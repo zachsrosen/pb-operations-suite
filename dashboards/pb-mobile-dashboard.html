@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="description" content="Photon Brothers Mobile Dashboard - Pipeline overview and quick access on the go">
+<meta name="theme-color" content="#3b82f6">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="PB Pipeline">
+<link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>â¡</text></svg>">
+<title>PB Mobile | Photon Brothers</title>
+<style>
+:root {
+  --bg: #0f172a;
+  --surface: #1e293b;
+  --surface-alt: #334155;
+  --border: #475569;
+  --text: #f1f5f9;
+  --text-dim: #94a3b8;
+  --primary: #3b82f6;
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --pe: #22c55e;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  padding-bottom: 70px;
+}
+
+/* Header */
+.header {
+  background: linear-gradient(135deg, var(--primary), #8b5cf6);
+  padding: 1rem;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.header h1 { font-size: 1.25rem; }
+.header-stats {
+  display: flex;
+  gap: 1rem;
+  margin-top: 0.75rem;
+  overflow-x: auto;
+}
+.header-stat {
+  background: rgba(255,255,255,0.1);
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.header-stat-value { font-size: 1.25rem; font-weight: 700; }
+.header-stat-label { font-size: 0.65rem; opacity: 0.8; }
+
+/* Alerts Banner */
+.alerts-banner {
+  background: var(--danger);
+  padding: 0.75rem 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.alerts-banner.warning { background: var(--warning); color: #000; }
+.alerts-icon { font-size: 1.25rem; }
+.alerts-text { font-size: 0.85rem; flex: 1; }
+
+/* Quick Actions */
+.section { padding: 1rem; }
+.section-title {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+  margin-bottom: 0.75rem;
+}
+
+.quick-actions {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.75rem;
+}
+.action-btn {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1rem;
+  text-align: center;
+  text-decoration: none;
+  color: var(--text);
+}
+.action-btn:active { background: var(--surface-alt); }
+.action-icon { font-size: 1.5rem; margin-bottom: 0.25rem; }
+.action-label { font-size: 0.8rem; }
+.action-count {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--primary);
+  margin-top: 0.25rem;
+}
+
+/* Cards */
+.card {
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 1rem;
+  margin-bottom: 0.75rem;
+}
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+.card-title { font-weight: 600; font-size: 0.9rem; }
+.card-badge {
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-weight: 600;
+}
+.badge-danger { background: var(--danger); }
+.badge-warning { background: var(--warning); color: #000; }
+.badge-success { background: var(--success); }
+.badge-pe { background: var(--pe); }
+
+/* Project List */
+.project-item {
+  background: var(--surface);
+  border-radius: 8px;
+  padding: 0.75rem;
+  margin-bottom: 0.5rem;
+  border-left: 3px solid var(--border);
+}
+.project-item.overdue { border-left-color: var(--danger); }
+.project-item.pe { border-left-color: var(--pe); }
+.project-item.urgent { border-left-color: var(--warning); }
+
+.project-name {
+  font-weight: 500;
+  font-size: 0.85rem;
+  margin-bottom: 0.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.project-meta {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+}
+.project-tags {
+  display: flex;
+  gap: 0.25rem;
+  margin-top: 0.5rem;
+}
+.tag {
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.6rem;
+  font-weight: 600;
+}
+.tag-pe { background: rgba(34, 197, 94, 0.2); color: var(--pe); }
+.tag-overdue { background: rgba(239, 68, 68, 0.2); color: var(--danger); }
+.tag-value { background: rgba(59, 130, 246, 0.2); color: var(--primary); }
+
+/* Location Summary */
+.location-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.5rem;
+}
+.location-card {
+  background: var(--surface-alt);
+  border-radius: 8px;
+  padding: 0.75rem;
+}
+.location-name { font-size: 0.75rem; color: var(--text-dim); }
+.location-value { font-size: 1.25rem; font-weight: 700; }
+.location-sub { font-size: 0.65rem; color: var(--text-dim); }
+
+/* Bottom Nav */
+.bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  display: flex;
+  padding: 0.5rem;
+  z-index: 100;
+}
+.nav-item {
+  flex: 1;
+  text-align: center;
+  padding: 0.5rem;
+  color: var(--text-dim);
+  text-decoration: none;
+  font-size: 0.7rem;
+}
+.nav-item.active { color: var(--primary); }
+.nav-icon { font-size: 1.25rem; display: block; margin-bottom: 0.15rem; }
+
+/* Tabs */
+.tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  overflow-x: auto;
+}
+.tab {
+  padding: 0.5rem 1rem;
+  background: var(--surface);
+  border: none;
+  border-radius: 20px;
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+.tab.active { background: var(--primary); color: white; }
+
+.view { display: none; }
+.view.active { display: block; }
+
+/* Touch feedback */
+.action-btn:active,
+.project-item:active,
+.location-card:active,
+.nav-item:active {
+  transform: scale(0.98);
+  opacity: 0.8;
+}
+
+/* Accessibility */
+.action-btn:focus,
+.project-item:focus,
+.nav-item:focus {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* Pull to refresh indicator (CSS only) */
+.refresh-indicator {
+  display: none;
+  text-align: center;
+  padding: 1rem;
+  color: var(--text-dim);
+  font-size: 0.8rem;
+}
+
+/* Loading state */
+.loading {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+/* Error state */
+.error-message {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  padding: 1rem;
+  margin: 1rem;
+  color: var(--danger);
+  text-align: center;
+}
+
+/* Safe area for newer phones */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  body {
+    padding-bottom: calc(70px + env(safe-area-inset-bottom));
+  }
+  .bottom-nav {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>PB Pipeline</h1>
+  <div class="header-stats">
+    <div class="header-stat">
+      <div class="header-stat-value" id="stat-total">--</div>
+      <div class="header-stat-label">Projects</div>
+    </div>
+    <div class="header-stat">
+      <div class="header-stat-value" id="stat-rtb">--</div>
+      <div class="header-stat-label">RTB</div>
+    </div>
+    <div class="header-stat">
+      <div class="header-stat-value" id="stat-pe">--</div>
+      <div class="header-stat-label">PE</div>
+    </div>
+    <div class="header-stat">
+      <div class="header-stat-value" id="stat-overdue">--</div>
+      <div class="header-stat-label">Overdue</div>
+    </div>
+    <div class="header-stat">
+      <div class="header-stat-value" id="stat-value">--</div>
+      <div class="header-stat-label">Value</div>
+    </div>
+  </div>
+</div>
+
+<div id="alerts-container"></div>
+
+<div id="view-home" class="view active">
+  <div class="section">
+    <div class="section-title">Quick Actions</div>
+    <div class="quick-actions">
+      <a href="#" class="action-btn" onclick="switchView('rtb')">
+        <div class="action-icon">ð¨</div>
+        <div class="action-label">Ready to Build</div>
+        <div class="action-count" id="action-rtb">--</div>
+      </a>
+      <a href="#" class="action-btn" onclick="switchView('overdue')">
+        <div class="action-icon">â ï¸</div>
+        <div class="action-label">Overdue</div>
+        <div class="action-count" id="action-overdue" style="color: var(--danger)">--</div>
+      </a>
+      <a href="#" class="action-btn" onclick="switchView('pe')">
+        <div class="action-icon">ð±</div>
+        <div class="action-label">PE Projects</div>
+        <div class="action-count" id="action-pe" style="color: var(--pe)">--</div>
+      </a>
+      <a href="#" class="action-btn" onclick="switchView('inspection')">
+        <div class="action-icon">ð</div>
+        <div class="action-label">Inspection</div>
+        <div class="action-count" id="action-insp">--</div>
+      </a>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Today's Priority</div>
+    <div id="priority-list"></div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">By Location</div>
+    <div class="location-grid" id="location-summary"></div>
+  </div>
+</div>
+
+<div id="view-rtb" class="view">
+  <div class="section">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+      <div class="section-title" style="margin: 0;">Ready to Build</div>
+      <button onclick="switchView('home')" style="background: var(--surface); border: none; color: var(--text); padding: 0.5rem;">â Back</button>
+    </div>
+    <div id="rtb-list"></div>
+  </div>
+</div>
+
+<div id="view-overdue" class="view">
+  <div class="section">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+      <div class="section-title" style="margin: 0;">Overdue Projects</div>
+      <button onclick="switchView('home')" style="background: var(--surface); border: none; color: var(--text); padding: 0.5rem;">â Back</button>
+    </div>
+    <div id="overdue-list"></div>
+  </div>
+</div>
+
+<div id="view-pe" class="view">
+  <div class="section">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+      <div class="section-title" style="margin: 0;">Participate Energy</div>
+      <button onclick="switchView('home')" style="background: var(--surface); border: none; color: var(--text); padding: 0.5rem;">â Back</button>
+    </div>
+    <div id="pe-list"></div>
+  </div>
+</div>
+
+<div id="view-inspection" class="view">
+  <div class="section">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+      <div class="section-title" style="margin: 0;">Inspection Stage</div>
+      <button onclick="switchView('home')" style="background: var(--surface); border: none; color: var(--text); padding: 0.5rem;">â Back</button>
+    </div>
+    <div id="inspection-list"></div>
+  </div>
+</div>
+
+<div class="bottom-nav">
+  <a href="#" class="nav-item active" onclick="switchView('home')">
+    <span class="nav-icon">ð </span>
+    Home
+  </a>
+  <a href="pb-dashboard-hub.html" class="nav-item">
+    <span class="nav-icon">ð</span>
+    Dashboards
+  </a>
+  <a href="comprehensive-schedule.xlsx" class="nav-item">
+    <span class="nav-icon">ð</span>
+    Schedule
+  </a>
+  <a href="weekly-operations-report.xlsx" class="nav-item">
+    <span class="nav-icon">ð</span>
+    Reports
+  </a>
+</div>
+
+<script>
+// Sample data - would be replaced with live data
+const data = {
+  total: 478,
+  rtb: 26,
+  rtbBlocked: 48,
+  pe: 107,
+  overdue: 367,
+  inspection: 121,
+  totalValue: 20335189,
+  locations: {
+    'Westminster': { count: 124, rtb: 4, pe: 25, value: 5234000 },
+    'Centennial': { count: 95, rtb: 1, pe: 18, value: 3890000 },
+    'Colorado Springs': { count: 68, rtb: 1, pe: 12, value: 2890000 },
+    'San Luis Obispo': { count: 100, rtb: 9, pe: 28, value: 4321000 },
+    'Camarillo': { count: 91, rtb: 10, pe: 24, value: 4000000 }
+  },
+  priority: [
+    { name: 'Pelisek, Katie', location: 'San Luis Obispo', isPE: true, daysOverdue: 333, value: 32950 },
+    { name: 'Smith, Richard', location: 'San Luis Obispo', isPE: true, daysOverdue: 221, value: 21070 },
+    { name: 'Sahagun, Damen', location: 'San Luis Obispo', isPE: false, daysOverdue: 200, value: 28399 },
+    { name: 'Yan Zhang, Hai', location: 'Westminster', isPE: true, daysOverdue: 161, value: 32006 },
+    { name: 'Rakoski, Noah', location: 'Camarillo', isPE: true, daysOverdue: 149, value: 63744 }
+  ]
+};
+
+// Update stats
+document.getElementById('stat-total').textContent = data.total;
+document.getElementById('stat-rtb').textContent = data.rtb;
+document.getElementById('stat-pe').textContent = data.pe;
+document.getElementById('stat-overdue').textContent = data.overdue;
+document.getElementById('stat-value').textContent = '$' + (data.totalValue / 1000000).toFixed(1) + 'M';
+
+document.getElementById('action-rtb').textContent = data.rtb;
+document.getElementById('action-overdue').textContent = data.overdue;
+document.getElementById('action-pe').textContent = data.pe;
+document.getElementById('action-insp').textContent = data.inspection;
+
+// Alerts
+if (data.overdue > 300) {
+  document.getElementById('alerts-container').innerHTML = `
+    <div class="alerts-banner">
+      <span class="alerts-icon">ð¨</span>
+      <span class="alerts-text">${data.overdue} projects overdue - ${data.rtbBlocked} RTB blocked</span>
+    </div>
+  `;
+}
+
+// Priority list
+document.getElementById('priority-list').innerHTML = data.priority.map(p => `
+  <div class="project-item ${p.isPE ? 'pe' : ''} ${p.daysOverdue > 100 ? 'overdue' : 'urgent'}">
+    <div class="project-name">
+      ${p.name}
+      ${p.isPE ? '<span class="tag tag-pe">PE</span>' : ''}
+    </div>
+    <div class="project-meta">${p.location} | ${p.daysOverdue}d overdue</div>
+    <div class="project-tags">
+      <span class="tag tag-value">$${(p.value/1000).toFixed(0)}k</span>
+      <span class="tag tag-overdue">${p.daysOverdue}d</span>
+    </div>
+  </div>
+`).join('');
+
+// Location summary
+document.getElementById('location-summary').innerHTML = Object.entries(data.locations).map(([loc, stats]) => `
+  <div class="location-card">
+    <div class="location-name">${loc}</div>
+    <div class="location-value">${stats.count}</div>
+    <div class="location-sub">${stats.rtb} RTB | ${stats.pe} PE</div>
+  </div>
+`).join('');
+
+// RTB list
+document.getElementById('rtb-list').innerHTML = `
+  <p style="color: var(--text-dim); font-size: 0.85rem;">
+    ${data.rtb} projects ready to build<br>
+    ${data.rtbBlocked} projects blocked (need unblocking)
+  </p>
+  <div style="margin-top: 1rem;">
+    ${data.priority.filter(p => true).map(p => `
+      <div class="project-item ${p.isPE ? 'pe' : ''}">
+        <div class="project-name">${p.name} ${p.isPE ? '<span class="tag tag-pe">PE</span>' : ''}</div>
+        <div class="project-meta">${p.location}</div>
+        <div class="project-tags">
+          <span class="tag tag-value">$${(p.value/1000).toFixed(0)}k</span>
+        </div>
+      </div>
+    `).join('')}
+  </div>
+`;
+
+// View switching
+function switchView(view) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  const targetView = document.getElementById('view-' + view);
+  if (targetView) {
+    targetView.classList.add('active');
+    // Scroll to top when switching views
+    window.scrollTo(0, 0);
+  }
+
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  if (view === 'home') {
+    document.querySelector('.nav-item').classList.add('active');
+  }
+
+  // Update URL hash for back button support
+  history.pushState(null, '', '#' + view);
+}
+
+// Handle back button
+window.addEventListener('popstate', () => {
+  const hash = window.location.hash.slice(1) || 'home';
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  const targetView = document.getElementById('view-' + hash);
+  if (targetView) targetView.classList.add('active');
+});
+
+// Keyboard accessibility for action buttons
+document.querySelectorAll('.action-btn, .project-item').forEach(el => {
+  el.setAttribute('tabindex', '0');
+  el.setAttribute('role', 'button');
+  el.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      el.click();
+    }
+  });
+});
+
+// Initialize view from hash
+const initialHash = window.location.hash.slice(1);
+if (initialHash && document.getElementById('view-' + initialHash)) {
+  switchView(initialHash);
+}
+
+console.log('PB Mobile Dashboard loaded');
+</script>
+
+</body>
+</html>
