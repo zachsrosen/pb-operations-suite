@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Photon Brothers Operations Suite - Pipeline Management & Scheduling Tools">
+    <meta name="theme-color" content="#0f172a">
+    <title>PB Operations Suite | Photon Brothers</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            color: #f1f5f9;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+        }
+        .container { max-width: 600px; text-align: center; }
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(135deg, #f97316, #fb923c);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .subtitle { color: #94a3b8; margin-bottom: 2rem; }
+        .btn {
+            display: inline-block;
+            padding: 1rem 2rem;
+            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+            color: white;
+            text-decoration: none;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 1.1rem;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin: 0.5rem;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 40px rgba(59, 130, 246, 0.3);
+        }
+        .btn.secondary {
+            background: #1e293b;
+            border: 1px solid #475569;
+        }
+        .links { margin-top: 2rem; }
+        .links a {
+            color: #94a3b8;
+            text-decoration: none;
+            margin: 0 1rem;
+            font-size: 0.9rem;
+        }
+        .links a:hover { color: #f1f5f9; }
+        .logo { font-size: 4rem; margin-bottom: 1rem; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">⚡</div>
+        <h1>Photon Brothers</h1>
+        <p class="subtitle">Operations Suite</p>
+
+        <a href="dashboards/pb-dashboard-hub.html" class="btn">Enter Dashboard Hub</a>
+        <a href="dashboards/pb-mobile-dashboard.html" class="btn secondary">Mobile View</a>
+
+        <div class="links">
+            <a href="dashboards/pb-unified-command-center.html">Command Center</a>
+            <a href="dashboards/pb-master-scheduler-v3.html">Scheduler</a>
+            <a href="dashboards/participate-energy-dashboard.html">PE Tracker</a>
+        </div>
+    </div>
+</body>
+</html>
