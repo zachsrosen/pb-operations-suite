@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Photon Brothers Dashboard Hub - Unified Pipeline Management & Participate Energy Tracking">
+<meta name="theme-color" content="#0f172a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>PB Dashboard Hub | Photon Brothers</title>
+<style>
+:root {
+  --bg: #0f172a;
+  --surface: #1e293b;
+  --surface-hover: #334155;
+  --border: #475569;
+  --text: #f1f5f9;
+  --text-dim: #94a3b8;
+  --primary: #3b82f6;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --purple: #8b5cf6;
+  --pe-green: #22c55e;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+}
+.header {
+  background: linear-gradient(135deg, #1e3a8a 0%, #7c3aed 50%, #22c55e 100%);
+  padding: 3rem 2rem;
+  text-align: center;
+}
+.header h1 {
+  font-size: 2.5rem;
+  margin-bottom: 0.5rem;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+.header p {
+  color: rgba(255,255,255,0.9);
+  font-size: 1.1rem;
+}
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+.section-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.section-title::before {
+  content: '';
+  display: block;
+  width: 4px;
+  height: 20px;
+  background: var(--primary);
+  border-radius: 2px;
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 3rem;
+}
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.5rem;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  text-decoration: none;
+  color: inherit;
+  display: block;
+}
+.card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 24px rgba(0,0,0,0.3);
+  border-color: var(--primary);
+}
+.card-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  margin-bottom: 1rem;
+}
+.card-icon.blue { background: rgba(59, 130, 246, 0.2); }
+.card-icon.green { background: rgba(34, 197, 94, 0.2); }
+.card-icon.purple { background: rgba(139, 92, 246, 0.2); }
+.card-icon.orange { background: rgba(249, 115, 22, 0.2); }
+.card-icon.red { background: rgba(239, 68, 68, 0.2); }
+.card-icon.cyan { background: rgba(6, 182, 212, 0.2); }
+.card h3 {
+  font-size: 1.1rem;
+  margin-bottom: 0.5rem;
+}
+.card p {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+.card-tag {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  margin-top: 1rem;
+}
+.tag-new { background: var(--success); color: white; }
+.tag-pe { background: var(--pe-green); color: white; }
+.tag-ops { background: var(--primary); color: white; }
+.tag-analytics { background: var(--purple); color: white; }
+.stats-bar {
+  display: flex;
+  justify-content: center;
+  gap: 3rem;
+  padding: 1.5rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.stat { text-align: center; }
+.stat-value { font-size: 1.75rem; font-weight: 700; }
+.stat-label { font-size: 0.8rem; color: var(--text-dim); }
+.stat-value.blue { color: var(--primary); }
+.stat-value.green { color: var(--success); }
+.stat-value.purple { color: var(--purple); }
+.stat-value.orange { color: var(--warning); }
+footer {
+  text-align: center;
+  padding: 2rem;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+.card:focus { outline: 2px solid var(--primary); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  .card { transition: none; }
+  .card:hover { transform: none; }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Photon Brothers Dashboard Hub</h1>
+  <p>Unified Pipeline Management & Participate Energy Tracking</p>
+</div>
+
+<div class="stats-bar">
+  <div class="stat">
+    <div class="stat-value blue">478</div>
+    <div class="stat-label">Active Projects</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value green">107</div>
+    <div class="stat-label">PE Projects</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value purple">$20.3M</div>
+    <div class="stat-label">Pipeline Value</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value orange">26</div>
+    <div class="stat-label">Ready to Build</div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="section-title">Operations Dashboards</div>
+  <div class="grid">
+    <a href="pb-unified-command-center.html" class="card">
+      <div class="card-icon blue">🎯</div>
+      <h3>Unified Command Center</h3>
+      <p>Complete pipeline + scheduler integration with capacity planning, PE tracking, and alerts.</p>
+      <span class="card-tag tag-new">NEW</span>
+    </a>
+
+    <a href="pb-optimization-dashboard.html" class="card">
+      <div class="card-icon purple">⚡</div>
+      <h3>Pipeline Optimizer</h3>
+      <p>AI-powered scheduling optimization, bottleneck detection, and efficiency metrics.</p>
+      <span class="card-tag tag-analytics">ANALYTICS</span>
+    </a>
+
+    <a href="pipeline-dashboard-v4.html" class="card">
+      <div class="card-icon blue">📊</div>
+      <h3>Pipeline Dashboard</h3>
+      <p>Full project list with PE filtering, forecasted dates, and pipeline/list views.</p>
+      <span class="card-tag tag-ops">OPERATIONS</span>
+    </a>
+
+    <a href="pipeline-at-risk.html" class="card">
+      <div class="card-icon red">🚨</div>
+      <h3>At-Risk Projects</h3>
+      <p>Critical alerts for overdue projects, sorted by severity and revenue impact.</p>
+      <span class="card-tag tag-ops">OPERATIONS</span>
+    </a>
+
+    <a href="pipeline-locations.html" class="card">
+      <div class="card-icon cyan">📍</div>
+      <h3>Location Comparison</h3>
+      <p>Performance metrics and project distribution across all PB locations.</p>
+      <span class="card-tag tag-analytics">ANALYTICS</span>
+    </a>
+
+    <a href="pipeline-timeline.html" class="card">
+      <div class="card-icon orange">📅</div>
+      <h3>Timeline View</h3>
+      <p>Gantt-style timeline showing project progression and milestone dates.</p>
+      <span class="card-tag tag-ops">OPERATIONS</span>
+    </a>
+  </div>
+
+  <div class="section-title">Participate Energy</div>
+  <div class="grid">
+    <a href="participate-energy-dashboard.html" class="card">
+      <div class="card-icon green">🌱</div>
+      <h3>PE Dashboard</h3>
+      <p>Dedicated Participate Energy tracking with milestone status and compliance monitoring.</p>
+      <span class="card-tag tag-pe">PE</span>
+    </a>
+
+    <a href="pipeline-executive-summary.html" class="card">
+      <div class="card-icon purple">📈</div>
+      <h3>Executive Summary</h3>
+      <p>High-level KPIs, charts, and month-over-month trends for leadership review.</p>
+      <span class="card-tag tag-analytics">ANALYTICS</span>
+    </a>
+
+    <a href="pb-mobile-dashboard.html" class="card">
+      <div class="card-icon blue">📱</div>
+      <h3>Mobile Dashboard</h3>
+      <p>Mobile-optimized view for field operations and quick status checks.</p>
+      <span class="card-tag tag-ops">OPERATIONS</span>
+    </a>
+  </div>
+</div>
+
+<footer>
+  Photon Brothers Pipeline Management System | Generated with HubSpot Data<br>
+  <span id="lastUpdated">Last Updated: Loading...</span>
+</footer>
+
+<script>
+  document.getElementById('lastUpdated').textContent =
+    'Last Updated: ' + new Date().toLocaleDateString('en-US', {
+      month: 'long',
+      year: 'numeric'
+    });
+
+  document.querySelectorAll('.card').forEach(card => {
+    card.setAttribute('role', 'link');
+    card.setAttribute('tabindex', '0');
+    card.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        card.click();
+      }
+    });
+  });
+</script>
+
+</body>
+</html>
