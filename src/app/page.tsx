@@ -102,11 +102,25 @@ export default function Home() {
           <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6 mb-8">
             <h2 className="text-lg font-semibold mb-4">Pipeline by Stage</h2>
             <div className="space-y-3">
-              {Object.entries(stats.stageCounts)
-                .sort((a, b) => (b[1] as number) - (a[1] as number))
-                .map(([stage, count]) => (
-                  <StageBar key={stage} stage={stage} count={count as number} total={stats.totalProjects} />
-                ))}
+              {(() => {
+                const stageOrder = [
+                  'Close Out', 'Permission To Operate', 'Inspection', 'Construction',
+                  'Ready To Build', 'RTB - Blocked', 'Permitting & Interconnection',
+                  'Design & Engineering', 'Site Survey', 'Project Rejected'
+                ];
+                return Object.entries(stats.stageCounts)
+                  .sort((a, b) => {
+                    const aIdx = stageOrder.indexOf(a[0]);
+                    const bIdx = stageOrder.indexOf(b[0]);
+                    if (aIdx === -1 && bIdx === -1) return a[0].localeCompare(b[0]);
+                    if (aIdx === -1) return 1;
+                    if (bIdx === -1) return -1;
+                    return aIdx - bIdx;
+                  })
+                  .map(([stage, count]) => (
+                    <StageBar key={stage} stage={stage} count={count as number} total={stats.totalProjects} />
+                  ));
+              })()}
             </div>
           </div>
         )}
@@ -128,49 +142,103 @@ export default function Home() {
           </div>
         )}
 
-        {/* Dashboard Links */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <DashboardLink
-            href="/dashboards/pb-dashboard-hub.html"
-            title="Dashboard Hub"
-            description="Central navigation to all dashboards"
-          />
+        {/* Operations Dashboards */}
+        <h2 className="text-lg font-semibold text-zinc-300 mb-4 mt-8">Operations Dashboards</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
           <DashboardLink
             href="/dashboards/pb-unified-command-center.html"
             title="Command Center"
-            description="Real-time operations monitoring"
+            description="Pipeline overview, scheduling, PE tracking, revenue, and alerts in one view"
+            tag="PRIMARY"
+            tagColor="orange"
           />
           <DashboardLink
-            href="/dashboards/participate-energy-dashboard.html"
-            title="Participate Energy"
-            description="PE milestone tracking"
+            href="/dashboards/pb-optimization-dashboard.html"
+            title="Pipeline Optimizer"
+            description="AI-powered scheduling optimization and bottleneck detection"
+            tag="ANALYTICS"
+            tagColor="purple"
           />
           <DashboardLink
             href="/dashboards/pb-master-scheduler-v3.html"
             title="Master Scheduler"
-            description="Crew scheduling calendar"
-          />
-          <DashboardLink
-            href="/dashboards/pipeline-executive-summary.html"
-            title="Executive Summary"
-            description="Leadership KPIs and metrics"
+            description="Drag-and-drop scheduling calendar with crew management"
+            tag="SCHEDULING"
+            tagColor="blue"
           />
           <DashboardLink
             href="/dashboards/pipeline-at-risk.html"
             title="At-Risk Projects"
-            description="Blocked and overdue alerts"
+            description="Critical alerts for overdue projects by severity and revenue impact"
+            tag="ALERTS"
+            tagColor="red"
+          />
+          <DashboardLink
+            href="/dashboards/pipeline-locations.html"
+            title="Location Comparison"
+            description="Performance metrics and project distribution across all locations"
+            tag="ANALYTICS"
+            tagColor="purple"
+          />
+          <DashboardLink
+            href="/dashboards/pipeline-timeline.html"
+            title="Timeline View"
+            description="Gantt-style timeline showing project progression and milestones"
+            tag="PLANNING"
+            tagColor="blue"
           />
         </div>
 
-        {/* API Info */}
-        <div className="mt-8 p-4 bg-zinc-900/30 border border-zinc-800 rounded-lg">
-          <h3 className="text-sm font-medium text-zinc-400 mb-2">API Endpoints</h3>
-          <div className="font-mono text-xs text-zinc-500 space-y-1">
-            <div><span className="text-green-500">GET</span> /api/projects?stats=true</div>
-            <div><span className="text-green-500">GET</span> /api/projects?context=pe</div>
-            <div><span className="text-green-500">GET</span> /api/projects?context=scheduling</div>
-            <div><span className="text-green-500">GET</span> /api/projects?context=at-risk</div>
-          </div>
+        {/* Participate Energy & Leadership */}
+        <h2 className="text-lg font-semibold text-zinc-300 mb-4">Participate Energy & Leadership</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+          <DashboardLink
+            href="/dashboards/participate-energy-dashboard.html"
+            title="PE Dashboard"
+            description="Dedicated PE tracking with milestone status and compliance monitoring"
+            tag="PE"
+            tagColor="emerald"
+          />
+          <DashboardLink
+            href="/dashboards/pipeline-executive-summary.html"
+            title="Executive Summary"
+            description="High-level KPIs, charts, and trends for leadership review"
+            tag="LEADERSHIP"
+            tagColor="purple"
+          />
+          <DashboardLink
+            href="/dashboards/pb-mobile-dashboard.html"
+            title="Mobile Dashboard"
+            description="Touch-optimized view for field teams with quick project lookup"
+            tag="MOBILE"
+            tagColor="blue"
+          />
+        </div>
+
+        {/* API Endpoints */}
+        <h2 className="text-lg font-semibold text-zinc-300 mb-4">API Endpoints</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <a href="/api/projects?stats=true" target="_blank" className="block bg-zinc-900/50 border border-zinc-800 rounded-xl p-5 hover:border-green-500/50 transition-all">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-green-500 font-mono text-sm">GET</span>
+              <span className="font-semibold text-white">Projects + Stats</span>
+            </div>
+            <p className="text-sm text-zinc-500">Full project data with statistics</p>
+          </a>
+          <a href="/api/projects?context=pe" target="_blank" className="block bg-zinc-900/50 border border-zinc-800 rounded-xl p-5 hover:border-green-500/50 transition-all">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-green-500 font-mono text-sm">GET</span>
+              <span className="font-semibold text-white">PE Projects</span>
+            </div>
+            <p className="text-sm text-zinc-500">Participate Energy project data</p>
+          </a>
+          <a href="/api/projects?context=scheduling" target="_blank" className="block bg-zinc-900/50 border border-zinc-800 rounded-xl p-5 hover:border-green-500/50 transition-all">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-green-500 font-mono text-sm">GET</span>
+              <span className="font-semibold text-white">Scheduling</span>
+            </div>
+            <p className="text-sm text-zinc-500">RTB and schedulable projects</p>
+          </a>
         </div>
       </main>
     </div>
@@ -234,14 +302,30 @@ function StageBar({ stage, count, total }: { stage: string; count: number; total
   );
 }
 
-function DashboardLink({ href, title, description }: { href: string; title: string; description: string }) {
+function DashboardLink({ href, title, description, tag, tagColor }: { href: string; title: string; description: string; tag?: string; tagColor?: string }) {
+  const tagColors: Record<string, string> = {
+    orange: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
+    purple: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
+    blue: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+    red: 'bg-red-500/20 text-red-400 border-red-500/30',
+    emerald: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
+    green: 'bg-green-500/20 text-green-400 border-green-500/30',
+  };
+
   return (
     <Link
       href={href}
       className="block bg-zinc-900/50 border border-zinc-800 rounded-xl p-5 hover:border-orange-500/50 hover:bg-zinc-900 transition-all group"
     >
-      <h3 className="font-semibold text-white group-hover:text-orange-400 transition-colors">{title}</h3>
-      <p className="text-sm text-zinc-500 mt-1">{description}</p>
+      <div className="flex items-center justify-between mb-1">
+        <h3 className="font-semibold text-white group-hover:text-orange-400 transition-colors">{title}</h3>
+        {tag && (
+          <span className={`text-xs font-medium px-2 py-0.5 rounded border ${tagColors[tagColor || 'blue']}`}>
+            {tag}
+          </span>
+        )}
+      </div>
+      <p className="text-sm text-zinc-500">{description}</p>
     </Link>
   );
 }
