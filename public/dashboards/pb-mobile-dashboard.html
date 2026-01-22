@@ -367,7 +367,7 @@ function processData() {
     total: projects.length,
     rtb: projects.filter(p => p.stage === 'Ready To Build').length,
     rtbBlocked: projects.filter(p => p.stage === 'RTB - Blocked').length,
-    pe: projects.filter(p => p.isPE).length,
+    pe: projects.filter(p => p.isParticipateEnergy).length,
     inspection: projects.filter(p => p.stage === 'Inspection').length,
     totalValue: projects.reduce((sum, p) => sum + (p.amount || 0), 0),
     locations: {}
@@ -391,7 +391,7 @@ function processData() {
     }
     stats.locations[loc].count++;
     if (p.stage === 'Ready To Build') stats.locations[loc].rtb++;
-    if (p.isPE) stats.locations[loc].pe++;
+    if (p.isParticipateEnergy) stats.locations[loc].pe++;
     stats.locations[loc].value += p.amount || 0;
   });
 
@@ -441,10 +441,10 @@ function renderStats() {
 
 function renderPriority(priorityProjects) {
   document.getElementById('priority-list').innerHTML = priorityProjects.map(p => `
-    <a href="${p.hubspotUrl}" target="_blank" class="project-item ${p.isPE ? 'pe' : ''} ${p.daysOverdue > 100 ? 'overdue' : 'urgent'}" style="display: block; text-decoration: none; color: inherit;">
+    <a href="${p.url}" target="_blank" class="project-item ${p.isParticipateEnergy ? 'pe' : ''} ${p.daysOverdue > 100 ? 'overdue' : 'urgent'}" style="display: block; text-decoration: none; color: inherit;">
       <div class="project-name">
         ${(p.name || '').split('|')[1]?.trim() || p.name?.split('|')[0]?.trim() || 'Unknown'}
-        ${p.isPE ? '<span class="tag tag-pe">PE</span>' : ''}
+        ${p.isParticipateEnergy ? '<span class="tag tag-pe">PE</span>' : ''}
       </div>
       <div class="project-meta">${p.pbLocation || 'Unknown'} | ${p.daysOverdue}d overdue</div>
       <div class="project-tags">
@@ -473,10 +473,10 @@ function renderLists(overdueProjects) {
   // RTB list
   const rtbProjects = projects.filter(p => p.stage === 'Ready To Build' || p.stage === 'RTB - Blocked');
   document.getElementById('rtb-list').innerHTML = rtbProjects.slice(0, 20).map(p => `
-    <a href="${p.hubspotUrl}" target="_blank" class="project-item ${p.isPE ? 'pe' : ''} ${p.stage === 'RTB - Blocked' ? 'urgent' : ''}" style="display: block; text-decoration: none; color: inherit;">
+    <a href="${p.url}" target="_blank" class="project-item ${p.isParticipateEnergy ? 'pe' : ''} ${p.stage === 'RTB - Blocked' ? 'urgent' : ''}" style="display: block; text-decoration: none; color: inherit;">
       <div class="project-name">
         ${(p.name || '').split('|')[1]?.trim() || p.name?.split('|')[0]?.trim() || 'Unknown'}
-        ${p.isPE ? '<span class="tag tag-pe">PE</span>' : ''}
+        ${p.isParticipateEnergy ? '<span class="tag tag-pe">PE</span>' : ''}
         ${p.stage === 'RTB - Blocked' ? '<span class="tag tag-overdue">Blocked</span>' : ''}
       </div>
       <div class="project-meta">${p.pbLocation || 'Unknown'} | ${p.stage}</div>
@@ -488,10 +488,10 @@ function renderLists(overdueProjects) {
 
   // Overdue list
   document.getElementById('overdue-list').innerHTML = overdueProjects.slice(0, 20).map(p => `
-    <a href="${p.hubspotUrl}" target="_blank" class="project-item overdue" style="display: block; text-decoration: none; color: inherit;">
+    <a href="${p.url}" target="_blank" class="project-item overdue" style="display: block; text-decoration: none; color: inherit;">
       <div class="project-name">
         ${(p.name || '').split('|')[1]?.trim() || p.name?.split('|')[0]?.trim() || 'Unknown'}
-        ${p.isPE ? '<span class="tag tag-pe">PE</span>' : ''}
+        ${p.isParticipateEnergy ? '<span class="tag tag-pe">PE</span>' : ''}
       </div>
       <div class="project-meta">${p.pbLocation || 'Unknown'} | ${p.daysOverdue}d overdue</div>
       <div class="project-tags">
@@ -502,9 +502,9 @@ function renderLists(overdueProjects) {
   `).join('') || '<div style="color: var(--text-dim);">No overdue projects</div>';
 
   // PE list
-  const peProjects = projects.filter(p => p.isPE);
+  const peProjects = projects.filter(p => p.isParticipateEnergy);
   document.getElementById('pe-list').innerHTML = peProjects.slice(0, 20).map(p => `
-    <a href="${p.hubspotUrl}" target="_blank" class="project-item pe" style="display: block; text-decoration: none; color: inherit;">
+    <a href="${p.url}" target="_blank" class="project-item pe" style="display: block; text-decoration: none; color: inherit;">
       <div class="project-name">
         ${(p.name || '').split('|')[1]?.trim() || p.name?.split('|')[0]?.trim() || 'Unknown'}
         <span class="tag tag-pe">PE</span>
@@ -519,10 +519,10 @@ function renderLists(overdueProjects) {
   // Inspection list
   const inspectionProjects = projects.filter(p => p.stage === 'Inspection');
   document.getElementById('inspection-list').innerHTML = inspectionProjects.slice(0, 20).map(p => `
-    <a href="${p.hubspotUrl}" target="_blank" class="project-item ${p.isPE ? 'pe' : ''}" style="display: block; text-decoration: none; color: inherit;">
+    <a href="${p.url}" target="_blank" class="project-item ${p.isParticipateEnergy ? 'pe' : ''}" style="display: block; text-decoration: none; color: inherit;">
       <div class="project-name">
         ${(p.name || '').split('|')[1]?.trim() || p.name?.split('|')[0]?.trim() || 'Unknown'}
-        ${p.isPE ? '<span class="tag tag-pe">PE</span>' : ''}
+        ${p.isParticipateEnergy ? '<span class="tag tag-pe">PE</span>' : ''}
       </div>
       <div class="project-meta">${p.pbLocation || 'Unknown'}</div>
       <div class="project-tags">

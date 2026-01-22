@@ -464,7 +464,7 @@ function transformProject(p) {
     daysElec: p.daysForElectricians || 1,
     roofType: null,
     scheduleDate: p.installScheduleDate || null,
-    hubspotUrl: p.hubspotUrl || `https://app.hubspot.com/contacts/21710069/record/0-3/${p.id}`
+    hubspotUrl: p.url || `https://app.hubspot.com/contacts/21710069/record/0-3/${p.id}`
   };
 }
 
@@ -1051,7 +1051,7 @@ function showDetail(id) {
     </div>
   `;
 
-  document.getElementById('hubspotLink').href = p.hubspotUrl;
+  document.getElementById('hubspotLink').href = p.url;
   document.getElementById('detailModal').classList.add('visible');
 }
 
