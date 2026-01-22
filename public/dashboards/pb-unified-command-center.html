@@ -248,6 +248,13 @@ a:hover { text-decoration: underline; }
       <div id="stageRevenueTable"></div>
     </div>
 
+    <!-- Backlog/RTB Forecasted Revenue -->
+    <div style="background: var(--surface); border: 1px solid var(--rtb); border-radius: 12px; padding: 1.25rem; margin-top: 1.5rem;">
+      <h3 style="font-size: 1rem; font-weight: 600; margin-bottom: 0.5rem; color: var(--rtb);">Backlog Forecasted Revenue</h3>
+      <p style="font-size: 0.75rem; color: var(--text-dim); margin-bottom: 1rem;">Revenue from RTB, RTB-Blocked, and pre-construction stages based on forecasted install dates</p>
+      <div id="backlogRevenueTable"></div>
+    </div>
+
     <!-- Revenue by Location + Timeline -->
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-top: 1.5rem;">
       <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem;">
@@ -255,7 +262,7 @@ a:hover { text-decoration: underline; }
         <div id="locationRevenueTable"></div>
       </div>
       <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem;">
-        <h3 style="font-size: 1rem; font-weight: 600; margin-bottom: 1rem; color: var(--accent);">Revenue Forecast Timeline</h3>
+        <h3 style="font-size: 1rem; font-weight: 600; margin-bottom: 1rem; color: var(--accent);">Scheduled Revenue Timeline</h3>
         <div style="display: flex; gap: 8px; margin-bottom: 1rem;">
           <button class="filter-btn active" id="weeklyBtn" onclick="setRevenueView('weekly')">Weekly</button>
           <button class="filter-btn" id="monthlyBtn" onclick="setRevenueView('monthly')">Monthly</button>
@@ -702,6 +709,7 @@ function renderRevenueView() {
   `;
 
   renderStageRevenueTable();
+  renderBacklogRevenueTable();
   renderLocationRevenueTable();
   renderRevenueTimeline();
 }
@@ -782,6 +790,117 @@ function renderStageRevenueTable() {
         <div style="text-align: right;" class="revenue-amount">$${(totalValue/1000000).toFixed(2)}M</div>
         <div></div>
       </div>
+    </div>
+  `;
+}
+
+function renderBacklogRevenueTable() {
+  // Backlog stages: not yet in construction
+  const backlogStages = ['Site Survey', 'Design & Engineering', 'Permitting & Interconnection', 'RTB - Blocked', 'Ready To Build'];
+  const backlogProjects = projects.filter(p => backlogStages.includes(p.stage));
+
+  // Group by forecasted month
+  const now = new Date();
+  const monthlyData = {};
+
+  // Generate next 6 months
+  for (let i = 0; i < 6; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+    const key = d.toISOString().substring(0, 7);
+    const label = d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+    monthlyData[key] = { label, count: 0, value: 0, byLocation: {}, byStage: {} };
+  }
+
+  // Add "Overdue" bucket for past dates
+  monthlyData['overdue'] = { label: 'Overdue', count: 0, value: 0, byLocation: {}, byStage: {} };
+
+  // Categorize projects
+  backlogProjects.forEach(p => {
+    if (!p.forecast_install) return;
+
+    const installDate = new Date(p.forecast_install);
+    const monthKey = installDate.toISOString().substring(0, 7);
+    const location = p.pb_location || 'Unknown';
+    const stage = p.stage;
+
+    let bucket;
+    if (installDate < now) {
+      bucket = monthlyData['overdue'];
+    } else if (monthlyData[monthKey]) {
+      bucket = monthlyData[monthKey];
+    } else {
+      // Future month beyond 6 months - skip
+      return;
+    }
+
+    bucket.count++;
+    bucket.value += (p.amount || 0);
+    bucket.byLocation[location] = (bucket.byLocation[location] || 0) + (p.amount || 0);
+    bucket.byStage[stage] = (bucket.byStage[stage] || 0) + (p.amount || 0);
+  });
+
+  // Convert to array and sort (overdue first, then by month)
+  const sortedPeriods = Object.entries(monthlyData)
+    .filter(([_, data]) => data.count > 0 || _ !== 'overdue')
+    .sort((a, b) => {
+      if (a[0] === 'overdue') return -1;
+      if (b[0] === 'overdue') return 1;
+      return a[0].localeCompare(b[0]);
+    })
+    .map(([key, data]) => ({ key, ...data }));
+
+  const totalValue = backlogProjects.reduce((sum, p) => sum + (p.amount || 0), 0);
+  const totalCount = backlogProjects.length;
+
+  document.getElementById('backlogRevenueTable').innerHTML = `
+    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 1.5rem;">
+      <div style="background: var(--bg); padding: 1rem; border-radius: 8px; text-align: center;">
+        <div style="font-size: 1.5rem; font-weight: 700; font-family: 'JetBrains Mono', monospace; color: var(--rtb);">$${(totalValue/1000000).toFixed(2)}M</div>
+        <div style="font-size: 0.7rem; color: var(--text-dim);">Total Backlog Value</div>
+      </div>
+      <div style="background: var(--bg); padding: 1rem; border-radius: 8px; text-align: center;">
+        <div style="font-size: 1.5rem; font-weight: 700; font-family: 'JetBrains Mono', monospace;">${totalCount}</div>
+        <div style="font-size: 0.7rem; color: var(--text-dim);">Backlog Projects</div>
+      </div>
+      <div style="background: var(--bg); padding: 1rem; border-radius: 8px; text-align: center;">
+        <div style="font-size: 1.5rem; font-weight: 700; font-family: 'JetBrains Mono', monospace; color: var(--danger);">$${((monthlyData['overdue']?.value || 0)/1000000).toFixed(2)}M</div>
+        <div style="font-size: 0.7rem; color: var(--text-dim);">Overdue (Past Forecast)</div>
+      </div>
+    </div>
+    <div style="font-size: 0.85rem;">
+      <div class="timeline-row header">
+        <div>Forecasted Month</div>
+        <div style="text-align: right;">Projects</div>
+        <div style="text-align: right;">Revenue</div>
+        <div>Breakdown</div>
+      </div>
+      ${sortedPeriods.map(period => {
+        const stageBreakdown = Object.entries(period.byStage)
+          .sort((a, b) => b[1] - a[1])
+          .map(([stage, val]) => `${stage}: $${(val/1000).toFixed(0)}k`)
+          .join(' | ');
+        const locationBreakdown = Object.entries(period.byLocation)
+          .sort((a, b) => b[1] - a[1])
+          .map(([loc, val]) => `${loc}: $${(val/1000).toFixed(0)}k`)
+          .join(', ');
+
+        const isOverdue = period.key === 'overdue';
+
+        return `
+          <div class="timeline-row" ${isOverdue ? 'style="background: rgba(239,68,68,0.1);"' : ''}>
+            <div style="font-weight: 500; ${isOverdue ? 'color: var(--danger);' : ''}">${period.label}</div>
+            <div style="text-align: right; color: var(--text-dim);">${period.count}</div>
+            <div style="text-align: right; font-family: 'JetBrains Mono', monospace; color: ${isOverdue ? 'var(--danger)' : 'var(--rtb)'};">$${(period.value/1000).toFixed(0)}k</div>
+            <div>
+              <button class="filter-btn" style="font-size: 0.6rem; padding: 2px 6px;" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'none' ? 'block' : 'none'">+</button>
+              <div style="display: none; font-size: 0.7rem; color: var(--text-dim); margin-top: 4px;">
+                <div style="margin-bottom: 4px;"><strong>By Stage:</strong> ${stageBreakdown || 'N/A'}</div>
+                <div><strong>By Location:</strong> ${locationBreakdown || 'N/A'}</div>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('')}
     </div>
   `;
 }
