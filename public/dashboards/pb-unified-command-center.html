@@ -1160,15 +1160,28 @@ function renderCalendar() {
 function prevMonth() { state.calendarMonth--; if (state.calendarMonth < 0) { state.calendarMonth = 11; state.calendarYear--; } renderCalendar(); }
 function nextMonth() { state.calendarMonth++; if (state.calendarMonth > 11) { state.calendarMonth = 0; state.calendarYear++; } renderCalendar(); }
 function dragProject(e, id) { e.dataTransfer.setData('projectId', id); }
+
+function getNextBusinessDay(dateStr) {
+  let d = new Date(dateStr + 'T12:00:00');
+  while (d.getDay() === 0 || d.getDay() === 6) {
+    d.setDate(d.getDate() + 1);
+  }
+  return d.toISOString().split('T')[0];
+}
+
 function dropProject(e, date) {
   e.preventDefault();
   const id = e.dataTransfer.getData('projectId');
   const project = projects.find(p => p.id == id);
   if (project) {
-    state.scheduledProjects[id] = { date, crew: project.default_crew };
-    project.forecast_install = date;
+    // Adjust weekend dates to next business day
+    const adjustedDate = getNextBusinessDay(date);
+    const wasWeekend = adjustedDate !== date;
+
+    state.scheduledProjects[id] = { date: adjustedDate, crew: project.default_crew };
+    project.forecast_install = adjustedDate;
     renderCalendar(); renderQueue();
-    alert(`Scheduled ${project.name.split('|')[1]?.trim() || project.name} for ${date}`);
+    alert(`Scheduled ${project.name.split('|')[1]?.trim() || project.name} for ${adjustedDate}${wasWeekend ? ' (adjusted from weekend)' : ''}`);
   }
 }
 

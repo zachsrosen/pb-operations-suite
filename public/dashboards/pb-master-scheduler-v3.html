@@ -577,6 +577,17 @@ const utils = {
     d.setDate(d.getDate() + days);
     return d.toISOString().split('T')[0];
   },
+  addBusinessDays(dateStr, days) {
+    let d = new Date(dateStr + 'T12:00:00');
+    let remaining = days;
+    while (remaining > 0) {
+      d.setDate(d.getDate() + 1);
+      if (d.getDay() !== 0 && d.getDay() !== 6) {
+        remaining--;
+      }
+    }
+    return d.toISOString().split('T')[0];
+  },
   getNextWorkday(dateStr) {
     let d = new Date(dateStr + 'T12:00:00');
     while (d.getDay() === 0 || d.getDay() === 6) {
@@ -967,6 +978,10 @@ function handleDrop(event, dateStr) {
 }
 
 function openScheduleModal(project, dateStr) {
+  // Adjust weekend dates to next business day
+  const adjustedDate = utils.getNextWorkday(dateStr);
+  const wasWeekend = adjustedDate !== dateStr;
+
   const customerName = utils.getCustomerName(project.name);
   const types = (project.type || 'Service').split(';').filter(t => t.trim()).join(', ');
   const locationCrews = crews[project.location] || [];
@@ -990,7 +1005,8 @@ function openScheduleModal(project, dateStr) {
     </div>
     <div class="modal-section">
       <div class="modal-section-title">Schedule</div>
-      <div class="modal-row"><span class="modal-label">Start Date</span><span><strong>${utils.formatDate(dateStr)}</strong></span></div>
+      ${wasWeekend ? `<div style="background: rgba(234,179,8,0.15); border: 1px solid rgba(234,179,8,0.3); border-radius: 6px; padding: 8px; margin-bottom: 8px; font-size: 0.7rem; color: #eab308;">⚠️ Weekend selected - adjusted to next business day</div>` : ''}
+      <div class="modal-row"><span class="modal-label">Start Date</span><span><strong>${utils.formatDate(adjustedDate)}</strong></span></div>
       <div class="form-row">
         <label>Days:</label>
         <input type="number" id="installDays" value="${project.daysInstall || 2}" min="1" max="10">
@@ -1001,7 +1017,7 @@ function openScheduleModal(project, dateStr) {
   `;
 
   document.getElementById('modalOverlay').classList.add('visible');
-  window.pendingSchedule = { project, date: dateStr };
+  window.pendingSchedule = { project, date: adjustedDate };
 }
 
 function confirmSchedule() {
@@ -1097,7 +1113,7 @@ function autoOptimize() {
     if (preferredCrew && crewNextDate[preferredCrew]) {
       const startDate = crewNextDate[preferredCrew];
       state.manualSchedules[p.id] = { startDate, days: p.daysInstall || 2, crew: preferredCrew };
-      crewNextDate[preferredCrew] = utils.getNextWorkday(utils.addDays(startDate, p.daysInstall || 2));
+      crewNextDate[preferredCrew] = utils.getNextWorkday(utils.addBusinessDays(startDate, p.daysInstall || 2));
       scheduled++;
     }
   });
