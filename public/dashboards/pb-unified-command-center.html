@@ -164,6 +164,21 @@ body { font-family: 'Space Grotesk', sans-serif; background: var(--bg); color: v
 .opt-stat-value { font-size: 1.5rem; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
 .opt-stat-label { font-size: 0.65rem; color: var(--text-dim); }
 
+/* Revenue View */
+.revenue-table { width: 100%; }
+.revenue-row { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; padding: 12px 0; border-bottom: 1px solid var(--border); align-items: center; }
+.revenue-row.header { font-weight: 600; font-size: 0.7rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
+.revenue-row:last-child { border-bottom: none; }
+.revenue-row.total { font-weight: 700; background: var(--bg); padding: 12px; border-radius: 8px; margin-top: 8px; }
+.revenue-stage { font-weight: 500; }
+.revenue-amount { font-family: 'JetBrains Mono', monospace; font-weight: 600; color: var(--accent); }
+.revenue-count { font-size: 0.8rem; color: var(--text-dim); }
+.revenue-bar { height: 8px; background: var(--bg); border-radius: 4px; overflow: hidden; }
+.revenue-bar-fill { height: 100%; border-radius: 4px; transition: width 0.3s ease; }
+.location-revenue-row { display: grid; grid-template-columns: 1.5fr 1fr 1fr 1fr 1fr; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 0.85rem; }
+.timeline-row { display: grid; grid-template-columns: 1.2fr 1fr 1fr 80px; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 0.85rem; align-items: center; }
+.timeline-row.header { font-weight: 600; font-size: 0.7rem; color: var(--text-dim); }
+
 /* Responsive */
 @media (max-width: 1200px) { .stats-grid { grid-template-columns: repeat(3, 1fr); } .scheduler-grid { grid-template-columns: 1fr; } }
 @media (max-width: 768px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } .table-header, .table-row { grid-template-columns: 1fr; } }
@@ -194,6 +209,7 @@ a:hover { text-decoration: underline; }
   </div>
   <div class="nav-tabs">
     <div class="nav-tab active" data-view="pipeline" onclick="switchView('pipeline')">Pipeline Overview</div>
+    <div class="nav-tab" data-view="revenue" onclick="switchView('revenue')">Revenue</div>
     <div class="nav-tab" data-view="capacity" onclick="switchView('capacity')">Capacity Planning</div>
     <div class="nav-tab" data-view="scheduler" onclick="switchView('scheduler')">Scheduler</div>
     <div class="nav-tab" data-view="pe" onclick="switchView('pe')">Participate Energy <span class="badge pe-badge" id="peCount">0</span></div>
@@ -219,6 +235,33 @@ a:hover { text-decoration: underline; }
         <div>Actions</div>
       </div>
       <div class="table-body" id="pipelineTable"></div>
+    </div>
+  </div>
+
+  <!-- Revenue View -->
+  <div class="view-panel" id="revenueView">
+    <div class="stats-grid" style="grid-template-columns: repeat(4, 1fr);" id="revenueStats"></div>
+
+    <!-- Revenue by Stage -->
+    <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem; margin-top: 1.5rem;">
+      <h3 style="font-size: 1rem; font-weight: 600; margin-bottom: 1rem; color: var(--accent);">Revenue by Deal Stage</h3>
+      <div id="stageRevenueTable"></div>
+    </div>
+
+    <!-- Revenue by Location + Timeline -->
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-top: 1.5rem;">
+      <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem;">
+        <h3 style="font-size: 1rem; font-weight: 600; margin-bottom: 1rem; color: var(--accent);">Scheduled Revenue by Location</h3>
+        <div id="locationRevenueTable"></div>
+      </div>
+      <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem;">
+        <h3 style="font-size: 1rem; font-weight: 600; margin-bottom: 1rem; color: var(--accent);">Revenue Forecast Timeline</h3>
+        <div style="display: flex; gap: 8px; margin-bottom: 1rem;">
+          <button class="filter-btn active" id="weeklyBtn" onclick="setRevenueView('weekly')">Weekly</button>
+          <button class="filter-btn" id="monthlyBtn" onclick="setRevenueView('monthly')">Monthly</button>
+        </div>
+        <div id="revenueTimeline"></div>
+      </div>
     </div>
   </div>
 
@@ -492,6 +535,7 @@ function switchView(view) {
   document.getElementById(view + 'View').classList.add('active');
 
   if (view === 'pipeline') renderPipelineView();
+  else if (view === 'revenue') renderRevenueView();
   else if (view === 'capacity') renderCapacityView();
   else if (view === 'scheduler') renderSchedulerView();
   else if (view === 'pe') renderPEView();
@@ -616,6 +660,259 @@ function renderPipelineTable() {
 function updateFilter(key, value) {
   state.filters[key] = value;
   renderPipelineView();
+}
+
+// Revenue view state
+let revenueViewMode = 'weekly';
+
+function setRevenueView(mode) {
+  revenueViewMode = mode;
+  document.getElementById('weeklyBtn').classList.toggle('active', mode === 'weekly');
+  document.getElementById('monthlyBtn').classList.toggle('active', mode === 'monthly');
+  renderRevenueTimeline();
+}
+
+function renderRevenueView() {
+  const totalValue = projects.reduce((sum, p) => sum + (p.amount || 0), 0);
+  const scheduledValue = projects.filter(p => p.forecast_install).reduce((sum, p) => sum + (p.amount || 0), 0);
+  const rtbValue = projects.filter(p => p.is_rtb).reduce((sum, p) => sum + (p.amount || 0), 0);
+  const peValue = projects.filter(p => p.is_participate_energy).reduce((sum, p) => sum + (p.amount || 0), 0);
+
+  document.getElementById('revenueStats').innerHTML = `
+    <div class="stat-card">
+      <div class="stat-value">$${(totalValue/1000000).toFixed(2)}M</div>
+      <div class="stat-label">Total Pipeline</div>
+      <div class="stat-sub">${projects.length} projects</div>
+    </div>
+    <div class="stat-card accent">
+      <div class="stat-value">$${(scheduledValue/1000000).toFixed(2)}M</div>
+      <div class="stat-label">Scheduled</div>
+      <div class="stat-sub">With install dates</div>
+    </div>
+    <div class="stat-card" style="border-color: var(--rtb);">
+      <div class="stat-value">$${(rtbValue/1000000).toFixed(2)}M</div>
+      <div class="stat-label">Ready to Build</div>
+      <div class="stat-sub">${projects.filter(p => p.is_rtb).length} projects</div>
+    </div>
+    <div class="stat-card pe">
+      <div class="stat-value">$${(peValue/1000000).toFixed(2)}M</div>
+      <div class="stat-label">Participate Energy</div>
+      <div class="stat-sub">${projects.filter(p => p.is_participate_energy).length} projects</div>
+    </div>
+  `;
+
+  renderStageRevenueTable();
+  renderLocationRevenueTable();
+  renderRevenueTimeline();
+}
+
+function renderStageRevenueTable() {
+  // Define stage order for display
+  const stageOrder = [
+    'Site Survey', 'Design & Engineering', 'Permitting & Interconnection',
+    'RTB - Blocked', 'Ready To Build', 'Construction', 'Inspection',
+    'Permission To Operate', 'Close Out'
+  ];
+
+  // Calculate revenue by stage
+  const stageData = {};
+  let maxValue = 0;
+  projects.forEach(p => {
+    const stage = p.stage;
+    if (!stageData[stage]) stageData[stage] = { count: 0, value: 0 };
+    stageData[stage].count++;
+    stageData[stage].value += (p.amount || 0);
+    if (stageData[stage].value > maxValue) maxValue = stageData[stage].value;
+  });
+
+  // Sort by stage order
+  const sortedStages = Object.keys(stageData).sort((a, b) => {
+    const aIdx = stageOrder.indexOf(a);
+    const bIdx = stageOrder.indexOf(b);
+    if (aIdx === -1 && bIdx === -1) return a.localeCompare(b);
+    if (aIdx === -1) return 1;
+    if (bIdx === -1) return -1;
+    return aIdx - bIdx;
+  });
+
+  const totalValue = projects.reduce((sum, p) => sum + (p.amount || 0), 0);
+  const totalCount = projects.length;
+
+  // Color mapping for stages
+  const stageColors = {
+    'Site Survey': '#3b82f6',
+    'Design & Engineering': '#8b5cf6',
+    'Permitting & Interconnection': '#ec4899',
+    'RTB - Blocked': '#ef4444',
+    'Ready To Build': '#10b981',
+    'Construction': '#f97316',
+    'Inspection': '#eab308',
+    'Permission To Operate': '#06b6d4',
+    'Close Out': '#22c55e'
+  };
+
+  document.getElementById('stageRevenueTable').innerHTML = `
+    <div class="revenue-table">
+      <div class="revenue-row header">
+        <div>Stage</div>
+        <div style="text-align: right;">Projects</div>
+        <div style="text-align: right;">Value</div>
+        <div>Distribution</div>
+      </div>
+      ${sortedStages.map(stage => {
+        const data = stageData[stage];
+        const pct = maxValue > 0 ? (data.value / maxValue * 100) : 0;
+        const color = stageColors[stage] || 'var(--accent)';
+        return `
+          <div class="revenue-row">
+            <div class="revenue-stage">${stage}</div>
+            <div style="text-align: right;" class="revenue-count">${data.count}</div>
+            <div style="text-align: right;" class="revenue-amount">$${(data.value/1000).toFixed(0)}k</div>
+            <div>
+              <div class="revenue-bar">
+                <div class="revenue-bar-fill" style="width: ${pct}%; background: ${color};"></div>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('')}
+      <div class="revenue-row total">
+        <div>Total</div>
+        <div style="text-align: right;">${totalCount}</div>
+        <div style="text-align: right;" class="revenue-amount">$${(totalValue/1000000).toFixed(2)}M</div>
+        <div></div>
+      </div>
+    </div>
+  `;
+}
+
+function renderLocationRevenueTable() {
+  // Calculate revenue by location
+  const locationData = {};
+  projects.forEach(p => {
+    const loc = p.pb_location || 'Unknown';
+    if (!locationData[loc]) locationData[loc] = { count: 0, value: 0, rtbValue: 0, scheduledValue: 0 };
+    locationData[loc].count++;
+    locationData[loc].value += (p.amount || 0);
+    if (p.is_rtb) locationData[loc].rtbValue += (p.amount || 0);
+    if (p.forecast_install) locationData[loc].scheduledValue += (p.amount || 0);
+  });
+
+  const sortedLocations = Object.keys(locationData).sort((a, b) => locationData[b].value - locationData[a].value);
+
+  document.getElementById('locationRevenueTable').innerHTML = `
+    <div style="font-size: 0.85rem;">
+      <div class="location-revenue-row" style="font-weight: 600; font-size: 0.7rem; color: var(--text-dim); text-transform: uppercase;">
+        <div>Location</div>
+        <div style="text-align: right;">Projects</div>
+        <div style="text-align: right;">Total</div>
+        <div style="text-align: right;">RTB</div>
+        <div style="text-align: right;">Scheduled</div>
+      </div>
+      ${sortedLocations.map(loc => {
+        const data = locationData[loc];
+        return `
+          <div class="location-revenue-row">
+            <div style="font-weight: 500;">${loc}</div>
+            <div style="text-align: right; color: var(--text-dim);">${data.count}</div>
+            <div style="text-align: right; font-family: 'JetBrains Mono', monospace; color: var(--accent);">$${(data.value/1000).toFixed(0)}k</div>
+            <div style="text-align: right; font-family: 'JetBrains Mono', monospace; color: var(--rtb);">$${(data.rtbValue/1000).toFixed(0)}k</div>
+            <div style="text-align: right; font-family: 'JetBrains Mono', monospace; color: var(--info);">$${(data.scheduledValue/1000).toFixed(0)}k</div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+function renderRevenueTimeline() {
+  const now = new Date();
+  const periods = [];
+
+  if (revenueViewMode === 'weekly') {
+    // Generate next 8 weeks
+    for (let i = 0; i < 8; i++) {
+      const weekStart = new Date(now);
+      weekStart.setDate(weekStart.getDate() - weekStart.getDay() + (i * 7)); // Start of week (Sunday)
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekEnd.getDate() + 6);
+
+      periods.push({
+        label: weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' - ' + weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        start: weekStart,
+        end: weekEnd
+      });
+    }
+  } else {
+    // Generate next 6 months
+    for (let i = 0; i < 6; i++) {
+      const monthStart = new Date(now.getFullYear(), now.getMonth() + i, 1);
+      const monthEnd = new Date(now.getFullYear(), now.getMonth() + i + 1, 0);
+
+      periods.push({
+        label: monthStart.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
+        start: monthStart,
+        end: monthEnd
+      });
+    }
+  }
+
+  // Calculate revenue per period by location
+  const locations = [...new Set(projects.map(p => p.pb_location))].filter(l => l !== 'Unknown').sort();
+  const periodData = periods.map(period => {
+    const data = { label: period.label, total: 0, count: 0, byLocation: {} };
+    locations.forEach(loc => data.byLocation[loc] = { value: 0, count: 0 });
+
+    projects.forEach(p => {
+      if (p.forecast_install) {
+        const installDate = new Date(p.forecast_install);
+        if (installDate >= period.start && installDate <= period.end) {
+          data.total += (p.amount || 0);
+          data.count++;
+          if (data.byLocation[p.pb_location]) {
+            data.byLocation[p.pb_location].value += (p.amount || 0);
+            data.byLocation[p.pb_location].count++;
+          }
+        }
+      }
+    });
+    return data;
+  });
+
+  document.getElementById('revenueTimeline').innerHTML = `
+    <div style="font-size: 0.85rem; max-height: 400px; overflow-y: auto;">
+      <div class="timeline-row header">
+        <div>Period</div>
+        <div style="text-align: right;">Projects</div>
+        <div style="text-align: right;">Revenue</div>
+        <div>Details</div>
+      </div>
+      ${periodData.map(period => {
+        const locationBreakdown = Object.entries(period.byLocation)
+          .filter(([_, d]) => d.count > 0)
+          .map(([loc, d]) => `${loc}: $${(d.value/1000).toFixed(0)}k (${d.count})`)
+          .join(', ');
+
+        return `
+          <div class="timeline-row">
+            <div style="font-weight: 500;">${period.label}</div>
+            <div style="text-align: right; color: var(--text-dim);">${period.count}</div>
+            <div style="text-align: right; font-family: 'JetBrains Mono', monospace; color: var(--accent);">$${(period.total/1000).toFixed(0)}k</div>
+            <div>
+              <button class="filter-btn" style="font-size: 0.6rem; padding: 2px 6px;" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'none' ? 'block' : 'none'">+</button>
+              <div style="display: none; font-size: 0.7rem; color: var(--text-dim); margin-top: 4px;">${locationBreakdown || 'No scheduled installs'}</div>
+            </div>
+          </div>
+        `;
+      }).join('')}
+      <div class="timeline-row" style="font-weight: 700; background: var(--bg); border-radius: 8px; margin-top: 8px;">
+        <div>Total</div>
+        <div style="text-align: right;">${periodData.reduce((s, p) => s + p.count, 0)}</div>
+        <div style="text-align: right; font-family: 'JetBrains Mono', monospace; color: var(--accent);">$${(periodData.reduce((s, p) => s + p.total, 0)/1000000).toFixed(2)}M</div>
+        <div></div>
+      </div>
+    </div>
+  `;
 }
 
 function renderCapacityView() {
