@@ -24,7 +24,7 @@
             const daysSinceClose = closeDate ? Math.floor((now - closeDate) / (1000 * 60 * 60 * 24)) : 0;
 
             // Calculate forecast dates based on close date
-            const forecastInstall = p.installScheduleDate || (closeDate ? new Date(closeDate.getTime() + 75*24*60*60*1000).toISOString().split('T')[0] : null);
+            const forecastInstall = p.constructionScheduleDate || (closeDate ? new Date(closeDate.getTime() + 75*24*60*60*1000).toISOString().split('T')[0] : null);
             const forecastInspection = p.inspectionCompletionDate || (closeDate ? new Date(closeDate.getTime() + 114*24*60*60*1000).toISOString().split('T')[0] : null);
             const forecastPto = p.ptoCompletionDate || (closeDate ? new Date(closeDate.getTime() + 139*24*60*60*1000).toISOString().split('T')[0] : null);
 

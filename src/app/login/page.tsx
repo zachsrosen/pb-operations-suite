@@ -83,6 +83,10 @@ export default function LoginPage() {
           <Suspense fallback={<div className="text-center text-zinc-500">Loading...</div>}>
             <LoginForm />
           </Suspense>
+
+          <p className="text-center text-zinc-600 text-xs mt-6">
+            By Zach Rosen
+          </p>
         </div>
       </div>
     </div>

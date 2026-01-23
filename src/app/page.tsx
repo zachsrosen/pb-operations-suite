@@ -189,6 +189,32 @@ export default function Home() {
           />
         </div>
 
+        {/* Other Pipelines */}
+        <h2 className="text-lg font-semibold text-zinc-300 mb-4">Other Pipelines</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+          <DashboardLink
+            href="/dashboards/sales-pipeline.html"
+            title="Sales Pipeline"
+            description="Active deals, funnel visualization, and proposal tracking"
+            tag="SALES"
+            tagColor="green"
+          />
+          <DashboardLink
+            href="/dashboards/service-pipeline.html"
+            title="Service Pipeline"
+            description="Service jobs, scheduling, and work in progress tracking"
+            tag="SERVICE"
+            tagColor="cyan"
+          />
+          <DashboardLink
+            href="/dashboards/dnr-pipeline.html"
+            title="D&R Pipeline"
+            description="Detach & Reset projects with phase tracking"
+            tag="D&R"
+            tagColor="purple"
+          />
+        </div>
+
         {/* Participate Energy & Leadership */}
         <h2 className="text-lg font-semibold text-zinc-300 mb-4">Participate Energy & Leadership</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
@@ -310,6 +336,7 @@ function DashboardLink({ href, title, description, tag, tagColor }: { href: stri
     red: 'bg-red-500/20 text-red-400 border-red-500/30',
     emerald: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
     green: 'bg-green-500/20 text-green-400 border-green-500/30',
+    cyan: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
   };
 
   return (

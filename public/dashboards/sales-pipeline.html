@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="PB Sales Pipeline Dashboard - Active Deals">
+    <meta name="theme-color" content="#22c55e">
+    <title>Sales Pipeline | Photon Brothers</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    </style>
+</head>
+<body class="bg-[#0a0a0f] text-white min-h-screen">
+    <div id="root">
+        <div class="flex items-center justify-center min-h-screen">
+            <div class="text-center">
+                <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-green-500 mx-auto mb-4"></div>
+                <p class="text-zinc-400">Loading Sales Pipeline...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const STAGES = [
+            'Qualified to buy',
+            'Proposal Submitted',
+            'Proposal Accepted',
+            'Finalizing Deal',
+            'Sales Follow Up',
+            'Nurture',
+            'Closed won',
+            'Closed lost'
+        ];
+
+        const STAGE_COLORS = {
+            'Qualified to buy': 'bg-blue-500',
+            'Proposal Submitted': 'bg-indigo-500',
+            'Proposal Accepted': 'bg-purple-500',
+            'Finalizing Deal': 'bg-violet-500',
+            'Sales Follow Up': 'bg-yellow-500',
+            'Nurture': 'bg-orange-500',
+            'Closed won': 'bg-green-500',
+            'Closed lost': 'bg-red-500'
+        };
+
+        const ACTIVE_STAGES = ['Qualified to buy', 'Proposal Submitted', 'Proposal Accepted', 'Finalizing Deal', 'Sales Follow Up', 'Nurture'];
+
+        let allDeals = [];
+        let filterLocation = 'all';
+        let filterStage = 'all';
+        let showActiveOnly = true;
+
+        async function fetchData() {
+            try {
+                const response = await fetch('/api/deals?pipeline=sales&active=false');
+                if (!response.ok) throw new Error('Failed to fetch');
+                const data = await response.json();
+                allDeals = data.deals;
+                render(data);
+            } catch (error) {
+                document.getElementById('root').innerHTML = `
+                    <div class="flex items-center justify-center min-h-screen">
+                        <div class="text-center text-red-500">
+                            <p class="text-xl mb-2">Error loading data</p>
+                            <p class="text-sm text-zinc-400">${error.message}</p>
+                            <button onclick="fetchData()" class="mt-4 px-4 py-2 bg-green-600 rounded-lg hover:bg-green-700">Retry</button>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        function formatCurrency(amount) {
+            return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(amount);
+        }
+
+        function getFilteredDeals() {
+            return allDeals.filter(d => {
+                if (showActiveOnly && !ACTIVE_STAGES.includes(d.stage)) return false;
+                if (filterLocation !== 'all' && d.pbLocation !== filterLocation) return false;
+                if (filterStage !== 'all' && d.stage !== filterStage) return false;
+                return true;
+            });
+        }
+
+        function render(data) {
+            const deals = getFilteredDeals();
+            const activeDeals = allDeals.filter(d => ACTIVE_STAGES.includes(d.stage));
+            const totalValue = activeDeals.reduce((sum, d) => sum + d.amount, 0);
+            const locations = [...new Set(allDeals.map(d => d.pbLocation))].filter(l => l !== 'Unknown').sort();
+
+            // Stage counts (active only)
+            const stageCounts = {};
+            STAGES.forEach(s => stageCounts[s] = 0);
+            activeDeals.forEach(d => { if (stageCounts[d.stage] !== undefined) stageCounts[d.stage]++; });
+
+            // Win rate calculation
+            const closedDeals = allDeals.filter(d => d.stage === 'Closed won' || d.stage === 'Closed lost');
+            const wonDeals = allDeals.filter(d => d.stage === 'Closed won');
+            const winRate = closedDeals.length > 0 ? ((wonDeals.length / closedDeals.length) * 100).toFixed(0) : 0;
+
+            // Proposals submitted value
+            const proposalValue = activeDeals.filter(d => d.stage === 'Proposal Submitted' || d.stage === 'Proposal Accepted').reduce((sum, d) => sum + d.amount, 0);
+
+            document.getElementById('root').innerHTML = `
+                <div class="min-h-screen">
+                    <!-- Header -->
+                    <header class="bg-[#12121a] border-b border-zinc-800 sticky top-0 z-50">
+                        <div class="max-w-7xl mx-auto px-4 py-4">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-4">
+                                    <a href="/" class="text-zinc-400 hover:text-white">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+                                        </svg>
+                                    </a>
+                                    <div>
+                                        <h1 class="text-xl font-bold text-green-400">Sales Pipeline</h1>
+                                        <p class="text-xs text-zinc-500">Active Deals • Last updated: ${new Date().toLocaleTimeString()}</p>
+                                    </div>
+                                </div>
+                                <div class="flex items-center gap-3">
+                                    <label class="flex items-center gap-2 text-sm text-zinc-400">
+                                        <input type="checkbox" ${showActiveOnly ? 'checked' : ''} onchange="toggleActiveOnly()" class="rounded bg-zinc-800 border-zinc-600">
+                                        Active only
+                                    </label>
+                                    <select id="locationFilter" class="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" onchange="setLocationFilter(this.value)">
+                                        <option value="all">All Locations</option>
+                                        ${locations.map(l => `<option value="${l}" ${filterLocation === l ? 'selected' : ''}>${l}</option>`).join('')}
+                                    </select>
+                                    <select id="stageFilter" class="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" onchange="setStageFilter(this.value)">
+                                        <option value="all">All Stages</option>
+                                        ${STAGES.map(s => `<option value="${s}" ${filterStage === s ? 'selected' : ''}>${s}</option>`).join('')}
+                                    </select>
+                                    <button onclick="fetchData()" class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg text-sm font-medium">
+                                        Refresh
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </header>
+
+                    <main class="max-w-7xl mx-auto px-4 py-6">
+                        <!-- Stats -->
+                        <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+                            <div class="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+                                <div class="text-2xl font-bold text-green-400">${activeDeals.length}</div>
+                                <div class="text-sm text-zinc-400">Active Deals</div>
+                            </div>
+                            <div class="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+                                <div class="text-2xl font-bold text-emerald-400">${formatCurrency(totalValue)}</div>
+                                <div class="text-sm text-zinc-400">Pipeline Value</div>
+                            </div>
+                            <div class="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+                                <div class="text-2xl font-bold text-purple-400">${formatCurrency(proposalValue)}</div>
+                                <div class="text-sm text-zinc-400">Proposal Value</div>
+                            </div>
+                            <div class="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+                                <div class="text-2xl font-bold text-violet-400">${stageCounts['Finalizing Deal']}</div>
+                                <div class="text-sm text-zinc-400">Finalizing</div>
+                            </div>
+                            <div class="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+                                <div class="text-2xl font-bold ${winRate >= 50 ? 'text-green-400' : 'text-yellow-400'}">${winRate}%</div>
+                                <div class="text-sm text-zinc-400">Win Rate</div>
+                            </div>
+                        </div>
+
+                        <!-- Pipeline Funnel -->
+                        <div class="bg-[#12121a] rounded-xl border border-zinc-800 p-4 mb-6">
+                            <h2 class="text-lg font-semibold mb-4">Sales Funnel</h2>
+                            <div class="space-y-2">
+                                ${ACTIVE_STAGES.map((stage, i) => {
+                                    const count = stageCounts[stage] || 0;
+                                    const value = activeDeals.filter(d => d.stage === stage).reduce((sum, d) => sum + d.amount, 0);
+                                    const maxCount = Math.max(...ACTIVE_STAGES.map(s => stageCounts[s] || 0));
+                                    const width = maxCount > 0 ? (count / maxCount) * 100 : 0;
+                                    return `
+                                        <div class="flex items-center gap-4">
+                                            <div class="w-36 text-sm text-zinc-300 truncate">${stage}</div>
+                                            <div class="flex-1 bg-zinc-800 rounded-full h-8 overflow-hidden">
+                                                <div class="${STAGE_COLORS[stage]} h-full rounded-full flex items-center justify-end pr-3 transition-all" style="width: ${Math.max(width, count > 0 ? 15 : 0)}%">
+                                                    <span class="text-xs font-bold text-white">${count}</span>
+                                                </div>
+                                            </div>
+                                            <div class="w-28 text-right text-sm font-mono ${value > 0 ? 'text-green-400' : 'text-zinc-600'}">${formatCurrency(value)}</div>
+                                        </div>
+                                    `;
+                                }).join('')}
+                            </div>
+                        </div>
+
+                        <!-- Deals Table -->
+                        <div class="bg-[#12121a] rounded-xl border border-zinc-800 overflow-hidden">
+                            <div class="p-4 border-b border-zinc-800">
+                                <h2 class="text-lg font-semibold">Deals (${deals.length})</h2>
+                            </div>
+                            <div class="overflow-x-auto">
+                                <table class="w-full">
+                                    <thead class="bg-zinc-900">
+                                        <tr>
+                                            <th class="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Deal</th>
+                                            <th class="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Location</th>
+                                            <th class="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Stage</th>
+                                            <th class="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase">Amount</th>
+                                            <th class="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Close Date</th>
+                                            <th class="px-4 py-3 text-center text-xs font-medium text-zinc-400 uppercase">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-zinc-800">
+                                        ${deals.length === 0 ? `
+                                            <tr>
+                                                <td colspan="6" class="px-4 py-8 text-center text-zinc-500">No deals found</td>
+                                            </tr>
+                                        ` : deals.map(deal => `
+                                            <tr class="hover:bg-zinc-900/50 ${deal.stage === 'Closed lost' ? 'opacity-40' : deal.stage === 'Closed won' ? 'bg-green-900/10' : ''}">
+                                                <td class="px-4 py-3">
+                                                    <div class="font-medium text-white">${deal.name}</div>
+                                                    <div class="text-xs text-zinc-500">${deal.city || ''} ${deal.state || ''}</div>
+                                                </td>
+                                                <td class="px-4 py-3 text-sm text-zinc-300">${deal.pbLocation}</td>
+                                                <td class="px-4 py-3">
+                                                    <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${STAGE_COLORS[deal.stage] || 'bg-zinc-600'} bg-opacity-20 text-white">
+                                                        ${deal.stage}
+                                                    </span>
+                                                </td>
+                                                <td class="px-4 py-3 text-right font-mono text-sm ${deal.amount > 0 ? 'text-green-400' : 'text-zinc-500'}">${formatCurrency(deal.amount)}</td>
+                                                <td class="px-4 py-3 text-sm text-zinc-400">${deal.closeDate || '-'}</td>
+                                                <td class="px-4 py-3 text-center">
+                                                    <a href="${deal.url}" target="_blank" class="text-green-400 hover:text-green-300 text-sm">
+                                                        Open →
+                                                    </a>
+                                                </td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </main>
+                </div>
+            `;
+        }
+
+        function setLocationFilter(value) {
+            filterLocation = value;
+            render({ deals: allDeals });
+        }
+
+        function setStageFilter(value) {
+            filterStage = value;
+            render({ deals: allDeals });
+        }
+
+        function toggleActiveOnly() {
+            showActiveOnly = !showActiveOnly;
+            render({ deals: allDeals });
+        }
+
+        // Initial load
+        fetchData();
+        // Auto-refresh every 5 minutes
+        setInterval(fetchData, 5 * 60 * 1000);
+    </script>
+</body>
+</html>

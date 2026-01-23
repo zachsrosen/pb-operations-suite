@@ -78,6 +78,8 @@ h1 { font-size: 1.2rem; font-weight: 700; background: linear-gradient(135deg, va
 .stage-tab.rtb.active { border-color: var(--rtb); color: var(--rtb); background: rgba(16, 185, 129, 0.1); }
 .stage-tab.blocked.active { border-color: var(--rtb-blocked); color: var(--rtb-blocked); background: rgba(234, 179, 8, 0.1); }
 .stage-tab.construction.active { border-color: var(--construction); color: var(--construction); background: rgba(59, 130, 246, 0.1); }
+.stage-tab.survey.active { border-color: var(--solar); color: var(--solar); background: rgba(6, 182, 212, 0.1); }
+.stage-tab.inspection.active { border-color: var(--inspection); color: var(--inspection); background: rgba(139, 92, 246, 0.1); }
 
 .queue-filters { display: flex; flex-direction: column; gap: 4px; }
 .queue-filters input, .queue-filters select { width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 6px 8px; border-radius: 6px; font-family: inherit; font-size: 0.7rem; }
@@ -93,6 +95,8 @@ h1 { font-size: 1.2rem; font-weight: 700; background: linear-gradient(135deg, va
 .queue-item.rtb { border-left: 3px solid var(--rtb); }
 .queue-item.blocked { border-left: 3px solid var(--rtb-blocked); }
 .queue-item.construction { border-left: 3px solid var(--construction); }
+.queue-item.survey { border-left: 3px solid var(--solar); }
+.queue-item.inspection { border-left: 3px solid var(--inspection); }
 .queue-item-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 2px; }
 .queue-item-name { font-size: 0.7rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
 .queue-item-amount { font-family: 'JetBrains Mono', monospace; font-size: 0.65rem; color: var(--accent); font-weight: 600; }
@@ -104,6 +108,8 @@ h1 { font-size: 1.2rem; font-weight: 700; background: linear-gradient(135deg, va
 .queue-item-tag.rtb { background: rgba(16, 185, 129, 0.2); color: var(--rtb); }
 .queue-item-tag.blocked { background: rgba(234, 179, 8, 0.2); color: var(--rtb-blocked); }
 .queue-item-tag.construction { background: rgba(59, 130, 246, 0.2); color: var(--construction); }
+.queue-item-tag.survey { background: rgba(6, 182, 212, 0.2); color: var(--solar); }
+.queue-item-tag.inspection { background: rgba(139, 92, 246, 0.2); color: var(--inspection); }
 .queue-item-tag.scheduled { background: rgba(59, 130, 246, 0.3); color: var(--construction); font-weight: 600; }
 .queue-item-specs { display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
 .spec { font-size: 0.55rem; color: var(--text-dim); }
@@ -125,7 +131,9 @@ h1 { font-size: 1.2rem; font-weight: 700; background: linear-gradient(135deg, va
 .day.other-month { opacity: 0.4; }
 .day.today { box-shadow: inset 0 0 0 2px var(--accent); }
 .day.drop-target { background: var(--accent-dim); box-shadow: inset 0 0 0 2px var(--accent); }
-.day.weekend { background: rgba(0,0,0,0.2); }
+.day.weekend { background: rgba(0,0,0,0.3); opacity: 0.6; cursor: default; }
+.day.weekend .day-number { color: var(--text-dim); }
+.day.weekend .event { pointer-events: auto; cursor: pointer; }
 .day-number { font-size: 0.7rem; font-weight: 600; margin-bottom: 2px; color: var(--text-dim); }
 .day.today .day-number { color: var(--accent); }
 
@@ -135,6 +143,8 @@ h1 { font-size: 1.2rem; font-weight: 700; background: linear-gradient(135deg, va
 .event.rtb { background: var(--rtb); color: #000; }
 .event.blocked { background: var(--rtb-blocked); color: #000; }
 .event.construction { background: var(--construction); color: #fff; }
+.event.survey { background: var(--solar); color: #fff; }
+.event.inspection { background: var(--inspection); color: #fff; }
 .event.scheduled { background: var(--solar); color: #fff; }
 .event.conflict { background: var(--conflict); color: #fff; animation: pulse 1s infinite; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
@@ -186,6 +196,8 @@ h1 { font-size: 1.2rem; font-weight: 700; background: linear-gradient(135deg, va
 .gantt-bar.rtb { background: var(--rtb); }
 .gantt-bar.scheduled { background: var(--solar); }
 .gantt-bar.blocked { background: var(--rtb-blocked); color: #000; }
+.gantt-bar.survey { background: var(--solar); }
+.gantt-bar.inspection { background: var(--inspection); }
 
 /* Right Panel - Crew & Conflicts */
 .panel-section { padding: 0.75rem; border-bottom: 1px solid var(--border); }
@@ -402,7 +414,7 @@ h1 { font-size: 1.2rem; font-weight: 700; background: linear-gradient(135deg, va
 <!-- Schedule Modal -->
 <div class="modal-overlay" id="modalOverlay">
   <div class="modal">
-    <h3>📅 Schedule Install</h3>
+    <h3 id="scheduleModalTitle">📅 Schedule Install</h3>
     <div class="modal-body" id="modalBody"></div>
     <div class="modal-actions">
       <button class="modal-btn cancel" onclick="closeModal()">Cancel</button>
@@ -437,16 +449,27 @@ let projects = [];
 // Transform API data to scheduler format
 function transformProject(p) {
   const stageMap = {
+    'Site Survey': 'survey',
     'Ready To Build': 'rtb',
     'RTB - Blocked': 'blocked',
     'Construction': 'construction',
     'Inspection': 'inspection'
   };
   const stage = stageMap[p.stage] || 'other';
-  const isSchedulable = stage === 'rtb' || stage === 'blocked' || stage === 'construction';
+  const isSchedulable = stage === 'survey' || stage === 'rtb' || stage === 'blocked' || stage === 'construction' || stage === 'inspection';
 
   // Only include schedulable projects
   if (!isSchedulable) return null;
+
+  // Get the appropriate schedule date based on stage
+  let scheduleDate = null;
+  if (stage === 'survey') {
+    scheduleDate = p.siteSurveyScheduleDate || null;
+  } else if (stage === 'inspection') {
+    scheduleDate = p.inspectionScheduleDate || null;
+  } else {
+    scheduleDate = p.constructionScheduleDate || null;
+  }
 
   return {
     id: String(p.id),
@@ -456,14 +479,27 @@ function transformProject(p) {
     amount: p.amount || 0,
     type: p.projectType || 'Solar',
     stage: stage,
-    systemSize: p.systemSizeKw || 0,
-    batteries: p.batteryCount || 0,
-    batteryModel: p.batteryBrand || null,
+    systemSize: p.equipment?.systemSizeKwdc || 0,
+    moduleCount: p.equipment?.modules?.count || 0,
+    inverterCount: p.equipment?.inverter?.count || 0,
+    batteries: p.equipment?.battery?.count || 0,
+    batteryExpansion: p.equipment?.battery?.expansionCount || 0,
+    batteryModel: p.equipment?.battery?.brand || null,
+    evCount: p.equipment?.evCount || 0,
+    // AHJ and Utility for survey/inspection
+    ahj: p.ahj || '',
+    utility: p.utility || '',
     crew: crews[p.pbLocation]?.[0]?.name || null,
-    daysInstall: p.daysForInstallers || 2,
-    daysElec: p.daysForElectricians || 1,
+    // Install forecast - 0.25 days for survey/inspection, full days for construction
+    daysInstall: (stage === 'rtb' || stage === 'blocked' || stage === 'construction') ? (p.daysForInstallers || p.expectedDaysForInstall || 2) : (stage === 'survey' || stage === 'inspection') ? 0.25 : 0,
+    daysElec: (stage === 'rtb' || stage === 'blocked' || stage === 'construction') ? (p.daysForElectricians || 0) : 0,
+    totalDays: (stage === 'rtb' || stage === 'blocked' || stage === 'construction') ? (p.expectedDaysForInstall || 0) : 0,
+    roofersCount: (stage === 'rtb' || stage === 'blocked' || stage === 'construction') ? (p.roofersCount || 0) : 0,
+    electriciansCount: (stage === 'rtb' || stage === 'blocked' || stage === 'construction') ? (p.electriciansCount || 0) : 0,
+    difficulty: (stage === 'rtb' || stage === 'blocked' || stage === 'construction') ? (p.installDifficulty || 3) : 0,
+    installNotes: (stage === 'rtb' || stage === 'blocked' || stage === 'construction') ? (p.installNotes || '') : '',
     roofType: null,
-    scheduleDate: p.installScheduleDate || null,
+    scheduleDate: scheduleDate,
     hubspotUrl: p.url || `https://app.hubspot.com/contacts/21710069/record/0-3/${p.id}`
   };
 }
@@ -568,32 +604,48 @@ const utils = {
   getProjectId(fullName) {
     return fullName.split(' | ')[0];
   },
-  isWeekend(date) {
-    const d = new Date(date);
+  isWeekend(dateStr) {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const d = new Date(year, month - 1, day);
     return d.getDay() === 0 || d.getDay() === 6;
   },
   addDays(dateStr, days) {
-    const d = new Date(dateStr + 'T12:00:00');
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const d = new Date(year, month - 1, day);
     d.setDate(d.getDate() + days);
-    return d.toISOString().split('T')[0];
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${dd}`;
   },
   addBusinessDays(dateStr, days) {
-    let d = new Date(dateStr + 'T12:00:00');
-    let remaining = days;
+    const [year, month, day] = dateStr.split('-').map(Number);
+    let d = new Date(year, month - 1, day); // Local date, no timezone issues
+    let remaining = Math.ceil(days); // Round up fractional days
+    if (remaining <= 0) return dateStr; // No days to add
     while (remaining > 0) {
       d.setDate(d.getDate() + 1);
       if (d.getDay() !== 0 && d.getDay() !== 6) {
         remaining--;
       }
     }
-    return d.toISOString().split('T')[0];
+    // Format as YYYY-MM-DD using local date
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${dd}`;
   },
   getNextWorkday(dateStr) {
-    let d = new Date(dateStr + 'T12:00:00');
+    const [year, month, day] = dateStr.split('-').map(Number);
+    let d = new Date(year, month - 1, day); // Local date, no timezone issues
     while (d.getDay() === 0 || d.getDay() === 6) {
       d.setDate(d.getDate() + 1);
     }
-    return d.toISOString().split('T')[0];
+    // Format as YYYY-MM-DD using local date
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${dd}`;
   }
 };
 
@@ -655,7 +707,7 @@ function getCrewScheduleForWeek(weekStart, crew, location) {
     schedule[dateStr] = crewEvents.filter(e => {
       const eventStart = new Date(e.date);
       const eventEnd = new Date(e.date);
-      eventEnd.setDate(eventEnd.getDate() + (e.days || 1) - 1);
+      eventEnd.setDate(eventEnd.getDate() + Math.ceil(e.days || 1) - 1);
       const checkDate = new Date(dateStr);
       return checkDate >= eventStart && checkDate <= eventEnd;
     });
@@ -674,7 +726,7 @@ function detectConflicts() {
     if (!e.crew) return;
     if (!crewSchedules[e.crew]) crewSchedules[e.crew] = [];
     const start = new Date(e.date);
-    for (let i = 0; i < (e.days || 1); i++) {
+    for (let i = 0; i < Math.ceil(e.days || 1); i++) {
       const d = new Date(start);
       d.setDate(d.getDate() + i);
       const dateStr = d.toISOString().split('T')[0];
@@ -721,9 +773,11 @@ function renderStageTabs() {
   const container = document.getElementById('stageTabs');
   container.innerHTML = `
     <div class="stage-tab ${state.selectedStage === 'all' ? 'active' : ''}" onclick="selectStage('all')">All</div>
-    <div class="stage-tab construction ${state.selectedStage === 'construction' ? 'active' : ''}" onclick="selectStage('construction')">🔨 Build</div>
+    <div class="stage-tab survey ${state.selectedStage === 'survey' ? 'active' : ''}" onclick="selectStage('survey')">📍 Survey</div>
     <div class="stage-tab rtb ${state.selectedStage === 'rtb' ? 'active' : ''}" onclick="selectStage('rtb')">✅ RTB</div>
     <div class="stage-tab blocked ${state.selectedStage === 'blocked' ? 'active' : ''}" onclick="selectStage('blocked')">⚠️ Blocked</div>
+    <div class="stage-tab construction ${state.selectedStage === 'construction' ? 'active' : ''}" onclick="selectStage('construction')">🔨 Build</div>
+    <div class="stage-tab inspection ${state.selectedStage === 'inspection' ? 'active' : ''}" onclick="selectStage('inspection')">🔍 Inspect</div>
   `;
 }
 
@@ -731,17 +785,19 @@ function renderStats() {
   const container = document.getElementById('statsBar');
   const filteredProjects = state.selectedLocation === 'All' ? projects : projects.filter(p => p.location === state.selectedLocation);
 
+  const surveyCount = filteredProjects.filter(p => p.stage === 'survey').length;
   const constructionCount = filteredProjects.filter(p => p.stage === 'construction').length;
   const rtbCount = filteredProjects.filter(p => p.stage === 'rtb').length;
   const blockedCount = filteredProjects.filter(p => p.stage === 'blocked').length;
+  const inspectionCount = filteredProjects.filter(p => p.stage === 'inspection').length;
   const scheduledCount = Object.keys(state.manualSchedules).length;
   const totalRevenue = (filteredProjects.reduce((sum, p) => sum + p.amount, 0) / 1000).toFixed(0);
 
   container.innerHTML = `
-    <div class="stat"><div class="stat-dot" style="background: var(--construction);"></div><div class="stat-value">${constructionCount}</div><div class="stat-label">Building</div></div>
+    <div class="stat"><div class="stat-dot" style="background: var(--solar);"></div><div class="stat-value">${surveyCount}</div><div class="stat-label">Survey</div></div>
     <div class="stat"><div class="stat-dot" style="background: var(--rtb);"></div><div class="stat-value">${rtbCount}</div><div class="stat-label">RTB</div></div>
-    <div class="stat"><div class="stat-dot" style="background: var(--rtb-blocked);"></div><div class="stat-value">${blockedCount}</div><div class="stat-label">Blocked</div></div>
-    <div class="stat"><div class="stat-dot" style="background: var(--solar);"></div><div class="stat-value">${scheduledCount}</div><div class="stat-label">Scheduled</div></div>
+    <div class="stat"><div class="stat-dot" style="background: var(--construction);"></div><div class="stat-value">${constructionCount}</div><div class="stat-label">Building</div></div>
+    <div class="stat"><div class="stat-dot" style="background: var(--inspection);"></div><div class="stat-value">${inspectionCount}</div><div class="stat-label">Inspect</div></div>
     <div class="stat"><div class="stat-dot" style="background: var(--accent);"></div><div class="stat-value">$${totalRevenue}K</div><div class="stat-label">Pipeline</div></div>
   `;
 }
@@ -756,7 +812,8 @@ function renderQueue() {
   container.innerHTML = queue.map(p => {
     const customerName = utils.getCustomerName(p.name);
     const types = (p.type || '').split(';').filter(t => t.trim());
-    const stageLabel = p.stage === 'construction' ? '🔨' : p.stage === 'rtb' ? '✅' : '⚠️';
+    const stageLabels = { survey: '📍', rtb: '✅', blocked: '⚠️', construction: '🔨', inspection: '🔍' };
+    const stageLabel = stageLabels[p.stage] || '📋';
     const isScheduled = state.manualSchedules[p.id] || p.scheduleDate;
     const scheduleDate = state.manualSchedules[p.id]?.startDate || p.scheduleDate;
 
@@ -780,11 +837,29 @@ function renderQueue() {
           }).join('')}
         </div>
         <div class="queue-item-specs">
-          ${p.systemSize ? `<span class="spec"><strong>${p.systemSize}</strong> kW</span>` : ''}
+          ${p.systemSize ? `<span class="spec"><strong>${p.systemSize.toFixed(1)}</strong> kW</span>` : ''}
+          ${p.moduleCount ? `<span class="spec"><strong>${p.moduleCount}</strong> mod</span>` : ''}
+          ${p.inverterCount ? `<span class="spec"><strong>${p.inverterCount}</strong> inv</span>` : ''}
           ${p.batteries ? `<span class="spec"><strong>${p.batteries}</strong> batt</span>` : ''}
-          ${p.daysInstall ? `<span class="spec"><strong>${p.daysInstall}</strong>d</span>` : ''}
-          ${p.crew ? `<span class="spec">${p.crew}</span>` : ''}
+          ${p.batteryExpansion ? `<span class="spec"><strong>+${p.batteryExpansion}</strong> exp</span>` : ''}
+          ${p.evCount ? `<span class="spec"><strong>${p.evCount}</strong> EV</span>` : ''}
         </div>
+        ${(p.stage === 'survey' || p.stage === 'inspection') ? `
+        <div class="queue-item-specs" style="margin-top: 2px;">
+          ${p.ahj ? `<span class="spec" title="AHJ">🏛️ ${p.ahj}</span>` : ''}
+          ${p.utility ? `<span class="spec" title="Utility">⚡ ${p.utility}</span>` : ''}
+        </div>
+        ` : `
+        <div class="queue-item-specs" style="margin-top: 2px;">
+          ${p.daysInstall ? `<span class="spec" title="Installer days">🔧<strong>${p.daysInstall}</strong>d</span>` : ''}
+          ${p.daysElec ? `<span class="spec" title="Electrician days">⚡<strong>${p.daysElec}</strong>d</span>` : ''}
+          ${!p.daysInstall && !p.daysElec && p.totalDays ? `<span class="spec"><strong>${p.totalDays}</strong>d</span>` : ''}
+          ${p.roofersCount > 0 ? `<span class="spec" title="Installers needed">👷${p.roofersCount}</span>` : ''}
+          ${p.electriciansCount > 0 ? `<span class="spec" title="Electricians needed">🔌${p.electriciansCount}</span>` : ''}
+          ${p.difficulty ? `<span class="spec" title="Difficulty ${p.difficulty}/5">D${p.difficulty}</span>` : ''}
+        </div>
+        ${p.installNotes ? `<div class="queue-item-notes" style="font-size: 0.55rem; color: var(--text-dim); margin-top: 4px; font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${p.installNotes}">📝 ${p.installNotes}</div>` : ''}
+        `}
       </div>
     `;
   }).join('');
@@ -807,14 +882,15 @@ function renderCalendar() {
     if (state.selectedLocation !== 'All' && e.location !== state.selectedLocation) return;
 
     const startDate = new Date(e.date);
-    for (let i = 0; i < (e.days || 1); i++) {
+    const calendarDays = Math.ceil(e.days || 1); // Use ceil so 0.25 shows on 1 day
+    for (let i = 0; i < calendarDays; i++) {
       const eventDate = new Date(startDate);
       eventDate.setDate(eventDate.getDate() + i);
 
       if (eventDate.getMonth() === state.currentMonth && eventDate.getFullYear() === state.currentYear) {
         const day = eventDate.getDate();
         if (!eventsByDate[day]) eventsByDate[day] = [];
-        eventsByDate[day].push({ ...e, dayNum: i + 1, totalDays: e.days || 1 });
+        eventsByDate[day].push({ ...e, dayNum: i + 1, totalDays: calendarDays });
       }
     }
   });
@@ -834,10 +910,9 @@ function renderCalendar() {
     const dateStr = `${state.currentYear}-${String(state.currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     const canDrop = state.selectedProject || state.draggedProject;
 
-    html += `<div class="day${isToday ? ' today' : ''}${canDrop ? ' drop-target' : ''}${isWeekend ? ' weekend' : ''}"
-                  onclick="handleDayClick('${dateStr}')"
-                  ondragover="handleDragOver(event)"
-                  ondrop="handleDrop(event, '${dateStr}')">`;
+    html += `<div class="day${isToday ? ' today' : ''}${canDrop && !isWeekend ? ' drop-target' : ''}${isWeekend ? ' weekend' : ''}"
+                  ${!isWeekend ? `onclick="handleDayClick('${dateStr}')" ondragover="handleDragOver(event)" ondrop="handleDrop(event, '${dateStr}')"` : ''}>
+    `;
     html += `<div class="day-number">${day}</div>`;
 
     dayEvents.slice(0, 4).forEach(e => {
@@ -950,6 +1025,11 @@ function selectProject(id) {
 
 function handleDayClick(dateStr) {
   if (!state.selectedProject || state.selectedProject.stage === 'construction') return;
+  // Reject weekends
+  if (utils.isWeekend(dateStr)) {
+    showToast('Cannot schedule on weekends', 'error');
+    return;
+  }
   openScheduleModal(state.selectedProject, dateStr);
 }
 
@@ -970,6 +1050,11 @@ function handleDragOver(event) {
 
 function handleDrop(event, dateStr) {
   event.preventDefault();
+  // Reject weekends
+  if (utils.isWeekend(dateStr)) {
+    showToast('Cannot schedule on weekends', 'error');
+    return;
+  }
   const projectId = event.dataTransfer.getData('text/plain');
   const project = projects.find(p => p.id === projectId);
   if (project && project.stage !== 'construction') {
@@ -987,6 +1072,13 @@ function openScheduleModal(project, dateStr) {
   const locationCrews = crews[project.location] || [];
   const crewOptions = locationCrews.map(c => `<option value="${c.name}" ${c.name === project.crew ? 'selected' : ''}>${c.name}</option>`).join('');
 
+  const isSurveyOrInspection = project.stage === 'survey' || project.stage === 'inspection';
+  const stageTitle = project.stage === 'survey' ? '📍 Site Survey' : project.stage === 'inspection' ? '🔍 Inspection' : (project.stage === 'rtb' ? '✅ RTB Ready' : '⚠️ Blocked');
+
+  // Set dynamic modal title based on stage
+  const modalTitle = project.stage === 'survey' ? '📍 Schedule Survey' : project.stage === 'inspection' ? '🔍 Schedule Inspection' : '📅 Schedule Install';
+  document.getElementById('scheduleModalTitle').textContent = modalTitle;
+
   document.getElementById('modalBody').innerHTML = `
     <div class="modal-section">
       <div class="modal-section-title">Project</div>
@@ -995,41 +1087,133 @@ function openScheduleModal(project, dateStr) {
       <div class="modal-row"><span class="modal-label">Location</span><span>${project.location}</span></div>
       <div class="modal-row"><span class="modal-label">Type</span><span>${types}</span></div>
       <div class="modal-row"><span class="modal-label">Amount</span><span style="color:var(--accent);font-weight:600;">$${project.amount.toLocaleString()}</span></div>
-      <div class="modal-row"><span class="modal-label">Status</span><span style="color:${project.stage === 'rtb' ? 'var(--rtb)' : 'var(--rtb-blocked)'}">${project.stage === 'rtb' ? '✅ RTB Ready' : '⚠️ Blocked'}</span></div>
+      <div class="modal-row"><span class="modal-label">Status</span><span style="color:${project.stage === 'rtb' ? 'var(--rtb)' : project.stage === 'survey' ? 'var(--solar)' : project.stage === 'inspection' ? 'var(--inspection)' : 'var(--rtb-blocked)'}">${stageTitle}</span></div>
     </div>
+    ${isSurveyOrInspection ? `
+    <div class="modal-section">
+      <div class="modal-section-title">Jurisdiction</div>
+      ${project.ahj ? `<div class="modal-row"><span class="modal-label">AHJ</span><span>${project.ahj}</span></div>` : '<div class="modal-row"><span class="modal-label">AHJ</span><span style="color:var(--text-dim);">Not set</span></div>'}
+      ${project.utility ? `<div class="modal-row"><span class="modal-label">Utility</span><span>${project.utility}</span></div>` : '<div class="modal-row"><span class="modal-label">Utility</span><span style="color:var(--text-dim);">Not set</span></div>'}
+    </div>
+    ` : ''}
     <div class="modal-section">
       <div class="modal-section-title">Equipment</div>
-      ${project.systemSize ? `<div class="modal-row"><span class="modal-label">System</span><span>${project.systemSize} kW</span></div>` : ''}
-      ${project.batteries ? `<div class="modal-row"><span class="modal-label">Batteries</span><span>${project.batteries}x ${project.batteryModel || 'Tesla'}</span></div>` : ''}
+      ${project.systemSize ? `<div class="modal-row"><span class="modal-label">System Size</span><span>${project.systemSize.toFixed(1)} kW</span></div>` : ''}
+      ${project.moduleCount ? `<div class="modal-row"><span class="modal-label">Modules</span><span>${project.moduleCount} panels</span></div>` : ''}
+      ${project.inverterCount ? `<div class="modal-row"><span class="modal-label">Inverters</span><span>${project.inverterCount}</span></div>` : ''}
+      ${project.batteries ? `<div class="modal-row"><span class="modal-label">Batteries</span><span>${project.batteries}x ${project.batteryModel || 'Tesla'}${project.batteryExpansion ? ` + ${project.batteryExpansion} expansion` : ''}</span></div>` : ''}
+      ${project.evCount ? `<div class="modal-row"><span class="modal-label">EV Chargers</span><span>${project.evCount}</span></div>` : ''}
       ${project.roofType ? `<div class="modal-row"><span class="modal-label">Roof</span><span>${project.roofType}</span></div>` : ''}
     </div>
+    ${!isSurveyOrInspection ? `
+    <div class="modal-section">
+      <div class="modal-section-title">Install Requirements</div>
+      ${project.daysInstall ? `<div class="modal-row"><span class="modal-label">Installer Days</span><span>${project.daysInstall}d</span></div>` : ''}
+      ${project.daysElec ? `<div class="modal-row"><span class="modal-label">Electrician Days</span><span>${project.daysElec}d</span></div>` : ''}
+      ${!project.daysInstall && !project.daysElec && project.totalDays ? `<div class="modal-row"><span class="modal-label">Total Days</span><span>${project.totalDays}d</span></div>` : ''}
+      ${project.roofersCount ? `<div class="modal-row"><span class="modal-label">Installers Needed</span><span>👷 ${project.roofersCount}</span></div>` : ''}
+      ${project.electriciansCount ? `<div class="modal-row"><span class="modal-label">Electricians Needed</span><span>🔌 ${project.electriciansCount}</span></div>` : ''}
+      ${project.difficulty ? `<div class="modal-row"><span class="modal-label">Difficulty</span><span>${'⭐'.repeat(project.difficulty)} (${project.difficulty}/5)</span></div>` : ''}
+      ${project.installNotes ? `<div class="modal-row"><span class="modal-label">Notes</span><span style="max-width: 250px; word-wrap: break-word;">${project.installNotes}</span></div>` : ''}
+    </div>
+    ` : ''}
     <div class="modal-section">
       <div class="modal-section-title">Schedule</div>
       ${wasWeekend ? `<div style="background: rgba(234,179,8,0.15); border: 1px solid rgba(234,179,8,0.3); border-radius: 6px; padding: 8px; margin-bottom: 8px; font-size: 0.7rem; color: #eab308;">⚠️ Weekend selected - adjusted to next business day</div>` : ''}
       <div class="modal-row"><span class="modal-label">Start Date</span><span><strong>${utils.formatDate(adjustedDate)}</strong></span></div>
       <div class="form-row">
         <label>Days:</label>
-        <input type="number" id="installDays" value="${project.daysInstall || 2}" min="1" max="10">
+        <input type="number" id="installDays" value="${isSurveyOrInspection ? 0.25 : (project.daysInstall || 2)}" min="0.25" max="10" step="0.25">
         <label>Crew:</label>
         <select id="crewSelect">${crewOptions || '<option>No crews</option>'}</select>
       </div>
     </div>
+    <div class="modal-section" id="zuperSection" style="display: none;">
+      <div class="modal-section-title">Zuper Integration</div>
+      <div class="form-row" style="align-items: center;">
+        <input type="checkbox" id="createZuperJob" checked style="width: 16px; height: 16px; accent-color: var(--accent);">
+        <label for="createZuperJob" style="flex: 1; cursor: pointer;">Create work order in Zuper</label>
+      </div>
+      <div style="font-size: 0.6rem; color: var(--text-dim); margin-top: 4px;">
+        This will create a ${project.stage === 'survey' ? 'Site Survey' : project.stage === 'inspection' ? 'Inspection' : 'Installation'} job in Zuper FSM
+      </div>
+    </div>
   `;
+
+  // Check if Zuper is configured and show the section
+  checkZuperStatus();
 
   document.getElementById('modalOverlay').classList.add('visible');
   window.pendingSchedule = { project, date: adjustedDate };
 }
 
-function confirmSchedule() {
+// Check Zuper integration status
+async function checkZuperStatus() {
+  try {
+    const response = await fetch('/api/zuper/status');
+    const data = await response.json();
+    if (data.configured) {
+      document.getElementById('zuperSection').style.display = 'block';
+    }
+  } catch (e) {
+    // Zuper not available, hide section
+  }
+}
+
+async function confirmSchedule() {
   if (!window.pendingSchedule) return;
 
   const { project, date } = window.pendingSchedule;
   const days = parseInt(document.getElementById('installDays').value) || 2;
   const crew = document.getElementById('crewSelect')?.value || project.crew;
+  const createZuper = document.getElementById('createZuperJob')?.checked;
 
   state.manualSchedules[project.id] = { startDate: date, days, crew };
 
-  showToast(`✅ ${utils.getCustomerName(project.name)} scheduled for ${utils.formatDate(date)}`);
+  // Create Zuper job if checkbox is checked and visible
+  if (createZuper && document.getElementById('zuperSection')?.style.display !== 'none') {
+    try {
+      const jobType = project.stage === 'survey' ? 'survey' :
+                      project.stage === 'inspection' ? 'inspection' : 'installation';
+
+      const addressParts = project.address.split(',').map(s => s.trim());
+      const response = await fetch('/api/zuper/jobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          project: {
+            id: project.id,
+            name: project.name,
+            address: addressParts[0] || project.address,
+            city: addressParts[1] || '',
+            state: addressParts[2] || '',
+            systemSizeKw: project.systemSize,
+            batteryCount: project.batteries,
+            projectType: project.type,
+          },
+          schedule: {
+            type: jobType,
+            date: date,
+            days: days,
+            crew: crew,
+            notes: `Scheduled from PB Operations Suite`,
+          }
+        })
+      });
+
+      if (response.ok) {
+        showToast(`✅ ${utils.getCustomerName(project.name)} scheduled for ${utils.formatDate(date)} + Zuper job created`);
+      } else {
+        showToast(`✅ Scheduled locally (Zuper sync failed)`);
+      }
+    } catch (e) {
+      console.error('Zuper job creation failed:', e);
+      showToast(`✅ ${utils.getCustomerName(project.name)} scheduled for ${utils.formatDate(date)}`);
+    }
+  } else {
+    showToast(`✅ ${utils.getCustomerName(project.name)} scheduled for ${utils.formatDate(date)}`);
+  }
+
   closeModal();
   state.selectedProject = null;
   document.getElementById('instructions').style.display = 'none';
@@ -1048,6 +1232,8 @@ function showDetail(id) {
   const customerName = utils.getCustomerName(p.name);
   const types = (p.type || 'Service').split(';').filter(t => t.trim()).join(', ');
   const scheduleInfo = state.manualSchedules[p.id] || (p.scheduleDate ? { startDate: p.scheduleDate, days: p.daysInstall, crew: p.crew } : null);
+  const isSurveyOrInspection = p.stage === 'survey' || p.stage === 'inspection';
+  const stageTitle = p.stage === 'survey' ? '📍 Site Survey' : p.stage === 'inspection' ? '🔍 Inspection' : (p.stage === 'rtb' ? '✅ RTB Ready' : p.stage === 'construction' ? '🔨 Construction' : '⚠️ Blocked');
 
   document.getElementById('detailModalBody').innerHTML = `
     <div class="modal-section">
@@ -1058,11 +1244,40 @@ function showDetail(id) {
       <div class="modal-row"><span class="modal-label">Location</span><span>${p.location}</span></div>
       <div class="modal-row"><span class="modal-label">Type</span><span>${types}</span></div>
       <div class="modal-row"><span class="modal-label">Amount</span><span style="color:var(--accent);font-weight:600;">$${p.amount.toLocaleString()}</span></div>
+      <div class="modal-row"><span class="modal-label">Status</span><span style="color:${p.stage === 'rtb' ? 'var(--rtb)' : p.stage === 'survey' ? 'var(--solar)' : p.stage === 'inspection' ? 'var(--inspection)' : p.stage === 'construction' ? 'var(--construction)' : 'var(--rtb-blocked)'}">${stageTitle}</span></div>
     </div>
+    ${isSurveyOrInspection ? `
+    <div class="modal-section">
+      <div class="modal-section-title">Jurisdiction</div>
+      ${p.ahj ? `<div class="modal-row"><span class="modal-label">AHJ</span><span>${p.ahj}</span></div>` : '<div class="modal-row"><span class="modal-label">AHJ</span><span style="color:var(--text-dim);">Not set</span></div>'}
+      ${p.utility ? `<div class="modal-row"><span class="modal-label">Utility</span><span>${p.utility}</span></div>` : '<div class="modal-row"><span class="modal-label">Utility</span><span style="color:var(--text-dim);">Not set</span></div>'}
+    </div>
+    ` : ''}
+    <div class="modal-section">
+      <div class="modal-section-title">Equipment</div>
+      ${p.systemSize ? `<div class="modal-row"><span class="modal-label">System Size</span><span>${p.systemSize.toFixed(1)} kW</span></div>` : ''}
+      ${p.moduleCount ? `<div class="modal-row"><span class="modal-label">Modules</span><span>${p.moduleCount} panels</span></div>` : ''}
+      ${p.inverterCount ? `<div class="modal-row"><span class="modal-label">Inverters</span><span>${p.inverterCount}</span></div>` : ''}
+      ${p.batteries ? `<div class="modal-row"><span class="modal-label">Batteries</span><span>${p.batteries}x ${p.batteryModel || 'Tesla'}${p.batteryExpansion ? ` + ${p.batteryExpansion} expansion` : ''}</span></div>` : ''}
+      ${p.evCount ? `<div class="modal-row"><span class="modal-label">EV Chargers</span><span>${p.evCount}</span></div>` : ''}
+      ${p.roofType ? `<div class="modal-row"><span class="modal-label">Roof</span><span>${p.roofType}</span></div>` : ''}
+    </div>
+    ${!isSurveyOrInspection ? `
+    <div class="modal-section">
+      <div class="modal-section-title">Install Requirements</div>
+      ${p.daysInstall ? `<div class="modal-row"><span class="modal-label">Installer Days</span><span>${p.daysInstall}d</span></div>` : ''}
+      ${p.daysElec ? `<div class="modal-row"><span class="modal-label">Electrician Days</span><span>${p.daysElec}d</span></div>` : ''}
+      ${!p.daysInstall && !p.daysElec && p.totalDays ? `<div class="modal-row"><span class="modal-label">Total Days</span><span>${p.totalDays}d</span></div>` : ''}
+      ${p.roofersCount ? `<div class="modal-row"><span class="modal-label">Installers</span><span>👷 ${p.roofersCount}</span></div>` : ''}
+      ${p.electriciansCount ? `<div class="modal-row"><span class="modal-label">Electricians</span><span>🔌 ${p.electriciansCount}</span></div>` : ''}
+      ${p.difficulty ? `<div class="modal-row"><span class="modal-label">Difficulty</span><span>${'⭐'.repeat(p.difficulty)} (${p.difficulty}/5)</span></div>` : ''}
+      ${p.installNotes ? `<div class="modal-row"><span class="modal-label">Notes</span><span style="max-width: 250px; word-wrap: break-word;">${p.installNotes}</span></div>` : ''}
+    </div>
+    ` : ''}
     <div class="modal-section">
       <div class="modal-section-title">Schedule</div>
       <div class="modal-row"><span class="modal-label">Date</span><span style="color:var(--construction);font-weight:600;">${scheduleInfo ? utils.formatDate(scheduleInfo.startDate) : 'Not scheduled'}</span></div>
-      <div class="modal-row"><span class="modal-label">Duration</span><span>${scheduleInfo?.days || p.daysInstall || 2} days</span></div>
+      <div class="modal-row"><span class="modal-label">Duration</span><span>${scheduleInfo?.days || p.daysInstall || (isSurveyOrInspection ? 0.25 : 2)} ${(scheduleInfo?.days || p.daysInstall || (isSurveyOrInspection ? 0.25 : 2)) === 1 ? 'day' : 'days'}</span></div>
       <div class="modal-row"><span class="modal-label">Crew</span><span>${scheduleInfo?.crew || p.crew || 'Unassigned'}</span></div>
     </div>
   `;
@@ -1092,28 +1307,56 @@ function autoOptimize() {
   let baseDate = new Date();
   baseDate.setDate(baseDate.getDate() + 1); // Start tomorrow
 
+  // Format baseDate as YYYY-MM-DD in local time (avoid timezone issues)
+  const baseDateStr = `${baseDate.getFullYear()}-${String(baseDate.getMonth() + 1).padStart(2, '0')}-${String(baseDate.getDate()).padStart(2, '0')}`;
+
   // Initialize crew dates
   Object.values(crews).flat().forEach(c => {
-    crewNextDate[c.name] = utils.getNextWorkday(baseDate.toISOString().split('T')[0]);
+    crewNextDate[c.name] = utils.getNextWorkday(baseDateStr);
   });
 
   // Existing schedules affect crew availability
   getScheduledEvents().forEach(e => {
     if (e.crew && crewNextDate[e.crew]) {
-      const endDate = utils.addDays(e.date, e.days || 1);
-      if (endDate > crewNextDate[e.crew]) {
-        crewNextDate[e.crew] = utils.getNextWorkday(endDate);
+      // Use business days for multi-day jobs
+      const endDate = utils.addBusinessDays(e.date, Math.ceil(e.days || 1));
+      const nextAvailable = utils.getNextWorkday(endDate);
+      if (nextAvailable > crewNextDate[e.crew]) {
+        crewNextDate[e.crew] = nextAvailable;
       }
     }
   });
 
   let scheduled = 0;
+  console.log('=== AUTO-OPTIMIZE DEBUG ===');
+  console.log('Base date:', baseDateStr);
+  console.log('Initial crew dates:', JSON.stringify(crewNextDate));
+
   rtbProjects.forEach(p => {
     const preferredCrew = p.crew;
     if (preferredCrew && crewNextDate[preferredCrew]) {
-      const startDate = crewNextDate[preferredCrew];
+      const crewDateBefore = crewNextDate[preferredCrew];
+      // Ensure start date is a workday
+      const startDate = utils.getNextWorkday(crewNextDate[preferredCrew]);
+      const jobDays = Math.ceil(p.daysInstall || 2); // Round up fractional days for scheduling
+
+      // Parse the date to check day of week
+      const [y, m, d] = startDate.split('-').map(Number);
+      const dateObj = new Date(y, m - 1, d);
+      const dayOfWeek = dateObj.getDay();
+      const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+      console.log(`Scheduling ${p.name}: crewDate=${crewDateBefore} -> startDate=${startDate} (${dayNames[dayOfWeek]})`);
+
+      // DEBUG: Check if startDate is a weekend
+      if (dayOfWeek === 0 || dayOfWeek === 6) {
+        console.error('BUG: Scheduled on weekend!', { project: p.name, startDate, dayOfWeek, crewDateBefore });
+        alert(`BUG: ${p.name} scheduled on ${dayNames[dayOfWeek]} ${startDate}!`);
+      }
+
       state.manualSchedules[p.id] = { startDate, days: p.daysInstall || 2, crew: preferredCrew };
-      crewNextDate[preferredCrew] = utils.getNextWorkday(utils.addBusinessDays(startDate, p.daysInstall || 2));
+      // Calculate next available date after this job (use ceiling of days for business day calculation)
+      crewNextDate[preferredCrew] = utils.getNextWorkday(utils.addBusinessDays(startDate, jobDays));
       scheduled++;
     }
   });
@@ -1159,7 +1402,7 @@ function exportICal() {
 
   events.forEach(e => {
     const start = e.date.replace(/-/g, '');
-    const end = utils.addDays(e.date, e.days || 1).replace(/-/g, '');
+    const end = utils.addDays(e.date, Math.ceil(e.days || 1)).replace(/-/g, '');
     ical += `BEGIN:VEVENT\nDTSTART;VALUE=DATE:${start}\nDTEND;VALUE=DATE:${end}\nSUMMARY:${utils.getCustomerName(e.name)} - ${e.crew || 'Unassigned'}\nDESCRIPTION:${e.address}\\n$${e.amount.toLocaleString()}\nEND:VEVENT\n`;
   });
 
@@ -1270,7 +1513,7 @@ function renderWeekView() {
         if (e.crew !== crew.name) return false;
         const eventStart = new Date(e.date);
         const eventEnd = new Date(e.date);
-        eventEnd.setDate(eventEnd.getDate() + (e.days || 1) - 1);
+        eventEnd.setDate(eventEnd.getDate() + Math.ceil(e.days || 1) - 1);
         return d >= eventStart && d <= eventEnd;
       });
 
@@ -1299,6 +1542,11 @@ function renderWeekView() {
 
 function handleWeekCellClick(dateStr, crewName) {
   if (!state.selectedProject || state.selectedProject.stage === 'construction') return;
+  // Reject weekends
+  if (utils.isWeekend(dateStr)) {
+    showToast('Cannot schedule on weekends', 'error');
+    return;
+  }
   // Pre-fill crew
   const project = { ...state.selectedProject, crew: crewName };
   state.selectedProject = project;
@@ -1307,6 +1555,11 @@ function handleWeekCellClick(dateStr, crewName) {
 
 function handleWeekDrop(event, dateStr, crewName) {
   event.preventDefault();
+  // Reject weekends
+  if (utils.isWeekend(dateStr)) {
+    showToast('Cannot schedule on weekends', 'error');
+    return;
+  }
   const projectId = event.dataTransfer.getData('text/plain');
   const project = projects.find(p => p.id === projectId);
   if (project && project.stage !== 'construction') {
@@ -1372,14 +1625,16 @@ function renderGanttView() {
         const eventStart = new Date(e.date);
         if (eventStart.toDateString() === d.toDateString()) {
           const days = e.days || 1;
+          const calendarDays = Math.ceil(days);
           const widthPercent = (days / 10) * 100 * 10; // Relative to cell width
           const shortName = utils.getCustomerName(e.name).substring(0, 12);
           const amount = utils.formatCurrency(e.amount);
+          const daysLabel = days < 1 ? `${days * 4}/4d` : `${days}d`; // Show fractional as "1/4d"
           html += `<div class="gantt-bar ${e.eventType || e.stage}"
-                        style="left: 0; width: calc(${days * 100}% + ${(days-1)}px);"
+                        style="left: 0; width: calc(${calendarDays * 100}% + ${(calendarDays-1)}px);"
                         onclick="showDetail('${e.id}')"
-                        title="${e.name} - ${days} days - ${amount}">
-            ${shortName} (${days}d)
+                        title="${e.name} - ${daysLabel} - ${amount}">
+            ${shortName} (${daysLabel})
           </div>`;
         }
       });

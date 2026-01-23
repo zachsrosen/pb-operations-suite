@@ -43,7 +43,7 @@ const STAGE_PRIORITY: Record<string, number> = {
 };
 
 // Stages that are schedulable for construction
-const SCHEDULABLE_STAGES = ["Ready To Build", "RTB - Blocked"];
+const SCHEDULABLE_STAGES = ["Site Survey", "Ready To Build", "RTB - Blocked", "Construction", "Inspection"];
 
 // Stages that are active (not completed, on-hold, or cancelled)
 const ACTIVE_STAGES = [
@@ -76,7 +76,9 @@ export interface Equipment {
     model: string;
     count: number;
     sizeKwh: number;
+    expansionCount: number;
   };
+  evCount: number;
   systemSizeKwdc: number;
   systemSizeKwac: number;
 }
@@ -167,6 +169,9 @@ export interface Project {
   daysForElectricians: number;
   installCrew: string;
   installDifficulty: number;
+  installNotes: string;
+  roofersCount: number;
+  electriciansCount: number;
 
   // Equipment (from deal properties, not line items)
   equipment: Equipment;
@@ -260,6 +265,12 @@ const DEAL_PROPERTIES = [
   "days_for_electricians",
   "install_crew",
   "install_difficulty",
+  "notes_for_install",
+  "expected_installer_cont",
+  "expected_electrician_count",
+
+  // EV
+  "ev_count",
 
   // Equipment (deal-level)
   "module_brand",
@@ -274,6 +285,7 @@ const DEAL_PROPERTIES = [
   "battery_model",
   "battery_count",
   "battery_size", // kWh
+  "battery_expansion_count",
   "calculated_system_size__kwdc_",
   "system_size_kwac",
 
@@ -402,7 +414,9 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string)
       model: String(deal.battery_model || ""),
       count: Number(deal.battery_count) || 0,
       sizeKwh: Number(deal.battery_size) || 0,
+      expansionCount: Number(deal.battery_expansion_count) || 0,
     },
+    evCount: Number(deal.ev_count) || 0,
     systemSizeKwdc: Number(deal.calculated_system_size__kwdc_) || 0,
     systemSizeKwac: Number(deal.system_size_kwac) || 0,
   };
@@ -493,6 +507,9 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string)
     daysForElectricians: Number(deal.days_for_electricians) || 1,
     installCrew: String(deal.install_crew || "Unassigned"),
     installDifficulty: Number(deal.install_difficulty) || 3,
+    installNotes: String(deal.notes_for_install || ""),
+    roofersCount: Number(deal.expected_installer_cont) || 0,
+    electriciansCount: Number(deal.expected_electrician_count) || 0,
 
     // Equipment
     equipment,
