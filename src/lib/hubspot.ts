@@ -641,15 +641,25 @@ export function calculateStats(projects: Project[]) {
   const ptoBacklog = activeProjects.filter((p) => p.stage === "Permission To Operate");
   const constructionProjects = activeProjects.filter((p) => p.stage === "Construction");
 
-  // Location breakdown
+  // Location breakdown (count and value)
   const locationCounts = activeProjects.reduce((acc, p) => {
     acc[p.pbLocation] = (acc[p.pbLocation] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
 
-  // Stage breakdown
+  const locationValues = activeProjects.reduce((acc, p) => {
+    acc[p.pbLocation] = (acc[p.pbLocation] || 0) + p.amount;
+    return acc;
+  }, {} as Record<string, number>);
+
+  // Stage breakdown (count and value)
   const stageCounts = activeProjects.reduce((acc, p) => {
     acc[p.stage] = (acc[p.stage] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
+  const stageValues = activeProjects.reduce((acc, p) => {
+    acc[p.stage] = (acc[p.stage] || 0) + p.amount;
     return acc;
   }, {} as Record<string, number>);
 
@@ -663,12 +673,19 @@ export function calculateStats(projects: Project[]) {
     peCount: peProjects.length,
     peValue: peProjects.reduce((sum, p) => sum + p.amount, 0),
     rtbCount: rtbProjects.length,
+    rtbValue: rtbProjects.reduce((sum, p) => sum + p.amount, 0),
     blockedCount: blockedProjects.length,
+    blockedValue: blockedProjects.reduce((sum, p) => sum + p.amount, 0),
     constructionCount: constructionProjects.length,
+    constructionValue: constructionProjects.reduce((sum, p) => sum + p.amount, 0),
     inspectionBacklog: inspectionBacklog.length,
+    inspectionValue: inspectionBacklog.reduce((sum, p) => sum + p.amount, 0),
     ptoBacklog: ptoBacklog.length,
+    ptoValue: ptoBacklog.reduce((sum, p) => sum + p.amount, 0),
     locationCounts,
+    locationValues,
     stageCounts,
+    stageValues,
     totalSystemSizeKw: Math.round(totalSystemSizeKw * 10) / 10,
     totalBatteryKwh: Math.round(totalBatteryKwh * 10) / 10,
     lastUpdated: new Date().toISOString(),

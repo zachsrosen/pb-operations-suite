@@ -6,14 +6,20 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "remotion:studio": "remotion studio remotion/index.ts",
+    "remotion:render": "remotion render remotion/index.ts",
+    "remotion:render-all": "remotion render remotion/index.ts MasterSchedulerDemo out/master-scheduler.mp4 && remotion render remotion/index.ts CommandCenterDemo out/command-center.mp4 && remotion render remotion/index.ts PEDashboardDemo out/pe-dashboard.mp4 && remotion render remotion/index.ts PipelineDashboardsDemo out/pipeline-dashboards.mp4 && remotion render remotion/index.ts FullSuiteDemo out/full-suite.mp4"
   },
   "dependencies": {
     "@hubspot/api-client": "^13.4.0",
+    "@remotion/cli": "^4.0.409",
+    "@remotion/player": "^4.0.409",
     "@vercel/analytics": "^1.6.1",
     "next": "16.1.4",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "remotion": "^4.0.409"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

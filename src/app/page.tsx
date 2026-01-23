@@ -9,12 +9,19 @@ interface Stats {
   peCount: number;
   peValue: number;
   rtbCount: number;
+  rtbValue: number;
   blockedCount: number;
+  blockedValue: number;
   constructionCount: number;
+  constructionValue: number;
   inspectionBacklog: number;
+  inspectionValue: number;
   ptoBacklog: number;
+  ptoValue: number;
   locationCounts: Record<string, number>;
+  locationValues: Record<string, number>;
   stageCounts: Record<string, number>;
+  stageValues: Record<string, number>;
   totalSystemSizeKw: number;
   totalBatteryKwh: number;
   lastUpdated: string;
@@ -69,6 +76,7 @@ export default function Home() {
           <StatCard
             label="Active Projects"
             value={loading ? '...' : stats?.totalProjects ?? '—'}
+            subValue={loading ? '' : stats?.totalValue ? `$${(stats.totalValue / 1000000).toFixed(1)}M pipeline` : ''}
             color="orange"
           />
           <StatCard
@@ -79,21 +87,23 @@ export default function Home() {
           <StatCard
             label="PE Projects"
             value={loading ? '...' : stats?.peCount ?? '—'}
+            subValue={loading ? '' : stats?.peValue ? `$${(stats.peValue / 1000000).toFixed(1)}M` : ''}
             color="emerald"
           />
           <StatCard
             label="Ready To Build"
             value={loading ? '...' : stats?.rtbCount ?? '—'}
+            subValue={loading ? '' : stats?.rtbValue ? `$${(stats.rtbValue / 1000000).toFixed(1)}M` : ''}
             color="blue"
           />
         </div>
 
         {/* Secondary Stats */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
-          <MiniStat label="Construction" value={loading ? '...' : stats?.constructionCount ?? '—'} />
-          <MiniStat label="Inspection Backlog" value={loading ? '...' : stats?.inspectionBacklog ?? '—'} alert={!loading && (stats?.inspectionBacklog ?? 0) > 50} />
-          <MiniStat label="PTO Backlog" value={loading ? '...' : stats?.ptoBacklog ?? '—'} alert={!loading && (stats?.ptoBacklog ?? 0) > 50} />
-          <MiniStat label="Blocked" value={loading ? '...' : stats?.blockedCount ?? '—'} alert={!loading && (stats?.blockedCount ?? 0) > 20} />
+          <MiniStat label="Construction" value={loading ? '...' : stats?.constructionCount ?? '—'} subValue={loading ? '' : stats?.constructionValue ? `$${(stats.constructionValue / 1000000).toFixed(1)}M` : ''} />
+          <MiniStat label="Inspection Backlog" value={loading ? '...' : stats?.inspectionBacklog ?? '—'} subValue={loading ? '' : stats?.inspectionValue ? `$${(stats.inspectionValue / 1000000).toFixed(1)}M` : ''} alert={!loading && (stats?.inspectionBacklog ?? 0) > 50} />
+          <MiniStat label="PTO Backlog" value={loading ? '...' : stats?.ptoBacklog ?? '—'} subValue={loading ? '' : stats?.ptoValue ? `$${(stats.ptoValue / 1000000).toFixed(1)}M` : ''} alert={!loading && (stats?.ptoBacklog ?? 0) > 50} />
+          <MiniStat label="Blocked" value={loading ? '...' : stats?.blockedCount ?? '—'} subValue={loading ? '' : stats?.blockedValue ? `$${(stats.blockedValue / 1000000).toFixed(1)}M` : ''} alert={!loading && (stats?.blockedCount ?? 0) > 20} />
           <MiniStat label="Total kW" value={loading ? '...' : stats?.totalSystemSizeKw ? `${Math.round(stats.totalSystemSizeKw).toLocaleString()}` : '—'} />
         </div>
 
@@ -118,7 +128,7 @@ export default function Home() {
                     return aIdx - bIdx;
                   })
                   .map(([stage, count]) => (
-                    <StageBar key={stage} stage={stage} count={count as number} total={stats.totalProjects} />
+                    <StageBar key={stage} stage={stage} count={count as number} total={stats.totalProjects} value={stats.stageValues?.[stage]} />
                   ));
               })()}
             </div>
@@ -132,12 +142,18 @@ export default function Home() {
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
               {Object.entries(stats.locationCounts)
                 .sort((a, b) => (b[1] as number) - (a[1] as number))
-                .map(([location, count]) => (
-                  <div key={location} className="bg-zinc-800/50 rounded-lg p-4 text-center">
-                    <div className="text-2xl font-bold text-white">{count as number}</div>
-                    <div className="text-sm text-zinc-400">{location}</div>
-                  </div>
-                ))}
+                .map(([location, count]) => {
+                  const value = stats.locationValues?.[location] || 0;
+                  return (
+                    <div key={location} className="bg-zinc-800/50 rounded-lg p-4 text-center">
+                      <div className="text-2xl font-bold text-white">{count as number}</div>
+                      <div className="text-sm text-zinc-400">{location}</div>
+                      <div className="text-xs text-green-500 font-mono mt-1">
+                        {value >= 1000000 ? `$${(value / 1000000).toFixed(1)}M` : `$${(value / 1000).toFixed(0)}k`}
+                      </div>
+                    </div>
+                  );
+                })}
             </div>
           </div>
         )}
@@ -271,7 +287,7 @@ export default function Home() {
   );
 }
 
-function StatCard({ label, value, color }: { label: string; value: string | number; color: string }) {
+function StatCard({ label, value, subValue, color }: { label: string; value: string | number; subValue?: string; color: string }) {
   const colorClasses: Record<string, string> = {
     orange: 'from-orange-500/20 to-orange-500/5 border-orange-500/30',
     green: 'from-green-500/20 to-green-500/5 border-green-500/30',
@@ -283,20 +299,22 @@ function StatCard({ label, value, color }: { label: string; value: string | numb
     <div className={`bg-gradient-to-br ${colorClasses[color]} border rounded-xl p-6`}>
       <div className="text-3xl font-bold text-white mb-1">{value}</div>
       <div className="text-sm text-zinc-400">{label}</div>
+      {subValue && <div className="text-xs text-zinc-500 mt-1">{subValue}</div>}
     </div>
   );
 }
 
-function MiniStat({ label, value, alert }: { label: string; value: string | number; alert?: boolean }) {
+function MiniStat({ label, value, subValue, alert }: { label: string; value: string | number; subValue?: string; alert?: boolean }) {
   return (
     <div className={`bg-zinc-900/50 border rounded-lg p-4 text-center ${alert ? 'border-red-500/50' : 'border-zinc-800'}`}>
       <div className={`text-xl font-bold ${alert ? 'text-red-400' : 'text-white'}`}>{value}</div>
       <div className="text-xs text-zinc-500">{label}</div>
+      {subValue && <div className="text-xs text-zinc-600 mt-0.5">{subValue}</div>}
     </div>
   );
 }
 
-function StageBar({ stage, count, total }: { stage: string; count: number; total: number }) {
+function StageBar({ stage, count, total, value }: { stage: string; count: number; total: number; value?: number }) {
   const percentage = (count / total) * 100;
 
   const stageColors: Record<string, string> = {
@@ -312,6 +330,12 @@ function StageBar({ stage, count, total }: { stage: string; count: number; total
     'Project Complete': 'bg-emerald-500',
   };
 
+  const formatValue = (v: number) => {
+    if (v >= 1000000) return `$${(v / 1000000).toFixed(1)}M`;
+    if (v >= 1000) return `$${(v / 1000).toFixed(0)}k`;
+    return `$${v}`;
+  };
+
   return (
     <div className="flex items-center gap-4">
       <div className="w-40 text-sm text-zinc-400 truncate">{stage}</div>
@@ -323,6 +347,7 @@ function StageBar({ stage, count, total }: { stage: string; count: number; total
           <span className="text-xs font-medium text-white">{count}</span>
         </div>
       </div>
+      <div className="w-20 text-right text-sm text-green-500 font-mono">{value ? formatValue(value) : '—'}</div>
       <div className="w-12 text-right text-sm text-zinc-500">{percentage.toFixed(0)}%</div>
     </div>
   );

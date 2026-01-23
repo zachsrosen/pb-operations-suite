@@ -79,7 +79,14 @@ function PEDashboard() {
     }, []);
     const [filterMilestone, setFilterMilestone] = useState('all');
     const [filterStatus, setFilterStatus] = useState('all');
+    const [filterStage, setFilterStage] = useState('all');
     const [sortBy, setSortBy] = useState('pto');
+
+    // Get unique stages from projects
+    const stages = useMemo(() => {
+        const uniqueStages = [...new Set(projects.map(p => p.stage))].filter(s => s).sort();
+        return ['all', ...uniqueStages];
+    }, [projects]);
     const chartRef = useRef(null);
     const chartInstance = useRef(null);
 
@@ -130,6 +137,11 @@ function PEDashboard() {
     const filteredProjects = useMemo(() => {
         let filtered = [...projects];
 
+        // Filter by stage
+        if (filterStage !== 'all') {
+            filtered = filtered.filter(p => p.stage === filterStage);
+        }
+
         if (filterStatus !== 'all') {
             filtered = filtered.filter(p => {
                 const days = filterMilestone === 'install' ? p.days_to_install :
@@ -149,7 +161,7 @@ function PEDashboard() {
         });
 
         return filtered;
-    }, [projects, filterMilestone, filterStatus, sortBy]);
+    }, [projects, filterMilestone, filterStatus, filterStage, sortBy]);
 
     // Monthly forecast chart
     useEffect(() => {
@@ -357,6 +369,14 @@ function PEDashboard() {
                                 </select>
                             </div>
                             <div className="flex items-center gap-2">
+                                <span className="text-sm text-gray-600">Stage:</span>
+                                <select value={filterStage} onChange={e => setFilterStage(e.target.value)} className="border rounded px-3 py-1.5 text-sm">
+                                    {stages.map(s => (
+                                        <option key={s} value={s}>{s === 'all' ? 'All Stages' : s}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="flex items-center gap-2">
                                 <span className="text-sm text-gray-600">Status:</span>
                                 <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="border rounded px-3 py-1.5 text-sm">
                                     <option value="all">All</option>
@@ -381,7 +401,7 @@ function PEDashboard() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {filteredProjects.slice(0, 50).map((p, idx) => (
+                                    {filteredProjects.map((p, idx) => (
                                         <tr key={p.id} className={'border-t ' + (idx % 2 === 0 ? 'bg-white' : 'bg-gray-50')}>
                                             <td className="p-3">
                                                 <a href={p.url} target="_blank" className="text-blue-600 hover:underline font-medium">
@@ -407,11 +427,9 @@ function PEDashboard() {
                                     ))}
                                 </tbody>
                             </table>
-                            {filteredProjects.length > 50 && (
-                                <div className="p-3 text-center text-sm text-gray-500 bg-gray-50">
-                                    Showing 50 of {filteredProjects.length} projects
-                                </div>
-                            )}
+                            <div className="p-3 text-center text-sm text-gray-500 bg-gray-50">
+                                Showing {filteredProjects.length} projects
+                            </div>
                         </div>
                     </>
                 )}

@@ -48,7 +48,7 @@
 
         async function fetchData() {
             try {
-                const response = await fetch('/api/deals?pipeline=service&active=false');
+                const response = await fetch('/api/deals?pipeline=service&active=true');
                 if (!response.ok) throw new Error('Failed to fetch');
                 const data = await response.json();
                 allDeals = data.deals;
