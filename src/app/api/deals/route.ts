@@ -102,7 +102,7 @@ interface Deal {
   stage: string;
   stageId: string;
   pipeline: string;
-  pbLocation: string;
+  location: string;
   address: string;
   city: string;
   state: string;
@@ -154,7 +154,7 @@ function transformDeal(deal: Record<string, unknown>, pipelineKey: string, porta
     stage: stageName,
     stageId,
     pipeline: pipelineKey,
-    pbLocation: String(deal.pb_location || "Unknown"),
+    location: String(deal.pb_location || "Unknown"),
     address: String(deal.address_line_1 || ""),
     city: String(deal.city || ""),
     state: String(deal.state || ""),
@@ -177,27 +177,50 @@ async function fetchDealsForPipeline(pipelineKey: string): Promise<Deal[]> {
   const allDeals: Record<string, unknown>[] = [];
   let after: string | undefined;
 
-  do {
-    const response = await hubspotClient.crm.deals.searchApi.doSearch({
-      filterGroups: [
-        {
-          filters: [
-            {
-              propertyName: "pipeline",
-              operator: FilterOperatorEnum.Eq,
-              value: pipelineId,
-            },
-          ],
-        },
-      ],
-      properties: DEAL_PROPERTIES,
-      limit: 100,
-      after: after || "0",
-    });
+  // For the sales pipeline (id="default"), use getAll and filter client-side
+  // because HubSpot's Search API doesn't accept "default" as a pipeline value
+  if (pipelineId === "default") {
+    const salesStageIds = new Set(Object.keys(STAGE_MAPS.sales));
 
-    allDeals.push(...response.results.map((deal) => deal.properties));
-    after = response.paging?.next?.after;
-  } while (after);
+    do {
+      const response = await hubspotClient.crm.deals.basicApi.getPage(
+        100,
+        after,
+        DEAL_PROPERTIES
+      );
+
+      // Filter to only include deals in sales pipeline stages
+      const salesDeals = response.results
+        .map((deal) => deal.properties)
+        .filter((deal) => salesStageIds.has(String(deal.dealstage)));
+
+      allDeals.push(...salesDeals);
+      after = response.paging?.next?.after;
+    } while (after);
+  } else {
+    // For other pipelines, query by pipeline ID
+    do {
+      const response = await hubspotClient.crm.deals.searchApi.doSearch({
+        filterGroups: [
+          {
+            filters: [
+              {
+                propertyName: "pipeline",
+                operator: FilterOperatorEnum.Eq,
+                value: pipelineId,
+              },
+            ],
+          },
+        ],
+        properties: DEAL_PROPERTIES,
+        limit: 100,
+        after: after || "0",
+      });
+
+      allDeals.push(...response.results.map((deal) => deal.properties));
+      after = response.paging?.next?.after;
+    } while (after);
+  }
 
   return allDeals.map((deal) => transformDeal(deal, pipelineKey, portalId));
 }
@@ -239,7 +262,7 @@ export async function GET(request: NextRequest) {
       deals = deals.filter((d) => d.isActive);
     }
     if (location) {
-      deals = deals.filter((d) => d.pbLocation === location);
+      deals = deals.filter((d) => d.location === location);
     }
     if (stage) {
       deals = deals.filter((d) => d.stage === stage);
@@ -250,22 +273,36 @@ export async function GET(request: NextRequest) {
 
     // Calculate stats
     const totalValue = deals.reduce((sum, d) => sum + d.amount, 0);
-    const stageCounts = deals.reduce((acc, d) => {
-      acc[d.stage] = (acc[d.stage] || 0) + 1;
+
+    // Group by stage with count and value
+    const byStage = deals.reduce((acc, d) => {
+      if (!acc[d.stage]) {
+        acc[d.stage] = { count: 0, value: 0 };
+      }
+      acc[d.stage].count += 1;
+      acc[d.stage].value += d.amount;
       return acc;
-    }, {} as Record<string, number>);
-    const locationCounts = deals.reduce((acc, d) => {
-      acc[d.pbLocation] = (acc[d.pbLocation] || 0) + 1;
+    }, {} as Record<string, { count: number; value: number }>);
+
+    // Group by location with count and value
+    const byLocation = deals.reduce((acc, d) => {
+      const loc = d.location || "Unknown";
+      if (!acc[loc]) {
+        acc[loc] = { count: 0, value: 0 };
+      }
+      acc[loc].count += 1;
+      acc[loc].value += d.amount;
       return acc;
-    }, {} as Record<string, number>);
+    }, {} as Record<string, { count: number; value: number }>);
 
     return NextResponse.json({
       deals,
       count: deals.length,
       stats: {
+        total: deals.length,
         totalValue,
-        stageCounts,
-        locationCounts,
+        byStage,
+        byLocation,
       },
       pipeline,
       cached: now - pipelineCache[pipeline].timestamp < CACHE_TTL && !forceRefresh,
