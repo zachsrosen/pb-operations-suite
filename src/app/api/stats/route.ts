@@ -1,16 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fetchAllProjects, calculateStats } from "@/lib/hubspot";
-
-// Reuse projects cache
-let statsCache: {
-  data: ReturnType<typeof calculateStats> | null;
-  timestamp: number;
-} = {
-  data: null,
-  timestamp: 0,
-};
-
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+import { fetchAllProjects, calculateStats, type Project } from "@/lib/hubspot";
+import { appCache, CACHE_KEYS } from "@/lib/cache";
 
 export async function GET(request: NextRequest) {
   try {
@@ -24,31 +14,20 @@ export async function GET(request: NextRequest) {
 
     const forceRefresh = request.nextUrl.searchParams.get("refresh") === "true";
 
-    // Check cache
-    const now = Date.now();
-    if (
-      !forceRefresh &&
-      statsCache.data &&
-      now - statsCache.timestamp < CACHE_TTL
-    ) {
-      return NextResponse.json({
-        ...statsCache.data,
-        cached: true,
-      });
-    }
+    // Reuse the shared projects cache - avoids duplicate HubSpot calls
+    const { data: projects, cached, stale, lastUpdated } = await appCache.getOrFetch<Project[]>(
+      CACHE_KEYS.PROJECTS_ALL,
+      () => fetchAllProjects({ activeOnly: false }),
+      forceRefresh
+    );
 
-    // Fetch fresh data
-    const projects = await fetchAllProjects();
-    const stats = calculateStats(projects);
-
-    statsCache = {
-      data: stats,
-      timestamp: now,
-    };
+    const stats = calculateStats(projects || []);
 
     return NextResponse.json({
       ...stats,
-      cached: false,
+      cached,
+      stale,
+      lastUpdated,
     });
   } catch (error) {
     console.error("Error fetching stats:", error);

@@ -1,0 +1,1160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="PB Pipeline Optimizer - AI-powered scheduling optimization and bottleneck detection">
+<meta name="theme-color" content="#0f172a">
+<title>PB Pipeline Optimizer | Photon Brothers</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+:root {
+  --bg: #0f172a;
+  --surface: #1e293b;
+  --surface-hover: #334155;
+  --border: #475569;
+  --text: #f1f5f9;
+  --text-dim: #94a3b8;
+  --primary: #3b82f6;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --purple: #8b5cf6;
+  --pe-green: #22c55e;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+}
+.header {
+  background: linear-gradient(135deg, #1e40af 0%, #7c3aed 100%);
+  padding: 1.5rem 2rem;
+  border-bottom: 1px solid var(--border);
+}
+.header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+.header h1 { font-size: 1.75rem; margin-bottom: 0.25rem; }
+.header p { color: rgba(255,255,255,0.8); font-size: 0.9rem; }
+.header-stats {
+  display: flex;
+  gap: 2rem;
+  margin-top: 1rem;
+}
+.header-stat {
+  text-align: center;
+}
+.header-stat-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+.header-stat-label {
+  font-size: 0.75rem;
+  opacity: 0.8;
+}
+.header-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+.header-btn {
+  padding: 0.5rem 1rem;
+  background: rgba(255,255,255,0.2);
+  border: 1px solid rgba(255,255,255,0.3);
+  border-radius: 6px;
+  color: white;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.header-btn:hover {
+  background: rgba(255,255,255,0.3);
+}
+.header-btn.primary {
+  background: #f97316;
+  border-color: #f97316;
+  font-weight: 600;
+}
+.header-btn.primary:hover {
+  background: #ea580c;
+}
+.container {
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1.5rem; }
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.25rem;
+}
+.card-title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.bottleneck {
+  background: var(--surface);
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 0.75rem;
+  border-left: 4px solid;
+}
+.bottleneck.high { border-left-color: var(--danger); background: rgba(239, 68, 68, 0.1); }
+.bottleneck.medium { border-left-color: var(--warning); background: rgba(245, 158, 11, 0.1); }
+.bottleneck-title {
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.bottleneck-desc { font-size: 0.85rem; color: var(--text-dim); margin-bottom: 0.5rem; }
+.bottleneck-impact { font-size: 0.8rem; color: var(--warning); margin-bottom: 0.5rem; }
+.bottleneck-rec {
+  font-size: 0.8rem;
+  background: var(--surface-hover);
+  padding: 0.5rem;
+  border-radius: 4px;
+  margin-top: 0.5rem;
+}
+.badge {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+.badge-high { background: var(--danger); color: white; }
+.badge-medium { background: var(--warning); color: black; }
+.priority-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem;
+  background: var(--surface-hover);
+  border-radius: 8px;
+  margin-bottom: 0.5rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.priority-item:hover {
+  background: var(--border);
+  transform: translateX(4px);
+}
+.priority-rank {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--primary);
+  border-radius: 50%;
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+.priority-item:nth-child(1) .priority-rank { background: #fbbf24; color: black; }
+.priority-item:nth-child(2) .priority-rank { background: #9ca3af; color: black; }
+.priority-item:nth-child(3) .priority-rank { background: #b45309; color: white; }
+.priority-info { flex: 1; min-width: 0; }
+.priority-name {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.priority-meta { font-size: 0.75rem; color: var(--text-dim); }
+.priority-score {
+  text-align: right;
+}
+.priority-score-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--primary);
+}
+.priority-score-label {
+  font-size: 0.65rem;
+  color: var(--text-dim);
+}
+.pe-badge {
+  background: var(--pe-green);
+  color: white;
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  margin-left: 0.5rem;
+}
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+}
+.metric {
+  background: var(--surface-hover);
+  padding: 1rem;
+  border-radius: 8px;
+  text-align: center;
+}
+.metric-value {
+  font-size: 1.75rem;
+  font-weight: 700;
+}
+.metric-label {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+.efficiency-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.efficiency-bar:last-child { border-bottom: none; }
+.efficiency-loc { width: 140px; font-weight: 500; }
+.efficiency-progress {
+  flex: 1;
+  height: 24px;
+  background: var(--surface-hover);
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+.efficiency-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.5s ease;
+}
+.efficiency-score {
+  width: 60px;
+  text-align: right;
+  font-weight: 600;
+}
+.chart-container {
+  height: 200px;
+  position: relative;
+}
+.section-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 2rem 0 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+th, td {
+  padding: 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+th {
+  background: var(--surface-hover);
+  font-weight: 600;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+td { font-size: 0.85rem; }
+tr:hover { background: var(--surface-hover); }
+a { color: var(--primary); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.days-badge {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+.days-overdue { background: rgba(239, 68, 68, 0.2); color: #fca5a5; }
+.days-urgent { background: rgba(245, 158, 11, 0.2); color: #fcd34d; }
+.days-ok { background: rgba(16, 185, 129, 0.2); color: #6ee7b7; }
+.tab-container {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.5rem;
+}
+.tab {
+  padding: 0.5rem 1rem;
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 0.9rem;
+  border-radius: 4px;
+}
+.tab:hover { background: var(--surface-hover); }
+.tab.active { background: var(--primary); color: white; }
+.stage-chart { height: 300px; }
+
+/* Optimize button */
+.optimize-section {
+  background: linear-gradient(135deg, rgba(249, 115, 22, 0.15), rgba(249, 115, 22, 0.05));
+  border: 1px solid #f97316;
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+.optimize-section h3 {
+  color: #f97316;
+  margin-bottom: 0.5rem;
+}
+.optimize-section p {
+  color: var(--text-dim);
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+}
+.optimize-btn {
+  padding: 0.75rem 1.5rem;
+  background: linear-gradient(135deg, #f97316, #fb923c);
+  border: none;
+  border-radius: 8px;
+  color: white;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.optimize-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(249, 115, 22, 0.4);
+}
+.optimize-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+.optimize-results {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: var(--surface);
+  border-radius: 8px;
+  display: none;
+}
+.optimize-results.visible {
+  display: block;
+}
+
+/* Loading state */
+.loading-spinner {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Error state */
+.error-message {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  padding: 1rem;
+  color: var(--danger);
+  margin: 1rem 0;
+}
+
+/* Toast notifications */
+.toast {
+  position: fixed;
+  bottom: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%) translateY(100px);
+  background: var(--success);
+  color: white;
+  padding: 1rem 2rem;
+  border-radius: 8px;
+  font-weight: 500;
+  opacity: 0;
+  transition: all 0.3s;
+  z-index: 1000;
+}
+.toast.visible {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+}
+.toast.error {
+  background: var(--danger);
+}
+
+/* Print styles */
+@media print {
+  body { background: white; color: black; }
+  .header { background: #1e40af; -webkit-print-color-adjust: exact; }
+  .card { border: 1px solid #ccc; break-inside: avoid; page-break-inside: avoid; }
+  a { color: #1e40af; }
+  .stage-chart { height: 250px; }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .loading-spinner { animation: none; }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-row">
+    <div>
+      <h1>Pipeline Optimizer</h1>
+      <p>AI-powered scheduling optimization and bottleneck detection</p>
+    </div>
+    <div class="header-actions">
+      <button class="header-btn" onclick="refreshData()">Refresh Data</button>
+      <a href="pb-master-scheduler-v3.html" class="header-btn">Open Scheduler</a>
+    </div>
+  </div>
+  <div class="header-stats">
+    <div class="header-stat">
+      <div class="header-stat-value" id="total-projects">--</div>
+      <div class="header-stat-label">Active Projects</div>
+    </div>
+    <div class="header-stat">
+      <div class="header-stat-value" id="schedulable">--</div>
+      <div class="header-stat-label">Ready to Schedule</div>
+    </div>
+    <div class="header-stat">
+      <div class="header-stat-value" id="bottleneck-count">--</div>
+      <div class="header-stat-label">Bottlenecks</div>
+    </div>
+    <div class="header-stat">
+      <div class="header-stat-value" id="pe-rate">--</div>
+      <div class="header-stat-label">PE Projects</div>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <!-- Optimize Section -->
+  <div class="optimize-section">
+    <h3>Auto-Optimize Schedule</h3>
+    <p>Automatically generate an optimized installation schedule based on revenue priority, crew availability, and PE milestone deadlines.</p>
+    <button class="optimize-btn" id="optimizeBtn" onclick="runOptimization()">Generate Optimized Schedule</button>
+    <div class="optimize-results" id="optimizeResults"></div>
+  </div>
+
+  <div class="grid-2" style="margin-bottom: 1.5rem;">
+    <!-- Bottlenecks -->
+    <div class="card">
+      <div class="card-title">Bottleneck Detection</div>
+      <div id="bottlenecks">
+        <div style="text-align: center; padding: 2rem; color: var(--text-dim);">
+          <div class="loading-spinner"></div>
+          <div style="margin-top: 0.5rem;">Loading...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Priority Queue -->
+    <div class="card">
+      <div class="card-title">Optimized Priority Queue</div>
+      <div id="priority-queue">
+        <div style="text-align: center; padding: 2rem; color: var(--text-dim);">
+          <div class="loading-spinner"></div>
+          <div style="margin-top: 0.5rem;">Loading...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Efficiency Metrics -->
+  <div class="card" style="margin-bottom: 1.5rem;">
+    <div class="card-title">Location Efficiency Scores</div>
+    <div id="efficiency">
+      <div style="text-align: center; padding: 2rem; color: var(--text-dim);">
+        <div class="loading-spinner"></div>
+        <div style="margin-top: 0.5rem;">Loading...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Stage Analysis Chart -->
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-title">Projects by Stage</div>
+      <div class="stage-chart">
+        <canvas id="stageChart"></canvas>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Schedule Distribution by Location</div>
+      <div class="stage-chart">
+        <canvas id="scheduleChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Full Priority Table -->
+  <div class="section-title">Complete Optimized Schedule Queue</div>
+  <div class="card">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Project</th>
+          <th>Location</th>
+          <th>Stage</th>
+          <th>Install Timeline</th>
+          <th>Value</th>
+          <th>Score</th>
+          <th>Rec. Date</th>
+        </tr>
+      </thead>
+      <tbody id="queue-table">
+        <tr>
+          <td colspan="8" style="text-align: center; padding: 2rem; color: var(--text-dim);">
+            <div class="loading-spinner"></div>
+            <div style="margin-top: 0.5rem;">Loading projects...</div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ============================================================
+// PB PIPELINE OPTIMIZER - Live API Integration
+// ============================================================
+
+let projects = [];
+let stageChart = null;
+let scheduleChart = null;
+
+// Fetch projects from API
+async function fetchProjects() {
+  try {
+    const response = await fetch('/api/projects?context=scheduling');
+    if (!response.ok) throw new Error('Failed to fetch projects');
+    const data = await response.json();
+    projects = data.projects;
+    return projects;
+  } catch (err) {
+    console.error('Error fetching projects:', err);
+    showError(err.message);
+    return [];
+  }
+}
+
+// Calculate priority score for a project
+function calculatePriorityScore(project) {
+  let score = 0;
+
+  // Base score from revenue (normalize to 0-100)
+  const amount = project.amount || 0;
+  score += Math.min(100, amount / 1000);
+
+  // PE bonus (higher priority)
+  if (project.isParticipateEnergy) {
+    score += 50;
+  }
+
+  // Urgency from days overdue
+  const daysToInstall = project.daysToInstall;
+  if (daysToInstall !== null && daysToInstall !== undefined) {
+    if (daysToInstall < 0) {
+      // Overdue - add urgency
+      score += Math.min(200, Math.abs(daysToInstall) * 2);
+    } else if (daysToInstall <= 14) {
+      // Due soon
+      score += (14 - daysToInstall) * 3;
+    }
+  }
+
+  // RTB ready bonus
+  if (project.stage === 'Ready To Build') {
+    score += 30;
+  }
+
+  // Blocked penalty
+  if (project.stage === 'RTB - Blocked') {
+    score -= 20;
+  }
+
+  return Math.max(0, score);
+}
+
+// Detect bottlenecks in the pipeline
+function detectBottlenecks(projects) {
+  const bottlenecks = [];
+
+  // Group by stage
+  const stageGroups = {};
+  projects.forEach(p => {
+    if (!stageGroups[p.stage]) stageGroups[p.stage] = [];
+    stageGroups[p.stage].push(p);
+  });
+
+  // Check for stage accumulation
+  Object.entries(stageGroups).forEach(([stage, stageProjects]) => {
+    if (stageProjects.length > 20) {
+      const totalValue = stageProjects.reduce((sum, p) => sum + (p.amount || 0), 0);
+      bottlenecks.push({
+        type: 'stage_accumulation',
+        severity: stageProjects.length > 50 ? 'high' : 'medium',
+        title: `${stage} Backlog`,
+        description: `${stageProjects.length} projects stuck in ${stage} stage`,
+        impact: `$${(totalValue / 1000).toFixed(0)}K pipeline value affected`,
+        recommendation: `Review ${stage} process - consider adding resources or expediting`
+      });
+    }
+  });
+
+  // Check PE milestone risk
+  const peProjects = projects.filter(p => p.isParticipateEnergy);
+  const peAtRisk = peProjects.filter(p =>
+    (p.daysToInstall !== null && p.daysToInstall < 0) ||
+    (p.daysToInspection !== null && p.daysToInspection < 0) ||
+    (p.daysToPto !== null && p.daysToPto < 0)
+  );
+
+  if (peAtRisk.length > 0) {
+    const peValue = peAtRisk.reduce((sum, p) => sum + (p.amount || 0), 0);
+    bottlenecks.push({
+      type: 'pe_milestone_risk',
+      severity: 'high',
+      title: 'Participate Energy Milestone Risk',
+      description: `${peAtRisk.length} PE projects with overdue milestones`,
+      impact: `$${(peValue / 1000).toFixed(0)}K in PE revenue at risk`,
+      recommendation: 'Prioritize PE projects in scheduling queue to meet bonus deadlines'
+    });
+  }
+
+  // Check for blocked projects
+  const blockedProjects = projects.filter(p => p.stage === 'RTB - Blocked' || p.isBlocked);
+  if (blockedProjects.length > 10) {
+    const blockedValue = blockedProjects.reduce((sum, p) => sum + (p.amount || 0), 0);
+    bottlenecks.push({
+      type: 'blocked_accumulation',
+      severity: blockedProjects.length > 25 ? 'high' : 'medium',
+      title: 'Blocked Projects Accumulation',
+      description: `${blockedProjects.length} projects are blocked and waiting`,
+      impact: `$${(blockedValue / 1000).toFixed(0)}K delayed until blockers resolved`,
+      recommendation: 'Review blocked projects weekly to identify resolution paths'
+    });
+  }
+
+  return bottlenecks;
+}
+
+// Calculate location efficiency
+function calculateLocationEfficiency(projects) {
+  const locations = {};
+
+  projects.forEach(p => {
+    const loc = p.pbLocation || 'Unknown';
+    if (!locations[loc]) {
+      locations[loc] = {
+        projects: [],
+        totalValue: 0,
+        overdueCount: 0,
+        totalDays: 0
+      };
+    }
+    locations[loc].projects.push(p);
+    locations[loc].totalValue += p.amount || 0;
+
+    if (p.daysToInstall !== null && p.daysToInstall < 0) {
+      locations[loc].overdueCount++;
+    }
+
+    locations[loc].totalDays += p.daysSinceClose || 0;
+  });
+
+  const efficiency = {};
+  Object.entries(locations).forEach(([loc, data]) => {
+    const count = data.projects.length;
+    const avgDays = count > 0 ? data.totalDays / count : 0;
+    const overduePct = count > 0 ? (data.overdueCount / count) * 100 : 0;
+
+    // Score: lower is better (fewer days, fewer overdue)
+    // Normalize to roughly -100 to +100 scale
+    const score = 50 - (avgDays / 5) - (overduePct * 0.5);
+
+    efficiency[loc] = {
+      avg_cycle_days: avgDays,
+      overdue_pct: overduePct,
+      score: Math.max(-100, Math.min(100, score)),
+      project_count: count,
+      total_value: data.totalValue
+    };
+  });
+
+  return efficiency;
+}
+
+// Format days display
+function formatDaysToInstall(days) {
+  if (days === null || days === undefined) return 'N/A';
+  if (days === 0) return 'due today';
+  if (days < 0) return `${Math.abs(days)}d overdue`;
+  return `in ${days}d`;
+}
+
+// Get next business day (skips weekends)
+function getNextBusinessDay(date) {
+  const d = new Date(date);
+  while (d.getDay() === 0 || d.getDay() === 6) {
+    d.setDate(d.getDate() + 1);
+  }
+  return d;
+}
+
+// Add business days to a date (skips weekends)
+function addBusinessDays(date, days) {
+  const d = new Date(date);
+  let remaining = days;
+  while (remaining > 0) {
+    d.setDate(d.getDate() + 1);
+    // Only count weekdays
+    if (d.getDay() !== 0 && d.getDay() !== 6) {
+      remaining--;
+    }
+  }
+  return d;
+}
+
+// Calculate recommended date (business days only)
+function getRecommendedDate(project, index) {
+  const today = new Date();
+  // Start from tomorrow
+  let startDate = getNextBusinessDay(new Date(today.getTime() + 24 * 60 * 60 * 1000));
+
+  // Stagger by index (2 projects per day max) - using business days
+  const daysToAdd = Math.floor(index / 2);
+  if (daysToAdd > 0) {
+    startDate = addBusinessDays(startDate, daysToAdd);
+  }
+
+  return startDate.toISOString().split('T')[0];
+}
+
+// Render all data
+async function renderAll() {
+  const data = await fetchProjects();
+  if (data.length === 0) return;
+
+  // Filter to schedulable projects (RTB, RTB-Blocked, Construction)
+  const schedulableStages = ['Ready To Build', 'RTB - Blocked', 'Construction', 'Install Scheduled', 'Install In Progress'];
+  const schedulable = projects.filter(p => schedulableStages.includes(p.stage));
+
+  // Calculate scores and sort
+  const scoredProjects = schedulable.map(p => ({
+    ...p,
+    score: calculatePriorityScore(p)
+  })).sort((a, b) => b.score - a.score);
+
+  // Update header stats
+  document.getElementById('total-projects').textContent = projects.length;
+  document.getElementById('schedulable').textContent = schedulable.filter(p => p.stage === 'Ready To Build').length;
+
+  const bottlenecks = detectBottlenecks(projects);
+  document.getElementById('bottleneck-count').textContent = bottlenecks.length;
+
+  const peCount = projects.filter(p => p.isParticipateEnergy).length;
+  document.getElementById('pe-rate').textContent = peCount;
+
+  // Render bottlenecks
+  renderBottlenecks(bottlenecks);
+
+  // Render priority queue (top 10)
+  renderPriorityQueue(scoredProjects.slice(0, 10));
+
+  // Render efficiency
+  const efficiency = calculateLocationEfficiency(projects);
+  renderEfficiency(efficiency);
+
+  // Render charts
+  renderStageChart(projects);
+  renderScheduleChart(schedulable);
+
+  // Render full table
+  renderQueueTable(scoredProjects);
+}
+
+function renderBottlenecks(bottlenecks) {
+  const container = document.getElementById('bottlenecks');
+
+  if (bottlenecks.length === 0) {
+    container.innerHTML = '<div style="text-align: center; padding: 2rem; color: var(--success);">No bottlenecks detected</div>';
+    return;
+  }
+
+  container.innerHTML = bottlenecks.map(b => `
+    <div class="bottleneck ${b.severity}">
+      <div class="bottleneck-title">
+        <span class="badge badge-${b.severity}">${b.severity.toUpperCase()}</span>
+        ${b.title}
+      </div>
+      <div class="bottleneck-desc">${b.description}</div>
+      <div class="bottleneck-impact">${b.impact}</div>
+      <div class="bottleneck-rec"><strong>Recommendation:</strong> ${b.recommendation}</div>
+    </div>
+  `).join('');
+}
+
+function renderPriorityQueue(topProjects) {
+  const container = document.getElementById('priority-queue');
+
+  container.innerHTML = topProjects.map((p, i) => {
+    const name = p.name?.split('|')[1]?.trim() || p.name || 'Unknown';
+    return `
+      <div class="priority-item" onclick="window.open('${p.url}', '_blank')">
+        <div class="priority-rank">${i + 1}</div>
+        <div class="priority-info">
+          <div class="priority-name">
+            ${name}
+            ${p.isParticipateEnergy ? '<span class="pe-badge">PE</span>' : ''}
+          </div>
+          <div class="priority-meta">${p.pbLocation || 'Unknown'} | ${formatDaysToInstall(p.daysToInstall)} | $${((p.amount || 0) / 1000).toFixed(0)}K</div>
+        </div>
+        <div class="priority-score">
+          <div class="priority-score-value">${p.score.toFixed(0)}</div>
+          <div class="priority-score-label">score</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderEfficiency(efficiency) {
+  const container = document.getElementById('efficiency');
+
+  const sorted = Object.entries(efficiency).sort((a, b) => b[1].score - a[1].score);
+
+  container.innerHTML = sorted.map(([loc, stats]) => {
+    const normalizedScore = Math.max(0, 50 + stats.score);
+    const color = normalizedScore > 60 ? '#10b981' : normalizedScore > 30 ? '#f59e0b' : '#ef4444';
+    return `
+      <div class="efficiency-bar">
+        <div class="efficiency-loc">${loc}</div>
+        <div class="efficiency-progress">
+          <div class="efficiency-fill" style="width: ${normalizedScore}%; background: ${color};"></div>
+        </div>
+        <div class="efficiency-score" style="color: ${color};">${stats.score.toFixed(0)}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderStageChart(projects) {
+  const stageGroups = {};
+  projects.forEach(p => {
+    const stage = p.stage || 'Unknown';
+    if (!stageGroups[stage]) stageGroups[stage] = 0;
+    stageGroups[stage]++;
+  });
+
+  const ctx = document.getElementById('stageChart').getContext('2d');
+
+  if (stageChart) stageChart.destroy();
+
+  stageChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: Object.keys(stageGroups),
+      datasets: [{
+        label: 'Projects in Stage',
+        data: Object.values(stageGroups),
+        backgroundColor: Object.values(stageGroups).map(v => v > 50 ? '#ef4444' : v > 20 ? '#f59e0b' : '#10b981'),
+        borderRadius: 4
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      indexAxis: 'y',
+      plugins: { legend: { display: false } },
+      scales: {
+        x: {
+          grid: { color: '#334155' },
+          ticks: { color: '#94a3b8' }
+        },
+        y: {
+          grid: { display: false },
+          ticks: { color: '#f1f5f9', font: { size: 10 } }
+        }
+      }
+    }
+  });
+}
+
+function renderScheduleChart(schedulable) {
+  const locationGroups = {};
+  schedulable.forEach(p => {
+    const loc = p.pbLocation || 'Unknown';
+    if (!locationGroups[loc]) locationGroups[loc] = 0;
+    locationGroups[loc]++;
+  });
+
+  const ctx = document.getElementById('scheduleChart').getContext('2d');
+
+  if (scheduleChart) scheduleChart.destroy();
+
+  scheduleChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: Object.keys(locationGroups),
+      datasets: [{
+        data: Object.values(locationGroups),
+        backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4']
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'right',
+          labels: { color: '#f1f5f9', padding: 15 }
+        }
+      }
+    }
+  });
+}
+
+function renderQueueTable(scoredProjects) {
+  const container = document.getElementById('queue-table');
+
+  container.innerHTML = scoredProjects.map((p, i) => {
+    const name = p.name?.split('|')[1]?.trim() || p.name || 'Unknown';
+    const daysClass = p.daysToInstall !== null && p.daysToInstall < 0 ? 'days-overdue' :
+                      p.daysToInstall !== null && p.daysToInstall <= 7 ? 'days-urgent' : 'days-ok';
+    const recommendedDate = getRecommendedDate(p, i);
+
+    return `
+      <tr>
+        <td>${i + 1}</td>
+        <td>
+          <a href="${p.url}" target="_blank">${name}</a>
+          ${p.isParticipateEnergy ? '<span class="pe-badge">PE</span>' : ''}
+        </td>
+        <td>${p.pbLocation || 'Unknown'}</td>
+        <td>${p.stage}</td>
+        <td><span class="days-badge ${daysClass}">${formatDaysToInstall(p.daysToInstall)}</span></td>
+        <td>$${((p.amount || 0) / 1000).toFixed(0)}K</td>
+        <td><strong>${p.score.toFixed(0)}</strong></td>
+        <td>${p.stage === 'Ready To Build' ? recommendedDate : '-'}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+// Run optimization algorithm
+async function runOptimization() {
+  const btn = document.getElementById('optimizeBtn');
+  const results = document.getElementById('optimizeResults');
+
+  btn.disabled = true;
+  btn.textContent = 'Optimizing...';
+
+  try {
+    // Get RTB projects sorted by priority
+    const rtbProjects = projects
+      .filter(p => p.stage === 'Ready To Build')
+      .map(p => ({ ...p, score: calculatePriorityScore(p) }))
+      .sort((a, b) => b.score - a.score);
+
+    if (rtbProjects.length === 0) {
+      showToast('No RTB projects to optimize', 'error');
+      return;
+    }
+
+    // Simulate crew availability
+    const crews = {
+      'Westminster': ['WESTY Alpha', 'WESTY Bravo'],
+      'Centennial': ['DTC Alpha', 'DTC Bravo'],
+      'Colorado Springs': ['COSP Alpha'],
+      'San Luis Obispo': ['SLO Solar'],
+      'Camarillo': ['CAM Crew']
+    };
+
+    // Create optimized schedule
+    const schedule = [];
+    const crewNextDate = {};
+    const today = new Date();
+    const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
+    const firstBusinessDay = getNextBusinessDay(tomorrow);
+
+    // Initialize crew dates to next business day
+    Object.values(crews).flat().forEach(crew => {
+      crewNextDate[crew] = firstBusinessDay.toISOString().split('T')[0];
+    });
+
+    rtbProjects.forEach(p => {
+      const locationCrews = crews[p.pbLocation] || ['Unassigned'];
+      const crew = locationCrews[0];
+      const startDate = crewNextDate[crew] || firstBusinessDay.toISOString().split('T')[0];
+      const days = p.daysForInstallers || 2;
+
+      schedule.push({
+        project: p,
+        crew,
+        startDate,
+        days
+      });
+
+      // Update crew next available date (add business days only)
+      if (crew !== 'Unassigned') {
+        const nextAvailable = addBusinessDays(new Date(startDate), days);
+        crewNextDate[crew] = nextAvailable.toISOString().split('T')[0];
+      }
+    });
+
+    // Display results
+    const totalValue = schedule.reduce((sum, s) => sum + (s.project.amount || 0), 0);
+    const peCount = schedule.filter(s => s.project.isParticipateEnergy).length;
+
+    results.innerHTML = `
+      <h4 style="color: var(--success); margin-bottom: 0.5rem;">Optimization Complete</h4>
+      <p style="margin-bottom: 1rem; color: var(--text-dim);">${schedule.length} projects scheduled over the next ${Math.ceil(schedule.length / 5)} weeks</p>
+      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 1rem;">
+        <div style="background: var(--surface-hover); padding: 1rem; border-radius: 8px; text-align: center;">
+          <div style="font-size: 1.5rem; font-weight: 700; color: var(--success);">${schedule.length}</div>
+          <div style="font-size: 0.75rem; color: var(--text-dim);">Projects</div>
+        </div>
+        <div style="background: var(--surface-hover); padding: 1rem; border-radius: 8px; text-align: center;">
+          <div style="font-size: 1.5rem; font-weight: 700; color: var(--primary);">$${(totalValue / 1000).toFixed(0)}K</div>
+          <div style="font-size: 0.75rem; color: var(--text-dim);">Revenue</div>
+        </div>
+        <div style="background: var(--surface-hover); padding: 1rem; border-radius: 8px; text-align: center;">
+          <div style="font-size: 1.5rem; font-weight: 700; color: var(--pe-green);">${peCount}</div>
+          <div style="font-size: 0.75rem; color: var(--text-dim);">PE Projects</div>
+        </div>
+      </div>
+      <div style="max-height: 300px; overflow-y: auto;">
+        <table style="width: 100%; font-size: 0.8rem;">
+          <thead>
+            <tr>
+              <th style="padding: 0.5rem; text-align: left;">Project</th>
+              <th style="padding: 0.5rem;">Crew</th>
+              <th style="padding: 0.5rem;">Date</th>
+              <th style="padding: 0.5rem;">Days</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${schedule.slice(0, 20).map(s => {
+              const name = s.project.name?.split('|')[1]?.trim() || s.project.name || 'Unknown';
+              return `
+                <tr>
+                  <td style="padding: 0.5rem;">
+                    ${name}
+                    ${s.project.isParticipateEnergy ? '<span class="pe-badge">PE</span>' : ''}
+                  </td>
+                  <td style="padding: 0.5rem; text-align: center;">${s.crew}</td>
+                  <td style="padding: 0.5rem; text-align: center;">${s.startDate}</td>
+                  <td style="padding: 0.5rem; text-align: center;">${s.days}</td>
+                </tr>
+              `;
+            }).join('')}
+            ${schedule.length > 20 ? `<tr><td colspan="4" style="padding: 0.5rem; text-align: center; color: var(--text-dim);">... and ${schedule.length - 20} more</td></tr>` : ''}
+          </tbody>
+        </table>
+      </div>
+      <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
+        <a href="pb-master-scheduler-v3.html" class="header-btn primary" style="text-decoration: none;">Open in Scheduler</a>
+        <button class="header-btn" onclick="exportOptimizedSchedule()">Export CSV</button>
+      </div>
+    `;
+    results.classList.add('visible');
+
+    // Store for export
+    window.optimizedSchedule = schedule;
+
+    showToast(`Optimized schedule generated for ${schedule.length} projects`);
+
+  } catch (err) {
+    console.error('Optimization error:', err);
+    showToast('Optimization failed: ' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Generate Optimized Schedule';
+  }
+}
+
+function exportOptimizedSchedule() {
+  if (!window.optimizedSchedule) {
+    showToast('No schedule to export', 'error');
+    return;
+  }
+
+  const headers = ['Project ID', 'Customer', 'Location', 'Amount', 'Crew', 'Start Date', 'Days', 'PE'];
+  let csv = headers.join(',') + '\n';
+
+  window.optimizedSchedule.forEach(s => {
+    const projectId = s.project.name?.split('|')[0]?.trim() || s.project.id;
+    const name = s.project.name?.split('|')[1]?.trim() || s.project.name;
+    csv += [
+      projectId,
+      `"${name}"`,
+      s.project.pbLocation || 'Unknown',
+      s.project.amount || 0,
+      s.crew,
+      s.startDate,
+      s.days,
+      s.project.isParticipateEnergy ? 'Yes' : 'No'
+    ].join(',') + '\n';
+  });
+
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `optimized-schedule-${new Date().toISOString().split('T')[0]}.csv`;
+  a.click();
+  showToast('CSV exported');
+}
+
+function refreshData() {
+  renderAll();
+  showToast('Data refreshed');
+}
+
+function showError(message) {
+  document.getElementById('bottlenecks').innerHTML = `
+    <div class="error-message">
+      <strong>Error:</strong> ${message}
+      <br><br>
+      <button onclick="renderAll()" style="padding: 0.5rem 1rem; background: var(--primary); border: none; border-radius: 4px; color: white; cursor: pointer;">Retry</button>
+    </div>
+  `;
+}
+
+function showToast(message, type = 'success') {
+  const toast = document.getElementById('toast');
+  toast.textContent = message;
+  toast.className = `toast visible ${type === 'error' ? 'error' : ''}`;
+  setTimeout(() => toast.classList.remove('visible'), 3000);
+}
+
+// Initialize
+renderAll();
+
+// Refresh every 5 minutes
+setInterval(renderAll, 5 * 60 * 1000);
+</script>
+</body>
+</html>

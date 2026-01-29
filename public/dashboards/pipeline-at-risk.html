@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="PB Pipeline At-Risk Projects - Track overdue and troubled projects">
+    <meta name="theme-color" content="#ef4444">
+    <title>At-Risk Projects | Photon Brothers</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        .pulse-red { animation: pulseRed 2s infinite; }
+        @keyframes pulseRed { 0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); } 50% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); } }
+        .pulse-yellow { animation: pulseYellow 2s infinite; }
+        @keyframes pulseYellow { 0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4); } 50% { box-shadow: 0 0 0 10px rgba(245, 158, 11, 0); } }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="text/babel">
+const { useState, useMemo, useEffect } = React;
+
+function transformProject(p) {
+    const now = new Date();
+    const closeDate = p.closeDate ? new Date(p.closeDate) : null;
+    const daysSinceClose = closeDate ? Math.floor((now - closeDate) / (1000 * 60 * 60 * 24)) : 0;
+
+    const forecastInstall = p.constructionScheduleDate || (closeDate ? new Date(closeDate.getTime() + 75*24*60*60*1000).toISOString().split('T')[0] : null);
+    const forecastInspection = p.inspectionCompletionDate || (closeDate ? new Date(closeDate.getTime() + 114*24*60*60*1000).toISOString().split('T')[0] : null);
+    const forecastPto = p.ptoCompletionDate || (closeDate ? new Date(closeDate.getTime() + 139*24*60*60*1000).toISOString().split('T')[0] : null);
+
+    const daysToInstall = forecastInstall ? Math.floor((new Date(forecastInstall) - now) / (1000 * 60 * 60 * 24)) : null;
+    const daysToInspection = forecastInspection ? Math.floor((new Date(forecastInspection) - now) / (1000 * 60 * 60 * 24)) : null;
+    const daysToPto = forecastPto ? Math.floor((new Date(forecastPto) - now) / (1000 * 60 * 60 * 24)) : null;
+
+    return {
+        id: p.id,
+        name: p.name,
+        pb_location: p.pbLocation || 'Unknown',
+        ahj: p.ahj || 'Unknown',
+        utility: p.utility || 'Unknown',
+        project_type: p.projectType || 'Unknown',
+        stage: p.stage,
+        amount: p.amount || 0,
+        url: p.url,
+        close_date: p.closeDate,
+        construction_complete: p.constructionCompleteDate,
+        inspection_pass: p.inspectionPassDate,
+        pto_granted: p.ptoGrantedDate,
+        forecast_install: forecastInstall,
+        forecast_inspection: forecastInspection,
+        forecast_pto: forecastPto,
+        days_to_install: daysToInstall,
+        days_to_inspection: daysToInspection,
+        days_to_pto: daysToPto,
+        days_since_close: daysSinceClose
+    };
+}
+
+function AtRiskDashboard() {
+    const [projects, setProjects] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [lastUpdated, setLastUpdated] = useState(null);
+    const [sortBy, setSortBy] = useState('severity');
+    const [filterLocation, setFilterLocation] = useState('all');
+    const [filterRiskType, setFilterRiskType] = useState('all');
+
+    const today = new Date();
+
+    useEffect(() => {
+        async function fetchData() {
+            try {
+                setLoading(true);
+                const response = await fetch('/api/projects?context=at-risk');
+                if (!response.ok) throw new Error('Failed to fetch data');
+                const data = await response.json();
+                setProjects(data.projects.map(transformProject));
+                setLastUpdated(new Date().toLocaleTimeString());
+                setError(null);
+            } catch (err) {
+                setError(err.message);
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        fetchData();
+        const interval = setInterval(fetchData, 5 * 60 * 1000);
+        return () => clearInterval(interval);
+    }, []);
+
+    const locations = useMemo(() => {
+        const locs = [...new Set(projects.map(p => p.pb_location))].filter(l => l !== 'Unknown').sort();
+        return ['all', ...locs];
+    }, [projects]);
+
+    // Calculate risk for each project
+    const projectsWithRisk = useMemo(() => {
+        return projects.map(p => {
+            const risks = [];
+            let riskScore = 0;
+
+            // Check install risk - only if construction NOT complete
+            if (!p.construction_complete && p.days_to_install !== null) {
+                if (p.days_to_install < 0) {
+                    risks.push({ type: 'Install Overdue', days: Math.abs(p.days_to_install), severity: 'critical' });
+                    riskScore += 100 + Math.abs(p.days_to_install);
+                } else if (p.days_to_install <= 7) {
+                    risks.push({ type: 'Install Soon', days: p.days_to_install, severity: 'warning' });
+                    riskScore += 50 - p.days_to_install;
+                }
+            }
+
+            // Check inspection risk - only if inspection NOT passed
+            if (!p.inspection_pass && p.days_to_inspection !== null) {
+                if (p.days_to_inspection < 0) {
+                    risks.push({ type: 'Inspection Overdue', days: Math.abs(p.days_to_inspection), severity: 'critical' });
+                    riskScore += 80 + Math.abs(p.days_to_inspection);
+                } else if (p.days_to_inspection <= 14) {
+                    risks.push({ type: 'Inspection Soon', days: p.days_to_inspection, severity: 'warning' });
+                    riskScore += 40 - p.days_to_inspection;
+                }
+            }
+
+            // Check PTO risk - only if PTO NOT granted
+            if (!p.pto_granted && p.days_to_pto !== null) {
+                if (p.days_to_pto < 0) {
+                    risks.push({ type: 'PTO Overdue', days: Math.abs(p.days_to_pto), severity: 'critical' });
+                    riskScore += 60 + Math.abs(p.days_to_pto);
+                } else if (p.days_to_pto <= 21) {
+                    risks.push({ type: 'PTO Soon', days: p.days_to_pto, severity: 'warning' });
+                    riskScore += 30 - p.days_to_pto;
+                }
+            }
+
+            // Check for stalled projects (long time since close without progress)
+            if (p.days_since_close > 60 && !p.construction_complete) {
+                risks.push({ type: 'Stalled', days: p.days_since_close, severity: 'warning' });
+                riskScore += 25;
+            }
+
+            // Check for blocked stage
+            if (p.stage === 'RTB - Blocked') {
+                risks.push({ type: 'Blocked', days: p.days_since_close, severity: 'critical' });
+                riskScore += 75;
+            }
+
+            // Add revenue impact to risk score
+            riskScore += (p.amount || 0) / 10000;
+
+            return {
+                ...p,
+                risks,
+                riskScore,
+                hasCritical: risks.some(r => r.severity === 'critical'),
+                hasWarning: risks.some(r => r.severity === 'warning')
+            };
+        }).filter(p => p.risks.length > 0);
+    }, [projects]);
+
+    // Filter and sort
+    const filteredProjects = useMemo(() => {
+        let filtered = projectsWithRisk;
+
+        if (filterLocation !== 'all') {
+            filtered = filtered.filter(p => p.pb_location === filterLocation);
+        }
+
+        if (filterRiskType !== 'all') {
+            filtered = filtered.filter(p => p.risks.some(r => r.type.toLowerCase().includes(filterRiskType.toLowerCase())));
+        }
+
+        if (sortBy === 'severity') {
+            filtered.sort((a, b) => b.riskScore - a.riskScore);
+        } else if (sortBy === 'amount') {
+            filtered.sort((a, b) => (b.amount || 0) - (a.amount || 0));
+        } else if (sortBy === 'days') {
+            filtered.sort((a, b) => {
+                const aDays = Math.max(...a.risks.map(r => r.days));
+                const bDays = Math.max(...b.risks.map(r => r.days));
+                return bDays - aDays;
+            });
+        }
+
+        return filtered;
+    }, [projectsWithRisk, filterLocation, filterRiskType, sortBy]);
+
+    // Summary stats
+    const stats = useMemo(() => {
+        const critical = filteredProjects.filter(p => p.hasCritical);
+        const warnings = filteredProjects.filter(p => p.hasWarning && !p.hasCritical);
+        const totalValue = filteredProjects.reduce((sum, p) => sum + (p.amount || 0), 0);
+        const criticalValue = critical.reduce((sum, p) => sum + (p.amount || 0), 0);
+
+        const byRiskType = {};
+        filteredProjects.forEach(p => {
+            p.risks.forEach(r => {
+                if (!byRiskType[r.type]) byRiskType[r.type] = { count: 0, value: 0 };
+                byRiskType[r.type].count++;
+                byRiskType[r.type].value += (p.amount || 0);
+            });
+        });
+
+        return { critical, warnings, totalValue, criticalValue, byRiskType };
+    }, [filteredProjects]);
+
+    const getRiskBadge = (risk) => {
+        const colors = risk.severity === 'critical'
+            ? 'bg-red-100 text-red-800 border-red-200'
+            : 'bg-yellow-100 text-yellow-800 border-yellow-200';
+
+        // Format days display based on risk type
+        let daysDisplay;
+        if (risk.type.includes('Overdue')) {
+            daysDisplay = risk.days === 0 ? 'due today' : `${risk.days}d overdue`;
+        } else if (risk.type.includes('Soon')) {
+            daysDisplay = risk.days === 0 ? 'due today' : `in ${risk.days}d`;
+        } else {
+            daysDisplay = `${risk.days}d`;
+        }
+
+        // Simplify type for display
+        const typeDisplay = risk.type.replace(' Overdue', '').replace(' Soon', '');
+
+        return (
+            <span className={'text-xs px-2 py-1 rounded-full border ' + colors}>
+                {typeDisplay}: {daysDisplay}
+            </span>
+        );
+    };
+
+    const riskTypes = ['all', 'install', 'inspection', 'pto', 'stalled', 'blocked'];
+
+    if (loading) {
+        return (
+            <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+                <div className="text-center">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-500 mx-auto mb-4"></div>
+                    <p className="text-gray-400">Loading at-risk projects...</p>
+                </div>
+            </div>
+        );
+    }
+
+    if (error) {
+        return (
+            <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+                <div className="text-center bg-gray-800 rounded-xl p-8 border border-gray-700">
+                    <div className="text-red-500 text-4xl mb-4">⚠️</div>
+                    <h2 className="text-xl font-bold text-white mb-2">Failed to Load Data</h2>
+                    <p className="text-gray-400 mb-4">{error}</p>
+                    <button onClick={() => window.location.reload()} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">
+                        Retry
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="min-h-screen bg-gray-900 text-white">
+            {/* Header */}
+            <div className="bg-gray-800 border-b border-gray-700 sticky top-0 z-20">
+                <div className="max-w-7xl mx-auto px-4 py-4">
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-3">
+                            <div className="w-3 h-3 rounded-full bg-red-500 pulse-red"></div>
+                            <div>
+                                <h1 className="text-2xl font-bold">At-Risk Projects</h1>
+                                <p className="text-gray-400">Projects requiring immediate attention</p>
+                            </div>
+                        </div>
+                        <div className="text-right">
+                            <div className="inline-flex items-center px-3 py-1 bg-green-900/50 text-green-400 rounded-full text-sm">
+                                <span className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></span>
+                                Live Data
+                            </div>
+                            {lastUpdated && <p className="text-xs text-gray-500 mt-1">Updated {lastUpdated}</p>}
+                        </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-4 items-center">
+                        <div className="flex items-center gap-2">
+                            <span className="text-sm text-gray-400">Risk Type:</span>
+                            <select value={filterRiskType} onChange={e => setFilterRiskType(e.target.value)}
+                                className="bg-gray-700 border-gray-600 border rounded px-3 py-1.5 text-sm">
+                                {riskTypes.map(t => (
+                                    <option key={t} value={t}>{t === 'all' ? 'All Risks' : t.charAt(0).toUpperCase() + t.slice(1)}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <span className="text-sm text-gray-400">Location:</span>
+                            <select value={filterLocation} onChange={e => setFilterLocation(e.target.value)}
+                                className="bg-gray-700 border-gray-600 border rounded px-3 py-1.5 text-sm">
+                                {locations.map(loc => (
+                                    <option key={loc} value={loc}>{loc === 'all' ? 'All Locations' : loc}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <span className="text-sm text-gray-400">Sort:</span>
+                            <select value={sortBy} onChange={e => setSortBy(e.target.value)}
+                                className="bg-gray-700 border-gray-600 border rounded px-3 py-1.5 text-sm">
+                                <option value="severity">By Severity</option>
+                                <option value="amount">By Value</option>
+                                <option value="days">By Days Overdue</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Alert Banner */}
+            {stats.critical.length > 0 && (
+                <div className="bg-red-900/50 border-b border-red-800 px-4 py-3">
+                    <div className="max-w-7xl mx-auto flex items-center gap-4">
+                        <div className="text-red-400 font-bold text-lg">ALERT</div>
+                        <div className="text-red-200">
+                            {stats.critical.length} critical projects at risk totaling ${(stats.criticalValue / 1000000).toFixed(2)}M in revenue
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            <div className="max-w-7xl mx-auto px-4 py-6">
+                {/* Summary Cards */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                    <div className="bg-red-900/30 border border-red-800 rounded-lg p-4">
+                        <div className="text-3xl font-bold text-red-400">{stats.critical.length}</div>
+                        <div className="text-sm text-red-300">Critical</div>
+                        <div className="text-xs text-red-400/70">${(stats.criticalValue / 1000).toFixed(0)}k at risk</div>
+                    </div>
+                    <div className="bg-yellow-900/30 border border-yellow-800 rounded-lg p-4">
+                        <div className="text-3xl font-bold text-yellow-400">{stats.warnings.length}</div>
+                        <div className="text-sm text-yellow-300">Warnings</div>
+                    </div>
+                    <div className="bg-gray-800 border border-gray-700 rounded-lg p-4">
+                        <div className="text-3xl font-bold text-white">{filteredProjects.length}</div>
+                        <div className="text-sm text-gray-400">Total At-Risk</div>
+                    </div>
+                    <div className="bg-gray-800 border border-gray-700 rounded-lg p-4">
+                        <div className="text-3xl font-bold text-purple-400">${(stats.totalValue / 1000000).toFixed(1)}M</div>
+                        <div className="text-sm text-gray-400">Total Value</div>
+                    </div>
+                </div>
+
+                {/* Risk Type Breakdown */}
+                <div className="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-6">
+                    <h3 className="text-sm font-medium text-gray-400 mb-3">Risk Breakdown</h3>
+                    <div className="flex flex-wrap gap-4">
+                        {Object.entries(stats.byRiskType).sort((a, b) => b[1].count - a[1].count).map(([type, data]) => (
+                            <div key={type} className="flex items-center gap-2">
+                                <div className={'w-2 h-2 rounded-full ' + (type.includes('Overdue') || type.includes('Blocked') ? 'bg-red-500' : 'bg-yellow-500')}></div>
+                                <span className="text-sm text-gray-300">{type}:</span>
+                                <span className="text-sm font-medium text-white">{data.count}</span>
+                                <span className="text-xs text-gray-500">(${(data.value / 1000).toFixed(0)}k)</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Project List */}
+                <div className="space-y-3">
+                    {filteredProjects.map((project, idx) => (
+                        <div key={project.id}
+                            className={'rounded-lg border p-4 ' + (project.hasCritical ? 'bg-red-900/20 border-red-800' : 'bg-yellow-900/20 border-yellow-800')}>
+                            <div className="flex items-start justify-between gap-4">
+                                <div className="flex-1">
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <span className="text-xs text-gray-500">#{idx + 1}</span>
+                                        <a href={project.url} target="_blank" className="text-lg font-medium text-blue-400 hover:underline">
+                                            {project.name.split('|')[0].trim()}
+                                        </a>
+                                    </div>
+                                    <div className="text-sm text-gray-400 mb-2">
+                                        {project.pb_location} | {project.ahj} | {project.utility} | {project.stage}
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                        {project.risks.map((risk, i) => (
+                                            <span key={i}>{getRiskBadge(risk)}</span>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div className="text-right">
+                                    <div className="text-xl font-bold text-white">${((project.amount || 0) / 1000).toFixed(0)}k</div>
+                                    <div className="text-xs text-gray-500">Risk Score: {project.riskScore.toFixed(0)}</div>
+                                </div>
+                            </div>
+
+                            <div className="mt-3 pt-3 border-t border-gray-700/50 grid grid-cols-3 gap-4 text-sm">
+                                <div>
+                                    <div className="text-gray-500">Forecast Install</div>
+                                    <div className="text-white">{project.forecast_install ? new Date(project.forecast_install).toLocaleDateString() : '-'}</div>
+                                </div>
+                                <div>
+                                    <div className="text-gray-500">Forecast Inspection</div>
+                                    <div className="text-white">{project.forecast_inspection ? new Date(project.forecast_inspection).toLocaleDateString() : '-'}</div>
+                                </div>
+                                <div>
+                                    <div className="text-gray-500">Forecast PTO</div>
+                                    <div className="text-white">{project.forecast_pto ? new Date(project.forecast_pto).toLocaleDateString() : '-'}</div>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+
+                {filteredProjects.length === 0 && (
+                    <div className="text-center py-12 text-gray-500">
+                        <div className="text-4xl mb-2">✓</div>
+                        <div>No at-risk projects found with current filters</div>
+                    </div>
+                )}
+
+                <div className="mt-8 text-center text-sm text-gray-500">
+                    Data synced from HubSpot • Auto-refreshes every 5 minutes
+                </div>
+            </div>
+        </div>
+    );
+}
+
+ReactDOM.render(<AtRiskDashboard />, document.getElementById('root'));
+    </script>
+</body>
+</html>

@@ -1,0 +1,1774 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Photon Brothers Master Scheduler - Crew scheduling, calendar management, and install coordination">
+<meta name="theme-color" content="#0a0a0f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>PB Master Scheduler | Photon Brothers</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #0a0a0f;
+  --surface: #12121a;
+  --surface-hover: #1a1a24;
+  --border: #1e1e2e;
+  --text: #e4e4e7;
+  --text-dim: #71717a;
+  --accent: #f97316;
+  --accent-dim: rgba(249, 115, 22, 0.15);
+  --rtb: #10b981;
+  --rtb-blocked: #eab308;
+  --construction: #3b82f6;
+  --inspection: #8b5cf6;
+  --solar: #06b6d4;
+  --battery: #a855f7;
+  --conflict: #ef4444;
+  --success: #22c55e;
+}
+body { font-family: 'Space Grotesk', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; overflow: hidden; }
+
+/* Main Layout */
+.app { display: grid; grid-template-columns: 360px 1fr 280px; height: 100vh; }
+.sidebar { background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+.main { display: flex; flex-direction: column; overflow: hidden; }
+.right-panel { background: var(--surface); border-left: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+
+/* Header */
+header { padding: 1rem; border-bottom: 1px solid var(--border); background: linear-gradient(135deg, var(--surface), #1a1a28); }
+.header-row { display: flex; justify-content: space-between; align-items: center; }
+h1 { font-size: 1.2rem; font-weight: 700; background: linear-gradient(135deg, var(--accent), #fb923c); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.subtitle { font-size: 0.65rem; color: var(--text-dim); margin-top: 2px; }
+.header-actions { display: flex; gap: 6px; }
+.header-btn { padding: 6px 10px; font-size: 0.7rem; border-radius: 6px; cursor: pointer; background: var(--bg); border: 1px solid var(--border); color: var(--text); transition: all 0.15s; font-family: inherit; }
+.header-btn:hover { border-color: var(--accent); color: var(--accent); }
+.header-btn.primary { background: var(--accent); border-color: var(--accent); color: #000; font-weight: 600; }
+.header-btn.primary:hover { background: #ea580c; }
+
+/* View Tabs */
+.view-tabs { display: flex; gap: 2px; padding: 0.5rem; background: var(--bg); border-bottom: 1px solid var(--border); }
+.view-tab { flex: 1; padding: 8px; font-size: 0.7rem; font-weight: 600; border-radius: 6px; cursor: pointer; background: var(--surface); border: 1px solid var(--border); color: var(--text-dim); transition: all 0.15s; text-align: center; }
+.view-tab:hover { border-color: var(--text-dim); }
+.view-tab.active { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+
+/* Location Tabs */
+.location-tabs { display: flex; gap: 2px; padding: 0.5rem; background: var(--bg); border-bottom: 1px solid var(--border); overflow-x: auto; }
+.location-tab { padding: 6px 10px; font-size: 0.65rem; font-weight: 500; border-radius: 6px; cursor: pointer; background: var(--surface); border: 1px solid var(--border); color: var(--text-dim); transition: all 0.15s; white-space: nowrap; }
+.location-tab:hover { border-color: var(--text-dim); }
+.location-tab.active { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+.location-tab .count { font-family: 'JetBrains Mono', monospace; margin-left: 4px; opacity: 0.7; }
+.location-tab .revenue { font-size: 0.55rem; opacity: 0.6; display: block; }
+
+/* Stats Bar */
+.stats-bar { display: flex; gap: 6px; padding: 0.5rem; background: var(--bg); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.stat { display: flex; align-items: center; gap: 4px; padding: 4px 8px; background: var(--surface); border-radius: 6px; border: 1px solid var(--border); }
+.stat-dot { width: 8px; height: 8px; border-radius: 2px; }
+.stat-value { font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 0.8rem; }
+.stat-label { font-size: 0.55rem; color: var(--text-dim); text-transform: uppercase; }
+
+/* Queue Sidebar */
+.queue-header { padding: 0.75rem; border-bottom: 1px solid var(--border); }
+.queue-header h2 { font-size: 0.8rem; font-weight: 600; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 6px; }
+.stage-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 0.5rem; }
+.stage-tab { padding: 4px 8px; font-size: 0.6rem; border-radius: 4px; cursor: pointer; background: var(--bg); border: 1px solid var(--border); color: var(--text-dim); transition: all 0.15s; }
+.stage-tab:hover { border-color: var(--text-dim); }
+.stage-tab.active { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+.stage-tab.rtb.active { border-color: var(--rtb); color: var(--rtb); background: rgba(16, 185, 129, 0.1); }
+.stage-tab.blocked.active { border-color: var(--rtb-blocked); color: var(--rtb-blocked); background: rgba(234, 179, 8, 0.1); }
+.stage-tab.construction.active { border-color: var(--construction); color: var(--construction); background: rgba(59, 130, 246, 0.1); }
+.stage-tab.survey.active { border-color: var(--solar); color: var(--solar); background: rgba(6, 182, 212, 0.1); }
+.stage-tab.inspection.active { border-color: var(--inspection); color: var(--inspection); background: rgba(139, 92, 246, 0.1); }
+
+.queue-filters { display: flex; flex-direction: column; gap: 4px; }
+.queue-filters input, .queue-filters select { width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 6px 8px; border-radius: 6px; font-family: inherit; font-size: 0.7rem; }
+.queue-filters input:focus, .queue-filters select:focus { outline: none; border-color: var(--accent); }
+.queue-count { font-size: 0.65rem; color: var(--text-dim); padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); background: var(--bg); display: flex; justify-content: space-between; }
+.queue-list { flex: 1; overflow-y: auto; padding: 0.5rem; }
+
+/* Queue Items - Draggable */
+.queue-item { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem; margin-bottom: 0.4rem; cursor: grab; transition: all 0.15s; position: relative; }
+.queue-item:hover { border-color: var(--accent); transform: translateX(2px); }
+.queue-item.selected { border-color: var(--accent); background: var(--accent-dim); box-shadow: 0 0 0 1px var(--accent); }
+.queue-item.dragging { opacity: 0.5; cursor: grabbing; }
+.queue-item.rtb { border-left: 3px solid var(--rtb); }
+.queue-item.blocked { border-left: 3px solid var(--rtb-blocked); }
+.queue-item.construction { border-left: 3px solid var(--construction); }
+.queue-item.survey { border-left: 3px solid var(--solar); }
+.queue-item.inspection { border-left: 3px solid var(--inspection); }
+.queue-item-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 2px; }
+.queue-item-name { font-size: 0.7rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
+.queue-item-amount { font-family: 'JetBrains Mono', monospace; font-size: 0.65rem; color: var(--accent); font-weight: 600; }
+.queue-item-address { font-size: 0.6rem; color: var(--text-dim); margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.queue-item-meta { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+.queue-item-tag { font-size: 0.5rem; padding: 2px 4px; border-radius: 3px; background: var(--border); color: var(--text-dim); }
+.queue-item-tag.solar { background: rgba(6, 182, 212, 0.2); color: var(--solar); }
+.queue-item-tag.battery { background: rgba(168, 85, 247, 0.2); color: var(--battery); }
+.queue-item-tag.rtb { background: rgba(16, 185, 129, 0.2); color: var(--rtb); }
+.queue-item-tag.blocked { background: rgba(234, 179, 8, 0.2); color: var(--rtb-blocked); }
+.queue-item-tag.construction { background: rgba(59, 130, 246, 0.2); color: var(--construction); }
+.queue-item-tag.survey { background: rgba(6, 182, 212, 0.2); color: var(--solar); }
+.queue-item-tag.inspection { background: rgba(139, 92, 246, 0.2); color: var(--inspection); }
+.queue-item-tag.scheduled { background: rgba(59, 130, 246, 0.3); color: var(--construction); font-weight: 600; }
+.queue-item-specs { display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
+.spec { font-size: 0.55rem; color: var(--text-dim); }
+.spec strong { color: var(--text); }
+
+/* Calendar Container */
+.calendar-container { flex: 1; padding: 0.75rem; overflow-y: auto; }
+.month-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem; padding: 0 0.5rem; }
+.month-nav button { background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 6px 12px; border-radius: 6px; cursor: pointer; font-family: inherit; font-size: 0.7rem; transition: all 0.15s; }
+.month-nav button:hover { background: var(--border); }
+.month-title { font-size: 1rem; font-weight: 600; }
+.today-btn { font-size: 0.65rem; padding: 4px 8px; }
+
+/* Calendar Grid */
+.calendar { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; background: var(--border); border-radius: 8px; overflow: hidden; padding: 2px; }
+.day-header { background: var(--surface); padding: 8px 4px; text-align: center; font-weight: 600; font-size: 0.65rem; color: var(--text-dim); }
+.day { background: var(--surface); min-height: 90px; padding: 4px; position: relative; cursor: pointer; transition: all 0.15s; }
+.day:hover { background: var(--surface-hover); }
+.day.other-month { opacity: 0.4; }
+.day.today { box-shadow: inset 0 0 0 2px var(--accent); }
+.day.drop-target { background: var(--accent-dim); box-shadow: inset 0 0 0 2px var(--accent); }
+.day.weekend { background: rgba(0,0,0,0.3); opacity: 0.6; cursor: default; }
+.day.weekend .day-number { color: var(--text-dim); }
+.day.weekend .event { pointer-events: auto; cursor: pointer; }
+.day-number { font-size: 0.7rem; font-weight: 600; margin-bottom: 2px; color: var(--text-dim); }
+.day.today .day-number { color: var(--accent); }
+
+/* Calendar Events */
+.event { font-size: 0.55rem; padding: 3px 4px; border-radius: 3px; margin-bottom: 2px; cursor: pointer; transition: all 0.1s; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.event:hover { transform: scale(1.02); box-shadow: 0 4px 12px rgba(0,0,0,0.4); z-index: 10; position: relative; }
+.event.rtb { background: var(--rtb); color: #000; }
+.event.blocked { background: var(--rtb-blocked); color: #000; }
+.event.construction { background: var(--construction); color: #fff; }
+.event.survey { background: var(--solar); color: #fff; }
+.event.inspection { background: var(--inspection); color: #fff; }
+.event.scheduled { background: var(--solar); color: #fff; }
+.event.conflict { background: var(--conflict); color: #fff; animation: pulse 1s infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+.event .day-num { font-size: 0.5rem; opacity: 0.8; }
+.more-events { font-size: 0.55rem; color: var(--text-dim); text-align: center; padding: 2px; cursor: pointer; }
+
+/* Week View */
+.week-view { display: none; }
+.week-view.active { display: block; }
+.calendar-view { display: block; }
+.calendar-view.hidden { display: none; }
+
+.week-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; padding: 0 8px; }
+.week-nav button { background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 6px 12px; border-radius: 6px; cursor: pointer; font-family: inherit; font-size: 0.7rem; transition: all 0.15s; }
+.week-nav button:hover { background: var(--border); }
+.week-title { font-size: 0.9rem; font-weight: 600; }
+
+.week-grid { display: grid; grid-template-columns: 100px repeat(5, 1fr); gap: 1px; background: var(--border); border-radius: 8px; overflow: hidden; }
+.week-header { background: var(--surface); padding: 10px 8px; text-align: center; font-size: 0.7rem; font-weight: 600; color: var(--text-dim); }
+.week-header.today { color: var(--accent); background: var(--accent-dim); }
+.week-header .date-num { font-size: 1rem; font-weight: 700; display: block; margin-top: 2px; color: var(--text); }
+.crew-row-header { background: var(--bg); padding: 10px 8px; font-size: 0.7rem; font-weight: 600; display: flex; flex-direction: column; gap: 4px; border-right: 3px solid var(--accent); }
+.crew-row-header .crew-name { color: var(--text); }
+.crew-row-header .crew-stats { font-size: 0.55rem; color: var(--text-dim); font-weight: 400; }
+.week-cell { background: var(--surface); min-height: 70px; padding: 4px; position: relative; cursor: pointer; transition: background 0.15s; }
+.week-cell:hover { background: var(--surface-hover); }
+.week-cell.drop-target { background: var(--accent-dim); box-shadow: inset 0 0 0 2px var(--accent); }
+.week-cell .event { font-size: 0.6rem; padding: 4px 6px; margin-bottom: 3px; }
+
+/* Gantt View */
+.gantt-container { padding: 0 8px; }
+.gantt-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.gantt-title { font-size: 0.9rem; font-weight: 600; }
+.gantt-legend { display: flex; gap: 12px; font-size: 0.6rem; }
+.gantt-legend-item { display: flex; align-items: center; gap: 4px; }
+.gantt-legend-box { width: 12px; height: 12px; border-radius: 3px; }
+.gantt-grid { background: var(--border); border-radius: 8px; overflow: hidden; }
+.gantt-timeline { display: grid; grid-template-columns: 140px repeat(14, 1fr); gap: 1px; }
+.gantt-day-header { background: var(--surface); padding: 6px 4px; text-align: center; font-size: 0.55rem; color: var(--text-dim); }
+.gantt-day-header.today { background: var(--accent-dim); color: var(--accent); }
+.gantt-day-header .day-name { font-weight: 600; }
+.gantt-day-header .day-num { font-size: 0.7rem; color: var(--text); display: block; }
+.gantt-crew-header { background: var(--bg); padding: 8px; font-size: 0.7rem; font-weight: 600; }
+.gantt-row { display: grid; grid-template-columns: 140px repeat(14, 1fr); gap: 1px; min-height: 50px; }
+.gantt-cell { background: var(--surface); position: relative; }
+.gantt-bar { position: absolute; top: 8px; bottom: 8px; border-radius: 4px; display: flex; align-items: center; padding: 0 6px; font-size: 0.55rem; font-weight: 500; color: #fff; cursor: pointer; transition: all 0.15s; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; z-index: 1; }
+.gantt-bar:hover { transform: scaleY(1.1); box-shadow: 0 4px 12px rgba(0,0,0,0.4); z-index: 2; }
+.gantt-bar.construction { background: var(--construction); }
+.gantt-bar.rtb { background: var(--rtb); }
+.gantt-bar.scheduled { background: var(--solar); }
+.gantt-bar.blocked { background: var(--rtb-blocked); color: #000; }
+.gantt-bar.survey { background: var(--solar); }
+.gantt-bar.inspection { background: var(--inspection); }
+
+/* Right Panel - Crew & Conflicts */
+.panel-section { padding: 0.75rem; border-bottom: 1px solid var(--border); }
+.panel-title { font-size: 0.75rem; font-weight: 600; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 6px; }
+.crew-card { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 8px; margin-bottom: 6px; }
+.crew-name { font-size: 0.7rem; font-weight: 600; margin-bottom: 4px; }
+.crew-capacity { display: flex; gap: 8px; margin-bottom: 6px; }
+.capacity-item { font-size: 0.6rem; display: flex; align-items: center; gap: 4px; }
+.capacity-bar { height: 4px; background: var(--border); border-radius: 2px; flex: 1; overflow: hidden; }
+.capacity-fill { height: 100%; background: var(--rtb); transition: width 0.3s; }
+.capacity-fill.warning { background: var(--rtb-blocked); }
+.capacity-fill.full { background: var(--conflict); }
+.crew-utilization { font-size: 0.6rem; color: var(--text-dim); }
+
+/* Conflict List */
+.conflict-item { background: rgba(239, 68, 68, 0.1); border: 1px solid var(--conflict); border-radius: 6px; padding: 8px; margin-bottom: 6px; font-size: 0.65rem; }
+.conflict-title { font-weight: 600; color: var(--conflict); margin-bottom: 4px; }
+.conflict-detail { color: var(--text-dim); }
+
+/* Optimization Panel */
+.optimize-btn { width: 100%; padding: 10px; font-size: 0.75rem; border-radius: 6px; cursor: pointer; background: linear-gradient(135deg, var(--accent), #fb923c); border: none; color: #000; font-weight: 600; font-family: inherit; transition: all 0.15s; }
+.optimize-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(249, 115, 22, 0.3); }
+.optimize-stats { margin-top: 8px; font-size: 0.6rem; color: var(--text-dim); }
+
+/* Export Panel */
+.export-btns { display: flex; flex-direction: column; gap: 6px; }
+.export-btn { padding: 8px; font-size: 0.7rem; border-radius: 6px; cursor: pointer; background: var(--bg); border: 1px solid var(--border); color: var(--text); font-family: inherit; transition: all 0.15s; text-align: left; }
+.export-btn:hover { border-color: var(--accent); }
+
+/* Modal */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: none; align-items: center; justify-content: center; z-index: 1000; }
+.modal-overlay.visible { display: flex; }
+.modal { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem; max-width: 500px; width: 90%; max-height: 85vh; overflow-y: auto; }
+.modal h3 { font-size: 1rem; margin-bottom: 0.75rem; display: flex; align-items: center; gap: 8px; }
+.modal-body { margin-bottom: 1rem; }
+.modal-section { margin-bottom: 0.75rem; }
+.modal-section-title { font-size: 0.65rem; color: var(--text-dim); text-transform: uppercase; margin-bottom: 4px; font-weight: 600; }
+.modal-row { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid var(--border); font-size: 0.75rem; }
+.modal-row:last-child { border-bottom: none; }
+.modal-label { color: var(--text-dim); }
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+.modal-btn { padding: 8px 14px; border-radius: 6px; font-family: inherit; font-size: 0.75rem; cursor: pointer; transition: all 0.15s; }
+.modal-btn.cancel { background: var(--bg); border: 1px solid var(--border); color: var(--text); }
+.modal-btn.cancel:hover { background: var(--border); }
+.modal-btn.confirm { background: var(--accent); border: 1px solid var(--accent); color: #000; font-weight: 600; }
+.modal-btn.confirm:hover { background: #ea580c; }
+.modal-btn.hubspot { background: #ff7a59; border: 1px solid #ff7a59; color: #fff; font-weight: 600; text-decoration: none; }
+
+/* Form Inputs */
+.form-row { display: flex; gap: 10px; margin-top: 8px; flex-wrap: wrap; align-items: center; }
+.form-row label { font-size: 0.7rem; color: var(--text-dim); }
+.form-row input, .form-row select { background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 6px 8px; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; }
+.form-row input[type="number"] { width: 60px; text-align: center; }
+
+/* Toast */
+.toast { position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%) translateY(100px); background: var(--success); color: #000; padding: 10px 20px; border-radius: 8px; font-size: 0.8rem; font-weight: 500; opacity: 0; transition: all 0.3s; z-index: 1001; }
+.toast.visible { transform: translateX(-50%) translateY(0); opacity: 1; }
+.toast.error { background: var(--conflict); color: #fff; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+/* Responsive */
+@media (max-width: 1400px) { .app { grid-template-columns: 320px 1fr 240px; } }
+@media (max-width: 1100px) { .right-panel { display: none; } .app { grid-template-columns: 320px 1fr; } }
+@media (max-width: 900px) { .app { grid-template-columns: 1fr; } .sidebar { max-height: 40vh; } }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- Left Sidebar - Pipeline Queue -->
+  <aside class="sidebar">
+    <header>
+      <div class="header-row">
+        <div>
+          <h1>⚡ PB Master Scheduler</h1>
+          <div class="subtitle">RTB + Construction • Live HubSpot Data</div>
+        </div>
+        <div class="header-actions">
+          <button class="header-btn" onclick="exportCSV()">📥 CSV</button>
+        </div>
+      </div>
+    </header>
+
+    <div class="queue-header">
+      <h2>📋 Install Pipeline</h2>
+      <div class="stage-tabs" id="stageTabs"></div>
+      <div class="queue-filters">
+        <input type="text" id="searchInput" placeholder="🔍 Search projects...">
+        <select id="typeFilter">
+          <option value="">All Types</option>
+          <option value="Solar">☀️ Solar</option>
+          <option value="Battery">🔋 Battery</option>
+          <option value="EV">🔌 EV Charger</option>
+        </select>
+        <select id="sortFilter">
+          <option value="amount">Sort: Revenue ↓</option>
+          <option value="date">Sort: Date</option>
+          <option value="days">Sort: Install Days</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="queue-count" id="queueCount">
+      <span>0 projects</span>
+      <span>$0K</span>
+    </div>
+    <div class="queue-list" id="queueList"></div>
+  </aside>
+
+  <!-- Main: Calendar/Week Views -->
+  <main class="main">
+    <div class="view-tabs">
+      <div class="view-tab active" data-view="calendar" onclick="switchView('calendar')">📅 Month</div>
+      <div class="view-tab" data-view="week" onclick="switchView('week')">📊 Week</div>
+      <div class="view-tab" data-view="gantt" onclick="switchView('gantt')">📈 Gantt</div>
+    </div>
+
+    <div class="location-tabs" id="locationTabs"></div>
+    <div class="stats-bar" id="statsBar"></div>
+
+    <div class="calendar-container">
+      <div class="instructions" id="instructions" style="display:none; background: var(--accent-dim); border: 1px solid var(--accent); border-radius: 8px; padding: 8px 12px; margin-bottom: 8px;">
+        <span style="font-size: 0.75rem; color: var(--accent);">📅 <strong id="selectedProjectName">Project</strong> selected — click a day to schedule or drag to calendar</span>
+      </div>
+
+      <div class="month-nav">
+        <button onclick="prevMonth()">← Prev</button>
+        <div class="month-title" id="monthTitle">January 2026</div>
+        <button onclick="nextMonth()">Next →</button>
+        <button class="today-btn" onclick="goToToday()">Today</button>
+      </div>
+
+      <!-- Calendar View -->
+      <div class="calendar-view" id="calendarView">
+        <div class="calendar" id="calendar"></div>
+      </div>
+
+      <!-- Week View -->
+      <div class="week-view" id="weekView">
+        <div class="week-nav">
+          <button onclick="prevWeek()">← Prev Week</button>
+          <div class="week-title" id="weekTitle">Week of Jan 13, 2026</div>
+          <button onclick="nextWeek()">Next Week →</button>
+        </div>
+        <div class="week-grid" id="weekGrid"></div>
+      </div>
+
+      <!-- Gantt View -->
+      <div class="week-view" id="ganttView">
+        <div class="gantt-container">
+          <div class="gantt-header">
+            <div class="gantt-title" id="ganttTitle">📈 2-Week Project Timeline</div>
+            <div class="gantt-legend">
+              <div class="gantt-legend-item"><div class="gantt-legend-box" style="background: var(--construction);"></div> In Construction</div>
+              <div class="gantt-legend-item"><div class="gantt-legend-box" style="background: var(--solar);"></div> Scheduled</div>
+              <div class="gantt-legend-item"><div class="gantt-legend-box" style="background: var(--rtb);"></div> RTB</div>
+            </div>
+          </div>
+          <div class="gantt-grid" id="ganttGrid"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Right Panel - Crew & Optimization -->
+  <aside class="right-panel">
+    <div class="panel-section">
+      <div class="panel-title">🤖 Auto-Optimize</div>
+      <button class="optimize-btn" onclick="autoOptimize()">⚡ Optimize Schedule</button>
+      <div class="optimize-stats" id="optimizeStats">
+        Click to auto-schedule RTB projects by revenue priority
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <div class="panel-title">👷 Crew Capacity</div>
+      <div id="crewCapacity"></div>
+    </div>
+
+    <div class="panel-section">
+      <div class="panel-title">⚠️ Conflicts (<span id="conflictCount">0</span>)</div>
+      <div id="conflictList">
+        <div style="font-size: 0.65rem; color: var(--text-dim);">No scheduling conflicts</div>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <div class="panel-title">📤 Export</div>
+      <div class="export-btns">
+        <button class="export-btn" onclick="exportCSV()">📥 Download CSV</button>
+        <button class="export-btn" onclick="exportICal()">📅 Export iCal</button>
+        <button class="export-btn" onclick="copySchedule()">📋 Copy to Clipboard</button>
+      </div>
+    </div>
+
+    <div class="panel-section" style="border-bottom: none;">
+      <div class="panel-title">⌨️ Keyboard Shortcuts</div>
+      <div style="font-size: 0.6rem; color: var(--text-dim); line-height: 1.6;">
+        <div><kbd style="background: var(--bg); padding: 2px 4px; border-radius: 3px; font-family: 'JetBrains Mono', monospace;">1</kbd> <kbd>2</kbd> <kbd>3</kbd> Switch views</div>
+        <div><kbd style="background: var(--bg); padding: 2px 4px; border-radius: 3px; font-family: 'JetBrains Mono', monospace;">Alt+←/→</kbd> Navigate</div>
+        <div><kbd style="background: var(--bg); padding: 2px 4px; border-radius: 3px; font-family: 'JetBrains Mono', monospace;">Ctrl+O</kbd> Auto-optimize</div>
+        <div><kbd style="background: var(--bg); padding: 2px 4px; border-radius: 3px; font-family: 'JetBrains Mono', monospace;">Ctrl+E</kbd> Export CSV</div>
+        <div><kbd style="background: var(--bg); padding: 2px 4px; border-radius: 3px; font-family: 'JetBrains Mono', monospace;">Esc</kbd> Close / Deselect</div>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<!-- Schedule Modal -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <h3 id="scheduleModalTitle">📅 Schedule Install</h3>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="modal-actions">
+      <button class="modal-btn cancel" onclick="closeModal()">Cancel</button>
+      <button class="modal-btn confirm" onclick="confirmSchedule()">Schedule</button>
+    </div>
+  </div>
+</div>
+
+<!-- Detail Modal -->
+<div class="modal-overlay" id="detailModal">
+  <div class="modal">
+    <h3>📋 Project Details</h3>
+    <div class="modal-body" id="detailModalBody"></div>
+    <div class="modal-actions">
+      <a class="modal-btn hubspot" id="hubspotLink" href="#" target="_blank">Open in HubSpot ↗</a>
+      <button class="modal-btn cancel" onclick="closeDetailModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ============================================================
+// PHOTON BROTHERS MASTER SCHEDULER v3
+// Live API Integration
+// ============================================================
+
+// ===== PROJECT DATA (fetched from HubSpot API) =====
+let projects = [];
+
+// Transform API data to scheduler format
+function transformProject(p) {
+  const stageMap = {
+    'Site Survey': 'survey',
+    'Ready To Build': 'rtb',
+    'RTB - Blocked': 'blocked',
+    'Construction': 'construction',
+    'Inspection': 'inspection'
+  };
+  const stage = stageMap[p.stage] || 'other';
+  const isSchedulable = stage === 'survey' || stage === 'rtb' || stage === 'blocked' || stage === 'construction' || stage === 'inspection';
+
+  // Only include schedulable projects
+  if (!isSchedulable) return null;
+
+  // Get the appropriate schedule date based on stage
+  let scheduleDate = null;
+  if (stage === 'survey') {
+    scheduleDate = p.siteSurveyScheduleDate || null;
+  } else if (stage === 'inspection') {
+    scheduleDate = p.inspectionScheduleDate || null;
+  } else {
+    scheduleDate = p.constructionScheduleDate || null;
+  }
+
+  return {
+    id: String(p.id),
+    name: p.name || `Project ${p.id}`,
+    address: [p.address, p.city, p.state].filter(Boolean).join(', ') || 'Address TBD',
+    location: p.pbLocation || 'Unknown',
+    amount: p.amount || 0,
+    type: p.projectType || 'Solar',
+    stage: stage,
+    systemSize: p.equipment?.systemSizeKwdc || 0,
+    moduleCount: p.equipment?.modules?.count || 0,
+    inverterCount: p.equipment?.inverter?.count || 0,
+    batteries: p.equipment?.battery?.count || 0,
+    batteryExpansion: p.equipment?.battery?.expansionCount || 0,
+    batteryModel: p.equipment?.battery?.brand || null,
+    evCount: p.equipment?.evCount || 0,
+    // AHJ and Utility for survey/inspection
+    ahj: p.ahj || '',
+    utility: p.utility || '',
+    crew: crews[p.pbLocation]?.[0]?.name || null,
+    // Install forecast - 0.25 days for survey/inspection, full days for construction
+    daysInstall: (stage === 'rtb' || stage === 'blocked' || stage === 'construction') ? (p.daysForInstallers || p.expectedDaysForInstall || 2) : (stage === 'survey' || stage === 'inspection') ? 0.25 : 0,
+    daysElec: (stage === 'rtb' || stage === 'blocked' || stage === 'construction') ? (p.daysForElectricians || 0) : 0,
+    totalDays: (stage === 'rtb' || stage === 'blocked' || stage === 'construction') ? (p.expectedDaysForInstall || 0) : 0,
+    roofersCount: (stage === 'rtb' || stage === 'blocked' || stage === 'construction') ? (p.roofersCount || 0) : 0,
+    electriciansCount: (stage === 'rtb' || stage === 'blocked' || stage === 'construction') ? (p.electriciansCount || 0) : 0,
+    difficulty: (stage === 'rtb' || stage === 'blocked' || stage === 'construction') ? (p.installDifficulty || 3) : 0,
+    installNotes: (stage === 'rtb' || stage === 'blocked' || stage === 'construction') ? (p.installNotes || '') : '',
+    roofType: null,
+    scheduleDate: scheduleDate,
+    hubspotUrl: p.url || `https://app.hubspot.com/contacts/21710069/record/0-3/${p.id}`
+  };
+}
+
+async function fetchProjects() {
+  try {
+    showLoadingState();
+    const response = await fetch('/api/projects?context=scheduling');
+    if (!response.ok) throw new Error('Failed to fetch projects');
+    const data = await response.json();
+
+    projects = data.projects
+      .map(transformProject)
+      .filter(p => p !== null);
+
+    hideLoadingState();
+    renderAll();
+  } catch (err) {
+    console.error('Error fetching projects:', err);
+    showErrorState(err.message);
+  }
+}
+
+function showLoadingState() {
+  document.getElementById('queueList').innerHTML = `
+    <div style="padding: 2rem; text-align: center; color: var(--text-dim);">
+      Loading projects from HubSpot...
+    </div>
+  `;
+}
+
+function hideLoadingState() {
+  // Will be replaced by renderQueue
+}
+
+function showErrorState(error) {
+  document.getElementById('queueList').innerHTML = `
+    <div style="padding: 2rem; text-align: center; color: var(--conflict);">
+      <div>Error loading data</div>
+      <div style="font-size: 0.7rem; margin-top: 0.5rem;">${error}</div>
+      <button onclick="fetchProjects()" style="margin-top: 1rem; padding: 6px 12px; background: var(--accent); border: none; border-radius: 6px; cursor: pointer;">Retry</button>
+    </div>
+  `;
+}
+
+// ===== CREW CONFIGURATION =====
+const crews = {
+  "Westminster": [
+    { name: "WESTY Alpha", roofers: 2, electricians: 1, color: "#3b82f6" },
+    { name: "WESTY Bravo", roofers: 2, electricians: 1, color: "#10b981" }
+  ],
+  "Centennial": [
+    { name: "DTC Alpha", roofers: 2, electricians: 1, color: "#8b5cf6" },
+    { name: "DTC Bravo", roofers: 2, electricians: 1, color: "#ec4899" }
+  ],
+  "Colorado Springs": [
+    { name: "COSP Alpha", roofers: 3, electricians: 1, color: "#f97316" }
+  ],
+  "San Luis Obispo": [
+    { name: "SLO Solar", roofers: 2, electricians: 1, color: "#06b6d4" },
+    { name: "SLO Electrical 1", roofers: 0, electricians: 2, color: "#a855f7" },
+    { name: "SLO Electrical 2", roofers: 0, electricians: 2, color: "#14b8a6" }
+  ],
+  "Camarillo": [
+    { name: "CAM Crew", roofers: 2, electricians: 1, color: "#f43f5e" }
+  ]
+};
+
+const locations = ['All', 'Westminster', 'Centennial', 'Colorado Springs', 'San Luis Obispo', 'Camarillo'];
+const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const dayNames = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+
+// ===== STATE =====
+let state = {
+  currentYear: 2026,
+  currentMonth: 0,
+  selectedProject: null,
+  selectedStage: 'all',
+  selectedLocation: 'All',
+  currentView: 'calendar',
+  manualSchedules: {}, // { projectId: { startDate, days, crew } }
+  draggedProject: null
+};
+
+// ===== UTILITY FUNCTIONS =====
+const utils = {
+  formatDate(dateStr) {
+    const date = new Date(dateStr + 'T12:00:00');
+    return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  },
+  formatShortDate(dateStr) {
+    if (!dateStr) return '';
+    const d = new Date(dateStr + 'T12:00:00');
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  },
+  formatCurrency(amount) {
+    return '$' + (amount / 1000).toFixed(1) + 'K';
+  },
+  getCustomerName(fullName) {
+    return fullName.split(' | ')[1] || fullName;
+  },
+  getProjectId(fullName) {
+    return fullName.split(' | ')[0];
+  },
+  isWeekend(dateStr) {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const d = new Date(year, month - 1, day);
+    return d.getDay() === 0 || d.getDay() === 6;
+  },
+  addDays(dateStr, days) {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const d = new Date(year, month - 1, day);
+    d.setDate(d.getDate() + days);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${dd}`;
+  },
+  addBusinessDays(dateStr, days) {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    let d = new Date(year, month - 1, day); // Local date, no timezone issues
+    let remaining = Math.ceil(days); // Round up fractional days
+    if (remaining <= 0) return dateStr; // No days to add
+    while (remaining > 0) {
+      d.setDate(d.getDate() + 1);
+      if (d.getDay() !== 0 && d.getDay() !== 6) {
+        remaining--;
+      }
+    }
+    // Format as YYYY-MM-DD using local date
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${dd}`;
+  },
+  getNextWorkday(dateStr) {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    let d = new Date(year, month - 1, day); // Local date, no timezone issues
+    while (d.getDay() === 0 || d.getDay() === 6) {
+      d.setDate(d.getDate() + 1);
+    }
+    // Format as YYYY-MM-DD using local date
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${dd}`;
+  }
+};
+
+// ===== DATA FUNCTIONS =====
+function getFilteredProjects() {
+  const search = document.getElementById('searchInput')?.value?.toLowerCase() || '';
+  const typeFilter = document.getElementById('typeFilter')?.value || '';
+  const sortBy = document.getElementById('sortFilter')?.value || 'amount';
+
+  let filtered = projects.filter(p => {
+    if (state.selectedLocation !== 'All' && p.location !== state.selectedLocation) return false;
+    if (state.selectedStage !== 'all' && p.stage !== state.selectedStage) return false;
+    if (search && !p.name.toLowerCase().includes(search) && !p.address.toLowerCase().includes(search)) return false;
+    if (typeFilter && (!p.type || !p.type.includes(typeFilter))) return false;
+    return true;
+  });
+
+  // Sort
+  if (sortBy === 'amount') filtered.sort((a, b) => b.amount - a.amount);
+  else if (sortBy === 'date') filtered.sort((a, b) => (a.scheduleDate || 'z').localeCompare(b.scheduleDate || 'z'));
+  else if (sortBy === 'days') filtered.sort((a, b) => (a.daysInstall || 1) - (b.daysInstall || 1));
+
+  return filtered;
+}
+
+function getScheduledEvents() {
+  const events = [];
+
+  // Projects with existing schedule dates
+  projects.forEach(p => {
+    if (p.scheduleDate) {
+      events.push({ ...p, date: p.scheduleDate, eventType: p.stage, days: p.daysInstall || 1 });
+    }
+  });
+
+  // Manual schedules (override project schedule)
+  Object.entries(state.manualSchedules).forEach(([id, data]) => {
+    const project = projects.find(p => p.id === id);
+    if (project) {
+      // Remove existing event for this project
+      const existingIdx = events.findIndex(e => e.id === id);
+      if (existingIdx > -1) events.splice(existingIdx, 1);
+      events.push({ ...project, date: data.startDate, eventType: 'scheduled', days: data.days, crew: data.crew });
+    }
+  });
+
+  return events;
+}
+
+function getCrewScheduleForWeek(weekStart, crew, location) {
+  const events = getScheduledEvents();
+  const crewEvents = events.filter(e => e.crew === crew && e.location === location);
+  const schedule = {};
+
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(weekStart);
+    d.setDate(d.getDate() + i);
+    const dateStr = d.toISOString().split('T')[0];
+    schedule[dateStr] = crewEvents.filter(e => {
+      const eventStart = new Date(e.date);
+      const eventEnd = new Date(e.date);
+      eventEnd.setDate(eventEnd.getDate() + Math.ceil(e.days || 1) - 1);
+      const checkDate = new Date(dateStr);
+      return checkDate >= eventStart && checkDate <= eventEnd;
+    });
+  }
+
+  return schedule;
+}
+
+function detectConflicts() {
+  const events = getScheduledEvents();
+  const conflicts = [];
+
+  // Group events by crew and check for overlaps
+  const crewSchedules = {};
+  events.forEach(e => {
+    if (!e.crew) return;
+    if (!crewSchedules[e.crew]) crewSchedules[e.crew] = [];
+    const start = new Date(e.date);
+    for (let i = 0; i < Math.ceil(e.days || 1); i++) {
+      const d = new Date(start);
+      d.setDate(d.getDate() + i);
+      const dateStr = d.toISOString().split('T')[0];
+      crewSchedules[e.crew].push({ date: dateStr, project: e });
+    }
+  });
+
+  Object.entries(crewSchedules).forEach(([crew, days]) => {
+    const dateMap = {};
+    days.forEach(d => {
+      if (!dateMap[d.date]) dateMap[d.date] = [];
+      dateMap[d.date].push(d.project);
+    });
+
+    Object.entries(dateMap).forEach(([date, projects]) => {
+      if (projects.length > 1) {
+        conflicts.push({
+          crew,
+          date,
+          projects: projects.map(p => utils.getCustomerName(p.name))
+        });
+      }
+    });
+  });
+
+  return conflicts;
+}
+
+// ===== RENDER FUNCTIONS =====
+function renderLocationTabs() {
+  const container = document.getElementById('locationTabs');
+  container.innerHTML = locations.map(loc => {
+    const locProjects = loc === 'All' ? projects : projects.filter(p => p.location === loc);
+    const count = locProjects.length;
+    const revenue = (locProjects.reduce((sum, p) => sum + p.amount, 0) / 1000).toFixed(0);
+    return `<div class="location-tab ${state.selectedLocation === loc ? 'active' : ''}" onclick="selectLocation('${loc}')">
+      ${loc === 'All' ? '🌐 All' : loc} <span class="count">${count}</span>
+      <span class="revenue">$${revenue}K</span>
+    </div>`;
+  }).join('');
+}
+
+function renderStageTabs() {
+  const container = document.getElementById('stageTabs');
+  container.innerHTML = `
+    <div class="stage-tab ${state.selectedStage === 'all' ? 'active' : ''}" onclick="selectStage('all')">All</div>
+    <div class="stage-tab survey ${state.selectedStage === 'survey' ? 'active' : ''}" onclick="selectStage('survey')">📍 Survey</div>
+    <div class="stage-tab rtb ${state.selectedStage === 'rtb' ? 'active' : ''}" onclick="selectStage('rtb')">✅ RTB</div>
+    <div class="stage-tab blocked ${state.selectedStage === 'blocked' ? 'active' : ''}" onclick="selectStage('blocked')">⚠️ Blocked</div>
+    <div class="stage-tab construction ${state.selectedStage === 'construction' ? 'active' : ''}" onclick="selectStage('construction')">🔨 Build</div>
+    <div class="stage-tab inspection ${state.selectedStage === 'inspection' ? 'active' : ''}" onclick="selectStage('inspection')">🔍 Inspect</div>
+  `;
+}
+
+function renderStats() {
+  const container = document.getElementById('statsBar');
+  const filteredProjects = state.selectedLocation === 'All' ? projects : projects.filter(p => p.location === state.selectedLocation);
+
+  const surveyCount = filteredProjects.filter(p => p.stage === 'survey').length;
+  const constructionCount = filteredProjects.filter(p => p.stage === 'construction').length;
+  const rtbCount = filteredProjects.filter(p => p.stage === 'rtb').length;
+  const blockedCount = filteredProjects.filter(p => p.stage === 'blocked').length;
+  const inspectionCount = filteredProjects.filter(p => p.stage === 'inspection').length;
+  const scheduledCount = Object.keys(state.manualSchedules).length;
+  const totalRevenue = (filteredProjects.reduce((sum, p) => sum + p.amount, 0) / 1000).toFixed(0);
+
+  container.innerHTML = `
+    <div class="stat"><div class="stat-dot" style="background: var(--solar);"></div><div class="stat-value">${surveyCount}</div><div class="stat-label">Survey</div></div>
+    <div class="stat"><div class="stat-dot" style="background: var(--rtb);"></div><div class="stat-value">${rtbCount}</div><div class="stat-label">RTB</div></div>
+    <div class="stat"><div class="stat-dot" style="background: var(--construction);"></div><div class="stat-value">${constructionCount}</div><div class="stat-label">Building</div></div>
+    <div class="stat"><div class="stat-dot" style="background: var(--inspection);"></div><div class="stat-value">${inspectionCount}</div><div class="stat-label">Inspect</div></div>
+    <div class="stat"><div class="stat-dot" style="background: var(--accent);"></div><div class="stat-value">$${totalRevenue}K</div><div class="stat-label">Pipeline</div></div>
+  `;
+}
+
+function renderQueue() {
+  const queue = getFilteredProjects();
+  const container = document.getElementById('queueList');
+  const totalRevenue = (queue.reduce((sum, p) => sum + p.amount, 0) / 1000).toFixed(0);
+
+  document.getElementById('queueCount').innerHTML = `<span>${queue.length} projects</span><span>$${totalRevenue}K</span>`;
+
+  container.innerHTML = queue.map(p => {
+    const customerName = utils.getCustomerName(p.name);
+    const types = (p.type || '').split(';').filter(t => t.trim());
+    const stageLabels = { survey: '📍', rtb: '✅', blocked: '⚠️', construction: '🔨', inspection: '🔍' };
+    const stageLabel = stageLabels[p.stage] || '📋';
+    const isScheduled = state.manualSchedules[p.id] || p.scheduleDate;
+    const scheduleDate = state.manualSchedules[p.id]?.startDate || p.scheduleDate;
+
+    return `
+      <div class="queue-item ${p.stage} ${state.selectedProject?.id === p.id ? 'selected' : ''}"
+           onclick="selectProject('${p.id}')"
+           draggable="true"
+           ondragstart="handleDragStart(event, '${p.id}')"
+           ondragend="handleDragEnd(event)">
+        <div class="queue-item-header">
+          <div class="queue-item-name" title="${p.name}">${customerName}</div>
+          <div class="queue-item-amount">${utils.formatCurrency(p.amount)}</div>
+        </div>
+        <div class="queue-item-address" title="${p.address}">${p.address}</div>
+        <div class="queue-item-meta">
+          <span class="queue-item-tag ${p.stage}">${stageLabel} ${p.stage}</span>
+          ${isScheduled ? `<span class="queue-item-tag scheduled">📅 ${utils.formatShortDate(scheduleDate)}</span>` : ''}
+          ${types.slice(0, 2).map(t => {
+            const cls = t.toLowerCase().includes('solar') ? 'solar' : t.toLowerCase().includes('battery') ? 'battery' : '';
+            return `<span class="queue-item-tag ${cls}">${t.trim()}</span>`;
+          }).join('')}
+        </div>
+        <div class="queue-item-specs">
+          ${p.systemSize ? `<span class="spec"><strong>${p.systemSize.toFixed(1)}</strong> kW</span>` : ''}
+          ${p.moduleCount ? `<span class="spec"><strong>${p.moduleCount}</strong> mod</span>` : ''}
+          ${p.inverterCount ? `<span class="spec"><strong>${p.inverterCount}</strong> inv</span>` : ''}
+          ${p.batteries ? `<span class="spec"><strong>${p.batteries}</strong> batt</span>` : ''}
+          ${p.batteryExpansion ? `<span class="spec"><strong>+${p.batteryExpansion}</strong> exp</span>` : ''}
+          ${p.evCount ? `<span class="spec"><strong>${p.evCount}</strong> EV</span>` : ''}
+        </div>
+        ${(p.stage === 'survey' || p.stage === 'inspection') ? `
+        <div class="queue-item-specs" style="margin-top: 2px;">
+          ${p.ahj ? `<span class="spec" title="AHJ">🏛️ ${p.ahj}</span>` : ''}
+          ${p.utility ? `<span class="spec" title="Utility">⚡ ${p.utility}</span>` : ''}
+        </div>
+        ` : `
+        <div class="queue-item-specs" style="margin-top: 2px;">
+          ${p.daysInstall ? `<span class="spec" title="Installer days">🔧<strong>${p.daysInstall}</strong>d</span>` : ''}
+          ${p.daysElec ? `<span class="spec" title="Electrician days">⚡<strong>${p.daysElec}</strong>d</span>` : ''}
+          ${!p.daysInstall && !p.daysElec && p.totalDays ? `<span class="spec"><strong>${p.totalDays}</strong>d</span>` : ''}
+          ${p.roofersCount > 0 ? `<span class="spec" title="Installers needed">👷${p.roofersCount}</span>` : ''}
+          ${p.electriciansCount > 0 ? `<span class="spec" title="Electricians needed">🔌${p.electriciansCount}</span>` : ''}
+          ${p.difficulty ? `<span class="spec" title="Difficulty ${p.difficulty}/5">D${p.difficulty}</span>` : ''}
+        </div>
+        ${p.installNotes ? `<div class="queue-item-notes" style="font-size: 0.55rem; color: var(--text-dim); margin-top: 4px; font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${p.installNotes}">📝 ${p.installNotes}</div>` : ''}
+        `}
+      </div>
+    `;
+  }).join('');
+}
+
+function renderCalendar() {
+  const cal = document.getElementById('calendar');
+  const firstDay = new Date(state.currentYear, state.currentMonth, 1);
+  const lastDay = new Date(state.currentYear, state.currentMonth + 1, 0);
+  const startDay = firstDay.getDay();
+  const daysInMonth = lastDay.getDate();
+  const today = new Date();
+
+  let html = dayNames.map(d => `<div class="day-header">${d}</div>`).join('');
+
+  const events = getScheduledEvents();
+  const eventsByDate = {};
+
+  events.forEach(e => {
+    if (state.selectedLocation !== 'All' && e.location !== state.selectedLocation) return;
+
+    const startDate = new Date(e.date);
+    const calendarDays = Math.ceil(e.days || 1); // Use ceil so 0.25 shows on 1 day
+    for (let i = 0; i < calendarDays; i++) {
+      const eventDate = new Date(startDate);
+      eventDate.setDate(eventDate.getDate() + i);
+
+      if (eventDate.getMonth() === state.currentMonth && eventDate.getFullYear() === state.currentYear) {
+        const day = eventDate.getDate();
+        if (!eventsByDate[day]) eventsByDate[day] = [];
+        eventsByDate[day].push({ ...e, dayNum: i + 1, totalDays: calendarDays });
+      }
+    }
+  });
+
+  // Previous month padding
+  const prevDays = new Date(state.currentYear, state.currentMonth, 0).getDate();
+  for (let i = startDay - 1; i >= 0; i--) {
+    html += `<div class="day other-month"><div class="day-number">${prevDays - i}</div></div>`;
+  }
+
+  // Current month
+  for (let day = 1; day <= daysInMonth; day++) {
+    const currentDate = new Date(state.currentYear, state.currentMonth, day);
+    const isToday = today.getDate() === day && today.getMonth() === state.currentMonth && today.getFullYear() === state.currentYear;
+    const isWeekend = currentDate.getDay() === 0 || currentDate.getDay() === 6;
+    const dayEvents = eventsByDate[day] || [];
+    const dateStr = `${state.currentYear}-${String(state.currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const canDrop = state.selectedProject || state.draggedProject;
+
+    html += `<div class="day${isToday ? ' today' : ''}${canDrop && !isWeekend ? ' drop-target' : ''}${isWeekend ? ' weekend' : ''}"
+                  ${!isWeekend ? `onclick="handleDayClick('${dateStr}')" ondragover="handleDragOver(event)" ondrop="handleDrop(event, '${dateStr}')"` : ''}>
+    `;
+    html += `<div class="day-number">${day}</div>`;
+
+    dayEvents.slice(0, 4).forEach(e => {
+      const shortName = utils.getCustomerName(e.name).substring(0, 8);
+      const dayLabel = e.totalDays > 1 ? `D${e.dayNum} ` : '';
+      html += `<div class="event ${e.eventType}" onclick="event.stopPropagation();showDetail('${e.id}')" title="${e.name} - ${e.crew || 'No crew'}">${dayLabel}${shortName}</div>`;
+    });
+
+    if (dayEvents.length > 4) {
+      html += `<div class="more-events">+${dayEvents.length - 4}</div>`;
+    }
+
+    html += '</div>';
+  }
+
+  // Next month padding
+  const total = startDay + daysInMonth;
+  const rem = 7 - (total % 7);
+  if (rem < 7) {
+    for (let i = 1; i <= rem; i++) {
+      html += `<div class="day other-month"><div class="day-number">${i}</div></div>`;
+    }
+  }
+
+  cal.innerHTML = html;
+  document.getElementById('monthTitle').textContent = `${monthNames[state.currentMonth]} ${state.currentYear}`;
+}
+
+function renderCrewCapacity() {
+  const container = document.getElementById('crewCapacity');
+  const loc = state.selectedLocation === 'All' ? null : state.selectedLocation;
+
+  if (!loc || !crews[loc]) {
+    container.innerHTML = '<div style="font-size: 0.65rem; color: var(--text-dim);">Select location to view crews</div>';
+    return;
+  }
+
+  const events = getScheduledEvents().filter(e => e.location === loc);
+
+  container.innerHTML = crews[loc].map(c => {
+    // Calculate utilization for next 2 weeks
+    const crewEvents = events.filter(e => e.crew === c.name);
+    const totalDays = crewEvents.reduce((sum, e) => sum + (e.days || 1), 0);
+    const utilization = Math.min(100, Math.round((totalDays / 10) * 100)); // 10 workdays in 2 weeks
+    const utilizationClass = utilization > 90 ? 'full' : utilization > 70 ? 'warning' : '';
+
+    return `
+      <div class="crew-card">
+        <div class="crew-name" style="color: ${c.color}">${c.name}</div>
+        <div class="crew-capacity">
+          ${c.roofers > 0 ? `<span class="capacity-item">👷 ${c.roofers}</span>` : ''}
+          ${c.electricians > 0 ? `<span class="capacity-item">⚡ ${c.electricians}</span>` : ''}
+        </div>
+        <div class="crew-utilization">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <div class="capacity-bar" style="width: 100px;">
+              <div class="capacity-fill ${utilizationClass}" style="width: ${utilization}%;"></div>
+            </div>
+            <span>${utilization}% (${crewEvents.length} jobs)</span>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderConflicts() {
+  const conflicts = detectConflicts();
+  document.getElementById('conflictCount').textContent = conflicts.length;
+
+  const container = document.getElementById('conflictList');
+  if (conflicts.length === 0) {
+    container.innerHTML = '<div style="font-size: 0.65rem; color: var(--text-dim);">✅ No scheduling conflicts</div>';
+    return;
+  }
+
+  container.innerHTML = conflicts.map(c => `
+    <div class="conflict-item">
+      <div class="conflict-title">⚠️ ${c.crew} - ${utils.formatShortDate(c.date)}</div>
+      <div class="conflict-detail">${c.projects.join(', ')}</div>
+    </div>
+  `).join('');
+}
+
+// ===== EVENT HANDLERS =====
+function selectLocation(loc) {
+  state.selectedLocation = loc;
+  renderAll();
+}
+
+function selectStage(stage) {
+  state.selectedStage = stage;
+  state.selectedProject = null;
+  document.getElementById('instructions').style.display = 'none';
+  renderStageTabs();
+  renderQueue();
+}
+
+function selectProject(id) {
+  state.selectedProject = projects.find(p => p.id === id);
+  if (state.selectedProject && state.selectedProject.stage !== 'construction') {
+    document.getElementById('instructions').style.display = 'block';
+    document.getElementById('selectedProjectName').textContent = utils.getCustomerName(state.selectedProject.name);
+  } else {
+    document.getElementById('instructions').style.display = 'none';
+  }
+  renderQueue();
+  renderCalendar();
+}
+
+function handleDayClick(dateStr) {
+  if (!state.selectedProject || state.selectedProject.stage === 'construction') return;
+  // Reject weekends
+  if (utils.isWeekend(dateStr)) {
+    showToast('Cannot schedule on weekends', 'error');
+    return;
+  }
+  openScheduleModal(state.selectedProject, dateStr);
+}
+
+function handleDragStart(event, projectId) {
+  state.draggedProject = projects.find(p => p.id === projectId);
+  event.target.classList.add('dragging');
+  event.dataTransfer.setData('text/plain', projectId);
+}
+
+function handleDragEnd(event) {
+  state.draggedProject = null;
+  event.target.classList.remove('dragging');
+}
+
+function handleDragOver(event) {
+  event.preventDefault();
+}
+
+function handleDrop(event, dateStr) {
+  event.preventDefault();
+  // Reject weekends
+  if (utils.isWeekend(dateStr)) {
+    showToast('Cannot schedule on weekends', 'error');
+    return;
+  }
+  const projectId = event.dataTransfer.getData('text/plain');
+  const project = projects.find(p => p.id === projectId);
+  if (project && project.stage !== 'construction') {
+    openScheduleModal(project, dateStr);
+  }
+}
+
+function openScheduleModal(project, dateStr) {
+  // Adjust weekend dates to next business day
+  const adjustedDate = utils.getNextWorkday(dateStr);
+  const wasWeekend = adjustedDate !== dateStr;
+
+  const customerName = utils.getCustomerName(project.name);
+  const types = (project.type || 'Service').split(';').filter(t => t.trim()).join(', ');
+  const locationCrews = crews[project.location] || [];
+  const crewOptions = locationCrews.map(c => `<option value="${c.name}" ${c.name === project.crew ? 'selected' : ''}>${c.name}</option>`).join('');
+
+  const isSurveyOrInspection = project.stage === 'survey' || project.stage === 'inspection';
+  const stageTitle = project.stage === 'survey' ? '📍 Site Survey' : project.stage === 'inspection' ? '🔍 Inspection' : (project.stage === 'rtb' ? '✅ RTB Ready' : '⚠️ Blocked');
+
+  // Set dynamic modal title based on stage
+  const modalTitle = project.stage === 'survey' ? '📍 Schedule Survey' : project.stage === 'inspection' ? '🔍 Schedule Inspection' : '📅 Schedule Install';
+  document.getElementById('scheduleModalTitle').textContent = modalTitle;
+
+  document.getElementById('modalBody').innerHTML = `
+    <div class="modal-section">
+      <div class="modal-section-title">Project</div>
+      <div class="modal-row"><span class="modal-label">Customer</span><span>${customerName}</span></div>
+      <div class="modal-row"><span class="modal-label">Address</span><span>${project.address}</span></div>
+      <div class="modal-row"><span class="modal-label">Location</span><span>${project.location}</span></div>
+      <div class="modal-row"><span class="modal-label">Type</span><span>${types}</span></div>
+      <div class="modal-row"><span class="modal-label">Amount</span><span style="color:var(--accent);font-weight:600;">$${project.amount.toLocaleString()}</span></div>
+      <div class="modal-row"><span class="modal-label">Status</span><span style="color:${project.stage === 'rtb' ? 'var(--rtb)' : project.stage === 'survey' ? 'var(--solar)' : project.stage === 'inspection' ? 'var(--inspection)' : 'var(--rtb-blocked)'}">${stageTitle}</span></div>
+    </div>
+    ${isSurveyOrInspection ? `
+    <div class="modal-section">
+      <div class="modal-section-title">Jurisdiction</div>
+      ${project.ahj ? `<div class="modal-row"><span class="modal-label">AHJ</span><span>${project.ahj}</span></div>` : '<div class="modal-row"><span class="modal-label">AHJ</span><span style="color:var(--text-dim);">Not set</span></div>'}
+      ${project.utility ? `<div class="modal-row"><span class="modal-label">Utility</span><span>${project.utility}</span></div>` : '<div class="modal-row"><span class="modal-label">Utility</span><span style="color:var(--text-dim);">Not set</span></div>'}
+    </div>
+    ` : ''}
+    <div class="modal-section">
+      <div class="modal-section-title">Equipment</div>
+      ${project.systemSize ? `<div class="modal-row"><span class="modal-label">System Size</span><span>${project.systemSize.toFixed(1)} kW</span></div>` : ''}
+      ${project.moduleCount ? `<div class="modal-row"><span class="modal-label">Modules</span><span>${project.moduleCount} panels</span></div>` : ''}
+      ${project.inverterCount ? `<div class="modal-row"><span class="modal-label">Inverters</span><span>${project.inverterCount}</span></div>` : ''}
+      ${project.batteries ? `<div class="modal-row"><span class="modal-label">Batteries</span><span>${project.batteries}x ${project.batteryModel || 'Tesla'}${project.batteryExpansion ? ` + ${project.batteryExpansion} expansion` : ''}</span></div>` : ''}
+      ${project.evCount ? `<div class="modal-row"><span class="modal-label">EV Chargers</span><span>${project.evCount}</span></div>` : ''}
+      ${project.roofType ? `<div class="modal-row"><span class="modal-label">Roof</span><span>${project.roofType}</span></div>` : ''}
+    </div>
+    ${!isSurveyOrInspection ? `
+    <div class="modal-section">
+      <div class="modal-section-title">Install Requirements</div>
+      ${project.daysInstall ? `<div class="modal-row"><span class="modal-label">Installer Days</span><span>${project.daysInstall}d</span></div>` : ''}
+      ${project.daysElec ? `<div class="modal-row"><span class="modal-label">Electrician Days</span><span>${project.daysElec}d</span></div>` : ''}
+      ${!project.daysInstall && !project.daysElec && project.totalDays ? `<div class="modal-row"><span class="modal-label">Total Days</span><span>${project.totalDays}d</span></div>` : ''}
+      ${project.roofersCount ? `<div class="modal-row"><span class="modal-label">Installers Needed</span><span>👷 ${project.roofersCount}</span></div>` : ''}
+      ${project.electriciansCount ? `<div class="modal-row"><span class="modal-label">Electricians Needed</span><span>🔌 ${project.electriciansCount}</span></div>` : ''}
+      ${project.difficulty ? `<div class="modal-row"><span class="modal-label">Difficulty</span><span>${'⭐'.repeat(project.difficulty)} (${project.difficulty}/5)</span></div>` : ''}
+      ${project.installNotes ? `<div class="modal-row"><span class="modal-label">Notes</span><span style="max-width: 250px; word-wrap: break-word;">${project.installNotes}</span></div>` : ''}
+    </div>
+    ` : ''}
+    <div class="modal-section">
+      <div class="modal-section-title">Schedule</div>
+      ${wasWeekend ? `<div style="background: rgba(234,179,8,0.15); border: 1px solid rgba(234,179,8,0.3); border-radius: 6px; padding: 8px; margin-bottom: 8px; font-size: 0.7rem; color: #eab308;">⚠️ Weekend selected - adjusted to next business day</div>` : ''}
+      <div class="modal-row"><span class="modal-label">Start Date</span><span><strong>${utils.formatDate(adjustedDate)}</strong></span></div>
+      <div class="form-row">
+        <label>Days:</label>
+        <input type="number" id="installDays" value="${isSurveyOrInspection ? 0.25 : (project.daysInstall || 2)}" min="0.25" max="10" step="0.25">
+        <label>Crew:</label>
+        <select id="crewSelect">${crewOptions || '<option>No crews</option>'}</select>
+      </div>
+    </div>
+    <div class="modal-section" id="zuperSection" style="display: none;">
+      <div class="modal-section-title">Zuper Integration</div>
+      <div class="form-row" style="align-items: center;">
+        <input type="checkbox" id="createZuperJob" checked style="width: 16px; height: 16px; accent-color: var(--accent);">
+        <label for="createZuperJob" style="flex: 1; cursor: pointer;">Create work order in Zuper</label>
+      </div>
+      <div style="font-size: 0.6rem; color: var(--text-dim); margin-top: 4px;">
+        This will create a ${project.stage === 'survey' ? 'Site Survey' : project.stage === 'inspection' ? 'Inspection' : 'Installation'} job in Zuper FSM
+      </div>
+    </div>
+  `;
+
+  // Check if Zuper is configured and show the section
+  checkZuperStatus();
+
+  document.getElementById('modalOverlay').classList.add('visible');
+  window.pendingSchedule = { project, date: adjustedDate };
+}
+
+// Check Zuper integration status
+async function checkZuperStatus() {
+  try {
+    const response = await fetch('/api/zuper/status');
+    const data = await response.json();
+    if (data.configured) {
+      document.getElementById('zuperSection').style.display = 'block';
+    }
+  } catch (e) {
+    // Zuper not available, hide section
+  }
+}
+
+async function confirmSchedule() {
+  if (!window.pendingSchedule) return;
+
+  const { project, date } = window.pendingSchedule;
+  const days = parseInt(document.getElementById('installDays').value) || 2;
+  const crew = document.getElementById('crewSelect')?.value || project.crew;
+  const createZuper = document.getElementById('createZuperJob')?.checked;
+
+  state.manualSchedules[project.id] = { startDate: date, days, crew };
+
+  // Create Zuper job if checkbox is checked and visible
+  if (createZuper && document.getElementById('zuperSection')?.style.display !== 'none') {
+    try {
+      const jobType = project.stage === 'survey' ? 'survey' :
+                      project.stage === 'inspection' ? 'inspection' : 'installation';
+
+      const addressParts = project.address.split(',').map(s => s.trim());
+      const response = await fetch('/api/zuper/jobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          project: {
+            id: project.id,
+            name: project.name,
+            address: addressParts[0] || project.address,
+            city: addressParts[1] || '',
+            state: addressParts[2] || '',
+            systemSizeKw: project.systemSize,
+            batteryCount: project.batteries,
+            projectType: project.type,
+          },
+          schedule: {
+            type: jobType,
+            date: date,
+            days: days,
+            crew: crew,
+            notes: `Scheduled from PB Operations Suite`,
+          }
+        })
+      });
+
+      if (response.ok) {
+        showToast(`✅ ${utils.getCustomerName(project.name)} scheduled for ${utils.formatDate(date)} + Zuper job created`);
+      } else {
+        showToast(`✅ Scheduled locally (Zuper sync failed)`);
+      }
+    } catch (e) {
+      console.error('Zuper job creation failed:', e);
+      showToast(`✅ ${utils.getCustomerName(project.name)} scheduled for ${utils.formatDate(date)}`);
+    }
+  } else {
+    showToast(`✅ ${utils.getCustomerName(project.name)} scheduled for ${utils.formatDate(date)}`);
+  }
+
+  closeModal();
+  state.selectedProject = null;
+  document.getElementById('instructions').style.display = 'none';
+  renderAll();
+}
+
+function closeModal() {
+  document.getElementById('modalOverlay').classList.remove('visible');
+  window.pendingSchedule = null;
+}
+
+function showDetail(id) {
+  const p = projects.find(proj => proj.id === id);
+  if (!p) return;
+
+  const customerName = utils.getCustomerName(p.name);
+  const types = (p.type || 'Service').split(';').filter(t => t.trim()).join(', ');
+  const scheduleInfo = state.manualSchedules[p.id] || (p.scheduleDate ? { startDate: p.scheduleDate, days: p.daysInstall, crew: p.crew } : null);
+  const isSurveyOrInspection = p.stage === 'survey' || p.stage === 'inspection';
+  const stageTitle = p.stage === 'survey' ? '📍 Site Survey' : p.stage === 'inspection' ? '🔍 Inspection' : (p.stage === 'rtb' ? '✅ RTB Ready' : p.stage === 'construction' ? '🔨 Construction' : '⚠️ Blocked');
+
+  document.getElementById('detailModalBody').innerHTML = `
+    <div class="modal-section">
+      <div class="modal-section-title">Project</div>
+      <div class="modal-row"><span class="modal-label">ID</span><span>${utils.getProjectId(p.name)}</span></div>
+      <div class="modal-row"><span class="modal-label">Customer</span><span>${customerName}</span></div>
+      <div class="modal-row"><span class="modal-label">Address</span><span>${p.address}</span></div>
+      <div class="modal-row"><span class="modal-label">Location</span><span>${p.location}</span></div>
+      <div class="modal-row"><span class="modal-label">Type</span><span>${types}</span></div>
+      <div class="modal-row"><span class="modal-label">Amount</span><span style="color:var(--accent);font-weight:600;">$${p.amount.toLocaleString()}</span></div>
+      <div class="modal-row"><span class="modal-label">Status</span><span style="color:${p.stage === 'rtb' ? 'var(--rtb)' : p.stage === 'survey' ? 'var(--solar)' : p.stage === 'inspection' ? 'var(--inspection)' : p.stage === 'construction' ? 'var(--construction)' : 'var(--rtb-blocked)'}">${stageTitle}</span></div>
+    </div>
+    ${isSurveyOrInspection ? `
+    <div class="modal-section">
+      <div class="modal-section-title">Jurisdiction</div>
+      ${p.ahj ? `<div class="modal-row"><span class="modal-label">AHJ</span><span>${p.ahj}</span></div>` : '<div class="modal-row"><span class="modal-label">AHJ</span><span style="color:var(--text-dim);">Not set</span></div>'}
+      ${p.utility ? `<div class="modal-row"><span class="modal-label">Utility</span><span>${p.utility}</span></div>` : '<div class="modal-row"><span class="modal-label">Utility</span><span style="color:var(--text-dim);">Not set</span></div>'}
+    </div>
+    ` : ''}
+    <div class="modal-section">
+      <div class="modal-section-title">Equipment</div>
+      ${p.systemSize ? `<div class="modal-row"><span class="modal-label">System Size</span><span>${p.systemSize.toFixed(1)} kW</span></div>` : ''}
+      ${p.moduleCount ? `<div class="modal-row"><span class="modal-label">Modules</span><span>${p.moduleCount} panels</span></div>` : ''}
+      ${p.inverterCount ? `<div class="modal-row"><span class="modal-label">Inverters</span><span>${p.inverterCount}</span></div>` : ''}
+      ${p.batteries ? `<div class="modal-row"><span class="modal-label">Batteries</span><span>${p.batteries}x ${p.batteryModel || 'Tesla'}${p.batteryExpansion ? ` + ${p.batteryExpansion} expansion` : ''}</span></div>` : ''}
+      ${p.evCount ? `<div class="modal-row"><span class="modal-label">EV Chargers</span><span>${p.evCount}</span></div>` : ''}
+      ${p.roofType ? `<div class="modal-row"><span class="modal-label">Roof</span><span>${p.roofType}</span></div>` : ''}
+    </div>
+    ${!isSurveyOrInspection ? `
+    <div class="modal-section">
+      <div class="modal-section-title">Install Requirements</div>
+      ${p.daysInstall ? `<div class="modal-row"><span class="modal-label">Installer Days</span><span>${p.daysInstall}d</span></div>` : ''}
+      ${p.daysElec ? `<div class="modal-row"><span class="modal-label">Electrician Days</span><span>${p.daysElec}d</span></div>` : ''}
+      ${!p.daysInstall && !p.daysElec && p.totalDays ? `<div class="modal-row"><span class="modal-label">Total Days</span><span>${p.totalDays}d</span></div>` : ''}
+      ${p.roofersCount ? `<div class="modal-row"><span class="modal-label">Installers</span><span>👷 ${p.roofersCount}</span></div>` : ''}
+      ${p.electriciansCount ? `<div class="modal-row"><span class="modal-label">Electricians</span><span>🔌 ${p.electriciansCount}</span></div>` : ''}
+      ${p.difficulty ? `<div class="modal-row"><span class="modal-label">Difficulty</span><span>${'⭐'.repeat(p.difficulty)} (${p.difficulty}/5)</span></div>` : ''}
+      ${p.installNotes ? `<div class="modal-row"><span class="modal-label">Notes</span><span style="max-width: 250px; word-wrap: break-word;">${p.installNotes}</span></div>` : ''}
+    </div>
+    ` : ''}
+    <div class="modal-section">
+      <div class="modal-section-title">Schedule</div>
+      <div class="modal-row"><span class="modal-label">Date</span><span style="color:var(--construction);font-weight:600;">${scheduleInfo ? utils.formatDate(scheduleInfo.startDate) : 'Not scheduled'}</span></div>
+      <div class="modal-row"><span class="modal-label">Duration</span><span>${scheduleInfo?.days || p.daysInstall || (isSurveyOrInspection ? 0.25 : 2)} ${(scheduleInfo?.days || p.daysInstall || (isSurveyOrInspection ? 0.25 : 2)) === 1 ? 'day' : 'days'}</span></div>
+      <div class="modal-row"><span class="modal-label">Crew</span><span>${scheduleInfo?.crew || p.crew || 'Unassigned'}</span></div>
+    </div>
+  `;
+
+  document.getElementById('hubspotLink').href = p.url;
+  document.getElementById('detailModal').classList.add('visible');
+}
+
+function closeDetailModal() {
+  document.getElementById('detailModal').classList.remove('visible');
+}
+
+// ===== AUTO-OPTIMIZE =====
+function autoOptimize() {
+  const rtbProjects = projects.filter(p => p.stage === 'rtb' && !state.manualSchedules[p.id] && !p.scheduleDate);
+
+  if (rtbProjects.length === 0) {
+    showToast('No unscheduled RTB projects to optimize', 'error');
+    return;
+  }
+
+  // Sort by revenue (highest first)
+  rtbProjects.sort((a, b) => b.amount - a.amount);
+
+  // Get next available dates per crew
+  const crewNextDate = {};
+  let baseDate = new Date();
+  baseDate.setDate(baseDate.getDate() + 1); // Start tomorrow
+
+  // Format baseDate as YYYY-MM-DD in local time (avoid timezone issues)
+  const baseDateStr = `${baseDate.getFullYear()}-${String(baseDate.getMonth() + 1).padStart(2, '0')}-${String(baseDate.getDate()).padStart(2, '0')}`;
+
+  // Initialize crew dates
+  Object.values(crews).flat().forEach(c => {
+    crewNextDate[c.name] = utils.getNextWorkday(baseDateStr);
+  });
+
+  // Existing schedules affect crew availability
+  getScheduledEvents().forEach(e => {
+    if (e.crew && crewNextDate[e.crew]) {
+      // Use business days for multi-day jobs
+      const endDate = utils.addBusinessDays(e.date, Math.ceil(e.days || 1));
+      const nextAvailable = utils.getNextWorkday(endDate);
+      if (nextAvailable > crewNextDate[e.crew]) {
+        crewNextDate[e.crew] = nextAvailable;
+      }
+    }
+  });
+
+  let scheduled = 0;
+  console.log('=== AUTO-OPTIMIZE DEBUG ===');
+  console.log('Base date:', baseDateStr);
+  console.log('Initial crew dates:', JSON.stringify(crewNextDate));
+
+  rtbProjects.forEach(p => {
+    const preferredCrew = p.crew;
+    if (preferredCrew && crewNextDate[preferredCrew]) {
+      const crewDateBefore = crewNextDate[preferredCrew];
+      // Ensure start date is a workday
+      const startDate = utils.getNextWorkday(crewNextDate[preferredCrew]);
+      const jobDays = Math.ceil(p.daysInstall || 2); // Round up fractional days for scheduling
+
+      // Parse the date to check day of week
+      const [y, m, d] = startDate.split('-').map(Number);
+      const dateObj = new Date(y, m - 1, d);
+      const dayOfWeek = dateObj.getDay();
+      const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+      console.log(`Scheduling ${p.name}: crewDate=${crewDateBefore} -> startDate=${startDate} (${dayNames[dayOfWeek]})`);
+
+      // DEBUG: Check if startDate is a weekend
+      if (dayOfWeek === 0 || dayOfWeek === 6) {
+        console.error('BUG: Scheduled on weekend!', { project: p.name, startDate, dayOfWeek, crewDateBefore });
+        alert(`BUG: ${p.name} scheduled on ${dayNames[dayOfWeek]} ${startDate}!`);
+      }
+
+      state.manualSchedules[p.id] = { startDate, days: p.daysInstall || 2, crew: preferredCrew };
+      // Calculate next available date after this job (use ceiling of days for business day calculation)
+      crewNextDate[preferredCrew] = utils.getNextWorkday(utils.addBusinessDays(startDate, jobDays));
+      scheduled++;
+    }
+  });
+
+  showToast(`⚡ Auto-scheduled ${scheduled} projects by revenue priority`);
+  document.getElementById('optimizeStats').innerHTML = `Scheduled ${scheduled} projects<br>Total: $${(rtbProjects.slice(0, scheduled).reduce((s, p) => s + p.amount, 0) / 1000).toFixed(0)}K`;
+  renderAll();
+}
+
+// ===== EXPORT FUNCTIONS =====
+function exportCSV() {
+  const events = getScheduledEvents();
+  const headers = ['Project ID', 'Customer', 'Address', 'Location', 'Amount', 'Type', 'Stage', 'Schedule Date', 'Days', 'Crew'];
+
+  let csv = headers.join(',') + '\n';
+  events.forEach(e => {
+    csv += [
+      utils.getProjectId(e.name),
+      `"${utils.getCustomerName(e.name)}"`,
+      `"${e.address}"`,
+      e.location,
+      e.amount,
+      `"${e.type || ''}"`,
+      e.stage,
+      e.date,
+      e.days || e.daysInstall || 2,
+      e.crew || ''
+    ].join(',') + '\n';
+  });
+
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `pb-schedule-${new Date().toISOString().split('T')[0]}.csv`;
+  a.click();
+  showToast('📥 CSV exported');
+}
+
+function exportICal() {
+  const events = getScheduledEvents();
+  let ical = 'BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//PB Scheduler//EN\n';
+
+  events.forEach(e => {
+    const start = e.date.replace(/-/g, '');
+    const end = utils.addDays(e.date, Math.ceil(e.days || 1)).replace(/-/g, '');
+    ical += `BEGIN:VEVENT\nDTSTART;VALUE=DATE:${start}\nDTEND;VALUE=DATE:${end}\nSUMMARY:${utils.getCustomerName(e.name)} - ${e.crew || 'Unassigned'}\nDESCRIPTION:${e.address}\\n$${e.amount.toLocaleString()}\nEND:VEVENT\n`;
+  });
+
+  ical += 'END:VCALENDAR';
+
+  const blob = new Blob([ical], { type: 'text/calendar' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'pb-schedule.ics';
+  a.click();
+  showToast('📅 iCal exported');
+}
+
+function copySchedule() {
+  const events = getScheduledEvents();
+  let text = 'PB Install Schedule\n==================\n\n';
+
+  events.forEach(e => {
+    text += `${utils.formatDate(e.date)} - ${utils.getCustomerName(e.name)}\n`;
+    text += `  ${e.address}\n`;
+    text += `  Crew: ${e.crew || 'Unassigned'} | ${e.days || e.daysInstall || 2} days | $${e.amount.toLocaleString()}\n\n`;
+  });
+
+  navigator.clipboard.writeText(text);
+  showToast('📋 Copied to clipboard');
+}
+
+// ===== VIEW SWITCHING =====
+let weekOffset = 0; // Weeks from current week
+
+function switchView(view) {
+  state.currentView = view;
+  document.querySelectorAll('.view-tab').forEach(t => t.classList.remove('active'));
+  document.querySelector(`[data-view="${view}"]`).classList.add('active');
+
+  document.getElementById('calendarView').classList.toggle('hidden', view !== 'calendar');
+  document.getElementById('weekView').classList.toggle('active', view === 'week');
+  document.getElementById('ganttView').classList.toggle('active', view === 'gantt');
+
+  if (view === 'week') renderWeekView();
+  if (view === 'gantt') renderGanttView();
+}
+
+function getWeekDates(offset = 0) {
+  const today = new Date(2026, 0, 13); // Use Jan 13, 2026 as base
+  const start = new Date(today);
+  start.setDate(start.getDate() - start.getDay() + 1 + (offset * 7)); // Start on Monday
+  const dates = [];
+  for (let i = 0; i < 5; i++) { // Monday through Friday
+    const d = new Date(start);
+    d.setDate(d.getDate() + i);
+    dates.push(d);
+  }
+  return dates;
+}
+
+function prevWeek() {
+  weekOffset--;
+  renderWeekView();
+}
+
+function nextWeek() {
+  weekOffset++;
+  renderWeekView();
+}
+
+function renderWeekView() {
+  const dates = getWeekDates(weekOffset);
+  const container = document.getElementById('weekGrid');
+  const today = new Date();
+
+  // Update title
+  const startDate = dates[0];
+  const endDate = dates[4];
+  document.getElementById('weekTitle').textContent =
+    `Week of ${startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+
+  // Get crews for selected location
+  const loc = state.selectedLocation === 'All' ? 'Westminster' : state.selectedLocation;
+  const locationCrews = crews[loc] || [];
+
+  // Header row
+  let html = '<div class="week-header" style="background: var(--bg);"></div>';
+  dates.forEach(d => {
+    const isToday = d.toDateString() === today.toDateString();
+    html += `<div class="week-header${isToday ? ' today' : ''}">
+      ${d.toLocaleDateString('en-US', { weekday: 'short' })}
+      <span class="date-num">${d.getDate()}</span>
+    </div>`;
+  });
+
+  // Crew rows
+  const events = getScheduledEvents();
+  locationCrews.forEach(crew => {
+    // Calculate crew's weekly stats
+    let weekProjects = 0;
+    let weekRevenue = 0;
+
+    html += `<div class="crew-row-header" style="border-right-color: ${crew.color};">
+      <span class="crew-name">${crew.name}</span>
+      <span class="crew-stats">👷 ${crew.roofers} | ⚡ ${crew.electricians}</span>
+    </div>`;
+
+    dates.forEach(d => {
+      const dateStr = d.toISOString().split('T')[0];
+      const dayEvents = events.filter(e => {
+        if (e.crew !== crew.name) return false;
+        const eventStart = new Date(e.date);
+        const eventEnd = new Date(e.date);
+        eventEnd.setDate(eventEnd.getDate() + Math.ceil(e.days || 1) - 1);
+        return d >= eventStart && d <= eventEnd;
+      });
+
+      const canDrop = state.selectedProject || state.draggedProject;
+      html += `<div class="week-cell${canDrop ? ' drop-target' : ''}"
+                    data-date="${dateStr}"
+                    data-crew="${crew.name}"
+                    onclick="handleWeekCellClick('${dateStr}', '${crew.name}')"
+                    ondragover="handleDragOver(event)"
+                    ondrop="handleWeekDrop(event, '${dateStr}', '${crew.name}')">`;
+
+      dayEvents.forEach(e => {
+        const dayNum = Math.floor((d - new Date(e.date)) / (1000*60*60*24)) + 1;
+        const shortName = utils.getCustomerName(e.name).substring(0, 10);
+        html += `<div class="event ${e.eventType || e.stage}" onclick="event.stopPropagation();showDetail('${e.id}')" title="${e.name}">
+          ${e.days > 1 ? `D${dayNum} ` : ''}${shortName}
+        </div>`;
+      });
+
+      html += '</div>';
+    });
+  });
+
+  container.innerHTML = html;
+}
+
+function handleWeekCellClick(dateStr, crewName) {
+  if (!state.selectedProject || state.selectedProject.stage === 'construction') return;
+  // Reject weekends
+  if (utils.isWeekend(dateStr)) {
+    showToast('Cannot schedule on weekends', 'error');
+    return;
+  }
+  // Pre-fill crew
+  const project = { ...state.selectedProject, crew: crewName };
+  state.selectedProject = project;
+  openScheduleModal(state.selectedProject, dateStr);
+}
+
+function handleWeekDrop(event, dateStr, crewName) {
+  event.preventDefault();
+  // Reject weekends
+  if (utils.isWeekend(dateStr)) {
+    showToast('Cannot schedule on weekends', 'error');
+    return;
+  }
+  const projectId = event.dataTransfer.getData('text/plain');
+  const project = projects.find(p => p.id === projectId);
+  if (project && project.stage !== 'construction') {
+    // Pre-fill crew from drop target
+    project.crew = crewName;
+    openScheduleModal(project, dateStr);
+  }
+}
+
+// ===== GANTT VIEW =====
+function getGanttDates() {
+  const start = new Date(2026, 0, 13); // Jan 13, 2026
+  const dates = [];
+  let current = new Date(start);
+  for (let i = 0; i < 14; i++) { // 2 weeks
+    if (current.getDay() !== 0 && current.getDay() !== 6) { // Skip weekends
+      dates.push(new Date(current));
+    }
+    current.setDate(current.getDate() + 1);
+    if (dates.length < 14 && (current.getDay() === 0 || current.getDay() === 6)) {
+      current.setDate(current.getDate() + (current.getDay() === 0 ? 1 : 2));
+    }
+  }
+  return dates.slice(0, 10); // 10 workdays
+}
+
+function renderGanttView() {
+  const container = document.getElementById('ganttGrid');
+  const dates = getGanttDates();
+  const today = new Date();
+
+  // Get all crews for selected location
+  const loc = state.selectedLocation === 'All' ? null : state.selectedLocation;
+  const allCrews = loc ? (crews[loc] || []) : Object.values(crews).flat();
+
+  // Header row with dates
+  let html = '<div class="gantt-timeline">';
+  html += '<div class="gantt-day-header" style="background: var(--bg); font-weight: 600;">Crew</div>';
+  dates.forEach(d => {
+    const isToday = d.toDateString() === today.toDateString();
+    html += `<div class="gantt-day-header${isToday ? ' today' : ''}">
+      <span class="day-name">${d.toLocaleDateString('en-US', { weekday: 'short' })}</span>
+      <span class="day-num">${d.getDate()}</span>
+    </div>`;
+  });
+  html += '</div>';
+
+  // Get all scheduled events
+  const events = getScheduledEvents();
+
+  // Crew rows
+  allCrews.forEach(crew => {
+    html += '<div class="gantt-row">';
+    html += `<div class="gantt-crew-header" style="border-left: 3px solid ${crew.color};">${crew.name}</div>`;
+
+    // Create cells for each day
+    dates.forEach((d, idx) => {
+      html += `<div class="gantt-cell" data-date="${d.toISOString().split('T')[0]}" data-crew="${crew.name}">`;
+
+      // Find events that start on this day for this crew
+      events.forEach(e => {
+        if (e.crew !== crew.name) return;
+        const eventStart = new Date(e.date);
+        if (eventStart.toDateString() === d.toDateString()) {
+          const days = e.days || 1;
+          const calendarDays = Math.ceil(days);
+          const widthPercent = (days / 10) * 100 * 10; // Relative to cell width
+          const shortName = utils.getCustomerName(e.name).substring(0, 12);
+          const amount = utils.formatCurrency(e.amount);
+          const daysLabel = days < 1 ? `${days * 4}/4d` : `${days}d`; // Show fractional as "1/4d"
+          html += `<div class="gantt-bar ${e.eventType || e.stage}"
+                        style="left: 0; width: calc(${calendarDays * 100}% + ${(calendarDays-1)}px);"
+                        onclick="showDetail('${e.id}')"
+                        title="${e.name} - ${daysLabel} - ${amount}">
+            ${shortName} (${daysLabel})
+          </div>`;
+        }
+      });
+
+      html += '</div>';
+    });
+
+    html += '</div>';
+  });
+
+  container.innerHTML = html;
+}
+
+// ===== NAVIGATION =====
+function prevMonth() {
+  state.currentMonth--;
+  if (state.currentMonth < 0) { state.currentMonth = 11; state.currentYear--; }
+  renderCalendar();
+}
+
+function nextMonth() {
+  state.currentMonth++;
+  if (state.currentMonth > 11) { state.currentMonth = 0; state.currentYear++; }
+  renderCalendar();
+}
+
+function goToToday() {
+  const today = new Date();
+  state.currentYear = today.getFullYear();
+  state.currentMonth = today.getMonth();
+  renderCalendar();
+}
+
+// ===== TOAST =====
+function showToast(message, type = 'success') {
+  const toast = document.getElementById('toast');
+  toast.textContent = message;
+  toast.className = `toast visible ${type === 'error' ? 'error' : ''}`;
+  setTimeout(() => toast.classList.remove('visible'), 3000);
+}
+
+// ===== RENDER ALL =====
+function renderAll() {
+  renderLocationTabs();
+  renderStageTabs();
+  renderStats();
+  renderQueue();
+  renderCalendar();
+  renderCrewCapacity();
+  renderConflicts();
+}
+
+// ===== EVENT LISTENERS =====
+document.getElementById('searchInput')?.addEventListener('input', renderQueue);
+document.getElementById('typeFilter')?.addEventListener('change', renderQueue);
+document.getElementById('sortFilter')?.addEventListener('change', renderQueue);
+
+// Keyboard shortcuts
+document.addEventListener('keydown', (e) => {
+  // Escape to close modals and deselect
+  if (e.key === 'Escape') {
+    if (document.getElementById('modalOverlay').classList.contains('visible')) {
+      closeModal();
+    } else if (document.getElementById('detailModal').classList.contains('visible')) {
+      closeDetailModal();
+    } else if (state.selectedProject) {
+      state.selectedProject = null;
+      document.getElementById('instructions').style.display = 'none';
+      renderQueue();
+      renderCalendar();
+    }
+  }
+
+  // View switching with number keys
+  if (e.key === '1' && !e.ctrlKey && !e.metaKey) switchView('calendar');
+  if (e.key === '2' && !e.ctrlKey && !e.metaKey) switchView('week');
+  if (e.key === '3' && !e.ctrlKey && !e.metaKey) switchView('gantt');
+
+  // Navigation with arrow keys
+  if (e.key === 'ArrowLeft' && e.altKey) {
+    if (state.currentView === 'calendar') prevMonth();
+    if (state.currentView === 'week') prevWeek();
+  }
+  if (e.key === 'ArrowRight' && e.altKey) {
+    if (state.currentView === 'calendar') nextMonth();
+    if (state.currentView === 'week') nextWeek();
+  }
+
+  // Quick optimize with O key
+  if (e.key === 'o' && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault();
+    autoOptimize();
+  }
+
+  // Quick export with E key
+  if (e.key === 'e' && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault();
+    exportCSV();
+  }
+});
+
+// Click outside modal to close
+document.getElementById('modalOverlay').addEventListener('click', (e) => {
+  if (e.target.id === 'modalOverlay') closeModal();
+});
+document.getElementById('detailModal').addEventListener('click', (e) => {
+  if (e.target.id === 'detailModal') closeDetailModal();
+});
+
+// ===== INIT =====
+// Fetch live data from API
+fetchProjects();
+
+// Refresh every 5 minutes
+setInterval(fetchProjects, 5 * 60 * 1000);
+
+// Show keyboard shortcuts hint
+console.log(`
+⌨️ PB Scheduler Keyboard Shortcuts:
+  1, 2, 3 - Switch views (Month, Week, Gantt)
+  Alt+← / Alt+→ - Navigate prev/next
+  Ctrl+O - Auto-optimize schedule
+  Ctrl+E - Export to CSV
+  Escape - Close modals / Deselect
+`);
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', () => {
+  // Clear any pending timers
+  if (window.toastTimeout) clearTimeout(window.toastTimeout);
+});
+
+// Performance: Use passive event listeners for scroll
+document.querySelector('.queue-list')?.addEventListener('scroll', () => {}, { passive: true });
+</script>
+</body>
+</html>

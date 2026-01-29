@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Participate Energy Project Tracker - PE milestone tracking and reporting">
+    <meta name="theme-color" content="#1a5f2a">
+    <title>Participate Energy Tracker | Photon Brothers</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        .pe-gradient { background: linear-gradient(135deg, #1a5f2a 0%, #2d8a3e 100%); }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <script id="project-data" type="application/json">[]</script>
+    <script type="text/babel">
+const { useState, useMemo, useEffect, useRef } = React;
+
+function PEDashboard() {
+    const [projects, setProjects] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [view, setView] = useState('overview');
+
+    // Fetch live data from API
+    useEffect(() => {
+        async function fetchData() {
+            try {
+                const response = await fetch('/api/projects?context=pe');
+                if (!response.ok) throw new Error('Failed to fetch');
+                const data = await response.json();
+                // Transform API data to match expected format
+                const transformed = data.projects.map(p => ({
+                    id: p.id,
+                    name: p.name,
+                    pb_location: p.pbLocation,
+                    ahj: p.ahj,
+                    utility: p.utility,
+                    project_type: p.projectType,
+                    stage: p.stage,
+                    amount: p.amount,
+                    url: p.url,
+                    close_date: p.closeDate,
+                    install_scheduled: p.constructionScheduleDate,
+                    construction_complete: p.constructionCompleteDate,
+                    inspection_scheduled: p.inspectionScheduleDate,
+                    inspection_complete: p.inspectionPassDate,
+                    pto_granted: p.ptoGrantedDate,
+                    forecast_install: p.forecastedInstallDate || p.constructionScheduleDate,
+                    install_basis: p.constructionScheduleDate ? 'Scheduled' : 'Forecast',
+                    days_to_install: p.daysToInstall,
+                    forecast_inspection: p.forecastedInspectionDate || p.inspectionScheduleDate,
+                    inspection_basis: p.inspectionScheduleDate ? 'Scheduled' : 'Forecast',
+                    days_to_inspection: p.daysToInspection,
+                    forecast_pto: p.forecastedPtoDate,
+                    pto_basis: p.ptoGrantedDate ? 'Completed' : 'Forecast',
+                    days_to_pto: p.daysToPto,
+                    days_since_close: p.daysSinceClose
+                }));
+                setProjects(transformed);
+                setError(null);
+            } catch (err) {
+                console.error('Failed to fetch PE projects:', err);
+                setError('Failed to load data. Please refresh.');
+            } finally {
+                setLoading(false);
+            }
+        }
+        fetchData();
+        // Refresh every 5 minutes
+        const interval = setInterval(fetchData, 5 * 60 * 1000);
+        return () => clearInterval(interval);
+    }, []);
+    const [filterMilestone, setFilterMilestone] = useState('all');
+    const [filterStatus, setFilterStatus] = useState('all');
+    const [sortBy, setSortBy] = useState('pto');
+    const chartRef = useRef(null);
+    const chartInstance = useRef(null);
+
+    const today = new Date();
+
+    // Calculate stats - only count as overdue if milestone not yet completed
+    const stats = useMemo(() => {
+        let installOverdue = 0, installSoon = 0, installOnTrack = 0;
+        let inspectionOverdue = 0, inspectionSoon = 0, inspectionOnTrack = 0;
+        let ptoOverdue = 0, ptoSoon = 0, ptoOnTrack = 0;
+        let totalValue = 0;
+
+        projects.forEach(p => {
+            totalValue += (p.amount || 0);
+
+            // Install stats - only if construction not complete
+            if (!p.construction_complete) {
+                if (p.days_to_install !== null && p.days_to_install < 0) installOverdue++;
+                else if (p.days_to_install !== null && p.days_to_install <= 14) installSoon++;
+                else installOnTrack++;
+            }
+
+            // Inspection stats - only if inspection not complete
+            if (!p.inspection_complete) {
+                if (p.days_to_inspection !== null && p.days_to_inspection < 0) inspectionOverdue++;
+                else if (p.days_to_inspection !== null && p.days_to_inspection <= 14) inspectionSoon++;
+                else inspectionOnTrack++;
+            }
+
+            // PTO stats - only if PTO not granted
+            if (!p.pto_granted) {
+                if (p.days_to_pto !== null && p.days_to_pto < 0) ptoOverdue++;
+                else if (p.days_to_pto !== null && p.days_to_pto <= 30) ptoSoon++;
+                else ptoOnTrack++;
+            }
+        });
+
+        return {
+            total: projects.length,
+            totalValue,
+            install: { overdue: installOverdue, soon: installSoon, onTrack: installOnTrack },
+            inspection: { overdue: inspectionOverdue, soon: inspectionSoon, onTrack: inspectionOnTrack },
+            pto: { overdue: ptoOverdue, soon: ptoSoon, onTrack: ptoOnTrack }
+        };
+    }, [projects]);
+
+    // Filter and sort projects
+    const filteredProjects = useMemo(() => {
+        let filtered = [...projects];
+
+        if (filterStatus !== 'all') {
+            filtered = filtered.filter(p => {
+                const days = filterMilestone === 'install' ? p.days_to_install :
+                            filterMilestone === 'inspection' ? p.days_to_inspection : p.days_to_pto;
+                if (filterStatus === 'overdue') return days < 0;
+                if (filterStatus === 'soon') return days >= 0 && days <= (filterMilestone === 'pto' ? 30 : 14);
+                return days > (filterMilestone === 'pto' ? 30 : 14);
+            });
+        }
+
+        filtered.sort((a, b) => {
+            if (sortBy === 'install') return (a.days_to_install || 999) - (b.days_to_install || 999);
+            if (sortBy === 'inspection') return (a.days_to_inspection || 999) - (b.days_to_inspection || 999);
+            if (sortBy === 'pto') return (a.days_to_pto || 999) - (b.days_to_pto || 999);
+            if (sortBy === 'amount') return (b.amount || 0) - (a.amount || 0);
+            return 0;
+        });
+
+        return filtered;
+    }, [projects, filterMilestone, filterStatus, sortBy]);
+
+    // Monthly forecast chart
+    useEffect(() => {
+        if (!chartRef.current || view !== 'overview') return;
+
+        if (chartInstance.current) chartInstance.current.destroy();
+
+        const months = [];
+        const installCounts = [];
+        const inspectionCounts = [];
+        const ptoCounts = [];
+
+        for (let i = 0; i < 6; i++) {
+            const d = new Date(today);
+            d.setMonth(d.getMonth() + i);
+            const monthKey = d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+            months.push(monthKey);
+
+            let installs = 0, inspections = 0, ptos = 0;
+            projects.forEach(p => {
+                if (p.forecast_install) {
+                    const fd = new Date(p.forecast_install);
+                    if (fd.getMonth() === d.getMonth() && fd.getFullYear() === d.getFullYear()) installs++;
+                }
+                if (p.forecast_inspection) {
+                    const fd = new Date(p.forecast_inspection);
+                    if (fd.getMonth() === d.getMonth() && fd.getFullYear() === d.getFullYear()) inspections++;
+                }
+                if (p.forecast_pto) {
+                    const fd = new Date(p.forecast_pto);
+                    if (fd.getMonth() === d.getMonth() && fd.getFullYear() === d.getFullYear()) ptos++;
+                }
+            });
+            installCounts.push(installs);
+            inspectionCounts.push(inspections);
+            ptoCounts.push(ptos);
+        }
+
+        chartInstance.current = new Chart(chartRef.current, {
+            type: 'bar',
+            data: {
+                labels: months,
+                datasets: [
+                    { label: 'Installations', data: installCounts, backgroundColor: '#3B82F6' },
+                    { label: 'Inspections', data: inspectionCounts, backgroundColor: '#F59E0B' },
+                    { label: 'PTO/Project Complete', data: ptoCounts, backgroundColor: '#10B981' }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { position: 'bottom' } },
+                scales: { y: { beginAtZero: true } }
+            }
+        });
+
+        return () => { if (chartInstance.current) chartInstance.current.destroy(); };
+    }, [projects, view]);
+
+    const getStatusBadge = (days, threshold = 14) => {
+        if (days === null || days === undefined) return <span className="px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">N/A</span>;
+        if (days < 0) return <span className="px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">{Math.abs(days)}d overdue</span>;
+        if (days === 0) return <span className="px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">due today</span>;
+        if (days <= threshold) return <span className="px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">in {days}d</span>;
+        return <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">in {days}d</span>;
+    };
+
+    // Loading state
+    if (loading) {
+        return (
+            <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+                <div className="text-center">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mx-auto mb-4"></div>
+                    <p className="text-gray-600">Loading Participate Energy data...</p>
+                </div>
+            </div>
+        );
+    }
+
+    // Error state
+    if (error) {
+        return (
+            <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+                <div className="text-center text-red-600">
+                    <p className="text-xl mb-2">Error</p>
+                    <p>{error}</p>
+                    <button onClick={() => window.location.reload()} className="mt-4 px-4 py-2 bg-green-600 text-white rounded">
+                        Retry
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="min-h-screen bg-gray-50">
+            {/* Header */}
+            <div className="pe-gradient text-white">
+                <div className="max-w-7xl mx-auto px-4 py-6">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <h1 className="text-2xl font-bold">Participate Energy</h1>
+                            <p className="text-green-100">Project Milestone Tracker</p>
+                        </div>
+                        <div className="text-right">
+                            <div className="text-3xl font-bold">{stats.total}</div>
+                            <div className="text-green-100 text-sm">Active Projects</div>
+                        </div>
+                    </div>
+
+                    {/* Tabs */}
+                    <div className="mt-4 flex gap-2">
+                        {['overview', 'projects', 'milestones'].map(v => (
+                            <button key={v} onClick={() => setView(v)}
+                                className={'px-4 py-2 rounded-t-lg text-sm font-medium ' +
+                                    (view === v ? 'bg-white text-green-800' : 'bg-green-800/50 text-white hover:bg-green-800/70')}>
+                                {v.charAt(0).toUpperCase() + v.slice(1)}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            </div>
+
+            <div className="max-w-7xl mx-auto px-4 py-6">
+                {view === 'overview' && (
+                    <>
+                        {/* KPI Cards */}
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                            <div className="bg-white rounded-lg p-4 shadow-sm border-l-4 border-blue-500">
+                                <div className="text-sm text-gray-500">Total Pipeline Value</div>
+                                <div className="text-2xl font-bold text-gray-900">${(stats.totalValue / 1000000).toFixed(2)}M</div>
+                            </div>
+                            <div className="bg-white rounded-lg p-4 shadow-sm border-l-4 border-red-500">
+                                <div className="text-sm text-gray-500">Overdue (PTO)</div>
+                                <div className="text-2xl font-bold text-red-600">{stats.pto.overdue}</div>
+                            </div>
+                            <div className="bg-white rounded-lg p-4 shadow-sm border-l-4 border-yellow-500">
+                                <div className="text-sm text-gray-500">PTO Next 30 Days</div>
+                                <div className="text-2xl font-bold text-yellow-600">{stats.pto.soon}</div>
+                            </div>
+                            <div className="bg-white rounded-lg p-4 shadow-sm border-l-4 border-green-500">
+                                <div className="text-sm text-gray-500">On Track</div>
+                                <div className="text-2xl font-bold text-green-600">{stats.pto.onTrack}</div>
+                            </div>
+                        </div>
+
+                        {/* Milestone Summary */}
+                        <div className="grid grid-cols-3 gap-4 mb-6">
+                            <div className="bg-white rounded-lg p-4 shadow-sm">
+                                <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                                    <span className="w-3 h-3 rounded-full bg-blue-500"></span>
+                                    Forecasted Installation
+                                </h3>
+                                <div className="space-y-2 text-sm">
+                                    <div className="flex justify-between"><span className="text-red-600">Overdue:</span> <strong>{stats.install.overdue}</strong></div>
+                                    <div className="flex justify-between"><span className="text-yellow-600">Next 14d:</span> <strong>{stats.install.soon}</strong></div>
+                                    <div className="flex justify-between"><span className="text-green-600">On Track:</span> <strong>{stats.install.onTrack}</strong></div>
+                                </div>
+                            </div>
+                            <div className="bg-white rounded-lg p-4 shadow-sm">
+                                <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                                    <span className="w-3 h-3 rounded-full bg-yellow-500"></span>
+                                    Forecasted Inspection
+                                </h3>
+                                <div className="space-y-2 text-sm">
+                                    <div className="flex justify-between"><span className="text-red-600">Overdue:</span> <strong>{stats.inspection.overdue}</strong></div>
+                                    <div className="flex justify-between"><span className="text-yellow-600">Next 14d:</span> <strong>{stats.inspection.soon}</strong></div>
+                                    <div className="flex justify-between"><span className="text-green-600">On Track:</span> <strong>{stats.inspection.onTrack}</strong></div>
+                                </div>
+                            </div>
+                            <div className="bg-white rounded-lg p-4 shadow-sm">
+                                <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                                    <span className="w-3 h-3 rounded-full bg-green-500"></span>
+                                    Forecasted PTO
+                                </h3>
+                                <div className="space-y-2 text-sm">
+                                    <div className="flex justify-between"><span className="text-red-600">Overdue:</span> <strong>{stats.pto.overdue}</strong></div>
+                                    <div className="flex justify-between"><span className="text-yellow-600">Next 30d:</span> <strong>{stats.pto.soon}</strong></div>
+                                    <div className="flex justify-between"><span className="text-green-600">On Track:</span> <strong>{stats.pto.onTrack}</strong></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Chart */}
+                        <div className="bg-white rounded-lg p-4 shadow-sm">
+                            <h3 className="font-semibold text-gray-800 mb-4">6-Month Milestone Forecast</h3>
+                            <div className="h-64">
+                                <canvas ref={chartRef}></canvas>
+                            </div>
+                        </div>
+                    </>
+                )}
+
+                {view === 'projects' && (
+                    <>
+                        {/* Filters */}
+                        <div className="bg-white rounded-lg p-4 shadow-sm mb-4 flex flex-wrap gap-4 items-center">
+                            <div className="flex items-center gap-2">
+                                <span className="text-sm text-gray-600">Sort by:</span>
+                                <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="border rounded px-3 py-1.5 text-sm">
+                                    <option value="pto">Days to PTO</option>
+                                    <option value="inspection">Days to Inspection</option>
+                                    <option value="install">Days to Install</option>
+                                    <option value="amount">Deal Value</option>
+                                </select>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <span className="text-sm text-gray-600">Status:</span>
+                                <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="border rounded px-3 py-1.5 text-sm">
+                                    <option value="all">All</option>
+                                    <option value="overdue">Overdue</option>
+                                    <option value="soon">Due Soon</option>
+                                    <option value="ontrack">On Track</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        {/* Project Table */}
+                        <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+                            <table className="w-full">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        <th className="text-left p-3 text-sm font-medium text-gray-600">Project</th>
+                                        <th className="text-left p-3 text-sm font-medium text-gray-600">Location</th>
+                                        <th className="text-right p-3 text-sm font-medium text-gray-600">Value</th>
+                                        <th className="text-center p-3 text-sm font-medium text-gray-600">Forecasted Install</th>
+                                        <th className="text-center p-3 text-sm font-medium text-gray-600">Forecasted Inspection</th>
+                                        <th className="text-center p-3 text-sm font-medium text-gray-600">Forecasted PTO</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {filteredProjects.slice(0, 50).map((p, idx) => (
+                                        <tr key={p.id} className={'border-t ' + (idx % 2 === 0 ? 'bg-white' : 'bg-gray-50')}>
+                                            <td className="p-3">
+                                                <a href={p.url} target="_blank" className="text-blue-600 hover:underline font-medium">
+                                                    {p.name.split('|')[0].trim()}
+                                                </a>
+                                                <div className="text-xs text-gray-500">{p.stage}</div>
+                                            </td>
+                                            <td className="p-3 text-sm text-gray-600">{p.pb_location}</td>
+                                            <td className="p-3 text-right font-medium">${((p.amount || 0) / 1000).toFixed(0)}k</td>
+                                            <td className="p-3 text-center">
+                                                <div className="text-xs text-gray-500 mb-1">{p.forecast_install}</div>
+                                                {getStatusBadge(p.days_to_install)}
+                                            </td>
+                                            <td className="p-3 text-center">
+                                                <div className="text-xs text-gray-500 mb-1">{p.forecast_inspection}</div>
+                                                {getStatusBadge(p.days_to_inspection)}
+                                            </td>
+                                            <td className="p-3 text-center">
+                                                <div className="text-xs text-gray-500 mb-1">{p.forecast_pto}</div>
+                                                {getStatusBadge(p.days_to_pto, 30)}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                            {filteredProjects.length > 50 && (
+                                <div className="p-3 text-center text-sm text-gray-500 bg-gray-50">
+                                    Showing 50 of {filteredProjects.length} projects
+                                </div>
+                            )}
+                        </div>
+                    </>
+                )}
+
+                {view === 'milestones' && (
+                    <div className="space-y-6">
+                        {/* Inspection Complete Milestone */}
+                        <div className="bg-white rounded-lg shadow-sm">
+                            <div className="p-4 border-b bg-yellow-50">
+                                <h3 className="font-semibold text-lg text-yellow-800">Forecasted Inspection Complete (Milestone 1)</h3>
+                                <p className="text-sm text-yellow-600">Projects with forecasted inspection dates requiring completion reporting</p>
+                            </div>
+                            <div className="max-h-80 overflow-y-auto">
+                                {projects.filter(p => p.days_to_inspection <= 30).sort((a, b) => a.days_to_inspection - b.days_to_inspection).slice(0, 20).map(p => (
+                                    <div key={p.id} className="flex items-center justify-between p-3 border-b hover:bg-gray-50">
+                                        <div>
+                                            <a href={p.url} target="_blank" className="text-blue-600 hover:underline">{p.name.split('|')[0].trim()}</a>
+                                            <div className="text-xs text-gray-500">{p.pb_location} | {p.ahj}</div>
+                                        </div>
+                                        <div className="text-right">
+                                            <div className="text-xs text-gray-400 mb-1">Forecasted</div>
+                                            <div className="text-sm">{p.forecast_inspection}</div>
+                                            {getStatusBadge(p.days_to_inspection)}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Project Complete (PTO) Milestone */}
+                        <div className="bg-white rounded-lg shadow-sm">
+                            <div className="p-4 border-b bg-green-50">
+                                <h3 className="font-semibold text-lg text-green-800">Forecasted PTO (Milestone 2)</h3>
+                                <p className="text-sm text-green-600">Projects with forecasted PTO dates requiring completion reporting</p>
+                            </div>
+                            <div className="max-h-80 overflow-y-auto">
+                                {projects.filter(p => p.days_to_pto <= 45).sort((a, b) => a.days_to_pto - b.days_to_pto).slice(0, 20).map(p => (
+                                    <div key={p.id} className="flex items-center justify-between p-3 border-b hover:bg-gray-50">
+                                        <div>
+                                            <a href={p.url} target="_blank" className="text-blue-600 hover:underline">{p.name.split('|')[0].trim()}</a>
+                                            <div className="text-xs text-gray-500">{p.pb_location} | {p.ahj}</div>
+                                        </div>
+                                        <div className="text-right">
+                                            <div className="text-xs text-gray-400 mb-1">Forecasted</div>
+                                            <div className="text-sm">{p.forecast_pto}</div>
+                                            {getStatusBadge(p.days_to_pto, 30)}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* Footer */}
+            <div className="max-w-7xl mx-auto px-4 py-4 text-center text-sm text-gray-500">
+                Last updated: {today.toLocaleDateString()} | {projects.length} Participate Energy projects
+            </div>
+        </div>
+    );
+}
+
+ReactDOM.render(<PEDashboard />, document.getElementById('root'));
+    </script>
+</body>
+</html>

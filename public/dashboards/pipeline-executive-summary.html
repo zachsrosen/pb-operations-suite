@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="PB Pipeline Executive Summary - High-level metrics and KPIs for leadership">
+    <meta name="theme-color" content="#0f172a">
+    <title>Executive Summary | Photon Brothers</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }</style>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="text/babel">
+        const { useState, useMemo, useEffect, useRef } = React;
+
+        function transformProject(p) {
+            const now = new Date();
+            const closeDate = p.closeDate ? new Date(p.closeDate) : null;
+            const daysSinceClose = closeDate ? Math.floor((now - closeDate) / (1000 * 60 * 60 * 24)) : 0;
+
+            // Calculate forecast dates based on close date
+            const forecastInstall = p.constructionScheduleDate || (closeDate ? new Date(closeDate.getTime() + 75*24*60*60*1000).toISOString().split('T')[0] : null);
+            const forecastInspection = p.inspectionCompletionDate || (closeDate ? new Date(closeDate.getTime() + 114*24*60*60*1000).toISOString().split('T')[0] : null);
+            const forecastPto = p.ptoCompletionDate || (closeDate ? new Date(closeDate.getTime() + 139*24*60*60*1000).toISOString().split('T')[0] : null);
+
+            const daysToInstall = forecastInstall ? Math.floor((new Date(forecastInstall) - now) / (1000 * 60 * 60 * 24)) : null;
+            const daysToInspection = forecastInspection ? Math.floor((new Date(forecastInspection) - now) / (1000 * 60 * 60 * 24)) : null;
+            const daysToPto = forecastPto ? Math.floor((new Date(forecastPto) - now) / (1000 * 60 * 60 * 24)) : null;
+
+            return {
+                id: p.id,
+                name: p.name,
+                pb_location: p.pbLocation || 'Unknown',
+                ahj: p.ahj || 'Unknown',
+                utility: p.utility || 'Unknown',
+                project_type: p.projectType || 'Unknown',
+                stage: p.stage,
+                amount: p.amount || 0,
+                url: p.url,
+                close_date: p.closeDate,
+                permit_submit: p.permitSubmitDate,
+                permit_issued: p.permitIssueDate,
+                install_scheduled: p.constructionScheduleDate,
+                construction_complete: p.constructionCompleteDate,
+                inspection_scheduled: p.inspectionScheduleDate,
+                inspection_pass: p.inspectionPassDate,
+                pto_granted: p.ptoGrantedDate,
+                forecast_install: forecastInstall,
+                forecast_inspection: forecastInspection,
+                forecast_pto: forecastPto,
+                days_to_install: daysToInstall,
+                days_to_inspection: daysToInspection,
+                days_to_pto: daysToPto,
+                days_since_close: daysSinceClose
+            };
+        }
+
+        function ExecutiveDashboard() {
+            const [projectData, setProjectData] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState(null);
+            const [lastUpdated, setLastUpdated] = useState(null);
+
+            const stageChartRef = useRef(null);
+            const locationChartRef = useRef(null);
+            const timelineChartRef = useRef(null);
+            const chartsRef = useRef([]);
+
+            useEffect(() => {
+                async function fetchData() {
+                    try {
+                        setLoading(true);
+                        const response = await fetch('/api/projects?context=executive');
+                        if (!response.ok) throw new Error('Failed to fetch data');
+                        const data = await response.json();
+                        setProjectData(data.projects.map(transformProject));
+                        setLastUpdated(new Date().toLocaleTimeString());
+                        setError(null);
+                    } catch (err) {
+                        setError(err.message);
+                    } finally {
+                        setLoading(false);
+                    }
+                }
+
+                fetchData();
+                const interval = setInterval(fetchData, 5 * 60 * 1000);
+                return () => clearInterval(interval);
+            }, []);
+
+            const metrics = useMemo(() => {
+                if (projectData.length === 0) return null;
+
+                const totalValue = projectData.reduce((sum, p) => sum + (p.amount || 0), 0);
+                // Only overdue if NOT completed AND past forecast date
+                const overdueInstall = projectData.filter(p => !p.construction_complete && p.days_to_install !== null && p.days_to_install < 0);
+                const overdueInspection = projectData.filter(p => !p.inspection_pass && p.days_to_inspection !== null && p.days_to_inspection < 0);
+                const overduePto = projectData.filter(p => !p.pto_granted && p.days_to_pto !== null && p.days_to_pto < 0);
+                const onTrack = projectData.filter(p => !p.pto_granted && p.days_to_pto !== null && p.days_to_pto >= 0 && p.days_to_pto <= 30);
+
+                const byLocation = {};
+                projectData.forEach(p => {
+                    const loc = p.pb_location || 'Unknown';
+                    if (!byLocation[loc]) byLocation[loc] = { count: 0, value: 0, overdue: 0 };
+                    byLocation[loc].count++;
+                    byLocation[loc].value += p.amount || 0;
+                    // Only count as overdue if PTO not granted
+                    if (!p.pto_granted && p.days_to_pto !== null && p.days_to_pto < 0) byLocation[loc].overdue++;
+                });
+
+                const byStage = {};
+                const stageOrder = ["Site Survey", "Design & Engineering", "Permitting & Interconnection", "Ready To Build", "RTB - Blocked", "Construction", "Inspection", "Permission To Operate"];
+                stageOrder.forEach(s => byStage[s] = { count: 0, value: 0 });
+                projectData.forEach(p => {
+                    if (byStage[p.stage]) {
+                        byStage[p.stage].count++;
+                        byStage[p.stage].value += p.amount || 0;
+                    }
+                });
+
+                const byMonth = {};
+                projectData.forEach(p => {
+                    if (p.forecast_pto) {
+                        const month = p.forecast_pto.substring(0, 7);
+                        if (!byMonth[month]) byMonth[month] = { count: 0, value: 0 };
+                        byMonth[month].count++;
+                        byMonth[month].value += p.amount || 0;
+                    }
+                });
+
+                return {
+                    total: projectData.length,
+                    totalValue,
+                    overdueInstall: overdueInstall.length,
+                    overdueInstallValue: overdueInstall.reduce((s, p) => s + (p.amount || 0), 0),
+                    overdueInspection: overdueInspection.length,
+                    overduePto: overduePto.length,
+                    overduePtoValue: overduePto.reduce((s, p) => s + (p.amount || 0), 0),
+                    onTrack: onTrack.length,
+                    byLocation,
+                    byStage,
+                    byMonth,
+                    stageOrder
+                };
+            }, [projectData]);
+
+            useEffect(() => {
+                if (!metrics) return;
+
+                // Small delay to ensure canvas elements are mounted
+                const timer = setTimeout(() => {
+                    // Destroy existing charts
+                    chartsRef.current.forEach(chart => chart.destroy());
+                    chartsRef.current = [];
+
+                    if (stageChartRef.current) {
+                    const chart = new Chart(stageChartRef.current.getContext('2d'), {
+                        type: 'bar',
+                        data: {
+                            labels: metrics.stageOrder.map(s => s.length > 15 ? s.substring(0, 12) + '...' : s),
+                            datasets: [{
+                                label: 'Projects',
+                                data: metrics.stageOrder.map(s => metrics.byStage[s].count),
+                                backgroundColor: ['#9CA3AF', '#3B82F6', '#8B5CF6', '#10B981', '#EF4444', '#F59E0B', '#F97316', '#14B8A6']
+                            }]
+                        },
+                        options: { responsive: true, plugins: { legend: { display: false }, title: { display: true, text: 'Projects by Stage' } } }
+                    });
+                    chartsRef.current.push(chart);
+                }
+                if (locationChartRef.current) {
+                    const locations = Object.keys(metrics.byLocation).sort((a, b) => metrics.byLocation[b].value - metrics.byLocation[a].value);
+                    const chart = new Chart(locationChartRef.current.getContext('2d'), {
+                        type: 'doughnut',
+                        data: {
+                            labels: locations,
+                            datasets: [{
+                                data: locations.map(l => metrics.byLocation[l].value),
+                                backgroundColor: ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#6B7280', '#EC4899', '#06B6D4']
+                            }]
+                        },
+                        options: { responsive: true, plugins: { legend: { position: 'right' }, title: { display: true, text: 'Pipeline Value by Location' } } }
+                    });
+                    chartsRef.current.push(chart);
+                }
+                if (timelineChartRef.current) {
+                    const months = Object.keys(metrics.byMonth).sort();
+                    const chart = new Chart(timelineChartRef.current.getContext('2d'), {
+                        type: 'line',
+                        data: {
+                            labels: months.map(m => {
+                                const [y, mo] = m.split('-');
+                                return new Date(y, mo - 1).toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+                            }),
+                            datasets: [{
+                                label: 'Forecasted PTOs',
+                                data: months.map(m => metrics.byMonth[m].count),
+                                borderColor: '#10B981',
+                                backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                                fill: true,
+                                tension: 0.3
+                            }]
+                        },
+                        options: { responsive: true, plugins: { title: { display: true, text: 'Forecasted PTO Timeline' } } }
+                    });
+                    chartsRef.current.push(chart);
+                }
+                }, 100);
+
+                return () => clearTimeout(timer);
+            }, [metrics]);
+
+            const formatCurrency = (val) => '$' + (val / 1000000).toFixed(2) + 'M';
+            const formatCurrencyK = (val) => val >= 1000000 ? '$' + (val / 1000000).toFixed(1) + 'M' : '$' + (val / 1000).toFixed(0) + 'K';
+
+            if (loading) {
+                return (
+                    <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+                        <div className="text-center">
+                            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                            <p className="text-gray-600">Loading pipeline data...</p>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (error) {
+                return (
+                    <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+                        <div className="text-center bg-white rounded-xl shadow-lg p-8">
+                            <div className="text-red-500 text-4xl mb-4">⚠️</div>
+                            <h2 className="text-xl font-bold text-gray-900 mb-2">Failed to Load Data</h2>
+                            <p className="text-gray-600 mb-4">{error}</p>
+                            <button onClick={() => window.location.reload()} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                                Retry
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (!metrics) return null;
+
+            return (
+                <div className="min-h-screen bg-gray-100 p-6">
+                    <div className="max-w-7xl mx-auto">
+                        <div className="mb-8 flex justify-between items-start">
+                            <div>
+                                <h1 className="text-3xl font-bold text-gray-900">Pipeline Executive Summary</h1>
+                                <p className="text-gray-500">Photon Brothers • {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                            </div>
+                            <div className="text-right">
+                                <div className="inline-flex items-center px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm">
+                                    <span className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></span>
+                                    Live Data
+                                </div>
+                                {lastUpdated && <p className="text-xs text-gray-400 mt-1">Updated {lastUpdated}</p>}
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8">
+                            <div className="bg-white rounded-xl shadow-lg p-6">
+                                <div className="text-gray-500 text-sm font-medium">Total Pipeline</div>
+                                <div className="text-3xl font-bold text-gray-900">{formatCurrency(metrics.totalValue)}</div>
+                                <div className="text-sm text-gray-400">{metrics.total} projects</div>
+                            </div>
+                            <div className="bg-white rounded-xl shadow-lg p-6 border-l-4 border-red-500">
+                                <div className="text-gray-500 text-sm font-medium">PTO Overdue</div>
+                                <div className="text-3xl font-bold text-red-600">{metrics.overduePto}</div>
+                                <div className="text-sm text-red-400">{formatCurrencyK(metrics.overduePtoValue)} at risk</div>
+                            </div>
+                            <div className="bg-white rounded-xl shadow-lg p-6 border-l-4 border-yellow-500">
+                                <div className="text-gray-500 text-sm font-medium">Install Overdue</div>
+                                <div className="text-3xl font-bold text-yellow-600">{metrics.overdueInstall}</div>
+                                <div className="text-sm text-yellow-400">{formatCurrencyK(metrics.overdueInstallValue)} delayed</div>
+                            </div>
+                            <div className="bg-white rounded-xl shadow-lg p-6 border-l-4 border-green-500">
+                                <div className="text-gray-500 text-sm font-medium">On Track</div>
+                                <div className="text-3xl font-bold text-green-600">{metrics.onTrack}</div>
+                                <div className="text-sm text-green-400">{metrics.total > 0 ? Math.round(metrics.onTrack / metrics.total * 100) : 0}% healthy</div>
+                            </div>
+                        </div>
+                        <div className="grid md:grid-cols-2 gap-6 mb-8">
+                            <div className="bg-white rounded-xl shadow-lg p-6"><canvas ref={stageChartRef}></canvas></div>
+                            <div className="bg-white rounded-xl shadow-lg p-6"><canvas ref={locationChartRef}></canvas></div>
+                        </div>
+                        <div className="bg-white rounded-xl shadow-lg p-6 mb-8"><canvas ref={timelineChartRef}></canvas></div>
+                        <div className="bg-white rounded-xl shadow-lg p-6">
+                            <h3 className="text-lg font-bold mb-4">Location Performance</h3>
+                            <table className="w-full">
+                                <thead>
+                                    <tr className="border-b">
+                                        <th className="text-left py-3">Location</th>
+                                        <th className="text-right py-3">Projects</th>
+                                        <th className="text-right py-3">Value</th>
+                                        <th className="text-right py-3">Overdue</th>
+                                        <th className="text-right py-3">Health</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {Object.entries(metrics.byLocation).sort((a, b) => b[1].value - a[1].value).map(([loc, data]) => {
+                                        const health = data.count > 0 ? Math.round((1 - data.overdue / data.count) * 100) : 100;
+                                        const healthClass = health >= 80 ? 'bg-green-100 text-green-700' : health >= 60 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700';
+                                        return (
+                                            <tr key={loc} className="border-b last:border-0">
+                                                <td className="py-3 font-medium">{loc}</td>
+                                                <td className="py-3 text-right">{data.count}</td>
+                                                <td className="py-3 text-right">{formatCurrencyK(data.value)}</td>
+                                                <td className="py-3 text-right text-red-600">{data.overdue}</td>
+                                                <td className="py-3 text-right"><span className={'px-2 py-1 rounded text-sm ' + healthClass}>{health}%</span></td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                        <div className="mt-6 text-center text-sm text-gray-400">
+                            Data synced from HubSpot • Auto-refreshes every 5 minutes
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+        ReactDOM.render(<ExecutiveDashboard />, document.getElementById('root'));
+    </script>
+</body>
+</html>

@@ -1,10 +1,46 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Client } from "@hubspot/api-client";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
+import { appCache, CACHE_KEYS } from "@/lib/cache";
 
 const hubspotClient = new Client({
   accessToken: process.env.HUBSPOT_ACCESS_TOKEN,
 });
+
+// Rate limiting helpers
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function searchWithRetry(
+  searchRequest: {
+    filterGroups: { filters: { propertyName: string; operator: typeof FilterOperatorEnum.Eq; value: string }[] }[];
+    properties: string[];
+    limit: number;
+    after?: string;
+  },
+  maxRetries = 3
+) {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await hubspotClient.crm.deals.searchApi.doSearch(searchRequest);
+    } catch (error: unknown) {
+      const isRateLimit =
+        error instanceof Error &&
+        (error.message.includes("429") || error.message.includes("rate") || error.message.includes("secondly"));
+      const statusCode = (error as { code?: number })?.code;
+
+      if ((isRateLimit || statusCode === 429) && attempt < maxRetries - 1) {
+        const delay = Math.pow(2, attempt + 1) * 500; // 1s, 2s, 4s
+        console.log(`Rate limited on attempt ${attempt + 1}, retrying in ${delay}ms...`);
+        await sleep(delay);
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new Error("Max retries exceeded");
+}
 
 // Pipeline IDs
 const PIPELINE_IDS: Record<string, string> = {
@@ -102,7 +138,7 @@ interface Deal {
   stage: string;
   stageId: string;
   pipeline: string;
-  location: string;
+  pbLocation: string;
   address: string;
   city: string;
   state: string;
@@ -115,16 +151,6 @@ interface Deal {
   isActive: boolean;
   daysSinceCreate: number;
 }
-
-// Cache for each pipeline
-const pipelineCache: Record<string, { data: Deal[] | null; timestamp: number }> = {
-  sales: { data: null, timestamp: 0 },
-  dnr: { data: null, timestamp: 0 },
-  service: { data: null, timestamp: 0 },
-  roofing: { data: null, timestamp: 0 },
-};
-
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 function parseDate(value: unknown): string | null {
   if (!value) return null;
@@ -154,7 +180,7 @@ function transformDeal(deal: Record<string, unknown>, pipelineKey: string, porta
     stage: stageName,
     stageId,
     pipeline: pipelineKey,
-    location: String(deal.pb_location || "Unknown"),
+    pbLocation: String(deal.pb_location || "Unknown"),
     address: String(deal.address_line_1 || ""),
     city: String(deal.city || ""),
     state: String(deal.state || ""),
@@ -177,30 +203,62 @@ async function fetchDealsForPipeline(pipelineKey: string): Promise<Deal[]> {
   const allDeals: Record<string, unknown>[] = [];
   let after: string | undefined;
 
-  // For the sales pipeline (id="default"), use getAll and filter client-side
-  // because HubSpot's Search API doesn't accept "default" as a pipeline value
-  if (pipelineId === "default") {
-    const salesStageIds = new Set(Object.keys(STAGE_MAPS.sales));
+  // For the default sales pipeline, search by each deal stage separately
+  // because HubSpot's search API rejects pipeline="default" as a filter value.
+  const stageMap = STAGE_MAPS[pipelineKey] || {};
+  const stageIds = Object.keys(stageMap);
 
-    do {
-      const response = await hubspotClient.crm.deals.basicApi.getPage(
-        100,
-        after,
-        DEAL_PROPERTIES
-      );
-
-      // Filter to only include deals in sales pipeline stages
-      const salesDeals = response.results
-        .map((deal) => deal.properties)
-        .filter((deal) => salesStageIds.has(String(deal.dealstage)));
-
-      allDeals.push(...salesDeals);
-      after = response.paging?.next?.after;
-    } while (after);
+  if (pipelineId === "default" && stageIds.length > 0) {
+    // Fetch each stage separately to avoid the pipeline filter issue.
+    // Add delays between requests to avoid HubSpot's secondly rate limits.
+    for (let i = 0; i < stageIds.length; i++) {
+      const stageId = stageIds[i];
+      // Add delay between stage requests (not before the first one)
+      if (i > 0) {
+        await sleep(300);
+      }
+      after = undefined;
+      do {
+        const searchRequest: {
+          filterGroups: { filters: { propertyName: string; operator: typeof FilterOperatorEnum.Eq; value: string }[] }[];
+          properties: string[];
+          limit: number;
+          after?: string;
+        } = {
+          filterGroups: [
+            {
+              filters: [
+                {
+                  propertyName: "dealstage",
+                  operator: FilterOperatorEnum.Eq,
+                  value: stageId,
+                },
+              ],
+            },
+          ],
+          properties: DEAL_PROPERTIES,
+          limit: 100,
+        };
+        if (after) {
+          searchRequest.after = after;
+        }
+        const response = await searchWithRetry(searchRequest);
+        allDeals.push(...response.results.map((deal) => deal.properties));
+        after = response.paging?.next?.after;
+        // Small delay between pagination requests
+        if (after) {
+          await sleep(150);
+        }
+      } while (after);
+    }
   } else {
-    // For other pipelines, query by pipeline ID
     do {
-      const response = await hubspotClient.crm.deals.searchApi.doSearch({
+      const searchRequest: {
+        filterGroups: { filters: { propertyName: string; operator: typeof FilterOperatorEnum.Eq; value: string }[] }[];
+        properties: string[];
+        limit: number;
+        after?: string;
+      } = {
         filterGroups: [
           {
             filters: [
@@ -214,9 +272,12 @@ async function fetchDealsForPipeline(pipelineKey: string): Promise<Deal[]> {
         ],
         properties: DEAL_PROPERTIES,
         limit: 100,
-        after: after || "0",
-      });
+      };
+      if (after) {
+        searchRequest.after = after;
+      }
 
+      const response = await searchWithRetry(searchRequest);
       allDeals.push(...response.results.map((deal) => deal.properties));
       after = response.paging?.next?.after;
     } while (after);
@@ -232,7 +293,15 @@ export async function GET(request: NextRequest) {
     const activeOnly = searchParams.get("active") !== "false";
     const location = searchParams.get("location");
     const stage = searchParams.get("stage");
+    const search = searchParams.get("search");
     const forceRefresh = searchParams.get("refresh") === "true";
+
+    // Pagination parameters
+    const page = Math.max(1, parseInt(searchParams.get("page") || "1"));
+    const rawLimit = parseInt(searchParams.get("limit") || "0");
+    const limit = rawLimit > 0 ? Math.min(200, rawLimit) : 0; // 0 = no pagination
+    const sortBy = searchParams.get("sort") || "amount";
+    const sortOrder = searchParams.get("order") === "asc" ? "asc" : "desc";
 
     if (!pipeline || !PIPELINE_IDS[pipeline]) {
       return NextResponse.json(
@@ -241,72 +310,91 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Check cache
-    const now = Date.now();
-    const cache = pipelineCache[pipeline];
+    // Use shared cache with stale-while-revalidate + request coalescing
+    const { data: allDeals, cached, stale, lastUpdated } = await appCache.getOrFetch<Deal[]>(
+      CACHE_KEYS.DEALS(pipeline),
+      () => fetchDealsForPipeline(pipeline),
+      forceRefresh
+    );
 
-    if (!forceRefresh && cache.data && now - cache.timestamp < CACHE_TTL) {
-      // Use cached data
-    } else {
-      // Fetch fresh data
-      pipelineCache[pipeline] = {
-        data: await fetchDealsForPipeline(pipeline),
-        timestamp: now,
-      };
-    }
-
-    let deals = pipelineCache[pipeline].data || [];
+    let deals = allDeals || [];
 
     // Apply filters
     if (activeOnly) {
       deals = deals.filter((d) => d.isActive);
     }
     if (location) {
-      deals = deals.filter((d) => d.location === location);
+      deals = deals.filter((d) => d.pbLocation === location);
     }
     if (stage) {
       deals = deals.filter((d) => d.stage === stage);
     }
 
-    // Sort by amount (highest first)
-    deals = deals.sort((a, b) => b.amount - a.amount);
+    // Text search
+    if (search) {
+      const q = search.toLowerCase();
+      deals = deals.filter(
+        (d) =>
+          d.name.toLowerCase().includes(q) ||
+          d.address.toLowerCase().includes(q) ||
+          d.city.toLowerCase().includes(q)
+      );
+    }
 
-    // Calculate stats
+    // Sort
+    const sortKey = sortBy as keyof Deal;
+    deals = deals.sort((a, b) => {
+      const aVal = a[sortKey];
+      const bVal = b[sortKey];
+      if (typeof aVal === "number" && typeof bVal === "number") {
+        return sortOrder === "desc" ? bVal - aVal : aVal - bVal;
+      }
+      const aStr = String(aVal ?? "");
+      const bStr = String(bVal ?? "");
+      return sortOrder === "desc" ? bStr.localeCompare(aStr) : aStr.localeCompare(bStr);
+    });
+
+    // Calculate stats BEFORE pagination
     const totalValue = deals.reduce((sum, d) => sum + d.amount, 0);
-
-    // Group by stage with count and value
-    const byStage = deals.reduce((acc, d) => {
-      if (!acc[d.stage]) {
-        acc[d.stage] = { count: 0, value: 0 };
-      }
-      acc[d.stage].count += 1;
-      acc[d.stage].value += d.amount;
+    const stageCounts = deals.reduce((acc, d) => {
+      acc[d.stage] = (acc[d.stage] || 0) + 1;
       return acc;
-    }, {} as Record<string, { count: number; value: number }>);
-
-    // Group by location with count and value
-    const byLocation = deals.reduce((acc, d) => {
-      const loc = d.location || "Unknown";
-      if (!acc[loc]) {
-        acc[loc] = { count: 0, value: 0 };
-      }
-      acc[loc].count += 1;
-      acc[loc].value += d.amount;
+    }, {} as Record<string, number>);
+    const locationCounts = deals.reduce((acc, d) => {
+      acc[d.pbLocation] = (acc[d.pbLocation] || 0) + 1;
       return acc;
-    }, {} as Record<string, { count: number; value: number }>);
+    }, {} as Record<string, number>);
+    const totalCount = deals.length;
+
+    // Apply pagination (limit=0 means no pagination for backwards compat)
+    let paginationMeta = null;
+    if (limit > 0) {
+      const offset = (page - 1) * limit;
+      const totalPages = Math.ceil(totalCount / limit);
+      deals = deals.slice(offset, offset + limit);
+      paginationMeta = {
+        page,
+        limit,
+        totalCount,
+        totalPages,
+        hasMore: page < totalPages,
+      };
+    }
 
     return NextResponse.json({
       deals,
       count: deals.length,
+      totalCount,
       stats: {
-        total: deals.length,
         totalValue,
-        byStage,
-        byLocation,
+        stageCounts,
+        locationCounts,
       },
+      pagination: paginationMeta,
       pipeline,
-      cached: now - pipelineCache[pipeline].timestamp < CACHE_TTL && !forceRefresh,
-      lastUpdated: new Date(pipelineCache[pipeline].timestamp).toISOString(),
+      cached,
+      stale,
+      lastUpdated,
     });
   } catch (error) {
     console.error("Error fetching deals:", error);
