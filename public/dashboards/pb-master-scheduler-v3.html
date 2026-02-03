@@ -373,7 +373,10 @@ h1 { font-size: 1.2rem; font-weight: 700; background: linear-gradient(135deg, va
       <div class="panel-title">🤖 Auto-Optimize</div>
       <button class="optimize-btn" onclick="autoOptimize()">⚡ Optimize Schedule</button>
       <div class="optimize-stats" id="optimizeStats">
-        Click to auto-schedule RTB projects by revenue priority
+        <div style="font-size: 0.6rem; color: var(--text-dim);">
+          Schedules RTB projects + inspections<br>
+          Priority: Easiest first, then by revenue
+        </div>
       </div>
     </div>
 
@@ -1292,15 +1295,27 @@ function closeDetailModal() {
 
 // ===== AUTO-OPTIMIZE =====
 function autoOptimize() {
+  // Get RTB projects (for construction) and Inspection projects
   const rtbProjects = projects.filter(p => p.stage === 'rtb' && !state.manualSchedules[p.id] && !p.scheduleDate);
+  const inspectionProjects = projects.filter(p => p.stage === 'inspection' && !state.manualSchedules[p.id] && !p.scheduleDate);
 
-  if (rtbProjects.length === 0) {
-    showToast('No unscheduled RTB projects to optimize', 'error');
+  if (rtbProjects.length === 0 && inspectionProjects.length === 0) {
+    showToast('No unscheduled RTB or Inspection projects to optimize', 'error');
     return;
   }
 
-  // Sort by revenue (highest first)
-  rtbProjects.sort((a, b) => b.amount - a.amount);
+  // Sort RTB projects by difficulty first (easiest = 1), then by revenue (highest first) within same difficulty
+  rtbProjects.sort((a, b) => {
+    const diffA = a.difficulty || 3; // Default to medium difficulty (3) if not set
+    const diffB = b.difficulty || 3;
+    if (diffA !== diffB) {
+      return diffA - diffB; // Easier projects first (lower number = easier)
+    }
+    return b.amount - a.amount; // Then by revenue (highest first)
+  });
+
+  // Sort inspection projects by revenue (highest first)
+  inspectionProjects.sort((a, b) => b.amount - a.amount);
 
   // Get next available dates per crew
   const crewNextDate = {};
@@ -1327,11 +1342,17 @@ function autoOptimize() {
     }
   });
 
-  let scheduled = 0;
+  let scheduledInstalls = 0;
+  let scheduledInspections = 0;
+  const scheduledInspectionDates = []; // Track inspection dates for the projects we schedule
+
   console.log('=== AUTO-OPTIMIZE DEBUG ===');
   console.log('Base date:', baseDateStr);
   console.log('Initial crew dates:', JSON.stringify(crewNextDate));
+  console.log(`RTB projects to schedule: ${rtbProjects.length} (sorted by difficulty, then revenue)`);
+  console.log(`Inspection projects to schedule: ${inspectionProjects.length}`);
 
+  // Schedule RTB projects (construction) AND their inspections
   rtbProjects.forEach(p => {
     const preferredCrew = p.crew;
     if (preferredCrew && crewNextDate[preferredCrew]) {
@@ -1346,7 +1367,7 @@ function autoOptimize() {
       const dayOfWeek = dateObj.getDay();
       const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-      console.log(`Scheduling ${p.name}: crewDate=${crewDateBefore} -> startDate=${startDate} (${dayNames[dayOfWeek]})`);
+      console.log(`Scheduling ${p.name} (D${p.difficulty || 3}): crewDate=${crewDateBefore} -> startDate=${startDate} (${dayNames[dayOfWeek]})`);
 
       // DEBUG: Check if startDate is a weekend
       if (dayOfWeek === 0 || dayOfWeek === 6) {
@@ -1355,14 +1376,70 @@ function autoOptimize() {
       }
 
       state.manualSchedules[p.id] = { startDate, days: p.daysInstall || 2, crew: preferredCrew };
+
+      // Calculate construction end date
+      const constructionEndDate = utils.addBusinessDays(startDate, jobDays);
+
+      // Schedule inspection 2 business days after construction ends
+      const inspectionDate = utils.addBusinessDays(constructionEndDate, 2);
+      scheduledInspectionDates.push({
+        projectName: p.name,
+        projectId: p.id,
+        inspectionDate: inspectionDate,
+        constructionEndDate: constructionEndDate
+      });
+
+      console.log(`  -> Inspection scheduled for ${inspectionDate} (2 days after construction ends ${constructionEndDate})`);
+
       // Calculate next available date after this job (use ceiling of days for business day calculation)
       crewNextDate[preferredCrew] = utils.getNextWorkday(utils.addBusinessDays(startDate, jobDays));
-      scheduled++;
+      scheduledInstalls++;
     }
   });
 
-  showToast(`⚡ Auto-scheduled ${scheduled} projects by revenue priority`);
-  document.getElementById('optimizeStats').innerHTML = `Scheduled ${scheduled} projects<br>Total: $${(rtbProjects.slice(0, scheduled).reduce((s, p) => s + p.amount, 0) / 1000).toFixed(0)}K`;
+  // Schedule standalone inspection projects (projects already in Inspection stage)
+  inspectionProjects.forEach(p => {
+    const preferredCrew = p.crew;
+    if (preferredCrew && crewNextDate[preferredCrew]) {
+      // For inspections, we just need 0.25 days (quarter day)
+      const startDate = utils.getNextWorkday(crewNextDate[preferredCrew]);
+
+      console.log(`Scheduling inspection for ${p.name}: date=${startDate}`);
+
+      state.manualSchedules[p.id] = { startDate, days: 0.25, crew: preferredCrew };
+      // Inspections are quick (0.25 days), so next crew availability is the next workday
+      crewNextDate[preferredCrew] = utils.getNextWorkday(startDate);
+      scheduledInspections++;
+    }
+  });
+
+  // Build summary message
+  const totalScheduled = scheduledInstalls + scheduledInspections;
+  const totalValue = (rtbProjects.slice(0, scheduledInstalls).reduce((s, p) => s + p.amount, 0) / 1000).toFixed(0);
+
+  let summaryMsg = '';
+  if (scheduledInstalls > 0 && scheduledInspections > 0) {
+    summaryMsg = `⚡ Scheduled ${scheduledInstalls} installs + ${scheduledInspections} inspections`;
+  } else if (scheduledInstalls > 0) {
+    summaryMsg = `⚡ Scheduled ${scheduledInstalls} installs (easiest first) + inspections`;
+  } else {
+    summaryMsg = `⚡ Scheduled ${scheduledInspections} inspections`;
+  }
+
+  showToast(summaryMsg);
+
+  // Update stats display
+  let statsHtml = `<div style="font-size: 0.65rem;">`;
+  statsHtml += `<div>📦 ${scheduledInstalls} installs scheduled</div>`;
+  statsHtml += `<div>🔍 ${scheduledInstalls} inspections auto-scheduled</div>`;
+  if (scheduledInspections > 0) {
+    statsHtml += `<div>🔍 +${scheduledInspections} pending inspections</div>`;
+  }
+  statsHtml += `<div style="color: var(--accent); margin-top: 4px;">💰 $${totalValue}K total value</div>`;
+  statsHtml += `<div style="color: var(--text-dim); margin-top: 4px; font-style: italic;">Sorted: Easiest → Hardest, then by $</div>`;
+  statsHtml += `</div>`;
+
+  document.getElementById('optimizeStats').innerHTML = statsHtml;
   renderAll();
 }
 

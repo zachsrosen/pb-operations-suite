@@ -159,23 +159,26 @@ export default function GuidePage() {
           <h3 className="text-xl font-semibold text-blue-400 mb-4">How "Optimize Schedule" Works</h3>
           <p className="text-zinc-300 mb-4">
             The Auto-Optimize feature in the Master Scheduler automatically schedules RTB (Ready To Build) projects
-            based on revenue priority while respecting crew availability.
+            AND their inspections, prioritizing easier projects first to maximize throughput.
           </p>
 
           <h4 className="font-semibold text-white mb-2">The Algorithm:</h4>
           <ol className="list-decimal list-inside space-y-2 text-zinc-300 mb-4">
-            <li><strong>Finds unscheduled RTB projects</strong> - Projects that are Ready To Build but don't have a scheduled date</li>
-            <li><strong>Sorts by revenue</strong> - Highest-value projects get priority</li>
-            <li><strong>Checks crew availability</strong> - Looks at each crew's existing schedule to find their next open date</li>
-            <li><strong>Assigns dates</strong> - Schedules each project on the crew's next available workday</li>
-            <li><strong>Avoids conflicts</strong> - Updates crew availability after each assignment to prevent double-booking</li>
+            <li><strong>Finds unscheduled RTB projects</strong> - Projects that are Ready To Build but don&apos;t have a scheduled date</li>
+            <li><strong>Sorts by difficulty, then revenue</strong> - Easiest projects first (difficulty 1-5), then by highest revenue within same difficulty</li>
+            <li><strong>Checks crew availability</strong> - Looks at each crew&apos;s existing schedule to find their next open date</li>
+            <li><strong>Schedules construction</strong> - Assigns each project to the crew&apos;s next available workday</li>
+            <li><strong>Auto-schedules inspections</strong> - Automatically schedules inspection 2 business days after construction ends</li>
+            <li><strong>Schedules pending inspections</strong> - Also schedules any projects already in the Inspection stage</li>
           </ol>
 
           <h4 className="font-semibold text-white mb-2">Key Features:</h4>
           <ul className="list-disc list-inside space-y-1 text-zinc-300">
-            <li><span className="text-green-400">Revenue Prioritization</span> - Higher-value projects scheduled first</li>
+            <li><span className="text-green-400">Difficulty-First Prioritization</span> - Easier projects (D1-D2) scheduled before harder ones (D4-D5)</li>
+            <li><span className="text-green-400">Revenue as Tiebreaker</span> - Within same difficulty, higher-value projects go first</li>
+            <li><span className="text-green-400">Automatic Inspection Scheduling</span> - Inspections scheduled 2 business days after construction</li>
             <li><span className="text-green-400">Weekend Avoidance</span> - Only schedules on business days (Mon-Fri)</li>
-            <li><span className="text-green-400">Crew-Aware</span> - Respects each crew's existing commitments</li>
+            <li><span className="text-green-400">Crew-Aware</span> - Respects each crew&apos;s existing commitments</li>
             <li><span className="text-green-400">Duration-Aware</span> - Accounts for job duration when calculating next availability</li>
           </ul>
         </section>
