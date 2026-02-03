@@ -573,7 +573,7 @@ const crews = {
 
 const locations = ['All', 'Westminster', 'Centennial', 'Colorado Springs', 'San Luis Obispo', 'Camarillo'];
 const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-const dayNames = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+const dayNames = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]; // Week starts on Monday
 
 // ===== STATE =====
 let state = {
@@ -872,7 +872,9 @@ function renderCalendar() {
   const cal = document.getElementById('calendar');
   const firstDay = new Date(state.currentYear, state.currentMonth, 1);
   const lastDay = new Date(state.currentYear, state.currentMonth + 1, 0);
-  const startDay = firstDay.getDay();
+  // Convert Sunday=0 to Monday-first index (Mon=0, Tue=1, ..., Sun=6)
+  const jsDay = firstDay.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+  const startDay = jsDay === 0 ? 6 : jsDay - 1; // Convert to Mon=0, Sun=6
   const daysInMonth = lastDay.getDate();
   const today = new Date();
 
