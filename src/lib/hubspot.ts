@@ -109,6 +109,13 @@ export interface Project {
   isParticipateEnergy: boolean;
   participateEnergyStatus: string | null;
 
+  // Incentive Programs
+  threeceEvStatus: string | null;
+  threeceBatteryStatus: string | null;
+  sgipStatus: string | null;
+  pbsrStatus: string | null;
+  cpaStatus: string | null;
+
   // Key dates
   closeDate: string | null;
 
@@ -119,14 +126,18 @@ export interface Project {
   // Design
   designCompletionDate: string | null;
   designApprovalDate: string | null;
+  designStatus: string | null;
+  layoutStatus: string | null;
 
   // Permitting
   permitSubmitDate: string | null;
   permitIssueDate: string | null;
+  permittingStatus: string | null;
 
   // Interconnection
   interconnectionSubmitDate: string | null;
   interconnectionApprovalDate: string | null;
+  interconnectionStatus: string | null;
 
   // Construction
   readyToBuildDate: string | null;
@@ -136,10 +147,12 @@ export interface Project {
   // Inspection
   inspectionScheduleDate: string | null;
   inspectionPassDate: string | null;
+  finalInspectionStatus: string | null;
 
   // PTO
   ptoSubmitDate: string | null;
   ptoGrantedDate: string | null;
+  ptoStatus: string | null;
 
   // Forecasted dates
   forecastedInstallDate: string | null;
@@ -222,21 +235,32 @@ const DEAL_PROPERTIES = [
   "tags",
   "participate_energy_status",
 
+  // Incentive Programs
+  "n3ce_ev_status",
+  "n3ce_battery_status",
+  "sgip_incentive_status",
+  "pbsr_incentive_status",
+  "cpa_status",
+
   // Site Survey dates
   "site_survey_schedule_date",
   "site_survey_date", // completion date
 
-  // Design dates
+  // Design dates & status
   "design_completion_date",
   "layout_approval_date", // design approval
+  "design_status",
+  "layout_status", // design approval status
 
   // Permit dates
   "permit_submit_date",
   "permit_completion_date", // issue date
+  "permitting_status",
 
   // Interconnection dates
   "interconnections_submit_date",
   "interconnections_completion_date", // approval date
+  "interconnection_status",
 
   // Construction dates
   "ready_to_build_date",
@@ -246,10 +270,12 @@ const DEAL_PROPERTIES = [
   // Inspection dates
   "inspections_schedule_date",
   "inspections_completion_date", // pass date
+  "final_inspection_status",
 
   // PTO dates
   "pto_start_date", // submit date
   "pto_completion_date", // granted date
+  "pto_status",
 
   // Forecasted dates
   "forecasted_installation_date",
@@ -447,6 +473,13 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string)
     isParticipateEnergy: isPE,
     participateEnergyStatus: deal.participate_energy_status ? String(deal.participate_energy_status) : null,
 
+    // Incentive Programs
+    threeceEvStatus: deal.n3ce_ev_status ? String(deal.n3ce_ev_status) : null,
+    threeceBatteryStatus: deal.n3ce_battery_status ? String(deal.n3ce_battery_status) : null,
+    sgipStatus: deal.sgip_incentive_status ? String(deal.sgip_incentive_status) : null,
+    pbsrStatus: deal.pbsr_incentive_status ? String(deal.pbsr_incentive_status) : null,
+    cpaStatus: deal.cpa_status ? String(deal.cpa_status) : null,
+
     // Key dates
     closeDate: parseDate(deal.closedate),
 
@@ -457,14 +490,18 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string)
     // Design
     designCompletionDate: parseDate(deal.design_completion_date),
     designApprovalDate: parseDate(deal.layout_approval_date),
+    designStatus: deal.design_status ? String(deal.design_status) : null,
+    layoutStatus: deal.layout_status ? String(deal.layout_status) : null,
 
     // Permitting
     permitSubmitDate: parseDate(deal.permit_submit_date),
     permitIssueDate: parseDate(deal.permit_completion_date),
+    permittingStatus: deal.permitting_status ? String(deal.permitting_status) : null,
 
     // Interconnection
     interconnectionSubmitDate: parseDate(deal.interconnections_submit_date),
     interconnectionApprovalDate: parseDate(deal.interconnections_completion_date),
+    interconnectionStatus: deal.interconnection_status ? String(deal.interconnection_status) : null,
 
     // Construction
     readyToBuildDate: parseDate(deal.ready_to_build_date),
@@ -474,10 +511,12 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string)
     // Inspection
     inspectionScheduleDate: parseDate(deal.inspections_schedule_date),
     inspectionPassDate: parseDate(deal.inspections_completion_date),
+    finalInspectionStatus: deal.final_inspection_status ? String(deal.final_inspection_status) : null,
 
     // PTO
     ptoSubmitDate: parseDate(deal.pto_start_date),
     ptoGrantedDate: parseDate(deal.pto_completion_date),
+    ptoStatus: deal.pto_status ? String(deal.pto_status) : null,
 
     // Forecasted dates
     forecastedInstallDate: parseDate(deal.forecasted_installation_date),

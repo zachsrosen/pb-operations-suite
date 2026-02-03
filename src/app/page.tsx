@@ -141,6 +141,7 @@ export default function Home() {
             <h2 className="text-lg font-semibold mb-4">Projects by Location</h2>
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
               {Object.entries(stats.locationCounts)
+                .filter(([location]) => location && location !== 'Unknown')
                 .sort((a, b) => (b[1] as number) - (a[1] as number))
                 .map(([location, count]) => {
                   const value = stats.locationValues?.[location] || 0;
@@ -202,6 +203,39 @@ export default function Home() {
             description="Gantt-style timeline showing project progression and milestones"
             tag="PLANNING"
             tagColor="blue"
+          />
+        </div>
+
+        {/* Design, Permitting, Interconnection & Incentives */}
+        <h2 className="text-lg font-semibold text-zinc-300 mb-4">Design, Permitting, Interconnection & Incentives</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+          <DashboardLink
+            href="/dashboards/design-engineering-dashboard.html"
+            title="Design & Engineering"
+            description="Track design status and layout approvals"
+            tag="DESIGN"
+            tagColor="indigo"
+          />
+          <DashboardLink
+            href="/dashboards/permitting-dashboard.html"
+            title="Permitting & Inspections"
+            description="Track permits, AHJ turnaround times, and inspection status"
+            tag="PERMITS"
+            tagColor="purple"
+          />
+          <DashboardLink
+            href="/dashboards/interconnection-dashboard.html"
+            title="Interconnection & PTO"
+            description="Track IC submissions, approvals, and Permission to Operate"
+            tag="IC"
+            tagColor="orange"
+          />
+          <DashboardLink
+            href="/dashboards/incentives-dashboard.html"
+            title="Incentives"
+            description="Track 3CE, SGIP, PBSR, CPA, and other incentive programs"
+            tag="INCENTIVES"
+            tagColor="emerald"
           />
         </div>
 
@@ -362,6 +396,7 @@ function DashboardLink({ href, title, description, tag, tagColor }: { href: stri
     emerald: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
     green: 'bg-green-500/20 text-green-400 border-green-500/30',
     cyan: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
+    indigo: 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30',
   };
 
   return (

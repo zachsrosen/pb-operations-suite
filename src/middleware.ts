@@ -1,6 +1,45 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
+interface SessionData {
+  token: string;
+  email: string;
+  createdAt: number;
+}
+
+function isValidSession(cookieValue: string): boolean {
+  try {
+    const session: SessionData = JSON.parse(cookieValue);
+
+    // Check if session has required fields
+    if (!session.token || !session.email || !session.createdAt) {
+      return false;
+    }
+
+    // Check if session is not expired (7 days)
+    const maxAge = 7 * 24 * 60 * 60 * 1000; // 7 days in ms
+    if (Date.now() - session.createdAt > maxAge) {
+      return false;
+    }
+
+    // Validate email domain
+    const allowedDomain = process.env.ALLOWED_EMAIL_DOMAIN || "photonbrothers.com";
+    const domains = allowedDomain.split(",").map((d) => d.trim().toLowerCase());
+    const emailValid = domains.some((domain) =>
+      session.email.toLowerCase().endsWith(`@${domain}`)
+    );
+
+    return emailValid;
+  } catch {
+    // If parsing fails, check for legacy password-based auth
+    const sitePassword = process.env.SITE_PASSWORD;
+    if (sitePassword && cookieValue === sitePassword) {
+      return true;
+    }
+    return false;
+  }
+}
+
 export function middleware(request: NextRequest) {
   // Skip API routes (they have their own auth)
   if (request.nextUrl.pathname.startsWith("/api/")) {
@@ -16,18 +55,20 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Check for password protection
-  const password = process.env.SITE_PASSWORD;
+  // Check if auth is required
+  const sitePassword = process.env.SITE_PASSWORD;
+  const resendApiKey = process.env.RESEND_API_KEY;
+  const allowedDomain = process.env.ALLOWED_EMAIL_DOMAIN;
 
-  if (!password) {
-    // No password set, allow access
+  // If neither password nor email auth is configured, allow access
+  if (!sitePassword && !resendApiKey && !allowedDomain) {
     return NextResponse.next();
   }
 
   // Check for auth cookie
   const authCookie = request.cookies.get("pb-auth");
 
-  if (authCookie?.value === password) {
+  if (authCookie?.value && isValidSession(authCookie.value)) {
     return NextResponse.next();
   }
 
