@@ -62,10 +62,15 @@ export default function Home() {
           <h1 className="text-xl font-bold bg-gradient-to-r from-orange-500 to-orange-400 bg-clip-text text-transparent">
             PB Operations Suite
           </h1>
-          <div className="text-sm text-zinc-500">
-            {loading ? 'Loading...' : error ? error : stats?.lastUpdated ? (
-              <>Last updated: {new Date(stats.lastUpdated).toLocaleString()}</>
-            ) : ''}
+          <div className="flex items-center gap-4">
+            <Link href="/guide" className="text-sm text-zinc-400 hover:text-orange-400 transition-colors">
+              Dashboard Guide
+            </Link>
+            <div className="text-sm text-zinc-500">
+              {loading ? 'Loading...' : error ? error : stats?.lastUpdated ? (
+                <>Last updated: {new Date(stats.lastUpdated).toLocaleString()}</>
+              ) : ''}
+            </div>
           </div>
         </div>
       </header>
