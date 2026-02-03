@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="PB Interconnection & PTO Dashboard - Track IC approvals and Permission to Operate">
+    <meta name="theme-color" content="#F59E0B">
+    <title>Interconnection & PTO | Photon Brothers</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    </style>
+</head>
+<body class="bg-[#0a0a0f] text-white min-h-screen">
+    <div id="root">
+        <div class="flex items-center justify-center min-h-screen">
+            <div class="text-center">
+                <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-amber-500 mx-auto mb-4"></div>
+                <p class="text-zinc-400">Loading Interconnection & PTO Data...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let allProjects = [];
+        let filterUtility = 'all';
+        let filterLocation = 'all';
+        let filterStage = 'all';
+        let filterIcStatus = 'all';
+        let filterPtoStatus = 'all';
+
+        // Display name mappings for status values
+        const DISPLAY_NAMES = {
+            // Interconnection Status
+            'ic_submitted': 'IC Submitted',
+            'ic_approved': 'IC Approved',
+            'interconnection_submitted': 'Interconnection Submitted',
+            'interconnection_approved': 'Interconnection Approved',
+            'awaiting_nem': 'Awaiting NEM',
+            'nem_approved': 'NEM Approved',
+            'upgrade_required': 'Upgrade Required',
+            'pending_utility': 'Pending Utility',
+            'ready_to_submit': 'Ready to Submit',
+            // PTO Status
+            'pto_submitted': 'PTO Submitted',
+            'pto_granted': 'PTO Granted',
+            'pto_pending': 'PTO Pending',
+            'awaiting_inspection': 'Awaiting Inspection',
+            'awaiting_meter': 'Awaiting Meter',
+            'meter_installed': 'Meter Installed',
+            // Common statuses
+            'submitted': 'Submitted',
+            'pending': 'Pending',
+            'approved': 'Approved',
+            'granted': 'Granted',
+            'complete': 'Complete',
+            'completed': 'Completed',
+            'in_progress': 'In Progress',
+            'in_review': 'In Review',
+            'not_started': 'Not Started',
+            'on_hold': 'On Hold',
+            'not_applicable': 'Not Applicable',
+            'n_a': 'N/A',
+            'na': 'N/A'
+        };
+
+        // Convert internal value to display name
+        function getDisplayName(value) {
+            if (!value) return value;
+            const key = value.toLowerCase().replace(/[\s-]+/g, '_');
+            return DISPLAY_NAMES[key] || value;
+        }
+
+        async function fetchData() {
+            try {
+                const response = await fetch('/api/projects?context=executive');
+                if (!response.ok) throw new Error('Failed to fetch');
+                const data = await response.json();
+                allProjects = data.projects;
+                render();
+            } catch (error) {
+                document.getElementById('root').innerHTML = `
+                    <div class="flex items-center justify-center min-h-screen">
+                        <div class="text-center text-red-500">
+                            <p class="text-xl mb-2">Error loading data</p>
+                            <p class="text-sm text-zinc-400">${error.message}</p>
+                            <button onclick="fetchData()" class="mt-4 px-4 py-2 bg-amber-600 rounded-lg hover:bg-amber-700">Retry</button>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        function formatCurrency(amount) {
+            return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(amount);
+        }
+
+        function daysBetween(date1, date2) {
+            if (!date1 || !date2) return null;
+            const d1 = new Date(date1);
+            const d2 = new Date(date2);
+            return Math.floor((d2 - d1) / (1000 * 60 * 60 * 24));
+        }
+
+        // Status helper functions
+        function isIcPending(p) {
+            const status = (p.interconnectionStatus || '').toLowerCase();
+            if (status && ['submitted', 'in review', 'pending', 'in progress', 'under review'].some(s => status.includes(s))) return true;
+            if (!status && p.interconnectionSubmitDate && !p.interconnectionApprovalDate) return true;
+            return false;
+        }
+        function isIcApproved(p) {
+            const status = (p.interconnectionStatus || '').toLowerCase();
+            if (status && ['approved', 'complete', 'granted', 'received'].some(s => status.includes(s))) return true;
+            if (!status && p.interconnectionApprovalDate) return true;
+            return false;
+        }
+        function isPtoPending(p) {
+            return p.stage === 'Permission To Operate' && !p.ptoGrantedDate;
+        }
+        function isPtoGranted(p) {
+            return !!p.ptoGrantedDate;
+        }
+
+        function getFilteredProjects() {
+            return allProjects.filter(p => {
+                if (filterUtility !== 'all' && p.utility !== filterUtility) return false;
+                if (filterLocation !== 'all' && p.pbLocation !== filterLocation) return false;
+                if (filterStage !== 'all' && p.stage !== filterStage) return false;
+                if (filterIcStatus !== 'all' && p.interconnectionStatus !== filterIcStatus) return false;
+                if (filterPtoStatus !== 'all' && p.ptoStatus !== filterPtoStatus) return false;
+                return true;
+            });
+        }
+
+        function render() {
+            const projects = getFilteredProjects();
+            const today = new Date();
+
+            // Calculate stats from FILTERED projects
+            const icPending = projects.filter(p => isIcPending(p));
+            const icApproved = projects.filter(p => isIcApproved(p));
+            const ptoPending = projects.filter(p => p.stage === 'Permission To Operate' && !p.ptoGrantedDate);
+            const ptoGranted = projects.filter(p => isPtoGranted(p));
+
+            // Calculate average days waiting for IC (filtered)
+            const daysWaitingIc = icPending.filter(p => p.interconnectionSubmitDate).map(p => {
+                return Math.floor((today - new Date(p.interconnectionSubmitDate)) / (1000 * 60 * 60 * 24));
+            });
+            const avgDaysWaitingIc = daysWaitingIc.length > 0
+                ? Math.round(daysWaitingIc.reduce((a, b) => a + b, 0) / daysWaitingIc.length)
+                : 0;
+
+            // Calculate average turnaround for IC approvals (filtered)
+            const turnaroundDays = icApproved.filter(p => p.interconnectionSubmitDate && p.interconnectionApprovalDate).map(p => {
+                return daysBetween(p.interconnectionSubmitDate, p.interconnectionApprovalDate);
+            }).filter(d => d !== null && d >= 0);
+            const avgTurnaround = turnaroundDays.length > 0
+                ? Math.round(turnaroundDays.reduce((a, b) => a + b, 0) / turnaroundDays.length)
+                : 0;
+
+            // Calculate average days in PTO stage (filtered)
+            const daysInPto = ptoPending.filter(p => p.ptoSubmitDate).map(p => {
+                return Math.floor((today - new Date(p.ptoSubmitDate)) / (1000 * 60 * 60 * 24));
+            });
+            const avgDaysInPto = daysInPto.length > 0
+                ? Math.round(daysInPto.reduce((a, b) => a + b, 0) / daysInPto.length)
+                : 0;
+
+            // Group by Utility (filtered)
+            const utilityStats = {};
+            projects.forEach(p => {
+                const utility = p.utility || 'Unknown';
+                if (!utilityStats[utility]) {
+                    utilityStats[utility] = { total: 0, icPending: 0, icApproved: 0, ptoPending: 0, avgDays: [], totalValue: 0 };
+                }
+                utilityStats[utility].total++;
+                utilityStats[utility].totalValue += p.amount || 0;
+                if (isIcApproved(p)) {
+                    utilityStats[utility].icApproved++;
+                    if (p.interconnectionSubmitDate && p.interconnectionApprovalDate) {
+                        const days = daysBetween(p.interconnectionSubmitDate, p.interconnectionApprovalDate);
+                        if (days !== null && days >= 0) utilityStats[utility].avgDays.push(days);
+                    }
+                } else if (isIcPending(p)) {
+                    utilityStats[utility].icPending++;
+                }
+                if (p.stage === 'Permission To Operate' && !p.ptoGrantedDate) {
+                    utilityStats[utility].ptoPending++;
+                }
+            });
+
+            // Get unique values for filters (from ALL projects)
+            const utilities = [...new Set(allProjects.map(p => p.utility))].filter(u => u && u !== 'Unknown').sort();
+            const locations = [...new Set(allProjects.map(p => p.pbLocation))].filter(l => l && l !== 'Unknown').sort();
+
+            // Dynamic status filters from actual data
+            const icStatuses = [...new Set(allProjects.map(p => p.interconnectionStatus))].filter(s => s).sort();
+            const ptoStatuses = [...new Set(allProjects.map(p => p.ptoStatus))].filter(s => s).sort();
+
+            // Stage order as per pipeline
+            const STAGE_ORDER = ['Site Survey', 'Design & Engineering', 'Permitting & Interconnection', 'RTB - Blocked', 'Ready To Build', 'Construction', 'Inspection', 'Permission To Operate', 'Close Out'];
+            const stages = [...new Set(allProjects.map(p => p.stage))].filter(s => s).sort((a, b) => {
+                const aIdx = STAGE_ORDER.findIndex(s => s.toLowerCase() === a.toLowerCase());
+                const bIdx = STAGE_ORDER.findIndex(s => s.toLowerCase() === b.toLowerCase());
+                if (aIdx === -1 && bIdx === -1) return a.localeCompare(b);
+                if (aIdx === -1) return 1;
+                if (bIdx === -1) return -1;
+                return aIdx - bIdx;
+            });
+
+            // Total value from filtered projects
+            const totalValue = projects.reduce((s, p) => s + (p.amount || 0), 0);
+
+            document.getElementById('root').innerHTML = `
+                <div class="min-h-screen">
+                    <!-- Header -->
+                    <header class="bg-[#12121a] border-b border-zinc-800 sticky top-0 z-50">
+                        <div class="max-w-7xl mx-auto px-4 py-4">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-4">
+                                    <a href="/" class="text-zinc-400 hover:text-white">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+                                        </svg>
+                                    </a>
+                                    <div>
+                                        <h1 class="text-xl font-bold text-amber-400">Interconnection & PTO</h1>
+                                        <p class="text-xs text-zinc-500">Last updated: ${new Date().toLocaleTimeString()}</p>
+                                    </div>
+                                </div>
+                                <div class="flex items-center gap-3">
+                                    <select id="utilityFilter" class="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" onchange="setUtilityFilter(this.value)">
+                                        <option value="all">All Utilities</option>
+                                        ${utilities.map(u => `<option value="${u}" ${filterUtility === u ? 'selected' : ''}>${u}</option>`).join('')}
+                                    </select>
+                                    <select id="locationFilter" class="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" onchange="setLocationFilter(this.value)">
+                                        <option value="all">All Locations</option>
+                                        ${locations.map(l => `<option value="${l}" ${filterLocation === l ? 'selected' : ''}>${l}</option>`).join('')}
+                                    </select>
+                                    <select id="stageFilter" class="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" onchange="setStageFilter(this.value)">
+                                        <option value="all">All Stages</option>
+                                        ${stages.map(s => `<option value="${s}" ${filterStage === s ? 'selected' : ''}>${s}</option>`).join('')}
+                                    </select>
+                                    <select id="icStatusFilter" class="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" onchange="setIcStatusFilter(this.value)">
+                                        <option value="all">All Interconnection Status</option>
+                                        ${icStatuses.map(s => `<option value="${s}" ${filterIcStatus === s ? 'selected' : ''}>${getDisplayName(s)}</option>`).join('')}
+                                    </select>
+                                    <select id="ptoStatusFilter" class="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" onchange="setPtoStatusFilter(this.value)">
+                                        <option value="all">All PTO Status</option>
+                                        ${ptoStatuses.map(s => `<option value="${s}" ${filterPtoStatus === s ? 'selected' : ''}>${getDisplayName(s)}</option>`).join('')}
+                                    </select>
+                                    <button onclick="fetchData()" class="bg-amber-600 hover:bg-amber-700 px-4 py-2 rounded-lg text-sm font-medium">
+                                        Refresh
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </header>
+
+                    <main class="max-w-7xl mx-auto px-4 py-6">
+                        <!-- Summary Stats -->
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                            <div class="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+                                <div class="text-2xl font-bold text-amber-400">${projects.length}</div>
+                                <div class="text-sm text-zinc-400">Total Projects</div>
+                                <div class="text-xs text-zinc-500">${formatCurrency(totalValue)}</div>
+                            </div>
+                            <div class="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+                                <div class="text-2xl font-bold text-yellow-400">${icPending.length}</div>
+                                <div class="text-sm text-zinc-400">IC Pending</div>
+                                <div class="text-xs text-zinc-500">${formatCurrency(icPending.reduce((s, p) => s + (p.amount || 0), 0))}</div>
+                            </div>
+                            <div class="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+                                <div class="text-2xl font-bold text-green-400">${icApproved.length}</div>
+                                <div class="text-sm text-zinc-400">IC Approved</div>
+                                <div class="text-xs text-zinc-500">${formatCurrency(icApproved.reduce((s, p) => s + (p.amount || 0), 0))}</div>
+                            </div>
+                            <div class="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+                                <div class="text-2xl font-bold text-cyan-400">${avgTurnaround}d</div>
+                                <div class="text-sm text-zinc-400">Avg IC Turnaround</div>
+                            </div>
+                        </div>
+
+                        <!-- PTO Stats -->
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                            <div class="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+                                <div class="text-2xl font-bold text-orange-400">${ptoPending.length}</div>
+                                <div class="text-sm text-zinc-400">PTO Pending</div>
+                                <div class="text-xs text-zinc-500">${formatCurrency(ptoPending.reduce((s, p) => s + (p.amount || 0), 0))}</div>
+                            </div>
+                            <div class="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+                                <div class="text-2xl font-bold text-emerald-400">${ptoGranted.length}</div>
+                                <div class="text-sm text-zinc-400">PTO Granted</div>
+                                <div class="text-xs text-zinc-500">${formatCurrency(ptoGranted.reduce((s, p) => s + (p.amount || 0), 0))}</div>
+                            </div>
+                            <div class="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+                                <div class="text-2xl font-bold text-purple-400">${avgDaysInPto}d</div>
+                                <div class="text-sm text-zinc-400">Avg Days in PTO</div>
+                            </div>
+                            <div class="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+                                <div class="text-2xl font-bold text-blue-400">${avgDaysWaitingIc}d</div>
+                                <div class="text-sm text-zinc-400">Avg Days IC Pending</div>
+                            </div>
+                        </div>
+
+                        <!-- Utility Breakdown -->
+                        <div class="bg-[#12121a] rounded-xl border border-zinc-800 p-4 mb-6">
+                            <h2 class="text-lg font-semibold mb-4">By Utility</h2>
+                            <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                                ${Object.entries(utilityStats)
+                                    .filter(([utility]) => utility !== 'Unknown')
+                                    .sort((a, b) => (b[1].icPending + b[1].ptoPending) - (a[1].icPending + a[1].ptoPending))
+                                    .slice(0, 12)
+                                    .map(([utility, stats]) => {
+                                        const avgDays = stats.avgDays.length > 0
+                                            ? Math.round(stats.avgDays.reduce((a, b) => a + b, 0) / stats.avgDays.length)
+                                            : null;
+                                        return `
+                                            <div class="bg-zinc-800/50 rounded-lg p-3 cursor-pointer hover:bg-zinc-800 transition-colors" onclick="setUtilityFilter('${utility}')">
+                                                <div class="text-sm font-medium text-white truncate" title="${utility}">${utility}</div>
+                                                <div class="flex items-center gap-2 mt-1">
+                                                    <span class="text-yellow-400 text-lg font-bold">${stats.icPending}</span>
+                                                    <span class="text-zinc-500 text-xs">IC</span>
+                                                </div>
+                                                <div class="flex items-center gap-2">
+                                                    <span class="text-orange-400 text-sm">${stats.ptoPending}</span>
+                                                    <span class="text-zinc-500 text-xs">PTO</span>
+                                                </div>
+                                                ${avgDays !== null ? `<div class="text-xs text-zinc-500 mt-1">~${avgDays}d turnaround</div>` : ''}
+                                            </div>
+                                        `;
+                                    }).join('')}
+                            </div>
+                        </div>
+
+                        <!-- Projects Table -->
+                        <div class="bg-[#12121a] rounded-xl border border-zinc-800 overflow-hidden">
+                            <div class="p-4 border-b border-zinc-800 flex items-center justify-between">
+                                <h2 class="text-lg font-semibold">Projects (${projects.length})</h2>
+                            </div>
+                            <div class="overflow-x-auto">
+                                <table class="w-full">
+                                    <thead class="bg-zinc-900">
+                                        <tr>
+                                            <th class="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Project</th>
+                                            <th class="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Utility</th>
+                                            <th class="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Interconnection</th>
+                                            <th class="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">IC Submitted</th>
+                                            <th class="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">IC Approved</th>
+                                            <th class="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">PTO Status</th>
+                                            <th class="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase">Amount</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-zinc-800">
+                                        ${projects.length === 0 ? `
+                                            <tr>
+                                                <td colspan="7" class="px-4 py-8 text-center text-zinc-500">No projects found</td>
+                                            </tr>
+                                        ` : projects
+                                            .sort((a, b) => {
+                                                // Sort by: IC pending first, then PTO pending, then by amount
+                                                if (isIcPending(a) && !isIcPending(b)) return -1;
+                                                if (!isIcPending(a) && isIcPending(b)) return 1;
+                                                if (a.stage === 'Permission To Operate' && b.stage !== 'Permission To Operate') return -1;
+                                                if (a.stage !== 'Permission To Operate' && b.stage === 'Permission To Operate') return 1;
+                                                return (b.amount || 0) - (a.amount || 0);
+                                            })
+                                            .slice(0, 100)
+                                            .map(project => {
+                                                let icStatus, icColor;
+                                                if (isIcApproved(project)) {
+                                                    icStatus = getDisplayName(project.interconnectionStatus) || 'Approved';
+                                                    icColor = 'bg-green-500/20 text-green-400';
+                                                } else if (isIcPending(project)) {
+                                                    icStatus = getDisplayName(project.interconnectionStatus) || 'Pending';
+                                                    icColor = 'bg-yellow-500/20 text-yellow-400';
+                                                } else {
+                                                    icStatus = getDisplayName(project.interconnectionStatus) || 'Not Started';
+                                                    icColor = 'bg-zinc-500/20 text-zinc-400';
+                                                }
+
+                                                let ptoStatus, ptoColor;
+                                                const rawPtoStatus = (project.ptoStatus || '').toLowerCase();
+                                                if (project.ptoGrantedDate || ['granted', 'complete', 'approved', 'received'].some(s => rawPtoStatus.includes(s))) {
+                                                    ptoStatus = getDisplayName(project.ptoStatus) || 'Granted';
+                                                    ptoColor = 'bg-emerald-500/20 text-emerald-400';
+                                                } else if (project.stage === 'Permission To Operate' || ['pending', 'submitted', 'in progress', 'in review'].some(s => rawPtoStatus.includes(s))) {
+                                                    ptoStatus = getDisplayName(project.ptoStatus) || (project.ptoSubmitDate ? 'Submitted' : 'Pending');
+                                                    ptoColor = 'bg-orange-500/20 text-orange-400';
+                                                } else if (project.ptoStatus) {
+                                                    ptoStatus = getDisplayName(project.ptoStatus);
+                                                    ptoColor = 'bg-zinc-500/20 text-zinc-400';
+                                                } else {
+                                                    ptoStatus = '—';
+                                                    ptoColor = 'bg-zinc-500/20 text-zinc-500';
+                                                }
+
+                                                return `
+                                                    <tr class="hover:bg-zinc-900/50">
+                                                        <td class="px-4 py-3">
+                                                            <a href="${project.url}" target="_blank" class="font-medium text-white hover:text-amber-400">${project.name.split('|')[0].trim()}</a>
+                                                            <div class="text-xs text-zinc-500">${project.pbLocation}</div>
+                                                        </td>
+                                                        <td class="px-4 py-3 text-sm text-zinc-300">${project.utility || '—'}</td>
+                                                        <td class="px-4 py-3">
+                                                            <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${icColor}">
+                                                                ${icStatus}
+                                                            </span>
+                                                        </td>
+                                                        <td class="px-4 py-3 text-sm ${project.interconnectionSubmitDate ? 'text-blue-400' : 'text-zinc-500'}">
+                                                            ${project.interconnectionSubmitDate || '—'}
+                                                        </td>
+                                                        <td class="px-4 py-3 text-sm ${project.interconnectionApprovalDate ? 'text-green-400' : 'text-zinc-500'}">
+                                                            ${project.interconnectionApprovalDate || '—'}
+                                                        </td>
+                                                        <td class="px-4 py-3">
+                                                            <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${ptoColor}">
+                                                                ${ptoStatus}
+                                                            </span>
+                                                        </td>
+                                                        <td class="px-4 py-3 text-right font-mono text-sm ${project.amount > 0 ? 'text-green-400' : 'text-zinc-500'}">${formatCurrency(project.amount)}</td>
+                                                    </tr>
+                                                `;
+                                            }).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </main>
+                </div>
+            `;
+        }
+
+        function setUtilityFilter(value) {
+            filterUtility = value;
+            render();
+        }
+
+        function setLocationFilter(value) {
+            filterLocation = value;
+            render();
+        }
+
+        function setStageFilter(value) {
+            filterStage = value;
+            render();
+        }
+
+        function setIcStatusFilter(value) {
+            filterIcStatus = value;
+            render();
+        }
+
+        function setPtoStatusFilter(value) {
+            filterPtoStatus = value;
+            render();
+        }
+
+        // Initial load
+        fetchData();
+        // Auto-refresh every 5 minutes
+        setInterval(fetchData, 5 * 60 * 1000);
+    </script>
+</body>
+</html>

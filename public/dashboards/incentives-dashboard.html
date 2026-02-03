@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="PB Incentives Dashboard - Track incentive programs, rebates, and compliance status">
+    <meta name="theme-color" content="#10B981">
+    <title>Incentives Dashboard | Photon Brothers</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    </style>
+</head>
+<body class="bg-[#0a0a0f] text-white min-h-screen">
+    <div id="root">
+        <div class="flex items-center justify-center min-h-screen">
+            <div class="text-center">
+                <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-emerald-500 mx-auto mb-4"></div>
+                <p class="text-zinc-400">Loading Incentives Data...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let allProjects = [];
+        let filterProgram = 'all';
+        let filterLocation = 'all';
+        let filterStage = 'all';
+        let chartInstance = null;
+
+        const PROGRAMS = [
+            { key: 'threeceEvStatus', name: '3CE EV', color: '#3B82F6' },
+            { key: 'threeceBatteryStatus', name: '3CE Battery', color: '#8B5CF6' },
+            { key: 'sgipStatus', name: 'SGIP', color: '#10B981' },
+            { key: 'pbsrStatus', name: 'PBSR', color: '#F59E0B' },
+            { key: 'cpaStatus', name: 'CPA', color: '#EC4899' }
+        ];
+
+        // Display name mappings for incentive status values
+        const DISPLAY_NAMES = {
+            // 3CE Status
+            '3ce_submitted': '3CE Submitted',
+            '3ce_approved': '3CE Approved',
+            '3ce_pending': '3CE Pending',
+            'reservation_submitted': 'Reservation Submitted',
+            'reservation_approved': 'Reservation Approved',
+            'incentive_claimed': 'Incentive Claimed',
+            'payment_received': 'Payment Received',
+            // SGIP Status
+            'sgip_submitted': 'SGIP Submitted',
+            'sgip_approved': 'SGIP Approved',
+            'sgip_reserved': 'SGIP Reserved',
+            'step_1': 'Step 1',
+            'step_2': 'Step 2',
+            'step_3': 'Step 3',
+            'step_4': 'Step 4',
+            'step_5': 'Step 5',
+            'step_1_complete': 'Step 1 Complete',
+            'step_2_complete': 'Step 2 Complete',
+            'step_3_complete': 'Step 3 Complete',
+            'step_4_complete': 'Step 4 Complete',
+            'step_5_complete': 'Step 5 Complete',
+            // PBSR Status
+            'pbsr_submitted': 'PBSR Submitted',
+            'pbsr_approved': 'PBSR Approved',
+            'pbsr_pending': 'PBSR Pending',
+            // CPA Status
+            'cpa_submitted': 'CPA Submitted',
+            'cpa_approved': 'CPA Approved',
+            'cpa_pending': 'CPA Pending',
+            // Common statuses
+            'submitted': 'Submitted',
+            'pending': 'Pending',
+            'approved': 'Approved',
+            'reserved': 'Reserved',
+            'claimed': 'Claimed',
+            'paid': 'Paid',
+            'complete': 'Complete',
+            'completed': 'Completed',
+            'in_progress': 'In Progress',
+            'in_review': 'In Review',
+            'not_started': 'Not Started',
+            'on_hold': 'On Hold',
+            'expired': 'Expired',
+            'cancelled': 'Cancelled',
+            'not_applicable': 'Not Applicable',
+            'n_a': 'N/A',
+            'na': 'N/A'
+        };
+
+        // Convert internal value to display name
+        function getDisplayName(value) {
+            if (!value) return value;
+            const key = value.toLowerCase().replace(/[\s-]+/g, '_');
+            return DISPLAY_NAMES[key] || value;
+        }
+
+        async function fetchData() {
+            try {
+                const response = await fetch('/api/projects?context=executive');
+                if (!response.ok) throw new Error('Failed to fetch');
+                const data = await response.json();
+                allProjects = data.projects;
+                render();
+            } catch (error) {
+                document.getElementById('root').innerHTML = `
+                    <div class="flex items-center justify-center min-h-screen">
+                        <div class="text-center text-red-500">
+                            <p class="text-xl mb-2">Error loading data</p>
+                            <p class="text-sm text-zinc-400">${error.message}</p>
+                            <button onclick="fetchData()" class="mt-4 px-4 py-2 bg-emerald-600 rounded-lg hover:bg-emerald-700">Retry</button>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        function formatCurrency(amount) {
+            return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(amount);
+        }
+
+        function hasIncentive(project) {
+            return project.threeceEvStatus ||
+                   project.threeceBatteryStatus ||
+                   project.sgipStatus ||
+                   project.pbsrStatus ||
+                   project.cpaStatus;
+        }
+
+        function getProjectPrograms(project) {
+            const programs = [];
+            if (project.threeceEvStatus) programs.push({ name: '3CE EV', status: project.threeceEvStatus });
+            if (project.threeceBatteryStatus) programs.push({ name: '3CE Battery', status: project.threeceBatteryStatus });
+            if (project.sgipStatus) programs.push({ name: 'SGIP', status: project.sgipStatus });
+            if (project.pbsrStatus) programs.push({ name: 'PBSR', status: project.pbsrStatus });
+            if (project.cpaStatus) programs.push({ name: 'CPA', status: project.cpaStatus });
+            return programs;
+        }
+
+        function getFilteredProjects() {
+            return allProjects.filter(p => {
+                if (!hasIncentive(p)) return false;
+                if (filterLocation !== 'all' && p.pbLocation !== filterLocation) return false;
+                if (filterStage !== 'all' && p.stage !== filterStage) return false;
+                if (filterProgram !== 'all') {
+                    if (filterProgram === '3ce_ev' && !p.threeceEvStatus) return false;
+                    if (filterProgram === '3ce_battery' && !p.threeceBatteryStatus) return false;
+                    if (filterProgram === 'sgip' && !p.sgipStatus) return false;
+                    if (filterProgram === 'pbsr' && !p.pbsrStatus) return false;
+                    if (filterProgram === 'cpa' && !p.cpaStatus) return false;
+                }
+                return true;
+            });
+        }
+
+        function render() {
+            const projects = getFilteredProjects();
+
+            // Calculate program stats from FILTERED projects
+            const programStats = {
+                '3ce_ev': { count: 0, value: 0, statuses: {} },
+                '3ce_battery': { count: 0, value: 0, statuses: {} },
+                sgip: { count: 0, value: 0, statuses: {} },
+                pbsr: { count: 0, value: 0, statuses: {} },
+                cpa: { count: 0, value: 0, statuses: {} }
+            };
+
+            projects.forEach(p => {
+                if (p.threeceEvStatus) {
+                    programStats['3ce_ev'].count++;
+                    programStats['3ce_ev'].value += p.amount || 0;
+                    programStats['3ce_ev'].statuses[p.threeceEvStatus] = (programStats['3ce_ev'].statuses[p.threeceEvStatus] || 0) + 1;
+                }
+                if (p.threeceBatteryStatus) {
+                    programStats['3ce_battery'].count++;
+                    programStats['3ce_battery'].value += p.amount || 0;
+                    programStats['3ce_battery'].statuses[p.threeceBatteryStatus] = (programStats['3ce_battery'].statuses[p.threeceBatteryStatus] || 0) + 1;
+                }
+                if (p.sgipStatus) {
+                    programStats.sgip.count++;
+                    programStats.sgip.value += p.amount || 0;
+                    programStats.sgip.statuses[p.sgipStatus] = (programStats.sgip.statuses[p.sgipStatus] || 0) + 1;
+                }
+                if (p.pbsrStatus) {
+                    programStats.pbsr.count++;
+                    programStats.pbsr.value += p.amount || 0;
+                    programStats.pbsr.statuses[p.pbsrStatus] = (programStats.pbsr.statuses[p.pbsrStatus] || 0) + 1;
+                }
+                if (p.cpaStatus) {
+                    programStats.cpa.count++;
+                    programStats.cpa.value += p.amount || 0;
+                    programStats.cpa.statuses[p.cpaStatus] = (programStats.cpa.statuses[p.cpaStatus] || 0) + 1;
+                }
+            });
+
+            // Get unique locations and stages
+            const locations = [...new Set(allProjects.map(p => p.pbLocation))].filter(l => l && l !== 'Unknown').sort();
+
+            // Stage order as per pipeline
+            const STAGE_ORDER = ['Site Survey', 'Design & Engineering', 'Permitting & Interconnection', 'RTB - Blocked', 'Ready To Build', 'Construction', 'Inspection', 'Permission To Operate', 'Close Out'];
+            const stages = [...new Set(allProjects.map(p => p.stage))].filter(s => s).sort((a, b) => {
+                const aIdx = STAGE_ORDER.findIndex(s => s.toLowerCase() === a.toLowerCase());
+                const bIdx = STAGE_ORDER.findIndex(s => s.toLowerCase() === b.toLowerCase());
+                if (aIdx === -1 && bIdx === -1) return a.localeCompare(b);
+                if (aIdx === -1) return 1;
+                if (bIdx === -1) return -1;
+                return aIdx - bIdx;
+            });
+
+            document.getElementById('root').innerHTML = `
+                <div class="min-h-screen">
+                    <!-- Header -->
+                    <header class="bg-[#12121a] border-b border-zinc-800 sticky top-0 z-50">
+                        <div class="max-w-7xl mx-auto px-4 py-4">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-4">
+                                    <a href="/" class="text-zinc-400 hover:text-white">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+                                        </svg>
+                                    </a>
+                                    <div>
+                                        <h1 class="text-xl font-bold text-emerald-400">Incentives Dashboard</h1>
+                                        <p class="text-xs text-zinc-500">Last updated: ${new Date().toLocaleTimeString()}</p>
+                                    </div>
+                                </div>
+                                <div class="flex items-center gap-3">
+                                    <select id="programFilter" class="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" onchange="setProgramFilter(this.value)">
+                                        <option value="all">All Programs</option>
+                                        <option value="3ce_ev" ${filterProgram === '3ce_ev' ? 'selected' : ''}>3CE EV</option>
+                                        <option value="3ce_battery" ${filterProgram === '3ce_battery' ? 'selected' : ''}>3CE Battery</option>
+                                        <option value="sgip" ${filterProgram === 'sgip' ? 'selected' : ''}>SGIP</option>
+                                        <option value="pbsr" ${filterProgram === 'pbsr' ? 'selected' : ''}>PBSR</option>
+                                        <option value="cpa" ${filterProgram === 'cpa' ? 'selected' : ''}>CPA</option>
+                                    </select>
+                                    <select id="locationFilter" class="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" onchange="setLocationFilter(this.value)">
+                                        <option value="all">All Locations</option>
+                                        ${locations.map(l => `<option value="${l}" ${filterLocation === l ? 'selected' : ''}>${l}</option>`).join('')}
+                                    </select>
+                                    <select id="stageFilter" class="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" onchange="setStageFilter(this.value)">
+                                        <option value="all">All Stages</option>
+                                        ${stages.map(s => `<option value="${s}" ${filterStage === s ? 'selected' : ''}>${s}</option>`).join('')}
+                                    </select>
+                                    <button onclick="fetchData()" class="bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded-lg text-sm font-medium">
+                                        Refresh
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </header>
+
+                    <main class="max-w-7xl mx-auto px-4 py-6">
+                        <!-- Stats -->
+                        <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+                            <div class="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+                                <div class="text-2xl font-bold text-emerald-400">${projects.length}</div>
+                                <div class="text-sm text-zinc-400">Projects with Incentives</div>
+                                <div class="text-xs text-zinc-500">${formatCurrency(projects.reduce((s, p) => s + (p.amount || 0), 0))}</div>
+                            </div>
+                            <div class="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+                                <div class="text-2xl font-bold text-green-400">${programStats.sgip.count}</div>
+                                <div class="text-sm text-zinc-400">SGIP</div>
+                                <div class="text-xs text-zinc-500">${formatCurrency(programStats.sgip.value)}</div>
+                            </div>
+                            <div class="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+                                <div class="text-2xl font-bold text-blue-400">${programStats['3ce_ev'].count + programStats['3ce_battery'].count}</div>
+                                <div class="text-sm text-zinc-400">3CE (EV + Battery)</div>
+                                <div class="text-xs text-zinc-500">${formatCurrency(programStats['3ce_ev'].value + programStats['3ce_battery'].value)}</div>
+                            </div>
+                            <div class="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+                                <div class="text-2xl font-bold text-amber-400">${programStats.pbsr.count}</div>
+                                <div class="text-sm text-zinc-400">PBSR</div>
+                                <div class="text-xs text-zinc-500">${formatCurrency(programStats.pbsr.value)}</div>
+                            </div>
+                            <div class="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+                                <div class="text-2xl font-bold text-pink-400">${programStats.cpa.count}</div>
+                                <div class="text-sm text-zinc-400">CPA</div>
+                                <div class="text-xs text-zinc-500">${formatCurrency(programStats.cpa.value)}</div>
+                            </div>
+                        </div>
+
+                        <!-- Program Breakdown -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+                            ${[
+                                { key: '3ce_ev', name: '3CE EV', color: 'blue' },
+                                { key: '3ce_battery', name: '3CE Battery', color: 'purple' },
+                                { key: 'sgip', name: 'SGIP', color: 'green' },
+                                { key: 'pbsr', name: 'PBSR', color: 'amber' },
+                                { key: 'cpa', name: 'CPA', color: 'pink' }
+                            ].map(prog => {
+                                const stats = programStats[prog.key];
+                                if (stats.count === 0) return '';
+                                return `
+                                    <div class="bg-[#12121a] rounded-xl border border-zinc-800 p-4 cursor-pointer hover:border-${prog.color}-500/50 transition-colors" onclick="setProgramFilter('${prog.key}')">
+                                        <div class="flex items-center justify-between mb-3">
+                                            <h3 class="font-semibold text-${prog.color}-400">${prog.name}</h3>
+                                            <span class="text-2xl font-bold text-white">${stats.count}</span>
+                                        </div>
+                                        <div class="text-sm text-green-400 mb-3">${formatCurrency(stats.value)}</div>
+                                        <div class="space-y-1">
+                                            ${Object.entries(stats.statuses)
+                                                .sort((a, b) => b[1] - a[1])
+                                                .slice(0, 5)
+                                                .map(([status, count]) => `
+                                                    <div class="flex items-center justify-between text-xs">
+                                                        <span class="text-zinc-400 truncate mr-2">${getDisplayName(status)}</span>
+                                                        <span class="text-zinc-300 font-medium">${count}</span>
+                                                    </div>
+                                                `).join('')}
+                                        </div>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+
+                        <!-- Chart -->
+                        <div class="bg-[#12121a] rounded-xl border border-zinc-800 p-4 mb-6">
+                            <h2 class="text-lg font-semibold mb-4">Program Distribution</h2>
+                            <div class="h-64">
+                                <canvas id="programChart"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- Projects Table -->
+                        <div class="bg-[#12121a] rounded-xl border border-zinc-800 overflow-hidden">
+                            <div class="p-4 border-b border-zinc-800 flex items-center justify-between">
+                                <h2 class="text-lg font-semibold">Incentive Projects (${projects.length})</h2>
+                            </div>
+                            <div class="overflow-x-auto">
+                                <table class="w-full">
+                                    <thead class="bg-zinc-900">
+                                        <tr>
+                                            <th class="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Project</th>
+                                            <th class="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Location</th>
+                                            <th class="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Stage</th>
+                                            <th class="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Programs</th>
+                                            <th class="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase">Amount</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-zinc-800">
+                                        ${projects.length === 0 ? `
+                                            <tr>
+                                                <td colspan="5" class="px-4 py-8 text-center text-zinc-500">No projects found</td>
+                                            </tr>
+                                        ` : projects
+                                            .sort((a, b) => (b.amount || 0) - (a.amount || 0))
+                                            .slice(0, 100)
+                                            .map(project => {
+                                                const programs = getProjectPrograms(project);
+                                                return `
+                                                    <tr class="hover:bg-zinc-900/50">
+                                                        <td class="px-4 py-3">
+                                                            <a href="${project.url}" target="_blank" class="font-medium text-white hover:text-emerald-400">${project.name.split('|')[0].trim()}</a>
+                                                        </td>
+                                                        <td class="px-4 py-3 text-sm text-zinc-300">${project.pbLocation}</td>
+                                                        <td class="px-4 py-3 text-sm text-zinc-400">${project.stage}</td>
+                                                        <td class="px-4 py-3">
+                                                            <div class="flex flex-wrap gap-1">
+                                                                ${programs.map(prog => `
+                                                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-500/20 text-emerald-400" title="${prog.status}">
+                                                                        ${prog.name}
+                                                                    </span>
+                                                                `).join('')}
+                                                            </div>
+                                                        </td>
+                                                        <td class="px-4 py-3 text-right font-mono text-sm ${project.amount > 0 ? 'text-green-400' : 'text-zinc-500'}">${formatCurrency(project.amount)}</td>
+                                                    </tr>
+                                                `;
+                                            }).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </main>
+                </div>
+            `;
+
+            // Render chart
+            setTimeout(() => {
+                const ctx = document.getElementById('programChart');
+                if (!ctx) return;
+
+                if (chartInstance) chartInstance.destroy();
+
+                const chartData = [
+                    { label: '3CE EV', value: programStats['3ce_ev'].count, color: '#3B82F6' },
+                    { label: '3CE Battery', value: programStats['3ce_battery'].count, color: '#8B5CF6' },
+                    { label: 'SGIP', value: programStats.sgip.count, color: '#10B981' },
+                    { label: 'PBSR', value: programStats.pbsr.count, color: '#F59E0B' },
+                    { label: 'CPA', value: programStats.cpa.count, color: '#EC4899' }
+                ].filter(d => d.value > 0);
+
+                chartInstance = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: chartData.map(d => d.label),
+                        datasets: [{
+                            data: chartData.map(d => d.value),
+                            backgroundColor: chartData.map(d => d.color),
+                            borderWidth: 0
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'right',
+                                labels: { color: '#a1a1aa' }
+                            }
+                        }
+                    }
+                });
+            }, 100);
+        }
+
+        function setProgramFilter(value) {
+            filterProgram = value;
+            render();
+        }
+
+        function setLocationFilter(value) {
+            filterLocation = value;
+            render();
+        }
+
+        function setStageFilter(value) {
+            filterStage = value;
+            render();
+        }
+
+        // Initial load
+        fetchData();
+        // Auto-refresh every 5 minutes
+        setInterval(fetchData, 5 * 60 * 1000);
+    </script>
+</body>
+</html>

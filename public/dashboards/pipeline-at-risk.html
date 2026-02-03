@@ -68,6 +68,7 @@ function AtRiskDashboard() {
     const [sortBy, setSortBy] = useState('severity');
     const [filterLocation, setFilterLocation] = useState('all');
     const [filterRiskType, setFilterRiskType] = useState('all');
+    const [filterStage, setFilterStage] = useState('all');
 
     const today = new Date();
 
@@ -96,6 +97,11 @@ function AtRiskDashboard() {
     const locations = useMemo(() => {
         const locs = [...new Set(projects.map(p => p.pb_location))].filter(l => l !== 'Unknown').sort();
         return ['all', ...locs];
+    }, [projects]);
+
+    const stages = useMemo(() => {
+        const uniqueStages = [...new Set(projects.map(p => p.stage))].filter(s => s).sort();
+        return ['all', ...uniqueStages];
     }, [projects]);
 
     // Calculate risk for each project
@@ -170,6 +176,10 @@ function AtRiskDashboard() {
             filtered = filtered.filter(p => p.pb_location === filterLocation);
         }
 
+        if (filterStage !== 'all') {
+            filtered = filtered.filter(p => p.stage === filterStage);
+        }
+
         if (filterRiskType !== 'all') {
             filtered = filtered.filter(p => p.risks.some(r => r.type.toLowerCase().includes(filterRiskType.toLowerCase())));
         }
@@ -187,7 +197,7 @@ function AtRiskDashboard() {
         }
 
         return filtered;
-    }, [projectsWithRisk, filterLocation, filterRiskType, sortBy]);
+    }, [projectsWithRisk, filterLocation, filterStage, filterRiskType, sortBy]);
 
     // Summary stats
     const stats = useMemo(() => {
@@ -290,6 +300,15 @@ function AtRiskDashboard() {
                                 className="bg-gray-700 border-gray-600 border rounded px-3 py-1.5 text-sm">
                                 {riskTypes.map(t => (
                                     <option key={t} value={t}>{t === 'all' ? 'All Risks' : t.charAt(0).toUpperCase() + t.slice(1)}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <span className="text-sm text-gray-400">Stage:</span>
+                            <select value={filterStage} onChange={e => setFilterStage(e.target.value)}
+                                className="bg-gray-700 border-gray-600 border rounded px-3 py-1.5 text-sm">
+                                {stages.map(s => (
+                                    <option key={s} value={s}>{s === 'all' ? 'All Stages' : s}</option>
                                 ))}
                             </select>
                         </div>

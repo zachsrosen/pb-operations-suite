@@ -72,7 +72,7 @@
 
         async function fetchData() {
             try {
-                const response = await fetch('/api/deals?pipeline=dnr&active=false');
+                const response = await fetch('/api/deals?pipeline=dnr&active=true');
                 if (!response.ok) throw new Error('Failed to fetch');
                 const data = await response.json();
                 allDeals = data.deals;

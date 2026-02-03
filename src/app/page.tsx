@@ -458,6 +458,12 @@ const StageBar = memo(function StageBar({
   const percentage = (count / total) * 100;
   const colorClass = STAGE_COLORS[stage]?.tw || "bg-zinc-600";
 
+  const formatValue = (v: number) => {
+    if (v >= 1000000) return `$${(v / 1000000).toFixed(1)}M`;
+    if (v >= 1000) return `$${(v / 1000).toFixed(0)}k`;
+    return `$${v}`;
+  };
+
   return (
     <div className="flex items-center gap-4">
       <div className="w-40 text-sm text-zinc-400 truncate" title={stage}>

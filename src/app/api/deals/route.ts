@@ -5,6 +5,7 @@ import { appCache, CACHE_KEYS } from "@/lib/cache";
 
 const hubspotClient = new Client({
   accessToken: process.env.HUBSPOT_ACCESS_TOKEN,
+  numberOfApiCallRetries: 1, // Limit internal retries
 });
 
 // Rate limiting helpers
@@ -111,6 +112,14 @@ const ACTIVE_STAGES: Record<string, string[]> = {
   roofing: ["On Hold", "Color Selection", "Material & Labor Order", "Confirm Dates", "Staged", "Production", "Post Production", "Invoice/Collections", "Job Close Out Paperwork"],
 };
 
+// Active stage IDs (for filtering at HubSpot level to reduce API calls)
+const ACTIVE_STAGE_IDS: Record<string, string[]> = {
+  sales: ["qualifiedtobuy", "decisionmakerboughtin", "1241097777", "contractsent", "70699053", "70695977"],
+  dnr: ["52474739", "52474740", "52474741", "52474742", "78437201", "52474743", "78453339", "78412639", "78412640", "52474744", "55098156", "52498440"],
+  service: ["1058744644", "1058924076", "171758480", "1058924077", "1058924078"],
+  roofing: ["1117662745", "1117662746", "1215078279", "1117662747", "1215078280", "1215078281", "1215078282", "1215078283", "1215078284"],
+};
+
 // Common properties to fetch
 const DEAL_PROPERTIES = [
   "hs_object_id",
@@ -195,13 +204,46 @@ function transformDeal(deal: Record<string, unknown>, pipelineKey: string, porta
   };
 }
 
-async function fetchDealsForPipeline(pipelineKey: string): Promise<Deal[]> {
+// Helper to delay execution
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Simple retry for rate-limited requests - fail fast to avoid Vercel timeout
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  maxRetries: number = 1,
+  retryDelay: number = 300
+): Promise<T> {
+  try {
+    return await fn();
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    // Check if it's a rate limit error
+    if (maxRetries > 0 && (errorMessage.includes("429") || errorMessage.includes("RATE_LIMIT"))) {
+      console.log(`Rate limited, waiting ${retryDelay}ms before retry`);
+      await delay(retryDelay);
+      return withRetry(fn, maxRetries - 1, retryDelay);
+    }
+    throw error;
+  }
+}
+
+// Max deals to fetch to avoid Vercel timeout (roughly 500 per 3 seconds)
+const MAX_DEALS_FETCH = 500;
+const MAX_PAGES = 5; // 5 pages * 100 deals = 500 max
+
+async function fetchDealsForPipeline(pipelineKey: string, activeOnly: boolean = true): Promise<Deal[]> {
   const pipelineId = PIPELINE_IDS[pipelineKey];
   if (!pipelineId) throw new Error(`Unknown pipeline: ${pipelineKey}`);
 
   const portalId = process.env.HUBSPOT_PORTAL_ID || "21710069";
   const allDeals: Record<string, unknown>[] = [];
   let after: string | undefined;
+  let pageCount = 0;
+
+  // Get active stage IDs for filtering at HubSpot level
+  const activeStageIds = activeOnly ? ACTIVE_STAGE_IDS[pipelineKey] : null;
 
   // For the default sales pipeline, search by each deal stage separately
   // because HubSpot's search API rejects pipeline="default" as a filter value.
@@ -393,8 +435,18 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("Error fetching deals:", error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+
+    // Check if it's a rate limit error and return appropriate status
+    if (errorMessage.includes("429") || errorMessage.includes("RATE_LIMIT")) {
+      return NextResponse.json(
+        { error: "HubSpot API rate limited. Please try again in a few seconds.", details: errorMessage },
+        { status: 429 }
+      );
+    }
+
     return NextResponse.json(
-      { error: "Failed to fetch deals", details: String(error) },
+      { error: "Failed to fetch deals", details: errorMessage },
       { status: 500 }
     );
   }
