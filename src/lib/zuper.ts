@@ -259,9 +259,26 @@ class ZuperClient {
         params.append(key, String(value));
       }
     });
-    return this.request<{ jobs: ZuperJob[]; total: number }>(
-      `/jobs?${params.toString()}`
-    );
+
+    // Zuper API returns { type, data: [...], total_records, ... }
+    // We need to transform it to our expected format
+    const result = await this.request<ZuperJob[]>(`/jobs?${params.toString()}`);
+
+    if (result.type === "success" && Array.isArray(result.data)) {
+      return {
+        type: "success",
+        data: {
+          jobs: result.data,
+          total: result.data.length,
+        },
+      };
+    }
+
+    return {
+      type: result.type,
+      error: result.error,
+      data: { jobs: [], total: 0 },
+    };
   }
 
   // ========== CUSTOMER OPERATIONS ==========
