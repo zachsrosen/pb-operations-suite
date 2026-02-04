@@ -1650,11 +1650,11 @@ export default function SchedulerPage() {
 
                   {/* Crew rows */}
                   {(() => {
-                    const loc =
+                    // When "All" is selected, show all crews from all locations
+                    const locationCrews =
                       selectedLocation === "All"
-                        ? "Westminster"
-                        : selectedLocation;
-                    const locationCrews = CREWS[loc] || [];
+                        ? Object.values(CREWS).flat()
+                        : CREWS[selectedLocation] || [];
                     return locationCrews.map((crew) => (
                       <React.Fragment key={crew.name}>
                         <div
