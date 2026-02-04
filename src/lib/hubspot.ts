@@ -779,9 +779,9 @@ export function filterProjectsForContext(
 ): Project[] {
   switch (context) {
     case "scheduling":
-      // Projects that need to be scheduled or are in construction
+      // Projects that need to be scheduled or are in construction/inspection stages
       return projects.filter(
-        (p) => p.isSchedulable || p.stage === "Construction"
+        (p) => p.isSchedulable || p.stage === "Construction" || p.stage === "Inspection"
       );
 
     case "equipment":
