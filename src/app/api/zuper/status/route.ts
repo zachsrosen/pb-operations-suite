@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { zuper, ZuperClient } from "@/lib/zuper";
+import { zuper } from "@/lib/zuper";
 
 export async function GET() {
   const configured = zuper.isConfigured();

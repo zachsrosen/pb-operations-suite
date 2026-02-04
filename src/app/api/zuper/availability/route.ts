@@ -410,13 +410,42 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // Filter out locally booked slots
+  // Filter out locally booked slots and add them to bookedSlots array for display
   for (const dateStr in availabilityByDate) {
     const day = availabilityByDate[dateStr];
+    const booked: Array<{
+      start_time: string;
+      end_time: string;
+      display_time?: string;
+      user_name?: string;
+      location?: string;
+      projectId?: string;
+      projectName?: string;
+    }> = [];
+
     day.availableSlots = day.availableSlots.filter((slot) => {
       const key = getSlotKey(dateStr, slot.user_name || "", slot.start_time);
-      return !bookedSlots.has(key);
+      const booking = bookedSlots.get(key);
+      if (booking) {
+        // Add to booked list for display
+        booked.push({
+          start_time: slot.start_time,
+          end_time: slot.end_time,
+          display_time: slot.display_time,
+          user_name: slot.user_name,
+          location: slot.location,
+          projectId: booking.projectId,
+          projectName: booking.projectName,
+        });
+        return false; // Filter out from available
+      }
+      return true;
     });
+
+    // Add booked slots to the day data
+    // @ts-expect-error - adding bookedSlots to response
+    day.bookedSlots = booked;
+
     // Recheck availability after filtering
     day.hasAvailability = day.availableSlots.length > 0;
   }

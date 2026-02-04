@@ -82,6 +82,15 @@ interface DayAvailability {
     user_name?: string;
     location?: string;
   }>;
+  bookedSlots?: Array<{
+    start_time: string;
+    end_time: string;
+    display_time?: string;
+    user_name?: string;
+    location?: string;
+    projectId?: string;
+    projectName?: string;
+  }>;
   timeOffs: Array<{
     user_name?: string;
     all_day?: boolean;
@@ -930,12 +939,12 @@ export default function SiteSurveySchedulerPage() {
                         <span>Available</span>
                       </div>
                       <div className="flex items-center gap-1">
-                        <div className="w-2 h-2 bg-yellow-500/60 rounded-full" />
-                        <span>Limited</span>
+                        <span className="text-orange-500/70">⊘</span>
+                        <span>Scheduled</span>
                       </div>
                       <div className="flex items-center gap-1">
                         <div className="w-2 h-2 bg-red-500/60 rounded-full" />
-                        <span>Booked</span>
+                        <span>Full</span>
                       </div>
                     </div>
                   )}
@@ -1076,6 +1085,27 @@ export default function SiteSurveySchedulerPage() {
                                   {slot.user_name} {slot.display_time && <span className="text-emerald-500/50">{slot.display_time}</span>}
                                 </div>
                               )
+                            ));
+                          })()}
+                          {/* Show booked slots so users can see what's already scheduled */}
+                          {showAvailability && dayAvailability?.bookedSlots && dayAvailability.bookedSlots.length > 0 && (() => {
+                            const projectLocation = selectedProject?.location;
+                            const matchingBooked = dayAvailability.bookedSlots.filter(slot => {
+                              if (!projectLocation) return true;
+                              if (!slot.location) return true;
+                              if (slot.location === projectLocation) return true;
+                              if ((slot.location === "DTC" || slot.location === "Centennial") &&
+                                  (projectLocation === "DTC" || projectLocation === "Centennial")) return true;
+                              return false;
+                            });
+                            return matchingBooked.slice(0, 2).map((slot, i) => (
+                              <div
+                                key={`booked-${i}`}
+                                className="text-[0.55rem] text-orange-400/70 truncate"
+                                title={`Booked: ${slot.user_name} - ${slot.display_time} - ${slot.projectName || "Unknown project"}`}
+                              >
+                                <span className="text-orange-500/50">⊘</span> {slot.user_name} {slot.display_time && <span className="text-orange-500/40">{slot.display_time}</span>}
+                              </div>
                             ));
                           })()}
                         </div>
