@@ -5,8 +5,8 @@ export async function GET() {
   const configured = zuper.isConfigured();
 
   // Get the web URL base for constructing job links
-  // Web app is at app.zuperpro.com, not the regional API URL
-  const webBaseUrl = process.env.ZUPER_WEB_URL || "https://app.zuperpro.com";
+  // Web app is at web.zuperpro.com with format: /jobs/{uid}/details
+  const webBaseUrl = process.env.ZUPER_WEB_URL || "https://web.zuperpro.com";
 
   return NextResponse.json({
     configured,

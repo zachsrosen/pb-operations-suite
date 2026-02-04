@@ -347,6 +347,9 @@ export async function GET(request: NextRequest) {
 
   // Fetch time-offs and scheduled jobs from Zuper if configured
   if (zuper.isConfigured()) {
+    // Get the category UID for filtering jobs
+    const categoryUid = type ? categoryMap[type] : undefined;
+
     const [timeOffResult, jobsResult] = await Promise.all([
       zuper.getTimeOffRequests({
         fromDate,
@@ -356,6 +359,7 @@ export async function GET(request: NextRequest) {
         fromDate,
         toDate,
         teamUid: resolvedTeamUid,
+        categoryUid, // Filter by job category (survey, construction, inspection)
       }),
     ]);
 

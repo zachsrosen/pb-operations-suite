@@ -1171,7 +1171,7 @@ export default function SiteSurveySchedulerPage() {
                                 </a>
                                 {project.zuperJobUid && (
                                   <a
-                                    href={`${zuperWebBaseUrl}/jobs/${project.zuperJobUid}`}
+                                    href={`${zuperWebBaseUrl}/jobs/${project.zuperJobUid}/details`}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="p-1 hover:bg-zinc-700 rounded transition-colors"
@@ -1325,7 +1325,7 @@ export default function SiteSurveySchedulerPage() {
                   </a>
                   {scheduleModal.project.zuperJobUid && (
                     <a
-                      href={`${zuperWebBaseUrl}/jobs/${scheduleModal.project.zuperJobUid}`}
+                      href={`${zuperWebBaseUrl}/jobs/${scheduleModal.project.zuperJobUid}/details`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1.5 text-xs text-cyan-400 hover:text-cyan-300"

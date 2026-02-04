@@ -499,10 +499,12 @@ export class ZuperClient {
     toDate: string;
     teamUid?: string;
     userUid?: string;
+    categoryUid?: string;
   }): Promise<ZuperApiResponse<ZuperJob[]>> {
     const result = await this.searchJobs({
       from_date: params.fromDate,
       to_date: params.toDate,
+      category: params.categoryUid,
       limit: 500,
     });
 
@@ -511,6 +513,15 @@ export class ZuperClient {
       // Filter by team or user if specified
       if (params.teamUid) {
         jobs = jobs.filter(j => j.assigned_to?.some(u => u.includes(params.teamUid!)));
+      }
+      // Filter by category if specified (in case API doesn't filter properly)
+      if (params.categoryUid) {
+        jobs = jobs.filter(j => {
+          const jobCategory = typeof j.job_category === 'string'
+            ? j.job_category
+            : j.job_category?.category_uid;
+          return jobCategory === params.categoryUid;
+        });
       }
       return { type: "success", data: jobs };
     }
