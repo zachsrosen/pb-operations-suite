@@ -27,6 +27,25 @@
   - [ ] Project detail modals
 - [ ] Add Zuper icon/badge for projects synced to Zuper
 
+### 4. Detailed User Activity Tracking
+- [ ] Track all user actions with timestamps:
+  - [ ] Page views (which dashboard, when, duration)
+  - [ ] Schedule changes (who scheduled what, when, old vs new values)
+  - [ ] Filter/search usage patterns
+  - [ ] Button clicks and feature usage
+- [ ] Store user session data:
+  - [ ] Login/logout times
+  - [ ] IP address and device/browser info
+  - [ ] Geographic location (if available)
+- [ ] Create activity log database schema
+- [ ] Build activity log API endpoints
+- [ ] Admin dashboard for viewing user activity:
+  - [ ] Timeline view of all actions
+  - [ ] Filter by user, action type, date range
+  - [ ] Export activity reports
+- [ ] Real-time activity feed (who's online, recent actions)
+- [ ] Analytics on feature adoption and usage patterns
+
 ---
 
 ## Medium Priority
