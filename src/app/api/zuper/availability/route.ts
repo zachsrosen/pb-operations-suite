@@ -119,9 +119,9 @@ const CREW_SCHEDULES: CrewSchedule[] = [
     location: "Westminster",
     reportLocation: "Westminster",
     schedule: [
-      { day: 2, startTime: "13:00", endTime: "16:00" }, // Tue 1pm-4pm
-      { day: 3, startTime: "11:00", endTime: "14:00" }, // Wed 11am-2pm
-      { day: 4, startTime: "13:00", endTime: "16:00" }, // Thu 1pm-4pm
+      { day: 2, startTime: "11:00", endTime: "14:00" }, // Tue 11am-2pm
+      { day: 3, startTime: "09:00", endTime: "12:00" }, // Wed 9am-12pm
+      { day: 4, startTime: "11:00", endTime: "14:00" }, // Thu 11am-2pm
     ],
     jobTypes: ["survey"],
   },
