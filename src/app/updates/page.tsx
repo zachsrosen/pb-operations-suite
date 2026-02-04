@@ -15,6 +15,21 @@ interface UpdateEntry {
 
 const UPDATES: UpdateEntry[] = [
   {
+    version: "1.5.0",
+    date: "2026-02-04",
+    title: "Maintenance Mode & Product Updates Page",
+    description: "Added deployment tools and transparency features for better communication with your team.",
+    changes: [
+      { type: "feature", text: "Maintenance mode page - shows 'Updates in Progress' during deployments" },
+      { type: "feature", text: "Product Updates page (this page!) - changelog showing all releases" },
+      { type: "feature", text: "Automatic maintenance detection - page auto-refreshes when updates complete" },
+      { type: "feature", text: "ROADMAP.md file tracking planned features and priorities" },
+      { type: "improvement", text: "Added 'Updates' link in header navigation" },
+      { type: "internal", text: "Environment variable MAINTENANCE_MODE controls maintenance state" },
+      { type: "internal", text: "Deployment webhook endpoint for Vercel integration" },
+    ],
+  },
+  {
     version: "1.4.0",
     date: "2026-02-04",
     title: "Multi-Select Filters & Availability Overlay",
@@ -22,22 +37,27 @@ const UPDATES: UpdateEntry[] = [
     changes: [
       { type: "feature", text: "Multi-select location filters on Site Survey Scheduler and Master Scheduler" },
       { type: "feature", text: "Availability overlay showing technician availability from Zuper" },
-      { type: "feature", text: "Calendar now filters to show only selected locations' jobs and crews" },
+      { type: "feature", text: "Calendar views filter to show only selected locations' jobs and crews" },
+      { type: "feature", text: "Week and Gantt views respect location filter selections" },
       { type: "improvement", text: "Crew capacity panel updates based on selected locations" },
-      { type: "internal", text: "Added /api/zuper/availability endpoint for combined availability data" },
+      { type: "improvement", text: "Green/yellow/red indicators show availability status on calendar days" },
+      { type: "internal", text: "Added /api/zuper/availability endpoint combining slots, time-offs, and jobs" },
     ],
   },
   {
     version: "1.3.0",
-    date: "2026-02-03",
+    date: "2026-02-04",
     title: "Site Survey Scheduler & Zuper Integration",
     description: "New dedicated scheduler for site surveys with full Zuper FSM integration.",
     changes: [
-      { type: "feature", text: "Site Survey Scheduler - dedicated calendar for scheduling surveys" },
-      { type: "feature", text: "Zuper FSM integration - create and schedule jobs directly" },
+      { type: "feature", text: "Site Survey Scheduler - dedicated calendar for scheduling site surveys" },
+      { type: "feature", text: "Zuper FSM integration - create and schedule jobs directly in Zuper" },
       { type: "feature", text: "Drag-and-drop scheduling with automatic Zuper sync" },
-      { type: "improvement", text: "Project cards show survey status and scheduling state" },
+      { type: "feature", text: "Assisted Scheduling API - fetch available time slots from Zuper" },
+      { type: "improvement", text: "Project cards show survey status, scheduling state, and system size" },
       { type: "fix", text: "Fixed Zuper API endpoint for job scheduling (PUT /jobs/schedule)" },
+      { type: "fix", text: "Fixed Zuper date format to use 'YYYY-MM-DD HH:mm:ss' instead of ISO" },
+      { type: "fix", text: "Fixed Zuper searchJobs to correctly parse nested API response" },
     ],
   },
   {
