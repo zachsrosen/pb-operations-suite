@@ -156,6 +156,14 @@ export async function GET(request: NextRequest) {
 
   const resolvedTeamUid = teamUid || (location ? teamMap[location] : undefined);
 
+  // Helper to format time for display (e.g., "12:00" -> "12pm", "08:00" -> "8am")
+  const formatTimeForDisplay = (time: string): string => {
+    const [hours, minutes] = time.split(":").map(Number);
+    const suffix = hours >= 12 ? "pm" : "am";
+    const displayHour = hours > 12 ? hours - 12 : hours === 0 ? 12 : hours;
+    return minutes === 0 ? `${displayHour}${suffix}` : `${displayHour}:${minutes.toString().padStart(2, "0")}${suffix}`;
+  };
+
   // Initialize availability by date
   const availabilityByDate: Record<
     string,
@@ -164,8 +172,10 @@ export async function GET(request: NextRequest) {
       availableSlots: Array<{
         start_time: string;
         end_time: string;
+        display_time?: string; // Formatted time range for display
         user_uid?: string;
         user_name?: string;
+        location?: string; // Crew member's location
       }>;
       timeOffs: Array<{
         user_name?: string;
@@ -218,10 +228,13 @@ export async function GET(request: NextRequest) {
       const shifts = crew.schedule.filter((s) => s.day === dayOfWeek);
       for (const shift of shifts) {
         if (availabilityByDate[dateStr]) {
+          const displayTime = `${formatTimeForDisplay(shift.startTime)}-${formatTimeForDisplay(shift.endTime)}`;
           availabilityByDate[dateStr].availableSlots.push({
             start_time: shift.startTime,
             end_time: shift.endTime,
+            display_time: displayTime,
             user_name: crew.name,
+            location: crew.location,
           });
           availabilityByDate[dateStr].hasAvailability = true;
         }

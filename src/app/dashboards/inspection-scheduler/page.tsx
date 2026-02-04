@@ -62,6 +62,8 @@ interface DayAvailability {
     end_time: string;
     user_uid?: string;
     user_name?: string;
+    display_time?: string;
+    location?: string;
   }>;
   timeOffs: Array<{
     user_name?: string;
@@ -957,13 +959,25 @@ export default function InspectionSchedulerPage() {
                               +{events.length - 3} more
                             </div>
                           )}
-                          {showAvailability && selectedProject && hasAvailability && dayAvailability?.availableSlots?.slice(0, 2).map((slot, i) => (
-                            slot.user_name && (
-                              <div key={i} className="text-[0.55rem] text-purple-400/70 truncate">
-                                {slot.user_name}
-                              </div>
-                            )
-                          ))}
+                          {showAvailability && selectedProject && hasAvailability && (() => {
+                            const projectLocation = selectedProject?.location;
+                            const matchingSlots = dayAvailability?.availableSlots?.filter(slot => {
+                              if (!projectLocation) return true;
+                              if (!slot.location) return true;
+                              if (slot.location === projectLocation) return true;
+                              // Allow DTC/Centennial interchangeability
+                              if ((slot.location === "DTC" || slot.location === "Centennial") &&
+                                  (projectLocation === "DTC" || projectLocation === "Centennial")) return true;
+                              return false;
+                            }) || [];
+                            return matchingSlots.slice(0, 2).map((slot, i) => (
+                              slot.user_name && (
+                                <div key={i} className="text-[0.55rem] text-purple-400/70 truncate">
+                                  {slot.user_name} {slot.display_time && <span className="text-purple-500/50">{slot.display_time}</span>}
+                                </div>
+                              )
+                            ));
+                          })()}
                         </div>
                       </div>
                     );

@@ -71,8 +71,10 @@ interface DayAvailability {
   availableSlots: Array<{
     start_time: string;
     end_time: string;
+    display_time?: string;
     user_uid?: string;
     user_name?: string;
+    location?: string;
   }>;
   timeOffs: Array<{
     user_name?: string;
@@ -990,14 +992,31 @@ export default function SiteSurveySchedulerPage() {
                               +{events.length - 3} more
                             </div>
                           )}
-                          {/* Show available user names when project selected */}
-                          {showAvailability && selectedProject && hasAvailability && dayAvailability?.availableSlots?.slice(0, 2).map((slot, i) => (
-                            slot.user_name && (
-                              <div key={i} className="text-[0.55rem] text-emerald-400/70 truncate">
-                                {slot.user_name}
-                              </div>
-                            )
-                          ))}
+                          {/* Show available surveyors with time slots */}
+                          {showAvailability && hasAvailability && (() => {
+                            // Filter slots by project location if a project is selected
+                            const projectLocation = selectedProject?.location;
+                            const matchingSlots = dayAvailability?.availableSlots?.filter(slot => {
+                              // If no project selected, show all slots
+                              if (!projectLocation) return true;
+                              // Match by location - handle DTC/Centennial equivalence
+                              if (!slot.location) return true;
+                              if (slot.location === projectLocation) return true;
+                              if ((slot.location === "DTC" || slot.location === "Centennial") &&
+                                  (projectLocation === "DTC" || projectLocation === "Centennial")) return true;
+                              return false;
+                            }) || [];
+
+                            // Show more slots if project selected, fewer if just browsing
+                            const maxSlots = selectedProject ? 3 : 2;
+                            return matchingSlots.slice(0, maxSlots).map((slot, i) => (
+                              slot.user_name && (
+                                <div key={i} className="text-[0.55rem] text-emerald-400/70 truncate" title={`${slot.user_name} - ${slot.location || "Any"} - ${slot.display_time || ""}`}>
+                                  {slot.user_name} {slot.display_time && <span className="text-emerald-500/50">{slot.display_time}</span>}
+                                </div>
+                              )
+                            ));
+                          })()}
                         </div>
                       </div>
                     );
