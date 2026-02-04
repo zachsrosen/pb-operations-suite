@@ -148,6 +148,11 @@ export default function GuidePage() {
                   <td className="py-3">Schedule installs, manage crews</td>
                 </tr>
                 <tr className="border-b border-zinc-800">
+                  <td className="py-3 font-medium">Site Survey Scheduler</td>
+                  <td className="py-3">Survey Team</td>
+                  <td className="py-3">Schedule surveys with Zuper sync</td>
+                </tr>
+                <tr className="border-b border-zinc-800">
                   <td className="py-3 font-medium">Design & Engineering</td>
                   <td className="py-3">Design Team</td>
                   <td className="py-3">Track design progress & approvals</td>
@@ -226,17 +231,19 @@ export default function GuidePage() {
           title="Master Scheduler"
           tag="SCHEDULING"
           tagColor="blue"
-          purpose="Schedule site surveys, installations, and inspections with crew management"
+          purpose="Schedule installations and inspections with crew management"
           features={[
             "Three views: Month Calendar, Week Grid, Gantt Timeline",
+            "Multi-select location filters - view multiple locations at once",
             "Drag-and-drop scheduling for projects",
             "Stage filtering: Survey, RTB, Blocked, Construction, Inspection",
             "Crew capacity tracking and conflict detection",
             "Auto-optimize by difficulty then revenue priority",
-            "Zuper FSM integration for work order creation"
+            "Calendar, Week, and Gantt views filter by selected locations"
           ]}
           howToUse={[
             "Select a view using tabs (Month/Week/Gantt) or press 1, 2, 3",
+            "Use the location filter buttons to select one or more locations",
             "Filter the queue by stage using the tabs on the left",
             "Drag projects from the left queue onto calendar dates",
             "Set duration and assign crew in the modal that appears",
@@ -250,11 +257,41 @@ export default function GuidePage() {
             { keys: "Esc", action: "Close modals / Deselect" }
           ]}
           tips={[
+            "Use location filters to focus on specific locations - the calendar and crews update automatically",
             "Use Auto-Optimize to quickly schedule all RTB projects - it prioritizes easy projects first",
             "Multi-day events skip weekends automatically (Fri → Mon)",
             "Inspections are auto-scheduled 2 business days after construction"
           ]}
           url="/dashboards/scheduler"
+        />
+
+        <DashboardCard
+          title="Site Survey Scheduler"
+          tag="SCHEDULING"
+          tagColor="cyan"
+          purpose="Dedicated calendar for scheduling site surveys with Zuper FSM integration"
+          features={[
+            "Monthly calendar view optimized for site survey scheduling",
+            "Multi-select location filters - view multiple locations at once",
+            "Availability overlay showing technician availability from Zuper",
+            "Drag-and-drop scheduling with automatic Zuper job creation",
+            "Project cards show survey status, system size, and scheduling state",
+            "Green/yellow/red indicators show daily availability status"
+          ]}
+          howToUse={[
+            "Use location filter buttons to select which locations to view",
+            "Toggle 'Show Availability' to see Zuper technician availability",
+            "Drag projects from the queue onto calendar dates to schedule",
+            "Confirm scheduling to automatically create/update Zuper jobs",
+            "Check the availability indicators: green = available, yellow = limited, red = busy"
+          ]}
+          tips={[
+            "The availability overlay pulls real-time data from Zuper including time-offs and scheduled jobs",
+            "Projects without a Zuper job will have one created automatically when scheduled",
+            "Projects already in Zuper will have their job rescheduled when moved",
+            "Use multi-select to view surveys across multiple locations at once"
+          ]}
+          url="/dashboards/site-survey-scheduler"
         />
 
         <DashboardCard
@@ -583,6 +620,41 @@ export default function GuidePage() {
           url="/dashboards/executive"
         />
 
+        {/* System Features */}
+        <h2 className="text-2xl font-semibold mb-4">System Features</h2>
+
+        <section className="bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 border border-emerald-500/30 rounded-xl p-6 mb-8">
+          <h3 className="text-xl font-semibold text-emerald-400 mb-4">Product Updates</h3>
+          <p className="text-zinc-300 mb-4">
+            Stay informed about new features, improvements, and fixes with the Product Updates page.
+          </p>
+          <ul className="list-disc list-inside space-y-2 text-zinc-300 mb-4">
+            <li>Click the <strong>&quot;Updates&quot;</strong> link in the header to view the changelog</li>
+            <li>Each release is version-tagged with a date and description</li>
+            <li>Changes are categorized: <span className="text-emerald-400">New</span> (features), <span className="text-blue-400">Improved</span> (enhancements), <span className="text-orange-400">Fixed</span> (bug fixes), <span className="text-zinc-400">Internal</span> (technical changes)</li>
+            <li>The current version is shown in the top right of the Updates page</li>
+          </ul>
+          <Link href="/updates" className="inline-block text-sm text-emerald-400 hover:text-emerald-300 font-mono">
+            /updates &rarr;
+          </Link>
+        </section>
+
+        <section className="bg-gradient-to-br from-zinc-500/10 to-zinc-500/5 border border-zinc-500/30 rounded-xl p-6 mb-8">
+          <h3 className="text-xl font-semibold text-zinc-300 mb-4">Maintenance Mode</h3>
+          <p className="text-zinc-300 mb-4">
+            During deployments and updates, you may see the &quot;Updates in Progress&quot; page.
+          </p>
+          <ul className="list-disc list-inside space-y-2 text-zinc-300 mb-4">
+            <li>This means we&apos;re deploying improvements - usually takes less than a minute</li>
+            <li>The page will <strong>automatically refresh</strong> when updates are complete</li>
+            <li>You can also click &quot;Try again now&quot; to manually check</li>
+            <li>No data is lost during maintenance - your work is preserved in HubSpot</li>
+          </ul>
+          <p className="text-zinc-500 text-sm">
+            If you see this page for more than 5 minutes, contact zach@photonbrothers.com
+          </p>
+        </section>
+
         {/* Common Features */}
         <section className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6 mb-8">
           <h2 className="text-xl font-semibold text-orange-400 mb-4">Common Features Across All Dashboards</h2>
@@ -625,10 +697,12 @@ export default function GuidePage() {
             <li>Start with the <strong>Command Center</strong> for a complete pipeline overview</li>
             <li>Use <strong>At-Risk Projects</strong> to identify problems needing immediate attention</li>
             <li>Check <strong>Design & Engineering</strong>, <strong>Permitting</strong>, or <strong>Interconnection</strong> for stage-specific status</li>
-            <li>Schedule work in the <strong>Master Scheduler</strong> - use Auto-Optimize for quick scheduling</li>
+            <li>Schedule site surveys in the <strong>Site Survey Scheduler</strong> with Zuper integration</li>
+            <li>Schedule installs in the <strong>Master Scheduler</strong> - use Auto-Optimize for quick scheduling</li>
             <li>Monitor <strong>Incentives</strong> for program application status</li>
             <li>Check <strong>PE Dashboard</strong> for Participate Energy compliance</li>
             <li>Share <strong>Executive Summary</strong> with leadership for KPI reviews</li>
+            <li>Check <strong>Updates</strong> to see the latest features and improvements</li>
           </ol>
 
           <div className="mt-6 p-4 bg-zinc-800/50 rounded-lg">
