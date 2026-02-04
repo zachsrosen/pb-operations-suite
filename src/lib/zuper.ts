@@ -282,18 +282,29 @@ export class ZuperClient {
     if (params.latitude) queryParams.append("latitude", String(params.latitude));
     if (params.longitude) queryParams.append("longitude", String(params.longitude));
 
+    const endpoint = `/assisted_scheduling?${queryParams.toString()}`;
+    console.log(`[Zuper] Calling assisted_scheduling: ${endpoint}`);
+
     const result = await this.request<{ type: string; data: AssistedSchedulingSlot[] }>(
-      `/assisted_scheduling?${queryParams.toString()}`
+      endpoint
     );
 
+    console.log(`[Zuper] Assisted scheduling response type: ${result.type}`);
     if (result.type === "success" && result.data) {
+      // Log raw response structure for debugging
+      console.log(`[Zuper] Raw response keys: ${Object.keys(result.data).join(", ")}`);
       const slots = Array.isArray(result.data.data) ? result.data.data : [];
+      console.log(`[Zuper] Parsed ${slots.length} availability slots`);
+      if (slots.length > 0) {
+        console.log(`[Zuper] Sample slot: ${JSON.stringify(slots[0])}`);
+      }
       return {
         type: "success",
         data: slots,
       };
     }
 
+    console.log(`[Zuper] Assisted scheduling error: ${result.error}`);
     return {
       type: result.type,
       error: result.error,

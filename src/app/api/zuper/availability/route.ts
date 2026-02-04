@@ -81,6 +81,15 @@ export async function GET(request: NextRequest) {
     }),
   ]);
 
+  // Debug logging
+  console.log(`[Availability] Query: type=${type}, location=${location}, teamUid=${resolvedTeamUid}`);
+  console.log(`[Availability] Slots result: ${slotsResult.type}, count: ${slotsResult.data?.length || 0}`);
+  if (slotsResult.type === "error") {
+    console.log(`[Availability] Slots error: ${slotsResult.error}`);
+  }
+  console.log(`[Availability] TimeOff result: ${timeOffResult.type}, count: ${timeOffResult.data?.length || 0}`);
+  console.log(`[Availability] Jobs result: ${jobsResult.type}, count: ${jobsResult.data?.length || 0}`);
+
   // Process availability by date
   const availabilityByDate: Record<
     string,
