@@ -78,10 +78,23 @@
 - [ ] Field technician mobile app
 - [ ] SMS notifications to customers
 
+### 5. Maintenance Mode Page
+- [x] Create /maintenance page showing "Updates in Progress"
+- [x] Friendly messaging during deployments
+- [x] Auto-refresh capability
+
+### 6. Product Updates / Changelog Page
+- [x] Create /updates page with release notes
+- [x] Version-tagged entries with dates
+- [x] Categorized changes (New, Improved, Fixed, Internal)
+- [x] Link to Updates page in header
+
 ---
 
 ## Completed
 
+- [x] Maintenance mode page for deployments
+- [x] Product Updates / Changelog page
 - [x] Multi-select location filters on schedulers
 - [x] Availability overlay on Site Survey Scheduler
 - [x] Zuper FSM integration (create/schedule jobs)
