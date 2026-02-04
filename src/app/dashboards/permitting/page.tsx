@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { formatMoney } from "@/lib/format";
 import { RawProject } from "@/lib/types";
+import { MultiSelectFilter, ProjectSearchBar, FilterGroup } from "@/components/ui/MultiSelectFilter";
 
 // Display name mappings
 const DISPLAY_NAMES: Record<string, string> = {
@@ -49,15 +50,130 @@ interface ExtendedProject extends RawProject {
   finalInspectionStatus?: string;
 }
 
+// Permitting Status Groups
+const PERMITTING_STATUS_GROUPS: FilterGroup[] = [
+  {
+    name: "Pre-Submission",
+    options: [
+      { value: "Awaiting Utility Approval", label: "Awaiting Utility Approval" },
+      { value: "Ready For Permitting", label: "Ready For Permitting" },
+      { value: "Submitted To Customer", label: "Submitted To Customer" },
+      { value: "Customer Signature Acquired", label: "Customer Signature Acquired" },
+      { value: "Waiting On Information", label: "Waiting On Information" },
+    ]
+  },
+  {
+    name: "Submitted",
+    options: [
+      { value: "Submitted to AHJ", label: "Submitted to AHJ" },
+      { value: "Resubmitted to AHJ", label: "Resubmitted to AHJ" },
+    ]
+  },
+  {
+    name: "Rejections & Revisions",
+    options: [
+      { value: "Non-Design Related Rejection", label: "Non-Design Related Rejection" },
+      { value: "Permit Rejected - Needs Revision", label: "Permit Rejected" },
+      { value: "Design Revision In Progress", label: "Design Revision In Progress" },
+      { value: "Revision Ready To Resubmit", label: "Revision Ready To Resubmit" },
+    ]
+  },
+  {
+    name: "As-Built Revisions",
+    options: [
+      { value: "As-Built Revision Needed", label: "As-Built Revision Needed" },
+      { value: "As-Built Revision In Progress", label: "As-Built Revision In Progress" },
+      { value: "As-Built Ready To Resubmit", label: "As-Built Ready To Resubmit" },
+      { value: "As-Built Revision Resubmitted", label: "As-Built Revision Resubmitted" },
+    ]
+  },
+  {
+    name: "SolarApp",
+    options: [
+      { value: "Ready to Submit for SolarApp", label: "Ready for SolarApp" },
+      { value: "Submit SolarApp to AHJ", label: "Submit SolarApp to AHJ" },
+    ]
+  },
+  {
+    name: "Completed",
+    options: [
+      { value: "Permit Issued", label: "Permit Issued" },
+    ]
+  },
+  {
+    name: "Other",
+    options: [
+      { value: "Not Needed", label: "Not Needed" },
+    ]
+  },
+];
+
+// Inspection Status Groups
+const INSPECTION_STATUS_GROUPS: FilterGroup[] = [
+  {
+    name: "Pre-Inspection",
+    options: [
+      { value: "Ready For Inspection", label: "Ready For Inspection" },
+      { value: "Scheduled", label: "Scheduled" },
+    ]
+  },
+  {
+    name: "In Progress",
+    options: [
+      { value: "On Our Way", label: "On Our Way" },
+      { value: "Started", label: "Started" },
+      { value: "In Progress", label: "In Progress" },
+    ]
+  },
+  {
+    name: "Failed/Waiting",
+    options: [
+      { value: "Failed", label: "Failed" },
+      { value: "Rejected", label: "Rejected" },
+      { value: "Waiting on Permit Revisions", label: "Waiting on Permit Revisions" },
+      { value: "Revisions Complete", label: "Revisions Complete" },
+    ]
+  },
+  {
+    name: "Passed",
+    options: [
+      { value: "Passed", label: "Passed" },
+      { value: "Partial Pass", label: "Partial Pass" },
+    ]
+  },
+  {
+    name: "Pending",
+    options: [
+      { value: "Pending New Construction Sign Off", label: "Pending NC Sign Off" },
+      { value: "Pending Fire Inspection", label: "Pending Fire Inspection" },
+      { value: "Pending BUS Install", label: "Pending BUS Install" },
+      { value: "Pending New Construction", label: "Pending New Construction" },
+    ]
+  },
+  {
+    name: "Other",
+    options: [
+      { value: "Not Needed", label: "Not Needed" },
+    ]
+  },
+];
+
+// Flatten groups to get all options
+const ALL_PERMITTING_STATUS_OPTIONS = PERMITTING_STATUS_GROUPS.flatMap(g => g.options || []);
+const ALL_INSPECTION_STATUS_OPTIONS = INSPECTION_STATUS_GROUPS.flatMap(g => g.options || []);
+
 export default function PermittingPage() {
   const [projects, setProjects] = useState<ExtendedProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filterAhj, setFilterAhj] = useState("all");
-  const [filterLocation, setFilterLocation] = useState("all");
-  const [filterStage, setFilterStage] = useState("all");
-  const [filterPermitStatus, setFilterPermitStatus] = useState("all");
-  const [filterInspectionStatus, setFilterInspectionStatus] = useState("all");
+
+  // Multi-select filters
+  const [filterAhjs, setFilterAhjs] = useState<string[]>([]);
+  const [filterLocations, setFilterLocations] = useState<string[]>([]);
+  const [filterStages, setFilterStages] = useState<string[]>([]);
+  const [filterPermitStatuses, setFilterPermitStatuses] = useState<string[]>([]);
+  const [filterInspectionStatuses, setFilterInspectionStatuses] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const fetchData = useCallback(async () => {
     try {
@@ -96,14 +212,33 @@ export default function PermittingPage() {
 
   const filteredProjects = useMemo(() => {
     return projects.filter(p => {
-      if (filterAhj !== 'all' && p.ahj !== filterAhj) return false;
-      if (filterLocation !== 'all' && p.pbLocation !== filterLocation) return false;
-      if (filterStage !== 'all' && p.stage !== filterStage) return false;
-      if (filterPermitStatus !== 'all' && p.permittingStatus !== filterPermitStatus) return false;
-      if (filterInspectionStatus !== 'all' && p.finalInspectionStatus !== filterInspectionStatus) return false;
+      // AHJ filter (multi-select)
+      if (filterAhjs.length > 0 && !filterAhjs.includes(p.ahj || '')) return false;
+
+      // Location filter (multi-select)
+      if (filterLocations.length > 0 && !filterLocations.includes(p.pbLocation || '')) return false;
+
+      // Stage filter (multi-select)
+      if (filterStages.length > 0 && !filterStages.includes(p.stage || '')) return false;
+
+      // Permit Status filter (multi-select)
+      if (filterPermitStatuses.length > 0 && !filterPermitStatuses.includes(p.permittingStatus || '')) return false;
+
+      // Inspection Status filter (multi-select)
+      if (filterInspectionStatuses.length > 0 && !filterInspectionStatuses.includes(p.finalInspectionStatus || '')) return false;
+
+      // Search filter
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        const name = (p.name || '').toLowerCase();
+        const location = (p.pbLocation || '').toLowerCase();
+        const ahj = (p.ahj || '').toLowerCase();
+        if (!name.includes(query) && !location.includes(query) && !ahj.includes(query)) return false;
+      }
+
       return true;
     });
-  }, [projects, filterAhj, filterLocation, filterStage, filterPermitStatus, filterInspectionStatus]);
+  }, [projects, filterAhjs, filterLocations, filterStages, filterPermitStatuses, filterInspectionStatuses, searchQuery]);
 
   const stats = useMemo(() => {
     const today = new Date();
@@ -141,6 +276,19 @@ export default function PermittingPage() {
       ? Math.round(daysInInspection.reduce((a, b) => a + b, 0) / daysInInspection.length)
       : 0;
 
+    // Status breakdown
+    const permitStatusStats: Record<string, number> = {};
+    const inspectionStatusStats: Record<string, number> = {};
+
+    filteredProjects.forEach(p => {
+      if (p.permittingStatus) {
+        permitStatusStats[p.permittingStatus] = (permitStatusStats[p.permittingStatus] || 0) + 1;
+      }
+      if (p.finalInspectionStatus) {
+        inspectionStatusStats[p.finalInspectionStatus] = (inspectionStatusStats[p.finalInspectionStatus] || 0) + 1;
+      }
+    });
+
     // Group by AHJ
     const ahjStats: Record<string, { total: number; permitPending: number; permitIssued: number; inspectionPending: number; avgDays: number[]; totalValue: number }> = {};
     filteredProjects.forEach(p => {
@@ -176,26 +324,55 @@ export default function PermittingPage() {
       avgDaysInPermitting,
       avgTurnaround,
       avgDaysInInspection,
+      permitStatusStats,
+      inspectionStatusStats,
       ahjStats,
     };
   }, [filteredProjects, isPermitPending, isPermitIssued]);
 
   // Get unique values for filters
-  const ahjs = useMemo(() => [...new Set(projects.map(p => p.ahj))].filter(a => a && a !== 'Unknown').sort(), [projects]);
-  const locations = useMemo(() => [...new Set(projects.map(p => p.pbLocation))].filter(l => l && l !== 'Unknown').sort(), [projects]);
+  const ahjs = useMemo(() =>
+    [...new Set(projects.map(p => p.ahj))]
+      .filter(a => a && a !== 'Unknown')
+      .sort()
+      .map(a => ({ value: a!, label: a! })),
+    [projects]
+  );
+
+  const locations = useMemo(() =>
+    [...new Set(projects.map(p => p.pbLocation))]
+      .filter(l => l && l !== 'Unknown')
+      .sort()
+      .map(l => ({ value: l!, label: l! })),
+    [projects]
+  );
+
   const stages = useMemo(() => {
     const STAGE_ORDER = ['Site Survey', 'Design & Engineering', 'Permitting & Interconnection', 'RTB - Blocked', 'Ready To Build', 'Construction', 'Inspection', 'Permission To Operate', 'Close Out'];
-    return [...new Set(projects.map(p => p.stage))].filter(s => s).sort((a, b) => {
-      const aIdx = STAGE_ORDER.findIndex(s => s.toLowerCase() === a.toLowerCase());
-      const bIdx = STAGE_ORDER.findIndex(s => s.toLowerCase() === b.toLowerCase());
-      if (aIdx === -1 && bIdx === -1) return a.localeCompare(b);
-      if (aIdx === -1) return 1;
-      if (bIdx === -1) return -1;
-      return aIdx - bIdx;
-    });
+    return [...new Set(projects.map(p => p.stage))]
+      .filter(s => s)
+      .sort((a, b) => {
+        const aIdx = STAGE_ORDER.findIndex(s => s.toLowerCase() === a!.toLowerCase());
+        const bIdx = STAGE_ORDER.findIndex(s => s.toLowerCase() === b!.toLowerCase());
+        if (aIdx === -1 && bIdx === -1) return a!.localeCompare(b!);
+        if (aIdx === -1) return 1;
+        if (bIdx === -1) return -1;
+        return aIdx - bIdx;
+      })
+      .map(s => ({ value: s!, label: s! }));
   }, [projects]);
-  const permitStatuses = useMemo(() => [...new Set(projects.map(p => (p as ExtendedProject).permittingStatus))].filter(s => s).sort() as string[], [projects]);
-  const inspectionStatuses = useMemo(() => [...new Set(projects.map(p => (p as ExtendedProject).finalInspectionStatus))].filter(s => s).sort() as string[], [projects]);
+
+  const clearAllFilters = () => {
+    setFilterAhjs([]);
+    setFilterLocations([]);
+    setFilterStages([]);
+    setFilterPermitStatuses([]);
+    setFilterInspectionStatuses([]);
+    setSearchQuery("");
+  };
+
+  const hasActiveFilters = filterAhjs.length > 0 || filterLocations.length > 0 ||
+    filterStages.length > 0 || filterPermitStatuses.length > 0 || filterInspectionStatuses.length > 0 || searchQuery;
 
   if (loading) {
     return (
@@ -226,33 +403,96 @@ export default function PermittingPage() {
     );
   }
 
+  const getPermitStatusColor = (status: string | undefined): string => {
+    if (!status) return 'bg-zinc-500/20 text-zinc-400';
+    const lower = status.toLowerCase();
+    if (lower.includes('issued') || lower.includes('complete')) return 'bg-green-500/20 text-green-400';
+    if (lower.includes('submitted') || lower.includes('resubmitted')) return 'bg-blue-500/20 text-blue-400';
+    if (lower.includes('rejected') || lower.includes('revision')) return 'bg-orange-500/20 text-orange-400';
+    if (lower.includes('waiting') || lower.includes('pending') || lower.includes('ready')) return 'bg-yellow-500/20 text-yellow-400';
+    if (lower.includes('solarapp')) return 'bg-cyan-500/20 text-cyan-400';
+    return 'bg-zinc-500/20 text-zinc-400';
+  };
+
+  const getInspectionStatusColor = (status: string | undefined): string => {
+    if (!status) return 'bg-zinc-500/20 text-zinc-400';
+    const lower = status.toLowerCase();
+    if (lower.includes('passed')) return 'bg-emerald-500/20 text-emerald-400';
+    if (lower.includes('failed') || lower.includes('rejected')) return 'bg-red-500/20 text-red-400';
+    if (lower.includes('scheduled') || lower.includes('ready')) return 'bg-blue-500/20 text-blue-400';
+    if (lower.includes('progress') || lower.includes('started') || lower.includes('way')) return 'bg-cyan-500/20 text-cyan-400';
+    if (lower.includes('waiting') || lower.includes('pending')) return 'bg-orange-500/20 text-orange-400';
+    return 'bg-zinc-500/20 text-zinc-400';
+  };
+
   return (
     <DashboardShell title="Permitting & Inspections" accentColor="purple">
-      {/* Filters */}
-      <div className="flex items-center gap-3 flex-wrap mb-6">
-        <select value={filterAhj} onChange={(e) => setFilterAhj(e.target.value)} className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
-          <option value="all">All AHJs</option>
-          {ahjs.map(a => <option key={a} value={a}>{a}</option>)}
-        </select>
-        <select value={filterLocation} onChange={(e) => setFilterLocation(e.target.value)} className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
-          <option value="all">All Locations</option>
-          {locations.map(l => <option key={l} value={l}>{l}</option>)}
-        </select>
-        <select value={filterStage} onChange={(e) => setFilterStage(e.target.value)} className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
-          <option value="all">All Stages</option>
-          {stages.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <select value={filterPermitStatus} onChange={(e) => setFilterPermitStatus(e.target.value)} className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
-          <option value="all">All Permit Status</option>
-          {permitStatuses.map(s => <option key={s} value={s}>{getDisplayName(s)}</option>)}
-        </select>
-        <select value={filterInspectionStatus} onChange={(e) => setFilterInspectionStatus(e.target.value)} className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
-          <option value="all">All Inspection Status</option>
-          {inspectionStatuses.map(s => <option key={s} value={s}>{getDisplayName(s)}</option>)}
-        </select>
-        <button onClick={fetchData} className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded-lg text-sm font-medium">
-          Refresh
-        </button>
+      {/* Search and Filters */}
+      <div className="flex flex-col gap-4 mb-6">
+        {/* Search Bar */}
+        <div className="flex items-center gap-3">
+          <ProjectSearchBar
+            onSearch={setSearchQuery}
+            placeholder="Search by PROJ #, name, location, or AHJ..."
+          />
+          <button onClick={fetchData} className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap">
+            Refresh
+          </button>
+        </div>
+
+        {/* Filter Row */}
+        <div className="flex items-center gap-3 flex-wrap">
+          <MultiSelectFilter
+            label="AHJ"
+            options={ahjs}
+            selected={filterAhjs}
+            onChange={setFilterAhjs}
+            placeholder="All AHJs"
+            accentColor="purple"
+          />
+          <MultiSelectFilter
+            label="Location"
+            options={locations}
+            selected={filterLocations}
+            onChange={setFilterLocations}
+            placeholder="All Locations"
+            accentColor="blue"
+          />
+          <MultiSelectFilter
+            label="Stage"
+            options={stages}
+            selected={filterStages}
+            onChange={setFilterStages}
+            placeholder="All Stages"
+            accentColor="indigo"
+          />
+          <MultiSelectFilter
+            label="Permit Status"
+            options={ALL_PERMITTING_STATUS_OPTIONS}
+            groups={PERMITTING_STATUS_GROUPS}
+            selected={filterPermitStatuses}
+            onChange={setFilterPermitStatuses}
+            placeholder="All Permit Statuses"
+            accentColor="green"
+          />
+          <MultiSelectFilter
+            label="Inspection"
+            options={ALL_INSPECTION_STATUS_OPTIONS}
+            groups={INSPECTION_STATUS_GROUPS}
+            selected={filterInspectionStatuses}
+            onChange={setFilterInspectionStatuses}
+            placeholder="All Inspection Statuses"
+            accentColor="orange"
+          />
+          {hasActiveFilters && (
+            <button
+              onClick={clearAllFilters}
+              className="text-xs text-zinc-400 hover:text-white px-3 py-2 border border-zinc-700 rounded-lg hover:border-zinc-600 transition-colors"
+            >
+              Clear All
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Summary Stats */}
@@ -300,6 +540,71 @@ export default function PermittingPage() {
         </div>
       </div>
 
+      {/* Status Breakdown */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+        {/* Permit Status Breakdown */}
+        <div className="bg-[#12121a] rounded-xl border border-zinc-800 p-4">
+          <h2 className="text-lg font-semibold mb-4 text-purple-400">By Permit Status</h2>
+          <div className="space-y-2 max-h-[250px] overflow-y-auto">
+            {Object.keys(stats.permitStatusStats).length === 0 ? (
+              <p className="text-zinc-500 text-sm">No permit status data available</p>
+            ) : (
+              Object.entries(stats.permitStatusStats)
+                .sort((a, b) => b[1] - a[1])
+                .map(([status, count]) => (
+                  <div
+                    key={status}
+                    className={`flex items-center justify-between p-2 bg-zinc-800/50 rounded-lg cursor-pointer hover:bg-zinc-800 transition-colors ${
+                      filterPermitStatuses.includes(status) ? 'ring-1 ring-purple-500' : ''
+                    }`}
+                    onClick={() => {
+                      if (filterPermitStatuses.includes(status)) {
+                        setFilterPermitStatuses(filterPermitStatuses.filter(s => s !== status));
+                      } else {
+                        setFilterPermitStatuses([...filterPermitStatuses, status]);
+                      }
+                    }}
+                  >
+                    <span className="text-sm text-zinc-300">{getDisplayName(status)}</span>
+                    <span className="text-lg font-bold text-purple-400">{count}</span>
+                  </div>
+                ))
+            )}
+          </div>
+        </div>
+
+        {/* Inspection Status Breakdown */}
+        <div className="bg-[#12121a] rounded-xl border border-zinc-800 p-4">
+          <h2 className="text-lg font-semibold mb-4 text-orange-400">By Inspection Status</h2>
+          <div className="space-y-2 max-h-[250px] overflow-y-auto">
+            {Object.keys(stats.inspectionStatusStats).length === 0 ? (
+              <p className="text-zinc-500 text-sm">No inspection status data available</p>
+            ) : (
+              Object.entries(stats.inspectionStatusStats)
+                .sort((a, b) => b[1] - a[1])
+                .map(([status, count]) => (
+                  <div
+                    key={status}
+                    className={`flex items-center justify-between p-2 bg-zinc-800/50 rounded-lg cursor-pointer hover:bg-zinc-800 transition-colors ${
+                      filterInspectionStatuses.includes(status) ? 'ring-1 ring-orange-500' : ''
+                    }`}
+                    onClick={() => {
+                      if (filterInspectionStatuses.includes(status)) {
+                        setFilterInspectionStatuses(filterInspectionStatuses.filter(s => s !== status));
+                      } else {
+                        setFilterInspectionStatuses([...filterInspectionStatuses, status]);
+                      }
+                    }}
+                  >
+                    <span className="text-sm text-zinc-300">{getDisplayName(status)}</span>
+                    <span className="text-lg font-bold text-orange-400">{count}</span>
+                  </div>
+                ))
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* AHJ Breakdown */}
       <div className="bg-[#12121a] rounded-xl border border-zinc-800 p-4 mb-6">
         <h2 className="text-lg font-semibold mb-4">By AHJ</h2>
@@ -315,8 +620,16 @@ export default function PermittingPage() {
               return (
                 <div
                   key={ahj}
-                  className="bg-zinc-800/50 rounded-lg p-3 cursor-pointer hover:bg-zinc-800 transition-colors"
-                  onClick={() => setFilterAhj(ahj)}
+                  className={`bg-zinc-800/50 rounded-lg p-3 cursor-pointer hover:bg-zinc-800 transition-colors ${
+                    filterAhjs.includes(ahj) ? 'ring-1 ring-purple-500' : ''
+                  }`}
+                  onClick={() => {
+                    if (filterAhjs.includes(ahj)) {
+                      setFilterAhjs(filterAhjs.filter(a => a !== ahj));
+                    } else {
+                      setFilterAhjs([...filterAhjs, ahj]);
+                    }
+                  }}
                 >
                   <div className="text-sm font-medium text-white truncate" title={ahj}>{ahj}</div>
                   <div className="flex items-center gap-2 mt-1">
@@ -338,6 +651,9 @@ export default function PermittingPage() {
       <div className="bg-[#12121a] rounded-xl border border-zinc-800 overflow-hidden">
         <div className="p-4 border-b border-zinc-800 flex items-center justify-between">
           <h2 className="text-lg font-semibold">Projects ({filteredProjects.length})</h2>
+          {hasActiveFilters && (
+            <span className="text-xs text-zinc-500">Filtered from {projects.length} total</span>
+          )}
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -368,24 +684,16 @@ export default function PermittingPage() {
                   })
                   .slice(0, 100)
                   .map(project => {
-                    let permitColor = 'bg-zinc-500/20 text-zinc-400';
-                    let permitLabel = getDisplayName(project.permittingStatus) || 'Not Started';
-                    if (isPermitIssued(project)) {
-                      permitColor = 'bg-green-500/20 text-green-400';
-                      permitLabel = getDisplayName(project.permittingStatus) || 'Issued';
-                    } else if (isPermitPending(project)) {
-                      permitColor = 'bg-yellow-500/20 text-yellow-400';
-                      permitLabel = getDisplayName(project.permittingStatus) || 'Pending';
-                    }
+                    const permitLabel = getDisplayName(project.permittingStatus) || (
+                      isPermitIssued(project) ? 'Issued' :
+                      isPermitPending(project) ? 'Pending' : 'Not Started'
+                    );
 
-                    let inspectionColor = 'bg-zinc-500/20 text-zinc-500';
                     let inspectionLabel = '-';
                     const rawInspStatus = (project.finalInspectionStatus || '').toLowerCase();
                     if (project.inspectionPassDate || ['passed', 'complete', 'approved'].some(s => rawInspStatus.includes(s))) {
-                      inspectionColor = 'bg-emerald-500/20 text-emerald-400';
                       inspectionLabel = getDisplayName(project.finalInspectionStatus) || 'Passed';
                     } else if (project.stage === 'Inspection' || ['pending', 'scheduled', 'in progress', 'submitted'].some(s => rawInspStatus.includes(s))) {
-                      inspectionColor = 'bg-orange-500/20 text-orange-400';
                       inspectionLabel = getDisplayName(project.finalInspectionStatus) || (project.inspectionScheduleDate ? 'Scheduled' : 'Pending');
                     } else if (project.finalInspectionStatus) {
                       inspectionLabel = getDisplayName(project.finalInspectionStatus);
@@ -401,7 +709,7 @@ export default function PermittingPage() {
                         </td>
                         <td className="px-4 py-3 text-sm text-zinc-300">{project.ahj || '-'}</td>
                         <td className="px-4 py-3">
-                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${permitColor}`}>
+                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getPermitStatusColor(project.permittingStatus)}`}>
                             {permitLabel}
                           </span>
                         </td>
@@ -412,7 +720,7 @@ export default function PermittingPage() {
                           {project.permitIssueDate || '-'}
                         </td>
                         <td className="px-4 py-3">
-                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${inspectionColor}`}>
+                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getInspectionStatusColor(project.finalInspectionStatus)}`}>
                             {inspectionLabel}
                           </span>
                         </td>

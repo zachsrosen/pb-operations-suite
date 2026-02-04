@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { formatMoney } from "@/lib/format";
 import { RawProject } from "@/lib/types";
+import { MultiSelectFilter, ProjectSearchBar, FilterGroup } from "@/components/ui/MultiSelectFilter";
 
 // Display name mappings
 const DISPLAY_NAMES: Record<string, string> = {
@@ -51,15 +52,142 @@ interface ExtendedProject extends RawProject {
   ptoSubmitDate?: string;
 }
 
+// Interconnection Status Groups
+const IC_STATUS_GROUPS: FilterGroup[] = [
+  {
+    name: "Initial Submission",
+    options: [
+      { value: "Ready for Interconnection", label: "Ready for Interconnection" },
+      { value: "Submitted To Customer", label: "Submitted To Customer" },
+      { value: "Ready To Submit - Pending Design", label: "Ready To Submit - Pending Design" },
+      { value: "Ready To Submit", label: "Signature Acquired" },
+      { value: "Submitted To Utility", label: "Submitted To Utility" },
+    ]
+  },
+  {
+    name: "Waiting",
+    options: [
+      { value: "Waiting On Information", label: "Waiting On Information" },
+      { value: "Waiting on Utility Bill", label: "Waiting on Utility Bill" },
+      { value: "Waiting on New Construction", label: "Waiting on New Construction" },
+      { value: "In Review", label: "In Review" },
+    ]
+  },
+  {
+    name: "Rejections & Revisions",
+    options: [
+      { value: "Non-Design Related Rejection", label: "Non-Design Related Rejection" },
+      { value: "Rejected", label: "Rejected (New)" },
+      { value: "Rejected - Revisions Needed", label: "Rejected - Revisions Needed" },
+      { value: "Design Revision In Progress", label: "Design Revision In Progress" },
+      { value: "Revision Ready To Resubmit", label: "Revision Ready To Resubmit" },
+      { value: "Resubmitted To Utility", label: "Resubmitted To Utility" },
+    ]
+  },
+  {
+    name: "Approved",
+    options: [
+      { value: "Application Approved", label: "Application Approved" },
+      { value: "Application Approved - Pending Signatures", label: "Approved - Pending Signatures" },
+      { value: "Conditional Application Approval", label: "Conditional Approval" },
+    ]
+  },
+  {
+    name: "Special Cases",
+    options: [
+      { value: "Transformer Upgrade", label: "Transformer Upgrade" },
+      { value: "Supplemental Review", label: "Supplemental Review" },
+      { value: "RBC On Hold", label: "RBC On Hold" },
+      { value: "Pending Rebate Approval", label: "Pending Rebate Approval" },
+    ]
+  },
+  {
+    name: "Xcel",
+    options: [
+      { value: "Xcel Site Plan & SLD Needed", label: "Xcel Site Plan & SLD Needed" },
+    ]
+  },
+  {
+    name: "Other",
+    options: [
+      { value: "Not Needed", label: "Not Needed" },
+    ]
+  },
+];
+
+// PTO Status Groups
+const PTO_STATUS_GROUPS: FilterGroup[] = [
+  {
+    name: "Pre-Submission",
+    options: [
+      { value: "PTO Waiting on Interconnection Approval", label: "Waiting on IC Approval" },
+      { value: "Inspection Passed - Ready for PTO Submission", label: "Ready for Utility" },
+    ]
+  },
+  {
+    name: "Submitted",
+    options: [
+      { value: "Inspection Submitted to Utility", label: "Submitted to Utility" },
+      { value: "PTO Revision Resubmitted", label: "Revision Resubmitted" },
+    ]
+  },
+  {
+    name: "Rejections",
+    options: [
+      { value: "Inspection Rejected By Utility", label: "Inspection Rejected" },
+      { value: "Ops Related PTO Rejection", label: "Ops Related Rejection" },
+    ]
+  },
+  {
+    name: "Waiting",
+    options: [
+      { value: "Waiting On Information", label: "Waiting On Information" },
+      { value: "Waiting on New Construction", label: "Waiting on New Construction" },
+      { value: "Pending Truck Roll", label: "Pending Truck Roll" },
+    ]
+  },
+  {
+    name: "Xcel Photos",
+    options: [
+      { value: "Xcel Photos Ready to Submit", label: "Photos Ready to Submit" },
+      { value: "Xcel Photos Submitted", label: "Photos Submitted" },
+      { value: "XCEL Photos Rejected", label: "Photos Rejected" },
+      { value: "Xcel Photos Ready to Resubmit", label: "Photos Ready to Resubmit" },
+      { value: "Xcel Photos Resubmitted", label: "Photos Resubmitted" },
+      { value: "Xcel Photos Approved", label: "Photos Approved" },
+    ]
+  },
+  {
+    name: "Completed",
+    options: [
+      { value: "PTO Granted", label: "PTO Granted" },
+      { value: "Conditional PTO - Pending Transformer Upgrade", label: "Conditional PTO" },
+    ]
+  },
+  {
+    name: "Other",
+    options: [
+      { value: "Not Needed", label: "Not Needed" },
+    ]
+  },
+];
+
+// Flatten groups to get all options
+const ALL_IC_STATUS_OPTIONS = IC_STATUS_GROUPS.flatMap(g => g.options || []);
+const ALL_PTO_STATUS_OPTIONS = PTO_STATUS_GROUPS.flatMap(g => g.options || []);
+
 export default function InterconnectionPage() {
   const [projects, setProjects] = useState<ExtendedProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filterUtility, setFilterUtility] = useState("all");
-  const [filterLocation, setFilterLocation] = useState("all");
-  const [filterStage, setFilterStage] = useState("all");
-  const [filterIcStatus, setFilterIcStatus] = useState("all");
-  const [filterPtoStatus, setFilterPtoStatus] = useState("all");
+
+  // Multi-select filters
+  const [filterUtilities, setFilterUtilities] = useState<string[]>([]);
+  const [filterLocations, setFilterLocations] = useState<string[]>([]);
+  const [filterStages, setFilterStages] = useState<string[]>([]);
+  const [filterIcStatuses, setFilterIcStatuses] = useState<string[]>([]);
+  const [filterPtoStatuses, setFilterPtoStatuses] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const fetchData = useCallback(async () => {
     try {
@@ -98,14 +226,33 @@ export default function InterconnectionPage() {
 
   const filteredProjects = useMemo(() => {
     return projects.filter(p => {
-      if (filterUtility !== 'all' && p.utility !== filterUtility) return false;
-      if (filterLocation !== 'all' && p.pbLocation !== filterLocation) return false;
-      if (filterStage !== 'all' && p.stage !== filterStage) return false;
-      if (filterIcStatus !== 'all' && p.interconnectionStatus !== filterIcStatus) return false;
-      if (filterPtoStatus !== 'all' && p.ptoStatus !== filterPtoStatus) return false;
+      // Utility filter (multi-select)
+      if (filterUtilities.length > 0 && !filterUtilities.includes(p.utility || '')) return false;
+
+      // Location filter (multi-select)
+      if (filterLocations.length > 0 && !filterLocations.includes(p.pbLocation || '')) return false;
+
+      // Stage filter (multi-select)
+      if (filterStages.length > 0 && !filterStages.includes(p.stage || '')) return false;
+
+      // IC Status filter (multi-select)
+      if (filterIcStatuses.length > 0 && !filterIcStatuses.includes(p.interconnectionStatus || '')) return false;
+
+      // PTO Status filter (multi-select)
+      if (filterPtoStatuses.length > 0 && !filterPtoStatuses.includes(p.ptoStatus || '')) return false;
+
+      // Search filter
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        const name = (p.name || '').toLowerCase();
+        const location = (p.pbLocation || '').toLowerCase();
+        const utility = (p.utility || '').toLowerCase();
+        if (!name.includes(query) && !location.includes(query) && !utility.includes(query)) return false;
+      }
+
       return true;
     });
-  }, [projects, filterUtility, filterLocation, filterStage, filterIcStatus, filterPtoStatus]);
+  }, [projects, filterUtilities, filterLocations, filterStages, filterIcStatuses, filterPtoStatuses, searchQuery]);
 
   const stats = useMemo(() => {
     const today = new Date();
@@ -143,6 +290,19 @@ export default function InterconnectionPage() {
       ? Math.round(daysInPto.reduce((a, b) => a + b, 0) / daysInPto.length)
       : 0;
 
+    // IC Status breakdown
+    const icStatusStats: Record<string, number> = {};
+    const ptoStatusStats: Record<string, number> = {};
+
+    filteredProjects.forEach(p => {
+      if (p.interconnectionStatus) {
+        icStatusStats[p.interconnectionStatus] = (icStatusStats[p.interconnectionStatus] || 0) + 1;
+      }
+      if (p.ptoStatus) {
+        ptoStatusStats[p.ptoStatus] = (ptoStatusStats[p.ptoStatus] || 0) + 1;
+      }
+    });
+
     // Group by Utility
     const utilityStats: Record<string, { total: number; icPending: number; icApproved: number; ptoPending: number; avgDays: number[]; totalValue: number }> = {};
     filteredProjects.forEach(p => {
@@ -178,26 +338,55 @@ export default function InterconnectionPage() {
       avgDaysWaitingIc,
       avgTurnaround,
       avgDaysInPto,
+      icStatusStats,
+      ptoStatusStats,
       utilityStats,
     };
   }, [filteredProjects, isIcPending, isIcApproved]);
 
   // Get unique values for filters
-  const utilities = useMemo(() => [...new Set(projects.map(p => p.utility))].filter(u => u && u !== 'Unknown').sort(), [projects]);
-  const locations = useMemo(() => [...new Set(projects.map(p => p.pbLocation))].filter(l => l && l !== 'Unknown').sort(), [projects]);
+  const utilities = useMemo(() =>
+    [...new Set(projects.map(p => p.utility))]
+      .filter(u => u && u !== 'Unknown')
+      .sort()
+      .map(u => ({ value: u!, label: u! })),
+    [projects]
+  );
+
+  const locations = useMemo(() =>
+    [...new Set(projects.map(p => p.pbLocation))]
+      .filter(l => l && l !== 'Unknown')
+      .sort()
+      .map(l => ({ value: l!, label: l! })),
+    [projects]
+  );
+
   const stages = useMemo(() => {
     const STAGE_ORDER = ['Site Survey', 'Design & Engineering', 'Permitting & Interconnection', 'RTB - Blocked', 'Ready To Build', 'Construction', 'Inspection', 'Permission To Operate', 'Close Out'];
-    return [...new Set(projects.map(p => p.stage))].filter(s => s).sort((a, b) => {
-      const aIdx = STAGE_ORDER.findIndex(s => s.toLowerCase() === a.toLowerCase());
-      const bIdx = STAGE_ORDER.findIndex(s => s.toLowerCase() === b.toLowerCase());
-      if (aIdx === -1 && bIdx === -1) return a.localeCompare(b);
-      if (aIdx === -1) return 1;
-      if (bIdx === -1) return -1;
-      return aIdx - bIdx;
-    });
+    return [...new Set(projects.map(p => p.stage))]
+      .filter(s => s)
+      .sort((a, b) => {
+        const aIdx = STAGE_ORDER.findIndex(s => s.toLowerCase() === a!.toLowerCase());
+        const bIdx = STAGE_ORDER.findIndex(s => s.toLowerCase() === b!.toLowerCase());
+        if (aIdx === -1 && bIdx === -1) return a!.localeCompare(b!);
+        if (aIdx === -1) return 1;
+        if (bIdx === -1) return -1;
+        return aIdx - bIdx;
+      })
+      .map(s => ({ value: s!, label: s! }));
   }, [projects]);
-  const icStatuses = useMemo(() => [...new Set(projects.map(p => (p as ExtendedProject).interconnectionStatus))].filter(s => s).sort() as string[], [projects]);
-  const ptoStatuses = useMemo(() => [...new Set(projects.map(p => (p as ExtendedProject).ptoStatus))].filter(s => s).sort() as string[], [projects]);
+
+  const clearAllFilters = () => {
+    setFilterUtilities([]);
+    setFilterLocations([]);
+    setFilterStages([]);
+    setFilterIcStatuses([]);
+    setFilterPtoStatuses([]);
+    setSearchQuery("");
+  };
+
+  const hasActiveFilters = filterUtilities.length > 0 || filterLocations.length > 0 ||
+    filterStages.length > 0 || filterIcStatuses.length > 0 || filterPtoStatuses.length > 0 || searchQuery;
 
   if (loading) {
     return (
@@ -228,33 +417,95 @@ export default function InterconnectionPage() {
     );
   }
 
+  const getIcStatusColor = (status: string | undefined): string => {
+    if (!status) return 'bg-zinc-500/20 text-zinc-400';
+    const lower = status.toLowerCase();
+    if (lower.includes('approved') || lower.includes('complete')) return 'bg-green-500/20 text-green-400';
+    if (lower.includes('submitted') || lower.includes('in review')) return 'bg-blue-500/20 text-blue-400';
+    if (lower.includes('rejected') || lower.includes('revision')) return 'bg-orange-500/20 text-orange-400';
+    if (lower.includes('waiting') || lower.includes('pending')) return 'bg-yellow-500/20 text-yellow-400';
+    return 'bg-zinc-500/20 text-zinc-400';
+  };
+
+  const getPtoStatusColor = (status: string | undefined): string => {
+    if (!status) return 'bg-zinc-500/20 text-zinc-400';
+    const lower = status.toLowerCase();
+    if (lower.includes('granted') || lower.includes('approved')) return 'bg-emerald-500/20 text-emerald-400';
+    if (lower.includes('submitted') || lower.includes('resubmitted')) return 'bg-cyan-500/20 text-cyan-400';
+    if (lower.includes('rejected')) return 'bg-red-500/20 text-red-400';
+    if (lower.includes('waiting') || lower.includes('pending')) return 'bg-orange-500/20 text-orange-400';
+    if (lower.includes('xcel') || lower.includes('photos')) return 'bg-purple-500/20 text-purple-400';
+    return 'bg-zinc-500/20 text-zinc-400';
+  };
+
   return (
     <DashboardShell title="Interconnection & PTO" accentColor="orange">
-      {/* Filters */}
-      <div className="flex items-center gap-3 flex-wrap mb-6">
-        <select value={filterUtility} onChange={(e) => setFilterUtility(e.target.value)} className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
-          <option value="all">All Utilities</option>
-          {utilities.map(u => <option key={u} value={u}>{u}</option>)}
-        </select>
-        <select value={filterLocation} onChange={(e) => setFilterLocation(e.target.value)} className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
-          <option value="all">All Locations</option>
-          {locations.map(l => <option key={l} value={l}>{l}</option>)}
-        </select>
-        <select value={filterStage} onChange={(e) => setFilterStage(e.target.value)} className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
-          <option value="all">All Stages</option>
-          {stages.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <select value={filterIcStatus} onChange={(e) => setFilterIcStatus(e.target.value)} className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
-          <option value="all">All Interconnection Status</option>
-          {icStatuses.map(s => <option key={s} value={s}>{getDisplayName(s)}</option>)}
-        </select>
-        <select value={filterPtoStatus} onChange={(e) => setFilterPtoStatus(e.target.value)} className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
-          <option value="all">All PTO Status</option>
-          {ptoStatuses.map(s => <option key={s} value={s}>{getDisplayName(s)}</option>)}
-        </select>
-        <button onClick={fetchData} className="bg-amber-600 hover:bg-amber-700 px-4 py-2 rounded-lg text-sm font-medium">
-          Refresh
-        </button>
+      {/* Search and Filters */}
+      <div className="flex flex-col gap-4 mb-6">
+        {/* Search Bar */}
+        <div className="flex items-center gap-3">
+          <ProjectSearchBar
+            onSearch={setSearchQuery}
+            placeholder="Search by PROJ #, name, location, or utility..."
+          />
+          <button onClick={fetchData} className="bg-amber-600 hover:bg-amber-700 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap">
+            Refresh
+          </button>
+        </div>
+
+        {/* Filter Row */}
+        <div className="flex items-center gap-3 flex-wrap">
+          <MultiSelectFilter
+            label="Utility"
+            options={utilities}
+            selected={filterUtilities}
+            onChange={setFilterUtilities}
+            placeholder="All Utilities"
+            accentColor="orange"
+          />
+          <MultiSelectFilter
+            label="Location"
+            options={locations}
+            selected={filterLocations}
+            onChange={setFilterLocations}
+            placeholder="All Locations"
+            accentColor="blue"
+          />
+          <MultiSelectFilter
+            label="Stage"
+            options={stages}
+            selected={filterStages}
+            onChange={setFilterStages}
+            placeholder="All Stages"
+            accentColor="purple"
+          />
+          <MultiSelectFilter
+            label="IC Status"
+            options={ALL_IC_STATUS_OPTIONS}
+            groups={IC_STATUS_GROUPS}
+            selected={filterIcStatuses}
+            onChange={setFilterIcStatuses}
+            placeholder="All IC Statuses"
+            accentColor="green"
+          />
+          <MultiSelectFilter
+            label="PTO Status"
+            options={ALL_PTO_STATUS_OPTIONS}
+            groups={PTO_STATUS_GROUPS}
+            selected={filterPtoStatuses}
+            onChange={setFilterPtoStatuses}
+            placeholder="All PTO Statuses"
+            accentColor="orange"
+          />
+          {hasActiveFilters && (
+            <button
+              onClick={clearAllFilters}
+              className="text-xs text-zinc-400 hover:text-white px-3 py-2 border border-zinc-700 rounded-lg hover:border-zinc-600 transition-colors"
+            >
+              Clear All
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Summary Stats */}
@@ -302,6 +553,71 @@ export default function InterconnectionPage() {
         </div>
       </div>
 
+      {/* Status Breakdown */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+        {/* IC Status Breakdown */}
+        <div className="bg-[#12121a] rounded-xl border border-zinc-800 p-4">
+          <h2 className="text-lg font-semibold mb-4 text-amber-400">By IC Status</h2>
+          <div className="space-y-2 max-h-[250px] overflow-y-auto">
+            {Object.keys(stats.icStatusStats).length === 0 ? (
+              <p className="text-zinc-500 text-sm">No IC status data available</p>
+            ) : (
+              Object.entries(stats.icStatusStats)
+                .sort((a, b) => b[1] - a[1])
+                .map(([status, count]) => (
+                  <div
+                    key={status}
+                    className={`flex items-center justify-between p-2 bg-zinc-800/50 rounded-lg cursor-pointer hover:bg-zinc-800 transition-colors ${
+                      filterIcStatuses.includes(status) ? 'ring-1 ring-amber-500' : ''
+                    }`}
+                    onClick={() => {
+                      if (filterIcStatuses.includes(status)) {
+                        setFilterIcStatuses(filterIcStatuses.filter(s => s !== status));
+                      } else {
+                        setFilterIcStatuses([...filterIcStatuses, status]);
+                      }
+                    }}
+                  >
+                    <span className="text-sm text-zinc-300">{getDisplayName(status)}</span>
+                    <span className="text-lg font-bold text-amber-400">{count}</span>
+                  </div>
+                ))
+            )}
+          </div>
+        </div>
+
+        {/* PTO Status Breakdown */}
+        <div className="bg-[#12121a] rounded-xl border border-zinc-800 p-4">
+          <h2 className="text-lg font-semibold mb-4 text-orange-400">By PTO Status</h2>
+          <div className="space-y-2 max-h-[250px] overflow-y-auto">
+            {Object.keys(stats.ptoStatusStats).length === 0 ? (
+              <p className="text-zinc-500 text-sm">No PTO status data available</p>
+            ) : (
+              Object.entries(stats.ptoStatusStats)
+                .sort((a, b) => b[1] - a[1])
+                .map(([status, count]) => (
+                  <div
+                    key={status}
+                    className={`flex items-center justify-between p-2 bg-zinc-800/50 rounded-lg cursor-pointer hover:bg-zinc-800 transition-colors ${
+                      filterPtoStatuses.includes(status) ? 'ring-1 ring-orange-500' : ''
+                    }`}
+                    onClick={() => {
+                      if (filterPtoStatuses.includes(status)) {
+                        setFilterPtoStatuses(filterPtoStatuses.filter(s => s !== status));
+                      } else {
+                        setFilterPtoStatuses([...filterPtoStatuses, status]);
+                      }
+                    }}
+                  >
+                    <span className="text-sm text-zinc-300">{getDisplayName(status)}</span>
+                    <span className="text-lg font-bold text-orange-400">{count}</span>
+                  </div>
+                ))
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* Utility Breakdown */}
       <div className="bg-[#12121a] rounded-xl border border-zinc-800 p-4 mb-6">
         <h2 className="text-lg font-semibold mb-4">By Utility</h2>
@@ -317,8 +633,16 @@ export default function InterconnectionPage() {
               return (
                 <div
                   key={utility}
-                  className="bg-zinc-800/50 rounded-lg p-3 cursor-pointer hover:bg-zinc-800 transition-colors"
-                  onClick={() => setFilterUtility(utility)}
+                  className={`bg-zinc-800/50 rounded-lg p-3 cursor-pointer hover:bg-zinc-800 transition-colors ${
+                    filterUtilities.includes(utility) ? 'ring-1 ring-amber-500' : ''
+                  }`}
+                  onClick={() => {
+                    if (filterUtilities.includes(utility)) {
+                      setFilterUtilities(filterUtilities.filter(u => u !== utility));
+                    } else {
+                      setFilterUtilities([...filterUtilities, utility]);
+                    }
+                  }}
                 >
                   <div className="text-sm font-medium text-white truncate" title={utility}>{utility}</div>
                   <div className="flex items-center gap-2 mt-1">
@@ -340,6 +664,9 @@ export default function InterconnectionPage() {
       <div className="bg-[#12121a] rounded-xl border border-zinc-800 overflow-hidden">
         <div className="p-4 border-b border-zinc-800 flex items-center justify-between">
           <h2 className="text-lg font-semibold">Projects ({filteredProjects.length})</h2>
+          {hasActiveFilters && (
+            <span className="text-xs text-zinc-500">Filtered from {projects.length} total</span>
+          )}
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -370,24 +697,16 @@ export default function InterconnectionPage() {
                   })
                   .slice(0, 100)
                   .map(project => {
-                    let icColor = 'bg-zinc-500/20 text-zinc-400';
-                    let icLabel = getDisplayName(project.interconnectionStatus) || 'Not Started';
-                    if (isIcApproved(project)) {
-                      icColor = 'bg-green-500/20 text-green-400';
-                      icLabel = getDisplayName(project.interconnectionStatus) || 'Approved';
-                    } else if (isIcPending(project)) {
-                      icColor = 'bg-yellow-500/20 text-yellow-400';
-                      icLabel = getDisplayName(project.interconnectionStatus) || 'Pending';
-                    }
+                    const icLabel = getDisplayName(project.interconnectionStatus) || (
+                      isIcApproved(project) ? 'Approved' :
+                      isIcPending(project) ? 'Pending' : 'Not Started'
+                    );
 
-                    let ptoColor = 'bg-zinc-500/20 text-zinc-500';
                     let ptoLabel = '-';
                     const rawPtoStatus = (project.ptoStatus || '').toLowerCase();
                     if (project.ptoGrantedDate || ['granted', 'complete', 'approved', 'received'].some(s => rawPtoStatus.includes(s))) {
-                      ptoColor = 'bg-emerald-500/20 text-emerald-400';
                       ptoLabel = getDisplayName(project.ptoStatus) || 'Granted';
                     } else if (project.stage === 'Permission To Operate' || ['pending', 'submitted', 'in progress', 'in review'].some(s => rawPtoStatus.includes(s))) {
-                      ptoColor = 'bg-orange-500/20 text-orange-400';
                       ptoLabel = getDisplayName(project.ptoStatus) || (project.ptoSubmitDate ? 'Submitted' : 'Pending');
                     } else if (project.ptoStatus) {
                       ptoLabel = getDisplayName(project.ptoStatus);
@@ -403,7 +722,7 @@ export default function InterconnectionPage() {
                         </td>
                         <td className="px-4 py-3 text-sm text-zinc-300">{project.utility || '-'}</td>
                         <td className="px-4 py-3">
-                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${icColor}`}>
+                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getIcStatusColor(project.interconnectionStatus)}`}>
                             {icLabel}
                           </span>
                         </td>
@@ -414,7 +733,7 @@ export default function InterconnectionPage() {
                           {project.interconnectionApprovalDate || '-'}
                         </td>
                         <td className="px-4 py-3">
-                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${ptoColor}`}>
+                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getPtoStatusColor(project.ptoStatus)}`}>
                             {ptoLabel}
                           </span>
                         </td>
