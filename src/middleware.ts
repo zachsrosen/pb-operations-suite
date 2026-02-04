@@ -6,10 +6,24 @@ export default auth((req) => {
   const isLoginPage = req.nextUrl.pathname === "/login";
   const isAuthRoute = req.nextUrl.pathname.startsWith("/api/auth");
   const isApiRoute = req.nextUrl.pathname.startsWith("/api/");
+  const isMaintenancePage = req.nextUrl.pathname === "/maintenance";
   const isStaticFile =
     req.nextUrl.pathname.startsWith("/_next/") ||
     req.nextUrl.pathname.startsWith("/static/") ||
     req.nextUrl.pathname.includes(".");
+
+  // Check for maintenance mode
+  const maintenanceMode = process.env.MAINTENANCE_MODE === "true";
+
+  // If maintenance mode is ON, redirect all non-maintenance pages to /maintenance
+  if (maintenanceMode && !isMaintenancePage && !isStaticFile && !isApiRoute) {
+    return NextResponse.redirect(new URL("/maintenance", req.url));
+  }
+
+  // If maintenance mode is OFF and user is on maintenance page, redirect to home
+  if (!maintenanceMode && isMaintenancePage) {
+    return NextResponse.redirect(new URL("/", req.url));
+  }
 
   // Always allow auth routes and static files
   if (isAuthRoute || isStaticFile) {

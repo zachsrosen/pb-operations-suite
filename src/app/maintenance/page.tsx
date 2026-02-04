@@ -4,12 +4,42 @@ import { useEffect, useState } from "react";
 
 export default function MaintenancePage() {
   const [dots, setDots] = useState("");
+  const [checkCount, setCheckCount] = useState(0);
 
+  // Animate the dots
   useEffect(() => {
     const interval = setInterval(() => {
       setDots((prev) => (prev.length >= 3 ? "" : prev + "."));
     }, 500);
     return () => clearInterval(interval);
+  }, []);
+
+  // Auto-check if maintenance is over every 10 seconds
+  useEffect(() => {
+    const checkHealth = async () => {
+      try {
+        const response = await fetch("/api/health", { cache: "no-store" });
+        if (response.ok) {
+          // Health check passed, try to navigate to home
+          // The middleware will redirect back here if still in maintenance
+          window.location.href = "/";
+        }
+      } catch {
+        // Still in maintenance or network error, keep waiting
+      }
+      setCheckCount((c) => c + 1);
+    };
+
+    // Check every 10 seconds
+    const interval = setInterval(checkHealth, 10000);
+
+    // Also check immediately after 3 seconds
+    const initialCheck = setTimeout(checkHealth, 3000);
+
+    return () => {
+      clearInterval(interval);
+      clearTimeout(initialCheck);
+    };
   }, []);
 
   return (
@@ -82,14 +112,19 @@ export default function MaintenancePage() {
         {/* Auto-refresh notice */}
         <p className="text-xs text-zinc-600 mt-6">
           This page will automatically refresh when updates are complete.
+          {checkCount > 0 && (
+            <span className="block mt-1 text-zinc-700">
+              Checked {checkCount} time{checkCount !== 1 ? "s" : ""}...
+            </span>
+          )}
         </p>
 
         {/* Manual refresh button */}
         <button
-          onClick={() => window.location.reload()}
+          onClick={() => window.location.href = "/"}
           className="mt-4 px-4 py-2 text-sm text-zinc-400 hover:text-white transition-colors"
         >
-          Refresh manually
+          Try again now
         </button>
       </div>
     </div>
