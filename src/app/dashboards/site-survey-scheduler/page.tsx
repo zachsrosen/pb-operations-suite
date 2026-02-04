@@ -53,6 +53,17 @@ interface PendingSchedule {
   date: string;
 }
 
+interface AssistedSlot {
+  date: string;
+  start_time: string;
+  end_time: string;
+  user_uid?: string;
+  user_name?: string;
+  team_uid?: string;
+  team_name?: string;
+  available: boolean;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Constants                                                          */
 /* ------------------------------------------------------------------ */
@@ -191,6 +202,11 @@ export default function SiteSurveySchedulerPage() {
   const [zuperConfigured, setZuperConfigured] = useState(false);
   const [syncToZuper, setSyncToZuper] = useState(true);
   const [syncingToZuper, setSyncingToZuper] = useState(false);
+
+  /* ---- Assisted scheduling ---- */
+  const [availableSlots, setAvailableSlots] = useState<AssistedSlot[]>([]);
+  const [loadingSlots, setLoadingSlots] = useState(false);
+  const [selectedSlot, setSelectedSlot] = useState<AssistedSlot | null>(null);
 
   /* ---- toast ---- */
   const [toast, setToast] = useState<{ message: string; type: string } | null>(null);

@@ -78,6 +78,17 @@ export interface ZuperApiResponse<T> {
   error?: string;
 }
 
+export interface AssistedSchedulingSlot {
+  date: string; // YYYY-MM-DD
+  start_time: string;
+  end_time: string;
+  user_uid?: string;
+  user_name?: string;
+  team_uid?: string;
+  team_name?: string;
+  available: boolean;
+}
+
 // Job categories mapping for PB workflows - using Zuper category UIDs
 // These UIDs are specific to the photonbrothers Zuper account
 export const JOB_CATEGORY_UIDS = {
@@ -105,7 +116,7 @@ export const JOB_TYPES = {
   FULL_SYSTEM: "Full System",
 } as const;
 
-class ZuperClient {
+export class ZuperClient {
   private apiKey: string;
   private baseUrl: string;
 
@@ -234,6 +245,47 @@ class ZuperClient {
    */
   async getUnscheduledJobs(): Promise<ZuperApiResponse<ZuperJob[]>> {
     return this.request<ZuperJob[]>("/jobs/unscheduled");
+  }
+
+  /**
+   * Get available time slots via Assisted Scheduling
+   * This queries Zuper for available slots based on date range, location, and job requirements
+   */
+  async getAssistedSchedulingSlots(params: {
+    fromDate: string; // YYYY-MM-DD
+    toDate: string; // YYYY-MM-DD
+    jobCategory?: string; // Category UID
+    teamUid?: string; // Team UID to filter by
+    duration?: number; // Duration in minutes
+    latitude?: number;
+    longitude?: number;
+  }): Promise<ZuperApiResponse<AssistedSchedulingSlot[]>> {
+    const queryParams = new URLSearchParams();
+    queryParams.append("from_date", params.fromDate);
+    queryParams.append("to_date", params.toDate);
+    if (params.jobCategory) queryParams.append("job_category", params.jobCategory);
+    if (params.teamUid) queryParams.append("team_uid", params.teamUid);
+    if (params.duration) queryParams.append("duration", String(params.duration));
+    if (params.latitude) queryParams.append("latitude", String(params.latitude));
+    if (params.longitude) queryParams.append("longitude", String(params.longitude));
+
+    const result = await this.request<{ type: string; data: AssistedSchedulingSlot[] }>(
+      `/assisted_scheduling?${queryParams.toString()}`
+    );
+
+    if (result.type === "success" && result.data) {
+      const slots = Array.isArray(result.data.data) ? result.data.data : [];
+      return {
+        type: "success",
+        data: slots,
+      };
+    }
+
+    return {
+      type: result.type,
+      error: result.error,
+      data: [],
+    };
   }
 
   /**
