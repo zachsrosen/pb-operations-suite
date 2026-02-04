@@ -185,7 +185,7 @@ export default function SiteSurveySchedulerPage() {
   const [currentMonth, setCurrentMonth] = useState(new Date().getMonth());
 
   /* ---- filters ---- */
-  const [selectedLocation, setSelectedLocation] = useState("All");
+  const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
   const [selectedStatus, setSelectedStatus] = useState("all");
   const [searchText, setSearchText] = useState("");
   const [sortBy, setSortBy] = useState("amount");
@@ -271,7 +271,8 @@ export default function SiteSurveySchedulerPage() {
 
   const filteredProjects = useMemo(() => {
     let filtered = projects.filter((p) => {
-      if (selectedLocation !== "All" && p.location !== selectedLocation) return false;
+      // Multi-select location filter - if any selected, filter by them
+      if (selectedLocations.length > 0 && !selectedLocations.includes(p.location)) return false;
       if (selectedStatus !== "all" && p.surveyStatus !== selectedStatus) return false;
       if (searchText &&
           !p.name.toLowerCase().includes(searchText.toLowerCase()) &&
@@ -290,7 +291,7 @@ export default function SiteSurveySchedulerPage() {
       filtered.sort((a, b) => a.surveyStatus.localeCompare(b.surveyStatus));
     }
     return filtered;
-  }, [projects, selectedLocation, selectedStatus, searchText, sortBy, manualSchedules]);
+  }, [projects, selectedLocations, selectedStatus, searchText, sortBy, manualSchedules]);
 
   const unscheduledProjects = useMemo(() => {
     return filteredProjects.filter(p =>
@@ -614,7 +615,7 @@ export default function SiteSurveySchedulerPage() {
           </div>
 
           {/* Filters Row */}
-          <div className="flex items-center gap-3 mt-3">
+          <div className="flex items-center gap-3 mt-3 flex-wrap">
             <input
               type="text"
               placeholder="Search projects..."
@@ -623,15 +624,36 @@ export default function SiteSurveySchedulerPage() {
               className="px-3 py-1.5 bg-zinc-900 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:border-cyan-500 w-48"
             />
 
-            <select
-              value={selectedLocation}
-              onChange={(e) => setSelectedLocation(e.target.value)}
-              className="px-3 py-1.5 bg-zinc-900 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:border-cyan-500"
-            >
-              {LOCATIONS.map((loc) => (
-                <option key={loc} value={loc}>{loc}</option>
+            {/* Multi-select Location Filter */}
+            <div className="flex items-center gap-1">
+              {LOCATIONS.filter(l => l !== "All").map((loc) => (
+                <button
+                  key={loc}
+                  onClick={() => {
+                    if (selectedLocations.includes(loc)) {
+                      setSelectedLocations(selectedLocations.filter(l => l !== loc));
+                    } else {
+                      setSelectedLocations([...selectedLocations, loc]);
+                    }
+                  }}
+                  className={`px-2 py-1 text-xs rounded-md border transition-colors ${
+                    selectedLocations.includes(loc)
+                      ? "bg-cyan-600 border-cyan-500 text-white"
+                      : "bg-zinc-900 border-zinc-700 text-zinc-400 hover:border-zinc-600"
+                  }`}
+                >
+                  {loc.replace("Colorado Springs", "CO Spgs").replace("San Luis Obispo", "SLO")}
+                </button>
               ))}
-            </select>
+              {selectedLocations.length > 0 && (
+                <button
+                  onClick={() => setSelectedLocations([])}
+                  className="px-2 py-1 text-xs text-zinc-500 hover:text-white"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
 
             <select
               value={selectedStatus}

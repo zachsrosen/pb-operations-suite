@@ -342,7 +342,8 @@ export default function SchedulerPage() {
   const [weekOffset, setWeekOffset] = useState(0);
 
   /* ---- filters ---- */
-  const [selectedLocation, setSelectedLocation] = useState("All");
+  const [selectedLocations, setSelectedLocations] = useState<string[]>([]); // For project list filtering (multi-select)
+  const [selectedLocation, setSelectedLocation] = useState("All"); // For calendar view (single-select)
   const [selectedStage, setSelectedStage] = useState("all");
   const [searchText, setSearchText] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
@@ -432,7 +433,7 @@ export default function SchedulerPage() {
 
   const filteredProjects = useMemo(() => {
     let filtered = projects.filter((p) => {
-      if (selectedLocation !== "All" && p.location !== selectedLocation)
+      if (selectedLocations.length > 0 && !selectedLocations.includes(p.location))
         return false;
       if (selectedStage !== "all" && p.stage !== selectedStage) return false;
       if (
@@ -452,7 +453,7 @@ export default function SchedulerPage() {
     else if (sortBy === "days")
       filtered.sort((a, b) => (a.daysInstall || 1) - (b.daysInstall || 1));
     return filtered;
-  }, [projects, selectedLocation, selectedStage, searchText, typeFilter, sortBy]);
+  }, [projects, selectedLocations, selectedStage, searchText, typeFilter, sortBy]);
 
   const scheduledEvents = useMemo((): ScheduledEvent[] => {
     const events: ScheduledEvent[] = [];
@@ -1156,6 +1157,36 @@ export default function SchedulerPage() {
                 <option value="date">Sort: Date</option>
                 <option value="days">Sort: Install Days</option>
               </select>
+              {/* Multi-select Location Filter */}
+              <div className="flex flex-wrap gap-1 mt-1">
+                {LOCATIONS.filter(l => l !== "All").map((loc) => (
+                  <button
+                    key={loc}
+                    onClick={() => {
+                      if (selectedLocations.includes(loc)) {
+                        setSelectedLocations(selectedLocations.filter(l => l !== loc));
+                      } else {
+                        setSelectedLocations([...selectedLocations, loc]);
+                      }
+                    }}
+                    className={`px-1.5 py-0.5 text-[0.6rem] rounded border transition-colors ${
+                      selectedLocations.includes(loc)
+                        ? "bg-orange-500 border-orange-400 text-black"
+                        : "bg-[#0a0a0f] border-zinc-700 text-zinc-400 hover:border-zinc-600"
+                    }`}
+                  >
+                    {loc.replace("Colorado Springs", "CO Spgs").replace("San Luis Obispo", "SLO")}
+                  </button>
+                ))}
+                {selectedLocations.length > 0 && (
+                  <button
+                    onClick={() => setSelectedLocations([])}
+                    className="px-1.5 py-0.5 text-[0.6rem] text-zinc-500 hover:text-white"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
