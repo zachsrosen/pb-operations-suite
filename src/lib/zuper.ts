@@ -212,21 +212,19 @@ class ZuperClient {
 
   /**
    * Reschedule a job by updating its scheduled times
-   * Zuper uses PUT /jobs with job object containing job_uid
+   * Zuper uses PUT /jobs/schedule with job_uid, from_date, to_date at top level
    */
   async rescheduleJob(
     jobUid: string,
     scheduledStartTime: string,
     scheduledEndTime: string
   ): Promise<ZuperApiResponse<ZuperJob>> {
-    return this.request<ZuperJob>(`/jobs`, {
+    return this.request<ZuperJob>(`/jobs/schedule`, {
       method: "PUT",
       body: JSON.stringify({
-        job: {
-          job_uid: jobUid,
-          scheduled_start_time: this.formatZuperDateTime(scheduledStartTime),
-          scheduled_end_time: this.formatZuperDateTime(scheduledEndTime),
-        },
+        job_uid: jobUid,
+        from_date: this.formatZuperDateTime(scheduledStartTime),
+        to_date: this.formatZuperDateTime(scheduledEndTime),
       }),
     });
   }
