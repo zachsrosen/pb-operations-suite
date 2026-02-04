@@ -152,6 +152,7 @@ export interface Project {
   // Site Survey
   siteSurveyScheduleDate: string | null;
   siteSurveyCompletionDate: string | null;
+  siteSurveyStatus: string | null;
 
   // Design
   designCompletionDate: string | null;
@@ -173,6 +174,7 @@ export interface Project {
   readyToBuildDate: string | null;
   constructionScheduleDate: string | null;
   constructionCompleteDate: string | null;
+  constructionStatus: string | null;
 
   // Inspection
   inspectionScheduleDate: string | null;
@@ -306,6 +308,10 @@ const DEAL_PROPERTIES = [
   "pto_start_date", // submit date
   "pto_completion_date", // granted date
   "pto_status",
+
+  // Status fields for dashboards
+  "construction_status",
+  "site_survey_status",
 
   // Forecasted dates
   "forecasted_installation_date",
@@ -516,6 +522,7 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string)
     // Site Survey
     siteSurveyScheduleDate: parseDate(deal.site_survey_schedule_date),
     siteSurveyCompletionDate: parseDate(deal.site_survey_date),
+    siteSurveyStatus: deal.site_survey_status ? String(deal.site_survey_status) : null,
 
     // Design
     designCompletionDate: parseDate(deal.design_completion_date),
@@ -537,6 +544,7 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string)
     readyToBuildDate: parseDate(deal.ready_to_build_date),
     constructionScheduleDate: parseDate(deal.install_schedule_date),
     constructionCompleteDate: parseDate(deal.construction_complete_date),
+    constructionStatus: deal.construction_status ? String(deal.construction_status) : null,
 
     // Inspection
     inspectionScheduleDate: parseDate(deal.inspections_schedule_date),
