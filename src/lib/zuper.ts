@@ -179,30 +179,40 @@ class ZuperClient {
 
   /**
    * Update an existing job
+   * Zuper uses PUT /jobs with job object containing job_uid
    */
   async updateJob(
     jobUid: string,
     updates: Partial<ZuperJob>
   ): Promise<ZuperApiResponse<ZuperJob>> {
-    return this.request<ZuperJob>(`/jobs/${jobUid}`, {
+    return this.request<ZuperJob>(`/jobs`, {
       method: "PUT",
-      body: JSON.stringify(updates),
+      body: JSON.stringify({
+        job: {
+          job_uid: jobUid,
+          ...updates,
+        },
+      }),
     });
   }
 
   /**
-   * Reschedule a job
+   * Reschedule a job by updating its scheduled times
+   * Zuper uses PUT /jobs with job object containing job_uid
    */
   async rescheduleJob(
     jobUid: string,
     scheduledStartTime: string,
     scheduledEndTime: string
   ): Promise<ZuperApiResponse<ZuperJob>> {
-    return this.request<ZuperJob>(`/jobs/${jobUid}/reschedule`, {
+    return this.request<ZuperJob>(`/jobs`, {
       method: "PUT",
       body: JSON.stringify({
-        scheduled_start_time: scheduledStartTime,
-        scheduled_end_time: scheduledEndTime,
+        job: {
+          job_uid: jobUid,
+          scheduled_start_time: scheduledStartTime,
+          scheduled_end_time: scheduledEndTime,
+        },
       }),
     });
   }
