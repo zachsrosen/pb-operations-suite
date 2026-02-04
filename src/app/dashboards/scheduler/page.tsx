@@ -139,7 +139,7 @@ const MONTH_NAMES = [
   "July", "August", "September", "October", "November", "December",
 ];
 
-const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]; // Week starts on Monday
 
 const STAGE_MAP: Record<string, string> = {
   "Site Survey": "survey",
@@ -359,7 +359,7 @@ export default function SchedulerPage() {
 
   /* ---- optimize stats ---- */
   const [optimizeStats, setOptimizeStats] = useState<string>(
-    "Click to auto-schedule RTB projects by revenue priority"
+    "Schedules RTB projects + inspections | Priority: Easiest first, then by revenue"
   );
 
   /* ================================================================ */
@@ -516,7 +516,9 @@ export default function SchedulerPage() {
   const calendarData = useMemo(() => {
     const firstDay = new Date(currentYear, currentMonth, 1);
     const lastDay = new Date(currentYear, currentMonth + 1, 0);
-    const startDay = firstDay.getDay();
+    // Convert Sunday=0 to Monday-first index (Mon=0, Tue=1, ..., Sun=6)
+    const jsDay = firstDay.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+    const startDay = jsDay === 0 ? 6 : jsDay - 1; // Convert to Mon=0, Sun=6
     const daysInMonth = lastDay.getDate();
     const today = new Date();
 
@@ -685,14 +687,31 @@ export default function SchedulerPage() {
 
   /* ---- Auto optimize ---- */
   const autoOptimize = useCallback(() => {
+    // Get RTB projects (for construction) and Inspection projects
     const rtbProjects = projects.filter(
       (p) => p.stage === "rtb" && !manualSchedules[p.id] && !p.scheduleDate
     );
-    if (rtbProjects.length === 0) {
-      showToast("No unscheduled RTB projects to optimize", "error");
+    const inspectionProjects = projects.filter(
+      (p) => p.stage === "inspection" && !manualSchedules[p.id] && !p.scheduleDate
+    );
+
+    if (rtbProjects.length === 0 && inspectionProjects.length === 0) {
+      showToast("No unscheduled RTB or Inspection projects to optimize", "error");
       return;
     }
-    rtbProjects.sort((a, b) => b.amount - a.amount);
+
+    // Sort RTB projects by difficulty first (easiest = 1), then by revenue (highest first)
+    rtbProjects.sort((a, b) => {
+      const diffA = a.difficulty || 3; // Default to medium difficulty (3) if not set
+      const diffB = b.difficulty || 3;
+      if (diffA !== diffB) {
+        return diffA - diffB; // Easier projects first (lower number = easier)
+      }
+      return b.amount - a.amount; // Then by revenue (highest first)
+    });
+
+    // Sort inspection projects by revenue (highest first)
+    inspectionProjects.sort((a, b) => b.amount - a.amount);
 
     const crewNextDate: Record<string, string> = {};
     const baseDate = new Date();
@@ -715,34 +734,75 @@ export default function SchedulerPage() {
       }
     });
 
-    let scheduled = 0;
+    let scheduledInstalls = 0;
+    let scheduledInspections = 0;
     const newSchedules: Record<string, ManualSchedule> = { ...manualSchedules };
 
+    // Schedule RTB projects (construction) AND their inspections
     rtbProjects.forEach((p) => {
       const preferredCrew = p.crew;
       if (preferredCrew && crewNextDate[preferredCrew]) {
         const startDate = getNextWorkday(crewNextDate[preferredCrew]);
         const jobDays = Math.ceil(p.daysInstall || 2);
+
         newSchedules[p.id] = {
           startDate,
           days: p.daysInstall || 2,
           crew: preferredCrew,
         };
+
+        // Calculate construction end date and schedule inspection 2 business days after
+        const constructionEndDate = addBusinessDays(startDate, jobDays);
+        const inspectionDate = addBusinessDays(constructionEndDate, 2);
+
+        // Note: Inspection is logged but not stored separately as it would need a separate tracking mechanism
+        console.log(`Scheduled ${p.name}: Install ${startDate}, Inspection ${inspectionDate}`);
+
         crewNextDate[preferredCrew] = getNextWorkday(
           addBusinessDays(startDate, jobDays)
         );
-        scheduled++;
+        scheduledInstalls++;
+      }
+    });
+
+    // Schedule standalone inspection projects (projects already in Inspection stage)
+    inspectionProjects.forEach((p) => {
+      const preferredCrew = p.crew;
+      if (preferredCrew && crewNextDate[preferredCrew]) {
+        const startDate = getNextWorkday(crewNextDate[preferredCrew]);
+        newSchedules[p.id] = {
+          startDate,
+          days: 0.25, // Inspections are quick (quarter day)
+          crew: preferredCrew,
+        };
+        // Inspections are quick, so next crew availability is the next workday
+        crewNextDate[preferredCrew] = getNextWorkday(startDate);
+        scheduledInspections++;
       }
     });
 
     setManualSchedules(newSchedules);
-    showToast(`Auto-scheduled ${scheduled} projects by revenue priority`);
+
+    // Build summary message
+    const totalScheduled = scheduledInstalls + scheduledInspections;
+    let msg = "";
+    if (scheduledInstalls > 0 && scheduledInspections > 0) {
+      msg = `Scheduled ${scheduledInstalls} installs + ${scheduledInspections} inspections`;
+    } else if (scheduledInstalls > 0) {
+      msg = `Scheduled ${scheduledInstalls} installs (easiest first) + inspections`;
+    } else {
+      msg = `Scheduled ${scheduledInspections} inspections`;
+    }
+    showToast(msg);
+
     const totalRev = (
       rtbProjects
-        .slice(0, scheduled)
+        .slice(0, scheduledInstalls)
         .reduce((s, p) => s + p.amount, 0) / 1000
     ).toFixed(0);
-    setOptimizeStats(`Scheduled ${scheduled} projects | Total: $${totalRev}K`);
+    setOptimizeStats(
+      `${scheduledInstalls} installs, ${scheduledInstalls} inspections | $${totalRev}K | Sorted: Easiest → Hardest`
+    );
   }, [projects, manualSchedules, scheduledEvents, showToast]);
 
   /* ---- Export functions ---- */

@@ -63,6 +63,10 @@ const ALL_DASHBOARDS: DashboardLinkData[] = [
   { href: "/dashboards/at-risk", title: "At-Risk Projects", description: "Critical alerts for overdue projects by severity and revenue impact", tag: "ALERTS", tagColor: "red", section: "Operations Dashboards" },
   { href: "/dashboards/locations", title: "Location Comparison", description: "Performance metrics and project distribution across all locations", tag: "ANALYTICS", tagColor: "purple", section: "Operations Dashboards" },
   { href: "/dashboards/timeline", title: "Timeline View", description: "Gantt-style timeline showing project progression and milestones", tag: "PLANNING", tagColor: "blue", section: "Operations Dashboards" },
+  { href: "/dashboards/design", title: "Design & Engineering", description: "Track design progress, engineering approvals, and plan sets", tag: "DESIGN", tagColor: "indigo", section: "Department Dashboards" },
+  { href: "/dashboards/permitting", title: "Permitting", description: "Permit status tracking, submission dates, and approval monitoring", tag: "PERMITTING", tagColor: "yellow", section: "Department Dashboards" },
+  { href: "/dashboards/interconnection", title: "Interconnection", description: "Utility interconnection applications, approvals, and meter installations", tag: "UTILITY", tagColor: "cyan", section: "Department Dashboards" },
+  { href: "/dashboards/incentives", title: "Incentives", description: "Rebate and incentive program tracking and application status", tag: "INCENTIVES", tagColor: "green", section: "Department Dashboards" },
   { href: "/dashboards/sales", title: "Sales Pipeline", description: "Active deals, funnel visualization, and proposal tracking", tag: "SALES", tagColor: "green", section: "Other Pipelines" },
   { href: "/dashboards/service", title: "Service Pipeline", description: "Service jobs, scheduling, and work in progress tracking", tag: "SERVICE", tagColor: "cyan", section: "Other Pipelines" },
   { href: "/dashboards/dnr", title: "D&R Pipeline", description: "Detach & Reset projects with phase tracking", tag: "D&R", tagColor: "purple", section: "Other Pipelines" },
@@ -327,6 +331,7 @@ export default function Home() {
               </h2>
               <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                 {Object.entries(stats.locationCounts)
+                  .filter(([location]) => location && location !== "Unknown")
                   .sort((a, b) => (b[1] as number) - (a[1] as number))
                   .map(([location, count]) => (
                     <div
