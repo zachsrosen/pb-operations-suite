@@ -15,6 +15,21 @@ interface UpdateEntry {
 
 const UPDATES: UpdateEntry[] = [
   {
+    version: "1.6.0",
+    date: "2026-02-04",
+    title: "Product Roadmap & Feature Voting",
+    description: "New interactive roadmap where you can vote on features and submit your own ideas.",
+    changes: [
+      { type: "feature", text: "Product Roadmap page - view all planned features and their status" },
+      { type: "feature", text: "Feature voting - upvote the features you want to see built next" },
+      { type: "feature", text: "Submit ideas - propose new features and improvements" },
+      { type: "feature", text: "Filter by status (Planned, In Progress, Under Review, Completed)" },
+      { type: "feature", text: "Filter by category (Performance, Features, Integrations, UX, Analytics)" },
+      { type: "improvement", text: "Roadmap linked from Updates page and header navigation" },
+      { type: "improvement", text: "Updated guide documentation with all recent features" },
+    ],
+  },
+  {
     version: "1.5.0",
     date: "2026-02-04",
     title: "Maintenance Mode & Product Updates Page",
@@ -127,8 +142,19 @@ export default function UpdatesPage() {
               <p className="text-xs text-zinc-500">Changelog & Release Notes</p>
             </div>
           </div>
-          <div className="text-xs text-zinc-500">
-            Current: v{UPDATES[0].version}
+          <div className="flex items-center gap-4">
+            <Link
+              href="/roadmap"
+              className="flex items-center gap-2 text-xs text-zinc-400 hover:text-orange-400 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+              </svg>
+              Roadmap
+            </Link>
+            <div className="text-xs text-zinc-500">
+              v{UPDATES[0].version}
+            </div>
           </div>
         </div>
       </header>
@@ -203,9 +229,26 @@ export default function UpdatesPage() {
           ))}
         </div>
 
+        {/* Roadmap CTA */}
+        <div className="mt-12 p-6 bg-gradient-to-br from-orange-500/10 to-orange-500/5 border border-orange-500/30 rounded-xl text-center">
+          <h3 className="text-lg font-semibold text-white mb-2">Want to shape what&apos;s next?</h3>
+          <p className="text-zinc-400 text-sm mb-4">
+            Vote on upcoming features and submit your own ideas on the Product Roadmap.
+          </p>
+          <Link
+            href="/roadmap"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+            </svg>
+            View Roadmap & Vote
+          </Link>
+        </div>
+
         {/* Footer */}
-        <div className="mt-12 text-center text-sm text-zinc-600">
-          <p>Have feedback or feature requests?</p>
+        <div className="mt-8 text-center text-sm text-zinc-600">
+          <p>Have a specific bug report or urgent request?</p>
           <p className="mt-1">
             Contact:{" "}
             <a href="mailto:zach@photonbrothers.com" className="text-orange-400 hover:underline">
