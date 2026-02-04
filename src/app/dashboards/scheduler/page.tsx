@@ -517,10 +517,13 @@ export default function SchedulerPage() {
   }, [scheduledEvents]);
 
   const stats = useMemo(() => {
+    // Use selectedLocations for multi-select filtering, fall back to selectedLocation for calendar view
     const fp =
-      selectedLocation === "All"
-        ? projects
-        : projects.filter((p) => p.location === selectedLocation);
+      selectedLocations.length > 0
+        ? projects.filter((p) => selectedLocations.includes(p.location))
+        : selectedLocation === "All"
+          ? projects
+          : projects.filter((p) => p.location === selectedLocation);
     return {
       survey: fp.filter((p) => p.stage === "survey").length,
       rtb: fp.filter((p) => p.stage === "rtb").length,
@@ -528,7 +531,7 @@ export default function SchedulerPage() {
       inspection: fp.filter((p) => p.stage === "inspection").length,
       totalRevenue: (fp.reduce((s, p) => s + p.amount, 0) / 1000).toFixed(0),
     };
-  }, [projects, selectedLocation]);
+  }, [projects, selectedLocation, selectedLocations]);
 
   const queueRevenue = useMemo(
     () => (filteredProjects.reduce((s, p) => s + p.amount, 0) / 1000).toFixed(0),
@@ -550,7 +553,9 @@ export default function SchedulerPage() {
 
     const eventsByDate: Record<number, (ScheduledEvent & { dayNum: number; totalCalDays: number })[]> = {};
     scheduledEvents.forEach((e) => {
-      if (selectedLocation !== "All" && e.location !== selectedLocation) return;
+      // Filter by multi-select locations if any selected, otherwise use single-select
+      if (selectedLocations.length > 0 && !selectedLocations.includes(e.location)) return;
+      if (selectedLocations.length === 0 && selectedLocation !== "All" && e.location !== selectedLocation) return;
       const startDate = new Date(e.date);
       const businessDays = Math.ceil(e.days || 1);
       let dayCount = 0;
@@ -581,7 +586,7 @@ export default function SchedulerPage() {
     });
 
     return { startDay, daysInMonth, today, eventsByDate };
-  }, [currentYear, currentMonth, scheduledEvents, selectedLocation]);
+  }, [currentYear, currentMonth, scheduledEvents, selectedLocation, selectedLocations]);
 
   /* ================================================================ */
   /*  Week view logic                                                  */
@@ -1769,11 +1774,13 @@ export default function SchedulerPage() {
 
                   {/* Crew rows */}
                   {(() => {
-                    // When "All" is selected, show all crews from all locations
+                    // Use multi-select locations if any selected, otherwise fall back to single-select
                     const locationCrews =
-                      selectedLocation === "All"
-                        ? Object.values(CREWS).flat()
-                        : CREWS[selectedLocation] || [];
+                      selectedLocations.length > 0
+                        ? selectedLocations.flatMap(loc => CREWS[loc] || [])
+                        : selectedLocation === "All"
+                          ? Object.values(CREWS).flat()
+                          : CREWS[selectedLocation] || [];
                     return locationCrews.map((crew) => (
                       <React.Fragment key={crew.name}>
                         <div
@@ -1928,11 +1935,13 @@ export default function SchedulerPage() {
 
                   {/* Crew rows */}
                   {(() => {
-                    const loc =
-                      selectedLocation === "All" ? null : selectedLocation;
-                    const allCrews = loc
-                      ? CREWS[loc] || []
-                      : Object.values(CREWS).flat();
+                    // Use multi-select locations if any selected, otherwise fall back to single-select
+                    const allCrews =
+                      selectedLocations.length > 0
+                        ? selectedLocations.flatMap(loc => CREWS[loc] || [])
+                        : selectedLocation === "All"
+                          ? Object.values(CREWS).flat()
+                          : CREWS[selectedLocation] || [];
                     return allCrews.map((crew) => (
                       <div
                         key={crew.name}
@@ -2044,14 +2053,25 @@ export default function SchedulerPage() {
             <div className="text-[0.75rem] font-semibold mb-2 flex items-center gap-1.5">
               Crew Capacity
             </div>
-            {selectedLocation === "All" || !CREWS[selectedLocation] ? (
-              <div className="text-[0.65rem] text-zinc-500">
-                Select location to view crews
-              </div>
-            ) : (
-              CREWS[selectedLocation].map((c) => {
+            {(() => {
+              // Get crews based on multi-select or single-select
+              const crewsToShow = selectedLocations.length > 0
+                ? selectedLocations.flatMap(loc => CREWS[loc] || [])
+                : selectedLocation !== "All" && CREWS[selectedLocation]
+                  ? CREWS[selectedLocation]
+                  : [];
+
+              if (crewsToShow.length === 0) {
+                return (
+                  <div className="text-[0.65rem] text-zinc-500">
+                    Select location to view crews
+                  </div>
+                );
+              }
+
+              return crewsToShow.map((c) => {
                 const crewEvents = scheduledEvents.filter(
-                  (e) => e.location === selectedLocation && e.crew === c.name
+                  (e) => e.crew === c.name
                 );
                 const totalDays = crewEvents.reduce(
                   (sum, e) => sum + (e.days || 1),
@@ -2105,8 +2125,8 @@ export default function SchedulerPage() {
                     </div>
                   </div>
                 );
-              })
-            )}
+              });
+            })()}
           </div>
 
           {/* Conflicts */}
