@@ -401,7 +401,6 @@ export async function GET(request: NextRequest) {
           if (availabilityByDate[dateStr]) {
             // Extract the hour from the scheduled time
             const startTime = job.scheduled_start_time.split("T")[1]?.substring(0, 5) || "";
-            const endTime = job.scheduled_end_time?.split("T")[1]?.substring(0, 5) || "";
 
             availabilityByDate[dateStr].scheduledJobs.push({
               job_title: job.job_title,
@@ -411,18 +410,34 @@ export async function GET(request: NextRequest) {
 
             // If we have a valid start time, mark that slot as booked from Zuper
             if (startTime) {
-              // Find assigned user from the job if available
-              const assignedUser = job.assigned_to?.[0] || "";
+              // Get assigned user's name from the job
+              // Zuper assigned_to is an array of { user: { first_name, last_name } }
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const assignedUserData = (job as any).assigned_to?.[0]?.user;
+              const assignedUserName = assignedUserData
+                ? `${assignedUserData.first_name || ""} ${assignedUserData.last_name || ""}`.trim()
+                : "";
 
               // Try to match this scheduled job to an availability slot and mark it booked
-              // This creates a booking entry so the slot shows as taken
               const startHour = parseInt(startTime.split(":")[0]);
               const slotStartTime = `${startHour.toString().padStart(2, "0")}:00`;
 
-              // Find which crew member this might be for based on the time
-              const matchingSlot = availabilityByDate[dateStr].availableSlots.find(
-                slot => slot.start_time === slotStartTime
-              );
+              // Find matching crew member - first try to match by assigned user name
+              let matchingSlot = null;
+              if (assignedUserName) {
+                // Try to find a slot for this specific user at this time
+                matchingSlot = availabilityByDate[dateStr].availableSlots.find(
+                  slot => slot.start_time === slotStartTime &&
+                    slot.user_name?.toLowerCase().includes(assignedUserName.split(" ")[0].toLowerCase())
+                );
+              }
+
+              // If no match by user, fall back to finding any slot at this time
+              if (!matchingSlot) {
+                matchingSlot = availabilityByDate[dateStr].availableSlots.find(
+                  slot => slot.start_time === slotStartTime
+                );
+              }
 
               if (matchingSlot) {
                 const key = getSlotKey(dateStr, matchingSlot.user_name || "", slotStartTime);
