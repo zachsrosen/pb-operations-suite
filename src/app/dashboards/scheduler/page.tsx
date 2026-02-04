@@ -359,6 +359,11 @@ export default function SchedulerPage() {
   const [installDaysInput, setInstallDaysInput] = useState(2);
   const [crewSelectInput, setCrewSelectInput] = useState("");
 
+  /* ---- Zuper integration ---- */
+  const [zuperConfigured, setZuperConfigured] = useState(false);
+  const [syncToZuper, setSyncToZuper] = useState(true);
+  const [syncingToZuper, setSyncingToZuper] = useState(false);
+
   /* ---- toast ---- */
   const [toast, setToast] = useState<{ message: string; type: string } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -396,6 +401,20 @@ export default function SchedulerPage() {
     const interval = setInterval(fetchProjects, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, [fetchProjects]);
+
+  // Check Zuper configuration status
+  useEffect(() => {
+    async function checkZuper() {
+      try {
+        const response = await fetch("/api/zuper/status");
+        const data = await response.json();
+        setZuperConfigured(data.configured === true);
+      } catch {
+        setZuperConfigured(false);
+      }
+    }
+    checkZuper();
+  }, []);
 
   /* ================================================================ */
   /*  Toast                                                            */
@@ -645,7 +664,7 @@ export default function SchedulerPage() {
     []
   );
 
-  const confirmSchedule = useCallback(() => {
+  const confirmSchedule = useCallback(async () => {
     if (!scheduleModal) return;
     const { project, date } = scheduleModal;
     const days = installDaysInput || 2;
@@ -656,12 +675,66 @@ export default function SchedulerPage() {
       [project.id]: { startDate: date, days, crew },
     }));
 
-    showToast(
-      `${getCustomerName(project.name)} scheduled for ${formatDate(date)}`
-    );
+    // Sync to Zuper if enabled
+    if (zuperConfigured && syncToZuper) {
+      setSyncingToZuper(true);
+      try {
+        const scheduleType = project.stage === "survey" ? "survey"
+          : project.stage === "inspection" ? "inspection"
+          : "installation";
+
+        const response = await fetch("/api/zuper/jobs/schedule", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            project: {
+              id: project.id,
+              name: project.name,
+              address: project.address,
+              city: "",
+              state: "",
+              systemSizeKw: project.systemSize,
+              batteryCount: project.batteries,
+              projectType: project.type,
+            },
+            schedule: {
+              type: scheduleType,
+              date: date,
+              days: days,
+              crew: crew,
+              notes: `Scheduled via Master Scheduler`,
+            },
+          }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          showToast(
+            `${getCustomerName(project.name)} scheduled - ${data.action === "rescheduled" ? "Zuper job updated" : "Zuper job created"} (customer notified)`
+          );
+        } else {
+          showToast(
+            `${getCustomerName(project.name)} scheduled locally (Zuper sync failed)`,
+            "error"
+          );
+        }
+      } catch {
+        showToast(
+          `${getCustomerName(project.name)} scheduled locally (Zuper sync failed)`,
+          "error"
+        );
+      } finally {
+        setSyncingToZuper(false);
+      }
+    } else {
+      showToast(
+        `${getCustomerName(project.name)} scheduled for ${formatDate(date)}`
+      );
+    }
+
     setScheduleModal(null);
     setSelectedProject(null);
-  }, [scheduleModal, installDaysInput, crewSelectInput, showToast]);
+  }, [scheduleModal, installDaysInput, crewSelectInput, showToast, zuperConfigured, syncToZuper]);
 
   const handleDragStart = useCallback(
     (e: React.DragEvent, projectId: string) => {
@@ -2295,20 +2368,48 @@ export default function SchedulerPage() {
                   </select>
                 </div>
               </ModalSection>
+
+              {/* Zuper Integration */}
+              {zuperConfigured && (
+                <ModalSection title="Zuper Integration">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="syncZuper"
+                      checked={syncToZuper}
+                      onChange={(e) => setSyncToZuper(e.target.checked)}
+                      className="w-4 h-4 accent-orange-500"
+                    />
+                    <label htmlFor="syncZuper" className="text-[0.7rem] text-zinc-300 cursor-pointer">
+                      Sync schedule to Zuper
+                    </label>
+                  </div>
+                  <div className="text-[0.6rem] text-zinc-500 mt-1">
+                    Updates the existing {scheduleModal.project.stage === "survey" ? "Site Survey" : scheduleModal.project.stage === "inspection" ? "Inspection" : "Installation"} job in Zuper (or creates one if none exists)
+                  </div>
+                  {syncToZuper && (
+                    <div className="mt-2 p-2 bg-amber-500/10 border border-amber-500/30 rounded text-[0.6rem] text-amber-400">
+                      ⚠️ <strong>Customer will receive EMAIL + SMS notification</strong> with their scheduled appointment
+                    </div>
+                  )}
+                </ModalSection>
+              )}
             </div>
 
             <div className="flex gap-2 justify-end flex-wrap">
               <button
                 onClick={() => setScheduleModal(null)}
-                className="px-3.5 py-2 rounded-md bg-[#0a0a0f] border border-zinc-800 text-zinc-300 text-[0.75rem] cursor-pointer hover:bg-zinc-800 transition-colors"
+                disabled={syncingToZuper}
+                className="px-3.5 py-2 rounded-md bg-[#0a0a0f] border border-zinc-800 text-zinc-300 text-[0.75rem] cursor-pointer hover:bg-zinc-800 transition-colors disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 onClick={confirmSchedule}
-                className="px-3.5 py-2 rounded-md bg-orange-500 border border-orange-500 text-black text-[0.75rem] font-semibold cursor-pointer hover:bg-orange-600 transition-colors"
+                disabled={syncingToZuper}
+                className="px-3.5 py-2 rounded-md bg-orange-500 border border-orange-500 text-black text-[0.75rem] font-semibold cursor-pointer hover:bg-orange-600 transition-colors disabled:opacity-50"
               >
-                Schedule
+                {syncingToZuper ? "Syncing..." : "Schedule"}
               </button>
             </div>
           </div>
