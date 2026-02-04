@@ -213,6 +213,7 @@ export default function InspectionSchedulerPage() {
 
   /* ---- Zuper integration ---- */
   const [zuperConfigured, setZuperConfigured] = useState(false);
+  const [zuperWebBaseUrl, setZuperWebBaseUrl] = useState("https://us-west-1c.zuperpro.com");
   const [syncToZuper, setSyncToZuper] = useState(true);
   const [syncingToZuper, setSyncingToZuper] = useState(false);
 
@@ -285,6 +286,9 @@ export default function InspectionSchedulerPage() {
         const response = await fetch("/api/zuper/status");
         const data = await response.json();
         setZuperConfigured(data.configured === true);
+        if (data.webBaseUrl) {
+          setZuperWebBaseUrl(data.webBaseUrl);
+        }
       } catch {
         setZuperConfigured(false);
       }
@@ -1041,7 +1045,7 @@ export default function InspectionSchedulerPage() {
                                 </a>
                                 {project.zuperJobUid && (
                                   <a
-                                    href={`https://app.zuper.co/jobs/${project.zuperJobUid}`}
+                                    href={`${zuperWebBaseUrl}/app/job/${project.zuperJobUid}`}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="p-1 hover:bg-zinc-700 rounded transition-colors"
@@ -1138,7 +1142,7 @@ export default function InspectionSchedulerPage() {
                   </a>
                   {scheduleModal.project.zuperJobUid && (
                     <a
-                      href={`https://app.zuper.co/jobs/${scheduleModal.project.zuperJobUid}`}
+                      href={`${zuperWebBaseUrl}/app/job/${scheduleModal.project.zuperJobUid}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1.5 text-xs text-cyan-400 hover:text-cyan-300"

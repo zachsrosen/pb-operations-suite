@@ -364,6 +364,7 @@ export default function SchedulerPage() {
 
   /* ---- Zuper integration ---- */
   const [zuperConfigured, setZuperConfigured] = useState(false);
+  const [zuperWebBaseUrl, setZuperWebBaseUrl] = useState("https://us-west-1c.zuperpro.com");
   const [syncToZuper, setSyncToZuper] = useState(true);
   const [syncingToZuper, setSyncingToZuper] = useState(false);
 
@@ -438,6 +439,9 @@ export default function SchedulerPage() {
         const response = await fetch("/api/zuper/status");
         const data = await response.json();
         setZuperConfigured(data.configured === true);
+        if (data.webBaseUrl) {
+          setZuperWebBaseUrl(data.webBaseUrl);
+        }
       } catch {
         setZuperConfigured(false);
       }
@@ -1318,7 +1322,7 @@ export default function SchedulerPage() {
                       )}
                       {p.zuperJobUid && (
                         <a
-                          href={`https://app.zuper.co/jobs/${p.zuperJobUid}`}
+                          href={`${zuperWebBaseUrl}/app/job/${p.zuperJobUid}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           onClick={(e) => e.stopPropagation()}
@@ -2336,7 +2340,7 @@ export default function SchedulerPage() {
                       <>
                         <span className="text-zinc-600">|</span>
                         <a
-                          href={`https://app.zuper.co/jobs/${scheduleModal.project.zuperJobUid}`}
+                          href={`${zuperWebBaseUrl}/app/job/${scheduleModal.project.zuperJobUid}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-[0.7rem] text-cyan-400 hover:text-cyan-300"
@@ -2750,7 +2754,7 @@ export default function SchedulerPage() {
               </a>
               {detailModal.zuperJobUid && (
                 <a
-                  href={`https://app.zuper.co/jobs/${detailModal.zuperJobUid}`}
+                  href={`${zuperWebBaseUrl}/app/job/${detailModal.zuperJobUid}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="px-3.5 py-2 rounded-md bg-cyan-600 border border-cyan-600 text-white text-[0.75rem] font-semibold no-underline hover:bg-cyan-700 transition-colors"
