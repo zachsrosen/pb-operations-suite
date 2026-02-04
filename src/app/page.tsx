@@ -60,6 +60,7 @@ const ALL_DASHBOARDS: DashboardLinkData[] = [
   { href: "/dashboards/command-center", title: "Command Center", description: "Pipeline overview, scheduling, PE tracking, revenue, and alerts in one view", tag: "PRIMARY", tagColor: "orange", section: "Operations Dashboards" },
   { href: "/dashboards/optimizer", title: "Pipeline Optimizer", description: "AI-powered scheduling optimization and bottleneck detection", tag: "ANALYTICS", tagColor: "purple", section: "Operations Dashboards" },
   { href: "/dashboards/scheduler", title: "Master Scheduler", description: "Drag-and-drop scheduling calendar with crew management", tag: "SCHEDULING", tagColor: "blue", section: "Operations Dashboards" },
+  { href: "/dashboards/site-survey-scheduler", title: "Site Survey Scheduler", description: "Dedicated calendar for scheduling site surveys with Zuper integration", tag: "SCHEDULING", tagColor: "cyan", section: "Operations Dashboards" },
   { href: "/dashboards/at-risk", title: "At-Risk Projects", description: "Critical alerts for overdue projects by severity and revenue impact", tag: "ALERTS", tagColor: "red", section: "Operations Dashboards" },
   { href: "/dashboards/locations", title: "Location Comparison", description: "Performance metrics and project distribution across all locations", tag: "ANALYTICS", tagColor: "purple", section: "Operations Dashboards" },
   { href: "/dashboards/timeline", title: "Timeline View", description: "Gantt-style timeline showing project progression and milestones", tag: "PLANNING", tagColor: "blue", section: "Operations Dashboards" },
