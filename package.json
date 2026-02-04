@@ -12,11 +12,14 @@
   },
   "dependencies": {
     "@hubspot/api-client": "^13.4.0",
+    "@prisma/adapter-neon": "^7.3.0",
+    "@prisma/client": "^7.3.0",
     "@remotion/cli": "^4.0.409",
     "@remotion/player": "^4.0.409",
     "@vercel/analytics": "^1.6.1",
     "next": "16.1.4",
     "next-auth": "^5.0.0-beta.30",
+    "prisma": "^7.3.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "resend": "^6.9.1"

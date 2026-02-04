@@ -1,0 +1,169 @@
+// PB Operations Suite - Database Schema
+// Using Prisma with PostgreSQL (Neon)
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ===========================================
+// USER & AUTHENTICATION
+// ===========================================
+
+enum UserRole {
+  ADMIN    // Full access, user management
+  MANAGER  // Can schedule, view all data
+  VIEWER   // Read-only access
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  image         String?
+  role          UserRole  @default(VIEWER)
+
+  // OAuth fields
+  googleId      String?   @unique
+
+  // Permissions - can override role defaults
+  canScheduleSurveys      Boolean @default(false)
+  canScheduleInstalls     Boolean @default(false)
+  canSyncToZuper          Boolean @default(false)
+  canManageUsers          Boolean @default(false)
+
+  // Location restrictions (empty = all locations)
+  allowedLocations        String[] @default([])
+
+  // Timestamps
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  lastLoginAt   DateTime?
+
+  // Relations
+  activities    ActivityLog[]
+
+  @@index([email])
+  @@index([role])
+}
+
+// ===========================================
+// ACTIVITY TRACKING
+// ===========================================
+
+enum ActivityType {
+  // Auth
+  LOGIN
+  LOGOUT
+
+  // Scheduling
+  SURVEY_SCHEDULED
+  SURVEY_RESCHEDULED
+  SURVEY_CANCELLED
+  INSTALL_SCHEDULED
+  INSTALL_RESCHEDULED
+  INSTALL_CANCELLED
+
+  // Zuper sync
+  ZUPER_JOB_CREATED
+  ZUPER_JOB_UPDATED
+
+  // User management
+  USER_CREATED
+  USER_UPDATED
+  USER_ROLE_CHANGED
+  USER_DELETED
+
+  // Data access
+  DASHBOARD_VIEWED
+  REPORT_EXPORTED
+
+  // System
+  SETTINGS_CHANGED
+  ERROR_OCCURRED
+}
+
+model ActivityLog {
+  id          String       @id @default(cuid())
+  type        ActivityType
+  description String
+
+  // Who performed the action
+  userId      String?
+  user        User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userEmail   String?      // Stored separately in case user is deleted
+
+  // What was affected
+  entityType  String?      // "project", "job", "user", etc.
+  entityId    String?      // The ID of the affected entity
+  entityName  String?      // Human-readable name for display
+
+  // Additional context (JSON)
+  metadata    Json?
+
+  // Request context
+  ipAddress   String?
+  userAgent   String?
+
+  // Timestamp
+  createdAt   DateTime     @default(now())
+
+  @@index([userId])
+  @@index([type])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+// ===========================================
+// BOOKED SLOTS (Persistent storage)
+// ===========================================
+
+model BookedSlot {
+  id          String   @id @default(cuid())
+
+  // Time slot info
+  date        String   // YYYY-MM-DD
+  startTime   String   // HH:mm
+  endTime     String   // HH:mm
+
+  // Assignment
+  userName    String
+  location    String
+
+  // Project reference
+  projectId   String   // HubSpot deal ID
+  projectName String
+
+  // Zuper reference (if synced)
+  zuperJobUid String?
+
+  // Source of booking
+  source      String   @default("manual") // "manual", "zuper", "hubspot"
+
+  // Timestamps
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([date, userName, startTime])
+  @@index([date])
+  @@index([projectId])
+  @@index([zuperJobUid])
+}
+
+// ===========================================
+// APP SETTINGS
+// ===========================================
+
+model AppSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     Json
+  updatedAt DateTime @updatedAt
+  updatedBy String?  // User ID who last updated
+
+  @@index([key])
+}

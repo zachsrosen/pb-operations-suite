@@ -48,6 +48,13 @@ interface SurveyProject {
   hubspotUrl: string;
   zuperJobUid?: string;
   zuperJobStatus?: string;
+  // Assigned slot info (if already scheduled)
+  assignedSlot?: {
+    userName: string;
+    startTime: string;
+    endTime: string;
+    displayTime: string;
+  };
 }
 
 interface PendingSchedule {
@@ -58,6 +65,13 @@ interface PendingSchedule {
     startTime: string;
     endTime: string;
     location: string;
+  };
+  isRescheduling?: boolean; // True if user wants to change existing schedule
+  currentSlot?: {  // The existing booked slot for this project
+    userName: string;
+    startTime: string;
+    endTime: string;
+    displayTime: string;
   };
 }
 
@@ -485,6 +499,28 @@ export default function SiteSurveySchedulerPage() {
   /*  Scheduling actions                                               */
   /* ================================================================ */
 
+  // Find the current booked slot for a project (if already scheduled)
+  const findCurrentSlotForProject = useCallback((projectId: string, date: string) => {
+    const dayAvail = availabilityByDate[date];
+    if (!dayAvail?.bookedSlots) return undefined;
+
+    // Look for a booked slot that matches this project
+    const bookedSlot = dayAvail.bookedSlots.find(slot =>
+      slot.projectId === projectId ||
+      slot.projectName?.includes(projectId)
+    );
+
+    if (bookedSlot) {
+      return {
+        userName: bookedSlot.user_name || "",
+        startTime: bookedSlot.start_time,
+        endTime: bookedSlot.end_time,
+        displayTime: bookedSlot.display_time || `${bookedSlot.start_time}-${bookedSlot.end_time}`,
+      };
+    }
+    return undefined;
+  }, [availabilityByDate]);
+
   const handleDragStart = useCallback((projectId: string) => {
     setDraggedProjectId(projectId);
   }, []);
@@ -497,19 +533,22 @@ export default function SiteSurveySchedulerPage() {
     if (!draggedProjectId) return;
     const project = projects.find(p => p.id === draggedProjectId);
     if (project) {
-      setScheduleModal({ project, date });
+      const currentSlot = findCurrentSlotForProject(project.id, date);
+      setScheduleModal({ project, date, currentSlot });
     }
     setDraggedProjectId(null);
-  }, [draggedProjectId, projects]);
+  }, [draggedProjectId, projects, findCurrentSlotForProject]);
 
   const handleDateClick = useCallback((date: string, project?: SurveyProject) => {
     if (project) {
-      setScheduleModal({ project, date });
+      const currentSlot = findCurrentSlotForProject(project.id, date);
+      setScheduleModal({ project, date, currentSlot });
     } else if (selectedProject) {
-      setScheduleModal({ project: selectedProject, date });
+      const currentSlot = findCurrentSlotForProject(selectedProject.id, date);
+      setScheduleModal({ project: selectedProject, date, currentSlot });
       setSelectedProject(null);
     }
-  }, [selectedProject]);
+  }, [selectedProject, findCurrentSlotForProject]);
 
   const confirmSchedule = useCallback(async () => {
     if (!scheduleModal) return;
@@ -1019,24 +1058,29 @@ export default function SiteSurveySchedulerPage() {
                           )}
                         </div>
                         <div className="space-y-1">
-                          {events.slice(0, 3).map((ev) => (
-                            <div
-                              key={ev.id}
-                              draggable
-                              onDragStart={(e) => {
-                                e.stopPropagation();
-                                handleDragStart(ev.id);
-                              }}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setScheduleModal({ project: ev, date: dateStr });
-                              }}
-                              className="text-xs p-1 rounded bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 truncate cursor-grab hover:bg-cyan-500/30 active:cursor-grabbing"
-                              title="Drag to reschedule"
-                            >
-                              {getCustomerName(ev.name)}
-                            </div>
-                          ))}
+                          {events.slice(0, 3).map((ev) => {
+                            // Find the booked slot for this event
+                            const evSlot = findCurrentSlotForProject(ev.id, dateStr);
+                            return (
+                              <div
+                                key={ev.id}
+                                draggable
+                                onDragStart={(e) => {
+                                  e.stopPropagation();
+                                  handleDragStart(ev.id);
+                                }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setScheduleModal({ project: ev, date: dateStr, currentSlot: evSlot });
+                                }}
+                                className="text-xs p-1 rounded bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 truncate cursor-grab hover:bg-cyan-500/30 active:cursor-grabbing"
+                                title={evSlot ? `${evSlot.userName} @ ${evSlot.displayTime} - Click to view` : "Drag to reschedule"}
+                              >
+                                {getCustomerName(ev.name)}
+                                {evSlot && <span className="text-cyan-400/60 ml-1">({evSlot.userName})</span>}
+                              </div>
+                            );
+                          })}
                           {events.length > 3 && (
                             <div className="text-xs text-zinc-500 pl-1">
                               +{events.length - 3} more
@@ -1222,7 +1266,13 @@ export default function SiteSurveySchedulerPage() {
           }}
         >
           <div className="bg-[#12121a] border border-zinc-800 rounded-xl p-5 max-w-md w-[90%]">
-            <h3 className="text-lg font-semibold mb-4">Schedule Site Survey</h3>
+            <h3 className="text-lg font-semibold mb-4">
+              {scheduleModal.currentSlot && !scheduleModal.isRescheduling
+                ? "Site Survey Details"
+                : scheduleModal.isRescheduling
+                  ? "Reschedule Site Survey"
+                  : "Schedule Site Survey"}
+            </h3>
 
             <div className="space-y-3 mb-4">
               <div>
@@ -1241,10 +1291,29 @@ export default function SiteSurveySchedulerPage() {
                 <p className="text-sm font-medium text-cyan-400">{formatDate(scheduleModal.date)}</p>
               </div>
 
-              {/* Time Slot Selection */}
-              {scheduleModal.slot ? (
+              {/* Time Slot Display / Selection */}
+              {scheduleModal.currentSlot && !scheduleModal.isRescheduling ? (
+                /* Show current assignment for already-scheduled surveys */
+                <div className="p-3 bg-cyan-900/30 border border-cyan-500/30 rounded-lg">
+                  <span className="text-xs text-cyan-400 font-medium">Currently Scheduled</span>
+                  <p className="text-sm text-white mt-1">
+                    <span className="font-medium">{scheduleModal.currentSlot.userName}</span>
+                    <span className="text-zinc-400 mx-2">&bull;</span>
+                    <span>{scheduleModal.currentSlot.displayTime}</span>
+                  </p>
+                  <button
+                    onClick={() => setScheduleModal({ ...scheduleModal, isRescheduling: true })}
+                    className="text-xs text-orange-400 hover:text-orange-300 mt-2"
+                  >
+                    Reschedule to different time/surveyor
+                  </button>
+                </div>
+              ) : scheduleModal.slot ? (
+                /* User has selected a new time slot */
                 <div className="p-2 bg-emerald-900/30 border border-emerald-500/30 rounded-lg">
-                  <span className="text-xs text-emerald-400 font-medium">Selected Time Slot</span>
+                  <span className="text-xs text-emerald-400 font-medium">
+                    {scheduleModal.currentSlot ? "New Time Slot" : "Selected Time Slot"}
+                  </span>
                   <p className="text-sm text-white mt-1">
                     {scheduleModal.slot.userName} &bull; {scheduleModal.slot.startTime.replace(/^0/, "")} - {scheduleModal.slot.endTime.replace(/^0/, "")}
                   </p>
@@ -1257,10 +1326,21 @@ export default function SiteSurveySchedulerPage() {
                   >
                     Change time slot
                   </button>
+                  {scheduleModal.currentSlot && (
+                    <button
+                      onClick={() => setScheduleModal({ ...scheduleModal, isRescheduling: false, slot: undefined })}
+                      className="text-xs text-zinc-500 hover:text-zinc-300 mt-1 ml-3"
+                    >
+                      Cancel reschedule
+                    </button>
+                  )}
                 </div>
               ) : (
+                /* Time slot picker for new scheduling or rescheduling */
                 <div>
-                  <span className="text-xs text-zinc-500">Select Time Slot</span>
+                  <span className="text-xs text-zinc-500">
+                    {scheduleModal.isRescheduling ? "Select New Time Slot" : "Select Time Slot"}
+                  </span>
                   <div className="mt-1 max-h-32 overflow-y-auto space-y-1">
                     {(() => {
                       const dayAvail = availabilityByDate[scheduleModal.date];
@@ -1300,6 +1380,14 @@ export default function SiteSurveySchedulerPage() {
                       ));
                     })()}
                   </div>
+                  {scheduleModal.isRescheduling && scheduleModal.currentSlot && (
+                    <button
+                      onClick={() => setScheduleModal({ ...scheduleModal, isRescheduling: false })}
+                      className="text-xs text-zinc-500 hover:text-zinc-300 mt-2"
+                    >
+                      Cancel reschedule
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -1340,8 +1428,8 @@ export default function SiteSurveySchedulerPage() {
               </div>
             </div>
 
-            {/* Zuper Sync Option */}
-            {zuperConfigured && (
+            {/* Zuper Sync Option - only show when scheduling/rescheduling */}
+            {zuperConfigured && (scheduleModal.slot || scheduleModal.isRescheduling) && (
               <div className="mb-4 p-3 bg-zinc-900 rounded-lg border border-zinc-800">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -1361,19 +1449,32 @@ export default function SiteSurveySchedulerPage() {
             )}
 
             <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setScheduleModal(null)}
-                className="px-4 py-2 text-sm text-zinc-400 hover:text-white"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={confirmSchedule}
-                disabled={syncingToZuper}
-                className="px-4 py-2 text-sm bg-cyan-600 hover:bg-cyan-700 rounded-lg font-medium disabled:opacity-50"
-              >
-                {syncingToZuper ? "Syncing..." : "Confirm Schedule"}
-              </button>
+              {scheduleModal.currentSlot && !scheduleModal.isRescheduling && !scheduleModal.slot ? (
+                /* Viewing mode - just show Close button */
+                <button
+                  onClick={() => setScheduleModal(null)}
+                  className="px-4 py-2 text-sm bg-zinc-700 hover:bg-zinc-600 rounded-lg font-medium"
+                >
+                  Close
+                </button>
+              ) : (
+                /* Scheduling or rescheduling mode */
+                <>
+                  <button
+                    onClick={() => setScheduleModal(null)}
+                    className="px-4 py-2 text-sm text-zinc-400 hover:text-white"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={confirmSchedule}
+                    disabled={syncingToZuper || !scheduleModal.slot}
+                    className="px-4 py-2 text-sm bg-cyan-600 hover:bg-cyan-700 rounded-lg font-medium disabled:opacity-50"
+                  >
+                    {syncingToZuper ? "Syncing..." : scheduleModal.isRescheduling ? "Confirm Reschedule" : "Confirm Schedule"}
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>
