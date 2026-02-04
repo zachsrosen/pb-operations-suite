@@ -46,9 +46,13 @@ export async function PUT(request: NextRequest) {
 
     const hubspotTag = `hubspot-${project.id}`;
 
-    // Search for existing job with this HubSpot deal ID
+    // Extract customer name for searching
+    const customerName = project.name?.split("|")[0]?.trim() || project.name || "";
+
+    // Search for existing job by customer name
     const searchResult = await zuper.searchJobs({
-      limit: 100, // Get enough jobs to search through
+      limit: 100,
+      search: customerName, // Use Zuper's search to find jobs matching customer name
     });
 
     let existingJob: ZuperJob | undefined;

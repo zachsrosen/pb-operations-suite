@@ -252,11 +252,14 @@ class ZuperClient {
     to_date?: string;
     page?: number;
     limit?: number;
+    search?: string; // Search by job title, customer name, etc.
   }): Promise<ZuperApiResponse<{ jobs: ZuperJob[]; total: number }>> {
     const params = new URLSearchParams();
     Object.entries(filters).forEach(([key, value]) => {
       if (value !== undefined) {
-        params.append(key, String(value));
+        // Zuper uses "count" instead of "limit" for pagination
+        const paramName = key === "limit" ? "count" : key;
+        params.append(paramName, String(value));
       }
     });
 
