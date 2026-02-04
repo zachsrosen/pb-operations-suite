@@ -10,10 +10,21 @@
  */
 
 // Types for Zuper API
+export interface ZuperJobCategory {
+  category_uid: string;
+  category_name: string;
+  category_color?: string;
+  estimated_duration?: {
+    days: number;
+    hours: number;
+    minutes: number;
+  };
+}
+
 export interface ZuperJob {
   job_uid?: string;
   job_title: string;
-  job_category?: string;
+  job_category?: string | ZuperJobCategory; // Can be UID string (for create) or object (from GET)
   job_priority?: "LOW" | "MEDIUM" | "HIGH" | "URGENT";
   job_type?: string;
   scheduled_start_time?: string;
@@ -67,12 +78,21 @@ export interface ZuperApiResponse<T> {
   error?: string;
 }
 
-// Job categories mapping for PB workflows
+// Job categories mapping for PB workflows - using Zuper category UIDs
+// These UIDs are specific to the photonbrothers Zuper account
+export const JOB_CATEGORY_UIDS = {
+  SITE_SURVEY: "002bac33-84d3-4083-a35d-50626fc49288",
+  CONSTRUCTION: "6ffbc218-6dad-4a46-b378-1fb02b3ab4bf", // Zuper calls it "Construction", not "Installation"
+  INSPECTION: "b7dc03d2-25d0-40df-a2fc-b1a477b16b65",
+  SERVICE: "cff6f839-c043-46ee-a09f-8d0e9f363437",
+} as const;
+
+// Human-readable category names (for display/logging)
 export const JOB_CATEGORIES = {
   SITE_SURVEY: "Site Survey",
-  INSTALLATION: "Installation",
+  CONSTRUCTION: "Construction",
   INSPECTION: "Inspection",
-  SERVICE: "Service Call",
+  SERVICE: "Service Visit",
 } as const;
 
 // Job type mapping based on project type
@@ -339,10 +359,15 @@ export async function createJobFromProject(project: {
   crew?: string;
   notes?: string;
 }): Promise<ZuperApiResponse<ZuperJob>> {
-  // Determine job category
-  const categoryMap = {
+  // Determine job category - use UIDs for creating jobs
+  const categoryUidMap = {
+    survey: JOB_CATEGORY_UIDS.SITE_SURVEY,
+    installation: JOB_CATEGORY_UIDS.CONSTRUCTION,
+    inspection: JOB_CATEGORY_UIDS.INSPECTION,
+  };
+  const categoryNameMap = {
     survey: JOB_CATEGORIES.SITE_SURVEY,
-    installation: JOB_CATEGORIES.INSTALLATION,
+    installation: JOB_CATEGORIES.CONSTRUCTION,
     inspection: JOB_CATEGORIES.INSPECTION,
   };
 
@@ -364,8 +389,8 @@ export async function createJobFromProject(project: {
   endDate.setHours(17, 0, 0, 0);
 
   const job: ZuperJob = {
-    job_title: `${categoryMap[schedule.type]} - ${project.name}`,
-    job_category: categoryMap[schedule.type],
+    job_title: `${categoryNameMap[schedule.type]} - ${project.name}`,
+    job_category: categoryUidMap[schedule.type],
     job_type: jobType,
     job_priority: "MEDIUM",
     scheduled_start_time: startDate.toISOString(),

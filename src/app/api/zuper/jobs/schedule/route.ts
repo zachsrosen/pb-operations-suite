@@ -54,19 +54,40 @@ export async function PUT(request: NextRequest) {
     let existingJob: ZuperJob | undefined;
 
     if (searchResult.type === "success" && searchResult.data?.jobs) {
-      // Find job with matching HubSpot tag and matching job type
+      // Map schedule type to Zuper category names
+      // Note: Zuper uses "Construction" instead of "Installation"
       const categoryMap: Record<string, string> = {
         survey: "Site Survey",
-        installation: "Installation",
+        installation: "Construction",
         inspection: "Inspection",
       };
       const targetCategory = categoryMap[schedule.type];
 
+      // Helper to get category name from job (handles both string and object formats)
+      const getJobCategoryName = (job: ZuperJob): string => {
+        if (typeof job.job_category === "string") {
+          return job.job_category;
+        }
+        return job.job_category?.category_name || "";
+      };
+
+      // First try to find by HubSpot tag (if job was created with tag)
       existingJob = searchResult.data.jobs.find(
         (job) =>
           job.job_tags?.includes(hubspotTag) &&
-          job.job_category === targetCategory
+          getJobCategoryName(job) === targetCategory
       );
+
+      // If not found by tag, try to find by job title containing customer name
+      // HubSpot workflow creates jobs with title format: "CustomerName | Address"
+      if (!existingJob && project.name) {
+        const customerName = project.name.split("|")[0]?.trim() || project.name;
+        existingJob = searchResult.data.jobs.find(
+          (job) =>
+            job.job_title?.includes(customerName) &&
+            getJobCategoryName(job) === targetCategory
+        );
+      }
     }
 
     // Calculate schedule times
