@@ -115,6 +115,7 @@ export default function Home() {
   );
   const sections = [
     "Operations Dashboards",
+    "Department Dashboards",
     "Other Pipelines",
     "Participate Energy & Leadership",
   ];
