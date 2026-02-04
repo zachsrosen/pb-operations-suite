@@ -1136,11 +1136,14 @@ function openScheduleModal(project, dateStr) {
     <div class="modal-section" id="zuperSection" style="display: none;">
       <div class="modal-section-title">Zuper Integration</div>
       <div class="form-row" style="align-items: center;">
-        <input type="checkbox" id="createZuperJob" checked style="width: 16px; height: 16px; accent-color: var(--accent);">
-        <label for="createZuperJob" style="flex: 1; cursor: pointer;">Create work order in Zuper</label>
+        <input type="checkbox" id="syncZuperJob" checked style="width: 16px; height: 16px; accent-color: var(--accent);">
+        <label for="syncZuperJob" style="flex: 1; cursor: pointer;">Sync schedule to Zuper</label>
       </div>
       <div style="font-size: 0.6rem; color: var(--text-dim); margin-top: 4px;">
-        This will create a ${project.stage === 'survey' ? 'Site Survey' : project.stage === 'inspection' ? 'Inspection' : 'Installation'} job in Zuper FSM
+        Updates the existing ${project.stage === 'survey' ? 'Site Survey' : project.stage === 'inspection' ? 'Inspection' : 'Installation'} job in Zuper (or creates one if none exists)
+      </div>
+      <div style="font-size: 0.6rem; color: #f59e0b; margin-top: 6px; padding: 6px 8px; background: rgba(245, 158, 11, 0.1); border-radius: 4px; border-left: 2px solid #f59e0b;">
+        ⚠️ <strong>Customer will receive EMAIL + SMS notification</strong> with their scheduled appointment
       </div>
     </div>
   `;
@@ -1169,21 +1172,22 @@ async function confirmSchedule() {
   if (!window.pendingSchedule) return;
 
   const { project, date } = window.pendingSchedule;
-  const days = parseInt(document.getElementById('installDays').value) || 2;
+  const days = parseFloat(document.getElementById('installDays').value) || 2;
   const crew = document.getElementById('crewSelect')?.value || project.crew;
-  const createZuper = document.getElementById('createZuperJob')?.checked;
+  const syncZuper = document.getElementById('syncZuperJob')?.checked;
 
   state.manualSchedules[project.id] = { startDate: date, days, crew };
 
-  // Create Zuper job if checkbox is checked and visible
-  if (createZuper && document.getElementById('zuperSection')?.style.display !== 'none') {
+  // Sync to Zuper if checkbox is checked and visible
+  if (syncZuper && document.getElementById('zuperSection')?.style.display !== 'none') {
     try {
       const jobType = project.stage === 'survey' ? 'survey' :
                       project.stage === 'inspection' ? 'inspection' : 'installation';
 
       const addressParts = project.address.split(',').map(s => s.trim());
-      const response = await fetch('/api/zuper/jobs', {
-        method: 'POST',
+      // Use the smart schedule endpoint that reschedules existing jobs or creates new ones
+      const response = await fetch('/api/zuper/jobs/schedule', {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           project: {
@@ -1207,12 +1211,17 @@ async function confirmSchedule() {
       });
 
       if (response.ok) {
-        showToast(`✅ ${utils.getCustomerName(project.name)} scheduled for ${utils.formatDate(date)} + Zuper job created`);
+        const result = await response.json();
+        if (result.action === 'rescheduled') {
+          showToast(`✅ ${utils.getCustomerName(project.name)} scheduled for ${utils.formatDate(date)} (Zuper job updated)`);
+        } else {
+          showToast(`✅ ${utils.getCustomerName(project.name)} scheduled for ${utils.formatDate(date)} (Zuper job created)`);
+        }
       } else {
         showToast(`✅ Scheduled locally (Zuper sync failed)`);
       }
     } catch (e) {
-      console.error('Zuper job creation failed:', e);
+      console.error('Zuper sync failed:', e);
       showToast(`✅ ${utils.getCustomerName(project.name)} scheduled for ${utils.formatDate(date)}`);
     }
   } else {

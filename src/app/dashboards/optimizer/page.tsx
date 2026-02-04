@@ -403,6 +403,18 @@ export default function OptimizerDashboard() {
   >(null);
   const [showOptimizeResults, setShowOptimizeResults] = useState(false);
 
+  // Zuper integration state
+  const [zuperConfigured, setZuperConfigured] = useState(false);
+  const [showZuperConfirmModal, setShowZuperConfirmModal] = useState(false);
+  const [zuperConfirmText, setZuperConfirmText] = useState("");
+  const [syncingToZuper, setSyncingToZuper] = useState(false);
+  const [zuperSyncProgress, setZuperSyncProgress] = useState<{
+    total: number;
+    completed: number;
+    failed: number;
+    current: string;
+  } | null>(null);
+
   // Toast state
   const [toast, setToast] = useState<{
     message: string;
@@ -449,6 +461,101 @@ export default function OptimizerDashboard() {
     const interval = setInterval(fetchProjects, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, [fetchProjects]);
+
+  // Check Zuper configuration status
+  useEffect(() => {
+    async function checkZuper() {
+      try {
+        const response = await fetch("/api/zuper/status");
+        const data = await response.json();
+        setZuperConfigured(data.configured === true);
+      } catch {
+        setZuperConfigured(false);
+      }
+    }
+    checkZuper();
+  }, []);
+
+  // ---- Zuper Sync Function ----
+  const syncScheduleToZuper = useCallback(async () => {
+    if (!optimizedSchedule || optimizedSchedule.length === 0) return;
+
+    setSyncingToZuper(true);
+    setZuperSyncProgress({
+      total: optimizedSchedule.length,
+      completed: 0,
+      failed: 0,
+      current: "",
+    });
+
+    let completed = 0;
+    let failed = 0;
+
+    for (const entry of optimizedSchedule) {
+      const projectName =
+        entry.project.name?.split("|")[1]?.trim() || entry.project.name;
+      setZuperSyncProgress((prev) =>
+        prev ? { ...prev, current: projectName } : null
+      );
+
+      try {
+        const response = await fetch("/api/zuper/jobs/schedule", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            project: {
+              id: entry.project.id,
+              name: entry.project.name,
+              address: "",
+              city: "",
+              state: "",
+              systemSizeKw: null,
+              batteryCount: null,
+              projectType: null,
+            },
+            schedule: {
+              type: "installation",
+              date: entry.startDate,
+              days: entry.days,
+              crew: entry.crew,
+              notes: "Scheduled via Pipeline Optimizer",
+            },
+          }),
+        });
+
+        if (response.ok) {
+          completed++;
+        } else {
+          failed++;
+        }
+      } catch {
+        failed++;
+      }
+
+      setZuperSyncProgress((prev) =>
+        prev ? { ...prev, completed, failed } : null
+      );
+
+      // Small delay between requests to avoid overwhelming the API
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+
+    setSyncingToZuper(false);
+    setShowZuperConfirmModal(false);
+    setZuperConfirmText("");
+    setZuperSyncProgress(null);
+
+    if (failed === 0) {
+      showToast(
+        `Successfully synced ${completed} projects to Zuper - customers notified`
+      );
+    } else {
+      showToast(
+        `Synced ${completed} projects, ${failed} failed`,
+        failed > completed / 2 ? "error" : "success"
+      );
+    }
+  }, [optimizedSchedule, showToast]);
 
   // ---- Derived data ----
   const schedulableStages = [
@@ -805,7 +912,7 @@ export default function OptimizerDashboard() {
             </div>
 
             {/* Actions */}
-            <div className="mt-4 flex gap-2">
+            <div className="mt-4 flex flex-wrap gap-2">
               <Link
                 href="/dashboards/timeline"
                 className="px-4 py-2 bg-orange-500 rounded-lg text-white text-sm font-semibold no-underline hover:bg-orange-600 transition-colors"
@@ -818,7 +925,30 @@ export default function OptimizerDashboard() {
               >
                 Export CSV
               </button>
+              {zuperConfigured && (
+                <button
+                  onClick={() => setShowZuperConfirmModal(true)}
+                  className="px-4 py-2 bg-blue-600 border border-blue-500 rounded-lg text-white text-sm font-semibold cursor-pointer hover:bg-blue-500 transition-colors"
+                >
+                  Apply to Zuper
+                </button>
+              )}
             </div>
+
+            {/* Zuper Warning */}
+            {zuperConfigured && (
+              <div className="mt-3 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+                <div className="text-amber-400 text-xs flex items-start gap-2">
+                  <span className="text-base">⚠️</span>
+                  <div>
+                    <strong>Customer Notification Warning:</strong> Applying this
+                    schedule to Zuper will send EMAIL and SMS notifications to{" "}
+                    {optimizedSchedule.length} customers with their scheduled
+                    appointment details.
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -1112,6 +1242,130 @@ export default function OptimizerDashboard() {
             </div>
           </div>
         </>
+      )}
+
+      {/* Zuper Confirmation Modal */}
+      {showZuperConfirmModal && optimizedSchedule && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-[#1a1a24] border border-zinc-700 rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-zinc-700">
+              <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                <span className="text-2xl">⚠️</span>
+                Confirm Zuper Sync
+              </h3>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {/* Warning */}
+              <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
+                <div className="text-red-400 font-semibold mb-2">
+                  Customer Notification Alert
+                </div>
+                <div className="text-red-300 text-sm">
+                  This action will send <strong>EMAIL and SMS notifications</strong> to{" "}
+                  <strong>{optimizedSchedule.length} customers</strong> with their
+                  scheduled appointment details.
+                </div>
+              </div>
+
+              {/* Summary */}
+              <div className="p-4 bg-zinc-800/50 rounded-lg">
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <span className="text-zinc-500">Total Projects</span>
+                    <div className="text-white font-semibold">
+                      {optimizedSchedule.length}
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-zinc-500">PE Projects</span>
+                    <div className="text-emerald-400 font-semibold">
+                      {optimizedSchedule.filter((s) => s.project.isParticipateEnergy).length}
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-zinc-500">Total Revenue</span>
+                    <div className="text-white font-semibold">
+                      ${(optimizedSchedule.reduce((sum, s) => sum + (s.project.amount || 0), 0) / 1000).toFixed(0)}K
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-zinc-500">Date Range</span>
+                    <div className="text-white font-semibold">
+                      {optimizedSchedule[0]?.startDate} -{" "}
+                      {optimizedSchedule[optimizedSchedule.length - 1]?.startDate}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Confirmation Input */}
+              <div>
+                <label className="block text-zinc-400 text-sm mb-2">
+                  Type <strong className="text-white">CONFIRM</strong> to proceed:
+                </label>
+                <input
+                  type="text"
+                  value={zuperConfirmText}
+                  onChange={(e) => setZuperConfirmText(e.target.value)}
+                  placeholder="Type CONFIRM"
+                  disabled={syncingToZuper}
+                  className="w-full px-4 py-3 bg-zinc-800 border border-zinc-600 rounded-lg text-white text-center font-mono text-lg focus:outline-none focus:border-orange-500 disabled:opacity-50"
+                />
+              </div>
+
+              {/* Progress */}
+              {syncingToZuper && zuperSyncProgress && (
+                <div className="p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+                  <div className="flex justify-between text-sm mb-2">
+                    <span className="text-blue-400">Syncing to Zuper...</span>
+                    <span className="text-white">
+                      {zuperSyncProgress.completed + zuperSyncProgress.failed} /{" "}
+                      {zuperSyncProgress.total}
+                    </span>
+                  </div>
+                  <div className="h-2 bg-zinc-700 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-blue-500 transition-all duration-200"
+                      style={{
+                        width: `${((zuperSyncProgress.completed + zuperSyncProgress.failed) / zuperSyncProgress.total) * 100}%`,
+                      }}
+                    />
+                  </div>
+                  <div className="text-xs text-zinc-500 mt-2 truncate">
+                    Current: {zuperSyncProgress.current}
+                  </div>
+                  {zuperSyncProgress.failed > 0 && (
+                    <div className="text-xs text-red-400 mt-1">
+                      {zuperSyncProgress.failed} failed
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="p-6 border-t border-zinc-700 flex gap-3 justify-end">
+              <button
+                onClick={() => {
+                  setShowZuperConfirmModal(false);
+                  setZuperConfirmText("");
+                }}
+                disabled={syncingToZuper}
+                className="px-4 py-2 bg-zinc-700 border border-zinc-600 rounded-lg text-zinc-300 text-sm cursor-pointer hover:bg-zinc-600 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={syncScheduleToZuper}
+                disabled={zuperConfirmText !== "CONFIRM" || syncingToZuper}
+                className="px-6 py-2 bg-red-600 border border-red-500 rounded-lg text-white text-sm font-semibold cursor-pointer hover:bg-red-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {syncingToZuper ? "Syncing..." : "Send Notifications & Sync"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Toast Notification */}
