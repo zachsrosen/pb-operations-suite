@@ -403,10 +403,22 @@ export async function GET(request: NextRequest) {
     if (jobsResult.type === "success" && jobsResult.data) {
       for (const job of jobsResult.data) {
         if (job.scheduled_start_time) {
-          const dateStr = job.scheduled_start_time.split("T")[0];
+          // Parse the scheduled time - Zuper returns UTC times
+          // We need to convert to local time (Mountain Time) for matching
+          const scheduledDate = new Date(job.scheduled_start_time);
+
+          // Get local date and time in Mountain Time
+          // Use the scheduled date's local representation
+          const localDateStr = scheduledDate.toLocaleDateString('en-CA', { timeZone: 'America/Denver' }); // YYYY-MM-DD format
+          const localHour = parseInt(scheduledDate.toLocaleTimeString('en-US', {
+            timeZone: 'America/Denver',
+            hour: '2-digit',
+            hour12: false
+          }));
+          const startTime = `${localHour.toString().padStart(2, "0")}:00`;
+
+          const dateStr = localDateStr;
           if (availabilityByDate[dateStr]) {
-            // Extract the hour from the scheduled time
-            const startTime = job.scheduled_start_time.split("T")[1]?.substring(0, 5) || "";
 
             availabilityByDate[dateStr].scheduledJobs.push({
               job_title: job.job_title,
@@ -424,31 +436,43 @@ export async function GET(request: NextRequest) {
                 ? `${assignedUserData.first_name || ""} ${assignedUserData.last_name || ""}`.trim()
                 : "";
 
+              // Log for debugging
+              console.log(`[Zuper Availability] Job: ${job.job_title}`);
+              console.log(`[Zuper Availability] Scheduled UTC: ${job.scheduled_start_time}`);
+              console.log(`[Zuper Availability] Local date: ${dateStr}, Local time: ${startTime}`);
+              console.log(`[Zuper Availability] Assigned user from Zuper: "${assignedUserName}"`);
+
               // Try to match this scheduled job to an availability slot and mark it booked
-              const startHour = parseInt(startTime.split(":")[0]);
-              const slotStartTime = `${startHour.toString().padStart(2, "0")}:00`;
+              const slotStartTime = startTime; // Already in HH:00 format
 
               // Find matching crew member - first try to match by assigned user name
               let matchingSlot = null;
               if (assignedUserName) {
                 // Try to find a slot for this specific user at this time
+                // Match by first name (case insensitive)
+                const firstName = assignedUserName.split(" ")[0].toLowerCase();
                 matchingSlot = availabilityByDate[dateStr].availableSlots.find(
                   slot => slot.start_time === slotStartTime &&
-                    slot.user_name?.toLowerCase().includes(assignedUserName.split(" ")[0].toLowerCase())
+                    slot.user_name?.toLowerCase().includes(firstName)
                 );
+                console.log(`[Zuper Availability] Looking for slot at ${slotStartTime} for user containing "${firstName}"`);
+                console.log(`[Zuper Availability] Available slots for this date:`, availabilityByDate[dateStr].availableSlots.map(s => `${s.user_name} @ ${s.start_time}`));
               }
 
               // If no match by user, fall back to finding any slot at this time
               if (!matchingSlot) {
+                console.log(`[Zuper Availability] No user match, falling back to time-only match at ${slotStartTime}`);
                 matchingSlot = availabilityByDate[dateStr].availableSlots.find(
                   slot => slot.start_time === slotStartTime
                 );
               }
 
               if (matchingSlot) {
+                console.log(`[Zuper Availability] Matched slot: ${matchingSlot.user_name} @ ${matchingSlot.start_time}`);
                 const key = getSlotKey(dateStr, matchingSlot.user_name || "", slotStartTime);
                 if (!bookedSlots.has(key)) {
                   // Auto-book this slot based on Zuper scheduled job
+                  const startHour = parseInt(slotStartTime.split(":")[0]);
                   bookedSlots.set(key, {
                     date: dateStr,
                     startTime: slotStartTime,
@@ -459,7 +483,10 @@ export async function GET(request: NextRequest) {
                     projectName: job.job_title,
                     bookedAt: new Date().toISOString(),
                   });
+                  console.log(`[Zuper Availability] Booked slot: ${key}`);
                 }
+              } else {
+                console.log(`[Zuper Availability] No matching slot found for ${dateStr} at ${slotStartTime}`);
               }
             }
           }
