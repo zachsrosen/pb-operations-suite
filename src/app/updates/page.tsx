@@ -15,6 +15,20 @@ interface UpdateEntry {
 
 const UPDATES: UpdateEntry[] = [
   {
+    version: "1.8.0",
+    date: "2026-02-04",
+    title: "Construction & Inspection Schedulers",
+    description: "New dedicated schedulers for construction and inspection teams with full Zuper integration.",
+    changes: [
+      { type: "feature", text: "Construction Scheduler - dedicated calendar for scheduling construction installs" },
+      { type: "feature", text: "Inspection Scheduler - dedicated calendar for scheduling inspections" },
+      { type: "feature", text: "Drag-and-drop rescheduling on all scheduler calendars" },
+      { type: "improvement", text: "All schedulers now support rescheduling by dragging events to new dates" },
+      { type: "improvement", text: "Roadmap voting now persists across sessions" },
+      { type: "fix", text: "Fixed back button navigation on scheduler pages" },
+    ],
+  },
+  {
     version: "1.7.0",
     date: "2026-02-04",
     title: "Zuper Job Links in Schedulers",

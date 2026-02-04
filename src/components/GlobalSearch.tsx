@@ -18,6 +18,9 @@ const DASHBOARD_LINKS = [
   { name: "Command Center", path: "/dashboards/command-center", description: "Pipeline overview and scheduling" },
   { name: "Pipeline Optimizer", path: "/dashboards/optimizer", description: "AI-powered scheduling optimization" },
   { name: "Master Scheduler", path: "/dashboards/scheduler", description: "Drag-and-drop scheduling calendar" },
+  { name: "Site Survey Scheduler", path: "/dashboards/site-survey-scheduler", description: "Schedule site surveys with Zuper" },
+  { name: "Construction Scheduler", path: "/dashboards/construction-scheduler", description: "Schedule construction installs with Zuper" },
+  { name: "Inspection Scheduler", path: "/dashboards/inspection-scheduler", description: "Schedule inspections with Zuper" },
   { name: "At-Risk Projects", path: "/dashboards/at-risk", description: "Critical project alerts" },
   { name: "Location Comparison", path: "/dashboards/locations", description: "Performance across locations" },
   { name: "Timeline View", path: "/dashboards/timeline", description: "Gantt-style project timeline" },
@@ -36,8 +39,10 @@ const DASHBOARD_LINKS = [
   { name: "PE Dashboard", path: "/dashboards/pe", description: "Participate Energy tracking" },
   { name: "Executive Summary", path: "/dashboards/executive", description: "KPIs and charts for leadership" },
   { name: "Mobile Dashboard", path: "/dashboards/mobile", description: "Touch-optimized field view" },
-  // Help
+  // Help & Info
   { name: "Dashboard Guide", path: "/guide", description: "How to use each dashboard" },
+  { name: "Product Updates", path: "/updates", description: "Changelog and release notes" },
+  { name: "Product Roadmap", path: "/roadmap", description: "Vote on features and submit ideas" },
 ];
 
 function useIsMac() {

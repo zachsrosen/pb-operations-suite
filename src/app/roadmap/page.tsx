@@ -55,7 +55,18 @@ export default function RoadmapPage() {
       const res = await fetch("/api/roadmap");
       if (res.ok) {
         const data = await res.json();
-        setItems(data.items || []);
+        let loadedItems = data.items || [];
+
+        // Merge in any localStorage vote counts (for persistence on Vercel)
+        const localVoteCounts = JSON.parse(localStorage.getItem("roadmap-vote-counts") || "{}");
+        if (Object.keys(localVoteCounts).length > 0) {
+          loadedItems = loadedItems.map((item: RoadmapItem) => ({
+            ...item,
+            votes: item.votes + (localVoteCounts[item.id] || 0)
+          }));
+        }
+
+        setItems(loadedItems);
       }
     } catch (error) {
       console.error("Failed to load roadmap:", error);
@@ -105,30 +116,34 @@ export default function RoadmapPage() {
     }
   };
 
-  // Handle vote
+  // Handle vote - uses localStorage for persistence since Vercel has read-only filesystem
   const handleVote = async (itemId: string) => {
     if (votedItems.has(itemId)) return; // Already voted
 
+    // Update local state immediately for better UX
+    setItems(prev => prev.map(item =>
+      item.id === itemId ? { ...item, votes: item.votes + 1 } : item
+    ));
+
+    // Save to localStorage
+    const newVoted = new Set(votedItems).add(itemId);
+    setVotedItems(newVoted);
+    localStorage.setItem("roadmap-votes", JSON.stringify([...newVoted]));
+
+    // Also save vote counts to localStorage for persistence
+    const currentVoteCounts = JSON.parse(localStorage.getItem("roadmap-vote-counts") || "{}");
+    currentVoteCounts[itemId] = (currentVoteCounts[itemId] || 0) + 1;
+    localStorage.setItem("roadmap-vote-counts", JSON.stringify(currentVoteCounts));
+
+    // Try server-side vote (may fail on Vercel due to read-only filesystem)
     try {
-      const res = await fetch("/api/roadmap/vote", {
+      await fetch("/api/roadmap/vote", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ itemId }),
       });
-
-      if (res.ok) {
-        // Update local state
-        setItems(prev => prev.map(item =>
-          item.id === itemId ? { ...item, votes: item.votes + 1 } : item
-        ));
-
-        // Save to localStorage
-        const newVoted = new Set(votedItems).add(itemId);
-        setVotedItems(newVoted);
-        localStorage.setItem("roadmap-votes", JSON.stringify([...newVoted]));
-      }
     } catch (error) {
-      console.error("Failed to vote:", error);
+      console.warn("Server-side vote failed (expected on Vercel):", error);
     }
   };
 

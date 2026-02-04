@@ -18,9 +18,9 @@ interface RawProject {
   projectType?: string;
   stage: string;
   url?: string;
-  siteSurveyScheduleDate?: string;
-  siteSurveyStatus?: string;
-  siteSurveyCompletionDate?: string;
+  inspectionDate?: string;
+  inspectionStatus?: string;
+  inspectionPass?: string;
   closeDate?: string;
   equipment?: {
     systemSizeKwdc?: number;
@@ -31,7 +31,7 @@ interface RawProject {
   };
 }
 
-interface SurveyProject {
+interface InspectionProject {
   id: string;
   name: string;
   address: string;
@@ -42,7 +42,7 @@ interface SurveyProject {
   batteries: number;
   evCount: number;
   scheduleDate: string | null;
-  surveyStatus: string;
+  inspectionStatus: string;
   completionDate: string | null;
   closeDate: string | null;
   hubspotUrl: string;
@@ -51,19 +51,8 @@ interface SurveyProject {
 }
 
 interface PendingSchedule {
-  project: SurveyProject;
+  project: InspectionProject;
   date: string;
-}
-
-interface AssistedSlot {
-  date: string;
-  start_time: string;
-  end_time: string;
-  user_uid?: string;
-  user_name?: string;
-  team_uid?: string;
-  team_name?: string;
-  available: boolean;
 }
 
 interface DayAvailability {
@@ -109,16 +98,13 @@ const MONTH_NAMES = [
 
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-const SURVEY_STATUSES = [
+const INSPECTION_STATUSES = [
   "Ready to Schedule",
-  "Awaiting Reply",
   "Scheduled",
-  "On Our Way",
-  "Started",
-  "In Progress",
-  "Needs Revisit",
-  "Completed",
-  "Scheduling On-Hold",
+  "Pending Review",
+  "Passed",
+  "Failed - Reschedule",
+  "On Hold",
 ];
 
 /* ------------------------------------------------------------------ */
@@ -172,9 +158,9 @@ function getTodayStr(): string {
 /*  Transform API data                                                 */
 /* ------------------------------------------------------------------ */
 
-function transformProject(p: RawProject): SurveyProject | null {
-  // Only include projects in Site Survey stage
-  if (p.stage !== "Site Survey") return null;
+function transformProject(p: RawProject): InspectionProject | null {
+  // Only include projects in Inspection stage
+  if (p.stage !== "Inspection") return null;
 
   return {
     id: String(p.id),
@@ -186,9 +172,9 @@ function transformProject(p: RawProject): SurveyProject | null {
     systemSize: p.equipment?.systemSizeKwdc || 0,
     batteries: p.equipment?.battery?.count || 0,
     evCount: p.equipment?.evCount || 0,
-    scheduleDate: p.siteSurveyScheduleDate || null,
-    surveyStatus: p.siteSurveyStatus || "Ready to Schedule",
-    completionDate: p.siteSurveyCompletionDate || null,
+    scheduleDate: p.inspectionDate || null,
+    inspectionStatus: p.inspectionStatus || "Ready to Schedule",
+    completionDate: p.inspectionPass || null,
     closeDate: p.closeDate || null,
     hubspotUrl: p.url || `https://app.hubspot.com/contacts/21710069/record/0-3/${p.id}`,
   };
@@ -198,9 +184,9 @@ function transformProject(p: RawProject): SurveyProject | null {
 /*  COMPONENT                                                          */
 /* ================================================================== */
 
-export default function SiteSurveySchedulerPage() {
+export default function InspectionSchedulerPage() {
   /* ---- core data ---- */
-  const [projects, setProjects] = useState<SurveyProject[]>([]);
+  const [projects, setProjects] = useState<InspectionProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -216,7 +202,7 @@ export default function SiteSurveySchedulerPage() {
   const [sortBy, setSortBy] = useState("amount");
 
   /* ---- selection / scheduling ---- */
-  const [selectedProject, setSelectedProject] = useState<SurveyProject | null>(null);
+  const [selectedProject, setSelectedProject] = useState<InspectionProject | null>(null);
   const [manualSchedules, setManualSchedules] = useState<Record<string, string>>({});
   const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null);
 
@@ -228,11 +214,9 @@ export default function SiteSurveySchedulerPage() {
   const [syncToZuper, setSyncToZuper] = useState(true);
   const [syncingToZuper, setSyncingToZuper] = useState(false);
 
-  /* ---- Assisted scheduling ---- */
-  const [availableSlots, setAvailableSlots] = useState<AssistedSlot[]>([]);
-  const [loadingSlots, setLoadingSlots] = useState(false);
-  const [selectedSlot, setSelectedSlot] = useState<AssistedSlot | null>(null);
+  /* ---- Availability ---- */
   const [availabilityByDate, setAvailabilityByDate] = useState<Record<string, DayAvailability>>({});
+  const [loadingSlots, setLoadingSlots] = useState(false);
   const [showAvailability, setShowAvailability] = useState(true);
 
   /* ---- toast ---- */
@@ -252,17 +236,16 @@ export default function SiteSurveySchedulerPage() {
       const data = await response.json();
       const transformed = data.projects
         .map((p: RawProject) => transformProject(p))
-        .filter((p: SurveyProject | null): p is SurveyProject => p !== null);
+        .filter((p: InspectionProject | null): p is InspectionProject => p !== null);
 
       // Look up Zuper job UIDs for these projects
       if (transformed.length > 0) {
         try {
-          const projectIds = transformed.map((p: SurveyProject) => p.id).join(",");
-          const zuperResponse = await fetch(`/api/zuper/jobs/lookup?projectIds=${projectIds}&category=site-survey`);
+          const projectIds = transformed.map((p: InspectionProject) => p.id).join(",");
+          const zuperResponse = await fetch(`/api/zuper/jobs/lookup?projectIds=${projectIds}&category=inspection`);
           if (zuperResponse.ok) {
             const zuperData = await zuperResponse.json();
             if (zuperData.jobs) {
-              // Merge Zuper job UIDs into projects
               for (const project of transformed) {
                 const zuperJob = zuperData.jobs[project.id];
                 if (zuperJob) {
@@ -274,7 +257,6 @@ export default function SiteSurveySchedulerPage() {
           }
         } catch (zuperErr) {
           console.warn("Failed to lookup Zuper jobs:", zuperErr);
-          // Don't fail the whole load if Zuper lookup fails
         }
       }
 
@@ -313,7 +295,6 @@ export default function SiteSurveySchedulerPage() {
 
     setLoadingSlots(true);
     try {
-      // Get date range for current month view
       const firstDay = new Date(currentYear, currentMonth, 1);
       const lastDay = new Date(currentYear, currentMonth + 1, 0);
       const fromDate = firstDay.toISOString().split("T")[0];
@@ -322,7 +303,7 @@ export default function SiteSurveySchedulerPage() {
       const params = new URLSearchParams({
         from_date: fromDate,
         to_date: toDate,
-        type: "survey",
+        type: "inspection",
       });
       if (location) {
         params.append("location", location);
@@ -341,12 +322,10 @@ export default function SiteSurveySchedulerPage() {
     }
   }, [zuperConfigured, currentYear, currentMonth]);
 
-  // Fetch availability when project is selected or month changes
   useEffect(() => {
     if (selectedProject && zuperConfigured) {
       fetchAvailability(selectedProject.location);
     } else if (zuperConfigured && showAvailability) {
-      // Fetch general availability when no project selected but overlay is on
       fetchAvailability();
     }
   }, [selectedProject, zuperConfigured, currentMonth, currentYear, fetchAvailability, showAvailability]);
@@ -367,9 +346,8 @@ export default function SiteSurveySchedulerPage() {
 
   const filteredProjects = useMemo(() => {
     let filtered = projects.filter((p) => {
-      // Multi-select location filter - if any selected, filter by them
       if (selectedLocations.length > 0 && !selectedLocations.includes(p.location)) return false;
-      if (selectedStatus !== "all" && p.surveyStatus !== selectedStatus) return false;
+      if (selectedStatus !== "all" && p.inspectionStatus !== selectedStatus) return false;
       if (searchText &&
           !p.name.toLowerCase().includes(searchText.toLowerCase()) &&
           !p.address.toLowerCase().includes(searchText.toLowerCase())) return false;
@@ -384,7 +362,7 @@ export default function SiteSurveySchedulerPage() {
         return dateA.localeCompare(dateB);
       });
     } else if (sortBy === "status") {
-      filtered.sort((a, b) => a.surveyStatus.localeCompare(b.surveyStatus));
+      filtered.sort((a, b) => a.inspectionStatus.localeCompare(b.inspectionStatus));
     }
     return filtered;
   }, [projects, selectedLocations, selectedStatus, searchText, sortBy, manualSchedules]);
@@ -394,13 +372,7 @@ export default function SiteSurveySchedulerPage() {
       !p.scheduleDate &&
       !manualSchedules[p.id] &&
       !p.completionDate &&
-      p.surveyStatus !== "Completed"
-    );
-  }, [filteredProjects, manualSchedules]);
-
-  const scheduledProjects = useMemo(() => {
-    return filteredProjects.filter(p =>
-      p.scheduleDate || manualSchedules[p.id]
+      p.inspectionStatus !== "Passed"
     );
   }, [filteredProjects, manualSchedules]);
 
@@ -412,10 +384,10 @@ export default function SiteSurveySchedulerPage() {
     const scheduled = projects.filter(p =>
       (p.scheduleDate || manualSchedules[p.id]) && !p.completionDate
     ).length;
-    const completed = projects.filter(p => p.completionDate).length;
+    const passed = projects.filter(p => p.completionDate || p.inspectionStatus === "Passed").length;
     const totalValue = projects.reduce((sum, p) => sum + p.amount, 0);
 
-    return { total, needsScheduling, scheduled, completed, totalValue };
+    return { total, needsScheduling, scheduled, passed, totalValue };
   }, [projects, manualSchedules]);
 
   /* ================================================================ */
@@ -427,22 +399,18 @@ export default function SiteSurveySchedulerPage() {
     const lastDay = new Date(currentYear, currentMonth + 1, 0);
     const days: string[] = [];
 
-    // Adjust for Monday start (0 = Sun, 1 = Mon, etc.)
     let startDow = firstDay.getDay();
-    startDow = startDow === 0 ? 6 : startDow - 1; // Convert to Monday = 0
+    startDow = startDow === 0 ? 6 : startDow - 1;
 
-    // Add days from previous month
     for (let i = startDow - 1; i >= 0; i--) {
       const d = new Date(currentYear, currentMonth, -i);
       days.push(toDateStr(d));
     }
 
-    // Add days of current month
     for (let i = 1; i <= lastDay.getDate(); i++) {
       days.push(`${currentYear}-${String(currentMonth + 1).padStart(2, "0")}-${String(i).padStart(2, "0")}`);
     }
 
-    // Pad to complete weeks
     while (days.length % 7 !== 0) {
       const lastDate = new Date(days[days.length - 1] + "T12:00:00");
       lastDate.setDate(lastDate.getDate() + 1);
@@ -480,7 +448,7 @@ export default function SiteSurveySchedulerPage() {
     setDraggedProjectId(null);
   }, [draggedProjectId, projects]);
 
-  const handleDateClick = useCallback((date: string, project?: SurveyProject) => {
+  const handleDateClick = useCallback((date: string, project?: InspectionProject) => {
     if (project) {
       setScheduleModal({ project, date });
     } else if (selectedProject) {
@@ -498,7 +466,6 @@ export default function SiteSurveySchedulerPage() {
       [project.id]: date,
     }));
 
-    // Sync to Zuper if enabled
     if (zuperConfigured && syncToZuper) {
       setSyncingToZuper(true);
       try {
@@ -517,10 +484,10 @@ export default function SiteSurveySchedulerPage() {
               projectType: project.type,
             },
             schedule: {
-              type: "survey",
+              type: "inspection",
               date: date,
-              days: 0.25, // Site surveys are typically ~2 hours
-              notes: "Scheduled via Site Survey Scheduler",
+              days: 0.25, // Inspections typically ~2 hours
+              notes: "Scheduled via Inspection Scheduler",
             },
           }),
         });
@@ -594,12 +561,12 @@ export default function SiteSurveySchedulerPage() {
 
   const getStatusColor = (status: string): string => {
     const s = status.toLowerCase();
-    if (s.includes("complete")) return "bg-green-500/20 text-green-400 border-green-500/30";
+    if (s.includes("passed")) return "bg-green-500/20 text-green-400 border-green-500/30";
     if (s.includes("scheduled")) return "bg-blue-500/20 text-blue-400 border-blue-500/30";
-    if (s.includes("progress") || s.includes("started") || s.includes("on our way")) return "bg-yellow-500/20 text-yellow-400 border-yellow-500/30";
-    if (s.includes("ready")) return "bg-cyan-500/20 text-cyan-400 border-cyan-500/30";
-    if (s.includes("awaiting") || s.includes("pending")) return "bg-purple-500/20 text-purple-400 border-purple-500/30";
-    if (s.includes("hold") || s.includes("revisit")) return "bg-orange-500/20 text-orange-400 border-orange-500/30";
+    if (s.includes("pending") || s.includes("review")) return "bg-yellow-500/20 text-yellow-400 border-yellow-500/30";
+    if (s.includes("ready")) return "bg-purple-500/20 text-purple-400 border-purple-500/30";
+    if (s.includes("failed") || s.includes("reschedule")) return "bg-red-500/20 text-red-400 border-red-500/30";
+    if (s.includes("hold")) return "bg-orange-500/20 text-orange-400 border-orange-500/30";
     return "bg-zinc-500/20 text-zinc-400 border-zinc-500/30";
   };
 
@@ -611,8 +578,8 @@ export default function SiteSurveySchedulerPage() {
     return (
       <div className="min-h-screen bg-[#0a0a0f] text-white flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-cyan-500 mx-auto mb-4" />
-          <p className="text-zinc-400">Loading Site Surveys...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500 mx-auto mb-4" />
+          <p className="text-zinc-400">Loading Inspection Projects...</p>
         </div>
       </div>
     );
@@ -624,7 +591,7 @@ export default function SiteSurveySchedulerPage() {
         <div className="text-center">
           <p className="text-red-400 text-xl mb-2">Error loading data</p>
           <p className="text-zinc-500 text-sm mb-4">{error}</p>
-          <button onClick={fetchProjects} className="px-4 py-2 bg-cyan-600 rounded-lg hover:bg-cyan-700">
+          <button onClick={fetchProjects} className="px-4 py-2 bg-purple-600 rounded-lg hover:bg-purple-700">
             Retry
           </button>
         </div>
@@ -655,9 +622,9 @@ export default function SiteSurveySchedulerPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
                 </svg>
               </Link>
-              <h1 className="text-xl font-bold text-cyan-400">Site Survey Scheduler</h1>
+              <h1 className="text-xl font-bold text-purple-400">Inspection Scheduler</h1>
               <span className="text-xs text-zinc-500 bg-zinc-800 px-2 py-1 rounded">
-                {stats.total} surveys
+                {stats.total} inspections
               </span>
             </div>
 
@@ -667,7 +634,7 @@ export default function SiteSurveySchedulerPage() {
                 <button
                   onClick={() => setCurrentView("calendar")}
                   className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                    currentView === "calendar" ? "bg-cyan-600 text-white" : "text-zinc-400 hover:text-white"
+                    currentView === "calendar" ? "bg-purple-600 text-white" : "text-zinc-400 hover:text-white"
                   }`}
                 >
                   Calendar
@@ -675,7 +642,7 @@ export default function SiteSurveySchedulerPage() {
                 <button
                   onClick={() => setCurrentView("list")}
                   className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                    currentView === "list" ? "bg-cyan-600 text-white" : "text-zinc-400 hover:text-white"
+                    currentView === "list" ? "bg-purple-600 text-white" : "text-zinc-400 hover:text-white"
                   }`}
                 >
                   List
@@ -694,15 +661,15 @@ export default function SiteSurveySchedulerPage() {
           <div className="flex items-center gap-6 mt-3 text-sm">
             <div className="flex items-center gap-2">
               <span className="text-zinc-500">Ready:</span>
-              <span className="text-cyan-400 font-semibold">{stats.needsScheduling}</span>
+              <span className="text-purple-400 font-semibold">{stats.needsScheduling}</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="text-zinc-500">Scheduled:</span>
               <span className="text-blue-400 font-semibold">{stats.scheduled}</span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-zinc-500">Completed:</span>
-              <span className="text-green-400 font-semibold">{stats.completed}</span>
+              <span className="text-zinc-500">Passed:</span>
+              <span className="text-green-400 font-semibold">{stats.passed}</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="text-zinc-500">Value:</span>
@@ -717,7 +684,7 @@ export default function SiteSurveySchedulerPage() {
               placeholder="Search projects..."
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
-              className="px-3 py-1.5 bg-zinc-900 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:border-cyan-500 w-48"
+              className="px-3 py-1.5 bg-zinc-900 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:border-purple-500 w-48"
             />
 
             {/* Multi-select Location Filter */}
@@ -734,7 +701,7 @@ export default function SiteSurveySchedulerPage() {
                   }}
                   className={`px-2 py-1 text-xs rounded-md border transition-colors ${
                     selectedLocations.includes(loc)
-                      ? "bg-cyan-600 border-cyan-500 text-white"
+                      ? "bg-purple-600 border-purple-500 text-white"
                       : "bg-zinc-900 border-zinc-700 text-zinc-400 hover:border-zinc-600"
                   }`}
                 >
@@ -754,10 +721,10 @@ export default function SiteSurveySchedulerPage() {
             <select
               value={selectedStatus}
               onChange={(e) => setSelectedStatus(e.target.value)}
-              className="px-3 py-1.5 bg-zinc-900 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:border-cyan-500"
+              className="px-3 py-1.5 bg-zinc-900 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:border-purple-500"
             >
               <option value="all">All Statuses</option>
-              {SURVEY_STATUSES.map((status) => (
+              {INSPECTION_STATUSES.map((status) => (
                 <option key={status} value={status}>{status}</option>
               ))}
             </select>
@@ -765,7 +732,7 @@ export default function SiteSurveySchedulerPage() {
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value)}
-              className="px-3 py-1.5 bg-zinc-900 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:border-cyan-500"
+              className="px-3 py-1.5 bg-zinc-900 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:border-purple-500"
             >
               <option value="amount">Sort: Amount</option>
               <option value="date">Sort: Date</option>
@@ -778,13 +745,13 @@ export default function SiteSurveySchedulerPage() {
                 onClick={() => setShowAvailability(!showAvailability)}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm border transition-colors ${
                   showAvailability
-                    ? "bg-emerald-600/20 border-emerald-500 text-emerald-400"
+                    ? "bg-purple-600/20 border-purple-500 text-purple-400"
                     : "bg-zinc-900 border-zinc-700 text-zinc-400 hover:border-zinc-600"
                 }`}
               >
-                <div className={`w-2 h-2 rounded-full ${showAvailability ? "bg-emerald-500" : "bg-zinc-600"}`} />
+                <div className={`w-2 h-2 rounded-full ${showAvailability ? "bg-purple-500" : "bg-zinc-600"}`} />
                 Availability
-                {loadingSlots && <div className="w-3 h-3 border-2 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" />}
+                {loadingSlots && <div className="w-3 h-3 border-2 border-purple-500/30 border-t-purple-500 rounded-full animate-spin" />}
               </button>
             )}
           </div>
@@ -798,7 +765,7 @@ export default function SiteSurveySchedulerPage() {
           <div className="w-80 flex-shrink-0">
             <div className="sticky top-[180px] bg-[#12121a] border border-zinc-800 rounded-xl overflow-hidden">
               <div className="p-3 border-b border-zinc-800 bg-zinc-900/50">
-                <h2 className="text-sm font-semibold text-cyan-400">
+                <h2 className="text-sm font-semibold text-purple-400">
                   Ready to Schedule ({unscheduledProjects.length})
                 </h2>
                 <p className="text-xs text-zinc-500 mt-1">
@@ -818,7 +785,7 @@ export default function SiteSurveySchedulerPage() {
                       onDragStart={() => handleDragStart(project.id)}
                       onClick={() => setSelectedProject(selectedProject?.id === project.id ? null : project)}
                       className={`p-3 border-b border-zinc-800 cursor-pointer hover:bg-zinc-800/50 transition-colors ${
-                        selectedProject?.id === project.id ? "bg-cyan-900/20 border-l-2 border-l-cyan-500" : ""
+                        selectedProject?.id === project.id ? "bg-purple-900/20 border-l-2 border-l-purple-500" : ""
                       }`}
                     >
                       <div className="flex items-start justify-between">
@@ -838,8 +805,8 @@ export default function SiteSurveySchedulerPage() {
                         </span>
                       </div>
                       <div className="flex items-center gap-2 mt-2">
-                        <span className={`text-xs px-1.5 py-0.5 rounded border ${getStatusColor(project.surveyStatus)}`}>
-                          {project.surveyStatus}
+                        <span className={`text-xs px-1.5 py-0.5 rounded border ${getStatusColor(project.inspectionStatus)}`}>
+                          {project.inspectionStatus}
                         </span>
                         {project.systemSize > 0 && (
                           <span className="text-xs text-zinc-500">
@@ -882,7 +849,7 @@ export default function SiteSurveySchedulerPage() {
                   {showAvailability && zuperConfigured && (
                     <div className="flex items-center gap-3 text-xs text-zinc-500">
                       <div className="flex items-center gap-1">
-                        <div className="w-2 h-2 bg-emerald-500 rounded-full" />
+                        <div className="w-2 h-2 bg-purple-500 rounded-full" />
                         <span>Available</span>
                       </div>
                       <div className="flex items-center gap-1">
@@ -928,10 +895,10 @@ export default function SiteSurveySchedulerPage() {
                         className={`min-h-[100px] p-1.5 border-b border-r border-zinc-800 cursor-pointer transition-colors ${
                           isCurrentMonth ? "" : "opacity-40"
                         } ${weekend ? "bg-zinc-900/30" : ""} ${
-                          isToday ? "bg-cyan-900/20" : ""
-                        } ${selectedProject ? "hover:bg-cyan-900/10" : "hover:bg-zinc-800/50"} ${
+                          isToday ? "bg-purple-900/20" : ""
+                        } ${selectedProject ? "hover:bg-purple-900/10" : "hover:bg-zinc-800/50"} ${
                           showAvailability && hasAvailability && selectedProject
-                            ? "ring-2 ring-inset ring-emerald-500/30 bg-emerald-900/10"
+                            ? "ring-2 ring-inset ring-purple-500/30 bg-purple-900/10"
                             : ""
                         } ${
                           showAvailability && isFullyBooked && selectedProject && !weekend
@@ -941,7 +908,7 @@ export default function SiteSurveySchedulerPage() {
                       >
                         <div className="flex items-center justify-between mb-1">
                           <span className={`text-xs font-medium ${
-                            isToday ? "text-cyan-400" : "text-zinc-500"
+                            isToday ? "text-purple-400" : "text-zinc-500"
                           }`}>
                             {parseInt(dateStr.split("-")[2])}
                           </span>
@@ -952,9 +919,9 @@ export default function SiteSurveySchedulerPage() {
                                 <div className="w-2 h-2 bg-zinc-600 rounded-full animate-pulse" />
                               ) : hasAvailability ? (
                                 <div className="flex items-center gap-0.5" title={`${slotCount} slot${slotCount !== 1 ? "s" : ""} available`}>
-                                  <div className="w-2 h-2 bg-emerald-500 rounded-full" />
+                                  <div className="w-2 h-2 bg-purple-500 rounded-full" />
                                   {slotCount > 1 && (
-                                    <span className="text-[0.55rem] text-emerald-400">{slotCount}</span>
+                                    <span className="text-[0.55rem] text-purple-400">{slotCount}</span>
                                   )}
                                 </div>
                               ) : isFullyBooked ? (
@@ -978,7 +945,7 @@ export default function SiteSurveySchedulerPage() {
                                 e.stopPropagation();
                                 setScheduleModal({ project: ev, date: dateStr });
                               }}
-                              className="text-xs p-1 rounded bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 truncate cursor-grab hover:bg-cyan-500/30 active:cursor-grabbing"
+                              className="text-xs p-1 rounded bg-purple-500/20 border border-purple-500/30 text-purple-300 truncate cursor-grab hover:bg-purple-500/30 active:cursor-grabbing"
                               title="Drag to reschedule"
                             >
                               {getCustomerName(ev.name)}
@@ -989,10 +956,9 @@ export default function SiteSurveySchedulerPage() {
                               +{events.length - 3} more
                             </div>
                           )}
-                          {/* Show available user names when project selected */}
                           {showAvailability && selectedProject && hasAvailability && dayAvailability?.availableSlots?.slice(0, 2).map((slot, i) => (
                             slot.user_name && (
-                              <div key={i} className="text-[0.55rem] text-emerald-400/70 truncate">
+                              <div key={i} className="text-[0.55rem] text-purple-400/70 truncate">
                                 {slot.user_name}
                               </div>
                             )
@@ -1007,7 +973,7 @@ export default function SiteSurveySchedulerPage() {
               /* List View */
               <div className="bg-[#12121a] border border-zinc-800 rounded-xl overflow-hidden">
                 <div className="p-3 border-b border-zinc-800">
-                  <h2 className="text-sm font-semibold">All Site Surveys ({filteredProjects.length})</h2>
+                  <h2 className="text-sm font-semibold">All Inspection Projects ({filteredProjects.length})</h2>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full">
@@ -1016,7 +982,7 @@ export default function SiteSurveySchedulerPage() {
                         <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Project</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Location</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Status</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Scheduled</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Inspection Date</th>
                         <th className="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase">Amount</th>
                         <th className="px-4 py-3 text-center text-xs font-medium text-zinc-400 uppercase">Links</th>
                         <th className="px-4 py-3 text-center text-xs font-medium text-zinc-400 uppercase">Actions</th>
@@ -1028,18 +994,18 @@ export default function SiteSurveySchedulerPage() {
                         return (
                           <tr key={project.id} className="hover:bg-zinc-900/50">
                             <td className="px-4 py-3">
-                              <a href={project.hubspotUrl} target="_blank" rel="noopener noreferrer" className="font-medium text-white hover:text-cyan-400">
+                              <a href={project.hubspotUrl} target="_blank" rel="noopener noreferrer" className="font-medium text-white hover:text-purple-400">
                                 {getCustomerName(project.name)}
                               </a>
                               <div className="text-xs text-zinc-500">{getProjectId(project.name)}</div>
                             </td>
                             <td className="px-4 py-3 text-sm text-zinc-400">{project.location}</td>
                             <td className="px-4 py-3">
-                              <span className={`text-xs px-2 py-1 rounded border ${getStatusColor(project.surveyStatus)}`}>
-                                {project.surveyStatus}
+                              <span className={`text-xs px-2 py-1 rounded border ${getStatusColor(project.inspectionStatus)}`}>
+                                {project.inspectionStatus}
                               </span>
                             </td>
-                            <td className={`px-4 py-3 text-sm ${schedDate ? "text-cyan-400" : "text-zinc-500"}`}>
+                            <td className={`px-4 py-3 text-sm ${schedDate ? "text-purple-400" : "text-zinc-500"}`}>
                               {schedDate ? formatShortDate(schedDate) : "—"}
                             </td>
                             <td className="px-4 py-3 text-right font-mono text-sm text-orange-400">
@@ -1084,7 +1050,7 @@ export default function SiteSurveySchedulerPage() {
                               ) : (
                                 <button
                                   onClick={() => setSelectedProject(project)}
-                                  className="text-xs text-cyan-400 hover:text-cyan-300"
+                                  className="text-xs text-purple-400 hover:text-purple-300"
                                 >
                                   Schedule
                                 </button>
@@ -1111,7 +1077,7 @@ export default function SiteSurveySchedulerPage() {
           }}
         >
           <div className="bg-[#12121a] border border-zinc-800 rounded-xl p-5 max-w-md w-[90%]">
-            <h3 className="text-lg font-semibold mb-4">Schedule Site Survey</h3>
+            <h3 className="text-lg font-semibold mb-4">Schedule Inspection</h3>
 
             <div className="space-y-3 mb-4">
               <div>
@@ -1126,8 +1092,13 @@ export default function SiteSurveySchedulerPage() {
               </div>
 
               <div>
-                <span className="text-xs text-zinc-500">Date</span>
-                <p className="text-sm font-medium text-cyan-400">{formatDate(scheduleModal.date)}</p>
+                <span className="text-xs text-zinc-500">Inspection Date</span>
+                <p className="text-sm font-medium text-purple-400">{formatDate(scheduleModal.date)}</p>
+              </div>
+
+              <div>
+                <span className="text-xs text-zinc-500">System Size</span>
+                <p className="text-sm">{scheduleModal.project.systemSize.toFixed(1)} kW</p>
               </div>
 
               <div>
@@ -1175,7 +1146,7 @@ export default function SiteSurveySchedulerPage() {
                     type="checkbox"
                     checked={syncToZuper}
                     onChange={(e) => setSyncToZuper(e.target.checked)}
-                    className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-cyan-500 focus:ring-cyan-500"
+                    className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-purple-500 focus:ring-purple-500"
                   />
                   <span className="text-sm">Sync to Zuper FSM</span>
                 </label>
@@ -1197,7 +1168,7 @@ export default function SiteSurveySchedulerPage() {
               <button
                 onClick={confirmSchedule}
                 disabled={syncingToZuper}
-                className="px-4 py-2 text-sm bg-cyan-600 hover:bg-cyan-700 rounded-lg font-medium disabled:opacity-50"
+                className="px-4 py-2 text-sm bg-purple-600 hover:bg-purple-700 rounded-lg font-medium disabled:opacity-50"
               >
                 {syncingToZuper ? "Syncing..." : "Confirm Schedule"}
               </button>

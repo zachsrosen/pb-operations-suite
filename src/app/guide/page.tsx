@@ -153,6 +153,16 @@ export default function GuidePage() {
                   <td className="py-3">Schedule surveys with Zuper sync</td>
                 </tr>
                 <tr className="border-b border-zinc-800">
+                  <td className="py-3 font-medium">Construction Scheduler</td>
+                  <td className="py-3">Install Team</td>
+                  <td className="py-3">Schedule installs with Zuper sync</td>
+                </tr>
+                <tr className="border-b border-zinc-800">
+                  <td className="py-3 font-medium">Inspection Scheduler</td>
+                  <td className="py-3">Inspection Team</td>
+                  <td className="py-3">Schedule inspections with Zuper sync</td>
+                </tr>
+                <tr className="border-b border-zinc-800">
                   <td className="py-3 font-medium">Design & Engineering</td>
                   <td className="py-3">Design Team</td>
                   <td className="py-3">Track design progress & approvals</td>
@@ -292,6 +302,62 @@ export default function GuidePage() {
             "Use multi-select to view surveys across multiple locations at once"
           ]}
           url="/dashboards/site-survey-scheduler"
+        />
+
+        <DashboardCard
+          title="Construction Scheduler"
+          tag="SCHEDULING"
+          tagColor="emerald"
+          purpose="Dedicated calendar for scheduling construction/installation jobs with Zuper FSM integration"
+          features={[
+            "Monthly calendar view optimized for construction scheduling",
+            "Multi-select location filters - view multiple locations at once",
+            "Availability overlay showing crew availability from Zuper",
+            "Drag-and-drop scheduling with automatic Zuper job creation",
+            "Project cards show install status, system size, and battery info",
+            "Reschedule existing jobs by dragging to new dates"
+          ]}
+          howToUse={[
+            "Use location filter buttons to select which locations to view",
+            "Toggle 'Show Availability' to see Zuper technician availability",
+            "Drag projects from the queue onto calendar dates to schedule",
+            "Drag existing calendar events to reschedule them",
+            "Confirm scheduling to automatically create/update Zuper jobs"
+          ]}
+          tips={[
+            "Construction jobs default to 2 days duration",
+            "Projects already in Zuper will have their job rescheduled when moved",
+            "The availability overlay shows real-time data from Zuper"
+          ]}
+          url="/dashboards/construction-scheduler"
+        />
+
+        <DashboardCard
+          title="Inspection Scheduler"
+          tag="SCHEDULING"
+          tagColor="purple"
+          purpose="Dedicated calendar for scheduling inspections with Zuper FSM integration"
+          features={[
+            "Monthly calendar view optimized for inspection scheduling",
+            "Multi-select location filters - view multiple locations at once",
+            "Availability overlay showing inspector availability from Zuper",
+            "Drag-and-drop scheduling with automatic Zuper job creation",
+            "Project cards show inspection status and system size",
+            "Reschedule existing inspections by dragging to new dates"
+          ]}
+          howToUse={[
+            "Use location filter buttons to select which locations to view",
+            "Toggle 'Show Availability' to see Zuper technician availability",
+            "Drag projects from the queue onto calendar dates to schedule",
+            "Drag existing calendar events to reschedule them",
+            "Confirm scheduling to automatically create/update Zuper jobs"
+          ]}
+          tips={[
+            "Inspections default to ~2 hours duration",
+            "Failed inspections can be easily rescheduled by dragging",
+            "Track inspection status (Ready, Scheduled, Passed, Failed)"
+          ]}
+          url="/dashboards/inspection-scheduler"
         />
 
         <DashboardCard
