@@ -1,4 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createHash } from "crypto";
+
+const AUTH_SALT = process.env.AUTH_SALT || "pb-ops-default-salt";
+
+/** Generate a SHA-256 token from the password + salt */
+function hashToken(password: string): string {
+  return createHash("sha256")
+    .update(password + AUTH_SALT)
+    .digest("hex");
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,8 +23,9 @@ export async function POST(request: NextRequest) {
     if (password === sitePassword) {
       const response = NextResponse.json({ success: true });
 
-      // Set auth cookie
-      response.cookies.set("pb-auth", sitePassword, {
+      // Set auth cookie with hashed token (not raw password)
+      const token = hashToken(sitePassword);
+      response.cookies.set("pb-auth", token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "lax",

@@ -7,9 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "remotion:studio": "remotion studio remotion/index.ts",
-    "remotion:render": "remotion render remotion/index.ts",
-    "remotion:render-all": "remotion render remotion/index.ts MasterSchedulerDemo out/master-scheduler.mp4 && remotion render remotion/index.ts CommandCenterDemo out/command-center.mp4 && remotion render remotion/index.ts PEDashboardDemo out/pe-dashboard.mp4 && remotion render remotion/index.ts PipelineDashboardsDemo out/pipeline-dashboards.mp4 && remotion render remotion/index.ts FullSuiteDemo out/full-suite.mp4"
+    "test": "jest",
+    "test:watch": "jest --watch"
   },
   "dependencies": {
     "@hubspot/api-client": "^13.4.0",
@@ -19,17 +18,24 @@
     "next": "16.1.4",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "remotion": "^4.0.409",
-    "resend": "^4.8.0"
+    "resend": "^6.9.1"
   },
   "devDependencies": {
+    "@jest/types": "^30.2.0",
     "@tailwindcss/postcss": "^4",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/jest": "^30.0.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.1.4",
+    "jest": "^30.2.0",
+    "jest-environment-jsdom": "^30.2.0",
     "tailwindcss": "^4",
+    "ts-jest": "^29.4.6",
     "typescript": "^5",
     "vercel": "^50.4.9"
   }

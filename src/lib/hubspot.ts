@@ -5,6 +5,36 @@ const hubspotClient = new Client({
   accessToken: process.env.HUBSPOT_ACCESS_TOKEN,
 });
 
+// Rate limiting helpers
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function searchWithRetry(
+  searchRequest: Parameters<typeof hubspotClient.crm.deals.searchApi.doSearch>[0],
+  maxRetries = 3
+) {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await hubspotClient.crm.deals.searchApi.doSearch(searchRequest);
+    } catch (error: unknown) {
+      const isRateLimit =
+        error instanceof Error &&
+        (error.message.includes("429") || error.message.includes("rate") || error.message.includes("secondly"));
+      const statusCode = (error as { code?: number })?.code;
+
+      if ((isRateLimit || statusCode === 429) && attempt < maxRetries - 1) {
+        const delay = Math.pow(2, attempt + 1) * 500; // 1s, 2s, 4s
+        console.log(`[hubspot] Rate limited on attempt ${attempt + 1}, retrying in ${delay}ms...`);
+        await sleep(delay);
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new Error("Max retries exceeded");
+}
+
 // Project Pipeline ID
 const PROJECT_PIPELINE_ID = "6900017";
 
@@ -567,9 +597,9 @@ export async function fetchAllProjects(options?: {
   const allDeals: Record<string, unknown>[] = [];
   let after: string | undefined;
 
-  // Use search API to filter by pipeline
+  // Use search API to filter by pipeline (with retry for rate limits)
   do {
-    const response = await hubspotClient.crm.deals.searchApi.doSearch({
+    const response = await searchWithRetry({
       filterGroups: [
         {
           filters: [
@@ -588,6 +618,9 @@ export async function fetchAllProjects(options?: {
 
     allDeals.push(...response.results.map((deal) => deal.properties));
     after = response.paging?.next?.after;
+
+    // Small delay between pagination requests to avoid rate limits
+    if (after) await sleep(100);
   } while (after);
 
   // Transform deals to projects
@@ -680,7 +713,7 @@ export function calculateStats(projects: Project[]) {
   const ptoBacklog = activeProjects.filter((p) => p.stage === "Permission To Operate");
   const constructionProjects = activeProjects.filter((p) => p.stage === "Construction");
 
-  // Location breakdown (count and value)
+  // Location breakdown (counts and values)
   const locationCounts = activeProjects.reduce((acc, p) => {
     acc[p.pbLocation] = (acc[p.pbLocation] || 0) + 1;
     return acc;
@@ -691,7 +724,7 @@ export function calculateStats(projects: Project[]) {
     return acc;
   }, {} as Record<string, number>);
 
-  // Stage breakdown (count and value)
+  // Stage breakdown (counts and values)
   const stageCounts = activeProjects.reduce((acc, p) => {
     acc[p.stage] = (acc[p.stage] || 0) + 1;
     return acc;

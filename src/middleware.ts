@@ -1,5 +1,57 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { createHash } from "crypto";
+
+const AUTH_SALT = process.env.AUTH_SALT || "pb-ops-default-salt";
+
+/** Generate a SHA-256 token from the password + salt */
+function hashToken(password: string): string {
+  return createHash("sha256")
+    .update(password + AUTH_SALT)
+    .digest("hex");
+}
+
+interface SessionData {
+  token: string;
+  email: string;
+  createdAt: number;
+}
+
+function isValidSession(cookieValue: string): boolean {
+  try {
+    const session: SessionData = JSON.parse(cookieValue);
+
+    // Check if session has required fields
+    if (!session.token || !session.email || !session.createdAt) {
+      return false;
+    }
+
+    // Check if session is not expired (7 days)
+    const maxAge = 7 * 24 * 60 * 60 * 1000; // 7 days in ms
+    if (Date.now() - session.createdAt > maxAge) {
+      return false;
+    }
+
+    // Validate email domain
+    const allowedDomain = process.env.ALLOWED_EMAIL_DOMAIN || "photonbrothers.com";
+    const domains = allowedDomain.split(",").map((d) => d.trim().toLowerCase());
+    const emailValid = domains.some((domain) =>
+      session.email.toLowerCase().endsWith(`@${domain}`)
+    );
+
+    return emailValid;
+  } catch {
+    // If parsing fails, check for legacy password-based auth
+    const sitePassword = process.env.SITE_PASSWORD;
+    if (sitePassword) {
+      const expectedToken = hashToken(sitePassword);
+      if (cookieValue === expectedToken) {
+        return true;
+      }
+    }
+    return false;
+  }
+}
 
 interface SessionData {
   token: string;

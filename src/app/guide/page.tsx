@@ -101,7 +101,7 @@ export default function GuidePage() {
             "Search for specific projects by name or AHJ",
             "Click 'Scheduler' to jump to the Master Scheduler"
           ]}
-          url="/dashboards/pb-unified-command-center.html"
+          url="/dashboards/command-center"
         />
 
         <DashboardCard
@@ -126,12 +126,12 @@ export default function GuidePage() {
           ]}
           keyboardShortcuts={[
             { keys: "1, 2, 3", action: "Switch views (Month, Week, Gantt)" },
-            { keys: "Alt + ← / →", action: "Navigate previous/next" },
+            { keys: "Alt + \u2190 / \u2192", action: "Navigate previous/next" },
             { keys: "Ctrl + O", action: "Auto-optimize schedule" },
             { keys: "Ctrl + E", action: "Export to CSV" },
             { keys: "Esc", action: "Close modals / Deselect" }
           ]}
-          url="/dashboards/pb-master-scheduler-v3.html"
+          url="/dashboards/scheduler"
         />
 
         <DashboardCard
@@ -151,12 +151,12 @@ export default function GuidePage() {
             "Click 'Generate Optimized Schedule' to auto-schedule",
             "Export the optimized schedule as CSV"
           ]}
-          url="/dashboards/pb-optimization-dashboard.html"
+          url="/dashboards/optimizer"
         />
 
         {/* How Auto-Optimize Works */}
         <section className="bg-gradient-to-br from-blue-500/10 to-blue-500/5 border border-blue-500/30 rounded-xl p-6 mb-8">
-          <h3 className="text-xl font-semibold text-blue-400 mb-4">How "Optimize Schedule" Works</h3>
+          <h3 className="text-xl font-semibold text-blue-400 mb-4">How &quot;Optimize Schedule&quot; Works</h3>
           <p className="text-zinc-300 mb-4">
             The Auto-Optimize feature in the Master Scheduler automatically schedules RTB (Ready To Build) projects
             AND their inspections, prioritizing easier projects first to maximize throughput.
@@ -165,11 +165,18 @@ export default function GuidePage() {
           <h4 className="font-semibold text-white mb-2">The Algorithm:</h4>
           <ol className="list-decimal list-inside space-y-2 text-zinc-300 mb-4">
             <li><strong>Finds unscheduled RTB projects</strong> - Projects that are Ready To Build but don&apos;t have a scheduled date</li>
+<<<<<<< nextjs-migration
+            <li><strong>Sorts by revenue</strong> - Highest-value projects get priority</li>
+            <li><strong>Checks crew availability</strong> - Looks at each crew&apos;s existing schedule to find their next open date</li>
+            <li><strong>Assigns dates</strong> - Schedules each project on the crew&apos;s next available workday</li>
+            <li><strong>Avoids conflicts</strong> - Updates crew availability after each assignment to prevent double-booking</li>
+=======
             <li><strong>Sorts by difficulty, then revenue</strong> - Easiest projects first (difficulty 1-5), then by highest revenue within same difficulty</li>
             <li><strong>Checks crew availability</strong> - Looks at each crew&apos;s existing schedule to find their next open date</li>
             <li><strong>Schedules construction</strong> - Assigns each project to the crew&apos;s next available workday</li>
             <li><strong>Auto-schedules inspections</strong> - Automatically schedules inspection 2 business days after construction ends</li>
             <li><strong>Schedules pending inspections</strong> - Also schedules any projects already in the Inspection stage</li>
+>>>>>>> main
           </ol>
 
           <h4 className="font-semibold text-white mb-2">Key Features:</h4>
@@ -204,7 +211,7 @@ export default function GuidePage() {
             "Click project names to open in HubSpot",
             "Monitor the status breakdown for bottlenecks"
           ]}
-          url="/dashboards/design-engineering-dashboard.html"
+          url="/dashboards/design"
         />
 
         <DashboardCard
@@ -225,7 +232,7 @@ export default function GuidePage() {
             "Use date columns to track timeline and identify delays",
             "Click project names to update records in HubSpot"
           ]}
-          url="/dashboards/permitting-dashboard.html"
+          url="/dashboards/permitting"
         />
 
         <DashboardCard
@@ -246,7 +253,7 @@ export default function GuidePage() {
             "Use date columns to monitor IC timeline",
             "Identify projects waiting on utility approval"
           ]}
-          url="/dashboards/interconnection-dashboard.html"
+          url="/dashboards/interconnection"
         />
 
         <DashboardCard
@@ -267,7 +274,7 @@ export default function GuidePage() {
             "Track which projects are eligible for which incentives",
             "Monitor application progress for revenue forecasting"
           ]}
-          url="/dashboards/incentives-dashboard.html"
+          url="/dashboards/incentives"
         />
 
         {/* Alerts & Analytics */}
@@ -291,7 +298,7 @@ export default function GuidePage() {
             { type: "Stalled", desc: "No stage movement in 30+ days" },
             { type: "Blocked", desc: "RTB-Blocked or On-Hold status" }
           ]}
-          url="/dashboards/pipeline-at-risk.html"
+          url="/dashboards/at-risk"
         />
 
         <DashboardCard
@@ -311,7 +318,7 @@ export default function GuidePage() {
             "Click on a location to see detailed breakdown",
             "Identify high-performing and struggling locations"
           ]}
-          url="/dashboards/pipeline-locations.html"
+          url="/dashboards/locations"
         />
 
         {/* PE & Leadership */}
@@ -334,7 +341,7 @@ export default function GuidePage() {
             "Milestones tab: Projects grouped by milestone type",
             "Sort by PTO/Inspection/Install/Value to prioritize work"
           ]}
-          url="/dashboards/participate-energy-dashboard.html"
+          url="/dashboards/pe"
         />
 
         <DashboardCard
@@ -354,7 +361,7 @@ export default function GuidePage() {
             { color: "bg-yellow-500", label: "60-80% on track" },
             { color: "bg-red-500", label: "<60% on track" }
           ]}
-          url="/dashboards/pipeline-executive-summary.html"
+          url="/dashboards/executive"
         />
 
         {/* Common Features */}
@@ -362,23 +369,23 @@ export default function GuidePage() {
           <h2 className="text-xl font-semibold text-orange-400 mb-4">Common Features Across All Dashboards</h2>
           <ul className="space-y-3 text-zinc-300">
             <li className="flex items-start gap-3">
-              <span className="text-green-400 mt-1">●</span>
+              <span className="text-green-400 mt-1">&#9679;</span>
               <span><strong>Live Data:</strong> All dashboards connect to HubSpot with 5-minute auto-refresh</span>
             </li>
             <li className="flex items-start gap-3">
-              <span className="text-blue-400 mt-1">●</span>
+              <span className="text-blue-400 mt-1">&#9679;</span>
               <span><strong>Direct Links:</strong> Click any project to open it directly in HubSpot</span>
             </li>
             <li className="flex items-start gap-3">
-              <span className="text-purple-400 mt-1">●</span>
+              <span className="text-purple-400 mt-1">&#9679;</span>
               <span><strong>Multi-Location:</strong> Filter and compare across all 5 locations</span>
             </li>
             <li className="flex items-start gap-3">
-              <span className="text-orange-400 mt-1">●</span>
+              <span className="text-orange-400 mt-1">&#9679;</span>
               <span><strong>Export Options:</strong> CSV, Excel, and clipboard exports available</span>
             </li>
             <li className="flex items-start gap-3">
-              <span className="text-zinc-400 mt-1">●</span>
+              <span className="text-zinc-400 mt-1">&#9679;</span>
               <span><strong>Color Coding:</strong> Red = Overdue/Critical, Yellow = Warning/Due Soon, Green = On Track</span>
             </li>
           </ul>

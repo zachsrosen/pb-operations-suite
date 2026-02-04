@@ -1,7 +1,25 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useMemo, memo } from "react";
+import { useSSE } from "@/hooks/useSSE";
+import { useFavorites } from "@/hooks/useFavorites";
+import { formatMoney } from "@/lib/format";
+import { STAGE_COLORS } from "@/lib/constants";
+import { StatCard, MiniStat } from "@/components/ui/MetricCard";
+import { SkeletonSection } from "@/components/ui/Skeleton";
+import { LiveIndicator } from "@/components/ui/LiveIndicator";
+
+function useIsMac() {
+  const [isMac, setIsMac] = useState(true);
+  useEffect(() => {
+    setIsMac(
+      typeof navigator !== "undefined" &&
+        /(Mac|iPhone|iPod|iPad)/i.test(navigator.userAgent)
+    );
+  }, []);
+  return isMac;
+}
 
 interface Stats {
   totalProjects: number;
@@ -27,32 +45,75 @@ interface Stats {
   lastUpdated: string;
 }
 
+// ---- Dashboard link data ----
+
+interface DashboardLinkData {
+  href: string;
+  title: string;
+  description: string;
+  tag: string;
+  tagColor: string;
+  section: string;
+}
+
+const ALL_DASHBOARDS: DashboardLinkData[] = [
+  { href: "/dashboards/command-center", title: "Command Center", description: "Pipeline overview, scheduling, PE tracking, revenue, and alerts in one view", tag: "PRIMARY", tagColor: "orange", section: "Operations Dashboards" },
+  { href: "/dashboards/optimizer", title: "Pipeline Optimizer", description: "AI-powered scheduling optimization and bottleneck detection", tag: "ANALYTICS", tagColor: "purple", section: "Operations Dashboards" },
+  { href: "/dashboards/scheduler", title: "Master Scheduler", description: "Drag-and-drop scheduling calendar with crew management", tag: "SCHEDULING", tagColor: "blue", section: "Operations Dashboards" },
+  { href: "/dashboards/at-risk", title: "At-Risk Projects", description: "Critical alerts for overdue projects by severity and revenue impact", tag: "ALERTS", tagColor: "red", section: "Operations Dashboards" },
+  { href: "/dashboards/locations", title: "Location Comparison", description: "Performance metrics and project distribution across all locations", tag: "ANALYTICS", tagColor: "purple", section: "Operations Dashboards" },
+  { href: "/dashboards/timeline", title: "Timeline View", description: "Gantt-style timeline showing project progression and milestones", tag: "PLANNING", tagColor: "blue", section: "Operations Dashboards" },
+  { href: "/dashboards/sales", title: "Sales Pipeline", description: "Active deals, funnel visualization, and proposal tracking", tag: "SALES", tagColor: "green", section: "Other Pipelines" },
+  { href: "/dashboards/service", title: "Service Pipeline", description: "Service jobs, scheduling, and work in progress tracking", tag: "SERVICE", tagColor: "cyan", section: "Other Pipelines" },
+  { href: "/dashboards/dnr", title: "D&R Pipeline", description: "Detach & Reset projects with phase tracking", tag: "D&R", tagColor: "purple", section: "Other Pipelines" },
+  { href: "/dashboards/pe", title: "PE Dashboard", description: "Dedicated PE tracking with milestone status and compliance monitoring", tag: "PE", tagColor: "emerald", section: "Participate Energy & Leadership" },
+  { href: "/dashboards/executive", title: "Executive Summary", description: "High-level KPIs, charts, and trends for leadership review", tag: "LEADERSHIP", tagColor: "purple", section: "Participate Energy & Leadership" },
+  { href: "/dashboards/mobile", title: "Mobile Dashboard", description: "Touch-optimized view for field teams with quick project lookup", tag: "MOBILE", tagColor: "blue", section: "Participate Energy & Leadership" },
+];
+
+// ---- Main page ----
+
 export default function Home() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isStale, setIsStale] = useState(false);
+  const { favorites, toggleFavorite, isFavorite } = useFavorites();
+  const isMac = useIsMac();
+  const modKey = isMac ? "\u2318" : "Ctrl";
+
+  const loadStats = useCallback(async () => {
+    try {
+      const res = await fetch("/api/projects?stats=true&context=executive");
+      if (!res.ok) throw new Error("Failed to fetch");
+      const data = await res.json();
+      setStats(data.stats);
+      setIsStale(data.stale || false);
+      setError(null);
+    } catch (err) {
+      setError("Failed to load data");
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    async function loadStats() {
-      try {
-        const res = await fetch('/api/projects?stats=true&context=executive');
-        if (!res.ok) throw new Error('Failed to fetch');
-        const data = await res.json();
-        setStats(data.stats);
-        setError(null);
-      } catch (err) {
-        setError('Failed to load data');
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    }
-
     loadStats();
-    // Refresh every 5 minutes
     const interval = setInterval(loadStats, 5 * 60 * 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [loadStats]);
+
+  const { connected, reconnecting } = useSSE(loadStats);
+
+  const favoriteDashboards = ALL_DASHBOARDS.filter((d) =>
+    favorites.includes(d.href)
+  );
+  const sections = [
+    "Operations Dashboards",
+    "Other Pipelines",
+    "Participate Energy & Leadership",
+  ];
 
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-white">
@@ -62,15 +123,56 @@ export default function Home() {
           <h1 className="text-xl font-bold bg-gradient-to-r from-orange-500 to-orange-400 bg-clip-text text-transparent">
             PB Operations Suite
           </h1>
-          <div className="flex items-center gap-4">
-            <Link href="/guide" className="text-sm text-zinc-400 hover:text-orange-400 transition-colors">
-              Dashboard Guide
-            </Link>
-            <div className="text-sm text-zinc-500">
-              {loading ? 'Loading...' : error ? error : stats?.lastUpdated ? (
-                <>Last updated: {new Date(stats.lastUpdated).toLocaleString()}</>
-              ) : ''}
-            </div>
+          <div className="flex items-center gap-3">
+            {/* Search hint */}
+            <button
+              onClick={() => {
+                window.dispatchEvent(
+                  new KeyboardEvent("keydown", {
+                    key: "k",
+                    metaKey: isMac,
+                    ctrlKey: !isMac,
+                    bubbles: true,
+                  })
+                );
+              }}
+              className="hidden sm:flex items-center gap-2 text-xs text-zinc-500 border border-zinc-800 rounded-lg px-3 py-1.5 hover:border-zinc-600 hover:text-zinc-400 transition-colors"
+            >
+              <svg
+                className="w-3.5 h-3.5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                />
+              </svg>
+              Search
+              <kbd className="text-[10px] border border-zinc-700 rounded px-1 py-0.5 font-mono">
+                {modKey}+K
+              </kbd>
+            </button>
+
+            <LiveIndicator connected={connected} reconnecting={reconnecting} />
+
+            {isStale && (
+              <span className="text-xs px-2 py-0.5 rounded bg-yellow-500/20 text-yellow-400 border border-yellow-500/30">
+                Refreshing...
+              </span>
+            )}
+            <span className="text-sm text-zinc-500 hidden md:inline">
+              {loading
+                ? "Loading..."
+                : error
+                  ? error
+                  : stats?.lastUpdated
+                    ? `Last updated: ${new Date(stats.lastUpdated).toLocaleString()}`
+                    : ""}
+            </span>
           </div>
         </div>
       </header>
@@ -80,245 +182,259 @@ export default function Home() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           <StatCard
             label="Active Projects"
-            value={loading ? '...' : stats?.totalProjects ?? '—'}
-            subValue={loading ? '' : stats?.totalValue ? `$${(stats.totalValue / 1000000).toFixed(1)}M pipeline` : ''}
+            value={loading ? null : stats?.totalProjects ?? null}
+            subtitle={
+              !loading && stats?.totalValue
+                ? `${formatMoney(stats.totalValue)} pipeline`
+                : null
+            }
             color="orange"
           />
           <StatCard
             label="Pipeline Value"
-            value={loading ? '...' : stats?.totalValue ? `$${(stats.totalValue / 1000000).toFixed(1)}M` : '—'}
+            value={
+              loading
+                ? null
+                : stats?.totalValue
+                  ? `$${(stats.totalValue / 1000000).toFixed(1)}M`
+                  : null
+            }
             color="green"
           />
           <StatCard
             label="PE Projects"
-            value={loading ? '...' : stats?.peCount ?? '—'}
-            subValue={loading ? '' : stats?.peValue ? `$${(stats.peValue / 1000000).toFixed(1)}M` : ''}
+            value={loading ? null : stats?.peCount ?? null}
+            subtitle={
+              !loading && stats?.peValue ? formatMoney(stats.peValue) : null
+            }
             color="emerald"
           />
           <StatCard
             label="Ready To Build"
-            value={loading ? '...' : stats?.rtbCount ?? '—'}
-            subValue={loading ? '' : stats?.rtbValue ? `$${(stats.rtbValue / 1000000).toFixed(1)}M` : ''}
+            value={loading ? null : stats?.rtbCount ?? null}
+            subtitle={
+              !loading && stats?.rtbValue ? formatMoney(stats.rtbValue) : null
+            }
             color="blue"
           />
         </div>
 
         {/* Secondary Stats */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
-          <MiniStat label="Construction" value={loading ? '...' : stats?.constructionCount ?? '—'} subValue={loading ? '' : stats?.constructionValue ? `$${(stats.constructionValue / 1000000).toFixed(1)}M` : ''} />
-          <MiniStat label="Inspection Backlog" value={loading ? '...' : stats?.inspectionBacklog ?? '—'} subValue={loading ? '' : stats?.inspectionValue ? `$${(stats.inspectionValue / 1000000).toFixed(1)}M` : ''} alert={!loading && (stats?.inspectionBacklog ?? 0) > 50} />
-          <MiniStat label="PTO Backlog" value={loading ? '...' : stats?.ptoBacklog ?? '—'} subValue={loading ? '' : stats?.ptoValue ? `$${(stats.ptoValue / 1000000).toFixed(1)}M` : ''} alert={!loading && (stats?.ptoBacklog ?? 0) > 50} />
-          <MiniStat label="Blocked" value={loading ? '...' : stats?.blockedCount ?? '—'} subValue={loading ? '' : stats?.blockedValue ? `$${(stats.blockedValue / 1000000).toFixed(1)}M` : ''} alert={!loading && (stats?.blockedCount ?? 0) > 20} />
-          <MiniStat label="Total kW" value={loading ? '...' : stats?.totalSystemSizeKw ? `${Math.round(stats.totalSystemSizeKw).toLocaleString()}` : '—'} />
+          <MiniStat
+            label="Construction"
+            value={loading ? null : stats?.constructionCount ?? null}
+            subtitle={
+              !loading && stats?.constructionValue
+                ? formatMoney(stats.constructionValue)
+                : null
+            }
+          />
+          <MiniStat
+            label="Inspection Backlog"
+            value={loading ? null : stats?.inspectionBacklog ?? null}
+            subtitle={
+              !loading && stats?.inspectionValue
+                ? formatMoney(stats.inspectionValue)
+                : null
+            }
+            alert={!loading && (stats?.inspectionBacklog ?? 0) > 50}
+          />
+          <MiniStat
+            label="PTO Backlog"
+            value={loading ? null : stats?.ptoBacklog ?? null}
+            subtitle={
+              !loading && stats?.ptoValue ? formatMoney(stats.ptoValue) : null
+            }
+            alert={!loading && (stats?.ptoBacklog ?? 0) > 50}
+          />
+          <MiniStat
+            label="Blocked"
+            value={loading ? null : stats?.blockedCount ?? null}
+            subtitle={
+              !loading && stats?.blockedValue
+                ? formatMoney(stats.blockedValue)
+                : null
+            }
+            alert={!loading && (stats?.blockedCount ?? 0) > 20}
+          />
+          <MiniStat
+            label="Total kW"
+            value={
+              loading
+                ? null
+                : stats?.totalSystemSizeKw
+                  ? `${Math.round(stats.totalSystemSizeKw).toLocaleString()}`
+                  : null
+            }
+          />
         </div>
 
         {/* Stage Breakdown */}
-        {stats?.stageCounts && (
-          <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6 mb-8">
-            <h2 className="text-lg font-semibold mb-4">Pipeline by Stage</h2>
-            <div className="space-y-3">
-              {(() => {
-                const stageOrder = [
-                  'Close Out', 'Permission To Operate', 'Inspection', 'Construction',
-                  'Ready To Build', 'RTB - Blocked', 'Permitting & Interconnection',
-                  'Design & Engineering', 'Site Survey', 'Project Rejected'
-                ];
-                return Object.entries(stats.stageCounts)
-                  .sort((a, b) => {
-                    const aIdx = stageOrder.indexOf(a[0]);
-                    const bIdx = stageOrder.indexOf(b[0]);
-                    if (aIdx === -1 && bIdx === -1) return a[0].localeCompare(b[0]);
-                    if (aIdx === -1) return 1;
-                    if (bIdx === -1) return -1;
-                    return aIdx - bIdx;
-                  })
-                  .map(([stage, count]) => (
-                    <StageBar key={stage} stage={stage} count={count as number} total={stats.totalProjects} value={stats.stageValues?.[stage]} />
-                  ));
-              })()}
+        {loading ? (
+          <SkeletonSection />
+        ) : (
+          stats?.stageCounts && (
+            <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6 mb-8 animate-fadeIn">
+              <h2 className="text-lg font-semibold mb-4">Pipeline by Stage</h2>
+              <div className="space-y-3">
+                {(() => {
+                  const stageOrder = [
+                    "Close Out",
+                    "Permission To Operate",
+                    "Inspection",
+                    "Construction",
+                    "Ready To Build",
+                    "RTB - Blocked",
+                    "Permitting & Interconnection",
+                    "Design & Engineering",
+                    "Site Survey",
+                    "Project Rejected",
+                  ];
+                  return Object.entries(stats.stageCounts)
+                    .sort((a, b) => {
+                      const aIdx = stageOrder.indexOf(a[0]);
+                      const bIdx = stageOrder.indexOf(b[0]);
+                      if (aIdx === -1 && bIdx === -1)
+                        return a[0].localeCompare(b[0]);
+                      if (aIdx === -1) return 1;
+                      if (bIdx === -1) return -1;
+                      return aIdx - bIdx;
+                    })
+                    .map(([stage, count]) => (
+                      <StageBar
+                        key={stage}
+                        stage={stage}
+                        count={count as number}
+                        total={stats.totalProjects}
+                        value={stats.stageValues?.[stage]}
+                      />
+                    ));
+                })()}
+              </div>
             </div>
-          </div>
+          )
         )}
 
         {/* Location Breakdown */}
-        {stats?.locationCounts && (
-          <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6 mb-8">
-            <h2 className="text-lg font-semibold mb-4">Projects by Location</h2>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-              {Object.entries(stats.locationCounts)
-                .filter(([location]) => location && location !== 'Unknown')
-                .sort((a, b) => (b[1] as number) - (a[1] as number))
-                .map(([location, count]) => {
-                  const value = stats.locationValues?.[location] || 0;
-                  return (
-                    <div key={location} className="bg-zinc-800/50 rounded-lg p-4 text-center">
-                      <div className="text-2xl font-bold text-white">{count as number}</div>
-                      <div className="text-sm text-zinc-400">{location}</div>
-                      <div className="text-xs text-green-500 font-mono mt-1">
-                        {value >= 1000000 ? `$${(value / 1000000).toFixed(1)}M` : `$${(value / 1000).toFixed(0)}k`}
+        {loading ? (
+          <SkeletonSection rows={2} />
+        ) : (
+          stats?.locationCounts && (
+            <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6 mb-8 animate-fadeIn">
+              <h2 className="text-lg font-semibold mb-4">
+                Projects by Location
+              </h2>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                {Object.entries(stats.locationCounts)
+                  .sort((a, b) => (b[1] as number) - (a[1] as number))
+                  .map(([location, count]) => (
+                    <div
+                      key={location}
+                      className="bg-zinc-800/50 rounded-lg p-4 text-center hover:bg-zinc-800/70 transition-colors"
+                    >
+                      <div className="text-2xl font-bold text-white">
+                        {count as number}
                       </div>
+                      <div className="text-sm text-zinc-400">{location}</div>
+                      {stats.locationValues?.[location] != null && (
+                        <div className="text-xs text-orange-400 mt-0.5">
+                          {formatMoney(stats.locationValues[location])}
+                        </div>
+                      )}
                     </div>
-                  );
-                })}
+                  ))}
+              </div>
             </div>
-          </div>
+          )
         )}
 
-        {/* Operations Dashboards */}
-        <h2 className="text-lg font-semibold text-zinc-300 mb-4 mt-8">Operations Dashboards</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-          <DashboardLink
-            href="/dashboards/pb-unified-command-center.html"
-            title="Command Center"
-            description="Pipeline overview, scheduling, PE tracking, revenue, and alerts in one view"
-            tag="PRIMARY"
-            tagColor="orange"
-          />
-          <DashboardLink
-            href="/dashboards/pb-optimization-dashboard.html"
-            title="Pipeline Optimizer"
-            description="AI-powered scheduling optimization and bottleneck detection"
-            tag="ANALYTICS"
-            tagColor="purple"
-          />
-          <DashboardLink
-            href="/dashboards/pb-master-scheduler-v3.html"
-            title="Master Scheduler"
-            description="Drag-and-drop scheduling calendar with crew management"
-            tag="SCHEDULING"
-            tagColor="blue"
-          />
-          <DashboardLink
-            href="/dashboards/pipeline-at-risk.html"
-            title="At-Risk Projects"
-            description="Critical alerts for overdue projects by severity and revenue impact"
-            tag="ALERTS"
-            tagColor="red"
-          />
-          <DashboardLink
-            href="/dashboards/pipeline-locations.html"
-            title="Location Comparison"
-            description="Performance metrics and project distribution across all locations"
-            tag="ANALYTICS"
-            tagColor="purple"
-          />
-          <DashboardLink
-            href="/dashboards/pipeline-timeline.html"
-            title="Timeline View"
-            description="Gantt-style timeline showing project progression and milestones"
-            tag="PLANNING"
-            tagColor="blue"
-          />
-        </div>
+        {/* Favorited Dashboards */}
+        {favoriteDashboards.length > 0 && (
+          <>
+            <h2 className="text-lg font-semibold text-zinc-300 mb-4 mt-8 flex items-center gap-2">
+              <span className="text-yellow-400">&#9733;</span> Favorites
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+              {favoriteDashboards.map((d) => (
+                <DashboardLink
+                  key={d.href}
+                  {...d}
+                  isFavorite={true}
+                  onToggleFavorite={() => toggleFavorite(d.href)}
+                />
+              ))}
+            </div>
+          </>
+        )}
 
-        {/* Design, Permitting, Interconnection & Incentives */}
-        <h2 className="text-lg font-semibold text-zinc-300 mb-4">Design, Permitting, Interconnection & Incentives</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          <DashboardLink
-            href="/dashboards/design-engineering-dashboard.html"
-            title="Design & Engineering"
-            description="Track design status and layout approvals"
-            tag="DESIGN"
-            tagColor="indigo"
-          />
-          <DashboardLink
-            href="/dashboards/permitting-dashboard.html"
-            title="Permitting & Inspections"
-            description="Track permits, AHJ turnaround times, and inspection status"
-            tag="PERMITS"
-            tagColor="purple"
-          />
-          <DashboardLink
-            href="/dashboards/interconnection-dashboard.html"
-            title="Interconnection & PTO"
-            description="Track IC submissions, approvals, and Permission to Operate"
-            tag="IC"
-            tagColor="orange"
-          />
-          <DashboardLink
-            href="/dashboards/incentives-dashboard.html"
-            title="Incentives"
-            description="Track 3CE, SGIP, PBSR, CPA, and other incentive programs"
-            tag="INCENTIVES"
-            tagColor="emerald"
-          />
-        </div>
-
-        {/* Other Pipelines */}
-        <h2 className="text-lg font-semibold text-zinc-300 mb-4">Other Pipelines</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-          <DashboardLink
-            href="/dashboards/sales-pipeline.html"
-            title="Sales Pipeline"
-            description="Active deals, funnel visualization, and proposal tracking"
-            tag="SALES"
-            tagColor="green"
-          />
-          <DashboardLink
-            href="/dashboards/service-pipeline.html"
-            title="Service Pipeline"
-            description="Service jobs, scheduling, and work in progress tracking"
-            tag="SERVICE"
-            tagColor="cyan"
-          />
-          <DashboardLink
-            href="/dashboards/dnr-pipeline.html"
-            title="D&R Pipeline"
-            description="Detach & Reset projects with phase tracking"
-            tag="D&R"
-            tagColor="purple"
-          />
-        </div>
-
-        {/* Participate Energy & Leadership */}
-        <h2 className="text-lg font-semibold text-zinc-300 mb-4">Participate Energy & Leadership</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-          <DashboardLink
-            href="/dashboards/participate-energy-dashboard.html"
-            title="PE Dashboard"
-            description="Dedicated PE tracking with milestone status and compliance monitoring"
-            tag="PE"
-            tagColor="emerald"
-          />
-          <DashboardLink
-            href="/dashboards/pipeline-executive-summary.html"
-            title="Executive Summary"
-            description="High-level KPIs, charts, and trends for leadership review"
-            tag="LEADERSHIP"
-            tagColor="purple"
-          />
-          <DashboardLink
-            href="/dashboards/pb-mobile-dashboard.html"
-            title="Mobile Dashboard"
-            description="Touch-optimized view for field teams with quick project lookup"
-            tag="MOBILE"
-            tagColor="blue"
-          />
-        </div>
+        {/* Dashboard sections */}
+        {sections.map((section) => {
+          const dashboards = ALL_DASHBOARDS.filter(
+            (d) => d.section === section
+          );
+          return (
+            <div key={section}>
+              <h2 className="text-lg font-semibold text-zinc-300 mb-4 mt-8">
+                {section}
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                {dashboards.map((d) => (
+                  <DashboardLink
+                    key={d.href}
+                    {...d}
+                    isFavorite={isFavorite(d.href)}
+                    onToggleFavorite={() => toggleFavorite(d.href)}
+                  />
+                ))}
+              </div>
+            </div>
+          );
+        })}
 
         {/* API Endpoints */}
-        <h2 className="text-lg font-semibold text-zinc-300 mb-4">API Endpoints</h2>
+        <h2 className="text-lg font-semibold text-zinc-300 mb-4">
+          API Endpoints
+        </h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <a href="/api/projects?stats=true" target="_blank" className="block bg-zinc-900/50 border border-zinc-800 rounded-xl p-5 hover:border-green-500/50 transition-all">
+          <a
+            href="/api/projects?stats=true"
+            target="_blank"
+            className="block bg-zinc-900/50 border border-zinc-800 rounded-xl p-5 hover:border-green-500/50 transition-all"
+          >
             <div className="flex items-center gap-2 mb-1">
               <span className="text-green-500 font-mono text-sm">GET</span>
               <span className="font-semibold text-white">Projects + Stats</span>
             </div>
-            <p className="text-sm text-zinc-500">Full project data with statistics</p>
+            <p className="text-sm text-zinc-500">
+              Full project data with statistics
+            </p>
           </a>
-          <a href="/api/projects?context=pe" target="_blank" className="block bg-zinc-900/50 border border-zinc-800 rounded-xl p-5 hover:border-green-500/50 transition-all">
+          <a
+            href="/api/projects?context=pe"
+            target="_blank"
+            className="block bg-zinc-900/50 border border-zinc-800 rounded-xl p-5 hover:border-green-500/50 transition-all"
+          >
             <div className="flex items-center gap-2 mb-1">
               <span className="text-green-500 font-mono text-sm">GET</span>
               <span className="font-semibold text-white">PE Projects</span>
             </div>
-            <p className="text-sm text-zinc-500">Participate Energy project data</p>
+            <p className="text-sm text-zinc-500">
+              Participate Energy project data
+            </p>
           </a>
-          <a href="/api/projects?context=scheduling" target="_blank" className="block bg-zinc-900/50 border border-zinc-800 rounded-xl p-5 hover:border-green-500/50 transition-all">
+          <a
+            href="/api/projects?context=scheduling"
+            target="_blank"
+            className="block bg-zinc-900/50 border border-zinc-800 rounded-xl p-5 hover:border-green-500/50 transition-all"
+          >
             <div className="flex items-center gap-2 mb-1">
               <span className="text-green-500 font-mono text-sm">GET</span>
               <span className="font-semibold text-white">Scheduling</span>
             </div>
-            <p className="text-sm text-zinc-500">RTB and schedulable projects</p>
+            <p className="text-sm text-zinc-500">
+              RTB and schedulable projects
+            </p>
           </a>
         </div>
       </main>
@@ -326,48 +442,21 @@ export default function Home() {
   );
 }
 
-function StatCard({ label, value, subValue, color }: { label: string; value: string | number; subValue?: string; color: string }) {
-  const colorClasses: Record<string, string> = {
-    orange: 'from-orange-500/20 to-orange-500/5 border-orange-500/30',
-    green: 'from-green-500/20 to-green-500/5 border-green-500/30',
-    emerald: 'from-emerald-500/20 to-emerald-500/5 border-emerald-500/30',
-    blue: 'from-blue-500/20 to-blue-500/5 border-blue-500/30',
-  };
+// ---- Sub-components ----
 
-  return (
-    <div className={`bg-gradient-to-br ${colorClasses[color]} border rounded-xl p-6`}>
-      <div className="text-3xl font-bold text-white mb-1">{value}</div>
-      <div className="text-sm text-zinc-400">{label}</div>
-      {subValue && <div className="text-xs text-zinc-500 mt-1">{subValue}</div>}
-    </div>
-  );
-}
-
-function MiniStat({ label, value, subValue, alert }: { label: string; value: string | number; subValue?: string; alert?: boolean }) {
-  return (
-    <div className={`bg-zinc-900/50 border rounded-lg p-4 text-center ${alert ? 'border-red-500/50' : 'border-zinc-800'}`}>
-      <div className={`text-xl font-bold ${alert ? 'text-red-400' : 'text-white'}`}>{value}</div>
-      <div className="text-xs text-zinc-500">{label}</div>
-      {subValue && <div className="text-xs text-zinc-600 mt-0.5">{subValue}</div>}
-    </div>
-  );
-}
-
-function StageBar({ stage, count, total, value }: { stage: string; count: number; total: number; value?: number }) {
+const StageBar = memo(function StageBar({
+  stage,
+  count,
+  total,
+  value,
+}: {
+  stage: string;
+  count: number;
+  total: number;
+  value?: number;
+}) {
   const percentage = (count / total) * 100;
-
-  const stageColors: Record<string, string> = {
-    'Site Survey': 'bg-blue-500',
-    'Design & Engineering': 'bg-indigo-500',
-    'Permitting & Interconnection': 'bg-purple-500',
-    'RTB - Blocked': 'bg-red-500',
-    'Ready To Build': 'bg-yellow-500',
-    'Construction': 'bg-orange-500',
-    'Inspection': 'bg-amber-500',
-    'Permission To Operate': 'bg-lime-500',
-    'Close Out': 'bg-green-500',
-    'Project Complete': 'bg-emerald-500',
-  };
+  const colorClass = STAGE_COLORS[stage]?.tw || "bg-zinc-600";
 
   const formatValue = (v: number) => {
     if (v >= 1000000) return `$${(v / 1000000).toFixed(1)}M`;
@@ -377,47 +466,86 @@ function StageBar({ stage, count, total, value }: { stage: string; count: number
 
   return (
     <div className="flex items-center gap-4">
-      <div className="w-40 text-sm text-zinc-400 truncate">{stage}</div>
+      <div className="w-40 text-sm text-zinc-400 truncate" title={stage}>
+        {stage}
+      </div>
       <div className="flex-1 bg-zinc-800 rounded-full h-6 overflow-hidden">
         <div
-          className={`h-full ${stageColors[stage] || 'bg-zinc-600'} flex items-center justify-end pr-2`}
+          className={`h-full ${colorClass} flex items-center justify-end pr-2 transition-all duration-500`}
           style={{ width: `${Math.max(percentage, 5)}%` }}
         >
           <span className="text-xs font-medium text-white">{count}</span>
         </div>
       </div>
-      <div className="w-20 text-right text-sm text-green-500 font-mono">{value ? formatValue(value) : '—'}</div>
-      <div className="w-12 text-right text-sm text-zinc-500">{percentage.toFixed(0)}%</div>
+      {value !== undefined && (
+        <div className="w-16 text-right text-sm text-zinc-400 font-medium">
+          {formatMoney(value)}
+        </div>
+      )}
+      <div className="w-12 text-right text-sm text-zinc-500">
+        {percentage.toFixed(0)}%
+      </div>
     </div>
   );
-}
+});
 
-function DashboardLink({ href, title, description, tag, tagColor }: { href: string; title: string; description: string; tag?: string; tagColor?: string }) {
+const DashboardLink = memo(function DashboardLink({
+  href,
+  title,
+  description,
+  tag,
+  tagColor,
+  isFavorite,
+  onToggleFavorite,
+}: DashboardLinkData & {
+  isFavorite: boolean;
+  onToggleFavorite: () => void;
+}) {
   const tagColors: Record<string, string> = {
-    orange: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
-    purple: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
-    blue: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-    red: 'bg-red-500/20 text-red-400 border-red-500/30',
-    emerald: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
-    green: 'bg-green-500/20 text-green-400 border-green-500/30',
-    cyan: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
-    indigo: 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30',
+    orange: "bg-orange-500/20 text-orange-400 border-orange-500/30",
+    purple: "bg-purple-500/20 text-purple-400 border-purple-500/30",
+    blue: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+    red: "bg-red-500/20 text-red-400 border-red-500/30",
+    emerald: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
+    green: "bg-green-500/20 text-green-400 border-green-500/30",
+    cyan: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
   };
 
   return (
-    <Link
-      href={href}
-      className="block bg-zinc-900/50 border border-zinc-800 rounded-xl p-5 hover:border-orange-500/50 hover:bg-zinc-900 transition-all group"
-    >
-      <div className="flex items-center justify-between mb-1">
-        <h3 className="font-semibold text-white group-hover:text-orange-400 transition-colors">{title}</h3>
-        {tag && (
-          <span className={`text-xs font-medium px-2 py-0.5 rounded border ${tagColors[tagColor || 'blue']}`}>
-            {tag}
-          </span>
-        )}
-      </div>
-      <p className="text-sm text-zinc-500">{description}</p>
-    </Link>
+    <div className="relative group">
+      <Link
+        href={href}
+        className="block bg-zinc-900/50 border border-zinc-800 rounded-xl p-5 hover:border-orange-500/50 hover:bg-zinc-900 transition-all"
+      >
+        <div className="flex items-center justify-between mb-1">
+          <h3 className="font-semibold text-white group-hover:text-orange-400 transition-colors">
+            {title}
+          </h3>
+          {tag && (
+            <span
+              className={`text-xs font-medium px-2 py-0.5 rounded border ${tagColors[tagColor || "blue"]}`}
+            >
+              {tag}
+            </span>
+          )}
+        </div>
+        <p className="text-sm text-zinc-500">{description}</p>
+      </Link>
+      <button
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onToggleFavorite();
+        }}
+        className={`absolute top-3 right-14 p-1 rounded transition-all ${
+          isFavorite
+            ? "text-yellow-400 opacity-100"
+            : "text-zinc-600 opacity-0 group-hover:opacity-100 hover:text-yellow-400"
+        }`}
+        title={isFavorite ? "Remove from favorites" : "Add to favorites"}
+      >
+        {isFavorite ? "\u2605" : "\u2606"}
+      </button>
+    </div>
   );
-}
+});
