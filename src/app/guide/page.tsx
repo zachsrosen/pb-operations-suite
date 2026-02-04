@@ -11,15 +11,118 @@ export default function GuidePage() {
           <Link href="/" className="text-xl font-bold bg-gradient-to-r from-orange-500 to-orange-400 bg-clip-text text-transparent hover:opacity-80 transition-opacity">
             PB Operations Suite
           </Link>
-          <Link href="/" className="text-sm text-zinc-400 hover:text-orange-400 transition-colors">
-            &larr; Back to Dashboard
-          </Link>
+          <div className="flex items-center gap-4">
+            <kbd className="hidden sm:inline-flex text-xs text-zinc-500 border border-zinc-700 rounded px-2 py-1">
+              <span className="font-mono">⌘K</span>
+              <span className="ml-1 text-zinc-600">Search</span>
+            </kbd>
+            <Link href="/" className="text-sm text-zinc-400 hover:text-orange-400 transition-colors">
+              &larr; Back to Dashboard
+            </Link>
+          </div>
         </div>
       </header>
 
       <main className="max-w-4xl mx-auto px-6 py-8">
         <h1 className="text-3xl font-bold mb-2">Dashboard Guide</h1>
         <p className="text-zinc-400 mb-8">Learn how to use each dashboard in the PB Operations Suite</p>
+
+        {/* Global Navigation */}
+        <section className="bg-gradient-to-br from-orange-500/10 to-orange-500/5 border border-orange-500/30 rounded-xl p-6 mb-8">
+          <h2 className="text-xl font-semibold text-orange-400 mb-4">Global Navigation</h2>
+          <div className="space-y-4">
+            <div>
+              <h3 className="font-semibold text-white mb-2 flex items-center gap-2">
+                <kbd className="bg-zinc-800 px-2 py-0.5 rounded text-xs font-mono text-orange-400">⌘K</kbd>
+                or
+                <kbd className="bg-zinc-800 px-2 py-0.5 rounded text-xs font-mono text-orange-400">Ctrl+K</kbd>
+                Quick Search
+              </h3>
+              <p className="text-zinc-300 mb-3">
+                Press <kbd className="bg-zinc-800 px-1.5 py-0.5 rounded text-xs font-mono">⌘K</kbd> (Mac) or <kbd className="bg-zinc-800 px-1.5 py-0.5 rounded text-xs font-mono">Ctrl+K</kbd> (Windows) anywhere to open the global search. You can:
+              </p>
+              <ul className="list-disc list-inside space-y-1 text-sm text-zinc-400 ml-2">
+                <li><strong className="text-zinc-300">Search dashboards</strong> - Type a dashboard name to quickly navigate (e.g., &quot;scheduler&quot;, &quot;design&quot;, &quot;PE&quot;)</li>
+                <li><strong className="text-zinc-300">Search projects</strong> - Type a project name, PROJ #, or address to find specific projects</li>
+                <li><strong className="text-zinc-300">Navigate with keyboard</strong> - Use <kbd className="bg-zinc-800 px-1 py-0.5 rounded text-xs font-mono">↑↓</kbd> arrows and <kbd className="bg-zinc-800 px-1 py-0.5 rounded text-xs font-mono">Enter</kbd> to select</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        {/* Multi-Select Filters */}
+        <section className="bg-gradient-to-br from-indigo-500/10 to-indigo-500/5 border border-indigo-500/30 rounded-xl p-6 mb-8">
+          <h2 className="text-xl font-semibold text-indigo-400 mb-4">Multi-Select Filters</h2>
+          <p className="text-zinc-300 mb-4">
+            The department dashboards (Design, Permitting, Interconnection) now feature advanced multi-select filters
+            that allow you to filter by multiple values simultaneously.
+          </p>
+
+          <h3 className="font-semibold text-white mb-2">How to Use Multi-Select Filters:</h3>
+          <ol className="list-decimal list-inside space-y-2 text-zinc-300 mb-4">
+            <li>Click any filter button to open the dropdown</li>
+            <li>Use the search box at the top to find specific options</li>
+            <li>Click individual options to select/deselect them</li>
+            <li>Click group headers to select/deselect entire groups</li>
+            <li>Use &quot;Select All&quot; or &quot;Clear All&quot; for bulk actions</li>
+          </ol>
+
+          <h3 className="font-semibold text-white mb-2">Status Groups:</h3>
+          <p className="text-zinc-400 text-sm mb-3">
+            Statuses are organized into logical groups to make filtering easier. Click a group header to toggle all statuses in that group.
+          </p>
+
+          <div className="grid md:grid-cols-2 gap-4 text-sm">
+            <div className="bg-zinc-800/50 rounded-lg p-3">
+              <h4 className="font-medium text-indigo-400 mb-2">Design Dashboard</h4>
+              <ul className="space-y-1 text-zinc-400">
+                <li><span className="text-zinc-300">Design Status:</span> Initial Design, Engineering, DA Revisions, etc.</li>
+                <li><span className="text-zinc-300">Design Approval:</span> In Review, Sent to Customer, Approved/Rejected</li>
+              </ul>
+            </div>
+            <div className="bg-zinc-800/50 rounded-lg p-3">
+              <h4 className="font-medium text-purple-400 mb-2">Permitting Dashboard</h4>
+              <ul className="space-y-1 text-zinc-400">
+                <li><span className="text-zinc-300">Permit Status:</span> Pre-Submission, Submitted, Rejections, Completed</li>
+                <li><span className="text-zinc-300">Inspection Status:</span> Pre-Inspection, In Progress, Failed, Passed</li>
+              </ul>
+            </div>
+            <div className="bg-zinc-800/50 rounded-lg p-3">
+              <h4 className="font-medium text-orange-400 mb-2">Interconnection Dashboard</h4>
+              <ul className="space-y-1 text-zinc-400">
+                <li><span className="text-zinc-300">IC Status:</span> Initial Submission, Waiting, Rejections, Approved</li>
+                <li><span className="text-zinc-300">PTO Status:</span> Pre-Submission, Submitted, Waiting, Completed</li>
+              </ul>
+            </div>
+            <div className="bg-zinc-800/50 rounded-lg p-3">
+              <h4 className="font-medium text-zinc-400 mb-2">Visual Indicators</h4>
+              <ul className="space-y-1 text-zinc-400">
+                <li><span className="text-indigo-400">Colored button</span> = Filters are active</li>
+                <li><span className="text-zinc-300">Gray button</span> = No filters (showing all)</li>
+                <li><span className="text-zinc-300">Checkbox filled</span> = Selected / partial selection</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        {/* Project Search Bar */}
+        <section className="bg-gradient-to-br from-blue-500/10 to-blue-500/5 border border-blue-500/30 rounded-xl p-6 mb-8">
+          <h2 className="text-xl font-semibold text-blue-400 mb-4">Project Search Bar</h2>
+          <p className="text-zinc-300 mb-4">
+            Each department dashboard includes a dedicated search bar for finding specific projects within the current view.
+          </p>
+
+          <h3 className="font-semibold text-white mb-2">Search Capabilities:</h3>
+          <ul className="list-disc list-inside space-y-1 text-zinc-300">
+            <li><strong>PROJ #</strong> - Search by project number (e.g., &quot;PROJ-12345&quot;)</li>
+            <li><strong>Customer Name</strong> - Search by the project or customer name</li>
+            <li><strong>Address/Location</strong> - Search by street address or city</li>
+          </ul>
+
+          <p className="text-zinc-400 text-sm mt-3">
+            The search is instant - results filter as you type. The search works in combination with your multi-select filters.
+          </p>
+        </section>
 
         {/* Quick Reference */}
         <section className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6 mb-8">
@@ -53,6 +156,16 @@ export default function GuidePage() {
                   <td className="py-3 font-medium">Permitting</td>
                   <td className="py-3">Permit Team</td>
                   <td className="py-3">Track permits & inspections</td>
+                </tr>
+                <tr className="border-b border-zinc-800">
+                  <td className="py-3 font-medium">Site Survey</td>
+                  <td className="py-3">Survey Team</td>
+                  <td className="py-3">Schedule & track site surveys</td>
+                </tr>
+                <tr className="border-b border-zinc-800">
+                  <td className="py-3 font-medium">Construction</td>
+                  <td className="py-3">Ops Team</td>
+                  <td className="py-3">Track construction progress</td>
                 </tr>
                 <tr className="border-b border-zinc-800">
                   <td className="py-3 font-medium">Interconnection</td>
@@ -101,6 +214,11 @@ export default function GuidePage() {
             "Search for specific projects by name or AHJ",
             "Click 'Scheduler' to jump to the Master Scheduler"
           ]}
+          tips={[
+            "Start your day here to get an overview of the entire pipeline",
+            "Check the Alerts tab for projects needing immediate attention",
+            "Use the PE tab for generating PE compliance reports"
+          ]}
           url="/dashboards/command-center"
         />
 
@@ -114,7 +232,7 @@ export default function GuidePage() {
             "Drag-and-drop scheduling for projects",
             "Stage filtering: Survey, RTB, Blocked, Construction, Inspection",
             "Crew capacity tracking and conflict detection",
-            "Auto-optimize by revenue priority",
+            "Auto-optimize by difficulty then revenue priority",
             "Zuper FSM integration for work order creation"
           ]}
           howToUse={[
@@ -122,14 +240,19 @@ export default function GuidePage() {
             "Filter the queue by stage using the tabs on the left",
             "Drag projects from the left queue onto calendar dates",
             "Set duration and assign crew in the modal that appears",
-            "Use 'Auto-Optimize' to schedule all RTB projects by revenue priority"
+            "Use 'Auto-Optimize' to schedule all RTB projects automatically"
           ]}
           keyboardShortcuts={[
             { keys: "1, 2, 3", action: "Switch views (Month, Week, Gantt)" },
-            { keys: "Alt + \u2190 / \u2192", action: "Navigate previous/next" },
+            { keys: "Alt + ← / →", action: "Navigate previous/next" },
             { keys: "Ctrl + O", action: "Auto-optimize schedule" },
             { keys: "Ctrl + E", action: "Export to CSV" },
             { keys: "Esc", action: "Close modals / Deselect" }
+          ]}
+          tips={[
+            "Use Auto-Optimize to quickly schedule all RTB projects - it prioritizes easy projects first",
+            "Multi-day events skip weekends automatically (Fri → Mon)",
+            "Inspections are auto-scheduled 2 business days after construction"
           ]}
           url="/dashboards/scheduler"
         />
@@ -184,25 +307,35 @@ export default function GuidePage() {
         </section>
 
         {/* Design, Permitting, IC, Incentives */}
-        <h2 className="text-2xl font-semibold mb-4">Design, Permitting, Interconnection & Incentives</h2>
+        <h2 className="text-2xl font-semibold mb-4">Department Dashboards</h2>
 
         <DashboardCard
           title="Design & Engineering"
           tag="DESIGN"
           tagColor="indigo"
-          purpose="Track design status, layout approvals, and engineering milestones"
+          purpose="Track design status, design approvals, and engineering milestones"
           features={[
-            "Design status breakdown (In Progress, Complete, Approved, etc.)",
-            "Layout approval tracking",
-            "Design completion dates",
-            "Filter by design status and location",
+            "Multi-select filters for Design Status, Design Approval, Location, and Stage",
+            "11 Design Status groups (Initial Design, Engineering, DA Revisions, etc.)",
+            "5 Design Approval groups (In Review, Sent to Customer, Approved/Rejected, etc.)",
+            "Project search by PROJ #, name, or address",
             "Direct links to HubSpot records"
           ]}
           howToUse={[
-            "Use the status filter to focus on specific design stages",
-            "Sort by design completion date to prioritize reviews",
+            "Use multi-select filters to view multiple statuses at once",
+            "Click group headers to toggle entire status groups",
+            "Use the search bar to find specific projects",
             "Click project names to open in HubSpot",
-            "Monitor the status breakdown for bottlenecks"
+            "Sort by clicking column headers"
+          ]}
+          statusGroups={[
+            { name: "Design Status Groups", items: ["Initial Design", "Engineering & Completion", "DA Revisions", "Permit Revisions", "Utility Revisions", "As-Built Revisions", "Needs Clarification", "New Construction", "Xcel", "Other", "Archived"] },
+            { name: "Design Approval Groups", items: ["In Review", "Sent to Customer", "Approved/Rejected", "Revisions", "Pending Changes"] }
+          ]}
+          tips={[
+            "Filter by 'Initial Design' group to see projects just starting the design process",
+            "Use 'DA Revisions' group to find projects with customer-requested changes",
+            "The 'DA Approved - Final Design Review' status indicates customer has approved the final design"
           ]}
           url="/dashboards/design"
         />
@@ -213,17 +346,26 @@ export default function GuidePage() {
           tagColor="purple"
           purpose="Track permit applications, AHJ turnaround times, and inspection status"
           features={[
-            "Permit status tracking (Submitted, Approved, Issued)",
-            "Inspection status and scheduling",
-            "AHJ turnaround time analysis",
-            "Permit submit and issue date tracking",
-            "Filter by permit status, inspection status, and location"
+            "Multi-select filters for Permit Status, Inspection Status, Location, and Stage",
+            "6 Permit Status groups (Pre-Submission, Submitted, Rejections, etc.)",
+            "6 Inspection Status groups (Pre-Inspection, In Progress, Failed, etc.)",
+            "Project search by PROJ #, name, or address",
+            "Permit submit and issue date tracking"
           ]}
           howToUse={[
-            "Filter by permit status to see what's pending vs approved",
-            "Check inspection status for projects ready for final inspection",
-            "Use date columns to track timeline and identify delays",
-            "Click project names to update records in HubSpot"
+            "Filter by 'Submitted' group to see permits pending approval",
+            "Use 'Rejections & Revisions' to find permits needing corrections",
+            "Filter Inspection Status by 'Failed' to see projects needing re-inspection",
+            "Search by AHJ name to see permits for a specific jurisdiction"
+          ]}
+          statusGroups={[
+            { name: "Permit Status Groups", items: ["Pre-Submission", "Submitted", "Rejections & Revisions", "As-Built Revisions", "SolarApp", "Completed", "Other"] },
+            { name: "Inspection Status Groups", items: ["Pre-Inspection", "In Progress", "Failed/Waiting", "Passed", "Pending", "Other"] }
+          ]}
+          tips={[
+            "Use 'SolarApp' group to filter projects using expedited SolarApp permitting",
+            "Check 'Failed/Waiting' inspection group to prioritize re-inspections",
+            "Monitor 'Submitted' group to track pending permits and average turnaround times"
           ]}
           url="/dashboards/permitting"
         />
@@ -234,19 +376,86 @@ export default function GuidePage() {
           tagColor="orange"
           purpose="Track interconnection applications, approvals, and Permission to Operate"
           features={[
-            "IC application status (Submitted, Approved, etc.)",
-            "PTO status tracking",
-            "IC submit and approval date tracking",
-            "Utility company breakdown",
-            "Filter by IC status, PTO status, and location"
+            "Multi-select filters for IC Status, PTO Status, Location, and Stage",
+            "7 IC Status groups (Initial Submission, Waiting, Rejections, etc.)",
+            "7 PTO Status groups (Pre-Submission, Submitted, Waiting, etc.)",
+            "Project search by PROJ #, name, or address",
+            "IC submit and approval date tracking"
           ]}
           howToUse={[
-            "Filter by IC status to see pending applications",
-            "Track PTO status for projects nearing completion",
-            "Use date columns to monitor IC timeline",
-            "Identify projects waiting on utility approval"
+            "Filter by 'Waiting' group to see projects pending utility response",
+            "Use 'Rejections & Revisions' to find IC applications needing corrections",
+            "Filter PTO by 'Submitted' to track PTO applications in progress",
+            "Check 'Completed' group to see projects with granted PTO"
+          ]}
+          statusGroups={[
+            { name: "IC Status Groups", items: ["Initial Submission", "Waiting", "Rejections & Revisions", "Approved", "Special Cases", "Xcel", "Other"] },
+            { name: "PTO Status Groups", items: ["Pre-Submission", "Submitted", "Rejections", "Waiting", "Xcel Photos", "Completed", "Other"] }
+          ]}
+          tips={[
+            "PE projects often have stricter PTO deadlines - filter by stage to find PE projects first",
+            "Use 'Xcel' groups for projects with Xcel Energy-specific requirements",
+            "Monitor 'Approved' IC status and 'Pre-Submission' PTO status to find projects ready for PTO submission"
           ]}
           url="/dashboards/interconnection"
+        />
+
+        <DashboardCard
+          title="Site Survey"
+          tag="SURVEY"
+          tagColor="blue"
+          purpose="Track site survey scheduling, completion, and status"
+          features={[
+            "Multi-select filters for Site Survey Status, Location, and Stage",
+            "4 Status groups: Scheduling, In Progress, Completion, On Hold",
+            "Survey scheduling and completion date tracking",
+            "Project search by PROJ #, name, or address",
+            "Turnaround time analytics"
+          ]}
+          howToUse={[
+            "Filter by 'Scheduling' group to see surveys needing to be scheduled",
+            "Use 'In Progress' group to track ongoing surveys",
+            "Check 'Needs Revisit' for surveys requiring follow-up",
+            "Monitor 'On Hold' group for blocked surveys"
+          ]}
+          statusGroups={[
+            { name: "Site Survey Status Groups", items: ["Scheduling (Ready to Schedule, Awaiting Reply, Scheduled)", "In Progress (On Our Way, Started, In Progress)", "Completion (Needs Revisit, Completed)", "On Hold (Scheduling On-Hold, No Site Survey Needed, Pending Loan Approval, Waiting on Change Order)"] }
+          ]}
+          tips={[
+            "Filter by 'Ready to Schedule' to find surveys needing scheduling",
+            "Check 'Needs Revisit' for surveys that may need corrections",
+            "Use the search bar to find specific projects by customer name or address"
+          ]}
+          url="/dashboards/site-survey"
+        />
+
+        <DashboardCard
+          title="Construction"
+          tag="CONSTRUCTION"
+          tagColor="orange"
+          purpose="Track construction status, scheduling, and progress"
+          features={[
+            "Multi-select filters for Construction Status, Location, and Stage",
+            "5 Status groups: Pre-Construction, Scheduling, In Progress, Completion, Revisions",
+            "Construction scheduling and completion date tracking",
+            "Project search by PROJ #, name, or address",
+            "Blocked/Rejected project tracking"
+          ]}
+          howToUse={[
+            "Filter by 'Pre-Construction' to see projects preparing for construction",
+            "Use 'In Progress' group to track active construction",
+            "Monitor 'Loose Ends Remaining' for nearly complete jobs",
+            "Check 'Revisions' group for projects needing design changes"
+          ]}
+          statusGroups={[
+            { name: "Construction Status Groups", items: ["Pre-Construction (Rejected, Blocked, Ready to Build)", "Scheduling (Scheduled, On Our Way)", "In Progress (Started, In Progress, Loose Ends Remaining)", "Completion (Construction Complete)", "Revisions (Revisions Needed, In Design For Revisions, Revisions Complete, Pending New Construction Design Review)"] }
+          ]}
+          tips={[
+            "Filter by 'Ready to Build' to see projects ready for scheduling",
+            "Use 'Loose Ends Remaining' to find jobs close to completion",
+            "Check 'Revisions' statuses to find projects with design issues"
+          ]}
+          url="/dashboards/construction"
         />
 
         <DashboardCard
@@ -266,6 +475,11 @@ export default function GuidePage() {
             "Use filters to find projects with specific program statuses",
             "Track which projects are eligible for which incentives",
             "Monitor application progress for revenue forecasting"
+          ]}
+          tips={[
+            "Cross-reference with the PE Dashboard for Participate Energy incentive tracking",
+            "SGIP projects often have storage components - check battery information",
+            "CPA projects have specific documentation requirements"
           ]}
           url="/dashboards/incentives"
         />
@@ -290,6 +504,12 @@ export default function GuidePage() {
             { type: "PTO Overdue", desc: "Past PTO deadline" },
             { type: "Stalled", desc: "No stage movement in 30+ days" },
             { type: "Blocked", desc: "RTB-Blocked or On-Hold status" }
+          ]}
+          tips={[
+            "Check this dashboard daily to catch problems early",
+            "Critical (red) issues should be addressed same-day",
+            "Warning (yellow) issues should be resolved within the week",
+            "Use 'Revenue at Risk' to prioritize high-value projects"
           ]}
           url="/dashboards/at-risk"
         />
@@ -326,13 +546,19 @@ export default function GuidePage() {
             "PE project overview with value tracking",
             "Milestone forecasting (Install, Inspection, PTO)",
             "6-month forecast chart",
-            "Status-based filtering (Overdue, Due Soon, On Track)"
+            "Status-based filtering (Overdue, Due Soon, On Track)",
+            "N/A indicator for projects without forecast dates"
           ]}
           howToUse={[
             "Overview tab: High-level PE metrics and compliance rate",
             "Projects tab: All PE projects with sort options",
             "Milestones tab: Projects grouped by milestone type",
             "Sort by PTO/Inspection/Install/Value to prioritize work"
+          ]}
+          tips={[
+            "Projects showing 'N/A' for days don't have a forecast date set in HubSpot",
+            "Red 'overdue' badges indicate milestones past their forecast date",
+            "Use the export function for PE compliance reporting"
           ]}
           url="/dashboards/pe"
         />
@@ -381,6 +607,14 @@ export default function GuidePage() {
               <span className="text-zinc-400 mt-1">&#9679;</span>
               <span><strong>Color Coding:</strong> Red = Overdue/Critical, Yellow = Warning/Due Soon, Green = On Track</span>
             </li>
+            <li className="flex items-start gap-3">
+              <span className="text-indigo-400 mt-1">&#9679;</span>
+              <span><strong>Global Search:</strong> Press <kbd className="bg-zinc-800 px-1.5 py-0.5 rounded text-xs font-mono">⌘K</kbd> or <kbd className="bg-zinc-800 px-1.5 py-0.5 rounded text-xs font-mono">Ctrl+K</kbd> to search anywhere</span>
+            </li>
+            <li className="flex items-start gap-3">
+              <span className="text-blue-400 mt-1">&#9679;</span>
+              <span><strong>Multi-Select Filters:</strong> Select multiple values in filters for more precise filtering</span>
+            </li>
           </ul>
         </section>
 
@@ -396,6 +630,16 @@ export default function GuidePage() {
             <li>Check <strong>PE Dashboard</strong> for Participate Energy compliance</li>
             <li>Share <strong>Executive Summary</strong> with leadership for KPI reviews</li>
           </ol>
+
+          <div className="mt-6 p-4 bg-zinc-800/50 rounded-lg">
+            <h3 className="font-semibold text-white mb-2">Pro Tips:</h3>
+            <ul className="list-disc list-inside space-y-1 text-sm text-zinc-400">
+              <li>Use <kbd className="bg-zinc-800 px-1 py-0.5 rounded text-xs font-mono">⌘K</kbd> to quickly jump between dashboards</li>
+              <li>Multi-select filters let you see multiple status groups at once</li>
+              <li>Click column headers to sort tables by any field</li>
+              <li>All times and dates are in your local timezone</li>
+            </ul>
+          </div>
         </section>
 
         {/* Footer */}
@@ -418,6 +662,8 @@ interface DashboardCardProps {
   keyboardShortcuts?: { keys: string; action: string }[];
   riskTypes?: { type: string; desc: string }[];
   colorLegend?: { color: string; label: string }[];
+  statusGroups?: { name: string; items: string[] }[];
+  tips?: string[];
   url: string;
 }
 
@@ -431,6 +677,8 @@ function DashboardCard({
   keyboardShortcuts,
   riskTypes,
   colorLegend,
+  statusGroups,
+  tips,
   url
 }: DashboardCardProps) {
   const tagColors: Record<string, string> = {
@@ -514,6 +762,31 @@ function DashboardCard({
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {statusGroups && (
+        <div className="mb-4">
+          <h4 className="text-sm font-semibold text-zinc-300 mb-2">Status Filter Groups:</h4>
+          <div className="space-y-2">
+            {statusGroups.map((group, i) => (
+              <div key={i} className="text-sm">
+                <span className="text-zinc-400">{group.name}: </span>
+                <span className="text-zinc-500">{group.items.join(", ")}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {tips && (
+        <div className="mb-4 p-3 bg-zinc-800/50 rounded-lg">
+          <h4 className="text-sm font-semibold text-yellow-400 mb-2">Tips:</h4>
+          <ul className="list-disc list-inside space-y-1 text-sm text-zinc-400">
+            {tips.map((tip, i) => (
+              <li key={i}>{tip}</li>
+            ))}
+          </ul>
         </div>
       )}
 

@@ -14,18 +14,30 @@ interface SearchResult {
 }
 
 const DASHBOARD_LINKS = [
+  // Operations Dashboards
   { name: "Command Center", path: "/dashboards/command-center", description: "Pipeline overview and scheduling" },
   { name: "Pipeline Optimizer", path: "/dashboards/optimizer", description: "AI-powered scheduling optimization" },
   { name: "Master Scheduler", path: "/dashboards/scheduler", description: "Drag-and-drop scheduling calendar" },
   { name: "At-Risk Projects", path: "/dashboards/at-risk", description: "Critical project alerts" },
   { name: "Location Comparison", path: "/dashboards/locations", description: "Performance across locations" },
   { name: "Timeline View", path: "/dashboards/timeline", description: "Gantt-style project timeline" },
+  // Department Dashboards
+  { name: "Design & Engineering", path: "/dashboards/design", description: "Track design progress and approvals" },
+  { name: "Permitting & Inspections", path: "/dashboards/permitting", description: "Permit status and inspection tracking" },
+  { name: "Interconnection & PTO", path: "/dashboards/interconnection", description: "Utility interconnection and PTO status" },
+  { name: "Incentives", path: "/dashboards/incentives", description: "Rebate and incentive tracking" },
+  // Other Pipelines
   { name: "Sales Pipeline", path: "/dashboards/sales", description: "Active deals and proposals" },
   { name: "Service Pipeline", path: "/dashboards/service", description: "Service job tracking" },
   { name: "D&R Pipeline", path: "/dashboards/dnr", description: "Detach & Reset projects" },
+  { name: "Construction", path: "/dashboards/construction", description: "Construction status and scheduling" },
+  { name: "Site Survey", path: "/dashboards/site-survey", description: "Site survey scheduling and status" },
+  // Leadership
   { name: "PE Dashboard", path: "/dashboards/pe", description: "Participate Energy tracking" },
   { name: "Executive Summary", path: "/dashboards/executive", description: "KPIs and charts for leadership" },
   { name: "Mobile Dashboard", path: "/dashboards/mobile", description: "Touch-optimized field view" },
+  // Help
+  { name: "Dashboard Guide", path: "/guide", description: "How to use each dashboard" },
 ];
 
 function useIsMac() {
