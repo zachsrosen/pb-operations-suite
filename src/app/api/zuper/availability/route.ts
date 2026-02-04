@@ -103,6 +103,44 @@ const CREW_SCHEDULES: CrewSchedule[] = [
     ],
     jobTypes: ["survey"],
   },
+
+  // ============================================
+  // CONSTRUCTION CREWS - PENDING CONFIGURATION
+  // Add construction crew schedules here
+  // ============================================
+  // Example:
+  // {
+  //   name: "Construction Crew 1",
+  //   location: "DTC",
+  //   reportLocation: "DTC",
+  //   schedule: [
+  //     { day: 1, startTime: "07:00", endTime: "16:00" }, // Mon
+  //     { day: 2, startTime: "07:00", endTime: "16:00" }, // Tue
+  //     { day: 3, startTime: "07:00", endTime: "16:00" }, // Wed
+  //     { day: 4, startTime: "07:00", endTime: "16:00" }, // Thu
+  //     { day: 5, startTime: "07:00", endTime: "16:00" }, // Fri
+  //   ],
+  //   jobTypes: ["construction"],
+  // },
+
+  // ============================================
+  // INSPECTION CREWS - PENDING CONFIGURATION
+  // Add inspection crew schedules here
+  // ============================================
+  // Example:
+  // {
+  //   name: "Inspector 1",
+  //   location: "DTC",
+  //   reportLocation: "DTC",
+  //   schedule: [
+  //     { day: 1, startTime: "08:00", endTime: "17:00" }, // Mon
+  //     { day: 2, startTime: "08:00", endTime: "17:00" }, // Tue
+  //     { day: 3, startTime: "08:00", endTime: "17:00" }, // Wed
+  //     { day: 4, startTime: "08:00", endTime: "17:00" }, // Thu
+  //     { day: 5, startTime: "08:00", endTime: "17:00" }, // Fri
+  //   ],
+  //   jobTypes: ["inspection"],
+  // },
 ];
 
 // Map location names to normalized versions
