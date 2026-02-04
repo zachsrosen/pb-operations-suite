@@ -91,7 +91,10 @@ class ZuperClient {
 
   constructor() {
     this.apiKey = process.env.ZUPER_API_KEY || "";
-    this.baseUrl = process.env.ZUPER_API_URL || "https://api.zuper.co/v1";
+    // Zuper uses region-specific API URLs. The correct URL for your account
+    // can be retrieved from https://accounts.zuperpro.com/api/config
+    // For photonbrothers: https://us-west-1c.zuperpro.com/api
+    this.baseUrl = process.env.ZUPER_API_URL || "https://us-west-1c.zuperpro.com/api";
 
     if (!this.apiKey) {
       console.warn("ZUPER_API_KEY not configured - Zuper integration disabled");
