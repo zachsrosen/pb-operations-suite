@@ -231,8 +231,14 @@ function addDays(dateStr: string, days: number): string {
 function addBusinessDays(dateStr: string, days: number): string {
   const [year, month, day] = dateStr.split("-").map(Number);
   const d = new Date(year, month - 1, day);
+  // First, move to a weekday if starting on a weekend
+  while (d.getDay() === 0 || d.getDay() === 6) {
+    d.setDate(d.getDate() + 1);
+  }
   let remaining = Math.ceil(days);
-  if (remaining <= 0) return dateStr;
+  if (remaining <= 0) {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
   while (remaining > 0) {
     d.setDate(d.getDate() + 1);
     if (d.getDay() !== 0 && d.getDay() !== 6) {
@@ -526,22 +532,31 @@ export default function SchedulerPage() {
     scheduledEvents.forEach((e) => {
       if (selectedLocation !== "All" && e.location !== selectedLocation) return;
       const startDate = new Date(e.date);
-      const calendarDays = Math.ceil(e.days || 1);
-      for (let i = 0; i < calendarDays; i++) {
+      const businessDays = Math.ceil(e.days || 1);
+      let dayCount = 0;
+      let calendarOffset = 0;
+      // Iterate through calendar days but only count business days
+      while (dayCount < businessDays) {
         const eventDate = new Date(startDate);
-        eventDate.setDate(eventDate.getDate() + i);
-        if (
-          eventDate.getMonth() === currentMonth &&
-          eventDate.getFullYear() === currentYear
-        ) {
-          const day = eventDate.getDate();
-          if (!eventsByDate[day]) eventsByDate[day] = [];
-          eventsByDate[day].push({
-            ...e,
-            dayNum: i + 1,
-            totalCalDays: calendarDays,
-          });
+        eventDate.setDate(eventDate.getDate() + calendarOffset);
+        const dayOfWeek = eventDate.getDay();
+        // Skip weekends
+        if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+          if (
+            eventDate.getMonth() === currentMonth &&
+            eventDate.getFullYear() === currentYear
+          ) {
+            const day = eventDate.getDate();
+            if (!eventsByDate[day]) eventsByDate[day] = [];
+            eventsByDate[day].push({
+              ...e,
+              dayNum: dayCount + 1,
+              totalCalDays: businessDays,
+            });
+          }
+          dayCount++;
         }
+        calendarOffset++;
       }
     });
 
