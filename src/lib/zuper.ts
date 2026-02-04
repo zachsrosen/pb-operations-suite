@@ -263,16 +263,20 @@ class ZuperClient {
       }
     });
 
-    // Zuper API returns { type, data: [...], total_records, ... }
-    // We need to transform it to our expected format
-    const result = await this.request<ZuperJob[]>(`/jobs?${params.toString()}`);
+    // Zuper API returns { type: "success", data: [...], total_records, ... }
+    // The request() method wraps this in another { type, data } structure
+    // So result.data contains the full Zuper response with its own data array
+    const result = await this.request<{ type: string; data: ZuperJob[]; total_records?: number }>(`/jobs?${params.toString()}`);
 
-    if (result.type === "success" && Array.isArray(result.data)) {
+    if (result.type === "success" && result.data) {
+      // result.data is the Zuper response: { type, data: [...], total_records }
+      const zuperResponse = result.data;
+      const jobs = Array.isArray(zuperResponse.data) ? zuperResponse.data : [];
       return {
         type: "success",
         data: {
-          jobs: result.data,
-          total: result.data.length,
+          jobs,
+          total: zuperResponse.total_records ?? jobs.length,
         },
       };
     }
