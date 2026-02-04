@@ -59,23 +59,40 @@ export async function GET(request: NextRequest) {
       to_date: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
     });
 
+    // Log for debugging
+    console.log(`Zuper lookup: searching ${result.data?.jobs?.length || 0} jobs for ${projectIds.length} projects, category filter: ${category || 'none'}`);
+
     if (result.type === "success" && result.data?.jobs) {
       for (const job of result.data.jobs) {
         // Check if this job has a HubSpot tag matching one of our project IDs
         const tags = job.job_tags || [];
+
         for (const projectId of projectIds) {
+          // Try multiple hubspot tag formats
           const hubspotTag = `hubspot-${projectId}`;
-          if (tags.includes(hubspotTag)) {
+          const hubspotTagUpper = `HubSpot-${projectId}`;
+          const hasHubspotTag = tags.includes(hubspotTag) || tags.includes(hubspotTagUpper) ||
+            tags.some(t => t.toLowerCase() === hubspotTag.toLowerCase());
+
+          if (hasHubspotTag) {
             // Found a match - check category if specified
             if (category) {
+              // Try multiple category tag formats
               const categoryTag = `category-${category}`;
-              if (!tags.includes(categoryTag)) {
+              const hasCategoryTag = tags.includes(categoryTag) ||
+                tags.includes(category) ||
+                tags.some(t => t.toLowerCase().includes(category.toLowerCase()));
+
+              if (!hasCategoryTag) {
+                // Log when we skip due to category mismatch
+                console.log(`Zuper: Found job ${job.job_uid} for project ${projectId} but category mismatch. Tags: ${tags.join(', ')}`);
                 continue; // Skip if category doesn't match
               }
             }
 
             // Only add if job_uid exists
             if (job.job_uid) {
+              console.log(`Zuper: Matched job ${job.job_uid} to project ${projectId}`);
               jobsMap[projectId] = {
                 jobUid: job.job_uid,
                 jobTitle: job.job_title || "",
