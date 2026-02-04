@@ -16,6 +16,7 @@
     "@remotion/player": "^4.0.409",
     "@vercel/analytics": "^1.6.1",
     "next": "16.1.4",
+    "next-auth": "^5.0.0-beta.30",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "resend": "^6.9.1"
