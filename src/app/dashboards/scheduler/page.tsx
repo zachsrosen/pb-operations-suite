@@ -395,7 +395,8 @@ export default function SchedulerPage() {
       if (transformed.length > 0) {
         try {
           const projectIds = transformed.map((p: SchedulerProject) => p.id).join(",");
-          const zuperResponse = await fetch(`/api/zuper/jobs/lookup?projectIds=${projectIds}&category=construction`);
+          const projectNames = transformed.map((p: SchedulerProject) => encodeURIComponent(p.name)).join(",");
+          const zuperResponse = await fetch(`/api/zuper/jobs/lookup?projectIds=${projectIds}&projectNames=${projectNames}&category=construction`);
           if (zuperResponse.ok) {
             const zuperData = await zuperResponse.json();
             if (zuperData.jobs) {

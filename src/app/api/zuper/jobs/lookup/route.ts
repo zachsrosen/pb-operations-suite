@@ -9,6 +9,7 @@ import { ZuperClient, ZuperJob } from "@/lib/zuper";
  *
  * Query params:
  * - projectIds: comma-separated list of HubSpot project IDs
+ * - projectNames: comma-separated list of project names (for fallback matching)
  * - category: optional job category filter (e.g., "site-survey", "construction")
  */
 export async function GET(request: NextRequest) {
@@ -23,6 +24,7 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const projectIdsParam = searchParams.get("projectIds");
+  const projectNamesParam = searchParams.get("projectNames");
   const category = searchParams.get("category");
 
   if (!projectIdsParam) {
@@ -33,6 +35,7 @@ export async function GET(request: NextRequest) {
   }
 
   const projectIds = projectIdsParam.split(",").map(id => id.trim()).filter(Boolean);
+  const projectNames = projectNamesParam ? projectNamesParam.split(",").map(n => n.trim()).filter(Boolean) : [];
 
   if (projectIds.length === 0) {
     return NextResponse.json({ configured: true, jobs: {} });
@@ -57,6 +60,12 @@ export async function GET(request: NextRequest) {
     return job.job_category?.category_name || "";
   };
 
+  // Helper to extract customer name from project name (format: "ProjectID | Customer Name")
+  const extractCustomerName = (name: string): string => {
+    const parts = name.split("|");
+    return parts.length > 1 ? parts[1].trim() : name.trim();
+  };
+
   try {
     const jobsMap: Record<string, {
       jobUid: string;
@@ -64,6 +73,7 @@ export async function GET(request: NextRequest) {
       status: string;
       scheduledDate?: string;
       category?: string;
+      matchedBy?: string;
     }> = {};
 
     // Search for jobs
@@ -78,37 +88,73 @@ export async function GET(request: NextRequest) {
     console.log(`Zuper lookup: searching ${result.data?.jobs?.length || 0} jobs for ${projectIds.length} projects, category filter: ${targetCategory || 'none'}`);
 
     if (result.type === "success" && result.data?.jobs) {
+      // First pass: Match by HubSpot tag (most reliable)
       for (const job of result.data.jobs) {
         const tags = job.job_tags || [];
         const jobCategoryName = getJobCategoryName(job);
 
-        for (const projectId of projectIds) {
+        for (let i = 0; i < projectIds.length; i++) {
+          const projectId = projectIds[i];
+
           // Skip if we already found a job for this project
           if (jobsMap[projectId]) continue;
+
+          // Check category filter first
+          if (targetCategory && jobCategoryName !== targetCategory) {
+            continue;
+          }
 
           // Try multiple hubspot tag formats (case-insensitive)
           const hubspotTag = `hubspot-${projectId}`;
           const hasHubspotTag = tags.some(t => t.toLowerCase() === hubspotTag.toLowerCase());
 
-          if (hasHubspotTag) {
-            // Found a match by HubSpot tag - check category if specified
+          if (hasHubspotTag && job.job_uid) {
+            console.log(`Zuper: Matched job ${job.job_uid} to project ${projectId} by tag (category: ${jobCategoryName})`);
+            jobsMap[projectId] = {
+              jobUid: job.job_uid,
+              jobTitle: job.job_title || "",
+              status: job.status || "UNKNOWN",
+              scheduledDate: job.scheduled_start_time,
+              category: jobCategoryName,
+              matchedBy: "tag",
+            };
+            break;
+          }
+        }
+      }
+
+      // Second pass: Match by customer name in job title (fallback for jobs created outside the app)
+      if (projectNames.length > 0) {
+        for (const job of result.data.jobs) {
+          const jobCategoryName = getJobCategoryName(job);
+          const jobTitle = job.job_title || "";
+
+          for (let i = 0; i < projectIds.length; i++) {
+            const projectId = projectIds[i];
+            const projectName = projectNames[i];
+
+            // Skip if we already found a job for this project
+            if (jobsMap[projectId] || !projectName) continue;
+
+            // Check category filter first
             if (targetCategory && jobCategoryName !== targetCategory) {
-              console.log(`Zuper: Found job ${job.job_uid} for project ${projectId} but category mismatch. Job category: "${jobCategoryName}", target: "${targetCategory}"`);
               continue;
             }
 
-            // Match found!
-            if (job.job_uid) {
-              console.log(`Zuper: Matched job ${job.job_uid} to project ${projectId} (category: ${jobCategoryName})`);
+            // Extract customer name from project name and check if job title contains it
+            const customerName = extractCustomerName(projectName);
+            if (customerName.length > 3 && jobTitle.toLowerCase().includes(customerName.toLowerCase()) && job.job_uid) {
+              console.log(`Zuper: Matched job ${job.job_uid} to project ${projectId} by name "${customerName}" (category: ${jobCategoryName})`);
               jobsMap[projectId] = {
                 jobUid: job.job_uid,
                 jobTitle: job.job_title || "",
                 status: job.status || "UNKNOWN",
                 scheduledDate: job.scheduled_start_time,
                 category: jobCategoryName,
+                matchedBy: "name",
               };
+              break;
             }
-            break;
           }
         }
       }

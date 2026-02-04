@@ -258,7 +258,8 @@ export default function SiteSurveySchedulerPage() {
       if (transformed.length > 0) {
         try {
           const projectIds = transformed.map((p: SurveyProject) => p.id).join(",");
-          const zuperResponse = await fetch(`/api/zuper/jobs/lookup?projectIds=${projectIds}&category=site-survey`);
+          const projectNames = transformed.map((p: SurveyProject) => encodeURIComponent(p.name)).join(",");
+          const zuperResponse = await fetch(`/api/zuper/jobs/lookup?projectIds=${projectIds}&projectNames=${projectNames}&category=site-survey`);
           if (zuperResponse.ok) {
             const zuperData = await zuperResponse.json();
             if (zuperData.jobs) {
