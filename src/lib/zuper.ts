@@ -34,7 +34,9 @@ export interface ZuperJob {
   customer_address?: ZuperAddress;
   assigned_to?: string[];
   job_tags?: string[];
-  custom_fields?: Record<string, unknown>;
+  // custom_fields can be an array (from GET) or object (for POST)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  custom_fields?: any;
   job_notes?: string;
   status?: string;
 }

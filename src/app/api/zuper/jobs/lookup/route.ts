@@ -60,10 +60,57 @@ export async function GET(request: NextRequest) {
     return job.job_category?.category_name || "";
   };
 
-  // Helper to extract customer name from project name (format: "ProjectID | Customer Name")
+  // Helper to get HubSpot Deal ID from custom fields
+  const getHubSpotDealId = (job: ZuperJob): string | null => {
+    if (!job.custom_fields || !Array.isArray(job.custom_fields)) return null;
+    const dealIdField = job.custom_fields.find(
+      (f) => f.label?.toLowerCase() === "hubspot deal id"
+    );
+    return dealIdField?.value || null;
+  };
+
+  // Helper to extract customer name from project name (format: "ProjectID | Customer Name" or "PROJ-XXXX | LastName, FirstName | Address")
   const extractCustomerName = (name: string): string => {
-    const parts = name.split("|");
-    return parts.length > 1 ? parts[1].trim() : name.trim();
+    // First decode any URL encoding
+    const decoded = decodeURIComponent(name);
+    const parts = decoded.split("|").map(p => p.trim());
+    // Return second part if it exists (customer name)
+    return parts.length > 1 ? parts[1].trim() : decoded.trim();
+  };
+
+  // Helper to extract customer last name for matching
+  const extractLastName = (customerName: string): string => {
+    // Handle "LastName, FirstName" format
+    if (customerName.includes(",")) {
+      return customerName.split(",")[0].trim();
+    }
+    // Handle "FirstName LastName" format - take last word
+    const parts = customerName.split(" ");
+    return parts[parts.length - 1].trim();
+  };
+
+  // Helper to check if Zuper job title matches a customer name
+  const jobTitleMatchesCustomer = (jobTitle: string, customerName: string): boolean => {
+    const titleLower = jobTitle.toLowerCase();
+    const customerLower = customerName.toLowerCase();
+    const lastName = extractLastName(customerName).toLowerCase();
+
+    // Direct full name match
+    if (customerLower.length > 3 && titleLower.includes(customerLower)) {
+      return true;
+    }
+
+    // Last name match (for "LastName, FirstName | Address" format in Zuper)
+    if (lastName.length > 2 && titleLower.startsWith(lastName)) {
+      return true;
+    }
+
+    // Check if Zuper title contains "LastName, FirstName" format
+    if (titleLower.includes(lastName + ",")) {
+      return true;
+    }
+
+    return false;
   };
 
   try {
@@ -88,21 +135,52 @@ export async function GET(request: NextRequest) {
     console.log(`Zuper lookup: searching ${result.data?.jobs?.length || 0} jobs for ${projectIds.length} projects, category filter: ${targetCategory || 'none'}`);
 
     if (result.type === "success" && result.data?.jobs) {
-      // First pass: Match by HubSpot tag (most reliable)
+      // First pass: Match by HubSpot Deal ID custom field (most reliable)
+      for (const job of result.data.jobs) {
+        const jobCategoryName = getJobCategoryName(job);
+        const hubspotDealId = getHubSpotDealId(job);
+
+        // Check category filter first
+        if (targetCategory && jobCategoryName !== targetCategory) {
+          continue;
+        }
+
+        // Check if this job's HubSpot Deal ID matches any of our project IDs
+        if (hubspotDealId && job.job_uid) {
+          for (const projectId of projectIds) {
+            if (jobsMap[projectId]) continue;
+
+            if (hubspotDealId === projectId) {
+              console.log(`Zuper: Matched job ${job.job_uid} to project ${projectId} by HubSpot Deal ID (category: ${jobCategoryName})`);
+              jobsMap[projectId] = {
+                jobUid: job.job_uid,
+                jobTitle: job.job_title || "",
+                status: job.status || "UNKNOWN",
+                scheduledDate: job.scheduled_start_time,
+                category: jobCategoryName,
+                matchedBy: "hubspot_deal_id",
+              };
+              break;
+            }
+          }
+        }
+      }
+
+      // Second pass: Match by HubSpot tag (fallback)
       for (const job of result.data.jobs) {
         const tags = job.job_tags || [];
         const jobCategoryName = getJobCategoryName(job);
+
+        // Check category filter first
+        if (targetCategory && jobCategoryName !== targetCategory) {
+          continue;
+        }
 
         for (let i = 0; i < projectIds.length; i++) {
           const projectId = projectIds[i];
 
           // Skip if we already found a job for this project
           if (jobsMap[projectId]) continue;
-
-          // Check category filter first
-          if (targetCategory && jobCategoryName !== targetCategory) {
-            continue;
-          }
 
           // Try multiple hubspot tag formats (case-insensitive)
           const hubspotTag = `hubspot-${projectId}`;
@@ -123,11 +201,16 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      // Second pass: Match by customer name in job title (fallback for jobs created outside the app)
+      // Third pass: Match by customer name in job title (fallback for jobs created outside the app)
       if (projectNames.length > 0) {
         for (const job of result.data.jobs) {
           const jobCategoryName = getJobCategoryName(job);
           const jobTitle = job.job_title || "";
+
+          // Check category filter first
+          if (targetCategory && jobCategoryName !== targetCategory) {
+            continue;
+          }
 
           for (let i = 0; i < projectIds.length; i++) {
             const projectId = projectIds[i];
@@ -136,14 +219,9 @@ export async function GET(request: NextRequest) {
             // Skip if we already found a job for this project
             if (jobsMap[projectId] || !projectName) continue;
 
-            // Check category filter first
-            if (targetCategory && jobCategoryName !== targetCategory) {
-              continue;
-            }
-
-            // Extract customer name from project name and check if job title contains it
+            // Extract customer name from project name and check if job title matches
             const customerName = extractCustomerName(projectName);
-            if (customerName.length > 3 && jobTitle.toLowerCase().includes(customerName.toLowerCase()) && job.job_uid) {
+            if (customerName.length > 3 && jobTitleMatchesCustomer(jobTitle, customerName) && job.job_uid) {
               console.log(`Zuper: Matched job ${job.job_uid} to project ${projectId} by name "${customerName}" (category: ${jobCategoryName})`);
               jobsMap[projectId] = {
                 jobUid: job.job_uid,
