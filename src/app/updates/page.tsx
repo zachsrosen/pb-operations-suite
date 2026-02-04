@@ -15,6 +15,20 @@ interface UpdateEntry {
 
 const UPDATES: UpdateEntry[] = [
   {
+    version: "1.7.0",
+    date: "2026-02-04",
+    title: "Zuper Job Links in Schedulers",
+    description: "Direct links to Zuper jobs now appear alongside HubSpot links in both scheduler tools.",
+    changes: [
+      { type: "feature", text: "Zuper job links in Site Survey Scheduler list view" },
+      { type: "feature", text: "Zuper job links in Master Scheduler project queue cards" },
+      { type: "feature", text: "Zuper links in schedule confirmation modals" },
+      { type: "feature", text: "Zuper links in project detail modals" },
+      { type: "improvement", text: "Projects automatically fetch Zuper job UIDs on load" },
+      { type: "internal", text: "New /api/zuper/jobs/lookup endpoint for batch job lookups" },
+    ],
+  },
+  {
     version: "1.6.0",
     date: "2026-02-04",
     title: "Product Roadmap & Feature Voting",

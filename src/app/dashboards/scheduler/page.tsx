@@ -67,6 +67,8 @@ interface SchedulerProject {
   roofType: string | null;
   scheduleDate: string | null;
   hubspotUrl: string;
+  zuperJobUid?: string;
+  zuperJobStatus?: string;
 }
 
 interface CrewConfig {
@@ -388,6 +390,31 @@ export default function SchedulerPage() {
       const transformed = data.projects
         .map((p: RawProject) => transformProject(p))
         .filter((p: SchedulerProject | null): p is SchedulerProject => p !== null);
+
+      // Look up Zuper job UIDs for these projects (construction jobs)
+      if (transformed.length > 0) {
+        try {
+          const projectIds = transformed.map((p: SchedulerProject) => p.id).join(",");
+          const zuperResponse = await fetch(`/api/zuper/jobs/lookup?projectIds=${projectIds}&category=construction`);
+          if (zuperResponse.ok) {
+            const zuperData = await zuperResponse.json();
+            if (zuperData.jobs) {
+              // Merge Zuper job UIDs into projects
+              for (const project of transformed) {
+                const zuperJob = zuperData.jobs[project.id];
+                if (zuperJob) {
+                  project.zuperJobUid = zuperJob.jobUid;
+                  project.zuperJobStatus = zuperJob.status;
+                }
+              }
+            }
+          }
+        } catch (zuperErr) {
+          console.warn("Failed to lookup Zuper jobs:", zuperErr);
+          // Don't fail the whole load if Zuper lookup fails
+        }
+      }
+
       setProjects(transformed);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Unknown error";
@@ -1287,6 +1314,18 @@ export default function SchedulerPage() {
                         <span className="text-[0.5rem] px-1 py-0.5 rounded bg-blue-500/30 text-blue-400 font-semibold">
                           {formatShortDate(schedDate)}
                         </span>
+                      )}
+                      {p.zuperJobUid && (
+                        <a
+                          href={`https://app.zuper.co/jobs/${p.zuperJobUid}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-[0.5rem] px-1 py-0.5 rounded bg-cyan-500/30 text-cyan-400 font-semibold hover:bg-cyan-500/50"
+                          title="Open in Zuper"
+                        >
+                          Zuper
+                        </a>
                       )}
                       {types.slice(0, 2).map((t, i) => (
                         <span
@@ -2276,6 +2315,32 @@ export default function SchedulerPage() {
                   }
                   valueClass={STAGE_TEXT_COLORS[scheduleModal.project.stage]}
                 />
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-[0.7rem] text-zinc-500 w-20">Links</span>
+                  <div className="flex items-center gap-2">
+                    <a
+                      href={scheduleModal.project.hubspotUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[0.7rem] text-orange-400 hover:text-orange-300"
+                    >
+                      HubSpot
+                    </a>
+                    {scheduleModal.project.zuperJobUid && (
+                      <>
+                        <span className="text-zinc-600">|</span>
+                        <a
+                          href={`https://app.zuper.co/jobs/${scheduleModal.project.zuperJobUid}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[0.7rem] text-cyan-400 hover:text-cyan-300"
+                        >
+                          Zuper
+                        </a>
+                      </>
+                    )}
+                  </div>
+                </div>
               </ModalSection>
 
               {/* Jurisdiction (survey/inspection only) */}
@@ -2677,6 +2742,16 @@ export default function SchedulerPage() {
               >
                 Open in HubSpot
               </a>
+              {detailModal.zuperJobUid && (
+                <a
+                  href={`https://app.zuper.co/jobs/${detailModal.zuperJobUid}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3.5 py-2 rounded-md bg-cyan-600 border border-cyan-600 text-white text-[0.75rem] font-semibold no-underline hover:bg-cyan-700 transition-colors"
+                >
+                  Open in Zuper
+                </a>
+              )}
               <button
                 onClick={() => setDetailModal(null)}
                 className="px-3.5 py-2 rounded-md bg-[#0a0a0f] border border-zinc-800 text-zinc-300 text-[0.75rem] cursor-pointer hover:bg-zinc-800 transition-colors"

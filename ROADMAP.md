@@ -18,14 +18,14 @@
 - [ ] Create admin panel for user management
 - [ ] Add audit logging for sensitive actions
 
-### 3. Zuper Job Links in Scheduler Tools
-- [ ] Store Zuper job UID when creating/syncing jobs
-- [ ] Add Zuper link alongside HubSpot link in:
-  - [ ] Site Survey Scheduler project cards
-  - [ ] Master Scheduler project cards
-  - [ ] Schedule confirmation modals
-  - [ ] Project detail modals
-- [ ] Add Zuper icon/badge for projects synced to Zuper
+### 3. Zuper Job Links in Scheduler Tools ✅ COMPLETED
+- [x] Store Zuper job UID when creating/syncing jobs
+- [x] Add Zuper link alongside HubSpot link in:
+  - [x] Site Survey Scheduler project cards
+  - [x] Master Scheduler project cards
+  - [x] Schedule confirmation modals
+  - [x] Project detail modals
+- [x] Add Zuper icon/badge for projects synced to Zuper
 
 ### 4. Detailed User Activity Tracking
 - [ ] Track all user actions with timestamps:
@@ -93,6 +93,8 @@
 
 ## Completed
 
+- [x] Zuper job links in scheduler tools (HubSpot + Zuper links side by side)
+- [x] Product Roadmap with feature voting and idea submission
 - [x] Maintenance mode page for deployments
 - [x] Product Updates / Changelog page
 - [x] Multi-select location filters on schedulers
