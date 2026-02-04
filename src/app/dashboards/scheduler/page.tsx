@@ -1695,6 +1695,11 @@ export default function SchedulerPage() {
                             return (
                               <div
                                 key={ei}
+                                draggable
+                                onDragStart={(e) => {
+                                  e.stopPropagation();
+                                  handleDragStart(e, ev.id);
+                                }}
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setDetailModal(
@@ -1702,8 +1707,8 @@ export default function SchedulerPage() {
                                       null
                                   );
                                 }}
-                                title={`${ev.name} - ${ev.crew || "No crew"}`}
-                                className={`text-[0.55rem] px-1 py-0.5 rounded mb-0.5 cursor-pointer transition-transform hover:scale-[1.02] hover:shadow-lg hover:z-10 relative overflow-hidden truncate ${
+                                title={`${ev.name} - ${ev.crew || "No crew"} (drag to reschedule)`}
+                                className={`text-[0.55rem] px-1 py-0.5 rounded mb-0.5 cursor-grab active:cursor-grabbing transition-transform hover:scale-[1.02] hover:shadow-lg hover:z-10 relative overflow-hidden truncate ${
                                   ev.eventType === "rtb"
                                     ? "bg-emerald-500 text-black"
                                     : ev.eventType === "blocked"

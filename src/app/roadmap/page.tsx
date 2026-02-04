@@ -46,6 +46,8 @@ export default function RoadmapPage() {
   const [filter, setFilter] = useState<"all" | RoadmapItem["status"]>("all");
   const [categoryFilter, setCategoryFilter] = useState<"all" | RoadmapItem["category"]>("all");
   const [sortBy, setSortBy] = useState<"votes" | "newest">("votes");
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [updatingStatus, setUpdatingStatus] = useState<string | null>(null);
 
   // Load roadmap items
   const loadItems = useCallback(async () => {
@@ -62,14 +64,46 @@ export default function RoadmapPage() {
     }
   }, []);
 
-  // Load voted items from localStorage
+  // Load voted items from localStorage and check admin status
   useEffect(() => {
     const stored = localStorage.getItem("roadmap-votes");
     if (stored) {
       setVotedItems(new Set(JSON.parse(stored)));
     }
+    // Check if admin mode is enabled (can be toggled via localStorage or URL param)
+    const urlParams = new URLSearchParams(window.location.search);
+    const adminFromUrl = urlParams.get("admin") === "true";
+    const adminFromStorage = localStorage.getItem("roadmap-admin") === "true";
+    setIsAdmin(adminFromUrl || adminFromStorage);
+    if (adminFromUrl) {
+      localStorage.setItem("roadmap-admin", "true");
+    }
     loadItems();
   }, [loadItems]);
+
+  // Handle status update (admin only)
+  const handleStatusUpdate = async (itemId: string, newStatus: RoadmapItem["status"]) => {
+    if (!isAdmin) return;
+
+    setUpdatingStatus(itemId);
+    try {
+      const res = await fetch("/api/roadmap", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: itemId, status: newStatus }),
+      });
+
+      if (res.ok) {
+        setItems(prev => prev.map(item =>
+          item.id === itemId ? { ...item, status: newStatus } : item
+        ));
+      }
+    } catch (error) {
+      console.error("Failed to update status:", error);
+    } finally {
+      setUpdatingStatus(null);
+    }
+  };
 
   // Handle vote
   const handleVote = async (itemId: string) => {
@@ -156,7 +190,14 @@ export default function RoadmapPage() {
               </svg>
             </Link>
             <div>
-              <h1 className="text-xl font-bold">Product Roadmap</h1>
+              <h1 className="text-xl font-bold flex items-center gap-2">
+                Product Roadmap
+                {isAdmin && (
+                  <span className="text-[0.6rem] px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 font-medium">
+                    ADMIN
+                  </span>
+                )}
+              </h1>
               <p className="text-xs text-zinc-500">Vote on features & submit ideas</p>
             </div>
           </div>
@@ -294,9 +335,23 @@ export default function RoadmapPage() {
                               Official
                             </span>
                           )}
-                          <span className={`text-[0.65rem] px-1.5 py-0.5 rounded ${statusStyle.bg} ${statusStyle.text} font-medium`}>
-                            {statusStyle.label}
-                          </span>
+                          {isAdmin ? (
+                            <select
+                              value={item.status}
+                              onChange={(e) => handleStatusUpdate(item.id, e.target.value as RoadmapItem["status"])}
+                              disabled={updatingStatus === item.id}
+                              className={`text-[0.65rem] px-1.5 py-0.5 rounded font-medium border-0 cursor-pointer ${statusStyle.bg} ${statusStyle.text} focus:ring-1 focus:ring-orange-500`}
+                            >
+                              <option value="planned">Planned</option>
+                              <option value="in-progress">In Progress</option>
+                              <option value="completed">Completed</option>
+                              <option value="under-review">Under Review</option>
+                            </select>
+                          ) : (
+                            <span className={`text-[0.65rem] px-1.5 py-0.5 rounded ${statusStyle.bg} ${statusStyle.text} font-medium`}>
+                              {statusStyle.label}
+                            </span>
+                          )}
                         </div>
                       </div>
                       <p className="text-sm text-zinc-400 mb-3">{item.description}</p>

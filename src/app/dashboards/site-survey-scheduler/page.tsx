@@ -969,11 +969,17 @@ export default function SiteSurveySchedulerPage() {
                           {events.slice(0, 3).map((ev) => (
                             <div
                               key={ev.id}
+                              draggable
+                              onDragStart={(e) => {
+                                e.stopPropagation();
+                                handleDragStart(ev.id);
+                              }}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setScheduleModal({ project: ev, date: dateStr });
                               }}
-                              className="text-xs p-1 rounded bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 truncate cursor-pointer hover:bg-cyan-500/30"
+                              className="text-xs p-1 rounded bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 truncate cursor-grab hover:bg-cyan-500/30 active:cursor-grabbing"
+                              title="Drag to reschedule"
                             >
                               {getCustomerName(ev.name)}
                             </div>
