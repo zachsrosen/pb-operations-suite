@@ -165,18 +165,11 @@ export default function GuidePage() {
           <h4 className="font-semibold text-white mb-2">The Algorithm:</h4>
           <ol className="list-decimal list-inside space-y-2 text-zinc-300 mb-4">
             <li><strong>Finds unscheduled RTB projects</strong> - Projects that are Ready To Build but don&apos;t have a scheduled date</li>
-<<<<<<< nextjs-migration
-            <li><strong>Sorts by revenue</strong> - Highest-value projects get priority</li>
-            <li><strong>Checks crew availability</strong> - Looks at each crew&apos;s existing schedule to find their next open date</li>
-            <li><strong>Assigns dates</strong> - Schedules each project on the crew&apos;s next available workday</li>
-            <li><strong>Avoids conflicts</strong> - Updates crew availability after each assignment to prevent double-booking</li>
-=======
             <li><strong>Sorts by difficulty, then revenue</strong> - Easiest projects first (difficulty 1-5), then by highest revenue within same difficulty</li>
             <li><strong>Checks crew availability</strong> - Looks at each crew&apos;s existing schedule to find their next open date</li>
             <li><strong>Schedules construction</strong> - Assigns each project to the crew&apos;s next available workday</li>
             <li><strong>Auto-schedules inspections</strong> - Automatically schedules inspection 2 business days after construction ends</li>
             <li><strong>Schedules pending inspections</strong> - Also schedules any projects already in the Inspection stage</li>
->>>>>>> main
           </ol>
 
           <h4 className="font-semibold text-white mb-2">Key Features:</h4>
