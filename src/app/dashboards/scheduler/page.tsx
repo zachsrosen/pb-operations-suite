@@ -1322,7 +1322,7 @@ export default function SchedulerPage() {
                       )}
                       {p.zuperJobUid && (
                         <a
-                          href={`${zuperWebBaseUrl}/app/job/${p.zuperJobUid}`}
+                          href={`${zuperWebBaseUrl}/jobs/${p.zuperJobUid}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           onClick={(e) => e.stopPropagation()}
@@ -2340,7 +2340,7 @@ export default function SchedulerPage() {
                       <>
                         <span className="text-zinc-600">|</span>
                         <a
-                          href={`${zuperWebBaseUrl}/app/job/${scheduleModal.project.zuperJobUid}`}
+                          href={`${zuperWebBaseUrl}/jobs/${scheduleModal.project.zuperJobUid}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-[0.7rem] text-cyan-400 hover:text-cyan-300"
@@ -2754,7 +2754,7 @@ export default function SchedulerPage() {
               </a>
               {detailModal.zuperJobUid && (
                 <a
-                  href={`${zuperWebBaseUrl}/app/job/${detailModal.zuperJobUid}`}
+                  href={`${zuperWebBaseUrl}/jobs/${detailModal.zuperJobUid}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="px-3.5 py-2 rounded-md bg-cyan-600 border border-cyan-600 text-white text-[0.75rem] font-semibold no-underline hover:bg-cyan-700 transition-colors"

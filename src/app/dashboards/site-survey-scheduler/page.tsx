@@ -1171,7 +1171,7 @@ export default function SiteSurveySchedulerPage() {
                                 </a>
                                 {project.zuperJobUid && (
                                   <a
-                                    href={`${zuperWebBaseUrl}/app/job/${project.zuperJobUid}`}
+                                    href={`${zuperWebBaseUrl}/jobs/${project.zuperJobUid}`}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="p-1 hover:bg-zinc-700 rounded transition-colors"
@@ -1241,16 +1241,65 @@ export default function SiteSurveySchedulerPage() {
                 <p className="text-sm font-medium text-cyan-400">{formatDate(scheduleModal.date)}</p>
               </div>
 
-              {/* Selected Time Slot */}
-              {scheduleModal.slot && (
+              {/* Time Slot Selection */}
+              {scheduleModal.slot ? (
                 <div className="p-2 bg-emerald-900/30 border border-emerald-500/30 rounded-lg">
-                  <span className="text-xs text-emerald-400 font-medium">Booked Time Slot</span>
+                  <span className="text-xs text-emerald-400 font-medium">Selected Time Slot</span>
                   <p className="text-sm text-white mt-1">
                     {scheduleModal.slot.userName} &bull; {scheduleModal.slot.startTime.replace(/^0/, "")} - {scheduleModal.slot.endTime.replace(/^0/, "")}
                   </p>
                   <p className="text-xs text-zinc-400 mt-0.5">
                     This 1-hour slot will be reserved
                   </p>
+                  <button
+                    onClick={() => setScheduleModal({ ...scheduleModal, slot: undefined })}
+                    className="text-xs text-zinc-500 hover:text-zinc-300 mt-1"
+                  >
+                    Change time slot
+                  </button>
+                </div>
+              ) : (
+                <div>
+                  <span className="text-xs text-zinc-500">Select Time Slot</span>
+                  <div className="mt-1 max-h-32 overflow-y-auto space-y-1">
+                    {(() => {
+                      const dayAvail = availabilityByDate[scheduleModal.date];
+                      const projectLocation = scheduleModal.project.location;
+                      const availableSlots = dayAvail?.availableSlots?.filter(slot => {
+                        if (!projectLocation) return true;
+                        if (!slot.location) return true;
+                        if (slot.location === projectLocation) return true;
+                        if ((slot.location === "DTC" || slot.location === "Centennial") &&
+                            (projectLocation === "DTC" || projectLocation === "Centennial")) return true;
+                        return false;
+                      }) || [];
+
+                      if (availableSlots.length === 0) {
+                        return (
+                          <p className="text-xs text-zinc-500 italic">No available slots for this location on this date</p>
+                        );
+                      }
+
+                      return availableSlots.map((slot, i) => (
+                        <button
+                          key={i}
+                          onClick={() => setScheduleModal({
+                            ...scheduleModal,
+                            slot: {
+                              userName: slot.user_name || "",
+                              startTime: slot.start_time,
+                              endTime: slot.end_time,
+                              location: slot.location || "",
+                            }
+                          })}
+                          className="w-full text-left px-2 py-1.5 text-sm rounded bg-zinc-800 hover:bg-emerald-900/30 hover:border-emerald-500/30 border border-transparent transition-colors"
+                        >
+                          <span className="text-emerald-400">{slot.user_name}</span>
+                          <span className="text-zinc-400 ml-2">{slot.display_time}</span>
+                        </button>
+                      ));
+                    })()}
+                  </div>
                 </div>
               )}
 
@@ -1276,7 +1325,7 @@ export default function SiteSurveySchedulerPage() {
                   </a>
                   {scheduleModal.project.zuperJobUid && (
                     <a
-                      href={`${zuperWebBaseUrl}/app/job/${scheduleModal.project.zuperJobUid}`}
+                      href={`${zuperWebBaseUrl}/jobs/${scheduleModal.project.zuperJobUid}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1.5 text-xs text-cyan-400 hover:text-cyan-300"

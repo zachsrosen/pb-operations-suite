@@ -393,17 +393,54 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Add scheduled jobs
+    // Add scheduled jobs and mark those time slots as booked
     if (jobsResult.type === "success" && jobsResult.data) {
       for (const job of jobsResult.data) {
         if (job.scheduled_start_time) {
           const dateStr = job.scheduled_start_time.split("T")[0];
           if (availabilityByDate[dateStr]) {
+            // Extract the hour from the scheduled time
+            const startTime = job.scheduled_start_time.split("T")[1]?.substring(0, 5) || "";
+            const endTime = job.scheduled_end_time?.split("T")[1]?.substring(0, 5) || "";
+
             availabilityByDate[dateStr].scheduledJobs.push({
               job_title: job.job_title,
               start_time: job.scheduled_start_time,
               end_time: job.scheduled_end_time,
             });
+
+            // If we have a valid start time, mark that slot as booked from Zuper
+            if (startTime) {
+              // Find assigned user from the job if available
+              const assignedUser = job.assigned_to?.[0] || "";
+
+              // Try to match this scheduled job to an availability slot and mark it booked
+              // This creates a booking entry so the slot shows as taken
+              const startHour = parseInt(startTime.split(":")[0]);
+              const slotStartTime = `${startHour.toString().padStart(2, "0")}:00`;
+
+              // Find which crew member this might be for based on the time
+              const matchingSlot = availabilityByDate[dateStr].availableSlots.find(
+                slot => slot.start_time === slotStartTime
+              );
+
+              if (matchingSlot) {
+                const key = getSlotKey(dateStr, matchingSlot.user_name || "", slotStartTime);
+                if (!bookedSlots.has(key)) {
+                  // Auto-book this slot based on Zuper scheduled job
+                  bookedSlots.set(key, {
+                    date: dateStr,
+                    startTime: slotStartTime,
+                    endTime: `${(startHour + 1).toString().padStart(2, "0")}:00`,
+                    userName: matchingSlot.user_name || "",
+                    location: matchingSlot.location || "",
+                    projectId: job.job_uid || "",
+                    projectName: job.job_title,
+                    bookedAt: new Date().toISOString(),
+                  });
+                }
+              }
+            }
           }
         }
       }
