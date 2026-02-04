@@ -89,6 +89,19 @@ export interface AssistedSchedulingSlot {
   available: boolean;
 }
 
+export interface TimeOffRequest {
+  timeoff_uid: string;
+  user_uid: string;
+  user_name?: string;
+  start_date: string;
+  end_date: string;
+  start_time?: string;
+  end_time?: string;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  all_day?: boolean;
+  reason?: string;
+}
+
 // Job categories mapping for PB workflows - using Zuper category UIDs
 // These UIDs are specific to the photonbrothers Zuper account
 export const JOB_CATEGORY_UIDS = {
@@ -417,6 +430,67 @@ export class ZuperClient {
    */
   async getUsersByTeam(teamUid: string): Promise<ZuperApiResponse<ZuperUser[]>> {
     return this.request<ZuperUser[]>(`/teams/${teamUid}/users`);
+  }
+
+  // ========== TIME OFF / AVAILABILITY ==========
+
+  /**
+   * Get time-off requests for users in a date range
+   * Used to determine when technicians are unavailable
+   */
+  async getTimeOffRequests(params: {
+    fromDate: string; // YYYY-MM-DD
+    toDate: string; // YYYY-MM-DD
+    userUid?: string; // Optional specific user
+  }): Promise<ZuperApiResponse<TimeOffRequest[]>> {
+    const queryParams = new URLSearchParams();
+    queryParams.append("filter.from_date", params.fromDate);
+    queryParams.append("filter.to_date", params.toDate);
+    if (params.userUid) {
+      queryParams.append("filter.user_uid", params.userUid);
+    }
+
+    const result = await this.request<{ type: string; data: TimeOffRequest[] }>(
+      `/timesheets/request/timeoff?${queryParams.toString()}`
+    );
+
+    if (result.type === "success" && result.data) {
+      const timeoffs = Array.isArray(result.data.data) ? result.data.data : [];
+      return { type: "success", data: timeoffs };
+    }
+
+    return {
+      type: result.type,
+      error: result.error,
+      data: [],
+    };
+  }
+
+  /**
+   * Get scheduled jobs for a date range to determine busy times
+   */
+  async getScheduledJobsForDateRange(params: {
+    fromDate: string;
+    toDate: string;
+    teamUid?: string;
+    userUid?: string;
+  }): Promise<ZuperApiResponse<ZuperJob[]>> {
+    const result = await this.searchJobs({
+      from_date: params.fromDate,
+      to_date: params.toDate,
+      limit: 500,
+    });
+
+    if (result.type === "success" && result.data) {
+      let jobs = result.data.jobs;
+      // Filter by team or user if specified
+      if (params.teamUid) {
+        jobs = jobs.filter(j => j.assigned_to?.some(u => u.includes(params.teamUid!)));
+      }
+      return { type: "success", data: jobs };
+    }
+
+    return { type: result.type, error: result.error, data: [] };
   }
 
   // ========== HELPER METHODS ==========
