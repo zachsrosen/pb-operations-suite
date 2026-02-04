@@ -5,8 +5,8 @@ import DashboardShell from "@/components/DashboardShell";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { formatCurrency } from "@/lib/format";
-import { DNR_STAGES } from "@/lib/constants";
 import { useProgressiveDeals } from "@/hooks/useProgressiveDeals";
+import { MultiSelectFilter, ProjectSearchBar, FilterOption, FilterGroup } from "@/components/ui/MultiSelectFilter";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -22,6 +22,8 @@ interface Deal {
   isActive: boolean;
   daysSinceCreate: number;
   url: string;
+  detachStatus?: string;
+  resetStatus?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -85,6 +87,48 @@ const STAGE_SHORT_LABELS: Record<string, string> = {
   "Reset Blocked - Waiting on Payment": "Blocked",
 };
 
+// Detach Status options and groups
+const DETACH_STATUS_OPTIONS: FilterOption[] = [
+  { value: "Ready To Schedule", label: "Ready To Schedule" },
+  { value: "Scheduled", label: "Scheduled" },
+  { value: "Started", label: "Started" },
+  { value: "Completed", label: "Completed" },
+];
+
+const DETACH_STATUS_GROUPS: FilterGroup[] = [
+  {
+    name: "Started",
+    options: [
+      { value: "Ready To Schedule", label: "Ready To Schedule" },
+      { value: "Scheduled", label: "Scheduled" },
+      { value: "Started", label: "Started" },
+      { value: "Completed", label: "Completed" },
+    ]
+  }
+];
+
+// Reset Status options and groups
+const RESET_STATUS_OPTIONS: FilterOption[] = [
+  { value: "Ready To Schedule", label: "Ready To Schedule" },
+  { value: "Scheduled", label: "Scheduled" },
+  { value: "On Our Way", label: "On Our Way" },
+  { value: "Started", label: "Started" },
+  { value: "Completed", label: "Completed" },
+];
+
+const RESET_STATUS_GROUPS: FilterGroup[] = [
+  {
+    name: "Reset",
+    options: [
+      { value: "Ready To Schedule", label: "Ready To Schedule" },
+      { value: "Scheduled", label: "Scheduled" },
+      { value: "On Our Way", label: "On Our Way" },
+      { value: "Started", label: "Started" },
+      { value: "Completed", label: "Completed" },
+    ]
+  }
+];
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -118,6 +162,9 @@ export default function DNRPipelinePage() {
 
   const [filterLocation, setFilterLocation] = useState("all");
   const [filterStage, setFilterStage] = useState("all");
+  const [selectedDetachStatuses, setSelectedDetachStatuses] = useState<string[]>([]);
+  const [selectedResetStatuses, setSelectedResetStatuses] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
 
   // ---- Derived data --------------------------------------------------------
 
@@ -135,9 +182,33 @@ export default function DNRPipelinePage() {
         if (filterLocation !== "all" && d.pbLocation !== filterLocation)
           return false;
         if (filterStage !== "all" && d.stage !== filterStage) return false;
+
+        // Detach Status filter
+        if (selectedDetachStatuses.length > 0) {
+          const detachStatus = d.detachStatus || "";
+          if (!selectedDetachStatuses.includes(detachStatus)) return false;
+        }
+
+        // Reset Status filter
+        if (selectedResetStatuses.length > 0) {
+          const resetStatus = d.resetStatus || "";
+          if (!selectedResetStatuses.includes(resetStatus)) return false;
+        }
+
+        // Search filter
+        if (searchQuery) {
+          const query = searchQuery.toLowerCase();
+          const name = (d.name || "").toLowerCase();
+          const location = (d.pbLocation || "").toLowerCase();
+          const city = (d.city || "").toLowerCase();
+          if (!name.includes(query) && !location.includes(query) && !city.includes(query)) {
+            return false;
+          }
+        }
+
         return true;
       }),
-    [allDeals, filterLocation, filterStage],
+    [allDeals, filterLocation, filterStage, selectedDetachStatuses, selectedResetStatuses, searchQuery],
   );
 
   const activeDeals = useMemo(
@@ -284,6 +355,53 @@ export default function DNRPipelinePage() {
         ))}
       </div>
 
+      {/* Filter bar with multi-select filters */}
+      <div className="bg-[#12121a] rounded-xl border border-zinc-800 p-4 mb-6">
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-sm text-zinc-400 font-medium">Status Filters:</span>
+
+          <MultiSelectFilter
+            label="Detach Status"
+            options={DETACH_STATUS_OPTIONS}
+            groups={DETACH_STATUS_GROUPS}
+            selected={selectedDetachStatuses}
+            onChange={setSelectedDetachStatuses}
+            placeholder="All Detach Statuses"
+            accentColor="orange"
+          />
+
+          <MultiSelectFilter
+            label="Reset Status"
+            options={RESET_STATUS_OPTIONS}
+            groups={RESET_STATUS_GROUPS}
+            selected={selectedResetStatuses}
+            onChange={setSelectedResetStatuses}
+            placeholder="All Reset Statuses"
+            accentColor="emerald"
+          />
+
+          <div className="flex-1 min-w-[200px]">
+            <ProjectSearchBar
+              onSearch={setSearchQuery}
+              placeholder="Search by name, location, or city..."
+            />
+          </div>
+
+          {(selectedDetachStatuses.length > 0 || selectedResetStatuses.length > 0 || searchQuery) && (
+            <button
+              onClick={() => {
+                setSelectedDetachStatuses([]);
+                setSelectedResetStatuses([]);
+                setSearchQuery("");
+              }}
+              className="text-xs text-zinc-500 hover:text-zinc-300 px-2 py-1"
+            >
+              Clear All Filters
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Deals table */}
       <div className="bg-[#12121a] rounded-xl border border-zinc-800 overflow-hidden">
         <div className="p-4 border-b border-zinc-800">
@@ -328,6 +446,12 @@ export default function DNRPipelinePage() {
                 <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">
                   Stage
                 </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">
+                  Detach Status
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">
+                  Reset Status
+                </th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase">
                   Amount
                 </th>
@@ -343,7 +467,7 @@ export default function DNRPipelinePage() {
               {filteredDeals.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={8}
                     className="px-4 py-8 text-center text-zinc-500"
                   >
                     No projects found
@@ -374,6 +498,24 @@ export default function DNRPipelinePage() {
                       >
                         {truncateStage(deal.stage)}
                       </span>
+                    </td>
+                    <td className="px-4 py-3 text-sm">
+                      {deal.detachStatus ? (
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-500/20 text-orange-400">
+                          {deal.detachStatus}
+                        </span>
+                      ) : (
+                        <span className="text-zinc-600">-</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-sm">
+                      {deal.resetStatus ? (
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-emerald-500/20 text-emerald-400">
+                          {deal.resetStatus}
+                        </span>
+                      ) : (
+                        <span className="text-zinc-600">-</span>
+                      )}
                     </td>
                     <td
                       className={`px-4 py-3 text-right font-mono text-sm ${

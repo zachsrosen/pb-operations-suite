@@ -138,6 +138,9 @@ const DEAL_PROPERTIES = [
   "project_type",
   "hubspot_owner_id",
   "deal_currency_code",
+  // D&R specific properties
+  "detach_status",
+  "reset_status",
 ];
 
 interface Deal {
@@ -159,6 +162,9 @@ interface Deal {
   url: string;
   isActive: boolean;
   daysSinceCreate: number;
+  // D&R specific fields
+  detachStatus?: string;
+  resetStatus?: string;
 }
 
 function parseDate(value: unknown): string | null {
@@ -201,6 +207,9 @@ function transformDeal(deal: Record<string, unknown>, pipelineKey: string, porta
     url: `https://app.hubspot.com/contacts/${portalId}/record/0-3/${deal.hs_object_id}`,
     isActive: activeStages.includes(stageName),
     daysSinceCreate: createDate ? daysBetween(createDate, now) : 0,
+    // D&R specific fields
+    detachStatus: deal.detach_status ? String(deal.detach_status) : undefined,
+    resetStatus: deal.reset_status ? String(deal.reset_status) : undefined,
   };
 }
 
