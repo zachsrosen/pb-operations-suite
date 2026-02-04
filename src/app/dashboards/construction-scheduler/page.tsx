@@ -18,9 +18,9 @@ interface RawProject {
   projectType?: string;
   stage: string;
   url?: string;
-  installDate?: string;
-  installStatus?: string;
-  constructionComplete?: string;
+  constructionScheduleDate?: string;
+  constructionStatus?: string;
+  constructionCompleteDate?: string;
   closeDate?: string;
   equipment?: {
     systemSizeKwdc?: number;
@@ -171,9 +171,9 @@ function transformProject(p: RawProject): ConstructionProject | null {
     systemSize: p.equipment?.systemSizeKwdc || 0,
     batteries: p.equipment?.battery?.count || 0,
     evCount: p.equipment?.evCount || 0,
-    scheduleDate: p.installDate || null,
-    installStatus: p.installStatus || "Ready to Schedule",
-    completionDate: p.constructionComplete || null,
+    scheduleDate: p.constructionScheduleDate || null,
+    installStatus: p.constructionStatus || "Ready to Schedule",
+    completionDate: p.constructionCompleteDate || null,
     closeDate: p.closeDate || null,
     hubspotUrl: p.url || `https://app.hubspot.com/contacts/21710069/record/0-3/${p.id}`,
   };
