@@ -500,14 +500,19 @@ export default function SiteSurveySchedulerPage() {
   /* ================================================================ */
 
   // Find the current booked slot for a project (if already scheduled)
-  const findCurrentSlotForProject = useCallback((projectId: string, date: string) => {
+  // projectName format: "PROJ-9031 | Czajkowski, Thomas"
+  // bookedSlot.projectName format: "PROJ-9031 | Czajkowski, Thomas | 7481 Spring Dr..."
+  const findCurrentSlotForProject = useCallback((projectId: string, date: string, projectName?: string) => {
     const dayAvail = availabilityByDate[date];
     if (!dayAvail?.bookedSlots) return undefined;
+
+    // Extract the PROJ ID from the project name (e.g., "PROJ-9031")
+    const projId = projectName?.split(" | ")[0] || "";
 
     // Look for a booked slot that matches this project
     const bookedSlot = dayAvail.bookedSlots.find(slot =>
       slot.projectId === projectId ||
-      slot.projectName?.includes(projectId)
+      (projId && slot.projectName?.startsWith(projId))
     );
 
     if (bookedSlot) {
@@ -533,7 +538,7 @@ export default function SiteSurveySchedulerPage() {
     if (!draggedProjectId) return;
     const project = projects.find(p => p.id === draggedProjectId);
     if (project) {
-      const currentSlot = findCurrentSlotForProject(project.id, date);
+      const currentSlot = findCurrentSlotForProject(project.id, date, project.name);
       setScheduleModal({ project, date, currentSlot });
     }
     setDraggedProjectId(null);
@@ -541,10 +546,10 @@ export default function SiteSurveySchedulerPage() {
 
   const handleDateClick = useCallback((date: string, project?: SurveyProject) => {
     if (project) {
-      const currentSlot = findCurrentSlotForProject(project.id, date);
+      const currentSlot = findCurrentSlotForProject(project.id, date, project.name);
       setScheduleModal({ project, date, currentSlot });
     } else if (selectedProject) {
-      const currentSlot = findCurrentSlotForProject(selectedProject.id, date);
+      const currentSlot = findCurrentSlotForProject(selectedProject.id, date, selectedProject.name);
       setScheduleModal({ project: selectedProject, date, currentSlot });
       setSelectedProject(null);
     }
@@ -1060,7 +1065,7 @@ export default function SiteSurveySchedulerPage() {
                         <div className="space-y-1">
                           {events.slice(0, 3).map((ev) => {
                             // Find the booked slot for this event
-                            const evSlot = findCurrentSlotForProject(ev.id, dateStr);
+                            const evSlot = findCurrentSlotForProject(ev.id, dateStr, ev.name);
                             return (
                               <div
                                 key={ev.id}
