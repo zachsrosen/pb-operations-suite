@@ -53,6 +53,12 @@ interface SurveyProject {
 interface PendingSchedule {
   project: SurveyProject;
   date: string;
+  slot?: {
+    userName: string;
+    startTime: string;
+    endTime: string;
+    location: string;
+  };
 }
 
 interface AssistedSlot {
@@ -494,12 +500,36 @@ export default function SiteSurveySchedulerPage() {
 
   const confirmSchedule = useCallback(async () => {
     if (!scheduleModal) return;
-    const { project, date } = scheduleModal;
+    const { project, date, slot } = scheduleModal;
 
     setManualSchedules((prev) => ({
       ...prev,
       [project.id]: date,
     }));
+
+    // Book the time slot if one was selected
+    if (slot) {
+      try {
+        const bookResponse = await fetch("/api/zuper/availability", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            date,
+            startTime: slot.startTime,
+            endTime: slot.endTime,
+            userName: slot.userName,
+            location: slot.location,
+            projectId: project.id,
+            projectName: project.name,
+          }),
+        });
+        if (!bookResponse.ok) {
+          console.warn("Failed to book slot:", await bookResponse.text());
+        }
+      } catch (err) {
+        console.error("Error booking slot:", err);
+      }
+    }
 
     // Sync to Zuper if enabled
     if (zuperConfigured && syncToZuper) {
@@ -522,16 +552,17 @@ export default function SiteSurveySchedulerPage() {
             schedule: {
               type: "survey",
               date: date,
-              days: 0.25, // Site surveys are typically ~2 hours
-              notes: "Scheduled via Site Survey Scheduler",
+              days: 0.25, // Site surveys are typically ~1 hour
+              notes: slot ? `Surveyor: ${slot.userName} at ${slot.startTime}` : "Scheduled via Site Survey Scheduler",
             },
           }),
         });
 
         if (response.ok) {
           const data = await response.json();
+          const slotInfo = slot ? ` (${slot.userName} ${slot.startTime})` : "";
           showToast(
-            `${getCustomerName(project.name)} scheduled - ${data.action === "rescheduled" ? "Zuper job updated" : "Zuper job created"} (customer notified)`
+            `${getCustomerName(project.name)} scheduled${slotInfo} - ${data.action === "rescheduled" ? "Zuper job updated" : "Zuper job created"}`
           );
         } else {
           showToast(
@@ -548,11 +579,17 @@ export default function SiteSurveySchedulerPage() {
         setSyncingToZuper(false);
       }
     } else {
-      showToast(`${getCustomerName(project.name)} scheduled for ${formatDate(date)}`);
+      const slotInfo = slot ? ` with ${slot.userName} at ${slot.startTime.replace(/^0/, "")}` : "";
+      showToast(`${getCustomerName(project.name)} scheduled for ${formatDate(date)}${slotInfo}`);
+    }
+
+    // Refresh availability to show the booked slot removed
+    if (slot) {
+      fetchAvailability(project.location);
     }
 
     setScheduleModal(null);
-  }, [scheduleModal, zuperConfigured, syncToZuper, showToast]);
+  }, [scheduleModal, zuperConfigured, syncToZuper, showToast, fetchAvailability]);
 
   const cancelSchedule = useCallback((projectId: string) => {
     setManualSchedules((prev) => {
@@ -992,7 +1029,7 @@ export default function SiteSurveySchedulerPage() {
                               +{events.length - 3} more
                             </div>
                           )}
-                          {/* Show available surveyors with time slots */}
+                          {/* Show available surveyors with time slots - clickable to book */}
                           {showAvailability && hasAvailability && (() => {
                             // Filter slots by project location if a project is selected
                             const projectLocation = selectedProject?.location;
@@ -1008,10 +1045,30 @@ export default function SiteSurveySchedulerPage() {
                             }) || [];
 
                             // Show more slots if project selected, fewer if just browsing
-                            const maxSlots = selectedProject ? 3 : 2;
+                            const maxSlots = selectedProject ? 4 : 2;
                             return matchingSlots.slice(0, maxSlots).map((slot, i) => (
                               slot.user_name && (
-                                <div key={i} className="text-[0.55rem] text-emerald-400/70 truncate" title={`${slot.user_name} - ${slot.location || "Any"} - ${slot.display_time || ""}`}>
+                                <div
+                                  key={i}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (selectedProject) {
+                                      // Open schedule modal with this slot pre-selected
+                                      setScheduleModal({
+                                        project: selectedProject,
+                                        date: dateStr,
+                                        slot: {
+                                          userName: slot.user_name || "",
+                                          startTime: slot.start_time,
+                                          endTime: slot.end_time,
+                                          location: slot.location || "",
+                                        }
+                                      });
+                                    }
+                                  }}
+                                  className={`text-[0.55rem] text-emerald-400/70 truncate ${selectedProject ? "cursor-pointer hover:bg-emerald-500/20 hover:text-emerald-300 rounded px-0.5" : ""}`}
+                                  title={`${selectedProject ? "Click to book: " : ""}${slot.user_name} - ${slot.location || "Any"} - ${slot.display_time || ""}`}
+                                >
                                   {slot.user_name} {slot.display_time && <span className="text-emerald-500/50">{slot.display_time}</span>}
                                 </div>
                               )
@@ -1149,6 +1206,19 @@ export default function SiteSurveySchedulerPage() {
                 <span className="text-xs text-zinc-500">Date</span>
                 <p className="text-sm font-medium text-cyan-400">{formatDate(scheduleModal.date)}</p>
               </div>
+
+              {/* Selected Time Slot */}
+              {scheduleModal.slot && (
+                <div className="p-2 bg-emerald-900/30 border border-emerald-500/30 rounded-lg">
+                  <span className="text-xs text-emerald-400 font-medium">Booked Time Slot</span>
+                  <p className="text-sm text-white mt-1">
+                    {scheduleModal.slot.userName} &bull; {scheduleModal.slot.startTime.replace(/^0/, "")} - {scheduleModal.slot.endTime.replace(/^0/, "")}
+                  </p>
+                  <p className="text-xs text-zinc-400 mt-0.5">
+                    This 1-hour slot will be reserved
+                  </p>
+                </div>
+              )}
 
               <div>
                 <span className="text-xs text-zinc-500">Amount</span>

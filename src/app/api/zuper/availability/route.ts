@@ -8,6 +8,7 @@ import { ZuperClient, JOB_CATEGORY_UIDS } from "@/lib/zuper";
  * - Local crew availability schedules (configured in this file)
  * - Time-off requests from Zuper (unavailable periods)
  * - Already scheduled jobs from Zuper
+ * - Locally booked 1-hour slots
  *
  * Query params:
  * - from_date: Start date (YYYY-MM-DD) - required
@@ -15,7 +16,39 @@ import { ZuperClient, JOB_CATEGORY_UIDS } from "@/lib/zuper";
  * - type: Job type (survey, construction, inspection) - maps to category
  * - team_uid: Filter by team
  * - location: Location name to filter by
+ *
+ * POST /api/zuper/availability
+ *
+ * Book a 1-hour time slot
+ * Body: { date, startTime, endTime, userName, location, projectId, projectName }
+ *
+ * DELETE /api/zuper/availability
+ *
+ * Remove a booked slot
+ * Body: { date, startTime, userName }
  */
+
+// In-memory store for booked slots
+// In production, this should be stored in a database
+// Format: { "2025-02-05|Drew Perry|12:00": { projectId, projectName, ... } }
+interface BookedSlot {
+  date: string;
+  startTime: string;
+  endTime: string;
+  userName: string;
+  location: string;
+  projectId: string;
+  projectName: string;
+  bookedAt: string;
+}
+
+// This will persist across requests within the same server instance
+// but will reset on redeploy - for production, use a database
+const bookedSlots: Map<string, BookedSlot> = new Map();
+
+function getSlotKey(date: string, userName: string, startTime: string): string {
+  return `${date}|${userName}|${startTime}`;
+}
 
 // Local crew availability configuration
 // Based on surveyor shift schedules
@@ -246,6 +279,33 @@ export async function GET(request: NextRequest) {
     };
   }
 
+  // Helper to generate 1-hour time slots from a time range
+  const generateHourlySlots = (startTime: string, endTime: string): Array<{ start: string; end: string }> => {
+    const slots: Array<{ start: string; end: string }> = [];
+    const [startHour, startMin] = startTime.split(":").map(Number);
+    const [endHour, endMin] = endTime.split(":").map(Number);
+
+    let currentHour = startHour;
+    let currentMin = startMin;
+
+    while (currentHour < endHour || (currentHour === endHour && currentMin < endMin)) {
+      const slotStart = `${currentHour.toString().padStart(2, "0")}:${currentMin.toString().padStart(2, "0")}`;
+
+      // Move to next hour
+      currentHour += 1;
+      if (currentHour > endHour || (currentHour === endHour && currentMin >= endMin)) {
+        // Last slot ends at the shift end time
+        slots.push({ start: slotStart, end: endTime });
+        break;
+      }
+
+      const slotEnd = `${currentHour.toString().padStart(2, "0")}:${currentMin.toString().padStart(2, "0")}`;
+      slots.push({ start: slotStart, end: slotEnd });
+    }
+
+    return slots;
+  };
+
   // Generate availability from local crew schedules
   const locationMatches = location ? getLocationMatches(location) : null;
   const jobType = type || "survey";
@@ -266,14 +326,19 @@ export async function GET(request: NextRequest) {
       const shifts = crew.schedule.filter((s) => s.day === dayOfWeek);
       for (const shift of shifts) {
         if (availabilityByDate[dateStr]) {
-          const displayTime = `${formatTimeForDisplay(shift.startTime)}-${formatTimeForDisplay(shift.endTime)}`;
-          availabilityByDate[dateStr].availableSlots.push({
-            start_time: shift.startTime,
-            end_time: shift.endTime,
-            display_time: displayTime,
-            user_name: crew.name,
-            location: crew.location,
-          });
+          // Generate 1-hour slots for this shift
+          const hourlySlots = generateHourlySlots(shift.startTime, shift.endTime);
+
+          for (const slot of hourlySlots) {
+            const displayTime = `${formatTimeForDisplay(slot.start)}-${formatTimeForDisplay(slot.end)}`;
+            availabilityByDate[dateStr].availableSlots.push({
+              start_time: slot.start,
+              end_time: slot.end,
+              display_time: displayTime,
+              user_name: crew.name,
+              location: crew.location,
+            });
+          }
           availabilityByDate[dateStr].hasAvailability = true;
         }
       }
@@ -345,6 +410,17 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // Filter out locally booked slots
+  for (const dateStr in availabilityByDate) {
+    const day = availabilityByDate[dateStr];
+    day.availableSlots = day.availableSlots.filter((slot) => {
+      const key = getSlotKey(dateStr, slot.user_name || "", slot.start_time);
+      return !bookedSlots.has(key);
+    });
+    // Recheck availability after filtering
+    day.hasAvailability = day.availableSlots.length > 0;
+  }
+
   // Determine if dates are fully booked
   for (const dateStr in availabilityByDate) {
     const day = availabilityByDate[dateStr];
@@ -362,4 +438,100 @@ export async function GET(request: NextRequest) {
     location,
     availabilityByDate,
   });
+}
+
+/**
+ * POST /api/zuper/availability
+ * Book a 1-hour time slot for a surveyor
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { date, startTime, endTime, userName, location, projectId, projectName } = body;
+
+    if (!date || !startTime || !userName || !projectId) {
+      return NextResponse.json(
+        { error: "Missing required fields: date, startTime, userName, projectId" },
+        { status: 400 }
+      );
+    }
+
+    const key = getSlotKey(date, userName, startTime);
+
+    // Check if slot is already booked
+    if (bookedSlots.has(key)) {
+      return NextResponse.json(
+        { error: "This time slot is already booked" },
+        { status: 409 }
+      );
+    }
+
+    // Book the slot
+    const booking: BookedSlot = {
+      date,
+      startTime,
+      endTime: endTime || `${(parseInt(startTime.split(":")[0]) + 1).toString().padStart(2, "0")}:00`,
+      userName,
+      location: location || "",
+      projectId,
+      projectName: projectName || "",
+      bookedAt: new Date().toISOString(),
+    };
+
+    bookedSlots.set(key, booking);
+
+    return NextResponse.json({
+      success: true,
+      booking,
+      message: `Slot booked: ${userName} on ${date} at ${startTime}`,
+    });
+  } catch (error) {
+    console.error("Error booking slot:", error);
+    return NextResponse.json(
+      { error: "Failed to book slot", details: String(error) },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * DELETE /api/zuper/availability
+ * Remove a booked time slot
+ */
+export async function DELETE(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { date, startTime, userName } = body;
+
+    if (!date || !startTime || !userName) {
+      return NextResponse.json(
+        { error: "Missing required fields: date, startTime, userName" },
+        { status: 400 }
+      );
+    }
+
+    const key = getSlotKey(date, userName, startTime);
+
+    if (!bookedSlots.has(key)) {
+      return NextResponse.json(
+        { error: "Slot not found" },
+        { status: 404 }
+      );
+    }
+
+    const booking = bookedSlots.get(key);
+    bookedSlots.delete(key);
+
+    return NextResponse.json({
+      success: true,
+      removed: booking,
+      message: `Slot freed: ${userName} on ${date} at ${startTime}`,
+    });
+  } catch (error) {
+    console.error("Error removing slot:", error);
+    return NextResponse.json(
+      { error: "Failed to remove slot", details: String(error) },
+      { status: 500 }
+    );
+  }
 }
