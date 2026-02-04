@@ -274,8 +274,9 @@ export class ZuperClient {
     longitude?: number;
   }): Promise<ZuperApiResponse<AssistedSchedulingSlot[]>> {
     const queryParams = new URLSearchParams();
-    queryParams.append("from_date", params.fromDate);
-    queryParams.append("to_date", params.toDate);
+    // Zuper expects datetime format: YYYY-MM-DD HH:mm:ss
+    queryParams.append("from_date", `${params.fromDate} 00:00:00`);
+    queryParams.append("to_date", `${params.toDate} 23:59:59`);
     if (params.jobCategory) queryParams.append("job_category", params.jobCategory);
     if (params.teamUid) queryParams.append("team_uid", params.teamUid);
     if (params.duration) queryParams.append("duration", String(params.duration));
