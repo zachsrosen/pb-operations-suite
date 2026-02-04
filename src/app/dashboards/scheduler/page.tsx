@@ -553,9 +553,12 @@ export default function SchedulerPage() {
   /* ================================================================ */
 
   const weekDates = useMemo(() => {
-    const base = new Date(2026, 0, 13);
-    const start = new Date(base);
-    start.setDate(start.getDate() - start.getDay() + 1 + weekOffset * 7);
+    const today = new Date();
+    // Find the Monday of the current week
+    const dayOfWeek = today.getDay();
+    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // Sunday is 0, so go back 6 days
+    const start = new Date(today);
+    start.setDate(today.getDate() + mondayOffset + weekOffset * 7);
     const dates: Date[] = [];
     for (let i = 0; i < 5; i++) {
       const d = new Date(start);
@@ -570,7 +573,12 @@ export default function SchedulerPage() {
   /* ================================================================ */
 
   const ganttDates = useMemo(() => {
-    const start = new Date(2026, 0, 13);
+    const today = new Date();
+    // Find the Monday of the current week
+    const dayOfWeek = today.getDay();
+    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const start = new Date(today);
+    start.setDate(today.getDate() + mondayOffset);
     const dates: Date[] = [];
     const current = new Date(start);
     while (dates.length < 10) {
