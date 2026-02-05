@@ -34,6 +34,9 @@ export default function AdminUsersPage() {
   const [error, setError] = useState<string | null>(null);
   const [updating, setUpdating] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [workspaceConfigured, setWorkspaceConfigured] = useState<boolean | null>(null);
+  const [workspaceDomain, setWorkspaceDomain] = useState<string>("");
 
   const fetchUsers = useCallback(async () => {
     try {
@@ -53,9 +56,23 @@ export default function AdminUsersPage() {
     }
   }, []);
 
+  const checkWorkspaceConfig = useCallback(async () => {
+    try {
+      const response = await fetch("/api/admin/sync-workspace");
+      if (response.ok) {
+        const data = await response.json();
+        setWorkspaceConfigured(data.configured);
+        setWorkspaceDomain(data.domain);
+      }
+    } catch {
+      setWorkspaceConfigured(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchUsers();
-  }, [fetchUsers]);
+    checkWorkspaceConfig();
+  }, [fetchUsers, checkWorkspaceConfig]);
 
   const updateRole = async (userId: string, newRole: string) => {
     setUpdating(userId);
@@ -81,6 +98,32 @@ export default function AdminUsersPage() {
       setTimeout(() => setToast(null), 3000);
     } finally {
       setUpdating(null);
+    }
+  };
+
+  const syncWorkspace = async () => {
+    setSyncing(true);
+    try {
+      const response = await fetch("/api/admin/sync-workspace", {
+        method: "POST",
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to sync");
+      }
+
+      setToast(`Synced: ${data.results.created} new, ${data.results.updated} updated`);
+      setTimeout(() => setToast(null), 4000);
+
+      // Refresh user list
+      await fetchUsers();
+    } catch (err) {
+      setToast(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
+      setTimeout(() => setToast(null), 4000);
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -120,22 +163,85 @@ export default function AdminUsersPage() {
       {/* Header */}
       <div className="sticky top-0 z-40 bg-[#0a0a0f]/95 backdrop-blur border-b border-zinc-800">
         <div className="max-w-4xl mx-auto px-4 py-4">
-          <div className="flex items-center gap-4">
-            <Link href="/" className="text-zinc-500 hover:text-white">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-              </svg>
-            </Link>
-            <h1 className="text-xl font-bold">User Management</h1>
-            <span className="text-xs text-zinc-500 bg-zinc-800 px-2 py-1 rounded">
-              {users.length} users
-            </span>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <Link href="/" className="text-zinc-500 hover:text-white">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                </svg>
+              </Link>
+              <h1 className="text-xl font-bold">User Management</h1>
+              <span className="text-xs text-zinc-500 bg-zinc-800 px-2 py-1 rounded">
+                {users.length} users
+              </span>
+            </div>
+
+            {/* Sync Button */}
+            {workspaceConfigured && (
+              <button
+                onClick={syncWorkspace}
+                disabled={syncing}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-not-allowed rounded-lg text-sm font-medium transition-colors"
+              >
+                {syncing ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Syncing...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Sync Google Workspace
+                  </>
+                )}
+              </button>
+            )}
           </div>
         </div>
       </div>
 
       {/* Content */}
       <div className="max-w-4xl mx-auto px-4 py-6">
+        {/* Workspace Sync Info */}
+        {workspaceConfigured === false && (
+          <div className="mb-6 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-xl">
+            <div className="flex items-start gap-3">
+              <svg className="w-5 h-5 text-yellow-400 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <div>
+                <h3 className="text-sm font-medium text-yellow-400">Google Workspace sync not configured</h3>
+                <p className="text-xs text-zinc-400 mt-1">
+                  To enable automatic user sync, add these environment variables:
+                </p>
+                <ul className="text-xs text-zinc-500 mt-2 space-y-1 font-mono">
+                  <li>GOOGLE_SERVICE_ACCOUNT_EMAIL</li>
+                  <li>GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY</li>
+                  <li>GOOGLE_ADMIN_EMAIL</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {workspaceConfigured && (
+          <div className="mb-6 p-4 bg-blue-500/10 border border-blue-500/30 rounded-xl">
+            <div className="flex items-center gap-3">
+              <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <div>
+                <h3 className="text-sm font-medium text-blue-400">Google Workspace connected</h3>
+                <p className="text-xs text-zinc-400 mt-0.5">
+                  Click &quot;Sync Google Workspace&quot; to import all users from <strong>{workspaceDomain}</strong>
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Role Legend */}
         <div className="mb-6 p-4 bg-zinc-900 rounded-xl border border-zinc-800">
           <h2 className="text-sm font-semibold mb-3 text-zinc-400">Role Permissions</h2>
@@ -202,7 +308,7 @@ export default function AdminUsersPage() {
 
           {users.length === 0 && (
             <div className="p-8 text-center text-zinc-500">
-              No users found. Users will appear here after they log in.
+              No users found. {workspaceConfigured ? "Click \"Sync Google Workspace\" to import users." : "Users will appear here after they log in."}
             </div>
           )}
         </div>
