@@ -1,16 +1,34 @@
 import { auth } from "@/auth";
 import { NextResponse } from "next/server";
 
+// Routes that SALES role can access
+const SALES_ALLOWED_ROUTES = [
+  "/dashboards/site-survey-scheduler",
+  "/login",
+  "/api/projects",
+  "/api/zuper",
+  "/api/auth",
+];
+
+// Routes that are public (no auth required)
+const PUBLIC_ROUTES = [
+  "/login",
+  "/api/auth",
+];
+
 export default auth((req) => {
   const isLoggedIn = !!req.auth;
-  const isLoginPage = req.nextUrl.pathname === "/login";
-  const isAuthRoute = req.nextUrl.pathname.startsWith("/api/auth");
-  const isApiRoute = req.nextUrl.pathname.startsWith("/api/");
-  const isMaintenancePage = req.nextUrl.pathname === "/maintenance";
+  const userRole = req.auth?.user?.role || "VIEWER";
+  const pathname = req.nextUrl.pathname;
+
+  const isLoginPage = pathname === "/login";
+  const isAuthRoute = pathname.startsWith("/api/auth");
+  const isApiRoute = pathname.startsWith("/api/");
+  const isMaintenancePage = pathname === "/maintenance";
   const isStaticFile =
-    req.nextUrl.pathname.startsWith("/_next/") ||
-    req.nextUrl.pathname.startsWith("/static/") ||
-    req.nextUrl.pathname.includes(".");
+    pathname.startsWith("/_next/") ||
+    pathname.startsWith("/static/") ||
+    pathname.includes(".");
 
   // Check for maintenance mode
   const maintenanceMode = process.env.MAINTENANCE_MODE === "true";
@@ -37,14 +55,27 @@ export default auth((req) => {
 
   // Redirect logged-in users away from login page
   if (isLoginPage && isLoggedIn) {
+    // SALES users go to survey scheduler, others go to home
+    if (userRole === "SALES") {
+      return NextResponse.redirect(new URL("/dashboards/site-survey-scheduler", req.url));
+    }
     return NextResponse.redirect(new URL("/", req.url));
   }
 
   // Redirect non-logged-in users to login
   if (!isLoginPage && !isLoggedIn) {
     const loginUrl = new URL("/login", req.url);
-    loginUrl.searchParams.set("callbackUrl", req.nextUrl.pathname);
+    loginUrl.searchParams.set("callbackUrl", pathname);
     return NextResponse.redirect(loginUrl);
+  }
+
+  // Role-based access control for SALES users
+  if (isLoggedIn && userRole === "SALES") {
+    const canAccess = SALES_ALLOWED_ROUTES.some(route => pathname.startsWith(route));
+    if (!canAccess) {
+      // Redirect SALES users to their allowed page
+      return NextResponse.redirect(new URL("/dashboards/site-survey-scheduler", req.url));
+    }
   }
 
   return NextResponse.next();
