@@ -223,10 +223,16 @@ export async function PUT(request: NextRequest) {
     if (existingJob && existingJob.job_uid) {
       // Reschedule existing job
       console.log(`[Zuper Schedule] ACTION: RESCHEDULE - Job UID: ${existingJob.job_uid}`);
+
+      // Get user UIDs from crew selection (crew can be a user UID or comma-separated list)
+      const userUids = schedule.crew ? schedule.crew.split(",").map((u: string) => u.trim()).filter(Boolean) : [];
+      console.log(`[Zuper Schedule] Assigning to users:`, userUids);
+
       const rescheduleResult = await zuper.rescheduleJob(
         existingJob.job_uid,
         startDateTime,
-        endDateTime
+        endDateTime,
+        userUids.length > 0 ? userUids : undefined
       );
 
       if (rescheduleResult.type === "error") {

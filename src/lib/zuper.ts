@@ -248,15 +248,17 @@ export class ZuperClient {
   }
 
   /**
-   * Reschedule a job by updating its scheduled times
+   * Reschedule a job by updating its scheduled times and optionally assign users
    * Zuper uses PUT /jobs/schedule with job_uid, from_date, to_date at top level
    */
   async rescheduleJob(
     jobUid: string,
     scheduledStartTime: string,
-    scheduledEndTime: string
+    scheduledEndTime: string,
+    userUids?: string[]
   ): Promise<ZuperApiResponse<ZuperJob>> {
-    return this.request<ZuperJob>(`/jobs/schedule`, {
+    // First reschedule the job times
+    const scheduleResult = await this.request<ZuperJob>(`/jobs/schedule`, {
       method: "PUT",
       body: JSON.stringify({
         job_uid: jobUid,
@@ -264,6 +266,19 @@ export class ZuperClient {
         to_date: this.formatZuperDateTime(scheduledEndTime),
       }),
     });
+
+    // If we have user UIDs to assign, do that too
+    if (scheduleResult.type === "success" && userUids && userUids.length > 0) {
+      console.log(`[Zuper] Assigning users to job ${jobUid}:`, userUids);
+      const assignResult = await this.assignJob(jobUid, userUids);
+      if (assignResult.type === "error") {
+        console.error(`[Zuper] Failed to assign users:`, assignResult.error);
+        // Return the schedule result anyway - job was rescheduled, just not assigned
+      }
+      return assignResult.type === "success" ? assignResult : scheduleResult;
+    }
+
+    return scheduleResult;
   }
 
   /**

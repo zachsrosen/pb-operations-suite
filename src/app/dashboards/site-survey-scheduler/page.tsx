@@ -62,6 +62,7 @@ interface PendingSchedule {
   date: string;
   slot?: {
     userName: string;
+    userUid?: string;
     startTime: string;
     endTime: string;
     location: string;
@@ -642,6 +643,7 @@ export default function SiteSurveySchedulerPage() {
               days: 0.25, // Site surveys are typically ~1 hour
               startTime: slot?.startTime, // e.g. "12:00"
               endTime: slot?.endTime, // e.g. "13:00"
+              crew: slot?.userUid, // Zuper user UID for assignment
               assignedUser: slot?.userName,
               notes: slot ? `Surveyor: ${slot.userName} at ${slot.startTime}` : "Scheduled via Site Survey Scheduler",
             },
@@ -1154,6 +1156,7 @@ export default function SiteSurveySchedulerPage() {
                                         date: dateStr,
                                         slot: {
                                           userName: slot.user_name || "",
+                                          userUid: slot.user_uid,
                                           startTime: slot.start_time,
                                           endTime: slot.end_time,
                                           location: slot.location || "",
@@ -1405,6 +1408,7 @@ export default function SiteSurveySchedulerPage() {
                             ...scheduleModal,
                             slot: {
                               userName: slot.user_name || "",
+                              userUid: slot.user_uid,
                               startTime: slot.start_time,
                               endTime: slot.end_time,
                               location: slot.location || "",
