@@ -89,10 +89,20 @@ async function getZuperUserUidMap(zuper: ZuperClient): Promise<Map<string, strin
   const userMap = new Map<string, string>();
 
   if (usersResult.type === "success" && usersResult.data) {
-    for (const user of usersResult.data) {
+    // Zuper API returns { type, data: [users] } or sometimes just the array
+    // Handle both cases
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const responseData = usersResult.data as any;
+    const users = Array.isArray(responseData)
+      ? responseData
+      : (Array.isArray(responseData.data) ? responseData.data : []);
+
+    console.log(`[Zuper Users] Got ${users.length} users from API`);
+
+    for (const user of users) {
       if (user.user_uid && user.first_name) {
         // Create multiple lookup keys for flexible matching
-        const fullName = `${user.first_name} ${user.last_name}`.trim().toLowerCase();
+        const fullName = `${user.first_name} ${user.last_name || ""}`.trim().toLowerCase();
         const firstName = user.first_name.toLowerCase();
         const lastName = (user.last_name || "").toLowerCase();
 
@@ -112,6 +122,8 @@ async function getZuperUserUidMap(zuper: ZuperClient): Promise<Map<string, strin
         console.log(`[Zuper Users] Cached: "${fullName}" -> ${user.user_uid}`);
       }
     }
+  } else {
+    console.error(`[Zuper Users] Failed to fetch users:`, usersResult.error);
   }
 
   // Cache the results
