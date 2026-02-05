@@ -10,6 +10,7 @@ import { StatCard, MiniStat } from "@/components/ui/MetricCard";
 import { SkeletonSection } from "@/components/ui/Skeleton";
 import { LiveIndicator } from "@/components/ui/LiveIndicator";
 import { UserMenu } from "@/components/UserMenu";
+import { prefetchDashboard } from "@/lib/prefetch";
 
 function useIsMac() {
   const [isMac, setIsMac] = useState(true);
@@ -585,8 +586,16 @@ const DashboardLink = memo(function DashboardLink({
     cyan: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
   };
 
+  // Extract dashboard name from href for prefetching
+  const dashboardName = href.replace("/dashboards/", "");
+
+  // Prefetch data on hover for faster navigation
+  const handleMouseEnter = useCallback(() => {
+    prefetchDashboard(dashboardName);
+  }, [dashboardName]);
+
   return (
-    <div className="relative group">
+    <div className="relative group" onMouseEnter={handleMouseEnter}>
       <Link
         href={href}
         className="block bg-zinc-900/50 border border-zinc-800 rounded-xl p-5 hover:border-orange-500/50 hover:bg-zinc-900 transition-all"

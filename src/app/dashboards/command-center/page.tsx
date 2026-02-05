@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
+import { prefetchDashboard } from "@/lib/prefetch";
 
 // ============================================================
 // TypeScript Interfaces
@@ -693,6 +694,7 @@ function PipelineView({ projects }: { projects: Project[] }) {
                     <Link
                       href="/dashboards/scheduler"
                       className="text-[0.65rem] px-2 py-1 rounded-md border border-zinc-800 text-zinc-300 hover:border-orange-500 hover:text-orange-500 transition-all"
+                      onMouseEnter={() => prefetchDashboard("scheduler")}
                     >
                       Schedule
                     </Link>
@@ -1767,6 +1769,7 @@ export default function CommandCenterPage() {
             <Link
               href="/dashboards/scheduler"
               className="px-4 sm:px-5 py-2 sm:py-2.5 text-[0.75rem] sm:text-[0.8rem] font-semibold rounded-t-lg cursor-pointer border border-b-0 bg-[#0a0a0f] text-zinc-500 border-[#1e1e2e] hover:text-zinc-300 transition-all no-underline whitespace-nowrap"
+              onMouseEnter={() => prefetchDashboard("scheduler")}
             >
               Scheduler &rarr;
             </Link>
