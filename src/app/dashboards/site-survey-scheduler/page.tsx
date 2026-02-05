@@ -500,8 +500,9 @@ export default function SiteSurveySchedulerPage() {
   /* ================================================================ */
 
   // Find the current booked slot for a project (if already scheduled)
-  // projectName format: "PROJ-9031 | Czajkowski, Thomas"
-  // bookedSlot.projectName format: "PROJ-9031 | Czajkowski, Thomas | 7481 Spring Dr..."
+  // HubSpot projectName format: "PROJ-9031 | Czajkowski, Thomas"
+  // Zuper bookedSlot.projectName format: "Barstad, Ed | 6611 S Yarrow St, Littleton, CO 80123"
+  // OR: "PROJ-9031 | Czajkowski, Thomas | 7481 Spring Dr..." (if booked via app)
   const findCurrentSlotForProject = useCallback((projectId: string, date: string, projectName?: string) => {
     const dayAvail = availabilityByDate[date];
     if (!dayAvail?.bookedSlots) return undefined;
@@ -509,11 +510,31 @@ export default function SiteSurveySchedulerPage() {
     // Extract the PROJ ID from the project name (e.g., "PROJ-9031")
     const projId = projectName?.split(" | ")[0] || "";
 
+    // Extract customer last name from HubSpot project name (e.g., "Czajkowski" from "PROJ-9031 | Czajkowski, Thomas")
+    const customerPart = projectName?.split(" | ")[1] || "";
+    const customerLastName = customerPart.split(",")[0]?.trim().toLowerCase() || "";
+
     // Look for a booked slot that matches this project
-    const bookedSlot = dayAvail.bookedSlots.find(slot =>
-      slot.projectId === projectId ||
-      (projId && slot.projectName?.startsWith(projId))
-    );
+    const bookedSlot = dayAvail.bookedSlots.find(slot => {
+      // Match by project ID
+      if (slot.projectId === projectId) return true;
+
+      // Match by PROJ number prefix (for jobs booked via app)
+      if (projId && slot.projectName?.startsWith(projId)) return true;
+
+      // Match by customer last name (for jobs created directly in Zuper)
+      // Zuper job titles are often "LastName, FirstName | Address"
+      if (customerLastName && customerLastName.length > 2) {
+        const slotNameLower = (slot.projectName || "").toLowerCase();
+        // Check if Zuper job title starts with the customer's last name
+        if (slotNameLower.startsWith(customerLastName + ",") ||
+            slotNameLower.startsWith(customerLastName + " ")) {
+          return true;
+        }
+      }
+
+      return false;
+    });
 
     if (bookedSlot) {
       return {
