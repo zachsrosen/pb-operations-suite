@@ -66,100 +66,15 @@ interface CrewSchedule {
   userUid?: string; // Zuper user UID - populated dynamically
 }
 
-// Cache for Zuper user UID lookups (name -> userUid)
-let userUidCache: Map<string, string> | null = null;
-let userUidCacheTime = 0;
-const USER_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
-
-/**
- * Fetch and cache Zuper user UIDs
- * Maps user names to their Zuper user_uid
- */
-async function getZuperUserUidMap(zuper: ZuperClient): Promise<Map<string, string>> {
-  const now = Date.now();
-
-  // Return cached data if still valid
-  if (userUidCache && (now - userUidCacheTime) < USER_CACHE_TTL) {
-    return userUidCache;
-  }
-
-  // Fetch users from Zuper
-  const usersResult = await zuper.getUsers();
-
-  const userMap = new Map<string, string>();
-
-  if (usersResult.type === "success" && usersResult.data) {
-    // Zuper API returns { type, data: [users] } or sometimes just the array
-    // Handle both cases
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const responseData = usersResult.data as any;
-    const users = Array.isArray(responseData)
-      ? responseData
-      : (Array.isArray(responseData.data) ? responseData.data : []);
-
-    console.log(`[Zuper Users] Got ${users.length} users from API`);
-
-    for (const user of users) {
-      if (user.user_uid && user.first_name) {
-        // Create multiple lookup keys for flexible matching
-        const fullName = `${user.first_name} ${user.last_name || ""}`.trim().toLowerCase();
-        const firstName = user.first_name.toLowerCase();
-        const lastName = (user.last_name || "").toLowerCase();
-
-        // Store with full name
-        userMap.set(fullName, user.user_uid);
-
-        // Store with first name only (for cases like "Rich" or "Rolando")
-        if (!userMap.has(firstName)) {
-          userMap.set(firstName, user.user_uid);
-        }
-
-        // Store with "FirstName LastName" format
-        if (lastName) {
-          userMap.set(`${firstName} ${lastName}`, user.user_uid);
-        }
-
-        console.log(`[Zuper Users] Cached: "${fullName}" -> ${user.user_uid}`);
-      }
-    }
-  } else {
-    console.error(`[Zuper Users] Failed to fetch users:`, usersResult.error);
-  }
-
-  // Cache the results
-  userUidCache = userMap;
-  userUidCacheTime = now;
-
-  console.log(`[Zuper Users] Cached ${userMap.size} user mappings`);
-  return userMap;
-}
-
-/**
- * Look up a Zuper user UID by name
- */
-function findUserUid(userMap: Map<string, string>, name: string): string | undefined {
-  const normalizedName = name.toLowerCase().trim();
-
-  // Try exact match first
-  if (userMap.has(normalizedName)) {
-    return userMap.get(normalizedName);
-  }
-
-  // Try first name only (e.g., "Rich" matches "Rich SomeLastName")
-  const firstName = normalizedName.split(" ")[0];
-  if (userMap.has(firstName)) {
-    return userMap.get(firstName);
-  }
-
-  // Try partial match (for cases where Zuper has different name format)
-  for (const [key, uid] of userMap.entries()) {
-    if (key.includes(firstName) || firstName.includes(key.split(" ")[0])) {
-      return uid;
-    }
-  }
-
-  return undefined;
-}
+// Zuper User UIDs - hardcoded since Zuper API doesn't have a /users endpoint
+// Found by searching job assignments
+const ZUPER_USER_UIDS: Record<string, string> = {
+  "Drew Perry": "0ddc7e1d-62e1-49df-b89d-905a39c1e353",
+  "Joe Lynch": "f203f99b-4aaf-488e-8e6a-8ee5e94ec217",
+  "Derek Pomar": "f3bb40c0-d548-4355-ab39-6c27532a6d36",
+  "Rolando": "a89ed2f5-222b-4b09-8bb0-14dc45c2a51b", // Rolando Valle
+  "Rich": "e043bf1d-006b-4033-a46e-3b5d06ed3d00", // Ryszard Szymanski
+};
 
 const CREW_SCHEDULES: CrewSchedule[] = [
   // Site Surveyors
@@ -172,6 +87,7 @@ const CREW_SCHEDULES: CrewSchedule[] = [
       { day: 4, startTime: "12:00", endTime: "15:00" }, // Thu
     ],
     jobTypes: ["survey"],
+    userUid: ZUPER_USER_UIDS["Drew Perry"],
   },
   {
     name: "Joe Lynch",
@@ -182,6 +98,7 @@ const CREW_SCHEDULES: CrewSchedule[] = [
       { day: 4, startTime: "11:00", endTime: "14:00" }, // Thu
     ],
     jobTypes: ["survey"],
+    userUid: ZUPER_USER_UIDS["Joe Lynch"],
   },
   {
     name: "Derek Pomar",
@@ -191,6 +108,7 @@ const CREW_SCHEDULES: CrewSchedule[] = [
       { day: 2, startTime: "12:00", endTime: "16:00" }, // Tue
     ],
     jobTypes: ["survey"],
+    userUid: ZUPER_USER_UIDS["Derek Pomar"],
   },
   {
     name: "Derek Pomar",
@@ -200,6 +118,7 @@ const CREW_SCHEDULES: CrewSchedule[] = [
       { day: 3, startTime: "12:00", endTime: "16:00" }, // Wed
     ],
     jobTypes: ["survey"],
+    userUid: ZUPER_USER_UIDS["Derek Pomar"],
   },
   {
     name: "Derek Pomar",
@@ -209,6 +128,7 @@ const CREW_SCHEDULES: CrewSchedule[] = [
       { day: 4, startTime: "12:00", endTime: "16:00" }, // Thu
     ],
     jobTypes: ["survey"],
+    userUid: ZUPER_USER_UIDS["Derek Pomar"],
   },
   {
     name: "Rich",
@@ -220,6 +140,7 @@ const CREW_SCHEDULES: CrewSchedule[] = [
       { day: 4, startTime: "11:00", endTime: "14:00" }, // Thu 11am-2pm
     ],
     jobTypes: ["survey"],
+    userUid: ZUPER_USER_UIDS["Rich"],
   },
   {
     name: "Rolando",
@@ -233,6 +154,7 @@ const CREW_SCHEDULES: CrewSchedule[] = [
       { day: 5, startTime: "08:00", endTime: "12:00" }, // Fri
     ],
     jobTypes: ["survey"],
+    userUid: ZUPER_USER_UIDS["Rolando"],
   },
 
   // ============================================
@@ -408,16 +330,6 @@ export async function GET(request: NextRequest) {
   const locationMatches = location ? getLocationMatches(location) : null;
   const jobType = type || "survey";
 
-  // Look up Zuper user UIDs for crew members
-  let userUidMap: Map<string, string> = new Map();
-  if (zuper.isConfigured()) {
-    try {
-      userUidMap = await getZuperUserUidMap(zuper);
-    } catch (err) {
-      console.error("[Zuper Availability] Failed to fetch user UIDs:", err);
-    }
-  }
-
   for (const crew of CREW_SCHEDULES) {
     // Filter by job type
     if (!crew.jobTypes.includes(jobType)) continue;
@@ -425,12 +337,12 @@ export async function GET(request: NextRequest) {
     // Filter by location if specified
     if (locationMatches && !locationMatches.includes(crew.location)) continue;
 
-    // Look up the user's Zuper UID
-    const crewUserUid = findUserUid(userUidMap, crew.name);
+    // Use the hardcoded userUid from the config
+    const crewUserUid = crew.userUid;
     if (crewUserUid) {
-      console.log(`[Zuper Availability] Matched crew "${crew.name}" to UID: ${crewUserUid}`);
+      console.log(`[Zuper Availability] Crew "${crew.name}" has UID: ${crewUserUid}`);
     } else {
-      console.log(`[Zuper Availability] No UID found for crew "${crew.name}"`);
+      console.log(`[Zuper Availability] No UID configured for crew "${crew.name}"`);
     }
 
     // Check each date in range
