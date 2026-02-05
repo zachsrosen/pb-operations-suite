@@ -472,7 +472,8 @@ export async function GET(request: NextRequest) {
               // Try to match this scheduled job to an availability slot and mark it booked
               const slotStartTime = startTime; // Already in HH:00 format
 
-              // Find matching crew member - first try to match by assigned user name
+              // Find matching crew member - ONLY if we know who it's assigned to
+              // Don't auto-match unassigned jobs to random slots
               let matchingSlot = null;
               if (assignedUserName) {
                 // Try to find a slot for this specific user at this time
@@ -484,14 +485,10 @@ export async function GET(request: NextRequest) {
                 );
                 console.log(`[Zuper Availability] Looking for slot at ${slotStartTime} for user containing "${firstName}"`);
                 console.log(`[Zuper Availability] Available slots for this date:`, availabilityByDate[dateStr].availableSlots.map(s => `${s.user_name} @ ${s.start_time}`));
-              }
-
-              // If no match by user, fall back to finding any slot at this time
-              if (!matchingSlot) {
-                console.log(`[Zuper Availability] No user match, falling back to time-only match at ${slotStartTime}`);
-                matchingSlot = availabilityByDate[dateStr].availableSlots.find(
-                  slot => slot.start_time === slotStartTime
-                );
+              } else {
+                // Job is not assigned to anyone - don't auto-match to a random slot
+                // This prevents showing "Drew" when Joe was selected but assignment failed
+                console.log(`[Zuper Availability] Job "${job.job_title}" has no assigned user - not auto-matching to slots`);
               }
 
               if (matchingSlot) {
