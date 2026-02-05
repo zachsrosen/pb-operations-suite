@@ -183,6 +183,12 @@ export default function SiteSurveyDashboardPage() {
       .map(s => ({ value: s!, label: s! }));
   }, [projects, isInSiteSurveyPhase]);
 
+  // Create dynamic filter options from actual data values
+  const dynamicSiteSurveyStatusOptions = useMemo(() => {
+    const existing = [...new Set(projects.map(p => (p as ExtendedProject).siteSurveyStatus).filter(Boolean))].sort();
+    return existing.map(status => ({ value: status as string, label: status as string }));
+  }, [projects]);
+
   if (loading) {
     return (
       <DashboardShell title="Site Survey" accentColor="teal">
@@ -270,8 +276,7 @@ export default function SiteSurveyDashboardPage() {
           />
           <MultiSelectFilter
             label="Site Survey Status"
-            options={ALL_SITE_SURVEY_STATUS_OPTIONS}
-            groups={SITE_SURVEY_STATUS_GROUPS}
+            options={dynamicSiteSurveyStatusOptions}
             selected={filterSiteSurveyStatuses}
             onChange={setFilterSiteSurveyStatuses}
             placeholder="All Statuses"

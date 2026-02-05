@@ -376,6 +376,17 @@ export default function InterconnectionPage() {
       .map(s => ({ value: s!, label: s! }));
   }, [projects]);
 
+  // Create dynamic filter options from actual data values
+  const dynamicIcStatusOptions = useMemo(() => {
+    const existing = [...new Set(projects.map(p => (p as ExtendedProject).interconnectionStatus).filter(Boolean))].sort();
+    return existing.map(status => ({ value: status as string, label: status as string }));
+  }, [projects]);
+
+  const dynamicPtoStatusOptions = useMemo(() => {
+    const existing = [...new Set(projects.map(p => (p as ExtendedProject).ptoStatus).filter(Boolean))].sort();
+    return existing.map(status => ({ value: status as string, label: status as string }));
+  }, [projects]);
+
   const clearAllFilters = () => {
     setFilterUtilities([]);
     setFilterLocations([]);
@@ -481,8 +492,7 @@ export default function InterconnectionPage() {
           />
           <MultiSelectFilter
             label="IC Status"
-            options={ALL_IC_STATUS_OPTIONS}
-            groups={IC_STATUS_GROUPS}
+            options={dynamicIcStatusOptions}
             selected={filterIcStatuses}
             onChange={setFilterIcStatuses}
             placeholder="All IC Statuses"
@@ -490,8 +500,7 @@ export default function InterconnectionPage() {
           />
           <MultiSelectFilter
             label="PTO Status"
-            options={ALL_PTO_STATUS_OPTIONS}
-            groups={PTO_STATUS_GROUPS}
+            options={dynamicPtoStatusOptions}
             selected={filterPtoStatuses}
             onChange={setFilterPtoStatuses}
             placeholder="All PTO Statuses"

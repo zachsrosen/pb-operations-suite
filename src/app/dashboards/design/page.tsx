@@ -355,6 +355,18 @@ export default function DesignEngineeringPage() {
     [projects]
   );
 
+  // Create dynamic filter options from actual data values
+  // This ensures the dropdown filter matches the exact values from HubSpot
+  const dynamicDesignStatusOptions = useMemo(() => {
+    const existing = [...existingDesignStatuses].sort();
+    return existing.map(status => ({ value: status as string, label: status as string }));
+  }, [existingDesignStatuses]);
+
+  const dynamicDesignApprovalOptions = useMemo(() => {
+    const existing = [...existingDesignApprovalStatuses].sort();
+    return existing.map(status => ({ value: status as string, label: status as string }));
+  }, [existingDesignApprovalStatuses]);
+
   if (loading) {
     return (
       <DashboardShell title="Design & Engineering" accentColor="indigo">
@@ -453,8 +465,7 @@ export default function DesignEngineeringPage() {
           />
           <MultiSelectFilter
             label="Design Status"
-            options={ALL_DESIGN_STATUS_OPTIONS}
-            groups={DESIGN_STATUS_GROUPS}
+            options={dynamicDesignStatusOptions}
             selected={filterDesignStatuses}
             onChange={setFilterDesignStatuses}
             placeholder="All Statuses"
@@ -462,8 +473,7 @@ export default function DesignEngineeringPage() {
           />
           <MultiSelectFilter
             label="Design Approval"
-            options={ALL_DESIGN_APPROVAL_OPTIONS}
-            groups={DESIGN_APPROVAL_GROUPS}
+            options={dynamicDesignApprovalOptions}
             selected={filterDesignApprovalStatuses}
             onChange={setFilterDesignApprovalStatuses}
             placeholder="All Statuses"

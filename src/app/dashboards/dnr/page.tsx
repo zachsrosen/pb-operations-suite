@@ -240,6 +240,17 @@ export default function DNRPipelinePage() {
     [activeDeals],
   );
 
+  // Create dynamic filter options from actual data values
+  const dynamicDetachStatusOptions = useMemo(() => {
+    const existing = [...new Set(allDeals.map(d => d.detachStatus).filter(Boolean))].sort();
+    return existing.map(status => ({ value: status as string, label: status as string }));
+  }, [allDeals]);
+
+  const dynamicResetStatusOptions = useMemo(() => {
+    const existing = [...new Set(allDeals.map(d => d.resetStatus).filter(Boolean))].sort();
+    return existing.map(status => ({ value: status as string, label: status as string }));
+  }, [allDeals]);
+
   // ---- Loading state -------------------------------------------------------
 
   if (loading && allDeals.length === 0) {
@@ -362,8 +373,7 @@ export default function DNRPipelinePage() {
 
           <MultiSelectFilter
             label="Detach Status"
-            options={DETACH_STATUS_OPTIONS}
-            groups={DETACH_STATUS_GROUPS}
+            options={dynamicDetachStatusOptions}
             selected={selectedDetachStatuses}
             onChange={setSelectedDetachStatuses}
             placeholder="All Detach Statuses"
@@ -372,8 +382,7 @@ export default function DNRPipelinePage() {
 
           <MultiSelectFilter
             label="Reset Status"
-            options={RESET_STATUS_OPTIONS}
-            groups={RESET_STATUS_GROUPS}
+            options={dynamicResetStatusOptions}
             selected={selectedResetStatuses}
             onChange={setSelectedResetStatuses}
             placeholder="All Reset Statuses"

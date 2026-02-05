@@ -362,6 +362,17 @@ export default function PermittingPage() {
       .map(s => ({ value: s!, label: s! }));
   }, [projects]);
 
+  // Create dynamic filter options from actual data values
+  const dynamicPermitStatusOptions = useMemo(() => {
+    const existing = [...new Set(projects.map(p => (p as ExtendedProject).permittingStatus).filter(Boolean))].sort();
+    return existing.map(status => ({ value: status as string, label: status as string }));
+  }, [projects]);
+
+  const dynamicInspectionStatusOptions = useMemo(() => {
+    const existing = [...new Set(projects.map(p => (p as ExtendedProject).finalInspectionStatus).filter(Boolean))].sort();
+    return existing.map(status => ({ value: status as string, label: status as string }));
+  }, [projects]);
+
   const clearAllFilters = () => {
     setFilterAhjs([]);
     setFilterLocations([]);
@@ -468,8 +479,7 @@ export default function PermittingPage() {
           />
           <MultiSelectFilter
             label="Permit Status"
-            options={ALL_PERMITTING_STATUS_OPTIONS}
-            groups={PERMITTING_STATUS_GROUPS}
+            options={dynamicPermitStatusOptions}
             selected={filterPermitStatuses}
             onChange={setFilterPermitStatuses}
             placeholder="All Permit Statuses"
@@ -477,8 +487,7 @@ export default function PermittingPage() {
           />
           <MultiSelectFilter
             label="Inspection"
-            options={ALL_INSPECTION_STATUS_OPTIONS}
-            groups={INSPECTION_STATUS_GROUPS}
+            options={dynamicInspectionStatusOptions}
             selected={filterInspectionStatuses}
             onChange={setFilterInspectionStatuses}
             placeholder="All Inspection Statuses"

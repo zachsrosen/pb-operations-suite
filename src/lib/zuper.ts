@@ -531,7 +531,7 @@ export class ZuperClient {
       const data = result.data as any;
       return { type: "success", data: data.data || data };
     }
-    return result as ZuperApiResponse<{ team_uid: string; team_name: string }[]>;
+    return result as unknown as ZuperApiResponse<{ team_uid: string; team_name: string }[]>;
   }
 
   // ========== TIME OFF / AVAILABILITY ==========

@@ -185,6 +185,12 @@ export default function ConstructionDashboardPage() {
       .map(s => ({ value: s!, label: s! }));
   }, [projects, isInConstructionPhase]);
 
+  // Create dynamic filter options from actual data values
+  const dynamicConstructionStatusOptions = useMemo(() => {
+    const existing = [...new Set(projects.map(p => (p as ExtendedProject).constructionStatus).filter(Boolean))].sort();
+    return existing.map(status => ({ value: status as string, label: status as string }));
+  }, [projects]);
+
   if (loading) {
     return (
       <DashboardShell title="Construction" accentColor="orange">
@@ -272,8 +278,7 @@ export default function ConstructionDashboardPage() {
           />
           <MultiSelectFilter
             label="Construction Status"
-            options={ALL_CONSTRUCTION_STATUS_OPTIONS}
-            groups={CONSTRUCTION_STATUS_GROUPS}
+            options={dynamicConstructionStatusOptions}
             selected={filterConstructionStatuses}
             onChange={setFilterConstructionStatuses}
             placeholder="All Statuses"
