@@ -593,28 +593,70 @@ export async function createJobFromProject(project: {
   }
 
   // Calculate schedule times
-  // If specific start/end times provided (e.g., for site surveys), use those
-  // Otherwise default to 8am-4pm for multi-day jobs
+  // User selects times in Mountain Time, but Zuper expects UTC
+  // Convert Mountain Time to UTC before sending to Zuper
+
+  // Helper to convert Mountain Time to UTC
+  const mountainToUtc = (dateStr: string, timeStr: string): string => {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const [hours, minutes] = (timeStr + ":00").split(':').map(Number);
+
+    // Determine if DST is in effect for this date
+    const testDate = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+    const mountainFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Denver',
+      timeZoneName: 'short'
+    });
+    const parts = mountainFormatter.formatToParts(testDate);
+    const tzName = parts.find(p => p.type === 'timeZoneName')?.value || 'MST';
+    const isDST = tzName === 'MDT';
+    const offsetHours = isDST ? 6 : 7; // MDT is UTC-6, MST is UTC-7
+
+    // Add the offset to convert Mountain Time to UTC
+    let utcHours = hours + offsetHours;
+    let utcDay = day;
+    let utcMonth = month;
+    let utcYear = year;
+
+    // Handle day overflow
+    if (utcHours >= 24) {
+      utcHours -= 24;
+      utcDay += 1;
+      const daysInMonth = new Date(year, month, 0).getDate();
+      if (utcDay > daysInMonth) {
+        utcDay = 1;
+        utcMonth += 1;
+        if (utcMonth > 12) {
+          utcMonth = 1;
+          utcYear += 1;
+        }
+      }
+    }
+
+    return `${utcYear}-${String(utcMonth).padStart(2, '0')}-${String(utcDay).padStart(2, '0')} ${String(utcHours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`;
+  };
+
   let startDateTime: string;
   let endDateTime: string;
 
   if (schedule.startTime && schedule.endTime) {
     // Use specific time slot (e.g., "12:00" to "13:00" for site surveys)
-    startDateTime = `${schedule.date}T${schedule.startTime}:00`;
-    endDateTime = `${schedule.date}T${schedule.endTime}:00`;
+    // Convert from Mountain Time to UTC for Zuper
+    startDateTime = mountainToUtc(schedule.date, schedule.startTime);
+    endDateTime = mountainToUtc(schedule.date, schedule.endTime);
   } else {
-    // Default to 8am-4pm for multi-day jobs
-    startDateTime = `${schedule.date}T08:00:00`;
+    // Default to 8am-4pm Mountain Time for multi-day jobs
+    startDateTime = mountainToUtc(schedule.date, "08:00");
 
-    // Calculate end date by parsing date parts directly (no timezone issues)
+    // Calculate end date
     const [year, month, day] = schedule.date.split('-').map(Number);
     const endDay = day + schedule.days - 1;
-    // Create date in local timezone to handle month overflow correctly
     const endDateObj = new Date(year, month - 1, endDay);
     const endYear = endDateObj.getFullYear();
     const endMonth = String(endDateObj.getMonth() + 1).padStart(2, '0');
     const endDayStr = String(endDateObj.getDate()).padStart(2, '0');
-    endDateTime = `${endYear}-${endMonth}-${endDayStr}T16:00:00`;
+    const endDateStr = `${endYear}-${endMonth}-${endDayStr}`;
+    endDateTime = mountainToUtc(endDateStr, "16:00");
   }
 
   const job: ZuperJob = {

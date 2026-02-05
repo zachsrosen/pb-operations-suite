@@ -740,6 +740,7 @@ export default function SchedulerPage() {
               systemSizeKw: project.systemSize,
               batteryCount: project.batteries,
               projectType: project.type,
+              zuperJobUid: project.zuperJobUid,
             },
             schedule: {
               type: scheduleType,

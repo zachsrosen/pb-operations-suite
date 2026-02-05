@@ -49,82 +49,180 @@ export async function PUT(request: NextRequest) {
 
     const hubspotTag = `hubspot-${project.id}`;
 
-    // Extract customer name for searching
-    const customerName = project.name?.split("|")[0]?.trim() || project.name || "";
+    // If the client already knows the Zuper job UID, use it directly (most reliable!)
+    let existingJobUid: string | undefined = project.zuperJobUid;
 
-    // Search for existing job by customer name
-    const searchResult = await zuper.searchJobs({
-      limit: 100,
-      search: customerName, // Use Zuper's search to find jobs matching customer name
-    });
+    console.log(`[Zuper Schedule] Processing schedule request:`);
+    console.log(`  - Project ID: ${project.id}`);
+    console.log(`  - Project Name: ${project.name}`);
+    console.log(`  - Known Zuper Job UID: ${existingJobUid || "none"}`);
+    console.log(`  - Schedule Type: ${schedule.type}`);
 
     let existingJob: ZuperJob | undefined;
 
-    if (searchResult.type === "success" && searchResult.data?.jobs) {
-      // Map schedule type to Zuper category names
-      // Note: Zuper uses "Construction" instead of "Installation"
-      const categoryMap: Record<string, string> = {
-        survey: "Site Survey",
-        installation: "Construction",
-        inspection: "Inspection",
-      };
-      const targetCategory = categoryMap[schedule.type];
+    // If we already have the Zuper job UID from the lookup, use it directly
+    if (existingJobUid) {
+      console.log(`[Zuper Schedule] Using provided Zuper job UID: ${existingJobUid}`);
+      existingJob = { job_uid: existingJobUid, job_title: project.name } as ZuperJob;
+    } else {
+      // Otherwise, search for existing job
+      // Extract customer name for searching
+      // HubSpot format: "PROJ-9031 | LastName, FirstName | Address"
+      // Zuper job title format: "LastName, FirstName | Address"
+      const nameParts = project.name?.split(" | ") || [];
+      const customerName = nameParts.length >= 2
+        ? nameParts[1]?.trim()  // "LastName, FirstName" from HubSpot format
+        : nameParts[0]?.trim() || "";  // Fallback to first part if only one part
 
-      // Helper to get category name from job (handles both string and object formats)
-      const getJobCategoryName = (job: ZuperJob): string => {
-        if (typeof job.job_category === "string") {
-          return job.job_category;
-        }
-        return job.job_category?.category_name || "";
-      };
+      // Also extract just the last name for looser matching
+      const customerLastName = customerName.split(",")[0]?.trim() || "";
 
-      // First try to find by HubSpot tag (if job was created with tag)
-      existingJob = searchResult.data.jobs.find(
-        (job) =>
-          job.job_tags?.includes(hubspotTag) &&
-          getJobCategoryName(job) === targetCategory
-      );
+      console.log(`[Zuper Schedule] No known job UID, searching by name:`);
+      console.log(`  - Customer Name: ${customerName}`);
+      console.log(`  - Customer Last Name: ${customerLastName}`);
+      console.log(`  - HubSpot Tag: ${hubspotTag}`);
 
-      // If not found by tag, try to find by job title containing customer name
-      // HubSpot workflow creates jobs with title format: "CustomerName | Address"
-      if (!existingJob && project.name) {
-        const customerName = project.name.split("|")[0]?.trim() || project.name;
+      // Search for existing job by customer last name (Zuper search is fuzzy)
+      const searchResult = await zuper.searchJobs({
+        limit: 100,
+        search: customerLastName, // Use last name for broader search
+      });
+
+      if (searchResult.type === "success" && searchResult.data?.jobs) {
+        console.log(`[Zuper Schedule] Found ${searchResult.data.jobs.length} jobs in search results`);
+
+        // Map schedule type to Zuper category names AND UIDs (for flexible matching)
+        const categoryConfig: Record<string, { name: string; uid: string }> = {
+          survey: { name: "Site Survey", uid: "002bac33-84d3-4083-a35d-50626fc49288" },
+          installation: { name: "Construction", uid: "6ffbc218-6dad-4a46-b378-1fb02b3ab4bf" },
+          inspection: { name: "Inspection", uid: "b7dc03d2-25d0-40df-a2fc-b1a477b16b65" },
+        };
+        const targetCategoryName = categoryConfig[schedule.type].name;
+        const targetCategoryUid = categoryConfig[schedule.type].uid;
+
+        // Helper to get category info from job
+        const getJobCategoryInfo = (job: ZuperJob): { name: string; uid: string } => {
+          if (typeof job.job_category === "string") {
+            return { name: job.job_category, uid: job.job_category };
+          }
+          return {
+            name: job.job_category?.category_name || "",
+            uid: job.job_category?.category_uid || "",
+          };
+        };
+
+        // Helper to check if job matches target category
+        const categoryMatches = (job: ZuperJob): boolean => {
+          const catInfo = getJobCategoryInfo(job);
+          return catInfo.name.toLowerCase() === targetCategoryName.toLowerCase() ||
+                 catInfo.uid === targetCategoryUid;
+        };
+
+        // First try to find by HubSpot tag
         existingJob = searchResult.data.jobs.find(
-          (job) =>
-            job.job_title?.includes(customerName) &&
-            getJobCategoryName(job) === targetCategory
+          (job) => job.job_tags?.includes(hubspotTag) && categoryMatches(job)
         );
+
+        // If not found by tag, try to find by job title starting with last name
+        if (!existingJob && customerLastName) {
+          const normalizedLastName = customerLastName.toLowerCase().trim();
+          existingJob = searchResult.data.jobs.find((job) => {
+            const jobTitle = job.job_title?.toLowerCase() || "";
+            const matchesCategory = categoryMatches(job);
+            const titleStartsWithLastName = jobTitle.startsWith(normalizedLastName + ",") ||
+                                            jobTitle.startsWith(normalizedLastName + " ");
+            return matchesCategory && titleStartsWithLastName;
+          });
+        }
+
+        if (existingJob) {
+          console.log(`[Zuper Schedule] Found existing job: ${existingJob.job_uid}`);
+        } else {
+          console.log(`[Zuper Schedule] No matching job found for "${customerLastName}"`);
+        }
+      } else {
+        console.log(`[Zuper Schedule] Search failed or returned no jobs`);
       }
-    }
+    } // End of else block (no provided zuperJobUid)
 
     // Calculate schedule times
-    // If specific start/end times provided (e.g., for site surveys), use those
-    // Otherwise default to 8am-4pm for installs
+    // User selects times in Mountain Time, but Zuper expects UTC
+    // Mountain Time is UTC-7 (MST) or UTC-6 (MDT during daylight saving)
     const days = schedule.days || 1;
+
+    // Helper to convert Mountain Time to UTC for Zuper API
+    // Takes a date string (YYYY-MM-DD) and time string (HH:mm) in Mountain Time
+    // Returns UTC datetime string in "YYYY-MM-DD HH:mm:ss" format
+    const mountainToUtc = (dateStr: string, timeStr: string): string => {
+      const [year, month, day] = dateStr.split('-').map(Number);
+      const [hours, minutes] = (timeStr + ":00").split(':').map(Number);
+
+      // Create a date object and use Intl to determine if DST is in effect
+      // This determines whether to use -7 (MST) or -6 (MDT)
+      const testDate = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+      const mountainFormatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Denver',
+        timeZoneName: 'short'
+      });
+      const parts = mountainFormatter.formatToParts(testDate);
+      const tzName = parts.find(p => p.type === 'timeZoneName')?.value || 'MST';
+      const isDST = tzName === 'MDT';
+      const offsetHours = isDST ? 6 : 7; // MDT is UTC-6, MST is UTC-7
+
+      // Add the offset to convert Mountain Time to UTC
+      let utcHours = hours + offsetHours;
+      let utcDay = day;
+      let utcMonth = month;
+      let utcYear = year;
+
+      // Handle day overflow
+      if (utcHours >= 24) {
+        utcHours -= 24;
+        utcDay += 1;
+        // Handle month overflow
+        const daysInMonth = new Date(year, month, 0).getDate();
+        if (utcDay > daysInMonth) {
+          utcDay = 1;
+          utcMonth += 1;
+          if (utcMonth > 12) {
+            utcMonth = 1;
+            utcYear += 1;
+          }
+        }
+      }
+
+      return `${utcYear}-${String(utcMonth).padStart(2, '0')}-${String(utcDay).padStart(2, '0')} ${String(utcHours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`;
+    };
+
     let startDateTime: string;
     let endDateTime: string;
 
     if (schedule.startTime && schedule.endTime) {
       // Use specific time slot (e.g., "12:00" to "13:00" for site surveys)
-      startDateTime = `${schedule.date}T${schedule.startTime}:00`;
-      endDateTime = `${schedule.date}T${schedule.endTime}:00`;
+      // Convert from Mountain Time to UTC for Zuper
+      startDateTime = mountainToUtc(schedule.date, schedule.startTime);
+      endDateTime = mountainToUtc(schedule.date, schedule.endTime);
+      console.log(`[Zuper Schedule] Converting Mountain Time ${schedule.startTime}-${schedule.endTime} to UTC`);
     } else {
-      // Default to 8am-4pm for multi-day jobs
-      startDateTime = `${schedule.date}T08:00:00`;
+      // Default to 8am-4pm Mountain Time for multi-day jobs
+      startDateTime = mountainToUtc(schedule.date, "08:00");
 
-      // Calculate end date by parsing date parts directly (no timezone issues)
+      // Calculate end date
       const [year, month, day] = schedule.date.split('-').map(Number);
       const endDay = day + days - 1;
-      // Create date in local timezone to handle month overflow correctly
       const endDateObj = new Date(year, month - 1, endDay);
       const endYear = endDateObj.getFullYear();
       const endMonth = String(endDateObj.getMonth() + 1).padStart(2, '0');
       const endDayStr = String(endDateObj.getDate()).padStart(2, '0');
-      endDateTime = `${endYear}-${endMonth}-${endDayStr}T16:00:00`;
+      const endDateStr = `${endYear}-${endMonth}-${endDayStr}`;
+      endDateTime = mountainToUtc(endDateStr, "16:00");
     }
+
+    console.log(`[Zuper Schedule] Schedule times (UTC for Zuper): ${startDateTime} to ${endDateTime}`);
 
     if (existingJob && existingJob.job_uid) {
       // Reschedule existing job
+      console.log(`[Zuper Schedule] ACTION: RESCHEDULE - Job UID: ${existingJob.job_uid}`);
       const rescheduleResult = await zuper.rescheduleJob(
         existingJob.job_uid,
         startDateTime,
@@ -132,11 +230,14 @@ export async function PUT(request: NextRequest) {
       );
 
       if (rescheduleResult.type === "error") {
+        console.log(`[Zuper Schedule] RESCHEDULE FAILED: ${rescheduleResult.error}`);
         return NextResponse.json(
           { error: rescheduleResult.error, action: "reschedule_failed" },
           { status: 500 }
         );
       }
+
+      console.log(`[Zuper Schedule] RESCHEDULE SUCCESS`);
 
       // Log the reschedule activity
       await logSchedulingActivity(
@@ -156,10 +257,13 @@ export async function PUT(request: NextRequest) {
       });
     } else {
       // No existing job found - create new one
+      console.log(`[Zuper Schedule] ACTION: CREATE NEW JOB (no existing job found for "${project.name}" with category "${schedule.type}")`);
       const createResult = await createJobFromProject(project, {
         type: schedule.type,
         date: schedule.date,
         days: days,
+        startTime: schedule.startTime,
+        endTime: schedule.endTime,
         crew: schedule.crew,
         notes: schedule.notes,
       });
@@ -241,16 +345,24 @@ export async function GET(request: NextRequest) {
 
     // Optionally filter by job type/category
     if (jobType) {
-      const categoryMap: Record<string, string> = {
-        survey: "Site Survey",
-        installation: "Installation",
-        inspection: "Inspection",
+      // Category config with both names and UIDs for flexible matching
+      const categoryConfig: Record<string, { name: string; uid: string }> = {
+        survey: { name: "Site Survey", uid: "002bac33-84d3-4083-a35d-50626fc49288" },
+        installation: { name: "Construction", uid: "6ffbc218-6dad-4a46-b378-1fb02b3ab4bf" },
+        inspection: { name: "Inspection", uid: "b7dc03d2-25d0-40df-a2fc-b1a477b16b65" },
       };
-      const targetCategory = categoryMap[jobType];
-      if (targetCategory) {
-        matchingJobs = matchingJobs.filter(
-          (job) => job.job_category === targetCategory
-        );
+      const config = categoryConfig[jobType];
+      if (config) {
+        matchingJobs = matchingJobs.filter((job) => {
+          // Handle both string and object category formats
+          if (typeof job.job_category === "string") {
+            return job.job_category === config.name || job.job_category === config.uid;
+          }
+          return (
+            job.job_category?.category_name === config.name ||
+            job.job_category?.category_uid === config.uid
+          );
+        });
       }
     }
 

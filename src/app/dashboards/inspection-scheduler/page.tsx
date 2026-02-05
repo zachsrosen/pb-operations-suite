@@ -489,6 +489,7 @@ export default function InspectionSchedulerPage() {
               systemSizeKw: project.systemSize,
               batteryCount: project.batteries,
               projectType: project.type,
+              zuperJobUid: project.zuperJobUid,
             },
             schedule: {
               type: "inspection",

@@ -488,9 +488,10 @@ export default function ConstructionSchedulerPage() {
               systemSizeKw: project.systemSize,
               batteryCount: project.batteries,
               projectType: project.type,
+              zuperJobUid: project.zuperJobUid,
             },
             schedule: {
-              type: "construction",
+              type: "installation",
               date: date,
               days: 2, // Construction typically takes 2 days
               notes: "Scheduled via Construction Scheduler",

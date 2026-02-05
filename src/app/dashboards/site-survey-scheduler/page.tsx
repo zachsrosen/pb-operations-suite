@@ -634,6 +634,7 @@ export default function SiteSurveySchedulerPage() {
               systemSizeKw: project.systemSize,
               batteryCount: project.batteries,
               projectType: project.type,
+              zuperJobUid: project.zuperJobUid, // Pass existing Zuper job UID if known
             },
             schedule: {
               type: "survey",
