@@ -590,20 +590,23 @@ export async function createJobFromProject(project: {
     jobType = JOB_TYPES.EV_CHARGER;
   }
 
-  // Calculate end time (assuming 8-hour workday starting at 8am)
-  const startDate = new Date(`${schedule.date}T08:00:00`);
-  const endDate = new Date(startDate);
-  endDate.setDate(endDate.getDate() + schedule.days - 1);
-  endDate.setHours(17, 0, 0, 0);
+  // Calculate end time (assuming 8-hour workday starting at 8am Mountain Time)
+  // Format times for Zuper API - use ISO format with Mountain Time offset
+  // Note: Zuper expects ISO 8601 format
+  const startDateTime = `${schedule.date}T08:00:00`;
+  const endDateObj = new Date(schedule.date);
+  endDateObj.setDate(endDateObj.getDate() + schedule.days - 1);
+  const endDateStr = endDateObj.toISOString().split('T')[0];
+  const endDateTime = `${endDateStr}T16:00:00`;
 
   const job: ZuperJob = {
     job_title: `${categoryNameMap[schedule.type]} - ${project.name}`,
     job_category: categoryUidMap[schedule.type],
     job_type: jobType,
     job_priority: "MEDIUM",
-    scheduled_start_time: startDate.toISOString(),
-    scheduled_end_time: endDate.toISOString(),
-    due_date: endDate.toISOString(),
+    scheduled_start_time: startDateTime,
+    scheduled_end_time: endDateTime,
+    due_date: endDateTime,
     customer_address: {
       street: project.address,
       city: project.city,

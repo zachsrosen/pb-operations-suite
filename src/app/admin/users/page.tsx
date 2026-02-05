@@ -176,8 +176,19 @@ export default function AdminUsersPage() {
               </span>
             </div>
 
-            {/* Sync Button */}
-            {workspaceConfigured && (
+            {/* Navigation */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-white px-3 py-1.5 rounded-lg bg-zinc-800">
+                Users
+              </span>
+              <Link
+                href="/admin/activity"
+                className="text-xs text-zinc-400 hover:text-white px-3 py-1.5 rounded-lg hover:bg-zinc-800 transition-colors"
+              >
+                Activity
+              </Link>
+              {/* Sync Button */}
+              {workspaceConfigured && (
               <button
                 onClick={syncWorkspace}
                 disabled={syncing}
@@ -197,7 +208,8 @@ export default function AdminUsersPage() {
                   </>
                 )}
               </button>
-            )}
+              )}
+            </div>
           </div>
         </div>
       </div>

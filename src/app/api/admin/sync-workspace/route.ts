@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { prisma, getOrCreateUser, getUserByEmail } from "@/lib/db";
+import { prisma, getOrCreateUser, getUserByEmail, logActivity } from "@/lib/db";
 
 /**
  * POST /api/admin/sync-workspace
@@ -137,6 +137,23 @@ export async function POST() {
         results.errors.push(`${wsUser.primaryEmail}: ${errorMsg}`);
       }
     }
+
+    // Log the sync activity
+    await logActivity({
+      type: "USER_CREATED",
+      description: `Google Workspace sync: ${results.created} created, ${results.updated} updated, ${results.skipped} skipped`,
+      userId: currentUser.id,
+      userEmail: currentUser.email,
+      entityType: "workspace_sync",
+      metadata: {
+        domain: workspaceDomain,
+        totalUsers: results.total,
+        created: results.created,
+        updated: results.updated,
+        skipped: results.skipped,
+        errors: results.errors.length,
+      },
+    });
 
     return NextResponse.json({
       success: true,

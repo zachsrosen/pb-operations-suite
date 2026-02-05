@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { prisma, getAllUsers, updateUserRole, UserRole, getUserByEmail } from "@/lib/db";
+import { prisma, getAllUsers, updateUserRole, UserRole, getUserByEmail, logActivity } from "@/lib/db";
 
 /**
  * GET /api/admin/users
@@ -67,11 +67,32 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "Invalid role" }, { status: 400 });
     }
 
+    // Get the target user to log the change
+    const targetUser = await prisma.user.findUnique({ where: { id: userId } });
+    const oldRole = targetUser?.role;
+
     const updatedUser = await updateUserRole(userId, role);
 
     if (!updatedUser) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
+
+    // Log the role change
+    await logActivity({
+      type: "USER_ROLE_CHANGED",
+      description: `Changed ${updatedUser.email} role from ${oldRole} to ${role}`,
+      userId: currentUser.id,
+      userEmail: currentUser.email,
+      entityType: "user",
+      entityId: updatedUser.id,
+      entityName: updatedUser.email,
+      metadata: {
+        targetUserId: updatedUser.id,
+        targetUserEmail: updatedUser.email,
+        oldRole,
+        newRole: role,
+      },
+    });
 
     return NextResponse.json({ user: updatedUser });
   } catch (error) {

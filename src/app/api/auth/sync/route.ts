@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
+import { headers } from "next/headers";
 import { auth } from "@/auth";
-import { getOrCreateUser, getUserByEmail } from "@/lib/db";
+import { getOrCreateUser, getUserByEmail, logActivity } from "@/lib/db";
 
 /**
  * POST /api/auth/sync
@@ -26,6 +27,21 @@ export async function POST() {
       // Database not configured, return default role
       return NextResponse.json({ role: "VIEWER", synced: false });
     }
+
+    // Log the login activity
+    const headersList = await headers();
+    const userAgent = headersList.get("user-agent") || undefined;
+    const forwarded = headersList.get("x-forwarded-for");
+    const ipAddress = forwarded?.split(",")[0]?.trim() || headersList.get("x-real-ip") || undefined;
+
+    await logActivity({
+      type: "LOGIN",
+      description: `${user.email} logged in`,
+      userId: user.id,
+      userEmail: user.email,
+      ipAddress,
+      userAgent,
+    });
 
     return NextResponse.json({
       role: user.role,

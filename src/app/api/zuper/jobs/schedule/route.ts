@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { headers } from "next/headers";
 import { zuper, createJobFromProject, ZuperJob } from "@/lib/zuper";
+import { auth } from "@/auth";
+import { getUserByEmail, logActivity } from "@/lib/db";
 
 /**
  * Smart scheduling endpoint that:
@@ -94,19 +97,21 @@ export async function PUT(request: NextRequest) {
       }
     }
 
-    // Calculate schedule times
+    // Calculate schedule times - 8am to 4pm
+    // Use simple datetime format without timezone conversion issues
     const days = schedule.days || 1;
-    const startDate = new Date(`${schedule.date}T08:00:00`);
-    const endDate = new Date(startDate);
-    endDate.setDate(endDate.getDate() + days - 1);
-    endDate.setHours(17, 0, 0, 0);
+    const startDateTime = `${schedule.date}T08:00:00`;
+    const endDateObj = new Date(schedule.date);
+    endDateObj.setDate(endDateObj.getDate() + days - 1);
+    const endDateStr = endDateObj.toISOString().split('T')[0];
+    const endDateTime = `${endDateStr}T16:00:00`;
 
     if (existingJob && existingJob.job_uid) {
       // Reschedule existing job
       const rescheduleResult = await zuper.rescheduleJob(
         existingJob.job_uid,
-        startDate.toISOString(),
-        endDate.toISOString()
+        startDateTime,
+        endDateTime
       );
 
       if (rescheduleResult.type === "error") {
@@ -115,6 +120,15 @@ export async function PUT(request: NextRequest) {
           { status: 500 }
         );
       }
+
+      // Log the reschedule activity
+      await logSchedulingActivity(
+        schedule.type === "survey" ? "SURVEY_RESCHEDULED" : "INSTALL_RESCHEDULED",
+        `Rescheduled ${schedule.type} for ${project.name || project.id}`,
+        project,
+        existingJob.job_uid,
+        schedule
+      );
 
       return NextResponse.json({
         success: true,
@@ -139,6 +153,15 @@ export async function PUT(request: NextRequest) {
           { status: 500 }
         );
       }
+
+      // Log the scheduling activity
+      await logSchedulingActivity(
+        schedule.type === "survey" ? "SURVEY_SCHEDULED" : "INSTALL_SCHEDULED",
+        `Scheduled ${schedule.type} for ${project.name || project.id}`,
+        project,
+        createResult.data?.job_uid,
+        schedule
+      );
 
       return NextResponse.json({
         success: true,
@@ -225,5 +248,56 @@ export async function GET(request: NextRequest) {
       { error: "Failed to check Zuper job", details: String(error) },
       { status: 500 }
     );
+  }
+}
+
+/**
+ * Helper to log scheduling activities
+ */
+async function logSchedulingActivity(
+  type: "SURVEY_SCHEDULED" | "SURVEY_RESCHEDULED" | "INSTALL_SCHEDULED" | "INSTALL_RESCHEDULED",
+  description: string,
+  project: { id: string; name?: string },
+  zuperJobId?: string,
+  schedule?: { type: string; date: string; crew?: string }
+) {
+  try {
+    const session = await auth();
+    let userId: string | undefined;
+    let userEmail: string | undefined;
+
+    if (session?.user?.email) {
+      userEmail = session.user.email;
+      const user = await getUserByEmail(session.user.email);
+      if (user) {
+        userId = user.id;
+      }
+    }
+
+    const headersList = await headers();
+    const userAgent = headersList.get("user-agent") || undefined;
+    const forwarded = headersList.get("x-forwarded-for");
+    const ipAddress = forwarded?.split(",")[0]?.trim() || headersList.get("x-real-ip") || undefined;
+
+    await logActivity({
+      type,
+      description,
+      userId,
+      userEmail,
+      entityType: "project",
+      entityId: project.id,
+      entityName: project.name,
+      metadata: {
+        zuperJobId,
+        scheduleType: schedule?.type,
+        scheduleDate: schedule?.date,
+        crew: schedule?.crew,
+      },
+      ipAddress,
+      userAgent,
+    });
+  } catch (err) {
+    console.error("Failed to log scheduling activity:", err);
+    // Don't throw - logging failures shouldn't break scheduling
   }
 }
