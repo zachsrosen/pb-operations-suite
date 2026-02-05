@@ -21,6 +21,12 @@ export interface ZuperJobCategory {
   };
 }
 
+// Zuper assignment format for creating/updating jobs
+export interface ZuperAssignment {
+  user_uid: string;
+  team_uid?: string;
+}
+
 export interface ZuperJob {
   job_uid?: string;
   job_title: string;
@@ -32,7 +38,11 @@ export interface ZuperJob {
   due_date?: string;
   customer_uid?: string;
   customer_address?: ZuperAddress;
-  assigned_to?: string[];
+  // assigned_to format differs between POST (create) and GET (read)
+  // For create: array of { user_uid, team_uid? }
+  // For read: array of { user: { first_name, last_name, ... } }
+  // NOTE: Zuper API only allows setting assigned_to at CREATION time, not updates!
+  assigned_to?: ZuperAssignment[] | { user: { first_name?: string; last_name?: string; user_uid?: string } }[];
   job_tags?: string[];
   // custom_fields can be an array (from GET) or object (for POST)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -199,11 +209,14 @@ export class ZuperClient {
 
   /**
    * Create a new job/work order in Zuper
+   * Note: Zuper API expects the job to be wrapped in a "job" object
+   * Note: assigned_to can ONLY be set during creation, not on updates!
    */
   async createJob(job: ZuperJob): Promise<ZuperApiResponse<ZuperJob>> {
+    console.log(`[ZuperClient.createJob] Creating job with payload:`, JSON.stringify({ job }, null, 2));
     return this.request<ZuperJob>("/jobs", {
       method: "POST",
-      body: JSON.stringify(job),
+      body: JSON.stringify({ job }),
     });
   }
 
@@ -364,22 +377,25 @@ export class ZuperClient {
     userUids: string[],
     teamUid?: string
   ): Promise<ZuperApiResponse<ZuperJob>> {
-    // Build assigned_to array with proper structure
-    const assigned_to = userUids.map(userUid => ({
+    // Build users array for the assign endpoint
+    // Format: {"type":"ASSIGN","users":[{"team_uid":"...","user_uid":"..."}],"assign_type":"REPLACE"}
+    const users = userUids.map(userUid => ({
       user_uid: userUid,
       ...(teamUid && { team_uid: teamUid }),
     }));
 
-    console.log(`[Zuper] Assigning job ${jobUid} to users:`, assigned_to);
+    const payload = {
+      type: "ASSIGN",
+      users,
+      assign_type: "REPLACE", // Replace existing assignments with new ones
+    };
 
-    return this.request<ZuperJob>(`/jobs`, {
+    console.log(`[Zuper] Assigning job ${jobUid} to users via /service_tasks/${jobUid}/assign:`, JSON.stringify(payload));
+
+    // Use the correct assignment endpoint: PUT /service_tasks/{job_uid}/assign
+    return this.request<ZuperJob>(`/service_tasks/${jobUid}/assign`, {
       method: "PUT",
-      body: JSON.stringify({
-        job: {
-          job_uid: jobUid,
-          assigned_to,
-        },
-      }),
+      body: JSON.stringify(payload),
     });
   }
 
@@ -501,6 +517,23 @@ export class ZuperClient {
     return this.request<ZuperUser[]>(`/teams/${teamUid}/users`);
   }
 
+  /**
+   * Get all teams
+   * Useful for finding team UIDs for assignment
+   */
+  async getTeams(): Promise<ZuperApiResponse<{ team_uid: string; team_name: string }[]>> {
+    const result = await this.request<{ type: string; data: { team_uid: string; team_name: string }[] }>(
+      `/teams/summary`
+    );
+
+    if (result.type === "success" && result.data) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data = result.data as any;
+      return { type: "success", data: data.data || data };
+    }
+    return result as ZuperApiResponse<{ team_uid: string; team_name: string }[]>;
+  }
+
   // ========== TIME OFF / AVAILABILITY ==========
 
   /**
@@ -556,7 +589,17 @@ export class ZuperClient {
       let jobs = result.data.jobs;
       // Filter by team or user if specified
       if (params.teamUid) {
-        jobs = jobs.filter(j => j.assigned_to?.some(u => u.includes(params.teamUid!)));
+        jobs = jobs.filter(j => j.assigned_to?.some(u => {
+          // Handle both assignment formats (POST vs GET response)
+          if (typeof u === 'object' && 'team_uid' in u) {
+            return u.team_uid === params.teamUid;
+          }
+          if (typeof u === 'object' && 'user' in u) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            return (u as any).team?.team_uid === params.teamUid;
+          }
+          return false;
+        }));
       }
       // Filter by category if specified (in case API doesn't filter properly)
       if (params.categoryUid) {
@@ -703,6 +746,16 @@ export async function createJobFromProject(project: {
     endDateTime = mountainToUtc(endDateStr, "16:00");
   }
 
+  // Build assigned_to array if crew user UID is provided
+  // IMPORTANT: Zuper API only allows setting assigned_to at creation time, not on updates!
+  // This is the ONLY way to assign a user to a job in Zuper.
+  let assignedTo: ZuperAssignment[] | undefined;
+  if (schedule.crew) {
+    // schedule.crew is a Zuper user UID (e.g., "f203f99b-4aaf-488e-8e6a-8ee5e94ec217")
+    assignedTo = [{ user_uid: schedule.crew }];
+    console.log(`[createJobFromProject] Assigning job to user: ${schedule.crew}`);
+  }
+
   const job: ZuperJob = {
     job_title: `${categoryNameMap[schedule.type]} - ${project.name}`,
     job_category: categoryUidMap[schedule.type],
@@ -717,6 +770,8 @@ export async function createJobFromProject(project: {
       state: project.state,
       zip_code: project.zipCode || "",
     },
+    // Assign to user at creation time (only way to do this in Zuper!)
+    ...(assignedTo && { assigned_to: assignedTo }),
     job_tags: [
       `hubspot-${project.id}`,
       schedule.type,
@@ -728,7 +783,7 @@ export async function createJobFromProject(project: {
       `HubSpot Deal ID: ${project.id}`,
       project.systemSizeKw ? `System Size: ${project.systemSizeKw} kW` : "",
       project.batteryCount ? `Batteries: ${project.batteryCount}` : "",
-      schedule.crew ? `Requested Crew: ${schedule.crew}` : "",
+      schedule.crew ? `Assigned to: ${schedule.crew}` : "",
     ]
       .filter(Boolean)
       .join("\n"),
@@ -740,6 +795,7 @@ export async function createJobFromProject(project: {
     },
   };
 
+  console.log(`[createJobFromProject] Creating job with assigned_to:`, job.assigned_to);
   return zuper.createJob(job);
 }
 

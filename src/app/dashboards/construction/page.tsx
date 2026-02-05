@@ -277,7 +277,7 @@ export default function ConstructionDashboardPage() {
             selected={filterConstructionStatuses}
             onChange={setFilterConstructionStatuses}
             placeholder="All Statuses"
-            accentColor="yellow"
+            accentColor="orange"
           />
           {hasActiveFilters && (
             <button

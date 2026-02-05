@@ -63,6 +63,7 @@ interface PendingSchedule {
   slot?: {
     userName: string;
     userUid?: string;
+    teamUid?: string; // Zuper team UID (required for assignment API)
     startTime: string;
     endTime: string;
     location: string;
@@ -94,6 +95,7 @@ interface DayAvailability {
     end_time: string;
     display_time?: string;
     user_uid?: string;
+    team_uid?: string; // Zuper team UID (required for assignment API)
     user_name?: string;
     location?: string;
   }>;
@@ -594,31 +596,10 @@ export default function SiteSurveySchedulerPage() {
       [project.id]: date,
     }));
 
-    // Book the time slot if one was selected
-    if (slot) {
-      try {
-        const bookResponse = await fetch("/api/zuper/availability", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            date,
-            startTime: slot.startTime,
-            endTime: slot.endTime,
-            userName: slot.userName,
-            location: slot.location,
-            projectId: project.id,
-            projectName: project.name,
-          }),
-        });
-        if (!bookResponse.ok) {
-          console.warn("Failed to book slot:", await bookResponse.text());
-        }
-      } catch (err) {
-        console.error("Error booking slot:", err);
-      }
-    }
+    // Track the Zuper job UID from scheduling response
+    let scheduledZuperJobUid: string | undefined = project.zuperJobUid;
 
-    // Sync to Zuper if enabled
+    // Sync to Zuper FIRST if enabled (so we get the job UID for local booking)
     if (zuperConfigured && syncToZuper) {
       setSyncingToZuper(true);
       try {
@@ -644,6 +625,7 @@ export default function SiteSurveySchedulerPage() {
               startTime: slot?.startTime, // e.g. "12:00"
               endTime: slot?.endTime, // e.g. "13:00"
               crew: slot?.userUid, // Zuper user UID for assignment
+              teamUid: slot?.teamUid, // Zuper team UID (required for assignment API)
               assignedUser: slot?.userName,
               notes: slot ? `Surveyor: ${slot.userName} at ${slot.startTime}` : "Scheduled via Site Survey Scheduler",
             },
@@ -652,6 +634,8 @@ export default function SiteSurveySchedulerPage() {
 
         if (response.ok) {
           const data = await response.json();
+          // Capture the Zuper job UID from the response
+          scheduledZuperJobUid = data.job?.job_uid || data.existingJobId || project.zuperJobUid;
           const slotInfo = slot ? ` (${slot.userName} ${slot.startTime})` : "";
           showToast(
             `${getCustomerName(project.name)} scheduled${slotInfo} - ${data.action === "rescheduled" ? "Zuper job updated" : "Zuper job created"}`
@@ -673,6 +657,35 @@ export default function SiteSurveySchedulerPage() {
     } else {
       const slotInfo = slot ? ` with ${slot.userName} at ${slot.startTime.replace(/^0/, "")}` : "";
       showToast(`${getCustomerName(project.name)} scheduled for ${formatDate(date)}${slotInfo}`);
+    }
+
+    // Book the time slot locally AFTER Zuper sync (so we have the job UID)
+    // This tracks the assignment since Zuper API doesn't support updating assignments
+    if (slot) {
+      try {
+        const bookResponse = await fetch("/api/zuper/availability", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            date,
+            startTime: slot.startTime,
+            endTime: slot.endTime,
+            userName: slot.userName,
+            userUid: slot.userUid, // Track the Zuper user UID for assignment
+            location: slot.location,
+            projectId: project.id,
+            projectName: project.name,
+            zuperJobUid: scheduledZuperJobUid, // Link to the Zuper job
+          }),
+        });
+        if (!bookResponse.ok) {
+          console.warn("Failed to book slot:", await bookResponse.text());
+        } else {
+          console.log(`[Scheduler] Booked slot for ${slot.userName} (${slot.userUid}) - Zuper job: ${scheduledZuperJobUid}`);
+        }
+      } catch (err) {
+        console.error("Error booking slot:", err);
+      }
     }
 
     // Refresh availability to show the booked slot removed
@@ -1157,6 +1170,7 @@ export default function SiteSurveySchedulerPage() {
                                         slot: {
                                           userName: slot.user_name || "",
                                           userUid: slot.user_uid,
+                                          teamUid: slot.team_uid, // Include team UID for assignment API
                                           startTime: slot.start_time,
                                           endTime: slot.end_time,
                                           location: slot.location || "",
@@ -1409,6 +1423,7 @@ export default function SiteSurveySchedulerPage() {
                             slot: {
                               userName: slot.user_name || "",
                               userUid: slot.user_uid,
+                              teamUid: slot.team_uid, // Include team UID for assignment API
                               startTime: slot.start_time,
                               endTime: slot.end_time,
                               location: slot.location || "",

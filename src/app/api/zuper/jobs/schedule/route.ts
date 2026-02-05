@@ -226,13 +226,15 @@ export async function PUT(request: NextRequest) {
 
       // Get user UIDs from crew selection (crew can be a user UID or comma-separated list)
       const userUids = schedule.crew ? schedule.crew.split(",").map((u: string) => u.trim()).filter(Boolean) : [];
-      console.log(`[Zuper Schedule] Assigning to users:`, userUids);
+      const teamUid = schedule.teamUid; // Team UID required for assignment API
+      console.log(`[Zuper Schedule] Assigning to users:`, userUids, `team:`, teamUid);
 
       const rescheduleResult = await zuper.rescheduleJob(
         existingJob.job_uid,
         startDateTime,
         endDateTime,
-        userUids.length > 0 ? userUids : undefined
+        userUids.length > 0 ? userUids : undefined,
+        teamUid // Pass team UID for assignment
       );
 
       if (rescheduleResult.type === "error") {

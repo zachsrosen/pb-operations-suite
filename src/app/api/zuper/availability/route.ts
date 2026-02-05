@@ -36,10 +36,13 @@ interface BookedSlot {
   startTime: string;
   endTime: string;
   userName: string;
+  userUid?: string; // Zuper user UID for assignment tracking
   location: string;
   projectId: string;
   projectName: string;
   bookedAt: string;
+  // Track the Zuper job UID if we created/scheduled this
+  zuperJobUid?: string;
 }
 
 // This will persist across requests within the same server instance
@@ -63,17 +66,28 @@ interface CrewSchedule {
     endTime: string;
   }>;
   jobTypes: string[]; // "survey", "construction", "inspection"
-  userUid?: string; // Zuper user UID - populated dynamically
+  userUid?: string; // Zuper user UID for assignments
+  teamUid?: string; // Zuper team UID (required for assignment API)
 }
 
-// Zuper User UIDs - hardcoded since Zuper API doesn't have a /users endpoint
+// Zuper Team UIDs - from /api/teams/summary
+const ZUPER_TEAM_UIDS = {
+  Westminster: "1c23adb9-cefa-44c7-8506-804949afc56f",
+  Centennial: "76b94bd3-e2fc-4cfe-8c2a-357b9a850b3c",
+  "Colorado Springs": "1a914a0e-b633-4f12-8ed6-3348285d6b93",
+  "San Luis Obispo": "699cec60-f9f8-4e57-b41a-bb29b1f3649c",
+  Camarillo: "0168d963-84af-4214-ad81-d6c43cee8e65",
+} as const;
+
+// Zuper User UIDs and Team UIDs - hardcoded since Zuper API doesn't have a /users endpoint
 // Found by searching job assignments
-const ZUPER_USER_UIDS: Record<string, string> = {
-  "Drew Perry": "0ddc7e1d-62e1-49df-b89d-905a39c1e353",
-  "Joe Lynch": "f203f99b-4aaf-488e-8e6a-8ee5e94ec217",
-  "Derek Pomar": "f3bb40c0-d548-4355-ab39-6c27532a6d36",
-  "Rolando": "a89ed2f5-222b-4b09-8bb0-14dc45c2a51b", // Rolando Valle
-  "Rich": "e043bf1d-006b-4033-a46e-3b5d06ed3d00", // Ryszard Szymanski
+// Team UIDs are required for the /service_tasks/{job_uid}/assign endpoint
+const ZUPER_USER_UIDS: Record<string, { userUid: string; teamUid?: string }> = {
+  "Drew Perry": { userUid: "0ddc7e1d-62e1-49df-b89d-905a39c1e353", teamUid: ZUPER_TEAM_UIDS.Centennial }, // Centennial team (DTC location)
+  "Joe Lynch": { userUid: "f203f99b-4aaf-488e-8e6a-8ee5e94ec217", teamUid: ZUPER_TEAM_UIDS.Westminster }, // Westminster team
+  "Derek Pomar": { userUid: "f3bb40c0-d548-4355-ab39-6c27532a6d36", teamUid: ZUPER_TEAM_UIDS.Centennial }, // Centennial team (DTC location)
+  "Rolando": { userUid: "a89ed2f5-222b-4b09-8bb0-14dc45c2a51b", teamUid: ZUPER_TEAM_UIDS["Colorado Springs"] }, // Colorado Springs team
+  "Rich": { userUid: "e043bf1d-006b-4033-a46e-3b5d06ed3d00", teamUid: ZUPER_TEAM_UIDS.Westminster }, // Ryszard Szymanski - Westminster team
 };
 
 const CREW_SCHEDULES: CrewSchedule[] = [
@@ -87,7 +101,8 @@ const CREW_SCHEDULES: CrewSchedule[] = [
       { day: 4, startTime: "12:00", endTime: "15:00" }, // Thu
     ],
     jobTypes: ["survey"],
-    userUid: ZUPER_USER_UIDS["Drew Perry"],
+    userUid: ZUPER_USER_UIDS["Drew Perry"].userUid,
+    teamUid: ZUPER_USER_UIDS["Drew Perry"].teamUid,
   },
   {
     name: "Joe Lynch",
@@ -98,7 +113,8 @@ const CREW_SCHEDULES: CrewSchedule[] = [
       { day: 4, startTime: "11:00", endTime: "14:00" }, // Thu
     ],
     jobTypes: ["survey"],
-    userUid: ZUPER_USER_UIDS["Joe Lynch"],
+    userUid: ZUPER_USER_UIDS["Joe Lynch"].userUid,
+    teamUid: ZUPER_USER_UIDS["Joe Lynch"].teamUid,
   },
   {
     name: "Derek Pomar",
@@ -108,7 +124,8 @@ const CREW_SCHEDULES: CrewSchedule[] = [
       { day: 2, startTime: "12:00", endTime: "16:00" }, // Tue
     ],
     jobTypes: ["survey"],
-    userUid: ZUPER_USER_UIDS["Derek Pomar"],
+    userUid: ZUPER_USER_UIDS["Derek Pomar"].userUid,
+    teamUid: ZUPER_USER_UIDS["Derek Pomar"].teamUid,
   },
   {
     name: "Derek Pomar",
@@ -118,7 +135,8 @@ const CREW_SCHEDULES: CrewSchedule[] = [
       { day: 3, startTime: "12:00", endTime: "16:00" }, // Wed
     ],
     jobTypes: ["survey"],
-    userUid: ZUPER_USER_UIDS["Derek Pomar"],
+    userUid: ZUPER_USER_UIDS["Derek Pomar"].userUid,
+    teamUid: ZUPER_USER_UIDS["Derek Pomar"].teamUid,
   },
   {
     name: "Derek Pomar",
@@ -128,7 +146,8 @@ const CREW_SCHEDULES: CrewSchedule[] = [
       { day: 4, startTime: "12:00", endTime: "16:00" }, // Thu
     ],
     jobTypes: ["survey"],
-    userUid: ZUPER_USER_UIDS["Derek Pomar"],
+    userUid: ZUPER_USER_UIDS["Derek Pomar"].userUid,
+    teamUid: ZUPER_USER_UIDS["Derek Pomar"].teamUid,
   },
   {
     name: "Rich",
@@ -140,7 +159,8 @@ const CREW_SCHEDULES: CrewSchedule[] = [
       { day: 4, startTime: "11:00", endTime: "14:00" }, // Thu 11am-2pm
     ],
     jobTypes: ["survey"],
-    userUid: ZUPER_USER_UIDS["Rich"],
+    userUid: ZUPER_USER_UIDS["Rich"].userUid,
+    teamUid: ZUPER_USER_UIDS["Rich"].teamUid,
   },
   {
     name: "Rolando",
@@ -154,7 +174,8 @@ const CREW_SCHEDULES: CrewSchedule[] = [
       { day: 5, startTime: "08:00", endTime: "12:00" }, // Fri
     ],
     jobTypes: ["survey"],
-    userUid: ZUPER_USER_UIDS["Rolando"],
+    userUid: ZUPER_USER_UIDS["Rolando"].userUid,
+    teamUid: ZUPER_USER_UIDS["Rolando"].teamUid,
   },
 
   // ============================================
@@ -237,12 +258,12 @@ export async function GET(request: NextRequest) {
 
   // Map location to team UID
   const teamMap: Record<string, string> = {
-    Westminster: "1c23adb9-cefa-44c7-8506-804949afc56f",
-    Centennial: "",
-    DTC: "",
-    "Colorado Springs": "",
-    "San Luis Obispo": "699cec60-f9f8-4e57-b41a-bb29b1f3649c",
-    Camarillo: "",
+    Westminster: ZUPER_TEAM_UIDS.Westminster,
+    Centennial: ZUPER_TEAM_UIDS.Centennial,
+    DTC: ZUPER_TEAM_UIDS.Centennial, // DTC is part of Centennial team
+    "Colorado Springs": ZUPER_TEAM_UIDS["Colorado Springs"],
+    "San Luis Obispo": ZUPER_TEAM_UIDS["San Luis Obispo"],
+    Camarillo: ZUPER_TEAM_UIDS.Camarillo,
   };
 
   const resolvedTeamUid = teamUid || (location ? teamMap[location] : undefined);
@@ -265,6 +286,7 @@ export async function GET(request: NextRequest) {
         end_time: string;
         display_time?: string; // Formatted time range for display
         user_uid?: string;
+        team_uid?: string; // Zuper team UID (required for assignment API)
         user_name?: string;
         location?: string; // Crew member's location
       }>;
@@ -337,10 +359,11 @@ export async function GET(request: NextRequest) {
     // Filter by location if specified
     if (locationMatches && !locationMatches.includes(crew.location)) continue;
 
-    // Use the hardcoded userUid from the config
+    // Use the hardcoded userUid and teamUid from the config
     const crewUserUid = crew.userUid;
+    const crewTeamUid = crew.teamUid;
     if (crewUserUid) {
-      console.log(`[Zuper Availability] Crew "${crew.name}" has UID: ${crewUserUid}`);
+      console.log(`[Zuper Availability] Crew "${crew.name}" has UID: ${crewUserUid}, Team: ${crewTeamUid || "none"}`);
     } else {
       console.log(`[Zuper Availability] No UID configured for crew "${crew.name}"`);
     }
@@ -364,6 +387,7 @@ export async function GET(request: NextRequest) {
               end_time: slot.end,
               display_time: displayTime,
               user_uid: crewUserUid, // Include Zuper user UID for assignment
+              team_uid: crewTeamUid, // Include Zuper team UID (required for assignment API)
               user_name: crew.name,
               location: crew.location,
             });
@@ -585,7 +609,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { date, startTime, endTime, userName, location, projectId, projectName } = body;
+    const { date, startTime, endTime, userName, userUid, location, projectId, projectName, zuperJobUid } = body;
 
     if (!date || !startTime || !userName || !projectId) {
       return NextResponse.json(
@@ -604,19 +628,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Book the slot
+    // Book the slot - this tracks the assignment locally since Zuper API
+    // doesn't support updating assignments after job creation
     const booking: BookedSlot = {
       date,
       startTime,
       endTime: endTime || `${(parseInt(startTime.split(":")[0]) + 1).toString().padStart(2, "0")}:00`,
       userName,
+      userUid, // Track the Zuper user UID for this booking
       location: location || "",
       projectId,
       projectName: projectName || "",
       bookedAt: new Date().toISOString(),
+      zuperJobUid, // Track which Zuper job this booking is for
     };
 
     bookedSlots.set(key, booking);
+
+    console.log(`[Availability] Booked slot for ${userName} (${userUid}) on ${date} at ${startTime} - Job: ${zuperJobUid}`);
 
     return NextResponse.json({
       success: true,
