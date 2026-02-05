@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { prisma, getOrCreateUser } from "@/lib/db";
+import { prisma, getOrCreateUser, getUserByEmail } from "@/lib/db";
 
 /**
  * POST /api/admin/sync-workspace
@@ -19,14 +19,14 @@ export async function POST() {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  // Check if user is admin
-  const userRole = session.user.role;
-  if (userRole !== "ADMIN") {
-    return NextResponse.json({ error: "Admin access required" }, { status: 403 });
-  }
-
   if (!prisma) {
     return NextResponse.json({ error: "Database not configured" }, { status: 500 });
+  }
+
+  // Check if user is admin - fetch from DB since JWT may be stale
+  const currentUser = await getUserByEmail(session.user.email);
+  if (!currentUser || currentUser.role !== "ADMIN") {
+    return NextResponse.json({ error: "Admin access required" }, { status: 403 });
   }
 
   // Check for required environment variables
@@ -232,8 +232,9 @@ export async function GET() {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const userRole = session.user.role;
-  if (userRole !== "ADMIN") {
+  // Check if user is admin - fetch from DB since JWT may be stale
+  const currentUser = await getUserByEmail(session.user.email);
+  if (!currentUser || currentUser.role !== "ADMIN") {
     return NextResponse.json({ error: "Admin access required" }, { status: 403 });
   }
 

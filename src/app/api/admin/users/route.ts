@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { prisma, getAllUsers, updateUserRole, UserRole } from "@/lib/db";
+import { prisma, getAllUsers, updateUserRole, UserRole, getUserByEmail } from "@/lib/db";
 
 /**
  * GET /api/admin/users
@@ -13,14 +13,14 @@ export async function GET() {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  // Check if user is admin
-  const userRole = session.user.role;
-  if (userRole !== "ADMIN") {
-    return NextResponse.json({ error: "Admin access required" }, { status: 403 });
-  }
-
   if (!prisma) {
     return NextResponse.json({ error: "Database not configured" }, { status: 500 });
+  }
+
+  // Check if user is admin - fetch from DB since JWT may be stale
+  const currentUser = await getUserByEmail(session.user.email);
+  if (!currentUser || currentUser.role !== "ADMIN") {
+    return NextResponse.json({ error: "Admin access required" }, { status: 403 });
   }
 
   try {
@@ -43,14 +43,14 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  // Check if user is admin
-  const userRole = session.user.role;
-  if (userRole !== "ADMIN") {
-    return NextResponse.json({ error: "Admin access required" }, { status: 403 });
-  }
-
   if (!prisma) {
     return NextResponse.json({ error: "Database not configured" }, { status: 500 });
+  }
+
+  // Check if user is admin - fetch from DB since JWT may be stale
+  const currentUser = await getUserByEmail(session.user.email);
+  if (!currentUser || currentUser.role !== "ADMIN") {
+    return NextResponse.json({ error: "Admin access required" }, { status: 403 });
   }
 
   try {
