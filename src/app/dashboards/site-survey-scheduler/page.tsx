@@ -177,6 +177,14 @@ function formatCurrency(amount: number): string {
   return "$" + amount.toFixed(0);
 }
 
+// Format 24-hour time (e.g., "13:00") to 12-hour format (e.g., "1pm")
+function formatTime12h(time: string): string {
+  const [hours, minutes] = time.split(":").map(Number);
+  const suffix = hours >= 12 ? "pm" : "am";
+  const hour12 = hours > 12 ? hours - 12 : hours === 0 ? 12 : hours;
+  return minutes === 0 ? `${hour12}${suffix}` : `${hour12}:${minutes.toString().padStart(2, "0")}${suffix}`;
+}
+
 function getCustomerName(fullName: string): string {
   return fullName.split(" | ")[1] || fullName;
 }
@@ -1344,7 +1352,7 @@ export default function SiteSurveySchedulerPage() {
                     {scheduleModal.currentSlot ? "New Time Slot" : "Selected Time Slot"}
                   </span>
                   <p className="text-sm text-white mt-1">
-                    {scheduleModal.slot.userName} &bull; {scheduleModal.slot.startTime.replace(/^0/, "")} - {scheduleModal.slot.endTime.replace(/^0/, "")}
+                    {scheduleModal.slot.userName} &bull; {formatTime12h(scheduleModal.slot.startTime)} - {formatTime12h(scheduleModal.slot.endTime)}
                   </p>
                   <p className="text-xs text-zinc-400 mt-0.5">
                     This 1-hour slot will be reserved
