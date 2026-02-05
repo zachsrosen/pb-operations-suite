@@ -564,6 +564,8 @@ export async function createJobFromProject(project: {
   type: "survey" | "installation" | "inspection";
   date: string;
   days: number;
+  startTime?: string; // Optional specific start time (e.g., "12:00")
+  endTime?: string; // Optional specific end time (e.g., "13:00")
   crew?: string;
   notes?: string;
 }): Promise<ZuperApiResponse<ZuperJob>> {
@@ -590,19 +592,30 @@ export async function createJobFromProject(project: {
     jobType = JOB_TYPES.EV_CHARGER;
   }
 
-  // Calculate end time (assuming 8-hour workday starting at 8am)
-  // Parse date parts directly to avoid timezone conversion issues
-  const startDateTime = `${schedule.date}T08:00:00`;
+  // Calculate schedule times
+  // If specific start/end times provided (e.g., for site surveys), use those
+  // Otherwise default to 8am-4pm for multi-day jobs
+  let startDateTime: string;
+  let endDateTime: string;
 
-  // Calculate end date by parsing date parts directly (no timezone issues)
-  const [year, month, day] = schedule.date.split('-').map(Number);
-  const endDay = day + schedule.days - 1;
-  // Create date in local timezone to handle month overflow correctly
-  const endDateObj = new Date(year, month - 1, endDay);
-  const endYear = endDateObj.getFullYear();
-  const endMonth = String(endDateObj.getMonth() + 1).padStart(2, '0');
-  const endDayStr = String(endDateObj.getDate()).padStart(2, '0');
-  const endDateTime = `${endYear}-${endMonth}-${endDayStr}T16:00:00`;
+  if (schedule.startTime && schedule.endTime) {
+    // Use specific time slot (e.g., "12:00" to "13:00" for site surveys)
+    startDateTime = `${schedule.date}T${schedule.startTime}:00`;
+    endDateTime = `${schedule.date}T${schedule.endTime}:00`;
+  } else {
+    // Default to 8am-4pm for multi-day jobs
+    startDateTime = `${schedule.date}T08:00:00`;
+
+    // Calculate end date by parsing date parts directly (no timezone issues)
+    const [year, month, day] = schedule.date.split('-').map(Number);
+    const endDay = day + schedule.days - 1;
+    // Create date in local timezone to handle month overflow correctly
+    const endDateObj = new Date(year, month - 1, endDay);
+    const endYear = endDateObj.getFullYear();
+    const endMonth = String(endDateObj.getMonth() + 1).padStart(2, '0');
+    const endDayStr = String(endDateObj.getDate()).padStart(2, '0');
+    endDateTime = `${endYear}-${endMonth}-${endDayStr}T16:00:00`;
+  }
 
   const job: ZuperJob = {
     job_title: `${categoryNameMap[schedule.type]} - ${project.name}`,

@@ -97,20 +97,31 @@ export async function PUT(request: NextRequest) {
       }
     }
 
-    // Calculate schedule times - 8am to 4pm
-    // Parse date parts directly to avoid timezone conversion issues
+    // Calculate schedule times
+    // If specific start/end times provided (e.g., for site surveys), use those
+    // Otherwise default to 8am-4pm for installs
     const days = schedule.days || 1;
-    const startDateTime = `${schedule.date}T08:00:00`;
+    let startDateTime: string;
+    let endDateTime: string;
 
-    // Calculate end date by parsing date parts directly (no timezone issues)
-    const [year, month, day] = schedule.date.split('-').map(Number);
-    const endDay = day + days - 1;
-    // Create date in local timezone to handle month overflow correctly
-    const endDateObj = new Date(year, month - 1, endDay);
-    const endYear = endDateObj.getFullYear();
-    const endMonth = String(endDateObj.getMonth() + 1).padStart(2, '0');
-    const endDayStr = String(endDateObj.getDate()).padStart(2, '0');
-    const endDateTime = `${endYear}-${endMonth}-${endDayStr}T16:00:00`;
+    if (schedule.startTime && schedule.endTime) {
+      // Use specific time slot (e.g., "12:00" to "13:00" for site surveys)
+      startDateTime = `${schedule.date}T${schedule.startTime}:00`;
+      endDateTime = `${schedule.date}T${schedule.endTime}:00`;
+    } else {
+      // Default to 8am-4pm for multi-day jobs
+      startDateTime = `${schedule.date}T08:00:00`;
+
+      // Calculate end date by parsing date parts directly (no timezone issues)
+      const [year, month, day] = schedule.date.split('-').map(Number);
+      const endDay = day + days - 1;
+      // Create date in local timezone to handle month overflow correctly
+      const endDateObj = new Date(year, month - 1, endDay);
+      const endYear = endDateObj.getFullYear();
+      const endMonth = String(endDateObj.getMonth() + 1).padStart(2, '0');
+      const endDayStr = String(endDateObj.getDate()).padStart(2, '0');
+      endDateTime = `${endYear}-${endMonth}-${endDayStr}T16:00:00`;
+    }
 
     if (existingJob && existingJob.job_uid) {
       // Reschedule existing job

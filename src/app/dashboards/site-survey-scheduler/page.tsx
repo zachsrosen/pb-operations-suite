@@ -631,6 +631,9 @@ export default function SiteSurveySchedulerPage() {
               type: "survey",
               date: date,
               days: 0.25, // Site surveys are typically ~1 hour
+              startTime: slot?.startTime, // e.g. "12:00"
+              endTime: slot?.endTime, // e.g. "13:00"
+              assignedUser: slot?.userName,
               notes: slot ? `Surveyor: ${slot.userName} at ${slot.startTime}` : "Scheduled via Site Survey Scheduler",
             },
           }),
