@@ -209,6 +209,12 @@ function formatCurrency(amount: number): string {
   return "$" + amount.toFixed(0);
 }
 
+// Format revenue without $ sign for display contexts that add their own
+function formatRevenueCompact(amount: number): string {
+  if (amount >= 1_000_000) return (amount / 1_000_000).toFixed(1) + "M";
+  return (amount / 1000).toFixed(0) + "K";
+}
+
 function getCustomerName(fullName: string): string {
   return fullName.split(" | ")[1] || fullName;
 }
@@ -339,8 +345,8 @@ export default function SchedulerPage() {
 
   /* ---- view / nav ---- */
   const [currentView, setCurrentView] = useState<"calendar" | "week" | "gantt">("calendar");
-  const [currentYear, setCurrentYear] = useState(2026);
-  const [currentMonth, setCurrentMonth] = useState(0);
+  const [currentYear, setCurrentYear] = useState(() => new Date().getFullYear());
+  const [currentMonth, setCurrentMonth] = useState(() => new Date().getMonth());
   const [weekOffset, setWeekOffset] = useState(0);
 
   /* ---- filters ---- */
@@ -561,12 +567,12 @@ export default function SchedulerPage() {
       rtb: fp.filter((p) => p.stage === "rtb").length,
       construction: fp.filter((p) => p.stage === "construction").length,
       inspection: fp.filter((p) => p.stage === "inspection").length,
-      totalRevenue: (fp.reduce((s, p) => s + p.amount, 0) / 1000).toFixed(0),
+      totalRevenue: formatRevenueCompact(fp.reduce((s, p) => s + p.amount, 0)),
     };
   }, [projects, selectedLocation, selectedLocations]);
 
   const queueRevenue = useMemo(
-    () => (filteredProjects.reduce((s, p) => s + p.amount, 0) / 1000).toFixed(0),
+    () => formatRevenueCompact(filteredProjects.reduce((s, p) => s + p.amount, 0)),
     [filteredProjects]
   );
 
@@ -929,13 +935,12 @@ export default function SchedulerPage() {
     }
     showToast(msg);
 
-    const totalRev = (
-      rtbProjects
+    const totalRevValue = rtbProjects
         .slice(0, scheduledInstalls)
-        .reduce((s, p) => s + p.amount, 0) / 1000
-    ).toFixed(0);
+        .reduce((s, p) => s + p.amount, 0);
+    const totalRev = formatRevenueCompact(totalRevValue);
     setOptimizeStats(
-      `${scheduledInstalls} installs, ${scheduledInstalls} inspections | $${totalRev}K | Sorted: Easiest → Hardest`
+      `${scheduledInstalls} installs, ${scheduledInstalls} inspections | $${totalRev} | Sorted: Easiest → Hardest`
     );
   }, [projects, manualSchedules, scheduledEvents, showToast]);
 
@@ -1502,9 +1507,9 @@ export default function SchedulerPage() {
                   ? projects
                   : projects.filter((p) => p.location === loc);
               const count = locProjects.length;
-              const revenue = (
-                locProjects.reduce((s, p) => s + p.amount, 0) / 1000
-              ).toFixed(0);
+              const revenue = formatRevenueCompact(
+                locProjects.reduce((s, p) => s + p.amount, 0)
+              );
               return (
                 <button
                   key={loc}
