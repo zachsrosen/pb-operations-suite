@@ -18,6 +18,7 @@ enum UserRole {
   ADMIN    // Full access, user management
   MANAGER  // Can schedule, view all data
   VIEWER   // Read-only access
+  SALES    // Only survey scheduler access
 }
 
 model User {
