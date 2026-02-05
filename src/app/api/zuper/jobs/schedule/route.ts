@@ -98,13 +98,19 @@ export async function PUT(request: NextRequest) {
     }
 
     // Calculate schedule times - 8am to 4pm
-    // Use simple datetime format without timezone conversion issues
+    // Parse date parts directly to avoid timezone conversion issues
     const days = schedule.days || 1;
     const startDateTime = `${schedule.date}T08:00:00`;
-    const endDateObj = new Date(schedule.date);
-    endDateObj.setDate(endDateObj.getDate() + days - 1);
-    const endDateStr = endDateObj.toISOString().split('T')[0];
-    const endDateTime = `${endDateStr}T16:00:00`;
+
+    // Calculate end date by parsing date parts directly (no timezone issues)
+    const [year, month, day] = schedule.date.split('-').map(Number);
+    const endDay = day + days - 1;
+    // Create date in local timezone to handle month overflow correctly
+    const endDateObj = new Date(year, month - 1, endDay);
+    const endYear = endDateObj.getFullYear();
+    const endMonth = String(endDateObj.getMonth() + 1).padStart(2, '0');
+    const endDayStr = String(endDateObj.getDate()).padStart(2, '0');
+    const endDateTime = `${endYear}-${endMonth}-${endDayStr}T16:00:00`;
 
     if (existingJob && existingJob.job_uid) {
       // Reschedule existing job
