@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import DashboardShell from "@/components/DashboardShell";
+import { formatCurrencyCompact } from "@/lib/format";
 
 // ============================================================
 // TypeScript Interfaces
@@ -163,7 +164,7 @@ function detectBottlenecks(projects: Project[]): Bottleneck[] {
         severity: stageProjects.length > 50 ? "high" : "medium",
         title: `${stage} Backlog`,
         description: `${stageProjects.length} projects stuck in ${stage} stage`,
-        impact: `$${(totalValue / 1000).toFixed(0)}K pipeline value affected`,
+        impact: `${formatCurrencyCompact(totalValue)} pipeline value affected`,
         recommendation: `Review ${stage} process - consider adding resources or expediting`,
       });
     }
@@ -185,7 +186,7 @@ function detectBottlenecks(projects: Project[]): Bottleneck[] {
       severity: "high",
       title: "Participate Energy Milestone Risk",
       description: `${peAtRisk.length} PE projects with overdue milestones`,
-      impact: `$${(peValue / 1000).toFixed(0)}K in PE revenue at risk`,
+      impact: `${formatCurrencyCompact(peValue)} in PE revenue at risk`,
       recommendation:
         "Prioritize PE projects in scheduling queue to meet bonus deadlines",
     });
@@ -205,7 +206,7 @@ function detectBottlenecks(projects: Project[]): Bottleneck[] {
       severity: blockedProjects.length > 25 ? "high" : "medium",
       title: "Blocked Projects Accumulation",
       description: `${blockedProjects.length} projects are blocked and waiting`,
-      impact: `$${(blockedValue / 1000).toFixed(0)}K delayed until blockers resolved`,
+      impact: `${formatCurrencyCompact(blockedValue)} delayed until blockers resolved`,
       recommendation:
         "Review blocked projects weekly to identify resolution paths",
     });
@@ -841,7 +842,7 @@ export default function OptimizerDashboard() {
               </div>
               <div className="bg-zinc-800/50 p-4 rounded-lg text-center">
                 <div className="text-2xl font-bold text-blue-400">
-                  ${(optimizationTotalValue / 1000).toFixed(0)}K
+                  {formatCurrencyCompact(optimizationTotalValue)}
                 </div>
                 <div className="text-xs text-zinc-500">Revenue</div>
               </div>
@@ -1055,8 +1056,8 @@ export default function OptimizerDashboard() {
                       </div>
                       <div className="text-xs text-zinc-500">
                         {p.pbLocation || "Unknown"} |{" "}
-                        {formatDaysToInstall(p.daysToInstall)} | $
-                        {((p.amount || 0) / 1000).toFixed(0)}K
+                        {formatDaysToInstall(p.daysToInstall)} |{" "}
+                        {formatCurrencyCompact(p.amount || 0)}
                       </div>
                     </div>
                     <div className="text-right shrink-0">
@@ -1214,7 +1215,7 @@ export default function OptimizerDashboard() {
                           </span>
                         </td>
                         <td className="py-3 px-4 text-sm text-zinc-300">
-                          ${((p.amount || 0) / 1000).toFixed(0)}K
+                          {formatCurrencyCompact(p.amount || 0)}
                         </td>
                         <td className="py-3 px-4 text-sm font-bold text-zinc-200">
                           {p.score.toFixed(0)}
@@ -1286,7 +1287,7 @@ export default function OptimizerDashboard() {
                   <div>
                     <span className="text-zinc-500">Total Revenue</span>
                     <div className="text-white font-semibold">
-                      ${(optimizedSchedule.reduce((sum, s) => sum + (s.project.amount || 0), 0) / 1000).toFixed(0)}K
+                      {formatCurrencyCompact(optimizedSchedule.reduce((sum, s) => sum + (s.project.amount || 0), 0))}
                     </div>
                   </div>
                   <div>

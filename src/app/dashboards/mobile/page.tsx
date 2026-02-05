@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { formatMoney } from "@/lib/format";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -62,11 +63,8 @@ function formatOverdue(days: number): string {
   return `${days} days overdue`;
 }
 
-function formatCurrency(amount: number): string {
-  if (amount >= 1_000_000) return `$${(amount / 1_000_000).toFixed(1)}M`;
-  if (amount >= 1_000) return `$${(amount / 1_000).toFixed(0)}k`;
-  return `$${amount.toFixed(0)}`;
-}
+// Use shared formatMoney from @/lib/format
+const formatCurrency = formatMoney;
 
 /* ------------------------------------------------------------------ */
 /*  Sub-components                                                     */
