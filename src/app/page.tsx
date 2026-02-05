@@ -9,6 +9,7 @@ import { STAGE_COLORS } from "@/lib/constants";
 import { StatCard, MiniStat } from "@/components/ui/MetricCard";
 import { SkeletonSection } from "@/components/ui/Skeleton";
 import { LiveIndicator } from "@/components/ui/LiveIndicator";
+import { UserMenu } from "@/components/UserMenu";
 
 function useIsMac() {
   const [isMac, setIsMac] = useState(true);
@@ -243,6 +244,8 @@ export default function Home() {
                     ? `Last updated: ${new Date(stats.lastUpdated).toLocaleString()}`
                     : ""}
             </span>
+
+            <UserMenu />
           </div>
         </div>
       </header>
