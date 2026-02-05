@@ -1235,7 +1235,7 @@ export default function SchedulerPage() {
           {/* Queue count */}
           <div className="text-[0.65rem] text-zinc-500 px-3 py-2 border-b border-zinc-800 bg-[#0a0a0f] flex justify-between">
             <span>{filteredProjects.length} projects</span>
-            <span>${queueRevenue}K</span>
+            <span>${queueRevenue}</span>
           </div>
 
           {/* Queue list */}
@@ -1523,7 +1523,7 @@ export default function SchedulerPage() {
                   {loc === "All" ? "All" : loc}{" "}
                   <span className="font-mono opacity-70">{count}</span>
                   <span className="text-[0.55rem] opacity-60 block">
-                    ${revenue}K
+                    ${revenue}
                   </span>
                 </button>
               );
@@ -1547,7 +1547,7 @@ export default function SchedulerPage() {
               },
               {
                 color: "bg-orange-500",
-                value: `$${stats.totalRevenue}K`,
+                value: `$${stats.totalRevenue}`,
                 label: "Pipeline",
               },
             ].map((s, i) => (
