@@ -255,7 +255,8 @@ export class ZuperClient {
     jobUid: string,
     scheduledStartTime: string,
     scheduledEndTime: string,
-    userUids?: string[]
+    userUids?: string[],
+    teamUid?: string
   ): Promise<ZuperApiResponse<ZuperJob>> {
     // First reschedule the job times
     const scheduleResult = await this.request<ZuperJob>(`/jobs/schedule`, {
@@ -269,8 +270,20 @@ export class ZuperClient {
 
     // If we have user UIDs to assign, do that too
     if (scheduleResult.type === "success" && userUids && userUids.length > 0) {
-      console.log(`[Zuper] Assigning users to job ${jobUid}:`, userUids);
-      const assignResult = await this.assignJob(jobUid, userUids);
+      // Get team UID from the job if not provided
+      let resolvedTeamUid = teamUid;
+      if (!resolvedTeamUid) {
+        const jobResult = await this.getJob(jobUid);
+        if (jobResult.type === "success" && jobResult.data) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const jobData = jobResult.data as any;
+          resolvedTeamUid = jobData.assigned_to_team?.[0]?.team?.team_uid;
+          console.log(`[Zuper] Got team_uid from job: ${resolvedTeamUid}`);
+        }
+      }
+
+      console.log(`[Zuper] Assigning users to job ${jobUid}:`, userUids, `team: ${resolvedTeamUid}`);
+      const assignResult = await this.assignJob(jobUid, userUids, resolvedTeamUid);
       if (assignResult.type === "error") {
         console.error(`[Zuper] Failed to assign users:`, assignResult.error);
         // Return the schedule result anyway - job was rescheduled, just not assigned
@@ -343,14 +356,30 @@ export class ZuperClient {
 
   /**
    * Assign technicians to a job
+   * Uses PUT /jobs with job wrapper to update assignments
+   * Note: Zuper API requires team_uid along with user_uid for assignments
    */
   async assignJob(
     jobUid: string,
-    userUids: string[]
+    userUids: string[],
+    teamUid?: string
   ): Promise<ZuperApiResponse<ZuperJob>> {
-    return this.request<ZuperJob>(`/jobs/${jobUid}/assign`, {
+    // Build assigned_to array with proper structure
+    const assigned_to = userUids.map(userUid => ({
+      user_uid: userUid,
+      ...(teamUid && { team_uid: teamUid }),
+    }));
+
+    console.log(`[Zuper] Assigning job ${jobUid} to users:`, assigned_to);
+
+    return this.request<ZuperJob>(`/jobs`, {
       method: "PUT",
-      body: JSON.stringify({ assigned_to: userUids }),
+      body: JSON.stringify({
+        job: {
+          job_uid: jobUid,
+          assigned_to,
+        },
+      }),
     });
   }
 
