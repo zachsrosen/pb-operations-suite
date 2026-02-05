@@ -1,9 +1,11 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
-import { getOrCreateUser, getUserByEmail } from "@/lib/db";
 
 // Allowed email domain for authentication
 const ALLOWED_DOMAIN = process.env.ALLOWED_EMAIL_DOMAIN || "photonbrothers.com";
+
+// Note: Database operations are done via API routes, not in auth callbacks
+// This is because auth callbacks run in Edge Runtime which doesn't support Prisma
 
 // Extend the session type to include role
 declare module "next-auth" {
@@ -47,19 +49,6 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         if (!domains.includes(emailDomain)) {
           return false; // Reject sign-in
         }
-
-        // Create or update user in database (if DB is configured)
-        try {
-          await getOrCreateUser({
-            email: user.email,
-            name: user.name ?? undefined,
-            image: user.image ?? undefined,
-            googleId: account?.providerAccountId,
-          });
-        } catch (error) {
-          // Don't block sign-in if DB is not configured
-          console.warn("Could not sync user to database:", error);
-        }
       }
       return true;
     },
@@ -68,31 +57,20 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       if (session.user && token.sub) {
         session.user.id = token.sub;
       }
-      // Add role from token
+      // Role will be fetched via API call on client side
       if (token.role) {
         session.user.role = token.role as string;
       }
       return session;
     },
-    async jwt({ token, user, account, trigger }) {
+    async jwt({ token, user }) {
       if (user) {
         token.id = user.id;
       }
-
-      // Fetch role from database on sign-in or when session is updated
-      if ((user || trigger === "update") && token.email) {
-        try {
-          const dbUser = await getUserByEmail(token.email as string);
-          if (dbUser) {
-            token.role = dbUser.role;
-          } else {
-            token.role = "VIEWER"; // Default role
-          }
-        } catch {
-          token.role = "VIEWER";
-        }
+      // Default role - actual role fetched from DB via API
+      if (!token.role) {
+        token.role = "VIEWER";
       }
-
       return token;
     },
   },
