@@ -185,11 +185,38 @@ export default function ConstructionDashboardPage() {
       .map(s => ({ value: s!, label: s! }));
   }, [projects, isInConstructionPhase]);
 
-  // Create dynamic filter options from actual data values
-  const dynamicConstructionStatusOptions = useMemo(() => {
-    const existing = [...new Set(projects.map(p => (p as ExtendedProject).constructionStatus).filter(Boolean))].sort();
-    return existing.map(status => ({ value: status as string, label: status as string }));
-  }, [projects]);
+  // Get construction statuses that exist in the data
+  const existingConstructionStatuses = useMemo(() =>
+    new Set(projects.map(p => (p as ExtendedProject).constructionStatus).filter(Boolean)),
+    [projects]
+  );
+
+  // Filter groups to only include options that exist in the actual data
+  const filteredConstructionStatusGroups = useMemo(() => {
+    const knownValues = new Set(ALL_CONSTRUCTION_STATUS_OPTIONS.map(o => o.value));
+    const uncategorized = [...existingConstructionStatuses].filter(s => !knownValues.has(s as string));
+
+    const filtered = CONSTRUCTION_STATUS_GROUPS.map(group => ({
+      ...group,
+      options: group.options?.filter(opt => existingConstructionStatuses.has(opt.value)) || []
+    })).filter(group => group.options && group.options.length > 0);
+
+    // Add uncategorized values that exist in data but not in predefined groups
+    if (uncategorized.length > 0) {
+      filtered.push({
+        name: "Other",
+        options: uncategorized.map(status => ({ value: status as string, label: status as string }))
+      });
+    }
+
+    return filtered;
+  }, [existingConstructionStatuses]);
+
+  // Flatten filtered groups to get all options for the filter component
+  const filteredConstructionStatusOptions = useMemo(() =>
+    filteredConstructionStatusGroups.flatMap(g => g.options || []),
+    [filteredConstructionStatusGroups]
+  );
 
   if (loading) {
     return (
@@ -278,7 +305,8 @@ export default function ConstructionDashboardPage() {
           />
           <MultiSelectFilter
             label="Construction Status"
-            options={dynamicConstructionStatusOptions}
+            options={filteredConstructionStatusOptions}
+            groups={filteredConstructionStatusGroups}
             selected={filterConstructionStatuses}
             onChange={setFilterConstructionStatuses}
             placeholder="All Statuses"

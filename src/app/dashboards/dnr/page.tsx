@@ -240,16 +240,66 @@ export default function DNRPipelinePage() {
     [activeDeals],
   );
 
-  // Create dynamic filter options from actual data values
-  const dynamicDetachStatusOptions = useMemo(() => {
-    const existing = [...new Set(allDeals.map(d => d.detachStatus).filter(Boolean))].sort();
-    return existing.map(status => ({ value: status as string, label: status as string }));
-  }, [allDeals]);
+  // Get statuses that exist in the data
+  const existingDetachStatuses = useMemo(() =>
+    new Set(allDeals.map(d => d.detachStatus).filter(Boolean)),
+    [allDeals]
+  );
 
-  const dynamicResetStatusOptions = useMemo(() => {
-    const existing = [...new Set(allDeals.map(d => d.resetStatus).filter(Boolean))].sort();
-    return existing.map(status => ({ value: status as string, label: status as string }));
-  }, [allDeals]);
+  const existingResetStatuses = useMemo(() =>
+    new Set(allDeals.map(d => d.resetStatus).filter(Boolean)),
+    [allDeals]
+  );
+
+  // Filter groups to only include options that exist in the actual data
+  const filteredDetachStatusGroups = useMemo(() => {
+    const knownValues = new Set(DETACH_STATUS_OPTIONS.map(o => o.value));
+    const uncategorized = [...existingDetachStatuses].filter(s => !knownValues.has(s as string));
+
+    const filtered = DETACH_STATUS_GROUPS.map(group => ({
+      ...group,
+      options: group.options?.filter(opt => existingDetachStatuses.has(opt.value)) || []
+    })).filter(group => group.options && group.options.length > 0);
+
+    if (uncategorized.length > 0) {
+      filtered.push({
+        name: "Other",
+        options: uncategorized.map(status => ({ value: status as string, label: status as string }))
+      });
+    }
+
+    return filtered;
+  }, [existingDetachStatuses]);
+
+  const filteredResetStatusGroups = useMemo(() => {
+    const knownValues = new Set(RESET_STATUS_OPTIONS.map(o => o.value));
+    const uncategorized = [...existingResetStatuses].filter(s => !knownValues.has(s as string));
+
+    const filtered = RESET_STATUS_GROUPS.map(group => ({
+      ...group,
+      options: group.options?.filter(opt => existingResetStatuses.has(opt.value)) || []
+    })).filter(group => group.options && group.options.length > 0);
+
+    if (uncategorized.length > 0) {
+      filtered.push({
+        name: "Other",
+        options: uncategorized.map(status => ({ value: status as string, label: status as string }))
+      });
+    }
+
+    return filtered;
+  }, [existingResetStatuses]);
+
+  // Flatten filtered groups to get all options
+  const filteredDetachStatusOptions = useMemo(() =>
+    filteredDetachStatusGroups.flatMap(g => g.options || []),
+    [filteredDetachStatusGroups]
+  );
+
+  const filteredResetStatusOptions = useMemo(() =>
+    filteredResetStatusGroups.flatMap(g => g.options || []),
+    [filteredResetStatusGroups]
+  );
 
   // ---- Loading state -------------------------------------------------------
 
@@ -373,7 +423,8 @@ export default function DNRPipelinePage() {
 
           <MultiSelectFilter
             label="Detach Status"
-            options={dynamicDetachStatusOptions}
+            options={filteredDetachStatusOptions}
+            groups={filteredDetachStatusGroups}
             selected={selectedDetachStatuses}
             onChange={setSelectedDetachStatuses}
             placeholder="All Detach Statuses"
@@ -382,7 +433,8 @@ export default function DNRPipelinePage() {
 
           <MultiSelectFilter
             label="Reset Status"
-            options={dynamicResetStatusOptions}
+            options={filteredResetStatusOptions}
+            groups={filteredResetStatusGroups}
             selected={selectedResetStatuses}
             onChange={setSelectedResetStatuses}
             placeholder="All Reset Statuses"

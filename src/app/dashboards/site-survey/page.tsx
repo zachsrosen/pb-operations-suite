@@ -183,11 +183,37 @@ export default function SiteSurveyDashboardPage() {
       .map(s => ({ value: s!, label: s! }));
   }, [projects, isInSiteSurveyPhase]);
 
-  // Create dynamic filter options from actual data values
-  const dynamicSiteSurveyStatusOptions = useMemo(() => {
-    const existing = [...new Set(projects.map(p => (p as ExtendedProject).siteSurveyStatus).filter(Boolean))].sort();
-    return existing.map(status => ({ value: status as string, label: status as string }));
-  }, [projects]);
+  // Get statuses that exist in the data
+  const existingSiteSurveyStatuses = useMemo(() =>
+    new Set(projects.map(p => (p as ExtendedProject).siteSurveyStatus).filter(Boolean)),
+    [projects]
+  );
+
+  // Filter groups to only include options that exist in the actual data
+  const filteredSiteSurveyStatusGroups = useMemo(() => {
+    const knownValues = new Set(ALL_SITE_SURVEY_STATUS_OPTIONS.map(o => o.value));
+    const uncategorized = [...existingSiteSurveyStatuses].filter(s => !knownValues.has(s as string));
+
+    const filtered = SITE_SURVEY_STATUS_GROUPS.map(group => ({
+      ...group,
+      options: group.options?.filter(opt => existingSiteSurveyStatuses.has(opt.value)) || []
+    })).filter(group => group.options && group.options.length > 0);
+
+    if (uncategorized.length > 0) {
+      filtered.push({
+        name: "Other",
+        options: uncategorized.map(status => ({ value: status as string, label: status as string }))
+      });
+    }
+
+    return filtered;
+  }, [existingSiteSurveyStatuses]);
+
+  // Flatten filtered groups to get all options
+  const filteredSiteSurveyStatusOptions = useMemo(() =>
+    filteredSiteSurveyStatusGroups.flatMap(g => g.options || []),
+    [filteredSiteSurveyStatusGroups]
+  );
 
   if (loading) {
     return (
@@ -276,7 +302,8 @@ export default function SiteSurveyDashboardPage() {
           />
           <MultiSelectFilter
             label="Site Survey Status"
-            options={dynamicSiteSurveyStatusOptions}
+            options={filteredSiteSurveyStatusOptions}
+            groups={filteredSiteSurveyStatusGroups}
             selected={filterSiteSurveyStatuses}
             onChange={setFilterSiteSurveyStatuses}
             placeholder="All Statuses"

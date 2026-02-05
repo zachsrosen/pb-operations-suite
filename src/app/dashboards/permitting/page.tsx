@@ -362,16 +362,66 @@ export default function PermittingPage() {
       .map(s => ({ value: s!, label: s! }));
   }, [projects]);
 
-  // Create dynamic filter options from actual data values
-  const dynamicPermitStatusOptions = useMemo(() => {
-    const existing = [...new Set(projects.map(p => (p as ExtendedProject).permittingStatus).filter(Boolean))].sort();
-    return existing.map(status => ({ value: status as string, label: status as string }));
-  }, [projects]);
+  // Get statuses that exist in the data
+  const existingPermitStatuses = useMemo(() =>
+    new Set(projects.map(p => (p as ExtendedProject).permittingStatus).filter(Boolean)),
+    [projects]
+  );
 
-  const dynamicInspectionStatusOptions = useMemo(() => {
-    const existing = [...new Set(projects.map(p => (p as ExtendedProject).finalInspectionStatus).filter(Boolean))].sort();
-    return existing.map(status => ({ value: status as string, label: status as string }));
-  }, [projects]);
+  const existingInspectionStatuses = useMemo(() =>
+    new Set(projects.map(p => (p as ExtendedProject).finalInspectionStatus).filter(Boolean)),
+    [projects]
+  );
+
+  // Filter groups to only include options that exist in the actual data
+  const filteredPermitStatusGroups = useMemo(() => {
+    const knownValues = new Set(ALL_PERMITTING_STATUS_OPTIONS.map(o => o.value));
+    const uncategorized = [...existingPermitStatuses].filter(s => !knownValues.has(s as string));
+
+    const filtered = PERMITTING_STATUS_GROUPS.map(group => ({
+      ...group,
+      options: group.options?.filter(opt => existingPermitStatuses.has(opt.value)) || []
+    })).filter(group => group.options && group.options.length > 0);
+
+    if (uncategorized.length > 0) {
+      filtered.push({
+        name: "Other",
+        options: uncategorized.map(status => ({ value: status as string, label: status as string }))
+      });
+    }
+
+    return filtered;
+  }, [existingPermitStatuses]);
+
+  const filteredInspectionStatusGroups = useMemo(() => {
+    const knownValues = new Set(ALL_INSPECTION_STATUS_OPTIONS.map(o => o.value));
+    const uncategorized = [...existingInspectionStatuses].filter(s => !knownValues.has(s as string));
+
+    const filtered = INSPECTION_STATUS_GROUPS.map(group => ({
+      ...group,
+      options: group.options?.filter(opt => existingInspectionStatuses.has(opt.value)) || []
+    })).filter(group => group.options && group.options.length > 0);
+
+    if (uncategorized.length > 0) {
+      filtered.push({
+        name: "Other",
+        options: uncategorized.map(status => ({ value: status as string, label: status as string }))
+      });
+    }
+
+    return filtered;
+  }, [existingInspectionStatuses]);
+
+  // Flatten filtered groups to get all options
+  const filteredPermitStatusOptions = useMemo(() =>
+    filteredPermitStatusGroups.flatMap(g => g.options || []),
+    [filteredPermitStatusGroups]
+  );
+
+  const filteredInspectionStatusOptions = useMemo(() =>
+    filteredInspectionStatusGroups.flatMap(g => g.options || []),
+    [filteredInspectionStatusGroups]
+  );
 
   const clearAllFilters = () => {
     setFilterAhjs([]);
@@ -479,7 +529,8 @@ export default function PermittingPage() {
           />
           <MultiSelectFilter
             label="Permit Status"
-            options={dynamicPermitStatusOptions}
+            options={filteredPermitStatusOptions}
+            groups={filteredPermitStatusGroups}
             selected={filterPermitStatuses}
             onChange={setFilterPermitStatuses}
             placeholder="All Permit Statuses"
@@ -487,7 +538,8 @@ export default function PermittingPage() {
           />
           <MultiSelectFilter
             label="Inspection"
-            options={dynamicInspectionStatusOptions}
+            options={filteredInspectionStatusOptions}
+            groups={filteredInspectionStatusGroups}
             selected={filterInspectionStatuses}
             onChange={setFilterInspectionStatuses}
             placeholder="All Inspection Statuses"

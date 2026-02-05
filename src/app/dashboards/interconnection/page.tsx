@@ -376,16 +376,66 @@ export default function InterconnectionPage() {
       .map(s => ({ value: s!, label: s! }));
   }, [projects]);
 
-  // Create dynamic filter options from actual data values
-  const dynamicIcStatusOptions = useMemo(() => {
-    const existing = [...new Set(projects.map(p => (p as ExtendedProject).interconnectionStatus).filter(Boolean))].sort();
-    return existing.map(status => ({ value: status as string, label: status as string }));
-  }, [projects]);
+  // Get statuses that exist in the data
+  const existingIcStatuses = useMemo(() =>
+    new Set(projects.map(p => (p as ExtendedProject).interconnectionStatus).filter(Boolean)),
+    [projects]
+  );
 
-  const dynamicPtoStatusOptions = useMemo(() => {
-    const existing = [...new Set(projects.map(p => (p as ExtendedProject).ptoStatus).filter(Boolean))].sort();
-    return existing.map(status => ({ value: status as string, label: status as string }));
-  }, [projects]);
+  const existingPtoStatuses = useMemo(() =>
+    new Set(projects.map(p => (p as ExtendedProject).ptoStatus).filter(Boolean)),
+    [projects]
+  );
+
+  // Filter groups to only include options that exist in the actual data
+  const filteredIcStatusGroups = useMemo(() => {
+    const knownValues = new Set(ALL_IC_STATUS_OPTIONS.map(o => o.value));
+    const uncategorized = [...existingIcStatuses].filter(s => !knownValues.has(s as string));
+
+    const filtered = IC_STATUS_GROUPS.map(group => ({
+      ...group,
+      options: group.options?.filter(opt => existingIcStatuses.has(opt.value)) || []
+    })).filter(group => group.options && group.options.length > 0);
+
+    if (uncategorized.length > 0) {
+      filtered.push({
+        name: "Other",
+        options: uncategorized.map(status => ({ value: status as string, label: status as string }))
+      });
+    }
+
+    return filtered;
+  }, [existingIcStatuses]);
+
+  const filteredPtoStatusGroups = useMemo(() => {
+    const knownValues = new Set(ALL_PTO_STATUS_OPTIONS.map(o => o.value));
+    const uncategorized = [...existingPtoStatuses].filter(s => !knownValues.has(s as string));
+
+    const filtered = PTO_STATUS_GROUPS.map(group => ({
+      ...group,
+      options: group.options?.filter(opt => existingPtoStatuses.has(opt.value)) || []
+    })).filter(group => group.options && group.options.length > 0);
+
+    if (uncategorized.length > 0) {
+      filtered.push({
+        name: "Other",
+        options: uncategorized.map(status => ({ value: status as string, label: status as string }))
+      });
+    }
+
+    return filtered;
+  }, [existingPtoStatuses]);
+
+  // Flatten filtered groups to get all options
+  const filteredIcStatusOptions = useMemo(() =>
+    filteredIcStatusGroups.flatMap(g => g.options || []),
+    [filteredIcStatusGroups]
+  );
+
+  const filteredPtoStatusOptions = useMemo(() =>
+    filteredPtoStatusGroups.flatMap(g => g.options || []),
+    [filteredPtoStatusGroups]
+  );
 
   const clearAllFilters = () => {
     setFilterUtilities([]);
@@ -492,7 +542,8 @@ export default function InterconnectionPage() {
           />
           <MultiSelectFilter
             label="IC Status"
-            options={dynamicIcStatusOptions}
+            options={filteredIcStatusOptions}
+            groups={filteredIcStatusGroups}
             selected={filterIcStatuses}
             onChange={setFilterIcStatuses}
             placeholder="All IC Statuses"
@@ -500,7 +551,8 @@ export default function InterconnectionPage() {
           />
           <MultiSelectFilter
             label="PTO Status"
-            options={dynamicPtoStatusOptions}
+            options={filteredPtoStatusOptions}
+            groups={filteredPtoStatusGroups}
             selected={filterPtoStatuses}
             onChange={setFilterPtoStatuses}
             placeholder="All PTO Statuses"

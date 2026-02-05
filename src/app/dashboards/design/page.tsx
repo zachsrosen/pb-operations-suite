@@ -355,17 +355,58 @@ export default function DesignEngineeringPage() {
     [projects]
   );
 
-  // Create dynamic filter options from actual data values
-  // This ensures the dropdown filter matches the exact values from HubSpot
-  const dynamicDesignStatusOptions = useMemo(() => {
-    const existing = [...existingDesignStatuses].sort();
-    return existing.map(status => ({ value: status as string, label: status as string }));
+  // Filter groups to only include options that exist in the actual data
+  // This ensures the dropdown shows proper grouping/labels while only including real values
+  const filteredDesignStatusGroups = useMemo(() => {
+    const knownValues = new Set(ALL_DESIGN_STATUS_OPTIONS.map(o => o.value));
+    const uncategorized = [...existingDesignStatuses].filter(s => !knownValues.has(s as string));
+
+    const filtered = DESIGN_STATUS_GROUPS.map(group => ({
+      ...group,
+      options: group.options?.filter(opt => existingDesignStatuses.has(opt.value)) || []
+    })).filter(group => group.options && group.options.length > 0);
+
+    // Add uncategorized values that exist in data but not in predefined groups
+    if (uncategorized.length > 0) {
+      filtered.push({
+        name: "Other",
+        options: uncategorized.map(status => ({ value: status as string, label: status as string }))
+      });
+    }
+
+    return filtered;
   }, [existingDesignStatuses]);
 
-  const dynamicDesignApprovalOptions = useMemo(() => {
-    const existing = [...existingDesignApprovalStatuses].sort();
-    return existing.map(status => ({ value: status as string, label: status as string }));
+  const filteredDesignApprovalGroups = useMemo(() => {
+    const knownValues = new Set(ALL_DESIGN_APPROVAL_OPTIONS.map(o => o.value));
+    const uncategorized = [...existingDesignApprovalStatuses].filter(s => !knownValues.has(s as string));
+
+    const filtered = DESIGN_APPROVAL_GROUPS.map(group => ({
+      ...group,
+      options: group.options?.filter(opt => existingDesignApprovalStatuses.has(opt.value)) || []
+    })).filter(group => group.options && group.options.length > 0);
+
+    // Add uncategorized values that exist in data but not in predefined groups
+    if (uncategorized.length > 0) {
+      filtered.push({
+        name: "Other",
+        options: uncategorized.map(status => ({ value: status as string, label: status as string }))
+      });
+    }
+
+    return filtered;
   }, [existingDesignApprovalStatuses]);
+
+  // Flatten filtered groups to get all options for the filter component
+  const filteredDesignStatusOptions = useMemo(() =>
+    filteredDesignStatusGroups.flatMap(g => g.options || []),
+    [filteredDesignStatusGroups]
+  );
+
+  const filteredDesignApprovalOptions = useMemo(() =>
+    filteredDesignApprovalGroups.flatMap(g => g.options || []),
+    [filteredDesignApprovalGroups]
+  );
 
   if (loading) {
     return (
@@ -465,7 +506,8 @@ export default function DesignEngineeringPage() {
           />
           <MultiSelectFilter
             label="Design Status"
-            options={dynamicDesignStatusOptions}
+            options={filteredDesignStatusOptions}
+            groups={filteredDesignStatusGroups}
             selected={filterDesignStatuses}
             onChange={setFilterDesignStatuses}
             placeholder="All Statuses"
@@ -473,7 +515,8 @@ export default function DesignEngineeringPage() {
           />
           <MultiSelectFilter
             label="Design Approval"
-            options={dynamicDesignApprovalOptions}
+            options={filteredDesignApprovalOptions}
+            groups={filteredDesignApprovalGroups}
             selected={filterDesignApprovalStatuses}
             onChange={setFilterDesignApprovalStatuses}
             placeholder="All Statuses"
