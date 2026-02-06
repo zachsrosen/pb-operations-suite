@@ -20,7 +20,7 @@ export const FORECAST_OFFSETS = {
  */
 export function transformProject(p: RawProject): TransformedProject {
   const now = new Date();
-  const closeDate = p.closeDate ? new Date(p.closeDate) : null;
+  const closeDate = p.closeDate ? new Date(p.closeDate + "T12:00:00") : null;
   const daysSinceClose = closeDate
     ? Math.floor((now.getTime() - closeDate.getTime()) / MS_PER_DAY)
     : 0;

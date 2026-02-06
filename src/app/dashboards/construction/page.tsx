@@ -144,7 +144,7 @@ export default function ConstructionDashboardPage() {
     // Calculate average days in construction
     const daysInConstruction = inConstruction
       .filter(p => p.constructionScheduleDate)
-      .map(p => Math.floor((today.getTime() - new Date(p.constructionScheduleDate!).getTime()) / (1000 * 60 * 60 * 24)));
+      .map(p => Math.floor((today.getTime() - new Date(p.constructionScheduleDate! + "T12:00:00").getTime()) / (1000 * 60 * 60 * 24)));
     const avgDaysInConstruction = daysInConstruction.length > 0
       ? Math.round(daysInConstruction.reduce((a, b) => a + b, 0) / daysInConstruction.length)
       : 0;

@@ -264,7 +264,7 @@ export default function InterconnectionPage() {
     // Calculate average days waiting for IC
     const daysWaitingIc = icPending
       .filter(p => p.interconnectionSubmitDate)
-      .map(p => Math.floor((today.getTime() - new Date(p.interconnectionSubmitDate!).getTime()) / (1000 * 60 * 60 * 24)));
+      .map(p => Math.floor((today.getTime() - new Date(p.interconnectionSubmitDate! + "T12:00:00").getTime()) / (1000 * 60 * 60 * 24)));
     const avgDaysWaitingIc = daysWaitingIc.length > 0
       ? Math.round(daysWaitingIc.reduce((a, b) => a + b, 0) / daysWaitingIc.length)
       : 0;
@@ -273,8 +273,8 @@ export default function InterconnectionPage() {
     const turnaroundDays = icApproved
       .filter(p => p.interconnectionSubmitDate && p.interconnectionApprovalDate)
       .map(p => {
-        const d1 = new Date(p.interconnectionSubmitDate!);
-        const d2 = new Date(p.interconnectionApprovalDate!);
+        const d1 = new Date(p.interconnectionSubmitDate! + "T12:00:00");
+        const d2 = new Date(p.interconnectionApprovalDate! + "T12:00:00");
         return Math.floor((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24));
       })
       .filter(d => d >= 0);
@@ -285,7 +285,7 @@ export default function InterconnectionPage() {
     // Calculate average days in PTO
     const daysInPto = ptoPending
       .filter(p => p.ptoSubmitDate)
-      .map(p => Math.floor((today.getTime() - new Date(p.ptoSubmitDate!).getTime()) / (1000 * 60 * 60 * 24)));
+      .map(p => Math.floor((today.getTime() - new Date(p.ptoSubmitDate! + "T12:00:00").getTime()) / (1000 * 60 * 60 * 24)));
     const avgDaysInPto = daysInPto.length > 0
       ? Math.round(daysInPto.reduce((a, b) => a + b, 0) / daysInPto.length)
       : 0;
@@ -315,8 +315,8 @@ export default function InterconnectionPage() {
       if (isIcApproved(p)) {
         utilityStats[utility].icApproved++;
         if (p.interconnectionSubmitDate && p.interconnectionApprovalDate) {
-          const d1 = new Date(p.interconnectionSubmitDate);
-          const d2 = new Date(p.interconnectionApprovalDate);
+          const d1 = new Date(p.interconnectionSubmitDate + "T12:00:00");
+          const d2 = new Date(p.interconnectionApprovalDate + "T12:00:00");
           const days = Math.floor((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24));
           if (days >= 0) utilityStats[utility].avgDays.push(days);
         }

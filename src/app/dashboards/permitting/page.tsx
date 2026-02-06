@@ -250,7 +250,7 @@ export default function PermittingPage() {
     // Calculate average days in permitting
     const daysInPermitting = permitPending
       .filter(p => p.permitSubmitDate)
-      .map(p => Math.floor((today.getTime() - new Date(p.permitSubmitDate!).getTime()) / (1000 * 60 * 60 * 24)));
+      .map(p => Math.floor((today.getTime() - new Date(p.permitSubmitDate! + "T12:00:00").getTime()) / (1000 * 60 * 60 * 24)));
     const avgDaysInPermitting = daysInPermitting.length > 0
       ? Math.round(daysInPermitting.reduce((a, b) => a + b, 0) / daysInPermitting.length)
       : 0;
@@ -259,8 +259,8 @@ export default function PermittingPage() {
     const turnaroundDays = permitIssued
       .filter(p => p.permitSubmitDate && p.permitIssueDate)
       .map(p => {
-        const d1 = new Date(p.permitSubmitDate!);
-        const d2 = new Date(p.permitIssueDate!);
+        const d1 = new Date(p.permitSubmitDate! + "T12:00:00");
+        const d2 = new Date(p.permitIssueDate! + "T12:00:00");
         return Math.floor((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24));
       })
       .filter(d => d >= 0);
@@ -271,7 +271,7 @@ export default function PermittingPage() {
     // Calculate average days in inspection
     const daysInInspection = inspectionPending
       .filter(p => p.inspectionScheduleDate)
-      .map(p => Math.floor((today.getTime() - new Date(p.inspectionScheduleDate!).getTime()) / (1000 * 60 * 60 * 24)));
+      .map(p => Math.floor((today.getTime() - new Date(p.inspectionScheduleDate! + "T12:00:00").getTime()) / (1000 * 60 * 60 * 24)));
     const avgDaysInInspection = daysInInspection.length > 0
       ? Math.round(daysInInspection.reduce((a, b) => a + b, 0) / daysInInspection.length)
       : 0;
@@ -301,8 +301,8 @@ export default function PermittingPage() {
       if (isPermitIssued(p)) {
         ahjStats[ahj].permitIssued++;
         if (p.permitSubmitDate && p.permitIssueDate) {
-          const d1 = new Date(p.permitSubmitDate);
-          const d2 = new Date(p.permitIssueDate);
+          const d1 = new Date(p.permitSubmitDate + "T12:00:00");
+          const d2 = new Date(p.permitIssueDate + "T12:00:00");
           const days = Math.floor((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24));
           if (days >= 0) ahjStats[ahj].avgDays.push(days);
         }

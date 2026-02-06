@@ -275,7 +275,7 @@ export default function MobileDashboardPage() {
         p.closeDate
       ) {
         const daysSinceClose = Math.floor(
-          (now.getTime() - new Date(p.closeDate).getTime()) / (1000 * 60 * 60 * 24)
+          (now.getTime() - new Date(p.closeDate + "T12:00:00").getTime()) / (1000 * 60 * 60 * 24)
         );
         if (daysSinceClose > EXPECTED_PTO_DAYS) overdue++;
       }
@@ -297,7 +297,7 @@ export default function MobileDashboardPage() {
     const now = new Date();
     return projects
       .map((p) => {
-        const closeDate = p.closeDate ? new Date(p.closeDate) : null;
+        const closeDate = p.closeDate ? new Date(p.closeDate + "T12:00:00") : null;
         const daysSinceClose = closeDate
           ? Math.floor((now.getTime() - closeDate.getTime()) / (1000 * 60 * 60 * 24))
           : 0;

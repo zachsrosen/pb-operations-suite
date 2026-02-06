@@ -289,7 +289,7 @@ export default function DesignEngineeringPage() {
     // Calculate average days in design
     const daysInDesign = inDesignStage
       .filter(p => p.closeDate)
-      .map(p => Math.floor((today.getTime() - new Date(p.closeDate!).getTime()) / (1000 * 60 * 60 * 24)));
+      .map(p => Math.floor((today.getTime() - new Date(p.closeDate! + "T12:00:00").getTime()) / (1000 * 60 * 60 * 24)));
     const avgDaysInDesign = daysInDesign.length > 0
       ? Math.round(daysInDesign.reduce((a, b) => a + b, 0) / daysInDesign.length)
       : 0;
@@ -298,8 +298,8 @@ export default function DesignEngineeringPage() {
     const designTurnaroundDays = filteredProjects
       .filter(p => p.closeDate && p.designCompletionDate)
       .map(p => {
-        const d1 = new Date(p.closeDate!);
-        const d2 = new Date(p.designCompletionDate!);
+        const d1 = new Date(p.closeDate! + "T12:00:00");
+        const d2 = new Date(p.designCompletionDate! + "T12:00:00");
         return Math.floor((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24));
       })
       .filter(d => d >= 0);

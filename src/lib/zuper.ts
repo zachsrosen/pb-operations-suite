@@ -286,6 +286,7 @@ export class ZuperClient {
       // Get team UID from the job if not provided
       let resolvedTeamUid = teamUid;
       if (!resolvedTeamUid) {
+        console.log(`[Zuper] No team UID provided, fetching from existing job...`);
         const jobResult = await this.getJob(jobUid);
         if (jobResult.type === "success" && jobResult.data) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -295,13 +296,24 @@ export class ZuperClient {
         }
       }
 
+      if (!resolvedTeamUid) {
+        // Assignment requires team_uid - return error if we don't have it
+        console.error(`[Zuper] Cannot assign user: No team_uid available`);
+        return {
+          type: "error",
+          error: "Cannot assign user: team_uid is required but not provided",
+        };
+      }
+
       console.log(`[Zuper] Assigning users to job ${jobUid}:`, userUids, `team: ${resolvedTeamUid}`);
       const assignResult = await this.assignJob(jobUid, userUids, resolvedTeamUid);
       if (assignResult.type === "error") {
         console.error(`[Zuper] Failed to assign users:`, assignResult.error);
-        // Return the schedule result anyway - job was rescheduled, just not assigned
+        // Return the error so the caller knows assignment failed
+        return assignResult;
       }
-      return assignResult.type === "success" ? assignResult : scheduleResult;
+      console.log(`[Zuper] Assignment successful`);
+      return assignResult;
     }
 
     return scheduleResult;
@@ -375,13 +387,13 @@ export class ZuperClient {
   async assignJob(
     jobUid: string,
     userUids: string[],
-    teamUid?: string
+    teamUid: string // Now required - caller must provide team_uid
   ): Promise<ZuperApiResponse<ZuperJob>> {
     // Build users array for the assign endpoint
     // Format: {"type":"ASSIGN","users":[{"team_uid":"...","user_uid":"..."}],"assign_type":"REPLACE"}
     const users = userUids.map(userUid => ({
       user_uid: userUid,
-      ...(teamUid && { team_uid: teamUid }),
+      team_uid: teamUid, // Required by Zuper API
     }));
 
     const payload = {
@@ -653,7 +665,8 @@ export async function createJobFromProject(project: {
   days: number;
   startTime?: string; // Optional specific start time (e.g., "12:00")
   endTime?: string; // Optional specific end time (e.g., "13:00")
-  crew?: string;
+  crew?: string; // Zuper user UID
+  teamUid?: string; // Zuper team UID (required for user assignment)
   notes?: string;
 }): Promise<ZuperApiResponse<ZuperJob>> {
   // Determine job category - use UIDs for creating jobs
@@ -752,8 +765,12 @@ export async function createJobFromProject(project: {
   let assignedTo: ZuperAssignment[] | undefined;
   if (schedule.crew) {
     // schedule.crew is a Zuper user UID (e.g., "f203f99b-4aaf-488e-8e6a-8ee5e94ec217")
-    assignedTo = [{ user_uid: schedule.crew }];
-    console.log(`[createJobFromProject] Assigning job to user: ${schedule.crew}`);
+    // schedule.teamUid is the Zuper team UID (required for assignment to work)
+    assignedTo = [{
+      user_uid: schedule.crew,
+      ...(schedule.teamUid && { team_uid: schedule.teamUid }),
+    }];
+    console.log(`[createJobFromProject] Assigning job to user: ${schedule.crew}, team: ${schedule.teamUid || 'none'}`);
   }
 
   const job: ZuperJob = {

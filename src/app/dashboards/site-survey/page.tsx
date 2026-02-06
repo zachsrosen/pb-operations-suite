@@ -138,8 +138,8 @@ export default function SiteSurveyDashboardPage() {
     const surveyTurnaroundDays = filteredProjects
       .filter(p => p.closeDate && p.siteSurveyCompletionDate)
       .map(p => {
-        const d1 = new Date(p.closeDate!);
-        const d2 = new Date(p.siteSurveyCompletionDate!);
+        const d1 = new Date(p.closeDate! + "T12:00:00");
+        const d2 = new Date(p.siteSurveyCompletionDate! + "T12:00:00");
         return Math.floor((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24));
       })
       .filter(d => d >= 0);

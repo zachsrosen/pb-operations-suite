@@ -528,7 +528,7 @@ export default function SchedulerPage() {
     scheduledEvents.forEach((e) => {
       if (!e.crew) return;
       if (!crewSchedules[e.crew]) crewSchedules[e.crew] = [];
-      const start = new Date(e.date);
+      const start = new Date(e.date + "T12:00:00");
       for (let i = 0; i < Math.ceil(e.days || 1); i++) {
         const d = new Date(start);
         d.setDate(d.getDate() + i);
@@ -594,7 +594,7 @@ export default function SchedulerPage() {
       // Filter by multi-select locations if any selected, otherwise use single-select
       if (selectedLocations.length > 0 && !selectedLocations.includes(e.location)) return;
       if (selectedLocations.length === 0 && selectedLocation !== "All" && e.location !== selectedLocation) return;
-      const startDate = new Date(e.date);
+      const startDate = new Date(e.date + "T12:00:00");
       const businessDays = Math.ceil(e.days || 1);
       let dayCount = 0;
       let calendarOffset = 0;
@@ -1851,8 +1851,8 @@ export default function SchedulerPage() {
                           const dateStr = toDateStr(d);
                           const dayEvents = scheduledEvents.filter((e) => {
                             if (e.crew !== crew.name) return false;
-                            const eventStart = new Date(e.date);
-                            const eventEnd = new Date(e.date);
+                            const eventStart = new Date(e.date + "T12:00:00");
+                            const eventEnd = new Date(e.date + "T12:00:00");
                             eventEnd.setDate(
                               eventEnd.getDate() +
                                 Math.ceil(e.days || 1) -
@@ -1880,7 +1880,7 @@ export default function SchedulerPage() {
                                 const dayNum =
                                   Math.floor(
                                     (d.getTime() -
-                                      new Date(ev.date).getTime()) /
+                                      new Date(ev.date + "T12:00:00").getTime()) /
                                       (1000 * 60 * 60 * 24)
                                   ) + 1;
                                 const shortName = getCustomerName(
@@ -2019,7 +2019,7 @@ export default function SchedulerPage() {
                             {scheduledEvents
                               .filter((e) => {
                                 if (e.crew !== crew.name) return false;
-                                const eventStart = new Date(e.date);
+                                const eventStart = new Date(e.date + "T12:00:00");
                                 return (
                                   eventStart.toDateString() ===
                                   d.toDateString()

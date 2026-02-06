@@ -227,7 +227,11 @@ export async function PUT(request: NextRequest) {
       // Get user UIDs from crew selection (crew can be a user UID or comma-separated list)
       const userUids = schedule.crew ? schedule.crew.split(",").map((u: string) => u.trim()).filter(Boolean) : [];
       const teamUid = schedule.teamUid; // Team UID required for assignment API
-      console.log(`[Zuper Schedule] Assigning to users:`, userUids, `team:`, teamUid);
+
+      console.log(`[Zuper Schedule] Input schedule.crew: "${schedule.crew}"`);
+      console.log(`[Zuper Schedule] Input schedule.teamUid: "${schedule.teamUid}"`);
+      console.log(`[Zuper Schedule] Parsed userUids:`, userUids);
+      console.log(`[Zuper Schedule] Assigning to users:`, userUids, `team:`, teamUid || "NOT PROVIDED");
 
       const rescheduleResult = await zuper.rescheduleJob(
         existingJob.job_uid,
@@ -273,6 +277,7 @@ export async function PUT(request: NextRequest) {
         startTime: schedule.startTime,
         endTime: schedule.endTime,
         crew: schedule.crew,
+        teamUid: schedule.teamUid, // Team UID required for user assignment
         notes: schedule.notes,
       });
 
