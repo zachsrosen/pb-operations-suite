@@ -398,22 +398,43 @@ export default function SchedulerPage() {
         .map((p: RawProject) => transformProject(p))
         .filter((p: SchedulerProject | null): p is SchedulerProject => p !== null);
 
-      // Look up Zuper job UIDs for these projects (construction jobs)
+      // Look up Zuper job UIDs for these projects (all job categories)
       if (transformed.length > 0) {
         try {
           const projectIds = transformed.map((p: SchedulerProject) => p.id).join(",");
           const projectNames = transformed.map((p: SchedulerProject) => encodeURIComponent(p.name)).join(",");
-          const zuperResponse = await fetch(`/api/zuper/jobs/lookup?projectIds=${projectIds}&projectNames=${projectNames}&category=construction`);
-          if (zuperResponse.ok) {
-            const zuperData = await zuperResponse.json();
-            if (zuperData.jobs) {
-              // Merge Zuper job UIDs into projects
-              for (const project of transformed) {
-                const zuperJob = zuperData.jobs[project.id];
-                if (zuperJob) {
-                  project.zuperJobUid = zuperJob.jobUid;
-                  project.zuperJobStatus = zuperJob.status;
-                }
+
+          // Look up jobs for each category (survey, construction, inspection)
+          const categories = ["survey", "construction", "inspection"];
+          const lookupPromises = categories.map(category =>
+            fetch(`/api/zuper/jobs/lookup?projectIds=${projectIds}&projectNames=${projectNames}&category=${category}`)
+              .then(res => res.ok ? res.json() : null)
+              .catch(() => null)
+          );
+
+          const results = await Promise.all(lookupPromises);
+
+          // Merge Zuper job UIDs into projects (prefer matching stage category)
+          for (const project of transformed) {
+            // Map project stage to category
+            const stageToCategory: Record<string, string> = {
+              survey: "survey",
+              rtb: "construction",
+              blocked: "construction",
+              construction: "construction",
+              inspection: "inspection",
+            };
+            const preferredCategory = stageToCategory[project.stage] || "construction";
+            const preferredIndex = categories.indexOf(preferredCategory);
+
+            // Check preferred category first, then others
+            const checkOrder = [preferredIndex, ...categories.map((_, i) => i).filter(i => i !== preferredIndex)];
+            for (const idx of checkOrder) {
+              const zuperData = results[idx];
+              if (zuperData?.jobs?.[project.id]) {
+                project.zuperJobUid = zuperData.jobs[project.id].jobUid;
+                project.zuperJobStatus = zuperData.jobs[project.id].status;
+                break;
               }
             }
           }
