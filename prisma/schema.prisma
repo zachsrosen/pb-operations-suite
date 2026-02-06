@@ -60,32 +60,64 @@ enum ActivityType {
   // Auth
   LOGIN
   LOGOUT
+  LOGIN_FAILED
+  SESSION_EXPIRED
 
-  // Scheduling
+  // Scheduling - Surveys
   SURVEY_SCHEDULED
   SURVEY_RESCHEDULED
   SURVEY_CANCELLED
+  SURVEY_COMPLETED
+
+  // Scheduling - Installations
   INSTALL_SCHEDULED
   INSTALL_RESCHEDULED
   INSTALL_CANCELLED
+  INSTALL_COMPLETED
+
+  // Scheduling - Inspections
+  INSPECTION_SCHEDULED
+  INSPECTION_RESCHEDULED
+  INSPECTION_CANCELLED
+  INSPECTION_PASSED
+  INSPECTION_FAILED
 
   // Zuper sync
   ZUPER_JOB_CREATED
   ZUPER_JOB_UPDATED
+  ZUPER_JOB_ASSIGNED
+  ZUPER_ASSIGNMENT_FAILED
+  ZUPER_SYNC_ERROR
+
+  // HubSpot
+  HUBSPOT_DEAL_VIEWED
+  HUBSPOT_DEAL_UPDATED
+  HUBSPOT_SYNC_ERROR
+
+  // Dashboard access
+  DASHBOARD_VIEWED
+  DASHBOARD_FILTERED
+  PROJECT_VIEWED
+  PROJECT_SEARCHED
+
+  // Data export
+  REPORT_EXPORTED
+  DATA_EXPORTED
+  CSV_DOWNLOADED
 
   // User management
   USER_CREATED
   USER_UPDATED
   USER_ROLE_CHANGED
   USER_DELETED
-
-  // Data access
-  DASHBOARD_VIEWED
-  REPORT_EXPORTED
+  USER_PERMISSIONS_CHANGED
+  USER_INVITED
 
   // System
   SETTINGS_CHANGED
   ERROR_OCCURRED
+  API_ERROR
+  FEATURE_USED
 }
 
 model ActivityLog {
@@ -97,26 +129,44 @@ model ActivityLog {
   userId      String?
   user        User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
   userEmail   String?      // Stored separately in case user is deleted
+  userName    String?      // User's display name at time of action
 
   // What was affected
-  entityType  String?      // "project", "job", "user", etc.
+  entityType  String?      // "project", "job", "user", "dashboard", etc.
   entityId    String?      // The ID of the affected entity
   entityName  String?      // Human-readable name for display
 
-  // Additional context (JSON)
+  // Location context
+  pbLocation  String?      // Westminster, Centennial, etc.
+
+  // Additional context (JSON) - can include:
+  // - filters applied, search terms, duration on page
+  // - before/after values for changes
+  // - error details, stack traces
+  // - Zuper job IDs, HubSpot deal IDs
   metadata    Json?
 
   // Request context
   ipAddress   String?
   userAgent   String?
+  requestPath String?      // The URL/route accessed
+  requestMethod String?    // GET, POST, PUT, DELETE
+  responseStatus Int?      // HTTP status code
+  durationMs  Int?         // How long the request took
+
+  // Session tracking
+  sessionId   String?      // To group actions in a session
 
   // Timestamp
   createdAt   DateTime     @default(now())
 
   @@index([userId])
+  @@index([userEmail])
   @@index([type])
   @@index([entityType, entityId])
+  @@index([pbLocation])
   @@index([createdAt])
+  @@index([sessionId])
 }
 
 // ===========================================

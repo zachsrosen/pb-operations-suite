@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
+import { useActivityTracking } from "@/hooks/useActivityTracking";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -241,6 +242,10 @@ function transformProject(p: RawProject): SurveyProject | null {
 /* ================================================================== */
 
 export default function SiteSurveySchedulerPage() {
+  /* ---- activity tracking ---- */
+  const { trackDashboardView, trackSearch, trackFilter, trackFeature } = useActivityTracking();
+  const hasTrackedView = useRef(false);
+
   /* ---- core data ---- */
   const [projects, setProjects] = useState<SurveyProject[]>([]);
   const [loading, setLoading] = useState(true);
@@ -281,6 +286,16 @@ export default function SiteSurveySchedulerPage() {
   /* ---- toast ---- */
   const [toast, setToast] = useState<{ message: string; type: string } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /* ---- Track dashboard view on load ---- */
+  useEffect(() => {
+    if (!loading && !hasTrackedView.current) {
+      hasTrackedView.current = true;
+      trackDashboardView("site-survey-scheduler", {
+        projectCount: projects.length,
+      });
+    }
+  }, [loading, projects.length, trackDashboardView]);
 
   /* ================================================================ */
   /*  Data fetching                                                    */

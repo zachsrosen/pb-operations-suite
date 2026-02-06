@@ -136,12 +136,19 @@ export async function logActivity(data: {
   description: string;
   userId?: string;
   userEmail?: string;
+  userName?: string;
   entityType?: string;
   entityId?: string;
   entityName?: string;
+  pbLocation?: string;
   metadata?: Record<string, unknown>;
   ipAddress?: string;
   userAgent?: string;
+  requestPath?: string;
+  requestMethod?: string;
+  responseStatus?: number;
+  durationMs?: number;
+  sessionId?: string;
 }) {
   if (!prisma) return null;
 
@@ -152,18 +159,204 @@ export async function logActivity(data: {
         description: data.description,
         userId: data.userId,
         userEmail: data.userEmail,
+        userName: data.userName,
         entityType: data.entityType,
         entityId: data.entityId,
         entityName: data.entityName,
+        pbLocation: data.pbLocation,
         metadata: data.metadata ? JSON.parse(JSON.stringify(data.metadata)) : undefined,
         ipAddress: data.ipAddress,
         userAgent: data.userAgent,
+        requestPath: data.requestPath,
+        requestMethod: data.requestMethod,
+        responseStatus: data.responseStatus,
+        durationMs: data.durationMs,
+        sessionId: data.sessionId,
       },
     });
   } catch (error) {
     console.error("Failed to log activity:", error);
     return null;
   }
+}
+
+/**
+ * Log a dashboard view
+ */
+export async function logDashboardView(data: {
+  dashboard: string;
+  userEmail?: string;
+  userName?: string;
+  filters?: Record<string, unknown>;
+  projectCount?: number;
+  pbLocation?: string;
+  ipAddress?: string;
+  userAgent?: string;
+  sessionId?: string;
+}) {
+  return logActivity({
+    type: "DASHBOARD_VIEWED",
+    description: `Viewed ${data.dashboard} dashboard`,
+    userEmail: data.userEmail,
+    userName: data.userName,
+    entityType: "dashboard",
+    entityId: data.dashboard,
+    entityName: data.dashboard,
+    pbLocation: data.pbLocation,
+    metadata: {
+      filters: data.filters,
+      projectCount: data.projectCount,
+    },
+    ipAddress: data.ipAddress,
+    userAgent: data.userAgent,
+    sessionId: data.sessionId,
+  });
+}
+
+/**
+ * Log a project view
+ */
+export async function logProjectView(data: {
+  projectId: string;
+  projectName: string;
+  userEmail?: string;
+  userName?: string;
+  source?: string; // "dashboard", "search", "direct"
+  ipAddress?: string;
+  userAgent?: string;
+  sessionId?: string;
+}) {
+  return logActivity({
+    type: "PROJECT_VIEWED",
+    description: `Viewed project ${data.projectName}`,
+    userEmail: data.userEmail,
+    userName: data.userName,
+    entityType: "project",
+    entityId: data.projectId,
+    entityName: data.projectName,
+    metadata: { source: data.source },
+    ipAddress: data.ipAddress,
+    userAgent: data.userAgent,
+    sessionId: data.sessionId,
+  });
+}
+
+/**
+ * Log a search action
+ */
+export async function logSearch(data: {
+  searchTerm: string;
+  resultCount: number;
+  dashboard?: string;
+  userEmail?: string;
+  userName?: string;
+  ipAddress?: string;
+  userAgent?: string;
+  sessionId?: string;
+}) {
+  return logActivity({
+    type: "PROJECT_SEARCHED",
+    description: `Searched for "${data.searchTerm}" (${data.resultCount} results)`,
+    userEmail: data.userEmail,
+    userName: data.userName,
+    entityType: "search",
+    entityName: data.dashboard || "global",
+    metadata: {
+      searchTerm: data.searchTerm,
+      resultCount: data.resultCount,
+      dashboard: data.dashboard,
+    },
+    ipAddress: data.ipAddress,
+    userAgent: data.userAgent,
+    sessionId: data.sessionId,
+  });
+}
+
+/**
+ * Log a filter change
+ */
+export async function logFilterChange(data: {
+  dashboard: string;
+  filters: Record<string, unknown>;
+  userEmail?: string;
+  userName?: string;
+  sessionId?: string;
+}) {
+  return logActivity({
+    type: "DASHBOARD_FILTERED",
+    description: `Applied filters on ${data.dashboard}`,
+    userEmail: data.userEmail,
+    userName: data.userName,
+    entityType: "dashboard",
+    entityId: data.dashboard,
+    entityName: data.dashboard,
+    metadata: { filters: data.filters },
+    sessionId: data.sessionId,
+  });
+}
+
+/**
+ * Log an API error
+ */
+export async function logApiError(data: {
+  endpoint: string;
+  method: string;
+  error: string;
+  statusCode?: number;
+  userEmail?: string;
+  ipAddress?: string;
+  userAgent?: string;
+  requestBody?: unknown;
+}) {
+  return logActivity({
+    type: "API_ERROR",
+    description: `API error on ${data.method} ${data.endpoint}: ${data.error}`,
+    userEmail: data.userEmail,
+    entityType: "api",
+    entityId: data.endpoint,
+    entityName: `${data.method} ${data.endpoint}`,
+    metadata: {
+      error: data.error,
+      statusCode: data.statusCode,
+      requestBody: data.requestBody,
+    },
+    ipAddress: data.ipAddress,
+    userAgent: data.userAgent,
+    requestPath: data.endpoint,
+    requestMethod: data.method,
+    responseStatus: data.statusCode,
+  });
+}
+
+/**
+ * Log a data export
+ */
+export async function logDataExport(data: {
+  exportType: string; // "csv", "pdf", "excel"
+  dashboard?: string;
+  recordCount: number;
+  userEmail?: string;
+  userName?: string;
+  filters?: Record<string, unknown>;
+  ipAddress?: string;
+  userAgent?: string;
+}) {
+  return logActivity({
+    type: "DATA_EXPORTED",
+    description: `Exported ${data.recordCount} records as ${data.exportType}`,
+    userEmail: data.userEmail,
+    userName: data.userName,
+    entityType: "export",
+    entityName: data.dashboard || "data",
+    metadata: {
+      exportType: data.exportType,
+      recordCount: data.recordCount,
+      dashboard: data.dashboard,
+      filters: data.filters,
+    },
+    ipAddress: data.ipAddress,
+    userAgent: data.userAgent,
+  });
 }
 
 /**
