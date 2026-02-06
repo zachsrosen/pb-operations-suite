@@ -168,3 +168,152 @@ model AppSetting {
 
   @@index([key])
 }
+
+// ===========================================
+// ZUPER JOB CACHE
+// ===========================================
+
+model ZuperJobCache {
+  id              String   @id @default(cuid())
+
+  // Zuper job info
+  jobUid          String   @unique
+  jobTitle        String
+  jobCategory     String   // "Site Survey", "Construction", "Inspection"
+  jobStatus       String   // "UNSCHEDULED", "SCHEDULED", "STARTED", etc.
+  jobPriority     String?
+
+  // Schedule info
+  scheduledStart  DateTime?
+  scheduledEnd    DateTime?
+
+  // Assignment
+  assignedUsers   Json?    // Array of { user_uid, user_name }
+  assignedTeam    String?  // Team UID
+
+  // Location
+  customerAddress Json?    // { street, city, state, zip_code }
+
+  // HubSpot link
+  hubspotDealId   String?  // Extracted from job tags
+  projectName     String?
+
+  // Metadata
+  jobTags         String[] @default([])
+  jobNotes        String?
+
+  // Cache management
+  lastSyncedAt    DateTime @default(now())
+  rawData         Json?    // Full Zuper response for debugging
+
+  @@index([hubspotDealId])
+  @@index([jobCategory])
+  @@index([jobStatus])
+  @@index([scheduledStart])
+  @@index([lastSyncedAt])
+}
+
+// ===========================================
+// HUBSPOT PROJECT CACHE
+// ===========================================
+
+model HubSpotProjectCache {
+  id              String   @id @default(cuid())
+
+  // HubSpot deal info
+  dealId          String   @unique
+  dealName        String
+  stage           String
+  amount          Float?
+
+  // Customer info
+  customerName    String?
+  customerEmail   String?
+  customerPhone   String?
+
+  // Location
+  address         String?
+  city            String?
+  state           String?
+  zipCode         String?
+  pbLocation      String?  // Westminster, Centennial, etc.
+
+  // Equipment
+  systemSizeKw    Float?
+  moduleCount     Int?
+  inverterCount   Int?
+  batteryCount    Int?
+  evCount         Int?
+
+  // Key dates
+  closeDate                   DateTime?
+  siteSurveyScheduleDate      DateTime?
+  siteSurveyCompletionDate    DateTime?
+  designCompletionDate        DateTime?
+  permitSubmitDate            DateTime?
+  permitIssueDate             DateTime?
+  interconnectionSubmitDate   DateTime?
+  interconnectionApprovalDate DateTime?
+  constructionScheduleDate    DateTime?
+  constructionCompleteDate    DateTime?
+  inspectionScheduleDate      DateTime?
+  inspectionPassDate          DateTime?
+  ptoSubmitDate               DateTime?
+  ptoGrantedDate              DateTime?
+
+  // Zuper link
+  zuperJobUid     String?  // Cached Zuper job UID for quick lookup
+
+  // Cache management
+  lastSyncedAt    DateTime @default(now())
+  rawData         Json?    // Full HubSpot response
+
+  @@index([stage])
+  @@index([pbLocation])
+  @@index([lastSyncedAt])
+  @@index([zuperJobUid])
+}
+
+// ===========================================
+// SCHEDULE RECORDS (Permanent history)
+// ===========================================
+
+model ScheduleRecord {
+  id              String   @id @default(cuid())
+
+  // What was scheduled
+  scheduleType    String   // "survey", "construction", "inspection"
+  projectId       String   // HubSpot deal ID
+  projectName     String
+
+  // When
+  scheduledDate   String   // YYYY-MM-DD
+  scheduledStart  String?  // HH:mm (for time slots)
+  scheduledEnd    String?  // HH:mm
+
+  // Who
+  assignedUser    String?  // User name
+  assignedUserUid String?  // Zuper user UID
+  assignedTeamUid String?  // Zuper team UID
+  scheduledBy     String?  // User who made the schedule
+
+  // Zuper sync status
+  zuperJobUid     String?
+  zuperSynced     Boolean  @default(false)
+  zuperAssigned   Boolean  @default(false)  // Did user assignment succeed?
+  zuperError      String?  // Error message if sync/assign failed
+
+  // Status
+  status          String   @default("scheduled") // "scheduled", "completed", "cancelled", "rescheduled"
+  notes           String?
+
+  // Timestamps
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([projectId])
+  @@index([scheduledDate])
+  @@index([scheduleType])
+  @@index([status])
+  @@index([zuperJobUid])
+}

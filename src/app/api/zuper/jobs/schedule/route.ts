@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { zuper, createJobFromProject, ZuperJob } from "@/lib/zuper";
 import { auth } from "@/auth";
-import { getUserByEmail, logActivity } from "@/lib/db";
+import { getUserByEmail, logActivity, createScheduleRecord, cacheZuperJob } from "@/lib/db";
 
 /**
  * Smart scheduling endpoint that:
@@ -270,6 +270,36 @@ export async function PUT(request: NextRequest) {
         schedule
       );
 
+      // Save schedule record to database
+      await createScheduleRecord({
+        scheduleType: schedule.type,
+        projectId: project.id,
+        projectName: project.name || `Project ${project.id}`,
+        scheduledDate: schedule.date,
+        scheduledStart: schedule.startTime,
+        scheduledEnd: schedule.endTime,
+        assignedUser: schedule.assignedUser,
+        assignedUserUid: schedule.crew,
+        assignedTeamUid: schedule.teamUid,
+        zuperJobUid: existingJob.job_uid,
+        zuperSynced: true,
+        zuperAssigned: !assignmentFailed,
+        zuperError: assignmentError,
+        notes: schedule.notes,
+      });
+
+      // Cache the Zuper job
+      if (rescheduleResult.data) {
+        await cacheZuperJob({
+          jobUid: existingJob.job_uid,
+          jobTitle: rescheduleResult.data.job_title || `${schedule.type} - ${project.name}`,
+          jobCategory: schedule.type === "survey" ? "Site Survey" : schedule.type === "inspection" ? "Inspection" : "Construction",
+          jobStatus: "SCHEDULED",
+          hubspotDealId: project.id,
+          projectName: project.name,
+        });
+      }
+
       return NextResponse.json({
         success: true,
         action: "rescheduled",
@@ -310,6 +340,36 @@ export async function PUT(request: NextRequest) {
         createResult.data?.job_uid,
         schedule
       );
+
+      // Save schedule record to database
+      const newJobUid = createResult.data?.job_uid;
+      await createScheduleRecord({
+        scheduleType: schedule.type,
+        projectId: project.id,
+        projectName: project.name || `Project ${project.id}`,
+        scheduledDate: schedule.date,
+        scheduledStart: schedule.startTime,
+        scheduledEnd: schedule.endTime,
+        assignedUser: schedule.assignedUser,
+        assignedUserUid: schedule.crew,
+        assignedTeamUid: schedule.teamUid,
+        zuperJobUid: newJobUid,
+        zuperSynced: true,
+        zuperAssigned: !!schedule.crew, // Assume assigned if crew was provided at creation
+        notes: schedule.notes,
+      });
+
+      // Cache the Zuper job
+      if (createResult.data && newJobUid) {
+        await cacheZuperJob({
+          jobUid: newJobUid,
+          jobTitle: createResult.data.job_title || `${schedule.type} - ${project.name}`,
+          jobCategory: schedule.type === "survey" ? "Site Survey" : schedule.type === "inspection" ? "Inspection" : "Construction",
+          jobStatus: "SCHEDULED",
+          hubspotDealId: project.id,
+          projectName: project.name,
+        });
+      }
 
       return NextResponse.json({
         success: true,

@@ -12,7 +12,7 @@ import { PrismaNeon } from "@prisma/adapter-neon";
 
 // Re-export types
 export { UserRole, ActivityType };
-export type { User, ActivityLog, BookedSlot, AppSetting } from "@/generated/prisma/client";
+export type { User, ActivityLog, BookedSlot, AppSetting, ZuperJobCache, HubSpotProjectCache, ScheduleRecord } from "@/generated/prisma/client";
 
 // Connection string
 const connectionString = process.env.DATABASE_URL;
@@ -267,4 +267,231 @@ export function canSchedule(role: UserRole): boolean {
  */
 export function canSyncZuper(role: UserRole): boolean {
   return ROLE_PERMISSIONS[role]?.canSyncZuper ?? false;
+}
+
+// ==========================================
+// ZUPER JOB CACHE
+// ==========================================
+
+/**
+ * Cache a Zuper job
+ */
+export async function cacheZuperJob(job: {
+  jobUid: string;
+  jobTitle: string;
+  jobCategory: string;
+  jobStatus: string;
+  jobPriority?: string;
+  scheduledStart?: Date;
+  scheduledEnd?: Date;
+  assignedUsers?: { user_uid: string; user_name?: string }[];
+  assignedTeam?: string;
+  customerAddress?: { street?: string; city?: string; state?: string; zip_code?: string };
+  hubspotDealId?: string;
+  projectName?: string;
+  jobTags?: string[];
+  jobNotes?: string;
+  rawData?: unknown;
+}) {
+  if (!prisma) return null;
+
+  try {
+    return await prisma.zuperJobCache.upsert({
+      where: { jobUid: job.jobUid },
+      update: {
+        jobTitle: job.jobTitle,
+        jobCategory: job.jobCategory,
+        jobStatus: job.jobStatus,
+        jobPriority: job.jobPriority,
+        scheduledStart: job.scheduledStart,
+        scheduledEnd: job.scheduledEnd,
+        assignedUsers: job.assignedUsers ? JSON.parse(JSON.stringify(job.assignedUsers)) : null,
+        assignedTeam: job.assignedTeam,
+        customerAddress: job.customerAddress ? JSON.parse(JSON.stringify(job.customerAddress)) : null,
+        hubspotDealId: job.hubspotDealId,
+        projectName: job.projectName,
+        jobTags: job.jobTags || [],
+        jobNotes: job.jobNotes,
+        rawData: job.rawData ? JSON.parse(JSON.stringify(job.rawData)) : null,
+        lastSyncedAt: new Date(),
+      },
+      create: {
+        jobUid: job.jobUid,
+        jobTitle: job.jobTitle,
+        jobCategory: job.jobCategory,
+        jobStatus: job.jobStatus,
+        jobPriority: job.jobPriority,
+        scheduledStart: job.scheduledStart,
+        scheduledEnd: job.scheduledEnd,
+        assignedUsers: job.assignedUsers ? JSON.parse(JSON.stringify(job.assignedUsers)) : null,
+        assignedTeam: job.assignedTeam,
+        customerAddress: job.customerAddress ? JSON.parse(JSON.stringify(job.customerAddress)) : null,
+        hubspotDealId: job.hubspotDealId,
+        projectName: job.projectName,
+        jobTags: job.jobTags || [],
+        jobNotes: job.jobNotes,
+        rawData: job.rawData ? JSON.parse(JSON.stringify(job.rawData)) : null,
+      },
+    });
+  } catch (error) {
+    console.error("Failed to cache Zuper job:", error);
+    return null;
+  }
+}
+
+/**
+ * Get cached Zuper job by HubSpot deal ID
+ */
+export async function getCachedZuperJobByDealId(dealId: string, category?: string) {
+  if (!prisma) return null;
+
+  return prisma.zuperJobCache.findFirst({
+    where: {
+      hubspotDealId: dealId,
+      ...(category && { jobCategory: category }),
+    },
+    orderBy: { lastSyncedAt: "desc" },
+  });
+}
+
+/**
+ * Get cached Zuper jobs by HubSpot deal IDs (bulk lookup)
+ */
+export async function getCachedZuperJobsByDealIds(dealIds: string[], category?: string) {
+  if (!prisma) return [];
+
+  return prisma.zuperJobCache.findMany({
+    where: {
+      hubspotDealId: { in: dealIds },
+      ...(category && { jobCategory: category }),
+    },
+  });
+}
+
+/**
+ * Check if cache is stale (older than maxAge minutes)
+ */
+export async function isZuperCacheStale(dealId: string, maxAgeMinutes: number = 5): Promise<boolean> {
+  if (!prisma) return true;
+
+  const cached = await prisma.zuperJobCache.findFirst({
+    where: { hubspotDealId: dealId },
+    select: { lastSyncedAt: true },
+  });
+
+  if (!cached) return true;
+
+  const ageMs = Date.now() - cached.lastSyncedAt.getTime();
+  return ageMs > maxAgeMinutes * 60 * 1000;
+}
+
+// ==========================================
+// SCHEDULE RECORDS
+// ==========================================
+
+/**
+ * Create a schedule record
+ */
+export async function createScheduleRecord(data: {
+  scheduleType: string;
+  projectId: string;
+  projectName: string;
+  scheduledDate: string;
+  scheduledStart?: string;
+  scheduledEnd?: string;
+  assignedUser?: string;
+  assignedUserUid?: string;
+  assignedTeamUid?: string;
+  scheduledBy?: string;
+  zuperJobUid?: string;
+  zuperSynced?: boolean;
+  zuperAssigned?: boolean;
+  zuperError?: string;
+  notes?: string;
+}) {
+  if (!prisma) return null;
+
+  try {
+    return await prisma.scheduleRecord.create({
+      data: {
+        scheduleType: data.scheduleType,
+        projectId: data.projectId,
+        projectName: data.projectName,
+        scheduledDate: data.scheduledDate,
+        scheduledStart: data.scheduledStart,
+        scheduledEnd: data.scheduledEnd,
+        assignedUser: data.assignedUser,
+        assignedUserUid: data.assignedUserUid,
+        assignedTeamUid: data.assignedTeamUid,
+        scheduledBy: data.scheduledBy,
+        zuperJobUid: data.zuperJobUid,
+        zuperSynced: data.zuperSynced ?? false,
+        zuperAssigned: data.zuperAssigned ?? false,
+        zuperError: data.zuperError,
+        notes: data.notes,
+      },
+    });
+  } catch (error) {
+    console.error("Failed to create schedule record:", error);
+    return null;
+  }
+}
+
+/**
+ * Get schedule records for a project
+ */
+export async function getScheduleRecordsForProject(projectId: string) {
+  if (!prisma) return [];
+
+  return prisma.scheduleRecord.findMany({
+    where: { projectId },
+    orderBy: { createdAt: "desc" },
+  });
+}
+
+/**
+ * Get schedule records that need manual assignment in Zuper
+ */
+export async function getUnassignedScheduleRecords() {
+  if (!prisma) return [];
+
+  return prisma.scheduleRecord.findMany({
+    where: {
+      zuperSynced: true,
+      zuperAssigned: false,
+      status: "scheduled",
+    },
+    orderBy: { scheduledDate: "asc" },
+  });
+}
+
+/**
+ * Update schedule record with Zuper sync status
+ */
+export async function updateScheduleRecordZuperStatus(
+  id: string,
+  status: { zuperJobUid?: string; zuperSynced?: boolean; zuperAssigned?: boolean; zuperError?: string }
+) {
+  if (!prisma) return null;
+
+  return prisma.scheduleRecord.update({
+    where: { id },
+    data: status,
+  });
+}
+
+/**
+ * Get schedule records by date range
+ */
+export async function getScheduleRecordsByDateRange(startDate: string, endDate: string, scheduleType?: string) {
+  if (!prisma) return [];
+
+  return prisma.scheduleRecord.findMany({
+    where: {
+      scheduledDate: { gte: startDate, lte: endDate },
+      ...(scheduleType && { scheduleType }),
+      status: { not: "cancelled" },
+    },
+    orderBy: { scheduledDate: "asc" },
+  });
 }
