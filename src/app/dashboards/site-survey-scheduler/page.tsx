@@ -637,9 +637,18 @@ export default function SiteSurveySchedulerPage() {
           // Capture the Zuper job UID from the response
           scheduledZuperJobUid = data.job?.job_uid || data.existingJobId || project.zuperJobUid;
           const slotInfo = slot ? ` (${slot.userName} ${slot.startTime})` : "";
-          showToast(
-            `${getCustomerName(project.name)} scheduled${slotInfo} - ${data.action === "rescheduled" ? "Zuper job updated" : "Zuper job created"}`
-          );
+
+          // Check if assignment failed
+          if (data.assignmentFailed) {
+            showToast(
+              `${getCustomerName(project.name)} scheduled${slotInfo} - please assign ${slot?.userName || "user"} in Zuper`,
+              "warning"
+            );
+          } else {
+            showToast(
+              `${getCustomerName(project.name)} scheduled${slotInfo} - ${data.action === "rescheduled" ? "Zuper job updated" : "Zuper job created"}`
+            );
+          }
         } else {
           showToast(
             `${getCustomerName(project.name)} scheduled locally (Zuper sync failed)`,

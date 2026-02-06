@@ -281,7 +281,9 @@ export class ZuperClient {
       }),
     });
 
-    // If we have user UIDs to assign, do that too
+    // If we have user UIDs to assign, try to assign (but don't fail the whole operation)
+    let assignmentFailed = false;
+    let assignmentError = "";
     if (scheduleResult.type === "success" && userUids && userUids.length > 0) {
       // Get team UID from the job if not provided
       let resolvedTeamUid = teamUid;
@@ -297,23 +299,33 @@ export class ZuperClient {
       }
 
       if (!resolvedTeamUid) {
-        // Assignment requires team_uid - return error if we don't have it
         console.error(`[Zuper] Cannot assign user: No team_uid available`);
-        return {
-          type: "error",
-          error: "Cannot assign user: team_uid is required but not provided",
-        };
+        assignmentFailed = true;
+        assignmentError = "No team_uid available - assign user manually in Zuper";
+      } else {
+        console.log(`[Zuper] Assigning users to job ${jobUid}:`, userUids, `team: ${resolvedTeamUid}`);
+        const assignResult = await this.assignJob(jobUid, userUids, resolvedTeamUid);
+        if (assignResult.type === "error") {
+          console.error(`[Zuper] Failed to assign users:`, assignResult.error);
+          assignmentFailed = true;
+          assignmentError = assignResult.error || "Assignment failed - assign user manually in Zuper";
+        } else {
+          console.log(`[Zuper] Assignment successful`);
+        }
       }
+    }
 
-      console.log(`[Zuper] Assigning users to job ${jobUid}:`, userUids, `team: ${resolvedTeamUid}`);
-      const assignResult = await this.assignJob(jobUid, userUids, resolvedTeamUid);
-      if (assignResult.type === "error") {
-        console.error(`[Zuper] Failed to assign users:`, assignResult.error);
-        // Return the error so the caller knows assignment failed
-        return assignResult;
-      }
-      console.log(`[Zuper] Assignment successful`);
-      return assignResult;
+    // Return success - schedule succeeded even if assignment failed
+    // Caller can check assignmentFailed flag to show warning
+    if (scheduleResult.type === "success") {
+      return {
+        type: "success",
+        data: {
+          ...scheduleResult.data,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ...(assignmentFailed && { _assignmentFailed: true, _assignmentError: assignmentError } as any),
+        },
+      };
     }
 
     return scheduleResult;

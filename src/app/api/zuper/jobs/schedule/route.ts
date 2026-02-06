@@ -249,12 +249,22 @@ export async function PUT(request: NextRequest) {
         );
       }
 
-      console.log(`[Zuper Schedule] RESCHEDULE SUCCESS`);
+      // Check if assignment failed (schedule succeeded but user assignment didn't)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const jobData = rescheduleResult.data as any;
+      const assignmentFailed = jobData?._assignmentFailed;
+      const assignmentError = jobData?._assignmentError;
+
+      if (assignmentFailed) {
+        console.log(`[Zuper Schedule] RESCHEDULE SUCCESS but ASSIGNMENT FAILED: ${assignmentError}`);
+      } else {
+        console.log(`[Zuper Schedule] RESCHEDULE SUCCESS`);
+      }
 
       // Log the reschedule activity
       await logSchedulingActivity(
         schedule.type === "survey" ? "SURVEY_RESCHEDULED" : "INSTALL_RESCHEDULED",
-        `Rescheduled ${schedule.type} for ${project.name || project.id}`,
+        `Rescheduled ${schedule.type} for ${project.name || project.id}${assignmentFailed ? " (user assignment failed)" : ""}`,
         project,
         existingJob.job_uid,
         schedule
@@ -264,8 +274,12 @@ export async function PUT(request: NextRequest) {
         success: true,
         action: "rescheduled",
         job: rescheduleResult.data,
-        message: `${schedule.type} job rescheduled in Zuper`,
+        message: assignmentFailed
+          ? `${schedule.type} job rescheduled but user assignment failed - please assign in Zuper`
+          : `${schedule.type} job rescheduled in Zuper`,
         existingJobId: existingJob.job_uid,
+        assignmentFailed,
+        assignmentError,
       });
     } else {
       // No existing job found - create new one
