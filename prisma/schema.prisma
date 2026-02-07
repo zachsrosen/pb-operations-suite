@@ -423,3 +423,34 @@ model ScheduleRecord {
   @@index([status])
   @@index([zuperJobUid])
 }
+
+// ===========================================
+// ROADMAP ITEMS
+// ===========================================
+
+model RoadmapItem {
+  id              String   @id @default(cuid())
+
+  // Item content
+  title           String
+  description     String
+
+  // Classification
+  category        String   // "performance", "features", "integrations", "ux", "analytics"
+  status          String   @default("planned") // "planned", "in-progress", "under-review", "completed"
+
+  // Voting
+  votes           Int      @default(0)
+
+  // Source
+  isOfficial      Boolean  @default(false)
+  submittedBy     String?
+
+  // Timestamps
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([status])
+  @@index([category])
+  @@index([votes])
+}

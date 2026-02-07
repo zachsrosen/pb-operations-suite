@@ -48,6 +48,7 @@ export default function RoadmapPage() {
   const [sortBy, setSortBy] = useState<"votes" | "newest">("votes");
   const [isAdmin, setIsAdmin] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
 
   // Load roadmap items
   const loadItems = useCallback(async () => {
@@ -92,9 +93,18 @@ export default function RoadmapPage() {
     loadItems();
   }, [loadItems]);
 
+  // Show toast notification
+  const showToast = (message: string, type: "success" | "error" = "success") => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
   // Handle status update (admin only)
   const handleStatusUpdate = async (itemId: string, newStatus: RoadmapItem["status"]) => {
     if (!isAdmin) return;
+
+    const item = items.find(i => i.id === itemId);
+    const oldStatus = item?.status;
 
     setUpdatingStatus(itemId);
     try {
@@ -105,12 +115,16 @@ export default function RoadmapPage() {
       });
 
       if (res.ok) {
-        setItems(prev => prev.map(item =>
-          item.id === itemId ? { ...item, status: newStatus } : item
+        setItems(prev => prev.map(i =>
+          i.id === itemId ? { ...i, status: newStatus } : i
         ));
+        showToast(`"${item?.title}" updated to ${STATUS_STYLES[newStatus].label}`);
+      } else {
+        showToast("Failed to update status", "error");
       }
     } catch (error) {
       console.error("Failed to update status:", error);
+      showToast("Failed to update status", "error");
     } finally {
       setUpdatingStatus(null);
     }
@@ -192,6 +206,15 @@ export default function RoadmapPage() {
 
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-white">
+      {/* Toast Notification */}
+      {toast && (
+        <div className={`fixed top-4 right-4 z-[100] px-4 py-3 rounded-lg shadow-lg transition-all ${
+          toast.type === "error" ? "bg-red-600" : "bg-green-600"
+        }`}>
+          {toast.message}
+        </div>
+      )}
+
       {/* Header */}
       <header className="sticky top-0 z-50 bg-[#0a0a0f]/95 backdrop-blur border-b border-zinc-800">
         <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
@@ -217,6 +240,19 @@ export default function RoadmapPage() {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            {/* Admin Toggle (hidden unless already admin) */}
+            {isAdmin && (
+              <button
+                onClick={() => {
+                  localStorage.removeItem("roadmap-admin");
+                  setIsAdmin(false);
+                  showToast("Admin mode disabled");
+                }}
+                className="text-xs text-red-400 hover:text-red-300 px-2 py-1 rounded border border-red-500/30 hover:bg-red-500/10 transition-colors"
+              >
+                Exit Admin
+              </button>
+            )}
             <Link
               href="/updates"
               className="flex items-center gap-2 text-xs text-zinc-400 hover:text-emerald-400 transition-colors"
@@ -351,17 +387,33 @@ export default function RoadmapPage() {
                             </span>
                           )}
                           {isAdmin ? (
-                            <select
-                              value={item.status}
-                              onChange={(e) => handleStatusUpdate(item.id, e.target.value as RoadmapItem["status"])}
-                              disabled={updatingStatus === item.id}
-                              className={`text-[0.65rem] px-1.5 py-0.5 rounded font-medium border-0 cursor-pointer ${statusStyle.bg} ${statusStyle.text} focus:ring-1 focus:ring-orange-500`}
-                            >
-                              <option value="planned">Planned</option>
-                              <option value="in-progress">In Progress</option>
-                              <option value="completed">Completed</option>
-                              <option value="under-review">Under Review</option>
-                            </select>
+                            <div className="relative">
+                              <select
+                                value={item.status}
+                                onChange={(e) => handleStatusUpdate(item.id, e.target.value as RoadmapItem["status"])}
+                                disabled={updatingStatus === item.id}
+                                className={`text-xs px-2 py-1 rounded-md font-medium cursor-pointer border appearance-none pr-6 ${
+                                  updatingStatus === item.id
+                                    ? "opacity-50"
+                                    : ""
+                                } ${statusStyle.bg} ${statusStyle.text} border-${statusStyle.text.replace("text-", "")}/30 focus:ring-2 focus:ring-orange-500 focus:outline-none`}
+                                style={{ minWidth: "110px" }}
+                              >
+                                <option value="planned" className="bg-zinc-900 text-zinc-300">📋 Planned</option>
+                                <option value="in-progress" className="bg-zinc-900 text-orange-300">🔨 In Progress</option>
+                                <option value="under-review" className="bg-zinc-900 text-indigo-300">🔍 Under Review</option>
+                                <option value="completed" className="bg-zinc-900 text-green-300">✅ Completed</option>
+                              </select>
+                              <div className="absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none">
+                                {updatingStatus === item.id ? (
+                                  <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                ) : (
+                                  <svg className="w-3 h-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                  </svg>
+                                )}
+                              </div>
+                            </div>
                           ) : (
                             <span className={`text-[0.65rem] px-1.5 py-0.5 rounded ${statusStyle.bg} ${statusStyle.text} font-medium`}>
                               {statusStyle.label}

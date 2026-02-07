@@ -1,37 +1,6 @@
 import { NextResponse } from "next/server";
-import { promises as fs } from "fs";
-import path from "path";
 import { auth } from "@/auth";
-import type { RoadmapItem } from "../route";
-
-const DATA_FILE = path.join(process.cwd(), "data", "roadmap.json");
-
-async function loadItems(): Promise<RoadmapItem[]> {
-  try {
-    const data = await fs.readFile(DATA_FILE, "utf-8");
-    return JSON.parse(data);
-  } catch {
-    // Import defaults from main route
-    const { GET } = await import("../route");
-    const response = await GET();
-    const data = await response.json();
-    return data.items;
-  }
-}
-
-async function saveItems(items: RoadmapItem[]) {
-  const dataDir = path.join(process.cwd(), "data");
-  try {
-    await fs.access(dataDir);
-  } catch {
-    await fs.mkdir(dataDir, { recursive: true });
-  }
-  await fs.writeFile(DATA_FILE, JSON.stringify(items, null, 2));
-}
-
-function generateId(): string {
-  return `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-}
+import { prisma } from "@/lib/db";
 
 export async function POST(request: Request) {
   try {
@@ -71,27 +40,39 @@ export async function POST(request: Request) {
       );
     }
 
-    // Create new item
-    const newItem: RoadmapItem = {
-      id: generateId(),
-      title: title.trim(),
-      description: description.trim(),
-      category,
-      status: "under-review",
-      votes: 1, // Auto-upvote by submitter
-      isOfficial: false,
-      submittedBy: userEmail ? userEmail.split("@")[0] : "Anonymous",
-      createdAt: new Date().toISOString(),
-    };
+    if (!prisma) {
+      return NextResponse.json(
+        { error: "Database not configured" },
+        { status: 503 }
+      );
+    }
 
-    // Load existing items and add new one
-    const items = await loadItems();
-    items.unshift(newItem); // Add to beginning
-    await saveItems(items);
+    // Create new item in database
+    const newItem = await prisma.roadmapItem.create({
+      data: {
+        title: title.trim(),
+        description: description.trim(),
+        category,
+        status: "under-review",
+        votes: 1, // Auto-upvote by submitter
+        isOfficial: false,
+        submittedBy: userEmail ? userEmail.split("@")[0] : "Anonymous",
+      },
+    });
 
     return NextResponse.json({
       success: true,
-      item: newItem,
+      item: {
+        id: newItem.id,
+        title: newItem.title,
+        description: newItem.description,
+        category: newItem.category,
+        status: newItem.status,
+        votes: newItem.votes,
+        isOfficial: newItem.isOfficial,
+        submittedBy: newItem.submittedBy,
+        createdAt: newItem.createdAt.toISOString(),
+      },
     });
   } catch (error) {
     console.error("Failed to submit idea:", error);

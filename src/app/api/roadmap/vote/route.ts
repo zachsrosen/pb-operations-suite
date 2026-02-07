@@ -1,32 +1,5 @@
 import { NextResponse } from "next/server";
-import { promises as fs } from "fs";
-import path from "path";
-import type { RoadmapItem } from "../route";
-
-const DATA_FILE = path.join(process.cwd(), "data", "roadmap.json");
-
-async function loadItems(): Promise<RoadmapItem[]> {
-  try {
-    const data = await fs.readFile(DATA_FILE, "utf-8");
-    return JSON.parse(data);
-  } catch {
-    // Import defaults from main route
-    const { GET } = await import("../route");
-    const response = await GET();
-    const data = await response.json();
-    return data.items;
-  }
-}
-
-async function saveItems(items: RoadmapItem[]) {
-  const dataDir = path.join(process.cwd(), "data");
-  try {
-    await fs.access(dataDir);
-  } catch {
-    await fs.mkdir(dataDir, { recursive: true });
-  }
-  await fs.writeFile(DATA_FILE, JSON.stringify(items, null, 2));
-}
+import { prisma } from "@/lib/db";
 
 export async function POST(request: Request) {
   try {
@@ -36,23 +9,27 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Item ID required" }, { status: 400 });
     }
 
-    const items = await loadItems();
-    const item = items.find(i => i.id === itemId);
-
-    if (!item) {
-      return NextResponse.json({ error: "Item not found" }, { status: 404 });
+    if (!prisma) {
+      // No database - return success anyway (vote tracked in localStorage)
+      return NextResponse.json({
+        success: true,
+        item: { id: itemId, votes: 1 },
+        note: "Vote tracked locally only",
+      });
     }
 
-    // Increment vote count
-    item.votes += 1;
-    await saveItems(items);
+    // Increment vote count in database
+    const updated = await prisma.roadmapItem.update({
+      where: { id: itemId },
+      data: { votes: { increment: 1 } },
+    });
 
     return NextResponse.json({
       success: true,
       item: {
-        id: item.id,
-        votes: item.votes
-      }
+        id: updated.id,
+        votes: updated.votes,
+      },
     });
   } catch (error) {
     console.error("Failed to vote:", error);

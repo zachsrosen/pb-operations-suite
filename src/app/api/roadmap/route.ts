@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { promises as fs } from "fs";
-import path from "path";
+import { prisma } from "@/lib/db";
 
 export interface RoadmapItem {
   id: string;
@@ -14,10 +13,8 @@ export interface RoadmapItem {
   createdAt: string;
 }
 
-const DATA_FILE = path.join(process.cwd(), "data", "roadmap.json");
-
-// Default roadmap items (from ROADMAP.md)
-const DEFAULT_ITEMS: RoadmapItem[] = [
+// Default roadmap items - used to seed the database
+const DEFAULT_ITEMS: Omit<RoadmapItem, "createdAt">[] = [
   {
     id: "security-1",
     title: "Security & Role-Based Access Control",
@@ -26,7 +23,6 @@ const DEFAULT_ITEMS: RoadmapItem[] = [
     status: "completed",
     votes: 15,
     isOfficial: true,
-    createdAt: "2026-02-07T00:00:00Z",
   },
   {
     id: "ux-3",
@@ -36,7 +32,6 @@ const DEFAULT_ITEMS: RoadmapItem[] = [
     status: "completed",
     votes: 6,
     isOfficial: true,
-    createdAt: "2026-02-06T00:00:00Z",
   },
   {
     id: "ux-4",
@@ -46,7 +41,6 @@ const DEFAULT_ITEMS: RoadmapItem[] = [
     status: "completed",
     votes: 8,
     isOfficial: true,
-    createdAt: "2026-02-05T00:00:00Z",
   },
   {
     id: "perf-1",
@@ -56,7 +50,6 @@ const DEFAULT_ITEMS: RoadmapItem[] = [
     status: "completed",
     votes: 12,
     isOfficial: true,
-    createdAt: "2026-02-04T00:00:00Z",
   },
   {
     id: "feat-1",
@@ -66,7 +59,6 @@ const DEFAULT_ITEMS: RoadmapItem[] = [
     status: "completed",
     votes: 8,
     isOfficial: true,
-    createdAt: "2026-02-04T00:00:00Z",
   },
   {
     id: "int-1",
@@ -76,7 +68,6 @@ const DEFAULT_ITEMS: RoadmapItem[] = [
     status: "completed",
     votes: 6,
     isOfficial: true,
-    createdAt: "2026-02-04T00:00:00Z",
   },
   {
     id: "analytics-1",
@@ -86,7 +77,6 @@ const DEFAULT_ITEMS: RoadmapItem[] = [
     status: "completed",
     votes: 5,
     isOfficial: true,
-    createdAt: "2026-02-04T00:00:00Z",
   },
   {
     id: "int-2",
@@ -96,7 +86,6 @@ const DEFAULT_ITEMS: RoadmapItem[] = [
     status: "planned",
     votes: 4,
     isOfficial: true,
-    createdAt: "2026-02-04T00:00:00Z",
   },
   {
     id: "int-3",
@@ -106,7 +95,6 @@ const DEFAULT_ITEMS: RoadmapItem[] = [
     status: "planned",
     votes: 3,
     isOfficial: true,
-    createdAt: "2026-02-04T00:00:00Z",
   },
   {
     id: "ux-1",
@@ -116,7 +104,6 @@ const DEFAULT_ITEMS: RoadmapItem[] = [
     status: "planned",
     votes: 2,
     isOfficial: true,
-    createdAt: "2026-02-04T00:00:00Z",
   },
   {
     id: "ux-2",
@@ -126,7 +113,6 @@ const DEFAULT_ITEMS: RoadmapItem[] = [
     status: "planned",
     votes: 3,
     isOfficial: true,
-    createdAt: "2026-02-04T00:00:00Z",
   },
   {
     id: "feat-2",
@@ -136,7 +122,6 @@ const DEFAULT_ITEMS: RoadmapItem[] = [
     status: "planned",
     votes: 2,
     isOfficial: true,
-    createdAt: "2026-02-04T00:00:00Z",
   },
   {
     id: "feat-3",
@@ -146,7 +131,6 @@ const DEFAULT_ITEMS: RoadmapItem[] = [
     status: "planned",
     votes: 4,
     isOfficial: true,
-    createdAt: "2026-02-04T00:00:00Z",
   },
   {
     id: "analytics-2",
@@ -156,7 +140,6 @@ const DEFAULT_ITEMS: RoadmapItem[] = [
     status: "planned",
     votes: 3,
     isOfficial: true,
-    createdAt: "2026-02-04T00:00:00Z",
   },
   {
     id: "analytics-3",
@@ -166,7 +149,6 @@ const DEFAULT_ITEMS: RoadmapItem[] = [
     status: "planned",
     votes: 2,
     isOfficial: true,
-    createdAt: "2026-02-04T00:00:00Z",
   },
   {
     id: "int-4",
@@ -176,7 +158,6 @@ const DEFAULT_ITEMS: RoadmapItem[] = [
     status: "completed",
     votes: 5,
     isOfficial: true,
-    createdAt: "2026-02-04T00:00:00Z",
   },
   {
     id: "int-5",
@@ -186,33 +167,73 @@ const DEFAULT_ITEMS: RoadmapItem[] = [
     status: "completed",
     votes: 7,
     isOfficial: true,
-    createdAt: "2026-02-07T00:00:00Z",
+  },
+  {
+    id: "ux-5",
+    title: "Improved Availability Display",
+    description: "Better visibility of surveyor availability on Site Survey Scheduler with grouped slots and no truncation.",
+    category: "ux",
+    status: "completed",
+    votes: 5,
+    isOfficial: true,
   },
 ];
 
-async function ensureDataDir() {
-  const dataDir = path.join(process.cwd(), "data");
-  try {
-    await fs.access(dataDir);
-  } catch {
-    await fs.mkdir(dataDir, { recursive: true });
-  }
-}
-
 async function loadItems(): Promise<RoadmapItem[]> {
-  await ensureDataDir();
-  try {
-    const data = await fs.readFile(DATA_FILE, "utf-8");
-    return JSON.parse(data);
-  } catch {
-    // File doesn't exist, return defaults
-    return DEFAULT_ITEMS;
+  if (!prisma) {
+    // No database - return defaults
+    return DEFAULT_ITEMS.map(item => ({
+      ...item,
+      createdAt: new Date().toISOString(),
+    }));
   }
-}
 
-async function saveItems(items: RoadmapItem[]) {
-  await ensureDataDir();
-  await fs.writeFile(DATA_FILE, JSON.stringify(items, null, 2));
+  try {
+    // Check if we have items in the database
+    const count = await prisma.roadmapItem.count();
+
+    if (count === 0) {
+      // Seed the database with default items
+      for (const item of DEFAULT_ITEMS) {
+        await prisma.roadmapItem.create({
+          data: {
+            id: item.id,
+            title: item.title,
+            description: item.description,
+            category: item.category,
+            status: item.status,
+            votes: item.votes,
+            isOfficial: item.isOfficial,
+            submittedBy: item.submittedBy,
+          },
+        });
+      }
+    }
+
+    // Load from database
+    const items = await prisma.roadmapItem.findMany({
+      orderBy: [{ votes: "desc" }, { createdAt: "desc" }],
+    });
+
+    return items.map(item => ({
+      id: item.id,
+      title: item.title,
+      description: item.description,
+      category: item.category as RoadmapItem["category"],
+      status: item.status as RoadmapItem["status"],
+      votes: item.votes,
+      isOfficial: item.isOfficial,
+      submittedBy: item.submittedBy || undefined,
+      createdAt: item.createdAt.toISOString(),
+    }));
+  } catch (error) {
+    console.error("Failed to load roadmap items from database:", error);
+    // Fallback to defaults
+    return DEFAULT_ITEMS.map(item => ({
+      ...item,
+      createdAt: new Date().toISOString(),
+    }));
+  }
 }
 
 export async function GET() {
@@ -221,25 +242,52 @@ export async function GET() {
     return NextResponse.json({ items });
   } catch (error) {
     console.error("Failed to load roadmap:", error);
-    return NextResponse.json({ items: DEFAULT_ITEMS });
+    return NextResponse.json({
+      items: DEFAULT_ITEMS.map(item => ({
+        ...item,
+        createdAt: new Date().toISOString(),
+      })),
+    });
   }
 }
 
-// Admin endpoint to update item status (protected in real app)
+// Update item status (admin only)
 export async function PUT(request: Request) {
   try {
     const { id, status } = await request.json();
-    const items = await loadItems();
-    const item = items.find(i => i.id === id);
 
-    if (!item) {
-      return NextResponse.json({ error: "Item not found" }, { status: 404 });
+    if (!id || !status) {
+      return NextResponse.json({ error: "Missing id or status" }, { status: 400 });
     }
 
-    item.status = status;
-    await saveItems(items);
+    const validStatuses = ["planned", "in-progress", "under-review", "completed"];
+    if (!validStatuses.includes(status)) {
+      return NextResponse.json({ error: "Invalid status" }, { status: 400 });
+    }
 
-    return NextResponse.json({ item });
+    if (!prisma) {
+      return NextResponse.json({ error: "Database not configured" }, { status: 503 });
+    }
+
+    // Update in database
+    const updated = await prisma.roadmapItem.update({
+      where: { id },
+      data: { status },
+    });
+
+    return NextResponse.json({
+      item: {
+        id: updated.id,
+        title: updated.title,
+        description: updated.description,
+        category: updated.category,
+        status: updated.status,
+        votes: updated.votes,
+        isOfficial: updated.isOfficial,
+        submittedBy: updated.submittedBy,
+        createdAt: updated.createdAt.toISOString(),
+      },
+    });
   } catch (error) {
     console.error("Failed to update roadmap item:", error);
     return NextResponse.json({ error: "Failed to update" }, { status: 500 });
