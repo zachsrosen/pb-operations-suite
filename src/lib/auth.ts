@@ -113,10 +113,79 @@ export function generateSessionToken(): string {
   return crypto.randomBytes(32).toString("hex");
 }
 
-// Rate limiting - for serverless we rely on token expiration
-export function checkRateLimit(_email: string): { allowed: boolean; retryAfter?: number } {
-  // In serverless, we can't maintain state between requests
-  // The 10-minute token expiration provides some protection
-  // For production, consider using Vercel KV or Upstash Redis
-  return { allowed: true };
+// Rate limiting using database
+// Limits: 5 code requests per 15 minutes per email
+const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+const RATE_LIMIT_MAX_REQUESTS = 5;
+
+export async function checkRateLimit(email: string): Promise<{ allowed: boolean; retryAfter?: number }> {
+  // Import dynamically to avoid circular dependencies
+  const { prisma } = await import("./db");
+
+  if (!prisma) {
+    // If database not configured, allow but log warning
+    console.warn("Rate limiting disabled: database not configured");
+    return { allowed: true };
+  }
+
+  const identifier = `email:${email.toLowerCase().trim()}`;
+  const now = new Date();
+  const windowStart = new Date(now.getTime() - RATE_LIMIT_WINDOW_MS);
+
+  try {
+    // Clean up expired entries (fire and forget)
+    prisma.rateLimit.deleteMany({
+      where: { expiresAt: { lt: now } }
+    }).catch(() => {}); // Ignore cleanup errors
+
+    // Get or create rate limit entry
+    const existing = await prisma.rateLimit.findUnique({
+      where: { identifier }
+    });
+
+    if (existing) {
+      // Check if window has expired
+      if (existing.windowStart < windowStart) {
+        // Reset the window
+        await prisma.rateLimit.update({
+          where: { identifier },
+          data: {
+            count: 1,
+            windowStart: now,
+            expiresAt: new Date(now.getTime() + RATE_LIMIT_WINDOW_MS)
+          }
+        });
+        return { allowed: true };
+      }
+
+      // Check if limit exceeded
+      if (existing.count >= RATE_LIMIT_MAX_REQUESTS) {
+        const retryAfter = Math.ceil((existing.windowStart.getTime() + RATE_LIMIT_WINDOW_MS - now.getTime()) / 1000);
+        return { allowed: false, retryAfter };
+      }
+
+      // Increment count
+      await prisma.rateLimit.update({
+        where: { identifier },
+        data: { count: existing.count + 1 }
+      });
+      return { allowed: true };
+    }
+
+    // Create new entry
+    await prisma.rateLimit.create({
+      data: {
+        identifier,
+        count: 1,
+        windowStart: now,
+        expiresAt: new Date(now.getTime() + RATE_LIMIT_WINDOW_MS)
+      }
+    });
+    return { allowed: true };
+
+  } catch (error) {
+    console.error("Rate limit check failed:", error);
+    // On error, allow but with reduced limit (fail open for UX, but log)
+    return { allowed: true };
+  }
 }

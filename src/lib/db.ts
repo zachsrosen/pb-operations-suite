@@ -12,7 +12,7 @@ import { PrismaNeon } from "@prisma/adapter-neon";
 
 // Re-export types
 export { UserRole, ActivityType };
-export type { User, ActivityLog, BookedSlot, AppSetting, ZuperJobCache, HubSpotProjectCache, ScheduleRecord } from "@/generated/prisma/client";
+export type { User, ActivityLog, BookedSlot, AppSetting, ZuperJobCache, HubSpotProjectCache, ScheduleRecord, RateLimit } from "@/generated/prisma/client";
 
 // Connection string
 const connectionString = process.env.DATABASE_URL;
@@ -687,4 +687,123 @@ export async function getScheduleRecordsByDateRange(startDate: string, endDate: 
     },
     orderBy: { scheduledDate: "asc" },
   });
+}
+
+// ==========================================
+// CREW MEMBERS (Zuper User Configuration)
+// ==========================================
+
+export type CrewMember = {
+  id: string;
+  name: string;
+  email: string | null;
+  zuperUserUid: string;
+  zuperTeamUid: string | null;
+  role: string;
+  locations: string[];
+  isActive: boolean;
+  maxDailyJobs: number;
+};
+
+/**
+ * Get all active crew members
+ */
+export async function getActiveCrewMembers(role?: string): Promise<CrewMember[]> {
+  if (!prisma) return [];
+
+  return prisma.crewMember.findMany({
+    where: {
+      isActive: true,
+      ...(role && { role }),
+    },
+    orderBy: { name: "asc" },
+  });
+}
+
+/**
+ * Get crew member by name
+ */
+export async function getCrewMemberByName(name: string): Promise<CrewMember | null> {
+  if (!prisma) return null;
+
+  return prisma.crewMember.findUnique({
+    where: { name },
+  });
+}
+
+/**
+ * Get crew members for a specific location
+ */
+export async function getCrewMembersForLocation(location: string, role?: string): Promise<CrewMember[]> {
+  if (!prisma) return [];
+
+  const allCrew = await prisma.crewMember.findMany({
+    where: {
+      isActive: true,
+      ...(role && { role }),
+    },
+    orderBy: { name: "asc" },
+  });
+
+  // Filter by location - empty locations array means "all locations"
+  return allCrew.filter(crew =>
+    crew.locations.length === 0 || crew.locations.includes(location)
+  );
+}
+
+/**
+ * Create or update a crew member
+ */
+export async function upsertCrewMember(data: {
+  name: string;
+  email?: string;
+  zuperUserUid: string;
+  zuperTeamUid?: string;
+  role?: string;
+  locations?: string[];
+  isActive?: boolean;
+  maxDailyJobs?: number;
+}): Promise<CrewMember | null> {
+  if (!prisma) return null;
+
+  return prisma.crewMember.upsert({
+    where: { name: data.name },
+    create: {
+      name: data.name,
+      email: data.email,
+      zuperUserUid: data.zuperUserUid,
+      zuperTeamUid: data.zuperTeamUid,
+      role: data.role || "technician",
+      locations: data.locations || [],
+      isActive: data.isActive ?? true,
+      maxDailyJobs: data.maxDailyJobs || 4,
+    },
+    update: {
+      email: data.email,
+      zuperUserUid: data.zuperUserUid,
+      zuperTeamUid: data.zuperTeamUid,
+      role: data.role,
+      locations: data.locations,
+      isActive: data.isActive,
+      maxDailyJobs: data.maxDailyJobs,
+    },
+  });
+}
+
+/**
+ * Get crew member lookup map (name -> UIDs)
+ * This is used by the scheduling API to look up Zuper UIDs
+ */
+export async function getCrewMemberLookup(): Promise<Record<string, { userUid: string; teamUid?: string }>> {
+  const crew = await getActiveCrewMembers();
+
+  const lookup: Record<string, { userUid: string; teamUid?: string }> = {};
+  for (const member of crew) {
+    lookup[member.name] = {
+      userUid: member.zuperUserUid,
+      ...(member.zuperTeamUid && { teamUid: member.zuperTeamUid }),
+    };
+  }
+
+  return lookup;
 }

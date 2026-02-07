@@ -37,8 +37,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check rate limit
-    const rateLimit = checkRateLimit(normalizedEmail);
+    // Check rate limit (now async with database)
+    const rateLimit = await checkRateLimit(normalizedEmail);
     if (!rateLimit.allowed) {
       return NextResponse.json(
         {

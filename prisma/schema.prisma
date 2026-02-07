@@ -325,6 +325,59 @@ model HubSpotProjectCache {
 }
 
 // ===========================================
+// CREW MEMBERS (Zuper User Configuration)
+// ===========================================
+
+model CrewMember {
+  id              String   @id @default(cuid())
+
+  // Display info
+  name            String   @unique // "Drew Perry", "Joe Lynch", etc.
+  email           String?  // Optional email for notifications
+
+  // Zuper identifiers (encrypted at rest by Neon)
+  zuperUserUid    String   // Zuper user UID
+  zuperTeamUid    String?  // Zuper team UID for assignment
+
+  // Work configuration
+  role            String   @default("technician") // "surveyor", "technician", "inspector"
+  locations       String[] @default([]) // Which PB locations they serve
+
+  // Scheduling
+  isActive        Boolean  @default(true)
+  maxDailyJobs    Int      @default(4)
+
+  // Timestamps
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([name])
+  @@index([role])
+  @@index([isActive])
+}
+
+// ===========================================
+// RATE LIMITING
+// ===========================================
+
+model RateLimit {
+  id              String   @id @default(cuid())
+
+  // Identifier (email, IP, or composite)
+  identifier      String   @unique
+
+  // Limit tracking
+  count           Int      @default(0)
+  windowStart     DateTime @default(now())
+
+  // Cleanup
+  expiresAt       DateTime
+
+  @@index([identifier])
+  @@index([expiresAt])
+}
+
+// ===========================================
 // SCHEDULE RECORDS (Permanent history)
 // ===========================================
 
