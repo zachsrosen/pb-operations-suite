@@ -15,10 +15,13 @@ datasource db {
 // ===========================================
 
 enum UserRole {
-  ADMIN    // Full access, user management
-  MANAGER  // Can schedule, view all data
-  VIEWER   // Read-only access
-  SALES    // Only survey scheduler access
+  ADMIN       // Full access, user management, all dashboards
+  MANAGER     // Can schedule all types, view all data, manage operations
+  OPERATIONS  // Can schedule installs/inspections, manage construction flow
+  DESIGNER    // Design & engineering dashboard access, can update design status
+  PERMITTING  // Permitting & interconnection dashboard access
+  VIEWER      // Read-only access to all dashboards
+  SALES       // Only survey scheduler access (for sales team)
 }
 
 model User {

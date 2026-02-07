@@ -391,44 +391,128 @@ export async function getRecentActivities(options?: {
 // ==========================================
 
 /**
- * Define which routes each role can access
+ * Permission structure for roles
  */
-export const ROLE_PERMISSIONS: Record<UserRole, {
+export interface RolePermissions {
   allowedRoutes: string[];
-  canSchedule: boolean;
+  canScheduleSurveys: boolean;
+  canScheduleInstalls: boolean;
+  canScheduleInspections: boolean;
   canSyncZuper: boolean;
   canManageUsers: boolean;
-}> = {
+  canEditDesign: boolean;
+  canEditPermitting: boolean;
+  canViewAllLocations: boolean;
+}
+
+/**
+ * Define which routes and actions each role can access
+ */
+export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
   ADMIN: {
     allowedRoutes: ["*"], // All routes
-    canSchedule: true,
+    canScheduleSurveys: true,
+    canScheduleInstalls: true,
+    canScheduleInspections: true,
     canSyncZuper: true,
     canManageUsers: true,
+    canEditDesign: true,
+    canEditPermitting: true,
+    canViewAllLocations: true,
   },
   MANAGER: {
     allowedRoutes: ["*"], // All routes
-    canSchedule: true,
+    canScheduleSurveys: true,
+    canScheduleInstalls: true,
+    canScheduleInspections: true,
     canSyncZuper: true,
     canManageUsers: false,
+    canEditDesign: true,
+    canEditPermitting: true,
+    canViewAllLocations: true,
+  },
+  OPERATIONS: {
+    allowedRoutes: [
+      "/dashboards/construction",
+      "/dashboards/construction-scheduler",
+      "/dashboards/inspection-scheduler",
+      "/dashboards/scheduler",
+      "/dashboards/command-center",
+      "/dashboards/at-risk",
+      "/dashboards/timeline",
+      "/api/projects",
+      "/api/zuper",
+    ],
+    canScheduleSurveys: false,
+    canScheduleInstalls: true,
+    canScheduleInspections: true,
+    canSyncZuper: true,
+    canManageUsers: false,
+    canEditDesign: false,
+    canEditPermitting: false,
+    canViewAllLocations: true,
+  },
+  DESIGNER: {
+    allowedRoutes: [
+      "/dashboards/design",
+      "/dashboards/pe",
+      "/dashboards/timeline",
+      "/api/projects",
+    ],
+    canScheduleSurveys: false,
+    canScheduleInstalls: false,
+    canScheduleInspections: false,
+    canSyncZuper: false,
+    canManageUsers: false,
+    canEditDesign: true,
+    canEditPermitting: false,
+    canViewAllLocations: true,
+  },
+  PERMITTING: {
+    allowedRoutes: [
+      "/dashboards/permitting",
+      "/dashboards/interconnection",
+      "/dashboards/timeline",
+      "/api/projects",
+    ],
+    canScheduleSurveys: false,
+    canScheduleInstalls: false,
+    canScheduleInspections: false,
+    canSyncZuper: false,
+    canManageUsers: false,
+    canEditDesign: false,
+    canEditPermitting: true,
+    canViewAllLocations: true,
   },
   VIEWER: {
     allowedRoutes: ["*"], // All routes, read-only
-    canSchedule: false,
+    canScheduleSurveys: false,
+    canScheduleInstalls: false,
+    canScheduleInspections: false,
     canSyncZuper: false,
     canManageUsers: false,
+    canEditDesign: false,
+    canEditPermitting: false,
+    canViewAllLocations: true,
   },
   SALES: {
     allowedRoutes: [
       "/dashboards/site-survey-scheduler",
+      "/dashboards/sales",
       "/api/projects",
       "/api/zuper/availability",
       "/api/zuper/status",
       "/api/zuper/jobs/lookup",
       "/api/zuper/jobs/schedule",
     ],
-    canSchedule: true,
+    canScheduleSurveys: true,
+    canScheduleInstalls: false,
+    canScheduleInspections: false,
     canSyncZuper: true,
     canManageUsers: false,
+    canEditDesign: false,
+    canEditPermitting: false,
+    canViewAllLocations: false, // SALES sees only their location
   },
 };
 
@@ -439,7 +523,7 @@ export function canAccessRoute(role: UserRole, route: string): boolean {
   const permissions = ROLE_PERMISSIONS[role];
   if (!permissions) return false;
 
-  // Admin/Manager/Viewer can access all
+  // Roles with "*" can access all routes
   if (permissions.allowedRoutes.includes("*")) return true;
 
   // Check specific routes
@@ -449,10 +533,67 @@ export function canAccessRoute(role: UserRole, route: string): boolean {
 }
 
 /**
- * Check if user can perform scheduling actions
+ * Check if user can schedule a specific type
+ */
+export function canScheduleType(role: UserRole, scheduleType: "survey" | "installation" | "inspection"): boolean {
+  const permissions = ROLE_PERMISSIONS[role];
+  if (!permissions) return false;
+
+  switch (scheduleType) {
+    case "survey":
+      return permissions.canScheduleSurveys;
+    case "installation":
+      return permissions.canScheduleInstalls;
+    case "inspection":
+      return permissions.canScheduleInspections;
+    default:
+      return false;
+  }
+}
+
+/**
+ * Check if user can perform any scheduling actions (legacy support)
  */
 export function canSchedule(role: UserRole): boolean {
-  return ROLE_PERMISSIONS[role]?.canSchedule ?? false;
+  const permissions = ROLE_PERMISSIONS[role];
+  if (!permissions) return false;
+  return permissions.canScheduleSurveys || permissions.canScheduleInstalls || permissions.canScheduleInspections;
+}
+
+/**
+ * Get user's permissions (combines role + user-specific overrides)
+ */
+export async function getUserPermissions(userEmail: string): Promise<RolePermissions | null> {
+  if (!prisma) return null;
+
+  const user = await prisma.user.findUnique({
+    where: { email: userEmail },
+    select: {
+      role: true,
+      canScheduleSurveys: true,
+      canScheduleInstalls: true,
+      canSyncToZuper: true,
+      canManageUsers: true,
+      allowedLocations: true,
+    },
+  });
+
+  if (!user) return null;
+
+  // Start with role permissions
+  const basePermissions = ROLE_PERMISSIONS[user.role];
+  if (!basePermissions) return null;
+
+  // Apply user-specific overrides (true in user overrides role)
+  return {
+    ...basePermissions,
+    canScheduleSurveys: user.canScheduleSurveys || basePermissions.canScheduleSurveys,
+    canScheduleInstalls: user.canScheduleInstalls || basePermissions.canScheduleInstalls,
+    canSyncZuper: user.canSyncToZuper || basePermissions.canSyncZuper,
+    canManageUsers: user.canManageUsers || basePermissions.canManageUsers,
+    // Location restriction: if user has specific locations, they can't view all
+    canViewAllLocations: user.allowedLocations.length === 0 && basePermissions.canViewAllLocations,
+  };
 }
 
 /**

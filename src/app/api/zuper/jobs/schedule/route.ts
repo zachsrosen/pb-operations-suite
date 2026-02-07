@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { zuper, createJobFromProject, ZuperJob } from "@/lib/zuper";
 import { auth } from "@/auth";
-import { getUserByEmail, logActivity, createScheduleRecord, cacheZuperJob } from "@/lib/db";
+import { getUserByEmail, logActivity, createScheduleRecord, cacheZuperJob, canScheduleType, getCrewMemberByName, UserRole } from "@/lib/db";
+import { sendSchedulingNotification } from "@/lib/email";
 
 /**
  * Smart scheduling endpoint that:
@@ -14,6 +15,45 @@ import { getUserByEmail, logActivity, createScheduleRecord, cacheZuperJob } from
  */
 export async function PUT(request: NextRequest) {
   try {
+    // Check authentication
+    const session = await auth();
+    if (!session?.user?.email) {
+      return NextResponse.json(
+        { error: "Authentication required" },
+        { status: 401 }
+      );
+    }
+
+    // Get user and check permissions
+    const user = await getUserByEmail(session.user.email);
+    if (!user) {
+      return NextResponse.json(
+        { error: "User not found" },
+        { status: 403 }
+      );
+    }
+
+    const body = await request.json();
+    const { project, schedule } = body;
+
+    // Validate schedule type early for permission check
+    const scheduleType = schedule?.type as "survey" | "installation" | "inspection";
+    if (!scheduleType || !["survey", "installation", "inspection"].includes(scheduleType)) {
+      return NextResponse.json(
+        { error: "Invalid schedule type. Must be: survey, installation, or inspection" },
+        { status: 400 }
+      );
+    }
+
+    // Check if user has permission to schedule this type
+    if (!canScheduleType(user.role as UserRole, scheduleType)) {
+      console.log(`[Zuper Schedule] Permission denied: User ${session.user.email} (${user.role}) cannot schedule ${scheduleType}`);
+      return NextResponse.json(
+        { error: `You don't have permission to schedule ${scheduleType}s. Contact an admin if you need access.` },
+        { status: 403 }
+      );
+    }
+
     // Check if Zuper is configured
     if (!zuper.isConfigured()) {
       return NextResponse.json(
@@ -21,28 +61,10 @@ export async function PUT(request: NextRequest) {
         { status: 503 }
       );
     }
-
-    const body = await request.json();
-    const { project, schedule } = body;
-
     // Validate required fields
-    if (!project?.id || !schedule?.type || !schedule?.date) {
+    if (!project?.id || !schedule?.date) {
       return NextResponse.json(
-        {
-          error:
-            "Missing required fields: project.id, schedule.type, schedule.date",
-        },
-        { status: 400 }
-      );
-    }
-
-    // Validate schedule type
-    if (!["survey", "installation", "inspection"].includes(schedule.type)) {
-      return NextResponse.json(
-        {
-          error:
-            "Invalid schedule type. Must be: survey, installation, or inspection",
-        },
+        { error: "Missing required fields: project.id, schedule.date" },
         { status: 400 }
       );
     }
@@ -300,6 +322,14 @@ export async function PUT(request: NextRequest) {
         });
       }
 
+      // Send notification to assigned crew member
+      await sendCrewNotification(
+        schedule,
+        project,
+        session.user.name || session.user.email,
+        session.user.email
+      );
+
       return NextResponse.json({
         success: true,
         action: "rescheduled",
@@ -370,6 +400,14 @@ export async function PUT(request: NextRequest) {
           projectName: project.name,
         });
       }
+
+      // Send notification to assigned crew member
+      await sendCrewNotification(
+        schedule,
+        project,
+        session.user.name || session.user.email,
+        session.user.email
+      );
 
       return NextResponse.json({
         success: true,
@@ -515,5 +553,72 @@ async function logSchedulingActivity(
   } catch (err) {
     console.error("Failed to log scheduling activity:", err);
     // Don't throw - logging failures shouldn't break scheduling
+  }
+}
+
+/**
+ * Helper to send notification to assigned crew member
+ */
+async function sendCrewNotification(
+  schedule: {
+    type: string;
+    date: string;
+    startTime?: string;
+    endTime?: string;
+    assignedUser?: string;
+    notes?: string;
+  },
+  project: { id: string; name?: string; address?: string },
+  schedulerName: string,
+  schedulerEmail: string
+) {
+  try {
+    // If no assigned user, skip notification
+    if (!schedule.assignedUser) {
+      console.log("[Zuper Schedule] No assigned user, skipping notification");
+      return;
+    }
+
+    // Look up crew member by name to get their email
+    const crewMember = await getCrewMemberByName(schedule.assignedUser);
+
+    if (!crewMember?.email) {
+      console.log(`[Zuper Schedule] No email found for crew member: ${schedule.assignedUser}`);
+      return;
+    }
+
+    // Extract customer name from project name
+    // Format: "PROJ-9031 | LastName, FirstName | Address" or "LastName, FirstName | Address"
+    const nameParts = project.name?.split(" | ") || [];
+    const customerName = nameParts.length >= 2
+      ? nameParts[1]?.trim()
+      : nameParts[0]?.trim() || "Customer";
+
+    // Extract address from project
+    const customerAddress = nameParts.length >= 3
+      ? nameParts[2]?.trim()
+      : nameParts.length >= 2 && !nameParts[0].includes("PROJ-")
+        ? nameParts[1]?.trim()
+        : project.address || "See Zuper for address";
+
+    await sendSchedulingNotification({
+      to: crewMember.email,
+      crewMemberName: schedule.assignedUser,
+      scheduledByName: schedulerName,
+      scheduledByEmail: schedulerEmail,
+      appointmentType: schedule.type as "survey" | "installation" | "inspection",
+      customerName,
+      customerAddress,
+      scheduledDate: schedule.date,
+      scheduledStart: schedule.startTime,
+      scheduledEnd: schedule.endTime,
+      projectId: project.id,
+      notes: schedule.notes,
+    });
+
+    console.log(`[Zuper Schedule] Notification sent to ${crewMember.email}`);
+  } catch (err) {
+    console.error("Failed to send crew notification:", err);
+    // Don't throw - notification failures shouldn't break scheduling
   }
 }
