@@ -1094,7 +1094,7 @@ export default function SiteSurveySchedulerPage() {
                         onDragOver={handleDragOver}
                         onDrop={() => handleDrop(dateStr)}
                         onClick={() => handleDateClick(dateStr)}
-                        className={`min-h-[110px] max-h-[180px] overflow-y-auto p-1.5 border-b border-r border-zinc-800 cursor-pointer transition-colors ${
+                        className={`min-h-[120px] max-h-[200px] overflow-y-auto p-1.5 border-b border-r border-zinc-800 cursor-pointer transition-colors ${
                           isCurrentMonth ? "" : "opacity-40"
                         } ${weekend ? "bg-zinc-900/30" : ""} ${
                           isToday ? "bg-cyan-900/20" : ""
@@ -1114,20 +1114,23 @@ export default function SiteSurveySchedulerPage() {
                           }`}>
                             {parseInt(dateStr.split("-")[2])}
                           </span>
-                          {/* Availability indicator */}
+                          {/* Availability indicator badge */}
                           {showAvailability && zuperConfigured && isCurrentMonth && !weekend && (
-                            <div className="flex items-center gap-0.5">
+                            <div className="flex items-center">
                               {loadingSlots ? (
                                 <div className="w-2 h-2 bg-zinc-600 rounded-full animate-pulse" />
                               ) : hasAvailability ? (
-                                <div className="flex items-center gap-0.5" title={`${slotCount} slot${slotCount !== 1 ? "s" : ""} available`}>
-                                  <div className="w-2 h-2 bg-emerald-500 rounded-full" />
-                                  {slotCount > 1 && (
-                                    <span className="text-[0.55rem] text-emerald-400">{slotCount}</span>
-                                  )}
+                                <div
+                                  className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/30"
+                                  title={`${slotCount} surveyor slot${slotCount !== 1 ? "s" : ""} available`}
+                                >
+                                  <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
+                                  <span className="text-[0.6rem] font-medium text-emerald-400">{slotCount}</span>
                                 </div>
                               ) : isFullyBooked ? (
-                                <div className="w-2 h-2 bg-red-500/60 rounded-full" title="Fully booked" />
+                                <div className="px-1.5 py-0.5 rounded-full bg-red-500/20 border border-red-500/30" title="Fully booked">
+                                  <span className="text-[0.6rem] font-medium text-red-400">Full</span>
+                                </div>
                               ) : dayAvailability ? (
                                 <div className="w-2 h-2 bg-yellow-500/60 rounded-full" title="Limited availability" />
                               ) : null}
@@ -1158,7 +1161,7 @@ export default function SiteSurveySchedulerPage() {
                               </div>
                             );
                           })}
-                                                    {/* Show available surveyors with time slots - clickable to book */}
+                                                    {/* Show available surveyors with time slots - scrollable list */}
                           {showAvailability && hasAvailability && (() => {
                             // Filter slots by project location if a project is selected
                             const projectLocation = selectedProject?.location;
@@ -1173,36 +1176,48 @@ export default function SiteSurveySchedulerPage() {
                               return false;
                             }) || [];
 
-                            // Show more slots if project selected, fewer if just browsing
-                            const maxSlots = selectedProject ? 4 : 2;
-                            return matchingSlots.slice(0, maxSlots).map((slot, i) => (
-                              slot.user_name && (
+                            // Group slots by surveyor for cleaner display
+                            const slotsBySurveyor: Record<string, typeof matchingSlots> = {};
+                            matchingSlots.forEach(slot => {
+                              const name = slot.user_name || "Unknown";
+                              if (!slotsBySurveyor[name]) slotsBySurveyor[name] = [];
+                              slotsBySurveyor[name].push(slot);
+                            });
+
+                            return Object.entries(slotsBySurveyor).map(([surveyorName, slots]) => (
+                              <div key={surveyorName} className="group">
                                 <div
-                                  key={i}
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    if (selectedProject) {
-                                      // Open schedule modal with this slot pre-selected
+                                    if (selectedProject && slots[0]) {
+                                      // Open schedule modal with first available slot for this surveyor
                                       setScheduleModal({
                                         project: selectedProject,
                                         date: dateStr,
                                         slot: {
-                                          userName: slot.user_name || "",
-                                          userUid: slot.user_uid,
-                                          teamUid: slot.team_uid, // Include team UID for assignment API
-                                          startTime: slot.start_time,
-                                          endTime: slot.end_time,
-                                          location: slot.location || "",
+                                          userName: surveyorName,
+                                          userUid: slots[0].user_uid,
+                                          teamUid: slots[0].team_uid,
+                                          startTime: slots[0].start_time,
+                                          endTime: slots[0].end_time,
+                                          location: slots[0].location || "",
                                         }
                                       });
                                     }
                                   }}
-                                  className={`text-[0.55rem] text-emerald-400/70 truncate ${selectedProject ? "cursor-pointer hover:bg-emerald-500/20 hover:text-emerald-300 rounded px-0.5" : ""}`}
-                                  title={`${selectedProject ? "Click to book: " : ""}${slot.user_name} - ${slot.location || "Any"} - ${slot.display_time || ""}`}
+                                  className={`text-[0.6rem] leading-tight truncate ${
+                                    selectedProject
+                                      ? "cursor-pointer hover:bg-emerald-500/20 hover:text-emerald-300 rounded px-0.5 py-0.5"
+                                      : ""
+                                  }`}
+                                  title={`${selectedProject ? "Click to book: " : ""}${surveyorName} - ${slots.length} slot${slots.length !== 1 ? "s" : ""}: ${slots.map(s => s.display_time || `${s.start_time}-${s.end_time}`).join(", ")}`}
                                 >
-                                  {slot.user_name} {slot.display_time && <span className="text-emerald-500/50">{slot.display_time}</span>}
+                                  <span className="text-emerald-400">{surveyorName}</span>
+                                  <span className="text-emerald-500/50 ml-1">
+                                    {slots.map(s => s.display_time || formatTime12h(s.start_time)).join(", ")}
+                                  </span>
                                 </div>
-                              )
+                              </div>
                             ));
                           })()}
                           {/* Show booked slots so users can see what's already scheduled */}
@@ -1216,13 +1231,25 @@ export default function SiteSurveySchedulerPage() {
                                   (projectLocation === "DTC" || projectLocation === "Centennial")) return true;
                               return false;
                             });
-                            return matchingBooked.slice(0, 2).map((slot, i) => (
+
+                            // Group booked slots by surveyor
+                            const bookedBySurveyor: Record<string, typeof matchingBooked> = {};
+                            matchingBooked.forEach(slot => {
+                              const name = slot.user_name || "Unknown";
+                              if (!bookedBySurveyor[name]) bookedBySurveyor[name] = [];
+                              bookedBySurveyor[name].push(slot);
+                            });
+
+                            return Object.entries(bookedBySurveyor).map(([surveyorName, slots]) => (
                               <div
-                                key={`booked-${i}`}
-                                className="text-[0.55rem] text-orange-400/70 truncate"
-                                title={`Booked: ${slot.user_name} - ${slot.display_time} - ${slot.projectName || "Unknown project"}`}
+                                key={`booked-${surveyorName}`}
+                                className="text-[0.6rem] leading-tight text-orange-400/60 truncate"
+                                title={`Booked: ${surveyorName} - ${slots.map(s => `${s.display_time || s.start_time} (${s.projectName || "Unknown"})`).join(", ")}`}
                               >
-                                <span className="text-orange-500/50">⊘</span> {slot.user_name} {slot.display_time && <span className="text-orange-500/40">{slot.display_time}</span>}
+                                <span className="text-orange-500/40">⊘</span> {surveyorName}
+                                <span className="text-orange-500/30 ml-1">
+                                  {slots.map(s => s.display_time || formatTime12h(s.start_time)).join(", ")}
+                                </span>
                               </div>
                             ));
                           })()}
