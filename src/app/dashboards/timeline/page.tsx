@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { ErrorState } from "@/components/ui/ErrorState";
@@ -10,6 +10,7 @@ import { transformProject } from "@/lib/transforms";
 import { formatCurrencyCompact } from "@/lib/format";
 import { STAGE_COLORS } from "@/lib/constants";
 import type { RawProject, TransformedProject } from "@/lib/types";
+import { useActivityTracking } from "@/hooks/useActivityTracking";
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                             */
@@ -29,6 +30,10 @@ function monthsBetween(startDate: Date, endDate: Date): number {
 /* ------------------------------------------------------------------ */
 
 export default function TimelineViewPage() {
+  /* ---- activity tracking ---- */
+  const { trackDashboardView } = useActivityTracking();
+  const hasTrackedView = useRef(false);
+
   const [filterLocation, setFilterLocation] = useState("all");
   const [filterStage, setFilterStage] = useState("all");
   const [zoomLevel, setZoomLevel] = useState<"month" | "quarter">("month");
@@ -39,6 +44,16 @@ export default function TimelineViewPage() {
   });
 
   const allProjects = projectData || [];
+
+  /* ---- Track dashboard view on load ---- */
+  useEffect(() => {
+    if (!loading && !hasTrackedView.current) {
+      hasTrackedView.current = true;
+      trackDashboardView("timeline", {
+        projectCount: allProjects.length,
+      });
+    }
+  }, [loading, allProjects.length, trackDashboardView]);
 
   /* ---- derived data ---- */
 

@@ -1094,7 +1094,7 @@ export default function SiteSurveySchedulerPage() {
                         onDragOver={handleDragOver}
                         onDrop={() => handleDrop(dateStr)}
                         onClick={() => handleDateClick(dateStr)}
-                        className={`min-h-[100px] p-1.5 border-b border-r border-zinc-800 cursor-pointer transition-colors ${
+                        className={`min-h-[110px] max-h-[180px] overflow-y-auto p-1.5 border-b border-r border-zinc-800 cursor-pointer transition-colors ${
                           isCurrentMonth ? "" : "opacity-40"
                         } ${weekend ? "bg-zinc-900/30" : ""} ${
                           isToday ? "bg-cyan-900/20" : ""
@@ -1135,7 +1135,7 @@ export default function SiteSurveySchedulerPage() {
                           )}
                         </div>
                         <div className="space-y-1">
-                          {events.slice(0, 3).map((ev) => {
+                          {events.map((ev) => {
                             // Find the booked slot for this event
                             const evSlot = findCurrentSlotForProject(ev.id, dateStr, ev.name);
                             return (
@@ -1158,12 +1158,7 @@ export default function SiteSurveySchedulerPage() {
                               </div>
                             );
                           })}
-                          {events.length > 3 && (
-                            <div className="text-xs text-zinc-500 pl-1">
-                              +{events.length - 3} more
-                            </div>
-                          )}
-                          {/* Show available surveyors with time slots - clickable to book */}
+                                                    {/* Show available surveyors with time slots - clickable to book */}
                           {showAvailability && hasAvailability && (() => {
                             // Filter slots by project location if a project is selected
                             const projectLocation = selectedProject?.location;

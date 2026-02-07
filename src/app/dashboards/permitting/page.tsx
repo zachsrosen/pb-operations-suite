@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { formatMoney } from "@/lib/format";
 import { RawProject } from "@/lib/types";
 import { MultiSelectFilter, ProjectSearchBar, FilterGroup } from "@/components/ui/MultiSelectFilter";
+import { useActivityTracking } from "@/hooks/useActivityTracking";
 
 // Display name mappings
 const DISPLAY_NAMES: Record<string, string> = {
@@ -76,11 +77,6 @@ const PERMITTING_STATUS_GROUPS: FilterGroup[] = [
       { value: "Permit Rejected - Needs Revision", label: "Permit Rejected" },
       { value: "Design Revision In Progress", label: "Design Revision In Progress" },
       { value: "Revision Ready To Resubmit", label: "Revision Ready To Resubmit" },
-    ]
-  },
-  {
-    name: "As-Built Revisions",
-    options: [
       { value: "As-Built Revision Needed", label: "As-Built Revision Needed" },
       { value: "As-Built Revision In Progress", label: "As-Built Revision In Progress" },
       { value: "As-Built Ready To Resubmit", label: "As-Built Ready To Resubmit" },
@@ -163,6 +159,10 @@ const ALL_PERMITTING_STATUS_OPTIONS = PERMITTING_STATUS_GROUPS.flatMap(g => g.op
 const ALL_INSPECTION_STATUS_OPTIONS = INSPECTION_STATUS_GROUPS.flatMap(g => g.options || []);
 
 export default function PermittingPage() {
+  /* ---- activity tracking ---- */
+  const { trackDashboardView, trackSearch, trackFilter } = useActivityTracking();
+  const hasTrackedView = useRef(false);
+
   const [projects, setProjects] = useState<ExtendedProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -194,6 +194,16 @@ export default function PermittingPage() {
     const interval = setInterval(fetchData, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, [fetchData]);
+
+  /* ---- Track dashboard view on load ---- */
+  useEffect(() => {
+    if (!loading && !hasTrackedView.current) {
+      hasTrackedView.current = true;
+      trackDashboardView("permitting", {
+        projectCount: projects.length,
+      });
+    }
+  }, [loading, projects.length, trackDashboardView]);
 
   // Status helper functions
   const isPermitPending = useCallback((p: ExtendedProject) => {

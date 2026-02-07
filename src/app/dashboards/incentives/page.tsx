@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useActivityTracking } from "@/hooks/useActivityTracking";
 import DashboardShell from "@/components/DashboardShell";
 import { formatMoney } from "@/lib/format";
 import { RawProject } from "@/lib/types";
@@ -80,6 +81,10 @@ export default function IncentivesPage() {
   const [filterLocation, setFilterLocation] = useState("all");
   const [filterStage, setFilterStage] = useState("all");
 
+  // Activity tracking
+  const { trackDashboardView, trackFilter } = useActivityTracking();
+  const hasTrackedView = useRef(false);
+
   const fetchData = useCallback(async () => {
     try {
       const response = await fetch("/api/projects?context=executive");
@@ -99,6 +104,21 @@ export default function IncentivesPage() {
     const interval = setInterval(fetchData, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, [fetchData]);
+
+  // Track dashboard view
+  useEffect(() => {
+    if (!loading && !hasTrackedView.current) {
+      hasTrackedView.current = true;
+      trackDashboardView("incentives", { projectCount: projects.length });
+    }
+  }, [loading, projects.length, trackDashboardView]);
+
+  // Track filter changes
+  useEffect(() => {
+    if (!loading && hasTrackedView.current) {
+      trackFilter("incentives", { program: filterProgram, location: filterLocation, stage: filterStage });
+    }
+  }, [filterProgram, filterLocation, filterStage, loading, trackFilter]);
 
   const hasIncentive = useCallback((p: ExtendedProject) => {
     return p.threeceEvStatus ||

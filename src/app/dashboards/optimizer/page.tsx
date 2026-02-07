@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import DashboardShell from "@/components/DashboardShell";
+import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { formatCurrencyCompact } from "@/lib/format";
 
 // ============================================================
@@ -392,6 +393,10 @@ function LocationDistributionChart({
 // ============================================================
 
 export default function OptimizerDashboard() {
+  /* ---- activity tracking ---- */
+  const { trackDashboardView } = useActivityTracking();
+  const hasTrackedView = useRef(false);
+
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -462,6 +467,16 @@ export default function OptimizerDashboard() {
     const interval = setInterval(fetchProjects, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, [fetchProjects]);
+
+  /* ---- Track dashboard view on load ---- */
+  useEffect(() => {
+    if (!loading && !hasTrackedView.current) {
+      hasTrackedView.current = true;
+      trackDashboardView("optimizer", {
+        projectCount: projects.length,
+      });
+    }
+  }, [loading, projects.length, trackDashboardView]);
 
   // Check Zuper configuration status
   useEffect(() => {

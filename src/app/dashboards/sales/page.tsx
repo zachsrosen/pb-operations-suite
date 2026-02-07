@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { formatCurrency } from "@/lib/format";
 import { SALES_STAGES, ACTIVE_SALES_STAGES } from "@/lib/constants";
 import { useProgressiveDeals } from "@/hooks/useProgressiveDeals";
+import { useActivityTracking } from "@/hooks/useActivityTracking";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -46,6 +47,10 @@ const STAGE_BG: Record<string, string> = {
 // ---------------------------------------------------------------------------
 
 export default function SalesPipelinePage() {
+  /* ---- activity tracking ---- */
+  const { trackDashboardView } = useActivityTracking();
+  const hasTrackedView = useRef(false);
+
   // State ------------------------------------------------------------------
   const {
     deals: allDeals,
@@ -62,6 +67,14 @@ export default function SalesPipelinePage() {
   const [filterLocation, setFilterLocation] = useState("all");
   const [filterStage, setFilterStage] = useState("all");
   const [showActiveOnly, setShowActiveOnly] = useState(true);
+
+  /* ---- Track dashboard view on load ---- */
+  useEffect(() => {
+    if (!loading && !hasTrackedView.current) {
+      hasTrackedView.current = true;
+      trackDashboardView("sales", {});
+    }
+  }, [loading, trackDashboardView]);
 
   // Derived data -----------------------------------------------------------
   const locations = useMemo(

@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { formatMoney } from "@/lib/format";
 import { RawProject } from "@/lib/types";
 import { MultiSelectFilter, ProjectSearchBar, FilterGroup } from "@/components/ui/MultiSelectFilter";
+import { useActivityTracking } from "@/hooks/useActivityTracking";
 
 interface ExtendedProject extends RawProject {
   siteSurveyStatus?: string;
@@ -20,6 +21,7 @@ const SITE_SURVEY_STATUS_GROUPS: FilterGroup[] = [
       { value: "Ready to Schedule", label: "Ready to Schedule" },
       { value: "Awaiting Reply", label: "Awaiting Reply" },
       { value: "Scheduled", label: "Scheduled" },
+      { value: "Needs Revisit", label: "Needs Revisit" },
     ]
   },
   {
@@ -33,7 +35,6 @@ const SITE_SURVEY_STATUS_GROUPS: FilterGroup[] = [
   {
     name: "Completion",
     options: [
-      { value: "Needs Revisit", label: "Needs Revisit" },
       { value: "Completed", label: "Completed" },
     ]
   },
@@ -52,6 +53,10 @@ const SITE_SURVEY_STATUS_GROUPS: FilterGroup[] = [
 const ALL_SITE_SURVEY_STATUS_OPTIONS = SITE_SURVEY_STATUS_GROUPS.flatMap(g => g.options || []);
 
 export default function SiteSurveyDashboardPage() {
+  /* ---- activity tracking ---- */
+  const { trackDashboardView, trackSearch, trackFilter } = useActivityTracking();
+  const hasTrackedView = useRef(false);
+
   const [projects, setProjects] = useState<ExtendedProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -81,6 +86,16 @@ export default function SiteSurveyDashboardPage() {
     const interval = setInterval(fetchData, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, [fetchData]);
+
+  /* ---- Track dashboard view on load ---- */
+  useEffect(() => {
+    if (!loading && !hasTrackedView.current) {
+      hasTrackedView.current = true;
+      trackDashboardView("site-survey", {
+        projectCount: projects.length,
+      });
+    }
+  }, [loading, projects.length, trackDashboardView]);
 
   // Check if project is in site survey phase
   const isInSiteSurveyPhase = useCallback((p: ExtendedProject) => {

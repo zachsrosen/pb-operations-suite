@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
+import { useActivityTracking } from "@/hooks/useActivityTracking";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -186,6 +187,10 @@ function transformProject(p: RawProject): ConstructionProject | null {
 /* ================================================================== */
 
 export default function ConstructionSchedulerPage() {
+  /* ---- activity tracking ---- */
+  const { trackDashboardView, trackFeature } = useActivityTracking();
+  const hasTrackedView = useRef(false);
+
   /* ---- core data ---- */
   const [projects, setProjects] = useState<ConstructionProject[]>([]);
   const [loading, setLoading] = useState(true);
@@ -294,6 +299,16 @@ export default function ConstructionSchedulerPage() {
     }
     checkZuper();
   }, []);
+
+  /* ---- Track dashboard view on load ---- */
+  useEffect(() => {
+    if (!loading && !hasTrackedView.current) {
+      hasTrackedView.current = true;
+      trackDashboardView("construction-scheduler", {
+        projectCount: projects.length,
+      });
+    }
+  }, [loading, projects.length, trackDashboardView]);
 
   // Fetch availability when a project is selected or month changes
   const fetchAvailability = useCallback(async (location?: string) => {
@@ -903,7 +918,7 @@ export default function ConstructionSchedulerPage() {
                         onDragOver={handleDragOver}
                         onDrop={() => handleDrop(dateStr)}
                         onClick={() => handleDateClick(dateStr)}
-                        className={`min-h-[100px] p-1.5 border-b border-r border-zinc-800 cursor-pointer transition-colors ${
+                        className={`min-h-[110px] max-h-[180px] overflow-y-auto p-1.5 border-b border-r border-zinc-800 cursor-pointer transition-colors ${
                           isCurrentMonth ? "" : "opacity-40"
                         } ${weekend ? "bg-zinc-900/30" : ""} ${
                           isToday ? "bg-emerald-900/20" : ""
@@ -944,7 +959,7 @@ export default function ConstructionSchedulerPage() {
                           )}
                         </div>
                         <div className="space-y-1">
-                          {events.slice(0, 3).map((ev) => (
+                          {events.map((ev) => (
                             <div
                               key={ev.id}
                               draggable
@@ -962,12 +977,7 @@ export default function ConstructionSchedulerPage() {
                               {getCustomerName(ev.name)}
                             </div>
                           ))}
-                          {events.length > 3 && (
-                            <div className="text-xs text-zinc-500 pl-1">
-                              +{events.length - 3} more
-                            </div>
-                          )}
-                          {showAvailability && selectedProject && hasAvailability && (() => {
+                                                    {showAvailability && selectedProject && hasAvailability && (() => {
                             const projectLocation = selectedProject?.location;
                             const matchingSlots = dayAvailability?.availableSlots?.filter(slot => {
                               if (!projectLocation) return true;

@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { formatCurrency } from "@/lib/format";
+import { useActivityTracking } from "@/hooks/useActivityTracking";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -427,6 +428,10 @@ function MilestoneGroup({
 // ---------------------------------------------------------------------------
 
 export default function PEDashboardPage() {
+  /* ---- activity tracking ---- */
+  const { trackDashboardView } = useActivityTracking();
+  const hasTrackedView = useRef(false);
+
   const [projects, setProjects] = useState<PEProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -457,6 +462,16 @@ export default function PEDashboardPage() {
     const interval = setInterval(fetchData, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
+
+  /* ---- Track dashboard view on load ---- */
+  useEffect(() => {
+    if (!loading && !hasTrackedView.current) {
+      hasTrackedView.current = true;
+      trackDashboardView("pe", {
+        projectCount: projects.length,
+      });
+    }
+  }, [loading, projects.length, trackDashboardView]);
 
   // Compute stats
   const stats: Stats = useMemo(() => {

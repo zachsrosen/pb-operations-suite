@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
+import { useActivityTracking } from "@/hooks/useActivityTracking";
 import DashboardShell from "@/components/DashboardShell";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { ErrorState } from "@/components/ui/ErrorState";
@@ -76,6 +77,25 @@ export default function ServicePipelinePage() {
 
   const [filterLocation, setFilterLocation] = useState("all");
   const [filterStage, setFilterStage] = useState("all");
+
+  // Activity tracking
+  const { trackDashboardView, trackFilter } = useActivityTracking();
+  const hasTrackedView = useRef(false);
+
+  // Track dashboard view
+  useEffect(() => {
+    if (!loading && !hasTrackedView.current) {
+      hasTrackedView.current = true;
+      trackDashboardView("service", { projectCount: allDeals.length });
+    }
+  }, [loading, allDeals.length, trackDashboardView]);
+
+  // Track filter changes
+  useEffect(() => {
+    if (!loading && hasTrackedView.current) {
+      trackFilter("service", { location: filterLocation, stage: filterStage });
+    }
+  }, [filterLocation, filterStage, loading, trackFilter]);
 
   // Unique locations for filter dropdown
   const locations = useMemo(

@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
 import { prefetchDashboard } from "@/lib/prefetch";
+import { useActivityTracking } from "@/hooks/useActivityTracking";
 
 // ============================================================
 // TypeScript Interfaces
@@ -1653,6 +1654,10 @@ function AlertsView({ alerts }: { alerts: Alert[] }) {
 // ============================================================
 
 export default function CommandCenterPage() {
+  /* ---- activity tracking ---- */
+  const { trackDashboardView } = useActivityTracking();
+  const hasTrackedView = useRef(false);
+
   const [currentView, setCurrentView] = useState<ViewType>("pipeline");
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1699,6 +1704,16 @@ export default function CommandCenterPage() {
     const interval = setInterval(fetchData, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, [fetchData]);
+
+  /* ---- Track dashboard view on load ---- */
+  useEffect(() => {
+    if (!loading && !hasTrackedView.current) {
+      hasTrackedView.current = true;
+      trackDashboardView("command-center", {
+        projectCount: projects.length,
+      });
+    }
+  }, [loading, projects.length, trackDashboardView]);
 
   const tabs: { key: ViewType; label: string; badge?: number; badgeStyle?: string }[] = [
     { key: "pipeline", label: "Pipeline Overview" },

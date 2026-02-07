@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { formatMoney } from "@/lib/format";
 import { RawProject } from "@/lib/types";
 import { MultiSelectFilter, ProjectSearchBar, FilterGroup } from "@/components/ui/MultiSelectFilter";
+import { useActivityTracking } from "@/hooks/useActivityTracking";
 
 // Display name mappings
 const DISPLAY_NAMES: Record<string, string> = {
@@ -99,11 +100,6 @@ const IC_STATUS_GROUPS: FilterGroup[] = [
       { value: "Supplemental Review", label: "Supplemental Review" },
       { value: "RBC On Hold", label: "RBC On Hold" },
       { value: "Pending Rebate Approval", label: "Pending Rebate Approval" },
-    ]
-  },
-  {
-    name: "Xcel",
-    options: [
       { value: "Xcel Site Plan & SLD Needed", label: "Xcel Site Plan & SLD Needed" },
     ]
   },
@@ -177,6 +173,10 @@ const ALL_IC_STATUS_OPTIONS = IC_STATUS_GROUPS.flatMap(g => g.options || []);
 const ALL_PTO_STATUS_OPTIONS = PTO_STATUS_GROUPS.flatMap(g => g.options || []);
 
 export default function InterconnectionPage() {
+  /* ---- activity tracking ---- */
+  const { trackDashboardView, trackSearch, trackFilter } = useActivityTracking();
+  const hasTrackedView = useRef(false);
+
   const [projects, setProjects] = useState<ExtendedProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -208,6 +208,16 @@ export default function InterconnectionPage() {
     const interval = setInterval(fetchData, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, [fetchData]);
+
+  /* ---- Track dashboard view on load ---- */
+  useEffect(() => {
+    if (!loading && !hasTrackedView.current) {
+      hasTrackedView.current = true;
+      trackDashboardView("interconnection", {
+        projectCount: projects.length,
+      });
+    }
+  }, [loading, projects.length, trackDashboardView]);
 
   // Status helper functions
   const isIcPending = useCallback((p: ExtendedProject) => {

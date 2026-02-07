@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { LiveIndicator } from "@/components/ui/LiveIndicator";
 import { useProjectData } from "@/hooks/useProjectData";
+import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { transformProject } from "@/lib/transforms";
 import { formatCurrency, formatCurrencyCompact } from "@/lib/format";
 import { STAGE_ORDER_ASC, STAGE_COLORS, LOCATION_COLORS } from "@/lib/constants";
@@ -40,12 +41,24 @@ const COMPARE_STAGES = STAGE_ORDER_ASC.filter(
 export default function LocationComparisonPage() {
   const [selectedLocation, setSelectedLocation] = useState<string | null>(null);
 
+  /* ---- activity tracking ---- */
+  const { trackDashboardView } = useActivityTracking();
+  const hasTrackedView = useRef(false);
+
   const { data: projectData, loading, error, lastUpdated, refetch } = useProjectData<TransformedProject[]>({
     params: { context: "executive" },
     transform: (res: unknown) => ((res as { projects: RawProject[] }).projects || []).map(transformProject),
   });
 
   const allProjects = projectData || [];
+
+  /* ---- Track dashboard view on load ---- */
+  useEffect(() => {
+    if (!loading && !hasTrackedView.current) {
+      hasTrackedView.current = true;
+      trackDashboardView("locations", {});
+    }
+  }, [loading, trackDashboardView]);
 
   /* ---- derived data ---- */
 

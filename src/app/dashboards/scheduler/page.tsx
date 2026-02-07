@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
+import { useActivityTracking } from "@/hooks/useActivityTracking";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -338,6 +339,10 @@ function transformProject(p: RawProject): SchedulerProject | null {
 /* ================================================================== */
 
 export default function SchedulerPage() {
+  /* ---- activity tracking ---- */
+  const { trackDashboardView, trackSearch, trackFilter, trackFeature } = useActivityTracking();
+  const hasTrackedView = useRef(false);
+
   /* ---- core data ---- */
   const [projects, setProjects] = useState<SchedulerProject[]>([]);
   const [loading, setLoading] = useState(true);
@@ -475,6 +480,16 @@ export default function SchedulerPage() {
     }
     checkZuper();
   }, []);
+
+  /* ---- Track dashboard view on load ---- */
+  useEffect(() => {
+    if (!loading && !hasTrackedView.current) {
+      hasTrackedView.current = true;
+      trackDashboardView("master-scheduler", {
+        projectCount: projects.length,
+      });
+    }
+  }, [loading, projects.length, trackDashboardView]);
 
   /* ================================================================ */
   /*  Toast                                                            */
@@ -1681,7 +1696,7 @@ export default function SchedulerPage() {
                       return (
                         <div
                           key={day}
-                          className={`bg-[#12121a] min-h-[90px] p-1 relative transition-colors ${
+                          className={`bg-[#12121a] min-h-[110px] max-h-[180px] overflow-y-auto p-1 relative transition-colors ${
                             isToday
                               ? "ring-2 ring-inset ring-orange-500"
                               : ""
@@ -1717,7 +1732,7 @@ export default function SchedulerPage() {
                           >
                             {day}
                           </div>
-                          {dayEvents.slice(0, 4).map((ev, ei) => {
+                          {dayEvents.map((ev, ei) => {
                             const shortName = getCustomerName(ev.name).substring(
                               0,
                               8
@@ -1761,12 +1776,7 @@ export default function SchedulerPage() {
                               </div>
                             );
                           })}
-                          {dayEvents.length > 4 && (
-                            <div className="text-[0.55rem] text-zinc-500 text-center py-0.5 cursor-pointer">
-                              +{dayEvents.length - 4}
-                            </div>
-                          )}
-                        </div>
+                                                  </div>
                       );
                     }
                   )}

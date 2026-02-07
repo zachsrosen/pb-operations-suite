@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { formatMoney } from "@/lib/format";
+import { useActivityTracking } from "@/hooks/useActivityTracking";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -223,6 +224,10 @@ function SearchIcon({ active }: { active: boolean }) {
 /* ------------------------------------------------------------------ */
 
 export default function MobileDashboardPage() {
+  /* ---- activity tracking ---- */
+  const { trackDashboardView } = useActivityTracking();
+  const hasTrackedView = useRef(false);
+
   const [projects, setProjects] = useState<RawProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -251,6 +256,16 @@ export default function MobileDashboardPage() {
     const interval = setInterval(loadData, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, [loadData]);
+
+  /* ---- Track dashboard view on load ---- */
+  useEffect(() => {
+    if (!loading && !hasTrackedView.current) {
+      hasTrackedView.current = true;
+      trackDashboardView("mobile", {
+        projectCount: projects.length,
+      });
+    }
+  }, [loading, projects.length, trackDashboardView]);
 
   /* ---- Computed data ---- */
   const stats: PipelineStats = useMemo(() => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { ErrorState } from "@/components/ui/ErrorState";
@@ -8,6 +8,7 @@ import { LiveIndicator } from "@/components/ui/LiveIndicator";
 import { useProjectData } from "@/hooks/useProjectData";
 import { transformProject } from "@/lib/transforms";
 import { formatMoney, formatCurrency } from "@/lib/format";
+import { useActivityTracking } from "@/hooks/useActivityTracking";
 import type { RawProject, TransformedProject, Risk, ProjectWithRisk } from "@/lib/types";
 
 /* ------------------------------------------------------------------ */
@@ -27,6 +28,10 @@ type RiskTypeFilter = "all" | "install" | "inspection" | "pto" | "stalled" | "bl
 /* ------------------------------------------------------------------ */
 
 export default function AtRiskPage() {
+  /* ---- activity tracking ---- */
+  const { trackDashboardView } = useActivityTracking();
+  const hasTrackedView = useRef(false);
+
   const [sortBy, setSortBy] = useState<SortOption>("severity");
   const [filterLocation, setFilterLocation] = useState("all");
   const [filterRiskType, setFilterRiskType] = useState<RiskTypeFilter>("all");
@@ -39,6 +44,16 @@ export default function AtRiskPage() {
   });
 
   const allProjects = projects || [];
+
+  /* ---- Track dashboard view on load ---- */
+  useEffect(() => {
+    if (!loading && !hasTrackedView.current) {
+      hasTrackedView.current = true;
+      trackDashboardView("at-risk", {
+        projectCount: allProjects.length,
+      });
+    }
+  }, [loading, allProjects.length, trackDashboardView]);
 
   /* ---- derived data ---- */
 

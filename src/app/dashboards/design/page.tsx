@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { formatMoney } from "@/lib/format";
 import { RawProject } from "@/lib/types";
 import { MultiSelectFilter, ProjectSearchBar, FilterGroup } from "@/components/ui/MultiSelectFilter";
+import { useActivityTracking } from "@/hooks/useActivityTracking";
 
 // Display name mappings for status values
 const DISPLAY_NAMES: Record<string, string> = {
@@ -61,18 +62,18 @@ const DESIGN_STATUS_GROUPS: FilterGroup[] = [
       { value: "Ready For Review", label: "Ready For Review (Initial)" },
       { value: "Final Review/Stamping", label: "Final Review/Stamping" },
       { value: "Draft Complete - Waiting on Approvals", label: "Draft Complete - Waiting on Approvals" },
+      { value: "DA Approved", label: "DA Approved - Final Design Review" },
     ]
   },
   {
     name: "Engineering & Completion",
     options: [
       { value: "Submitted To Engineering", label: "Submitted To Engineering" },
-      { value: "DA Approved", label: "DA Approved - Final Design Review" },
       { value: "Design Complete", label: "Design Complete" },
     ]
   },
   {
-    name: "DA Revisions",
+    name: "Revisions - DA",
     options: [
       { value: "Revision Needed - DA Rejected", label: "Revision Needed - DA Rejected" },
       { value: "DA Revision In Progress", label: "DA Revision In Progress" },
@@ -80,7 +81,7 @@ const DESIGN_STATUS_GROUPS: FilterGroup[] = [
     ]
   },
   {
-    name: "Permit Revisions",
+    name: "Revisions - Permit",
     options: [
       { value: "Revision Needed - Rejected by AHJ", label: "Revision Needed - Rejected by AHJ" },
       { value: "Permit Revision In Progress", label: "Permit Revision In Progress" },
@@ -88,7 +89,7 @@ const DESIGN_STATUS_GROUPS: FilterGroup[] = [
     ]
   },
   {
-    name: "Utility Revisions",
+    name: "Revisions - Utility",
     options: [
       { value: "Revision Needed - Rejected by Utility", label: "Revision Needed - Rejected by Utility" },
       { value: "Utility Revision In Progress", label: "Utility Revision In Progress" },
@@ -96,7 +97,7 @@ const DESIGN_STATUS_GROUPS: FilterGroup[] = [
     ]
   },
   {
-    name: "As-Built Revisions",
+    name: "Revisions - As-Built",
     options: [
       { value: "Revision Needed - As-Built", label: "Revision Needed - As-Built" },
       { value: "As-Built Revision In Progress", label: "As-Built Revision In Progress" },
@@ -152,6 +153,13 @@ const DESIGN_STATUS_GROUPS: FilterGroup[] = [
 // Design Approval Status Groups (formerly Layout Status)
 const DESIGN_APPROVAL_GROUPS: FilterGroup[] = [
   {
+    name: "Ready",
+    options: [
+      { value: "Ready For Review", label: "Ready For Review" },
+      { value: "Draft Created", label: "Draft Created" },
+    ]
+  },
+  {
     name: "In Review",
     options: [
       { value: "Review In Progress", label: "Review In Progress" },
@@ -164,6 +172,7 @@ const DESIGN_APPROVAL_GROUPS: FilterGroup[] = [
     options: [
       { value: "Sent For Approval", label: "Sent For Approval" },
       { value: "Resent For Approval", label: "Resent For Approval" },
+      { value: "Sent to Customer", label: "Sent to Customer" },
     ]
   },
   {
@@ -197,6 +206,10 @@ const ALL_DESIGN_STATUS_OPTIONS = DESIGN_STATUS_GROUPS.flatMap(g => g.options ||
 const ALL_DESIGN_APPROVAL_OPTIONS = DESIGN_APPROVAL_GROUPS.flatMap(g => g.options || []);
 
 export default function DesignEngineeringPage() {
+  /* ---- activity tracking ---- */
+  const { trackDashboardView, trackSearch, trackFilter } = useActivityTracking();
+  const hasTrackedView = useRef(false);
+
   const [projects, setProjects] = useState<ExtendedProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -227,6 +240,16 @@ export default function DesignEngineeringPage() {
     const interval = setInterval(fetchData, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, [fetchData]);
+
+  /* ---- Track dashboard view on load ---- */
+  useEffect(() => {
+    if (!loading && !hasTrackedView.current) {
+      hasTrackedView.current = true;
+      trackDashboardView("design", {
+        projectCount: projects.length,
+      });
+    }
+  }, [loading, projects.length, trackDashboardView]);
 
   // Check if project is in design phase or has design data
   const isInDesignPhase = useCallback((p: ExtendedProject) => {

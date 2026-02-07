@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { formatCurrency } from "@/lib/format";
 import { useProgressiveDeals } from "@/hooks/useProgressiveDeals";
-import { MultiSelectFilter, ProjectSearchBar, FilterOption, FilterGroup } from "@/components/ui/MultiSelectFilter";
+import { ProjectSearchBar } from "@/components/ui/MultiSelectFilter";
+import { useActivityTracking } from "@/hooks/useActivityTracking";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -87,47 +88,7 @@ const STAGE_SHORT_LABELS: Record<string, string> = {
   "Reset Blocked - Waiting on Payment": "Blocked",
 };
 
-// Detach Status options and groups
-const DETACH_STATUS_OPTIONS: FilterOption[] = [
-  { value: "Ready To Schedule", label: "Ready To Schedule" },
-  { value: "Scheduled", label: "Scheduled" },
-  { value: "Started", label: "Started" },
-  { value: "Completed", label: "Completed" },
-];
-
-const DETACH_STATUS_GROUPS: FilterGroup[] = [
-  {
-    name: "Started",
-    options: [
-      { value: "Ready To Schedule", label: "Ready To Schedule" },
-      { value: "Scheduled", label: "Scheduled" },
-      { value: "Started", label: "Started" },
-      { value: "Completed", label: "Completed" },
-    ]
-  }
-];
-
-// Reset Status options and groups
-const RESET_STATUS_OPTIONS: FilterOption[] = [
-  { value: "Ready To Schedule", label: "Ready To Schedule" },
-  { value: "Scheduled", label: "Scheduled" },
-  { value: "On Our Way", label: "On Our Way" },
-  { value: "Started", label: "Started" },
-  { value: "Completed", label: "Completed" },
-];
-
-const RESET_STATUS_GROUPS: FilterGroup[] = [
-  {
-    name: "Reset",
-    options: [
-      { value: "Ready To Schedule", label: "Ready To Schedule" },
-      { value: "Scheduled", label: "Scheduled" },
-      { value: "On Our Way", label: "On Our Way" },
-      { value: "Started", label: "Started" },
-      { value: "Completed", label: "Completed" },
-    ]
-  }
-];
+// Note: Detach and Reset status filters removed - D&R uses deal stages primarily
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -160,10 +121,22 @@ export default function DNRPipelinePage() {
     params: { pipeline: "dnr", active: "false" },
   });
 
+  /* ---- activity tracking ---- */
+  const { trackDashboardView } = useActivityTracking();
+  const hasTrackedView = useRef(false);
+
+  /* ---- Track dashboard view on load ---- */
+  useEffect(() => {
+    if (!loading && !hasTrackedView.current) {
+      hasTrackedView.current = true;
+      trackDashboardView("dnr", {
+        projectCount: allDeals.length,
+      });
+    }
+  }, [loading, allDeals.length, trackDashboardView]);
+
   const [filterLocation, setFilterLocation] = useState("all");
   const [filterStage, setFilterStage] = useState("all");
-  const [selectedDetachStatuses, setSelectedDetachStatuses] = useState<string[]>([]);
-  const [selectedResetStatuses, setSelectedResetStatuses] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
 
   // ---- Derived data --------------------------------------------------------
@@ -183,18 +156,6 @@ export default function DNRPipelinePage() {
           return false;
         if (filterStage !== "all" && d.stage !== filterStage) return false;
 
-        // Detach Status filter
-        if (selectedDetachStatuses.length > 0) {
-          const detachStatus = d.detachStatus || "";
-          if (!selectedDetachStatuses.includes(detachStatus)) return false;
-        }
-
-        // Reset Status filter
-        if (selectedResetStatuses.length > 0) {
-          const resetStatus = d.resetStatus || "";
-          if (!selectedResetStatuses.includes(resetStatus)) return false;
-        }
-
         // Search filter
         if (searchQuery) {
           const query = searchQuery.toLowerCase();
@@ -208,7 +169,7 @@ export default function DNRPipelinePage() {
 
         return true;
       }),
-    [allDeals, filterLocation, filterStage, selectedDetachStatuses, selectedResetStatuses, searchQuery],
+    [allDeals, filterLocation, filterStage, searchQuery],
   );
 
   const activeDeals = useMemo(
@@ -241,66 +202,6 @@ export default function DNRPipelinePage() {
   );
 
   // Get statuses that exist in the data
-  const existingDetachStatuses = useMemo(() =>
-    new Set(allDeals.map(d => d.detachStatus).filter(Boolean)),
-    [allDeals]
-  );
-
-  const existingResetStatuses = useMemo(() =>
-    new Set(allDeals.map(d => d.resetStatus).filter(Boolean)),
-    [allDeals]
-  );
-
-  // Filter groups to only include options that exist in the actual data
-  const filteredDetachStatusGroups = useMemo(() => {
-    const knownValues = new Set(DETACH_STATUS_OPTIONS.map(o => o.value));
-    const uncategorized = [...existingDetachStatuses].filter(s => !knownValues.has(s as string));
-
-    const filtered = DETACH_STATUS_GROUPS.map(group => ({
-      ...group,
-      options: group.options?.filter(opt => existingDetachStatuses.has(opt.value)) || []
-    })).filter(group => group.options && group.options.length > 0);
-
-    if (uncategorized.length > 0) {
-      filtered.push({
-        name: "Other",
-        options: uncategorized.map(status => ({ value: status as string, label: status as string }))
-      });
-    }
-
-    return filtered;
-  }, [existingDetachStatuses]);
-
-  const filteredResetStatusGroups = useMemo(() => {
-    const knownValues = new Set(RESET_STATUS_OPTIONS.map(o => o.value));
-    const uncategorized = [...existingResetStatuses].filter(s => !knownValues.has(s as string));
-
-    const filtered = RESET_STATUS_GROUPS.map(group => ({
-      ...group,
-      options: group.options?.filter(opt => existingResetStatuses.has(opt.value)) || []
-    })).filter(group => group.options && group.options.length > 0);
-
-    if (uncategorized.length > 0) {
-      filtered.push({
-        name: "Other",
-        options: uncategorized.map(status => ({ value: status as string, label: status as string }))
-      });
-    }
-
-    return filtered;
-  }, [existingResetStatuses]);
-
-  // Flatten filtered groups to get all options
-  const filteredDetachStatusOptions = useMemo(() =>
-    filteredDetachStatusGroups.flatMap(g => g.options || []),
-    [filteredDetachStatusGroups]
-  );
-
-  const filteredResetStatusOptions = useMemo(() =>
-    filteredResetStatusGroups.flatMap(g => g.options || []),
-    [filteredResetStatusGroups]
-  );
-
   // ---- Loading state -------------------------------------------------------
 
   if (loading && allDeals.length === 0) {
@@ -416,31 +317,9 @@ export default function DNRPipelinePage() {
         ))}
       </div>
 
-      {/* Filter bar with multi-select filters */}
+      {/* Search bar */}
       <div className="bg-[#12121a] rounded-xl border border-zinc-800 p-4 mb-6">
         <div className="flex flex-wrap items-center gap-3">
-          <span className="text-sm text-zinc-400 font-medium">Status Filters:</span>
-
-          <MultiSelectFilter
-            label="Detach Status"
-            options={filteredDetachStatusOptions}
-            groups={filteredDetachStatusGroups}
-            selected={selectedDetachStatuses}
-            onChange={setSelectedDetachStatuses}
-            placeholder="All Detach Statuses"
-            accentColor="orange"
-          />
-
-          <MultiSelectFilter
-            label="Reset Status"
-            options={filteredResetStatusOptions}
-            groups={filteredResetStatusGroups}
-            selected={selectedResetStatuses}
-            onChange={setSelectedResetStatuses}
-            placeholder="All Reset Statuses"
-            accentColor="emerald"
-          />
-
           <div className="flex-1 min-w-[200px]">
             <ProjectSearchBar
               onSearch={setSearchQuery}
@@ -448,16 +327,14 @@ export default function DNRPipelinePage() {
             />
           </div>
 
-          {(selectedDetachStatuses.length > 0 || selectedResetStatuses.length > 0 || searchQuery) && (
+          {searchQuery && (
             <button
               onClick={() => {
-                setSelectedDetachStatuses([]);
-                setSelectedResetStatuses([]);
                 setSearchQuery("");
               }}
               className="text-xs text-zinc-500 hover:text-zinc-300 px-2 py-1"
             >
-              Clear All Filters
+              Clear Search
             </button>
           )}
         </div>

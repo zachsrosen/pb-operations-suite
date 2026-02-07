@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { formatMoney } from "@/lib/format";
 import { RawProject } from "@/lib/types";
 import { MultiSelectFilter, ProjectSearchBar, FilterGroup } from "@/components/ui/MultiSelectFilter";
+import { useActivityTracking } from "@/hooks/useActivityTracking";
 
 interface ExtendedProject extends RawProject {
   constructionStatus?: string;
@@ -21,18 +22,14 @@ const CONSTRUCTION_STATUS_GROUPS: FilterGroup[] = [
       { value: "Rejected", label: "Rejected" },
       { value: "Blocked", label: "Blocked" },
       { value: "Ready to Build", label: "Ready to Build" },
-    ]
-  },
-  {
-    name: "Scheduling",
-    options: [
       { value: "Scheduled", label: "Scheduled" },
-      { value: "On Our Way", label: "On Our Way" },
+      { value: "Pending New Construction Design Review", label: "Pending New Construction Design Review" },
     ]
   },
   {
     name: "In Progress",
     options: [
+      { value: "On Our Way", label: "On Our Way" },
       { value: "Started", label: "Started" },
       { value: "In Progress", label: "In Progress" },
       { value: "Loose Ends Remaining", label: "Loose Ends Remaining" },
@@ -50,7 +47,6 @@ const CONSTRUCTION_STATUS_GROUPS: FilterGroup[] = [
       { value: "Revisions Needed", label: "Revisions Needed" },
       { value: "In Design For Revisions", label: "In Design For Revisions" },
       { value: "Revisions Complete", label: "Revisions Complete" },
-      { value: "Pending New Construction Design Review", label: "Pending New Construction Design Review" },
     ]
   },
 ];
@@ -59,6 +55,10 @@ const CONSTRUCTION_STATUS_GROUPS: FilterGroup[] = [
 const ALL_CONSTRUCTION_STATUS_OPTIONS = CONSTRUCTION_STATUS_GROUPS.flatMap(g => g.options || []);
 
 export default function ConstructionDashboardPage() {
+  /* ---- activity tracking ---- */
+  const { trackDashboardView, trackSearch, trackFilter } = useActivityTracking();
+  const hasTrackedView = useRef(false);
+
   const [projects, setProjects] = useState<ExtendedProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -88,6 +88,16 @@ export default function ConstructionDashboardPage() {
     const interval = setInterval(fetchData, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, [fetchData]);
+
+  /* ---- Track dashboard view on load ---- */
+  useEffect(() => {
+    if (!loading && !hasTrackedView.current) {
+      hasTrackedView.current = true;
+      trackDashboardView("construction", {
+        projectCount: projects.length,
+      });
+    }
+  }, [loading, projects.length, trackDashboardView]);
 
   // Check if project is in construction phase
   const isInConstructionPhase = useCallback((p: ExtendedProject) => {
