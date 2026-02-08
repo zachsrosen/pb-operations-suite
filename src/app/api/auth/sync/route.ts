@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { auth } from "@/auth";
-import { getOrCreateUser, getUserByEmail, logActivity } from "@/lib/db";
+import { prisma, getOrCreateUser, getUserByEmail, logActivity } from "@/lib/db";
 
 /**
  * POST /api/auth/sync
@@ -62,6 +62,7 @@ export async function POST() {
 /**
  * GET /api/auth/sync
  * Get the current user's role from the database
+ * If admin is impersonating, returns impersonated user's role
  */
 export async function GET() {
   const session = await auth();
@@ -77,9 +78,42 @@ export async function GET() {
       return NextResponse.json({ role: "VIEWER", found: false });
     }
 
+    // Check if admin is impersonating another user
+    if (user.role === "ADMIN" && user.impersonatingUserId && prisma) {
+      const impersonatedUser = await prisma.user.findUnique({
+        where: { id: user.impersonatingUserId },
+      });
+
+      if (impersonatedUser) {
+        return NextResponse.json({
+          role: impersonatedUser.role,
+          found: true,
+          isImpersonating: true,
+          user: {
+            id: impersonatedUser.id,
+            email: impersonatedUser.email,
+            name: impersonatedUser.name,
+            role: impersonatedUser.role,
+          },
+          impersonatedUser: {
+            id: impersonatedUser.id,
+            email: impersonatedUser.email,
+            name: impersonatedUser.name,
+            role: impersonatedUser.role,
+          },
+          adminUser: {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+          },
+        });
+      }
+    }
+
     return NextResponse.json({
       role: user.role,
       found: true,
+      isImpersonating: false,
       user: {
         id: user.id,
         email: user.email,

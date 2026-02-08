@@ -15,6 +15,20 @@ interface UpdateEntry {
 
 const UPDATES: UpdateEntry[] = [
   {
+    version: "1.14.0",
+    date: "2026-02-07",
+    title: "Admin User Impersonation",
+    description: "Admins can now log in as any user to review functionality and troubleshoot issues.",
+    changes: [
+      { type: "feature", text: "User impersonation - admins can 'View As' any non-admin user from User Management" },
+      { type: "feature", text: "Impersonation banner - orange banner shows when viewing as another user with quick exit button" },
+      { type: "feature", text: "Full impersonation audit trail - all impersonation start/stop events logged to ActivityLog" },
+      { type: "improvement", text: "All dashboards and APIs respect impersonated user's role and permissions" },
+      { type: "internal", text: "New API: /api/admin/impersonate for starting/stopping user impersonation" },
+      { type: "internal", text: "Database field: impersonatingUserId on User model tracks active impersonation" },
+    ],
+  },
+  {
     version: "1.13.0",
     date: "2026-02-07",
     title: "Granular User Permissions & Roadmap Management",

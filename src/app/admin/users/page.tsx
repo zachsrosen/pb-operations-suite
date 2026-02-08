@@ -67,6 +67,8 @@ export default function AdminUsersPage() {
   const [workspaceDomain, setWorkspaceDomain] = useState<string>("");
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editPermissions, setEditPermissions] = useState<UserPermissions | null>(null);
+  const [impersonating, setImpersonating] = useState<string | null>(null);
+  const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
 
   const fetchUsers = useCallback(async () => {
     try {
@@ -99,10 +101,23 @@ export default function AdminUsersPage() {
     }
   }, []);
 
+  const fetchCurrentUser = useCallback(async () => {
+    try {
+      const response = await fetch("/api/user/me");
+      if (response.ok) {
+        const data = await response.json();
+        setCurrentUserEmail(data.user?.email || null);
+      }
+    } catch {
+      // Ignore errors
+    }
+  }, []);
+
   useEffect(() => {
     fetchUsers();
     checkWorkspaceConfig();
-  }, [fetchUsers, checkWorkspaceConfig]);
+    fetchCurrentUser();
+  }, [fetchUsers, checkWorkspaceConfig, fetchCurrentUser]);
 
   const showToast = (message: string) => {
     setToast(message);
@@ -228,6 +243,41 @@ export default function AdminUsersPage() {
 
   const hasCustomPermissions = (user: User) => {
     return user.canScheduleSurveys || user.canScheduleInstalls || user.canSyncToZuper || user.canManageUsers || (user.allowedLocations && user.allowedLocations.length > 0);
+  };
+
+  const startImpersonation = async (user: User) => {
+    // Don't allow impersonating yourself
+    if (user.email === currentUserEmail) {
+      showToast("Error: Cannot impersonate yourself");
+      return;
+    }
+
+    setImpersonating(user.id);
+    try {
+      const response = await fetch("/api/admin/impersonate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          targetUserId: user.id,
+          reason: "Admin review via User Management",
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to start impersonation");
+      }
+
+      showToast(`Now viewing as ${user.name || user.email}`);
+      // Reload the page to reset all UI state
+      setTimeout(() => {
+        window.location.href = "/";
+      }, 1000);
+    } catch (err) {
+      showToast(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
+    } finally {
+      setImpersonating(null);
+    }
   };
 
   if (loading) {
@@ -487,6 +537,7 @@ export default function AdminUsersPage() {
                 <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Role</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Permissions</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Last Login</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-800">
@@ -543,6 +594,34 @@ export default function AdminUsersPage() {
                         })
                       : "Never"
                     }
+                  </td>
+                  <td className="px-4 py-3">
+                    {user.email !== currentUserEmail && user.role !== "ADMIN" && (
+                      <button
+                        onClick={() => startImpersonation(user)}
+                        disabled={impersonating === user.id}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 rounded-lg text-sm transition-colors disabled:opacity-50"
+                        title={`View as ${user.name || user.email}`}
+                      >
+                        {impersonating === user.id ? (
+                          <>
+                            <div className="w-3 h-3 border-2 border-amber-400/50 border-t-amber-400 rounded-full animate-spin" />
+                            <span>Starting...</span>
+                          </>
+                        ) : (
+                          <>
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                            </svg>
+                            <span>View As</span>
+                          </>
+                        )}
+                      </button>
+                    )}
+                    {user.role === "ADMIN" && user.email !== currentUserEmail && (
+                      <span className="text-xs text-zinc-600">Cannot impersonate admins</span>
+                    )}
                   </td>
                 </tr>
               ))}
