@@ -26,23 +26,22 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    // Update the user's role to ADMIN
-    // Note: Only updating role - impersonatingUserId may not exist yet if migration not run
-    const updatedUser = await prisma.user.update({
-      where: { email: session.user.email },
-      data: {
-        role: "ADMIN",
-      },
-    });
+    // Use raw SQL to avoid Prisma client schema mismatch issues
+    // This bypasses Prisma's generated client and talks directly to the database
+    const result = await prisma.$executeRaw`
+      UPDATE "User"
+      SET "role" = 'ADMIN'::"UserRole"
+      WHERE "email" = ${session.user.email}
+    `;
+
+    if (result === 0) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
 
     return NextResponse.json({
       success: true,
       message: `Role restored to ADMIN for ${session.user.email}`,
-      user: {
-        id: updatedUser.id,
-        email: updatedUser.email,
-        role: updatedUser.role,
-      },
+      rowsUpdated: result,
     });
   } catch (error) {
     console.error("Error fixing role:", error);
