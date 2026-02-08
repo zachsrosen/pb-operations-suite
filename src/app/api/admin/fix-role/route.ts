@@ -18,8 +18,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Database not configured" }, { status: 500 });
   }
 
-  // Only allow this for specific known admin email
-  const adminEmails = ["zach@photonbrothers.com"];
+  // Only allow this for specific known admin emails
+  const adminEmails = ["zach@photonbrothers.com", "zach.rosen@photonbrothers.com"];
 
   if (!adminEmails.includes(session.user.email)) {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
