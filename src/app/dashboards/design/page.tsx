@@ -155,6 +155,7 @@ const DESIGN_APPROVAL_GROUPS: FilterGroup[] = [
   {
     name: "Ready",
     options: [
+      { value: "Ready", label: "Ready" },
       { value: "Ready For Review", label: "Ready For Review" },
       { value: "Draft Created", label: "Draft Created" },
     ]

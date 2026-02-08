@@ -44,12 +44,16 @@ export default function ImpersonationBanner() {
     setEnding(true);
     try {
       const res = await fetch("/api/admin/impersonate", { method: "DELETE" });
-      if (res.ok) {
+      const data = await res.json();
+      if (res.ok && data.success) {
         // Refresh the page to reset all state
         window.location.reload();
+      } else {
+        alert("Failed to exit impersonation: " + (data.error || "Unknown error"));
       }
     } catch (error) {
       console.error("Failed to end impersonation:", error);
+      alert("Failed to exit impersonation. Please try again.");
     } finally {
       setEnding(false);
     }
@@ -60,7 +64,7 @@ export default function ImpersonationBanner() {
   }
 
   return (
-    <div className="fixed top-0 left-0 right-0 z-[100] bg-gradient-to-r from-amber-600 via-orange-500 to-amber-600 text-white px-4 py-2 shadow-lg">
+    <div className="sticky top-0 left-0 right-0 z-[100] bg-gradient-to-r from-amber-600 via-orange-500 to-amber-600 text-white px-4 py-2 shadow-lg">
       <div className="max-w-7xl mx-auto flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
