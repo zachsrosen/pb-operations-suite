@@ -1408,6 +1408,13 @@ export default function SiteSurveySchedulerPage() {
                 <p className="text-sm">{scheduleModal.project.location}</p>
               </div>
 
+              {scheduleModal.project.address && (
+                <div>
+                  <span className="text-xs text-zinc-500">Address</span>
+                  <p className="text-sm">{scheduleModal.project.address}</p>
+                </div>
+              )}
+
               <div>
                 <span className="text-xs text-zinc-500">Date</span>
                 <p className="text-sm font-medium text-cyan-400">{formatDate(scheduleModal.date)}</p>

@@ -304,7 +304,9 @@ export class ZuperClient {
         assignmentError = "No team_uid available - assign user manually in Zuper";
       } else {
         console.log(`[Zuper] Assigning users to job ${jobUid}:`, userUids, `team: ${resolvedTeamUid}`);
+        console.log(`[Zuper] Assignment request: jobUid=${jobUid}, userUids=${JSON.stringify(userUids)}, teamUid=${resolvedTeamUid}`);
         const assignResult = await this.assignJob(jobUid, userUids, resolvedTeamUid);
+        console.log(`[Zuper] Assignment response:`, JSON.stringify(assignResult));
         if (assignResult.type === "error") {
           console.error(`[Zuper] Failed to assign users:`, assignResult.error);
           assignmentFailed = true;
