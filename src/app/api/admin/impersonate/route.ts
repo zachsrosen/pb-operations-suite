@@ -5,8 +5,13 @@ import { prisma, getUserByEmail, logActivity } from "@/lib/db";
 /**
  * POST /api/admin/impersonate
  * Start impersonating another user (admin only)
+ * DISABLED: Requires database migration - run `npx prisma db push` first
  */
 export async function POST(request: NextRequest) {
+  return NextResponse.json({
+    error: "Impersonation disabled - database migration required. Run: npx prisma db push"
+  }, { status: 503 });
+
   const session = await auth();
 
   if (!session?.user?.email) {
@@ -92,10 +97,11 @@ export async function POST(request: NextRequest) {
 /**
  * DELETE /api/admin/impersonate
  * Stop impersonating (return to admin view)
- * Note: This endpoint allows any admin who is currently impersonating to stop,
- * even though they appear as a non-admin role while impersonating.
+ * DISABLED: Requires database migration - run `npx prisma db push` first
  */
 export async function DELETE() {
+  return NextResponse.json({ success: true, message: "Impersonation disabled" });
+
   const session = await auth();
 
   if (!session?.user?.email) {
@@ -170,8 +176,11 @@ export async function DELETE() {
 /**
  * GET /api/admin/impersonate
  * Get current impersonation status
+ * DISABLED: Requires database migration - run `npx prisma db push` first
  */
 export async function GET() {
+  return NextResponse.json({ isImpersonating: false });
+
   const session = await auth();
 
   if (!session?.user?.email) {

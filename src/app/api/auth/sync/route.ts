@@ -78,37 +78,8 @@ export async function GET() {
       return NextResponse.json({ role: "VIEWER", found: false });
     }
 
-    // Check if admin is impersonating another user
-    if (user.role === "ADMIN" && user.impersonatingUserId && prisma) {
-      const impersonatedUser = await prisma.user.findUnique({
-        where: { id: user.impersonatingUserId },
-      });
-
-      if (impersonatedUser) {
-        return NextResponse.json({
-          role: impersonatedUser.role,
-          found: true,
-          isImpersonating: true,
-          user: {
-            id: impersonatedUser.id,
-            email: impersonatedUser.email,
-            name: impersonatedUser.name,
-            role: impersonatedUser.role,
-          },
-          impersonatedUser: {
-            id: impersonatedUser.id,
-            email: impersonatedUser.email,
-            name: impersonatedUser.name,
-            role: impersonatedUser.role,
-          },
-          adminUser: {
-            id: user.id,
-            email: user.email,
-            name: user.name,
-          },
-        });
-      }
-    }
+    // Impersonation feature disabled until database migration is run
+    // TODO: Re-enable after running `npx prisma db push` to add impersonatingUserId column
 
     return NextResponse.json({
       role: user.role,

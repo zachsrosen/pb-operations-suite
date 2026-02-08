@@ -43,9 +43,6 @@ model User {
   // Location restrictions (empty = all locations)
   allowedLocations        String[] @default([])
 
-  // Admin impersonation - when set, this admin is viewing as another user
-  impersonatingUserId     String?
-
   // Timestamps
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -56,7 +53,6 @@ model User {
 
   @@index([email])
   @@index([role])
-  @@index([impersonatingUserId])
 }
 
 // ===========================================
