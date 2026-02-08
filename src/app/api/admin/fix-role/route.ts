@@ -27,11 +27,11 @@ export async function POST(request: NextRequest) {
 
   try {
     // Update the user's role to ADMIN
+    // Note: Only updating role - impersonatingUserId may not exist yet if migration not run
     const updatedUser = await prisma.user.update({
       where: { email: session.user.email },
       data: {
         role: "ADMIN",
-        impersonatingUserId: null, // Clear any stuck impersonation
       },
     });
 
