@@ -1185,37 +1185,40 @@ export default function SiteSurveySchedulerPage() {
                             });
 
                             return Object.entries(slotsBySurveyor).map(([surveyorName, slots]) => (
-                              <div key={surveyorName} className="group">
-                                <div
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (selectedProject && slots[0]) {
-                                      // Open schedule modal with first available slot for this surveyor
-                                      setScheduleModal({
-                                        project: selectedProject,
-                                        date: dateStr,
-                                        slot: {
-                                          userName: surveyorName,
-                                          userUid: slots[0].user_uid,
-                                          teamUid: slots[0].team_uid,
-                                          startTime: slots[0].start_time,
-                                          endTime: slots[0].end_time,
-                                          location: slots[0].location || "",
+                              <div key={surveyorName} className="mb-1">
+                                <span className="text-emerald-400 font-medium text-[0.6rem]">{surveyorName}</span>
+                                <div className="flex flex-wrap gap-0.5 mt-0.5">
+                                  {slots.map((slot, slotIndex) => (
+                                    <button
+                                      key={`${surveyorName}-${slotIndex}`}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (selectedProject) {
+                                          setScheduleModal({
+                                            project: selectedProject,
+                                            date: dateStr,
+                                            slot: {
+                                              userName: surveyorName,
+                                              userUid: slot.user_uid,
+                                              teamUid: slot.team_uid,
+                                              startTime: slot.start_time,
+                                              endTime: slot.end_time,
+                                              location: slot.location || "",
+                                            }
+                                          });
                                         }
-                                      });
-                                    }
-                                  }}
-                                  className={`text-[0.6rem] leading-tight break-words ${
-                                    selectedProject
-                                      ? "cursor-pointer hover:bg-emerald-500/20 hover:text-emerald-300 rounded px-0.5 py-0.5"
-                                      : ""
-                                  }`}
-                                  title={`${selectedProject ? "Click to book: " : ""}${surveyorName} - ${slots.length} slot${slots.length !== 1 ? "s" : ""}: ${slots.map(s => s.display_time || `${s.start_time}-${s.end_time}`).join(", ")}`}
-                                >
-                                  <span className="text-emerald-400 font-medium">{surveyorName}</span>
-                                  <span className="text-emerald-500/50 block">
-                                    {slots.map(s => s.display_time || formatTime12h(s.start_time)).join(", ")}
-                                  </span>
+                                      }}
+                                      disabled={!selectedProject}
+                                      className={`text-[0.55rem] px-1 py-0.5 rounded ${
+                                        selectedProject
+                                          ? "bg-emerald-500/10 hover:bg-emerald-500/30 text-emerald-400 cursor-pointer border border-emerald-500/20 hover:border-emerald-500/40"
+                                          : "text-emerald-500/50"
+                                      }`}
+                                      title={selectedProject ? `Book ${surveyorName} at ${slot.display_time || `${slot.start_time}-${slot.end_time}`}` : "Select a project first"}
+                                    >
+                                      {slot.display_time || formatTime12h(slot.start_time)}
+                                    </button>
+                                  ))}
                                 </div>
                               </div>
                             ));
