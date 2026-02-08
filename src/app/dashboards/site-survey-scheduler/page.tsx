@@ -1170,11 +1170,12 @@ export default function SiteSurveySchedulerPage() {
                                   e.stopPropagation();
                                   setScheduleModal({ project: ev, date: dateStr, currentSlot: evSlot });
                                 }}
-                                className="text-xs p-1 rounded bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 truncate cursor-grab hover:bg-cyan-500/30 active:cursor-grabbing"
-                                title={evSlot ? `${evSlot.userName} @ ${evSlot.displayTime} - Click to view` : "Drag to reschedule"}
+                                className="text-xs p-1 rounded bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 cursor-grab hover:bg-cyan-500/30 active:cursor-grabbing"
+                                title={evSlot ? `${evSlot.userName} @ ${evSlot.displayTime}\n${ev.address || "No address"} - Click to view` : `${ev.address || "No address"} - Drag to reschedule`}
                               >
-                                {getCustomerName(ev.name)}
-                                {evSlot && <span className="text-cyan-400/60 ml-1">({evSlot.userName})</span>}
+                                <div className="truncate">{getCustomerName(ev.name)}</div>
+                                {ev.address && <div className="text-[0.6rem] text-cyan-400/50 truncate">{ev.address}</div>}
+                                {evSlot && <div className="text-[0.6rem] text-cyan-400/60 truncate">{evSlot.userName} @ {evSlot.displayTime}</div>}
                               </div>
                             );
                           })}
