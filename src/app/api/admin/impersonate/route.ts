@@ -92,6 +92,8 @@ export async function POST(request: NextRequest) {
 /**
  * DELETE /api/admin/impersonate
  * Stop impersonating (return to admin view)
+ * Note: This endpoint allows any admin who is currently impersonating to stop,
+ * even though they appear as a non-admin role while impersonating.
  */
 export async function DELETE() {
   const session = await auth();
@@ -104,23 +106,31 @@ export async function DELETE() {
     return NextResponse.json({ error: "Database not configured" }, { status: 500 });
   }
 
-  // Get the admin user
-  const adminUser = await getUserByEmail(session.user.email);
-  if (!adminUser) {
+  // Get the actual logged-in user (the admin who is impersonating)
+  const user = await getUserByEmail(session.user.email);
+  if (!user) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
-  // Only admins can have impersonation state
-  if (adminUser.role !== "ADMIN") {
+  // Allow any user with impersonatingUserId set to clear it (they're an admin who started impersonating)
+  // Also allow admins to call this endpoint even if not impersonating
+  const isCurrentlyImpersonating = !!user.impersonatingUserId;
+
+  if (!isCurrentlyImpersonating && user.role !== "ADMIN") {
     return NextResponse.json({ error: "Admin access required" }, { status: 403 });
   }
 
+  // If user is not impersonating and is admin, nothing to do
+  if (!isCurrentlyImpersonating) {
+    return NextResponse.json({ success: true, message: "Not currently impersonating" });
+  }
+
   try {
-    const wasImpersonating = adminUser.impersonatingUserId;
+    const wasImpersonating = user.impersonatingUserId;
 
     // Clear the impersonation
     await prisma.user.update({
-      where: { id: adminUser.id },
+      where: { id: user.id },
       data: { impersonatingUserId: null },
     });
 
@@ -133,8 +143,8 @@ export async function DELETE() {
       await logActivity({
         type: "FEATURE_USED",
         description: `Admin stopped impersonating ${targetUser?.email || wasImpersonating}`,
-        userId: adminUser.id,
-        userEmail: adminUser.email,
+        userId: user.id,
+        userEmail: user.email,
         entityType: "user",
         entityId: wasImpersonating,
         entityName: targetUser?.email || wasImpersonating,
