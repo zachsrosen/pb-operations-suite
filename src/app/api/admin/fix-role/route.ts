@@ -46,6 +46,7 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error("Error fixing role:", error);
-    return NextResponse.json({ error: "Failed to fix role" }, { status: 500 });
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    return NextResponse.json({ error: "Failed to fix role", details: errorMessage }, { status: 500 });
   }
 }
