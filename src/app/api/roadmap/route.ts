@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { auth } from "@/auth";
+import { prisma, getUserByEmail } from "@/lib/db";
 
 export interface RoadmapItem {
   id: string;
@@ -251,9 +252,21 @@ export async function GET() {
   }
 }
 
-// Update item status (admin only)
+// Update item status (admin only - server-side enforced)
 export async function PUT(request: Request) {
   try {
+    // Verify user is authenticated and is an ADMIN
+    const session = await auth();
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    }
+
+    // Check if user is admin in database
+    const currentUser = await getUserByEmail(session.user.email);
+    if (!currentUser || currentUser.role !== "ADMIN") {
+      return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+    }
+
     const { id, status } = await request.json();
 
     if (!id || !status) {

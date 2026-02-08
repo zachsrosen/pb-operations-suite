@@ -1205,15 +1205,15 @@ export default function SiteSurveySchedulerPage() {
                                       });
                                     }
                                   }}
-                                  className={`text-[0.6rem] leading-tight truncate ${
+                                  className={`text-[0.6rem] leading-tight break-words ${
                                     selectedProject
                                       ? "cursor-pointer hover:bg-emerald-500/20 hover:text-emerald-300 rounded px-0.5 py-0.5"
                                       : ""
                                   }`}
                                   title={`${selectedProject ? "Click to book: " : ""}${surveyorName} - ${slots.length} slot${slots.length !== 1 ? "s" : ""}: ${slots.map(s => s.display_time || `${s.start_time}-${s.end_time}`).join(", ")}`}
                                 >
-                                  <span className="text-emerald-400">{surveyorName}</span>
-                                  <span className="text-emerald-500/50 ml-1">
+                                  <span className="text-emerald-400 font-medium">{surveyorName}</span>
+                                  <span className="text-emerald-500/50 block">
                                     {slots.map(s => s.display_time || formatTime12h(s.start_time)).join(", ")}
                                   </span>
                                 </div>
@@ -1243,11 +1243,11 @@ export default function SiteSurveySchedulerPage() {
                             return Object.entries(bookedBySurveyor).map(([surveyorName, slots]) => (
                               <div
                                 key={`booked-${surveyorName}`}
-                                className="text-[0.6rem] leading-tight text-orange-400/60 truncate"
+                                className="text-[0.6rem] leading-tight text-orange-400/60 break-words"
                                 title={`Booked: ${surveyorName} - ${slots.map(s => `${s.display_time || s.start_time} (${s.projectName || "Unknown"})`).join(", ")}`}
                               >
-                                <span className="text-orange-500/40">⊘</span> {surveyorName}
-                                <span className="text-orange-500/30 ml-1">
+                                <span className="text-orange-500/40">⊘</span> <span className="font-medium">{surveyorName}</span>
+                                <span className="text-orange-500/30 block">
                                   {slots.map(s => s.display_time || formatTime12h(s.start_time)).join(", ")}
                                 </span>
                               </div>

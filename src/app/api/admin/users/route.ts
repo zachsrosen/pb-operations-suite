@@ -62,7 +62,7 @@ export async function PUT(request: NextRequest) {
     }
 
     // Validate role
-    const validRoles: UserRole[] = ["ADMIN", "MANAGER", "VIEWER", "SALES"];
+    const validRoles: UserRole[] = ["ADMIN", "MANAGER", "OPERATIONS", "DESIGNER", "PERMITTING", "VIEWER", "SALES"];
     if (!validRoles.includes(role)) {
       return NextResponse.json({ error: "Invalid role" }, { status: 400 });
     }

@@ -15,6 +15,23 @@ interface UpdateEntry {
 
 const UPDATES: UpdateEntry[] = [
   {
+    version: "1.13.0",
+    date: "2026-02-07",
+    title: "Granular User Permissions & Roadmap Management",
+    description: "Per-user permission overrides, expanded user roles, and admin roadmap status management.",
+    changes: [
+      { type: "feature", text: "Granular permissions modal - set per-user permission overrides (surveys, installs, Zuper sync, user management)" },
+      { type: "feature", text: "Location restrictions - limit users to specific PB locations (Westminster, Centennial, Colorado Springs, San Luis Obispo, Camarillo)" },
+      { type: "feature", text: "Roadmap admin mode - admins can mark items as Planned, In Progress, Under Review, or Completed" },
+      { type: "feature", text: "Database-backed roadmap - votes and status changes persist across deployments" },
+      { type: "improvement", text: "All 7 user roles now visible in admin panel (ADMIN, MANAGER, OPERATIONS, DESIGNER, PERMITTING, VIEWER, SALES)" },
+      { type: "improvement", text: "Site Survey Scheduler availability display improved - shows all slots without truncation" },
+      { type: "improvement", text: "Availability grouped by surveyor name with pill badges showing slot counts" },
+      { type: "internal", text: "New API: /api/admin/users/permissions for granular permission updates" },
+      { type: "internal", text: "Activity logging for permission changes" },
+    ],
+  },
+  {
     version: "1.12.0",
     date: "2026-02-07",
     title: "Security & Role-Based Access Control",

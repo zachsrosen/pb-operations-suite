@@ -3,6 +3,14 @@
 import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 
+interface UserPermissions {
+  canScheduleSurveys: boolean;
+  canScheduleInstalls: boolean;
+  canSyncToZuper: boolean;
+  canManageUsers: boolean;
+  allowedLocations: string[];
+}
+
 interface User {
   id: string;
   email: string;
@@ -10,13 +18,21 @@ interface User {
   role: string;
   lastLoginAt: string | null;
   createdAt: string;
+  canScheduleSurveys: boolean;
+  canScheduleInstalls: boolean;
+  canSyncToZuper: boolean;
+  canManageUsers: boolean;
+  allowedLocations: string[];
 }
 
-const ROLES = ["ADMIN", "MANAGER", "VIEWER", "SALES"];
+const ROLES = ["ADMIN", "MANAGER", "OPERATIONS", "DESIGNER", "PERMITTING", "VIEWER", "SALES"];
 
 const ROLE_DESCRIPTIONS: Record<string, string> = {
   ADMIN: "Full access, can manage users",
-  MANAGER: "Can schedule, view all data",
+  MANAGER: "Can schedule all types, view all data",
+  OPERATIONS: "Schedule installs/inspections, manage construction",
+  DESIGNER: "Design & engineering dashboard access",
+  PERMITTING: "Permitting & interconnection dashboard",
   VIEWER: "Read-only access to all dashboards",
   SALES: "Only access to Site Survey Scheduler",
 };
@@ -24,8 +40,20 @@ const ROLE_DESCRIPTIONS: Record<string, string> = {
 const ROLE_COLORS: Record<string, string> = {
   ADMIN: "bg-red-500/20 text-red-400 border-red-500/30",
   MANAGER: "bg-purple-500/20 text-purple-400 border-purple-500/30",
+  OPERATIONS: "bg-orange-500/20 text-orange-400 border-orange-500/30",
+  DESIGNER: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+  PERMITTING: "bg-green-500/20 text-green-400 border-green-500/30",
   VIEWER: "bg-zinc-500/20 text-zinc-400 border-zinc-500/30",
   SALES: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
+};
+
+const LOCATIONS = ["Westminster", "Centennial", "Colorado Springs", "San Luis Obispo", "Camarillo"];
+
+const PERMISSION_LABELS: Record<keyof Omit<UserPermissions, "allowedLocations">, { label: string; description: string }> = {
+  canScheduleSurveys: { label: "Schedule Surveys", description: "Can schedule site surveys" },
+  canScheduleInstalls: { label: "Schedule Installs", description: "Can schedule installations & inspections" },
+  canSyncToZuper: { label: "Sync to Zuper", description: "Can sync jobs to Zuper FSM" },
+  canManageUsers: { label: "Manage Users", description: "Can access admin panel & manage users" },
 };
 
 export default function AdminUsersPage() {
@@ -37,6 +65,8 @@ export default function AdminUsersPage() {
   const [syncing, setSyncing] = useState(false);
   const [workspaceConfigured, setWorkspaceConfigured] = useState<boolean | null>(null);
   const [workspaceDomain, setWorkspaceDomain] = useState<string>("");
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [editPermissions, setEditPermissions] = useState<UserPermissions | null>(null);
 
   const fetchUsers = useCallback(async () => {
     try {
@@ -74,6 +104,11 @@ export default function AdminUsersPage() {
     checkWorkspaceConfig();
   }, [fetchUsers, checkWorkspaceConfig]);
 
+  const showToast = (message: string) => {
+    setToast(message);
+    setTimeout(() => setToast(null), 3000);
+  };
+
   const updateRole = async (userId: string, newRole: string) => {
     setUpdating(userId);
     try {
@@ -91,14 +126,82 @@ export default function AdminUsersPage() {
       setUsers(users.map(u =>
         u.id === userId ? { ...u, role: newRole } : u
       ));
-      setToast(`Role updated to ${newRole}`);
-      setTimeout(() => setToast(null), 3000);
+      showToast(`Role updated to ${newRole}`);
     } catch (err) {
-      setToast(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
-      setTimeout(() => setToast(null), 3000);
+      showToast(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
     } finally {
       setUpdating(null);
     }
+  };
+
+  const openPermissionsModal = (user: User) => {
+    setEditingUser(user);
+    setEditPermissions({
+      canScheduleSurveys: user.canScheduleSurveys,
+      canScheduleInstalls: user.canScheduleInstalls,
+      canSyncToZuper: user.canSyncToZuper,
+      canManageUsers: user.canManageUsers,
+      allowedLocations: user.allowedLocations || [],
+    });
+  };
+
+  const closePermissionsModal = () => {
+    setEditingUser(null);
+    setEditPermissions(null);
+  };
+
+  const savePermissions = async () => {
+    if (!editingUser || !editPermissions) return;
+
+    setUpdating(editingUser.id);
+    try {
+      const response = await fetch("/api/admin/users/permissions", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: editingUser.id,
+          permissions: editPermissions,
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to update permissions");
+      }
+
+      // Update local state
+      setUsers(users.map(u =>
+        u.id === editingUser.id
+          ? { ...u, ...editPermissions }
+          : u
+      ));
+      showToast("Permissions updated successfully");
+      closePermissionsModal();
+    } catch (err) {
+      showToast(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
+    } finally {
+      setUpdating(null);
+    }
+  };
+
+  const togglePermission = (key: keyof Omit<UserPermissions, "allowedLocations">) => {
+    if (!editPermissions) return;
+    setEditPermissions({
+      ...editPermissions,
+      [key]: !editPermissions[key],
+    });
+  };
+
+  const toggleLocation = (location: string) => {
+    if (!editPermissions) return;
+    const current = editPermissions.allowedLocations;
+    const updated = current.includes(location)
+      ? current.filter(l => l !== location)
+      : [...current, location];
+    setEditPermissions({
+      ...editPermissions,
+      allowedLocations: updated,
+    });
   };
 
   const syncWorkspace = async () => {
@@ -114,17 +217,17 @@ export default function AdminUsersPage() {
         throw new Error(data.error || "Failed to sync");
       }
 
-      setToast(`Synced: ${data.results.created} new, ${data.results.updated} updated`);
-      setTimeout(() => setToast(null), 4000);
-
-      // Refresh user list
+      showToast(`Synced: ${data.results.created} new, ${data.results.updated} updated`);
       await fetchUsers();
     } catch (err) {
-      setToast(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
-      setTimeout(() => setToast(null), 4000);
+      showToast(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
     } finally {
       setSyncing(false);
     }
+  };
+
+  const hasCustomPermissions = (user: User) => {
+    return user.canScheduleSurveys || user.canScheduleInstalls || user.canSyncToZuper || user.canManageUsers || (user.allowedLocations && user.allowedLocations.length > 0);
   };
 
   if (loading) {
@@ -160,9 +263,115 @@ export default function AdminUsersPage() {
         </div>
       )}
 
+      {/* Permissions Modal */}
+      {editingUser && editPermissions && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={closePermissionsModal} />
+          <div className="relative bg-zinc-900 rounded-2xl border border-zinc-700 w-full max-w-lg mx-4 p-6 shadow-2xl">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h2 className="text-lg font-bold">Edit Permissions</h2>
+                <p className="text-sm text-zinc-400">{editingUser.name || editingUser.email}</p>
+              </div>
+              <button
+                onClick={closePermissionsModal}
+                className="p-2 hover:bg-zinc-800 rounded-lg transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Permission Toggles */}
+            <div className="space-y-3 mb-6">
+              <h3 className="text-sm font-medium text-zinc-400 mb-2">Action Permissions</h3>
+              {(Object.keys(PERMISSION_LABELS) as Array<keyof Omit<UserPermissions, "allowedLocations">>).map(key => (
+                <label
+                  key={key}
+                  className="flex items-center justify-between p-3 bg-zinc-800 rounded-lg cursor-pointer hover:bg-zinc-750 transition-colors"
+                >
+                  <div>
+                    <p className="font-medium text-sm">{PERMISSION_LABELS[key].label}</p>
+                    <p className="text-xs text-zinc-500">{PERMISSION_LABELS[key].description}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => togglePermission(key)}
+                    className={`relative w-11 h-6 rounded-full transition-colors ${
+                      editPermissions[key] ? "bg-cyan-500" : "bg-zinc-600"
+                    }`}
+                  >
+                    <span
+                      className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${
+                        editPermissions[key] ? "translate-x-5" : ""
+                      }`}
+                    />
+                  </button>
+                </label>
+              ))}
+            </div>
+
+            {/* Location Restrictions */}
+            <div className="mb-6">
+              <h3 className="text-sm font-medium text-zinc-400 mb-2">Location Access</h3>
+              <p className="text-xs text-zinc-500 mb-3">Empty = access to all locations</p>
+              <div className="grid grid-cols-2 gap-2">
+                {LOCATIONS.map(location => (
+                  <label
+                    key={location}
+                    className={`flex items-center gap-2 p-3 rounded-lg cursor-pointer transition-colors ${
+                      editPermissions.allowedLocations.includes(location)
+                        ? "bg-cyan-500/20 border border-cyan-500/50"
+                        : "bg-zinc-800 border border-transparent hover:bg-zinc-750"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={editPermissions.allowedLocations.includes(location)}
+                      onChange={() => toggleLocation(location)}
+                      className="sr-only"
+                    />
+                    <div className={`w-4 h-4 rounded border-2 flex items-center justify-center ${
+                      editPermissions.allowedLocations.includes(location)
+                        ? "border-cyan-500 bg-cyan-500"
+                        : "border-zinc-600"
+                    }`}>
+                      {editPermissions.allowedLocations.includes(location) && (
+                        <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                    </div>
+                    <span className="text-sm">{location}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-3">
+              <button
+                onClick={closePermissionsModal}
+                className="flex-1 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={savePermissions}
+                disabled={updating === editingUser.id}
+                className="flex-1 px-4 py-2.5 bg-cyan-600 hover:bg-cyan-700 disabled:bg-cyan-800 disabled:cursor-not-allowed rounded-lg text-sm font-medium transition-colors"
+              >
+                {updating === editingUser.id ? "Saving..." : "Save Changes"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="sticky top-0 z-40 bg-[#0a0a0f]/95 backdrop-blur border-b border-zinc-800">
-        <div className="max-w-4xl mx-auto px-4 py-4">
+        <div className="max-w-5xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <Link href="/" className="text-zinc-500 hover:text-white">
@@ -215,7 +424,7 @@ export default function AdminUsersPage() {
       </div>
 
       {/* Content */}
-      <div className="max-w-4xl mx-auto px-4 py-6">
+      <div className="max-w-5xl mx-auto px-4 py-6">
         {/* Workspace Sync Info */}
         {workspaceConfigured === false && (
           <div className="mb-6 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-xl">
@@ -257,10 +466,10 @@ export default function AdminUsersPage() {
         {/* Role Legend */}
         <div className="mb-6 p-4 bg-zinc-900 rounded-xl border border-zinc-800">
           <h2 className="text-sm font-semibold mb-3 text-zinc-400">Role Permissions</h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
             {ROLES.map(role => (
               <div key={role} className="text-xs">
-                <span className={`inline-block px-2 py-1 rounded border ${ROLE_COLORS[role]}`}>
+                <span className={`inline-block px-2 py-1 rounded border ${ROLE_COLORS[role] || "bg-zinc-500/20 text-zinc-400 border-zinc-500/30"}`}>
                   {role}
                 </span>
                 <p className="mt-1 text-zinc-500">{ROLE_DESCRIPTIONS[role]}</p>
@@ -276,6 +485,7 @@ export default function AdminUsersPage() {
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">User</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Role</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Permissions</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Last Login</th>
               </tr>
             </thead>
@@ -293,7 +503,7 @@ export default function AdminUsersPage() {
                       value={user.role}
                       onChange={(e) => updateRole(user.id, e.target.value)}
                       disabled={updating === user.id}
-                      className={`px-3 py-1.5 rounded border text-sm bg-transparent cursor-pointer focus:outline-none focus:ring-2 focus:ring-cyan-500 ${ROLE_COLORS[user.role]} ${updating === user.id ? "opacity-50" : ""}`}
+                      className={`px-3 py-1.5 rounded border text-sm bg-transparent cursor-pointer focus:outline-none focus:ring-2 focus:ring-cyan-500 ${ROLE_COLORS[user.role] || "bg-zinc-500/20 text-zinc-400 border-zinc-500/30"} ${updating === user.id ? "opacity-50" : ""}`}
                     >
                       {ROLES.map(role => (
                         <option key={role} value={role} className="bg-zinc-900 text-white">
@@ -301,6 +511,27 @@ export default function AdminUsersPage() {
                         </option>
                       ))}
                     </select>
+                  </td>
+                  <td className="px-4 py-3">
+                    <button
+                      onClick={() => openPermissionsModal(user)}
+                      className="flex items-center gap-2 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm transition-colors"
+                    >
+                      {hasCustomPermissions(user) ? (
+                        <>
+                          <span className="w-2 h-2 bg-cyan-400 rounded-full" />
+                          <span className="text-cyan-400">Custom</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-zinc-400">Default</span>
+                        </>
+                      )}
+                      <svg className="w-4 h-4 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                    </button>
                   </td>
                   <td className="px-4 py-3 text-sm text-zinc-500">
                     {user.lastLoginAt

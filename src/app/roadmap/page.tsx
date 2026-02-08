@@ -76,22 +76,38 @@ export default function RoadmapPage() {
     }
   }, []);
 
+  // Check if current user is an admin
+  const checkAdminStatus = useCallback(async () => {
+    try {
+      const res = await fetch("/api/auth/session");
+      if (res.ok) {
+        const session = await res.json();
+        if (session?.user?.email) {
+          // Check user role from our API
+          const userRes = await fetch("/api/user/me");
+          if (userRes.ok) {
+            const userData = await userRes.json();
+            if (userData.user?.role === "ADMIN") {
+              setIsAdmin(true);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Failed to check admin status:", error);
+    }
+  }, []);
+
   // Load voted items from localStorage and check admin status
   useEffect(() => {
     const stored = localStorage.getItem("roadmap-votes");
     if (stored) {
       setVotedItems(new Set(JSON.parse(stored)));
     }
-    // Check if admin mode is enabled (can be toggled via localStorage or URL param)
-    const urlParams = new URLSearchParams(window.location.search);
-    const adminFromUrl = urlParams.get("admin") === "true";
-    const adminFromStorage = localStorage.getItem("roadmap-admin") === "true";
-    setIsAdmin(adminFromUrl || adminFromStorage);
-    if (adminFromUrl) {
-      localStorage.setItem("roadmap-admin", "true");
-    }
+    // Check admin status from server
+    checkAdminStatus();
     loadItems();
-  }, [loadItems]);
+  }, [loadItems, checkAdminStatus]);
 
   // Show toast notification
   const showToast = (message: string, type: "success" | "error" = "success") => {
@@ -240,19 +256,6 @@ export default function RoadmapPage() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            {/* Admin Toggle (hidden unless already admin) */}
-            {isAdmin && (
-              <button
-                onClick={() => {
-                  localStorage.removeItem("roadmap-admin");
-                  setIsAdmin(false);
-                  showToast("Admin mode disabled");
-                }}
-                className="text-xs text-red-400 hover:text-red-300 px-2 py-1 rounded border border-red-500/30 hover:bg-red-500/10 transition-colors"
-              >
-                Exit Admin
-              </button>
-            )}
             <Link
               href="/updates"
               className="flex items-center gap-2 text-xs text-zinc-400 hover:text-emerald-400 transition-colors"
