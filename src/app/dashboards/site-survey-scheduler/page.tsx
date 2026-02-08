@@ -211,6 +211,11 @@ function getTodayStr(): string {
   return toDateStr(new Date());
 }
 
+// Check if a date is in the past (before today)
+function isPastDate(dateStr: string): boolean {
+  return dateStr < getTodayStr();
+}
+
 /* ------------------------------------------------------------------ */
 /*  Transform API data                                                 */
 /* ------------------------------------------------------------------ */
@@ -583,15 +588,24 @@ export default function SiteSurveySchedulerPage() {
 
   const handleDrop = useCallback((date: string) => {
     if (!draggedProjectId) return;
+    if (isPastDate(date)) {
+      showToast("Cannot schedule on past dates");
+      setDraggedProjectId(null);
+      return;
+    }
     const project = projects.find(p => p.id === draggedProjectId);
     if (project) {
       const currentSlot = findCurrentSlotForProject(project.id, date, project.name);
       setScheduleModal({ project, date, currentSlot });
     }
     setDraggedProjectId(null);
-  }, [draggedProjectId, projects, findCurrentSlotForProject]);
+  }, [draggedProjectId, projects, findCurrentSlotForProject, showToast]);
 
   const handleDateClick = useCallback((date: string, project?: SurveyProject) => {
+    if (isPastDate(date)) {
+      showToast("Cannot schedule on past dates");
+      return;
+    }
     if (project) {
       const currentSlot = findCurrentSlotForProject(project.id, date, project.name);
       setScheduleModal({ project, date, currentSlot });
@@ -600,7 +614,7 @@ export default function SiteSurveySchedulerPage() {
       setScheduleModal({ project: selectedProject, date, currentSlot });
       setSelectedProject(null);
     }
-  }, [selectedProject, findCurrentSlotForProject]);
+  }, [selectedProject, findCurrentSlotForProject, showToast]);
 
   const confirmSchedule = useCallback(async () => {
     if (!scheduleModal) return;
@@ -1081,6 +1095,7 @@ export default function SiteSurveySchedulerPage() {
                     const [year, month] = dateStr.split("-").map(Number);
                     const isCurrentMonth = month - 1 === currentMonth && year === currentYear;
                     const isToday = dateStr === todayStr;
+                    const isPast = isPastDate(dateStr);
                     const weekend = isWeekend(dateStr);
                     const events = eventsForDate(dateStr);
                     const dayAvailability = availabilityByDate[dateStr];
@@ -1091,19 +1106,21 @@ export default function SiteSurveySchedulerPage() {
                     return (
                       <div
                         key={dateStr}
-                        onDragOver={handleDragOver}
+                        onDragOver={!isPast ? handleDragOver : undefined}
                         onDrop={() => handleDrop(dateStr)}
                         onClick={() => handleDateClick(dateStr)}
-                        className={`min-h-[120px] max-h-[200px] overflow-y-auto p-1.5 border-b border-r border-zinc-800 cursor-pointer transition-colors ${
-                          isCurrentMonth ? "" : "opacity-40"
-                        } ${weekend ? "bg-zinc-900/30" : ""} ${
+                        className={`min-h-[120px] max-h-[200px] overflow-y-auto p-1.5 border-b border-r border-zinc-800 transition-colors ${
+                          isPast ? "opacity-50 cursor-not-allowed bg-zinc-900/40" : "cursor-pointer"
+                        } ${
+                          isCurrentMonth && !isPast ? "" : !isPast ? "opacity-40" : ""
+                        } ${weekend && !isPast ? "bg-zinc-900/30" : ""} ${
                           isToday ? "bg-cyan-900/20" : ""
-                        } ${selectedProject ? "hover:bg-cyan-900/10" : "hover:bg-zinc-800/50"} ${
-                          showAvailability && hasAvailability && selectedProject
+                        } ${!isPast && selectedProject ? "hover:bg-cyan-900/10" : !isPast ? "hover:bg-zinc-800/50" : ""} ${
+                          showAvailability && hasAvailability && selectedProject && !isPast
                             ? "ring-2 ring-inset ring-emerald-500/30 bg-emerald-900/10"
                             : ""
                         } ${
-                          showAvailability && isFullyBooked && selectedProject && !weekend
+                          showAvailability && isFullyBooked && selectedProject && !weekend && !isPast
                             ? "ring-2 ring-inset ring-red-500/20 bg-red-900/5"
                             : ""
                         }`}
@@ -1193,7 +1210,7 @@ export default function SiteSurveySchedulerPage() {
                                       key={`${surveyorName}-${slotIndex}`}
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        if (selectedProject) {
+                                        if (selectedProject && !isPast) {
                                           setScheduleModal({
                                             project: selectedProject,
                                             date: dateStr,
@@ -1208,9 +1225,9 @@ export default function SiteSurveySchedulerPage() {
                                           });
                                         }
                                       }}
-                                      disabled={!selectedProject}
+                                      disabled={!selectedProject || isPast}
                                       className={`text-[0.55rem] px-1 py-0.5 rounded ${
-                                        selectedProject
+                                        selectedProject && !isPast
                                           ? "bg-emerald-500/10 hover:bg-emerald-500/30 text-emerald-400 cursor-pointer border border-emerald-500/20 hover:border-emerald-500/40"
                                           : "text-emerald-500/50"
                                       }`}
