@@ -153,10 +153,12 @@ export default function Home() {
   const isMac = useIsMac();
   const modKey = isMac ? "\u2318" : "Ctrl";
 
-  // Fetch raw projects once — stats computed client-side for instant filtering
+  // Fetch raw projects once — only request the fields we need for stats
   const loadProjects = useCallback(async () => {
     try {
-      const res = await fetch("/api/projects?context=executive&limit=0");
+      const res = await fetch(
+        "/api/projects?context=executive&limit=0&fields=stage,amount,pbLocation,isParticipateEnergy,isRtb,isBlocked"
+      );
       if (!res.ok) throw new Error("Failed to fetch");
       const data = await res.json();
       setRawProjects(
@@ -173,8 +175,37 @@ export default function Home() {
       setLastUpdated(data.lastUpdated || null);
       setError(null);
     } catch (err) {
-      setError("Failed to load data");
-      console.error(err);
+      console.error("Primary fetch failed, trying fallback:", err);
+      // Fallback to /api/stats if projects endpoint fails
+      try {
+        const res = await fetch("/api/stats");
+        if (!res.ok) throw new Error("Stats fallback failed");
+        const data = await res.json();
+        // Build minimal location-aware data from stats
+        const fallbackProjects: ProjectRecord[] = [];
+        const stages = data.stageCounts || {};
+        for (const [stage, count] of Object.entries(stages)) {
+          const stageVal = data.stageValues?.[stage] || 0;
+          const avg = (count as number) > 0 ? (stageVal as number) / (count as number) : 0;
+          for (let i = 0; i < (count as number); i++) {
+            fallbackProjects.push({
+              stage,
+              amount: avg,
+              pbLocation: "Unknown",
+              isParticipateEnergy: false,
+              isRtb: stage === "Ready To Build",
+              isBlocked: stage === "RTB - Blocked",
+            });
+          }
+        }
+        setRawProjects(fallbackProjects);
+        setIsStale(data.stale || false);
+        setLastUpdated(data.lastUpdated || null);
+        setError(null);
+      } catch (fallbackErr) {
+        setError("Failed to load data");
+        console.error("Both fetches failed:", fallbackErr);
+      }
     } finally {
       setLoading(false);
     }

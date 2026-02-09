@@ -34,6 +34,7 @@ export async function GET(request: NextRequest) {
     const activeOnly = searchParams.get("active") !== "false";
     const includeStats = searchParams.get("stats") === "true";
     const forceRefresh = searchParams.get("refresh") === "true";
+    const fieldsParam = searchParams.get("fields"); // comma-separated field list for slim responses
 
     // Pagination parameters (limit=0 means no pagination - return all results)
     const page = Math.max(1, parseInt(searchParams.get("page") || "1") || 1);
@@ -116,9 +117,22 @@ export async function GET(request: NextRequest) {
       };
     }
 
+    // If specific fields requested, return slim project objects
+    let outputProjects: unknown[] = projects;
+    if (fieldsParam) {
+      const fields = fieldsParam.split(",").map((f) => f.trim());
+      outputProjects = projects.map((p) => {
+        const slim: Record<string, unknown> = {};
+        for (const f of fields) {
+          if (f in p) slim[f] = p[f as keyof Project];
+        }
+        return slim;
+      });
+    }
+
     return NextResponse.json({
-      projects,
-      count: projects.length,
+      projects: outputProjects,
+      count: outputProjects.length,
       totalCount,
       stats,
       pagination: paginationMeta,
