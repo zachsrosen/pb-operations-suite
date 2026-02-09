@@ -24,6 +24,7 @@ const DASHBOARD_LINKS = [
   { name: "At-Risk Projects", path: "/dashboards/at-risk", description: "Critical project alerts" },
   { name: "Location Comparison", path: "/dashboards/locations", description: "Performance across locations" },
   { name: "Timeline View", path: "/dashboards/timeline", description: "Gantt-style project timeline" },
+  { name: "Equipment Backlog", path: "/dashboards/equipment-backlog", description: "Equipment forecasting by brand, model, and stage" },
   // Department Dashboards
   { name: "Design & Engineering", path: "/dashboards/design", description: "Track design progress and approvals" },
   { name: "Permitting & Inspections", path: "/dashboards/permitting", description: "Permit status and inspection tracking" },

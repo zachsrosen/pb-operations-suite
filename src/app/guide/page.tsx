@@ -197,6 +197,11 @@ export default function GuidePage() {
                   <td className="py-3">Problem Solving</td>
                   <td className="py-3">Find overdue or stalled projects</td>
                 </tr>
+                <tr className="border-b border-zinc-800">
+                  <td className="py-3 font-medium">Equipment Backlog</td>
+                  <td className="py-3">Procurement</td>
+                  <td className="py-3">Equipment forecasting by brand &amp; stage</td>
+                </tr>
                 <tr>
                   <td className="py-3 font-medium">PE Dashboard</td>
                   <td className="py-3">PE Compliance</td>
@@ -635,6 +640,28 @@ export default function GuidePage() {
             "Identify high-performing and struggling locations"
           ]}
           url="/dashboards/locations"
+        />
+
+        <DashboardCard
+          title="Equipment Backlog"
+          tag="EQUIPMENT"
+          tagColor="cyan"
+          purpose="Equipment forecasting by brand, model, and pipeline stage"
+          features={[
+            "Summary view: modules, inverters, and batteries grouped by brand/model",
+            "Projects view: sortable table with full equipment details per job",
+            "Equipment breakdown by pipeline stage (kW DC, module count, value)",
+            "Multi-select PB location and deal stage filtering",
+            "CSV export for procurement and equipment planning"
+          ]}
+          howToUse={[
+            "Use Summary view to see total equipment needed across the pipeline",
+            "Filter by location to forecast equipment needs per branch",
+            "Filter by stage to see what's needed for upcoming construction",
+            "Switch to Projects view for job-level equipment details",
+            "Export to CSV for sharing with procurement teams"
+          ]}
+          url="/dashboards/equipment-backlog"
         />
 
         {/* PE & Leadership */}
