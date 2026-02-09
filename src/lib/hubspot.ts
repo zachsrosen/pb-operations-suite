@@ -785,8 +785,14 @@ export function filterProjectsForContext(
       );
 
     case "equipment":
-      // All active projects with equipment data for forecasting
-      return projects.filter((p) => p.isActive && p.equipment.systemSizeKwdc > 0);
+      // All active projects with any equipment data (solar, battery, or EV)
+      return projects.filter(
+        (p) =>
+          p.isActive &&
+          (p.equipment.systemSizeKwdc > 0 ||
+            p.equipment.battery.count > 0 ||
+            p.equipment.evCount > 0)
+      );
 
     case "pe":
       // Participate Energy projects
