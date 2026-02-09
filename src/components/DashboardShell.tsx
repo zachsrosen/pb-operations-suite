@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { ReactNode, useCallback } from "react";
+import { ThemeToggle } from "./ThemeToggle";
 
 interface Breadcrumb {
   label: string;
@@ -57,12 +58,12 @@ export default function DashboardShell({
     : "max-w-7xl mx-auto px-4 sm:px-6";
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-white">
-      <header className="bg-[#12121a] border-b border-zinc-800 sticky top-0 z-40">
+    <div className="min-h-screen bg-[#0a0a0f] dark:bg-[#0a0a0f] light:bg-[#f8fafc] text-white dashboard-bg">
+      <header className="bg-[#12121a] border-b border-zinc-800 sticky top-0 z-40 dashboard-header">
         <div className={`${containerClass} py-3 sm:py-4`}>
           {/* Breadcrumbs */}
           {breadcrumbs && breadcrumbs.length > 0 && (
-            <nav className="flex items-center gap-1 text-xs text-zinc-500 mb-2">
+            <nav className="flex items-center gap-1 text-xs text-zinc-500 dashboard-text-muted mb-2">
               <Link href="/" className="hover:text-zinc-300 transition-colors">
                 Home
               </Link>
@@ -77,7 +78,7 @@ export default function DashboardShell({
                       {crumb.label}
                     </Link>
                   ) : (
-                    <span className="text-zinc-400">{crumb.label}</span>
+                    <span className="text-zinc-400 dashboard-text-secondary">{crumb.label}</span>
                   )}
                 </span>
               ))}
@@ -112,13 +113,13 @@ export default function DashboardShell({
                   {title}
                 </h1>
                 {subtitle && (
-                  <p className="text-xs text-zinc-500 truncate">{subtitle}</p>
+                  <p className="text-xs text-zinc-500 dashboard-text-muted truncate">{subtitle}</p>
                 )}
               </div>
             </div>
             <div className="flex items-center gap-2 sm:gap-3 shrink-0">
               {lastUpdated && (
-                <span className="text-xs text-zinc-500 hidden sm:inline">
+                <span className="text-xs text-zinc-500 dashboard-text-muted hidden sm:inline">
                   Updated {lastUpdated}
                 </span>
               )}
@@ -143,6 +144,7 @@ export default function DashboardShell({
                   </svg>
                 </button>
               )}
+              <ThemeToggle />
               {headerRight}
             </div>
           </div>

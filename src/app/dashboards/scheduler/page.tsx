@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 
 /* ------------------------------------------------------------------ */
@@ -1149,7 +1150,7 @@ export default function SchedulerPage() {
   /* ================================================================ */
 
   return (
-    <div className="h-screen overflow-hidden bg-[#0a0a0f] text-zinc-200 font-sans max-[900px]:h-auto max-[900px]:min-h-screen max-[900px]:overflow-auto">
+    <div className="h-screen overflow-hidden bg-[#0a0a0f] text-zinc-200 font-sans max-[900px]:h-auto max-[900px]:min-h-screen max-[900px]:overflow-auto dashboard-bg">
       {/* 3-column grid layout */}
       <div className="grid grid-cols-[360px_1fr_280px] h-full max-[1400px]:grid-cols-[320px_1fr_240px] max-[1100px]:grid-cols-[320px_1fr] max-[900px]:grid-cols-[1fr] max-[900px]:h-auto">
         {/* ============================================================ */}
@@ -1167,7 +1168,8 @@ export default function SchedulerPage() {
                   RTB + Construction &bull; Live HubSpot Data
                 </div>
               </div>
-              <div className="flex gap-1.5">
+              <div className="flex gap-1.5 items-center">
+                <ThemeToggle />
                 <Link
                   href="/"
                   className="px-2.5 py-1.5 text-[0.7rem] rounded-md bg-[#0a0a0f] border border-zinc-800 text-zinc-300 hover:border-orange-500 hover:text-orange-400 transition-colors"

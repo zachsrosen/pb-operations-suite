@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 
 /* ------------------------------------------------------------------ */
@@ -818,7 +819,7 @@ export default function SiteSurveySchedulerPage() {
   const todayStr = getTodayStr();
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-white">
+    <div className="min-h-screen bg-[#0a0a0f] text-white dashboard-bg">
       {/* Toast */}
       {toast && (
         <div className={`fixed top-4 right-4 z-[9999] px-4 py-3 rounded-lg shadow-lg ${
@@ -829,27 +830,27 @@ export default function SiteSurveySchedulerPage() {
       )}
 
       {/* Header */}
-      <div className="sticky top-0 z-50 bg-[#0a0a0f]/95 backdrop-blur border-b border-zinc-800">
-        <div className="max-w-[1800px] mx-auto px-4 py-3">
+      <div className="sticky top-0 z-50 bg-[#0a0a0f]/95 backdrop-blur border-b border-zinc-800 dashboard-header">
+        <div className="max-w-[1800px] mx-auto px-3 sm:px-4 py-2 sm:py-3">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Link href="/" className="text-zinc-500 hover:text-white">
+            <div className="flex items-center gap-2 sm:gap-4 min-w-0">
+              <Link href="/" className="text-zinc-500 hover:text-white shrink-0">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
                 </svg>
               </Link>
-              <h1 className="text-xl font-bold text-cyan-400">Site Survey Scheduler</h1>
-              <span className="text-xs text-zinc-500 bg-zinc-800 px-2 py-1 rounded">
+              <h1 className="text-base sm:text-xl font-bold text-cyan-400 truncate">Site Survey Scheduler</h1>
+              <span className="text-xs text-zinc-500 bg-zinc-800 px-2 py-1 rounded hidden sm:inline-block">
                 {stats.total} surveys
               </span>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 sm:gap-3">
               {/* View Toggle */}
               <div className="flex bg-zinc-900 rounded-lg p-0.5">
                 <button
                   onClick={() => setCurrentView("calendar")}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                  className={`px-2 sm:px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                     currentView === "calendar" ? "bg-cyan-600 text-white" : "text-zinc-400 hover:text-white"
                   }`}
                 >
@@ -857,13 +858,15 @@ export default function SiteSurveySchedulerPage() {
                 </button>
                 <button
                   onClick={() => setCurrentView("list")}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                  className={`px-2 sm:px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                     currentView === "list" ? "bg-cyan-600 text-white" : "text-zinc-400 hover:text-white"
                   }`}
                 >
                   List
                 </button>
               </div>
+
+              <ThemeToggle />
 
               <button onClick={fetchProjects} className="p-2 hover:bg-zinc-800 rounded-lg">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -874,37 +877,37 @@ export default function SiteSurveySchedulerPage() {
           </div>
 
           {/* Stats Row */}
-          <div className="flex items-center gap-6 mt-3 text-sm">
-            <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3 sm:gap-6 mt-2 sm:mt-3 text-xs sm:text-sm overflow-x-auto">
+            <div className="flex items-center gap-1 sm:gap-2 shrink-0">
               <span className="text-zinc-500">Ready:</span>
               <span className="text-cyan-400 font-semibold">{stats.needsScheduling}</span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 sm:gap-2 shrink-0">
               <span className="text-zinc-500">Scheduled:</span>
               <span className="text-blue-400 font-semibold">{stats.scheduled}</span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 sm:gap-2 shrink-0">
               <span className="text-zinc-500">Completed:</span>
               <span className="text-green-400 font-semibold">{stats.completed}</span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 sm:gap-2 shrink-0">
               <span className="text-zinc-500">Value:</span>
               <span className="text-orange-400 font-semibold">{formatCurrency(stats.totalValue)}</span>
             </div>
           </div>
 
           {/* Filters Row */}
-          <div className="flex items-center gap-3 mt-3 flex-wrap">
+          <div className="flex items-center gap-2 sm:gap-3 mt-2 sm:mt-3 flex-wrap">
             <input
               type="text"
-              placeholder="Search projects..."
+              placeholder="Search..."
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
-              className="px-3 py-1.5 bg-zinc-900 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:border-cyan-500 w-48"
+              className="px-3 py-1.5 bg-zinc-900 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:border-cyan-500 w-32 sm:w-48"
             />
 
             {/* Multi-select Location Filter */}
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 overflow-x-auto max-w-full">
               {LOCATIONS.filter(l => l !== "All").map((loc) => (
                 <button
                   key={loc}
@@ -915,7 +918,7 @@ export default function SiteSurveySchedulerPage() {
                       setSelectedLocations([...selectedLocations, loc]);
                     }
                   }}
-                  className={`px-2 py-1 text-xs rounded-md border transition-colors ${
+                  className={`px-2 py-1 text-xs rounded-md border transition-colors shrink-0 ${
                     selectedLocations.includes(loc)
                       ? "bg-cyan-600 border-cyan-500 text-white"
                       : "bg-zinc-900 border-zinc-700 text-zinc-400 hover:border-zinc-600"
@@ -927,7 +930,7 @@ export default function SiteSurveySchedulerPage() {
               {selectedLocations.length > 0 && (
                 <button
                   onClick={() => setSelectedLocations([])}
-                  className="px-2 py-1 text-xs text-zinc-500 hover:text-white"
+                  className="px-2 py-1 text-xs text-zinc-500 hover:text-white shrink-0"
                 >
                   Clear
                 </button>
@@ -975,20 +978,20 @@ export default function SiteSurveySchedulerPage() {
       </div>
 
       {/* Main Content */}
-      <div className="max-w-[1800px] mx-auto px-4 py-4">
-        <div className="flex gap-4">
+      <div className="max-w-[1800px] mx-auto px-3 sm:px-4 py-3 sm:py-4">
+        <div className="flex flex-col lg:flex-row gap-3 sm:gap-4">
           {/* Left Sidebar - Unscheduled Projects */}
-          <div className="w-80 flex-shrink-0">
-            <div className="sticky top-[180px] bg-[#12121a] border border-zinc-800 rounded-xl overflow-hidden">
+          <div className="w-full lg:w-80 lg:flex-shrink-0">
+            <div className="lg:sticky lg:top-[180px] bg-[#12121a] border border-zinc-800 rounded-xl overflow-hidden dashboard-card">
               <div className="p-3 border-b border-zinc-800 bg-zinc-900/50">
                 <h2 className="text-sm font-semibold text-cyan-400">
                   Ready to Schedule ({unscheduledProjects.length})
                 </h2>
-                <p className="text-xs text-zinc-500 mt-1">
+                <p className="text-xs text-zinc-500 mt-1 hidden sm:block">
                   Drag to calendar or click to select
                 </p>
               </div>
-              <div className="max-h-[calc(100vh-280px)] overflow-y-auto">
+              <div className="max-h-[40vh] lg:max-h-[calc(100vh-280px)] overflow-y-auto">
                 {unscheduledProjects.length === 0 ? (
                   <div className="p-4 text-center text-zinc-500 text-sm">
                     No projects need scheduling
@@ -1040,16 +1043,16 @@ export default function SiteSurveySchedulerPage() {
           {/* Main Area - Calendar or List */}
           <div className="flex-1">
             {currentView === "calendar" ? (
-              <div className="bg-[#12121a] border border-zinc-800 rounded-xl overflow-hidden">
+              <div className="bg-[#12121a] border border-zinc-800 rounded-xl overflow-hidden dashboard-card">
                 {/* Calendar Header */}
-                <div className="p-3 border-b border-zinc-800 flex items-center justify-between">
+                <div className="p-2 sm:p-3 border-b border-zinc-800 flex items-center justify-between flex-wrap gap-2">
                   <div className="flex items-center gap-2">
                     <button onClick={goToPrevMonth} className="p-1.5 hover:bg-zinc-800 rounded">
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                       </svg>
                     </button>
-                    <span className="text-lg font-semibold min-w-[180px] text-center">
+                    <span className="text-sm sm:text-lg font-semibold min-w-[140px] sm:min-w-[180px] text-center">
                       {MONTH_NAMES[currentMonth]} {currentYear}
                     </span>
                     <button onClick={goToNextMonth} className="p-1.5 hover:bg-zinc-800 rounded">
@@ -1083,7 +1086,7 @@ export default function SiteSurveySchedulerPage() {
                 {/* Day Headers */}
                 <div className="grid grid-cols-7 border-b border-zinc-800">
                   {DAY_NAMES.map((day) => (
-                    <div key={day} className="p-2 text-center text-xs font-medium text-zinc-500">
+                    <div key={day} className="p-1 sm:p-2 text-center text-[0.65rem] sm:text-xs font-medium text-zinc-500">
                       {day}
                     </div>
                   ))}
@@ -1109,7 +1112,7 @@ export default function SiteSurveySchedulerPage() {
                         onDragOver={!isPast ? handleDragOver : undefined}
                         onDrop={() => handleDrop(dateStr)}
                         onClick={() => handleDateClick(dateStr)}
-                        className={`min-h-[120px] max-h-[200px] overflow-y-auto p-1.5 border-b border-r border-zinc-800 transition-colors ${
+                        className={`min-h-[70px] sm:min-h-[120px] max-h-[120px] sm:max-h-[200px] overflow-y-auto p-1 sm:p-1.5 border-b border-r border-zinc-800 transition-colors ${
                           isPast ? "opacity-50 cursor-not-allowed bg-zinc-900/40" : "cursor-pointer"
                         } ${
                           isCurrentMonth && !isPast ? "" : !isPast ? "opacity-40" : ""

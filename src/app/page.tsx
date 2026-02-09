@@ -10,6 +10,7 @@ import { StatCard, MiniStat } from "@/components/ui/MetricCard";
 import { SkeletonSection } from "@/components/ui/Skeleton";
 import { LiveIndicator } from "@/components/ui/LiveIndicator";
 import { UserMenu } from "@/components/UserMenu";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { prefetchDashboard } from "@/lib/prefetch";
 
 function useIsMac() {
@@ -128,9 +129,9 @@ export default function Home() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-white">
+    <div className="min-h-screen bg-[#0a0a0f] text-white dashboard-bg">
       {/* Header */}
-      <header className="border-b border-zinc-800 px-6 py-4">
+      <header className="border-b border-zinc-800 px-6 py-4 dashboard-header">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <h1 className="text-xl font-bold bg-gradient-to-r from-orange-500 to-orange-400 bg-clip-text text-transparent">
             PB Operations Suite
@@ -246,6 +247,7 @@ export default function Home() {
                     : ""}
             </span>
 
+            <ThemeToggle />
             <UserMenu />
           </div>
         </div>
