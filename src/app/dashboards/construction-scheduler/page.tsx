@@ -245,7 +245,7 @@ export default function ConstructionSchedulerPage() {
       if (transformed.length > 0) {
         try {
           const projectIds = transformed.map((p: ConstructionProject) => p.id).join(",");
-          const projectNames = transformed.map((p: ConstructionProject) => encodeURIComponent(p.name)).join(",");
+          const projectNames = transformed.map((p: ConstructionProject) => encodeURIComponent(p.name)).join("|||");
           const zuperResponse = await fetch(`/api/zuper/jobs/lookup?projectIds=${projectIds}&projectNames=${projectNames}&category=construction`);
           if (zuperResponse.ok) {
             const zuperData = await zuperResponse.json();

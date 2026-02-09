@@ -245,7 +245,7 @@ export default function InspectionSchedulerPage() {
       if (transformed.length > 0) {
         try {
           const projectIds = transformed.map((p: InspectionProject) => p.id).join(",");
-          const projectNames = transformed.map((p: InspectionProject) => encodeURIComponent(p.name)).join(",");
+          const projectNames = transformed.map((p: InspectionProject) => encodeURIComponent(p.name)).join("|||");
           const zuperResponse = await fetch(`/api/zuper/jobs/lookup?projectIds=${projectIds}&projectNames=${projectNames}&category=inspection`);
           if (zuperResponse.ok) {
             const zuperData = await zuperResponse.json();

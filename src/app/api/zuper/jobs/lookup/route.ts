@@ -35,7 +35,11 @@ export async function GET(request: NextRequest) {
   }
 
   const projectIds = projectIdsParam.split(",").map(id => id.trim()).filter(Boolean);
-  const projectNames = projectNamesParam ? projectNamesParam.split(",").map(n => n.trim()).filter(Boolean) : [];
+  // Project names use "|||" delimiter because names contain commas (e.g. "LastName, FirstName")
+  // which would break comma-based splitting after URL decoding
+  const projectNames = projectNamesParam
+    ? projectNamesParam.split("|||").map(n => decodeURIComponent(n.trim())).filter(Boolean)
+    : [];
 
   if (projectIds.length === 0) {
     return NextResponse.json({ configured: true, jobs: {} });

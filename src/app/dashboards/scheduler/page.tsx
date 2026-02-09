@@ -408,7 +408,7 @@ export default function SchedulerPage() {
       if (transformed.length > 0) {
         try {
           const projectIds = transformed.map((p: SchedulerProject) => p.id).join(",");
-          const projectNames = transformed.map((p: SchedulerProject) => encodeURIComponent(p.name)).join(",");
+          const projectNames = transformed.map((p: SchedulerProject) => encodeURIComponent(p.name)).join("|||");
 
           // Look up jobs for each category (survey, construction, inspection)
           const categories = ["survey", "construction", "inspection"];
