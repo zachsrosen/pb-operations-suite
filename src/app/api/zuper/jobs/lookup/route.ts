@@ -42,7 +42,6 @@ export async function GET(request: NextRequest) {
   }
 
   // Map URL category param to Zuper job category names
-  // Same mapping used in /api/zuper/jobs/schedule
   const categoryMap: Record<string, string> = {
     "site-survey": "Site Survey",
     "survey": "Site Survey",
@@ -69,12 +68,28 @@ export async function GET(request: NextRequest) {
     return dealIdField?.value || null;
   };
 
-  // Helper to extract customer name from project name (format: "ProjectID | Customer Name" or "PROJ-XXXX | LastName, FirstName | Address")
+  // Completed/closed statuses that should be deprioritized
+  const COMPLETED_STATUSES = new Set([
+    "completed", "complete", "closed", "cancelled", "canceled",
+    "construction complete", "inspection complete", "survey complete",
+  ]);
+
+  // Score a job's status: active/open jobs score higher than completed ones
+  const getStatusScore = (job: ZuperJob): number => {
+    const status = (job.status || "").toLowerCase();
+    if (COMPLETED_STATUSES.has(status)) return 0;
+    // Scheduled jobs are best — they're the active upcoming ones
+    if (status === "scheduled" || status === "in_progress" || status === "in progress") return 20;
+    // Unscheduled/new jobs are next
+    if (status === "unassigned" || status === "new" || status === "created") return 15;
+    // Any other non-completed status
+    return 10;
+  };
+
+  // Helper to extract customer name from project name
   const extractCustomerName = (name: string): string => {
-    // First decode any URL encoding
     const decoded = decodeURIComponent(name);
     const parts = decoded.split("|").map(p => p.trim());
-    // Return second part if it exists (customer name)
     return parts.length > 1 ? parts[1].trim() : decoded.trim();
   };
 
@@ -87,11 +102,9 @@ export async function GET(request: NextRequest) {
 
   // Helper to extract customer last name for matching
   const extractLastName = (customerName: string): string => {
-    // Handle "LastName, FirstName" format
     if (customerName.includes(",")) {
       return customerName.split(",")[0].trim();
     }
-    // Handle "FirstName LastName" format - take last word
     const parts = customerName.split(" ");
     return parts[parts.length - 1].trim();
   };
@@ -103,52 +116,131 @@ export async function GET(request: NextRequest) {
   };
 
   // Helper to check if Zuper job title matches a customer name and optionally address
-  const jobTitleMatchesCustomer = (jobTitle: string, customerName: string, projectAddress: string): { matches: boolean; score: number } => {
+  const jobTitleMatchesCustomer = (jobTitle: string, customerName: string, projectAddress: string): { matches: boolean; addressScore: number } => {
     const titleLower = jobTitle.toLowerCase();
     const customerLower = customerName.toLowerCase();
     const lastName = extractLastName(customerName).toLowerCase();
 
     let nameMatches = false;
 
-    // Direct full name match
     if (customerLower.length > 3 && titleLower.includes(customerLower)) {
       nameMatches = true;
     }
-
-    // Last name match (for "LastName, FirstName | Address" format in Zuper)
     if (!nameMatches && lastName.length > 2 && titleLower.startsWith(lastName)) {
       nameMatches = true;
     }
-
-    // Check if Zuper title contains "LastName, FirstName" format
     if (!nameMatches && titleLower.includes(lastName + ",")) {
       nameMatches = true;
     }
 
-    if (!nameMatches) return { matches: false, score: 0 };
+    if (!nameMatches) return { matches: false, addressScore: 0 };
 
-    // Score the match: higher = better
-    let score = 1; // Base score for name match
-
-    // Boost score if address also matches
+    let addressScore = 0;
     if (projectAddress) {
       const addressLower = projectAddress.toLowerCase();
       const streetNum = extractStreetNumber(projectAddress);
-
-      // Full address match in job title
       if (addressLower.length > 5 && titleLower.includes(addressLower)) {
-        score = 10;
-      }
-      // Street number match in job title
-      else if (streetNum && titleLower.includes(streetNum)) {
-        score = 5;
+        addressScore = 10;
+      } else if (streetNum && titleLower.includes(streetNum)) {
+        addressScore = 5;
       }
     }
 
-    return { matches: true, score };
+    return { matches: true, addressScore };
   };
 
   try {
+    type JobMatch = {
+      job: ZuperJob;
+      matchMethod: "hubspot_deal_id" | "tag" | "name";
+      methodScore: number; // higher = more reliable match method
+      statusScore: number; // higher = more active job
+      addressScore: number; // higher = better address match
+      categoryName: string;
+    };
+
+    // Collect ALL candidate matches per project, then pick the best
+    const allCandidates: Record<string, JobMatch[]> = {};
+
+    const addCandidate = (projectId: string, match: JobMatch) => {
+      if (!allCandidates[projectId]) allCandidates[projectId] = [];
+      allCandidates[projectId].push(match);
+    };
+
+    // Search for jobs
+    const result = await zuper.searchJobs({
+      limit: 500,
+      from_date: new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+      to_date: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+    });
+
+    console.log(`Zuper lookup: searching ${result.data?.jobs?.length || 0} jobs for ${projectIds.length} projects, category filter: ${targetCategory || 'none'}`);
+
+    if (result.type === "success" && result.data?.jobs) {
+      for (const job of result.data.jobs) {
+        const jobCategoryName = getJobCategoryName(job);
+        if (targetCategory && jobCategoryName !== targetCategory) continue;
+        if (!job.job_uid) continue;
+
+        const hubspotDealId = getHubSpotDealId(job);
+        const tags = job.job_tags || [];
+        const jobTitle = job.job_title || "";
+        const statusScore = getStatusScore(job);
+
+        for (let i = 0; i < projectIds.length; i++) {
+          const projectId = projectIds[i];
+
+          // Check Deal ID match (most reliable method)
+          if (hubspotDealId && hubspotDealId === projectId) {
+            addCandidate(projectId, {
+              job,
+              matchMethod: "hubspot_deal_id",
+              methodScore: 100,
+              statusScore,
+              addressScore: 0,
+              categoryName: jobCategoryName,
+            });
+          }
+
+          // Check tag match
+          const hubspotTag = `hubspot-${projectId}`;
+          const hasHubspotTag = tags.some(t => t.toLowerCase() === hubspotTag.toLowerCase());
+          if (hasHubspotTag) {
+            addCandidate(projectId, {
+              job,
+              matchMethod: "tag",
+              methodScore: 50,
+              statusScore,
+              addressScore: 0,
+              categoryName: jobCategoryName,
+            });
+          }
+
+          // Check name match
+          const projectName = projectNames[i];
+          if (projectName) {
+            const customerName = extractCustomerName(projectName);
+            const projectAddress = extractAddress(projectName);
+            if (customerName.length > 3) {
+              const { matches, addressScore } = jobTitleMatchesCustomer(jobTitle, customerName, projectAddress);
+              if (matches) {
+                addCandidate(projectId, {
+                  job,
+                  matchMethod: "name",
+                  methodScore: 10,
+                  statusScore,
+                  addressScore,
+                  categoryName: jobCategoryName,
+                });
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Pick the best candidate for each project
+    // Sort by: matchMethod reliability → active status → address match
     const jobsMap: Record<string, {
       jobUid: string;
       jobTitle: string;
@@ -158,136 +250,41 @@ export async function GET(request: NextRequest) {
       matchedBy?: string;
     }> = {};
 
-    // Search for jobs
-    const result = await zuper.searchJobs({
-      limit: 500,
-      // Get jobs from the last 6 months to now + 3 months
-      from_date: new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-      to_date: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-    });
-
-    // Log for debugging
-    console.log(`Zuper lookup: searching ${result.data?.jobs?.length || 0} jobs for ${projectIds.length} projects, category filter: ${targetCategory || 'none'}`);
-
-    if (result.type === "success" && result.data?.jobs) {
-      // First pass: Match by HubSpot Deal ID custom field (most reliable)
-      for (const job of result.data.jobs) {
-        const jobCategoryName = getJobCategoryName(job);
-        const hubspotDealId = getHubSpotDealId(job);
-
-        // Check category filter first
-        if (targetCategory && jobCategoryName !== targetCategory) {
-          continue;
-        }
-
-        // Check if this job's HubSpot Deal ID matches any of our project IDs
-        if (hubspotDealId && job.job_uid) {
-          for (const projectId of projectIds) {
-            if (jobsMap[projectId]) continue;
-
-            if (hubspotDealId === projectId) {
-              console.log(`Zuper: Matched job ${job.job_uid} to project ${projectId} by HubSpot Deal ID (category: ${jobCategoryName})`);
-              jobsMap[projectId] = {
-                jobUid: job.job_uid,
-                jobTitle: job.job_title || "",
-                status: job.status || "UNKNOWN",
-                scheduledDate: job.scheduled_start_time,
-                category: jobCategoryName,
-                matchedBy: "hubspot_deal_id",
-              };
-              break;
-            }
-          }
+    for (const [projectId, candidates] of Object.entries(allCandidates)) {
+      // Deduplicate by job UID (same job can match via multiple methods)
+      const uniqueByUid = new Map<string, JobMatch>();
+      for (const c of candidates) {
+        const uid = c.job.job_uid!;
+        const existing = uniqueByUid.get(uid);
+        if (!existing || c.methodScore > existing.methodScore) {
+          uniqueByUid.set(uid, c);
         }
       }
 
-      // Second pass: Match by HubSpot tag (fallback)
-      for (const job of result.data.jobs) {
-        const tags = job.job_tags || [];
-        const jobCategoryName = getJobCategoryName(job);
+      const dedupedCandidates = [...uniqueByUid.values()];
 
-        // Check category filter first
-        if (targetCategory && jobCategoryName !== targetCategory) {
-          continue;
-        }
+      // Sort: highest methodScore first, then statusScore, then addressScore
+      dedupedCandidates.sort((a, b) => {
+        if (a.methodScore !== b.methodScore) return b.methodScore - a.methodScore;
+        if (a.statusScore !== b.statusScore) return b.statusScore - a.statusScore;
+        return b.addressScore - a.addressScore;
+      });
 
-        for (let i = 0; i < projectIds.length; i++) {
-          const projectId = projectIds[i];
+      const best = dedupedCandidates[0];
+      const totalCandidates = dedupedCandidates.length;
+      console.log(
+        `Zuper: Matched job ${best.job.job_uid} to project ${projectId} by ${best.matchMethod}` +
+        ` (status: ${best.job.status}, statusScore: ${best.statusScore}, candidates: ${totalCandidates}, category: ${best.categoryName})`
+      );
 
-          // Skip if we already found a job for this project
-          if (jobsMap[projectId]) continue;
-
-          // Try multiple hubspot tag formats (case-insensitive)
-          const hubspotTag = `hubspot-${projectId}`;
-          const hasHubspotTag = tags.some(t => t.toLowerCase() === hubspotTag.toLowerCase());
-
-          if (hasHubspotTag && job.job_uid) {
-            console.log(`Zuper: Matched job ${job.job_uid} to project ${projectId} by tag (category: ${jobCategoryName})`);
-            jobsMap[projectId] = {
-              jobUid: job.job_uid,
-              jobTitle: job.job_title || "",
-              status: job.status || "UNKNOWN",
-              scheduledDate: job.scheduled_start_time,
-              category: jobCategoryName,
-              matchedBy: "tag",
-            };
-            break;
-          }
-        }
-      }
-
-      // Third pass: Match by customer name in job title (fallback for jobs created outside the app)
-      // Uses scored matching: address matches rank higher than name-only matches
-      if (projectNames.length > 0) {
-        // Collect all candidates per project, then pick the best match
-        const candidates: Record<string, { job: ZuperJob; score: number; categoryName: string }[]> = {};
-
-        for (const job of result.data.jobs) {
-          const jobCategoryName = getJobCategoryName(job);
-          const jobTitle = job.job_title || "";
-
-          // Check category filter first
-          if (targetCategory && jobCategoryName !== targetCategory) {
-            continue;
-          }
-
-          for (let i = 0; i < projectIds.length; i++) {
-            const projectId = projectIds[i];
-            const projectName = projectNames[i];
-
-            // Skip if we already found a job for this project via Deal ID or tag
-            if (jobsMap[projectId] || !projectName) continue;
-
-            // Extract customer name and address from project name
-            const customerName = extractCustomerName(projectName);
-            const projectAddress = extractAddress(projectName);
-
-            if (customerName.length > 3 && job.job_uid) {
-              const { matches, score } = jobTitleMatchesCustomer(jobTitle, customerName, projectAddress);
-              if (matches) {
-                if (!candidates[projectId]) candidates[projectId] = [];
-                candidates[projectId].push({ job, score, categoryName: jobCategoryName });
-              }
-            }
-          }
-        }
-
-        // Pick the best candidate for each project (highest score)
-        for (const [projectId, projectCandidates] of Object.entries(candidates)) {
-          if (jobsMap[projectId]) continue;
-          projectCandidates.sort((a, b) => b.score - a.score);
-          const best = projectCandidates[0];
-          console.log(`Zuper: Matched job ${best.job.job_uid} to project ${projectId} by name (score: ${best.score}, candidates: ${projectCandidates.length}, category: ${best.categoryName})`);
-          jobsMap[projectId] = {
-            jobUid: best.job.job_uid!,
-            jobTitle: best.job.job_title || "",
-            status: best.job.status || "UNKNOWN",
-            scheduledDate: best.job.scheduled_start_time,
-            category: best.categoryName,
-            matchedBy: "name",
-          };
-        }
-      }
+      jobsMap[projectId] = {
+        jobUid: best.job.job_uid!,
+        jobTitle: best.job.job_title || "",
+        status: best.job.status || "UNKNOWN",
+        scheduledDate: best.job.scheduled_start_time,
+        category: best.categoryName,
+        matchedBy: best.matchMethod,
+      };
     }
 
     return NextResponse.json({
