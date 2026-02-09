@@ -312,7 +312,7 @@ const DEAL_PROPERTIES = [
   "pto_status",
 
   // Status fields for dashboards
-  "construction_status",
+  "install_status", // labeled "Construction Status" in HubSpot
   "site_survey_status",
 
   // Forecasted dates
@@ -548,7 +548,7 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
     readyToBuildDate: parseDate(deal.ready_to_build_date),
     constructionScheduleDate: parseDate(deal.install_schedule_date),
     constructionCompleteDate: parseDate(deal.construction_complete_date),
-    constructionStatus: deal.construction_status ? String(deal.construction_status) : null,
+    constructionStatus: deal.install_status ? String(deal.install_status) : null,
 
     // Inspection
     inspectionScheduleDate: parseDate(deal.inspections_schedule_date),
