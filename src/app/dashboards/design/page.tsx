@@ -706,6 +706,7 @@ export default function DesignEngineeringPage() {
                         <a href={project.url} target="_blank" rel="noopener noreferrer" className="font-medium text-white hover:text-indigo-400">
                           {project.name.split('|')[0].trim()}
                         </a>
+                        <div className="text-xs text-zinc-400">{project.name.split('|')[1]?.trim() || ''}</div>
                         <div className="text-xs text-zinc-500">{project.pbLocation}</div>
                       </td>
                       <td className="px-4 py-3 text-sm text-zinc-400">{project.stage}</td>

@@ -78,6 +78,13 @@ export async function GET(request: NextRequest) {
     return parts.length > 1 ? parts[1].trim() : decoded.trim();
   };
 
+  // Helper to extract address from project name (third segment after "|")
+  const extractAddress = (name: string): string => {
+    const decoded = decodeURIComponent(name);
+    const parts = decoded.split("|").map(p => p.trim());
+    return parts.length > 2 ? parts[2].trim() : "";
+  };
+
   // Helper to extract customer last name for matching
   const extractLastName = (customerName: string): string => {
     // Handle "LastName, FirstName" format
@@ -89,28 +96,56 @@ export async function GET(request: NextRequest) {
     return parts[parts.length - 1].trim();
   };
 
-  // Helper to check if Zuper job title matches a customer name
-  const jobTitleMatchesCustomer = (jobTitle: string, customerName: string): boolean => {
+  // Helper to extract street number from an address string
+  const extractStreetNumber = (address: string): string => {
+    const match = address.match(/^\d+/);
+    return match ? match[0] : "";
+  };
+
+  // Helper to check if Zuper job title matches a customer name and optionally address
+  const jobTitleMatchesCustomer = (jobTitle: string, customerName: string, projectAddress: string): { matches: boolean; score: number } => {
     const titleLower = jobTitle.toLowerCase();
     const customerLower = customerName.toLowerCase();
     const lastName = extractLastName(customerName).toLowerCase();
 
+    let nameMatches = false;
+
     // Direct full name match
     if (customerLower.length > 3 && titleLower.includes(customerLower)) {
-      return true;
+      nameMatches = true;
     }
 
     // Last name match (for "LastName, FirstName | Address" format in Zuper)
-    if (lastName.length > 2 && titleLower.startsWith(lastName)) {
-      return true;
+    if (!nameMatches && lastName.length > 2 && titleLower.startsWith(lastName)) {
+      nameMatches = true;
     }
 
     // Check if Zuper title contains "LastName, FirstName" format
-    if (titleLower.includes(lastName + ",")) {
-      return true;
+    if (!nameMatches && titleLower.includes(lastName + ",")) {
+      nameMatches = true;
     }
 
-    return false;
+    if (!nameMatches) return { matches: false, score: 0 };
+
+    // Score the match: higher = better
+    let score = 1; // Base score for name match
+
+    // Boost score if address also matches
+    if (projectAddress) {
+      const addressLower = projectAddress.toLowerCase();
+      const streetNum = extractStreetNumber(projectAddress);
+
+      // Full address match in job title
+      if (addressLower.length > 5 && titleLower.includes(addressLower)) {
+        score = 10;
+      }
+      // Street number match in job title
+      else if (streetNum && titleLower.includes(streetNum)) {
+        score = 5;
+      }
+    }
+
+    return { matches: true, score };
   };
 
   try {
@@ -202,7 +237,11 @@ export async function GET(request: NextRequest) {
       }
 
       // Third pass: Match by customer name in job title (fallback for jobs created outside the app)
+      // Uses scored matching: address matches rank higher than name-only matches
       if (projectNames.length > 0) {
+        // Collect all candidates per project, then pick the best match
+        const candidates: Record<string, { job: ZuperJob; score: number; categoryName: string }[]> = {};
+
         for (const job of result.data.jobs) {
           const jobCategoryName = getJobCategoryName(job);
           const jobTitle = job.job_title || "";
@@ -216,24 +255,37 @@ export async function GET(request: NextRequest) {
             const projectId = projectIds[i];
             const projectName = projectNames[i];
 
-            // Skip if we already found a job for this project
+            // Skip if we already found a job for this project via Deal ID or tag
             if (jobsMap[projectId] || !projectName) continue;
 
-            // Extract customer name from project name and check if job title matches
+            // Extract customer name and address from project name
             const customerName = extractCustomerName(projectName);
-            if (customerName.length > 3 && jobTitleMatchesCustomer(jobTitle, customerName) && job.job_uid) {
-              console.log(`Zuper: Matched job ${job.job_uid} to project ${projectId} by name "${customerName}" (category: ${jobCategoryName})`);
-              jobsMap[projectId] = {
-                jobUid: job.job_uid,
-                jobTitle: job.job_title || "",
-                status: job.status || "UNKNOWN",
-                scheduledDate: job.scheduled_start_time,
-                category: jobCategoryName,
-                matchedBy: "name",
-              };
-              break;
+            const projectAddress = extractAddress(projectName);
+
+            if (customerName.length > 3 && job.job_uid) {
+              const { matches, score } = jobTitleMatchesCustomer(jobTitle, customerName, projectAddress);
+              if (matches) {
+                if (!candidates[projectId]) candidates[projectId] = [];
+                candidates[projectId].push({ job, score, categoryName: jobCategoryName });
+              }
             }
           }
+        }
+
+        // Pick the best candidate for each project (highest score)
+        for (const [projectId, projectCandidates] of Object.entries(candidates)) {
+          if (jobsMap[projectId]) continue;
+          projectCandidates.sort((a, b) => b.score - a.score);
+          const best = projectCandidates[0];
+          console.log(`Zuper: Matched job ${best.job.job_uid} to project ${projectId} by name (score: ${best.score}, candidates: ${projectCandidates.length}, category: ${best.categoryName})`);
+          jobsMap[projectId] = {
+            jobUid: best.job.job_uid!,
+            jobTitle: best.job.job_title || "",
+            status: best.job.status || "UNKNOWN",
+            scheduledDate: best.job.scheduled_start_time,
+            category: best.categoryName,
+            matchedBy: "name",
+          };
         }
       }
     }
