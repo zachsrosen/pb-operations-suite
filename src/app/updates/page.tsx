@@ -15,6 +15,51 @@ interface UpdateEntry {
 
 const UPDATES: UpdateEntry[] = [
   {
+    version: "1.17.0",
+    date: "2026-02-08",
+    title: "Equipment Backlog Dashboard & Location Filtering",
+    description: "New equipment forecasting dashboard and interactive location filtering on the home page.",
+    changes: [
+      { type: "feature", text: "Equipment Backlog dashboard - equipment breakdown by brand, model, and stage with forecasting" },
+      { type: "feature", text: "Multi-select PB location and deal stage filtering on Equipment Backlog" },
+      { type: "feature", text: "CSV export of equipment data for procurement and forecasting" },
+      { type: "feature", text: "Summary view with modules, inverters, and batteries grouped by brand/model" },
+      { type: "feature", text: "Projects view with sortable table of all equipment details" },
+      { type: "feature", text: "Interactive location filtering on home page - click 'Projects by Location' cards to filter all stats" },
+      { type: "feature", text: "Multi-location API support - filter stats by multiple PB locations simultaneously" },
+      { type: "improvement", text: "Active filter banner shows selected locations with one-click clear" },
+      { type: "improvement", text: "Unselected location cards dim when filter is active for visual clarity" },
+      { type: "fix", text: "Fixed location filter not applying due to React dependency loop" },
+    ],
+  },
+  {
+    version: "1.16.0",
+    date: "2026-02-08",
+    title: "Theme Toggle & Inspection Fix",
+    description: "Dark/light theme toggle added to all remaining pages, and inspection status filter fixed.",
+    changes: [
+      { type: "feature", text: "ThemeToggle added to Construction Scheduler, Command Center, and Mobile dashboards" },
+      { type: "feature", text: "Light theme support (dashboard-bg class) on all dashboard pages" },
+      { type: "fix", text: "Fixed 'Ready For Inspection' status filter - case mismatch with HubSpot field value" },
+      { type: "improvement", text: "Removed Total kW stat from home page (per request)" },
+    ],
+  },
+  {
+    version: "1.15.0",
+    date: "2026-02-08",
+    title: "PWA Support & Dark/Light Theme",
+    description: "Install the app on your phone or desktop, plus a new dark/light theme toggle.",
+    changes: [
+      { type: "feature", text: "Progressive Web App (PWA) - install PB Operations Suite on iOS, Android, and desktop" },
+      { type: "feature", text: "Dark/light theme toggle with localStorage persistence" },
+      { type: "feature", text: "Mobile-responsive scheduler views - all schedulers optimized for phone screens" },
+      { type: "improvement", text: "Runtime CSS injection for theme support (bypasses Tailwind v4 PostCSS limitations)" },
+      { type: "improvement", text: "Service worker for offline caching and faster load times" },
+      { type: "internal", text: "Web app manifest with icons for Add to Home Screen" },
+      { type: "fix", text: "Dependency vulnerabilities patched - Next.js 16.1.4 → 16.1.6, tar updated" },
+    ],
+  },
+  {
     version: "1.14.0",
     date: "2026-02-07",
     title: "Admin User Impersonation",
