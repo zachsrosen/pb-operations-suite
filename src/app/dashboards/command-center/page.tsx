@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
 import { prefetchDashboard } from "@/lib/prefetch";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 // ============================================================
 // TypeScript Interfaces
@@ -1729,7 +1730,7 @@ export default function CommandCenterPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-zinc-200">
+    <div className="min-h-screen bg-[#0a0a0f] text-zinc-200 dashboard-bg">
       {/* Navigation */}
       <nav className="bg-gradient-to-br from-[#12121a] to-[#1a1a28] border-b border-[#1e1e2e] sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
@@ -1750,11 +1751,14 @@ export default function CommandCenterPage() {
                 </div>
               </div>
             </div>
-            <div className="text-right text-[0.7rem] text-zinc-500 shrink-0 hidden sm:block">
-              <div>{lastUpdated && `Updated: ${lastUpdated}`}</div>
-              <div>
-                {summary.total_value > 0 &&
-                  `Pipeline: ${formatCurrency(summary.total_value, "M")}`}
+            <div className="flex items-center gap-3">
+              <ThemeToggle />
+              <div className="text-right text-[0.7rem] text-zinc-500 shrink-0 hidden sm:block">
+                <div>{lastUpdated && `Updated: ${lastUpdated}`}</div>
+                <div>
+                  {summary.total_value > 0 &&
+                    `Pipeline: ${formatCurrency(summary.total_value, "M")}`}
+                </div>
               </div>
             </div>
           </div>

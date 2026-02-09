@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -623,7 +624,7 @@ export default function ConstructionSchedulerPage() {
   const todayStr = getTodayStr();
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-white">
+    <div className="min-h-screen bg-[#0a0a0f] text-white dashboard-bg">
       {/* Toast */}
       {toast && (
         <div className={`fixed top-4 right-4 z-[9999] px-4 py-3 rounded-lg shadow-lg ${
@@ -669,6 +670,8 @@ export default function ConstructionSchedulerPage() {
                   List
                 </button>
               </div>
+
+              <ThemeToggle />
 
               <button onClick={fetchProjects} className="p-2 hover:bg-zinc-800 rounded-lg">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

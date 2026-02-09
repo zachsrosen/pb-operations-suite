@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { formatMoney } from "@/lib/format";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -563,7 +564,7 @@ export default function MobileDashboardPage() {
 
   /* ---- Main render ---- */
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-white flex flex-col">
+    <div className="min-h-screen bg-[#0a0a0f] text-white flex flex-col dashboard-bg">
       {/* Mobile-optimized full-bleed layout (no DashboardShell) */}
       <div className="max-w-lg mx-auto w-full flex-1 pb-16">
         {/* Gradient header with live stats */}
@@ -575,12 +576,15 @@ export default function MobileDashboardPage() {
                 {lastUpdated ? `Live \u2022 ${lastUpdated}` : "Loading..."}
               </span>
             </div>
-            <a
-              href="/"
-              className="text-orange-100 hover:text-white text-xs font-medium transition-colors"
-            >
-              &larr; Home
-            </a>
+            <div className="flex items-center gap-2">
+              <ThemeToggle />
+              <a
+                href="/"
+                className="text-orange-100 hover:text-white text-xs font-medium transition-colors"
+              >
+                &larr; Home
+              </a>
+            </div>
           </div>
           <h1 className="text-lg font-bold text-white mt-2">PB Pipeline</h1>
           <div className="flex gap-3 mt-3 overflow-x-auto pb-1">

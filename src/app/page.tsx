@@ -69,6 +69,7 @@ const ALL_DASHBOARDS: DashboardLinkData[] = [
   { href: "/dashboards/at-risk", title: "At-Risk Projects", description: "Critical alerts for overdue projects by severity and revenue impact", tag: "ALERTS", tagColor: "red", section: "Operations Dashboards" },
   { href: "/dashboards/locations", title: "Location Comparison", description: "Performance metrics and project distribution across all locations", tag: "ANALYTICS", tagColor: "purple", section: "Operations Dashboards" },
   { href: "/dashboards/timeline", title: "Timeline View", description: "Gantt-style timeline showing project progression and milestones", tag: "PLANNING", tagColor: "blue", section: "Operations Dashboards" },
+  { href: "/dashboards/equipment-backlog", title: "Equipment Backlog", description: "Equipment forecasting by brand, model, and stage with location filtering", tag: "EQUIPMENT", tagColor: "cyan", section: "Operations Dashboards" },
   { href: "/dashboards/site-survey", title: "Site Survey", description: "Site survey scheduling, status tracking, and completion monitoring", tag: "SURVEY", tagColor: "blue", section: "Department Dashboards" },
   { href: "/dashboards/design", title: "Design & Engineering", description: "Track design progress, engineering approvals, and plan sets", tag: "DESIGN", tagColor: "indigo", section: "Department Dashboards" },
   { href: "/dashboards/permitting", title: "Permitting", description: "Permit status tracking, submission dates, and approval monitoring", tag: "PERMITTING", tagColor: "yellow", section: "Department Dashboards" },
@@ -87,28 +88,44 @@ const ALL_DASHBOARDS: DashboardLinkData[] = [
 
 export default function Home() {
   const [stats, setStats] = useState<Stats | null>(null);
+  const [allLocations, setAllLocations] = useState<string[]>([]);
+  const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isStale, setIsStale] = useState(false);
+  const [locationDropdownOpen, setLocationDropdownOpen] = useState(false);
   const { favorites, toggleFavorite, isFavorite } = useFavorites();
   const isMac = useIsMac();
   const modKey = isMac ? "\u2318" : "Ctrl";
 
-  const loadStats = useCallback(async () => {
+  const loadStats = useCallback(async (locs?: string[]) => {
     try {
-      const res = await fetch("/api/projects?stats=true&context=executive");
+      let url = "/api/projects?stats=true&context=executive";
+      const activeLocations = locs ?? selectedLocations;
+      if (activeLocations.length > 0) {
+        url += `&locations=${encodeURIComponent(activeLocations.join(","))}`;
+      }
+      const res = await fetch(url);
       if (!res.ok) throw new Error("Failed to fetch");
       const data = await res.json();
       setStats(data.stats);
       setIsStale(data.stale || false);
       setError(null);
+
+      // Populate all-locations list from unfiltered data (only on first load)
+      if (activeLocations.length === 0 && data.stats?.locationCounts) {
+        const locs = Object.keys(data.stats.locationCounts)
+          .filter((l) => l && l !== "Unknown")
+          .sort();
+        setAllLocations(locs);
+      }
     } catch (err) {
       setError("Failed to load data");
       console.error(err);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selectedLocations]);
 
   useEffect(() => {
     loadStats();
@@ -117,6 +134,24 @@ export default function Home() {
   }, [loadStats]);
 
   const { connected, reconnecting } = useSSE(loadStats);
+
+  const toggleLocation = useCallback(
+    (loc: string) => {
+      setSelectedLocations((prev) => {
+        const next = prev.includes(loc)
+          ? prev.filter((l) => l !== loc)
+          : [...prev, loc];
+        loadStats(next);
+        return next;
+      });
+    },
+    [loadStats]
+  );
+
+  const clearLocations = useCallback(() => {
+    setSelectedLocations([]);
+    loadStats([]);
+  }, [loadStats]);
 
   const favoriteDashboards = ALL_DASHBOARDS.filter((d) =>
     favorites.includes(d.href)
@@ -254,6 +289,41 @@ export default function Home() {
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-8">
+        {/* Location Filter */}
+        {allLocations.length > 0 && (
+          <div className="mb-6 animate-fadeIn">
+            <div className="flex items-center gap-3 flex-wrap">
+              <span className="text-sm text-zinc-400 font-medium">Filter by Location:</span>
+              <div className="flex flex-wrap gap-2">
+                {allLocations.map((loc) => {
+                  const isSelected = selectedLocations.includes(loc);
+                  return (
+                    <button
+                      key={loc}
+                      onClick={() => toggleLocation(loc)}
+                      className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
+                        isSelected
+                          ? "bg-orange-500/20 border-orange-500/50 text-orange-400"
+                          : "bg-zinc-800/50 border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-300"
+                      }`}
+                    >
+                      {loc}
+                    </button>
+                  );
+                })}
+              </div>
+              {selectedLocations.length > 0 && (
+                <button
+                  onClick={clearLocations}
+                  className="text-xs text-zinc-500 hover:text-zinc-300 underline transition-colors"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Stats Grid */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           <StatCard
@@ -296,7 +366,7 @@ export default function Home() {
         </div>
 
         {/* Secondary Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           <MiniStat
             label="Construction"
             value={loading ? null : stats?.constructionCount ?? null}
@@ -333,16 +403,6 @@ export default function Home() {
                 : null
             }
             alert={!loading && (stats?.blockedCount ?? 0) > 20}
-          />
-          <MiniStat
-            label="Total kW"
-            value={
-              loading
-                ? null
-                : stats?.totalSystemSizeKw
-                  ? `${Math.round(stats.totalSystemSizeKw).toLocaleString()}`
-                  : null
-            }
           />
         </div>
 

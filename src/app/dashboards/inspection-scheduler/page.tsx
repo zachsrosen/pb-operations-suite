@@ -103,7 +103,7 @@ const MONTH_NAMES = [
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 const INSPECTION_STATUSES = [
-  "Ready for Inspection",  // Matches HubSpot final_inspection_status field
+  "Ready For Inspection",  // Matches HubSpot final_inspection_status field
   "Scheduled",
   "Pending Review",
   "Passed",
@@ -177,7 +177,7 @@ function transformProject(p: RawProject): InspectionProject | null {
     batteries: p.equipment?.battery?.count || 0,
     evCount: p.equipment?.evCount || 0,
     scheduleDate: p.inspectionScheduleDate || null,
-    inspectionStatus: p.finalInspectionStatus || "Ready for Inspection",
+    inspectionStatus: p.finalInspectionStatus || "Ready For Inspection",
     completionDate: p.inspectionPassDate || null,
     closeDate: p.closeDate || null,
     hubspotUrl: p.url || `https://app.hubspot.com/contacts/21710069/record/0-3/${p.id}`,

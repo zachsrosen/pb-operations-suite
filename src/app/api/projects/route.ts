@@ -20,6 +20,7 @@ export async function GET(request: NextRequest) {
     // Parse query parameters
     const searchParams = request.nextUrl.searchParams;
     const location = searchParams.get("location");
+    const locations = searchParams.get("locations"); // comma-separated multi-location filter
     const stage = searchParams.get("stage");
     const search = searchParams.get("search");
     const context = searchParams.get("context") as
@@ -58,7 +59,10 @@ export async function GET(request: NextRequest) {
     }
 
     // Apply additional filters
-    if (location) {
+    if (locations) {
+      const locSet = new Set(locations.split(",").map((l) => l.trim()));
+      projects = projects.filter((p) => locSet.has(p.pbLocation));
+    } else if (location) {
       projects = projects.filter((p) => p.pbLocation === location);
     }
     if (stage) {
