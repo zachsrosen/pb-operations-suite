@@ -4,6 +4,7 @@ import { zuper, createJobFromProject, ZuperJob } from "@/lib/zuper";
 import { auth } from "@/auth";
 import { getUserByEmail, logActivity, createScheduleRecord, cacheZuperJob, canScheduleType, getCrewMemberByName, UserRole } from "@/lib/db";
 import { sendSchedulingNotification } from "@/lib/email";
+import { updateDealProperty } from "@/lib/hubspot";
 
 /**
  * Smart scheduling endpoint that:
@@ -322,6 +323,13 @@ export async function PUT(request: NextRequest) {
         });
       }
 
+      // Update site surveyor in HubSpot (fire and forget)
+      if (schedule.assignedUser && schedule.type === "survey") {
+        updateDealProperty(project.id, { site_surveyor: schedule.assignedUser }).catch(err =>
+          console.warn(`[Zuper Schedule] Failed to update HubSpot site_surveyor:`, err)
+        );
+      }
+
       // Send notification to assigned crew member
       await sendCrewNotification(
         schedule,
@@ -399,6 +407,13 @@ export async function PUT(request: NextRequest) {
           hubspotDealId: project.id,
           projectName: project.name,
         });
+      }
+
+      // Update site surveyor in HubSpot (fire and forget)
+      if (schedule.assignedUser && schedule.type === "survey") {
+        updateDealProperty(project.id, { site_surveyor: schedule.assignedUser }).catch(err =>
+          console.warn(`[Zuper Schedule] Failed to update HubSpot site_surveyor:`, err)
+        );
       }
 
       // Send notification to assigned crew member

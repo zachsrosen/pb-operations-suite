@@ -224,6 +224,8 @@ export interface Project {
   // Team
   projectManager: string;
   operationsManager: string;
+  dealOwner: string;
+  siteSurveyor: string;
 }
 
 export interface LineItem {
@@ -354,6 +356,8 @@ const DEAL_PROPERTIES = [
   // Team
   "project_manager",
   "operations_manager",
+  "hubspot_owner_id",
+  "site_surveyor",
 ];
 
 function daysBetween(date1: Date, date2: Date): number {
@@ -406,7 +410,7 @@ function calculatePriorityScore(
   return Math.round(score * 10) / 10;
 }
 
-function transformDealToProject(deal: Record<string, unknown>, portalId: string): Project {
+function transformDealToProject(deal: Record<string, unknown>, portalId: string, ownerMap?: Record<string, string>): Project {
   const now = new Date();
   const closeDate = deal.closedate ? new Date(deal.closedate as string) : null;
   const stageId = String(deal.dealstage || "");
@@ -594,6 +598,8 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string)
     // Team
     projectManager: String(deal.project_manager || ""),
     operationsManager: String(deal.operations_manager || ""),
+    dealOwner: ownerMap?.[String(deal.hubspot_owner_id || "")] || "",
+    siteSurveyor: String(deal.site_surveyor || ""),
   };
 }
 
@@ -631,8 +637,25 @@ export async function fetchAllProjects(options?: {
     if (after) await sleep(100);
   } while (after);
 
+  // Resolve HubSpot owner IDs to names
+  const ownerIds = [...new Set(
+    allDeals.map(d => String(d.hubspot_owner_id || "")).filter(Boolean)
+  )];
+  const ownerMap: Record<string, string> = {};
+  if (ownerIds.length > 0) {
+    try {
+      const ownersResponse = await hubspotClient.crm.owners.ownersApi.getPage(undefined, undefined, 500);
+      for (const owner of ownersResponse.results || []) {
+        const name = [owner.firstName, owner.lastName].filter(Boolean).join(" ");
+        if (owner.id && name) ownerMap[owner.id] = name;
+      }
+    } catch (err) {
+      console.warn("Failed to fetch HubSpot owners:", err);
+    }
+  }
+
   // Transform deals to projects
-  let projects = allDeals.map((deal) => transformDealToProject(deal, portalId));
+  let projects = allDeals.map((deal) => transformDealToProject(deal, portalId, ownerMap));
 
   // Apply filters
   if (options?.activeOnly) {
@@ -656,6 +679,23 @@ export async function fetchProjectById(id: string): Promise<Project | null> {
     return transformDealToProject(response.properties, portalId);
   } catch {
     return null;
+  }
+}
+
+/**
+ * Update a deal property in HubSpot
+ */
+export async function updateDealProperty(
+  dealId: string,
+  properties: Record<string, string>
+): Promise<boolean> {
+  try {
+    await hubspotClient.crm.deals.basicApi.update(dealId, { properties });
+    console.log(`[HubSpot] Updated deal ${dealId} properties:`, Object.keys(properties).join(", "));
+    return true;
+  } catch (err) {
+    console.error(`[HubSpot] Failed to update deal ${dealId}:`, err);
+    return false;
   }
 }
 
