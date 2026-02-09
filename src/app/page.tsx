@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, useCallback, useMemo, memo } from "react";
+import { useEffect, useState, useCallback, useMemo, memo, useRef } from "react";
 import { useSSE } from "@/hooks/useSSE";
 import { useFavorites } from "@/hooks/useFavorites";
 import { formatMoney } from "@/lib/format";
@@ -88,22 +88,25 @@ const ALL_DASHBOARDS: DashboardLinkData[] = [
 
 export default function Home() {
   const [stats, setStats] = useState<Stats | null>(null);
+  const [unfilteredLocationCounts, setUnfilteredLocationCounts] = useState<Record<string, number>>({});
+  const [unfilteredLocationValues, setUnfilteredLocationValues] = useState<Record<string, number>>({});
   const [allLocations, setAllLocations] = useState<string[]>([]);
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
+  const selectedLocationsRef = useRef<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isStale, setIsStale] = useState(false);
-  const [locationDropdownOpen, setLocationDropdownOpen] = useState(false);
   const { favorites, toggleFavorite, isFavorite } = useFavorites();
   const isMac = useIsMac();
   const modKey = isMac ? "\u2318" : "Ctrl";
 
-  const loadStats = useCallback(async (locs?: string[]) => {
+  // Stable fetch function that reads locations from ref (no dependency on selectedLocations)
+  const loadStats = useCallback(async (locsOverride?: string[]) => {
     try {
+      const activeLocs = locsOverride ?? selectedLocationsRef.current;
       let url = "/api/projects?stats=true&context=executive";
-      const activeLocations = locs ?? selectedLocations;
-      if (activeLocations.length > 0) {
-        url += `&locations=${encodeURIComponent(activeLocations.join(","))}`;
+      if (activeLocs.length > 0) {
+        url += `&locations=${encodeURIComponent(activeLocs.join(","))}`;
       }
       const res = await fetch(url);
       if (!res.ok) throw new Error("Failed to fetch");
@@ -113,11 +116,13 @@ export default function Home() {
       setError(null);
 
       // Populate all-locations list from unfiltered data (only on first load)
-      if (activeLocations.length === 0 && data.stats?.locationCounts) {
-        const locs = Object.keys(data.stats.locationCounts)
+      if (activeLocs.length === 0 && data.stats?.locationCounts) {
+        const locations = Object.keys(data.stats.locationCounts)
           .filter((l) => l && l !== "Unknown")
           .sort();
-        setAllLocations(locs);
+        setAllLocations(locations);
+        setUnfilteredLocationCounts(data.stats.locationCounts);
+        setUnfilteredLocationValues(data.stats.locationValues || {});
       }
     } catch (err) {
       setError("Failed to load data");
@@ -125,11 +130,11 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-  }, [selectedLocations]);
+  }, []);
 
   useEffect(() => {
     loadStats();
-    const interval = setInterval(loadStats, 5 * 60 * 1000);
+    const interval = setInterval(() => loadStats(), 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, [loadStats]);
 
@@ -141,6 +146,7 @@ export default function Home() {
         const next = prev.includes(loc)
           ? prev.filter((l) => l !== loc)
           : [...prev, loc];
+        selectedLocationsRef.current = next;
         loadStats(next);
         return next;
       });
@@ -150,6 +156,7 @@ export default function Home() {
 
   const clearLocations = useCallback(() => {
     setSelectedLocations([]);
+    selectedLocationsRef.current = [];
     loadStats([]);
   }, [loadStats]);
 
@@ -289,38 +296,21 @@ export default function Home() {
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-8">
-        {/* Location Filter */}
-        {allLocations.length > 0 && (
-          <div className="mb-6 animate-fadeIn">
-            <div className="flex items-center gap-3 flex-wrap">
-              <span className="text-sm text-zinc-400 font-medium">Filter by Location:</span>
-              <div className="flex flex-wrap gap-2">
-                {allLocations.map((loc) => {
-                  const isSelected = selectedLocations.includes(loc);
-                  return (
-                    <button
-                      key={loc}
-                      onClick={() => toggleLocation(loc)}
-                      className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
-                        isSelected
-                          ? "bg-orange-500/20 border-orange-500/50 text-orange-400"
-                          : "bg-zinc-800/50 border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-300"
-                      }`}
-                    >
-                      {loc}
-                    </button>
-                  );
-                })}
-              </div>
-              {selectedLocations.length > 0 && (
-                <button
-                  onClick={clearLocations}
-                  className="text-xs text-zinc-500 hover:text-zinc-300 underline transition-colors"
-                >
-                  Clear
-                </button>
-              )}
-            </div>
+        {/* Active Location Filter Banner */}
+        {selectedLocations.length > 0 && (
+          <div className="mb-4 flex items-center gap-2 px-3 py-2 bg-orange-500/10 border border-orange-500/30 rounded-lg animate-fadeIn">
+            <svg className="w-4 h-4 text-orange-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+            </svg>
+            <span className="text-sm text-orange-400">
+              Filtered: <span className="font-medium">{selectedLocations.join(", ")}</span>
+            </span>
+            <button
+              onClick={clearLocations}
+              className="ml-auto text-xs text-orange-400/70 hover:text-orange-300 underline"
+            >
+              Clear
+            </button>
           </div>
         )}
 
@@ -452,35 +442,60 @@ export default function Home() {
           )
         )}
 
-        {/* Location Breakdown */}
+        {/* Location Breakdown - always shows unfiltered counts, click to filter */}
         {loading ? (
           <SkeletonSection rows={2} />
         ) : (
-          stats?.locationCounts && (
+          allLocations.length > 0 && (
             <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6 mb-8 animate-fadeIn">
-              <h2 className="text-lg font-semibold mb-4">
-                Projects by Location
-              </h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold">
+                  Projects by Location
+                  {selectedLocations.length > 0 && (
+                    <span className="text-sm text-orange-400 font-normal ml-2">
+                      ({selectedLocations.length} filtered)
+                    </span>
+                  )}
+                </h2>
+                {selectedLocations.length > 0 && (
+                  <button
+                    onClick={clearLocations}
+                    className="text-xs text-zinc-500 hover:text-zinc-300 underline transition-colors"
+                  >
+                    Clear filter
+                  </button>
+                )}
+              </div>
+              <p className="text-xs text-zinc-500 mb-3">Click a location to filter all data above</p>
               <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                {Object.entries(stats.locationCounts)
-                  .filter(([location]) => location && location !== "Unknown")
-                  .sort((a, b) => (b[1] as number) - (a[1] as number))
-                  .map(([location, count]) => (
-                    <div
+                {allLocations.map((location) => {
+                  const count = unfilteredLocationCounts[location] || 0;
+                  const value = unfilteredLocationValues[location];
+                  const isSelected = selectedLocations.includes(location);
+                  return (
+                    <button
                       key={location}
-                      className="bg-zinc-800/50 rounded-lg p-4 text-center hover:bg-zinc-800/70 transition-colors"
+                      onClick={() => toggleLocation(location)}
+                      className={`rounded-lg p-4 text-center transition-all cursor-pointer border ${
+                        isSelected
+                          ? "bg-orange-500/15 border-orange-500/50 ring-1 ring-orange-500/30 scale-[1.02]"
+                          : selectedLocations.length > 0
+                            ? "bg-zinc-800/30 border-transparent hover:bg-zinc-800/50 opacity-60 hover:opacity-100"
+                            : "bg-zinc-800/50 border-transparent hover:bg-zinc-800/70"
+                      }`}
                     >
-                      <div className="text-2xl font-bold text-white">
-                        {count as number}
+                      <div className={`text-2xl font-bold ${isSelected ? "text-orange-400" : "text-white"}`}>
+                        {count}
                       </div>
-                      <div className="text-sm text-zinc-400">{location}</div>
-                      {stats.locationValues?.[location] != null && (
+                      <div className={`text-sm ${isSelected ? "text-orange-300" : "text-zinc-400"}`}>{location}</div>
+                      {value != null && (
                         <div className="text-xs text-orange-400 mt-0.5">
-                          {formatMoney(stats.locationValues[location])}
+                          {formatMoney(value)}
                         </div>
                       )}
-                    </div>
-                  ))}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )
