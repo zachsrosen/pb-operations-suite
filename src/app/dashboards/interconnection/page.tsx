@@ -749,13 +749,15 @@ export default function InterconnectionPage() {
                 <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">IC Submitted</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">IC Approved</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">PTO Status</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">PTO Submitted</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">PTO Granted</th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase">Amount</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-800">
               {filteredProjects.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-zinc-500">No projects found</td>
+                  <td colSpan={9} className="px-4 py-8 text-center text-zinc-500">No projects found</td>
                 </tr>
               ) : (
                 filteredProjects
@@ -808,6 +810,12 @@ export default function InterconnectionPage() {
                           <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getPtoStatusColor(project.ptoStatus)}`}>
                             {ptoLabel}
                           </span>
+                        </td>
+                        <td className={`px-4 py-3 text-sm ${project.ptoSubmitDate ? 'text-cyan-400' : 'text-zinc-500'}`}>
+                          {project.ptoSubmitDate || '-'}
+                        </td>
+                        <td className={`px-4 py-3 text-sm ${project.ptoGrantedDate ? 'text-emerald-400' : 'text-zinc-500'}`}>
+                          {project.ptoGrantedDate || '-'}
                         </td>
                         <td className={`px-4 py-3 text-right font-mono text-sm ${(project.amount || 0) > 0 ? 'text-green-400' : 'text-zinc-500'}`}>
                           {formatMoney(project.amount || 0)}

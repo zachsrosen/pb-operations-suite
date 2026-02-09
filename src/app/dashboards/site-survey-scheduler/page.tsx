@@ -51,6 +51,7 @@ interface SurveyProject {
   hubspotUrl: string;
   zuperJobUid?: string;
   zuperJobStatus?: string;
+  assignedSurveyor?: string; // Locally stored surveyor name from scheduling
   // Assigned slot info (if already scheduled)
   assignedSlot?: {
     userName: string;
@@ -280,6 +281,34 @@ export default function SiteSurveySchedulerPage() {
   const [availabilityByDate, setAvailabilityByDate] = useState<Record<string, DayAvailability>>({});
   const [showAvailability, setShowAvailability] = useState(true);
 
+  /* ---- surveyor assignments (stored locally) ---- */
+  const [surveyorAssignments, setSurveyorAssignments] = useState<Record<string, string>>({});
+
+  // Load surveyor assignments from localStorage on mount
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("surveyorAssignments");
+      if (stored) {
+        setSurveyorAssignments(JSON.parse(stored));
+      }
+    } catch {
+      // Ignore localStorage errors
+    }
+  }, []);
+
+  // Save surveyor assignments to localStorage when they change
+  const saveSurveyorAssignment = useCallback((projectId: string, surveyorName: string) => {
+    setSurveyorAssignments((prev) => {
+      const next = { ...prev, [projectId]: surveyorName };
+      try {
+        localStorage.setItem("surveyorAssignments", JSON.stringify(next));
+      } catch {
+        // Ignore localStorage errors
+      }
+      return next;
+    });
+  }, []);
+
   /* ---- toast ---- */
   const [toast, setToast] = useState<{ message: string; type: string } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -332,6 +361,21 @@ export default function SiteSurveySchedulerPage() {
           console.warn("Failed to lookup Zuper jobs:", zuperErr);
           // Don't fail the whole load if Zuper lookup fails
         }
+      }
+
+      // Merge locally-stored surveyor assignments into projects
+      try {
+        const stored = localStorage.getItem("surveyorAssignments");
+        if (stored) {
+          const assignments = JSON.parse(stored) as Record<string, string>;
+          for (const project of transformed) {
+            if (assignments[project.id]) {
+              project.assignedSurveyor = assignments[project.id];
+            }
+          }
+        }
+      } catch {
+        // Ignore localStorage errors
       }
 
       setProjects(transformed);
@@ -627,6 +671,17 @@ export default function SiteSurveySchedulerPage() {
       [project.id]: date,
     }));
 
+    // Store surveyor assignment locally so we can display it
+    if (slot?.userName) {
+      saveSurveyorAssignment(project.id, slot.userName);
+      // Also update the project in state immediately
+      setProjects((prev) =>
+        prev.map((p) =>
+          p.id === project.id ? { ...p, assignedSurveyor: slot.userName } : p
+        )
+      );
+    }
+
     // Track the Zuper job UID from scheduling response
     let scheduledZuperJobUid: string | undefined = project.zuperJobUid;
 
@@ -734,7 +789,7 @@ export default function SiteSurveySchedulerPage() {
     }
 
     setScheduleModal(null);
-  }, [scheduleModal, zuperConfigured, syncToZuper, showToast, fetchAvailability]);
+  }, [scheduleModal, zuperConfigured, syncToZuper, showToast, fetchAvailability, saveSurveyorAssignment]);
 
   const cancelSchedule = useCallback((projectId: string) => {
     setManualSchedules((prev) => {
@@ -1173,11 +1228,15 @@ export default function SiteSurveySchedulerPage() {
                                   setScheduleModal({ project: ev, date: dateStr, currentSlot: evSlot });
                                 }}
                                 className="text-xs p-1 rounded bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 cursor-grab hover:bg-cyan-500/30 active:cursor-grabbing"
-                                title={evSlot ? `${evSlot.userName} @ ${evSlot.displayTime}\n${ev.address || "No address"} - Click to view` : `${ev.address || "No address"} - Drag to reschedule`}
+                                title={evSlot ? `${evSlot.userName} @ ${evSlot.displayTime}\n${ev.address || "No address"} - Click to view` : `${ev.assignedSurveyor ? `Surveyor: ${ev.assignedSurveyor}\n` : ""}${ev.address || "No address"} - Drag to reschedule`}
                               >
                                 <div className="truncate">{getCustomerName(ev.name)}</div>
                                 {ev.address && <div className="text-[0.6rem] text-cyan-400/50 truncate">{ev.address}</div>}
-                                {evSlot && <div className="text-[0.6rem] text-cyan-400/60 truncate">{evSlot.userName} @ {evSlot.displayTime}</div>}
+                                {evSlot ? (
+                                  <div className="text-[0.6rem] text-cyan-400/60 truncate">{evSlot.userName} @ {evSlot.displayTime}</div>
+                                ) : ev.assignedSurveyor ? (
+                                  <div className="text-[0.6rem] text-emerald-400/70 truncate">{ev.assignedSurveyor}</div>
+                                ) : null}
                               </div>
                             );
                           })}
@@ -1295,6 +1354,7 @@ export default function SiteSurveySchedulerPage() {
                         <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Project</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Location</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Status</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Surveyor</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Scheduled</th>
                         <th className="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase">Amount</th>
                         <th className="px-4 py-3 text-center text-xs font-medium text-zinc-400 uppercase">Links</th>
@@ -1317,6 +1377,9 @@ export default function SiteSurveySchedulerPage() {
                               <span className={`text-xs px-2 py-1 rounded border ${getStatusColor(project.surveyStatus)}`}>
                                 {project.surveyStatus}
                               </span>
+                            </td>
+                            <td className="px-4 py-3 text-sm text-emerald-400">
+                              {project.assignedSurveyor || <span className="text-zinc-600">—</span>}
                             </td>
                             <td className={`px-4 py-3 text-sm ${schedDate ? "text-cyan-400" : "text-zinc-500"}`}>
                               {schedDate ? formatShortDate(schedDate) : "—"}
@@ -1521,6 +1584,14 @@ export default function SiteSurveySchedulerPage() {
                       Cancel reschedule
                     </button>
                   )}
+                </div>
+              )}
+
+              {/* Show locally stored surveyor assignment */}
+              {scheduleModal.project.assignedSurveyor && !scheduleModal.currentSlot && !scheduleModal.slot && (
+                <div className="p-2 bg-emerald-900/20 border border-emerald-500/20 rounded-lg">
+                  <span className="text-xs text-emerald-400 font-medium">Assigned Surveyor</span>
+                  <p className="text-sm text-white mt-0.5">{scheduleModal.project.assignedSurveyor}</p>
                 </div>
               )}
 

@@ -5,6 +5,7 @@ import { useActivityTracking } from "@/hooks/useActivityTracking";
 import DashboardShell from "@/components/DashboardShell";
 import { formatMoney } from "@/lib/format";
 import { RawProject } from "@/lib/types";
+import { MultiSelectFilter, ProjectSearchBar } from "@/components/ui/MultiSelectFilter";
 
 // Display name mappings for incentive status values
 const DISPLAY_NAMES: Record<string, string> = {
@@ -77,9 +78,11 @@ export default function IncentivesPage() {
   const [projects, setProjects] = useState<ExtendedProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filterProgram, setFilterProgram] = useState("all");
-  const [filterLocation, setFilterLocation] = useState("all");
-  const [filterStage, setFilterStage] = useState("all");
+  const [filterPrograms, setFilterPrograms] = useState<string[]>([]);
+  const [filterLocations, setFilterLocations] = useState<string[]>([]);
+  const [filterStages, setFilterStages] = useState<string[]>([]);
+  const [filterStatuses, setFilterStatuses] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Activity tracking
   const { trackDashboardView, trackFilter } = useActivityTracking();
@@ -116,9 +119,9 @@ export default function IncentivesPage() {
   // Track filter changes
   useEffect(() => {
     if (!loading && hasTrackedView.current) {
-      trackFilter("incentives", { program: filterProgram, location: filterLocation, stage: filterStage });
+      trackFilter("incentives", { programs: filterPrograms, locations: filterLocations, stages: filterStages });
     }
-  }, [filterProgram, filterLocation, filterStage, loading, trackFilter]);
+  }, [filterPrograms, filterLocations, filterStages, loading, trackFilter]);
 
   const hasIncentive = useCallback((p: ExtendedProject) => {
     return p.threeceEvStatus ||
@@ -141,18 +144,49 @@ export default function IncentivesPage() {
   const filteredProjects = useMemo(() => {
     return projects.filter(p => {
       if (!hasIncentive(p)) return false;
-      if (filterLocation !== 'all' && p.pbLocation !== filterLocation) return false;
-      if (filterStage !== 'all' && p.stage !== filterStage) return false;
-      if (filterProgram !== 'all') {
-        if (filterProgram === '3ce_ev' && !p.threeceEvStatus) return false;
-        if (filterProgram === '3ce_battery' && !p.threeceBatteryStatus) return false;
-        if (filterProgram === 'sgip' && !p.sgipStatus) return false;
-        if (filterProgram === 'pbsr' && !p.pbsrStatus) return false;
-        if (filterProgram === 'cpa' && !p.cpaStatus) return false;
+
+      // Location filter (multi-select)
+      if (filterLocations.length > 0 && !filterLocations.includes(p.pbLocation || '')) return false;
+
+      // Stage filter (multi-select)
+      if (filterStages.length > 0 && !filterStages.includes(p.stage || '')) return false;
+
+      // Program filter (multi-select)
+      if (filterPrograms.length > 0) {
+        const hasMatchingProgram = filterPrograms.some(prog => {
+          if (prog === '3ce_ev') return !!p.threeceEvStatus;
+          if (prog === '3ce_battery') return !!p.threeceBatteryStatus;
+          if (prog === 'sgip') return !!p.sgipStatus;
+          if (prog === 'pbsr') return !!p.pbsrStatus;
+          if (prog === 'cpa') return !!p.cpaStatus;
+          return false;
+        });
+        if (!hasMatchingProgram) return false;
       }
+
+      // Status filter (multi-select) — matches across all programs
+      if (filterStatuses.length > 0) {
+        const projectStatuses = [
+          p.threeceEvStatus,
+          p.threeceBatteryStatus,
+          p.sgipStatus,
+          p.pbsrStatus,
+          p.cpaStatus,
+        ].filter(Boolean) as string[];
+        if (!projectStatuses.some(s => filterStatuses.includes(s))) return false;
+      }
+
+      // Search filter
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        const name = (p.name || '').toLowerCase();
+        const location = (p.pbLocation || '').toLowerCase();
+        if (!name.includes(query) && !location.includes(query)) return false;
+      }
+
       return true;
     });
-  }, [projects, filterProgram, filterLocation, filterStage, hasIncentive]);
+  }, [projects, filterPrograms, filterLocations, filterStages, filterStatuses, searchQuery, hasIncentive]);
 
   const programStats = useMemo(() => {
     const stats: Record<string, ProgramStats> = {
@@ -195,18 +229,62 @@ export default function IncentivesPage() {
   }, [filteredProjects]);
 
   // Get unique values for filters
-  const locations = useMemo(() => [...new Set(projects.map(p => p.pbLocation))].filter(l => l && l !== 'Unknown').sort(), [projects]);
-  const stages = useMemo(() => {
+  const locationOptions = useMemo(() =>
+    [...new Set(projects.map(p => p.pbLocation))]
+      .filter(l => l && l !== 'Unknown')
+      .sort()
+      .map(l => ({ value: l!, label: l! })),
+    [projects]
+  );
+
+  const stageOptions = useMemo(() => {
     const STAGE_ORDER = ['Site Survey', 'Design & Engineering', 'Permitting & Interconnection', 'RTB - Blocked', 'Ready To Build', 'Construction', 'Inspection', 'Permission To Operate', 'Close Out'];
-    return [...new Set(projects.map(p => p.stage))].filter(s => s).sort((a, b) => {
-      const aIdx = STAGE_ORDER.findIndex(s => s.toLowerCase() === a.toLowerCase());
-      const bIdx = STAGE_ORDER.findIndex(s => s.toLowerCase() === b.toLowerCase());
-      if (aIdx === -1 && bIdx === -1) return a.localeCompare(b);
-      if (aIdx === -1) return 1;
-      if (bIdx === -1) return -1;
-      return aIdx - bIdx;
-    });
+    return [...new Set(projects.map(p => p.stage))]
+      .filter(s => s)
+      .sort((a, b) => {
+        const aIdx = STAGE_ORDER.findIndex(s => s.toLowerCase() === a.toLowerCase());
+        const bIdx = STAGE_ORDER.findIndex(s => s.toLowerCase() === b.toLowerCase());
+        if (aIdx === -1 && bIdx === -1) return a.localeCompare(b);
+        if (aIdx === -1) return 1;
+        if (bIdx === -1) return -1;
+        return aIdx - bIdx;
+      })
+      .map(s => ({ value: s!, label: s! }));
   }, [projects]);
+
+  const programOptions = [
+    { value: '3ce_ev', label: '3CE EV' },
+    { value: '3ce_battery', label: '3CE Battery' },
+    { value: 'sgip', label: 'SGIP' },
+    { value: 'pbsr', label: 'PBSR' },
+    { value: 'cpa', label: 'CPA' },
+  ];
+
+  // Collect all unique statuses from all incentive programs
+  const statusOptions = useMemo(() => {
+    const allStatuses = new Set<string>();
+    projects.forEach(p => {
+      if (p.threeceEvStatus) allStatuses.add(p.threeceEvStatus);
+      if (p.threeceBatteryStatus) allStatuses.add(p.threeceBatteryStatus);
+      if (p.sgipStatus) allStatuses.add(p.sgipStatus);
+      if (p.pbsrStatus) allStatuses.add(p.pbsrStatus);
+      if (p.cpaStatus) allStatuses.add(p.cpaStatus);
+    });
+    return [...allStatuses]
+      .sort()
+      .map(s => ({ value: s, label: getDisplayName(s) }));
+  }, [projects]);
+
+  const clearAllFilters = () => {
+    setFilterPrograms([]);
+    setFilterLocations([]);
+    setFilterStages([]);
+    setFilterStatuses([]);
+    setSearchQuery("");
+  };
+
+  const hasActiveFilters = filterPrograms.length > 0 || filterLocations.length > 0 ||
+    filterStages.length > 0 || filterStatuses.length > 0 || searchQuery;
 
   if (loading) {
     return (
@@ -247,39 +325,62 @@ export default function IncentivesPage() {
 
   return (
     <DashboardShell title="Incentives Dashboard" accentColor="emerald">
-      {/* Filters */}
-      <div className="flex items-center gap-3 flex-wrap mb-6">
-        <select
-          value={filterProgram}
-          onChange={(e) => setFilterProgram(e.target.value)}
-          className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
-        >
-          <option value="all">All Programs</option>
-          <option value="3ce_ev">3CE EV</option>
-          <option value="3ce_battery">3CE Battery</option>
-          <option value="sgip">SGIP</option>
-          <option value="pbsr">PBSR</option>
-          <option value="cpa">CPA</option>
-        </select>
-        <select
-          value={filterLocation}
-          onChange={(e) => setFilterLocation(e.target.value)}
-          className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
-        >
-          <option value="all">All Locations</option>
-          {locations.map(l => <option key={l} value={l}>{l}</option>)}
-        </select>
-        <select
-          value={filterStage}
-          onChange={(e) => setFilterStage(e.target.value)}
-          className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
-        >
-          <option value="all">All Stages</option>
-          {stages.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <button onClick={fetchData} className="bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded-lg text-sm font-medium">
-          Refresh
-        </button>
+      {/* Search and Filters */}
+      <div className="flex flex-col gap-4 mb-6">
+        {/* Search Bar */}
+        <div className="flex items-center gap-3">
+          <ProjectSearchBar
+            onSearch={setSearchQuery}
+            placeholder="Search by PROJ #, name, or location..."
+          />
+          <button onClick={fetchData} className="bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap">
+            Refresh
+          </button>
+        </div>
+
+        {/* Filter Row */}
+        <div className="flex items-center gap-3 flex-wrap">
+          <MultiSelectFilter
+            label="Program"
+            options={programOptions}
+            selected={filterPrograms}
+            onChange={setFilterPrograms}
+            placeholder="All Programs"
+            accentColor="emerald"
+          />
+          <MultiSelectFilter
+            label="Location"
+            options={locationOptions}
+            selected={filterLocations}
+            onChange={setFilterLocations}
+            placeholder="All Locations"
+            accentColor="blue"
+          />
+          <MultiSelectFilter
+            label="Stage"
+            options={stageOptions}
+            selected={filterStages}
+            onChange={setFilterStages}
+            placeholder="All Stages"
+            accentColor="purple"
+          />
+          <MultiSelectFilter
+            label="Status"
+            options={statusOptions}
+            selected={filterStatuses}
+            onChange={setFilterStatuses}
+            placeholder="All Statuses"
+            accentColor="orange"
+          />
+          {hasActiveFilters && (
+            <button
+              onClick={clearAllFilters}
+              className="text-xs text-zinc-400 hover:text-white px-3 py-2 border border-zinc-700 rounded-lg hover:border-zinc-600 transition-colors"
+            >
+              Clear All
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Summary Stats */}
@@ -328,8 +429,16 @@ export default function IncentivesPage() {
           return (
             <div
               key={prog.key}
-              className={`bg-[#12121a] rounded-xl border border-zinc-800 p-4 cursor-pointer transition-colors ${colorMap[prog.color]}`}
-              onClick={() => setFilterProgram(prog.key)}
+              className={`bg-[#12121a] rounded-xl border p-4 cursor-pointer transition-colors ${
+                filterPrograms.includes(prog.key) ? 'border-emerald-500 ring-1 ring-emerald-500/30' : 'border-zinc-800'
+              } ${colorMap[prog.color]}`}
+              onClick={() => {
+                if (filterPrograms.includes(prog.key)) {
+                  setFilterPrograms(filterPrograms.filter(p => p !== prog.key));
+                } else {
+                  setFilterPrograms([...filterPrograms, prog.key]);
+                }
+              }}
             >
               <div className="flex items-center justify-between mb-3">
                 <h3 className={`font-semibold ${colorMap[prog.color]}`}>{prog.name}</h3>
@@ -356,6 +465,9 @@ export default function IncentivesPage() {
       <div className="bg-[#12121a] rounded-xl border border-zinc-800 overflow-hidden">
         <div className="p-4 border-b border-zinc-800 flex items-center justify-between">
           <h2 className="text-lg font-semibold">Incentive Projects ({filteredProjects.length})</h2>
+          {hasActiveFilters && (
+            <span className="text-xs text-zinc-500">Filtered from {projects.filter(hasIncentive).length} total</span>
+          )}
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -385,6 +497,7 @@ export default function IncentivesPage() {
                           <a href={project.url} target="_blank" rel="noopener noreferrer" className="font-medium text-white hover:text-emerald-400">
                             {project.name.split('|')[0].trim()}
                           </a>
+                          <div className="text-xs text-zinc-400">{project.name.split('|')[1]?.trim() || ''}</div>
                         </td>
                         <td className="px-4 py-3 text-sm text-zinc-300">{project.pbLocation}</td>
                         <td className="px-4 py-3 text-sm text-zinc-400">{project.stage}</td>

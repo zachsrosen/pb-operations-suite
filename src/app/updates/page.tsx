@@ -15,6 +15,27 @@ interface UpdateEntry {
 
 const UPDATES: UpdateEntry[] = [
   {
+    version: "1.19.0",
+    date: "2026-02-09",
+    title: "Dashboard Enhancements & Zuper Improvements",
+    description: "New columns across dashboards, improved Zuper job matching, surveyor tracking, and multi-select filters on the Incentives dashboard.",
+    changes: [
+      { type: "feature", text: "Incentives dashboard: multi-select filters for Program, Location, Stage, and Status with search bar" },
+      { type: "feature", text: "Interconnection dashboard: PTO Submitted and PTO Granted date columns" },
+      { type: "feature", text: "Design dashboard: Project Type and Tags columns" },
+      { type: "feature", text: "Site Survey Scheduler: assigned surveyor stored locally and displayed in list view, calendar, and modal" },
+      { type: "feature", text: "Customer names added to all 5 department dashboards (Construction, Site Survey, Design, Permitting, Interconnection)" },
+      { type: "improvement", text: "Zuper job matching rewritten with multi-factor scoring (DB cache > Deal ID > tag > name + address)" },
+      { type: "improvement", text: "Zuper job lookup prioritizes active/scheduled jobs over completed ones" },
+      { type: "improvement", text: "Activity logs now include assigned user name in metadata" },
+      { type: "fix", text: "Fixed Zuper job linking to incorrect jobs for customers with common last names" },
+      { type: "fix", text: "Fixed project name delimiter issue causing misaligned Zuper lookups (commas in customer names)" },
+      { type: "fix", text: "Fixed main page 'Failed to load data' error with slim API responses and fallback" },
+      { type: "fix", text: "Fixed equipment backlog missing battery-only and EV-only projects" },
+      { type: "fix", text: "Increased Vercel function timeout from 30s to 60s for cold-start reliability" },
+    ],
+  },
+  {
     version: "1.18.0",
     date: "2026-02-08",
     title: "Dynamic Status Filters & Multi-Select",

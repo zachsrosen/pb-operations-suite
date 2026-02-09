@@ -513,7 +513,7 @@ async function logSchedulingActivity(
   description: string,
   project: { id: string; name?: string },
   zuperJobId?: string,
-  schedule?: { type: string; date: string; crew?: string }
+  schedule?: { type: string; date: string; crew?: string; assignedUser?: string }
 ) {
   try {
     const session = await auth();
@@ -546,6 +546,7 @@ async function logSchedulingActivity(
         scheduleType: schedule?.type,
         scheduleDate: schedule?.date,
         crew: schedule?.crew,
+        assignedUser: schedule?.assignedUser,
       },
       ipAddress,
       userAgent,

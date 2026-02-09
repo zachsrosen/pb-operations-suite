@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ZuperClient, ZuperJob } from "@/lib/zuper";
+import { getCachedZuperJobsByDealIds } from "@/lib/db";
 
 /**
  * GET /api/zuper/jobs/lookup
@@ -156,7 +157,7 @@ export async function GET(request: NextRequest) {
   try {
     type JobMatch = {
       job: ZuperJob;
-      matchMethod: "hubspot_deal_id" | "tag" | "name";
+      matchMethod: "db_cache" | "hubspot_deal_id" | "tag" | "name";
       methodScore: number; // higher = more reliable match method
       statusScore: number; // higher = more active job
       addressScore: number; // higher = better address match
@@ -171,7 +172,28 @@ export async function GET(request: NextRequest) {
       allCandidates[projectId].push(match);
     };
 
-    // Search for jobs
+    // --- Pass 0: Database cache (most reliable — set when jobs are scheduled through the app) ---
+    try {
+      const categoryForDb = targetCategory || undefined;
+      const cachedJobs = await getCachedZuperJobsByDealIds(projectIds, categoryForDb);
+      for (const cached of cachedJobs) {
+        if (cached.hubspotDealId && cached.jobUid) {
+          addCandidate(cached.hubspotDealId, {
+            job: { job_uid: cached.jobUid, job_title: cached.jobTitle, status: cached.jobStatus } as ZuperJob,
+            matchMethod: "db_cache",
+            methodScore: 200, // Highest priority — direct DB mapping from scheduling
+            statusScore: getStatusScore({ status: cached.jobStatus } as ZuperJob),
+            addressScore: 0,
+            categoryName: cached.jobCategory,
+          });
+          console.log(`Zuper: DB cache hit for project ${cached.hubspotDealId} → job ${cached.jobUid}`);
+        }
+      }
+    } catch (dbErr) {
+      console.warn("Zuper: DB cache lookup failed, falling back to API:", dbErr);
+    }
+
+    // --- Zuper API search (for projects not found in DB cache) ---
     const result = await zuper.searchJobs({
       limit: 500,
       from_date: new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],

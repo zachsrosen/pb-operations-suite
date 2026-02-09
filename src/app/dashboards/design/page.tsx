@@ -50,6 +50,7 @@ interface ExtendedProject extends RawProject {
   layoutStatus?: string; // This is Design Approval Status in HubSpot
   designCompletionDate?: string;
   designApprovalDate?: string;
+  tags?: string[];
 }
 
 // Design Status Groups
@@ -684,13 +685,15 @@ export default function DesignEngineeringPage() {
                 <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Design Approval</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Design Complete</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Design Approved</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Type</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Tags</th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase">Amount</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-800">
               {filteredProjects.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-zinc-500">No projects found</td>
+                  <td colSpan={9} className="px-4 py-8 text-center text-zinc-500">No projects found</td>
                 </tr>
               ) : (
                 filteredProjects
@@ -733,6 +736,25 @@ export default function DesignEngineeringPage() {
                       </td>
                       <td className={`px-4 py-3 text-sm ${project.designApprovalDate ? 'text-emerald-400' : 'text-zinc-500'}`}>
                         {project.designApprovalDate || '-'}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-zinc-300">
+                        {project.projectType || '-'}
+                      </td>
+                      <td className="px-4 py-3">
+                        {project.tags && project.tags.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {project.tags.map((tag, idx) => (
+                              <span
+                                key={idx}
+                                className="inline-flex items-center px-1.5 py-0.5 rounded text-[0.65rem] font-medium bg-indigo-500/15 text-indigo-300 border border-indigo-500/20"
+                              >
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-zinc-500">-</span>
+                        )}
                       </td>
                       <td className={`px-4 py-3 text-right font-mono text-sm ${(project.amount || 0) > 0 ? 'text-green-400' : 'text-zinc-500'}`}>
                         {formatMoney(project.amount || 0)}
