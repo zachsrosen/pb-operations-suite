@@ -73,6 +73,20 @@ export async function GET(request: NextRequest) {
     return dealIdField?.value || null;
   };
 
+  // Helper to extract assigned user name from a Zuper job
+  // Zuper GET response format: assigned_to: [{ user: { first_name, last_name, user_uid } }]
+  const getAssignedUserName = (job: ZuperJob): string | undefined => {
+    if (!job.assigned_to || !Array.isArray(job.assigned_to) || job.assigned_to.length === 0) return undefined;
+    const firstAssignment = job.assigned_to[0];
+    // Handle GET response format: { user: { first_name, last_name } }
+    if (typeof firstAssignment === 'object' && 'user' in firstAssignment) {
+      const user = (firstAssignment as { user: { first_name?: string; last_name?: string } }).user;
+      const name = [user.first_name, user.last_name].filter(Boolean).join(' ');
+      return name || undefined;
+    }
+    return undefined;
+  };
+
   // Completed/closed statuses that should be deprioritized
   const COMPLETED_STATUSES = new Set([
     "completed", "complete", "closed", "cancelled", "canceled",
@@ -274,6 +288,7 @@ export async function GET(request: NextRequest) {
       scheduledDate?: string;
       category?: string;
       matchedBy?: string;
+      assignedTo?: string;
     }> = {};
 
     for (const [projectId, candidates] of Object.entries(allCandidates)) {
@@ -303,6 +318,7 @@ export async function GET(request: NextRequest) {
         ` (status: ${best.job.status}, statusScore: ${best.statusScore}, candidates: ${totalCandidates}, category: ${best.categoryName})`
       );
 
+      const assignedUser = getAssignedUserName(best.job);
       jobsMap[projectId] = {
         jobUid: best.job.job_uid!,
         jobTitle: best.job.job_title || "",
@@ -310,6 +326,7 @@ export async function GET(request: NextRequest) {
         scheduledDate: best.job.scheduled_start_time,
         category: best.categoryName,
         matchedBy: best.matchMethod,
+        ...(assignedUser && { assignedTo: assignedUser }),
       };
     }
 

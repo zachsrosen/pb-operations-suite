@@ -347,12 +347,16 @@ export default function SiteSurveySchedulerPage() {
           if (zuperResponse.ok) {
             const zuperData = await zuperResponse.json();
             if (zuperData.jobs) {
-              // Merge Zuper job UIDs into projects
+              // Merge Zuper job UIDs and assigned users into projects
               for (const project of transformed) {
                 const zuperJob = zuperData.jobs[project.id];
                 if (zuperJob) {
                   project.zuperJobUid = zuperJob.jobUid;
                   project.zuperJobStatus = zuperJob.status;
+                  // Use Zuper's assigned user as the primary source of truth
+                  if (zuperJob.assignedTo) {
+                    project.assignedSurveyor = zuperJob.assignedTo;
+                  }
                 }
               }
             }
@@ -363,13 +367,13 @@ export default function SiteSurveySchedulerPage() {
         }
       }
 
-      // Merge locally-stored surveyor assignments into projects
+      // Merge locally-stored surveyor assignments into projects (only if not already set by Zuper)
       try {
         const stored = localStorage.getItem("surveyorAssignments");
         if (stored) {
           const assignments = JSON.parse(stored) as Record<string, string>;
           for (const project of transformed) {
-            if (assignments[project.id]) {
+            if (!project.assignedSurveyor && assignments[project.id]) {
               project.assignedSurveyor = assignments[project.id];
             }
           }

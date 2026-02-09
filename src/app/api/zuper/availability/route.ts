@@ -479,19 +479,20 @@ export async function GET(request: NextRequest) {
 
             // If we have a valid start time, mark that slot as booked from Zuper
             if (startTime) {
-              // Get assigned user's name from the job
-              // Zuper assigned_to is an array of { user: { first_name, last_name } }
+              // Get assigned user's info from the job
+              // Zuper assigned_to is an array of { user: { first_name, last_name, user_uid } }
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               const assignedUserData = (job as any).assigned_to?.[0]?.user;
               const assignedUserName = assignedUserData
                 ? `${assignedUserData.first_name || ""} ${assignedUserData.last_name || ""}`.trim()
                 : "";
+              const assignedUserUid = assignedUserData?.user_uid || "";
 
               // Log for debugging
               console.log(`[Zuper Availability] Job: ${job.job_title}`);
               console.log(`[Zuper Availability] Scheduled UTC: ${job.scheduled_start_time}`);
               console.log(`[Zuper Availability] Local date: ${dateStr}, Local time: ${startTime}`);
-              console.log(`[Zuper Availability] Assigned user from Zuper: "${assignedUserName}"`);
+              console.log(`[Zuper Availability] Assigned user from Zuper: "${assignedUserName}" (uid: ${assignedUserUid})`);
 
               // Try to match this scheduled job to an availability slot and mark it booked
               const slotStartTime = startTime; // Already in HH:00 format
@@ -499,16 +500,26 @@ export async function GET(request: NextRequest) {
               // Find matching crew member - ONLY if we know who it's assigned to
               // Don't auto-match unassigned jobs to random slots
               let matchingSlot = null;
-              if (assignedUserName) {
-                // Try to find a slot for this specific user at this time
-                // Match by first name (case insensitive)
-                const firstName = assignedUserName.split(" ")[0].toLowerCase();
-                matchingSlot = availabilityByDate[dateStr].availableSlots.find(
-                  slot => slot.start_time === slotStartTime &&
-                    slot.user_name?.toLowerCase().includes(firstName)
-                );
-                console.log(`[Zuper Availability] Looking for slot at ${slotStartTime} for user containing "${firstName}"`);
-                console.log(`[Zuper Availability] Available slots for this date:`, availabilityByDate[dateStr].availableSlots.map(s => `${s.user_name} @ ${s.start_time}`));
+              if (assignedUserUid || assignedUserName) {
+                // Primary: match by user UID (most reliable — handles nickname mismatches like "Rich" vs "Ryszard")
+                if (assignedUserUid) {
+                  matchingSlot = availabilityByDate[dateStr].availableSlots.find(
+                    slot => slot.start_time === slotStartTime && slot.user_uid === assignedUserUid
+                  );
+                  console.log(`[Zuper Availability] UID match for ${assignedUserUid}: ${matchingSlot ? `${matchingSlot.user_name} @ ${matchingSlot.start_time}` : "none"}`);
+                }
+
+                // Fallback: match by first name (case insensitive)
+                if (!matchingSlot && assignedUserName) {
+                  const firstName = assignedUserName.split(" ")[0].toLowerCase();
+                  matchingSlot = availabilityByDate[dateStr].availableSlots.find(
+                    slot => slot.start_time === slotStartTime &&
+                      slot.user_name?.toLowerCase().includes(firstName)
+                  );
+                  console.log(`[Zuper Availability] Name match for "${firstName}": ${matchingSlot ? `${matchingSlot.user_name} @ ${matchingSlot.start_time}` : "none"}`);
+                }
+
+                console.log(`[Zuper Availability] Available slots for this date:`, availabilityByDate[dateStr].availableSlots.map(s => `${s.user_name} (${s.user_uid}) @ ${s.start_time}`));
               } else {
                 // Job is not assigned to anyone - don't auto-match to a random slot
                 // This prevents showing "Drew" when Joe was selected but assignment failed
