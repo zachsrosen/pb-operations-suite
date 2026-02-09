@@ -90,6 +90,12 @@ const ZUPER_USER_UIDS: Record<string, { userUid: string; teamUid?: string }> = {
   "Rich": { userUid: "e043bf1d-006b-4033-a46e-3b5d06ed3d00", teamUid: ZUPER_TEAM_UIDS.Westminster }, // Ryszard Szymanski - Westminster team
 };
 
+// Reverse lookup: Zuper user UID → display name used in crew schedules
+const ZUPER_UID_TO_DISPLAY_NAME: Record<string, string> = {};
+for (const [name, { userUid }] of Object.entries(ZUPER_USER_UIDS)) {
+  ZUPER_UID_TO_DISPLAY_NAME[userUid] = name;
+}
+
 const CREW_SCHEDULES: CrewSchedule[] = [
   // Site Surveyors
   {
@@ -544,6 +550,30 @@ export async function GET(request: NextRequest) {
                   });
                   console.log(`[Zuper Availability] Booked slot: ${key}`);
                 }
+              } else if (assignedUserUid || assignedUserName) {
+                // No matching availability slot found, but the job IS assigned and scheduled in Zuper.
+                // This happens when the job is on a day/time outside the crew's configured schedule
+                // (e.g. job at a different location, or an ad-hoc booking).
+                // We still need to block this slot so it shows on the calendar.
+                const displayName = (assignedUserUid && ZUPER_UID_TO_DISPLAY_NAME[assignedUserUid]) || assignedUserName;
+                const startHour = parseInt(slotStartTime.split(":")[0]);
+                const endTime = `${(startHour + 1).toString().padStart(2, "0")}:00`;
+                const key = getSlotKey(dateStr, displayName, slotStartTime);
+                if (!bookedSlots.has(key)) {
+                  bookedSlots.set(key, {
+                    date: dateStr,
+                    startTime: slotStartTime,
+                    endTime,
+                    userName: displayName,
+                    location: "",
+                    projectId: job.job_uid || "",
+                    projectName: job.job_title,
+                    bookedAt: new Date().toISOString(),
+                  });
+                  // Also inject this as a booked slot in the day's data so the frontend sees it
+                  // even if there was no pre-existing availability slot for this user/time
+                  console.log(`[Zuper Availability] Injected booked slot for ${displayName} @ ${slotStartTime} (no configured schedule slot): ${key}`);
+                }
               } else {
                 console.log(`[Zuper Availability] No matching slot found for ${dateStr} at ${slotStartTime}`);
               }
@@ -567,10 +597,14 @@ export async function GET(request: NextRequest) {
       projectName?: string;
     }> = [];
 
+    // Track which bookings were matched against an availability slot
+    const matchedBookingKeys = new Set<string>();
+
     day.availableSlots = day.availableSlots.filter((slot) => {
       const key = getSlotKey(dateStr, slot.user_name || "", slot.start_time);
       const booking = bookedSlots.get(key);
       if (booking) {
+        matchedBookingKeys.add(key);
         // Add to booked list for display
         booked.push({
           start_time: slot.start_time,
@@ -585,6 +619,22 @@ export async function GET(request: NextRequest) {
       }
       return true;
     });
+
+    // Also add injected Zuper bookings that had no matching availability slot
+    // (e.g. jobs on days/times outside the configured crew schedule, or at different locations)
+    for (const [key, booking] of bookedSlots.entries()) {
+      if (booking.date === dateStr && !matchedBookingKeys.has(key)) {
+        booked.push({
+          start_time: booking.startTime,
+          end_time: booking.endTime,
+          display_time: `${formatTimeForDisplay(booking.startTime)}-${formatTimeForDisplay(booking.endTime)}`,
+          user_name: booking.userName,
+          location: booking.location,
+          projectId: booking.projectId,
+          projectName: booking.projectName,
+        });
+      }
+    }
 
     // Add booked slots to the day data
     // @ts-expect-error - adding bookedSlots to response
