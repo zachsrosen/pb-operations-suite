@@ -236,7 +236,8 @@ function transformProject(p: RawProject): SurveyProject | null {
     closeDate: p.closeDate || null,
     hubspotUrl: p.url || `https://app.hubspot.com/contacts/21710069/record/0-3/${p.id}`,
     dealOwner: p.dealOwner || "",
-    assignedSurveyor: p.siteSurveyor || undefined, // Pre-populate from HubSpot if set
+    // Pre-populate from HubSpot if set (skip numeric-only values — those are unresolved enum IDs)
+    assignedSurveyor: (p.siteSurveyor && !/^\d+$/.test(p.siteSurveyor)) ? p.siteSurveyor : undefined,
   };
 }
 
@@ -499,9 +500,10 @@ export default function SiteSurveySchedulerPage() {
   );
 
   // Dynamic surveyor options (from all sources: Zuper, localStorage, HubSpot)
+  // Filter out purely numeric values (enum IDs that weren't resolved)
   const surveyorOptions = useMemo(
     () =>
-      [...new Set(projects.map((p) => p.assignedSurveyor).filter((s): s is string => !!s))]
+      [...new Set(projects.map((p) => p.assignedSurveyor).filter((s): s is string => !!s && !/^\d+$/.test(s)))]
         .sort()
         .map((s) => ({ value: s, label: s })),
     [projects]

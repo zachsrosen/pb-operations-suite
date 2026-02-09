@@ -410,7 +410,7 @@ function calculatePriorityScore(
   return Math.round(score * 10) / 10;
 }
 
-function transformDealToProject(deal: Record<string, unknown>, portalId: string, ownerMap?: Record<string, string>): Project {
+function transformDealToProject(deal: Record<string, unknown>, portalId: string, ownerMap?: Record<string, string>, surveyorMap?: Record<string, string>): Project {
   const now = new Date();
   const closeDate = deal.closedate ? new Date(deal.closedate as string) : null;
   const stageId = String(deal.dealstage || "");
@@ -599,7 +599,13 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
     projectManager: String(deal.project_manager || ""),
     operationsManager: String(deal.operations_manager || ""),
     dealOwner: ownerMap?.[String(deal.hubspot_owner_id || "")] || "",
-    siteSurveyor: String(deal.site_surveyor || ""),
+    siteSurveyor: (() => {
+      const raw = String(deal.site_surveyor || "");
+      if (!raw) return "";
+      // If surveyorMap exists and has a mapping, use the label; otherwise use the raw value
+      // This handles both enum (ID→label) and text (raw name) properties
+      return surveyorMap?.[raw] || raw;
+    })(),
   };
 }
 
@@ -638,24 +644,48 @@ export async function fetchAllProjects(options?: {
   } while (after);
 
   // Resolve HubSpot owner IDs to names
-  const ownerIds = [...new Set(
-    allDeals.map(d => String(d.hubspot_owner_id || "")).filter(Boolean)
-  )];
   const ownerMap: Record<string, string> = {};
-  if (ownerIds.length > 0) {
-    try {
-      const ownersResponse = await hubspotClient.crm.owners.ownersApi.getPage(undefined, undefined, 500);
+  try {
+    let ownerAfter: string | undefined;
+    do {
+      const ownersResponse = await hubspotClient.crm.owners.ownersApi.getPage(
+        undefined, ownerAfter, 500, false
+      );
       for (const owner of ownersResponse.results || []) {
         const name = [owner.firstName, owner.lastName].filter(Boolean).join(" ");
-        if (owner.id && name) ownerMap[owner.id] = name;
+        if (name) {
+          // Map by owner ID (primary key used in hubspot_owner_id)
+          if (owner.id) ownerMap[owner.id] = name;
+          // Also map by userId (some deals may use this format)
+          if (owner.userId) ownerMap[String(owner.userId)] = name;
+        }
       }
-    } catch (err) {
-      console.warn("Failed to fetch HubSpot owners:", err);
+      ownerAfter = ownersResponse.paging?.next?.after;
+    } while (ownerAfter);
+    console.log(`[HubSpot] Loaded ${Object.keys(ownerMap).length} owner mappings`);
+  } catch (err) {
+    console.warn("Failed to fetch HubSpot owners:", err);
+  }
+
+  // Resolve site_surveyor enum values to labels (if it's a dropdown/enum property)
+  const surveyorMap: Record<string, string> = {};
+  try {
+    const propResponse = await hubspotClient.crm.properties.coreApi.getByName("deals", "site_surveyor");
+    if (propResponse.options && propResponse.options.length > 0) {
+      for (const opt of propResponse.options) {
+        if (opt.value && opt.label) {
+          surveyorMap[opt.value] = opt.label;
+        }
+      }
+      console.log(`[HubSpot] Loaded ${Object.keys(surveyorMap).length} site_surveyor option mappings`);
     }
+  } catch (err) {
+    // Property might not exist or might be a text field — that's OK
+    console.log(`[HubSpot] site_surveyor property lookup:`, err instanceof Error ? err.message : err);
   }
 
   // Transform deals to projects
-  let projects = allDeals.map((deal) => transformDealToProject(deal, portalId, ownerMap));
+  let projects = allDeals.map((deal) => transformDealToProject(deal, portalId, ownerMap, surveyorMap));
 
   // Apply filters
   if (options?.activeOnly) {
