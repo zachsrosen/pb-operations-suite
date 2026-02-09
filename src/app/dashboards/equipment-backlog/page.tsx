@@ -48,6 +48,7 @@ export default function EquipmentBacklogPage() {
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
 
   // Filters
@@ -64,13 +65,17 @@ export default function EquipmentBacklogPage() {
 
   const fetchData = useCallback(async () => {
     try {
-      const res = await fetch("/api/projects?context=equipment&limit=0");
+      const res = await fetch(
+        "/api/projects?context=equipment&limit=0&fields=id,name,projectNumber,pbLocation,stage,amount,equipment,address,city"
+      );
       if (!res.ok) throw new Error("Failed to fetch");
       const data = await res.json();
       setProjects(data.projects || []);
       setLastUpdated(data.lastUpdated || null);
+      setError(null);
     } catch (err) {
       console.error("Equipment backlog fetch error:", err);
+      setError("Failed to load equipment data. Please try refreshing.");
     } finally {
       setLoading(false);
     }
@@ -310,6 +315,22 @@ export default function EquipmentBacklogPage() {
       <DashboardShell title="Equipment Backlog" accentColor="cyan">
         <div className="flex items-center justify-center py-20">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-400" />
+        </div>
+      </DashboardShell>
+    );
+  }
+
+  if (error) {
+    return (
+      <DashboardShell title="Equipment Backlog" accentColor="cyan">
+        <div className="flex flex-col items-center justify-center py-20 gap-4">
+          <p className="text-red-400">{error}</p>
+          <button
+            onClick={() => { setLoading(true); setError(null); fetchData(); }}
+            className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-sm transition-colors"
+          >
+            Retry
+          </button>
         </div>
       </DashboardShell>
     );

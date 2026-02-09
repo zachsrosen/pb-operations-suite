@@ -234,7 +234,7 @@ export default function ConstructionSchedulerPage() {
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch("/api/projects?context=scheduling");
+      const response = await fetch("/api/projects?context=scheduling&fields=id,name,address,city,state,pbLocation,amount,projectType,stage,url,constructionScheduleDate,constructionStatus,constructionCompleteDate,closeDate,equipment,installCrew,projectNumber");
       if (!response.ok) throw new Error("Failed to fetch projects");
       const data = await response.json();
       const transformed = data.projects
