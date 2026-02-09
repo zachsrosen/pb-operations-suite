@@ -86,44 +86,92 @@ const ALL_DASHBOARDS: DashboardLinkData[] = [
 
 // ---- Main page ----
 
+// Lightweight project shape for client-side stats
+interface ProjectRecord {
+  stage: string;
+  amount: number;
+  pbLocation: string;
+  isParticipateEnergy: boolean;
+  isRtb: boolean;
+  isBlocked: boolean;
+}
+
+function computeStats(projects: ProjectRecord[]): Stats {
+  const totalValue = projects.reduce((s, p) => s + p.amount, 0);
+  const pe = projects.filter((p) => p.isParticipateEnergy);
+  const rtb = projects.filter((p) => p.isRtb);
+  const blocked = projects.filter((p) => p.isBlocked);
+  const construction = projects.filter((p) => p.stage === "Construction");
+  const inspection = projects.filter((p) => p.stage === "Inspection");
+  const pto = projects.filter((p) => p.stage === "Permission To Operate");
+
+  const locationCounts: Record<string, number> = {};
+  const locationValues: Record<string, number> = {};
+  const stageCounts: Record<string, number> = {};
+  const stageValues: Record<string, number> = {};
+
+  for (const p of projects) {
+    locationCounts[p.pbLocation] = (locationCounts[p.pbLocation] || 0) + 1;
+    locationValues[p.pbLocation] = (locationValues[p.pbLocation] || 0) + p.amount;
+    stageCounts[p.stage] = (stageCounts[p.stage] || 0) + 1;
+    stageValues[p.stage] = (stageValues[p.stage] || 0) + p.amount;
+  }
+
+  return {
+    totalProjects: projects.length,
+    totalValue,
+    peCount: pe.length,
+    peValue: pe.reduce((s, p) => s + p.amount, 0),
+    rtbCount: rtb.length,
+    rtbValue: rtb.reduce((s, p) => s + p.amount, 0),
+    blockedCount: blocked.length,
+    blockedValue: blocked.reduce((s, p) => s + p.amount, 0),
+    constructionCount: construction.length,
+    constructionValue: construction.reduce((s, p) => s + p.amount, 0),
+    inspectionBacklog: inspection.length,
+    inspectionValue: inspection.reduce((s, p) => s + p.amount, 0),
+    ptoBacklog: pto.length,
+    ptoValue: pto.reduce((s, p) => s + p.amount, 0),
+    locationCounts,
+    locationValues,
+    stageCounts,
+    stageValues,
+    totalSystemSizeKw: 0,
+    totalBatteryKwh: 0,
+    lastUpdated: new Date().toISOString(),
+  };
+}
+
 export default function Home() {
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [unfilteredLocationCounts, setUnfilteredLocationCounts] = useState<Record<string, number>>({});
-  const [unfilteredLocationValues, setUnfilteredLocationValues] = useState<Record<string, number>>({});
-  const [allLocations, setAllLocations] = useState<string[]>([]);
+  const [rawProjects, setRawProjects] = useState<ProjectRecord[]>([]);
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
-  const selectedLocationsRef = useRef<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isStale, setIsStale] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const { favorites, toggleFavorite, isFavorite } = useFavorites();
   const isMac = useIsMac();
   const modKey = isMac ? "\u2318" : "Ctrl";
 
-  // Stable fetch function that reads locations from ref (no dependency on selectedLocations)
-  const loadStats = useCallback(async (locsOverride?: string[]) => {
+  // Fetch raw projects once — stats computed client-side for instant filtering
+  const loadProjects = useCallback(async () => {
     try {
-      const activeLocs = locsOverride ?? selectedLocationsRef.current;
-      let url = "/api/projects?stats=true&context=executive";
-      if (activeLocs.length > 0) {
-        url += `&locations=${encodeURIComponent(activeLocs.join(","))}`;
-      }
-      const res = await fetch(url);
+      const res = await fetch("/api/projects?context=executive&limit=0");
       if (!res.ok) throw new Error("Failed to fetch");
       const data = await res.json();
-      setStats(data.stats);
+      setRawProjects(
+        (data.projects || []).map((p: Record<string, unknown>) => ({
+          stage: p.stage || "",
+          amount: p.amount || 0,
+          pbLocation: p.pbLocation || "Unknown",
+          isParticipateEnergy: !!p.isParticipateEnergy,
+          isRtb: !!p.isRtb,
+          isBlocked: !!p.isBlocked,
+        }))
+      );
       setIsStale(data.stale || false);
+      setLastUpdated(data.lastUpdated || null);
       setError(null);
-
-      // Populate all-locations list from unfiltered data (only on first load)
-      if (activeLocs.length === 0 && data.stats?.locationCounts) {
-        const locations = Object.keys(data.stats.locationCounts)
-          .filter((l) => l && l !== "Unknown")
-          .sort();
-        setAllLocations(locations);
-        setUnfilteredLocationCounts(data.stats.locationCounts);
-        setUnfilteredLocationValues(data.stats.locationValues || {});
-      }
     } catch (err) {
       setError("Failed to load data");
       console.error(err);
@@ -133,32 +181,42 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    loadStats();
-    const interval = setInterval(() => loadStats(), 5 * 60 * 1000);
+    loadProjects();
+    const interval = setInterval(loadProjects, 5 * 60 * 1000);
     return () => clearInterval(interval);
-  }, [loadStats]);
+  }, [loadProjects]);
 
-  const { connected, reconnecting } = useSSE(loadStats);
+  const { connected, reconnecting } = useSSE(loadProjects);
 
-  const toggleLocation = useCallback(
-    (loc: string) => {
-      setSelectedLocations((prev) => {
-        const next = prev.includes(loc)
-          ? prev.filter((l) => l !== loc)
-          : [...prev, loc];
-        selectedLocationsRef.current = next;
-        loadStats(next);
-        return next;
-      });
-    },
-    [loadStats]
+  // All locations (from unfiltered data)
+  const allLocations = useMemo(
+    () =>
+      [...new Set(rawProjects.map((p) => p.pbLocation))]
+        .filter((l) => l && l !== "Unknown")
+        .sort(),
+    [rawProjects]
   );
+
+  // Unfiltered stats for location cards (always show full counts)
+  const unfilteredStats = useMemo(() => computeStats(rawProjects), [rawProjects]);
+
+  // Filtered projects & stats — instant, no API call
+  const stats = useMemo(() => {
+    if (selectedLocations.length === 0) return unfilteredStats;
+    const locSet = new Set(selectedLocations);
+    const filtered = rawProjects.filter((p) => locSet.has(p.pbLocation));
+    return computeStats(filtered);
+  }, [rawProjects, selectedLocations, unfilteredStats]);
+
+  const toggleLocation = useCallback((loc: string) => {
+    setSelectedLocations((prev) =>
+      prev.includes(loc) ? prev.filter((l) => l !== loc) : [...prev, loc]
+    );
+  }, []);
 
   const clearLocations = useCallback(() => {
     setSelectedLocations([]);
-    selectedLocationsRef.current = [];
-    loadStats([]);
-  }, [loadStats]);
+  }, []);
 
   const favoriteDashboards = ALL_DASHBOARDS.filter((d) =>
     favorites.includes(d.href)
@@ -284,8 +342,8 @@ export default function Home() {
                 ? "Loading..."
                 : error
                   ? error
-                  : stats?.lastUpdated
-                    ? `Last updated: ${new Date(stats.lastUpdated).toLocaleString()}`
+                  : lastUpdated
+                    ? `Last updated: ${new Date(lastUpdated).toLocaleString()}`
                     : ""}
             </span>
 
@@ -469,8 +527,8 @@ export default function Home() {
               <p className="text-xs text-zinc-500 mb-3">Click a location to filter all data above</p>
               <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                 {allLocations.map((location) => {
-                  const count = unfilteredLocationCounts[location] || 0;
-                  const value = unfilteredLocationValues[location];
+                  const count = unfilteredStats.locationCounts[location] || 0;
+                  const value = unfilteredStats.locationValues[location];
                   const isSelected = selectedLocations.includes(location);
                   return (
                     <button
