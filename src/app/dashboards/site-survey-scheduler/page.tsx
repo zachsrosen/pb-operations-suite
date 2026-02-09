@@ -263,8 +263,6 @@ export default function SiteSurveySchedulerPage() {
   /* ---- filters ---- */
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
   const [filterStatuses, setFilterStatuses] = useState<string[]>([]);
-  const [filterOwners, setFilterOwners] = useState<string[]>([]);
-  const [filterSurveyors, setFilterSurveyors] = useState<string[]>([]);
   const [searchText, setSearchText] = useState("");
   const [sortBy, setSortBy] = useState("amount");
 
@@ -490,31 +488,11 @@ export default function SiteSurveySchedulerPage() {
     [projects]
   );
 
-  // Dynamic deal owner options
-  const ownerOptions = useMemo(
-    () =>
-      [...new Set(projects.map((p) => p.dealOwner).filter(Boolean))]
-        .sort()
-        .map((o) => ({ value: o, label: o })),
-    [projects]
-  );
-
-  // Dynamic surveyor options (from all sources: Zuper, localStorage, HubSpot)
-  const surveyorOptions = useMemo(
-    () =>
-      [...new Set(projects.map((p) => p.assignedSurveyor).filter((s): s is string => !!s))]
-        .sort()
-        .map((s) => ({ value: s, label: s })),
-    [projects]
-  );
-
   const filteredProjects = useMemo(() => {
     let filtered = projects.filter((p) => {
       // Multi-select location filter - if any selected, filter by them
       if (selectedLocations.length > 0 && !selectedLocations.includes(p.location)) return false;
       if (filterStatuses.length > 0 && !filterStatuses.includes(p.surveyStatus)) return false;
-      if (filterOwners.length > 0 && !filterOwners.includes(p.dealOwner)) return false;
-      if (filterSurveyors.length > 0 && (!p.assignedSurveyor || !filterSurveyors.includes(p.assignedSurveyor))) return false;
       if (searchText &&
           !p.name.toLowerCase().includes(searchText.toLowerCase()) &&
           !p.address.toLowerCase().includes(searchText.toLowerCase())) return false;
@@ -532,7 +510,7 @@ export default function SiteSurveySchedulerPage() {
       filtered.sort((a, b) => a.surveyStatus.localeCompare(b.surveyStatus));
     }
     return filtered;
-  }, [projects, selectedLocations, filterStatuses, filterOwners, filterSurveyors, searchText, sortBy, manualSchedules]);
+  }, [projects, selectedLocations, filterStatuses, searchText, sortBy, manualSchedules]);
 
   const unscheduledProjects = useMemo(() => {
     return filteredProjects.filter(p =>
@@ -1032,24 +1010,6 @@ export default function SiteSurveySchedulerPage() {
               onChange={setFilterStatuses}
               placeholder="All Statuses"
               accentColor="cyan"
-            />
-
-            <MultiSelectFilter
-              label="Deal Owner"
-              options={ownerOptions}
-              selected={filterOwners}
-              onChange={setFilterOwners}
-              placeholder="All Owners"
-              accentColor="violet"
-            />
-
-            <MultiSelectFilter
-              label="Surveyor"
-              options={surveyorOptions}
-              selected={filterSurveyors}
-              onChange={setFilterSurveyors}
-              placeholder="All Surveyors"
-              accentColor="emerald"
             />
 
             <select
