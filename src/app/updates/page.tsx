@@ -15,6 +15,19 @@ interface UpdateEntry {
 
 const UPDATES: UpdateEntry[] = [
   {
+    version: "1.18.0",
+    date: "2026-02-08",
+    title: "Dynamic Status Filters & Multi-Select",
+    description: "All scheduler status filters now pull values directly from HubSpot data and support multi-select.",
+    changes: [
+      { type: "feature", text: "Multi-select status filters on Construction, Inspection, and Site Survey schedulers" },
+      { type: "improvement", text: "Status filter options are now dynamically generated from actual project data instead of hardcoded lists" },
+      { type: "fix", text: "Fixed construction scheduler status filter showing inaccurate/mismatched options" },
+      { type: "fix", text: "Fixed inspection scheduler status filter not matching HubSpot values" },
+      { type: "fix", text: "Fixed site survey scheduler status filter with stale hardcoded values" },
+    ],
+  },
+  {
     version: "1.17.0",
     date: "2026-02-08",
     title: "Equipment Backlog Dashboard & Location Filtering",

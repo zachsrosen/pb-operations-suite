@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import Link from "next/link";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -102,13 +103,7 @@ const MONTH_NAMES = [
 
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-const INSTALL_STATUSES = [
-  "Ready to Schedule",
-  "Scheduled",
-  "In Progress",
-  "On Hold",
-  "Completed",
-];
+// Status values discovered dynamically from actual project data
 
 /* ------------------------------------------------------------------ */
 /*  Utility helpers                                                    */
@@ -204,7 +199,7 @@ export default function ConstructionSchedulerPage() {
 
   /* ---- filters ---- */
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
-  const [selectedStatus, setSelectedStatus] = useState("all");
+  const [filterStatuses, setFilterStatuses] = useState<string[]>([]);
   const [searchText, setSearchText] = useState("");
   const [sortBy, setSortBy] = useState("amount");
 
@@ -366,10 +361,20 @@ export default function ConstructionSchedulerPage() {
   /*  Derived data                                                     */
   /* ================================================================ */
 
+  // Dynamic status options from actual project data
+  const statusOptions = useMemo(
+    () =>
+      [...new Set(projects.map((p) => p.installStatus))]
+        .filter(Boolean)
+        .sort()
+        .map((s) => ({ value: s, label: s })),
+    [projects]
+  );
+
   const filteredProjects = useMemo(() => {
     let filtered = projects.filter((p) => {
       if (selectedLocations.length > 0 && !selectedLocations.includes(p.location)) return false;
-      if (selectedStatus !== "all" && p.installStatus !== selectedStatus) return false;
+      if (filterStatuses.length > 0 && !filterStatuses.includes(p.installStatus)) return false;
       if (searchText &&
           !p.name.toLowerCase().includes(searchText.toLowerCase()) &&
           !p.address.toLowerCase().includes(searchText.toLowerCase())) return false;
@@ -387,7 +392,7 @@ export default function ConstructionSchedulerPage() {
       filtered.sort((a, b) => a.installStatus.localeCompare(b.installStatus));
     }
     return filtered;
-  }, [projects, selectedLocations, selectedStatus, searchText, sortBy, manualSchedules]);
+  }, [projects, selectedLocations, filterStatuses, searchText, sortBy, manualSchedules]);
 
   const unscheduledProjects = useMemo(() => {
     return filteredProjects.filter(p =>
@@ -742,16 +747,14 @@ export default function ConstructionSchedulerPage() {
               )}
             </div>
 
-            <select
-              value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value)}
-              className="px-3 py-1.5 bg-zinc-900 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:border-emerald-500"
-            >
-              <option value="all">All Statuses</option>
-              {INSTALL_STATUSES.map((status) => (
-                <option key={status} value={status}>{status}</option>
-              ))}
-            </select>
+            <MultiSelectFilter
+              label="Status"
+              options={statusOptions}
+              selected={filterStatuses}
+              onChange={setFilterStatuses}
+              placeholder="All Statuses"
+              accentColor="green"
+            />
 
             <select
               value={sortBy}

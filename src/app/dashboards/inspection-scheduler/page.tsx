@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import Link from "next/link";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
+import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -102,14 +103,7 @@ const MONTH_NAMES = [
 
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-const INSPECTION_STATUSES = [
-  "Ready For Inspection",  // Matches HubSpot final_inspection_status field
-  "Scheduled",
-  "Pending Review",
-  "Passed",
-  "Failed - Reschedule",
-  "On Hold",
-];
+// Status values discovered dynamically from actual project data
 
 /* ------------------------------------------------------------------ */
 /*  Utility helpers                                                    */
@@ -205,7 +199,7 @@ export default function InspectionSchedulerPage() {
 
   /* ---- filters ---- */
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
-  const [selectedStatus, setSelectedStatus] = useState("all");
+  const [filterStatuses, setFilterStatuses] = useState<string[]>([]);
   const [searchText, setSearchText] = useState("");
   const [sortBy, setSortBy] = useState("amount");
 
@@ -367,10 +361,20 @@ export default function InspectionSchedulerPage() {
   /*  Derived data                                                     */
   /* ================================================================ */
 
+  // Dynamic status options from actual project data
+  const statusOptions = useMemo(
+    () =>
+      [...new Set(projects.map((p) => p.inspectionStatus))]
+        .filter(Boolean)
+        .sort()
+        .map((s) => ({ value: s, label: s })),
+    [projects]
+  );
+
   const filteredProjects = useMemo(() => {
     let filtered = projects.filter((p) => {
       if (selectedLocations.length > 0 && !selectedLocations.includes(p.location)) return false;
-      if (selectedStatus !== "all" && p.inspectionStatus !== selectedStatus) return false;
+      if (filterStatuses.length > 0 && !filterStatuses.includes(p.inspectionStatus)) return false;
       if (searchText &&
           !p.name.toLowerCase().includes(searchText.toLowerCase()) &&
           !p.address.toLowerCase().includes(searchText.toLowerCase())) return false;
@@ -388,7 +392,7 @@ export default function InspectionSchedulerPage() {
       filtered.sort((a, b) => a.inspectionStatus.localeCompare(b.inspectionStatus));
     }
     return filtered;
-  }, [projects, selectedLocations, selectedStatus, searchText, sortBy, manualSchedules]);
+  }, [projects, selectedLocations, filterStatuses, searchText, sortBy, manualSchedules]);
 
   const unscheduledProjects = useMemo(() => {
     return filteredProjects.filter(p =>
@@ -744,16 +748,14 @@ export default function InspectionSchedulerPage() {
               )}
             </div>
 
-            <select
-              value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value)}
-              className="px-3 py-1.5 bg-zinc-900 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:border-purple-500"
-            >
-              <option value="all">All Statuses</option>
-              {INSPECTION_STATUSES.map((status) => (
-                <option key={status} value={status}>{status}</option>
-              ))}
-            </select>
+            <MultiSelectFilter
+              label="Status"
+              options={statusOptions}
+              selected={filterStatuses}
+              onChange={setFilterStatuses}
+              placeholder="All Statuses"
+              accentColor="purple"
+            />
 
             <select
               value={sortBy}

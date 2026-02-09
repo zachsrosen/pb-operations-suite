@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import Link from "next/link";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
+import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -145,17 +146,7 @@ const MONTH_NAMES = [
 
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-const SURVEY_STATUSES = [
-  "Ready to Schedule",
-  "Awaiting Reply",
-  "Scheduled",
-  "On Our Way",
-  "Started",
-  "In Progress",
-  "Needs Revisit",
-  "Completed",
-  "Scheduling On-Hold",
-];
+// Status values discovered dynamically from actual project data
 
 /* ------------------------------------------------------------------ */
 /*  Utility helpers                                                    */
@@ -264,7 +255,7 @@ export default function SiteSurveySchedulerPage() {
 
   /* ---- filters ---- */
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
-  const [selectedStatus, setSelectedStatus] = useState("all");
+  const [filterStatuses, setFilterStatuses] = useState<string[]>([]);
   const [searchText, setSearchText] = useState("");
   const [sortBy, setSortBy] = useState("amount");
 
@@ -433,11 +424,21 @@ export default function SiteSurveySchedulerPage() {
   /*  Derived data                                                     */
   /* ================================================================ */
 
+  // Dynamic status options from actual project data
+  const statusOptions = useMemo(
+    () =>
+      [...new Set(projects.map((p) => p.surveyStatus))]
+        .filter(Boolean)
+        .sort()
+        .map((s) => ({ value: s, label: s })),
+    [projects]
+  );
+
   const filteredProjects = useMemo(() => {
     let filtered = projects.filter((p) => {
       // Multi-select location filter - if any selected, filter by them
       if (selectedLocations.length > 0 && !selectedLocations.includes(p.location)) return false;
-      if (selectedStatus !== "all" && p.surveyStatus !== selectedStatus) return false;
+      if (filterStatuses.length > 0 && !filterStatuses.includes(p.surveyStatus)) return false;
       if (searchText &&
           !p.name.toLowerCase().includes(searchText.toLowerCase()) &&
           !p.address.toLowerCase().includes(searchText.toLowerCase())) return false;
@@ -455,7 +456,7 @@ export default function SiteSurveySchedulerPage() {
       filtered.sort((a, b) => a.surveyStatus.localeCompare(b.surveyStatus));
     }
     return filtered;
-  }, [projects, selectedLocations, selectedStatus, searchText, sortBy, manualSchedules]);
+  }, [projects, selectedLocations, filterStatuses, searchText, sortBy, manualSchedules]);
 
   const unscheduledProjects = useMemo(() => {
     return filteredProjects.filter(p =>
@@ -937,16 +938,14 @@ export default function SiteSurveySchedulerPage() {
               )}
             </div>
 
-            <select
-              value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value)}
-              className="px-3 py-1.5 bg-zinc-900 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:border-cyan-500"
-            >
-              <option value="all">All Statuses</option>
-              {SURVEY_STATUSES.map((status) => (
-                <option key={status} value={status}>{status}</option>
-              ))}
-            </select>
+            <MultiSelectFilter
+              label="Status"
+              options={statusOptions}
+              selected={filterStatuses}
+              onChange={setFilterStatuses}
+              placeholder="All Statuses"
+              accentColor="cyan"
+            />
 
             <select
               value={sortBy}
