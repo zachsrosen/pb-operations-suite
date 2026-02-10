@@ -87,13 +87,14 @@ const ZUPER_USER_UIDS: Record<string, { userUid: string; teamUid?: string }> = {
   "Joe Lynch": { userUid: "f203f99b-4aaf-488e-8e6a-8ee5e94ec217", teamUid: ZUPER_TEAM_UIDS.Westminster }, // Westminster team
   "Derek Pomar": { userUid: "f3bb40c0-d548-4355-ab39-6c27532a6d36", teamUid: ZUPER_TEAM_UIDS.Centennial }, // Centennial team (DTC location)
   "Rolando": { userUid: "a89ed2f5-222b-4b09-8bb0-14dc45c2a51b", teamUid: ZUPER_TEAM_UIDS["Colorado Springs"] }, // Colorado Springs team
-  "Rich": { userUid: "e043bf1d-006b-4033-a46e-3b5d06ed3d00", teamUid: ZUPER_TEAM_UIDS.Westminster }, // Ryszard Szymanski - Westminster team
+  "Ryszard Szymanski": { userUid: "e043bf1d-006b-4033-a46e-3b5d06ed3d00", teamUid: ZUPER_TEAM_UIDS.Westminster }, // Westminster team
+  "Nick Scarpellino": { userUid: "8e67159c-48fe-4fb0-acc3-b1c905ff6e95", teamUid: ZUPER_TEAM_UIDS["San Luis Obispo"] }, // SLO/Camarillo
 };
 
 // Reverse lookup: Zuper user UID → display name used in crew schedules
 const ZUPER_UID_TO_DISPLAY_NAME: Record<string, string> = {};
 for (const [name, { userUid }] of Object.entries(ZUPER_USER_UIDS)) {
-  ZUPER_UID_TO_DISPLAY_NAME[userUid] = name;
+  if (userUid) ZUPER_UID_TO_DISPLAY_NAME[userUid] = name;
 }
 
 const CREW_SCHEDULES: CrewSchedule[] = [
@@ -156,7 +157,7 @@ const CREW_SCHEDULES: CrewSchedule[] = [
     teamUid: ZUPER_USER_UIDS["Derek Pomar"].teamUid,
   },
   {
-    name: "Rich",
+    name: "Ryszard Szymanski",
     location: "Westminster",
     reportLocation: "Westminster",
     schedule: [
@@ -165,8 +166,8 @@ const CREW_SCHEDULES: CrewSchedule[] = [
       { day: 4, startTime: "11:00", endTime: "14:00" }, // Thu 11am-2pm
     ],
     jobTypes: ["survey"],
-    userUid: ZUPER_USER_UIDS["Rich"].userUid,
-    teamUid: ZUPER_USER_UIDS["Rich"].teamUid,
+    userUid: ZUPER_USER_UIDS["Ryszard Szymanski"].userUid,
+    teamUid: ZUPER_USER_UIDS["Ryszard Szymanski"].teamUid,
   },
   {
     name: "Rolando",
@@ -182,6 +183,33 @@ const CREW_SCHEDULES: CrewSchedule[] = [
     jobTypes: ["survey"],
     userUid: ZUPER_USER_UIDS["Rolando"].userUid,
     teamUid: ZUPER_USER_UIDS["Rolando"].teamUid,
+  },
+
+  // Nick Scarpellino — California locations
+  // Times stored as Mountain Time (Pacific + 1hr) since the system uses MT throughout
+  {
+    name: "Nick Scarpellino",
+    location: "San Luis Obispo",
+    reportLocation: "San Luis Obispo",
+    schedule: [
+      { day: 1, startTime: "09:00", endTime: "11:00" }, // Mon 8-10am PT = 9-11am MT
+      { day: 2, startTime: "09:00", endTime: "11:00" }, // Tue 8-10am PT = 9-11am MT
+      { day: 4, startTime: "09:00", endTime: "11:00" }, // Thu 8-10am PT = 9-11am MT
+    ],
+    jobTypes: ["survey"],
+    userUid: ZUPER_USER_UIDS["Nick Scarpellino"].userUid,
+    teamUid: ZUPER_USER_UIDS["Nick Scarpellino"].teamUid,
+  },
+  {
+    name: "Nick Scarpellino",
+    location: "Camarillo",
+    reportLocation: "Camarillo",
+    schedule: [
+      { day: 3, startTime: "10:30", endTime: "12:30" }, // Wed 9:30-11:30am PT = 10:30am-12:30pm MT
+    ],
+    jobTypes: ["survey"],
+    userUid: ZUPER_USER_UIDS["Nick Scarpellino"].userUid,
+    teamUid: ZUPER_USER_UIDS["Nick Scarpellino"].teamUid,
   },
 
   // ============================================
