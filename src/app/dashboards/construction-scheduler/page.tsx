@@ -25,6 +25,8 @@ interface RawProject {
   constructionStatus?: string;
   constructionCompleteDate?: string;
   closeDate?: string;
+  daysForInstallers?: number;
+  expectedDaysForInstall?: number;
   equipment?: {
     systemSizeKwdc?: number;
     modules?: { count?: number };
@@ -44,6 +46,7 @@ interface ConstructionProject {
   systemSize: number;
   batteries: number;
   evCount: number;
+  installDays: number;
   scheduleDate: string | null;
   installStatus: string;
   completionDate: string | null;
@@ -183,6 +186,7 @@ function transformProject(p: RawProject): ConstructionProject | null {
     systemSize: p.equipment?.systemSizeKwdc || 0,
     batteries: p.equipment?.battery?.count || 0,
     evCount: p.equipment?.evCount || 0,
+    installDays: p.daysForInstallers || p.expectedDaysForInstall || 2,
     scheduleDate: p.constructionScheduleDate || null,
     installStatus: p.constructionStatus || "Ready to Schedule",
     completionDate: p.constructionCompleteDate || null,
@@ -247,7 +251,7 @@ export default function ConstructionSchedulerPage() {
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch("/api/projects?context=scheduling&fields=id,name,address,city,state,pbLocation,amount,projectType,stage,url,constructionScheduleDate,constructionStatus,constructionCompleteDate,closeDate,equipment,installCrew,projectNumber");
+      const response = await fetch("/api/projects?context=scheduling&fields=id,name,address,city,state,pbLocation,amount,projectType,stage,url,constructionScheduleDate,constructionStatus,constructionCompleteDate,closeDate,equipment,installCrew,projectNumber,daysForInstallers,expectedDaysForInstall");
       if (!response.ok) throw new Error("Failed to fetch projects");
       const data = await response.json();
       const transformed = data.projects
@@ -461,11 +465,30 @@ export default function ConstructionSchedulerPage() {
     return days;
   }, [currentYear, currentMonth]);
 
-  const eventsForDate = useCallback((dateStr: string) => {
-    return filteredProjects.filter(p => {
+  const eventsForDate = useCallback((dateStr: string): (ConstructionProject & { dayNum: number; totalDays: number })[] => {
+    const results: (ConstructionProject & { dayNum: number; totalDays: number })[] = [];
+    filteredProjects.forEach(p => {
       const schedDate = manualSchedules[p.id] || p.scheduleDate;
-      return schedDate === dateStr;
+      if (!schedDate) return;
+      const businessDays = Math.ceil(p.installDays || 2);
+      const startDate = new Date(schedDate + "T12:00:00");
+      let bDayCount = 0;
+      let calOffset = 0;
+      while (bDayCount < businessDays) {
+        const checkDate = new Date(startDate);
+        checkDate.setDate(checkDate.getDate() + calOffset);
+        const dow = checkDate.getDay();
+        if (dow !== 0 && dow !== 6) {
+          if (toDateStr(checkDate) === dateStr) {
+            results.push({ ...p, dayNum: bDayCount + 1, totalDays: businessDays });
+            return;
+          }
+          bDayCount++;
+        }
+        calOffset++;
+      }
     });
+    return results;
   }, [filteredProjects, manualSchedules]);
 
   /* ================================================================ */
@@ -528,7 +551,7 @@ export default function ConstructionSchedulerPage() {
             schedule: {
               type: "installation",
               date: date,
-              days: 2, // Construction typically takes 2 days
+              days: project.installDays || 2,
               notes: "Scheduled via Construction Scheduler",
             },
           }),
@@ -865,6 +888,11 @@ export default function ConstructionSchedulerPage() {
                             {project.systemSize.toFixed(1)}kW
                           </span>
                         )}
+                        {project.installDays > 0 && (
+                          <span className="text-xs text-blue-400">
+                            {project.installDays}d
+                          </span>
+                        )}
                         {project.batteries > 0 && (
                           <span className="text-xs text-purple-400">
                             {project.batteries} batt
@@ -994,7 +1022,7 @@ export default function ConstructionSchedulerPage() {
                             const overdue = isInstallOverdue(ev, manualSchedules[ev.id]);
                             return (
                             <div
-                              key={ev.id}
+                              key={`${ev.id}-d${ev.dayNum}`}
                               draggable
                               onDragStart={(e) => {
                                 e.stopPropagation();
@@ -1002,16 +1030,17 @@ export default function ConstructionSchedulerPage() {
                               }}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setScheduleModal({ project: ev, date: dateStr });
+                                setScheduleModal({ project: ev, date: manualSchedules[ev.id] || ev.scheduleDate || dateStr });
                               }}
                               className={`text-xs p-1 rounded truncate cursor-grab active:cursor-grabbing ${
                                 overdue
                                   ? "bg-red-500/20 border border-red-500/40 text-red-300 hover:bg-red-500/30"
                                   : "bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/30"
                               }`}
-                              title={overdue ? "⚠ OVERDUE - Install not completed. Drag to reschedule" : "Drag to reschedule"}
+                              title={overdue ? "⚠ OVERDUE - Install not completed. Drag to reschedule" : `${getCustomerName(ev.name)} - Day ${ev.dayNum}/${ev.totalDays}. Drag to reschedule`}
                             >
                               {overdue && <span className="text-red-400 mr-0.5">⚠</span>}
+                              {ev.totalDays > 1 && <span className="font-semibold mr-0.5">D{ev.dayNum}</span>}
                               {getCustomerName(ev.name)}
                             </div>
                             );
@@ -1055,6 +1084,7 @@ export default function ConstructionSchedulerPage() {
                         <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Location</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Status</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Install Date</th>
+                        <th className="px-4 py-3 text-center text-xs font-medium text-zinc-400 uppercase">Days</th>
                         <th className="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase">Amount</th>
                         <th className="px-4 py-3 text-center text-xs font-medium text-zinc-400 uppercase">Links</th>
                         <th className="px-4 py-3 text-center text-xs font-medium text-zinc-400 uppercase">Actions</th>
@@ -1088,6 +1118,9 @@ export default function ConstructionSchedulerPage() {
                             </td>
                             <td className={`px-4 py-3 text-sm ${overdue ? "text-red-400" : schedDate ? "text-emerald-400" : "text-zinc-500"}`}>
                               {schedDate ? formatShortDate(schedDate) : "—"}
+                            </td>
+                            <td className="px-4 py-3 text-center text-sm text-zinc-400">
+                              {project.installDays}d
                             </td>
                             <td className="px-4 py-3 text-right font-mono text-sm text-orange-400">
                               {formatCurrency(project.amount)}
@@ -1177,9 +1210,15 @@ export default function ConstructionSchedulerPage() {
                 <p className="text-sm font-medium text-emerald-400">{formatDate(scheduleModal.date)}</p>
               </div>
 
-              <div>
-                <span className="text-xs text-zinc-500">System Size</span>
-                <p className="text-sm">{scheduleModal.project.systemSize.toFixed(1)} kW {scheduleModal.project.batteries > 0 && `+ ${scheduleModal.project.batteries} batteries`}</p>
+              <div className="flex gap-6">
+                <div>
+                  <span className="text-xs text-zinc-500">System Size</span>
+                  <p className="text-sm">{scheduleModal.project.systemSize.toFixed(1)} kW {scheduleModal.project.batteries > 0 && `+ ${scheduleModal.project.batteries} batteries`}</p>
+                </div>
+                <div>
+                  <span className="text-xs text-zinc-500">Install Days</span>
+                  <p className="text-sm font-medium">{scheduleModal.project.installDays}d</p>
+                </div>
               </div>
 
               <div>

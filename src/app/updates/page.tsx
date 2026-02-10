@@ -15,6 +15,22 @@ interface UpdateEntry {
 
 const UPDATES: UpdateEntry[] = [
   {
+    version: "1.20.0",
+    date: "2026-02-09",
+    title: "Overdue Indicators, Multi-Day Installs & Timezone Scheduling",
+    description: "Overdue project indicators across all schedulers, multi-day install display on construction scheduler, timezone-aware scheduling for California locations, and master scheduler week view fix.",
+    changes: [
+      { type: "feature", text: "Overdue indicators on Site Survey, Construction, and Inspection schedulers - calendar, sidebar, list view, and stats row" },
+      { type: "feature", text: "Construction scheduler now shows multi-day installs spanning across business days (D1, D2, etc.)" },
+      { type: "feature", text: "Install days column added to construction scheduler list view and schedule modal" },
+      { type: "feature", text: "Timezone-aware scheduling for California locations (Pacific Time for Nick Scarpellino)" },
+      { type: "improvement", text: "Site Survey Scheduler shows booked slot immediately after scheduling (optimistic UI update)" },
+      { type: "improvement", text: "Construction scheduler uses actual install days from HubSpot instead of hardcoded 2 days" },
+      { type: "fix", text: "Master scheduler week view now correctly shows all days of multi-day installs (was only showing D1)" },
+      { type: "fix", text: "Timezone-aware availability display for California crew members (was showing Mountain Time)" },
+    ],
+  },
+  {
     version: "1.19.0",
     date: "2026-02-09",
     title: "Dashboard Enhancements & Zuper Improvements",
