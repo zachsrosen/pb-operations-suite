@@ -214,6 +214,15 @@ function isPastDate(dateStr: string): boolean {
   return dateStr < getTodayStr();
 }
 
+// Check if a survey is overdue: scheduled in the past but not completed
+function isSurveyOverdue(project: SurveyProject, manualScheduleDate?: string): boolean {
+  const schedDate = manualScheduleDate || project.scheduleDate;
+  if (!schedDate) return false;
+  if (project.completionDate) return false;
+  if (project.surveyStatus.toLowerCase().includes("complete")) return false;
+  return isPastDate(schedDate);
+}
+
 /* ------------------------------------------------------------------ */
 /*  Transform API data                                                 */
 /* ------------------------------------------------------------------ */
@@ -538,9 +547,10 @@ export default function SiteSurveySchedulerPage() {
       (p.scheduleDate || manualSchedules[p.id]) && !p.completionDate
     ).length;
     const completed = projects.filter(p => p.completionDate).length;
+    const overdue = projects.filter(p => isSurveyOverdue(p, manualSchedules[p.id])).length;
     const totalValue = projects.reduce((sum, p) => sum + p.amount, 0);
 
-    return { total, needsScheduling, scheduled, completed, totalValue };
+    return { total, needsScheduling, scheduled, completed, overdue, totalValue };
   }, [projects, manualSchedules]);
 
   /* ================================================================ */
@@ -794,11 +804,47 @@ export default function SiteSurveySchedulerPage() {
       } catch (err) {
         console.error("Error booking slot:", err);
       }
+
+      // Optimistically update client-side availability state immediately
+      // This ensures the slot shows as booked even if the server-side in-memory
+      // store is on a different serverless instance
+      setAvailabilityByDate(prev => {
+        const dayData = prev[date];
+        if (!dayData) return prev;
+
+        const updatedDay = { ...dayData };
+
+        // Remove from available slots
+        updatedDay.availableSlots = (updatedDay.availableSlots || []).filter(
+          s => !(s.start_time === slot.startTime && s.user_name === slot.userName)
+        );
+
+        // Add to booked slots
+        const existingBooked = updatedDay.bookedSlots || [];
+        updatedDay.bookedSlots = [
+          ...existingBooked,
+          {
+            start_time: slot.startTime,
+            end_time: slot.endTime,
+            display_time: `${slot.startTime}-${slot.endTime}`,
+            user_name: slot.userName,
+            location: slot.location,
+            projectId: project.id,
+            projectName: project.name,
+          },
+        ];
+
+        updatedDay.hasAvailability = updatedDay.availableSlots.length > 0;
+
+        return { ...prev, [date]: updatedDay };
+      });
     }
 
-    // Refresh availability to show the booked slot removed
+    // Also refresh from server to get the full Zuper-synced state
+    // (may take a moment for Zuper to reflect the new job)
     if (slot) {
-      fetchAvailability(project.location);
+      // Delay refresh slightly to let Zuper sync complete
+      setTimeout(() => fetchAvailability(project.location), 2000);
     }
 
     setScheduleModal(null);
@@ -959,6 +1005,12 @@ export default function SiteSurveySchedulerPage() {
               <span className="text-zinc-500">Completed:</span>
               <span className="text-green-400 font-semibold">{stats.completed}</span>
             </div>
+            {stats.overdue > 0 && (
+              <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+                <span className="text-red-400">⚠ Overdue:</span>
+                <span className="text-red-400 font-semibold">{stats.overdue}</span>
+              </div>
+            )}
             <div className="flex items-center gap-1 sm:gap-2 shrink-0">
               <span className="text-zinc-500">Value:</span>
               <span className="text-orange-400 font-semibold">{formatCurrency(stats.totalValue)}</span>
@@ -1091,6 +1143,11 @@ export default function SiteSurveySchedulerPage() {
                         </span>
                       </div>
                       <div className="flex items-center gap-2 mt-2">
+                        {isSurveyOverdue(project, manualSchedules[project.id]) && (
+                          <span className="text-xs px-1.5 py-0.5 rounded border bg-red-500/20 text-red-400 border-red-500/30 font-medium">
+                            ⚠ Overdue
+                          </span>
+                        )}
                         <span className={`text-xs px-1.5 py-0.5 rounded border ${getStatusColor(project.surveyStatus)}`}>
                           {project.surveyStatus}
                         </span>
@@ -1228,6 +1285,7 @@ export default function SiteSurveySchedulerPage() {
                           {events.map((ev) => {
                             // Find the booked slot for this event
                             const evSlot = findCurrentSlotForProject(ev.id, dateStr, ev.name);
+                            const overdue = isSurveyOverdue(ev, manualSchedules[ev.id]);
                             return (
                               <div
                                 key={ev.id}
@@ -1240,11 +1298,20 @@ export default function SiteSurveySchedulerPage() {
                                   e.stopPropagation();
                                   setScheduleModal({ project: ev, date: dateStr, currentSlot: evSlot });
                                 }}
-                                className="text-xs p-1 rounded bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 cursor-grab hover:bg-cyan-500/30 active:cursor-grabbing"
-                                title={evSlot ? `${evSlot.userName} @ ${evSlot.displayTime}\n${ev.address || "No address"} - Click to view` : `${ev.assignedSurveyor ? `Surveyor: ${ev.assignedSurveyor}\n` : ""}${ev.address || "No address"} - Drag to reschedule`}
+                                className={`text-xs p-1 rounded cursor-grab active:cursor-grabbing ${
+                                  overdue
+                                    ? "bg-red-500/20 border border-red-500/40 text-red-300 hover:bg-red-500/30"
+                                    : "bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/30"
+                                }`}
+                                title={overdue
+                                  ? `⚠ OVERDUE - Survey not completed\n${evSlot ? `${evSlot.userName} @ ${evSlot.displayTime}\n` : ""}${ev.address || "No address"} - Click to reschedule`
+                                  : evSlot ? `${evSlot.userName} @ ${evSlot.displayTime}\n${ev.address || "No address"} - Click to view` : `${ev.assignedSurveyor ? `Surveyor: ${ev.assignedSurveyor}\n` : ""}${ev.address || "No address"} - Drag to reschedule`}
                               >
-                                <div className="truncate">{getCustomerName(ev.name)}</div>
-                                {ev.address && <div className="text-[0.6rem] text-cyan-400/50 truncate">{ev.address}</div>}
+                                <div className="truncate">
+                                  {overdue && <span className="text-red-400 mr-0.5">⚠</span>}
+                                  {getCustomerName(ev.name)}
+                                </div>
+                                {ev.address && <div className={`text-[0.6rem] truncate ${overdue ? "text-red-400/50" : "text-cyan-400/50"}`}>{ev.address}</div>}
                                 {evSlot ? (
                                   <div className="text-[0.6rem] text-cyan-400/60 truncate">{evSlot.userName} @ {evSlot.displayTime}</div>
                                 ) : ev.assignedSurveyor ? (
@@ -1378,24 +1445,33 @@ export default function SiteSurveySchedulerPage() {
                     <tbody className="divide-y divide-zinc-800">
                       {filteredProjects.map((project) => {
                         const schedDate = manualSchedules[project.id] || project.scheduleDate;
+                        const overdue = isSurveyOverdue(project, manualSchedules[project.id]);
                         return (
-                          <tr key={project.id} className="hover:bg-zinc-900/50">
+                          <tr key={project.id} className={`hover:bg-zinc-900/50 ${overdue ? "bg-red-500/5" : ""}`}>
                             <td className="px-4 py-3">
                               <a href={project.hubspotUrl} target="_blank" rel="noopener noreferrer" className="font-medium text-white hover:text-cyan-400">
+                                {overdue && <span className="text-red-400 mr-1">⚠</span>}
                                 {getCustomerName(project.name)}
                               </a>
                               <div className="text-xs text-zinc-500">{getProjectId(project.name)}</div>
                             </td>
                             <td className="px-4 py-3 text-sm text-zinc-400">{project.location}</td>
                             <td className="px-4 py-3">
-                              <span className={`text-xs px-2 py-1 rounded border ${getStatusColor(project.surveyStatus)}`}>
-                                {project.surveyStatus}
-                              </span>
+                              <div className="flex items-center gap-1.5">
+                                <span className={`text-xs px-2 py-1 rounded border ${getStatusColor(project.surveyStatus)}`}>
+                                  {project.surveyStatus}
+                                </span>
+                                {overdue && (
+                                  <span className="text-xs px-1.5 py-0.5 rounded border bg-red-500/20 text-red-400 border-red-500/30 font-medium">
+                                    Overdue
+                                  </span>
+                                )}
+                              </div>
                             </td>
                             <td className="px-4 py-3 text-sm text-emerald-400">
                               {project.assignedSurveyor || <span className="text-zinc-600">—</span>}
                             </td>
-                            <td className={`px-4 py-3 text-sm ${schedDate ? "text-cyan-400" : "text-zinc-500"}`}>
+                            <td className={`px-4 py-3 text-sm ${overdue ? "text-red-400" : schedDate ? "text-cyan-400" : "text-zinc-500"}`}>
                               {schedDate ? formatShortDate(schedDate) : "—"}
                             </td>
                             <td className="px-4 py-3 text-right font-mono text-sm text-orange-400">
