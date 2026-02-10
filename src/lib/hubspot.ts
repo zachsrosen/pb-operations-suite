@@ -625,7 +625,12 @@ export async function fetchAllProjects(options?: {
       console.warn(`[HubSpot] Hit pagination safety limit (${MAX_PAGINATION_PAGES} pages) for project pipeline. Some projects may be missing.`);
       break;
     }
-    const response = await searchWithRetry({
+    const searchRequest: {
+      filterGroups: typeof FilterOperatorEnum extends never ? never : { filters: { propertyName: string; operator: typeof FilterOperatorEnum.Eq; value: string }[] }[];
+      properties: string[];
+      limit: number;
+      after?: string;
+    } = {
       filterGroups: [
         {
           filters: [
@@ -639,8 +644,11 @@ export async function fetchAllProjects(options?: {
       ],
       properties: DEAL_PROPERTIES,
       limit: 100,
-      after: after || "0",
-    });
+    };
+    if (after) {
+      searchRequest.after = after;
+    }
+    const response = await searchWithRetry(searchRequest);
 
     allDeals.push(...response.results.map((deal) => deal.properties));
     after = response.paging?.next?.after;
