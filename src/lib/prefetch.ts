@@ -50,6 +50,7 @@ export function prefetchDashboard(dashboard: string): void {
     "executive": "/api/projects?context=executive",
     "construction": "/api/projects?context=executive",
     "permitting": "/api/projects?context=executive",
+    "inspections": "/api/projects?context=executive",
     "interconnection": "/api/projects?context=executive",
     "incentives": "/api/projects?context=executive",
     "site-survey": "/api/projects?context=executive",

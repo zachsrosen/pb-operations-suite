@@ -6,6 +6,7 @@ import Link from "next/link";
 interface UserPermissions {
   canScheduleSurveys: boolean;
   canScheduleInstalls: boolean;
+  canScheduleInspections: boolean;
   canSyncToZuper: boolean;
   canManageUsers: boolean;
   allowedLocations: string[];
@@ -20,9 +21,19 @@ interface User {
   createdAt: string;
   canScheduleSurveys: boolean;
   canScheduleInstalls: boolean;
+  canScheduleInspections: boolean;
   canSyncToZuper: boolean;
   canManageUsers: boolean;
   allowedLocations: string[];
+}
+
+interface ActivityLog {
+  id: string;
+  timestamp: string;
+  type: string;
+  oldValue?: string;
+  newValue?: string;
+  description: string;
 }
 
 const ROLES = ["ADMIN", "MANAGER", "OPERATIONS", "DESIGNER", "PERMITTING", "VIEWER", "SALES"];
@@ -51,7 +62,8 @@ const LOCATIONS = ["Westminster", "Centennial", "Colorado Springs", "San Luis Ob
 
 const PERMISSION_LABELS: Record<keyof Omit<UserPermissions, "allowedLocations">, { label: string; description: string }> = {
   canScheduleSurveys: { label: "Schedule Surveys", description: "Can schedule site surveys" },
-  canScheduleInstalls: { label: "Schedule Installs", description: "Can schedule installations & inspections" },
+  canScheduleInstalls: { label: "Schedule Installs", description: "Can schedule installations" },
+  canScheduleInspections: { label: "Schedule Inspections", description: "Can schedule inspections" },
   canSyncToZuper: { label: "Sync to Zuper", description: "Can sync jobs to Zuper FSM" },
   canManageUsers: { label: "Manage Users", description: "Can access admin panel & manage users" },
 };
@@ -69,6 +81,11 @@ export default function AdminUsersPage() {
   const [editPermissions, setEditPermissions] = useState<UserPermissions | null>(null);
   const [impersonating, setImpersonating] = useState<string | null>(null);
   const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [selectedRole, setSelectedRole] = useState<string>("All");
+  const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set());
+  const [bulkUpdateRole, setBulkUpdateRole] = useState<string | null>(null);
+  const [activityLogs, setActivityLogs] = useState<Record<string, ActivityLog[]>>({});
 
   const fetchUsers = useCallback(async () => {
     try {
@@ -154,11 +171,29 @@ export default function AdminUsersPage() {
     setEditPermissions({
       canScheduleSurveys: user.canScheduleSurveys,
       canScheduleInstalls: user.canScheduleInstalls,
+      canScheduleInspections: user.canScheduleInspections,
       canSyncToZuper: user.canSyncToZuper,
       canManageUsers: user.canManageUsers,
       allowedLocations: user.allowedLocations || [],
     });
+    // Fetch activity logs for this user
+    fetchActivityLogs(user.id);
   };
+
+  const fetchActivityLogs = useCallback(async (userId: string) => {
+    try {
+      const response = await fetch(`/api/admin/activity?type=USER_ROLE_CHANGED&userId=${userId}&limit=3`);
+      if (response.ok) {
+        const data = await response.json();
+        setActivityLogs(prev => ({
+          ...prev,
+          [userId]: data.logs || [],
+        }));
+      }
+    } catch {
+      // Silently fail, activity logs are optional
+    }
+  }, []);
 
   const closePermissionsModal = () => {
     setEditingUser(null);
@@ -242,7 +277,107 @@ export default function AdminUsersPage() {
   };
 
   const hasCustomPermissions = (user: User) => {
-    return user.canScheduleSurveys || user.canScheduleInstalls || user.canSyncToZuper || user.canManageUsers || (user.allowedLocations && user.allowedLocations.length > 0);
+    return user.canScheduleSurveys || user.canScheduleInstalls || user.canScheduleInspections || user.canSyncToZuper || user.canManageUsers || (user.allowedLocations && user.allowedLocations.length > 0);
+  };
+
+  const getLastActiveIndicator = (lastLoginAt: string | null): { color: string; label: string; time: string } => {
+    if (!lastLoginAt) {
+      return { color: "bg-red-500", label: "Never", time: "Never logged in" };
+    }
+
+    const now = new Date();
+    const lastLogin = new Date(lastLoginAt);
+    const diffMs = now.getTime() - lastLogin.getTime();
+    const diffDays = diffMs / (1000 * 60 * 60 * 24);
+    const diffHours = diffMs / (1000 * 60 * 60);
+
+    if (diffDays < 1) {
+      const hours = Math.floor(diffHours);
+      return { color: "bg-green-500", label: `${hours}h ago`, time: `${hours}h` };
+    } else if (diffDays < 7) {
+      const days = Math.floor(diffDays);
+      return { color: "bg-yellow-500", label: `${days}d ago`, time: `${days}d` };
+    } else {
+      return { color: "bg-red-500", label: `${Math.floor(diffDays)}d ago`, time: `${Math.floor(diffDays)}d` };
+    }
+  };
+
+  const filterUsers = () => {
+    return users.filter(user => {
+      const matchesSearch = searchQuery === "" ||
+        user.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        user.email.toLowerCase().includes(searchQuery.toLowerCase());
+
+      const matchesRole = selectedRole === "All" || user.role === selectedRole;
+
+      return matchesSearch && matchesRole;
+    });
+  };
+
+  const getActiveCount = () => {
+    const now = new Date();
+    return users.filter(user => {
+      if (!user.lastLoginAt) return false;
+      const lastLogin = new Date(user.lastLoginAt);
+      const diffDays = (now.getTime() - lastLogin.getTime()) / (1000 * 60 * 60 * 24);
+      return diffDays < 7;
+    }).length;
+  };
+
+  const getAdminCount = () => {
+    return users.filter(user => user.role === "ADMIN").length;
+  };
+
+  const handleSelectUser = (userId: string) => {
+    const newSelected = new Set(selectedUsers);
+    if (newSelected.has(userId)) {
+      newSelected.delete(userId);
+    } else {
+      newSelected.add(userId);
+    }
+    setSelectedUsers(newSelected);
+  };
+
+  const handleSelectAll = () => {
+    const filtered = filterUsers();
+    if (selectedUsers.size === filtered.length) {
+      setSelectedUsers(new Set());
+    } else {
+      setSelectedUsers(new Set(filtered.map(u => u.id)));
+    }
+  };
+
+  const handleBulkRoleUpdate = async () => {
+    if (!bulkUpdateRole || selectedUsers.size === 0) return;
+
+    setUpdating("bulk");
+    try {
+      const response = await fetch("/api/admin/users/bulk-role", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userIds: Array.from(selectedUsers),
+          role: bulkUpdateRole,
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to update roles");
+      }
+
+      // Update local state
+      setUsers(users.map(u =>
+        selectedUsers.has(u.id) ? { ...u, role: bulkUpdateRole } : u
+      ));
+      showToast(`Updated ${selectedUsers.size} users to ${bulkUpdateRole}`);
+      setSelectedUsers(new Set());
+      setBulkUpdateRole(null);
+    } catch (err) {
+      showToast(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
+    } finally {
+      setUpdating(null);
+    }
   };
 
   const startImpersonation = async (user: User) => {
@@ -317,8 +452,8 @@ export default function AdminUsersPage() {
       {editingUser && editPermissions && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={closePermissionsModal} />
-          <div className="relative bg-zinc-900 rounded-2xl border border-zinc-700 w-full max-w-lg mx-4 p-6 shadow-2xl">
-            <div className="flex items-center justify-between mb-6">
+          <div className="relative bg-zinc-900 rounded-2xl border border-zinc-700 w-full max-w-lg mx-4 p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-6 sticky top-0 bg-zinc-900">
               <div>
                 <h2 className="text-lg font-bold">Edit Permissions</h2>
                 <p className="text-sm text-zinc-400">{editingUser.name || editingUser.email}</p>
@@ -399,8 +534,30 @@ export default function AdminUsersPage() {
               </div>
             </div>
 
+            {/* Recent Changes */}
+            {activityLogs[editingUser.id] && activityLogs[editingUser.id].length > 0 && (
+              <div className="mb-6 pb-6 border-t border-zinc-700 pt-4">
+                <h3 className="text-sm font-medium text-zinc-400 mb-3">Recent Changes</h3>
+                <div className="space-y-2">
+                  {activityLogs[editingUser.id].map(log => (
+                    <div key={log.id} className="p-2 bg-zinc-800/50 rounded text-xs">
+                      <p className="text-zinc-300">{log.description}</p>
+                      <p className="text-zinc-600 text-xs mt-0.5">
+                        {new Date(log.timestamp).toLocaleDateString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                          hour: "numeric",
+                          minute: "2-digit",
+                        })}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Actions */}
-            <div className="flex gap-3">
+            <div className="flex gap-3 sticky bottom-0 bg-zinc-900 pt-4 border-t border-zinc-700">
               <button
                 onClick={closePermissionsModal}
                 className="flex-1 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm font-medium transition-colors"
@@ -474,7 +631,7 @@ export default function AdminUsersPage() {
       </div>
 
       {/* Content */}
-      <div className="max-w-5xl mx-auto px-4 py-6">
+      <div className="max-w-6xl mx-auto px-4 py-6">
         {/* Workspace Sync Info */}
         {workspaceConfigured === false && (
           <div className="mb-6 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-xl">
@@ -513,6 +670,83 @@ export default function AdminUsersPage() {
           </div>
         )}
 
+        {/* User Count Summary */}
+        {users.length > 0 && (
+          <div className="mb-6 p-4 bg-zinc-900 rounded-xl border border-zinc-800">
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-zinc-300 font-medium">{users.length} users total</span>
+              <span className="text-zinc-600">•</span>
+              <span className="text-zinc-300">{getAdminCount()} admins</span>
+              <span className="text-zinc-600">•</span>
+              <span className="text-zinc-300">{getActiveCount()} active in last 7 days</span>
+            </div>
+          </div>
+        )}
+
+        {/* Search and Filters */}
+        <div className="mb-6 space-y-4">
+          {/* Search Input */}
+          <div className="relative">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input
+              type="text"
+              placeholder="Search by name or email..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-2.5 bg-zinc-800 border border-zinc-700 rounded-lg text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+            />
+          </div>
+
+          {/* Role Filters */}
+          <div className="flex flex-wrap gap-2">
+            {["All", ...ROLES].map(role => (
+              <button
+                key={role}
+                onClick={() => setSelectedRole(role)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  selectedRole === role
+                    ? "bg-cyan-600 text-white"
+                    : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+                }`}
+              >
+                {role}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Bulk Update Section */}
+        {selectedUsers.size > 0 && (
+          <div className="mb-6 p-4 bg-cyan-500/10 border border-cyan-500/30 rounded-xl flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-cyan-300 font-medium">{selectedUsers.size} user{selectedUsers.size !== 1 ? 's' : ''} selected</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <select
+                value={bulkUpdateRole || ""}
+                onChange={(e) => setBulkUpdateRole(e.target.value || null)}
+                className="px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              >
+                <option value="">Select role...</option>
+                {ROLES.map(role => (
+                  <option key={role} value={role}>
+                    {role}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={handleBulkRoleUpdate}
+                disabled={!bulkUpdateRole || updating === "bulk"}
+                className="px-4 py-1.5 bg-cyan-600 hover:bg-cyan-700 disabled:bg-cyan-800 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
+              >
+                {updating === "bulk" ? "Updating..." : "Update Roles"}
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Role Legend */}
         <div className="mb-6 p-4 bg-zinc-900 rounded-xl border border-zinc-800">
           <h2 className="text-sm font-semibold mb-3 text-zinc-400">Role Permissions</h2>
@@ -533,104 +767,121 @@ export default function AdminUsersPage() {
           <table className="w-full">
             <thead className="bg-zinc-800">
               <tr>
+                <th className="px-4 py-3 text-left w-8">
+                  <input
+                    type="checkbox"
+                    checked={selectedUsers.size > 0 && selectedUsers.size === filterUsers().length && filterUsers().length > 0}
+                    onChange={handleSelectAll}
+                    className="cursor-pointer"
+                  />
+                </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">User</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Role</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Status</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Permissions</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Last Login</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-800">
-              {users.map(user => (
-                <tr key={user.id} className="hover:bg-zinc-800/50">
-                  <td className="px-4 py-3">
-                    <div>
-                      <p className="font-medium">{user.name || "No name"}</p>
-                      <p className="text-xs text-zinc-500">{user.email}</p>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <select
-                      value={user.role}
-                      onChange={(e) => updateRole(user.id, e.target.value)}
-                      disabled={updating === user.id}
-                      className={`px-3 py-1.5 rounded border text-sm bg-transparent cursor-pointer focus:outline-none focus:ring-2 focus:ring-cyan-500 ${ROLE_COLORS[user.role] || "bg-zinc-500/20 text-zinc-400 border-zinc-500/30"} ${updating === user.id ? "opacity-50" : ""}`}
-                    >
-                      {ROLES.map(role => (
-                        <option key={role} value={role} className="bg-zinc-900 text-white">
-                          {role}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td className="px-4 py-3">
-                    <button
-                      onClick={() => openPermissionsModal(user)}
-                      className="flex items-center gap-2 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm transition-colors"
-                    >
-                      {hasCustomPermissions(user) ? (
-                        <>
-                          <span className="w-2 h-2 bg-cyan-400 rounded-full" />
-                          <span className="text-cyan-400">Custom</span>
-                        </>
-                      ) : (
-                        <>
-                          <span className="text-zinc-400">Default</span>
-                        </>
-                      )}
-                      <svg className="w-4 h-4 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      </svg>
-                    </button>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-zinc-500">
-                    {user.lastLoginAt
-                      ? new Date(user.lastLoginAt).toLocaleDateString("en-US", {
-                          month: "short",
-                          day: "numeric",
-                          hour: "numeric",
-                          minute: "2-digit",
-                        })
-                      : "Never"
-                    }
-                  </td>
-                  <td className="px-4 py-3">
-                    {user.email !== currentUserEmail && user.role !== "ADMIN" && (
-                      <button
-                        onClick={() => startImpersonation(user)}
-                        disabled={impersonating === user.id}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 rounded-lg text-sm transition-colors disabled:opacity-50"
-                        title={`View as ${user.name || user.email}`}
+              {filterUsers().map(user => {
+                const indicator = getLastActiveIndicator(user.lastLoginAt);
+                return (
+                  <tr key={user.id} className="hover:bg-zinc-800/50">
+                    <td className="px-4 py-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedUsers.has(user.id)}
+                        onChange={() => handleSelectUser(user.id)}
+                        className="cursor-pointer"
+                      />
+                    </td>
+                    <td className="px-4 py-3">
+                      <div>
+                        <p className="font-medium">{user.name || "No name"}</p>
+                        <p className="text-xs text-zinc-500">{user.email}</p>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <select
+                        value={user.role}
+                        onChange={(e) => updateRole(user.id, e.target.value)}
+                        disabled={updating === user.id}
+                        className={`px-3 py-1.5 rounded border text-sm bg-transparent cursor-pointer focus:outline-none focus:ring-2 focus:ring-cyan-500 ${ROLE_COLORS[user.role] || "bg-zinc-500/20 text-zinc-400 border-zinc-500/30"} ${updating === user.id ? "opacity-50" : ""}`}
                       >
-                        {impersonating === user.id ? (
+                        {ROLES.map(role => (
+                          <option key={role} value={role} className="bg-zinc-900 text-white">
+                            {role}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <div className={`w-2 h-2 rounded-full ${indicator.color}`} title={indicator.time} />
+                        <span className="text-xs text-zinc-400">{indicator.label}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => openPermissionsModal(user)}
+                        className="flex items-center gap-2 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm transition-colors"
+                      >
+                        {hasCustomPermissions(user) ? (
                           <>
-                            <div className="w-3 h-3 border-2 border-amber-400/50 border-t-amber-400 rounded-full animate-spin" />
-                            <span>Starting...</span>
+                            <span className="w-2 h-2 bg-cyan-400 rounded-full" />
+                            <span className="text-cyan-400">Custom</span>
                           </>
                         ) : (
                           <>
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                            </svg>
-                            <span>View As</span>
+                            <span className="text-zinc-400">Default</span>
                           </>
                         )}
+                        <svg className="w-4 h-4 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
                       </button>
-                    )}
-                    {user.role === "ADMIN" && user.email !== currentUserEmail && (
-                      <span className="text-xs text-zinc-600">Cannot impersonate admins</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td className="px-4 py-3">
+                      {user.email !== currentUserEmail && user.role !== "ADMIN" && (
+                        <button
+                          onClick={() => startImpersonation(user)}
+                          disabled={impersonating === user.id}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 rounded-lg text-sm transition-colors disabled:opacity-50"
+                          title={`View as ${user.name || user.email}`}
+                        >
+                          {impersonating === user.id ? (
+                            <>
+                              <div className="w-3 h-3 border-2 border-amber-400/50 border-t-amber-400 rounded-full animate-spin" />
+                              <span>Starting...</span>
+                            </>
+                          ) : (
+                            <>
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                              </svg>
+                              <span>View As</span>
+                            </>
+                          )}
+                        </button>
+                      )}
+                      {user.role === "ADMIN" && user.email !== currentUserEmail && (
+                        <span className="text-xs text-zinc-600">Cannot impersonate admins</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
 
-          {users.length === 0 && (
+          {filterUsers().length === 0 && (
             <div className="p-8 text-center text-zinc-500">
-              No users found. {workspaceConfigured ? "Click \"Sync Google Workspace\" to import users." : "Users will appear here after they log in."}
+              {users.length === 0
+                ? (workspaceConfigured ? "Click \"Sync Google Workspace\" to import users." : "Users will appear here after they log in.")
+                : "No users match your filters."
+              }
             </div>
           )}
         </div>

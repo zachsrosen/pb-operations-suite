@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 
 interface ActivityLog {
@@ -45,11 +45,15 @@ export default function AdminActivityPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>("all");
+  const [dateRange, setDateRange] = useState<"today" | "7d" | "30d" | "all">("all");
+  const [searchEmail, setSearchEmail] = useState<string>("");
+  const [limit, setLimit] = useState<number>(200);
+  const [autoRefresh, setAutoRefresh] = useState<boolean>(false);
 
   const fetchActivities = useCallback(async () => {
     try {
       setLoading(true);
-      const params = new URLSearchParams({ limit: "100" });
+      const params = new URLSearchParams({ limit: limit.toString() });
       if (filter !== "all") {
         params.set("type", filter);
       }
@@ -66,11 +70,17 @@ export default function AdminActivityPage() {
     } finally {
       setLoading(false);
     }
-  }, [filter]);
+  }, [filter, limit]);
 
   useEffect(() => {
     fetchActivities();
   }, [fetchActivities]);
+
+  useEffect(() => {
+    if (!autoRefresh) return;
+    const interval = setInterval(fetchActivities, 30000);
+    return () => clearInterval(interval);
+  }, [autoRefresh, fetchActivities]);
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -91,6 +101,104 @@ export default function AdminActivityPage() {
       hour: "numeric",
       minute: "2-digit",
     });
+  };
+
+  const formatMetadata = (type: string, metadata: Record<string, unknown> | null): string => {
+    if (!metadata) return "";
+
+    switch (type) {
+      case "DASHBOARD_VIEWED":
+        return `Viewed ${metadata.dashboard || "dashboard"}`;
+      case "SURVEY_SCHEDULED":
+      case "INSTALL_SCHEDULED":
+      case "INSPECTION_SCHEDULED":
+        return `Scheduled for ${metadata.date || "unknown date"}`;
+      case "SEARCH":
+        return `Searched '${metadata.query || ""}' - ${metadata.resultCount || 0} results`;
+      case "FILTER":
+        return `Filter: ${metadata.name || "unknown"} = ${metadata.values || ""}`;
+      default:
+        return "";
+    }
+  };
+
+  const getDateRangeFilter = (): Date | null => {
+    const now = new Date();
+    switch (dateRange) {
+      case "today":
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        return today;
+      case "7d":
+        const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        return sevenDaysAgo;
+      case "30d":
+        const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        return thirtyDaysAgo;
+      default:
+        return null;
+    }
+  };
+
+  const filteredActivities = useMemo(() => {
+    let result = [...activities];
+
+    const dateFilterDate = getDateRangeFilter();
+    if (dateFilterDate) {
+      result = result.filter(
+        activity => new Date(activity.createdAt) >= dateFilterDate
+      );
+    }
+
+    if (searchEmail.trim()) {
+      const query = searchEmail.toLowerCase();
+      result = result.filter(
+        activity =>
+          (activity.userEmail && activity.userEmail.toLowerCase().includes(query)) ||
+          (activity.user?.email && activity.user.email.toLowerCase().includes(query))
+      );
+    }
+
+    return result;
+  }, [activities, dateRange, searchEmail]);
+
+  const activityTypeCounts = useMemo(() => {
+    return {
+      logins: filteredActivities.filter(a => a.type === "LOGIN").length,
+      dashboardViews: filteredActivities.filter(a => a.type === "DASHBOARD_VIEWED").length,
+      schedules: filteredActivities.filter(
+        a => a.type.includes("SCHEDULED") || a.type.includes("RESCHEDULED")
+      ).length,
+      exports: filteredActivities.filter(a => a.type === "EXPORT").length,
+      searches: filteredActivities.filter(a => a.type === "SEARCH").length,
+    };
+  }, [filteredActivities]);
+
+  const exportToCSV = () => {
+    if (filteredActivities.length === 0) {
+      alert("No activities to export");
+      return;
+    }
+
+    const headers = ["Timestamp", "User", "Type", "Details", "IP"];
+    const rows = filteredActivities.map(activity => [
+      new Date(activity.createdAt).toLocaleString(),
+      activity.user?.email || activity.userEmail || "System",
+      activity.type,
+      activity.description,
+      activity.ipAddress || "N/A",
+    ]);
+
+    const csvContent = [
+      headers.join(","),
+      ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(",")),
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `activity-log-${new Date().toISOString().split("T")[0]}.csv`;
+    link.click();
   };
 
   const getActivityStyle = (type: string) => {
@@ -148,29 +256,119 @@ export default function AdminActivityPage() {
       </div>
 
       {/* Content */}
-      <div className="max-w-4xl mx-auto px-4 py-6">
-        {/* Filter */}
-        <div className="mb-6 flex items-center gap-3">
-          <span className="text-sm text-zinc-400">Filter:</span>
-          <select
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
-          >
-            <option value="all">All Activities</option>
-            {uniqueTypes.map(type => (
-              <option key={type} value={type}>{type.replace(/_/g, " ")}</option>
-            ))}
-          </select>
-          <button
-            onClick={fetchActivities}
-            className="text-zinc-400 hover:text-white p-1.5 rounded-lg hover:bg-zinc-800 transition-colors"
-            title="Refresh"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-          </button>
+      <div className="max-w-6xl mx-auto px-4 py-6">
+        {/* Stats Summary */}
+        <div className="mb-6 grid grid-cols-5 gap-3">
+          <div className="bg-zinc-900 rounded-lg border border-zinc-800 p-3">
+            <div className="text-xs text-zinc-500 mb-1">Logins</div>
+            <div className="text-2xl font-bold text-green-400">{activityTypeCounts.logins}</div>
+          </div>
+          <div className="bg-zinc-900 rounded-lg border border-zinc-800 p-3">
+            <div className="text-xs text-zinc-500 mb-1">Dashboard Views</div>
+            <div className="text-2xl font-bold text-blue-400">{activityTypeCounts.dashboardViews}</div>
+          </div>
+          <div className="bg-zinc-900 rounded-lg border border-zinc-800 p-3">
+            <div className="text-xs text-zinc-500 mb-1">Schedules</div>
+            <div className="text-2xl font-bold text-emerald-400">{activityTypeCounts.schedules}</div>
+          </div>
+          <div className="bg-zinc-900 rounded-lg border border-zinc-800 p-3">
+            <div className="text-xs text-zinc-500 mb-1">Exports</div>
+            <div className="text-2xl font-bold text-orange-400">{activityTypeCounts.exports}</div>
+          </div>
+          <div className="bg-zinc-900 rounded-lg border border-zinc-800 p-3">
+            <div className="text-xs text-zinc-500 mb-1">Searches</div>
+            <div className="text-2xl font-bold text-purple-400">{activityTypeCounts.searches}</div>
+          </div>
+        </div>
+
+        {/* Filter and Controls */}
+        <div className="mb-6 space-y-4">
+          {/* Date Range Filter */}
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-zinc-400">Date Range:</span>
+            <div className="flex gap-2">
+              {(["today", "7d", "30d", "all"] as const).map(range => (
+                <button
+                  key={range}
+                  onClick={() => setDateRange(range)}
+                  className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
+                    dateRange === range
+                      ? "bg-cyan-600 text-white"
+                      : "bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700"
+                  }`}
+                >
+                  {range === "today" && "Today"}
+                  {range === "7d" && "Last 7 Days"}
+                  {range === "30d" && "Last 30 Days"}
+                  {range === "all" && "All Time"}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Type Filter and Search */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+            <div className="flex items-center gap-3 flex-1">
+              <span className="text-sm text-zinc-400">Type:</span>
+              <select
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              >
+                <option value="all">All Activities</option>
+                {uniqueTypes.map(type => (
+                  <option key={type} value={type}>{type.replace(/_/g, " ")}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center gap-3 flex-1">
+              <span className="text-sm text-zinc-400">Search:</span>
+              <input
+                type="email"
+                placeholder="Filter by email..."
+                value={searchEmail}
+                onChange={(e) => setSearchEmail(e.target.value)}
+                className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 flex-1"
+              />
+            </div>
+
+            {/* Control Buttons */}
+            <div className="flex gap-2">
+              <button
+                onClick={() => setAutoRefresh(!autoRefresh)}
+                className={`p-1.5 rounded-lg transition-colors ${
+                  autoRefresh
+                    ? "bg-green-600/20 text-green-400 border border-green-600/50"
+                    : "text-zinc-400 hover:text-white hover:bg-zinc-800"
+                }`}
+                title={autoRefresh ? "Disable auto-refresh" : "Enable auto-refresh (every 30s)"}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                </svg>
+              </button>
+              <button
+                onClick={fetchActivities}
+                className="text-zinc-400 hover:text-white p-1.5 rounded-lg hover:bg-zinc-800 transition-colors"
+                title="Refresh"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </button>
+              <button
+                onClick={exportToCSV}
+                className="text-zinc-400 hover:text-white px-3 py-1.5 rounded-lg hover:bg-zinc-800 transition-colors text-sm"
+                title="Export to CSV"
+              >
+                <svg className="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                CSV
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* Activity List */}
@@ -178,74 +376,99 @@ export default function AdminActivityPage() {
           <div className="flex items-center justify-center py-12">
             <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-cyan-500" />
           </div>
-        ) : activities.length === 0 ? (
+        ) : filteredActivities.length === 0 ? (
           <div className="text-center py-12 text-zinc-500">
             <svg className="w-12 h-12 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <p>No activity yet</p>
-            <p className="text-sm mt-1">Activities will appear here as users interact with the system</p>
+            <p>No activities match your filters</p>
+            <p className="text-sm mt-1">Try adjusting your search criteria or date range</p>
           </div>
         ) : (
-          <div className="space-y-2">
-            {activities.map(activity => {
-              const style = getActivityStyle(activity.type);
-              return (
-                <div
-                  key={activity.id}
-                  className="bg-zinc-900 rounded-xl border border-zinc-800 p-4 hover:border-zinc-700 transition-colors"
-                >
-                  <div className="flex items-start gap-3">
-                    {/* Icon */}
-                    <div className={`p-2 rounded-lg bg-zinc-800 ${style.color}`}>
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={style.icon} />
-                      </svg>
-                    </div>
+          <>
+            <div className="space-y-2">
+              {filteredActivities.map(activity => {
+                const style = getActivityStyle(activity.type);
+                const metadataDisplay = formatMetadata(activity.type, activity.metadata);
+                return (
+                  <div
+                    key={activity.id}
+                    className="bg-zinc-900 rounded-xl border border-zinc-800 p-4 hover:border-zinc-700 transition-colors"
+                  >
+                    <div className="flex items-start gap-3">
+                      {/* Icon */}
+                      <div className={`p-2 rounded-lg bg-zinc-800 ${style.color}`}>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={style.icon} />
+                        </svg>
+                      </div>
 
-                    {/* Content */}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-white">{activity.description}</p>
-                      <div className="flex items-center gap-2 mt-1 text-xs text-zinc-500">
-                        {activity.user ? (
-                          <span>{activity.user.name || activity.user.email}</span>
-                        ) : activity.userEmail ? (
-                          <span>{activity.userEmail}</span>
-                        ) : (
-                          <span>System</span>
+                      {/* Content */}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-white">{activity.description}</p>
+                        <div className="flex items-center gap-2 mt-1 text-xs text-zinc-500 flex-wrap">
+                          {activity.user ? (
+                            <span>{activity.user.name || activity.user.email}</span>
+                          ) : activity.userEmail ? (
+                            <span>{activity.userEmail}</span>
+                          ) : (
+                            <span>System</span>
+                          )}
+                          <span>•</span>
+                          <span>{formatDate(activity.createdAt)}</span>
+                          {activity.ipAddress && (
+                            <>
+                              <span>•</span>
+                              <span className="font-mono">{activity.ipAddress}</span>
+                            </>
+                          )}
+                        </div>
+
+                        {/* Formatted Metadata */}
+                        {metadataDisplay && (
+                          <p className="mt-2 text-xs text-zinc-400 italic">{metadataDisplay}</p>
                         )}
-                        <span>•</span>
-                        <span>{formatDate(activity.createdAt)}</span>
-                        {activity.ipAddress && (
-                          <>
-                            <span>•</span>
-                            <span className="font-mono">{activity.ipAddress}</span>
-                          </>
+
+                        {/* Raw Metadata Details */}
+                        {activity.metadata && Object.keys(activity.metadata).length > 0 && !metadataDisplay && (
+                          <details className="mt-2">
+                            <summary className="text-xs text-zinc-500 cursor-pointer hover:text-zinc-400">
+                              Details
+                            </summary>
+                            <pre className="mt-2 p-2 bg-zinc-800 rounded text-xs overflow-x-auto text-zinc-400">
+                              {JSON.stringify(activity.metadata, null, 2)}
+                            </pre>
+                          </details>
                         )}
                       </div>
 
-                      {/* Metadata */}
-                      {activity.metadata && Object.keys(activity.metadata).length > 0 && (
-                        <details className="mt-2">
-                          <summary className="text-xs text-zinc-500 cursor-pointer hover:text-zinc-400">
-                            Details
-                          </summary>
-                          <pre className="mt-2 p-2 bg-zinc-800 rounded text-xs overflow-x-auto text-zinc-400">
-                            {JSON.stringify(activity.metadata, null, 2)}
-                          </pre>
-                        </details>
-                      )}
+                      {/* Type Badge */}
+                      <span className={`text-xs px-2 py-1 rounded-full bg-zinc-800 ${style.color} whitespace-nowrap`}>
+                        {activity.type.replace(/_/g, " ")}
+                      </span>
                     </div>
-
-                    {/* Type Badge */}
-                    <span className={`text-xs px-2 py-1 rounded-full bg-zinc-800 ${style.color}`}>
-                      {activity.type.replace(/_/g, " ")}
-                    </span>
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+
+            {/* Load More Button */}
+            {filteredActivities.length >= limit && (
+              <div className="mt-6 flex justify-center">
+                <button
+                  onClick={() => setLimit(limit + 200)}
+                  className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg transition-colors text-sm"
+                >
+                  Load More
+                </button>
+              </div>
+            )}
+
+            {/* Results Summary */}
+            <div className="mt-4 text-center text-xs text-zinc-500">
+              Showing {filteredActivities.length} of {activities.length} activities
+            </div>
+          </>
         )}
       </div>
     </div>

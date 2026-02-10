@@ -18,13 +18,6 @@ const DISPLAY_NAMES: Record<string, string> = {
   'ready_to_submit': 'Ready to Submit',
   'not_started': 'Not Started',
   'on_hold': 'On Hold',
-  'inspection_scheduled': 'Inspection Scheduled',
-  'inspection_passed': 'Inspection Passed',
-  'inspection_failed': 'Inspection Failed',
-  'corrections_required': 'Corrections Required',
-  'reinspection_needed': 'Reinspection Needed',
-  'final_passed': 'Final Passed',
-  'pending_inspection': 'Pending Inspection',
   'submitted': 'Submitted',
   'pending': 'Pending',
   'approved': 'Approved',
@@ -104,59 +97,8 @@ const PERMITTING_STATUS_GROUPS: FilterGroup[] = [
   },
 ];
 
-// Inspection Status Groups
-const INSPECTION_STATUS_GROUPS: FilterGroup[] = [
-  {
-    name: "Pre-Inspection",
-    options: [
-      { value: "Ready For Inspection", label: "Ready For Inspection" },
-      { value: "Scheduled", label: "Scheduled" },
-    ]
-  },
-  {
-    name: "In Progress",
-    options: [
-      { value: "On Our Way", label: "On Our Way" },
-      { value: "Started", label: "Started" },
-      { value: "In Progress", label: "In Progress" },
-    ]
-  },
-  {
-    name: "Failed/Waiting",
-    options: [
-      { value: "Failed", label: "Failed" },
-      { value: "Rejected", label: "Rejected" },
-      { value: "Waiting on Permit Revisions", label: "Waiting on Permit Revisions" },
-      { value: "Revisions Complete", label: "Revisions Complete" },
-    ]
-  },
-  {
-    name: "Passed",
-    options: [
-      { value: "Passed", label: "Passed" },
-      { value: "Partial Pass", label: "Partial Pass" },
-    ]
-  },
-  {
-    name: "Pending",
-    options: [
-      { value: "Pending New Construction Sign Off", label: "Pending NC Sign Off" },
-      { value: "Pending Fire Inspection", label: "Pending Fire Inspection" },
-      { value: "Pending BUS Install", label: "Pending BUS Install" },
-      { value: "Pending New Construction", label: "Pending New Construction" },
-    ]
-  },
-  {
-    name: "Other",
-    options: [
-      { value: "Not Needed", label: "Not Needed" },
-    ]
-  },
-];
-
 // Flatten groups to get all options
 const ALL_PERMITTING_STATUS_OPTIONS = PERMITTING_STATUS_GROUPS.flatMap(g => g.options || []);
-const ALL_INSPECTION_STATUS_OPTIONS = INSPECTION_STATUS_GROUPS.flatMap(g => g.options || []);
 
 export default function PermittingPage() {
   /* ---- activity tracking ---- */
@@ -172,7 +114,6 @@ export default function PermittingPage() {
   const [filterLocations, setFilterLocations] = useState<string[]>([]);
   const [filterStages, setFilterStages] = useState<string[]>([]);
   const [filterPermitStatuses, setFilterPermitStatuses] = useState<string[]>([]);
-  const [filterInspectionStatuses, setFilterInspectionStatuses] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
 
   const fetchData = useCallback(async () => {
@@ -234,9 +175,6 @@ export default function PermittingPage() {
       // Permit Status filter (multi-select)
       if (filterPermitStatuses.length > 0 && !filterPermitStatuses.includes(p.permittingStatus || '')) return false;
 
-      // Inspection Status filter (multi-select)
-      if (filterInspectionStatuses.length > 0 && !filterInspectionStatuses.includes(p.finalInspectionStatus || '')) return false;
-
       // Search filter
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
@@ -248,14 +186,12 @@ export default function PermittingPage() {
 
       return true;
     });
-  }, [projects, filterAhjs, filterLocations, filterStages, filterPermitStatuses, filterInspectionStatuses, searchQuery]);
+  }, [projects, filterAhjs, filterLocations, filterStages, filterPermitStatuses, searchQuery]);
 
   const stats = useMemo(() => {
     const today = new Date();
     const permitPending = filteredProjects.filter(p => isPermitPending(p));
     const permitIssued = filteredProjects.filter(p => isPermitIssued(p));
-    const inspectionPending = filteredProjects.filter(p => p.stage === 'Inspection' && !p.inspectionPassDate);
-    const inspectionPassed = filteredProjects.filter(p => !!p.inspectionPassDate);
 
     // Calculate average days in permitting
     const daysInPermitting = permitPending
@@ -278,33 +214,21 @@ export default function PermittingPage() {
       ? Math.round(turnaroundDays.reduce((a, b) => a + b, 0) / turnaroundDays.length)
       : 0;
 
-    // Calculate average days in inspection
-    const daysInInspection = inspectionPending
-      .filter(p => p.inspectionScheduleDate)
-      .map(p => Math.floor((today.getTime() - new Date(p.inspectionScheduleDate! + "T12:00:00").getTime()) / (1000 * 60 * 60 * 24)));
-    const avgDaysInInspection = daysInInspection.length > 0
-      ? Math.round(daysInInspection.reduce((a, b) => a + b, 0) / daysInInspection.length)
-      : 0;
-
     // Status breakdown
     const permitStatusStats: Record<string, number> = {};
-    const inspectionStatusStats: Record<string, number> = {};
 
     filteredProjects.forEach(p => {
       if (p.permittingStatus) {
         permitStatusStats[p.permittingStatus] = (permitStatusStats[p.permittingStatus] || 0) + 1;
       }
-      if (p.finalInspectionStatus) {
-        inspectionStatusStats[p.finalInspectionStatus] = (inspectionStatusStats[p.finalInspectionStatus] || 0) + 1;
-      }
     });
 
     // Group by AHJ
-    const ahjStats: Record<string, { total: number; permitPending: number; permitIssued: number; inspectionPending: number; avgDays: number[]; totalValue: number }> = {};
+    const ahjStats: Record<string, { total: number; permitPending: number; permitIssued: number; avgDays: number[]; totalValue: number }> = {};
     filteredProjects.forEach(p => {
       const ahj = p.ahj || 'Unknown';
       if (!ahjStats[ahj]) {
-        ahjStats[ahj] = { total: 0, permitPending: 0, permitIssued: 0, inspectionPending: 0, avgDays: [], totalValue: 0 };
+        ahjStats[ahj] = { total: 0, permitPending: 0, permitIssued: 0, avgDays: [], totalValue: 0 };
       }
       ahjStats[ahj].total++;
       ahjStats[ahj].totalValue += p.amount || 0;
@@ -319,9 +243,6 @@ export default function PermittingPage() {
       } else if (isPermitPending(p)) {
         ahjStats[ahj].permitPending++;
       }
-      if (p.stage === 'Inspection' && !p.inspectionPassDate) {
-        ahjStats[ahj].inspectionPending++;
-      }
     });
 
     return {
@@ -329,13 +250,9 @@ export default function PermittingPage() {
       totalValue: filteredProjects.reduce((s, p) => s + (p.amount || 0), 0),
       permitPending,
       permitIssued,
-      inspectionPending,
-      inspectionPassed,
       avgDaysInPermitting,
       avgTurnaround,
-      avgDaysInInspection,
       permitStatusStats,
-      inspectionStatusStats,
       ahjStats,
     };
   }, [filteredProjects, isPermitPending, isPermitIssued]);
@@ -378,11 +295,6 @@ export default function PermittingPage() {
     [projects]
   );
 
-  const existingInspectionStatuses = useMemo(() =>
-    new Set(projects.map(p => (p as ExtendedProject).finalInspectionStatus).filter(Boolean)),
-    [projects]
-  );
-
   // Filter groups to only include options that exist in the actual data
   const filteredPermitStatusGroups = useMemo(() => {
     const knownValues = new Set(ALL_PERMITTING_STATUS_OPTIONS.map(o => o.value));
@@ -403,34 +315,10 @@ export default function PermittingPage() {
     return filtered;
   }, [existingPermitStatuses]);
 
-  const filteredInspectionStatusGroups = useMemo(() => {
-    const knownValues = new Set(ALL_INSPECTION_STATUS_OPTIONS.map(o => o.value));
-    const uncategorized = [...existingInspectionStatuses].filter(s => !knownValues.has(s as string));
-
-    const filtered = INSPECTION_STATUS_GROUPS.map(group => ({
-      ...group,
-      options: group.options?.filter(opt => existingInspectionStatuses.has(opt.value)) || []
-    })).filter(group => group.options && group.options.length > 0);
-
-    if (uncategorized.length > 0) {
-      filtered.push({
-        name: "Other",
-        options: uncategorized.map(status => ({ value: status as string, label: status as string }))
-      });
-    }
-
-    return filtered;
-  }, [existingInspectionStatuses]);
-
   // Flatten filtered groups to get all options
   const filteredPermitStatusOptions = useMemo(() =>
     filteredPermitStatusGroups.flatMap(g => g.options || []),
     [filteredPermitStatusGroups]
-  );
-
-  const filteredInspectionStatusOptions = useMemo(() =>
-    filteredInspectionStatusGroups.flatMap(g => g.options || []),
-    [filteredInspectionStatusGroups]
   );
 
   const clearAllFilters = () => {
@@ -438,20 +326,19 @@ export default function PermittingPage() {
     setFilterLocations([]);
     setFilterStages([]);
     setFilterPermitStatuses([]);
-    setFilterInspectionStatuses([]);
     setSearchQuery("");
   };
 
   const hasActiveFilters = filterAhjs.length > 0 || filterLocations.length > 0 ||
-    filterStages.length > 0 || filterPermitStatuses.length > 0 || filterInspectionStatuses.length > 0 || searchQuery;
+    filterStages.length > 0 || filterPermitStatuses.length > 0 || searchQuery;
 
   if (loading) {
     return (
-      <DashboardShell title="Permitting & Inspections" accentColor="purple">
+      <DashboardShell title="Permitting" accentColor="purple">
         <div className="flex items-center justify-center min-h-[400px]">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500 mx-auto mb-4"></div>
-            <p className="text-zinc-400">Loading Permitting & Inspections Data...</p>
+            <p className="text-zinc-400">Loading Permitting Data...</p>
           </div>
         </div>
       </DashboardShell>
@@ -460,7 +347,7 @@ export default function PermittingPage() {
 
   if (error) {
     return (
-      <DashboardShell title="Permitting & Inspections" accentColor="purple">
+      <DashboardShell title="Permitting" accentColor="purple">
         <div className="flex items-center justify-center min-h-[400px]">
           <div className="text-center text-red-500">
             <p className="text-xl mb-2">Error loading data</p>
@@ -485,19 +372,8 @@ export default function PermittingPage() {
     return 'bg-zinc-500/20 text-zinc-400';
   };
 
-  const getInspectionStatusColor = (status: string | undefined): string => {
-    if (!status) return 'bg-zinc-500/20 text-zinc-400';
-    const lower = status.toLowerCase();
-    if (lower.includes('passed')) return 'bg-emerald-500/20 text-emerald-400';
-    if (lower.includes('failed') || lower.includes('rejected')) return 'bg-red-500/20 text-red-400';
-    if (lower.includes('scheduled') || lower.includes('ready')) return 'bg-blue-500/20 text-blue-400';
-    if (lower.includes('progress') || lower.includes('started') || lower.includes('way')) return 'bg-cyan-500/20 text-cyan-400';
-    if (lower.includes('waiting') || lower.includes('pending')) return 'bg-orange-500/20 text-orange-400';
-    return 'bg-zinc-500/20 text-zinc-400';
-  };
-
   return (
-    <DashboardShell title="Permitting & Inspections" accentColor="purple">
+    <DashboardShell title="Permitting" accentColor="purple">
       {/* Search and Filters */}
       <div className="flex flex-col gap-4 mb-6">
         {/* Search Bar */}
@@ -546,15 +422,6 @@ export default function PermittingPage() {
             placeholder="All Permit Statuses"
             accentColor="green"
           />
-          <MultiSelectFilter
-            label="Inspection"
-            options={filteredInspectionStatusOptions}
-            groups={filteredInspectionStatusGroups}
-            selected={filterInspectionStatuses}
-            onChange={setFilterInspectionStatuses}
-            placeholder="All Inspection Statuses"
-            accentColor="orange"
-          />
           {hasActiveFilters && (
             <button
               onClick={clearAllFilters}
@@ -589,30 +456,8 @@ export default function PermittingPage() {
         </div>
       </div>
 
-      {/* Inspection Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <div className="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
-          <div className="text-2xl font-bold text-orange-400">{stats.inspectionPending.length}</div>
-          <div className="text-sm text-zinc-400">Inspections Pending</div>
-          <div className="text-xs text-zinc-500">{formatMoney(stats.inspectionPending.reduce((s, p) => s + (p.amount || 0), 0))}</div>
-        </div>
-        <div className="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
-          <div className="text-2xl font-bold text-emerald-400">{stats.inspectionPassed.length}</div>
-          <div className="text-sm text-zinc-400">Inspections Passed</div>
-          <div className="text-xs text-zinc-500">{formatMoney(stats.inspectionPassed.reduce((s, p) => s + (p.amount || 0), 0))}</div>
-        </div>
-        <div className="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
-          <div className="text-2xl font-bold text-amber-400">{stats.avgDaysInInspection}d</div>
-          <div className="text-sm text-zinc-400">Avg Days in Inspection</div>
-        </div>
-        <div className="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
-          <div className="text-2xl font-bold text-blue-400">{stats.avgDaysInPermitting}d</div>
-          <div className="text-sm text-zinc-400">Avg Days Permit Pending</div>
-        </div>
-      </div>
-
       {/* Status Breakdown */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+      <div className="grid grid-cols-1 gap-6 mb-6">
         {/* Permit Status Breakdown */}
         <div className="bg-[#12121a] rounded-xl border border-zinc-800 p-4">
           <h2 className="text-lg font-semibold mb-4 text-purple-400">By Permit Status</h2>
@@ -643,37 +488,6 @@ export default function PermittingPage() {
             )}
           </div>
         </div>
-
-        {/* Inspection Status Breakdown */}
-        <div className="bg-[#12121a] rounded-xl border border-zinc-800 p-4">
-          <h2 className="text-lg font-semibold mb-4 text-orange-400">By Inspection Status</h2>
-          <div className="space-y-2 max-h-[250px] overflow-y-auto">
-            {Object.keys(stats.inspectionStatusStats).length === 0 ? (
-              <p className="text-zinc-500 text-sm">No inspection status data available</p>
-            ) : (
-              Object.entries(stats.inspectionStatusStats)
-                .sort((a, b) => b[1] - a[1])
-                .map(([status, count]) => (
-                  <div
-                    key={status}
-                    className={`flex items-center justify-between p-2 bg-zinc-800/50 rounded-lg cursor-pointer hover:bg-zinc-800 transition-colors ${
-                      filterInspectionStatuses.includes(status) ? 'ring-1 ring-orange-500' : ''
-                    }`}
-                    onClick={() => {
-                      if (filterInspectionStatuses.includes(status)) {
-                        setFilterInspectionStatuses(filterInspectionStatuses.filter(s => s !== status));
-                      } else {
-                        setFilterInspectionStatuses([...filterInspectionStatuses, status]);
-                      }
-                    }}
-                  >
-                    <span className="text-sm text-zinc-300">{getDisplayName(status)}</span>
-                    <span className="text-lg font-bold text-orange-400">{count}</span>
-                  </div>
-                ))
-            )}
-          </div>
-        </div>
       </div>
 
       {/* AHJ Breakdown */}
@@ -682,7 +496,7 @@ export default function PermittingPage() {
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
           {Object.entries(stats.ahjStats)
             .filter(([ahj]) => ahj !== 'Unknown')
-            .sort((a, b) => (b[1].permitPending + b[1].inspectionPending) - (a[1].permitPending + a[1].inspectionPending))
+            .sort((a, b) => b[1].permitPending - a[1].permitPending)
             .slice(0, 12)
             .map(([ahj, ahjData]) => {
               const avgDays = ahjData.avgDays.length > 0
@@ -706,10 +520,6 @@ export default function PermittingPage() {
                   <div className="flex items-center gap-2 mt-1">
                     <span className="text-yellow-400 text-lg font-bold">{ahjData.permitPending}</span>
                     <span className="text-zinc-500 text-xs">permit</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-orange-400 text-sm">{ahjData.inspectionPending}</span>
-                    <span className="text-zinc-500 text-xs">inspection</span>
                   </div>
                   {avgDays !== null && <div className="text-xs text-zinc-500 mt-1">~{avgDays}d turnaround</div>}
                 </div>
@@ -735,14 +545,13 @@ export default function PermittingPage() {
                 <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Permit Status</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Permit Submitted</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Permit Issued</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Inspection</th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase">Amount</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-800">
               {filteredProjects.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-zinc-500">No projects found</td>
+                  <td colSpan={6} className="px-4 py-8 text-center text-zinc-500">No projects found</td>
                 </tr>
               ) : (
                 filteredProjects
@@ -759,16 +568,6 @@ export default function PermittingPage() {
                       isPermitIssued(project) ? 'Issued' :
                       isPermitPending(project) ? 'Pending' : 'Not Started'
                     );
-
-                    let inspectionLabel = '-';
-                    const rawInspStatus = (project.finalInspectionStatus || '').toLowerCase();
-                    if (project.inspectionPassDate || ['passed', 'complete', 'approved'].some(s => rawInspStatus.includes(s))) {
-                      inspectionLabel = getDisplayName(project.finalInspectionStatus) || 'Passed';
-                    } else if (project.stage === 'Inspection' || ['pending', 'scheduled', 'in progress', 'submitted'].some(s => rawInspStatus.includes(s))) {
-                      inspectionLabel = getDisplayName(project.finalInspectionStatus) || (project.inspectionScheduleDate ? 'Scheduled' : 'Pending');
-                    } else if (project.finalInspectionStatus) {
-                      inspectionLabel = getDisplayName(project.finalInspectionStatus);
-                    }
 
                     return (
                       <tr key={project.id} className="hover:bg-zinc-900/50">
@@ -790,11 +589,6 @@ export default function PermittingPage() {
                         </td>
                         <td className={`px-4 py-3 text-sm ${project.permitIssueDate ? 'text-green-400' : 'text-zinc-500'}`}>
                           {project.permitIssueDate || '-'}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getInspectionStatusColor(project.finalInspectionStatus)}`}>
-                            {inspectionLabel}
-                          </span>
                         </td>
                         <td className={`px-4 py-3 text-right font-mono text-sm ${(project.amount || 0) > 0 ? 'text-green-400' : 'text-zinc-500'}`}>
                           {formatMoney(project.amount || 0)}

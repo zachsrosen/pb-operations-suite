@@ -55,7 +55,7 @@ export default function EquipmentBacklogPage() {
   const [filterLocations, setFilterLocations] = useState<string[]>([]);
   const [filterStages, setFilterStages] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [sortField, setSortField] = useState<"systemSize" | "modules" | "stage" | "location" | "name">("systemSize");
+  const [sortField, setSortField] = useState<"systemSize" | "modules" | "stage" | "location" | "name" | "value">("systemSize");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   // View mode
@@ -153,6 +153,9 @@ export default function EquipmentBacklogPage() {
           break;
         case "name":
           cmp = (a.name || "").localeCompare(b.name || "");
+          break;
+        case "value":
+          cmp = (a.amount || 0) - (b.amount || 0);
           break;
       }
       return sortDir === "desc" ? -cmp : cmp;
@@ -264,7 +267,7 @@ export default function EquipmentBacklogPage() {
   /* ---- Stage breakdown ---- */
 
   const stageBreakdown = useMemo(() => {
-    const map = new Map<string, { count: number; kwdc: number; modules: number; value: number }>();
+    const map = new Map<string, { count: number; kwdc: number; kwac: number; modules: number; inverters: number; batteries: number; kwh: number; value: number }>();
     for (const p of filteredProjects) {
       const stage = p.stage || "Unknown";
       const existing = map.get(stage);
@@ -272,13 +275,21 @@ export default function EquipmentBacklogPage() {
       if (existing) {
         existing.count += 1;
         existing.kwdc += eq?.systemSizeKwdc || 0;
+        existing.kwac += eq?.systemSizeKwac || 0;
         existing.modules += eq?.modules?.count || 0;
+        existing.inverters += eq?.inverter?.count || 0;
+        existing.batteries += eq?.battery?.count || 0;
+        existing.kwh += (eq?.battery?.sizeKwh || 0) * (eq?.battery?.count || 0);
         existing.value += p.amount || 0;
       } else {
         map.set(stage, {
           count: 1,
           kwdc: eq?.systemSizeKwdc || 0,
+          kwac: eq?.systemSizeKwac || 0,
           modules: eq?.modules?.count || 0,
+          inverters: eq?.inverter?.count || 0,
+          batteries: eq?.battery?.count || 0,
+          kwh: (eq?.battery?.sizeKwh || 0) * (eq?.battery?.count || 0),
           value: p.amount || 0,
         });
       }
@@ -289,6 +300,39 @@ export default function EquipmentBacklogPage() {
         const bi = STAGE_ORDER.indexOf(b[0] as (typeof STAGE_ORDER)[number]);
         return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
       });
+  }, [filteredProjects]);
+
+  /* ---- Location breakdown ---- */
+
+  const locationBreakdown = useMemo(() => {
+    const map = new Map<string, { count: number; kwdc: number; kwac: number; modules: number; inverters: number; batteries: number; kwh: number; value: number }>();
+    for (const p of filteredProjects) {
+      const loc = p.pbLocation || "Unknown";
+      const eq = p.equipment;
+      const existing = map.get(loc);
+      if (existing) {
+        existing.count += 1;
+        existing.kwdc += eq?.systemSizeKwdc || 0;
+        existing.kwac += eq?.systemSizeKwac || 0;
+        existing.modules += eq?.modules?.count || 0;
+        existing.inverters += eq?.inverter?.count || 0;
+        existing.batteries += eq?.battery?.count || 0;
+        existing.kwh += (eq?.battery?.sizeKwh || 0) * (eq?.battery?.count || 0);
+        existing.value += p.amount || 0;
+      } else {
+        map.set(loc, {
+          count: 1,
+          kwdc: eq?.systemSizeKwdc || 0,
+          kwac: eq?.systemSizeKwac || 0,
+          modules: eq?.modules?.count || 0,
+          inverters: eq?.inverter?.count || 0,
+          batteries: eq?.battery?.count || 0,
+          kwh: (eq?.battery?.sizeKwh || 0) * (eq?.battery?.count || 0),
+          value: p.amount || 0,
+        });
+      }
+    }
+    return [...map.entries()].sort((a, b) => b[1].kwdc - a[1].kwdc);
   }, [filteredProjects]);
 
   /* ---- Column sort handler ---- */
@@ -409,7 +453,7 @@ export default function EquipmentBacklogPage() {
       </div>
 
       {/* Stat Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 mb-8">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-9 gap-3 mb-8">
         {[
           { label: "Projects", value: totals.projects.toLocaleString(), color: "text-cyan-400" },
           { label: "Total kW DC", value: totals.totalKwdc.toLocaleString(), color: "text-orange-400" },
@@ -419,6 +463,7 @@ export default function EquipmentBacklogPage() {
           { label: "Batteries", value: totals.totalBatteries.toLocaleString(), color: "text-emerald-400" },
           { label: "Battery kWh", value: totals.totalKwh.toLocaleString(), color: "text-green-400" },
           { label: "EV Chargers", value: totals.totalEv.toLocaleString(), color: "text-pink-400" },
+          { label: "Pipeline Value", value: formatMoney(totals.totalValue), color: "text-orange-400" },
         ].map((stat) => (
           <div key={stat.label} className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-3 text-center">
             <div className={`text-xl font-bold ${stat.color}`}>{stat.value}</div>
@@ -439,7 +484,11 @@ export default function EquipmentBacklogPage() {
                     <th className="pb-2 pr-4">Stage</th>
                     <th className="pb-2 pr-4 text-right">Projects</th>
                     <th className="pb-2 pr-4 text-right">kW DC</th>
+                    <th className="pb-2 pr-4 text-right">kW AC</th>
                     <th className="pb-2 pr-4 text-right">Modules</th>
+                    <th className="pb-2 pr-4 text-right">Inverters</th>
+                    <th className="pb-2 pr-4 text-right">Batteries</th>
+                    <th className="pb-2 pr-4 text-right">kWh</th>
                     <th className="pb-2 text-right">Value</th>
                   </tr>
                 </thead>
@@ -457,7 +506,48 @@ export default function EquipmentBacklogPage() {
                       </td>
                       <td className="py-2 pr-4 text-right text-zinc-300">{data.count}</td>
                       <td className="py-2 pr-4 text-right text-orange-400">{Math.round(data.kwdc).toLocaleString()}</td>
+                      <td className="py-2 pr-4 text-right text-amber-400">{Math.round(data.kwac).toLocaleString()}</td>
                       <td className="py-2 pr-4 text-right text-blue-400">{data.modules.toLocaleString()}</td>
+                      <td className="py-2 pr-4 text-right text-purple-400">{data.inverters.toLocaleString()}</td>
+                      <td className="py-2 pr-4 text-right text-emerald-400">{data.batteries.toLocaleString()}</td>
+                      <td className="py-2 pr-4 text-right text-green-400">{Math.round(data.kwh).toLocaleString()}</td>
+                      <td className="py-2 text-right text-zinc-400">{formatMoney(data.value)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Location Breakdown */}
+          <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6 mb-6">
+            <h2 className="text-lg font-semibold mb-4">Equipment by Location</h2>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-zinc-500 text-left border-b border-zinc-800">
+                    <th className="pb-2 pr-4">Location</th>
+                    <th className="pb-2 pr-4 text-right">Projects</th>
+                    <th className="pb-2 pr-4 text-right">kW DC</th>
+                    <th className="pb-2 pr-4 text-right">kW AC</th>
+                    <th className="pb-2 pr-4 text-right">Modules</th>
+                    <th className="pb-2 pr-4 text-right">Inverters</th>
+                    <th className="pb-2 pr-4 text-right">Batteries</th>
+                    <th className="pb-2 pr-4 text-right">kWh</th>
+                    <th className="pb-2 text-right">Value</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {locationBreakdown.map(([location, data]) => (
+                    <tr key={location} className="border-b border-zinc-800/50 hover:bg-zinc-800/30">
+                      <td className="py-2 pr-4 text-zinc-300">{location}</td>
+                      <td className="py-2 pr-4 text-right text-zinc-300">{data.count}</td>
+                      <td className="py-2 pr-4 text-right text-orange-400">{Math.round(data.kwdc).toLocaleString()}</td>
+                      <td className="py-2 pr-4 text-right text-amber-400">{Math.round(data.kwac).toLocaleString()}</td>
+                      <td className="py-2 pr-4 text-right text-blue-400">{data.modules.toLocaleString()}</td>
+                      <td className="py-2 pr-4 text-right text-purple-400">{data.inverters.toLocaleString()}</td>
+                      <td className="py-2 pr-4 text-right text-emerald-400">{data.batteries.toLocaleString()}</td>
+                      <td className="py-2 pr-4 text-right text-green-400">{Math.round(data.kwh).toLocaleString()}</td>
                       <td className="py-2 text-right text-zinc-400">{formatMoney(data.value)}</td>
                     </tr>
                   ))}
@@ -475,20 +565,33 @@ export default function EquipmentBacklogPage() {
                 <p className="text-zinc-500 text-sm">No module data</p>
               ) : (
                 <div className="space-y-2">
-                  {moduleSummary.map((m, i) => (
-                    <div key={i} className="flex items-center justify-between text-sm">
-                      <div className="truncate mr-2">
-                        <span className="text-zinc-300">{m.brand}</span>
-                        {m.model !== "Unknown" && (
-                          <span className="text-zinc-500 ml-1">{m.model}</span>
-                        )}
+                  {moduleSummary.map((m, i) => {
+                    const wattageDisplay = m.totalCount > 0
+                      ? (() => {
+                          const totalWattage = moduleSummary.reduce((sum, mod) => sum + (mod.totalCount > 0 ? mod.totalCount : 0), 0);
+                          const matchingProjects = filteredProjects.filter(p =>
+                            p.equipment?.modules?.brand === m.brand &&
+                            p.equipment?.modules?.model === m.model
+                          );
+                          const wattage = matchingProjects.length > 0 ? matchingProjects[0].equipment?.modules?.wattage : 0;
+                          return wattage ? ` (${wattage}W)` : "";
+                        })()
+                      : "";
+                    return (
+                      <div key={i} className="flex items-center justify-between text-sm">
+                        <div className="truncate mr-2">
+                          <span className="text-zinc-300">{m.brand}</span>
+                          {m.model !== "Unknown" && (
+                            <span className="text-zinc-500 ml-1">{m.model}{wattageDisplay}</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0">
+                          <span className="text-blue-400 font-medium">{m.totalCount.toLocaleString()}</span>
+                          <span className="text-zinc-600 text-xs">{m.projects} jobs</span>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-3 shrink-0">
-                        <span className="text-blue-400 font-medium">{m.totalCount.toLocaleString()}</span>
-                        <span className="text-zinc-600 text-xs">{m.projects} jobs</span>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -500,20 +603,30 @@ export default function EquipmentBacklogPage() {
                 <p className="text-zinc-500 text-sm">No inverter data</p>
               ) : (
                 <div className="space-y-2">
-                  {inverterSummary.map((inv, i) => (
-                    <div key={i} className="flex items-center justify-between text-sm">
-                      <div className="truncate mr-2">
-                        <span className="text-zinc-300">{inv.brand}</span>
-                        {inv.model !== "Unknown" && (
-                          <span className="text-zinc-500 ml-1">{inv.model}</span>
-                        )}
+                  {inverterSummary.map((inv, i) => {
+                    const kwacDisplay = (() => {
+                      const matchingProjects = filteredProjects.filter(p =>
+                        p.equipment?.inverter?.brand === inv.brand &&
+                        p.equipment?.inverter?.model === inv.model
+                      );
+                      const kwac = matchingProjects.length > 0 ? matchingProjects[0].equipment?.inverter?.sizeKwac : 0;
+                      return kwac ? ` (${kwac} kW each)` : "";
+                    })();
+                    return (
+                      <div key={i} className="flex items-center justify-between text-sm">
+                        <div className="truncate mr-2">
+                          <span className="text-zinc-300">{inv.brand}</span>
+                          {inv.model !== "Unknown" && (
+                            <span className="text-zinc-500 ml-1">{inv.model}{kwacDisplay}</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0">
+                          <span className="text-purple-400 font-medium">{inv.totalCount.toLocaleString()}</span>
+                          <span className="text-zinc-600 text-xs">{inv.projects} jobs</span>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-3 shrink-0">
-                        <span className="text-purple-400 font-medium">{inv.totalCount.toLocaleString()}</span>
-                        <span className="text-zinc-600 text-xs">{inv.projects} jobs</span>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -564,17 +677,22 @@ export default function EquipmentBacklogPage() {
                   <th className="px-4 py-3 cursor-pointer hover:text-zinc-300 text-right" onClick={() => handleSort("systemSize")}>
                     kW DC <SortIcon field="systemSize" />
                   </th>
+                  <th className="px-4 py-3 text-right">kW AC</th>
                   <th className="px-4 py-3 cursor-pointer hover:text-zinc-300 text-right" onClick={() => handleSort("modules")}>
                     Modules <SortIcon field="modules" />
                   </th>
                   <th className="px-4 py-3 text-right">Inverters</th>
                   <th className="px-4 py-3 text-right">Batteries</th>
                   <th className="px-4 py-3 text-right">EV</th>
+                  <th className="px-4 py-3 cursor-pointer hover:text-zinc-300 text-right" onClick={() => handleSort("value")}>
+                    Value <SortIcon field="value" />
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {sortedProjects.map((p) => {
                   const eq = p.equipment;
+                  const wattageDisplay = eq?.modules?.wattage ? ` × ${eq.modules.wattage}W` : "";
                   return (
                     <tr key={p.id} className="border-b border-zinc-800/50 hover:bg-zinc-800/30">
                       <td className="px-4 py-2.5">
@@ -597,7 +715,10 @@ export default function EquipmentBacklogPage() {
                         <span className="text-orange-400 font-medium">{Math.round(eq?.systemSizeKwdc || 0).toLocaleString()}</span>
                       </td>
                       <td className="px-4 py-2.5 text-right">
-                        <div className="text-blue-400">{eq?.modules?.count || 0}</div>
+                        <span className="text-amber-400">{Math.round(eq?.systemSizeKwac || 0).toLocaleString()}</span>
+                      </td>
+                      <td className="px-4 py-2.5 text-right">
+                        <div className="text-blue-400">{eq?.modules?.count || 0}{wattageDisplay}</div>
                         {eq?.modules?.brand && (
                           <div className="text-xs text-zinc-600 truncate max-w-[120px]">{eq.modules.brand}</div>
                         )}
@@ -617,12 +738,15 @@ export default function EquipmentBacklogPage() {
                       <td className="px-4 py-2.5 text-right text-pink-400">
                         {eq?.evCount || 0}
                       </td>
+                      <td className="px-4 py-2.5 text-right text-zinc-400">
+                        {formatMoney(p.amount)}
+                      </td>
                     </tr>
                   );
                 })}
                 {sortedProjects.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="text-center py-12 text-zinc-500">
+                    <td colSpan={10} className="text-center py-12 text-zinc-500">
                       No projects match the current filters
                     </td>
                   </tr>
