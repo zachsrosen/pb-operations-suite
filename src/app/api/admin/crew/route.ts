@@ -27,10 +27,17 @@ const ZUPER_TEAM_UIDS: Record<string, string> = {
   Camarillo: "0168d963-84af-4214-ad81-d6c43cee8e65",
 };
 
+// Generate email from name: "Drew Perry" → "drew@photonbrothers.com"
+function generateCrewEmail(name: string): string {
+  const firstName = name.split(" ")[0].toLowerCase();
+  return `${firstName}@photonbrothers.com`;
+}
+
 // Initial seed data (migrate from hardcoded values)
 const SEED_DATA = [
   {
     name: "Drew Perry",
+    email: "drew@photonbrothers.com",
     zuperUserUid: "0ddc7e1d-62e1-49df-b89d-905a39c1e353",
     zuperTeamUid: ZUPER_TEAM_UIDS.Centennial,
     role: "surveyor",
@@ -38,6 +45,7 @@ const SEED_DATA = [
   },
   {
     name: "Joe Lynch",
+    email: "joe@photonbrothers.com",
     zuperUserUid: "f203f99b-4aaf-488e-8e6a-8ee5e94ec217",
     zuperTeamUid: ZUPER_TEAM_UIDS.Westminster,
     role: "surveyor",
@@ -45,25 +53,37 @@ const SEED_DATA = [
   },
   {
     name: "Derek Pomar",
+    email: "derek@photonbrothers.com",
     zuperUserUid: "f3bb40c0-d548-4355-ab39-6c27532a6d36",
     zuperTeamUid: ZUPER_TEAM_UIDS.Centennial,
     role: "surveyor",
     locations: ["DTC", "Centennial"],
   },
   {
+    name: "Ryszard Szymanski",
+    email: "ryszard@photonbrothers.com",
+    zuperUserUid: "e043bf1d-006b-4033-a46e-3b5d06ed3d00",
+    zuperTeamUid: ZUPER_TEAM_UIDS.Westminster,
+    role: "surveyor",
+    locations: ["Westminster"],
+  },
+  {
+    name: "Nick Scarpellino",
+    email: "nick@photonbrothers.com",
+    zuperUserUid: "8e67159c-48fe-4fb0-acc3-b1c905ff6e95",
+    zuperTeamUid: ZUPER_TEAM_UIDS["San Luis Obispo"],
+    role: "surveyor",
+    locations: ["San Luis Obispo", "Camarillo"],
+  },
+  {
     name: "Rolando",
+    email: "rolando@photonbrothers.com",
     zuperUserUid: "a89ed2f5-222b-4b09-8bb0-14dc45c2a51b",
     zuperTeamUid: ZUPER_TEAM_UIDS["Colorado Springs"],
     role: "technician",
     locations: ["Colorado Springs"],
   },
-  {
-    name: "Rich",
-    zuperUserUid: "e043bf1d-006b-4033-a46e-3b5d06ed3d00",
-    zuperTeamUid: ZUPER_TEAM_UIDS.Westminster,
-    role: "technician",
-    locations: ["Westminster"],
-  },
+  // Note: "Rich" was previously listed here with UID e043bf1d — that's Ryszard Szymanski (listed above)
 ];
 
 // Verify admin role
@@ -191,7 +211,7 @@ export async function POST(request: NextRequest) {
 
     const crew = await upsertCrewMember({
       name: body.name,
-      email: body.email,
+      email: body.email || generateCrewEmail(body.name),
       zuperUserUid: body.zuperUserUid,
       zuperTeamUid: body.zuperTeamUid,
       role: body.role,

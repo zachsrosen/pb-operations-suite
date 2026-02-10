@@ -883,6 +883,17 @@ export async function getCrewMemberByName(name: string): Promise<CrewMember | nu
 }
 
 /**
+ * Get crew member by email (for linking logged-in users to their crew profile)
+ */
+export async function getCrewMemberByEmail(email: string): Promise<CrewMember | null> {
+  if (!prisma) return null;
+
+  return prisma.crewMember.findFirst({
+    where: { email, isActive: true },
+  });
+}
+
+/**
  * Get crew members for a specific location
  */
 export async function getCrewMembersForLocation(location: string, role?: string): Promise<CrewMember[]> {
