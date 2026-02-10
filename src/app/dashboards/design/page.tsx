@@ -45,12 +45,120 @@ function getDisplayName(value: string | undefined): string {
   return DISPLAY_NAMES[key] || value;
 }
 
+interface FullEquipment {
+  modules: { brand: string; model: string; count: number; wattage: number };
+  inverter: { brand: string; model: string; count: number; sizeKwac: number };
+  battery: { brand: string; model: string; count: number; sizeKwh: number; expansionCount: number };
+  evCount: number;
+  systemSizeKwdc: number;
+  systemSizeKwac: number;
+}
+
 interface ExtendedProject extends RawProject {
   designStatus?: string;
   layoutStatus?: string; // This is Design Approval Status in HubSpot
   designCompletionDate?: string;
   designApprovalDate?: string;
   tags?: string[];
+  equipment?: FullEquipment | RawProject["equipment"];
+}
+
+// ============== CLIPPING DETECTION ENGINE ==============
+// Seasonal TSRF decomposition: when shade data is unavailable (EVTD-only designs),
+// the annual-average TSRF suppresses summer peaks. This decomposes TSRF into a
+// seasonal curve so we can estimate true summer peak DC/AC ratio and flag clipping.
+
+interface ClippingAnalysis {
+  projectName: string;
+  projectId: string;
+  projectUrl?: string;
+  panelCount: number;
+  panelWattage: number;
+  dcCapacityKw: number;
+  inverterCount: number;
+  acCapacityKw: number;
+  nameplateDcAcRatio: number;
+  estimatedSummerDcAcRatio: number;
+  estimatedSummerTsrf: number;
+  avgTsrf: number;
+  batteryCount: number;
+  batteryKwh: number;
+  riskLevel: "none" | "low" | "moderate" | "high";
+  stage: string;
+  designStatus?: string;
+}
+
+const DEFAULT_TSRF = 0.84; // Default annual avg TSRF when not known (typical residential)
+const SHADE_SWING_FACTOR = 0.65; // Fraction of shade loss recovered in summer
+
+function getSeasonalTSRF(annualTsrf: number): number {
+  if (annualTsrf >= 1.0) return annualTsrf;
+  const B = SHADE_SWING_FACTOR * (1.0 - annualTsrf);
+  const correctedBase = annualTsrf - 0.15 * B;
+  // Summer solstice (day 172): sin((172-80)/365 * 2*PI) ≈ 1.0
+  return Math.min(1.0, correctedBase + B);
+}
+
+function analyzeClipping(project: ExtendedProject): ClippingAnalysis | null {
+  const eq = project.equipment as FullEquipment | undefined;
+  if (!eq) return null;
+
+  const panelCount = eq.modules?.count || 0;
+  const panelWattage = eq.modules?.wattage || 0;
+  const inverterCount = eq.inverter?.count || 0;
+  const inverterSizeKwac = eq.inverter?.sizeKwac || 0;
+
+  // Need both DC and AC data to analyze
+  const dcCapacityKw = eq.systemSizeKwdc || (panelCount * panelWattage / 1000);
+  const acCapacityKw = eq.systemSizeKwac || (inverterCount * inverterSizeKwac);
+
+  if (dcCapacityKw <= 0 || acCapacityKw <= 0) return null;
+
+  const nameplateDcAcRatio = dcCapacityKw / acCapacityKw;
+  const avgTsrf = DEFAULT_TSRF; // No per-project TSRF from HubSpot; use typical residential
+  const summerTsrf = getSeasonalTSRF(avgTsrf);
+  const estimatedSummerDcAcRatio = (dcCapacityKw * summerTsrf) / acCapacityKw;
+
+  const batteryCount = eq.battery?.count || 0;
+  const batteryKwh = batteryCount * (eq.battery?.sizeKwh || 0);
+
+  // Risk classification
+  let riskLevel: ClippingAnalysis["riskLevel"] = "none";
+  if (nameplateDcAcRatio > 1.5) {
+    riskLevel = "high";
+  } else if (estimatedSummerDcAcRatio > 1.15 || nameplateDcAcRatio > 1.3) {
+    riskLevel = "moderate";
+  } else if (estimatedSummerDcAcRatio > 1.0 || nameplateDcAcRatio > 1.15) {
+    riskLevel = "low";
+  }
+
+  // Battery can absorb some DC excess — reduce risk if battery present
+  if (riskLevel !== "none" && batteryKwh > 0) {
+    // DC-coupled battery (e.g., PW3) can absorb ~5kW DC excess
+    // If battery present and ratio is only slightly over, downgrade risk
+    if (riskLevel === "low") riskLevel = "none";
+    else if (riskLevel === "moderate" && nameplateDcAcRatio < 1.4) riskLevel = "low";
+  }
+
+  return {
+    projectName: project.name,
+    projectId: project.id,
+    projectUrl: project.url,
+    panelCount,
+    panelWattage,
+    dcCapacityKw,
+    inverterCount,
+    acCapacityKw,
+    nameplateDcAcRatio,
+    estimatedSummerDcAcRatio,
+    estimatedSummerTsrf: summerTsrf,
+    avgTsrf,
+    batteryCount,
+    batteryKwh,
+    riskLevel,
+    stage: project.stage,
+    designStatus: project.designStatus,
+  };
 }
 
 // Design Status Groups
@@ -344,6 +452,23 @@ export default function DesignEngineeringPage() {
       avgDesignTurnaround,
     };
   }, [filteredProjects]);
+
+  // Clipping analysis across all projects with equipment data
+  const clippingAnalyses = useMemo(() => {
+    const analyses = filteredProjects
+      .map(p => analyzeClipping(p))
+      .filter((a): a is ClippingAnalysis => a !== null);
+
+    const atRisk = analyses.filter(a => a.riskLevel !== "none");
+    const high = analyses.filter(a => a.riskLevel === "high");
+    const moderate = analyses.filter(a => a.riskLevel === "moderate");
+    const low = analyses.filter(a => a.riskLevel === "low");
+    const withBattery = atRisk.filter(a => a.batteryKwh > 0);
+
+    return { all: analyses, atRisk, high, moderate, low, withBattery };
+  }, [filteredProjects]);
+
+  const [showClippingTool, setShowClippingTool] = useState(false);
 
   // Get unique values for filters
   const locations = useMemo(() =>
@@ -667,6 +792,163 @@ export default function DesignEngineeringPage() {
         </div>
       </div>
 
+      {/* Clipping Detection Tool */}
+      <div className="bg-[#12121a] rounded-xl border border-zinc-800 mb-6 overflow-hidden">
+        <button
+          onClick={() => setShowClippingTool(!showClippingTool)}
+          className="w-full p-4 flex items-center justify-between hover:bg-zinc-900/50 transition-colors"
+        >
+          <div className="flex items-center gap-3">
+            <h2 className="text-lg font-semibold text-amber-400">Clipping Detection</h2>
+            <span className="text-xs text-zinc-500">Seasonal TSRF Decomposition</span>
+            {clippingAnalyses.atRisk.length > 0 && (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-500/20 text-amber-400">
+                {clippingAnalyses.atRisk.length} at risk
+              </span>
+            )}
+          </div>
+          <svg
+            className={`w-5 h-5 text-zinc-400 transition-transform ${showClippingTool ? 'rotate-180' : ''}`}
+            fill="none" viewBox="0 0 24 24" stroke="currentColor"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+
+        {showClippingTool && (
+          <div className="p-4 border-t border-zinc-800">
+            {/* Summary Stats */}
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+              <div className="bg-zinc-900/50 rounded-lg p-3 border border-zinc-700/50">
+                <div className="text-xl font-bold text-zinc-300">{clippingAnalyses.all.length}</div>
+                <div className="text-xs text-zinc-500">Analyzed</div>
+              </div>
+              <div className="bg-zinc-900/50 rounded-lg p-3 border border-red-500/20">
+                <div className="text-xl font-bold text-red-400">{clippingAnalyses.high.length}</div>
+                <div className="text-xs text-zinc-500">High Risk</div>
+              </div>
+              <div className="bg-zinc-900/50 rounded-lg p-3 border border-amber-500/20">
+                <div className="text-xl font-bold text-amber-400">{clippingAnalyses.moderate.length}</div>
+                <div className="text-xs text-zinc-500">Moderate Risk</div>
+              </div>
+              <div className="bg-zinc-900/50 rounded-lg p-3 border border-yellow-500/20">
+                <div className="text-xl font-bold text-yellow-400">{clippingAnalyses.low.length}</div>
+                <div className="text-xs text-zinc-500">Low Risk</div>
+              </div>
+              <div className="bg-zinc-900/50 rounded-lg p-3 border border-cyan-500/20">
+                <div className="text-xl font-bold text-cyan-400">{clippingAnalyses.withBattery.length}</div>
+                <div className="text-xs text-zinc-500">Battery Mitigated</div>
+              </div>
+            </div>
+
+            {/* Explanation */}
+            <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg p-3 mb-4">
+              <p className="text-xs text-zinc-400 leading-relaxed">
+                <span className="text-amber-400 font-medium">How it works:</span> Without EVIA 30-min shade profiles,
+                annual-average TSRF suppresses summer peaks. This tool decomposes TSRF seasonally — summer TSRF is ~{Math.round(getSeasonalTSRF(DEFAULT_TSRF) * 100)}%
+                vs annual avg ~{Math.round(DEFAULT_TSRF * 100)}% — revealing systems where summer DC output exceeds inverter AC capacity.
+                Projects flagged here may clip in summer even if the EVTD interface reports acceptable ratios.
+                DC-coupled batteries (PW3) can absorb ~5kW DC excess before true clipping occurs.
+              </p>
+            </div>
+
+            {/* At-Risk Projects Table */}
+            {clippingAnalyses.atRisk.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-zinc-900/80">
+                    <tr>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-zinc-400 uppercase">Project</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-zinc-400 uppercase">Equipment</th>
+                      <th className="px-3 py-2 text-center text-xs font-medium text-zinc-400 uppercase">DC kW</th>
+                      <th className="px-3 py-2 text-center text-xs font-medium text-zinc-400 uppercase">AC kW</th>
+                      <th className="px-3 py-2 text-center text-xs font-medium text-zinc-400 uppercase">Nameplate DC/AC</th>
+                      <th className="px-3 py-2 text-center text-xs font-medium text-zinc-400 uppercase">Summer DC/AC</th>
+                      <th className="px-3 py-2 text-center text-xs font-medium text-zinc-400 uppercase">Battery</th>
+                      <th className="px-3 py-2 text-center text-xs font-medium text-zinc-400 uppercase">Risk</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-800/50">
+                    {clippingAnalyses.atRisk
+                      .sort((a, b) => b.nameplateDcAcRatio - a.nameplateDcAcRatio)
+                      .map(analysis => {
+                        const riskColors = {
+                          high: "bg-red-500/20 text-red-400 border-red-500/30",
+                          moderate: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+                          low: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
+                          none: "bg-green-500/20 text-green-400 border-green-500/30",
+                        };
+                        return (
+                          <tr key={analysis.projectId} className="hover:bg-zinc-900/30">
+                            <td className="px-3 py-2">
+                              <a
+                                href={analysis.projectUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-sm font-medium text-white hover:text-amber-400"
+                              >
+                                {analysis.projectName.split('|')[0].trim()}
+                              </a>
+                              <div className="text-xs text-zinc-500">{analysis.stage}</div>
+                            </td>
+                            <td className="px-3 py-2 text-xs text-zinc-400">
+                              {analysis.panelCount}x {analysis.panelWattage}W
+                              <div className="text-zinc-500">{analysis.inverterCount}x inv</div>
+                            </td>
+                            <td className="px-3 py-2 text-center text-sm font-mono text-zinc-300">
+                              {analysis.dcCapacityKw.toFixed(1)}
+                            </td>
+                            <td className="px-3 py-2 text-center text-sm font-mono text-zinc-300">
+                              {analysis.acCapacityKw.toFixed(1)}
+                            </td>
+                            <td className="px-3 py-2 text-center">
+                              <span className={`text-sm font-mono font-bold ${
+                                analysis.nameplateDcAcRatio > 1.3 ? 'text-red-400' :
+                                analysis.nameplateDcAcRatio > 1.15 ? 'text-amber-400' :
+                                analysis.nameplateDcAcRatio > 1.0 ? 'text-yellow-400' : 'text-green-400'
+                              }`}>
+                                {analysis.nameplateDcAcRatio.toFixed(2)}
+                              </span>
+                              <div className="text-[10px] text-zinc-500">{(analysis.nameplateDcAcRatio * 100).toFixed(0)}%</div>
+                            </td>
+                            <td className="px-3 py-2 text-center">
+                              <span className={`text-sm font-mono font-bold ${
+                                analysis.estimatedSummerDcAcRatio > 1.15 ? 'text-red-400' :
+                                analysis.estimatedSummerDcAcRatio > 1.0 ? 'text-amber-400' : 'text-green-400'
+                              }`}>
+                                {analysis.estimatedSummerDcAcRatio.toFixed(2)}
+                              </span>
+                              <div className="text-[10px] text-zinc-500">~{Math.round(analysis.estimatedSummerTsrf * 100)}% TSRF</div>
+                            </td>
+                            <td className="px-3 py-2 text-center text-xs">
+                              {analysis.batteryKwh > 0 ? (
+                                <span className="text-cyan-400">{analysis.batteryKwh.toFixed(0)} kWh</span>
+                              ) : (
+                                <span className="text-zinc-600">None</span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-center">
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${riskColors[analysis.riskLevel]}`}>
+                                {analysis.riskLevel}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="text-center py-6 text-zinc-500 text-sm">
+                {clippingAnalyses.all.length === 0
+                  ? "No projects with equipment data available for clipping analysis"
+                  : "No clipping risk detected across analyzed projects"}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Projects Table */}
       <div className="bg-[#12121a] rounded-xl border border-zinc-800 overflow-hidden">
         <div className="p-4 border-b border-zinc-800 flex items-center justify-between">
@@ -687,13 +969,14 @@ export default function DesignEngineeringPage() {
                 <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Design Approved</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Type</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Tags</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-zinc-400 uppercase">DC/AC</th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase">Amount</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-800">
               {filteredProjects.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center text-zinc-500">No projects found</td>
+                  <td colSpan={10} className="px-4 py-8 text-center text-zinc-500">No projects found</td>
                 </tr>
               ) : (
                 filteredProjects
@@ -755,6 +1038,23 @@ export default function DesignEngineeringPage() {
                         ) : (
                           <span className="text-zinc-500">-</span>
                         )}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {(() => {
+                          const clip = analyzeClipping(project);
+                          if (!clip) return <span className="text-zinc-600 text-xs">-</span>;
+                          const colors = {
+                            high: "text-red-400",
+                            moderate: "text-amber-400",
+                            low: "text-yellow-400",
+                            none: "text-green-400",
+                          };
+                          return (
+                            <span className={`text-xs font-mono font-medium ${colors[clip.riskLevel]}`} title={`DC: ${clip.dcCapacityKw.toFixed(1)}kW / AC: ${clip.acCapacityKw.toFixed(1)}kW | Summer est: ${clip.estimatedSummerDcAcRatio.toFixed(2)}`}>
+                              {clip.nameplateDcAcRatio.toFixed(2)}
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className={`px-4 py-3 text-right font-mono text-sm ${(project.amount || 0) > 0 ? 'text-green-400' : 'text-zinc-500'}`}>
                         {formatMoney(project.amount || 0)}
