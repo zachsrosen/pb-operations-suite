@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ZuperClient, JOB_CATEGORY_UIDS } from "@/lib/zuper";
-import { getCrewSchedulesFromDB } from "@/lib/db";
+import { getCrewSchedulesFromDB, getAvailabilityOverrides } from "@/lib/db";
 
 /**
  * GET /api/zuper/availability
@@ -57,6 +57,7 @@ function getSlotKey(date: string, userName: string, startTime: string): string {
 // Local crew availability configuration
 // Based on surveyor shift schedules
 interface CrewSchedule {
+  crewMemberId?: string; // DB crew member ID (undefined for hardcoded fallback)
   name: string;
   location: string; // "DTC", "Westminster", "Colorado Springs", etc.
   reportLocation: string; // Where they report to
@@ -65,6 +66,7 @@ interface CrewSchedule {
     day: number;
     startTime: string; // "HH:mm" format in the crew's LOCAL timezone
     endTime: string;
+    availabilityId?: string; // DB availability record ID (for linking overrides)
   }>;
   jobTypes: string[]; // "survey", "construction", "inspection"
   userUid?: string; // Zuper user UID for assignments
@@ -369,6 +371,7 @@ export async function GET(request: NextRequest) {
     const dbSchedules = await getCrewSchedulesFromDB();
     if (dbSchedules.length > 0) {
       activeSchedules = dbSchedules.map(s => ({
+        crewMemberId: s.crewMemberId,
         name: s.name,
         location: s.location,
         reportLocation: s.reportLocation,
@@ -384,6 +387,25 @@ export async function GET(request: NextRequest) {
     }
   } catch (dbErr) {
     console.warn("[Zuper Availability] Failed to load DB schedules, using hardcoded fallback:", dbErr);
+  }
+
+  // Load date-specific overrides (blocked dates, custom slots)
+  const overridesMap = new Map<string, Array<{ availabilityId: string | null; type: string }>>();
+  try {
+    const overrides = await getAvailabilityOverrides({ dateFrom: fromDate!, dateTo: toDate! });
+    for (const ov of overrides) {
+      const key = `${ov.crewMemberId}|${ov.date}`;
+      if (!overridesMap.has(key)) overridesMap.set(key, []);
+      overridesMap.get(key)!.push({
+        availabilityId: ov.availabilityId,
+        type: ov.type,
+      });
+    }
+    if (overrides.length > 0) {
+      console.log(`[Zuper Availability] Loaded ${overrides.length} date overrides`);
+    }
+  } catch (ovErr) {
+    console.warn("[Zuper Availability] Failed to load overrides:", ovErr);
   }
 
   // Resolve all unique crew member names to Zuper UIDs (one API call, cached)
@@ -430,6 +452,16 @@ export async function GET(request: NextRequest) {
       const shifts = crew.schedule.filter((s) => s.day === dayOfWeek);
       for (const shift of shifts) {
         if (availabilityByDate[dateStr]) {
+          // Check for date-specific overrides (blocked dates)
+          if (crew.crewMemberId) {
+            const dateOverrides = overridesMap.get(`${crew.crewMemberId}|${dateStr}`) || [];
+            const isBlocked = dateOverrides.some(ov =>
+              ov.type === "blocked" &&
+              (!ov.availabilityId || ov.availabilityId === shift.availabilityId)
+            );
+            if (isBlocked) continue; // Skip this shift for this specific date
+          }
+
           // Generate 1-hour slots for this shift (times are in crew's local timezone)
           const hourlySlots = generateHourlySlots(shift.startTime, shift.endTime);
 

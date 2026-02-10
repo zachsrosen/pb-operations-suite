@@ -12,7 +12,7 @@ import { PrismaNeon } from "@prisma/adapter-neon";
 
 // Re-export types
 export { UserRole, ActivityType };
-export type { User, ActivityLog, BookedSlot, AppSetting, ZuperJobCache, HubSpotProjectCache, ScheduleRecord, RateLimit } from "@/generated/prisma/client";
+export type { User, ActivityLog, BookedSlot, AppSetting, ZuperJobCache, HubSpotProjectCache, ScheduleRecord, RateLimit, AvailabilityOverride } from "@/generated/prisma/client";
 
 // Connection string
 const connectionString = process.env.DATABASE_URL;
@@ -1073,10 +1073,11 @@ export async function deleteCrewAvailability(id: string) {
  * used by the availability route. Groups by crew member name.
  */
 export async function getCrewSchedulesFromDB(): Promise<Array<{
+  crewMemberId: string;
   name: string;
   location: string;
   reportLocation: string;
-  schedule: Array<{ day: number; startTime: string; endTime: string }>;
+  schedule: Array<{ day: number; startTime: string; endTime: string; availabilityId: string }>;
   jobTypes: string[];
   userUid?: string;
   teamUid?: string;
@@ -1098,10 +1099,11 @@ export async function getCrewSchedulesFromDB(): Promise<Array<{
 
   // Group by crew member + location combo
   const grouped = new Map<string, {
+    crewMemberId: string;
     name: string;
     location: string;
     reportLocation: string;
-    schedule: Array<{ day: number; startTime: string; endTime: string }>;
+    schedule: Array<{ day: number; startTime: string; endTime: string; availabilityId: string }>;
     jobTypes: Set<string>;
     userUid?: string;
     teamUid?: string;
@@ -1112,6 +1114,7 @@ export async function getCrewSchedulesFromDB(): Promise<Array<{
     const key = `${record.crewMember.name}|${record.location}`;
     if (!grouped.has(key)) {
       grouped.set(key, {
+        crewMemberId: record.crewMemberId,
         name: record.crewMember.name,
         location: record.location,
         reportLocation: record.reportLocation || record.location,
@@ -1127,6 +1130,7 @@ export async function getCrewSchedulesFromDB(): Promise<Array<{
       day: record.dayOfWeek,
       startTime: record.startTime,
       endTime: record.endTime,
+      availabilityId: record.id,
     });
     group.jobTypes.add(record.jobType);
   }
@@ -1135,4 +1139,114 @@ export async function getCrewSchedulesFromDB(): Promise<Array<{
     ...g,
     jobTypes: Array.from(g.jobTypes),
   }));
+}
+
+// ==========================================
+// AVAILABILITY OVERRIDES (Date-specific exceptions)
+// ==========================================
+
+/**
+ * Get overrides for a crew member within a date range.
+ * Used by the availability API to check if a recurring slot
+ * should be blocked or modified on a specific date.
+ */
+export async function getAvailabilityOverrides(filters?: {
+  crewMemberId?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  date?: string;
+}): Promise<Array<{
+  id: string;
+  crewMemberId: string;
+  date: string;
+  availabilityId: string | null;
+  type: string;
+  reason: string | null;
+  startTime: string | null;
+  endTime: string | null;
+  createdBy: string | null;
+  createdAt: Date;
+  crewMember: { name: string; isActive: boolean };
+}>> {
+  if (!prisma) return [];
+
+  const where: Record<string, unknown> = {};
+  if (filters?.crewMemberId) where.crewMemberId = filters.crewMemberId;
+  if (filters?.date) {
+    where.date = filters.date;
+  } else {
+    const dateFilter: Record<string, string> = {};
+    if (filters?.dateFrom) dateFilter.gte = filters.dateFrom;
+    if (filters?.dateTo) dateFilter.lte = filters.dateTo;
+    if (Object.keys(dateFilter).length > 0) where.date = dateFilter;
+  }
+
+  return prisma.availabilityOverride.findMany({
+    where,
+    include: {
+      crewMember: {
+        select: { name: true, isActive: true },
+      },
+    },
+    orderBy: [{ date: "asc" }, { crewMemberId: "asc" }],
+  });
+}
+
+/**
+ * Create or update an availability override.
+ */
+export async function upsertAvailabilityOverride(data: {
+  id?: string;
+  crewMemberId: string;
+  date: string;
+  availabilityId?: string | null;
+  type: string;
+  reason?: string | null;
+  startTime?: string | null;
+  endTime?: string | null;
+  createdBy?: string;
+  updatedBy?: string;
+}) {
+  if (!prisma) return null;
+
+  if (data.id) {
+    return prisma.availabilityOverride.update({
+      where: { id: data.id },
+      data: {
+        crewMemberId: data.crewMemberId,
+        date: data.date,
+        availabilityId: data.availabilityId,
+        type: data.type,
+        reason: data.reason,
+        startTime: data.startTime,
+        endTime: data.endTime,
+        updatedBy: data.updatedBy,
+      },
+    });
+  }
+
+  return prisma.availabilityOverride.create({
+    data: {
+      crewMemberId: data.crewMemberId,
+      date: data.date,
+      availabilityId: data.availabilityId,
+      type: data.type,
+      reason: data.reason,
+      startTime: data.startTime,
+      endTime: data.endTime,
+      createdBy: data.createdBy,
+      updatedBy: data.updatedBy,
+    },
+  });
+}
+
+/**
+ * Delete an availability override.
+ */
+export async function deleteAvailabilityOverride(id: string) {
+  if (!prisma) return null;
+
+  return prisma.availabilityOverride.delete({
+    where: { id },
+  });
 }

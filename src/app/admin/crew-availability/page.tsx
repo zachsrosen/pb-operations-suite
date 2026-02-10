@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { formatTimeRange12h } from "@/lib/format";
 
 interface CrewMember {
   id: string;
@@ -24,6 +25,18 @@ interface AvailabilityRecord {
     name: string;
     isActive: boolean;
   };
+}
+
+interface OverrideRecord {
+  id: string;
+  crewMemberId: string;
+  date: string;
+  availabilityId: string | null;
+  type: string;
+  reason: string | null;
+  startTime: string | null;
+  endTime: string | null;
+  crewMember: { name: string; isActive: boolean };
 }
 
 interface FormData {
@@ -90,6 +103,11 @@ export default function CrewAvailabilityPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<FormData>(DEFAULT_FORM);
 
+  // Overrides (date-specific blocks)
+  const [overrides, setOverrides] = useState<OverrideRecord[]>([]);
+  const [showOverrideModal, setShowOverrideModal] = useState(false);
+  const [overrideForm, setOverrideForm] = useState({ crewMemberId: "", date: "", reason: "" });
+
   const showToast = (message: string) => {
     setToast(message);
     setTimeout(() => setToast(null), 3000);
@@ -113,6 +131,20 @@ export default function CrewAvailabilityPage() {
     }
   }, []);
 
+  const fetchOverrides = useCallback(async () => {
+    try {
+      // Fetch overrides from today onwards
+      const today = new Date().toISOString().split("T")[0];
+      const response = await fetch(`/api/admin/crew-availability/overrides?dateFrom=${today}`);
+      if (response.ok) {
+        const data = await response.json();
+        setOverrides(data.records || []);
+      }
+    } catch {
+      // Non-critical
+    }
+  }, []);
+
   const fetchCrewMembers = useCallback(async () => {
     try {
       const response = await fetch("/api/admin/crew");
@@ -128,7 +160,8 @@ export default function CrewAvailabilityPage() {
   useEffect(() => {
     fetchRecords();
     fetchCrewMembers();
-  }, [fetchRecords, fetchCrewMembers]);
+    fetchOverrides();
+  }, [fetchRecords, fetchCrewMembers, fetchOverrides]);
 
   const filteredRecords = records.filter(r => {
     if (filterCrew !== "All" && r.crewMember.name !== filterCrew) return false;
@@ -260,6 +293,74 @@ export default function CrewAvailabilityPage() {
     }
   };
 
+  const handleCreateOverride = async () => {
+    if (!overrideForm.crewMemberId || !overrideForm.date) {
+      showToast("Crew member and date are required");
+      return;
+    }
+    try {
+      const response = await fetch("/api/admin/crew-availability/overrides", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          crewMemberId: overrideForm.crewMemberId,
+          date: overrideForm.date,
+          type: "blocked",
+          reason: overrideForm.reason || null,
+        }),
+      });
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to create");
+      }
+      showToast("Date blocked");
+      setShowOverrideModal(false);
+      setOverrideForm({ crewMemberId: "", date: "", reason: "" });
+      fetchOverrides();
+    } catch (err) {
+      showToast(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
+    }
+  };
+
+  const handleDeleteOverride = async (id: string) => {
+    if (!confirm("Remove this date block?")) return;
+    try {
+      const response = await fetch("/api/admin/crew-availability/overrides", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to delete");
+      }
+      showToast("Block removed");
+      fetchOverrides();
+    } catch (err) {
+      showToast(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
+    }
+  };
+
+  // Helper to compute the next occurrence of a dayOfWeek
+  const getNextDateForDay = (dayOfWeek: number): string => {
+    const today = new Date();
+    const currentDay = today.getDay();
+    let daysUntil = dayOfWeek - currentDay;
+    if (daysUntil <= 0) daysUntil += 7;
+    const next = new Date(today);
+    next.setDate(today.getDate() + daysUntil);
+    return next.toISOString().split("T")[0];
+  };
+
+  const openBlockNextModal = (record: AvailabilityRecord) => {
+    setOverrideForm({
+      crewMemberId: record.crewMemberId,
+      date: getNextDateForDay(record.dayOfWeek),
+      reason: "",
+    });
+    setShowOverrideModal(true);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#0a0a0f] text-white flex items-center justify-center">
@@ -314,6 +415,15 @@ export default function CrewAvailabilityPage() {
                 {seeding ? "Seeding..." : "Seed from Code"}
               </button>
             )}
+            <button
+              onClick={() => {
+                setOverrideForm({ crewMemberId: "", date: "", reason: "" });
+                setShowOverrideModal(true);
+              }}
+              className="px-4 py-2 bg-amber-600 hover:bg-amber-500 rounded-lg text-sm font-medium transition-colors"
+            >
+              Block Date
+            </button>
             <button
               onClick={openAddModal}
               className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-sm font-medium transition-colors"
@@ -392,8 +502,8 @@ export default function CrewAvailabilityPage() {
                           {DAY_ABBREV[record.dayOfWeek]}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-zinc-300 font-mono text-xs">
-                        {record.startTime} - {record.endTime}
+                      <td className="px-4 py-3 text-zinc-300 text-xs">
+                        {formatTimeRange12h(record.startTime, record.endTime)}
                       </td>
                       <td className="px-4 py-3">
                         <span className={`px-2 py-0.5 rounded text-xs ${
@@ -416,6 +526,13 @@ export default function CrewAvailabilityPage() {
                       </td>
                       <td className="px-4 py-3 text-right">
                         <button
+                          onClick={() => openBlockNextModal(record)}
+                          className="text-amber-400 hover:text-amber-300 text-xs mr-3"
+                          title={`Block next ${DAYS[record.dayOfWeek]}`}
+                        >
+                          Block Next
+                        </button>
+                        <button
                           onClick={() => openEditModal(record)}
                           className="text-zinc-400 hover:text-white text-xs mr-3"
                         >
@@ -435,7 +552,121 @@ export default function CrewAvailabilityPage() {
             </table>
           </div>
         </div>
+
+        {/* Date Overrides Section */}
+        {overrides.length > 0 && (
+          <div className="mt-8">
+            <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
+              <span className="text-amber-400">Blocked Dates</span>
+              <span className="text-zinc-500 text-sm font-normal">{overrides.length} upcoming</span>
+            </h2>
+            <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-zinc-800 bg-zinc-900/50">
+                      <th className="text-left px-4 py-3 text-zinc-400 font-medium">Crew Member</th>
+                      <th className="text-left px-4 py-3 text-zinc-400 font-medium">Date</th>
+                      <th className="text-left px-4 py-3 text-zinc-400 font-medium">Day</th>
+                      <th className="text-left px-4 py-3 text-zinc-400 font-medium">Reason</th>
+                      <th className="text-right px-4 py-3 text-zinc-400 font-medium">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {overrides.map(ov => {
+                      const d = new Date(ov.date + "T12:00:00");
+                      return (
+                        <tr key={ov.id} className="border-b border-zinc-800/50 hover:bg-zinc-800/30">
+                          <td className="px-4 py-3 font-medium">{ov.crewMember.name}</td>
+                          <td className="px-4 py-3 text-zinc-300">{ov.date}</td>
+                          <td className="px-4 py-3">
+                            <span className="px-2 py-0.5 bg-amber-900/30 text-amber-300 rounded text-xs">
+                              {DAY_ABBREV[d.getDay()]}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-zinc-400 text-xs">{ov.reason || "—"}</td>
+                          <td className="px-4 py-3 text-right">
+                            <button
+                              onClick={() => handleDeleteOverride(ov.id)}
+                              className="text-zinc-500 hover:text-red-400 text-xs"
+                            >
+                              Remove
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* Block Date Modal */}
+      {showOverrideModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 w-full max-w-md mx-4">
+            <h2 className="text-lg font-bold mb-4">Block a Date</h2>
+            <p className="text-sm text-zinc-400 mb-4">
+              Block a crew member from being scheduled on a specific date without affecting their recurring weekly schedule.
+            </p>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm text-zinc-400 mb-1">Crew Member</label>
+                <select
+                  value={overrideForm.crewMemberId}
+                  onChange={e => setOverrideForm(prev => ({ ...prev, crewMemberId: e.target.value }))}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+                >
+                  <option value="">Select crew member...</option>
+                  {crewMembers.filter(c => c.isActive).map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm text-zinc-400 mb-1">Date</label>
+                <input
+                  type="date"
+                  value={overrideForm.date}
+                  onChange={e => setOverrideForm(prev => ({ ...prev, date: e.target.value }))}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-zinc-400 mb-1">Reason (optional)</label>
+                <input
+                  type="text"
+                  value={overrideForm.reason}
+                  onChange={e => setOverrideForm(prev => ({ ...prev, reason: e.target.value }))}
+                  placeholder="PTO, training, appointment..."
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => setShowOverrideModal(false)}
+                className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreateOverride}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-500 rounded-lg text-sm font-medium"
+              >
+                Block Date
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add/Edit Modal */}
       {showModal && (

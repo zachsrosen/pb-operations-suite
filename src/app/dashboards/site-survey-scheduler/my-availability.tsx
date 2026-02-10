@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
+import { formatTimeRange12h } from "@/lib/format";
 
 interface CrewMemberInfo {
   id: string;
@@ -20,6 +21,15 @@ interface AvailabilityRecord {
   endTime: string;
   timezone: string;
   isActive: boolean;
+}
+
+interface OverrideRecord {
+  id: string;
+  crewMemberId: string;
+  date: string;
+  type: string;
+  reason: string | null;
+  createdAt: string;
 }
 
 interface FormData {
@@ -80,6 +90,13 @@ export default function MyAvailability({ onClose }: MyAvailabilityProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<FormData>(DEFAULT_FORM);
 
+  // Overrides (date-specific blocks)
+  const [overrides, setOverrides] = useState<OverrideRecord[]>([]);
+  const [showBlockForm, setShowBlockForm] = useState(false);
+  const [blockDate, setBlockDate] = useState("");
+  const [blockReason, setBlockReason] = useState("");
+  const [savingBlock, setSavingBlock] = useState(false);
+
   const showToast = (message: string) => {
     setToast(message);
     setTimeout(() => setToast(null), 3000);
@@ -88,14 +105,23 @@ export default function MyAvailability({ onClose }: MyAvailabilityProps) {
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await fetch("/api/zuper/my-availability");
-      if (!response.ok) {
-        const data = await response.json();
+      const [availRes, overridesRes] = await Promise.all([
+        fetch("/api/zuper/my-availability"),
+        fetch("/api/zuper/my-availability/overrides"),
+      ]);
+      if (!availRes.ok) {
+        const data = await availRes.json();
         throw new Error(data.error || "Failed to fetch");
       }
-      const data = await response.json();
+      const data = await availRes.json();
       setCrewMember(data.crewMember);
       setRecords(data.records || []);
+
+      if (overridesRes.ok) {
+        const ovData = await overridesRes.json();
+        setOverrides(ovData.records || []);
+      }
+
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
@@ -205,6 +231,73 @@ export default function MyAvailability({ onClose }: MyAvailabilityProps) {
     }
   };
 
+  // --- Override handlers ---
+  const openBlockForm = () => {
+    // Default to tomorrow
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    setBlockDate(tomorrow.toISOString().split("T")[0]);
+    setBlockReason("");
+    setShowBlockForm(true);
+  };
+
+  const handleBlockDate = async () => {
+    if (!blockDate) {
+      showToast("Please select a date");
+      return;
+    }
+
+    setSavingBlock(true);
+    try {
+      const response = await fetch("/api/zuper/my-availability/overrides", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date: blockDate, reason: blockReason || undefined }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to block date");
+      }
+
+      showToast(`Blocked ${formatDateShort(blockDate)}`);
+      setShowBlockForm(false);
+      fetchData();
+    } catch (err) {
+      showToast(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
+    } finally {
+      setSavingBlock(false);
+    }
+  };
+
+  const handleDeleteOverride = async (id: string) => {
+    if (!confirm("Remove this blocked date?")) return;
+
+    try {
+      const response = await fetch("/api/zuper/my-availability/overrides", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to remove block");
+      }
+
+      showToast("Block removed");
+      fetchData();
+    } catch (err) {
+      showToast(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
+    }
+  };
+
+  const formatDateShort = (dateStr: string) => {
+    const [y, m, d] = dateStr.split("-").map(Number);
+    const dt = new Date(y, m - 1, d);
+    return dt.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+  };
+
   // Sort records by day of week, then start time
   const sortedRecords = [...records].sort((a, b) => {
     if (a.dayOfWeek !== b.dayOfWeek) return a.dayOfWeek - b.dayOfWeek;
@@ -252,7 +345,7 @@ export default function MyAvailability({ onClose }: MyAvailabilityProps) {
             <div className="text-center py-12">
               <p className="text-red-400 text-sm">{error}</p>
             </div>
-          ) : sortedRecords.length === 0 ? (
+          ) : sortedRecords.length === 0 && overrides.length === 0 ? (
             <div className="text-center py-12">
               <p className="text-zinc-500 text-sm mb-3">No availability slots configured</p>
               <button
@@ -263,62 +356,111 @@ export default function MyAvailability({ onClose }: MyAvailabilityProps) {
               </button>
             </div>
           ) : (
-            <div className="space-y-2">
-              {sortedRecords.map(record => (
-                <div
-                  key={record.id}
-                  className={`flex items-center justify-between p-3 rounded-lg border ${
-                    record.isActive
-                      ? "bg-zinc-800/50 border-zinc-700/50"
-                      : "bg-zinc-900/50 border-zinc-800/30 opacity-60"
-                  }`}
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <span className="px-2 py-0.5 bg-zinc-700 rounded text-xs font-medium shrink-0">
-                      {DAY_ABBREV[record.dayOfWeek]}
-                    </span>
-                    <div className="min-w-0">
-                      <p className="text-sm text-white truncate">
-                        {record.location}
-                        <span className="text-zinc-500 ml-2 font-mono text-xs">
-                          {record.startTime} - {record.endTime}
+            <div className="space-y-4">
+              {/* Recurring Slots */}
+              {sortedRecords.length > 0 && (
+                <div className="space-y-2">
+                  <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+                    Weekly Schedule
+                  </h3>
+                  {sortedRecords.map(record => (
+                    <div
+                      key={record.id}
+                      className={`flex items-center justify-between p-3 rounded-lg border ${
+                        record.isActive
+                          ? "bg-zinc-800/50 border-zinc-700/50"
+                          : "bg-zinc-900/50 border-zinc-800/30 opacity-60"
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="px-2 py-0.5 bg-zinc-700 rounded text-xs font-medium shrink-0">
+                          {DAY_ABBREV[record.dayOfWeek]}
                         </span>
-                      </p>
-                      <p className="text-xs text-zinc-500">
-                        <span className="capitalize">{record.jobType}</span>
-                        {record.timezone === "America/Los_Angeles" ? " · PT" : " · MT"}
-                        {!record.isActive && " · Inactive"}
-                      </p>
+                        <div className="min-w-0">
+                          <p className="text-sm text-white truncate">
+                            {record.location}
+                            <span className="text-zinc-500 ml-2 text-xs">
+                              {formatTimeRange12h(record.startTime, record.endTime)}
+                            </span>
+                          </p>
+                          <p className="text-xs text-zinc-500">
+                            <span className="capitalize">{record.jobType}</span>
+                            {record.timezone === "America/Los_Angeles" ? " · PT" : " · MT"}
+                            {!record.isActive && " · Inactive"}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0 ml-2">
+                        <button
+                          onClick={() => openEditForm(record)}
+                          className="text-zinc-400 hover:text-white text-xs px-2 py-1"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => handleDelete(record.id)}
+                          className="text-zinc-500 hover:text-red-400 text-xs px-2 py-1"
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0 ml-2">
-                    <button
-                      onClick={() => openEditForm(record)}
-                      className="text-zinc-400 hover:text-white text-xs px-2 py-1"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => handleDelete(record.id)}
-                      className="text-zinc-500 hover:text-red-400 text-xs px-2 py-1"
-                    >
-                      Delete
-                    </button>
-                  </div>
+                  ))}
                 </div>
-              ))}
+              )}
+
+              {/* Blocked Dates */}
+              {overrides.length > 0 && (
+                <div className="space-y-2">
+                  <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+                    Blocked Dates
+                  </h3>
+                  {overrides.map(ov => (
+                    <div
+                      key={ov.id}
+                      className="flex items-center justify-between p-3 rounded-lg border border-amber-900/30 bg-amber-950/20"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="px-2 py-0.5 bg-amber-900/50 text-amber-300 rounded text-xs font-medium shrink-0">
+                          Blocked
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-sm text-white">
+                            {formatDateShort(ov.date)}
+                          </p>
+                          {ov.reason && (
+                            <p className="text-xs text-zinc-500">{ov.reason}</p>
+                          )}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleDeleteOverride(ov.id)}
+                        className="text-zinc-500 hover:text-red-400 text-xs px-2 py-1 shrink-0 ml-2"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
 
         {/* Footer */}
-        {!loading && !error && sortedRecords.length > 0 && (
-          <div className="px-5 py-3 border-t border-zinc-800">
+        {!loading && !error && (sortedRecords.length > 0 || overrides.length > 0) && (
+          <div className="px-5 py-3 border-t border-zinc-800 flex gap-2">
             <button
               onClick={openAddForm}
-              className="w-full px-4 py-2 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-sm font-medium transition-colors"
+              className="flex-1 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-sm font-medium transition-colors"
             >
               + Add Slot
+            </button>
+            <button
+              onClick={openBlockForm}
+              className="flex-1 px-4 py-2 bg-amber-700 hover:bg-amber-600 rounded-lg text-sm font-medium transition-colors"
+            >
+              Block a Date
             </button>
           </div>
         )}
@@ -450,6 +592,58 @@ export default function MyAvailability({ onClose }: MyAvailabilityProps) {
                 className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-xs font-medium disabled:opacity-50"
               >
                 {saving ? "Saving..." : editingId ? "Update" : "Create"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Block Date Modal */}
+      {showBlockForm && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
+          <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-full max-w-sm">
+            <h3 className="text-base font-bold mb-4">Block a Date</h3>
+            <p className="text-xs text-zinc-400 mb-4">
+              Block all your availability for a specific date. Your recurring weekly schedule won&apos;t be affected.
+            </p>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs text-zinc-400 mb-1">Date</label>
+                <input
+                  type="date"
+                  value={blockDate}
+                  onChange={e => setBlockDate(e.target.value)}
+                  min={new Date().toISOString().split("T")[0]}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-zinc-400 mb-1">Reason (optional)</label>
+                <input
+                  type="text"
+                  value={blockReason}
+                  onChange={e => setBlockReason(e.target.value)}
+                  placeholder="PTO, Appointment, Training..."
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm placeholder:text-zinc-600"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 mt-5">
+              <button
+                onClick={() => setShowBlockForm(false)}
+                className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-xs"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleBlockDate}
+                disabled={savingBlock}
+                className="px-4 py-2 bg-amber-700 hover:bg-amber-600 rounded-lg text-xs font-medium disabled:opacity-50"
+              >
+                {savingBlock ? "Blocking..." : "Block Date"}
               </button>
             </div>
           </div>

@@ -361,6 +361,7 @@ model CrewMember {
 
   // Relations
   availabilities  CrewAvailability[]
+  overrides       AvailabilityOverride[]
 
   @@index([name])
   @@index([role])
@@ -408,6 +409,43 @@ model CrewAvailability {
   @@index([jobType])
   @@index([dayOfWeek])
   @@index([isActive])
+}
+
+// ===========================================
+// AVAILABILITY OVERRIDES (Date-specific exceptions)
+// ===========================================
+
+model AvailabilityOverride {
+  id              String   @id @default(cuid())
+
+  // Crew member link
+  crewMemberId    String
+  crewMember      CrewMember @relation(fields: [crewMemberId], references: [id], onDelete: Cascade)
+
+  // Specific date this override applies to
+  date            String   // YYYY-MM-DD
+
+  // Optional link to the recurring slot being overridden (null = block ALL slots for this crew+date)
+  availabilityId  String?
+
+  // Override type
+  type            String   // "blocked" | "custom"
+  reason          String?  // "PTO", "Training", "Appointment", etc.
+
+  // For "custom" type: alternative time window
+  startTime       String?  // HH:mm
+  endTime         String?  // HH:mm
+
+  // Audit
+  createdBy       String?
+  updatedBy       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([crewMemberId, date, availabilityId])
+  @@index([crewMemberId])
+  @@index([date])
+  @@index([crewMemberId, date])
 }
 
 // ===========================================

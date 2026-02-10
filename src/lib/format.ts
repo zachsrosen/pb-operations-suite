@@ -93,3 +93,23 @@ export function formatPercent(
 ): string {
   return `${value.toFixed(decimals)}%`;
 }
+
+/**
+ * Format a 24-hour time string ("HH:mm") to 12-hour display.
+ * Minutes are only shown when non-zero: "8am", "12pm", "9:30am".
+ */
+export function formatTime12h(time: string): string {
+  const [hours, minutes] = time.split(":").map(Number);
+  const suffix = hours >= 12 ? "pm" : "am";
+  const hour12 = hours > 12 ? hours - 12 : hours === 0 ? 12 : hours;
+  return minutes === 0
+    ? `${hour12}${suffix}`
+    : `${hour12}:${minutes.toString().padStart(2, "0")}${suffix}`;
+}
+
+/**
+ * Format a time range for display: "8am – 3pm", "9:30am – 11:30am".
+ */
+export function formatTimeRange12h(start: string, end: string): string {
+  return `${formatTime12h(start)} – ${formatTime12h(end)}`;
+}
