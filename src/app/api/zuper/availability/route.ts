@@ -81,53 +81,19 @@ const LOCATION_TIMEZONE: Record<string, string> = {
   Camarillo: "America/Los_Angeles",
 };
 
-// Zuper Team UIDs - loaded from environment variable ZUPER_TEAM_UIDS (JSON)
-// Fallback to hardcoded defaults for backwards compatibility during migration
-const ZUPER_TEAM_UIDS: Record<string, string> = (() => {
-  try {
-    const envVal = process.env.ZUPER_TEAM_UIDS;
-    if (envVal) return JSON.parse(envVal);
-  } catch (e) {
-    console.warn("[Zuper] Failed to parse ZUPER_TEAM_UIDS env var:", e);
-  }
-  // Fallback defaults - migrate these to env vars
-  return {
-    Westminster: "1c23adb9-cefa-44c7-8506-804949afc56f",
-    Centennial: "76b94bd3-e2fc-4cfe-8c2a-357b9a850b3c",
-    "Colorado Springs": "1a914a0e-b633-4f12-8ed6-3348285d6b93",
-    "San Luis Obispo": "699cec60-f9f8-4e57-b41a-bb29b1f3649c",
-    Camarillo: "0168d963-84af-4214-ad81-d6c43cee8e65",
-  };
-})();
-
-// Zuper User UIDs and Team UIDs - loaded from environment variable ZUPER_USER_UIDS (JSON)
-// Fallback to hardcoded defaults for backwards compatibility during migration
-const ZUPER_USER_UIDS: Record<string, { userUid: string; teamUid?: string }> = (() => {
-  try {
-    const envVal = process.env.ZUPER_USER_UIDS;
-    if (envVal) return JSON.parse(envVal);
-  } catch (e) {
-    console.warn("[Zuper] Failed to parse ZUPER_USER_UIDS env var:", e);
-  }
-  // Fallback defaults - migrate these to env vars
-  return {
-    "Drew Perry": { userUid: "0ddc7e1d-62e1-49df-b89d-905a39c1e353", teamUid: ZUPER_TEAM_UIDS.Centennial },
-    "Joe Lynch": { userUid: "f203f99b-4aaf-488e-8e6a-8ee5e94ec217", teamUid: ZUPER_TEAM_UIDS.Westminster },
-    "Derek Pomar": { userUid: "f3bb40c0-d548-4355-ab39-6c27532a6d36", teamUid: ZUPER_TEAM_UIDS.Centennial },
-    "Rolando": { userUid: "a89ed2f5-222b-4b09-8bb0-14dc45c2a51b", teamUid: ZUPER_TEAM_UIDS["Colorado Springs"] },
-    "Ryszard Szymanski": { userUid: "e043bf1d-006b-4033-a46e-3b5d06ed3d00", teamUid: ZUPER_TEAM_UIDS.Westminster },
-    "Nick Scarpellino": { userUid: "8e67159c-48fe-4fb0-acc3-b1c905ff6e95", teamUid: ZUPER_TEAM_UIDS["San Luis Obispo"] },
-  };
-})();
-
-// Reverse lookup: Zuper user UID → display name used in crew schedules
-const ZUPER_UID_TO_DISPLAY_NAME: Record<string, string> = {};
-for (const [name, { userUid }] of Object.entries(ZUPER_USER_UIDS)) {
-  if (userUid) ZUPER_UID_TO_DISPLAY_NAME[userUid] = name;
-}
+// Team and user UIDs are now resolved dynamically from Zuper API (cached in ZuperClient).
+// Location names used for team resolution:
+const TEAM_LOCATION_NAMES: Record<string, string> = {
+  Westminster: "Westminster",
+  Centennial: "Centennial",
+  DTC: "Centennial", // DTC is part of Centennial team
+  "Colorado Springs": "Colorado Springs",
+  "San Luis Obispo": "San Luis Obispo",
+  Camarillo: "Camarillo",
+};
 
 const CREW_SCHEDULES: CrewSchedule[] = [
-  // Site Surveyors
+  // Site Surveyors — userUid and teamUid are resolved dynamically from Zuper API
   {
     name: "Drew Perry",
     location: "DTC",
@@ -137,8 +103,6 @@ const CREW_SCHEDULES: CrewSchedule[] = [
       { day: 4, startTime: "12:00", endTime: "15:00" }, // Thu
     ],
     jobTypes: ["survey"],
-    userUid: ZUPER_USER_UIDS["Drew Perry"].userUid,
-    teamUid: ZUPER_USER_UIDS["Drew Perry"].teamUid,
   },
   {
     name: "Joe Lynch",
@@ -149,8 +113,6 @@ const CREW_SCHEDULES: CrewSchedule[] = [
       { day: 4, startTime: "11:00", endTime: "14:00" }, // Thu
     ],
     jobTypes: ["survey"],
-    userUid: ZUPER_USER_UIDS["Joe Lynch"].userUid,
-    teamUid: ZUPER_USER_UIDS["Joe Lynch"].teamUid,
   },
   {
     name: "Derek Pomar",
@@ -160,8 +122,6 @@ const CREW_SCHEDULES: CrewSchedule[] = [
       { day: 2, startTime: "12:00", endTime: "16:00" }, // Tue
     ],
     jobTypes: ["survey"],
-    userUid: ZUPER_USER_UIDS["Derek Pomar"].userUid,
-    teamUid: ZUPER_USER_UIDS["Derek Pomar"].teamUid,
   },
   {
     name: "Derek Pomar",
@@ -171,8 +131,6 @@ const CREW_SCHEDULES: CrewSchedule[] = [
       { day: 3, startTime: "12:00", endTime: "16:00" }, // Wed
     ],
     jobTypes: ["survey"],
-    userUid: ZUPER_USER_UIDS["Derek Pomar"].userUid,
-    teamUid: ZUPER_USER_UIDS["Derek Pomar"].teamUid,
   },
   {
     name: "Derek Pomar",
@@ -182,8 +140,6 @@ const CREW_SCHEDULES: CrewSchedule[] = [
       { day: 4, startTime: "12:00", endTime: "16:00" }, // Thu
     ],
     jobTypes: ["survey"],
-    userUid: ZUPER_USER_UIDS["Derek Pomar"].userUid,
-    teamUid: ZUPER_USER_UIDS["Derek Pomar"].teamUid,
   },
   {
     name: "Ryszard Szymanski",
@@ -195,8 +151,6 @@ const CREW_SCHEDULES: CrewSchedule[] = [
       { day: 4, startTime: "11:00", endTime: "14:00" }, // Thu 11am-2pm
     ],
     jobTypes: ["survey"],
-    userUid: ZUPER_USER_UIDS["Ryszard Szymanski"].userUid,
-    teamUid: ZUPER_USER_UIDS["Ryszard Szymanski"].teamUid,
   },
   {
     name: "Rolando",
@@ -210,8 +164,6 @@ const CREW_SCHEDULES: CrewSchedule[] = [
       { day: 5, startTime: "08:00", endTime: "12:00" }, // Fri
     ],
     jobTypes: ["survey"],
-    userUid: ZUPER_USER_UIDS["Rolando"].userUid,
-    teamUid: ZUPER_USER_UIDS["Rolando"].teamUid,
   },
 
   // Nick Scarpellino — California locations (times in Pacific Time)
@@ -226,8 +178,6 @@ const CREW_SCHEDULES: CrewSchedule[] = [
       { day: 4, startTime: "08:00", endTime: "10:00" }, // Thu 8-10am PT
     ],
     jobTypes: ["survey"],
-    userUid: ZUPER_USER_UIDS["Nick Scarpellino"].userUid,
-    teamUid: ZUPER_USER_UIDS["Nick Scarpellino"].teamUid,
   },
   {
     name: "Nick Scarpellino",
@@ -238,8 +188,6 @@ const CREW_SCHEDULES: CrewSchedule[] = [
       { day: 3, startTime: "09:30", endTime: "11:30" }, // Wed 9:30-11:30am PT
     ],
     jobTypes: ["survey"],
-    userUid: ZUPER_USER_UIDS["Nick Scarpellino"].userUid,
-    teamUid: ZUPER_USER_UIDS["Nick Scarpellino"].teamUid,
   },
 
   // ============================================
@@ -320,15 +268,12 @@ export async function GET(request: NextRequest) {
     inspection: JOB_CATEGORY_UIDS.INSPECTION,
   };
 
-  // Map location to team UID
-  const teamMap: Record<string, string> = {
-    Westminster: ZUPER_TEAM_UIDS.Westminster,
-    Centennial: ZUPER_TEAM_UIDS.Centennial,
-    DTC: ZUPER_TEAM_UIDS.Centennial, // DTC is part of Centennial team
-    "Colorado Springs": ZUPER_TEAM_UIDS["Colorado Springs"],
-    "San Luis Obispo": ZUPER_TEAM_UIDS["San Luis Obispo"],
-    Camarillo: ZUPER_TEAM_UIDS.Camarillo,
-  };
+  // Resolve team UIDs dynamically from Zuper API
+  const teamMap: Record<string, string> = {};
+  for (const [loc, teamName] of Object.entries(TEAM_LOCATION_NAMES)) {
+    const resolved = await zuper.resolveTeamUid(teamName);
+    if (resolved) teamMap[loc] = resolved;
+  }
 
   const resolvedTeamUid = teamUid || (location ? teamMap[location] : undefined);
 
@@ -417,6 +362,18 @@ export async function GET(request: NextRequest) {
   const locationMatches = location ? getLocationMatches(location) : null;
   const jobType = type || "survey";
 
+  // Resolve all unique crew member names to Zuper UIDs (one API call, cached)
+  const crewNames = [...new Set(CREW_SCHEDULES.map(c => c.name))];
+  const resolvedCrewUids: Record<string, { userUid: string; teamUid?: string }> = {};
+  const uidToDisplayName: Record<string, string> = {};
+  for (const name of crewNames) {
+    const resolved = await zuper.resolveUserUid(name);
+    if (resolved) {
+      resolvedCrewUids[name] = resolved;
+      uidToDisplayName[resolved.userUid] = name;
+    }
+  }
+
   for (const crew of CREW_SCHEDULES) {
     // Filter by job type
     if (!crew.jobTypes.includes(jobType)) continue;
@@ -424,13 +381,15 @@ export async function GET(request: NextRequest) {
     // Filter by location if specified
     if (locationMatches && !locationMatches.includes(crew.location)) continue;
 
-    // Use the hardcoded userUid and teamUid from the config
-    const crewUserUid = crew.userUid;
-    const crewTeamUid = crew.teamUid;
+    // Resolve userUid and teamUid dynamically from Zuper API
+    const resolved = resolvedCrewUids[crew.name];
+    const crewUserUid = crew.userUid || resolved?.userUid;
+    // Prefer team from user's Zuper profile, fall back to location-based team map
+    const crewTeamUid = crew.teamUid || resolved?.teamUid || teamMap[crew.location];
     if (crewUserUid) {
-      console.log(`[Zuper Availability] Crew "${crew.name}" has UID: ${crewUserUid}, Team: ${crewTeamUid || "none"}`);
+      console.log(`[Zuper Availability] Crew "${crew.name}" resolved UID: ${crewUserUid}, Team: ${crewTeamUid || "none"}`);
     } else {
-      console.log(`[Zuper Availability] No UID configured for crew "${crew.name}"`);
+      console.log(`[Zuper Availability] Could not resolve UID for crew "${crew.name}"`);
     }
 
     // Determine crew timezone
@@ -632,7 +591,7 @@ export async function GET(request: NextRequest) {
                 // This happens when the job is on a day/time outside the crew's configured schedule
                 // (e.g. job at a different location, or an ad-hoc booking).
                 // We still need to block this slot so it shows on the calendar.
-                const displayName = (assignedUserUid && ZUPER_UID_TO_DISPLAY_NAME[assignedUserUid]) || assignedUserName;
+                const displayName = (assignedUserUid && uidToDisplayName[assignedUserUid]) || assignedUserName;
                 const startHour = parseInt(slotStartTime.split(":")[0]);
                 const endTime = `${(startHour + 1).toString().padStart(2, "0")}:00`;
                 const key = getSlotKey(dateStr, displayName, slotStartTime);
