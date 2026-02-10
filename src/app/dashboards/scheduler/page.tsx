@@ -1882,16 +1882,27 @@ export default function SchedulerPage() {
                         </div>
                         {weekDates.map((d, di) => {
                           const dateStr = toDateStr(d);
-                          const dayEvents = scheduledEvents.filter((e) => {
-                            if (e.crew !== crew.name) return false;
+                          // Find events that span this date using business days (skip weekends)
+                          const dayEvents: { event: ScheduledEvent; dayNum: number }[] = [];
+                          scheduledEvents.forEach((e) => {
+                            if (e.crew !== crew.name) return;
+                            const businessDays = Math.ceil(e.days || 1);
                             const eventStart = new Date(e.date + "T12:00:00");
-                            const eventEnd = new Date(e.date + "T12:00:00");
-                            eventEnd.setDate(
-                              eventEnd.getDate() +
-                                Math.ceil(e.days || 1) -
-                                1
-                            );
-                            return d >= eventStart && d <= eventEnd;
+                            let bDayCount = 0;
+                            let calOffset = 0;
+                            while (bDayCount < businessDays) {
+                              const checkDate = new Date(eventStart);
+                              checkDate.setDate(checkDate.getDate() + calOffset);
+                              const dow = checkDate.getDay();
+                              if (dow !== 0 && dow !== 6) { // Skip weekends
+                                if (toDateStr(checkDate) === dateStr) {
+                                  dayEvents.push({ event: e, dayNum: bDayCount + 1 });
+                                  return; // Found match, done
+                                }
+                                bDayCount++;
+                              }
+                              calOffset++;
+                            }
                           });
                           return (
                             <div
@@ -1909,13 +1920,7 @@ export default function SchedulerPage() {
                                 handleDrop(e, dateStr, crew.name)
                               }
                             >
-                              {dayEvents.map((ev, ei) => {
-                                const dayNum =
-                                  Math.floor(
-                                    (d.getTime() -
-                                      new Date(ev.date + "T12:00:00").getTime()) /
-                                      (1000 * 60 * 60 * 24)
-                                  ) + 1;
+                              {dayEvents.map(({ event: ev, dayNum }, ei) => {
                                 const shortName = getCustomerName(
                                   ev.name
                                 ).substring(0, 10);
