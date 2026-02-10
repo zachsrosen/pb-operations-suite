@@ -152,6 +152,19 @@ function getTodayStr(): string {
   return toDateStr(new Date());
 }
 
+function isPastDate(dateStr: string): boolean {
+  return dateStr < getTodayStr();
+}
+
+// Check if an inspection is overdue: scheduled in the past but not completed/passed
+function isInspectionOverdue(project: InspectionProject, manualScheduleDate?: string): boolean {
+  const schedDate = manualScheduleDate || project.scheduleDate;
+  if (!schedDate) return false;
+  if (project.completionDate) return false;
+  if (project.inspectionStatus.toLowerCase().includes("pass")) return false;
+  return isPastDate(schedDate);
+}
+
 /* ------------------------------------------------------------------ */
 /*  Transform API data                                                 */
 /* ------------------------------------------------------------------ */
@@ -412,9 +425,10 @@ export default function InspectionSchedulerPage() {
       (p.scheduleDate || manualSchedules[p.id]) && !p.completionDate
     ).length;
     const passed = projects.filter(p => p.completionDate || p.inspectionStatus === "Passed").length;
+    const overdue = projects.filter(p => isInspectionOverdue(p, manualSchedules[p.id])).length;
     const totalValue = projects.reduce((sum, p) => sum + p.amount, 0);
 
-    return { total, needsScheduling, scheduled, passed, totalValue };
+    return { total, needsScheduling, scheduled, passed, overdue, totalValue };
   }, [projects, manualSchedules]);
 
   /* ================================================================ */
@@ -701,6 +715,12 @@ export default function InspectionSchedulerPage() {
               <span className="text-zinc-500">Passed:</span>
               <span className="text-green-400 font-semibold">{stats.passed}</span>
             </div>
+            {stats.overdue > 0 && (
+              <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+                <span className="text-red-400">⚠ Overdue:</span>
+                <span className="text-red-400 font-semibold">{stats.overdue}</span>
+              </div>
+            )}
             <div className="flex items-center gap-1 sm:gap-2 shrink-0">
               <span className="text-zinc-500">Value:</span>
               <span className="text-orange-400 font-semibold">{formatCurrency(stats.totalValue)}</span>
@@ -833,6 +853,11 @@ export default function InspectionSchedulerPage() {
                         </span>
                       </div>
                       <div className="flex items-center gap-2 mt-2">
+                        {isInspectionOverdue(project, manualSchedules[project.id]) && (
+                          <span className="text-xs px-1.5 py-0.5 rounded border bg-red-500/20 text-red-400 border-red-500/30 font-medium">
+                            ⚠ Overdue
+                          </span>
+                        )}
                         <span className={`text-xs px-1.5 py-0.5 rounded border ${getStatusColor(project.inspectionStatus)}`}>
                           {project.inspectionStatus}
                         </span>
@@ -961,7 +986,9 @@ export default function InspectionSchedulerPage() {
                           )}
                         </div>
                         <div className="space-y-1">
-                          {events.map((ev) => (
+                          {events.map((ev) => {
+                            const overdue = isInspectionOverdue(ev, manualSchedules[ev.id]);
+                            return (
                             <div
                               key={ev.id}
                               draggable
@@ -973,12 +1000,18 @@ export default function InspectionSchedulerPage() {
                                 e.stopPropagation();
                                 setScheduleModal({ project: ev, date: dateStr });
                               }}
-                              className="text-xs p-1 rounded bg-purple-500/20 border border-purple-500/30 text-purple-300 truncate cursor-grab hover:bg-purple-500/30 active:cursor-grabbing"
-                              title="Drag to reschedule"
+                              className={`text-xs p-1 rounded truncate cursor-grab active:cursor-grabbing ${
+                                overdue
+                                  ? "bg-red-500/20 border border-red-500/40 text-red-300 hover:bg-red-500/30"
+                                  : "bg-purple-500/20 border border-purple-500/30 text-purple-300 hover:bg-purple-500/30"
+                              }`}
+                              title={overdue ? "⚠ OVERDUE - Inspection not completed. Drag to reschedule" : "Drag to reschedule"}
                             >
+                              {overdue && <span className="text-red-400 mr-0.5">⚠</span>}
                               {getCustomerName(ev.name)}
                             </div>
-                          ))}
+                            );
+                          })}
                                                     {showAvailability && selectedProject && hasAvailability && (() => {
                             const projectLocation = selectedProject?.location;
                             const matchingSlots = dayAvailability?.availableSlots?.filter(slot => {
@@ -1026,21 +1059,30 @@ export default function InspectionSchedulerPage() {
                     <tbody className="divide-y divide-zinc-800">
                       {filteredProjects.map((project) => {
                         const schedDate = manualSchedules[project.id] || project.scheduleDate;
+                        const overdue = isInspectionOverdue(project, manualSchedules[project.id]);
                         return (
-                          <tr key={project.id} className="hover:bg-zinc-900/50">
+                          <tr key={project.id} className={`hover:bg-zinc-900/50 ${overdue ? "bg-red-500/5" : ""}`}>
                             <td className="px-4 py-3">
                               <a href={project.hubspotUrl} target="_blank" rel="noopener noreferrer" className="font-medium text-white hover:text-purple-400">
+                                {overdue && <span className="text-red-400 mr-1">⚠</span>}
                                 {getCustomerName(project.name)}
                               </a>
                               <div className="text-xs text-zinc-500">{getProjectId(project.name)}</div>
                             </td>
                             <td className="px-4 py-3 text-sm text-zinc-400">{project.location}</td>
                             <td className="px-4 py-3">
-                              <span className={`text-xs px-2 py-1 rounded border ${getStatusColor(project.inspectionStatus)}`}>
-                                {project.inspectionStatus}
-                              </span>
+                              <div className="flex items-center gap-1.5">
+                                <span className={`text-xs px-2 py-1 rounded border ${getStatusColor(project.inspectionStatus)}`}>
+                                  {project.inspectionStatus}
+                                </span>
+                                {overdue && (
+                                  <span className="text-xs px-1.5 py-0.5 rounded border bg-red-500/20 text-red-400 border-red-500/30 font-medium">
+                                    Overdue
+                                  </span>
+                                )}
+                              </div>
                             </td>
-                            <td className={`px-4 py-3 text-sm ${schedDate ? "text-purple-400" : "text-zinc-500"}`}>
+                            <td className={`px-4 py-3 text-sm ${overdue ? "text-red-400" : schedDate ? "text-purple-400" : "text-zinc-500"}`}>
                               {schedDate ? formatShortDate(schedDate) : "—"}
                             </td>
                             <td className="px-4 py-3 text-right font-mono text-sm text-orange-400">
