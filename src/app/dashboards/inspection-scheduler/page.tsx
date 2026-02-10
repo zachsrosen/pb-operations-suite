@@ -5,6 +5,8 @@ import Link from "next/link";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
+import { formatTime12h, formatTimeRange12h } from "@/lib/format";
+import MyAvailability from "../site-survey-scheduler/my-availability";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -51,11 +53,29 @@ interface InspectionProject {
   hubspotUrl: string;
   zuperJobUid?: string;
   zuperJobStatus?: string;
+  assignedInspector?: string;
+  zuperScheduledTime?: string;
 }
 
 interface PendingSchedule {
   project: InspectionProject;
   date: string;
+  slot?: {
+    userName: string;
+    userUid?: string;
+    teamUid?: string;
+    startTime: string;
+    endTime: string;
+    location: string;
+    timezone?: string;
+  };
+  isRescheduling?: boolean;
+  currentSlot?: {
+    userName: string;
+    startTime: string;
+    endTime: string;
+    displayTime: string;
+  };
 }
 
 interface DayAvailability {
@@ -64,9 +84,21 @@ interface DayAvailability {
     start_time: string;
     end_time: string;
     user_uid?: string;
+    team_uid?: string;
     user_name?: string;
     display_time?: string;
     location?: string;
+    timezone?: string;
+  }>;
+  bookedSlots?: Array<{
+    start_time: string;
+    end_time: string;
+    display_time?: string;
+    user_name?: string;
+    location?: string;
+    projectId?: string;
+    projectName?: string;
+    zuperJobUid?: string;
   }>;
   timeOffs: Array<{
     user_name?: string;
@@ -197,7 +229,7 @@ function transformProject(p: RawProject): InspectionProject | null {
 
 export default function InspectionSchedulerPage() {
   /* ---- activity tracking ---- */
-  const { trackDashboardView, trackFeature } = useActivityTracking();
+  const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
   /* ---- core data ---- */
@@ -235,6 +267,34 @@ export default function InspectionSchedulerPage() {
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [showAvailability, setShowAvailability] = useState(true);
 
+  /* ---- user role ---- */
+  const [userRole, setUserRole] = useState<string | null>(null);
+  const [isLinkedInspector, setIsLinkedInspector] = useState(false);
+  const [showMyAvailability, setShowMyAvailability] = useState(false);
+
+  /* ---- inspector assignments (stored locally) ---- */
+  const [inspectorAssignments, setInspectorAssignments] = useState<Record<string, string>>({});
+
+  // Load inspector assignments from localStorage on mount
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("inspectorAssignments");
+      if (stored) {
+        setInspectorAssignments(JSON.parse(stored));
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  const saveInspectorAssignment = useCallback((projectId: string, inspectorName: string) => {
+    setInspectorAssignments((prev) => {
+      const next = { ...prev, [projectId]: inspectorName };
+      try {
+        localStorage.setItem("inspectorAssignments", JSON.stringify(next));
+      } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
+
   /* ---- toast ---- */
   const [toast, setToast] = useState<{ message: string; type: string } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -268,6 +328,27 @@ export default function InspectionSchedulerPage() {
                 if (zuperJob) {
                   project.zuperJobUid = zuperJob.jobUid;
                   project.zuperJobStatus = zuperJob.status;
+                  // Use Zuper's assigned user as primary source of truth
+                  if (zuperJob.assignedTo) {
+                    project.assignedInspector = zuperJob.assignedTo;
+                  }
+                  // Use Zuper's scheduled date/time as source of truth
+                  if (zuperJob.scheduledDate) {
+                    try {
+                      const utcDate = new Date(zuperJob.scheduledDate);
+                      const loc = (project.location || "").toLowerCase();
+                      const tz = (loc.includes("san luis") || loc.includes("slo") || loc.includes("camarillo"))
+                        ? "America/Los_Angeles" : "America/Denver";
+                      const localDate = utcDate.toLocaleDateString("en-CA", { timeZone: tz });
+                      const localTimeStr = utcDate.toLocaleTimeString("en-US", {
+                        timeZone: tz, hour: "numeric", minute: "2-digit", hour12: true,
+                      }).replace(":00 ", "").replace(" ", "").toLowerCase();
+                      project.zuperScheduledTime = localTimeStr;
+                      if (localDate && localDate !== project.scheduleDate) {
+                        project.scheduleDate = localDate;
+                      }
+                    } catch { /* ignore */ }
+                  }
                 }
               }
             }
@@ -276,6 +357,19 @@ export default function InspectionSchedulerPage() {
           console.warn("Failed to lookup Zuper jobs:", zuperErr);
         }
       }
+
+      // Merge locally-stored inspector assignments (only if not already set by Zuper)
+      try {
+        const stored = localStorage.getItem("inspectorAssignments");
+        if (stored) {
+          const assignments = JSON.parse(stored) as Record<string, string>;
+          for (const project of transformed) {
+            if (!project.assignedInspector && assignments[project.id]) {
+              project.assignedInspector = assignments[project.id];
+            }
+          }
+        }
+      } catch { /* ignore */ }
 
       setProjects(transformed);
     } catch (err: unknown) {
@@ -307,6 +401,24 @@ export default function InspectionSchedulerPage() {
       }
     }
     checkZuper();
+  }, []);
+
+  // Fetch user role and check if linked inspector
+  useEffect(() => {
+    async function fetchUserInfo() {
+      try {
+        const res = await fetch("/api/auth/session");
+        if (res.ok) {
+          const data = await res.json();
+          setUserRole(data.user?.role || null);
+        }
+      } catch { /* ignore */ }
+      try {
+        const res = await fetch("/api/zuper/my-availability");
+        if (res.ok) setIsLinkedInspector(true);
+      } catch { /* ignore */ }
+    }
+    fetchUserInfo();
   }, []);
 
   // Fetch availability when a project is selected or month changes
@@ -480,27 +592,71 @@ export default function InspectionSchedulerPage() {
     e.preventDefault();
   }, []);
 
+  const findCurrentSlotForProject = useCallback((projectId: string, date: string, projectName?: string, zuperJobUid?: string) => {
+    const dayAvail = availabilityByDate[date];
+    if (!dayAvail?.bookedSlots) return undefined;
+
+    const projId = projectName?.split(" | ")[0] || "";
+    const customerPart = projectName?.split(" | ")[1] || "";
+    const customerLastName = customerPart.split(",")[0]?.trim().toLowerCase() || "";
+
+    const bookedSlot = dayAvail.bookedSlots.find(slot => {
+      const slotNameLower = (slot.projectName || "").toLowerCase();
+      if (slot.projectId === projectId) return true;
+      if (zuperJobUid && slot.zuperJobUid && slot.zuperJobUid === zuperJobUid) return true;
+      if (projId && slotNameLower.includes(projId.toLowerCase())) return true;
+      if (customerLastName && customerLastName.length > 2) {
+        if (slotNameLower.startsWith(customerLastName + ",") ||
+            slotNameLower.startsWith(customerLastName + " ")) return true;
+      }
+      return false;
+    });
+
+    if (bookedSlot) {
+      return {
+        userName: bookedSlot.user_name || "",
+        startTime: bookedSlot.start_time,
+        endTime: bookedSlot.end_time,
+        displayTime: bookedSlot.display_time || `${bookedSlot.start_time}-${bookedSlot.end_time}`,
+      };
+    }
+    return undefined;
+  }, [availabilityByDate]);
+
   const handleDrop = useCallback((date: string) => {
     if (!draggedProjectId) return;
+    if (isPastDate(date)) {
+      showToast("Cannot schedule on past dates", "warning");
+      setDraggedProjectId(null);
+      return;
+    }
     const project = projects.find(p => p.id === draggedProjectId);
     if (project) {
-      setScheduleModal({ project, date });
+      const currentSlot = findCurrentSlotForProject(project.id, date, project.name, project.zuperJobUid);
+      setScheduleModal({ project, date, currentSlot });
     }
     setDraggedProjectId(null);
-  }, [draggedProjectId, projects]);
+  }, [draggedProjectId, projects, showToast, findCurrentSlotForProject]);
 
   const handleDateClick = useCallback((date: string, project?: InspectionProject) => {
+    if (isPastDate(date)) {
+      showToast("Cannot schedule on past dates", "warning");
+      return;
+    }
     if (project) {
-      setScheduleModal({ project, date });
+      const currentSlot = findCurrentSlotForProject(project.id, date, project.name, project.zuperJobUid);
+      setScheduleModal({ project, date, currentSlot });
     } else if (selectedProject) {
-      setScheduleModal({ project: selectedProject, date });
+      const currentSlot = findCurrentSlotForProject(selectedProject.id, date, selectedProject.name, selectedProject.zuperJobUid);
+      setScheduleModal({ project: selectedProject, date, currentSlot });
       setSelectedProject(null);
     }
-  }, [selectedProject]);
+  }, [selectedProject, showToast, findCurrentSlotForProject]);
 
   const confirmSchedule = useCallback(async () => {
     if (!scheduleModal) return;
-    const { project, date } = scheduleModal;
+    const { project, date, slot } = scheduleModal;
+    let scheduledZuperJobUid: string | undefined = project.zuperJobUid;
 
     setManualSchedules((prev) => ({
       ...prev,
@@ -528,17 +684,34 @@ export default function InspectionSchedulerPage() {
             schedule: {
               type: "inspection",
               date: date,
-              days: 0.25, // Inspections typically ~2 hours
-              notes: "Scheduled via Inspection Scheduler",
+              days: 0.25,
+              startTime: slot?.startTime,
+              endTime: slot?.endTime,
+              crew: slot?.userUid,
+              teamUid: slot?.teamUid,
+              assignedUser: slot?.userName,
+              timezone: slot?.timezone,
+              notes: slot
+                ? `Inspector: ${slot.userName} at ${slot.startTime}`
+                : "Scheduled via Inspection Scheduler",
             },
           }),
         });
 
         if (response.ok) {
           const data = await response.json();
-          showToast(
-            `${getCustomerName(project.name)} scheduled - ${data.action === "rescheduled" ? "Zuper job updated" : "Zuper job created"} (customer notified)`
-          );
+          scheduledZuperJobUid = data.job?.job_uid || data.existingJobId || project.zuperJobUid;
+          const slotInfo = slot ? ` (${slot.userName} ${formatTime12h(slot.startTime)})` : "";
+          if (data.assignmentFailed) {
+            showToast(
+              `${getCustomerName(project.name)} scheduled${slotInfo} - please assign ${slot?.userName || "inspector"} in Zuper`,
+              "warning"
+            );
+          } else {
+            showToast(
+              `${getCustomerName(project.name)} scheduled${slotInfo} - ${data.action === "rescheduled" ? "Zuper job updated" : "Zuper job created"}`
+            );
+          }
         } else {
           showToast(
             `${getCustomerName(project.name)} scheduled locally (Zuper sync failed)`,
@@ -554,11 +727,78 @@ export default function InspectionSchedulerPage() {
         setSyncingToZuper(false);
       }
     } else {
-      showToast(`${getCustomerName(project.name)} scheduled for ${formatDate(date)}`);
+      const slotInfo = slot ? ` with ${slot.userName} at ${formatTime12h(slot.startTime)}` : "";
+      showToast(`${getCustomerName(project.name)} scheduled for ${formatDate(date)}${slotInfo}`);
+    }
+
+    // Store inspector assignment locally
+    if (slot?.userName) {
+      saveInspectorAssignment(project.id, slot.userName);
+      setProjects((prev) =>
+        prev.map((p) =>
+          p.id === project.id ? { ...p, assignedInspector: slot.userName } : p
+        )
+      );
+    }
+
+    // Book the time slot in availability if a slot was selected
+    if (slot) {
+      try {
+        await fetch("/api/zuper/availability", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            date,
+            startTime: slot.startTime,
+            endTime: slot.endTime,
+            userName: slot.userName,
+            userUid: slot.userUid,
+            location: slot.location,
+            projectId: project.id,
+            projectName: project.name,
+            zuperJobUid: scheduledZuperJobUid,
+          }),
+        });
+      } catch { /* best effort */ }
+
+      // Optimistically update availability
+      setAvailabilityByDate(prev => {
+        const dayAvail = prev[date];
+        if (!dayAvail) return prev;
+        const updatedSlots = dayAvail.availableSlots.filter(s =>
+          !(s.start_time === slot.startTime && s.user_name === slot.userName)
+        );
+        const existingBooked = dayAvail.bookedSlots || [];
+        return {
+          ...prev,
+          [date]: {
+            ...dayAvail,
+            availableSlots: updatedSlots,
+            bookedSlots: [
+              ...existingBooked,
+              {
+                start_time: slot.startTime,
+                end_time: slot.endTime,
+                display_time: `${slot.startTime}-${slot.endTime}`,
+                user_name: slot.userName,
+                location: slot.location,
+                projectId: project.id,
+                projectName: project.name,
+                zuperJobUid: scheduledZuperJobUid,
+              },
+            ],
+            isFullyBooked: updatedSlots.length === 0,
+            hasAvailability: updatedSlots.length > 0,
+          },
+        };
+      });
+
+      // Refresh availability after a delay
+      setTimeout(() => fetchAvailability(), 2000);
     }
 
     setScheduleModal(null);
-  }, [scheduleModal, zuperConfigured, syncToZuper, showToast]);
+  }, [scheduleModal, zuperConfigured, syncToZuper, showToast, fetchAvailability, saveInspectorAssignment]);
 
   const cancelSchedule = useCallback((projectId: string) => {
     setManualSchedules((prev) => {
@@ -690,6 +930,31 @@ export default function InspectionSchedulerPage() {
                   List
                 </button>
               </div>
+
+              {/* Manage Availability (admin link) */}
+              {(userRole === "ADMIN" || userRole === "MANAGER" || userRole === "OPERATIONS") && (
+                <Link
+                  href="/admin/crew-availability"
+                  className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-lg text-zinc-400 hover:text-white transition-colors"
+                  title="Manage Crew Availability"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  Manage
+                </Link>
+              )}
+
+              {/* My Availability (for linked inspectors) */}
+              {isLinkedInspector && (
+                <button
+                  onClick={() => setShowMyAvailability(true)}
+                  className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs bg-purple-600/20 hover:bg-purple-600/30 rounded-lg text-purple-400 border border-purple-500/30 transition-colors"
+                >
+                  My Availability
+                </button>
+              )}
 
               <ThemeToggle />
 
@@ -988,6 +1253,12 @@ export default function InspectionSchedulerPage() {
                         <div className="space-y-1">
                           {events.map((ev) => {
                             const overdue = isInspectionOverdue(ev, manualSchedules[ev.id]);
+                            const evSlot = findCurrentSlotForProject(ev.id, dateStr, ev.name, ev.zuperJobUid);
+                            const inspectorDisplay = evSlot
+                              ? `${evSlot.userName} · ${evSlot.displayTime}`
+                              : ev.assignedInspector
+                                ? `${ev.assignedInspector}${ev.zuperScheduledTime ? ` · ${ev.zuperScheduledTime}` : ""}`
+                                : null;
                             return (
                             <div
                               key={ev.id}
@@ -998,17 +1269,26 @@ export default function InspectionSchedulerPage() {
                               }}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setScheduleModal({ project: ev, date: dateStr });
+                                setScheduleModal({ project: ev, date: dateStr, currentSlot: evSlot });
                               }}
-                              className={`text-xs p-1 rounded truncate cursor-grab active:cursor-grabbing ${
+                              className={`text-xs p-1 rounded cursor-grab active:cursor-grabbing ${
                                 overdue
                                   ? "bg-red-500/20 border border-red-500/40 text-red-300 hover:bg-red-500/30"
                                   : "bg-purple-500/20 border border-purple-500/30 text-purple-300 hover:bg-purple-500/30"
                               }`}
-                              title={overdue ? "⚠ OVERDUE - Inspection not completed. Drag to reschedule" : "Drag to reschedule"}
+                              title={overdue
+                                ? `⚠ OVERDUE${inspectorDisplay ? ` - ${inspectorDisplay}` : ""}`
+                                : inspectorDisplay || "Click to schedule"}
                             >
-                              {overdue && <span className="text-red-400 mr-0.5">⚠</span>}
-                              {getCustomerName(ev.name)}
+                              <div className="truncate">
+                                {overdue && <span className="text-red-400 mr-0.5">⚠</span>}
+                                {getCustomerName(ev.name)}
+                              </div>
+                              {inspectorDisplay && (
+                                <div className="text-[0.6rem] text-purple-400/60 truncate">
+                                  {inspectorDisplay}
+                                </div>
+                              )}
                             </div>
                             );
                           })}
@@ -1154,7 +1434,13 @@ export default function InspectionSchedulerPage() {
           }}
         >
           <div className="bg-[#12121a] border border-zinc-800 rounded-xl p-5 max-w-md w-[90%]">
-            <h3 className="text-lg font-semibold mb-4">Schedule Inspection</h3>
+            <h3 className="text-lg font-semibold mb-4">
+              {scheduleModal.currentSlot && !scheduleModal.isRescheduling
+                ? "Inspection Details"
+                : scheduleModal.isRescheduling
+                  ? "Reschedule Inspection"
+                  : "Schedule Inspection"}
+            </h3>
 
             <div className="space-y-3 mb-4">
               <div>
@@ -1173,50 +1459,147 @@ export default function InspectionSchedulerPage() {
                 <p className="text-sm font-medium text-purple-400">{formatDate(scheduleModal.date)}</p>
               </div>
 
-              <div>
-                <span className="text-xs text-zinc-500">System Size</span>
-                <p className="text-sm">{scheduleModal.project.systemSize.toFixed(1)} kW</p>
-              </div>
+              {/* Time Slot Selection — 3 states */}
+              {scheduleModal.currentSlot && !scheduleModal.isRescheduling && !scheduleModal.slot ? (
+                /* State A: Viewing existing booking */
+                <div className="p-2 bg-purple-900/20 border border-purple-500/20 rounded-lg">
+                  <span className="text-xs text-purple-400 font-medium">Currently Scheduled</span>
+                  <p className="text-sm text-white mt-1">
+                    {scheduleModal.currentSlot.userName} &bull; {scheduleModal.currentSlot.displayTime}
+                  </p>
+                  <button
+                    onClick={() => setScheduleModal({ ...scheduleModal, isRescheduling: true })}
+                    className="text-xs text-purple-400 hover:text-purple-300 mt-2 underline"
+                  >
+                    Reschedule
+                  </button>
+                </div>
+              ) : scheduleModal.slot ? (
+                /* State B: Slot selected (new or reschedule) */
+                <div className="p-2 bg-purple-900/30 border border-purple-500/30 rounded-lg">
+                  <span className="text-xs text-purple-400 font-medium">Selected Time Slot</span>
+                  <p className="text-sm text-white mt-1">
+                    {scheduleModal.slot.userName} &bull; {formatTimeRange12h(scheduleModal.slot.startTime, scheduleModal.slot.endTime)}
+                  </p>
+                  <p className="text-xs text-zinc-400 mt-0.5">
+                    {scheduleModal.slot.location}{scheduleModal.slot.timezone === "America/Los_Angeles" ? " · PT" : " · MT"}
+                  </p>
+                  <div className="flex gap-3 mt-1">
+                    <button
+                      onClick={() => setScheduleModal({ ...scheduleModal, slot: undefined })}
+                      className="text-xs text-zinc-500 hover:text-zinc-300"
+                    >
+                      Change time slot
+                    </button>
+                    {scheduleModal.isRescheduling && (
+                      <button
+                        onClick={() => setScheduleModal({ ...scheduleModal, slot: undefined, isRescheduling: false })}
+                        className="text-xs text-zinc-500 hover:text-zinc-300"
+                      >
+                        Cancel reschedule
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                /* State C: Picking a slot (new scheduling or rescheduling) */
+                <div>
+                  <span className="text-xs text-zinc-500">Select Time Slot</span>
+                  <div className="mt-1 max-h-32 overflow-y-auto space-y-1">
+                    {(() => {
+                      const dayAvail = availabilityByDate[scheduleModal.date];
+                      const projectLocation = scheduleModal.project.location;
+                      const availSlots = dayAvail?.availableSlots?.filter(slot => {
+                        if (!projectLocation) return true;
+                        if (!slot.location) return true;
+                        if (slot.location === projectLocation) return true;
+                        if ((slot.location === "DTC" || slot.location === "Centennial") &&
+                            (projectLocation === "DTC" || projectLocation === "Centennial")) return true;
+                        return false;
+                      }) || [];
 
-              <div>
-                <span className="text-xs text-zinc-500">Amount</span>
-                <p className="text-sm font-mono text-orange-400">{formatCurrency(scheduleModal.project.amount)}</p>
+                      if (availSlots.length === 0) {
+                        return (
+                          <p className="text-xs text-zinc-500 italic">No available slots for this location on this date</p>
+                        );
+                      }
+
+                      return availSlots.map((slot, i) => (
+                        <button
+                          key={i}
+                          onClick={() => setScheduleModal({
+                            ...scheduleModal,
+                            slot: {
+                              userName: slot.user_name || "",
+                              userUid: slot.user_uid,
+                              teamUid: slot.team_uid,
+                              startTime: slot.start_time,
+                              endTime: slot.end_time,
+                              location: slot.location || "",
+                              timezone: slot.timezone,
+                            }
+                          })}
+                          className="w-full text-left px-2 py-1.5 text-sm rounded bg-zinc-800 hover:bg-purple-900/30 hover:border-purple-500/30 border border-transparent transition-colors"
+                        >
+                          <span className="text-purple-400">{slot.user_name}</span>
+                          <span className="text-zinc-400 ml-2">{slot.display_time || formatTimeRange12h(slot.start_time, slot.end_time)}</span>
+                        </button>
+                      ));
+                    })()}
+                  </div>
+                  {scheduleModal.isRescheduling && (
+                    <button
+                      onClick={() => setScheduleModal({ ...scheduleModal, isRescheduling: false })}
+                      className="text-xs text-zinc-500 hover:text-zinc-300 mt-2"
+                    >
+                      Cancel reschedule
+                    </button>
+                  )}
+                </div>
+              )}
+
+              <div className="flex gap-4">
+                <div>
+                  <span className="text-xs text-zinc-500">System Size</span>
+                  <p className="text-sm">{scheduleModal.project.systemSize.toFixed(1)} kW</p>
+                </div>
+                <div>
+                  <span className="text-xs text-zinc-500">Amount</span>
+                  <p className="text-sm font-mono text-orange-400">{formatCurrency(scheduleModal.project.amount)}</p>
+                </div>
               </div>
 
               {/* External Links */}
-              <div>
-                <span className="text-xs text-zinc-500">Links</span>
-                <div className="flex items-center gap-3 mt-1">
+              <div className="flex items-center gap-3">
+                <a
+                  href={scheduleModal.project.hubspotUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-xs text-orange-400 hover:text-orange-300"
+                >
+                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M18.164 7.93V5.084a2.198 2.198 0 001.267-1.984 2.21 2.21 0 00-4.42 0c0 .873.507 1.626 1.238 1.984V7.93a6.506 6.506 0 00-3.427 1.758l-7.27-5.66a2.56 2.56 0 00.076-.608 2.574 2.574 0 10-.988 2.03l7.128 5.548a6.543 6.543 0 00-.167 1.46c0 .5.057.986.165 1.453l-7.126 5.549a2.574 2.574 0 10.988 2.03c0-.211-.027-.416-.076-.613l7.27-5.658a6.506 6.506 0 003.427 1.758v2.844a2.198 2.198 0 00-1.238 1.985 2.21 2.21 0 004.42 0c0-.872-.505-1.627-1.237-1.985v-2.844a6.508 6.508 0 003.426-1.758 6.539 6.539 0 000-9.229 6.506 6.506 0 00-3.456-1.764zm-.154 9.076a4.016 4.016 0 01-2.854 1.182 4.016 4.016 0 01-2.854-1.182 4.05 4.05 0 01-1.182-2.863c0-1.082.42-2.1 1.182-2.864a4.016 4.016 0 012.854-1.182c1.08 0 2.095.42 2.854 1.182a4.05 4.05 0 011.182 2.864c0 1.081-.419 2.099-1.182 2.863z"/>
+                  </svg>
+                  HubSpot
+                </a>
+                {scheduleModal.project.zuperJobUid && (
                   <a
-                    href={scheduleModal.project.hubspotUrl}
+                    href={`${zuperWebBaseUrl}/jobs/${scheduleModal.project.zuperJobUid}/details`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 text-xs text-orange-400 hover:text-orange-300"
+                    className="inline-flex items-center gap-1.5 text-xs text-cyan-400 hover:text-cyan-300"
                   >
-                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M18.164 7.93V5.084a2.198 2.198 0 001.267-1.984 2.21 2.21 0 00-4.42 0c0 .873.507 1.626 1.238 1.984V7.93a6.506 6.506 0 00-3.427 1.758l-7.27-5.66a2.56 2.56 0 00.076-.608 2.574 2.574 0 10-.988 2.03l7.128 5.548a6.543 6.543 0 00-.167 1.46c0 .5.057.986.165 1.453l-7.126 5.549a2.574 2.574 0 10.988 2.03c0-.211-.027-.416-.076-.613l7.27-5.658a6.506 6.506 0 003.427 1.758v2.844a2.198 2.198 0 00-1.238 1.985 2.21 2.21 0 004.42 0c0-.872-.505-1.627-1.237-1.985v-2.844a6.508 6.508 0 003.426-1.758 6.539 6.539 0 000-9.229 6.506 6.506 0 00-3.456-1.764zm-.154 9.076a4.016 4.016 0 01-2.854 1.182 4.016 4.016 0 01-2.854-1.182 4.05 4.05 0 01-1.182-2.863c0-1.082.42-2.1 1.182-2.864a4.016 4.016 0 012.854-1.182c1.08 0 2.095.42 2.854 1.182a4.05 4.05 0 011.182 2.864c0 1.081-.419 2.099-1.182 2.863z"/>
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                     </svg>
-                    HubSpot
+                    Zuper Job
                   </a>
-                  {scheduleModal.project.zuperJobUid && (
-                    <a
-                      href={`${zuperWebBaseUrl}/jobs/${scheduleModal.project.zuperJobUid}/details`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 text-xs text-cyan-400 hover:text-cyan-300"
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                      </svg>
-                      Zuper Job
-                    </a>
-                  )}
-                </div>
+                )}
               </div>
             </div>
 
-            {/* Zuper Sync Option */}
-            {zuperConfigured && (
+            {/* Zuper Sync Option — only show when scheduling/rescheduling */}
+            {zuperConfigured && (scheduleModal.slot || (scheduleModal.isRescheduling && !scheduleModal.currentSlot)) && (
               <div className="mb-4 p-3 bg-zinc-900 rounded-lg border border-zinc-800">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -1236,22 +1619,40 @@ export default function InspectionSchedulerPage() {
             )}
 
             <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setScheduleModal(null)}
-                className="px-4 py-2 text-sm text-zinc-400 hover:text-white"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={confirmSchedule}
-                disabled={syncingToZuper}
-                className="px-4 py-2 text-sm bg-purple-600 hover:bg-purple-700 rounded-lg font-medium disabled:opacity-50"
-              >
-                {syncingToZuper ? "Syncing..." : "Confirm Schedule"}
-              </button>
+              {scheduleModal.currentSlot && !scheduleModal.isRescheduling && !scheduleModal.slot ? (
+                /* View mode — just Close button */
+                <button
+                  onClick={() => setScheduleModal(null)}
+                  className="px-4 py-2 text-sm bg-zinc-700 hover:bg-zinc-600 rounded-lg font-medium"
+                >
+                  Close
+                </button>
+              ) : (
+                /* Schedule/Reschedule mode */
+                <>
+                  <button
+                    onClick={() => setScheduleModal(null)}
+                    className="px-4 py-2 text-sm text-zinc-400 hover:text-white"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={confirmSchedule}
+                    disabled={syncingToZuper || !scheduleModal.slot}
+                    className="px-4 py-2 text-sm bg-purple-600 hover:bg-purple-700 rounded-lg font-medium disabled:opacity-50"
+                  >
+                    {syncingToZuper ? "Syncing..." : scheduleModal.isRescheduling ? "Confirm Reschedule" : "Confirm Schedule"}
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>
+      )}
+
+      {/* My Availability Modal */}
+      {showMyAvailability && (
+        <MyAvailability onClose={() => { setShowMyAvailability(false); fetchAvailability(); }} />
       )}
     </div>
   );

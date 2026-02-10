@@ -124,7 +124,7 @@ export async function getAllUsers() {
   if (!prisma) return [];
 
   return prisma.user.findMany({
-    orderBy: { createdAt: "desc" },
+    orderBy: { lastLoginAt: { sort: "desc", nulls: "last" } },
   });
 }
 

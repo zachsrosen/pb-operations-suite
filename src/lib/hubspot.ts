@@ -367,9 +367,23 @@ function daysBetween(date1: Date, date2: Date): number {
 
 function parseDate(value: unknown): string | null {
   if (!value) return null;
-  const str = String(value);
+  const str = String(value).trim();
+  // ISO datetime string like "2026-02-10T00:00:00.000Z" — extract date portion
   if (str.includes("T")) {
     return str.split("T")[0];
+  }
+  // Already YYYY-MM-DD format
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+    return str;
+  }
+  // Unix timestamp in milliseconds (HubSpot sometimes returns dates this way)
+  if (/^\d{10,13}$/.test(str)) {
+    const ts = parseInt(str, 10);
+    const d = new Date(ts);
+    if (!isNaN(d.getTime())) {
+      // Use UTC to avoid timezone shift (HubSpot stores dates at midnight UTC)
+      return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+    }
   }
   return str;
 }
