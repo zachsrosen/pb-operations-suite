@@ -53,6 +53,7 @@ interface SurveyProject {
   hubspotUrl: string;
   zuperJobUid?: string;
   zuperJobStatus?: string;
+  zuperScheduledTime?: string; // Local time from Zuper (e.g., "1pm") for display when booked slot not found
   dealOwner: string;
   assignedSurveyor?: string; // Surveyor name from Zuper/localStorage/HubSpot
   // Assigned slot info (if already scheduled)
@@ -374,6 +375,31 @@ export default function SiteSurveySchedulerPage() {
                   // Use Zuper's assigned user as the primary source of truth
                   if (zuperJob.assignedTo) {
                     project.assignedSurveyor = zuperJob.assignedTo;
+                  }
+                  // Use Zuper's scheduled date and time as source of truth — when a job is
+                  // rescheduled in Zuper, the HubSpot date may be stale. Convert
+                  // the UTC timestamp to local date/time in the appropriate timezone.
+                  if (zuperJob.scheduledDate) {
+                    try {
+                      const utcDate = new Date(zuperJob.scheduledDate);
+                      // Determine timezone from project location
+                      const loc = (project.location || "").toLowerCase();
+                      const tz = (loc.includes("san luis") || loc.includes("slo") || loc.includes("camarillo"))
+                        ? "America/Los_Angeles" : "America/Denver";
+                      const localDate = utcDate.toLocaleDateString("en-CA", { timeZone: tz });
+                      // Extract local time for display (e.g., "1pm", "12pm")
+                      const localTimeStr = utcDate.toLocaleTimeString("en-US", {
+                        timeZone: tz, hour: "numeric", minute: "2-digit", hour12: true,
+                      }).replace(":00 ", "").replace(" ", "").toLowerCase();
+                      project.zuperScheduledTime = localTimeStr;
+
+                      if (localDate && localDate !== project.scheduleDate) {
+                        console.log(`[Scheduler] Zuper date override for ${project.name}: HubSpot=${project.scheduleDate} → Zuper=${localDate}`);
+                        project.scheduleDate = localDate;
+                      }
+                    } catch {
+                      // Ignore date parsing errors
+                    }
                   }
                 }
               }
@@ -1316,8 +1342,8 @@ export default function SiteSurveySchedulerPage() {
                                     : "bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/30"
                                 }`}
                                 title={overdue
-                                  ? `⚠ OVERDUE - Survey not completed\n${evSlot ? `${evSlot.userName} @ ${evSlot.displayTime}\n` : ""}${ev.address || "No address"} - Click to reschedule`
-                                  : evSlot ? `${evSlot.userName} @ ${evSlot.displayTime}\n${ev.address || "No address"} - Click to view` : `${ev.assignedSurveyor ? `Surveyor: ${ev.assignedSurveyor}\n` : ""}${ev.address || "No address"} - Drag to reschedule`}
+                                  ? `⚠ OVERDUE - Survey not completed\n${evSlot ? `${evSlot.userName} @ ${evSlot.displayTime}\n` : ev.assignedSurveyor ? `${ev.assignedSurveyor}${ev.zuperScheduledTime ? ` @ ${ev.zuperScheduledTime}` : ""}\n` : ""}${ev.address || "No address"} - Click to reschedule`
+                                  : evSlot ? `${evSlot.userName} @ ${evSlot.displayTime}\n${ev.address || "No address"} - Click to view` : `${ev.assignedSurveyor ? `Surveyor: ${ev.assignedSurveyor}${ev.zuperScheduledTime ? ` @ ${ev.zuperScheduledTime}` : ""}\n` : ""}${ev.address || "No address"} - Drag to reschedule`}
                               >
                                 <div className="truncate">
                                   {overdue && <span className="text-red-400 mr-0.5">⚠</span>}
@@ -1327,7 +1353,9 @@ export default function SiteSurveySchedulerPage() {
                                 {evSlot ? (
                                   <div className="text-[0.6rem] text-cyan-400/60 truncate">{evSlot.userName} @ {evSlot.displayTime}</div>
                                 ) : ev.assignedSurveyor ? (
-                                  <div className="text-[0.6rem] text-emerald-400/70 truncate">{ev.assignedSurveyor}</div>
+                                  <div className="text-[0.6rem] text-emerald-400/70 truncate">
+                                    {ev.assignedSurveyor}{ev.zuperScheduledTime ? ` @ ${ev.zuperScheduledTime}` : ""}
+                                  </div>
                                 ) : null}
                               </div>
                             );
@@ -1481,7 +1509,9 @@ export default function SiteSurveySchedulerPage() {
                               </div>
                             </td>
                             <td className="px-4 py-3 text-sm text-emerald-400">
-                              {project.assignedSurveyor || <span className="text-zinc-600">—</span>}
+                              {project.assignedSurveyor ? (
+                                <span>{project.assignedSurveyor}{project.zuperScheduledTime ? <span className="text-zinc-500 ml-1">@ {project.zuperScheduledTime}</span> : null}</span>
+                              ) : <span className="text-zinc-600">—</span>}
                             </td>
                             <td className={`px-4 py-3 text-sm ${overdue ? "text-red-400" : schedDate ? "text-cyan-400" : "text-zinc-500"}`}>
                               {schedDate ? formatShortDate(schedDate) : "—"}
