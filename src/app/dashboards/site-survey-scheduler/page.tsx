@@ -217,6 +217,13 @@ function isPastDate(dateStr: string): boolean {
   return dateStr < getTodayStr();
 }
 
+// Check if a date is tomorrow (next day after today)
+function isTomorrow(dateStr: string): boolean {
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return dateStr === toDateStr(tomorrow);
+}
+
 // Check if a survey is overdue: scheduled in the past but not completed
 function isSurveyOverdue(project: SurveyProject, manualScheduleDate?: string): boolean {
   const schedDate = manualScheduleDate || project.scheduleDate;
@@ -300,6 +307,9 @@ export default function SiteSurveySchedulerPage() {
   const [selectedSlot, setSelectedSlot] = useState<AssistedSlot | null>(null);
   const [availabilityByDate, setAvailabilityByDate] = useState<Record<string, DayAvailability>>({});
   const [showAvailability, setShowAvailability] = useState(true);
+
+  /* ---- user role ---- */
+  const [userRole, setUserRole] = useState<string | null>(null);
 
   /* ---- self-service availability ---- */
   const [isLinkedSurveyor, setIsLinkedSurveyor] = useState(false);
@@ -462,8 +472,12 @@ export default function SiteSurveySchedulerPage() {
     checkZuper();
   }, []);
 
-  // Check if logged-in user is a linked crew member
+  // Fetch user role + check if linked crew member
   useEffect(() => {
+    fetch("/api/auth/sync")
+      .then(res => res.json())
+      .then(data => { if (data.role) setUserRole(data.role); })
+      .catch(() => {});
     fetch("/api/zuper/my-availability")
       .then(res => { if (res.ok) setIsLinkedSurveyor(true); })
       .catch(() => {});
@@ -710,17 +724,26 @@ export default function SiteSurveySchedulerPage() {
       setDraggedProjectId(null);
       return;
     }
+    if (userRole === "SALES" && isTomorrow(date)) {
+      showToast("Cannot schedule for tomorrow — surveys need at least 2 days lead time");
+      setDraggedProjectId(null);
+      return;
+    }
     const project = projects.find(p => p.id === draggedProjectId);
     if (project) {
       const currentSlot = findCurrentSlotForProject(project.id, date, project.name, project.zuperJobUid);
       setScheduleModal({ project, date, currentSlot });
     }
     setDraggedProjectId(null);
-  }, [draggedProjectId, projects, findCurrentSlotForProject, showToast]);
+  }, [draggedProjectId, projects, findCurrentSlotForProject, showToast, userRole]);
 
   const handleDateClick = useCallback((date: string, project?: SurveyProject) => {
     if (isPastDate(date)) {
       showToast("Cannot schedule on past dates");
+      return;
+    }
+    if (userRole === "SALES" && isTomorrow(date)) {
+      showToast("Cannot schedule for tomorrow — surveys need at least 2 days lead time");
       return;
     }
     if (project) {
@@ -731,11 +754,18 @@ export default function SiteSurveySchedulerPage() {
       setScheduleModal({ project: selectedProject, date, currentSlot });
       setSelectedProject(null);
     }
-  }, [selectedProject, findCurrentSlotForProject, showToast]);
+  }, [selectedProject, findCurrentSlotForProject, showToast, userRole]);
 
   const confirmSchedule = useCallback(async () => {
     if (!scheduleModal) return;
     const { project, date, slot } = scheduleModal;
+
+    // Safety net: prevent SALES from confirming a tomorrow schedule
+    if (userRole === "SALES" && isTomorrow(date)) {
+      showToast("Cannot schedule for tomorrow — surveys need at least 2 days lead time");
+      setScheduleModal(null);
+      return;
+    }
 
     setManualSchedules((prev) => ({
       ...prev,
@@ -897,7 +927,7 @@ export default function SiteSurveySchedulerPage() {
     }
 
     setScheduleModal(null);
-  }, [scheduleModal, zuperConfigured, syncToZuper, showToast, fetchAvailability, saveSurveyorAssignment]);
+  }, [scheduleModal, zuperConfigured, syncToZuper, showToast, fetchAvailability, saveSurveyorAssignment, userRole]);
 
   const cancelSchedule = useCallback((projectId: string) => {
     setManualSchedules((prev) => {
