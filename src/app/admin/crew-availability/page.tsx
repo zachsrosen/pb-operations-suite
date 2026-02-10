@@ -406,15 +406,13 @@ export default function CrewAvailabilityPage() {
             <span className="text-zinc-500 text-sm">{records.length} slots</span>
           </div>
           <div className="flex items-center gap-3">
-            {records.length === 0 && (
-              <button
-                onClick={handleSeed}
-                disabled={seeding}
-                className="px-4 py-2 bg-amber-600 hover:bg-amber-500 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
-              >
-                {seeding ? "Seeding..." : "Seed from Code"}
-              </button>
-            )}
+            <button
+              onClick={handleSeed}
+              disabled={seeding}
+              className="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+            >
+              {seeding ? "Seeding..." : "Sync from Code"}
+            </button>
             <button
               onClick={() => {
                 setOverrideForm({ crewMemberId: "", date: "", reason: "" });
@@ -488,7 +486,7 @@ export default function CrewAvailabilityPage() {
                   <tr>
                     <td colSpan={8} className="px-4 py-12 text-center text-zinc-500">
                       {records.length === 0
-                        ? "No availability records. Click \"Seed from Code\" to import existing schedules."
+                        ? "No availability records. Click \"Sync from Code\" to import existing schedules."
                         : "No records match your filters."}
                     </td>
                   </tr>
