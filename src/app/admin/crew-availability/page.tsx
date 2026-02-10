@@ -226,21 +226,32 @@ export default function CrewAvailabilityPage() {
   };
 
   const handleSeed = async () => {
-    if (!confirm("Seed availability from hardcoded schedules? This won't overwrite existing records.")) return;
+    if (!confirm("Seed crew members and availability from hardcoded schedules? This won't overwrite existing records.")) return;
 
     setSeeding(true);
     try {
+      // Step 1: Ensure crew members exist (required before availability can be seeded)
+      const crewResponse = await fetch("/api/admin/crew?action=seed", {
+        method: "POST",
+      });
+      if (!crewResponse.ok) {
+        const crewData = await crewResponse.json();
+        throw new Error(crewData.error || "Failed to seed crew members");
+      }
+
+      // Step 2: Seed availability schedules
       const response = await fetch("/api/admin/crew-availability/seed", {
         method: "POST",
       });
 
       if (!response.ok) {
         const data = await response.json();
-        throw new Error(data.error || "Failed to seed");
+        throw new Error(data.error || "Failed to seed availability");
       }
 
       const data = await response.json();
-      showToast(`Seeded: ${data.created} created, ${data.skipped} skipped`);
+      const errMsg = data.errors?.length ? ` (${data.errors.join(", ")})` : "";
+      showToast(`Seeded: ${data.created} created, ${data.skipped} skipped${errMsg}`);
       fetchRecords();
     } catch (err) {
       showToast(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);

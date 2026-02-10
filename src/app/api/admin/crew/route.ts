@@ -158,7 +158,12 @@ export async function POST(request: NextRequest) {
           const created = await upsertCrewMember(data);
           results.push({ name: data.name, status: "created", data: created });
         } else {
-          results.push({ name: data.name, status: "exists", data: existing });
+          // Update existing crew member with any missing fields (email, locations, teamUid, etc.)
+          const updated = await upsertCrewMember({
+            ...data,
+            email: data.email || existing.email || generateCrewEmail(data.name),
+          });
+          results.push({ name: data.name, status: "updated", data: updated });
         }
       }
 
