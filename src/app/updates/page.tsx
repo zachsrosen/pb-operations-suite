@@ -15,6 +15,21 @@ interface UpdateEntry {
 
 const UPDATES: UpdateEntry[] = [
   {
+    version: "1.22.0",
+    date: "2026-02-10",
+    title: "Surveyor Self-Service, SALES Scheduling Controls & Design Clipping",
+    description: "Surveyors can manage their own availability, SALES users restricted from next-day scheduling, inverter clipping detection added to design dashboard, and Zuper calendar accuracy improvements.",
+    changes: [
+      { type: "feature", text: "Surveyor self-service availability: crew members can view and update their own schedules directly from the Site Survey Scheduler via \"My Availability\" button" },
+      { type: "feature", text: "Design dashboard clipping detection tool: analyzes DC/AC ratios with seasonal TSRF decomposition, battery mitigation factors, and risk-level classification for inverter clipping" },
+      { type: "feature", text: "SALES role scheduling restriction: SALES users cannot schedule surveys for tomorrow, enforcing a minimum 2-day lead time" },
+      { type: "feature", text: "\"Manage Availability\" admin link added to scheduler toolbar for quick access to crew availability management" },
+      { type: "fix", text: "Admin impersonation now works correctly with self-service availability (crew member lookup uses impersonated user's email)" },
+      { type: "fix", text: "Zuper DB cache now includes scheduled dates, assigned surveyors, and job status for accurate survey calendar display" },
+      { type: "internal", text: "Crew member email linking via firstname@photonbrothers.com convention for automatic user-to-surveyor mapping" },
+    ],
+  },
+  {
     version: "1.21.0",
     date: "2026-02-10",
     title: "Dashboard Separation, Equipment Expansion & Admin Upgrades",

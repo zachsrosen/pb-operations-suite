@@ -43,7 +43,22 @@ async function resolveCrewMember(
     return NextResponse.json({ error: "User not found" }, { status: 401 });
   }
 
-  const crewMember = await getCrewMemberByEmail(session.user.email);
+  // Support admin impersonation: use the impersonated user's email for crew lookup
+  let lookupEmail = session.user.email;
+  if (
+    currentUser.role === "ADMIN" &&
+    (currentUser as Record<string, unknown>).impersonatingUserId &&
+    prisma
+  ) {
+    const impersonatedUser = await prisma.user.findUnique({
+      where: { id: (currentUser as Record<string, unknown>).impersonatingUserId as string },
+    });
+    if (impersonatedUser?.email) {
+      lookupEmail = impersonatedUser.email;
+    }
+  }
+
+  const crewMember = await getCrewMemberByEmail(lookupEmail);
   if (!crewMember) {
     return NextResponse.json(
       { error: "No crew profile linked to your account" },
