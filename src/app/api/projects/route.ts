@@ -43,19 +43,26 @@ export async function GET(request: NextRequest) {
     const sortBy = searchParams.get("sort") || "priorityScore";
     const sortOrder = searchParams.get("order") === "asc" ? "asc" : "desc";
 
-    // Use shared cache with stale-while-revalidate + request coalescing
-    const { data: allProjects, cached, stale, lastUpdated } = await appCache.getOrFetch<Project[]>(
-      CACHE_KEYS.PROJECTS_ALL,
-      () => fetchAllProjects({ activeOnly: false }),
+    // Use separate cache keys for active vs all projects.
+    // Default (active-only) path fetches ~700 deals with server-side stage
+    // filtering — much faster than fetching all ~6,500 deals.
+    const cacheKey = activeOnly ? CACHE_KEYS.PROJECTS_ACTIVE : CACHE_KEYS.PROJECTS_ALL;
+
+    const { data: cachedProjects, cached, stale, lastUpdated } = await appCache.getOrFetch<Project[]>(
+      cacheKey,
+      () => fetchAllProjects({ activeOnly }),
       forceRefresh
     );
 
-    let projects = allProjects || [];
+    let projects = cachedProjects || [];
 
     // Apply context filter first (if provided)
     if (context) {
       projects = filterProjectsForContext(projects, context);
     } else if (activeOnly) {
+      // Safety net: ensure only active projects when activeOnly is true
+      // (HubSpot-level filtering already excludes inactive stages, but this
+      // guards against edge cases like unexpected stage IDs)
       projects = projects.filter((p) => p.isActive);
     }
 

@@ -614,49 +614,117 @@ export async function fetchAllProjects(options?: {
   stages?: string[];
 }): Promise<Project[]> {
   const portalId = process.env.HUBSPOT_PORTAL_ID || "21710069";
-  const allDeals: Record<string, unknown>[] = [];
-  let after: string | undefined;
 
-  // Use search API to filter by pipeline (with retry for rate limits)
-  const MAX_PAGINATION_PAGES = 50; // Safety limit: 50 pages * 100 = 5,000 projects max
-  let paginationCount = 0;
+  // ── Phase 1: Collect all deal IDs using search with MINIMAL properties ──
+  // HubSpot search API truncates results when too many properties are
+  // requested per deal (we need 63). Searching with just the ID is fast
+  // and paginates reliably, then we batch-read full properties in Phase 2.
+  const INACTIVE_STAGE_IDS = ["20440343", "20440344", "68229433", "20461935"];
+
+  // Build search filters
+  const filters: { propertyName: string; operator: typeof FilterOperatorEnum.Eq | typeof FilterOperatorEnum.Neq; value: string }[] = [
+    {
+      propertyName: "pipeline",
+      operator: FilterOperatorEnum.Eq,
+      value: PROJECT_PIPELINE_ID,
+    },
+  ];
+
+  // When fetching active-only, exclude inactive stages at the HubSpot level.
+  // This reduces results from ~6,500 to ~700 deals (10× faster).
+  if (options?.activeOnly !== false) {
+    for (const stageId of INACTIVE_STAGE_IDS) {
+      filters.push({
+        propertyName: "dealstage",
+        operator: FilterOperatorEnum.Neq,
+        value: stageId,
+      });
+    }
+  }
+
+  const allDealIds: string[] = [];
+  let after: string | undefined;
+  const MAX_PAGINATION_PAGES = 100; // 100 pages × 100 = 10,000 (HubSpot search max)
+  let pageCount = 0;
+  let searchTotal = 0;
+
+  console.log(`[HubSpot] Starting project fetch (activeOnly=${options?.activeOnly !== false})`);
+
   do {
-    if (paginationCount >= MAX_PAGINATION_PAGES) {
-      console.warn(`[HubSpot] Hit pagination safety limit (${MAX_PAGINATION_PAGES} pages) for project pipeline. Some projects may be missing.`);
+    if (pageCount >= MAX_PAGINATION_PAGES) {
+      console.warn(`[HubSpot] Hit pagination limit (${MAX_PAGINATION_PAGES} pages, ${allDealIds.length} IDs)`);
       break;
     }
+
     const searchRequest: {
-      filterGroups: typeof FilterOperatorEnum extends never ? never : { filters: { propertyName: string; operator: typeof FilterOperatorEnum.Eq; value: string }[] }[];
+      filterGroups: { filters: typeof filters }[];
       properties: string[];
       limit: number;
       after?: string;
     } = {
-      filterGroups: [
-        {
-          filters: [
-            {
-              propertyName: "pipeline",
-              operator: FilterOperatorEnum.Eq,
-              value: PROJECT_PIPELINE_ID,
-            },
-          ],
-        },
-      ],
-      properties: DEAL_PROPERTIES,
+      filterGroups: [{ filters }],
+      properties: ["hs_object_id"],
       limit: 100,
     };
     if (after) {
       searchRequest.after = after;
     }
+
     const response = await searchWithRetry(searchRequest);
 
-    allDeals.push(...response.results.map((deal) => deal.properties));
-    after = response.paging?.next?.after;
-    paginationCount++;
+    if (pageCount === 0) {
+      searchTotal = response.total;
+      console.log(`[HubSpot] Search reports ${searchTotal} total matching deals`);
+    }
 
-    // Small delay between pagination requests to avoid rate limits
-    if (after) await sleep(100);
+    const ids = response.results.map((deal) => deal.id);
+    allDealIds.push(...ids);
+    after = response.paging?.next?.after;
+    pageCount++;
+
+    if (after) await sleep(50);
   } while (after);
+
+  console.log(`[HubSpot] Phase 1 complete: ${allDealIds.length} IDs collected in ${pageCount} pages (HubSpot total: ${searchTotal})`);
+
+  if (allDealIds.length === 0) return [];
+
+  // ── Phase 2: Batch-read full properties ──
+  // The batch API reliably returns all requested properties without truncation.
+  const allDeals: Record<string, unknown>[] = [];
+  const BATCH_SIZE = 100;
+  const batches: string[][] = [];
+
+  for (let i = 0; i < allDealIds.length; i += BATCH_SIZE) {
+    batches.push(allDealIds.slice(i, i + BATCH_SIZE));
+  }
+
+  // Process batches with limited concurrency to respect rate limits
+  const CONCURRENCY = 3;
+  for (let i = 0; i < batches.length; i += CONCURRENCY) {
+    const batchGroup = batches.slice(i, i + CONCURRENCY);
+    const results = await Promise.allSettled(
+      batchGroup.map((batch) =>
+        hubspotClient.crm.deals.batchApi.read({
+          inputs: batch.map((id) => ({ id })),
+          properties: DEAL_PROPERTIES,
+          propertiesWithHistory: [],
+        })
+      )
+    );
+
+    for (const result of results) {
+      if (result.status === "fulfilled") {
+        allDeals.push(...result.value.results.map((deal) => deal.properties));
+      } else {
+        console.error("[HubSpot] Batch read failed:", result.reason?.message || result.reason);
+      }
+    }
+
+    if (i + CONCURRENCY < batches.length) await sleep(100);
+  }
+
+  console.log(`[HubSpot] Phase 2 complete: ${allDeals.length} deals with full properties`);
 
   // Resolve owner IDs to names — use BOTH property definitions and Owners API
   // to maximize coverage (property defs may be incomplete, Owners API may fail)
