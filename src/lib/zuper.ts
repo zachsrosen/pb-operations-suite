@@ -681,6 +681,7 @@ export async function createJobFromProject(project: {
   endTime?: string; // Optional specific end time (e.g., "13:00")
   crew?: string; // Zuper user UID
   teamUid?: string; // Zuper team UID (required for user assignment)
+  timezone?: string; // IANA timezone for the slot (e.g. "America/Los_Angeles" for CA)
   notes?: string;
 }): Promise<ZuperApiResponse<ZuperJob>> {
   // Determine job category - use UIDs for creating jobs
@@ -707,26 +708,44 @@ export async function createJobFromProject(project: {
   }
 
   // Calculate schedule times
-  // User selects times in Mountain Time, but Zuper expects UTC
-  // Convert Mountain Time to UTC before sending to Zuper
+  // Slot times are in the crew member's local timezone (e.g. Mountain for CO, Pacific for CA)
+  // Zuper expects UTC, so we convert using the timezone provided by the caller
+  const slotTimezone = schedule.timezone || "America/Denver";
 
-  // Helper to convert Mountain Time to UTC
-  const mountainToUtc = (dateStr: string, timeStr: string): string => {
+  // Helper to convert local time to UTC
+  const localToUtc = (dateStr: string, timeStr: string): string => {
     const [year, month, day] = dateStr.split('-').map(Number);
     const [hours, minutes] = (timeStr + ":00").split(':').map(Number);
 
-    // Determine if DST is in effect for this date
+    // Determine the UTC offset for this timezone on this date
     const testDate = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
-    const mountainFormatter = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'America/Denver',
-      timeZoneName: 'short'
+    const localFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: slotTimezone,
+      timeZoneName: 'longOffset'
     });
-    const parts = mountainFormatter.formatToParts(testDate);
-    const tzName = parts.find(p => p.type === 'timeZoneName')?.value || 'MST';
-    const isDST = tzName === 'MDT';
-    const offsetHours = isDST ? 6 : 7; // MDT is UTC-6, MST is UTC-7
+    const parts = localFormatter.formatToParts(testDate);
+    const tzOffsetStr = parts.find(p => p.type === 'timeZoneName')?.value || '';
+    // Parse offset like "GMT-07:00" or "GMT-06:00"
+    const offsetMatch = tzOffsetStr.match(/GMT([+-])(\d{2}):(\d{2})/);
+    let offsetHours: number;
+    if (offsetMatch) {
+      const sign = offsetMatch[1] === '-' ? 1 : -1; // Negative UTC offset means ADD hours to get UTC
+      offsetHours = sign * parseInt(offsetMatch[2]);
+    } else {
+      // Fallback: use short name for common US timezones
+      const shortFormatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: slotTimezone,
+        timeZoneName: 'short'
+      });
+      const shortParts = shortFormatter.formatToParts(testDate);
+      const shortTzName = shortParts.find(p => p.type === 'timeZoneName')?.value || '';
+      const tzOffsets: Record<string, number> = {
+        'MST': 7, 'MDT': 6, 'PST': 8, 'PDT': 7, 'CST': 6, 'CDT': 5, 'EST': 5, 'EDT': 4,
+      };
+      offsetHours = tzOffsets[shortTzName] || 7;
+    }
 
-    // Add the offset to convert Mountain Time to UTC
+    // Add the offset to convert local time to UTC
     let utcHours = hours + offsetHours;
     let utcDay = day;
     let utcMonth = month;
@@ -754,13 +773,13 @@ export async function createJobFromProject(project: {
   let endDateTime: string;
 
   if (schedule.startTime && schedule.endTime) {
-    // Use specific time slot (e.g., "12:00" to "13:00" for site surveys)
-    // Convert from Mountain Time to UTC for Zuper
-    startDateTime = mountainToUtc(schedule.date, schedule.startTime);
-    endDateTime = mountainToUtc(schedule.date, schedule.endTime);
+    // Use specific time slot (e.g., "08:00" to "09:00" for site surveys)
+    // Convert from local timezone to UTC for Zuper
+    startDateTime = localToUtc(schedule.date, schedule.startTime);
+    endDateTime = localToUtc(schedule.date, schedule.endTime);
   } else {
-    // Default to 8am-4pm Mountain Time for multi-day jobs
-    startDateTime = mountainToUtc(schedule.date, "08:00");
+    // Default to 8am-4pm local time for multi-day jobs
+    startDateTime = localToUtc(schedule.date, "08:00");
 
     // Calculate end date
     const [year, month, day] = schedule.date.split('-').map(Number);
@@ -770,7 +789,7 @@ export async function createJobFromProject(project: {
     const endMonth = String(endDateObj.getMonth() + 1).padStart(2, '0');
     const endDayStr = String(endDateObj.getDate()).padStart(2, '0');
     const endDateStr = `${endYear}-${endMonth}-${endDayStr}`;
-    endDateTime = mountainToUtc(endDateStr, "16:00");
+    endDateTime = localToUtc(endDateStr, "16:00");
   }
 
   // Build assigned_to array if crew user UID is provided

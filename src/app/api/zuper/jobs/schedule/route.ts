@@ -169,30 +169,52 @@ export async function PUT(request: NextRequest) {
     } // End of else block (no provided zuperJobUid)
 
     // Calculate schedule times
-    // User selects times in Mountain Time, but Zuper expects UTC
-    // Mountain Time is UTC-7 (MST) or UTC-6 (MDT during daylight saving)
+    // Slot times are in the crew member's local timezone (e.g. Mountain Time for CO, Pacific for CA)
+    // Zuper expects UTC, so we convert using the timezone provided by the frontend
     const days = schedule.days || 1;
 
-    // Helper to convert Mountain Time to UTC for Zuper API
-    // Takes a date string (YYYY-MM-DD) and time string (HH:mm) in Mountain Time
+    // Determine the timezone for this schedule
+    // Frontend passes schedule.timezone for timezone-aware slots (e.g. "America/Los_Angeles" for CA)
+    // Default to Mountain Time for CO locations
+    const slotTimezone = schedule.timezone || "America/Denver";
+
+    // Helper to convert local time to UTC for Zuper API
+    // Takes a date string (YYYY-MM-DD) and time string (HH:mm) in the slot's local timezone
     // Returns UTC datetime string in "YYYY-MM-DD HH:mm:ss" format
-    const mountainToUtc = (dateStr: string, timeStr: string): string => {
+    const localToUtc = (dateStr: string, timeStr: string): string => {
       const [year, month, day] = dateStr.split('-').map(Number);
       const [hours, minutes] = (timeStr + ":00").split(':').map(Number);
 
-      // Create a date object and use Intl to determine if DST is in effect
-      // This determines whether to use -7 (MST) or -6 (MDT)
+      // Create a date object and use Intl to determine the UTC offset for this timezone
       const testDate = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
-      const mountainFormatter = new Intl.DateTimeFormat('en-US', {
-        timeZone: 'America/Denver',
-        timeZoneName: 'short'
+      const localFormatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: slotTimezone,
+        timeZoneName: 'longOffset'
       });
-      const parts = mountainFormatter.formatToParts(testDate);
-      const tzName = parts.find(p => p.type === 'timeZoneName')?.value || 'MST';
-      const isDST = tzName === 'MDT';
-      const offsetHours = isDST ? 6 : 7; // MDT is UTC-6, MST is UTC-7
+      const parts = localFormatter.formatToParts(testDate);
+      const tzOffsetStr = parts.find(p => p.type === 'timeZoneName')?.value || '';
+      // Parse offset like "GMT-07:00" or "GMT-06:00"
+      const offsetMatch = tzOffsetStr.match(/GMT([+-])(\d{2}):(\d{2})/);
+      let offsetHours: number;
+      if (offsetMatch) {
+        const sign = offsetMatch[1] === '-' ? 1 : -1; // Negative UTC offset means ADD hours to get UTC
+        offsetHours = sign * parseInt(offsetMatch[2]);
+      } else {
+        // Fallback: use short name to determine offset for common timezones
+        const shortFormatter = new Intl.DateTimeFormat('en-US', {
+          timeZone: slotTimezone,
+          timeZoneName: 'short'
+        });
+        const shortParts = shortFormatter.formatToParts(testDate);
+        const shortTzName = shortParts.find(p => p.type === 'timeZoneName')?.value || '';
+        // Common US timezone offsets
+        const tzOffsets: Record<string, number> = {
+          'MST': 7, 'MDT': 6, 'PST': 8, 'PDT': 7, 'CST': 6, 'CDT': 5, 'EST': 5, 'EDT': 4,
+        };
+        offsetHours = tzOffsets[shortTzName] || 7; // Default to MST
+      }
 
-      // Add the offset to convert Mountain Time to UTC
+      // Add the offset to convert local time to UTC
       let utcHours = hours + offsetHours;
       let utcDay = day;
       let utcMonth = month;
@@ -222,13 +244,13 @@ export async function PUT(request: NextRequest) {
 
     if (schedule.startTime && schedule.endTime) {
       // Use specific time slot (e.g., "12:00" to "13:00" for site surveys)
-      // Convert from Mountain Time to UTC for Zuper
-      startDateTime = mountainToUtc(schedule.date, schedule.startTime);
-      endDateTime = mountainToUtc(schedule.date, schedule.endTime);
-      console.log(`[Zuper Schedule] Converting Mountain Time ${schedule.startTime}-${schedule.endTime} to UTC`);
+      // Convert from local timezone to UTC for Zuper
+      startDateTime = localToUtc(schedule.date, schedule.startTime);
+      endDateTime = localToUtc(schedule.date, schedule.endTime);
+      console.log(`[Zuper Schedule] Converting ${slotTimezone} time ${schedule.startTime}-${schedule.endTime} to UTC`);
     } else {
-      // Default to 8am-4pm Mountain Time for multi-day jobs
-      startDateTime = mountainToUtc(schedule.date, "08:00");
+      // Default to 8am-4pm local time for multi-day jobs
+      startDateTime = localToUtc(schedule.date, "08:00");
 
       // Calculate end date
       const [year, month, day] = schedule.date.split('-').map(Number);
@@ -238,7 +260,7 @@ export async function PUT(request: NextRequest) {
       const endMonth = String(endDateObj.getMonth() + 1).padStart(2, '0');
       const endDayStr = String(endDateObj.getDate()).padStart(2, '0');
       const endDateStr = `${endYear}-${endMonth}-${endDayStr}`;
-      endDateTime = mountainToUtc(endDateStr, "16:00");
+      endDateTime = localToUtc(endDateStr, "16:00");
     }
 
     console.log(`[Zuper Schedule] Schedule times (UTC for Zuper): ${startDateTime} to ${endDateTime}`);
@@ -360,6 +382,7 @@ export async function PUT(request: NextRequest) {
         endTime: schedule.endTime,
         crew: schedule.crew,
         teamUid: schedule.teamUid, // Team UID required for user assignment
+        timezone: schedule.timezone, // IANA timezone for correct UTC conversion (e.g. "America/Los_Angeles")
         notes: schedule.notes,
       });
 

@@ -74,6 +74,7 @@ interface PendingSchedule {
     startTime: string;
     endTime: string;
     location: string;
+    timezone?: string; // IANA timezone if not Mountain Time (e.g. "America/Los_Angeles")
   };
   isRescheduling?: boolean; // True if user wants to change existing schedule
   currentSlot?: {  // The existing booked slot for this project
@@ -105,6 +106,7 @@ interface DayAvailability {
     team_uid?: string; // Zuper team UID (required for assignment API)
     user_name?: string;
     location?: string;
+    timezone?: string; // IANA timezone for non-Mountain Time slots (e.g. "America/Los_Angeles")
   }>;
   bookedSlots?: Array<{
     start_time: string;
@@ -723,6 +725,7 @@ export default function SiteSurveySchedulerPage() {
               crew: slot?.userUid, // Zuper user UID for assignment
               teamUid: slot?.teamUid, // Zuper team UID (required for assignment API)
               assignedUser: slot?.userName,
+              timezone: slot?.timezone, // Slot's local timezone (e.g. "America/Los_Angeles" for CA)
               notes: slot ? `Surveyor: ${slot.userName} at ${slot.startTime}` : "Scheduled via Site Survey Scheduler",
             },
           }),
@@ -1293,6 +1296,7 @@ export default function SiteSurveySchedulerPage() {
                                               startTime: slot.start_time,
                                               endTime: slot.end_time,
                                               location: slot.location || "",
+                                              timezone: slot.timezone,
                                             }
                                           });
                                         }
@@ -1576,6 +1580,7 @@ export default function SiteSurveySchedulerPage() {
                               startTime: slot.start_time,
                               endTime: slot.end_time,
                               location: slot.location || "",
+                              timezone: slot.timezone, // IANA timezone for CA slots
                             }
                           })}
                           className="w-full text-left px-2 py-1.5 text-sm rounded bg-zinc-800 hover:bg-emerald-900/30 hover:border-emerald-500/30 border border-transparent transition-colors"
