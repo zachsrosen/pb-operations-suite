@@ -640,6 +640,160 @@ export class ZuperClient {
     return { type: result.type, error: result.error, data: [] };
   }
 
+  // ========== CACHED LOOKUPS ==========
+
+  private static userCache: { data: Map<string, { userUid: string; teamUid?: string }>; fetchedAt: number } | null = null;
+  private static teamCache: { data: Map<string, string>; fetchedAt: number } | null = null;
+  private static userCachePromise: Promise<Map<string, { userUid: string; teamUid?: string }>> | null = null;
+  private static teamCachePromise: Promise<Map<string, string>> | null = null;
+  private static readonly CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
+  /**
+   * Get all Zuper users as a name→{userUid, teamUid} map, cached for 10 minutes.
+   * Pulls from /team endpoint which returns teams with embedded user arrays.
+   * Keys are lowercase full names ("drew perry"), first names ("rolando"), etc.
+   */
+  async getCachedUsers(): Promise<Map<string, { userUid: string; teamUid?: string }>> {
+    const now = Date.now();
+    if (ZuperClient.userCache && (now - ZuperClient.userCache.fetchedAt) < ZuperClient.CACHE_TTL) {
+      return ZuperClient.userCache.data;
+    }
+
+    // Deduplicate in-flight requests
+    if (ZuperClient.userCachePromise) return ZuperClient.userCachePromise;
+
+    ZuperClient.userCachePromise = (async () => {
+      try {
+        // Zuper's /users endpoint doesn't exist; users are embedded in /team response
+        const result = await this.request<{ type: string; data: Array<{ team_uid: string; team_name: string; users: Array<{ user_uid: string; first_name: string; last_name: string; email?: string }> }> }>("/team");
+        const map = new Map<string, { userUid: string; teamUid?: string }>();
+
+        if (result.type === "success" && result.data) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const rawData = result.data as any;
+          const teams = Array.isArray(rawData) ? rawData : (rawData?.data ?? []);
+          const seen = new Set<string>();
+
+          for (const team of teams) {
+            // Skip backoffice teams for user resolution — they contain admin/office users
+            // that shouldn't be matched to field crew names
+            const teamName = (team.team_name || "").toLowerCase();
+            if (teamName.startsWith("backoffice")) continue;
+
+            for (const user of (team.users || [])) {
+              if (!user.user_uid || seen.has(user.user_uid)) continue;
+              seen.add(user.user_uid);
+
+              const entry = { userUid: user.user_uid, teamUid: team.team_uid };
+              const fullName = `${user.first_name || ""} ${user.last_name || ""}`.trim().toLowerCase();
+              const firstName = (user.first_name || "").trim().toLowerCase();
+
+              if (fullName) map.set(fullName, entry);
+              // Also index by first name only (for entries like "Rolando")
+              if (firstName && !map.has(firstName)) map.set(firstName, entry);
+            }
+          }
+
+          console.log(`[Zuper] Cached ${seen.size} users (${map.size} name entries) from ${teams.length} teams`);
+        } else {
+          console.warn(`[Zuper] Failed to fetch users for cache: ${result.error}`);
+        }
+
+        ZuperClient.userCache = { data: map, fetchedAt: Date.now() };
+        return map;
+      } finally {
+        ZuperClient.userCachePromise = null;
+      }
+    })();
+
+    return ZuperClient.userCachePromise;
+  }
+
+  /**
+   * Get all Zuper teams as a name→teamUid map, cached for 10 minutes.
+   * Keys are lowercase team names.
+   */
+  async getCachedTeams(): Promise<Map<string, string>> {
+    const now = Date.now();
+    if (ZuperClient.teamCache && (now - ZuperClient.teamCache.fetchedAt) < ZuperClient.CACHE_TTL) {
+      return ZuperClient.teamCache.data;
+    }
+
+    if (ZuperClient.teamCachePromise) return ZuperClient.teamCachePromise;
+
+    ZuperClient.teamCachePromise = (async () => {
+      try {
+        const result = await this.getTeams();
+        const map = new Map<string, string>();
+
+        if (result.type === "success" && result.data) {
+          const teams = Array.isArray(result.data) ? result.data : [];
+          for (const team of teams) {
+            if (team.team_uid && team.team_name) {
+              map.set(team.team_name.toLowerCase(), team.team_uid);
+            }
+          }
+          console.log(`[Zuper] Cached ${teams.length} teams: ${[...map.keys()].join(", ")}`);
+        } else {
+          console.warn(`[Zuper] Failed to fetch teams for cache: ${result.error}`);
+        }
+
+        ZuperClient.teamCache = { data: map, fetchedAt: Date.now() };
+        return map;
+      } finally {
+        ZuperClient.teamCachePromise = null;
+      }
+    })();
+
+    return ZuperClient.teamCachePromise;
+  }
+
+  /**
+   * Resolve a crew member name to their Zuper user_uid and team_uid.
+   * Matches by full name, first name, or partial match (case-insensitive).
+   */
+  async resolveUserUid(name: string): Promise<{ userUid: string; teamUid?: string } | null> {
+    if (!this.isConfigured()) return null;
+    const users = await this.getCachedUsers();
+    const lower = name.toLowerCase().trim();
+
+    // 1. Exact full name match
+    if (users.has(lower)) return users.get(lower)!;
+
+    // 2. First name only match (e.g. "Rolando")
+    const firstName = lower.split(" ")[0];
+    if (users.has(firstName)) return users.get(firstName)!;
+
+    // 3. Partial/contains match
+    for (const [key, val] of users) {
+      if (key.includes(lower) || lower.includes(key)) return val;
+    }
+
+    console.warn(`[Zuper] Could not resolve user UID for "${name}"`);
+    return null;
+  }
+
+  /**
+   * Resolve a team/location name to a Zuper team_uid.
+   * Matches by exact name or partial match (case-insensitive).
+   */
+  async resolveTeamUid(name: string): Promise<string | null> {
+    if (!this.isConfigured()) return null;
+    const teams = await this.getCachedTeams();
+    const lower = name.toLowerCase().trim();
+
+    // 1. Exact match
+    if (teams.has(lower)) return teams.get(lower)!;
+
+    // 2. Partial/contains match
+    for (const [key, val] of teams) {
+      if (key.includes(lower) || lower.includes(key)) return val;
+    }
+
+    console.warn(`[Zuper] Could not resolve team UID for "${name}"`);
+    return null;
+  }
+
   // ========== HELPER METHODS ==========
 
   /**
