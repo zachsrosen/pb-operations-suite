@@ -400,6 +400,7 @@ export interface RolePermissions {
   canScheduleInspections: boolean;
   canSyncZuper: boolean;
   canManageUsers: boolean;
+  canManageAvailability: boolean;
   canEditDesign: boolean;
   canEditPermitting: boolean;
   canViewAllLocations: boolean;
@@ -416,6 +417,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     canScheduleInspections: true,
     canSyncZuper: true,
     canManageUsers: true,
+    canManageAvailability: true,
     canEditDesign: true,
     canEditPermitting: true,
     canViewAllLocations: true,
@@ -427,6 +429,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     canScheduleInspections: true,
     canSyncZuper: true,
     canManageUsers: false,
+    canManageAvailability: true,
     canEditDesign: true,
     canEditPermitting: true,
     canViewAllLocations: true,
@@ -448,6 +451,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     canScheduleInspections: true,
     canSyncZuper: true,
     canManageUsers: false,
+    canManageAvailability: true,
     canEditDesign: false,
     canEditPermitting: false,
     canViewAllLocations: true,
@@ -464,6 +468,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     canScheduleInspections: false,
     canSyncZuper: false,
     canManageUsers: false,
+    canManageAvailability: false,
     canEditDesign: true,
     canEditPermitting: false,
     canViewAllLocations: true,
@@ -480,6 +485,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     canScheduleInspections: false,
     canSyncZuper: false,
     canManageUsers: false,
+    canManageAvailability: false,
     canEditDesign: false,
     canEditPermitting: true,
     canViewAllLocations: true,
@@ -491,6 +497,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     canScheduleInspections: false,
     canSyncZuper: false,
     canManageUsers: false,
+    canManageAvailability: false,
     canEditDesign: false,
     canEditPermitting: false,
     canViewAllLocations: true,
@@ -510,6 +517,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     canScheduleInspections: false,
     canSyncZuper: true,
     canManageUsers: false,
+    canManageAvailability: false,
     canEditDesign: false,
     canEditPermitting: false,
     canViewAllLocations: false, // SALES sees only their location
@@ -574,6 +582,7 @@ export async function getUserPermissions(userEmail: string): Promise<RolePermiss
       canScheduleInstalls: true,
       canSyncToZuper: true,
       canManageUsers: true,
+      canManageAvailability: true,
       allowedLocations: true,
     },
   });
@@ -591,6 +600,7 @@ export async function getUserPermissions(userEmail: string): Promise<RolePermiss
     canScheduleInstalls: user.canScheduleInstalls || basePermissions.canScheduleInstalls,
     canSyncZuper: user.canSyncToZuper || basePermissions.canSyncZuper,
     canManageUsers: user.canManageUsers || basePermissions.canManageUsers,
+    canManageAvailability: user.canManageAvailability || basePermissions.canManageAvailability,
     // Location restriction: if user has specific locations, they can't view all
     canViewAllLocations: user.allowedLocations.length === 0 && basePermissions.canViewAllLocations,
   };
@@ -947,4 +957,171 @@ export async function getCrewMemberLookup(): Promise<Record<string, { userUid: s
   }
 
   return lookup;
+}
+
+// ==========================================
+// CREW AVAILABILITY
+// ==========================================
+
+/**
+ * Get crew availability records with optional filters
+ */
+export async function getCrewAvailabilities(filters?: {
+  crewMemberId?: string;
+  location?: string;
+  jobType?: string;
+  dayOfWeek?: number;
+  isActive?: boolean;
+}) {
+  if (!prisma) return [];
+
+  return prisma.crewAvailability.findMany({
+    where: {
+      ...(filters?.crewMemberId && { crewMemberId: filters.crewMemberId }),
+      ...(filters?.location && { location: filters.location }),
+      ...(filters?.jobType && { jobType: filters.jobType }),
+      ...(filters?.dayOfWeek !== undefined && { dayOfWeek: filters.dayOfWeek }),
+      ...(filters?.isActive !== undefined && { isActive: filters.isActive }),
+    },
+    include: {
+      crewMember: {
+        select: { name: true, zuperUserUid: true, zuperTeamUid: true, isActive: true },
+      },
+    },
+    orderBy: [{ crewMember: { name: "asc" } }, { dayOfWeek: "asc" }, { startTime: "asc" }],
+  });
+}
+
+/**
+ * Create or update a crew availability slot
+ */
+export async function upsertCrewAvailability(data: {
+  id?: string;
+  crewMemberId: string;
+  location: string;
+  reportLocation?: string;
+  jobType: string;
+  dayOfWeek: number;
+  startTime: string;
+  endTime: string;
+  timezone?: string;
+  isActive?: boolean;
+  updatedBy?: string;
+  createdBy?: string;
+}) {
+  if (!prisma) return null;
+
+  if (data.id) {
+    return prisma.crewAvailability.update({
+      where: { id: data.id },
+      data: {
+        crewMemberId: data.crewMemberId,
+        location: data.location,
+        reportLocation: data.reportLocation,
+        jobType: data.jobType,
+        dayOfWeek: data.dayOfWeek,
+        startTime: data.startTime,
+        endTime: data.endTime,
+        timezone: data.timezone || "America/Denver",
+        isActive: data.isActive ?? true,
+        updatedBy: data.updatedBy,
+      },
+    });
+  }
+
+  return prisma.crewAvailability.create({
+    data: {
+      crewMemberId: data.crewMemberId,
+      location: data.location,
+      reportLocation: data.reportLocation,
+      jobType: data.jobType,
+      dayOfWeek: data.dayOfWeek,
+      startTime: data.startTime,
+      endTime: data.endTime,
+      timezone: data.timezone || "America/Denver",
+      isActive: data.isActive ?? true,
+      createdBy: data.createdBy,
+      updatedBy: data.updatedBy,
+    },
+  });
+}
+
+/**
+ * Delete a crew availability slot
+ */
+export async function deleteCrewAvailability(id: string) {
+  if (!prisma) return null;
+
+  return prisma.crewAvailability.delete({
+    where: { id },
+  });
+}
+
+/**
+ * Convert DB crew availability records to the CrewSchedule format
+ * used by the availability route. Groups by crew member name.
+ */
+export async function getCrewSchedulesFromDB(): Promise<Array<{
+  name: string;
+  location: string;
+  reportLocation: string;
+  schedule: Array<{ day: number; startTime: string; endTime: string }>;
+  jobTypes: string[];
+  userUid?: string;
+  teamUid?: string;
+  timezone?: string;
+}>> {
+  if (!prisma) return [];
+
+  const records = await prisma.crewAvailability.findMany({
+    where: { isActive: true },
+    include: {
+      crewMember: {
+        select: { name: true, zuperUserUid: true, zuperTeamUid: true, isActive: true },
+      },
+    },
+  });
+
+  // Only include records where the crew member is active
+  const activeRecords = records.filter(r => r.crewMember.isActive);
+
+  // Group by crew member + location combo
+  const grouped = new Map<string, {
+    name: string;
+    location: string;
+    reportLocation: string;
+    schedule: Array<{ day: number; startTime: string; endTime: string }>;
+    jobTypes: Set<string>;
+    userUid?: string;
+    teamUid?: string;
+    timezone?: string;
+  }>();
+
+  for (const record of activeRecords) {
+    const key = `${record.crewMember.name}|${record.location}`;
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        name: record.crewMember.name,
+        location: record.location,
+        reportLocation: record.reportLocation || record.location,
+        schedule: [],
+        jobTypes: new Set(),
+        userUid: record.crewMember.zuperUserUid,
+        teamUid: record.crewMember.zuperTeamUid || undefined,
+        timezone: record.timezone !== "America/Denver" ? record.timezone : undefined,
+      });
+    }
+    const group = grouped.get(key)!;
+    group.schedule.push({
+      day: record.dayOfWeek,
+      startTime: record.startTime,
+      endTime: record.endTime,
+    });
+    group.jobTypes.add(record.jobType);
+  }
+
+  return Array.from(grouped.values()).map(g => ({
+    ...g,
+    jobTypes: Array.from(g.jobTypes),
+  }));
 }

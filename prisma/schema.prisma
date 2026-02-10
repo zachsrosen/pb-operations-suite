@@ -39,6 +39,7 @@ model User {
   canScheduleInstalls     Boolean @default(false)
   canSyncToZuper          Boolean @default(false)
   canManageUsers          Boolean @default(false)
+  canManageAvailability   Boolean @default(false)
 
   // Location restrictions (empty = all locations)
   allowedLocations        String[] @default([])
@@ -358,8 +359,54 @@ model CrewMember {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
+  // Relations
+  availabilities  CrewAvailability[]
+
   @@index([name])
   @@index([role])
+  @@index([isActive])
+}
+
+// ===========================================
+// CREW AVAILABILITY (Weekly schedule slots)
+// ===========================================
+
+model CrewAvailability {
+  id              String   @id @default(cuid())
+
+  // Crew member link
+  crewMemberId    String
+  crewMember      CrewMember @relation(fields: [crewMemberId], references: [id], onDelete: Cascade)
+
+  // Location
+  location        String   // "Westminster", "DTC", "Colorado Springs", "SLO", "Camarillo"
+  reportLocation  String?  // Where crew reports to (if different)
+
+  // Job type
+  jobType         String   @default("survey") // "survey", "construction", "inspection"
+
+  // Weekly schedule
+  dayOfWeek       Int      // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+  startTime       String   // HH:mm format (e.g. "08:00")
+  endTime         String   // HH:mm format (e.g. "17:00")
+
+  // Timezone
+  timezone        String   @default("America/Denver")
+
+  // Status
+  isActive        Boolean  @default(true)
+
+  // Audit
+  createdBy       String?  // User ID who created
+  updatedBy       String?  // User ID who last updated
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([crewMemberId, location, dayOfWeek, startTime])
+  @@index([crewMemberId])
+  @@index([location])
+  @@index([jobType])
+  @@index([dayOfWeek])
   @@index([isActive])
 }
 

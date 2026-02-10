@@ -600,8 +600,9 @@ export default function SiteSurveySchedulerPage() {
 
   // Find the current booked slot for a project (if already scheduled)
   // HubSpot projectName format: "PROJ-9031 | Czajkowski, Thomas"
-  // Zuper bookedSlot.projectName format: "Barstad, Ed | 6611 S Yarrow St, Littleton, CO 80123"
-  // OR: "PROJ-9031 | Czajkowski, Thomas | 7481 Spring Dr..." (if booked via app)
+  // Zuper bookedSlot.projectName formats:
+  //   - "Barstad, Ed | 6611 S Yarrow St, Littleton, CO 80123" (created in Zuper)
+  //   - "Site Survey - PROJ-9031 | Czajkowski, Thomas" (created via app)
   const findCurrentSlotForProject = useCallback((projectId: string, date: string, projectName?: string) => {
     const dayAvail = availabilityByDate[date];
     if (!dayAvail?.bookedSlots) return undefined;
@@ -615,19 +616,26 @@ export default function SiteSurveySchedulerPage() {
 
     // Look for a booked slot that matches this project
     const bookedSlot = dayAvail.bookedSlots.find(slot => {
+      const slotNameLower = (slot.projectName || "").toLowerCase();
+
       // Match by project ID
       if (slot.projectId === projectId) return true;
 
-      // Match by PROJ number prefix (for jobs booked via app)
-      if (projId && slot.projectName?.startsWith(projId)) return true;
+      // Match by PROJ number anywhere in slot name
+      // Handles both "PROJ-9031 | Name" and "Site Survey - PROJ-9031 | Name"
+      if (projId && slotNameLower.includes(projId.toLowerCase())) return true;
 
       // Match by customer last name (for jobs created directly in Zuper)
       // Zuper job titles are often "LastName, FirstName | Address"
       if (customerLastName && customerLastName.length > 2) {
-        const slotNameLower = (slot.projectName || "").toLowerCase();
-        // Check if Zuper job title starts with the customer's last name
+        // Check if Zuper job title starts with or contains the customer's last name
         if (slotNameLower.startsWith(customerLastName + ",") ||
             slotNameLower.startsWith(customerLastName + " ")) {
+          return true;
+        }
+        // Also check after " - " prefix (e.g. "Site Survey - PROJ-9031 | Morse, Todd")
+        const afterDash = slotNameLower.split(" - ").slice(1).join(" - ");
+        if (afterDash && afterDash.includes("| " + customerLastName + ",")) {
           return true;
         }
       }

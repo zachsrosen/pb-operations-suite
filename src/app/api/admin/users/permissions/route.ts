@@ -13,6 +13,7 @@ interface PermissionsPayload {
   canScheduleInstalls?: boolean;
   canSyncToZuper?: boolean;
   canManageUsers?: boolean;
+  canManageAvailability?: boolean;
   allowedLocations?: unknown;
 }
 
@@ -31,7 +32,7 @@ function validatePermissionsUpdate(data: unknown): data is { userId: string; per
   }
 
   const permissions = req.permissions as Record<string, unknown>;
-  const validPermissionKeys = ["canScheduleSurveys", "canScheduleInstalls", "canSyncToZuper", "canManageUsers", "allowedLocations"];
+  const validPermissionKeys = ["canScheduleSurveys", "canScheduleInstalls", "canSyncToZuper", "canManageUsers", "canManageAvailability", "allowedLocations"];
 
   // Check that all keys are valid
   for (const key of Object.keys(permissions)) {
@@ -51,6 +52,9 @@ function validatePermissionsUpdate(data: unknown): data is { userId: string; per
     return false;
   }
   if (permissions.canManageUsers !== undefined && typeof permissions.canManageUsers !== "boolean") {
+    return false;
+  }
+  if (permissions.canManageAvailability !== undefined && typeof permissions.canManageAvailability !== "boolean") {
     return false;
   }
 
@@ -111,6 +115,7 @@ export async function PUT(request: NextRequest) {
       canScheduleInstalls: targetUser.canScheduleInstalls,
       canSyncToZuper: targetUser.canSyncToZuper,
       canManageUsers: targetUser.canManageUsers,
+      canManageAvailability: targetUser.canManageAvailability,
       allowedLocations: targetUser.allowedLocations,
     };
 
@@ -122,6 +127,7 @@ export async function PUT(request: NextRequest) {
         canScheduleInstalls: permissions.canScheduleInstalls ?? targetUser.canScheduleInstalls,
         canSyncToZuper: permissions.canSyncToZuper ?? targetUser.canSyncToZuper,
         canManageUsers: permissions.canManageUsers ?? targetUser.canManageUsers,
+        canManageAvailability: permissions.canManageAvailability ?? targetUser.canManageAvailability,
         allowedLocations: permissions.allowedLocations ?? targetUser.allowedLocations,
       },
     });
@@ -144,6 +150,7 @@ export async function PUT(request: NextRequest) {
           canScheduleInstalls: updatedUser.canScheduleInstalls,
           canSyncToZuper: updatedUser.canSyncToZuper,
           canManageUsers: updatedUser.canManageUsers,
+          canManageAvailability: updatedUser.canManageAvailability,
           allowedLocations: updatedUser.allowedLocations,
         },
       },
@@ -160,6 +167,7 @@ export async function PUT(request: NextRequest) {
         canScheduleInstalls: updatedUser.canScheduleInstalls,
         canSyncToZuper: updatedUser.canSyncToZuper,
         canManageUsers: updatedUser.canManageUsers,
+        canManageAvailability: updatedUser.canManageAvailability,
         allowedLocations: updatedUser.allowedLocations,
       },
     });

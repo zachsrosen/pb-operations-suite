@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ZuperClient, JOB_CATEGORY_UIDS } from "@/lib/zuper";
+import { getCrewSchedulesFromDB } from "@/lib/db";
 
 /**
  * GET /api/zuper/availability
@@ -362,8 +363,31 @@ export async function GET(request: NextRequest) {
   const locationMatches = location ? getLocationMatches(location) : null;
   const jobType = type || "survey";
 
+  // Try loading crew schedules from DB first, fall back to hardcoded
+  let activeSchedules = CREW_SCHEDULES;
+  try {
+    const dbSchedules = await getCrewSchedulesFromDB();
+    if (dbSchedules.length > 0) {
+      activeSchedules = dbSchedules.map(s => ({
+        name: s.name,
+        location: s.location,
+        reportLocation: s.reportLocation,
+        schedule: s.schedule,
+        jobTypes: s.jobTypes,
+        userUid: s.userUid,
+        teamUid: s.teamUid,
+        timezone: s.timezone,
+      }));
+      console.log(`[Zuper Availability] Using ${dbSchedules.length} crew schedules from DB`);
+    } else {
+      console.log("[Zuper Availability] No DB schedules found, using hardcoded fallback");
+    }
+  } catch (dbErr) {
+    console.warn("[Zuper Availability] Failed to load DB schedules, using hardcoded fallback:", dbErr);
+  }
+
   // Resolve all unique crew member names to Zuper UIDs (one API call, cached)
-  const crewNames = [...new Set(CREW_SCHEDULES.map(c => c.name))];
+  const crewNames = [...new Set(activeSchedules.map(c => c.name))];
   const resolvedCrewUids: Record<string, { userUid: string; teamUid?: string }> = {};
   const uidToDisplayName: Record<string, string> = {};
   for (const name of crewNames) {
@@ -374,7 +398,7 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  for (const crew of CREW_SCHEDULES) {
+  for (const crew of activeSchedules) {
     // Filter by job type
     if (!crew.jobTypes.includes(jobType)) continue;
 
@@ -616,6 +640,20 @@ export async function GET(request: NextRequest) {
             }
           }
         }
+      }
+    }
+  }
+
+  // Clean up stale in-memory bookings that Zuper now manages.
+  // Keep recent bookings (< 5 min) for optimistic UI, but let Zuper
+  // be the source of truth for older entries it owns.
+  const STALE_THRESHOLD_MS = 5 * 60 * 1000;
+  const now = Date.now();
+  for (const [key, slot] of bookedSlots.entries()) {
+    if (slot.date >= fromDate && slot.date <= toDate) {
+      const age = now - new Date(slot.bookedAt).getTime();
+      if (slot.zuperJobUid && age > STALE_THRESHOLD_MS) {
+        bookedSlots.delete(key);
       }
     }
   }

@@ -9,6 +9,7 @@ interface UserPermissions {
   canScheduleInspections: boolean;
   canSyncToZuper: boolean;
   canManageUsers: boolean;
+  canManageAvailability: boolean;
   allowedLocations: string[];
 }
 
@@ -24,6 +25,7 @@ interface User {
   canScheduleInspections: boolean;
   canSyncToZuper: boolean;
   canManageUsers: boolean;
+  canManageAvailability: boolean;
   allowedLocations: string[];
 }
 
@@ -66,6 +68,7 @@ const PERMISSION_LABELS: Record<keyof Omit<UserPermissions, "allowedLocations">,
   canScheduleInspections: { label: "Schedule Inspections", description: "Can schedule inspections" },
   canSyncToZuper: { label: "Sync to Zuper", description: "Can sync jobs to Zuper FSM" },
   canManageUsers: { label: "Manage Users", description: "Can access admin panel & manage users" },
+  canManageAvailability: { label: "Manage Availability", description: "Can add/edit/remove crew time slot schedules" },
 };
 
 export default function AdminUsersPage() {
@@ -174,6 +177,7 @@ export default function AdminUsersPage() {
       canScheduleInspections: user.canScheduleInspections,
       canSyncToZuper: user.canSyncToZuper,
       canManageUsers: user.canManageUsers,
+      canManageAvailability: user.canManageAvailability,
       allowedLocations: user.allowedLocations || [],
     });
     // Fetch activity logs for this user
@@ -597,6 +601,12 @@ export default function AdminUsersPage() {
               <span className="text-xs text-white px-3 py-1.5 rounded-lg bg-zinc-800">
                 Users
               </span>
+              <Link
+                href="/admin/crew-availability"
+                className="text-xs text-zinc-400 hover:text-white px-3 py-1.5 rounded-lg hover:bg-zinc-800 transition-colors"
+              >
+                Crew Availability
+              </Link>
               <Link
                 href="/admin/activity"
                 className="text-xs text-zinc-400 hover:text-white px-3 py-1.5 rounded-lg hover:bg-zinc-800 transition-colors"
