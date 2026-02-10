@@ -349,6 +349,20 @@ export async function GET(request: NextRequest) {
       configured: true,
       jobs: jobsMap,
       count: Object.keys(jobsMap).length,
+      _debug: {
+        totalJobsFetched: result.data?.jobs?.length || 0,
+        totalRecords: result.data?.total || 0,
+        siteSurveyCount: result.data?.jobs?.filter((j: ZuperJob) => {
+          const cat = typeof j.job_category === 'string' ? j.job_category : j.job_category?.category_name;
+          return cat === targetCategory;
+        }).length || 0,
+        projectIdsRequested: projectIds.length,
+        matchedCount: Object.keys(jobsMap).length,
+        dateRange: {
+          from: new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+          to: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+        },
+      },
     });
   } catch (error) {
     console.error("Zuper job lookup error:", error);
