@@ -207,15 +207,34 @@ export async function GET(request: NextRequest) {
       const cachedJobs = await getCachedZuperJobsByDealIds(projectIds, categoryForDb);
       for (const cached of cachedJobs) {
         if (cached.hubspotDealId && cached.jobUid) {
+          // Build a ZuperJob-like object with ALL relevant fields from the cache
+          // Previously only job_uid/job_title/status were included, which caused
+          // scheduledDate and assignedTo to be undefined when the cache won over API results
+          const cachedAssignedUsers = cached.assignedUsers as { user_uid: string; user_name?: string }[] | null;
+          const assignedTo = cachedAssignedUsers?.length
+            ? cachedAssignedUsers.map(u => {
+                const parts = (u.user_name || "").split(" ");
+                return { user: { first_name: parts[0] || "", last_name: parts.slice(1).join(" ") || "", user_uid: u.user_uid } };
+              })
+            : undefined;
+          const cachedJob = {
+            job_uid: cached.jobUid,
+            job_title: cached.jobTitle,
+            status: cached.jobStatus,
+            scheduled_start_time: cached.scheduledStart?.toISOString(),
+            scheduled_end_time: cached.scheduledEnd?.toISOString(),
+            current_job_status: { status_name: cached.jobStatus },
+            ...(assignedTo && { assigned_to: assignedTo }),
+          } as ZuperJob;
           addCandidate(cached.hubspotDealId, {
-            job: { job_uid: cached.jobUid, job_title: cached.jobTitle, status: cached.jobStatus } as ZuperJob,
+            job: cachedJob,
             matchMethod: "db_cache",
             methodScore: 200, // Highest priority — direct DB mapping from scheduling
-            statusScore: getStatusScore({ status: cached.jobStatus } as ZuperJob),
+            statusScore: getStatusScore(cachedJob),
             addressScore: 0,
             categoryName: cached.jobCategory,
           });
-          console.log(`Zuper: DB cache hit for project ${cached.hubspotDealId} → job ${cached.jobUid}`);
+          console.log(`Zuper: DB cache hit for project ${cached.hubspotDealId} → job ${cached.jobUid} (scheduled: ${cached.scheduledStart?.toISOString()}, assigned: ${cachedAssignedUsers?.[0]?.user_name || 'none'})`);
         }
       }
     } catch (dbErr) {
@@ -308,11 +327,18 @@ export async function GET(request: NextRequest) {
 
     for (const [projectId, candidates] of Object.entries(allCandidates)) {
       // Deduplicate by job UID (same job can match via multiple methods)
+      // When the same job matches via both DB cache and API, prefer the API's live data
+      // (it has up-to-date schedule/assignment info) but keep the DB cache's higher methodScore
       const uniqueByUid = new Map<string, JobMatch>();
       for (const c of candidates) {
         const uid = c.job.job_uid!;
         const existing = uniqueByUid.get(uid);
-        if (!existing || c.methodScore > existing.methodScore) {
+        if (!existing) {
+          uniqueByUid.set(uid, c);
+        } else if (c.matchMethod !== "db_cache" && existing.matchMethod === "db_cache") {
+          // API match for same UID — use API's live job data but inherit DB cache's methodScore
+          uniqueByUid.set(uid, { ...c, methodScore: existing.methodScore });
+        } else if (c.methodScore > existing.methodScore) {
           uniqueByUid.set(uid, c);
         }
       }
@@ -330,7 +356,7 @@ export async function GET(request: NextRequest) {
       const totalCandidates = dedupedCandidates.length;
       console.log(
         `Zuper: Matched job ${best.job.job_uid} to project ${projectId} by ${best.matchMethod}` +
-        ` (status: ${best.job.status}, statusScore: ${best.statusScore}, candidates: ${totalCandidates}, category: ${best.categoryName})`
+        ` (status: ${getJobStatus(best.job)}, statusScore: ${best.statusScore}, candidates: ${totalCandidates}, category: ${best.categoryName})`
       );
 
       const assignedUser = getAssignedUserName(best.job);
@@ -349,20 +375,6 @@ export async function GET(request: NextRequest) {
       configured: true,
       jobs: jobsMap,
       count: Object.keys(jobsMap).length,
-      _debug: {
-        totalJobsFetched: result.data?.jobs?.length || 0,
-        totalRecords: result.data?.total || 0,
-        siteSurveyCount: result.data?.jobs?.filter((j: ZuperJob) => {
-          const cat = typeof j.job_category === 'string' ? j.job_category : j.job_category?.category_name;
-          return cat === targetCategory;
-        }).length || 0,
-        projectIdsRequested: projectIds.length,
-        matchedCount: Object.keys(jobsMap).length,
-        dateRange: {
-          from: new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-          to: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-        },
-      },
     });
   } catch (error) {
     console.error("Zuper job lookup error:", error);

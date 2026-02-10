@@ -365,28 +365,11 @@ export default function SiteSurveySchedulerPage() {
           const zuperResponse = await fetch(`/api/zuper/jobs/lookup?projectIds=${projectIds}&projectNames=${projectNames}&category=site-survey`);
           if (zuperResponse.ok) {
             const zuperData = await zuperResponse.json();
-            console.log("[Scheduler] Zuper lookup response:", {
-              count: zuperData.count,
-              debug: zuperData._debug,
-              sampleJobs: Object.entries(zuperData.jobs || {}).slice(0, 5).map(([id, j]: [string, any]) => ({
-                id,
-                title: j.jobTitle,
-                scheduled: j.scheduledDate,
-                assignedTo: j.assignedTo,
-                status: j.status,
-              })),
-            });
             if (zuperData.jobs) {
               // Merge Zuper job UIDs and assigned users into projects
-              // Log unmatched projects for debugging
-              const unmatchedNames = ['carter', 'spaid', 'franklin', 'olson', 'ptasnik'];
               for (const project of transformed) {
                 const zuperJob = zuperData.jobs[project.id];
-                if (!zuperJob && unmatchedNames.some(n => project.name.toLowerCase().includes(n))) {
-                  console.warn(`[Scheduler] NO Zuper match for "${project.name}" (id=${project.id}, schedDate=${project.scheduleDate})`);
-                }
                 if (zuperJob) {
-                  console.log(`[Scheduler] Zuper match for project ${project.id} (${project.name}):`, zuperJob);
                   project.zuperJobUid = zuperJob.jobUid;
                   project.zuperJobStatus = zuperJob.status;
                   // Use Zuper's assigned user as the primary source of truth
@@ -411,7 +394,6 @@ export default function SiteSurveySchedulerPage() {
                       project.zuperScheduledTime = localTimeStr;
 
                       if (localDate && localDate !== project.scheduleDate) {
-                        console.log(`[Scheduler] Zuper date override for ${project.name}: HubSpot=${project.scheduleDate} → Zuper=${localDate}`);
                         project.scheduleDate = localDate;
                       }
                     } catch {
