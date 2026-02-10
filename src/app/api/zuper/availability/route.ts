@@ -213,23 +213,20 @@ const CREW_SCHEDULES: CrewSchedule[] = [
   // },
 
   // ============================================
-  // INSPECTION CREWS - PENDING CONFIGURATION
-  // Add inspection crew schedules here
+  // INSPECTION CREWS
   // ============================================
-  // Example:
-  // {
-  //   name: "Inspector 1",
-  //   location: "DTC",
-  //   reportLocation: "DTC",
-  //   schedule: [
-  //     { day: 1, startTime: "08:00", endTime: "17:00" }, // Mon
-  //     { day: 2, startTime: "08:00", endTime: "17:00" }, // Tue
-  //     { day: 3, startTime: "08:00", endTime: "17:00" }, // Wed
-  //     { day: 4, startTime: "08:00", endTime: "17:00" }, // Thu
-  //     { day: 5, startTime: "08:00", endTime: "17:00" }, // Fri
-  //   ],
-  //   jobTypes: ["inspection"],
-  // },
+  {
+    name: "Daniel Kelly",
+    location: "DTC",
+    reportLocation: "DTC",
+    schedule: [
+      { day: 2, startTime: "08:00", endTime: "15:00" }, // Tue 8am-3pm
+      { day: 3, startTime: "08:00", endTime: "15:00" }, // Wed 8am-3pm
+      { day: 4, startTime: "08:00", endTime: "15:00" }, // Thu 8am-3pm
+      { day: 5, startTime: "08:00", endTime: "15:00" }, // Fri 8am-3pm
+    ],
+    jobTypes: ["inspection"],
+  },
 ];
 
 // Map location names to normalized versions

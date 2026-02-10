@@ -83,6 +83,14 @@ const SEED_DATA = [
     role: "technician",
     locations: ["Colorado Springs"],
   },
+  {
+    name: "Daniel Kelly",
+    email: "dan@photonbrothers.com",
+    zuperUserUid: "f0a5aca8-0137-478c-a910-1380b9a31a79",
+    zuperTeamUid: ZUPER_TEAM_UIDS.DTC,
+    role: "inspector",
+    locations: ["DTC"],
+  },
   // Note: "Rich" was previously listed here with UID e043bf1d — that's Ryszard Szymanski (listed above)
 ];
 

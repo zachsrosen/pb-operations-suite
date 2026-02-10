@@ -92,6 +92,18 @@ const SEED_SCHEDULES = [
     ],
     jobTypes: ["survey"],
   },
+  {
+    name: "Daniel Kelly",
+    location: "DTC",
+    reportLocation: "DTC",
+    schedule: [
+      { day: 2, startTime: "08:00", endTime: "15:00" },
+      { day: 3, startTime: "08:00", endTime: "15:00" },
+      { day: 4, startTime: "08:00", endTime: "15:00" },
+      { day: 5, startTime: "08:00", endTime: "15:00" },
+    ],
+    jobTypes: ["inspection"],
+  },
 ];
 
 /**
