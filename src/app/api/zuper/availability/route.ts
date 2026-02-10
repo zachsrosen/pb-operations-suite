@@ -81,26 +81,44 @@ const LOCATION_TIMEZONE: Record<string, string> = {
   Camarillo: "America/Los_Angeles",
 };
 
-// Zuper Team UIDs - from /api/teams/summary
-const ZUPER_TEAM_UIDS = {
-  Westminster: "1c23adb9-cefa-44c7-8506-804949afc56f",
-  Centennial: "76b94bd3-e2fc-4cfe-8c2a-357b9a850b3c",
-  "Colorado Springs": "1a914a0e-b633-4f12-8ed6-3348285d6b93",
-  "San Luis Obispo": "699cec60-f9f8-4e57-b41a-bb29b1f3649c",
-  Camarillo: "0168d963-84af-4214-ad81-d6c43cee8e65",
-} as const;
+// Zuper Team UIDs - loaded from environment variable ZUPER_TEAM_UIDS (JSON)
+// Fallback to hardcoded defaults for backwards compatibility during migration
+const ZUPER_TEAM_UIDS: Record<string, string> = (() => {
+  try {
+    const envVal = process.env.ZUPER_TEAM_UIDS;
+    if (envVal) return JSON.parse(envVal);
+  } catch (e) {
+    console.warn("[Zuper] Failed to parse ZUPER_TEAM_UIDS env var:", e);
+  }
+  // Fallback defaults - migrate these to env vars
+  return {
+    Westminster: "1c23adb9-cefa-44c7-8506-804949afc56f",
+    Centennial: "76b94bd3-e2fc-4cfe-8c2a-357b9a850b3c",
+    "Colorado Springs": "1a914a0e-b633-4f12-8ed6-3348285d6b93",
+    "San Luis Obispo": "699cec60-f9f8-4e57-b41a-bb29b1f3649c",
+    Camarillo: "0168d963-84af-4214-ad81-d6c43cee8e65",
+  };
+})();
 
-// Zuper User UIDs and Team UIDs - hardcoded since Zuper API doesn't have a /users endpoint
-// Found by searching job assignments
-// Team UIDs are required for the /service_tasks/{job_uid}/assign endpoint
-const ZUPER_USER_UIDS: Record<string, { userUid: string; teamUid?: string }> = {
-  "Drew Perry": { userUid: "0ddc7e1d-62e1-49df-b89d-905a39c1e353", teamUid: ZUPER_TEAM_UIDS.Centennial }, // Centennial team (DTC location)
-  "Joe Lynch": { userUid: "f203f99b-4aaf-488e-8e6a-8ee5e94ec217", teamUid: ZUPER_TEAM_UIDS.Westminster }, // Westminster team
-  "Derek Pomar": { userUid: "f3bb40c0-d548-4355-ab39-6c27532a6d36", teamUid: ZUPER_TEAM_UIDS.Centennial }, // Centennial team (DTC location)
-  "Rolando": { userUid: "a89ed2f5-222b-4b09-8bb0-14dc45c2a51b", teamUid: ZUPER_TEAM_UIDS["Colorado Springs"] }, // Colorado Springs team
-  "Ryszard Szymanski": { userUid: "e043bf1d-006b-4033-a46e-3b5d06ed3d00", teamUid: ZUPER_TEAM_UIDS.Westminster }, // Westminster team
-  "Nick Scarpellino": { userUid: "8e67159c-48fe-4fb0-acc3-b1c905ff6e95", teamUid: ZUPER_TEAM_UIDS["San Luis Obispo"] }, // SLO/Camarillo
-};
+// Zuper User UIDs and Team UIDs - loaded from environment variable ZUPER_USER_UIDS (JSON)
+// Fallback to hardcoded defaults for backwards compatibility during migration
+const ZUPER_USER_UIDS: Record<string, { userUid: string; teamUid?: string }> = (() => {
+  try {
+    const envVal = process.env.ZUPER_USER_UIDS;
+    if (envVal) return JSON.parse(envVal);
+  } catch (e) {
+    console.warn("[Zuper] Failed to parse ZUPER_USER_UIDS env var:", e);
+  }
+  // Fallback defaults - migrate these to env vars
+  return {
+    "Drew Perry": { userUid: "0ddc7e1d-62e1-49df-b89d-905a39c1e353", teamUid: ZUPER_TEAM_UIDS.Centennial },
+    "Joe Lynch": { userUid: "f203f99b-4aaf-488e-8e6a-8ee5e94ec217", teamUid: ZUPER_TEAM_UIDS.Westminster },
+    "Derek Pomar": { userUid: "f3bb40c0-d548-4355-ab39-6c27532a6d36", teamUid: ZUPER_TEAM_UIDS.Centennial },
+    "Rolando": { userUid: "a89ed2f5-222b-4b09-8bb0-14dc45c2a51b", teamUid: ZUPER_TEAM_UIDS["Colorado Springs"] },
+    "Ryszard Szymanski": { userUid: "e043bf1d-006b-4033-a46e-3b5d06ed3d00", teamUid: ZUPER_TEAM_UIDS.Westminster },
+    "Nick Scarpellino": { userUid: "8e67159c-48fe-4fb0-acc3-b1c905ff6e95", teamUid: ZUPER_TEAM_UIDS["San Luis Obispo"] },
+  };
+})();
 
 // Reverse lookup: Zuper user UID → display name used in crew schedules
 const ZUPER_UID_TO_DISPLAY_NAME: Record<string, string> = {};
@@ -375,7 +393,7 @@ export async function GET(request: NextRequest) {
     const [endHour, endMin] = endTime.split(":").map(Number);
 
     let currentHour = startHour;
-    let currentMin = startMin;
+    const currentMin = startMin;
 
     while (currentHour < endHour || (currentHour === endHour && currentMin < endMin)) {
       const slotStart = `${currentHour.toString().padStart(2, "0")}:${currentMin.toString().padStart(2, "0")}`;

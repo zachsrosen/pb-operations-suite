@@ -2,6 +2,66 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma, getUserByEmail, logActivity } from "@/lib/db";
 
+// Inline validation for permission update request
+interface UpdatePermissionsRequest {
+  userId?: unknown;
+  permissions?: unknown;
+}
+
+interface PermissionsPayload {
+  canScheduleSurveys?: boolean;
+  canScheduleInstalls?: boolean;
+  canSyncToZuper?: boolean;
+  canManageUsers?: boolean;
+  allowedLocations?: unknown;
+}
+
+function validatePermissionsUpdate(data: unknown): data is { userId: string; permissions: PermissionsPayload } {
+  if (!data || typeof data !== "object") return false;
+  const req = data as UpdatePermissionsRequest;
+
+  // Validate userId
+  if (typeof req.userId !== "string" || req.userId.length === 0) {
+    return false;
+  }
+
+  // Validate permissions object
+  if (!req.permissions || typeof req.permissions !== "object") {
+    return false;
+  }
+
+  const permissions = req.permissions as Record<string, unknown>;
+  const validPermissionKeys = ["canScheduleSurveys", "canScheduleInstalls", "canSyncToZuper", "canManageUsers", "allowedLocations"];
+
+  // Check that all keys are valid
+  for (const key of Object.keys(permissions)) {
+    if (!validPermissionKeys.includes(key)) {
+      return false;
+    }
+  }
+
+  // Validate each permission field type
+  if (permissions.canScheduleSurveys !== undefined && typeof permissions.canScheduleSurveys !== "boolean") {
+    return false;
+  }
+  if (permissions.canScheduleInstalls !== undefined && typeof permissions.canScheduleInstalls !== "boolean") {
+    return false;
+  }
+  if (permissions.canSyncToZuper !== undefined && typeof permissions.canSyncToZuper !== "boolean") {
+    return false;
+  }
+  if (permissions.canManageUsers !== undefined && typeof permissions.canManageUsers !== "boolean") {
+    return false;
+  }
+
+  // Validate allowedLocations is array if provided
+  if (permissions.allowedLocations !== undefined && !Array.isArray(permissions.allowedLocations)) {
+    return false;
+  }
+
+  return true;
+}
+
 /**
  * PUT /api/admin/users/permissions
  * Update a user's granular permissions (admin only)
@@ -24,24 +84,21 @@ export async function PUT(request: NextRequest) {
   }
 
   try {
-    const body = await request.json();
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON in request body" }, { status: 400 });
+    }
+
+    // Validate request body
+    if (!validatePermissionsUpdate(body)) {
+      return NextResponse.json({
+        error: "Invalid request: userId (string) and permissions (object with boolean flags and optional allowedLocations array) are required",
+      }, { status: 400 });
+    }
+
     const { userId, permissions } = body;
-
-    if (!userId || !permissions) {
-      return NextResponse.json({ error: "userId and permissions are required" }, { status: 400 });
-    }
-
-    // Validate permissions object
-    const validPermissionKeys = ["canScheduleSurveys", "canScheduleInstalls", "canSyncToZuper", "canManageUsers", "allowedLocations"];
-    const invalidKeys = Object.keys(permissions).filter(key => !validPermissionKeys.includes(key));
-    if (invalidKeys.length > 0) {
-      return NextResponse.json({ error: `Invalid permission keys: ${invalidKeys.join(", ")}` }, { status: 400 });
-    }
-
-    // Validate allowedLocations is an array if provided
-    if (permissions.allowedLocations !== undefined && !Array.isArray(permissions.allowedLocations)) {
-      return NextResponse.json({ error: "allowedLocations must be an array" }, { status: 400 });
-    }
 
     // Get the target user to log the change
     const targetUser = await prisma.user.findUnique({ where: { id: userId } });

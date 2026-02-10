@@ -500,7 +500,7 @@ export default function SiteSurveySchedulerPage() {
   );
 
   const filteredProjects = useMemo(() => {
-    let filtered = projects.filter((p) => {
+    const filtered = projects.filter((p) => {
       // Multi-select location filter - if any selected, filter by them
       if (selectedLocations.length > 0 && !selectedLocations.includes(p.location)) return false;
       if (filterStatuses.length > 0 && !filterStatuses.includes(p.surveyStatus)) return false;

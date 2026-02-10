@@ -35,6 +35,7 @@ export function useSSE(
   const eventSourceRef = useRef<EventSource | null>(null);
   const retriesRef = useRef(0);
   const onUpdateRef = useRef(onUpdate);
+  const connectRef = useRef<() => void>(undefined);
 
   // Keep onUpdate ref current without re-triggering effect
   useEffect(() => {
@@ -72,7 +73,9 @@ export function useSSE(
           setConnected(false);
           setReconnecting(true);
           // Server asked us to reconnect - use short delay
-          setTimeout(connect, 1000);
+          if (connectRef.current) {
+            setTimeout(connectRef.current, 1000);
+          }
         }
       } catch {
         // Ignore parse errors (heartbeats etc.)
@@ -91,12 +94,19 @@ export function useSSE(
           30000
         );
         retriesRef.current++;
-        setTimeout(connect, delay);
+        if (connectRef.current) {
+          setTimeout(connectRef.current, delay);
+        }
       } else {
         setReconnecting(false);
       }
     };
   }, [url, maxRetries, cacheKeyFilter]);
+
+  // Store the connect function in a ref so it can be called from within its own callbacks
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   useEffect(() => {
     connect();

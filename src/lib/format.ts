@@ -31,14 +31,17 @@ export function formatCurrency(value: number): string {
 }
 
 /**
- * Format a monetary value adaptively: $1.2M for millions, $450K for thousands
+ * Format a monetary value adaptively: $1.2M for millions, $450K for thousands, $500 for small
  * Used for tables and detailed breakdowns.
  */
 export function formatCurrencyCompact(value: number): string {
   if (value >= 1_000_000) {
     return "$" + (value / 1_000_000).toFixed(1) + "M";
   }
-  return "$" + (value / 1_000).toFixed(0) + "K";
+  if (value >= 1_000) {
+    return "$" + (value / 1_000).toFixed(0) + "K";
+  }
+  return "$" + value.toFixed(0);
 }
 
 /**
@@ -58,11 +61,20 @@ export function formatDate(dateStr: string | null | undefined): string {
 
 /**
  * Format a date as a relative description: "3 days ago", "in 5 days", "today"
+ * Uses date-only comparison (ignoring time) to avoid timezone-related off-by-one errors.
  */
 export function formatRelativeDate(dateStr: string): string {
+  // Parse both as local dates at noon to avoid timezone edge cases
   const now = new Date();
-  const date = new Date(dateStr);
-  const diffMs = date.getTime() - now.getTime();
+  const todayNoon = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0);
+
+  // Handle date-only strings (YYYY-MM-DD) by parsing as local date, not UTC
+  const parts = dateStr.split("T")[0].split("-");
+  const dateNoon = parts.length === 3
+    ? new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 12, 0, 0)
+    : new Date(dateStr);
+
+  const diffMs = dateNoon.getTime() - todayNoon.getTime();
   const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
 
   if (diffDays === 0) return "today";

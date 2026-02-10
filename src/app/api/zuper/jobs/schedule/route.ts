@@ -73,7 +73,7 @@ export async function PUT(request: NextRequest) {
     const hubspotTag = `hubspot-${project.id}`;
 
     // If the client already knows the Zuper job UID, use it directly (most reliable!)
-    let existingJobUid: string | undefined = project.zuperJobUid;
+    const existingJobUid: string | undefined = project.zuperJobUid;
 
     console.log(`[Zuper Schedule] Processing schedule request:`);
     console.log(`  - Project ID: ${project.id}`);

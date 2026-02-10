@@ -41,7 +41,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     error: "/login",
   },
   callbacks: {
-    async signIn({ user, account, profile }) {
+    async signIn({ user }) {
       // Verify email is from allowed domain
       if (user.email) {
         const domains = ALLOWED_DOMAIN.split(",").map((d) => d.trim().toLowerCase());

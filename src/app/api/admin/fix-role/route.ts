@@ -7,7 +7,7 @@ import { prisma } from "@/lib/db";
  * Emergency endpoint to restore admin role for specific user
  * Only works for zach@photonbrothers.com
  */
-export async function POST(request: NextRequest) {
+export async function POST(_request: NextRequest) {
   const session = await auth();
 
   if (!session?.user?.email) {
@@ -26,22 +26,26 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    // Use raw SQL to avoid Prisma client schema mismatch issues
-    // This bypasses Prisma's generated client and talks directly to the database
-    const result = await prisma.$executeRaw`
-      UPDATE "User"
-      SET "role" = 'ADMIN'::"UserRole"
-      WHERE "email" = ${session.user.email}
-    `;
+    // Use Prisma ORM to update user role safely
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email },
+    });
 
-    if (result === 0) {
+    if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
+
+    // Update user role to ADMIN using Prisma
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const _updatedUser = await prisma.user.update({
+      where: { email: session.user.email },
+      data: { role: "ADMIN" },
+    });
 
     return NextResponse.json({
       success: true,
       message: `Role restored to ADMIN for ${session.user.email}`,
-      rowsUpdated: result,
+      rowsUpdated: 1,
     });
   } catch (error) {
     console.error("Error fixing role:", error);

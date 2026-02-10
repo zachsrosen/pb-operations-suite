@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Component, ReactNode } from "react";
 
 interface Props {
@@ -31,9 +32,9 @@ export class ErrorBoundary extends Component<Props, State> {
       if (this.props.fallback) return this.props.fallback;
 
       return (
-        <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center p-6">
+        <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center p-6" role="alert" aria-live="assertive">
           <div className="text-center bg-[#12121a] rounded-xl p-8 border border-zinc-800 max-w-md">
-            <div className="text-red-500 text-5xl mb-4">!</div>
+            <div className="text-red-500 text-5xl mb-4" aria-hidden="true">!</div>
             <h2 className="text-xl font-bold text-white mb-2">
               Something went wrong
             </h2>
@@ -52,12 +53,12 @@ export class ErrorBoundary extends Component<Props, State> {
               >
                 Try Again
               </button>
-              <a
+              <Link
                 href="/"
                 className="px-4 py-2 bg-zinc-700 text-white rounded-lg hover:bg-zinc-600 transition-colors"
               >
                 Go Home
-              </a>
+              </Link>
             </div>
           </div>
         </div>

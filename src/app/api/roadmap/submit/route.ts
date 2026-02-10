@@ -2,43 +2,57 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 
+// Inline validation for roadmap submission
+interface RoadmapSubmissionRequest {
+  title?: unknown;
+  description?: unknown;
+  category?: unknown;
+}
+
+const VALID_CATEGORIES = ["performance", "features", "integrations", "ux", "analytics"];
+const MAX_TITLE_LENGTH = 100;
+const MAX_DESCRIPTION_LENGTH = 500;
+
+function validateRoadmapSubmission(data: unknown): data is { title: string; description: string; category: string } {
+  if (!data || typeof data !== "object") return false;
+  const req = data as RoadmapSubmissionRequest;
+
+  return (
+    typeof req.title === "string" &&
+    req.title.length > 0 &&
+    req.title.length <= MAX_TITLE_LENGTH &&
+    typeof req.description === "string" &&
+    req.description.length > 0 &&
+    req.description.length <= MAX_DESCRIPTION_LENGTH &&
+    typeof req.category === "string" &&
+    VALID_CATEGORIES.includes(req.category)
+  );
+}
+
 export async function POST(request: Request) {
   try {
     // Get the current user session
     const session = await auth();
     const userEmail = session?.user?.email;
 
-    const { title, description, category } = await request.json();
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON in request body" }, { status: 400 });
+    }
 
-    // Validate input
-    if (!title || !description) {
+    // Validate request body
+    if (!validateRoadmapSubmission(body)) {
       return NextResponse.json(
-        { error: "Title and description are required" },
+        {
+          error: `Invalid request: title (1-${MAX_TITLE_LENGTH} chars), description (1-${MAX_DESCRIPTION_LENGTH} chars), and category (${VALID_CATEGORIES.join("|")}) are required`,
+        },
         { status: 400 }
       );
     }
 
-    if (title.length > 100) {
-      return NextResponse.json(
-        { error: "Title must be 100 characters or less" },
-        { status: 400 }
-      );
-    }
-
-    if (description.length > 500) {
-      return NextResponse.json(
-        { error: "Description must be 500 characters or less" },
-        { status: 400 }
-      );
-    }
-
-    const validCategories = ["performance", "features", "integrations", "ux", "analytics"];
-    if (!validCategories.includes(category)) {
-      return NextResponse.json(
-        { error: "Invalid category" },
-        { status: 400 }
-      );
-    }
+    const { title, description, category } = body;
 
     if (!prisma) {
       return NextResponse.json(

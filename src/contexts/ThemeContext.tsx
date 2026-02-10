@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, ReactNode } from "react";
 
 type Theme = "dark" | "light";
 
@@ -99,22 +99,41 @@ function removeLightStyles() {
   document.getElementById(LIGHT_STYLE_ID)?.remove();
 }
 
-export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setTheme] = useState<Theme>("dark");
-  const [mounted, setMounted] = useState(false);
+/**
+ * Read saved theme from localStorage at initialization time.
+ * This avoids calling setState in useEffect (which triggers cascading renders).
+ * Note: This runs only on the client because the component is "use client".
+ */
+function getInitialTheme(): Theme {
+  if (typeof window === "undefined") return "dark";
+  try {
+    const saved = localStorage.getItem("pb-theme");
+    if (saved === "light" || saved === "dark") return saved;
+  } catch {
+    // localStorage may be unavailable
+  }
+  return "dark";
+}
 
-  // Read saved preference on mount
+export function ThemeProvider({ children }: { children: ReactNode }) {
+  const [theme, setTheme] = useState<Theme>(getInitialTheme);
+  const mountedRef = useRef(false);
+
+  // On mount, sync DOM class with state and inject styles if needed.
+  // The inline <head> script already handled the initial paint.
   useEffect(() => {
-    const saved = localStorage.getItem("pb-theme") as Theme | null;
-    if (saved === "light" || saved === "dark") {
-      setTheme(saved);
+    document.documentElement.classList.remove("light", "dark");
+    document.documentElement.classList.add(theme);
+    if (theme === "light") {
+      injectLightStyles();
     }
-    setMounted(true);
+    mountedRef.current = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Apply theme class to <html> and inject/remove runtime styles
+  // Apply theme class to <html> and inject/remove runtime styles on toggle
   useEffect(() => {
-    if (!mounted) return;
+    if (!mountedRef.current) return;
     const root = document.documentElement;
     root.classList.remove("light", "dark");
     root.classList.add(theme);
@@ -131,7 +150,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     if (meta) {
       meta.setAttribute("content", theme === "dark" ? "#0a0a0f" : "#ffffff");
     }
-  }, [theme, mounted]);
+  }, [theme]);
 
   const toggleTheme = () => {
     setTheme((prev) => (prev === "dark" ? "light" : "dark"));

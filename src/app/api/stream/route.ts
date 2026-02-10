@@ -7,55 +7,92 @@ export async function GET() {
 
   const stream = new ReadableStream({
     start(controller) {
-      // Send initial connection message
-      controller.enqueue(
-        encoder.encode(`data: ${JSON.stringify({ type: "connected", timestamp: Date.now() })}\n\n`)
-      );
+      let isClosed = false;
+      let unsubscribe: (() => void) | null = null;
+      let heartbeat: NodeJS.Timeout | null = null;
+      let timeoutHandle: NodeJS.Timeout | null = null;
 
-      // Subscribe to cache updates
-      const unsubscribe = appCache.subscribe((key, timestamp) => {
-        try {
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({ type: "cache_update", key, timestamp, lastUpdated: new Date(timestamp).toISOString() })}\n\n`
-            )
-          );
-        } catch {
-          // Stream closed
-          unsubscribe();
-        }
-      });
-
-      // Heartbeat every 30 seconds to keep connection alive
-      const heartbeat = setInterval(() => {
-        try {
-          controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify({ type: "heartbeat", timestamp: Date.now() })}\n\n`)
-          );
-        } catch {
-          clearInterval(heartbeat);
-          unsubscribe();
-        }
-      }, 30000);
-
-      // Cleanup on close
       const cleanup = () => {
-        clearInterval(heartbeat);
-        unsubscribe();
+        isClosed = true;
+        if (heartbeat) {
+          clearInterval(heartbeat);
+          heartbeat = null;
+        }
+        if (timeoutHandle) {
+          clearTimeout(timeoutHandle);
+          timeoutHandle = null;
+        }
+        if (unsubscribe) {
+          unsubscribe();
+          unsubscribe = null;
+        }
       };
 
-      // Auto-close after 5 minutes to prevent stale connections
-      setTimeout(() => {
+      const enqueueMessage = (data: object) => {
+        try {
+          // Check if stream is still writable before enqueueing
+          if (!isClosed) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+          }
+        } catch {
+          // Stream has been closed or errored
+          cleanup();
+        }
+      };
+
+      try {
+        // Send initial connection message
+        enqueueMessage({ type: "connected", timestamp: Date.now() });
+
+        // Subscribe to cache updates
+        unsubscribe = appCache.subscribe((key, timestamp) => {
+          try {
+            enqueueMessage({
+              type: "cache_update",
+              key,
+              timestamp,
+              lastUpdated: new Date(timestamp).toISOString(),
+            });
+          } catch {
+            // Error during cache update handling
+            cleanup();
+          }
+        });
+
+        // Heartbeat every 30 seconds to keep connection alive
+        heartbeat = setInterval(() => {
+          try {
+            enqueueMessage({ type: "heartbeat", timestamp: Date.now() });
+          } catch {
+            // Stream closed, cleanup
+            cleanup();
+          }
+        }, 30000);
+
+        // Auto-close after 5 minutes to prevent stale connections
+        timeoutHandle = setTimeout(() => {
+          try {
+            enqueueMessage({
+              type: "reconnect",
+              reason: "timeout",
+            });
+            cleanup();
+            controller.close();
+          } catch {
+            // Already closed
+            cleanup();
+          }
+        }, 5 * 60 * 1000);
+      } catch (setupError) {
+        // Error during initial setup
+        console.error("Error setting up SSE stream:", setupError);
         cleanup();
         try {
-          controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify({ type: "reconnect", reason: "timeout" })}\n\n`)
-          );
           controller.close();
         } catch {
           // Already closed
         }
-      }, 5 * 60 * 1000);
+      }
     },
   });
 

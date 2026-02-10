@@ -67,7 +67,7 @@ const SEED_DATA = [
 ];
 
 // Verify admin role
-async function verifyAdmin(request: NextRequest): Promise<{ authorized: boolean; error?: string }> {
+async function verifyAdmin(_request: NextRequest): Promise<{ authorized: boolean; error?: string }> {
   const session = await auth();
 
   if (!session?.user?.email) {
@@ -158,7 +158,12 @@ export async function POST(request: NextRequest) {
 
   // Create/update single crew member
   try {
-    const body = await request.json();
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON in request body" }, { status: 400 });
+    }
 
     // Validate required fields
     if (!body.name || !body.zuperUserUid) {

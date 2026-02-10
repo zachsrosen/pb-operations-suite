@@ -41,7 +41,12 @@ interface VercelWebhookPayload {
 
 export async function POST(request: NextRequest) {
   try {
-    const body: VercelWebhookPayload = await request.json();
+    let body: VercelWebhookPayload;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON in request body" }, { status: 400 });
+    }
 
     // Log deployment events
     console.log(`[Deployment] Event: ${body.type}`, {

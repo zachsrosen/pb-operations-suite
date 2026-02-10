@@ -373,8 +373,8 @@ export class ZuperClient {
     console.log(`[Zuper] Assisted scheduling response type: ${result.type}`);
     if (result.type === "success" && result.data) {
       // Log raw response structure for debugging
-      console.log(`[Zuper] Raw response keys: ${Object.keys(result.data).join(", ")}`);
-      const slots = Array.isArray(result.data.data) ? result.data.data : [];
+      console.log(`[Zuper] Raw response keys: ${Object.keys(result.data ?? {}).join(", ")}`);
+      const slots = Array.isArray(result.data?.data) ? result.data.data : [];
       console.log(`[Zuper] Parsed ${slots.length} availability slots`);
       if (slots.length > 0) {
         console.log(`[Zuper] Sample slot: ${JSON.stringify(slots[0])}`);
@@ -468,13 +468,13 @@ export class ZuperClient {
 
     if (result.type === "success" && result.data) {
       // result.data is the Zuper response: { type, data: [...], total_records }
-      const zuperResponse = result.data;
-      const jobs = Array.isArray(zuperResponse.data) ? zuperResponse.data : [];
+      const zuperResponse = result.data ?? {};
+      const jobs = Array.isArray(zuperResponse?.data) ? zuperResponse.data : [];
       return {
         type: "success",
         data: {
           jobs,
-          total: zuperResponse.total_records ?? jobs.length,
+          total: zuperResponse?.total_records ?? jobs.length,
         },
       };
     }
@@ -555,7 +555,7 @@ export class ZuperClient {
     if (result.type === "success" && result.data) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const data = result.data as any;
-      return { type: "success", data: data.data || data };
+      return { type: "success", data: data?.data ?? data ?? [] };
     }
     return result as unknown as ZuperApiResponse<{ team_uid: string; team_name: string }[]>;
   }
@@ -583,7 +583,7 @@ export class ZuperClient {
     );
 
     if (result.type === "success" && result.data) {
-      const timeoffs = Array.isArray(result.data.data) ? result.data.data : [];
+      const timeoffs = Array.isArray(result.data?.data) ? result.data.data : [];
       return { type: "success", data: timeoffs };
     }
 

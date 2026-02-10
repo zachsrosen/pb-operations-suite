@@ -11,6 +11,7 @@ const SALES_ALLOWED_ROUTES = [
 ];
 
 // Routes that are public (no auth required)
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const PUBLIC_ROUTES = [
   "/login",
   "/api/auth",
@@ -37,9 +38,10 @@ function addSecurityHeaders(response: NextResponse): NextResponse {
   );
 
   // Content Security Policy - allow same origin, inline styles/scripts for Next.js
+  // Note: unsafe-inline required for Next.js inline scripts; unsafe-eval removed for security
   response.headers.set(
     "Content-Security-Policy",
-    "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https:; frame-ancestors 'none';"
+    "default-src 'self'; script-src 'self' 'unsafe-inline' https://va.vercel-scripts.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https:; frame-ancestors 'none';"
   );
 
   // Strict Transport Security (HTTPS only in production)

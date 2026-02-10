@@ -14,13 +14,10 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { prefetchDashboard } from "@/lib/prefetch";
 
 function useIsMac() {
-  const [isMac, setIsMac] = useState(true);
-  useEffect(() => {
-    setIsMac(
-      typeof navigator !== "undefined" &&
-        /(Mac|iPhone|iPod|iPad)/i.test(navigator.userAgent)
-    );
-  }, []);
+  const [isMac] = useState(() => {
+    if (typeof navigator === "undefined") return true;
+    return /(Mac|iPhone|iPod|iPad)/i.test(navigator.userAgent);
+  });
   return isMac;
 }
 
@@ -699,7 +696,7 @@ const StageBar = memo(function StageBar({
   const percentage = (count / total) * 100;
   const colorClass = STAGE_COLORS[stage]?.tw || "bg-zinc-600";
 
-  const formatValue = (v: number) => {
+  const _formatValue = (v: number) => {
     if (v >= 1000000) return `$${(v / 1000000).toFixed(1)}M`;
     if (v >= 1000) return `$${(v / 1000).toFixed(0)}k`;
     return `$${v}`;

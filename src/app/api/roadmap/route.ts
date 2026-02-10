@@ -267,7 +267,14 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: "Admin access required" }, { status: 403 });
     }
 
-    const { id, status } = await request.json();
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON in request body" }, { status: 400 });
+    }
+
+    const { id, status } = body;
 
     if (!id || !status) {
       return NextResponse.json({ error: "Missing id or status" }, { status: 400 });

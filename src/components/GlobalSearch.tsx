@@ -47,13 +47,10 @@ const DASHBOARD_LINKS = [
 ];
 
 function useIsMac() {
-  const [isMac, setIsMac] = useState(true);
-  useEffect(() => {
-    setIsMac(
-      typeof navigator !== "undefined" &&
-        /(Mac|iPhone|iPod|iPad)/i.test(navigator.userAgent)
-    );
-  }, []);
+  const [isMac] = useState(() => {
+    if (typeof navigator === "undefined") return true;
+    return /(Mac|iPhone|iPod|iPad)/i.test(navigator.userAgent);
+  });
   return isMac;
 }
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import Link from "next/link";
 import { formatMoney } from "@/lib/format";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -578,12 +579,12 @@ export default function MobileDashboardPage() {
             </div>
             <div className="flex items-center gap-2">
               <ThemeToggle />
-              <a
+              <Link
                 href="/"
                 className="text-orange-100 hover:text-white text-xs font-medium transition-colors"
               >
                 &larr; Home
-              </a>
+              </Link>
             </div>
           </div>
           <h1 className="text-lg font-bold text-white mt-2">PB Pipeline</h1>

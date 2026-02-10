@@ -43,13 +43,13 @@ async function searchWithRetry(
   throw new Error("Max retries exceeded");
 }
 
-// Pipeline IDs
+// Pipeline IDs - loaded from environment variables with hardcoded fallbacks
 const PIPELINE_IDS: Record<string, string> = {
-  sales: "default",
-  project: "6900017",
-  dnr: "21997330",
-  service: "23928924",
-  roofing: "765928545",
+  sales: process.env.HUBSPOT_PIPELINE_SALES || "default",
+  project: process.env.HUBSPOT_PIPELINE_PROJECT || "6900017",
+  dnr: process.env.HUBSPOT_PIPELINE_DNR || "21997330",
+  service: process.env.HUBSPOT_PIPELINE_SERVICE || "23928924",
+  roofing: process.env.HUBSPOT_PIPELINE_ROOFING || "765928545",
 };
 
 // Stage mappings for each pipeline
@@ -249,7 +249,8 @@ async function fetchDealsForPipeline(pipelineKey: string, activeOnly: boolean = 
   const portalId = process.env.HUBSPOT_PORTAL_ID || "21710069";
   const allDeals: Record<string, unknown>[] = [];
   let after: string | undefined;
-  let pageCount = 0;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const pageCount = 0;
 
   // Get active stage IDs for filtering at HubSpot level
   const activeStageIds = activeOnly ? ACTIVE_STAGE_IDS[pipelineKey] : null;
@@ -298,7 +299,13 @@ async function fetchDealsForPipeline(pipelineKey: string, activeOnly: boolean = 
       } while (after);
     }
   } else {
+    const MAX_PAGINATION_PAGES = 50; // Safety limit: 50 pages * 100 = 5,000 deals max
+    let paginationCount = 0;
     do {
+      if (paginationCount >= MAX_PAGINATION_PAGES) {
+        console.warn(`[Deals] Hit pagination safety limit (${MAX_PAGINATION_PAGES} pages) for pipeline ${pipelineKey}. Some deals may be missing.`);
+        break;
+      }
       const searchRequest: {
         filterGroups: { filters: { propertyName: string; operator: typeof FilterOperatorEnum.Eq; value: string }[] }[];
         properties: string[];
@@ -326,6 +333,8 @@ async function fetchDealsForPipeline(pipelineKey: string, activeOnly: boolean = 
       const response = await searchWithRetry(searchRequest);
       allDeals.push(...response.results.map((deal) => deal.properties));
       after = response.paging?.next?.after;
+      paginationCount++;
+      if (after) await sleep(100);
     } while (after);
   }
 

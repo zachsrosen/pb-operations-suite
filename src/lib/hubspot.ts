@@ -461,30 +461,30 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
 
   const priorityScore = calculatePriorityScore(stageName, daysSinceClose, isPE, isRTB, isBlocked);
 
-  // Build equipment object from deal properties
+  // Build equipment object from deal properties with null-safety
   const equipment: Equipment = {
     modules: {
-      brand: String(deal.module_brand || ""),
-      model: String(deal.module_model || ""),
-      count: Number(deal.module_count) || 0,
-      wattage: Number(deal.module_wattage) || 0,
+      brand: String(deal?.module_brand ?? ""),
+      model: String(deal?.module_model ?? ""),
+      count: Number(deal?.module_count ?? 0) || 0,
+      wattage: Number(deal?.module_wattage ?? 0) || 0,
     },
     inverter: {
-      brand: String(deal.inverter_brand || ""),
-      model: String(deal.inverter_model || ""),
-      count: Number(deal.inverter_qty) || 0,
-      sizeKwac: Number(deal.inverter_size_kwac) || 0,
+      brand: String(deal?.inverter_brand ?? ""),
+      model: String(deal?.inverter_model ?? ""),
+      count: Number(deal?.inverter_qty ?? 0) || 0,
+      sizeKwac: Number(deal?.inverter_size_kwac ?? 0) || 0,
     },
     battery: {
-      brand: String(deal.battery_brand || ""),
-      model: String(deal.battery_model || ""),
-      count: Number(deal.battery_count) || 0,
-      sizeKwh: Number(deal.battery_size) || 0,
-      expansionCount: Number(deal.battery_expansion_count) || 0,
+      brand: String(deal?.battery_brand ?? ""),
+      model: String(deal?.battery_model ?? ""),
+      count: Number(deal?.battery_count ?? 0) || 0,
+      sizeKwh: Number(deal?.battery_size ?? 0) || 0,
+      expansionCount: Number(deal?.battery_expansion_count ?? 0) || 0,
     },
-    evCount: Number(deal.ev_count) || 0,
-    systemSizeKwdc: Number(deal.calculated_system_size__kwdc_) || 0,
-    systemSizeKwac: Number(deal.system_size_kwac) || 0,
+    evCount: Number(deal?.ev_count ?? 0) || 0,
+    systemSizeKwdc: Number(deal?.calculated_system_size__kwdc_ ?? 0) || 0,
+    systemSizeKwac: Number(deal?.system_size_kwac ?? 0) || 0,
   };
 
   return {
@@ -618,7 +618,13 @@ export async function fetchAllProjects(options?: {
   let after: string | undefined;
 
   // Use search API to filter by pipeline (with retry for rate limits)
+  const MAX_PAGINATION_PAGES = 50; // Safety limit: 50 pages * 100 = 5,000 projects max
+  let paginationCount = 0;
   do {
+    if (paginationCount >= MAX_PAGINATION_PAGES) {
+      console.warn(`[HubSpot] Hit pagination safety limit (${MAX_PAGINATION_PAGES} pages) for project pipeline. Some projects may be missing.`);
+      break;
+    }
     const response = await searchWithRetry({
       filterGroups: [
         {
@@ -638,6 +644,7 @@ export async function fetchAllProjects(options?: {
 
     allDeals.push(...response.results.map((deal) => deal.properties));
     after = response.paging?.next?.after;
+    paginationCount++;
 
     // Small delay between pagination requests to avoid rate limits
     if (after) await sleep(100);
@@ -645,52 +652,72 @@ export async function fetchAllProjects(options?: {
 
   // Resolve owner IDs to names — use BOTH property definitions and Owners API
   // to maximize coverage (property defs may be incomplete, Owners API may fail)
+  // Parallelized for performance (was 3 sequential API calls)
   const ownerMap: Record<string, string> = {};
 
-  // Source 1: Property definition options for hubspot_owner_id (partial but reliable)
-  try {
-    const ownerPropResponse = await hubspotClient.crm.properties.coreApi.getByName("deals", "hubspot_owner_id");
-    for (const opt of ownerPropResponse.options || []) {
+  const [ownerPropResult, surveyorPropResult, ownersApiResult] = await Promise.allSettled([
+    // Source 1: Property definition options for hubspot_owner_id
+    hubspotClient.crm.properties.coreApi.getByName("deals", "hubspot_owner_id"),
+    // Source 2: Property definition options for site_surveyor
+    hubspotClient.crm.properties.coreApi.getByName("deals", "site_surveyor"),
+    // Source 3: Owners API (first page — covers most cases)
+    hubspotClient.crm.owners.ownersApi.getPage(undefined, undefined, 500, false),
+  ]);
+
+  // Process Source 1: hubspot_owner_id property options
+  if (ownerPropResult.status === "fulfilled") {
+    for (const opt of ownerPropResult.value.options || []) {
       if (opt.value && opt.label && opt.label.trim()) {
         ownerMap[opt.value] = opt.label;
       }
     }
     console.log(`[HubSpot] Owner prop options: ${Object.keys(ownerMap).length} mappings`);
-  } catch (err) {
-    console.warn("[HubSpot] Failed to fetch hubspot_owner_id property:", err instanceof Error ? err.message : err);
+  } else {
+    console.warn("[HubSpot] Failed to fetch hubspot_owner_id property:", ownerPropResult.reason?.message || ownerPropResult.reason);
   }
 
-  // Source 2: Property definition options for site_surveyor (may have additional entries)
-  try {
-    const surveyorPropResponse = await hubspotClient.crm.properties.coreApi.getByName("deals", "site_surveyor");
-    for (const opt of surveyorPropResponse.options || []) {
+  // Process Source 2: site_surveyor property options
+  if (surveyorPropResult.status === "fulfilled") {
+    for (const opt of surveyorPropResult.value.options || []) {
       if (opt.value && opt.label && opt.label.trim() && !ownerMap[opt.value]) {
         ownerMap[opt.value] = opt.label;
       }
     }
     console.log(`[HubSpot] After surveyor prop: ${Object.keys(ownerMap).length} total mappings`);
-  } catch (err) {
-    console.warn("[HubSpot] Failed to fetch site_surveyor property:", err instanceof Error ? err.message : err);
+  } else {
+    console.warn("[HubSpot] Failed to fetch site_surveyor property:", surveyorPropResult.reason?.message || surveyorPropResult.reason);
   }
 
-  // Source 3: Owners API (paginated — fills gaps from property definitions)
-  try {
-    let ownerAfter: string | undefined;
-    do {
-      const ownersResponse = await hubspotClient.crm.owners.ownersApi.getPage(
-        undefined, ownerAfter, 500, false
-      );
-      for (const owner of ownersResponse.results || []) {
-        const name = [owner.firstName, owner.lastName].filter(Boolean).join(" ").trim();
-        if (name && owner.id && !ownerMap[owner.id]) {
-          ownerMap[owner.id] = name;
-        }
+  // Process Source 3: Owners API (paginated — fills gaps)
+  if (ownersApiResult.status === "fulfilled") {
+    for (const owner of ownersApiResult.value.results || []) {
+      const name = [owner.firstName, owner.lastName].filter(Boolean).join(" ").trim();
+      if (name && owner.id && !ownerMap[owner.id]) {
+        ownerMap[owner.id] = name;
       }
-      ownerAfter = ownersResponse.paging?.next?.after;
-    } while (ownerAfter);
+    }
+    // Paginate remaining owners if needed
+    let ownerAfter = ownersApiResult.value.paging?.next?.after;
+    while (ownerAfter) {
+      try {
+        const ownersResponse = await hubspotClient.crm.owners.ownersApi.getPage(
+          undefined, ownerAfter, 500, false
+        );
+        for (const owner of ownersResponse.results || []) {
+          const name = [owner.firstName, owner.lastName].filter(Boolean).join(" ").trim();
+          if (name && owner.id && !ownerMap[owner.id]) {
+            ownerMap[owner.id] = name;
+          }
+        }
+        ownerAfter = ownersResponse.paging?.next?.after;
+      } catch (err) {
+        console.warn("[HubSpot] Failed to paginate owners:", err instanceof Error ? err.message : err);
+        break;
+      }
+    }
     console.log(`[HubSpot] After owners API: ${Object.keys(ownerMap).length} total mappings`);
-  } catch (err) {
-    console.warn("[HubSpot] Failed to fetch owners API:", err instanceof Error ? err.message : err);
+  } else {
+    console.warn("[HubSpot] Failed to fetch owners API:", ownersApiResult.reason?.message || ownersApiResult.reason);
   }
 
   console.log(`[HubSpot] Final owner map: ${Object.keys(ownerMap).length} ID→name mappings`);
@@ -728,6 +755,7 @@ export async function fetchProjectById(id: string): Promise<Project | null> {
 
 /**
  * Update a deal property in HubSpot
+ * Invalidates related caches after successful update.
  */
 export async function updateDealProperty(
   dealId: string,
@@ -736,6 +764,18 @@ export async function updateDealProperty(
   try {
     await hubspotClient.crm.deals.basicApi.update(dealId, { properties });
     console.log(`[HubSpot] Updated deal ${dealId} properties:`, Object.keys(properties).join(", "));
+
+    // Invalidate caches so updated data is fetched on next request
+    try {
+      const { appCache } = await import("@/lib/cache");
+      appCache.invalidateByPrefix("projects:");
+      appCache.invalidateByPrefix("deals:");
+      appCache.invalidate("stats");
+      console.log(`[HubSpot] Cache invalidated after deal ${dealId} update`);
+    } catch {
+      // Cache invalidation is best-effort, don't fail the update
+    }
+
     return true;
   } catch (err) {
     console.error(`[HubSpot] Failed to update deal ${dealId}:`, err);

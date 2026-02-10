@@ -120,7 +120,7 @@ export default function RoadmapPage() {
     if (!isAdmin) return;
 
     const item = items.find(i => i.id === itemId);
-    const oldStatus = item?.status;
+    const _oldStatus = item?.status;
 
     setUpdatingStatus(itemId);
     try {

@@ -17,7 +17,7 @@ type CacheEntry<T> = {
 type CacheListener = (key: string, timestamp: number) => void;
 
 const DEFAULT_TTL = 5 * 60 * 1000; // 5 minutes
-const STALE_TTL = 30 * 60 * 1000; // 30 minutes - serve stale data up to this long
+const STALE_TTL = 10 * 60 * 1000; // 10 minutes - serve stale data up to this long
 
 class CacheStore {
   private cache = new Map<string, CacheEntry<unknown>>();
@@ -194,10 +194,27 @@ class CacheStore {
   }
 
   /**
-   * Invalidate a specific cache key
+   * Invalidate a specific cache key and notify listeners
    */
   invalidate(key: string): void {
     this.cache.delete(key);
+    this.notifyListeners(key, Date.now());
+  }
+
+  /**
+   * Invalidate all cache keys matching a prefix (e.g., "projects:" or "deals:")
+   */
+  invalidateByPrefix(prefix: string): void {
+    const keysToDelete: string[] = [];
+    for (const key of this.cache.keys()) {
+      if (key.startsWith(prefix)) {
+        keysToDelete.push(key);
+      }
+    }
+    for (const key of keysToDelete) {
+      this.cache.delete(key);
+      this.notifyListeners(key, Date.now());
+    }
   }
 
   /**
@@ -208,12 +225,21 @@ class CacheStore {
   }
 
   /**
-   * Get cache stats for debugging
+   * Get cache stats for debugging.
+   * Uses approximate byte length estimation to avoid expensive JSON.stringify.
    */
   stats(): { keys: string[]; sizes: Record<string, number>; inflight: string[] } {
     const sizes: Record<string, number> = {};
     for (const [key, entry] of this.cache.entries()) {
-      sizes[key] = JSON.stringify(entry.data).length;
+      // Use rough estimate instead of JSON.stringify for performance
+      const data = entry.data;
+      if (Array.isArray(data)) {
+        sizes[key] = data.length * 500; // ~500 bytes per array item estimate
+      } else if (typeof data === "object" && data !== null) {
+        sizes[key] = Object.keys(data as Record<string, unknown>).length * 200;
+      } else {
+        sizes[key] = String(data).length;
+      }
     }
     return {
       keys: Array.from(this.cache.keys()),

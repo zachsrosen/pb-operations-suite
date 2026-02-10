@@ -2,6 +2,26 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma, getAllUsers, updateUserRole, UserRole, getUserByEmail, logActivity } from "@/lib/db";
 
+// Inline validation for role update request
+interface UpdateUserRoleRequest {
+  userId?: unknown;
+  role?: unknown;
+}
+
+function validateRoleUpdate(data: unknown): data is { userId: string; role: UserRole } {
+  if (!data || typeof data !== "object") return false;
+  const req = data as UpdateUserRoleRequest;
+
+  const validRoles: UserRole[] = ["ADMIN", "MANAGER", "OPERATIONS", "DESIGNER", "PERMITTING", "VIEWER", "SALES"];
+
+  return (
+    typeof req.userId === "string" &&
+    req.userId.length > 0 &&
+    typeof req.role === "string" &&
+    validRoles.includes(req.role as UserRole)
+  );
+}
+
 /**
  * GET /api/admin/users
  * Get all users (admin only)
@@ -54,18 +74,21 @@ export async function PUT(request: NextRequest) {
   }
 
   try {
-    const body = await request.json();
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON in request body" }, { status: 400 });
+    }
+
+    // Validate request body
+    if (!validateRoleUpdate(body)) {
+      return NextResponse.json({
+        error: "Invalid request: userId (string) and role (valid role string) are required",
+      }, { status: 400 });
+    }
+
     const { userId, role } = body;
-
-    if (!userId || !role) {
-      return NextResponse.json({ error: "userId and role are required" }, { status: 400 });
-    }
-
-    // Validate role
-    const validRoles: UserRole[] = ["ADMIN", "MANAGER", "OPERATIONS", "DESIGNER", "PERMITTING", "VIEWER", "SALES"];
-    if (!validRoles.includes(role)) {
-      return NextResponse.json({ error: "Invalid role" }, { status: 400 });
-    }
 
     // Get the target user to log the change
     const targetUser = await prisma.user.findUnique({ where: { id: userId } });

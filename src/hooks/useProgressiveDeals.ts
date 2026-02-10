@@ -47,6 +47,7 @@ export function useProgressiveDeals<T = Record<string, unknown>>(
 
   const isFirstLoad = useRef(true);
   const abortRef = useRef<AbortController | null>(null);
+  const requestIdRef = useRef(0);
 
   const buildUrl = useCallback(() => {
     const qs = new URLSearchParams(params).toString();
@@ -59,6 +60,9 @@ export function useProgressiveDeals<T = Record<string, unknown>>(
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
+
+    // Increment request ID to track which request this is
+    const currentRequestId = ++requestIdRef.current;
 
     const isInitial = isFirstLoad.current;
 
@@ -80,6 +84,8 @@ export function useProgressiveDeals<T = Record<string, unknown>>(
         const { done, value } = await reader.read();
         if (done) break;
         if (controller.signal.aborted) return;
+        // Ignore responses from stale requests
+        if (currentRequestId !== requestIdRef.current) return;
 
         buffer += decoder.decode(value, { stream: true });
 
@@ -108,47 +114,56 @@ export function useProgressiveDeals<T = Record<string, unknown>>(
 
           if (msg.type === "full") {
             // Warm cache hit — everything at once
-            setDeals(msg.deals ?? []);
-            setLoading(false);
-            setLoadingMore(false);
-            setProgress(null);
-            setLastUpdated(
-              msg.lastUpdated
-                ? new Date(msg.lastUpdated).toLocaleTimeString()
-                : new Date().toLocaleTimeString()
-            );
-            isFirstLoad.current = false;
+            // Only set state if this is still the current request
+            if (currentRequestId === requestIdRef.current) {
+              setDeals(msg.deals ?? []);
+              setLoading(false);
+              setLoadingMore(false);
+              setProgress(null);
+              setLastUpdated(
+                msg.lastUpdated
+                  ? new Date(msg.lastUpdated).toLocaleTimeString()
+                  : new Date().toLocaleTimeString()
+              );
+              isFirstLoad.current = false;
+            }
             return;
           }
 
           if (msg.type === "batch") {
             // Streaming chunk — append and render
-            const batchDeals = msg.deals ?? [];
-            accumulated = [...accumulated, ...batchDeals];
-            setDeals(accumulated);
-            setProgress({
-              loaded: msg.loaded ?? accumulated.length,
-              total: msg.total ?? null,
-            });
+            // Only update if this is still the current request
+            if (currentRequestId === requestIdRef.current) {
+              const batchDeals = msg.deals ?? [];
+              accumulated = [...accumulated, ...batchDeals];
+              setDeals(accumulated);
+              setProgress({
+                loaded: msg.loaded ?? accumulated.length,
+                total: msg.total ?? null,
+              });
 
-            if (!gotFirstBatch) {
-              gotFirstBatch = true;
-              setLoading(false);
-              setLoadingMore(true);
-              isFirstLoad.current = false;
+              if (!gotFirstBatch) {
+                gotFirstBatch = true;
+                setLoading(false);
+                setLoadingMore(true);
+                isFirstLoad.current = false;
+              }
             }
           }
 
           if (msg.type === "done") {
             // Final complete dataset — replace accumulated (correct sort order)
-            setDeals(msg.deals ?? accumulated);
-            setLoadingMore(false);
-            setProgress(null);
-            setLastUpdated(
-              msg.lastUpdated
-                ? new Date(msg.lastUpdated).toLocaleTimeString()
-                : new Date().toLocaleTimeString()
-            );
+            // Only set state if this is still the current request
+            if (currentRequestId === requestIdRef.current) {
+              setDeals(msg.deals ?? accumulated);
+              setLoadingMore(false);
+              setProgress(null);
+              setLastUpdated(
+                msg.lastUpdated
+                  ? new Date(msg.lastUpdated).toLocaleTimeString()
+                  : new Date().toLocaleTimeString()
+              );
+            }
           }
 
           if (msg.type === "error") {
@@ -158,10 +173,13 @@ export function useProgressiveDeals<T = Record<string, unknown>>(
       }
     } catch (err: unknown) {
       if (err instanceof DOMException && err.name === "AbortError") return;
-      const message = err instanceof Error ? err.message : "An unknown error occurred";
-      setError(message);
-      setLoading(false);
-      setLoadingMore(false);
+      // Only set error state if this is still the current request
+      if (currentRequestId === requestIdRef.current) {
+        const message = err instanceof Error ? err.message : "An unknown error occurred";
+        setError(message);
+        setLoading(false);
+        setLoadingMore(false);
+      }
     }
   }, [buildUrl]);
 

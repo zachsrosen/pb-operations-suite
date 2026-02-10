@@ -59,7 +59,10 @@ export function UserMenu() {
     <div className="relative" ref={menuRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 text-xs text-zinc-400 border border-zinc-800 rounded-lg px-2 py-1.5 hover:border-zinc-600 hover:text-zinc-300 transition-colors"
+        className="flex items-center gap-2 text-xs text-zinc-400 border border-zinc-800 rounded-lg px-2 py-1.5 hover:border-zinc-600 hover:text-zinc-300 transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-1"
+        aria-label="User menu"
+        aria-expanded={isOpen}
+        aria-haspopup="menu"
       >
         <div className="w-6 h-6 rounded-full bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center text-white text-[10px] font-medium">
           {initials}
@@ -73,7 +76,7 @@ export function UserMenu() {
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-56 bg-[#1a1a24] border border-zinc-800 rounded-lg shadow-xl z-50 overflow-hidden">
+        <div className="absolute right-0 mt-2 w-56 bg-[#1a1a24] border border-zinc-800 rounded-lg shadow-xl z-50 overflow-hidden" role="menu" aria-label="User actions">
           <div className="p-3 border-b border-zinc-800">
             <p className="text-sm font-medium text-white truncate">{session.user.name}</p>
             <p className="text-xs text-zinc-500 truncate">{session.user.email}</p>

@@ -507,7 +507,7 @@ export default function SchedulerPage() {
   /* ================================================================ */
 
   const filteredProjects = useMemo(() => {
-    let filtered = projects.filter((p) => {
+    const filtered = projects.filter((p) => {
       if (selectedLocations.length > 0 && !selectedLocations.includes(p.location))
         return false;
       if (selectedStage !== "all" && p.stage !== selectedStage) return false;
