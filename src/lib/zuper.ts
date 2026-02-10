@@ -395,31 +395,29 @@ export class ZuperClient {
 
   /**
    * Assign technicians to a job
-   * Uses PUT /jobs with job wrapper to update assignments
-   * Note: Zuper API requires team_uid along with user_uid for assignments
+   * Uses PUT /jobs/{job_uid}/update endpoint with job array payload
+   * Format discovered from working dev example
    */
   async assignJob(
     jobUid: string,
     userUids: string[],
-    teamUid: string // Now required - caller must provide team_uid
+    teamUid: string // Required - caller must provide team_uid
   ): Promise<ZuperApiResponse<ZuperJob>> {
-    // Build users array for the assign endpoint
-    // Format: {"type":"ASSIGN","users":[{"team_uid":"...","user_uid":"..."}],"assign_type":"REPLACE"}
-    const users = userUids.map(userUid => ({
-      user_uid: userUid,
-      team_uid: teamUid, // Required by Zuper API
-    }));
-
+    // Build job array for the update endpoint
+    // Format: {"job":[{"type":"ASSIGN","user_uid":"...","team_uid":"...","is_primary":false}]}
     const payload = {
-      type: "ASSIGN",
-      users,
-      assign_type: "REPLACE", // Replace existing assignments with new ones
+      job: userUids.map(userUid => ({
+        type: "ASSIGN",
+        user_uid: userUid,
+        team_uid: teamUid,
+        is_primary: false,
+      })),
     };
 
-    console.log(`[Zuper] Assigning job ${jobUid} to users via /service_tasks/${jobUid}/assign:`, JSON.stringify(payload));
+    const endpoint = `/jobs/${jobUid}/update?job_uid=${jobUid}&notify_users=true&update_all_jobs=false`;
+    console.log(`[Zuper] Assigning job ${jobUid} via ${endpoint}:`, JSON.stringify(payload));
 
-    // Use the correct assignment endpoint: PUT /service_tasks/{job_uid}/assign
-    return this.request<ZuperJob>(`/service_tasks/${jobUid}/assign`, {
+    return this.request<ZuperJob>(endpoint, {
       method: "PUT",
       body: JSON.stringify(payload),
     });
