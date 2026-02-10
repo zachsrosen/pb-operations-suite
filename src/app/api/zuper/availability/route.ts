@@ -645,7 +645,23 @@ export async function GET(request: NextRequest) {
                 });
                 console.log(`[Zuper Availability] Injected Zuper booking for ${displayName} @ ${slotStartTime} (no configured schedule slot): ${key}`);
               } else {
-                console.log(`[Zuper Availability] No matching slot found for ${dateStr} at ${slotStartTime}`);
+                // Job has no assigned user — still create a booking so the frontend
+                // can match by zuperJobUid and show the job is scheduled
+                const startHour = parseInt(slotStartTime.split(":")[0]);
+                const endTime = `${(startHour + 1).toString().padStart(2, "0")}:00`;
+                const key = getSlotKey(dateStr, "Unassigned", slotStartTime);
+                zuperBookings.set(key, {
+                  date: dateStr,
+                  startTime: slotStartTime,
+                  endTime,
+                  userName: "Unassigned",
+                  location: "",
+                  projectId: slotProjectId,
+                  projectName: job.job_title,
+                  bookedAt: new Date().toISOString(),
+                  zuperJobUid: job.job_uid,
+                });
+                console.log(`[Zuper Availability] Unassigned Zuper job booking: ${key} (${job.job_title})`);
               }
             }
           }
@@ -693,6 +709,7 @@ export async function GET(request: NextRequest) {
       location?: string;
       projectId?: string;
       projectName?: string;
+      zuperJobUid?: string;
     }> = [];
 
     // Track which slot keys have been accounted for
@@ -713,6 +730,7 @@ export async function GET(request: NextRequest) {
           location: slot.location,
           projectId: zuperBooking.projectId,
           projectName: zuperBooking.projectName,
+          zuperJobUid: zuperBooking.zuperJobUid,
         });
         return false; // Remove from available
       }
@@ -728,6 +746,7 @@ export async function GET(request: NextRequest) {
           location: slot.location,
           projectId: appBooking.projectId,
           projectName: appBooking.projectName,
+          zuperJobUid: appBooking.zuperJobUid,
         });
         return false; // Remove from available
       }
@@ -746,6 +765,7 @@ export async function GET(request: NextRequest) {
           location: booking.location,
           projectId: booking.projectId,
           projectName: booking.projectName,
+          zuperJobUid: booking.zuperJobUid,
         });
       }
     }
@@ -761,6 +781,7 @@ export async function GET(request: NextRequest) {
           location: booking.location,
           projectId: booking.projectId,
           projectName: booking.projectName,
+          zuperJobUid: booking.zuperJobUid,
         });
       }
     }

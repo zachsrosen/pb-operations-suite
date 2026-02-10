@@ -116,6 +116,7 @@ interface DayAvailability {
     location?: string;
     projectId?: string;
     projectName?: string;
+    zuperJobUid?: string;
   }>;
   timeOffs: Array<{
     user_name?: string;
@@ -603,7 +604,7 @@ export default function SiteSurveySchedulerPage() {
   // Zuper bookedSlot.projectName formats:
   //   - "Barstad, Ed | 6611 S Yarrow St, Littleton, CO 80123" (created in Zuper)
   //   - "Site Survey - PROJ-9031 | Czajkowski, Thomas" (created via app)
-  const findCurrentSlotForProject = useCallback((projectId: string, date: string, projectName?: string) => {
+  const findCurrentSlotForProject = useCallback((projectId: string, date: string, projectName?: string, zuperJobUid?: string) => {
     const dayAvail = availabilityByDate[date];
     if (!dayAvail?.bookedSlots) return undefined;
 
@@ -618,8 +619,11 @@ export default function SiteSurveySchedulerPage() {
     const bookedSlot = dayAvail.bookedSlots.find(slot => {
       const slotNameLower = (slot.projectName || "").toLowerCase();
 
-      // Match by project ID
+      // Match by HubSpot project ID (direct match)
       if (slot.projectId === projectId) return true;
+
+      // Match by Zuper job UID (most reliable for Zuper-sourced bookings)
+      if (zuperJobUid && slot.zuperJobUid && slot.zuperJobUid === zuperJobUid) return true;
 
       // Match by PROJ number anywhere in slot name
       // Handles both "PROJ-9031 | Name" and "Site Survey - PROJ-9031 | Name"
@@ -671,7 +675,7 @@ export default function SiteSurveySchedulerPage() {
     }
     const project = projects.find(p => p.id === draggedProjectId);
     if (project) {
-      const currentSlot = findCurrentSlotForProject(project.id, date, project.name);
+      const currentSlot = findCurrentSlotForProject(project.id, date, project.name, project.zuperJobUid);
       setScheduleModal({ project, date, currentSlot });
     }
     setDraggedProjectId(null);
@@ -683,10 +687,10 @@ export default function SiteSurveySchedulerPage() {
       return;
     }
     if (project) {
-      const currentSlot = findCurrentSlotForProject(project.id, date, project.name);
+      const currentSlot = findCurrentSlotForProject(project.id, date, project.name, project.zuperJobUid);
       setScheduleModal({ project, date, currentSlot });
     } else if (selectedProject) {
-      const currentSlot = findCurrentSlotForProject(selectedProject.id, date, selectedProject.name);
+      const currentSlot = findCurrentSlotForProject(selectedProject.id, date, selectedProject.name, selectedProject.zuperJobUid);
       setScheduleModal({ project: selectedProject, date, currentSlot });
       setSelectedProject(null);
     }
@@ -1292,7 +1296,7 @@ export default function SiteSurveySchedulerPage() {
                         <div className="space-y-1">
                           {events.map((ev) => {
                             // Find the booked slot for this event
-                            const evSlot = findCurrentSlotForProject(ev.id, dateStr, ev.name);
+                            const evSlot = findCurrentSlotForProject(ev.id, dateStr, ev.name, ev.zuperJobUid);
                             const overdue = isSurveyOverdue(ev, manualSchedules[ev.id]);
                             return (
                               <div
