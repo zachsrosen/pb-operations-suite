@@ -519,13 +519,24 @@ export async function GET(request: NextRequest) {
     };
 
     // Helper: extract HubSpot Deal ID from Zuper job custom fields
+    // Zuper jobs may have "HubSpot Deal ID" (numeric) or "Hubspot Deal Link" (URL) fields
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const getHubSpotDealId = (job: any): string | null => {
       const fields = job.custom_fields;
       if (!fields || !Array.isArray(fields)) return null;
+      // Try direct numeric ID field first
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const dealIdField = fields.find((f: any) => f.label?.toLowerCase() === "hubspot deal id");
-      return dealIdField?.value || null;
+      if (dealIdField?.value) return dealIdField.value;
+      // Fall back to extracting ID from the deal link URL
+      // Format: "https://app.hubspot.com/contacts/PORTAL_ID/record/0-3/DEAL_ID"
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const dealLinkField = fields.find((f: any) => f.label?.toLowerCase().includes("hubspot") && f.label?.toLowerCase().includes("link"));
+      if (dealLinkField?.value) {
+        const urlMatch = dealLinkField.value.match(/\/record\/0-3\/(\d+)/);
+        if (urlMatch) return urlMatch[1];
+      }
+      return null;
     };
 
     // Add scheduled jobs and mark those time slots as booked
@@ -538,7 +549,6 @@ export async function GET(request: NextRequest) {
           // Default: convert to Mountain Time for date/logging
           const mtLocal = utcToLocalTime(scheduledDate, 'America/Denver');
           const dateStr = mtLocal.dateStr;
-          const startTime = `${mtLocal.hour.toString().padStart(2, "0")}:00`;
 
           if (job.job_uid) zuperJobUids.add(job.job_uid);
 
@@ -550,119 +560,127 @@ export async function GET(request: NextRequest) {
               end_time: job.scheduled_end_time,
             });
 
-            // If we have a valid start time, mark that slot as booked from Zuper
-            if (startTime) {
-              // Get assigned user's info from the job
-              // Zuper assigned_to is an array of { user: { first_name, last_name, user_uid } }
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const assignedUserData = (job as any).assigned_to?.[0]?.user;
-              const assignedUserName = assignedUserData
-                ? `${assignedUserData.first_name || ""} ${assignedUserData.last_name || ""}`.trim()
-                : "";
-              const assignedUserUid = assignedUserData?.user_uid || "";
+            // Get assigned user's info from the job
+            // Zuper assigned_to is an array of { user: { first_name, last_name, user_uid } }
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const assignedUserData = (job as any).assigned_to?.[0]?.user;
+            const assignedUserName = assignedUserData
+              ? `${assignedUserData.first_name || ""} ${assignedUserData.last_name || ""}`.trim()
+              : "";
+            const assignedUserUid = assignedUserData?.user_uid || "";
 
-              // Extract HubSpot deal ID so frontend can match by project ID directly
-              const hubspotDealId = getHubSpotDealId(job);
-              // Use HubSpot deal ID as projectId when available, fall back to job_uid
-              const slotProjectId = hubspotDealId || job.job_uid || "";
+            // Extract HubSpot deal ID so frontend can match by project ID directly
+            const hubspotDealId = getHubSpotDealId(job);
+            // Use HubSpot deal ID as projectId when available, fall back to job_uid
+            const slotProjectId = hubspotDealId || job.job_uid || "";
 
-              // Log for debugging
-              console.log(`[Zuper Availability] Job: ${job.job_title}`);
-              console.log(`[Zuper Availability] Scheduled UTC: ${job.scheduled_start_time}`);
-              console.log(`[Zuper Availability] MT date: ${dateStr}, MT time: ${startTime}`);
-              console.log(`[Zuper Availability] Assigned user from Zuper: "${assignedUserName}" (uid: ${assignedUserUid})`);
+            // Log for debugging
+            console.log(`[Zuper Availability] Job: ${job.job_title}`);
+            console.log(`[Zuper Availability] Scheduled UTC: ${job.scheduled_start_time}`);
+            console.log(`[Zuper Availability] MT date: ${dateStr}`);
+            console.log(`[Zuper Availability] Assigned user from Zuper: "${assignedUserName}" (uid: ${assignedUserUid})`);
 
-              // Try to match this scheduled job to an availability slot and mark it booked
-              const slotStartTime = startTime; // MT time for default matching
-
-              // Find matching crew member - ONLY if we know who it's assigned to
-              let matchingSlot = null;
-              if (assignedUserUid || assignedUserName) {
-                // Primary: match by user UID with timezone-aware time comparison
-                if (assignedUserUid) {
-                  matchingSlot = availabilityByDate[dateStr].availableSlots.find(slot => {
-                    if (slot.user_uid !== assignedUserUid) return false;
-                    const slotTz = slot.timezone || 'America/Denver';
-                    const localTime = utcToLocalTime(scheduledDate, slotTz);
-                    const localStartTime = `${localTime.hour.toString().padStart(2, "0")}:${localTime.minute.toString().padStart(2, "0")}`;
-                    return slot.start_time === localStartTime || slot.start_time === `${localTime.hour.toString().padStart(2, "0")}:00`;
-                  });
-                  console.log(`[Zuper Availability] UID match for ${assignedUserUid}: ${matchingSlot ? `${matchingSlot.user_name} @ ${matchingSlot.start_time}` : "none"}`);
-                }
-
-                // Fallback: match by first name (case insensitive) with timezone-aware time
-                if (!matchingSlot && assignedUserName) {
-                  const firstName = assignedUserName.split(" ")[0].toLowerCase();
-                  matchingSlot = availabilityByDate[dateStr].availableSlots.find(slot => {
-                    if (!slot.user_name?.toLowerCase().includes(firstName)) return false;
-                    const slotTz = slot.timezone || 'America/Denver';
-                    const localTime = utcToLocalTime(scheduledDate, slotTz);
-                    const localStartTime = `${localTime.hour.toString().padStart(2, "0")}:${localTime.minute.toString().padStart(2, "0")}`;
-                    return slot.start_time === localStartTime || slot.start_time === `${localTime.hour.toString().padStart(2, "0")}:00`;
-                  });
-                  console.log(`[Zuper Availability] Name match for "${firstName}": ${matchingSlot ? `${matchingSlot.user_name} @ ${matchingSlot.start_time}` : "none"}`);
-                }
-
-                console.log(`[Zuper Availability] Available slots for this date:`, availabilityByDate[dateStr].availableSlots.map(s => `${s.user_name} (${s.user_uid}) @ ${s.start_time}`));
-              } else {
-                console.log(`[Zuper Availability] Job "${job.job_title}" has no assigned user - not auto-matching to slots`);
+            // Find matching crew member - ONLY if we know who it's assigned to
+            let matchingSlot = null;
+            if (assignedUserUid || assignedUserName) {
+              // Primary: match by user UID with timezone-aware time comparison
+              if (assignedUserUid) {
+                matchingSlot = availabilityByDate[dateStr].availableSlots.find(slot => {
+                  if (slot.user_uid !== assignedUserUid) return false;
+                  const slotTz = slot.timezone || 'America/Denver';
+                  const localTime = utcToLocalTime(scheduledDate, slotTz);
+                  const localStartTime = `${localTime.hour.toString().padStart(2, "0")}:${localTime.minute.toString().padStart(2, "0")}`;
+                  return slot.start_time === localStartTime || slot.start_time === `${localTime.hour.toString().padStart(2, "0")}:00`;
+                });
+                console.log(`[Zuper Availability] UID match for ${assignedUserUid}: ${matchingSlot ? `${matchingSlot.user_name} @ ${matchingSlot.start_time}` : "none"}`);
               }
 
-              if (matchingSlot) {
-                console.log(`[Zuper Availability] Matched slot: ${matchingSlot.user_name} @ ${matchingSlot.start_time}`);
-                const key = getSlotKey(dateStr, matchingSlot.user_name || "", slotStartTime);
-                const startHour = parseInt(slotStartTime.split(":")[0]);
-                // Store in temporary zuperBookings (NOT persistent bookedSlots)
-                zuperBookings.set(key, {
-                  date: dateStr,
-                  startTime: slotStartTime,
-                  endTime: `${(startHour + 1).toString().padStart(2, "0")}:00`,
-                  userName: matchingSlot.user_name || "",
-                  location: matchingSlot.location || "",
-                  projectId: slotProjectId,
-                  projectName: job.job_title,
-                  bookedAt: new Date().toISOString(),
-                  zuperJobUid: job.job_uid,
+              // Fallback: match by first name (case insensitive) with timezone-aware time
+              if (!matchingSlot && assignedUserName) {
+                const firstName = assignedUserName.split(" ")[0].toLowerCase();
+                matchingSlot = availabilityByDate[dateStr].availableSlots.find(slot => {
+                  if (!slot.user_name?.toLowerCase().includes(firstName)) return false;
+                  const slotTz = slot.timezone || 'America/Denver';
+                  const localTime = utcToLocalTime(scheduledDate, slotTz);
+                  const localStartTime = `${localTime.hour.toString().padStart(2, "0")}:${localTime.minute.toString().padStart(2, "0")}`;
+                  return slot.start_time === localStartTime || slot.start_time === `${localTime.hour.toString().padStart(2, "0")}:00`;
                 });
-                console.log(`[Zuper Availability] Zuper-sourced booking: ${key}`);
-              } else if (assignedUserUid || assignedUserName) {
-                // No matching availability slot found, but the job IS assigned and scheduled in Zuper.
-                const displayName = (assignedUserUid && uidToDisplayName[assignedUserUid]) || assignedUserName;
-                const startHour = parseInt(slotStartTime.split(":")[0]);
-                const endTime = `${(startHour + 1).toString().padStart(2, "0")}:00`;
-                const key = getSlotKey(dateStr, displayName, slotStartTime);
-                // Store in temporary zuperBookings (NOT persistent bookedSlots)
-                zuperBookings.set(key, {
-                  date: dateStr,
-                  startTime: slotStartTime,
-                  endTime,
-                  userName: displayName,
-                  location: "",
-                  projectId: slotProjectId,
-                  projectName: job.job_title,
-                  bookedAt: new Date().toISOString(),
-                  zuperJobUid: job.job_uid,
-                });
-                console.log(`[Zuper Availability] Injected Zuper booking for ${displayName} @ ${slotStartTime} (no configured schedule slot): ${key}`);
-              } else {
-                // Job has no assigned user — still create a booking so the frontend
-                // can match by zuperJobUid and show the job is scheduled
-                const startHour = parseInt(slotStartTime.split(":")[0]);
-                const endTime = `${(startHour + 1).toString().padStart(2, "0")}:00`;
-                const key = getSlotKey(dateStr, "Unassigned", slotStartTime);
-                zuperBookings.set(key, {
-                  date: dateStr,
-                  startTime: slotStartTime,
-                  endTime,
-                  userName: "Unassigned",
-                  location: "",
-                  projectId: slotProjectId,
-                  projectName: job.job_title,
-                  bookedAt: new Date().toISOString(),
-                  zuperJobUid: job.job_uid,
-                });
-                console.log(`[Zuper Availability] Unassigned Zuper job booking: ${key} (${job.job_title})`);
+                console.log(`[Zuper Availability] Name match for "${firstName}": ${matchingSlot ? `${matchingSlot.user_name} @ ${matchingSlot.start_time}` : "none"}`);
               }
+
+              console.log(`[Zuper Availability] Available slots for this date:`, availabilityByDate[dateStr].availableSlots.map(s => `${s.user_name} (${s.user_uid}) @ ${s.start_time}`));
+            } else {
+              console.log(`[Zuper Availability] Job "${job.job_title}" has no assigned user - not auto-matching to slots`);
+            }
+
+            if (matchingSlot) {
+              // Use the MATCHED SLOT's start_time for the key — this is in the crew member's
+              // local timezone and matches the available slot key used in the merge phase.
+              // Previously we used MT-converted time here, which caused key mismatches for
+              // non-Mountain-Time crew (e.g., California/Pacific Time).
+              const slotLocalStart = matchingSlot.start_time;
+              console.log(`[Zuper Availability] Matched slot: ${matchingSlot.user_name} @ ${slotLocalStart}`);
+              const key = getSlotKey(dateStr, matchingSlot.user_name || "", slotLocalStart);
+              const slotLocalHour = parseInt(slotLocalStart.split(":")[0]);
+              // Store in temporary zuperBookings (NOT persistent bookedSlots)
+              zuperBookings.set(key, {
+                date: dateStr,
+                startTime: slotLocalStart,
+                endTime: `${(slotLocalHour + 1).toString().padStart(2, "0")}:00`,
+                userName: matchingSlot.user_name || "",
+                location: matchingSlot.location || "",
+                projectId: slotProjectId,
+                projectName: job.job_title,
+                bookedAt: new Date().toISOString(),
+                zuperJobUid: job.job_uid,
+              });
+              console.log(`[Zuper Availability] Zuper-sourced booking: ${key}`);
+            } else if (assignedUserUid || assignedUserName) {
+              // No matching availability slot found, but the job IS assigned and scheduled in Zuper.
+              // Determine the user's timezone from their crew schedule or default to MT.
+              const displayName = (assignedUserUid && uidToDisplayName[assignedUserUid]) || assignedUserName;
+              const crewEntry = activeSchedules.find(c => c.name === displayName);
+              const userTz = crewEntry?.timezone || LOCATION_TIMEZONE[crewEntry?.location || ""] || 'America/Denver';
+              const localTime = utcToLocalTime(scheduledDate, userTz);
+              const localStartTime = `${localTime.hour.toString().padStart(2, "0")}:00`;
+              const localHour = localTime.hour;
+              const endTime = `${(localHour + 1).toString().padStart(2, "0")}:00`;
+              // Also check if the date differs in the user's local timezone
+              const localDateStr = localTime.dateStr;
+              const effectiveDateStr = availabilityByDate[localDateStr] ? localDateStr : dateStr;
+              const key = getSlotKey(effectiveDateStr, displayName, localStartTime);
+              // Store in temporary zuperBookings (NOT persistent bookedSlots)
+              zuperBookings.set(key, {
+                date: effectiveDateStr,
+                startTime: localStartTime,
+                endTime,
+                userName: displayName,
+                location: crewEntry?.location || "",
+                projectId: slotProjectId,
+                projectName: job.job_title,
+                bookedAt: new Date().toISOString(),
+                zuperJobUid: job.job_uid,
+              });
+              console.log(`[Zuper Availability] Injected Zuper booking for ${displayName} @ ${localStartTime} ${userTz} (no configured schedule slot): ${key}`);
+            } else {
+              // Job has no assigned user — still create a booking so the frontend
+              // can match by zuperJobUid and show the job is scheduled
+              const mtStartTime = `${mtLocal.hour.toString().padStart(2, "0")}:00`;
+              const startHour = mtLocal.hour;
+              const endTime = `${(startHour + 1).toString().padStart(2, "0")}:00`;
+              const key = getSlotKey(dateStr, "Unassigned", mtStartTime);
+              zuperBookings.set(key, {
+                date: dateStr,
+                startTime: mtStartTime,
+                endTime,
+                userName: "Unassigned",
+                location: "",
+                projectId: slotProjectId,
+                projectName: job.job_title,
+                bookedAt: new Date().toISOString(),
+                zuperJobUid: job.job_uid,
+              });
+              console.log(`[Zuper Availability] Unassigned Zuper job booking: ${key} (${job.job_title})`);
             }
           }
         }

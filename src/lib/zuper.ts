@@ -49,6 +49,12 @@ export interface ZuperJob {
   custom_fields?: any;
   job_notes?: string;
   status?: string;
+  // Zuper API returns the actual job status here (not in `status`)
+  current_job_status?: {
+    status_uid?: string;
+    status_name?: string;
+    status_color?: string;
+  };
 }
 
 export interface ZuperAddress {
@@ -1027,8 +1033,8 @@ export async function getJobStatusForProject(
   return {
     type: "success",
     data: {
-      status: job.status || "unknown",
-      completedDate: job.status === "COMPLETED" ? job.scheduled_end_time : undefined,
+      status: job.current_job_status?.status_name || job.status || "unknown",
+      completedDate: (job.current_job_status?.status_name || job.status || "").toUpperCase() === "COMPLETED" ? job.scheduled_end_time : undefined,
     },
   };
 }

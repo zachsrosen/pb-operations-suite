@@ -65,12 +65,23 @@ export async function GET(request: NextRequest) {
   };
 
   // Helper to get HubSpot Deal ID from custom fields
+  // Zuper jobs may have "HubSpot Deal ID" (numeric) or "Hubspot Deal Link" (URL) fields
   const getHubSpotDealId = (job: ZuperJob): string | null => {
     if (!job.custom_fields || !Array.isArray(job.custom_fields)) return null;
+    // Try direct numeric ID field first
     const dealIdField = job.custom_fields.find(
       (f) => f.label?.toLowerCase() === "hubspot deal id"
     );
-    return dealIdField?.value || null;
+    if (dealIdField?.value) return dealIdField.value;
+    // Fall back to extracting ID from the deal link URL
+    const dealLinkField = job.custom_fields.find(
+      (f) => f.label?.toLowerCase().includes("hubspot") && f.label?.toLowerCase().includes("link")
+    );
+    if (dealLinkField?.value) {
+      const urlMatch = dealLinkField.value.match(/\/record\/0-3\/(\d+)/);
+      if (urlMatch) return urlMatch[1];
+    }
+    return null;
   };
 
   // Helper to extract assigned user name from a Zuper job
@@ -94,8 +105,12 @@ export async function GET(request: NextRequest) {
   ]);
 
   // Score a job's status: active/open jobs score higher than completed ones
+  // Zuper API returns actual status in `current_job_status.status_name`, not `status`
+  const getJobStatus = (job: ZuperJob): string => {
+    return job.current_job_status?.status_name || job.status || "";
+  };
   const getStatusScore = (job: ZuperJob): number => {
-    const status = (job.status || "").toLowerCase();
+    const status = getJobStatus(job).toLowerCase();
     if (COMPLETED_STATUSES.has(status)) return 0;
     // Scheduled jobs are best — they're the active upcoming ones
     if (status === "scheduled" || status === "in_progress" || status === "in progress") return 20;
@@ -322,7 +337,7 @@ export async function GET(request: NextRequest) {
       jobsMap[projectId] = {
         jobUid: best.job.job_uid!,
         jobTitle: best.job.job_title || "",
-        status: best.job.status || "UNKNOWN",
+        status: getJobStatus(best.job) || "UNKNOWN",
         scheduledDate: best.job.scheduled_start_time,
         category: best.categoryName,
         matchedBy: best.matchMethod,
