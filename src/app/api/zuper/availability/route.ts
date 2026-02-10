@@ -62,13 +62,24 @@ interface CrewSchedule {
   // Days of week: 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
   schedule: Array<{
     day: number;
-    startTime: string; // "HH:mm" format
+    startTime: string; // "HH:mm" format in the crew's LOCAL timezone
     endTime: string;
   }>;
   jobTypes: string[]; // "survey", "construction", "inspection"
   userUid?: string; // Zuper user UID for assignments
   teamUid?: string; // Zuper team UID (required for assignment API)
+  timezone?: string; // IANA timezone (defaults to "America/Denver" for CO locations)
 }
+
+// Location → timezone mapping
+const LOCATION_TIMEZONE: Record<string, string> = {
+  Westminster: "America/Denver",
+  Centennial: "America/Denver",
+  DTC: "America/Denver",
+  "Colorado Springs": "America/Denver",
+  "San Luis Obispo": "America/Los_Angeles",
+  Camarillo: "America/Los_Angeles",
+};
 
 // Zuper Team UIDs - from /api/teams/summary
 const ZUPER_TEAM_UIDS = {
@@ -185,16 +196,16 @@ const CREW_SCHEDULES: CrewSchedule[] = [
     teamUid: ZUPER_USER_UIDS["Rolando"].teamUid,
   },
 
-  // Nick Scarpellino — California locations
-  // Times stored as Mountain Time (Pacific + 1hr) since the system uses MT throughout
+  // Nick Scarpellino — California locations (times in Pacific Time)
   {
     name: "Nick Scarpellino",
     location: "San Luis Obispo",
     reportLocation: "San Luis Obispo",
+    timezone: "America/Los_Angeles",
     schedule: [
-      { day: 1, startTime: "09:00", endTime: "11:00" }, // Mon 8-10am PT = 9-11am MT
-      { day: 2, startTime: "09:00", endTime: "11:00" }, // Tue 8-10am PT = 9-11am MT
-      { day: 4, startTime: "09:00", endTime: "11:00" }, // Thu 8-10am PT = 9-11am MT
+      { day: 1, startTime: "08:00", endTime: "10:00" }, // Mon 8-10am PT
+      { day: 2, startTime: "08:00", endTime: "10:00" }, // Tue 8-10am PT
+      { day: 4, startTime: "08:00", endTime: "10:00" }, // Thu 8-10am PT
     ],
     jobTypes: ["survey"],
     userUid: ZUPER_USER_UIDS["Nick Scarpellino"].userUid,
@@ -204,8 +215,9 @@ const CREW_SCHEDULES: CrewSchedule[] = [
     name: "Nick Scarpellino",
     location: "Camarillo",
     reportLocation: "Camarillo",
+    timezone: "America/Los_Angeles",
     schedule: [
-      { day: 3, startTime: "10:30", endTime: "12:30" }, // Wed 9:30-11:30am PT = 10:30am-12:30pm MT
+      { day: 3, startTime: "09:30", endTime: "11:30" }, // Wed 9:30-11:30am PT
     ],
     jobTypes: ["survey"],
     userUid: ZUPER_USER_UIDS["Nick Scarpellino"].userUid,
@@ -316,13 +328,14 @@ export async function GET(request: NextRequest) {
     {
       date: string;
       availableSlots: Array<{
-        start_time: string;
+        start_time: string; // HH:mm in the crew's local timezone
         end_time: string;
-        display_time?: string; // Formatted time range for display
+        display_time?: string; // Formatted time range for display (local tz)
         user_uid?: string;
         team_uid?: string; // Zuper team UID (required for assignment API)
         user_name?: string;
         location?: string; // Crew member's location
+        timezone?: string; // IANA timezone for this slot (e.g. "America/Los_Angeles")
       }>;
       timeOffs: Array<{
         user_name?: string;
@@ -402,6 +415,11 @@ export async function GET(request: NextRequest) {
       console.log(`[Zuper Availability] No UID configured for crew "${crew.name}"`);
     }
 
+    // Determine crew timezone
+    const crewTimezone = crew.timezone || LOCATION_TIMEZONE[crew.location] || "America/Denver";
+    const isPacific = crewTimezone === "America/Los_Angeles";
+    const tzSuffix = isPacific ? " PT" : "";
+
     // Check each date in range
     for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
       const dayOfWeek = d.getDay();
@@ -411,11 +429,11 @@ export async function GET(request: NextRequest) {
       const shifts = crew.schedule.filter((s) => s.day === dayOfWeek);
       for (const shift of shifts) {
         if (availabilityByDate[dateStr]) {
-          // Generate 1-hour slots for this shift
+          // Generate 1-hour slots for this shift (times are in crew's local timezone)
           const hourlySlots = generateHourlySlots(shift.startTime, shift.endTime);
 
           for (const slot of hourlySlots) {
-            const displayTime = `${formatTimeForDisplay(slot.start)}-${formatTimeForDisplay(slot.end)}`;
+            const displayTime = `${formatTimeForDisplay(slot.start)}-${formatTimeForDisplay(slot.end)}${tzSuffix}`;
             availabilityByDate[dateStr].availableSlots.push({
               start_time: slot.start,
               end_time: slot.end,
@@ -424,6 +442,7 @@ export async function GET(request: NextRequest) {
               team_uid: crewTeamUid, // Include Zuper team UID (required for assignment API)
               user_name: crew.name,
               location: crew.location,
+              timezone: isPacific ? crewTimezone : undefined, // Only include if non-default
             });
           }
           availabilityByDate[dateStr].hasAvailability = true;
@@ -484,25 +503,26 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Helper: convert UTC date to local time in a given timezone
+    const utcToLocalTime = (utcDate: Date, tz: string): { dateStr: string; hour: number; minute: number } => {
+      const localDateStr = utcDate.toLocaleDateString('en-CA', { timeZone: tz });
+      const localHour = parseInt(utcDate.toLocaleTimeString('en-US', { timeZone: tz, hour: '2-digit', hour12: false }));
+      const localMinute = parseInt(utcDate.toLocaleTimeString('en-US', { timeZone: tz, minute: '2-digit', hour12: false }).split(':')[1] || '0');
+      return { dateStr: localDateStr, hour: localHour, minute: localMinute };
+    };
+
     // Add scheduled jobs and mark those time slots as booked
     if (jobsResult.type === "success" && jobsResult.data) {
       for (const job of jobsResult.data) {
         if (job.scheduled_start_time) {
           // Parse the scheduled time - Zuper returns UTC times
-          // We need to convert to local time (Mountain Time) for matching
           const scheduledDate = new Date(job.scheduled_start_time);
 
-          // Get local date and time in Mountain Time
-          // Use the scheduled date's local representation
-          const localDateStr = scheduledDate.toLocaleDateString('en-CA', { timeZone: 'America/Denver' }); // YYYY-MM-DD format
-          const localHour = parseInt(scheduledDate.toLocaleTimeString('en-US', {
-            timeZone: 'America/Denver',
-            hour: '2-digit',
-            hour12: false
-          }));
-          const startTime = `${localHour.toString().padStart(2, "0")}:00`;
+          // Default: convert to Mountain Time for date/logging
+          const mtLocal = utcToLocalTime(scheduledDate, 'America/Denver');
+          const dateStr = mtLocal.dateStr;
+          const startTime = `${mtLocal.hour.toString().padStart(2, "0")}:00`;
 
-          const dateStr = localDateStr;
           if (availabilityByDate[dateStr]) {
 
             availabilityByDate[dateStr].scheduledJobs.push({
@@ -525,31 +545,42 @@ export async function GET(request: NextRequest) {
               // Log for debugging
               console.log(`[Zuper Availability] Job: ${job.job_title}`);
               console.log(`[Zuper Availability] Scheduled UTC: ${job.scheduled_start_time}`);
-              console.log(`[Zuper Availability] Local date: ${dateStr}, Local time: ${startTime}`);
+              console.log(`[Zuper Availability] MT date: ${dateStr}, MT time: ${startTime}`);
               console.log(`[Zuper Availability] Assigned user from Zuper: "${assignedUserName}" (uid: ${assignedUserUid})`);
 
               // Try to match this scheduled job to an availability slot and mark it booked
-              const slotStartTime = startTime; // Already in HH:00 format
+              // Note: slotStartTime is in MT, but slots may be in different timezones (e.g. PT for CA)
+              // We match by converting UTC to each slot's timezone
+              const slotStartTime = startTime; // MT time for default matching
 
               // Find matching crew member - ONLY if we know who it's assigned to
               // Don't auto-match unassigned jobs to random slots
               let matchingSlot = null;
               if (assignedUserUid || assignedUserName) {
-                // Primary: match by user UID (most reliable — handles nickname mismatches like "Rich" vs "Ryszard")
+                // Primary: match by user UID with timezone-aware time comparison
                 if (assignedUserUid) {
-                  matchingSlot = availabilityByDate[dateStr].availableSlots.find(
-                    slot => slot.start_time === slotStartTime && slot.user_uid === assignedUserUid
-                  );
+                  matchingSlot = availabilityByDate[dateStr].availableSlots.find(slot => {
+                    if (slot.user_uid !== assignedUserUid) return false;
+                    // Convert UTC to the slot's timezone for time comparison
+                    const slotTz = slot.timezone || 'America/Denver';
+                    const localTime = utcToLocalTime(scheduledDate, slotTz);
+                    const localStartTime = `${localTime.hour.toString().padStart(2, "0")}:${localTime.minute.toString().padStart(2, "0")}`;
+                    // Match if the hour aligns (slots are hourly)
+                    return slot.start_time === localStartTime || slot.start_time === `${localTime.hour.toString().padStart(2, "0")}:00`;
+                  });
                   console.log(`[Zuper Availability] UID match for ${assignedUserUid}: ${matchingSlot ? `${matchingSlot.user_name} @ ${matchingSlot.start_time}` : "none"}`);
                 }
 
-                // Fallback: match by first name (case insensitive)
+                // Fallback: match by first name (case insensitive) with timezone-aware time
                 if (!matchingSlot && assignedUserName) {
                   const firstName = assignedUserName.split(" ")[0].toLowerCase();
-                  matchingSlot = availabilityByDate[dateStr].availableSlots.find(
-                    slot => slot.start_time === slotStartTime &&
-                      slot.user_name?.toLowerCase().includes(firstName)
-                  );
+                  matchingSlot = availabilityByDate[dateStr].availableSlots.find(slot => {
+                    if (!slot.user_name?.toLowerCase().includes(firstName)) return false;
+                    const slotTz = slot.timezone || 'America/Denver';
+                    const localTime = utcToLocalTime(scheduledDate, slotTz);
+                    const localStartTime = `${localTime.hour.toString().padStart(2, "0")}:${localTime.minute.toString().padStart(2, "0")}`;
+                    return slot.start_time === localStartTime || slot.start_time === `${localTime.hour.toString().padStart(2, "0")}:00`;
+                  });
                   console.log(`[Zuper Availability] Name match for "${firstName}": ${matchingSlot ? `${matchingSlot.user_name} @ ${matchingSlot.start_time}` : "none"}`);
                 }
 
