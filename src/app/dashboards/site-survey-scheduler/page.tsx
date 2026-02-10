@@ -236,8 +236,8 @@ function transformProject(p: RawProject): SurveyProject | null {
     closeDate: p.closeDate || null,
     hubspotUrl: p.url || `https://app.hubspot.com/contacts/21710069/record/0-3/${p.id}`,
     dealOwner: p.dealOwner || "",
-    // Pre-populate from HubSpot if set (enum IDs are now resolved to labels server-side)
-    assignedSurveyor: p.siteSurveyor || undefined,
+    // Pre-populate from HubSpot if resolved to a name (skip raw numeric enum IDs)
+    assignedSurveyor: (p.siteSurveyor && !/^\d+$/.test(p.siteSurveyor)) ? p.siteSurveyor : undefined,
   };
 }
 

@@ -643,9 +643,37 @@ export async function fetchAllProjects(options?: {
     if (after) await sleep(100);
   } while (after);
 
-  // Resolve owner IDs to names using the Owners API (paginated to get ALL owners)
-  // Both hubspot_owner_id and site_surveyor store owner IDs, so one map covers both
+  // Resolve owner IDs to names — use BOTH property definitions and Owners API
+  // to maximize coverage (property defs may be incomplete, Owners API may fail)
   const ownerMap: Record<string, string> = {};
+
+  // Source 1: Property definition options for hubspot_owner_id (partial but reliable)
+  try {
+    const ownerPropResponse = await hubspotClient.crm.properties.coreApi.getByName("deals", "hubspot_owner_id");
+    for (const opt of ownerPropResponse.options || []) {
+      if (opt.value && opt.label && opt.label.trim()) {
+        ownerMap[opt.value] = opt.label;
+      }
+    }
+    console.log(`[HubSpot] Owner prop options: ${Object.keys(ownerMap).length} mappings`);
+  } catch (err) {
+    console.warn("[HubSpot] Failed to fetch hubspot_owner_id property:", err instanceof Error ? err.message : err);
+  }
+
+  // Source 2: Property definition options for site_surveyor (may have additional entries)
+  try {
+    const surveyorPropResponse = await hubspotClient.crm.properties.coreApi.getByName("deals", "site_surveyor");
+    for (const opt of surveyorPropResponse.options || []) {
+      if (opt.value && opt.label && opt.label.trim() && !ownerMap[opt.value]) {
+        ownerMap[opt.value] = opt.label;
+      }
+    }
+    console.log(`[HubSpot] After surveyor prop: ${Object.keys(ownerMap).length} total mappings`);
+  } catch (err) {
+    console.warn("[HubSpot] Failed to fetch site_surveyor property:", err instanceof Error ? err.message : err);
+  }
+
+  // Source 3: Owners API (paginated — fills gaps from property definitions)
   try {
     let ownerAfter: string | undefined;
     do {
@@ -654,19 +682,20 @@ export async function fetchAllProjects(options?: {
       );
       for (const owner of ownersResponse.results || []) {
         const name = [owner.firstName, owner.lastName].filter(Boolean).join(" ").trim();
-        if (name && owner.id) {
-          // owner.id matches the ownerId stored in hubspot_owner_id and site_surveyor
+        if (name && owner.id && !ownerMap[owner.id]) {
           ownerMap[owner.id] = name;
         }
       }
       ownerAfter = ownersResponse.paging?.next?.after;
     } while (ownerAfter);
-    console.log(`[HubSpot] Loaded ${Object.keys(ownerMap).length} owner ID→name mappings`);
+    console.log(`[HubSpot] After owners API: ${Object.keys(ownerMap).length} total mappings`);
   } catch (err) {
-    console.warn("Failed to fetch HubSpot owners:", err);
+    console.warn("[HubSpot] Failed to fetch owners API:", err instanceof Error ? err.message : err);
   }
 
-  // Use same ownerMap for site_surveyor resolution (both fields store owner IDs)
+  console.log(`[HubSpot] Final owner map: ${Object.keys(ownerMap).length} ID→name mappings`);
+
+  // Both hubspot_owner_id and site_surveyor store owner IDs, so one map covers both
   const surveyorMap = ownerMap;
 
   // Transform deals to projects
