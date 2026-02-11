@@ -1234,6 +1234,7 @@ export default function InspectionSchedulerPage() {
                     const [year, month] = dateStr.split("-").map(Number);
                     const isCurrentMonth = month - 1 === currentMonth && year === currentYear;
                     const isToday = dateStr === todayStr;
+                    const isPast = isPastDate(dateStr);
                     const weekend = isWeekend(dateStr);
                     const events = eventsForDate(dateStr);
                     const dayAvailability = availabilityByDate[dateStr];
@@ -1247,40 +1248,47 @@ export default function InspectionSchedulerPage() {
                         onDragOver={handleDragOver}
                         onDrop={() => handleDrop(dateStr)}
                         onClick={() => handleDateClick(dateStr)}
-                        className={`min-h-[70px] sm:min-h-[110px] max-h-[120px] sm:max-h-[180px] overflow-y-auto p-1 sm:p-1.5 border-b border-r border-zinc-800 cursor-pointer transition-colors ${
+                        className={`min-h-[70px] sm:min-h-[120px] max-h-[140px] sm:max-h-[220px] overflow-y-auto p-1 sm:p-1.5 border-b border-r border-zinc-800 transition-colors ${
                           isCurrentMonth ? "" : "opacity-40"
                         } ${weekend ? "bg-zinc-900/30" : ""} ${
                           isToday ? "bg-purple-900/20" : ""
-                        } ${selectedProject ? "hover:bg-purple-900/10" : "hover:bg-zinc-800/50"} ${
-                          showAvailability && hasAvailability && selectedProject
+                        } ${
+                          isPast && !isToday ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
+                        } ${
+                          !isPast && selectedProject ? "hover:bg-purple-900/10" : !isPast ? "hover:bg-zinc-800/50" : ""
+                        } ${
+                          showAvailability && hasAvailability && selectedProject && !isPast
                             ? "ring-2 ring-inset ring-purple-500/30 bg-purple-900/10"
                             : ""
                         } ${
-                          showAvailability && isFullyBooked && selectedProject && !weekend
+                          showAvailability && isFullyBooked && selectedProject && !weekend && !isPast
                             ? "ring-2 ring-inset ring-red-500/20 bg-red-900/5"
                             : ""
                         }`}
                       >
                         <div className="flex items-center justify-between mb-1">
                           <span className={`text-xs font-medium ${
-                            isToday ? "text-purple-400" : "text-zinc-500"
+                            isToday ? "text-purple-400" : isPast ? "text-zinc-600" : "text-zinc-500"
                           }`}>
                             {parseInt(dateStr.split("-")[2])}
                           </span>
-                          {/* Availability indicator */}
-                          {showAvailability && zuperConfigured && isCurrentMonth && !weekend && (
+                          {/* Availability indicator badge */}
+                          {showAvailability && zuperConfigured && isCurrentMonth && !weekend && !isPast && (
                             <div className="flex items-center gap-0.5">
                               {loadingSlots ? (
                                 <div className="w-2 h-2 bg-zinc-600 rounded-full animate-pulse" />
                               ) : hasAvailability ? (
-                                <div className="flex items-center gap-0.5" title={`${slotCount} slot${slotCount !== 1 ? "s" : ""} available`}>
-                                  <div className="w-2 h-2 bg-purple-500 rounded-full" />
-                                  {slotCount > 1 && (
-                                    <span className="text-[0.55rem] text-purple-400">{slotCount}</span>
-                                  )}
+                                <div
+                                  className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-purple-500/20 border border-purple-500/30"
+                                  title={`${slotCount} inspector slot${slotCount !== 1 ? "s" : ""} available`}
+                                >
+                                  <div className="w-1.5 h-1.5 bg-purple-500 rounded-full" />
+                                  <span className="text-[0.6rem] font-medium text-purple-400">{slotCount}</span>
                                 </div>
                               ) : isFullyBooked ? (
-                                <div className="w-2 h-2 bg-red-500/60 rounded-full" title="Fully booked" />
+                                <div className="px-1.5 py-0.5 rounded-full bg-red-500/20 border border-red-500/30" title="Fully booked">
+                                  <span className="text-[0.6rem] font-medium text-red-400">Full</span>
+                                </div>
                               ) : dayAvailability ? (
                                 <div className="w-2 h-2 bg-yellow-500/60 rounded-full" title="Limited availability" />
                               ) : null}
@@ -1321,6 +1329,11 @@ export default function InspectionSchedulerPage() {
                                 {overdue && <span className="text-red-400 mr-0.5">⚠</span>}
                                 {getCustomerName(ev.name)}
                               </div>
+                              {ev.address && ev.address !== "Address TBD" && (
+                                <div className="text-[0.55rem] text-zinc-500 truncate hidden sm:block">
+                                  {ev.address.split(",")[0]}
+                                </div>
+                              )}
                               {inspectorDisplay && (
                                 <div className="text-[0.6rem] text-purple-400/60 truncate">
                                   {inspectorDisplay}
@@ -1329,23 +1342,94 @@ export default function InspectionSchedulerPage() {
                             </div>
                             );
                           })}
-                                                    {showAvailability && selectedProject && hasAvailability && (() => {
+                          {/* Available slots grouped by inspector */}
+                          {showAvailability && selectedProject && hasAvailability && !isPast && (() => {
                             const projectLocation = selectedProject?.location;
                             const matchingSlots = dayAvailability?.availableSlots?.filter(slot => {
                               if (!projectLocation) return true;
                               if (!slot.location) return true;
                               if (slot.location === projectLocation) return true;
-                              // Allow DTC/Centennial interchangeability
                               if ((slot.location === "DTC" || slot.location === "Centennial") &&
                                   (projectLocation === "DTC" || projectLocation === "Centennial")) return true;
                               return false;
                             }) || [];
-                            return matchingSlots.slice(0, 2).map((slot, i) => (
-                              slot.user_name && (
-                                <div key={i} className="text-[0.55rem] text-purple-400/70 truncate">
-                                  {slot.user_name} {slot.display_time && <span className="text-purple-500/50">{slot.display_time}</span>}
+
+                            // Group by inspector
+                            const slotsByInspector: Record<string, typeof matchingSlots> = {};
+                            matchingSlots.forEach(slot => {
+                              const name = slot.user_name || "Unknown";
+                              if (!slotsByInspector[name]) slotsByInspector[name] = [];
+                              slotsByInspector[name].push(slot);
+                            });
+
+                            return Object.entries(slotsByInspector).map(([inspectorName, slots]) => (
+                              <div key={inspectorName} className="mb-1">
+                                <span className="text-purple-400 font-medium text-[0.6rem]">{inspectorName}</span>
+                                <div className="flex flex-wrap gap-0.5 mt-0.5">
+                                  {slots.map((slot, slotIndex) => (
+                                    <button
+                                      key={`${inspectorName}-${slotIndex}`}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (selectedProject) {
+                                          setScheduleModal({
+                                            project: selectedProject,
+                                            date: dateStr,
+                                            slot: {
+                                              userName: inspectorName,
+                                              userUid: slot.user_uid,
+                                              teamUid: slot.team_uid,
+                                              startTime: slot.start_time,
+                                              endTime: slot.end_time,
+                                              location: slot.location || "",
+                                              timezone: slot.timezone,
+                                            }
+                                          });
+                                        }
+                                      }}
+                                      className="text-[0.55rem] px-1 py-0.5 rounded bg-purple-500/10 hover:bg-purple-500/30 text-purple-400 cursor-pointer border border-purple-500/20 hover:border-purple-500/40"
+                                      title={`Book ${inspectorName} at ${slot.display_time || `${slot.start_time}-${slot.end_time}`}`}
+                                    >
+                                      {slot.display_time || formatTime12h(slot.start_time)}
+                                    </button>
+                                  ))}
                                 </div>
-                              )
+                              </div>
+                            ));
+                          })()}
+
+                          {/* Booked slots grouped by inspector */}
+                          {showAvailability && selectedProject && dayAvailability?.bookedSlots && dayAvailability.bookedSlots.length > 0 && (() => {
+                            const projectLocation = selectedProject?.location;
+                            const matchingBooked = dayAvailability.bookedSlots.filter(slot => {
+                              if (!projectLocation) return true;
+                              if (!slot.location) return true;
+                              if (slot.location === projectLocation) return true;
+                              if ((slot.location === "DTC" || slot.location === "Centennial") &&
+                                  (projectLocation === "DTC" || projectLocation === "Centennial")) return true;
+                              return false;
+                            });
+
+                            if (matchingBooked.length === 0) return null;
+
+                            const bookedByInspector: Record<string, typeof matchingBooked> = {};
+                            matchingBooked.forEach(slot => {
+                              const name = slot.user_name || "Unknown";
+                              if (!bookedByInspector[name]) bookedByInspector[name] = [];
+                              bookedByInspector[name].push(slot);
+                            });
+
+                            return Object.entries(bookedByInspector).map(([inspectorName, slots]) => (
+                              <div
+                                key={`booked-${inspectorName}`}
+                                className="text-[0.6rem] leading-tight text-orange-400/60 break-words"
+                                title={`Booked: ${inspectorName} - ${slots.map(s => `${s.display_time || s.start_time} (${s.projectName || "Unknown"})`).join(", ")}`}
+                              >
+                                <span className="text-orange-500/40">&#8856;</span> <span className="font-medium">{inspectorName}</span>
+                                <span className="text-orange-500/30 block">
+                                  {slots.map(s => s.display_time || formatTime12h(s.start_time)).join(", ")}
+                                </span>
+                              </div>
                             ));
                           })()}
                         </div>
@@ -1365,8 +1449,10 @@ export default function InspectionSchedulerPage() {
                     <thead className="bg-zinc-900">
                       <tr>
                         <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Project</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase hidden lg:table-cell">Address</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Location</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Status</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Inspector</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Inspection Date</th>
                         <th className="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase">Amount</th>
                         <th className="px-4 py-3 text-center text-xs font-medium text-zinc-400 uppercase">Links</th>
@@ -1386,6 +1472,9 @@ export default function InspectionSchedulerPage() {
                               </a>
                               <div className="text-xs text-zinc-500">{getProjectId(project.name)}</div>
                             </td>
+                            <td className="px-4 py-3 text-sm text-zinc-500 max-w-[200px] truncate hidden lg:table-cell" title={project.address}>
+                              {project.address !== "Address TBD" ? project.address : "—"}
+                            </td>
                             <td className="px-4 py-3 text-sm text-zinc-400">{project.location}</td>
                             <td className="px-4 py-3">
                               <div className="flex items-center gap-1.5">
@@ -1398,6 +1487,9 @@ export default function InspectionSchedulerPage() {
                                   </span>
                                 )}
                               </div>
+                            </td>
+                            <td className="px-4 py-3 text-sm text-purple-400">
+                              {project.assignedInspector || "—"}
                             </td>
                             <td className={`px-4 py-3 text-sm ${overdue ? "text-red-400" : schedDate ? "text-purple-400" : "text-zinc-500"}`}>
                               {schedDate ? formatShortDate(schedDate) : "—"}
@@ -1485,6 +1577,13 @@ export default function InspectionSchedulerPage() {
                 <p className="text-sm font-medium">{getCustomerName(scheduleModal.project.name)}</p>
                 <p className="text-xs text-zinc-500">{getProjectId(scheduleModal.project.name)}</p>
               </div>
+
+              {scheduleModal.project.address && scheduleModal.project.address !== "Address TBD" && (
+                <div>
+                  <span className="text-xs text-zinc-500">Address</span>
+                  <p className="text-sm text-zinc-300">{scheduleModal.project.address}</p>
+                </div>
+              )}
 
               <div>
                 <span className="text-xs text-zinc-500">Location</span>
