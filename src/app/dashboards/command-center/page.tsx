@@ -53,6 +53,7 @@ interface ApiProject {
   isParticipateEnergy?: boolean;
   priorityScore?: number;
   daysForInstallers?: number;
+  designApprovalDate?: string | null;
   constructionCompleteDate?: string | null;
   inspectionPassDate?: string | null;
   ptoGrantedDate?: string | null;
@@ -81,6 +82,7 @@ interface Project {
   priority_score: number;
   estimated_install_days: number;
   default_crew: string;
+  design_approval: string | null;
   construction_complete: string | null;
   inspection_pass: string | null;
   pto_granted: string | null;
@@ -269,6 +271,7 @@ function transformProject(p: ApiProject): Project {
     priority_score: p.priorityScore || 0,
     estimated_install_days: p.daysForInstallers || 2,
     default_crew: CREWS_CONFIG[p.pbLocation || ""]?.crews[0]?.name || "Unassigned",
+    design_approval: p.designApprovalDate || null,
     construction_complete: p.constructionCompleteDate || null,
     inspection_pass: p.inspectionPassDate || null,
     pto_granted: p.ptoGrantedDate || null,
@@ -735,7 +738,7 @@ function RevenueView({ projects }: { projects: Project[] }) {
 
   const totalValue = projects.reduce((s, p) => s + p.amount, 0);
   const scheduledValue = projects
-    .filter((p) => p.forecast_install)
+    .filter((p) => p.forecast_install && !p.construction_complete)
     .reduce((s, p) => s + p.amount, 0);
   const rtbValue = projects
     .filter((p) => p.is_rtb)
@@ -829,7 +832,7 @@ function RevenueView({ projects }: { projects: Project[] }) {
       data[loc].count++;
       data[loc].value += p.amount;
       if (p.is_rtb) data[loc].rtbValue += p.amount;
-      if (p.forecast_install) data[loc].scheduledValue += p.amount;
+      if (p.forecast_install && !p.construction_complete) data[loc].scheduledValue += p.amount;
     });
     const sorted = Object.keys(data).sort((a, b) => data[b].value - data[a].value);
     return { data, sorted };
@@ -1204,6 +1207,14 @@ function RevenueView({ projects }: { projects: Project[] }) {
 
 const DEAL_MILESTONES: MilestoneConfig[] = [
   {
+    title: "Design Approvals",
+    dateField: "design_approval",
+    forecastField: "design_approval",
+    borderColor: "border-l-purple-500",
+    barColor: "bg-purple-500",
+    headerBg: "bg-purple-500/10",
+  },
+  {
     title: "Construction Completes",
     dateField: "construction_complete",
     forecastField: "forecast_install",
@@ -1246,6 +1257,9 @@ function MilestoneRevenueSection({
   // Pipeline Strength
   const pipelineStrength = useMemo(() => {
     const rtb = projects.filter((p) => p.is_rtb);
+    const designApproved = projects.filter(
+      (p) => p.design_approval && !p.construction_complete
+    );
     const scheduledConstruction = projects.filter(
       (p) => p.forecast_install && !p.construction_complete
     );
@@ -1257,6 +1271,7 @@ function MilestoneRevenueSection({
     );
     return [
       { label: "RTB Projects", count: rtb.length, value: rtb.reduce((s, p) => s + p.amount, 0), color: "emerald" },
+      { label: "Design Approved", count: designApproved.length, value: designApproved.reduce((s, p) => s + p.amount, 0), color: "purple" },
       { label: "Scheduled Construction", count: scheduledConstruction.length, value: scheduledConstruction.reduce((s, p) => s + p.amount, 0), color: "blue" },
       { label: "Pending Inspection", count: pendingInspection.length, value: pendingInspection.reduce((s, p) => s + p.amount, 0), color: "violet" },
       { label: "Awaiting PTO", count: awaitingPto.length, value: awaitingPto.reduce((s, p) => s + p.amount, 0), color: "amber" },
@@ -1289,6 +1304,7 @@ function MilestoneRevenueSection({
 
   const colorMap: Record<string, string> = {
     emerald: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
+    purple: "bg-purple-500/20 text-purple-400 border-purple-500/30",
     blue: "bg-blue-500/20 text-blue-400 border-blue-500/30",
     violet: "bg-violet-500/20 text-violet-400 border-violet-500/30",
     amber: "bg-amber-500/20 text-amber-400 border-amber-500/30",
@@ -1324,7 +1340,7 @@ function MilestoneRevenueSection({
       </div>
 
       {/* Pipeline Strength Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         {pipelineStrength.map((item) => (
           <div
             key={item.label}
