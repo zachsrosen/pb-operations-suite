@@ -135,6 +135,15 @@ export default auth((req) => {
       return addSecurityHeaders(NextResponse.next());
     }
 
+    // Executive-only routes — only ADMIN and OWNER can access
+    const EXECUTIVE_ONLY_ROUTES = ["/dashboards/command-center"];
+    if (EXECUTIVE_ONLY_ROUTES.some(r => pathname.startsWith(r))) {
+      if (userRole !== "ADMIN" && userRole !== "OWNER") {
+        const defaultRoute = getDefaultRouteForRole(userRole);
+        return addSecurityHeaders(NextResponse.redirect(new URL(defaultRoute, req.url)));
+      }
+    }
+
     // Check role permissions
     if (!canAccessRoute(userRole, pathname)) {
       // Redirect to their default allowed page

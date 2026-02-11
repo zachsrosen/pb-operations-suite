@@ -22,8 +22,11 @@ interface RawProject {
   stage: string;
   url?: string;
   siteSurveyScheduleDate?: string;
+  siteSurveyCompletionDate?: string;
   inspectionScheduleDate?: string;
+  inspectionPassDate?: string;
   constructionScheduleDate?: string;
+  constructionCompleteDate?: string;
   daysForInstallers?: number;
   daysForElectricians?: number;
   expectedDaysForInstall?: number;
@@ -69,6 +72,9 @@ interface SchedulerProject {
   installNotes: string;
   roofType: string | null;
   scheduleDate: string | null;
+  surveyCompleted: string | null;
+  constructionCompleted: string | null;
+  inspectionCompleted: string | null;
   hubspotUrl: string;
   zuperJobUid?: string;
   zuperJobStatus?: string;
@@ -91,6 +97,8 @@ interface ScheduledEvent extends SchedulerProject {
   date: string;
   eventType: string;
   days: number;
+  isCompleted?: boolean;
+  isOverdue?: boolean;
 }
 
 interface Conflict {
@@ -330,6 +338,9 @@ function transformProject(p: RawProject): SchedulerProject | null {
     installNotes: isBuildStage ? p.installNotes || "" : "",
     roofType: null,
     scheduleDate,
+    surveyCompleted: p.siteSurveyCompletionDate || null,
+    constructionCompleted: p.constructionCompleteDate || null,
+    inspectionCompleted: p.inspectionPassDate || null,
     hubspotUrl:
       p.url ||
       `https://app.hubspot.com/contacts/21710069/record/0-3/${p.id}`,
@@ -361,6 +372,7 @@ export default function SchedulerPage() {
   const [selectedLocation, setSelectedLocation] = useState("All"); // For calendar view (single-select)
   const [calendarLocations, setCalendarLocations] = useState<string[]>([]); // Multi-select for calendar
   const [calendarScheduleTypes, setCalendarScheduleTypes] = useState<string[]>([]); // Multi-select for calendar
+  const [showCompleted, setShowCompleted] = useState(true); // Toggle completed events on calendar
   const [selectedStage, setSelectedStage] = useState("all");
   const [searchText, setSearchText] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
@@ -535,13 +547,34 @@ export default function SchedulerPage() {
 
   const scheduledEvents = useMemo((): ScheduledEvent[] => {
     const events: ScheduledEvent[] = [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
     projects.forEach((p) => {
       if (p.scheduleDate) {
+        // Determine if this scheduled event is completed or overdue
+        const schedDate = new Date(p.scheduleDate + "T12:00:00");
+        let isCompleted = false;
+        let isOverdue = false;
+
+        if (p.stage === "survey") {
+          isCompleted = !!p.surveyCompleted;
+          isOverdue = !isCompleted && schedDate < today;
+        } else if (p.stage === "construction" || p.stage === "rtb" || p.stage === "blocked") {
+          isCompleted = !!p.constructionCompleted;
+          isOverdue = !isCompleted && schedDate < today;
+        } else if (p.stage === "inspection") {
+          isCompleted = !!p.inspectionCompleted;
+          isOverdue = !isCompleted && schedDate < today;
+        }
+
         events.push({
           ...p,
           date: p.scheduleDate,
           eventType: p.stage,
           days: p.daysInstall || 1,
+          isCompleted,
+          isOverdue,
         });
       }
     });
@@ -561,6 +594,16 @@ export default function SchedulerPage() {
     });
     return events;
   }, [projects, manualSchedules]);
+
+  // Apply calendar multi-select filters for all views (month, week, Gantt)
+  const filteredScheduledEvents = useMemo(() => {
+    return scheduledEvents.filter((e) => {
+      if (calendarLocations.length > 0 && !calendarLocations.includes(e.location)) return false;
+      if (calendarScheduleTypes.length > 0 && !calendarScheduleTypes.includes(e.eventType)) return false;
+      if (!showCompleted && e.isCompleted) return false;
+      return true;
+    });
+  }, [scheduledEvents, calendarLocations, calendarScheduleTypes, showCompleted]);
 
   const conflicts = useMemo((): Conflict[] => {
     const result: Conflict[] = [];
@@ -630,11 +673,7 @@ export default function SchedulerPage() {
     const today = new Date();
 
     const eventsByDate: Record<number, (ScheduledEvent & { dayNum: number; totalCalDays: number })[]> = {};
-    scheduledEvents.forEach((e) => {
-      // Filter by calendar location multi-select
-      if (calendarLocations.length > 0 && !calendarLocations.includes(e.location)) return;
-      // Filter by calendar schedule type multi-select
-      if (calendarScheduleTypes.length > 0 && !calendarScheduleTypes.includes(e.eventType)) return;
+    filteredScheduledEvents.forEach((e) => {
       const startDate = new Date(e.date + "T12:00:00");
       const businessDays = Math.ceil(e.days || 1);
       let dayCount = 0;
@@ -665,7 +704,7 @@ export default function SchedulerPage() {
     });
 
     return { startDay, daysInMonth, today, eventsByDate };
-  }, [currentYear, currentMonth, scheduledEvents, calendarLocations, calendarScheduleTypes]);
+  }, [currentYear, currentMonth, filteredScheduledEvents]);
 
   /* ================================================================ */
   /*  Week view logic                                                  */
@@ -1543,7 +1582,7 @@ export default function SchedulerPage() {
           </div>
 
           {/* Calendar Filters */}
-          <div className="flex items-center gap-2 p-2 bg-[#0a0a0f] border-b border-zinc-800 overflow-x-auto">
+          <div className="flex items-center gap-2 p-2 bg-[#0a0a0f] border-b border-zinc-800">
             <MultiSelectFilter
               label="Location"
               options={[
@@ -1580,6 +1619,23 @@ export default function SchedulerPage() {
                 Clear filters
               </button>
             )}
+            <div className="ml-auto flex items-center gap-1.5">
+              <button
+                onClick={() => setShowCompleted(!showCompleted)}
+                className={`flex items-center gap-1 px-2 py-1.5 text-[0.65rem] font-medium rounded-md border transition-colors ${
+                  showCompleted
+                    ? "border-zinc-600 text-zinc-300 bg-zinc-800"
+                    : "border-zinc-700 text-zinc-500"
+                }`}
+              >
+                <span className={`w-3 h-3 rounded border flex items-center justify-center ${
+                  showCompleted ? "bg-emerald-500 border-emerald-500" : "border-zinc-600"
+                }`}>
+                  {showCompleted && <svg className="w-2 h-2 text-white" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>}
+                </span>
+                Completed
+              </button>
+            </div>
           </div>
 
           {/* Stats bar */}
@@ -1769,8 +1825,14 @@ export default function SchedulerPage() {
                                       null
                                   );
                                 }}
-                                title={`${ev.name} - ${ev.crew || "No crew"} (drag to reschedule)`}
-                                className={`text-[0.55rem] px-1 py-0.5 rounded mb-0.5 cursor-grab active:cursor-grabbing transition-transform hover:scale-[1.02] hover:shadow-lg hover:z-10 relative overflow-hidden truncate ${
+                                title={`${ev.name} - ${ev.crew || "No crew"}${ev.isCompleted ? " ✓ Completed" : ev.isOverdue ? " ⚠ Overdue" : " (drag to reschedule)"}`}
+                                className={`text-[0.55rem] px-1 py-0.5 rounded mb-0.5 transition-transform hover:scale-[1.02] hover:shadow-lg hover:z-10 relative overflow-hidden truncate ${
+                                  ev.isCompleted
+                                    ? "opacity-40 cursor-default"
+                                    : ev.isOverdue
+                                      ? "ring-1 ring-red-500 cursor-grab active:cursor-grabbing"
+                                      : "cursor-grab active:cursor-grabbing"
+                                } ${
                                   ev.eventType === "rtb"
                                     ? "bg-emerald-500 text-black"
                                     : ev.eventType === "blocked"
@@ -1786,8 +1848,10 @@ export default function SchedulerPage() {
                                               : "bg-zinc-600 text-white"
                                 }`}
                               >
+                                {ev.isCompleted && <span className="mr-0.5">✓</span>}
+                                {ev.isOverdue && <span className="mr-0.5 text-red-200">!</span>}
                                 {dayLabel}
-                                {shortName}
+                                <span className={ev.isCompleted ? "line-through" : ""}>{shortName}</span>
                               </div>
                             );
                           })}
@@ -1895,7 +1959,7 @@ export default function SchedulerPage() {
                           const dateStr = toDateStr(d);
                           // Find events that span this date using business days (skip weekends)
                           const dayEvents: { event: ScheduledEvent; dayNum: number }[] = [];
-                          scheduledEvents.forEach((e) => {
+                          filteredScheduledEvents.forEach((e) => {
                             if (e.crew !== crew.name) return;
                             const businessDays = Math.ceil(e.days || 1);
                             const eventStart = new Date(e.date + "T12:00:00");
@@ -1946,8 +2010,10 @@ export default function SchedulerPage() {
                                         ) || null
                                       );
                                     }}
-                                    title={ev.name}
+                                    title={`${ev.name}${ev.isCompleted ? " ✓ Completed" : ev.isOverdue ? " ⚠ Overdue" : ""}`}
                                     className={`text-[0.6rem] px-1.5 py-1 rounded mb-1 cursor-pointer transition-transform hover:scale-[1.02] hover:shadow-lg ${
+                                      ev.isCompleted ? "opacity-40" : ev.isOverdue ? "ring-1 ring-red-500" : ""
+                                    } ${
                                       ev.eventType === "rtb"
                                         ? "bg-emerald-500 text-black"
                                         : ev.eventType === "blocked"
@@ -1963,8 +2029,10 @@ export default function SchedulerPage() {
                                                   : "bg-zinc-600 text-white"
                                     }`}
                                   >
+                                    {ev.isCompleted && <span className="mr-0.5">✓</span>}
+                                    {ev.isOverdue && <span className="mr-0.5 text-red-200">!</span>}
                                     {ev.days > 1 ? `D${dayNum} ` : ""}
-                                    {shortName}
+                                    <span className={ev.isCompleted ? "line-through" : ""}>{shortName}</span>
                                   </div>
                                 );
                               })}
@@ -2063,7 +2131,7 @@ export default function SchedulerPage() {
                             key={idx}
                             className="bg-[#12121a] relative"
                           >
-                            {scheduledEvents
+                            {filteredScheduledEvents
                               .filter((e) => {
                                 if (e.crew !== crew.name) return false;
                                 const eventStart = new Date(e.date + "T12:00:00");
@@ -2093,8 +2161,10 @@ export default function SchedulerPage() {
                                         ) || null
                                       )
                                     }
-                                    title={`${e.name} - ${daysLabel} - ${amount}`}
+                                    title={`${e.name} - ${daysLabel} - ${amount}${e.isCompleted ? " ✓ Completed" : e.isOverdue ? " ⚠ Overdue" : ""}`}
                                     className={`absolute top-2 bottom-2 rounded flex items-center px-1.5 text-[0.55rem] font-medium cursor-pointer transition-transform hover:scale-y-110 hover:shadow-lg hover:z-10 overflow-hidden truncate ${
+                                      e.isCompleted ? "opacity-40" : e.isOverdue ? "ring-1 ring-red-500" : ""
+                                    } ${
                                       e.eventType === "construction"
                                         ? "bg-blue-500 text-white"
                                         : e.eventType === "rtb"
@@ -2115,7 +2185,9 @@ export default function SchedulerPage() {
                                       zIndex: 1,
                                     }}
                                   >
-                                    {shortName} ({daysLabel})
+                                    {e.isCompleted && <span className="mr-0.5">✓</span>}
+                                    {e.isOverdue && <span className="mr-0.5 text-red-200">!</span>}
+                                    <span className={e.isCompleted ? "line-through" : ""}>{shortName}</span> ({daysLabel})
                                   </div>
                                 );
                               })}

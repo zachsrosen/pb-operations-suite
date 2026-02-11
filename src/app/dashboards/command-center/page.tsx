@@ -1,10 +1,18 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { prefetchDashboard } from "@/lib/prefetch";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import {
+  generateMonthlyPeriods,
+  generateWeeklyPeriods,
+  formatRevenueShort,
+  type RevenuePeriod,
+  type MilestoneConfig,
+} from "@/lib/revenue-utils";
 
 // ============================================================
 // TypeScript Interfaces
@@ -125,7 +133,7 @@ interface TimelinePeriod {
   byLocation: Record<string, { value: number; count: number }>;
 }
 
-type ViewType = "pipeline" | "revenue" | "capacity" | "pe" | "alerts";
+type ViewType = "pipeline" | "revenue" | "capacity" | "pe" | "alerts" | "executive" | "at-risk" | "optimizer";
 
 // ============================================================
 // Constants
@@ -1183,6 +1191,231 @@ function RevenueView({ projects }: { projects: Project[] }) {
           </div>
         </div>
       </div>
+
+      {/* ---- Milestone Revenue Tables ---- */}
+      <MilestoneRevenueSection projects={projects} revenueViewMode={revenueViewMode} setRevenueViewMode={setRevenueViewMode} />
+    </div>
+  );
+}
+
+// ============================================================
+// Milestone Revenue Section (replicates PE pattern for all deals)
+// ============================================================
+
+const DEAL_MILESTONES: MilestoneConfig[] = [
+  {
+    title: "Construction Completes",
+    dateField: "construction_complete",
+    forecastField: "forecast_install",
+    borderColor: "border-l-blue-500",
+    barColor: "bg-blue-500",
+    headerBg: "bg-blue-500/10",
+  },
+  {
+    title: "Inspections Passed",
+    dateField: "inspection_pass",
+    forecastField: "forecast_inspection",
+    borderColor: "border-l-emerald-500",
+    barColor: "bg-emerald-500",
+    headerBg: "bg-emerald-500/10",
+  },
+  {
+    title: "PTO Granted",
+    dateField: "pto_granted",
+    forecastField: "forecast_pto",
+    borderColor: "border-l-amber-500",
+    barColor: "bg-amber-500",
+    headerBg: "bg-amber-500/10",
+  },
+];
+
+function MilestoneRevenueSection({
+  projects,
+  revenueViewMode,
+  setRevenueViewMode,
+}: {
+  projects: Project[];
+  revenueViewMode: "weekly" | "monthly";
+  setRevenueViewMode: (mode: "weekly" | "monthly") => void;
+}) {
+  const periods = useMemo(
+    () => (revenueViewMode === "monthly" ? generateMonthlyPeriods() : generateWeeklyPeriods()),
+    [revenueViewMode]
+  );
+
+  // Pipeline Strength
+  const pipelineStrength = useMemo(() => {
+    const rtb = projects.filter((p) => p.is_rtb);
+    const scheduledConstruction = projects.filter(
+      (p) => p.forecast_install && !p.construction_complete
+    );
+    const pendingInspection = projects.filter(
+      (p) => p.construction_complete && !p.inspection_pass
+    );
+    const awaitingPto = projects.filter(
+      (p) => p.inspection_pass && !p.pto_granted
+    );
+    return [
+      { label: "RTB Projects", count: rtb.length, value: rtb.reduce((s, p) => s + p.amount, 0), color: "emerald" },
+      { label: "Scheduled Construction", count: scheduledConstruction.length, value: scheduledConstruction.reduce((s, p) => s + p.amount, 0), color: "blue" },
+      { label: "Pending Inspection", count: pendingInspection.length, value: pendingInspection.reduce((s, p) => s + p.amount, 0), color: "violet" },
+      { label: "Awaiting PTO", count: awaitingPto.length, value: awaitingPto.reduce((s, p) => s + p.amount, 0), color: "amber" },
+    ];
+  }, [projects]);
+
+  // Milestone data for each config
+  const milestoneData = useMemo(() => {
+    return DEAL_MILESTONES.map((config) => {
+      const periodData = periods.map((period) => {
+        const matching = projects.filter((p) => {
+          const dateStr =
+            (p[config.dateField as keyof Project] as string | null) ||
+            (config.dateField !== config.forecastField
+              ? (p[config.forecastField as keyof Project] as string | null)
+              : null);
+          if (!dateStr) return false;
+          const d = new Date(dateStr);
+          return d >= period.start && d <= period.end;
+        });
+        return {
+          count: matching.length,
+          revenue: matching.reduce((s, p) => s + p.amount, 0),
+        };
+      });
+      const maxRevenue = Math.max(...periodData.map((d) => d.revenue), 1);
+      return { config, periodData, maxRevenue };
+    });
+  }, [projects, periods]);
+
+  const colorMap: Record<string, string> = {
+    emerald: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
+    blue: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+    violet: "bg-violet-500/20 text-violet-400 border-violet-500/30",
+    amber: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+  };
+
+  return (
+    <div className="space-y-6 mt-6">
+      {/* Header with toggle */}
+      <div className="flex items-center justify-between">
+        <h3 className="text-base font-bold">Milestone Revenue Breakdown</h3>
+        <div className="flex gap-1 bg-zinc-800 rounded-lg p-0.5">
+          <button
+            onClick={() => setRevenueViewMode("weekly")}
+            className={`px-3 py-1 text-xs rounded-md transition-colors ${
+              revenueViewMode === "weekly"
+                ? "bg-orange-500 text-white"
+                : "text-zinc-400 hover:text-zinc-200"
+            }`}
+          >
+            Weekly
+          </button>
+          <button
+            onClick={() => setRevenueViewMode("monthly")}
+            className={`px-3 py-1 text-xs rounded-md transition-colors ${
+              revenueViewMode === "monthly"
+                ? "bg-orange-500 text-white"
+                : "text-zinc-400 hover:text-zinc-200"
+            }`}
+          >
+            Monthly
+          </button>
+        </div>
+      </div>
+
+      {/* Pipeline Strength Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {pipelineStrength.map((item) => (
+          <div
+            key={item.label}
+            className={`rounded-lg border p-3 ${colorMap[item.color] || "bg-zinc-800 border-zinc-700"}`}
+          >
+            <div className="text-[0.65rem] font-medium opacity-80">{item.label}</div>
+            <div className="text-xl font-bold mt-1">{item.count}</div>
+            <div className="text-[0.7rem] font-mono mt-0.5">{formatRevenueShort(item.value)}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Milestone Tables */}
+      {milestoneData.map(({ config, periodData, maxRevenue }) => (
+        <div
+          key={config.title}
+          className={`bg-[#12121a] rounded-lg border border-zinc-800 ${config.borderColor} border-l-4 overflow-hidden`}
+        >
+          {/* Table Header */}
+          <div className={`${config.headerBg} px-4 py-2.5 flex items-center justify-between`}>
+            <span className="text-sm font-bold">{config.title}</span>
+            <span className="text-xs text-zinc-400">
+              {periodData.reduce((s, d) => s + d.count, 0)} total &middot;{" "}
+              {formatRevenueShort(periodData.reduce((s, d) => s + d.revenue, 0))}
+            </span>
+          </div>
+
+          {/* Period Grid */}
+          <div className="overflow-x-auto">
+            <div className="min-w-[600px]">
+              {/* Period labels */}
+              <div className="grid gap-px px-4 py-2 border-b border-zinc-800" style={{ gridTemplateColumns: `repeat(${periods.length}, 1fr)` }}>
+                {periods.map((p, i) => (
+                  <div
+                    key={i}
+                    className={`text-[0.6rem] text-center ${
+                      p.isCurrent ? "text-orange-400 font-bold" : p.isPast ? "text-zinc-600" : "text-zinc-400"
+                    }`}
+                  >
+                    {p.label}
+                  </div>
+                ))}
+              </div>
+
+              {/* Count row */}
+              <div className="grid gap-px px-4 py-1.5" style={{ gridTemplateColumns: `repeat(${periods.length}, 1fr)` }}>
+                {periodData.map((d, i) => (
+                  <div
+                    key={i}
+                    className={`text-center text-sm font-bold ${
+                      periods[i].isCurrent ? "text-orange-400" : periods[i].isPast ? "text-zinc-600" : "text-zinc-200"
+                    }`}
+                  >
+                    {d.count || "—"}
+                  </div>
+                ))}
+              </div>
+
+              {/* Revenue row */}
+              <div className="grid gap-px px-4 py-1" style={{ gridTemplateColumns: `repeat(${periods.length}, 1fr)` }}>
+                {periodData.map((d, i) => (
+                  <div
+                    key={i}
+                    className={`text-center text-[0.6rem] font-mono ${
+                      periods[i].isPast ? "text-zinc-600" : "text-zinc-400"
+                    }`}
+                  >
+                    {d.revenue > 0 ? formatRevenueShort(d.revenue) : "—"}
+                  </div>
+                ))}
+              </div>
+
+              {/* Bar chart row */}
+              <div className="grid gap-px px-4 py-2 pb-3" style={{ gridTemplateColumns: `repeat(${periods.length}, 1fr)` }}>
+                {periodData.map((d, i) => (
+                  <div key={i} className="flex justify-center">
+                    <div className="w-full max-w-[40px] h-6 bg-zinc-800 rounded-sm overflow-hidden relative">
+                      <div
+                        className={`absolute bottom-0 w-full rounded-sm transition-all ${config.barColor} ${
+                          periods[i].isPast ? "opacity-40" : ""
+                        }`}
+                        style={{ height: `${maxRevenue > 0 ? (d.revenue / maxRevenue) * 100 : 0}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -1655,6 +1888,7 @@ function AlertsView({ alerts }: { alerts: Alert[] }) {
 // ============================================================
 
 export default function CommandCenterPage() {
+  const router = useRouter();
   /* ---- activity tracking ---- */
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
@@ -1716,7 +1950,7 @@ export default function CommandCenterPage() {
     }
   }, [loading, projects.length, trackDashboardView]);
 
-  const tabs: { key: ViewType; label: string; badge?: number; badgeStyle?: string }[] = [
+  const tabs: { key: ViewType; label: string; badge?: number; badgeStyle?: string; href?: string }[] = [
     { key: "pipeline", label: "Pipeline Overview" },
     { key: "revenue", label: "Revenue" },
     { key: "capacity", label: "Capacity Planning" },
@@ -1727,6 +1961,9 @@ export default function CommandCenterPage() {
       badge: alerts.filter((a) => a.type === "danger").length,
       badgeStyle: "bg-red-500",
     },
+    { key: "executive", label: "Executive Summary", href: "/dashboards/executive" },
+    { key: "at-risk", label: "At-Risk Projects", href: "/dashboards/at-risk" },
+    { key: "optimizer", label: "Pipeline Optimizer", href: "/dashboards/optimizer" },
   ];
 
   return (
@@ -1743,11 +1980,11 @@ export default function CommandCenterPage() {
                 &larr; Back
               </Link>
               <div className="min-w-0">
-                <div className="text-lg sm:text-xl font-bold bg-gradient-to-br from-orange-500 to-orange-400 bg-clip-text text-transparent">
-                  PB Command Center
+                <div className="text-lg sm:text-xl font-bold bg-gradient-to-br from-amber-500 to-orange-400 bg-clip-text text-transparent">
+                  Executive Suite
                 </div>
                 <div className="text-[0.65rem] text-zinc-500 truncate">
-                  Unified Pipeline &amp; Scheduling System - Live Data
+                  Pipeline, Revenue &amp; Executive Dashboards - Live Data
                 </div>
               </div>
             </div>
@@ -1768,11 +2005,19 @@ export default function CommandCenterPage() {
             {tabs.map((tab) => (
               <button
                 key={tab.key}
-                onClick={() => setCurrentView(tab.key)}
+                onClick={() => {
+                  if (tab.href) {
+                    router.push(tab.href);
+                  } else {
+                    setCurrentView(tab.key);
+                  }
+                }}
                 className={`px-4 sm:px-5 py-2 sm:py-2.5 text-[0.75rem] sm:text-[0.8rem] font-semibold rounded-t-lg cursor-pointer border border-b-0 transition-all whitespace-nowrap ${
                   currentView === tab.key
                     ? "bg-[#12121a] text-orange-500 border-orange-500"
-                    : "bg-[#0a0a0f] text-zinc-500 border-[#1e1e2e] hover:text-zinc-300"
+                    : tab.href
+                      ? "bg-[#0a0a0f] text-zinc-600 border-[#1e1e2e] hover:text-zinc-400 italic"
+                      : "bg-[#0a0a0f] text-zinc-500 border-[#1e1e2e] hover:text-zinc-300"
                 }`}
               >
                 {tab.label}

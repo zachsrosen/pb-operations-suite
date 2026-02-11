@@ -57,7 +57,7 @@ interface DashboardLinkData {
 }
 
 const ALL_DASHBOARDS: DashboardLinkData[] = [
-  { href: "/dashboards/command-center", title: "Command Center", description: "Pipeline overview, scheduling, PE tracking, revenue, and alerts in one view", tag: "PRIMARY", tagColor: "orange", section: "Operations Dashboards" },
+  { href: "/dashboards/command-center", title: "Executive Suite", description: "Pipeline, revenue milestones, capacity, PE tracking, and executive dashboards", tag: "EXECUTIVE", tagColor: "amber", section: "Operations Dashboards" },
   { href: "/dashboards/optimizer", title: "Pipeline Optimizer", description: "AI-powered scheduling optimization and bottleneck detection", tag: "ANALYTICS", tagColor: "purple", section: "Operations Dashboards" },
   { href: "/dashboards/scheduler", title: "Master Scheduler", description: "Drag-and-drop scheduling calendar with crew management", tag: "SCHEDULING", tagColor: "blue", section: "Operations Dashboards" },
   { href: "/dashboards/site-survey-scheduler", title: "Site Survey Scheduler", description: "Dedicated calendar for scheduling site surveys with Zuper integration", tag: "SCHEDULING", tagColor: "cyan", section: "Operations Dashboards" },
@@ -80,6 +80,7 @@ const ALL_DASHBOARDS: DashboardLinkData[] = [
   { href: "/dashboards/pe", title: "PE Dashboard", description: "Dedicated PE tracking with milestone status and compliance monitoring", tag: "PE", tagColor: "emerald", section: "Participate Energy & Leadership" },
   { href: "/dashboards/executive", title: "Executive Summary", description: "High-level KPIs, charts, and trends for leadership review", tag: "LEADERSHIP", tagColor: "purple", section: "Participate Energy & Leadership" },
   { href: "/dashboards/mobile", title: "Mobile Dashboard", description: "Touch-optimized view for field teams with quick project lookup", tag: "MOBILE", tagColor: "blue", section: "Participate Energy & Leadership" },
+  { href: "/handbook", title: "Handbook", description: "Comprehensive guide to all dashboards, features, and workflows", tag: "GUIDE", tagColor: "zinc", section: "Participate Energy & Leadership" },
 ];
 
 // ---- Main page ----

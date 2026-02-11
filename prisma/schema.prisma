@@ -16,6 +16,7 @@ datasource db {
 
 enum UserRole {
   ADMIN               // Full access, user management, all dashboards
+  OWNER               // Like ADMIN but without user management (for Matt & David)
   MANAGER             // Can schedule all types, view all data, manage operations
   OPERATIONS          // Can schedule installs/inspections, manage construction flow
   OPERATIONS_MANAGER  // Operations managers — crew oversight, scheduling, availability
