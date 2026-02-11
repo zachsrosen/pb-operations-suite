@@ -423,7 +423,7 @@ export async function POST(request: NextRequest) {
             data: {
               email,
               name: fullName,
-              role: "VIEWER",
+              role: "TECH_OPS",
               // No googleId, no lastLoginAt — they haven't logged in
             },
           });

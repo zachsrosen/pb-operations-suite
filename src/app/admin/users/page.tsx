@@ -38,12 +38,15 @@ interface ActivityLog {
   description: string;
 }
 
-const ROLES = ["ADMIN", "MANAGER", "OPERATIONS", "DESIGNER", "PERMITTING", "VIEWER", "SALES"];
+const ROLES = ["ADMIN", "MANAGER", "OPERATIONS_MANAGER", "PROJECT_MANAGER", "OPERATIONS", "TECH_OPS", "DESIGNER", "PERMITTING", "VIEWER", "SALES"];
 
 const ROLE_DESCRIPTIONS: Record<string, string> = {
   ADMIN: "Full access, can manage users",
   MANAGER: "Can schedule all types, view all data",
+  OPERATIONS_MANAGER: "Crew oversight, scheduling, availability management",
+  PROJECT_MANAGER: "Project tracking, scheduling, reporting",
   OPERATIONS: "Schedule installs/inspections, manage construction",
+  TECH_OPS: "Field technicians — view schedules, self-service availability",
   DESIGNER: "Design & engineering dashboard access",
   PERMITTING: "Permitting & interconnection dashboard",
   VIEWER: "Read-only access to all dashboards",
@@ -53,7 +56,10 @@ const ROLE_DESCRIPTIONS: Record<string, string> = {
 const ROLE_COLORS: Record<string, string> = {
   ADMIN: "bg-red-500/20 text-red-400 border-red-500/30",
   MANAGER: "bg-purple-500/20 text-purple-400 border-purple-500/30",
+  OPERATIONS_MANAGER: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+  PROJECT_MANAGER: "bg-indigo-500/20 text-indigo-400 border-indigo-500/30",
   OPERATIONS: "bg-orange-500/20 text-orange-400 border-orange-500/30",
+  TECH_OPS: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
   DESIGNER: "bg-blue-500/20 text-blue-400 border-blue-500/30",
   PERMITTING: "bg-green-500/20 text-green-400 border-green-500/30",
   VIEWER: "bg-zinc-500/20 text-zinc-400 border-zinc-500/30",

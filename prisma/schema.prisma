@@ -15,13 +15,16 @@ datasource db {
 // ===========================================
 
 enum UserRole {
-  ADMIN       // Full access, user management, all dashboards
-  MANAGER     // Can schedule all types, view all data, manage operations
-  OPERATIONS  // Can schedule installs/inspections, manage construction flow
-  DESIGNER    // Design & engineering dashboard access, can update design status
-  PERMITTING  // Permitting & interconnection dashboard access
-  VIEWER      // Read-only access to all dashboards
-  SALES       // Only survey scheduler access (for sales team)
+  ADMIN               // Full access, user management, all dashboards
+  MANAGER             // Can schedule all types, view all data, manage operations
+  OPERATIONS          // Can schedule installs/inspections, manage construction flow
+  OPERATIONS_MANAGER  // Operations managers — crew oversight, scheduling, availability
+  PROJECT_MANAGER     // Project managers — project tracking, scheduling, reporting
+  TECH_OPS            // Field technicians — view schedules, self-service availability
+  DESIGNER            // Design & engineering dashboard access, can update design status
+  PERMITTING          // Permitting & interconnection dashboard access
+  VIEWER              // Read-only access to all dashboards
+  SALES               // Only survey scheduler access (for sales team)
 }
 
 model User {

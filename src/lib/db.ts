@@ -456,6 +456,51 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     canEditPermitting: false,
     canViewAllLocations: true,
   },
+  OPERATIONS_MANAGER: {
+    allowedRoutes: ["*"], // All routes — full operational oversight
+    canScheduleSurveys: true,
+    canScheduleInstalls: true,
+    canScheduleInspections: true,
+    canSyncZuper: true,
+    canManageUsers: false,
+    canManageAvailability: true,
+    canEditDesign: false,
+    canEditPermitting: false,
+    canViewAllLocations: true,
+  },
+  PROJECT_MANAGER: {
+    allowedRoutes: ["*"], // All routes — project tracking & scheduling
+    canScheduleSurveys: true,
+    canScheduleInstalls: true,
+    canScheduleInspections: true,
+    canSyncZuper: true,
+    canManageUsers: false,
+    canManageAvailability: false,
+    canEditDesign: false,
+    canEditPermitting: false,
+    canViewAllLocations: true,
+  },
+  TECH_OPS: {
+    allowedRoutes: [
+      "/dashboards/construction",
+      "/dashboards/construction-scheduler",
+      "/dashboards/inspection-scheduler",
+      "/dashboards/scheduler",
+      "/dashboards/site-survey-scheduler",
+      "/dashboards/timeline",
+      "/api/projects",
+      "/api/zuper",
+    ],
+    canScheduleSurveys: false,
+    canScheduleInstalls: false,
+    canScheduleInspections: false,
+    canSyncZuper: false,
+    canManageUsers: false,
+    canManageAvailability: true, // Can manage their own availability
+    canEditDesign: false,
+    canEditPermitting: false,
+    canViewAllLocations: false, // Only their location
+  },
   DESIGNER: {
     allowedRoutes: [
       "/dashboards/design",
