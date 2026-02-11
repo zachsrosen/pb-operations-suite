@@ -92,6 +92,7 @@ export default function CrewAvailabilityPage() {
   const [toast, setToast] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [seeding, setSeeding] = useState(false);
+  const [seedingTeams, setSeedingTeams] = useState(false);
 
   // Filters
   const [filterCrew, setFilterCrew] = useState<string>("All");
@@ -293,6 +294,30 @@ export default function CrewAvailabilityPage() {
     }
   };
 
+  const handleSeedTeams = async () => {
+    if (!confirm("Seed DTC & Westminster crew teams from Zuper? This will resolve Zuper UIDs and create user accounts.")) return;
+
+    setSeedingTeams(true);
+    try {
+      const response = await fetch("/api/admin/crew?action=seed-teams", {
+        method: "POST",
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to seed teams");
+      }
+
+      const data = await response.json();
+      showToast(data.message || "Teams seeded successfully");
+      fetchRecords();
+    } catch (err) {
+      showToast(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
+    } finally {
+      setSeedingTeams(false);
+    }
+  };
+
   const handleCreateOverride = async () => {
     if (!overrideForm.crewMemberId || !overrideForm.date) {
       showToast("Crew member and date are required");
@@ -412,6 +437,13 @@ export default function CrewAvailabilityPage() {
               className="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
             >
               {seeding ? "Seeding..." : "Sync from Code"}
+            </button>
+            <button
+              onClick={handleSeedTeams}
+              disabled={seedingTeams}
+              className="px-4 py-2 bg-purple-600 hover:bg-purple-500 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+            >
+              {seedingTeams ? "Seeding Teams..." : "Seed Teams"}
             </button>
             <button
               onClick={() => {
