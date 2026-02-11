@@ -66,17 +66,27 @@ export async function GET(request: NextRequest) {
 
   // Helper to get HubSpot Deal ID from custom fields
   // Zuper jobs may have "HubSpot Deal ID" (numeric) or "Hubspot Deal Link" (URL) fields
+  // When WE create jobs, we set custom_fields: { hubspot_deal_id: project.id } (by name, not label)
+  // Zuper may return these with either `label` or `name` fields, with varying casing
   const getHubSpotDealId = (job: ZuperJob): string | null => {
     if (!job.custom_fields || !Array.isArray(job.custom_fields)) return null;
-    // Try direct numeric ID field first
-    const dealIdField = job.custom_fields.find(
-      (f) => f.label?.toLowerCase() === "hubspot deal id"
-    );
+
+    // Try direct numeric ID field — check both label and name (case-insensitive)
+    const dealIdField = job.custom_fields.find((f) => {
+      const label = f.label?.toLowerCase() || "";
+      const name = (f as { name?: string }).name?.toLowerCase() || "";
+      return label === "hubspot deal id" || label === "hubspot_deal_id" ||
+             name === "hubspot_deal_id" || name === "hubspot deal id";
+    });
     if (dealIdField?.value) return dealIdField.value;
+
     // Fall back to extracting ID from the deal link URL
-    const dealLinkField = job.custom_fields.find(
-      (f) => f.label?.toLowerCase().includes("hubspot") && f.label?.toLowerCase().includes("link")
-    );
+    const dealLinkField = job.custom_fields.find((f) => {
+      const label = f.label?.toLowerCase() || "";
+      const name = (f as { name?: string }).name?.toLowerCase() || "";
+      return (label.includes("hubspot") && label.includes("link")) ||
+             (name.includes("hubspot") && name.includes("link"));
+    });
     if (dealLinkField?.value) {
       const urlMatch = dealLinkField.value.match(/\/record\/0-3\/(\d+)/);
       if (urlMatch) return urlMatch[1];
@@ -134,6 +144,15 @@ export async function GET(request: NextRequest) {
     return parts.length > 2 ? parts[2].trim() : "";
   };
 
+  // Helper to extract PROJ number (e.g. "PROJ-7637") from project name
+  // Project name format: "PROJ-7637 | Smith, Victor | 123 Main St"
+  const extractProjectNumber = (name: string): string => {
+    const decoded = decodeURIComponent(name);
+    const firstPart = decoded.split("|")[0].trim();
+    const projMatch = firstPart.match(/PROJ-\d+/i);
+    return projMatch ? projMatch[0] : "";
+  };
+
   // Helper to extract customer last name for matching
   const extractLastName = (customerName: string): string => {
     if (customerName.includes(",")) {
@@ -149,34 +168,46 @@ export async function GET(request: NextRequest) {
     return match ? match[0] : "";
   };
 
-  // Helper to check if Zuper job title matches a customer name and optionally address
-  const jobTitleMatchesCustomer = (jobTitle: string, customerName: string, projectAddress: string): { matches: boolean; addressScore: number } => {
+  // Helper to check if Zuper job title matches a customer name and optionally address/PROJ number
+  const jobTitleMatchesCustomer = (jobTitle: string, customerName: string, projectAddress: string, projNumber: string = ""): { matches: boolean; addressScore: number } => {
     const titleLower = jobTitle.toLowerCase();
     const customerLower = customerName.toLowerCase();
     const lastName = extractLastName(customerName).toLowerCase();
 
     let nameMatches = false;
 
-    if (customerLower.length > 3 && titleLower.includes(customerLower)) {
+    // PROJ number match is strongest — if title contains "PROJ-7637", it's almost certainly the right job
+    if (projNumber && titleLower.includes(projNumber.toLowerCase())) {
+      nameMatches = true;
+    }
+
+    if (!nameMatches && customerLower.length > 3 && titleLower.includes(customerLower)) {
+      nameMatches = true;
+    }
+    // Use includes instead of startsWith — our job titles are "Inspection - PROJ-7637 | Smith, Victor"
+    if (!nameMatches && lastName.length > 2 && titleLower.includes(lastName + ",")) {
       nameMatches = true;
     }
     if (!nameMatches && lastName.length > 2 && titleLower.startsWith(lastName)) {
-      nameMatches = true;
-    }
-    if (!nameMatches && titleLower.includes(lastName + ",")) {
       nameMatches = true;
     }
 
     if (!nameMatches) return { matches: false, addressScore: 0 };
 
     let addressScore = 0;
+
+    // PROJ number match gets highest address bonus — disambiguates common last names
+    if (projNumber && titleLower.includes(projNumber.toLowerCase())) {
+      addressScore += 20;
+    }
+
     if (projectAddress) {
       const addressLower = projectAddress.toLowerCase();
       const streetNum = extractStreetNumber(projectAddress);
       if (addressLower.length > 5 && titleLower.includes(addressLower)) {
-        addressScore = 10;
+        addressScore += 10;
       } else if (streetNum && titleLower.includes(streetNum)) {
-        addressScore = 5;
+        addressScore += 5;
       }
     }
 
@@ -276,7 +307,7 @@ export async function GET(request: NextRequest) {
             });
           }
 
-          // Check tag match
+          // Check tag match (hubspot-{dealId} tag)
           const hubspotTag = `hubspot-${projectId}`;
           const hasHubspotTag = tags.some(t => t.toLowerCase() === hubspotTag.toLowerCase());
           if (hasHubspotTag) {
@@ -290,13 +321,46 @@ export async function GET(request: NextRequest) {
             });
           }
 
-          // Check name match
-          const projectName = projectNames[i];
-          if (projectName) {
-            const customerName = extractCustomerName(projectName);
-            const projectAddress = extractAddress(projectName);
+          // Check PROJ number tag match (e.g. "proj-7637" tag)
+          const pName = projectNames[i];
+          if (pName) {
+            const projNum = extractProjectNumber(pName);
+            if (projNum) {
+              const hasProjTag = tags.some(t => t.toLowerCase() === projNum.toLowerCase());
+              if (hasProjTag) {
+                addCandidate(projectId, {
+                  job,
+                  matchMethod: "tag",
+                  methodScore: 45, // Slightly less than hubspot tag but still strong
+                  statusScore,
+                  addressScore: 0,
+                  categoryName: jobCategoryName,
+                });
+              }
+            }
+          }
+
+          // Check name match (with PROJ number disambiguation)
+          if (pName) {
+            const customerName = extractCustomerName(pName);
+            const projectAddress = extractAddress(pName);
+            const projNumber = extractProjectNumber(pName);
+
+            // Standalone PROJ number match — even if customer name doesn't match,
+            // a PROJ number in the title is a strong signal (score between tag and name)
+            if (projNumber && jobTitle.toLowerCase().includes(projNumber.toLowerCase())) {
+              addCandidate(projectId, {
+                job,
+                matchMethod: "name",
+                methodScore: 30, // Between tag (50) and pure name (10)
+                statusScore,
+                addressScore: 20,
+                categoryName: jobCategoryName,
+              });
+            }
+
             if (customerName.length > 3) {
-              const { matches, addressScore } = jobTitleMatchesCustomer(jobTitle, customerName, projectAddress);
+              const { matches, addressScore } = jobTitleMatchesCustomer(jobTitle, customerName, projectAddress, projNumber);
               if (matches) {
                 addCandidate(projectId, {
                   job,

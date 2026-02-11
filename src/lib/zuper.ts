@@ -982,6 +982,8 @@ export async function createJobFromProject(project: {
     ...(assignedTo && { assigned_to: assignedTo }),
     job_tags: [
       `hubspot-${project.id}`,
+      // Add PROJ number tag for future matching (e.g. "proj-7637")
+      ...(project.name?.match(/PROJ-\d+/i) ? [project.name.match(/PROJ-\d+/i)![0].toLowerCase()] : []),
       schedule.type,
       project.systemSizeKw ? `${project.systemSizeKw}kw` : "",
       project.batteryCount ? `${project.batteryCount}-batteries` : "",

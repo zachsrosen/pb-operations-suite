@@ -91,7 +91,8 @@ export async function PUT(request: NextRequest) {
       // Otherwise, search for existing job
       // Extract customer name for searching
       // HubSpot format: "PROJ-9031 | LastName, FirstName | Address"
-      // Zuper job title format: "LastName, FirstName | Address"
+      // Zuper job title format: "Inspection - PROJ-7637 | Smith, Victor" (created by our system)
+      //                     or: "LastName, FirstName | Address" (created by HubSpot workflow)
       const nameParts = project.name?.split(" | ") || [];
       const customerName = nameParts.length >= 2
         ? nameParts[1]?.trim()  // "LastName, FirstName" from HubSpot format
@@ -100,9 +101,13 @@ export async function PUT(request: NextRequest) {
       // Also extract just the last name for looser matching
       const customerLastName = customerName.split(",")[0]?.trim() || "";
 
+      // Extract PROJ number (e.g. "PROJ-7637") for strongest matching
+      const projNumber = nameParts[0]?.trim().match(/PROJ-\d+/i)?.[0] || "";
+
       console.log(`[Zuper Schedule] No known job UID, searching by name:`);
       console.log(`  - Customer Name: ${customerName}`);
       console.log(`  - Customer Last Name: ${customerLastName}`);
+      console.log(`  - PROJ Number: ${projNumber || "none"}`);
       console.log(`  - HubSpot Tag: ${hubspotTag}`);
 
       // Search for existing job by customer last name (Zuper search is fuzzy)
@@ -146,15 +151,22 @@ export async function PUT(request: NextRequest) {
           (job) => job.job_tags?.includes(hubspotTag) && categoryMatches(job)
         );
 
-        // If not found by tag, try to find by job title starting with last name
-        if (!existingJob && customerLastName) {
+        // If not found by tag, try PROJ number match first (strongest), then last name
+        if (!existingJob && (customerLastName || projNumber)) {
           const normalizedLastName = customerLastName.toLowerCase().trim();
+          const normalizedProjNumber = projNumber.toLowerCase().trim();
           existingJob = searchResult.data.jobs.find((job) => {
             const jobTitle = job.job_title?.toLowerCase() || "";
-            const matchesCategory = categoryMatches(job);
-            const titleStartsWithLastName = jobTitle.startsWith(normalizedLastName + ",") ||
-                                            jobTitle.startsWith(normalizedLastName + " ");
-            return matchesCategory && titleStartsWithLastName;
+            if (!categoryMatches(job)) return false;
+            // PROJ number in title is strongest match
+            if (normalizedProjNumber && jobTitle.includes(normalizedProjNumber)) return true;
+            // Last name matching — use includes() instead of startsWith() because
+            // our job titles are "Inspection - PROJ-7637 | Smith, Victor", not "Smith, Victor ..."
+            if (normalizedLastName.length > 2) {
+              return jobTitle.includes(normalizedLastName + ",") ||
+                     jobTitle.startsWith(normalizedLastName + " ");
+            }
+            return false;
           });
         }
 
