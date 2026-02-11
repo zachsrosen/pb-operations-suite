@@ -188,13 +188,34 @@ function isPastDate(dateStr: string): boolean {
   return dateStr < getTodayStr();
 }
 
-// Check if an inspection is overdue: scheduled in the past but not completed/passed
-function isInspectionOverdue(project: InspectionProject, manualScheduleDate?: string): boolean {
+// Extract the base project number, stripping " New Inspection" or similar suffixes
+// e.g. "PROJ-1234 New Inspection | Smith, John" → "PROJ-1234"
+function getBaseProjectNumber(name: string): string {
+  const projPart = name.split(" | ")[0] || "";
+  return projPart.replace(/\s+new\s+inspection.*$/i, "").trim();
+}
+
+// Check if an inspection is overdue: scheduled in the past but not completed/passed.
+// A failed inspection is NOT overdue if a sibling "New Inspection" project for the
+// same base project number has passed (meaning the re-inspection succeeded).
+function isInspectionOverdue(
+  project: InspectionProject,
+  manualScheduleDate?: string,
+  passedReinspections?: Set<string>,
+): boolean {
   const schedDate = manualScheduleDate || project.scheduleDate;
   if (!schedDate) return false;
   if (project.completionDate) return false;
   if (project.inspectionStatus.toLowerCase().includes("pass")) return false;
-  return isPastDate(schedDate);
+  if (!isPastDate(schedDate)) return false;
+
+  // If a "New Inspection" sibling for this project has passed, not overdue
+  if (passedReinspections) {
+    const baseNum = getBaseProjectNumber(project.name);
+    if (baseNum && passedReinspections.has(baseNum)) return false;
+  }
+
+  return true;
 }
 
 /* ------------------------------------------------------------------ */
@@ -528,6 +549,22 @@ export default function InspectionSchedulerPage() {
     );
   }, [filteredProjects, manualSchedules]);
 
+  // Build a set of base project numbers whose "New Inspection" sibling has passed.
+  // If PROJ-1234 failed but "PROJ-1234 New Inspection" passed, the original is no
+  // longer overdue.
+  const passedReinspections = useMemo(() => {
+    const passed = new Set<string>();
+    for (const p of projects) {
+      const nameLower = p.name.toLowerCase();
+      if (!nameLower.includes("new inspection")) continue;
+      const hasPassed = p.completionDate || p.inspectionStatus.toLowerCase().includes("pass");
+      if (hasPassed) {
+        passed.add(getBaseProjectNumber(p.name));
+      }
+    }
+    return passed;
+  }, [projects]);
+
   const stats = useMemo(() => {
     const total = projects.length;
     const needsScheduling = projects.filter(p =>
@@ -537,11 +574,11 @@ export default function InspectionSchedulerPage() {
       (p.scheduleDate || manualSchedules[p.id]) && !p.completionDate
     ).length;
     const passed = projects.filter(p => p.completionDate || p.inspectionStatus === "Passed").length;
-    const overdue = projects.filter(p => isInspectionOverdue(p, manualSchedules[p.id])).length;
+    const overdue = projects.filter(p => isInspectionOverdue(p, manualSchedules[p.id], passedReinspections)).length;
     const totalValue = projects.reduce((sum, p) => sum + p.amount, 0);
 
     return { total, needsScheduling, scheduled, passed, overdue, totalValue };
-  }, [projects, manualSchedules]);
+  }, [projects, manualSchedules, passedReinspections]);
 
   /* ================================================================ */
   /*  Calendar data                                                    */
@@ -1118,7 +1155,7 @@ export default function InspectionSchedulerPage() {
                         </span>
                       </div>
                       <div className="flex items-center gap-2 mt-2">
-                        {isInspectionOverdue(project, manualSchedules[project.id]) && (
+                        {isInspectionOverdue(project, manualSchedules[project.id], passedReinspections) && (
                           <span className="text-xs px-1.5 py-0.5 rounded border bg-red-500/20 text-red-400 border-red-500/30 font-medium">
                             ⚠ Overdue
                           </span>
@@ -1252,7 +1289,7 @@ export default function InspectionSchedulerPage() {
                         </div>
                         <div className="space-y-1">
                           {events.map((ev) => {
-                            const overdue = isInspectionOverdue(ev, manualSchedules[ev.id]);
+                            const overdue = isInspectionOverdue(ev, manualSchedules[ev.id], passedReinspections);
                             const evSlot = findCurrentSlotForProject(ev.id, dateStr, ev.name, ev.zuperJobUid);
                             const inspectorDisplay = evSlot
                               ? `${evSlot.userName} · ${evSlot.displayTime}`
@@ -1339,7 +1376,7 @@ export default function InspectionSchedulerPage() {
                     <tbody className="divide-y divide-zinc-800">
                       {filteredProjects.map((project) => {
                         const schedDate = manualSchedules[project.id] || project.scheduleDate;
-                        const overdue = isInspectionOverdue(project, manualSchedules[project.id]);
+                        const overdue = isInspectionOverdue(project, manualSchedules[project.id], passedReinspections);
                         return (
                           <tr key={project.id} className={`hover:bg-zinc-900/50 ${overdue ? "bg-red-500/5" : ""}`}>
                             <td className="px-4 py-3">
