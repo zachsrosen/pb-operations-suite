@@ -5,7 +5,8 @@
  */
 
 import { auth } from "@/auth";
-import { getUserByEmail, canAccessRoute, UserRole, ROLE_PERMISSIONS } from "./db";
+import { getUserByEmail } from "./db";
+import { canAccessRoute, UserRole, ROLE_PERMISSIONS } from "./role-permissions";
 
 export interface SessionUser {
   id?: string;

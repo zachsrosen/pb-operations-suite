@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireApiAuth } from "@/lib/api-auth";
 import { ZuperClient, JOB_CATEGORY_UIDS } from "@/lib/zuper";
 import { getCrewSchedulesFromDB, getAvailabilityOverrides } from "@/lib/db";
 
@@ -244,6 +245,9 @@ function getLocationMatches(location: string): string[] {
 }
 
 export async function GET(request: NextRequest) {
+  const authResult = await requireApiAuth();
+  if (authResult instanceof NextResponse) return authResult;
+
   const zuper = new ZuperClient();
   const { searchParams } = new URL(request.url);
 
@@ -866,6 +870,9 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
+    const authResult = await requireApiAuth();
+    if (authResult instanceof NextResponse) return authResult;
+
     const body = await request.json();
     const { date, startTime, endTime, userName, userUid, location, projectId, projectName, zuperJobUid } = body;
 
@@ -925,6 +932,9 @@ export async function POST(request: NextRequest) {
  */
 export async function DELETE(request: NextRequest) {
   try {
+    const authResult = await requireApiAuth();
+    if (authResult instanceof NextResponse) return authResult;
+
     const body = await request.json();
     const { date, startTime, userName } = body;
 

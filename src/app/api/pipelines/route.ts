@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { Client } from "@hubspot/api-client";
 import { appCache, CACHE_KEYS } from "@/lib/cache";
+import { requireApiAuth } from "@/lib/api-auth";
 
 const hubspotClient = new Client({
   accessToken: process.env.HUBSPOT_ACCESS_TOKEN,
@@ -35,6 +36,9 @@ async function fetchPipelines(): Promise<PipelineData> {
 
 export async function GET() {
   try {
+    const authResult = await requireApiAuth();
+    if (authResult instanceof NextResponse) return authResult;
+
     const { data, cached, stale, lastUpdated } = await appCache.getOrFetch<PipelineData>(
       CACHE_KEYS.PIPELINES,
       fetchPipelines

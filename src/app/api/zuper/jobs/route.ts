@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireApiAuth } from "@/lib/api-auth";
+import { logActivity } from "@/lib/db";
 import { zuper, createJobFromProject } from "@/lib/zuper";
 
 // Inline validation for job creation request
@@ -66,6 +68,9 @@ function validateJobCreation(data: unknown): data is {
 
 export async function POST(request: NextRequest) {
   try {
+    const authResult = await requireApiAuth();
+    if (authResult instanceof NextResponse) return authResult;
+
     // Check if Zuper is configured
     if (!zuper.isConfigured()) {
       return NextResponse.json(
@@ -110,6 +115,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Log the job creation
+    await logActivity({
+      type: "ZUPER_JOB_CREATED",
+      description: `Created ${schedule.type} job for ${project.name}`,
+      userEmail: authResult.email,
+      userName: authResult.name,
+      entityType: "zuper_job",
+      entityId: result.data?.job_uid,
+      entityName: project.name,
+      metadata: {
+        scheduleType: schedule.type,
+        scheduledDate: schedule.date,
+        projectId: project.id,
+        crew: schedule.crew,
+      },
+      ipAddress: authResult.ip,
+      userAgent: authResult.userAgent,
+    });
+
     return NextResponse.json({
       success: true,
       job: result.data,
@@ -126,6 +150,9 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
+    const authResult = await requireApiAuth();
+    if (authResult instanceof NextResponse) return authResult;
+
     // Check if Zuper is configured
     if (!zuper.isConfigured()) {
       return NextResponse.json(

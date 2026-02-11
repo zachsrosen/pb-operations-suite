@@ -11,11 +11,13 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
+import { requireApiAuth } from "@/lib/api-auth";
 import {
   prisma,
   getActiveCrewMembers,
   upsertCrewMember,
   getCrewMemberByName,
+  logActivity,
 } from "@/lib/db";
 import { zuper } from "@/lib/zuper";
 
@@ -295,10 +297,13 @@ export async function GET(request: NextRequest) {
  * POST /api/admin/crew - Create/update crew member or seed data
  */
 export async function POST(request: NextRequest) {
-  const authResult = await verifyAdmin(request);
-  if (!authResult.authorized) {
-    return NextResponse.json({ error: authResult.error }, { status: 401 });
+  const adminCheck = await verifyAdmin(request);
+  if (!adminCheck.authorized) {
+    return NextResponse.json({ error: adminCheck.error }, { status: 401 });
   }
+
+  const authResult = await requireApiAuth();
+  if (authResult instanceof NextResponse) return authResult;
 
   const action = request.nextUrl.searchParams.get("action");
 
@@ -320,6 +325,17 @@ export async function POST(request: NextRequest) {
           results.push({ name: data.name, status: "updated", data: updated });
         }
       }
+
+      // Log the seed operation
+      await logActivity({
+        type: "SETTINGS_CHANGED",
+        description: `Crew configuration updated`,
+        userEmail: authResult.email,
+        userName: authResult.name,
+        entityType: "crew",
+        ipAddress: authResult.ip,
+        userAgent: authResult.userAgent,
+      });
 
       return NextResponse.json({
         success: true,
@@ -445,6 +461,17 @@ export async function POST(request: NextRequest) {
       const unresolved = results.filter(r => !r.zuperResolved).length;
       const usersCreated = results.filter(r => r.userCreated).length;
 
+      // Log the seed-teams operation
+      await logActivity({
+        type: "SETTINGS_CHANGED",
+        description: `Crew configuration updated`,
+        userEmail: authResult.email,
+        userName: authResult.name,
+        entityType: "crew",
+        ipAddress: authResult.ip,
+        userAgent: authResult.userAgent,
+      });
+
       return NextResponse.json({
         success: true,
         message: `Seeded ${results.length} crew members (${resolved} Zuper resolved, ${unresolved} pending). Created ${usersCreated} user accounts.`,
@@ -503,6 +530,17 @@ export async function POST(request: NextRequest) {
       permissions: body.permissions,
       isActive: body.isActive,
       maxDailyJobs: body.maxDailyJobs,
+    });
+
+    // Log the crew member update
+    await logActivity({
+      type: "SETTINGS_CHANGED",
+      description: `Crew configuration updated`,
+      userEmail: authResult.email,
+      userName: authResult.name,
+      entityType: "crew",
+      ipAddress: authResult.ip,
+      userAgent: authResult.userAgent,
     });
 
     return NextResponse.json({

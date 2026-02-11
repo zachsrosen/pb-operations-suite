@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ZuperClient, JOB_CATEGORY_UIDS } from "@/lib/zuper";
+import { requireApiAuth } from "@/lib/api-auth";
 
 /**
  * GET /api/zuper/assisted-scheduling
@@ -14,6 +15,9 @@ import { ZuperClient, JOB_CATEGORY_UIDS } from "@/lib/zuper";
  * - location: Location name to get team UID
  */
 export async function GET(request: NextRequest) {
+  const authResult = await requireApiAuth();
+  if (authResult instanceof NextResponse) return authResult;
+
   const zuper = new ZuperClient();
   const { searchParams } = new URL(request.url);
 

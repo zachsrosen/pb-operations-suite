@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { prisma, logActivity } from "@/lib/db";
+import { requireApiAuth } from "@/lib/api-auth";
 
 // Inline validation for vote request
 interface VoteRequest {
@@ -15,6 +16,9 @@ function validateVoteRequest(data: unknown): data is { itemId: string } {
 
 export async function POST(request: Request) {
   try {
+    const authResult = await requireApiAuth();
+    if (authResult instanceof NextResponse) return authResult;
+
     let body;
     try {
       body = await request.json();
@@ -44,6 +48,19 @@ export async function POST(request: Request) {
     const updated = await prisma.roadmapItem.update({
       where: { id: itemId },
       data: { votes: { increment: 1 } },
+    });
+
+    // Log the vote
+    await logActivity({
+      type: "FEATURE_USED",
+      description: `Voted on roadmap item: ${updated.title || itemId}`,
+      userEmail: authResult.email,
+      userName: authResult.name,
+      entityType: "roadmap_item",
+      entityId: itemId,
+      entityName: updated.title || undefined,
+      ipAddress: authResult.ip,
+      userAgent: authResult.userAgent,
     });
 
     return NextResponse.json({

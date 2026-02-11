@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
+import { requireApiAuth } from "@/lib/api-auth";
 import { zuper } from "@/lib/zuper";
 
 export async function GET() {
+  const authResult = await requireApiAuth();
+  if (authResult instanceof NextResponse) return authResult;
+
   const configured = zuper.isConfigured();
 
   // Get the web URL base for constructing job links

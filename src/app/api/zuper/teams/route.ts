@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireApiAuth } from "@/lib/api-auth";
 import { zuper } from "@/lib/zuper";
 
 /**
@@ -8,6 +9,9 @@ import { zuper } from "@/lib/zuper";
  * Useful for finding team UIDs for user assignment
  */
 export async function GET() {
+  const authResult = await requireApiAuth();
+  if (authResult instanceof NextResponse) return authResult;
+
   if (!zuper.isConfigured()) {
     return NextResponse.json(
       { error: "Zuper integration not configured", configured: false },

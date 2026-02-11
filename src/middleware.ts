@@ -1,21 +1,9 @@
 import { auth } from "@/auth";
 import { NextResponse } from "next/server";
+import { ROLE_PERMISSIONS, canAccessRoute, type UserRole } from "@/lib/role-permissions";
 
-// Routes that SALES role can access
-const SALES_ALLOWED_ROUTES = [
-  "/dashboards/site-survey-scheduler",
-  "/login",
-  "/api/projects",
-  "/api/zuper",
-  "/api/auth",
-];
-
-// Routes that are public (no auth required)
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const PUBLIC_ROUTES = [
-  "/login",
-  "/api/auth",
-];
+// Routes that are always accessible (login, auth callbacks)
+const ALWAYS_ALLOWED = ["/login", "/api/auth", "/maintenance"];
 
 // Security headers for all responses
 function addSecurityHeaders(response: NextResponse): NextResponse {
@@ -55,9 +43,21 @@ function addSecurityHeaders(response: NextResponse): NextResponse {
   return response;
 }
 
+/**
+ * Get the default redirect route for a role (first dashboard route, or /)
+ */
+function getDefaultRouteForRole(role: UserRole): string {
+  const permissions = ROLE_PERMISSIONS[role];
+  if (!permissions || permissions.allowedRoutes.includes("*")) return "/";
+
+  // Find first dashboard route as default landing page
+  const dashboardRoute = permissions.allowedRoutes.find(r => r.startsWith("/dashboards/"));
+  return dashboardRoute || "/";
+}
+
 export default auth((req) => {
   const isLoggedIn = !!req.auth;
-  const userRole = req.auth?.user?.role || "VIEWER";
+  const userRole = (req.auth?.user?.role || "VIEWER") as UserRole;
   const pathname = req.nextUrl.pathname;
 
   const isLoginPage = pathname === "/login";
@@ -87,20 +87,27 @@ export default auth((req) => {
     return addSecurityHeaders(NextResponse.next());
   }
 
-  // API routes - require authentication except for public endpoints
+  // API routes - require authentication + role-based access
   if (isApiRoute) {
     // Allow auth endpoints without session check
     if (pathname.startsWith("/api/auth")) {
       return addSecurityHeaders(NextResponse.next());
     }
 
-    // For other API routes, check if user is authenticated
-    // Note: Some API routes have their own additional auth (admin routes, etc.)
+    // For other API routes, require authentication
     if (!isLoggedIn) {
-      // Return 401 for unauthenticated API requests
       const response = NextResponse.json(
         { error: "Unauthorized - Please log in" },
         { status: 401 }
+      );
+      return addSecurityHeaders(response);
+    }
+
+    // Enforce role-based API access (check if the role can access this API path)
+    if (!canAccessRoute(userRole, pathname)) {
+      const response = NextResponse.json(
+        { error: "Forbidden - Insufficient permissions" },
+        { status: 403 }
       );
       return addSecurityHeaders(response);
     }
@@ -110,11 +117,8 @@ export default auth((req) => {
 
   // Redirect logged-in users away from login page
   if (isLoginPage && isLoggedIn) {
-    // SALES users go to survey scheduler, others go to home
-    if (userRole === "SALES") {
-      return addSecurityHeaders(NextResponse.redirect(new URL("/dashboards/site-survey-scheduler", req.url)));
-    }
-    return addSecurityHeaders(NextResponse.redirect(new URL("/", req.url)));
+    const defaultRoute = getDefaultRouteForRole(userRole);
+    return addSecurityHeaders(NextResponse.redirect(new URL(defaultRoute, req.url)));
   }
 
   // Redirect non-logged-in users to login
@@ -124,12 +128,18 @@ export default auth((req) => {
     return addSecurityHeaders(NextResponse.redirect(loginUrl));
   }
 
-  // Role-based access control for SALES users
-  if (isLoggedIn && userRole === "SALES") {
-    const canAccess = SALES_ALLOWED_ROUTES.some(route => pathname.startsWith(route));
-    if (!canAccess) {
-      // Redirect SALES users to their allowed page
-      return addSecurityHeaders(NextResponse.redirect(new URL("/dashboards/site-survey-scheduler", req.url)));
+  // Role-based access control for ALL roles (not just SALES)
+  if (isLoggedIn && !isLoginPage) {
+    // Always allow these routes for everyone
+    if (ALWAYS_ALLOWED.some(route => pathname.startsWith(route))) {
+      return addSecurityHeaders(NextResponse.next());
+    }
+
+    // Check role permissions
+    if (!canAccessRoute(userRole, pathname)) {
+      // Redirect to their default allowed page
+      const defaultRoute = getDefaultRouteForRole(userRole);
+      return addSecurityHeaders(NextResponse.redirect(new URL(defaultRoute, req.url)));
     }
   }
 

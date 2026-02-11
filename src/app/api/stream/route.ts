@@ -1,8 +1,13 @@
 import { appCache } from "@/lib/cache";
+import { NextResponse } from "next/server";
+import { requireApiAuth } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  const authResult = await requireApiAuth();
+  if (authResult instanceof NextResponse) return authResult;
+
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({

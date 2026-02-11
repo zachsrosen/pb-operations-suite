@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ZuperClient, ZuperJob } from "@/lib/zuper";
 import { getCachedZuperJobsByDealIds } from "@/lib/db";
+import { requireApiAuth } from "@/lib/api-auth";
 
 /**
  * GET /api/zuper/jobs/lookup
@@ -14,6 +15,9 @@ import { getCachedZuperJobsByDealIds } from "@/lib/db";
  * - category: optional job category filter (e.g., "site-survey", "construction")
  */
 export async function GET(request: NextRequest) {
+  const authResult = await requireApiAuth();
+  if (authResult instanceof NextResponse) return authResult;
+
   const zuper = new ZuperClient();
 
   if (!zuper.isConfigured()) {

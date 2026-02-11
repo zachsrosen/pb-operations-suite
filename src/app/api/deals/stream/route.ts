@@ -1,4 +1,5 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { requireApiAuth } from "@/lib/api-auth";
 import { Client } from "@hubspot/api-client";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
 import { appCache, CACHE_KEYS } from "@/lib/cache";
@@ -199,6 +200,9 @@ function filterDeals(deals: Deal[], activeOnly: boolean, location: string | null
 }
 
 export async function GET(request: NextRequest) {
+  const authResult = await requireApiAuth();
+  if (authResult instanceof NextResponse) return authResult;
+
   const searchParams = request.nextUrl.searchParams;
   const pipeline = searchParams.get("pipeline");
   const activeOnly = searchParams.get("active") !== "false";

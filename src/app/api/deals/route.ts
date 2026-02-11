@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Client } from "@hubspot/api-client";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
 import { appCache, CACHE_KEYS } from "@/lib/cache";
+import { requireApiAuth } from "@/lib/api-auth";
 
 const hubspotClient = new Client({
   accessToken: process.env.HUBSPOT_ACCESS_TOKEN,
@@ -343,6 +344,9 @@ async function fetchDealsForPipeline(pipelineKey: string, activeOnly: boolean = 
 
 export async function GET(request: NextRequest) {
   try {
+    const authResult = await requireApiAuth();
+    if (authResult instanceof NextResponse) return authResult;
+
     const searchParams = request.nextUrl.searchParams;
     const pipeline = searchParams.get("pipeline");
     const activeOnly = searchParams.get("active") !== "false";

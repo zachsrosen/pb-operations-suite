@@ -22,6 +22,7 @@ interface PEProject {
   amount: number;
   url: string;
   close_date: string | null;
+  design_approval: string | null;
   install_scheduled: string | null;
   construction_complete: string | null;
   inspection_scheduled: string | null;
@@ -50,6 +51,7 @@ interface APIProject {
   amount: number;
   url: string;
   closeDate: string | null;
+  designApprovalDate: string | null;
   constructionScheduleDate: string | null;
   constructionCompleteDate: string | null;
   inspectionScheduleDate: string | null;
@@ -89,7 +91,7 @@ interface ForecastMonth {
   ptos: number;
 }
 
-type ViewType = "overview" | "projects" | "milestones";
+type ViewType = "overview" | "projects" | "milestones" | "revenue";
 type SortKey = "pto" | "inspection" | "install" | "amount";
 type FilterStatus = "all" | "overdue" | "soon" | "ontrack";
 
@@ -99,6 +101,62 @@ type FilterStatus = "all" | "overdue" | "soon" | "ontrack";
 
 function displayName(name: string): string {
   return name.split("|")[0].trim();
+}
+
+function formatRevenueShort(amount: number): string {
+  if (amount >= 1000000) return `$${(amount / 1000000).toFixed(1)}M`;
+  if (amount >= 1000) return `$${(amount / 1000).toFixed(0)}k`;
+  return `$${amount.toFixed(0)}`;
+}
+
+interface RevenuePeriod {
+  label: string;
+  start: Date;
+  end: Date;
+  isCurrent: boolean;
+  isPast: boolean;
+}
+
+function generateMonthlyPeriods(): RevenuePeriod[] {
+  const today = new Date();
+  const currentMonth = today.getMonth();
+  const currentYear = today.getFullYear();
+  const months: RevenuePeriod[] = [];
+  for (let i = -2; i <= 5; i++) {
+    const d = new Date(currentYear, currentMonth + i, 1);
+    const endOfMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59);
+    months.push({
+      label: d.toLocaleDateString("en-US", { month: "short", year: "numeric" }),
+      start: d,
+      end: endOfMonth,
+      isCurrent: i === 0,
+      isPast: i < 0,
+    });
+  }
+  return months;
+}
+
+function generateWeeklyPeriods(): RevenuePeriod[] {
+  const today = new Date();
+  const dayOfWeek = today.getDay();
+  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  const weeks: RevenuePeriod[] = [];
+  for (let i = -4; i <= 7; i++) {
+    const weekStart = new Date(today);
+    weekStart.setDate(today.getDate() + mondayOffset + i * 7);
+    weekStart.setHours(0, 0, 0, 0);
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekEnd.getDate() + 4);
+    weekEnd.setHours(23, 59, 59, 999);
+    weeks.push({
+      label: weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      start: weekStart,
+      end: weekEnd,
+      isCurrent: i === 0,
+      isPast: i < 0,
+    });
+  }
+  return weeks;
 }
 
 function transformProject(p: APIProject): PEProject {
@@ -113,6 +171,7 @@ function transformProject(p: APIProject): PEProject {
     amount: p.amount,
     url: p.url,
     close_date: p.closeDate,
+    design_approval: p.designApprovalDate,
     install_scheduled: p.constructionScheduleDate,
     construction_complete: p.constructionCompleteDate,
     inspection_scheduled: p.inspectionScheduleDate,
@@ -424,6 +483,277 @@ function MilestoneGroup({
 }
 
 // ---------------------------------------------------------------------------
+// Revenue View
+// ---------------------------------------------------------------------------
+
+interface MilestoneTableConfig {
+  title: string;
+  dateField: keyof PEProject;
+  forecastField: keyof PEProject;
+  borderColor: string;
+  barColor: string;
+  headerBg: string;
+}
+
+const MILESTONE_CONFIGS: MilestoneTableConfig[] = [
+  {
+    title: "Design Approvals",
+    dateField: "design_approval",
+    forecastField: "design_approval",
+    borderColor: "border-l-purple-500",
+    barColor: "bg-purple-500",
+    headerBg: "bg-purple-500/10",
+  },
+  {
+    title: "Construction Completes",
+    dateField: "construction_complete",
+    forecastField: "forecast_install",
+    borderColor: "border-l-blue-500",
+    barColor: "bg-blue-500",
+    headerBg: "bg-blue-500/10",
+  },
+  {
+    title: "PE M1: Inspection Passed",
+    dateField: "inspection_complete",
+    forecastField: "forecast_inspection",
+    borderColor: "border-l-emerald-500",
+    barColor: "bg-emerald-500",
+    headerBg: "bg-emerald-500/10",
+  },
+  {
+    title: "PE M2: PTO Granted",
+    dateField: "pto_granted",
+    forecastField: "forecast_pto",
+    borderColor: "border-l-amber-500",
+    barColor: "bg-amber-500",
+    headerBg: "bg-amber-500/10",
+  },
+];
+
+function RevenueView({
+  projects,
+  revenuePeriod,
+  setRevenuePeriod,
+}: {
+  projects: PEProject[];
+  revenuePeriod: "monthly" | "weekly";
+  setRevenuePeriod: (v: "monthly" | "weekly") => void;
+}) {
+  // Pipeline strength cards
+  const pipelineStrength = useMemo(() => {
+    const RTB_STAGES = ["RTB", "Ready to Build", "Ready To Build"];
+    const rtbProjects = projects.filter((p) =>
+      RTB_STAGES.some((s) => p.stage.toLowerCase() === s.toLowerCase())
+    );
+    const scheduledConstruction = projects.filter(
+      (p) => p.install_scheduled && !p.construction_complete
+    );
+    const upcomingInspections = projects.filter(
+      (p) => p.construction_complete && !p.inspection_complete
+    );
+    const awaitingPto = projects.filter(
+      (p) => p.inspection_complete && !p.pto_granted
+    );
+
+    return {
+      rtb: {
+        count: rtbProjects.length,
+        value: rtbProjects.reduce((sum, p) => sum + (p.amount || 0), 0),
+      },
+      scheduled: {
+        count: scheduledConstruction.length,
+        value: scheduledConstruction.reduce((sum, p) => sum + (p.amount || 0), 0),
+      },
+      inspections: {
+        count: upcomingInspections.length,
+        value: upcomingInspections.reduce((sum, p) => sum + (p.amount || 0), 0),
+      },
+      pto: {
+        count: awaitingPto.length,
+        value: awaitingPto.reduce((sum, p) => sum + (p.amount || 0), 0),
+      },
+    };
+  }, [projects]);
+
+  // Period generation
+  const periods = useMemo(
+    () => (revenuePeriod === "monthly" ? generateMonthlyPeriods() : generateWeeklyPeriods()),
+    [revenuePeriod]
+  );
+
+  // Milestone revenue data computation
+  const milestoneData = useMemo(() => {
+    return MILESTONE_CONFIGS.map((config) => {
+      const periodData = periods.map((period) => {
+        let completions = 0;
+        let revenue = 0;
+
+        projects.forEach((p) => {
+          // Use actual completion date if available, otherwise use forecast
+          const dateStr =
+            (p[config.dateField] as string | null) ||
+            (config.dateField !== config.forecastField
+              ? (p[config.forecastField] as string | null)
+              : null);
+          if (!dateStr) return;
+
+          const date = new Date(dateStr + "T12:00:00");
+          if (date >= period.start && date <= period.end) {
+            completions++;
+            revenue += p.amount || 0;
+          }
+        });
+
+        return { completions, revenue };
+      });
+
+      const totalCompletions = periodData.reduce((s, d) => s + d.completions, 0);
+      const totalRevenue = periodData.reduce((s, d) => s + d.revenue, 0);
+      const maxRevenue = Math.max(...periodData.map((d) => d.revenue), 1);
+
+      return { config, periodData, totalCompletions, totalRevenue, maxRevenue };
+    });
+  }, [projects, periods]);
+
+  return (
+    <div className="space-y-6">
+      {/* Pipeline Strength */}
+      <div>
+        <h2 className="text-lg font-semibold text-zinc-200 mb-3">Pipeline Strength</h2>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="bg-[#12121a] border border-zinc-800 rounded-lg p-4 border-l-4 border-l-green-500">
+            <div className="text-sm text-zinc-400">RTB Projects</div>
+            <div className="text-2xl font-bold text-green-400">{pipelineStrength.rtb.count}</div>
+            <div className="text-sm text-zinc-500">{formatRevenueShort(pipelineStrength.rtb.value)}</div>
+          </div>
+          <div className="bg-[#12121a] border border-zinc-800 rounded-lg p-4 border-l-4 border-l-blue-500">
+            <div className="text-sm text-zinc-400">Scheduled Construction</div>
+            <div className="text-2xl font-bold text-blue-400">{pipelineStrength.scheduled.count}</div>
+            <div className="text-sm text-zinc-500">{formatRevenueShort(pipelineStrength.scheduled.value)}</div>
+          </div>
+          <div className="bg-[#12121a] border border-zinc-800 rounded-lg p-4 border-l-4 border-l-emerald-500">
+            <div className="text-sm text-zinc-400">Upcoming Inspections</div>
+            <div className="text-2xl font-bold text-emerald-400">{pipelineStrength.inspections.count}</div>
+            <div className="text-sm text-zinc-500">{formatRevenueShort(pipelineStrength.inspections.value)}</div>
+          </div>
+          <div className="bg-[#12121a] border border-zinc-800 rounded-lg p-4 border-l-4 border-l-amber-500">
+            <div className="text-sm text-zinc-400">Awaiting PTO</div>
+            <div className="text-2xl font-bold text-amber-400">{pipelineStrength.pto.count}</div>
+            <div className="text-sm text-zinc-500">{formatRevenueShort(pipelineStrength.pto.value)}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Period Toggle */}
+      <div className="flex items-center gap-2">
+        <div className="flex bg-[#12121a] border border-zinc-800 rounded-lg p-1">
+          <button
+            onClick={() => setRevenuePeriod("monthly")}
+            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+              revenuePeriod === "monthly"
+                ? "bg-green-600 text-white"
+                : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800"
+            }`}
+          >
+            Monthly
+          </button>
+          <button
+            onClick={() => setRevenuePeriod("weekly")}
+            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+              revenuePeriod === "weekly"
+                ? "bg-green-600 text-white"
+                : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800"
+            }`}
+          >
+            Weekly
+          </button>
+        </div>
+      </div>
+
+      {/* Milestone Revenue Tables */}
+      {milestoneData.map(({ config, periodData, totalCompletions, totalRevenue, maxRevenue }) => (
+        <div
+          key={config.title}
+          className={`bg-[#12121a] border border-zinc-800 rounded-lg overflow-hidden border-l-4 ${config.borderColor}`}
+        >
+          <div className={`p-4 border-b border-zinc-800 ${config.headerBg}`}>
+            <h3 className="font-semibold text-zinc-200">{config.title}</h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-zinc-800 bg-zinc-900/50">
+                  <th className="text-left p-3 text-sm font-medium text-zinc-400 w-32">Period</th>
+                  <th className="text-right p-3 text-sm font-medium text-zinc-400 w-28">Completions</th>
+                  <th className="text-right p-3 text-sm font-medium text-zinc-400 w-28">Revenue</th>
+                  <th className="p-3 text-sm font-medium text-zinc-400"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {periods.map((period, idx) => {
+                  const data = periodData[idx];
+                  const barWidth = maxRevenue > 0 ? (data.revenue / maxRevenue) * 100 : 0;
+                  return (
+                    <tr
+                      key={period.label}
+                      className={`border-b border-zinc-800/50 transition-colors ${
+                        period.isCurrent
+                          ? "bg-zinc-800/40"
+                          : period.isPast
+                            ? "opacity-60"
+                            : ""
+                      }`}
+                    >
+                      <td className="p-3 text-sm text-zinc-300">
+                        <span className={period.isCurrent ? "font-semibold text-green-400" : ""}>
+                          {period.label}
+                          {period.isCurrent && (
+                            <span className="ml-1.5 text-[10px] text-green-500 font-normal">
+                              current
+                            </span>
+                          )}
+                        </span>
+                      </td>
+                      <td className="p-3 text-sm text-right text-zinc-300 font-medium">
+                        {data.completions || "-"}
+                      </td>
+                      <td className="p-3 text-sm text-right text-zinc-300 font-medium">
+                        {data.revenue > 0 ? formatRevenueShort(data.revenue) : "-"}
+                      </td>
+                      <td className="p-3 pr-4">
+                        {data.revenue > 0 && (
+                          <div className="h-2 rounded-full bg-zinc-800 overflow-hidden">
+                            <div
+                              className={`h-full rounded-full ${config.barColor} transition-all duration-300`}
+                              style={{ width: `${barWidth}%` }}
+                            />
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {/* Total row */}
+                <tr className="bg-zinc-900/70 border-t border-zinc-700">
+                  <td className="p-3 text-sm font-semibold text-zinc-200">Total</td>
+                  <td className="p-3 text-sm text-right font-semibold text-zinc-200">
+                    {totalCompletions}
+                  </td>
+                  <td className="p-3 text-sm text-right font-semibold text-zinc-200">
+                    {totalRevenue > 0 ? formatRevenueShort(totalRevenue) : "-"}
+                  </td>
+                  <td className="p-3"></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main Page Component
 // ---------------------------------------------------------------------------
 
@@ -440,6 +770,7 @@ export default function PEDashboardPage() {
   const [filterMilestone, setFilterMilestone] = useState<string>("all");
   const [sortBy, setSortBy] = useState<SortKey>("pto");
   const [searchQuery, setSearchQuery] = useState("");
+  const [revenuePeriod, setRevenuePeriod] = useState<"monthly" | "weekly">("monthly");
 
   // Fetch data
   useEffect(() => {
@@ -730,7 +1061,7 @@ export default function PEDashboardPage() {
     >
       {/* Tab Navigation */}
       <div className="flex gap-1 mb-6 bg-[#12121a] border border-zinc-800 rounded-lg p-1 w-fit">
-        {(["overview", "projects", "milestones"] as ViewType[]).map((v) => (
+        {(["overview", "projects", "milestones", "revenue"] as ViewType[]).map((v) => (
           <button
             key={v}
             onClick={() => setView(v)}
@@ -981,6 +1312,17 @@ export default function PEDashboardPage() {
             threshold={30}
           />
         </div>
+      )}
+
+      {/* ================================================================ */}
+      {/* REVENUE VIEW                                                     */}
+      {/* ================================================================ */}
+      {view === "revenue" && (
+        <RevenueView
+          projects={projects}
+          revenuePeriod={revenuePeriod}
+          setRevenuePeriod={setRevenuePeriod}
+        />
       )}
     </DashboardShell>
   );

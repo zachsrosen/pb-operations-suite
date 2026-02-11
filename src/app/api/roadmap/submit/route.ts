@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { prisma } from "@/lib/db";
+import { prisma, logActivity } from "@/lib/db";
+import { requireApiAuth } from "@/lib/api-auth";
 
 // Inline validation for roadmap submission
 interface RoadmapSubmissionRequest {
@@ -31,6 +32,9 @@ function validateRoadmapSubmission(data: unknown): data is { title: string; desc
 
 export async function POST(request: Request) {
   try {
+    const authResult = await requireApiAuth();
+    if (authResult instanceof NextResponse) return authResult;
+
     // Get the current user session
     const session = await auth();
     const userEmail = session?.user?.email;
@@ -72,6 +76,19 @@ export async function POST(request: Request) {
         isOfficial: false,
         submittedBy: userEmail ? userEmail.split("@")[0] : "Anonymous",
       },
+    });
+
+    // Log the submission
+    await logActivity({
+      type: "FEATURE_USED",
+      description: `Submitted roadmap idea: ${title}`,
+      userEmail: authResult.email,
+      userName: authResult.name,
+      entityType: "roadmap_item",
+      entityId: newItem.id,
+      entityName: title,
+      ipAddress: authResult.ip,
+      userAgent: authResult.userAgent,
     });
 
     return NextResponse.json({

@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import Link from "next/link";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
+import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -358,6 +359,8 @@ export default function SchedulerPage() {
   /* ---- filters ---- */
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]); // For project list filtering (multi-select)
   const [selectedLocation, setSelectedLocation] = useState("All"); // For calendar view (single-select)
+  const [calendarLocations, setCalendarLocations] = useState<string[]>([]); // Multi-select for calendar
+  const [calendarScheduleTypes, setCalendarScheduleTypes] = useState<string[]>([]); // Multi-select for calendar
   const [selectedStage, setSelectedStage] = useState("all");
   const [searchText, setSearchText] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
@@ -592,13 +595,13 @@ export default function SchedulerPage() {
   }, [scheduledEvents]);
 
   const stats = useMemo(() => {
-    // Use selectedLocations for multi-select filtering, fall back to selectedLocation for calendar view
-    const fp =
-      selectedLocations.length > 0
-        ? projects.filter((p) => selectedLocations.includes(p.location))
-        : selectedLocation === "All"
-          ? projects
-          : projects.filter((p) => p.location === selectedLocation);
+    // Use calendar filters for stats
+    let fp = calendarLocations.length > 0
+      ? projects.filter((p) => calendarLocations.includes(p.location))
+      : projects;
+    if (calendarScheduleTypes.length > 0) {
+      fp = fp.filter((p) => calendarScheduleTypes.includes(p.stage));
+    }
     return {
       survey: fp.filter((p) => p.stage === "survey").length,
       rtb: fp.filter((p) => p.stage === "rtb").length,
@@ -606,7 +609,7 @@ export default function SchedulerPage() {
       inspection: fp.filter((p) => p.stage === "inspection").length,
       totalRevenue: formatRevenueCompact(fp.reduce((s, p) => s + p.amount, 0)),
     };
-  }, [projects, selectedLocation, selectedLocations]);
+  }, [projects, calendarLocations, calendarScheduleTypes]);
 
   const queueRevenue = useMemo(
     () => formatRevenueCompact(filteredProjects.reduce((s, p) => s + p.amount, 0)),
@@ -628,9 +631,10 @@ export default function SchedulerPage() {
 
     const eventsByDate: Record<number, (ScheduledEvent & { dayNum: number; totalCalDays: number })[]> = {};
     scheduledEvents.forEach((e) => {
-      // Filter by multi-select locations if any selected, otherwise use single-select
-      if (selectedLocations.length > 0 && !selectedLocations.includes(e.location)) return;
-      if (selectedLocations.length === 0 && selectedLocation !== "All" && e.location !== selectedLocation) return;
+      // Filter by calendar location multi-select
+      if (calendarLocations.length > 0 && !calendarLocations.includes(e.location)) return;
+      // Filter by calendar schedule type multi-select
+      if (calendarScheduleTypes.length > 0 && !calendarScheduleTypes.includes(e.eventType)) return;
       const startDate = new Date(e.date + "T12:00:00");
       const businessDays = Math.ceil(e.days || 1);
       let dayCount = 0;
@@ -661,7 +665,7 @@ export default function SchedulerPage() {
     });
 
     return { startDay, daysInMonth, today, eventsByDate };
-  }, [currentYear, currentMonth, scheduledEvents, selectedLocation, selectedLocations]);
+  }, [currentYear, currentMonth, scheduledEvents, calendarLocations, calendarScheduleTypes]);
 
   /* ================================================================ */
   /*  Week view logic                                                  */
@@ -1538,35 +1542,44 @@ export default function SchedulerPage() {
             ))}
           </div>
 
-          {/* Location tabs */}
-          <div className="flex gap-0.5 p-2 bg-[#0a0a0f] border-b border-zinc-800 overflow-x-auto">
-            {LOCATIONS.map((loc) => {
-              const locProjects =
-                loc === "All"
-                  ? projects
-                  : projects.filter((p) => p.location === loc);
-              const count = locProjects.length;
-              const revenue = formatRevenueCompact(
-                locProjects.reduce((s, p) => s + p.amount, 0)
-              );
-              return (
-                <button
-                  key={loc}
-                  onClick={() => setSelectedLocation(loc)}
-                  className={`px-2.5 py-1.5 text-[0.65rem] font-medium rounded-md border transition-colors whitespace-nowrap ${
-                    selectedLocation === loc
-                      ? "border-orange-500 text-orange-400 bg-orange-500/10"
-                      : "bg-[#12121a] border-zinc-800 text-zinc-500 hover:border-zinc-600"
-                  }`}
-                >
-                  {loc === "All" ? "All" : loc}{" "}
-                  <span className="font-mono opacity-70">{count}</span>
-                  <span className="text-[0.55rem] opacity-60 block">
-                    ${revenue}
-                  </span>
-                </button>
-              );
-            })}
+          {/* Calendar Filters */}
+          <div className="flex items-center gap-2 p-2 bg-[#0a0a0f] border-b border-zinc-800 overflow-x-auto">
+            <MultiSelectFilter
+              label="Location"
+              options={[
+                { value: "Westminster", label: "Westminster" },
+                { value: "Centennial", label: "Centennial" },
+                { value: "Colorado Springs", label: "CO Springs" },
+                { value: "San Luis Obispo", label: "SLO" },
+                { value: "Camarillo", label: "Camarillo" },
+              ]}
+              selected={calendarLocations}
+              onChange={setCalendarLocations}
+              placeholder="All Locations"
+              accentColor="orange"
+            />
+            <MultiSelectFilter
+              label="Type"
+              options={[
+                { value: "survey", label: "Survey" },
+                { value: "rtb", label: "RTB" },
+                { value: "blocked", label: "Blocked" },
+                { value: "construction", label: "Construction" },
+                { value: "inspection", label: "Inspection" },
+              ]}
+              selected={calendarScheduleTypes}
+              onChange={setCalendarScheduleTypes}
+              placeholder="All Types"
+              accentColor="blue"
+            />
+            {(calendarLocations.length > 0 || calendarScheduleTypes.length > 0) && (
+              <button
+                onClick={() => { setCalendarLocations([]); setCalendarScheduleTypes([]); }}
+                className="px-2 py-1.5 text-[0.65rem] font-medium rounded-md border border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500 transition-colors"
+              >
+                Clear filters
+              </button>
+            )}
           </div>
 
           {/* Stats bar */}
@@ -1862,13 +1875,11 @@ export default function SchedulerPage() {
 
                   {/* Crew rows */}
                   {(() => {
-                    // Use multi-select locations if any selected, otherwise fall back to single-select
+                    // Use calendar multi-select locations for crew filtering
                     const locationCrews =
-                      selectedLocations.length > 0
-                        ? selectedLocations.flatMap(loc => CREWS[loc] || [])
-                        : selectedLocation === "All"
-                          ? Object.values(CREWS).flat()
-                          : CREWS[selectedLocation] || [];
+                      calendarLocations.length > 0
+                        ? calendarLocations.flatMap(loc => CREWS[loc] || [])
+                        : Object.values(CREWS).flat();
                     return locationCrews.map((crew) => (
                       <React.Fragment key={crew.name}>
                         <div
@@ -2028,13 +2039,11 @@ export default function SchedulerPage() {
 
                   {/* Crew rows */}
                   {(() => {
-                    // Use multi-select locations if any selected, otherwise fall back to single-select
+                    // Use calendar multi-select locations for crew filtering
                     const allCrews =
-                      selectedLocations.length > 0
-                        ? selectedLocations.flatMap(loc => CREWS[loc] || [])
-                        : selectedLocation === "All"
-                          ? Object.values(CREWS).flat()
-                          : CREWS[selectedLocation] || [];
+                      calendarLocations.length > 0
+                        ? calendarLocations.flatMap(loc => CREWS[loc] || [])
+                        : Object.values(CREWS).flat();
                     return allCrews.map((crew) => (
                       <div
                         key={crew.name}
@@ -2147,12 +2156,10 @@ export default function SchedulerPage() {
               Crew Capacity
             </div>
             {(() => {
-              // Get crews based on multi-select or single-select
-              const crewsToShow = selectedLocations.length > 0
-                ? selectedLocations.flatMap(loc => CREWS[loc] || [])
-                : selectedLocation !== "All" && CREWS[selectedLocation]
-                  ? CREWS[selectedLocation]
-                  : [];
+              // Get crews based on calendar multi-select locations
+              const crewsToShow = calendarLocations.length > 0
+                ? calendarLocations.flatMap(loc => CREWS[loc] || [])
+                : [];
 
               if (crewsToShow.length === 0) {
                 return (
