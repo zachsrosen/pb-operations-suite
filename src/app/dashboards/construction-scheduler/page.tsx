@@ -7,6 +7,19 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 
 /* ------------------------------------------------------------------ */
+/*  Construction Director Assignments                                   */
+/* ------------------------------------------------------------------ */
+
+const CONSTRUCTION_DIRECTORS: Record<string, { name: string; userUid: string; teamUid: string }> = {
+  Westminster: { name: "Joe Lynch", userUid: "f203f99b-4aaf-488e-8e6a-8ee5e94ec217", teamUid: "1c23adb9-cefa-44c7-8506-804949afc56f" },
+  Centennial: { name: "Drew Perry", userUid: "0ddc7e1d-62e1-49df-b89d-905a39c1e353", teamUid: "76b94bd3-e2fc-4cfe-8c2a-357b9a850b3c" },
+  DTC: { name: "Drew Perry", userUid: "0ddc7e1d-62e1-49df-b89d-905a39c1e353", teamUid: "76b94bd3-e2fc-4cfe-8c2a-357b9a850b3c" },
+  "Colorado Springs": { name: "Rolando", userUid: "a89ed2f5-222b-4b09-8bb0-14dc45c2a51b", teamUid: "1a914a0e-b633-4f12-8ed6-3348285d6b93" },
+  "San Luis Obispo": { name: "Nick Scarpellino", userUid: "8e67159c-48fe-4fb0-acc3-b1c905ff6e95", teamUid: "699cec60-f9f8-4e57-b41a-bb29b1f3649c" },
+  Camarillo: { name: "Nick Scarpellino", userUid: "8e67159c-48fe-4fb0-acc3-b1c905ff6e95", teamUid: "0168d963-84af-4214-ad81-d6c43cee8e65" },
+};
+
+/* ------------------------------------------------------------------ */
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
 
@@ -533,6 +546,8 @@ export default function ConstructionSchedulerPage() {
     if (zuperConfigured && syncToZuper) {
       setSyncingToZuper(true);
       try {
+        // Auto-assign location director
+        const director = CONSTRUCTION_DIRECTORS[project.location];
         const response = await fetch("/api/zuper/jobs/schedule", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -552,7 +567,9 @@ export default function ConstructionSchedulerPage() {
               type: "installation",
               date: date,
               days: project.installDays || 2,
-              notes: "Scheduled via Construction Scheduler",
+              crew: director?.userUid,
+              teamUid: director?.teamUid,
+              notes: `Scheduled via Construction Scheduler${director ? ` — Director: ${director.name}` : ""}`,
             },
           }),
         });

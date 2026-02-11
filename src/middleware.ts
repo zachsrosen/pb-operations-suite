@@ -135,14 +135,9 @@ export default auth((req) => {
       return addSecurityHeaders(NextResponse.next());
     }
 
-    // Executive-only routes — only ADMIN and OWNER can access
-    const EXECUTIVE_ONLY_ROUTES = ["/dashboards/command-center"];
-    if (EXECUTIVE_ONLY_ROUTES.some(r => pathname.startsWith(r))) {
-      if (userRole !== "ADMIN" && userRole !== "OWNER") {
-        const defaultRoute = getDefaultRouteForRole(userRole);
-        return addSecurityHeaders(NextResponse.redirect(new URL(defaultRoute, req.url)));
-      }
-    }
+    // Note: Executive Suite access is enforced client-side in the page component
+    // because JWT role is not synced from DB (always defaults to VIEWER in Edge Runtime).
+    // The client fetches the real role from /api/auth/sync and redirects if unauthorized.
 
     // Check role permissions
     if (!canAccessRoute(userRole, pathname)) {

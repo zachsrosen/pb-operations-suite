@@ -1893,6 +1893,24 @@ export default function CommandCenterPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
+  /* ---- Executive access guard (ADMIN / OWNER only) ---- */
+  const [accessChecked, setAccessChecked] = useState(false);
+  useEffect(() => {
+    fetch("/api/auth/sync")
+      .then(r => r.json())
+      .then(data => {
+        const role = data.role || "VIEWER";
+        setAccessChecked(true);
+        if (role !== "ADMIN" && role !== "OWNER") {
+          router.push("/");
+        }
+      })
+      .catch(() => {
+        setAccessChecked(true);
+        router.push("/");
+      });
+  }, [router]);
+
   const [currentView, setCurrentView] = useState<ViewType>("pipeline");
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1965,6 +1983,15 @@ export default function CommandCenterPage() {
     { key: "at-risk", label: "At-Risk Projects", href: "/dashboards/at-risk" },
     { key: "optimizer", label: "Pipeline Optimizer", href: "/dashboards/optimizer" },
   ];
+
+  // Wait for access check before rendering
+  if (!accessChecked) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
+        <div className="text-zinc-400 text-lg">Checking access...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-zinc-200 dashboard-bg">
