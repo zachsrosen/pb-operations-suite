@@ -38,10 +38,11 @@ interface ActivityLog {
   description: string;
 }
 
-const ROLES = ["ADMIN", "MANAGER", "OPERATIONS_MANAGER", "PROJECT_MANAGER", "OPERATIONS", "TECH_OPS", "DESIGNER", "PERMITTING", "VIEWER", "SALES"];
+const ROLES = ["ADMIN", "OWNER", "MANAGER", "OPERATIONS_MANAGER", "PROJECT_MANAGER", "OPERATIONS", "TECH_OPS", "DESIGNER", "PERMITTING", "VIEWER", "SALES"];
 
 const ROLE_DESCRIPTIONS: Record<string, string> = {
   ADMIN: "Full access, can manage users",
+  OWNER: "Full access like Admin, but cannot manage users",
   MANAGER: "Can schedule all types, view all data",
   OPERATIONS_MANAGER: "Crew oversight, scheduling, availability management",
   PROJECT_MANAGER: "Project tracking, scheduling, reporting",
@@ -55,6 +56,7 @@ const ROLE_DESCRIPTIONS: Record<string, string> = {
 
 const ROLE_COLORS: Record<string, string> = {
   ADMIN: "bg-red-500/20 text-red-400 border-red-500/30",
+  OWNER: "bg-amber-600/20 text-amber-300 border-amber-500/30",
   MANAGER: "bg-purple-500/20 text-purple-400 border-purple-500/30",
   OPERATIONS_MANAGER: "bg-amber-500/20 text-amber-400 border-amber-500/30",
   PROJECT_MANAGER: "bg-indigo-500/20 text-indigo-400 border-indigo-500/30",
