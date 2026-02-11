@@ -135,7 +135,7 @@ interface TimelinePeriod {
   byLocation: Record<string, { value: number; count: number }>;
 }
 
-type ViewType = "pipeline" | "revenue" | "capacity" | "pe" | "alerts" | "executive" | "at-risk" | "optimizer";
+type ViewType = "pipeline" | "revenue" | "capacity" | "pe" | "alerts" | "executive" | "at-risk" | "optimizer" | "locations";
 
 // ============================================================
 // Constants
@@ -1998,6 +1998,7 @@ export default function CommandCenterPage() {
     { key: "executive", label: "Executive Summary", href: "/dashboards/executive" },
     { key: "at-risk", label: "At-Risk Projects", href: "/dashboards/at-risk" },
     { key: "optimizer", label: "Pipeline Optimizer", href: "/dashboards/optimizer" },
+    { key: "locations", label: "Location Comparison", href: "/dashboards/locations" },
   ];
 
   // Wait for access check before rendering
