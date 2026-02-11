@@ -109,9 +109,9 @@ export default function CrewAvailabilityPage() {
   const [showOverrideModal, setShowOverrideModal] = useState(false);
   const [overrideForm, setOverrideForm] = useState({ crewMemberId: "", date: "", reason: "" });
 
-  const showToast = (message: string) => {
+  const showToast = (message: string, durationMs = 5000) => {
     setToast(message);
-    setTimeout(() => setToast(null), 3000);
+    setTimeout(() => setToast(null), durationMs);
   };
 
   const fetchRecords = useCallback(async () => {
@@ -268,9 +268,10 @@ export default function CrewAvailabilityPage() {
       const crewResponse = await fetch("/api/admin/crew?action=seed", {
         method: "POST",
       });
+      let crewData;
+      try { crewData = await crewResponse.json(); } catch { crewData = null; }
       if (!crewResponse.ok) {
-        const crewData = await crewResponse.json();
-        throw new Error(crewData.error || "Failed to seed crew members");
+        throw new Error(crewData?.error || `Crew seed failed (${crewResponse.status})`);
       }
 
       // Step 2: Seed availability schedules
@@ -278,17 +279,19 @@ export default function CrewAvailabilityPage() {
         method: "POST",
       });
 
+      let data;
+      try { data = await response.json(); } catch { data = null; }
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || "Failed to seed availability");
+        throw new Error(data?.error || `Availability seed failed (${response.status})`);
       }
 
-      const data = await response.json();
-      const errMsg = data.errors?.length ? ` (${data.errors.join(", ")})` : "";
-      showToast(`Seeded: ${data.created} created, ${data.skipped} skipped${errMsg}`);
+      const crewCount = crewData?.results?.length || 0;
+      const errMsg = data?.errors?.length ? ` (${data.errors.join(", ")})` : "";
+      showToast(`${crewCount} crew synced, ${data?.created || 0} slots created, ${data?.skipped || 0} skipped${errMsg}`, 8000);
       fetchRecords();
+      fetchCrewMembers();
     } catch (err) {
-      showToast(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
+      showToast(`Error: ${err instanceof Error ? err.message : "Unknown error"}`, 10000);
     } finally {
       setSeeding(false);
     }
@@ -303,16 +306,22 @@ export default function CrewAvailabilityPage() {
         method: "POST",
       });
 
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || "Failed to seed teams");
+      let data;
+      try {
+        data = await response.json();
+      } catch {
+        throw new Error(`Server returned ${response.status}: ${response.statusText}`);
       }
 
-      const data = await response.json();
-      showToast(data.message || "Teams seeded successfully");
+      if (!response.ok) {
+        throw new Error(data.error || data.details || `Failed (${response.status})`);
+      }
+
+      showToast(data.message || "Teams seeded successfully", 8000);
       fetchRecords();
+      fetchCrewMembers();
     } catch (err) {
-      showToast(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
+      showToast(`Error: ${err instanceof Error ? err.message : "Unknown error"}`, 10000);
     } finally {
       setSeedingTeams(false);
     }
