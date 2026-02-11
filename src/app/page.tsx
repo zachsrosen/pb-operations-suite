@@ -73,8 +73,8 @@ const ALL_DASHBOARDS: DashboardLinkData[] = [
   { href: "/dashboards/sales", title: "Sales Pipeline", description: "Active deals, funnel visualization, and proposal tracking", tag: "SALES", tagColor: "green", section: "Other Pipelines" },
   { href: "/dashboards/service", title: "Service Pipeline", description: "Service jobs, scheduling, and work in progress tracking", tag: "SERVICE", tagColor: "cyan", section: "Other Pipelines" },
   { href: "/dashboards/dnr", title: "D&R Pipeline", description: "Detach & Reset projects with phase tracking", tag: "D&R", tagColor: "purple", section: "Other Pipelines" },
+  { href: "/dashboards/command-center", title: "Executive Suite", description: "Pipeline, revenue milestones, capacity, PE tracking, and executive dashboards", tag: "EXECUTIVE", tagColor: "amber", section: "Participate Energy & Leadership" },
   { href: "/dashboards/pe", title: "PE Dashboard", description: "Dedicated PE tracking with milestone status and compliance monitoring", tag: "PE", tagColor: "emerald", section: "Participate Energy & Leadership" },
-  { href: "/dashboards/executive", title: "Executive Summary", description: "High-level KPIs, charts, and trends for leadership review", tag: "LEADERSHIP", tagColor: "purple", section: "Participate Energy & Leadership" },
   { href: "/dashboards/mobile", title: "Mobile Dashboard", description: "Touch-optimized view for field teams with quick project lookup", tag: "MOBILE", tagColor: "blue", section: "Participate Energy & Leadership" },
   { href: "/handbook", title: "Handbook", description: "Comprehensive guide to all dashboards, features, and workflows", tag: "GUIDE", tagColor: "zinc", section: "Participate Energy & Leadership" },
 ];
