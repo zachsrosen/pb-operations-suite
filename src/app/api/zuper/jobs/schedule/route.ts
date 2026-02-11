@@ -254,14 +254,20 @@ export async function PUT(request: NextRequest) {
     let startDateTime: string;
     let endDateTime: string;
 
-    if (schedule.startTime && schedule.endTime) {
+    if (schedule.type === "inspection") {
+      // Inspections always use a fixed 8am-4pm same-day window
+      // The slot selection only determines the inspector assignment, not the time window
+      startDateTime = localToUtc(schedule.date, "08:00");
+      endDateTime = localToUtc(schedule.date, "16:00");
+      console.log(`[Zuper Schedule] Inspection: using fixed 8am-4pm ${slotTimezone} window`);
+    } else if (schedule.startTime && schedule.endTime) {
       // Use specific time slot (e.g., "12:00" to "13:00" for site surveys)
       // Convert from local timezone to UTC for Zuper
       startDateTime = localToUtc(schedule.date, schedule.startTime);
       endDateTime = localToUtc(schedule.date, schedule.endTime);
       console.log(`[Zuper Schedule] Converting ${slotTimezone} time ${schedule.startTime}-${schedule.endTime} to UTC`);
     } else {
-      // Default to 8am-4pm local time for multi-day jobs
+      // Default to 8am-4pm local time for multi-day jobs (construction)
       startDateTime = localToUtc(schedule.date, "08:00");
 
       // Calculate end date
@@ -320,7 +326,7 @@ export async function PUT(request: NextRequest) {
 
       // Log the reschedule activity
       await logSchedulingActivity(
-        schedule.type === "survey" ? "SURVEY_RESCHEDULED" : "INSTALL_RESCHEDULED",
+        schedule.type === "survey" ? "SURVEY_RESCHEDULED" : schedule.type === "inspection" ? "INSPECTION_RESCHEDULED" : "INSTALL_RESCHEDULED",
         `Rescheduled ${schedule.type} for ${project.name || project.id}${assignmentFailed ? " (user assignment failed)" : ""}`,
         project,
         existingJob.job_uid,
@@ -407,7 +413,7 @@ export async function PUT(request: NextRequest) {
 
       // Log the scheduling activity
       await logSchedulingActivity(
-        schedule.type === "survey" ? "SURVEY_SCHEDULED" : "INSTALL_SCHEDULED",
+        schedule.type === "survey" ? "SURVEY_SCHEDULED" : schedule.type === "inspection" ? "INSPECTION_SCHEDULED" : "INSTALL_SCHEDULED",
         `Scheduled ${schedule.type} for ${project.name || project.id}`,
         project,
         createResult.data?.job_uid,
@@ -559,7 +565,7 @@ export async function GET(request: NextRequest) {
  * Helper to log scheduling activities
  */
 async function logSchedulingActivity(
-  type: "SURVEY_SCHEDULED" | "SURVEY_RESCHEDULED" | "INSTALL_SCHEDULED" | "INSTALL_RESCHEDULED",
+  type: "SURVEY_SCHEDULED" | "SURVEY_RESCHEDULED" | "INSTALL_SCHEDULED" | "INSTALL_RESCHEDULED" | "INSPECTION_SCHEDULED" | "INSPECTION_RESCHEDULED",
   description: string,
   project: { id: string; name?: string },
   zuperJobId?: string,

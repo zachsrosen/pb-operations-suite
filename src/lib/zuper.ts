@@ -930,13 +930,18 @@ export async function createJobFromProject(project: {
   let startDateTime: string;
   let endDateTime: string;
 
-  if (schedule.startTime && schedule.endTime) {
+  if (schedule.type === "inspection") {
+    // Inspections always use a fixed 8am-4pm same-day window
+    // The slot selection only determines the inspector assignment, not the time window
+    startDateTime = localToUtc(schedule.date, "08:00");
+    endDateTime = localToUtc(schedule.date, "16:00");
+  } else if (schedule.startTime && schedule.endTime) {
     // Use specific time slot (e.g., "08:00" to "09:00" for site surveys)
     // Convert from local timezone to UTC for Zuper
     startDateTime = localToUtc(schedule.date, schedule.startTime);
     endDateTime = localToUtc(schedule.date, schedule.endTime);
   } else {
-    // Default to 8am-4pm local time for multi-day jobs
+    // Default to 8am-4pm local time for multi-day jobs (construction)
     startDateTime = localToUtc(schedule.date, "08:00");
 
     // Calculate end date
