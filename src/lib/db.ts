@@ -852,6 +852,8 @@ export type CrewMember = {
   zuperTeamUid: string | null;
   role: string;
   locations: string[];
+  teamName: string | null;
+  permissions: string[];
   isActive: boolean;
   maxDailyJobs: number;
 };
@@ -923,6 +925,8 @@ export async function upsertCrewMember(data: {
   zuperTeamUid?: string;
   role?: string;
   locations?: string[];
+  teamName?: string;
+  permissions?: string[];
   isActive?: boolean;
   maxDailyJobs?: number;
 }): Promise<CrewMember | null> {
@@ -937,6 +941,8 @@ export async function upsertCrewMember(data: {
       zuperTeamUid: data.zuperTeamUid,
       role: data.role || "technician",
       locations: data.locations || [],
+      teamName: data.teamName,
+      permissions: data.permissions || [],
       isActive: data.isActive ?? true,
       maxDailyJobs: data.maxDailyJobs || 4,
     },
@@ -946,6 +952,8 @@ export async function upsertCrewMember(data: {
       zuperTeamUid: data.zuperTeamUid,
       role: data.role,
       locations: data.locations,
+      teamName: data.teamName,
+      permissions: data.permissions,
       isActive: data.isActive,
       maxDailyJobs: data.maxDailyJobs,
     },

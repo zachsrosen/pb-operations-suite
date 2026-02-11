@@ -4,6 +4,7 @@
  * GET /api/admin/crew - List all crew members
  * POST /api/admin/crew - Create/update crew member
  * POST /api/admin/crew?action=seed - Seed initial crew data from hardcoded values
+ * POST /api/admin/crew?action=seed-teams - Seed DTC & Westminster teams with Zuper resolution
  *
  * Admin-only endpoint
  */
@@ -16,6 +17,7 @@ import {
   upsertCrewMember,
   getCrewMemberByName,
 } from "@/lib/db";
+import { zuper } from "@/lib/zuper";
 
 // Zuper Team UIDs by location
 const ZUPER_TEAM_UIDS: Record<string, string> = {
@@ -90,8 +92,152 @@ const SEED_DATA = [
     zuperTeamUid: ZUPER_TEAM_UIDS.DTC,
     role: "inspector",
     locations: ["DTC"],
+    teamName: "Thunderbird",
+    permissions: ["Site Survey", "Inspections", "Service", "Loose Ends"],
   },
-  // Note: "Rich" was previously listed here with UID e043bf1d — that's Ryszard Szymanski (listed above)
+];
+
+// DTC & Westminster crew teams (Zuper UIDs resolved at seed time)
+const TEAM_SEED_DATA: Array<{
+  name: string;
+  zuperSearchName: string; // Name to search in Zuper (first name or full name)
+  location: "DTC" | "Westminster";
+  role: string;
+  teamName: string;
+  permissions: string[];
+}> = [
+  // ===== DTC Electricians =====
+  {
+    name: "Jeremy",
+    zuperSearchName: "Jeremy",
+    location: "DTC",
+    role: "electrician",
+    teamName: "Godzilla",
+    permissions: ["Inspections", "MPUs", "GW3s", "Split Service", "Site Survey", "Service", "EV", "Sub Panels", "Loose Ends"],
+  },
+  {
+    name: "Olek",
+    zuperSearchName: "Olek",
+    location: "DTC",
+    role: "electrician",
+    teamName: "Mothman",
+    permissions: ["MPUs", "GW3s", "Split Service", "EV", "Sub Panels", "Service", "Loose Ends"],
+  },
+  {
+    name: "Paul",
+    zuperSearchName: "Paul",
+    location: "DTC",
+    role: "electrician",
+    teamName: "Nessie",
+    permissions: ["TBUS", "PW3", "AC Coupled", "Inspections", "EV", "Sub Panels", "Roof Work", "Loose Ends"],
+  },
+  {
+    name: "Gaige",
+    zuperSearchName: "Gaige",
+    location: "DTC",
+    role: "electrician",
+    teamName: "Sasquatch",
+    permissions: ["TBUS", "PW3", "AC Coupled", "EV", "Sub Panels", "Roof Work", "Loose Ends"],
+  },
+  // ===== DTC Roof Teams =====
+  {
+    name: "Emerill",
+    zuperSearchName: "Emerill",
+    location: "DTC",
+    role: "roofer",
+    teamName: "Jackalope",
+    permissions: ["All Roof Scope"],
+  },
+  {
+    name: "Ian",
+    zuperSearchName: "Ian",
+    location: "DTC",
+    role: "roofer",
+    teamName: "Jackalope",
+    permissions: ["All Roof Scope"],
+  },
+  {
+    name: "Kaleb",
+    zuperSearchName: "Kaleb",
+    location: "DTC",
+    role: "roofer",
+    teamName: "Chupacabra",
+    permissions: ["All Roof Scope"],
+  },
+  {
+    name: "Kevin",
+    zuperSearchName: "Kevin",
+    location: "DTC",
+    role: "roofer",
+    teamName: "Chupacabra",
+    permissions: ["All Roof Scope"],
+  },
+  // ===== Westminster Electricians =====
+  {
+    name: "Adolphe",
+    zuperSearchName: "Adolphe",
+    location: "Westminster",
+    role: "electrician",
+    teamName: "Summit",
+    permissions: ["Inspections", "MPUs", "GW3s", "Split Service", "EV", "Sub Panels", "Loose Ends", "Service", "Live"],
+  },
+  {
+    name: "Chris K",
+    zuperSearchName: "Chris",
+    location: "Westminster",
+    role: "electrician",
+    teamName: "Keystone",
+    permissions: ["MPUs", "GW3s", "Split Service", "EV", "Sub Panels", "Service", "Inspections", "Loose Ends"],
+  },
+  {
+    name: "Chad",
+    zuperSearchName: "Chad",
+    location: "Westminster",
+    role: "electrician",
+    teamName: "Denali",
+    permissions: ["Inspections", "Service", "Loose Ends", "GW3s", "MPUs", "Sub Panels"],
+  },
+  // ===== Westminster Roof Teams =====
+  {
+    name: "Nathan",
+    zuperSearchName: "Nathan",
+    location: "Westminster",
+    role: "roofer",
+    teamName: "Kilimanjaro",
+    permissions: ["All Roof Scope"],
+  },
+  {
+    name: "Tyler",
+    zuperSearchName: "Tyler",
+    location: "Westminster",
+    role: "roofer",
+    teamName: "Kilimanjaro",
+    permissions: ["All Roof Scope"],
+  },
+  {
+    name: "Dalton",
+    zuperSearchName: "Dalton",
+    location: "Westminster",
+    role: "roofer",
+    teamName: "Kilimanjaro",
+    permissions: ["All Roof Scope"],
+  },
+  {
+    name: "Jose",
+    zuperSearchName: "Jose",
+    location: "Westminster",
+    role: "roofer",
+    teamName: "Everest",
+    permissions: ["All Roof Scope"],
+  },
+  {
+    name: "Tony",
+    zuperSearchName: "Tony",
+    location: "Westminster",
+    role: "roofer",
+    teamName: "Everest",
+    permissions: ["All Roof Scope"],
+  },
 ];
 
 // Verify admin role
@@ -156,7 +302,7 @@ export async function POST(request: NextRequest) {
 
   const action = request.nextUrl.searchParams.get("action");
 
-  // Seed initial data
+  // Seed initial data (existing crew with known Zuper UIDs)
   if (action === "seed") {
     try {
       const results = [];
@@ -184,6 +330,130 @@ export async function POST(request: NextRequest) {
       console.error("Error seeding crew data:", error);
       return NextResponse.json(
         { error: "Failed to seed crew data" },
+        { status: 500 }
+      );
+    }
+  }
+
+  // Seed DTC & Westminster teams — resolve Zuper UIDs dynamically + create User records
+  if (action === "seed-teams") {
+    try {
+      if (!prisma) {
+        return NextResponse.json({ error: "Database not configured" }, { status: 503 });
+      }
+
+      // Step 1: Fetch all Zuper users for UID resolution
+      const zuperUsers = zuper.isConfigured() ? await zuper.getCachedUsers() : new Map();
+      console.log(`[seed-teams] Zuper user cache has ${zuperUsers.size} entries`);
+
+      const results: Array<{
+        name: string;
+        teamName: string;
+        location: string;
+        status: string;
+        zuperUserUid?: string;
+        zuperResolved: boolean;
+        userCreated: boolean;
+      }> = [];
+
+      // Step 2: First update Daniel Kelly with team info (already exists)
+      const danielData = SEED_DATA.find(d => d.name === "Daniel Kelly");
+      if (danielData) {
+        await upsertCrewMember({
+          ...danielData,
+          teamName: "Thunderbird",
+          permissions: ["Site Survey", "Inspections", "Service", "Loose Ends"],
+        });
+        results.push({
+          name: "Daniel Kelly",
+          teamName: "Thunderbird",
+          location: "DTC",
+          status: "updated",
+          zuperUserUid: danielData.zuperUserUid,
+          zuperResolved: true,
+          userCreated: false,
+        });
+      }
+
+      // Step 3: Process each new crew member
+      for (const crew of TEAM_SEED_DATA) {
+        // Skip Daniel Kelly — already handled above
+        if (crew.name === "Daniel Kelly" || crew.name === "Dan") continue;
+
+        // Resolve Zuper UID by searching first name
+        const resolved = zuperUsers.size > 0
+          ? await zuper.resolveUserUid(crew.zuperSearchName)
+          : null;
+
+        const zuperUserUid = resolved?.userUid || "pending-" + crew.name.toLowerCase().replace(/\s+/g, "-");
+        const zuperTeamUid = resolved?.teamUid || ZUPER_TEAM_UIDS[crew.location];
+
+        // Build full name for crew member record
+        // For first-name-only entries, try to get full name from Zuper
+        let fullName = crew.name;
+        if (resolved) {
+          // Check if Zuper gave us more info (full name in the cache key)
+          for (const [key, val] of zuperUsers) {
+            if (val.userUid === resolved.userUid && key.includes(" ")) {
+              // Found full name — capitalize properly
+              fullName = key.split(" ").map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+              break;
+            }
+          }
+        }
+
+        // Upsert crew member
+        const crewResult = await upsertCrewMember({
+          name: fullName,
+          email: generateCrewEmail(fullName),
+          zuperUserUid,
+          zuperTeamUid,
+          role: crew.role,
+          locations: [crew.location],
+          teamName: crew.teamName,
+          permissions: crew.permissions,
+        });
+
+        // Step 4: Create User record if not present
+        let userCreated = false;
+        const email = generateCrewEmail(fullName);
+        const existingUser = await prisma.user.findUnique({ where: { email } });
+        if (!existingUser) {
+          await prisma.user.create({
+            data: {
+              email,
+              name: fullName,
+              role: "VIEWER",
+              // No googleId, no lastLoginAt — they haven't logged in
+            },
+          });
+          userCreated = true;
+        }
+
+        results.push({
+          name: fullName,
+          teamName: crew.teamName,
+          location: crew.location,
+          status: crewResult ? "created" : "failed",
+          zuperUserUid: resolved?.userUid,
+          zuperResolved: !!resolved,
+          userCreated,
+        });
+      }
+
+      const resolved = results.filter(r => r.zuperResolved).length;
+      const unresolved = results.filter(r => !r.zuperResolved).length;
+      const usersCreated = results.filter(r => r.userCreated).length;
+
+      return NextResponse.json({
+        success: true,
+        message: `Seeded ${results.length} crew members (${resolved} Zuper resolved, ${unresolved} pending). Created ${usersCreated} user accounts.`,
+        results,
+      });
+    } catch (error) {
+      console.error("Error seeding team data:", error);
+      return NextResponse.json(
+        { error: "Failed to seed team data", details: String(error) },
         { status: 500 }
       );
     }
@@ -229,6 +499,8 @@ export async function POST(request: NextRequest) {
       zuperTeamUid: body.zuperTeamUid,
       role: body.role,
       locations: body.locations,
+      teamName: body.teamName,
+      permissions: body.permissions,
       isActive: body.isActive,
       maxDailyJobs: body.maxDailyJobs,
     });

@@ -348,8 +348,10 @@ model CrewMember {
   zuperTeamUid    String?  // Zuper team UID for assignment
 
   // Work configuration
-  role            String   @default("technician") // "surveyor", "technician", "inspector"
+  role            String   @default("technician") // "surveyor", "technician", "inspector", "electrician", "roofer"
   locations       String[] @default([]) // Which PB locations they serve
+  teamName        String?  // Crew team name: "Godzilla", "Mothman", "Jackalope", "Summit", etc.
+  permissions     String[] @default([]) // Job capabilities: "Inspections", "MPUs", "GW3s", "Roof", etc.
 
   // Scheduling
   isActive        Boolean  @default(true)
@@ -365,6 +367,7 @@ model CrewMember {
 
   @@index([name])
   @@index([role])
+  @@index([teamName])
   @@index([isActive])
 }
 
