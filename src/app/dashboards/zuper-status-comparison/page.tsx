@@ -188,6 +188,23 @@ export default function ZuperStatusComparisonPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
+  /* ---- Admin access guard (JWT role is stale, so check via API) ---- */
+  const [accessChecked, setAccessChecked] = useState(false);
+  useEffect(() => {
+    fetch("/api/auth/sync")
+      .then(r => r.json())
+      .then(data => {
+        const role = data.role || "VIEWER";
+        setAccessChecked(true);
+        if (role !== "ADMIN") {
+          window.location.href = "/";
+        }
+      })
+      .catch(() => {
+        window.location.href = "/";
+      });
+  }, []);
+
   const [data, setData] = useState<ApiResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

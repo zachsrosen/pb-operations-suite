@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
+import { getUserByEmail } from "@/lib/db";
 import { zuper, JOB_CATEGORY_UIDS } from "@/lib/zuper";
 import { Client } from "@hubspot/api-client";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
@@ -362,6 +363,12 @@ export async function GET() {
   try {
     const authResult = await requireApiAuth();
     if (authResult instanceof NextResponse) return authResult;
+
+    // Admin-only: check real DB role (JWT role is stale)
+    const dbUser = await getUserByEmail(authResult.email);
+    if (!dbUser || dbUser.role !== "ADMIN") {
+      return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+    }
 
     if (!zuper.isConfigured()) {
       return NextResponse.json(

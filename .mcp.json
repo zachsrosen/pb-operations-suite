@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "zuper": {
+      "type": "sse",
+      "url": "https://mcp.zuperpro.com/sse",
+      "headers": {
+        "x-api-key": "${ZUPER_API_KEY}"
+      }
+    }
+  }
+}

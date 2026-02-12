@@ -213,8 +213,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
  * New dashboards/features go here until confirmed ready for wider access.
  */
 export const ADMIN_ONLY_ROUTES: string[] = [
-  "/dashboards/zuper-status-comparison",
-  "/api/zuper/status-comparison",
+  // Note: Don't add dashboard/API routes here — JWT role in middleware defaults
+  // to VIEWER (not synced from DB), so admin-only gating must happen client-side
+  // (for pages) or server-side in the route handler (for APIs).
 ];
 
 /**
