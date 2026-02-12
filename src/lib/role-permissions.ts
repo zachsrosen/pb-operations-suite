@@ -77,7 +77,6 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/scheduler",
       "/dashboards/at-risk",
       "/dashboards/timeline",
-      "/dashboards/zuper-status-comparison",
       "/handbook",
       "/api/projects",
       "/api/zuper",
@@ -124,7 +123,6 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/scheduler",
       "/dashboards/site-survey-scheduler",
       "/dashboards/timeline",
-      "/dashboards/zuper-status-comparison",
       "/handbook",
       "/api/projects",
       "/api/zuper",
@@ -211,11 +209,25 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
 };
 
 /**
+ * Routes restricted to ADMIN role only.
+ * New dashboards/features go here until confirmed ready for wider access.
+ */
+export const ADMIN_ONLY_ROUTES: string[] = [
+  "/dashboards/zuper-status-comparison",
+  "/api/zuper/status-comparison",
+];
+
+/**
  * Check if a user role can access a specific route
  */
 export function canAccessRoute(role: UserRole, route: string): boolean {
   const permissions = ROLE_PERMISSIONS[role];
   if (!permissions) return false;
+
+  // Check admin-only routes first — only ADMIN can access these
+  if (ADMIN_ONLY_ROUTES.some(restricted => route.startsWith(restricted))) {
+    return role === "ADMIN";
+  }
 
   // Roles with "*" can access all routes
   if (permissions.allowedRoutes.includes("*")) return true;
