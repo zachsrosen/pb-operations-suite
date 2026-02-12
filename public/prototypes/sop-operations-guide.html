@@ -1,0 +1,1681 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Standard Operating Procedures — Solar Operations Guide</title>
+<style>
+:root{--primary:#1a56db;--primary-light:#e8eefb;--primary-dark:#0f3a8e;--success:#059669;--success-light:#ecfdf5;--warning:#d97706;--warning-light:#fffbeb;--danger:#dc2626;--danger-light:#fef2f2;--gray-50:#f9fafb;--gray-100:#f3f4f6;--gray-200:#e5e7eb;--gray-300:#d1d5db;--gray-400:#9ca3af;--gray-500:#6b7280;--gray-600:#4b5563;--gray-700:#374151;--gray-800:#1f2937;--gray-900:#111827;--tag-auto:#7c3aed;--tag-auto-bg:#ede9fe;--tag-manual:#b45309;--tag-manual-bg:#fef3c7;--tag-trigger:#2563eb;--tag-trigger-bg:#dbeafe;--tag-zuper:#059669;--tag-zuper-bg:#dcfce7;--tag-check:#db2777;--tag-check-bg:#fce7f3;--tag-calc:#0d9488;--tag-calc-bg:#ccfbf1;--tag-notif:#4f46e5;--tag-notif-bg:#e0e7ff;--radius:8px;--shadow:0 1px 3px rgba(0,0,0,.1),0 1px 2px rgba(0,0,0,.06);}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;color:var(--gray-800);background:var(--gray-50);line-height:1.6;}
+.top-bar{background:#fff;border-bottom:1px solid var(--gray-200);padding:10px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:1000;box-shadow:var(--shadow);}
+.top-bar .logo{font-weight:700;font-size:17px;color:var(--primary);display:flex;align-items:center;gap:8px;}
+.search-box{display:flex;align-items:center;background:var(--gray-100);border:1px solid var(--gray-200);border-radius:var(--radius);padding:5px 12px;width:300px;}
+.search-box input{border:none;background:transparent;outline:none;font-size:13px;width:100%;margin-left:8px;color:var(--gray-700);}
+.search-box .kbd{font-size:10px;background:var(--gray-200);border-radius:3px;padding:1px 5px;color:var(--gray-500);font-family:monospace;}
+.top-bar .meta{font-size:11px;color:var(--gray-500);}
+.layout{display:flex;min-height:calc(100vh - 49px);}
+.sidebar{width:260px;background:#fff;border-right:1px solid var(--gray-200);padding:14px 0;position:sticky;top:49px;height:calc(100vh - 49px);overflow-y:auto;flex-shrink:0;}
+.sidebar-section{margin-bottom:4px;}
+.sidebar-section-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--gray-400);padding:10px 18px 3px;}
+.sidebar a{display:flex;align-items:center;gap:7px;padding:5px 18px;text-decoration:none;color:var(--gray-600);font-size:13px;transition:all .12s;border-left:3px solid transparent;}
+.sidebar a:hover{background:var(--gray-50);color:var(--gray-900);}
+.sidebar a.active{background:var(--primary-light);color:var(--primary);font-weight:600;border-left-color:var(--primary);}
+.sidebar .dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;}
+.dot-blue{background:var(--primary);}.dot-green{background:var(--success);}.dot-amber{background:var(--warning);}.dot-red{background:var(--danger);}.dot-purple{background:var(--tag-auto);}.dot-pink{background:var(--tag-check);}.dot-teal{background:var(--tag-calc);}.dot-indigo{background:var(--tag-notif);}
+.main{flex:1;padding:28px 44px;max-width:980px;}
+.main h1{font-size:26px;font-weight:700;color:var(--gray-900);margin-bottom:6px;padding-bottom:10px;border-bottom:2px solid var(--primary);}
+.subtitle{color:var(--gray-500);font-size:14px;margin-bottom:20px;}
+.main h2{font-size:20px;font-weight:700;color:var(--gray-900);margin:32px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--gray-200);}
+.main h3{font-size:16px;font-weight:600;color:var(--gray-800);margin:20px 0 6px;}
+.main h4{font-size:14px;font-weight:600;color:var(--gray-700);margin:14px 0 4px;}
+.main p,.main li{font-size:13.5px;color:var(--gray-700);}
+.main p{margin-bottom:8px;}
+.section{display:none;}.section.active{display:block;}
+/* Tags */
+.t{display:inline-flex;align-items:center;font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:2px 7px;border-radius:10px;vertical-align:middle;margin:0 1px;white-space:nowrap;}
+.t-auto{background:var(--tag-auto-bg);color:var(--tag-auto);}.t-man{background:var(--tag-manual-bg);color:var(--tag-manual);}.t-trig{background:var(--tag-trigger-bg);color:var(--tag-trigger);}.t-zup{background:var(--tag-zuper-bg);color:var(--tag-zuper);}.t-chk{background:var(--tag-check-bg);color:var(--tag-check);}.t-calc{background:var(--tag-calc-bg);color:var(--tag-calc);}.t-not{background:var(--tag-notif-bg);color:var(--tag-notif);}
+/* Cards & Tables */
+.card{background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius);padding:16px;margin:12px 0;box-shadow:var(--shadow);}
+.card-hd{font-weight:600;font-size:14px;color:var(--gray-900);margin-bottom:6px;}
+table{width:100%;border-collapse:collapse;font-size:12.5px;margin:10px 0;}
+th{background:var(--gray-100);text-align:left;padding:7px 10px;font-weight:600;color:var(--gray-700);border-bottom:2px solid var(--gray-200);}
+td{padding:7px 10px;border-bottom:1px solid var(--gray-100);vertical-align:top;}
+tr:hover td{background:var(--gray-50);}
+code{font-family:'SF Mono',Consolas,monospace;font-size:11px;background:var(--gray-100);padding:1px 4px;border-radius:3px;color:var(--primary-dark);}
+/* Status flows */
+.sf{display:flex;flex-wrap:wrap;gap:3px;align-items:center;margin:8px 0;padding:8px 10px;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:var(--radius);}
+.sp{font-size:11px;padding:2px 9px;border-radius:11px;background:white;border:1px solid var(--gray-200);color:var(--gray-600);white-space:nowrap;}
+.sp-r{background:var(--danger-light);color:var(--danger);border-color:#fca5a5;}.sp-h{background:var(--warning-light);color:var(--warning);border-color:#fcd34d;}
+.fa{color:var(--gray-300);font-size:13px;}
+/* Auto chains */
+.ac{border-left:3px solid var(--tag-auto);margin:10px 0;padding:6px 14px;background:var(--tag-auto-bg);border-radius:0 var(--radius) var(--radius) 0;font-size:12.5px;}
+.ac.ac-trig{border-left-color:var(--tag-trigger);background:var(--tag-trigger-bg);}
+.ac.ac-chk{border-left-color:var(--tag-check);background:var(--tag-check-bg);}
+.ac.ac-zup{border-left-color:var(--tag-zuper);background:var(--tag-zuper-bg);}
+.ac.ac-not{border-left-color:var(--tag-notif);background:var(--tag-notif-bg);}
+.ac.ac-calc{border-left-color:var(--tag-calc);background:var(--tag-calc-bg);}
+.ac div{margin:3px 0;padding-left:16px;position:relative;}
+.ac div::before{content:"";position:absolute;left:0;top:7px;width:8px;height:8px;border-radius:50%;background:currentColor;opacity:.4;}
+.warn{background:#fef2f2;border:1px solid #fecaca;border-radius:var(--radius);padding:10px 14px;margin:10px 0;font-size:12.5px;color:#991b1b;}
+.info{background:#eff6ff;border:1px solid #bfdbfe;border-radius:var(--radius);padding:10px 14px;margin:10px 0;font-size:12.5px;color:#1e40af;}
+.tip{background:#ecfdf5;border:1px solid #a7f3d0;border-radius:var(--radius);padding:10px 14px;margin:10px 0;font-size:12.5px;color:#065f46;}
+/* Pipeline visual */
+.pv{display:flex;flex-wrap:wrap;gap:3px;align-items:center;margin:12px 0;}
+.ps{padding:5px 12px;border-radius:16px;font-size:12px;font-weight:500;white-space:nowrap;}
+.ps-s{background:#dbeafe;color:#1e40af;}.ps-p{background:#dcfce7;color:#166534;}.ps-d{background:#fef3c7;color:#92400e;}.ps-v{background:#ede9fe;color:#5b21b6;}.ps-r{background:#ffe4e6;color:#9f1239;}.ps-g{background:var(--gray-100);color:var(--gray-600);}
+.pa{color:var(--gray-300);font-size:16px;}
+/* Legend grid */
+.lg{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;margin:14px 0;}
+.lc{border:1px solid var(--gray-200);border-radius:var(--radius);padding:12px;text-align:center;}
+.lc .t{font-size:11px;margin-bottom:6px;}
+.lc p{font-size:11.5px;color:var(--gray-600);margin:0;}
+@media print{.top-bar,.sidebar{display:none!important;}.layout{display:block!important;}.main{max-width:100%!important;padding:0!important;}.section{display:block!important;page-break-before:always;}.card{break-inside:avoid;}}
+@media(max-width:768px){.sidebar{display:none;}.main{padding:16px;}.search-box{width:180px;}}
+</style>
+</head>
+<body>
+<div class="top-bar">
+<div class="logo">
+<svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+SOP Operations Guide
+</div>
+<div class="search-box" onclick="document.getElementById('si').focus()">
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+<input type="text" id="si" placeholder="Search procedures..." onkeydown="if(event.key==='Enter')handleSearch(this.value)">
+<span class="kbd">Ctrl+K</span>
+</div>
+<div class="meta">v3.0 — Updated Feb 2026</div>
+</div>
+
+<div class="layout">
+<nav class="sidebar" id="sidebar">
+<div class="sidebar-section">
+<div class="sidebar-section-title">Overview</div>
+<a href="#" onclick="go('overview')" class="active" data-s="overview"><span class="dot dot-blue"></span>Automation Legend</a>
+<a href="#" onclick="go('roles')" data-s="roles"><span class="dot dot-blue"></span>Team Roles</a>
+</div>
+<div class="sidebar-section">
+<div class="sidebar-section-title">Sales</div>
+<a href="#" onclick="go('sales')" data-s="sales"><span class="dot dot-amber"></span>Sales Pipeline</a>
+</div>
+<div class="sidebar-section">
+<div class="sidebar-section-title">Project Operations</div>
+<a href="#" onclick="go('proj')" data-s="proj"><span class="dot dot-green"></span>Pipeline Overview</a>
+<a href="#" onclick="go('survey')" data-s="survey"><span class="dot dot-green"></span>Site Survey</a>
+<a href="#" onclick="go('da')" data-s="da"><span class="dot dot-green"></span>Design Approval (DA)</a>
+<a href="#" onclick="go('design')" data-s="design"><span class="dot dot-green"></span>Design &amp; Engineering</a>
+<a href="#" onclick="go('permit')" data-s="permit"><span class="dot dot-green"></span>Permitting</a>
+<a href="#" onclick="go('ic')" data-s="ic"><span class="dot dot-green"></span>Interconnection</a>
+<a href="#" onclick="go('rtb')" data-s="rtb"><span class="dot dot-green"></span>RTB Gate</a>
+<a href="#" onclick="go('con')" data-s="con"><span class="dot dot-green"></span>Construction</a>
+<a href="#" onclick="go('insp')" data-s="insp"><span class="dot dot-green"></span>Inspection</a>
+<a href="#" onclick="go('pto')" data-s="pto"><span class="dot dot-green"></span>PTO</a>
+<a href="#" onclick="go('close')" data-s="close"><span class="dot dot-green"></span>Close Out</a>
+<a href="#" onclick="go('hold')" data-s="hold"><span class="dot dot-amber"></span>On-Hold &amp; Cancel</a>
+</div>
+<div class="sidebar-section">
+<div class="sidebar-section-title">D&amp;R Pipeline</div>
+<a href="#" onclick="go('dr')" data-s="dr"><span class="dot dot-purple"></span>Detach &amp; Reset</a>
+</div>
+<div class="sidebar-section">
+<div class="sidebar-section-title">Service &amp; Roofing</div>
+<a href="#" onclick="go('svc')" data-s="svc"><span class="dot dot-teal"></span>Service Pipeline</a>
+<a href="#" onclick="go('roof')" data-s="roof"><span class="dot dot-pink"></span>Roofing Pipeline</a>
+</div>
+<div class="sidebar-section">
+<div class="sidebar-section-title">Parallel Workflows</div>
+<a href="#" onclick="go('inc')" data-s="inc"><span class="dot dot-amber"></span>Incentives &amp; Rebates</a>
+<a href="#" onclick="go('notif')" data-s="notif"><span class="dot dot-indigo"></span>Notifications</a>
+<a href="#" onclick="go('inv')" data-s="inv"><span class="dot dot-teal"></span>Invoicing</a>
+<a href="#" onclick="go('met')" data-s="met"><span class="dot dot-teal"></span>Timing Metrics</a>
+</div>
+<div class="sidebar-section">
+<div class="sidebar-section-title">Reference</div>
+<a href="#" onclick="go('ref')" data-s="ref"><span class="dot dot-blue"></span>Field Reference</a>
+</div>
+</nav>
+
+<main class="main">
+<!-- ===== OVERVIEW / LEGEND ===== -->
+<div class="section active" id="overview">
+<h1>Automation Legend &amp; System Map</h1>
+<p class="subtitle">Every action in this SOP is tagged to show what's automated, what's manual, and what triggers downstream automations.</p>
+
+<h2>Tag Reference</h2>
+<div class="lg">
+<div class="lc"><span class="t t-auto">AUTO</span><p>Happens automatically via HubSpot workflow. No human action needed.</p></div>
+<div class="lc"><span class="t t-man">MANUAL</span><p>Requires a team member to take action — update a field, make a call, upload a doc.</p></div>
+<div class="lc"><span class="t t-trig">TRIGGER</span><p>Your manual action kicks off downstream automations. You act, then the system reacts.</p></div>
+<div class="lc"><span class="t t-zup">ZUPER SYNC</span><p>Data synced from Zuper Pro field software. Update in Zuper → auto-syncs to HubSpot.</p></div>
+<div class="lc"><span class="t t-chk">CHECKLIST</span><p>Completed by submitting a HubSpot checklist form. Submission triggers automations.</p></div>
+<div class="lc"><span class="t t-calc">CALCULATED</span><p>Auto-calculated timing metric. Computes when date fields are populated.</p></div>
+<div class="lc"><span class="t t-not">NOTIFICATION</span><p>Auto-sent customer SMS + Email notification triggered by a status change.</p></div>
+</div>
+
+<h2>Pipeline Overview</h2>
+<div class="card">
+<table>
+<tr><th>Pipeline</th><th>Purpose</th><th>Stages</th></tr>
+<tr><td><span class="ps ps-s">Sales</span></td><td>Lead qualification → contract signing</td><td>Qualified → Proposal → Accepted → Finalizing → Closed</td></tr>
+<tr><td><span class="ps ps-p">Project</span></td><td>Post-sale execution → completion</td><td>Survey → Design → Permit/IC → RTB → Construction → Inspection → PTO → Complete</td></tr>
+<tr><td><span class="ps ps-d">D&amp;R</span></td><td>Detach &amp; Reset for roof work</td><td>Kickoff → Survey → Design → Permit → Detach → Reset → Inspection → Complete</td></tr>
+<tr><td><span class="ps ps-v">Service</span></td><td>Post-install service &amp; warranty</td><td>Prep → Site Visit → WIP → Inspection → Invoicing → Complete</td></tr>
+<tr><td><span class="ps ps-r">Roofing</span></td><td>Standalone roofing projects</td><td>Appointment → Qualified → Presentation → Contract → Closed</td></tr>
+</table>
+</div>
+
+<h2>Key Automation Chains</h2>
+<p>These are the most important automation sequences. Understanding these tells you what happens after you take an action.</p>
+
+<h3>Site Survey Completion</h3>
+<div class="ac ac-zup"><div><span class="t t-zup">ZUPER</span> Field crew completes survey in Zuper → <code>Site Survey Status</code> syncs to "Completed"</div></div>
+<div class="ac"><div><span class="t t-auto">AUTO</span> <code>Is Site Survey Completed?</code> → Yes</div><div><span class="t t-calc">CALC</span> <code>Sale to Survey Completion</code> computed</div><div><span class="t t-auto">AUTO</span> Deal stage → Design &amp; Engineering</div></div>
+
+<h3>Design Task Workflow → DA → Engineering → Design Complete</h3>
+<div class="ac"><div><span class="t t-auto">AUTO</span> Vishtik tasks 1–2: Retrieve details → Upload design → <code>Design Status</code> advances through "In Progress" → "Ready For Review"</div></div>
+<div class="ac"><div><span class="t t-auto">AUTO</span> Design Lead task 3: Initial review complete → <code>Design Status</code> → "Draft Complete - Waiting on Approvals"</div></div>
+<div class="ac"><div><span class="t t-auto">AUTO</span> PandaDoc sent → <code>Design Approval Status</code> → "Sent For Approval"</div><div><span class="t t-not">NOTIF</span> Design Approval Update SMS + Email sent to customer</div></div>
+<div class="ac"><div><span class="t t-auto">AUTO</span> PandaDoc approved/rejected → <code>Design Approval Status</code> → "Design Approved" or "Design Rejected"</div></div>
+<div class="ac"><div><span class="t t-auto">AUTO</span> DA approved → Final Design Review task created → Design Lead task 4</div></div>
+<div class="ac"><div><span class="t t-auto">AUTO</span> Task 4 complete → routes to engineering stamps (Vishtik tasks 5–6) OR straight to permitting</div></div>
+<div class="ac"><div><span class="t t-auto">AUTO</span> Task 6 (Upload Stamped Plans) complete → <code>Design Status</code> → "Design Complete"</div></div>
+<div class="ac"><div><span class="t t-auto">AUTO</span> <code>Is Design Completed?</code> → Yes, <code>Design Completion Date</code> set</div><div><span class="t t-calc">CALC</span> <code>Design Turnaround Time</code>, <code>DA To Permit</code></div><div><span class="t t-auto">AUTO</span> Deal stage → Permitting &amp; Interconnection</div></div>
+
+<h3>Permit + Interconnection → RTB Gate</h3>
+<div class="ac"><div><span class="t t-auto">AUTO</span> Permitting task workflow advances statuses: "Submitted To Customer" → "Customer Signature Acquired" → "Submitted to AHJ" (all task-driven)</div></div>
+<div class="ac"><div><span class="t t-auto">AUTO</span> Interconnection task workflow advances statuses: "Submitted To Customer" → "Ready To Submit" → "Submitted To Utility" (all task-driven)</div></div>
+<div class="ac ac-trig"><div><span class="t t-man">MANUAL</span> <code>Permitting Status</code> → "Permit Issued" (set manually when permit received)</div></div>
+<div class="ac ac-trig"><div><span class="t t-man">MANUAL</span> <code>Interconnection Status</code> → "Application Approved" (set manually when utility approves)</div></div>
+<div class="ac"><div><span class="t t-auto">AUTO</span> <code>Is Permit Issued?</code> → Yes, <code>Permit Issue Date</code> set</div><div><span class="t t-calc">CALC</span> <code>Time to Permit</code></div><div><span class="t t-not">NOTIF</span> Permit Status Update SMS + Email</div></div>
+<div class="tip"><strong>RTB Gate:</strong> <span class="t t-auto">AUTO</span> When BOTH permit = Issued AND interconnection = Approved → deal moves to Ready To Build. If only one → RTB - Blocked.</div>
+
+<h3>Construction Complete</h3>
+<div class="ac ac-chk"><div><span class="t t-chk">CHECKLIST</span> Construction Complete Checklist submitted</div></div>
+<div class="ac"><div><span class="t t-auto">AUTO</span> <code>Construction Status</code> → Construction Complete</div><div><span class="t t-auto">AUTO</span> <code>Construction Complete Date</code> set</div><div><span class="t t-calc">CALC</span> <code>Construction Turnaround Time</code>, <code>Time from RTB to CC</code>, <code>Time to CC</code></div><div><span class="t t-auto">AUTO</span> Deal stage → Inspection</div><div><span class="t t-auto">AUTO</span> M1 invoice workflow triggered</div><div><span class="t t-not">NOTIF</span> Construction Update SMS + Email</div></div>
+
+<h3>Inspection Pass → PTO → Close Out</h3>
+<div class="ac ac-zup"><div><span class="t t-zup">ZUPER</span> Inspection passes in field → <code>Final Inspection Status</code> syncs to "Passed"</div></div>
+<div class="ac"><div><span class="t t-auto">AUTO</span> <code>Is Inspection Passed?</code> → Yes</div><div><span class="t t-auto">AUTO</span> <code>PTO Status</code> → "Inspection Passed - Ready for PTO Submission"</div><div><span class="t t-auto">AUTO</span> Deal stage → Permission To Operate</div></div>
+<div class="ac ac-trig"><div><span class="t t-trig">TRIGGER</span> <code>PTO Status</code> → "PTO Granted"</div></div>
+<div class="ac"><div><span class="t t-auto">AUTO</span> Deal stage → Close Out</div><div><span class="t t-calc">CALC</span> <code>PTO Turnaround Time</code>, <code>Time To PTO</code>, <code>Time Between CC &amp; PTO</code></div><div><span class="t t-auto">AUTO</span> PTO invoice workflow triggered</div><div><span class="t t-not">NOTIF</span> PTO Update + Closeout Update SMS + Email</div></div>
+
+<h3>Zuper Sync</h3>
+<div class="ac ac-zup"><div><span class="t t-zup">ZUPER</span> Field crew updates job status in Zuper Pro</div></div>
+<div class="ac"><div><span class="t t-auto">AUTO</span> <code>Site Survey Status</code>, <code>Construction Status</code>, <code>Detach Status</code>, <code>Reset Status</code>, <code>Final Inspection Status</code> all sync from Zuper</div></div>
+<div class="warn"><strong>Known Race Condition — Zuper Inspection Sync:</strong> When an inspection fails in Zuper, the system auto-creates a new job, overwriting the "Failed" status before HubSpot captures it. <strong>Always use the Inspection Failed Checklist in HubSpot</strong> as the reliable method for failure tracking.</div>
+</div>
+<!-- ===== TEAM ROLES ===== -->
+<div class="section" id="roles">
+<h1>Team Roles &amp; Owner Fields</h1>
+<p class="subtitle">HubSpot owner fields map team members to specific responsibilities across the project lifecycle. All project leads are assigned at the beginning of the project when the deal enters the Project Pipeline.</p>
+<div class="card">
+<table>
+<tr><th>HubSpot Field</th><th>Role</th><th>Pipeline</th><th>Responsibility</th><th>Set By</th></tr>
+<tr><td><code>Deal owner</code></td><td>Deal Owner</td><td>All</td><td>Primary owner of the deal record</td><td><span class="t t-man">MANUAL</span></td></tr>
+<tr><td><code>Site Survey Lead</code></td><td>Site Survey Lead</td><td>Project</td><td>Scheduling and completing site surveys</td><td><span class="t t-man">MANUAL</span></td></tr>
+<tr><td><code>Site Surveyor - Zuper</code></td><td>Surveyor (Zuper)</td><td>Project</td><td>Field surveyor assigned in Zuper</td><td><span class="t t-zup">ZUPER</span></td></tr>
+<tr><td><code>Design Lead</code></td><td>Design Lead</td><td>Project</td><td>Design review and approval (initial + final review tasks)</td><td><span class="t t-man">MANUAL</span></td></tr>
+<tr><td><code>Permit Lead</code></td><td>Permit Lead</td><td>Project</td><td>Permit applications and tracking</td><td><span class="t t-man">MANUAL</span></td></tr>
+<tr><td><code>Interconnections Lead</code></td><td>Interconnections Lead</td><td>Project</td><td>Utility interconnection applications</td><td><span class="t t-man">MANUAL</span></td></tr>
+<tr><td><code>Project Manager - Zuper</code></td><td>PM (Zuper)</td><td>Project</td><td>Project manager assigned in Zuper for field ops</td><td><span class="t t-zup">ZUPER</span></td></tr>
+<tr><td><code>Incentive Lead</code></td><td>Incentive Lead</td><td>Project</td><td>Incentive and rebate program management</td><td><span class="t t-man">MANUAL</span></td></tr>
+</table>
+</div>
+<h2>Active Team Members</h2>
+<div class="card">
+<table>
+<tr><th>Name</th><th>Status</th></tr>
+<tr><td>Support On The Fuze</td><td><span class="t t-auto" style="background:#dcfce7;color:#166534;">Active</span></td></tr>
+<tr><td>Natasha Wooten-Sanford</td><td><span class="t t-auto" style="background:#dcfce7;color:#166534;">Active</span></td></tr>
+<tr><td>Peter Zaun</td><td><span class="t t-auto" style="background:#dcfce7;color:#166534;">Active</span></td></tr>
+<tr><td>Christian White</td><td><span class="t t-auto" style="background:#dcfce7;color:#166534;">Active</span></td></tr>
+<tr><td>Dustin Oswald</td><td><span class="t t-auto" style="background:#dcfce7;color:#166534;">Active</span></td></tr>
+<tr><td>Amir Ahmadi</td><td><span class="t t-auto" style="background:#dcfce7;color:#166534;">Active</span></td></tr>
+</table>
+</div>
+</div>
+
+<!-- ===== SALES PIPELINE ===== -->
+<div class="section" id="sales">
+<h1>Sales Pipeline</h1>
+<p class="subtitle">Lead qualification through contract signing and handoff to operations.</p>
+
+<h2>Pipeline Stages</h2>
+<div class="pv">
+<span class="ps ps-s">Qualified to Buy</span><span class="pa">→</span>
+<span class="ps ps-s">Proposal Submitted</span><span class="pa">→</span>
+<span class="ps ps-s">Proposal Accepted</span><span class="pa">→</span>
+<span class="ps ps-s">Finalizing Deal</span><span class="pa">→</span>
+<span class="ps ps-s">Closed Won</span>
+</div>
+<div class="pv" style="margin-top:0;">
+<span style="font-size:12px;color:var(--gray-400);">Other:</span>
+<span class="ps ps-s">Sales Follow Up</span>
+<span class="ps ps-s">Nurture</span>
+<span class="ps ps-g">Closed Lost</span>
+</div>
+
+<h2>Qualified to Buy</h2>
+<div class="card">
+<table>
+<tr><th>Action</th><th>Type</th><th>Details</th></tr>
+<tr><td>Collect contact info, utility, HOA, roof details</td><td><span class="t t-man">MANUAL</span></td><td>Fill <code>Utility Company</code>, <code>Utility Account Number</code>, <code>HOA</code>, <code>Roof Age</code>, <code>Roof Type</code></td></tr>
+<tr><td>Stage entry/exit timestamps</td><td><span class="t t-auto">AUTO</span></td><td><code>hs_v2_date_entered_qualifiedtobuy</code>, cumulative time tracked automatically</td></tr>
+</table>
+</div>
+
+<h2>Proposal Submitted</h2>
+<div class="card">
+<table>
+<tr><th>Action</th><th>Type</th><th>Details</th></tr>
+<tr><td>Generate proposal PDF, upload link</td><td><span class="t t-man">MANUAL</span></td><td>Set <code>PDF Proposal Link</code></td></tr>
+<tr><td>Record submission date</td><td><span class="t t-man">MANUAL</span></td><td>Set <code>Proposal Submission Date</code></td></tr>
+<tr><td>Move deal to this stage</td><td><span class="t t-man">MANUAL</span></td><td>Sales rep moves deal stage</td></tr>
+<tr><td>OS proposal attachment</td><td><span class="t t-auto">AUTO</span></td><td><code>Trigger Attach OS Proposal</code> fires when conditions met</td></tr>
+<tr><td>Stage timestamps</td><td><span class="t t-auto">AUTO</span></td><td>Entry/exit dates and cumulative time tracked</td></tr>
+</table>
+</div>
+
+<h2>Proposal Accepted → Finalizing Deal</h2>
+<div class="card">
+<table>
+<tr><th>Action</th><th>Type</th><th>Details</th></tr>
+<tr><td>Send DocuSign contract</td><td><span class="t t-man">MANUAL</span></td><td>Prepare and send via DocuSign</td></tr>
+<tr><td>Set contract fields</td><td><span class="t t-man">MANUAL</span></td><td><code>Contract Submission Date</code>, <code>Contract Specific Terms</code>, <code>Additional Contract Terms</code></td></tr>
+<tr><td>Set financing fields</td><td><span class="t t-man">MANUAL</span></td><td><code>Payment Method</code>, <code>Financing Needs</code>, <code>Financing Notes</code>, <code>Down Payment</code></td></tr>
+<tr><td>Loan status tracking</td><td><span class="t t-man">MANUAL</span></td><td><code>Loan Status</code>: Not Started → Submitted → Waiting on Approval → Approved / Cash Project</td></tr>
+<tr><td>DocuSign contract retrieved</td><td><span class="t t-auto">AUTO</span></td><td><code>DocuSign Contract Retrieved</code> set when DocuSign integration syncs signed contract</td></tr>
+<tr><td>PandaDoc trigger</td><td><span class="t t-auto">AUTO</span></td><td><code>Trigger Participate Energy PandaDoc</code> for applicable deals</td></tr>
+</table>
+</div>
+
+<h2>Closed Won → Handoff</h2>
+<div class="warn"><strong>Before moving to Closed Won, verify:</strong> Contract signed (<code>DocuSign Contract Retrieved</code>), financing confirmed (<code>Loan Status</code> = Approved or Cash Project), down payment collected.</div>
+<div class="card">
+<table>
+<tr><th>Action</th><th>Type</th><th>Details</th></tr>
+<tr><td>Move deal to Closed Won</td><td><span class="t t-trig">TRIGGER</span></td><td>Triggers project pipeline handoff and notifications</td></tr>
+<tr><td>Close date recorded</td><td><span class="t t-auto">AUTO</span></td><td><code>Close Date</code> set automatically by HubSpot</td></tr>
+<tr><td>Timing metrics</td><td><span class="t t-calc">CALC</span></td><td><code>Pending Sales Date</code>, <code>Time Waiting on Sales</code>, <code>Sales Communication Complete Date</code></td></tr>
+</table>
+</div>
+
+<h3>Loan Status Flow</h3>
+<div class="sf">
+<span class="sp">Not Started</span><span class="fa">→</span>
+<span class="sp">Submitted</span><span class="fa">→</span>
+<span class="sp">Waiting on Approval</span><span class="fa">→</span>
+<span class="sp">Approved</span>
+</div>
+<div class="sf" style="margin-top:2px;">
+<span style="font-size:11px;color:var(--gray-400);">Other:</span>
+<span class="sp">Cash Project</span>
+<span class="sp">Loan Not Needed</span>
+<span class="sp">Ready</span>
+<span class="sp">Requested</span>
+<span class="sp sp-r">Rejected</span>
+<span class="sp sp-r">Canceled</span>
+<span class="sp sp-h">Delayed</span>
+</div>
+</div>
+<!-- ===== PROJECT PIPELINE OVERVIEW ===== -->
+<div class="section" id="proj">
+<h1>Project Pipeline Overview</h1>
+<p class="subtitle">Post-sale lifecycle from site survey through project completion. All stage transitions are driven by status field updates, checklists, and automation chains.</p>
+
+<div class="pv">
+<span class="ps ps-p">Project Rejected</span><span class="pa">→</span>
+<span class="ps ps-p">Site Survey</span><span class="pa">→</span>
+<span class="ps ps-p">Design &amp; Engineering</span><span class="pa">→</span>
+<span class="ps ps-p">Permitting &amp; IC</span><span class="pa">→</span>
+<span class="ps ps-p">RTB - Blocked</span>
+</div>
+<div class="pv" style="margin-top:0;">
+<span class="ps ps-p">Ready To Build</span><span class="pa">→</span>
+<span class="ps ps-p">Construction</span><span class="pa">→</span>
+<span class="ps ps-p">Inspection</span><span class="pa">→</span>
+<span class="ps ps-p">PTO</span><span class="pa">→</span>
+<span class="ps ps-p">Close Out</span><span class="pa">→</span>
+<span class="ps ps-p">Project Complete</span>
+</div>
+<div class="pv" style="margin-top:0;"><span style="font-size:12px;color:var(--gray-400);">Other:</span><span class="ps ps-g">On-Hold</span><span class="ps ps-g">Cancelled</span></div>
+
+<h2>Project Lead Assignment</h2>
+<div class="info"><strong>All project leads are assigned at the beginning of the project</strong> when the deal enters the Project Pipeline. This includes Design Lead, Permit Lead, Interconnections Lead, Incentive Lead, and Site Survey Lead. These assignments happen upfront — not at each individual stage.</div>
+
+<h2>Stage Transition Map</h2>
+<div class="card">
+<table>
+<tr><th>From</th><th>To</th><th>Trigger</th><th>Type</th></tr>
+<tr><td>Site Survey</td><td>Design &amp; Engineering</td><td><code>Site Survey Status</code> = "Completed" (via Zuper)</td><td><span class="t t-zup">ZUPER</span>→<span class="t t-auto">AUTO</span></td></tr>
+<tr><td>Design &amp; Eng</td><td>Permitting &amp; IC</td><td><code>Design Status</code> = "Design Complete" (via task completion)</td><td><span class="t t-auto">AUTO</span> (task)</td></tr>
+<tr><td>Permitting &amp; IC</td><td>Ready To Build</td><td>BOTH permit issued AND IC approved</td><td><span class="t t-auto">AUTO</span> (dual gate)</td></tr>
+<tr><td>Permitting &amp; IC</td><td>RTB - Blocked</td><td>Only ONE of permit/IC complete</td><td><span class="t t-auto">AUTO</span></td></tr>
+<tr><td>Ready To Build</td><td>Construction</td><td><code>Construction Status</code> → Scheduled or further</td><td><span class="t t-zup">ZUPER</span>→<span class="t t-auto">AUTO</span></td></tr>
+<tr><td>Construction</td><td>Inspection</td><td>Construction Complete Checklist submitted</td><td><span class="t t-chk">CHECKLIST</span>→<span class="t t-auto">AUTO</span></td></tr>
+<tr><td>Inspection</td><td>PTO</td><td><code>Final Inspection Status</code> = "Passed" (via Zuper)</td><td><span class="t t-zup">ZUPER</span>→<span class="t t-auto">AUTO</span></td></tr>
+<tr><td>PTO</td><td>Close Out</td><td><code>PTO Status</code> = "PTO Granted"</td><td><span class="t t-trig">TRIGGER</span>→<span class="t t-auto">AUTO</span></td></tr>
+</table>
+</div>
+
+<div class="info"><strong>Auto-tracked timestamps:</strong> HubSpot automatically records <code>hs_v2_date_entered_[stage]</code>, <code>hs_v2_date_exited_[stage]</code>, <code>hs_v2_cumulative_time_in_[stage]</code>, and <code>hs_v2_time_in_current_stage</code> for every stage. <span class="t t-auto">AUTO</span> — never set these manually.</div>
+</div>
+
+<!-- ===== SITE SURVEY ===== -->
+<div class="section" id="survey">
+<h1>Site Survey</h1>
+<p class="subtitle">Scheduling, conducting, and documenting site surveys with full automation mapping.</p>
+
+<h2>Status Flow <code>Site Survey Status</code></h2>
+<div class="sf">
+<span class="sp">Ready to Schedule</span><span class="fa">→</span>
+<span class="sp">Awaiting Reply</span><span class="fa">→</span>
+<span class="sp">Scheduled</span><span class="fa">→</span>
+<span class="sp">On Our Way</span><span class="fa">→</span>
+<span class="sp">Started</span><span class="fa">→</span>
+<span class="sp">In Progress</span><span class="fa">→</span>
+<span class="sp">Completed</span>
+</div>
+<div class="sf" style="margin-top:2px;">
+<span style="font-size:11px;color:var(--gray-400);">Other:</span>
+<span class="sp sp-h">Needs Revisit</span>
+<span class="sp sp-h">Scheduling On-Hold</span>
+<span class="sp">No Site Survey Needed</span>
+<span class="sp sp-h">Pending Loan Approval</span>
+<span class="sp sp-h">Waiting on Change Order</span>
+</div>
+
+<h2>Procedure</h2>
+
+<h3>1. Schedule Survey <span class="t t-zup">ZUPER SYNC</span></h3>
+<p>When the site survey is scheduled in the scheduler or directly in Zuper, <code>Site Survey Status</code> auto-updates to "Scheduled".</p>
+<div class="ac ac-zup"><div><span class="t t-zup">ZUPER</span> Survey scheduled in Zuper/scheduler → <code>Site Survey Status</code> → "Scheduled"</div></div>
+<div class="ac"><div><span class="t t-auto">AUTO</span> <code>Is Site Survey Scheduled?</code> → Yes</div><div><span class="t t-calc">CALC</span> <code>Time Taken to Schedule Site Survey</code> (time from deal entry to schedule)</div></div>
+<div class="ac ac-not"><div><span class="t t-not">NOTIF</span> Customer notification sent: <code>Site Survey Update - SMS</code> + <code>Site Survey Update - Email</code></div></div>
+
+<h3>2. Conduct Survey <span class="t t-zup">ZUPER SYNC</span></h3>
+<p>Surveyor updates job status in Zuper Pro. Zuper auto-syncs to HubSpot: On Our Way → Started → In Progress.</p>
+<div class="ac ac-zup"><div><span class="t t-zup">ZUPER</span> <code>Site Survey Status</code> updated from Zuper</div><div><span class="t t-zup">ZUPER</span> <code>Site Surveyor - Zuper</code> assigned from Zuper</div></div>
+
+<h3>3. Upload Survey Data <span class="t t-man">MANUAL</span></h3>
+<p>Upload photos, measurements, notes to <code>Site Survey Documents</code>. Note MPU needs in <code>MPU Scheduled For</code>.</p>
+
+<h3>4. Survey Completed <span class="t t-zup">ZUPER SYNC</span></h3>
+<p>When the field crew marks the survey job complete in Zuper, the status syncs to HubSpot and triggers the stage advance.</p>
+<div class="ac ac-zup"><div><span class="t t-zup">ZUPER</span> Survey completed in Zuper → <code>Site Survey Status</code> → "Completed"</div></div>
+<div class="ac"><div><span class="t t-auto">AUTO</span> <code>Is Site Survey Completed?</code> → Yes</div><div><span class="t t-auto">AUTO</span> <code>Site Survey Checklist Completed By</code> records who</div><div><span class="t t-calc">CALC</span> <code>Sale to Survey Completion</code> (time from sale to survey done)</div><div><span class="t t-calc">CALC</span> <code>Time Between Close Date &amp; Survey Completion</code></div><div><span class="t t-auto">AUTO</span> Deal stage advances to <strong>Design &amp; Engineering</strong></div></div>
+
+<div class="warn"><strong>If survey reveals issues</strong> (bad roof, inadequate electrical, HOA restrictions), set status to "Needs Revisit" or "Scheduling On-Hold" in Zuper <em>before</em> marking complete — the Zuper completion sync triggers the stage advance.</div>
+
+<h2>Key Fields</h2>
+<div class="card">
+<table>
+<tr><th>Field</th><th>Set By</th><th>Purpose</th></tr>
+<tr><td><code>Site Survey Status</code></td><td><span class="t t-zup">ZUPER</span> / <span class="t t-auto">AUTO</span></td><td>Current survey status</td></tr>
+<tr><td><code>Site Survey Lead</code></td><td><span class="t t-man">MANUAL</span></td><td>Site Survey Lead assigned</td></tr>
+<tr><td><code>Is Site Survey Scheduled?</code></td><td><span class="t t-auto">AUTO</span></td><td>Flips when Zuper/scheduler sets status to Scheduled</td></tr>
+<tr><td><code>Is Site Survey Completed?</code></td><td><span class="t t-auto">AUTO</span></td><td>Flips when Zuper syncs status to Completed</td></tr>
+<tr><td><code>Site Survey Booked Date</code></td><td><span class="t t-man">MANUAL</span></td><td>Date the survey was booked/scheduled on</td></tr>
+<tr><td><code>Site Survey Schedule Date</code></td><td><span class="t t-man">MANUAL</span></td><td>Actual date of the site survey</td></tr>
+<tr><td><code>Site Survey Documents</code></td><td><span class="t t-man">MANUAL</span></td><td>Link to survey documents</td></tr>
+<tr><td><code>Time Taken to Schedule Site Survey</code></td><td><span class="t t-calc">CALC</span></td><td>Days from deal entry to scheduling</td></tr>
+<tr><td><code>Sale to Survey Completion</code></td><td><span class="t t-calc">CALC</span></td><td>Total time from sale to survey done</td></tr>
+</table>
+</div>
+</div>
+
+<!-- ===== DESIGN APPROVAL (DA) ===== -->
+<div class="section" id="da">
+<h1>Design Approval (DA)</h1>
+<p class="subtitle">The customer-facing design approval process that runs within the Design &amp; Engineering stage. This is a critical sub-workflow with its own status tracking.</p>
+
+<h2>Status Flow <code>Design Approval Status</code></h2>
+<div class="sf">
+<span class="sp">Review In Progress</span><span class="fa">→</span>
+<span class="sp">Draft Complete</span><span class="fa">→</span>
+<span class="sp">Sent For Approval</span><span class="fa">→</span>
+<span class="sp">Design Approved</span>
+</div>
+<div class="sf" style="margin-top:2px;">
+<span style="font-size:11px;color:var(--gray-400);">Rejection path:</span>
+<span class="sp sp-r">Design Rejected</span><span class="fa">→</span>
+<span class="sp">In Revision</span><span class="fa">→</span>
+<span class="sp">DA Revision Ready To Send</span><span class="fa">→</span>
+<span class="sp">Resent For Approval</span>
+</div>
+<div class="sf" style="margin-top:2px;">
+<span style="font-size:11px;color:var(--gray-400);">Blocked:</span>
+<span class="sp sp-h">Needs Clarification</span>
+<span class="sp sp-h">Pending Sales Changes</span>
+<span class="sp sp-h">Pending Ops Changes</span>
+<span class="sp sp-h">Pending Design Changes</span>
+<span class="sp sp-h">Pending Resurvey</span>
+<span class="sp sp-h">Pending Review</span>
+</div>
+
+<h2>Procedure</h2>
+
+<h3>1. Design Ready for Review <span class="t t-auto">AUTO</span></h3>
+<p><code>Design Approval Ready Date</code> auto-recorded when design enters review status.</p>
+
+<h3>2. Sent to Customer <span class="t t-auto">AUTO</span> (PandaDoc)</h3>
+<p>When the design approval PandaDoc is sent to the customer, <code>Design Approval Status</code> auto-updates to "Sent For Approval".</p>
+<div class="ac"><div><span class="t t-auto">AUTO</span> PandaDoc sent → <code>Design Approval Status</code> → "Sent For Approval"</div></div>
+<div class="ac"><div><span class="t t-auto">AUTO</span> <code>Is DA sent?</code> → Yes</div><div><span class="t t-auto">AUTO</span> <code>Design Approval Sent Date</code> recorded</div><div><span class="t t-calc">CALC</span> <code>Time between DA Ready and DA Sent</code></div><div><span class="t t-calc">CALC</span> <code>Time Between Survey Schedule Date &amp; DA Ready Date</code></div><div><span class="t t-calc">CALC</span> <code>Time Between Survey Schedule Date &amp; DA Sent Date</code></div></div>
+<div class="ac ac-not"><div><span class="t t-not">NOTIF</span> <code>Design Approval Update - Email</code> + <code>Design Approval Update - SMS</code> sent to customer</div></div>
+
+<h3>3. Customer Responds <span class="t t-auto">AUTO</span> (PandaDoc)</h3>
+<h4>If Approved</h4>
+<p>Customer signs/approves the PandaDoc → <code>Design Approval Status</code> auto-updates to "Design Approved".</p>
+<div class="ac"><div><span class="t t-auto">AUTO</span> PandaDoc approved → <code>Design Approval Status</code> → "Design Approved"</div></div>
+<div class="ac"><div><span class="t t-auto">AUTO</span> <code>Is Design Approved?</code> → Yes</div><div><span class="t t-auto">AUTO</span> <code>Design Approval Date</code> recorded</div><div><span class="t t-calc">CALC</span> <code>DA Turnaround Time</code></div><div><span class="t t-calc">CALC</span> <code>Time to DA</code> (total time from sale to DA)</div><div><span class="t t-auto">AUTO</span> <code>DA Last 365 Days</code> flag set</div></div>
+<div class="info">When DA is approved and <code>Design Status</code> is "Draft Complete - Waiting on Approvals", the Final Design Review task is triggered for the Design Lead.</div>
+
+<h4>If Rejected</h4>
+<p>Customer rejects the PandaDoc → <code>Design Approval Status</code> auto-updates to "Design Rejected".</p>
+<div class="ac"><div><span class="t t-auto">AUTO</span> PandaDoc rejected → <code>Design Approval Status</code> → "Design Rejected"</div></div>
+<div class="ac"><div><span class="t t-auto">AUTO</span> <code>DA Revision Counter</code> incremented</div><div><span class="t t-auto">AUTO</span> <code>First DA Rejection Reason</code> / <code>DA Rejection Reason</code> captured from <code>Design Approval Notes from Customer</code></div></div>
+<p>Revision cycle: In Revision → DA Revision Ready To Send → Resent For Approval (re-sent via PandaDoc).</p>
+<p>If re-sent: <span class="t t-auto">AUTO</span> <code>DA Revision Complete Date</code> recorded.</p>
+
+<h2>Key Fields</h2>
+<div class="card">
+<table>
+<tr><th>Field</th><th>Set By</th><th>Purpose</th></tr>
+<tr><td><code>Design Approval Status</code></td><td><span class="t t-auto">AUTO</span></td><td>Fully driven by PandaDoc — auto-set when sent, approved, or rejected</td></tr>
+<tr><td><code>Design Approval Ready Date</code></td><td><span class="t t-auto">AUTO</span></td><td>When design entered review</td></tr>
+<tr><td><code>Is DA sent?</code></td><td><span class="t t-auto">AUTO</span></td><td>Flips when sent for approval</td></tr>
+<tr><td><code>Design Approval Sent Date</code></td><td><span class="t t-auto">AUTO</span></td><td>Date DA was sent to customer</td></tr>
+<tr><td><code>Is Design Approved?</code></td><td><span class="t t-auto">AUTO</span></td><td>Yes when customer approves</td></tr>
+<tr><td><code>Design Approval Date</code></td><td><span class="t t-auto">AUTO</span></td><td>Date customer approved</td></tr>
+<tr><td><code>DA Revision Counter</code></td><td><span class="t t-auto">AUTO</span></td><td>Number of DA rejections/revisions</td></tr>
+<tr><td><code>DA Turnaround Time</code></td><td><span class="t t-calc">CALC</span></td><td>DA Turnaround Time</td></tr>
+<tr><td><code>Time to DA</code></td><td><span class="t t-calc">CALC</span></td><td>Total time from sale to DA approval</td></tr>
+</table>
+</div>
+</div>
+<!-- ===== DESIGN & ENGINEERING ===== -->
+<div class="section" id="design">
+<h1>Design &amp; Engineering</h1>
+<p class="subtitle">Full engineering design process from survey handoff through design completion and stage advance to Permitting.</p>
+
+<h2>Status Flow <code>Design Status</code></h2>
+<div class="sf">
+<span class="sp">Ready for Design</span><span class="fa">→</span>
+<span class="sp">In Progress</span><span class="fa">→</span>
+<span class="sp">Ready For Review</span><span class="fa">→</span>
+<span class="sp">Final Review/Stamping</span><span class="fa">→</span>
+<span class="sp">Draft Complete - Waiting on Approvals</span><span class="fa">→</span>
+<span class="sp">DA Approved</span><span class="fa">→</span>
+<span class="sp">Submitted To Engineering</span><span class="fa">→</span>
+<span class="sp">Design Complete</span>
+</div>
+<div class="sf" style="margin-top:2px;">
+<span style="font-size:11px;color:var(--gray-400);">DA revision path:</span>
+<span class="sp sp-r">Revision Needed - DA Rejected</span><span class="fa">→</span>
+<span class="sp">DA Revision In Progress</span><span class="fa">→</span>
+<span class="sp">DA Revision Completed</span>
+</div>
+<div class="sf" style="margin-top:2px;">
+<span style="font-size:11px;color:var(--gray-400);">Permit revision path:</span>
+<span class="sp sp-r">Revision Needed - Rejected by AHJ</span><span class="fa">→</span>
+<span class="sp">Permit Revision In Progress</span><span class="fa">→</span>
+<span class="sp">Permit Revision Completed</span>
+</div>
+<div class="sf" style="margin-top:2px;">
+<span style="font-size:11px;color:var(--gray-400);">Utility revision path:</span>
+<span class="sp sp-r">Revision Needed - Rejected by Utility</span><span class="fa">→</span>
+<span class="sp">Utility Revision In Progress</span><span class="fa">→</span>
+<span class="sp">Utility Revision Completed</span>
+</div>
+<div class="sf" style="margin-top:2px;">
+<span style="font-size:11px;color:var(--gray-400);">As-Built revision path:</span>
+<span class="sp sp-r">Revision Needed - As-Built</span><span class="fa">→</span>
+<span class="sp">As-Built Revision In Progress</span><span class="fa">→</span>
+<span class="sp">As-Built Revision Completed</span>
+</div>
+<div class="sf" style="margin-top:2px;">
+<span style="font-size:11px;color:var(--gray-400);">Blocked / Clarification:</span>
+<span class="sp sp-h">Needs Clarification</span>
+<span class="sp sp-h">Needs Clarification from Customer</span>
+<span class="sp sp-h">Needs Clarification from Sales</span>
+<span class="sp sp-h">Needs Clarification from Operations</span>
+<span class="sp sp-h">Pending Resurvey</span>
+<span class="sp sp-h">On Hold</span>
+<span class="sp">No Design Needed</span>
+</div>
+<div class="sf" style="margin-top:2px;">
+<span style="font-size:11px;color:var(--gray-400);">New Construction path:</span>
+<span class="sp">New Construction - Design Needed</span><span class="fa">→</span>
+<span class="sp">New Construction - In Progress</span><span class="fa">→</span>
+<span class="sp">New Construction - Ready for Review</span><span class="fa">→</span>
+<span class="sp">New Construction - Design Completed</span>
+</div>
+<div class="sf" style="margin-top:2px;">
+<span style="font-size:11px;color:var(--gray-400);">Xcel path:</span>
+<span class="sp">Xcel - Design Needed</span><span class="fa">→</span>
+<span class="sp">Xcel - In Progress</span><span class="fa">→</span>
+<span class="sp">Xcel - Site Plan &amp; SLD Completed</span>
+</div>
+
+<h2>Task Workflow (6-Step)</h2>
+<p>Design statuses are driven by a task workflow shared between <strong>Vishtik</strong> (external design company) and the <strong>Design Lead</strong>. Each task completion auto-advances the <code>Design Status</code>.</p>
+
+<div class="card">
+<table>
+<tr><th>#</th><th>Task</th><th>Assigned To</th><th>Status After Completion</th></tr>
+<tr><td>1</td><td>Retrieve Project Details</td><td>Vishtik</td><td><span class="t t-auto">AUTO</span> → "In Progress"</td></tr>
+<tr><td>2</td><td>Upload Completed Design</td><td>Vishtik</td><td><span class="t t-auto">AUTO</span> → "Ready For Review"</td></tr>
+<tr><td>3</td><td>Complete Initial Design Review</td><td>Design Lead</td><td><span class="t t-auto">AUTO</span> → "Draft Complete - Waiting on Approvals"</td></tr>
+<tr><td>4</td><td>Complete Final Design Review</td><td>Design Lead</td><td><span class="t t-auto">AUTO</span> → "DA Approved" (triggered when DA is approved)</td></tr>
+<tr><td>5</td><td>Retrieve Plans for Stamping</td><td>Vishtik</td><td><span class="t t-auto">AUTO</span> → "Submitted To Engineering"</td></tr>
+<tr><td>6</td><td>Upload Stamped Plans</td><td>Vishtik</td><td><span class="t t-auto">AUTO</span> → "Design Complete"</td></tr>
+</table>
+</div>
+
+<div class="info"><strong>Task 4 (Final Design Review)</strong> is triggered when DA is approved and design is in "Draft Complete - Waiting on Approvals". Completion of Final Design Review sends the design for engineering stamps OR straight to permitting, depending on job criteria and AHJ requirements.</div>
+
+<h2>Procedure</h2>
+
+<h3>1. Design Queue Entry <span class="t t-auto">AUTO</span></h3>
+<p>After site survey completes (Zuper sync), deal enters Design &amp; Engineering stage. <code>Design Lead</code> is already assigned at project start.</p>
+<div class="ac"><div><span class="t t-auto">AUTO</span> <code>Design Status</code> defaults to "Ready for Design"</div></div>
+<p>Vishtik receives first task automatically.</p>
+
+<h3>2. Vishtik Retrieves &amp; Designs <span class="t t-auto">AUTO</span> (Tasks 1–2)</h3>
+<p>Vishtik retrieves project details (Task 1), then uploads completed design (Task 2). Each task completion auto-advances the status.</p>
+<div class="ac"><div><span class="t t-auto">AUTO</span> Task 1 complete → <code>Design Status</code> → "In Progress"</div><div><span class="t t-auto">AUTO</span> Task 2 complete → <code>Design Status</code> → "Ready For Review"</div></div>
+
+<h3>3. Design Lead Initial Review <span class="t t-auto">AUTO</span> (Task 3)</h3>
+<p>Design Lead completes initial design review.</p>
+<div class="ac"><div><span class="t t-auto">AUTO</span> Task 3 complete → <code>Design Status</code> → "Draft Complete - Waiting on Approvals"</div></div>
+<p>At this point, the DA PandaDoc is sent to the customer (see <a href="#" onclick="go('da')">Design Approval</a>).</p>
+
+<h3>4. Final Design Review <span class="t t-auto">AUTO</span> (Task 4)</h3>
+<p>Triggered when DA is approved. Design Lead completes final review.</p>
+<div class="ac"><div><span class="t t-auto">AUTO</span> DA approved → Final Design Review task created for Design Lead</div><div><span class="t t-auto">AUTO</span> Task 4 complete → routes to engineering stamps OR straight to permitting (based on job criteria / AHJ requirements)</div></div>
+
+<h3>5. Engineering Stamps <span class="t t-auto">AUTO</span> (Tasks 5–6, if required)</h3>
+<p>If engineering stamps are required, Vishtik retrieves plans (Task 5) then uploads stamped plans (Task 6).</p>
+<div class="ac"><div><span class="t t-auto">AUTO</span> Task 5 complete → <code>Design Status</code> → "Submitted To Engineering"</div><div><span class="t t-auto">AUTO</span> <code>Engineering Submission Date</code> recorded</div></div>
+<div class="ac"><div><span class="t t-auto">AUTO</span> Task 6 complete → <code>Design Status</code> → "Design Complete"</div></div>
+
+<h3>6. Design Complete <span class="t t-auto">AUTO</span></h3>
+<p>Upload Stamped Plans completion (Task 6) marks the design complete and triggers stage advance.</p>
+<div class="ac"><div><span class="t t-auto">AUTO</span> <code>Is Design Completed?</code> → Yes</div><div><span class="t t-auto">AUTO</span> <code>Design Completion Date</code> recorded</div><div><span class="t t-calc">CALC</span> <code>Design Turnaround Time</code> (time from survey to design complete)</div><div><span class="t t-calc">CALC</span> <code>DA To Permit</code> (time from DA to design complete)</div><div><span class="t t-auto">AUTO</span> Deal stage advances to <strong>Permitting &amp; Interconnection</strong></div></div>
+
+<h3>7. Design Revisions</h3>
+<p>If revisions are needed (DA rejection, AHJ rejection, utility rejection, or as-built), the appropriate revision path is triggered.</p>
+<div class="ac"><div><span class="t t-auto">AUTO</span> <code>Revision Counter</code> incremented</div><div><span class="t t-auto">AUTO</span> Revision tasks assigned to Vishtik / Design Lead as needed</div></div>
+
+<h2>Key Fields</h2>
+<div class="card">
+<table>
+<tr><th>Field</th><th>Set By</th><th>Purpose</th></tr>
+<tr><td><code>Design Status</code></td><td><span class="t t-auto">AUTO</span></td><td>Driven by 6-step task workflow (Vishtik + Design Lead)</td></tr>
+<tr><td><code>Design Lead</code></td><td><span class="t t-man">MANUAL</span></td><td>Assigned at project start — reviews and approves designs</td></tr>
+<tr><td><code>Is Design Completed?</code></td><td><span class="t t-auto">AUTO</span></td><td>Flips when design_status = Design Complete</td></tr>
+<tr><td><code>Design Completion Date</code></td><td><span class="t t-auto">AUTO</span></td><td>Date design was completed</td></tr>
+<tr><td><code>Engineering Submission Date</code></td><td><span class="t t-auto">AUTO</span></td><td>Date engineering was submitted</td></tr>
+<tr><td><code>Engineering Stamped Date</code></td><td><span class="t t-auto">AUTO</span></td><td>Date stamped plans received</td></tr>
+<tr><td><code>Design Turnaround Time</code></td><td><span class="t t-calc">CALC</span></td><td>Survey to design complete duration</td></tr>
+<tr><td><code>Revision Counter</code></td><td><span class="t t-auto">AUTO</span></td><td>Number of design revisions</td></tr>
+</table>
+</div>
+</div>
+
+<!-- ===== PERMITTING ===== -->
+<div class="section" id="permit">
+<h1>Permitting</h1>
+<p class="subtitle">Permit application, tracking, and approval process. One half of the RTB dual-gate.</p>
+
+<h2>Status Flow <code>Permitting Status</code></h2>
+<div class="sf">
+<span class="sp">Ready For Permitting</span><span class="fa">→</span>
+<span class="sp">Submitted To Customer</span><span class="fa">→</span>
+<span class="sp">Customer Signature Acquired</span><span class="fa">→</span>
+<span class="sp">Submitted to AHJ</span><span class="fa">→</span>
+<span class="sp">Permit Issued</span>
+</div>
+<div class="sf" style="margin-top:2px;">
+<span style="font-size:11px;color:var(--gray-400);">Rejection path:</span>
+<span class="sp sp-r">Permit Rejected - Needs Revision</span><span class="fa">→</span>
+<span class="sp">Design Revision In Progress</span><span class="fa">→</span>
+<span class="sp">Revision Ready To Resubmit</span><span class="fa">→</span>
+<span class="sp">Resubmitted to AHJ</span>
+</div>
+<div class="sf" style="margin-top:2px;">
+<span style="font-size:11px;color:var(--gray-400);">Non-design rejection:</span>
+<span class="sp sp-r">Non-Design Related Rejection</span>
+</div>
+<div class="sf" style="margin-top:2px;">
+<span style="font-size:11px;color:var(--gray-400);">SolarApp path:</span>
+<span class="sp">Ready to Submit for SolarApp</span><span class="fa">→</span>
+<span class="sp">Submit SolarApp to AHJ</span><span class="fa">→</span>
+<span class="sp">Permit Issued</span>
+</div>
+<div class="sf" style="margin-top:2px;">
+<span style="font-size:11px;color:var(--gray-400);">As-Built path:</span>
+<span class="sp">As-Built Revision Needed</span><span class="fa">→</span>
+<span class="sp">As-Built Revision In Progress</span><span class="fa">→</span>
+<span class="sp">As-Built Ready To Resubmit</span><span class="fa">→</span>
+<span class="sp">As-Built Revision Resubmitted</span>
+</div>
+<div class="sf" style="margin-top:2px;">
+<span style="font-size:11px;color:var(--gray-400);">Other:</span>
+<span class="sp sp-h">Awaiting Utility Approval</span>
+<span class="sp sp-h">Waiting On Information</span>
+<span class="sp">Not Needed</span>
+</div>
+
+<h2>Procedure</h2>
+
+<h3>1. Queue Entry <span class="t t-auto">AUTO</span></h3>
+<p>When deal enters Permitting &amp; IC stage, permit work begins. <code>Permit Lead</code> is already assigned at project start.</p>
+
+<h3>2. Submit to Customer <span class="t t-auto">AUTO</span> (task)</h3>
+<p>Permit application package is prepared and submitted to customer for signature via task workflow.</p>
+<div class="ac"><div><span class="t t-auto">AUTO</span> Task completion → <code>Permitting Status</code> → "Submitted To Customer"</div></div>
+
+<h3>3. Customer Signature &amp; AHJ Submission <span class="t t-auto">AUTO</span> (task)</h3>
+<p>Once customer signature is acquired, the permit application is submitted to the AHJ via task workflow.</p>
+<div class="ac"><div><span class="t t-auto">AUTO</span> Task completion → <code>Permitting Status</code> → "Customer Signature Acquired"</div></div>
+<div class="ac"><div><span class="t t-auto">AUTO</span> Task completion → <code>Permitting Status</code> → "Submitted to AHJ"</div><div><span class="t t-auto">AUTO</span> <code>Permit Submit Date</code> recorded</div></div>
+<p>Check for SolarApp eligibility — if eligible, follow the SolarApp fast-track path ("Ready to Submit for SolarApp" → "Submit SolarApp to AHJ").</p>
+
+<h3>4. Track Review</h3>
+<p>Monitor AHJ response. If rejected, the revision path is followed: "Permit Rejected - Needs Revision" → "Design Revision In Progress" → "Revision Ready To Resubmit" → "Resubmitted to AHJ".</p>
+
+<h3>5. Permit Issued <span class="t t-man">MANUAL</span></h3>
+<p>Manually set <code>Permitting Status</code> → "Permit Issued" once permit is received from the AHJ.</p>
+<div class="ac ac-trig"><div><span class="t t-trig">TRIGGER</span> <code>Permitting Status</code> changes to "Permit Issued"</div></div>
+<div class="ac"><div><span class="t t-auto">AUTO</span> <code>Is Permit Issued?</code> → Yes</div><div><span class="t t-auto">AUTO</span> <code>Permit Issue Date</code> recorded</div><div><span class="t t-calc">CALC</span> <code>Time to Permit</code></div><div><span class="t t-calc">CALC</span> <code>Permit Turnaround Time</code> (submission to issued)</div><div><span class="t t-not">NOTIF</span> <code>Permit Status Update - SMS</code> + <code>Permit Status Update - Email</code></div><div><span class="t t-auto">AUTO</span> RTB Gate check triggered (see RTB Gate section)</div></div>
+
+<div class="warn"><strong>As-Built permits:</strong> Some jurisdictions require as-built permits after construction. Track separately using the As-Built path statuses. This does NOT affect the RTB gate — only the initial permit matters for stage advance.</div>
+
+<h2>Key Fields</h2>
+<div class="card">
+<table>
+<tr><th>Field</th><th>Set By</th><th>Purpose</th></tr>
+<tr><td><code>Permitting Status</code></td><td><span class="t t-auto">AUTO</span> (task) / <span class="t t-man">MANUAL</span></td><td>Task-driven through normal flow; "Permit Issued" is set manually</td></tr>
+<tr><td><code>Permit Lead</code></td><td><span class="t t-man">MANUAL</span></td><td>Assigned at project start</td></tr>
+<tr><td><code>Is Permit Issued?</code></td><td><span class="t t-auto">AUTO</span></td><td>Flips when permit issued</td></tr>
+<tr><td><code>Permit Submit Date</code></td><td><span class="t t-auto">AUTO</span></td><td>Date application submitted</td></tr>
+<tr><td><code>Permit Issue Date</code></td><td><span class="t t-auto">AUTO</span></td><td>Date permit was issued</td></tr>
+<tr><td><code>Permit Turnaround Time</code></td><td><span class="t t-calc">CALC</span></td><td>Submission to issued duration</td></tr>
+<tr><td><code>Time to Permit</code></td><td><span class="t t-calc">CALC</span></td><td>Sale to permit issued duration</td></tr>
+<tr><td><code>Permit Number</code></td><td><span class="t t-man">MANUAL</span></td><td>AHJ permit number</td></tr>
+</table>
+</div>
+</div>
+
+<!-- ===== INTERCONNECTION ===== -->
+<div class="section" id="ic">
+<h1>Interconnection</h1>
+<p class="subtitle">Utility interconnection application and approval. The second half of the RTB dual-gate.</p>
+
+<h2>Status Flow <code>Interconnection Status</code></h2>
+<div class="sf">
+<span class="sp">Ready for Interconnection</span><span class="fa">→</span>
+<span class="sp">Submitted To Customer</span><span class="fa">→</span>
+<span class="sp">Ready To Submit</span><span class="fa">→</span>
+<span class="sp">Submitted To Utility</span><span class="fa">→</span>
+<span class="sp">In Review</span><span class="fa">→</span>
+<span class="sp">Application Approved</span>
+</div>
+<div class="sf" style="margin-top:2px;">
+<span style="font-size:11px;color:var(--gray-400);">Pre-design:</span>
+<span class="sp sp-h">Ready To Submit - Pending Design</span>
+</div>
+<div class="sf" style="margin-top:2px;">
+<span style="font-size:11px;color:var(--gray-400);">Rejection path:</span>
+<span class="sp sp-r">Rejected</span><span class="fa">→</span>
+<span class="sp sp-r">Rejected - Revisions Needed</span><span class="fa">→</span>
+<span class="sp">Design Revision In Progress</span><span class="fa">→</span>
+<span class="sp">Revision Ready To Resubmit</span><span class="fa">→</span>
+<span class="sp">Resubmitted To Utility</span>
+</div>
+<div class="sf" style="margin-top:2px;">
+<span style="font-size:11px;color:var(--gray-400);">Non-design rejection:</span>
+<span class="sp sp-r">Non-Design Related Rejection</span>
+</div>
+<div class="sf" style="margin-top:2px;">
+<span style="font-size:11px;color:var(--gray-400);">Pending signatures:</span>
+<span class="sp">Application Approved - Pending Signatures</span>
+<span class="sp">Conditional Application Approval</span>
+</div>
+<div class="sf" style="margin-top:2px;">
+<span style="font-size:11px;color:var(--gray-400);">Blocked / Waiting:</span>
+<span class="sp sp-h">Waiting On Information</span>
+<span class="sp sp-h">Waiting on Utility Bill</span>
+<span class="sp sp-h">Waiting on New Construction</span>
+<span class="sp sp-h">Transformer Upgrade</span>
+<span class="sp sp-h">Supplemental Review</span>
+<span class="sp sp-h">RBC On Hold</span>
+<span class="sp sp-h">Pending Rebate Approval</span>
+</div>
+<div class="sf" style="margin-top:2px;">
+<span style="font-size:11px;color:var(--gray-400);">Xcel path:</span>
+<span class="sp">Xcel Site Plan &amp; SLD Needed</span>
+</div>
+<div class="sf" style="margin-top:2px;">
+<span style="font-size:11px;color:var(--gray-400);">Other:</span>
+<span class="sp">Not Needed</span>
+</div>
+
+<h2>Procedure</h2>
+
+<h3>1. Queue Entry <span class="t t-auto">AUTO</span></h3>
+<p>Runs in parallel with permitting. <code>Interconnections Lead</code> is already assigned at project start.</p>
+
+<h3>2. Submit to Customer <span class="t t-auto">AUTO</span> (task)</h3>
+<p>Interconnection application is prepared and submitted to customer for signature via task workflow.</p>
+<div class="ac"><div><span class="t t-auto">AUTO</span> Task completion → <code>Interconnection Status</code> → "Submitted To Customer"</div></div>
+<p>Note: If design is not yet complete, status may be set to "Ready To Submit - Pending Design". MPU requirements identified during survey may also block IC submission.</p>
+
+<h3>3. Customer Signature &amp; Utility Submission <span class="t t-auto">AUTO</span> (task)</h3>
+<p>Once customer signature is acquired, the application is submitted to the utility via task workflow.</p>
+<div class="ac"><div><span class="t t-auto">AUTO</span> Task completion → <code>Interconnection Status</code> → "Ready To Submit"</div></div>
+<div class="ac"><div><span class="t t-auto">AUTO</span> Task completion → <code>Interconnection Status</code> → "Submitted To Utility"</div><div><span class="t t-auto">AUTO</span> <code>Interconnection Submit Date</code> recorded</div></div>
+
+<h3>4. Track Review</h3>
+<p>Monitor utility response. Handle corrections or rejections as needed.</p>
+<p>Track blockers in <code>Interconnection Blocker</code> field if delays occur (Transformer Upgrade, Supplemental Review, RBC On Hold, etc.).</p>
+
+<h3>5. Interconnection Approved <span class="t t-man">MANUAL</span></h3>
+<p>Manually set <code>Interconnection Status</code> → "Application Approved" once the utility approves the application.</p>
+<div class="ac ac-trig"><div><span class="t t-trig">TRIGGER</span> <code>Interconnection Status</code> changes to "Application Approved"</div></div>
+<div class="ac"><div><span class="t t-auto">AUTO</span> <code>Is Interconnection Approved?</code> → Yes</div><div><span class="t t-auto">AUTO</span> <code>Interconnection Approval Date</code> recorded</div><div><span class="t t-calc">CALC</span> <code>Interconnection Turnaround Time</code></div><div><span class="t t-calc">CALC</span> <code>Time to Interconnection</code></div><div><span class="t t-not">NOTIF</span> <code>Interconnection Status Update - SMS</code> + <code>Interconnection Status Update - Email</code></div><div><span class="t t-auto">AUTO</span> RTB Gate check triggered (see RTB Gate section)</div></div>
+
+<h2>Key Fields</h2>
+<div class="card">
+<table>
+<tr><th>Field</th><th>Set By</th><th>Purpose</th></tr>
+<tr><td><code>Interconnection Status</code></td><td><span class="t t-auto">AUTO</span> (task) / <span class="t t-man">MANUAL</span></td><td>Task-driven through normal flow; "Application Approved" is set manually</td></tr>
+<tr><td><code>Interconnections Lead</code></td><td><span class="t t-man">MANUAL</span></td><td>Assigned at project start</td></tr>
+<tr><td><code>Is Interconnection Approved?</code></td><td><span class="t t-auto">AUTO</span></td><td>Flips when IC approved</td></tr>
+<tr><td><code>Interconnection Submit Date</code></td><td><span class="t t-auto">AUTO</span></td><td>Date IC application submitted</td></tr>
+<tr><td><code>Interconnection Approval Date</code></td><td><span class="t t-auto">AUTO</span></td><td>Date IC was approved</td></tr>
+<tr><td><code>Interconnection Turnaround Time</code></td><td><span class="t t-calc">CALC</span></td><td>Submission to approval duration</td></tr>
+<tr><td><code>Interconnection Blocker</code></td><td><span class="t t-man">MANUAL</span></td><td>Blocker reason if delayed</td></tr>
+</table>
+</div>
+</div>
+
+<!-- ===== RTB GATE ===== -->
+<div class="section" id="rtb">
+<h1>RTB Gate (Ready To Build)</h1>
+<p class="subtitle">The dual-condition gate that controls when a project can move to construction. Both permit AND interconnection must be approved.</p>
+
+<h2>Gate Logic</h2>
+<div class="card">
+<table>
+<tr><th>Condition</th><th>Field</th><th>Required Value</th></tr>
+<tr><td>Permit</td><td><code>Is Permit Issued?</code></td><td>Yes</td></tr>
+<tr><td>Interconnection</td><td><code>Is Interconnection Approved?</code></td><td>Yes</td></tr>
+</table>
+</div>
+
+<div class="tip"><strong>Dual-Gate Logic:</strong> <span class="t t-auto">AUTO</span> When BOTH conditions are met → deal auto-advances to <strong>Ready To Build</strong>. If only ONE is complete → deal moves to <strong>RTB - Blocked</strong> with the blocking reason tracked.</div>
+
+<h2>RTB - Blocked</h2>
+<p>When one condition is met but not the other, the deal enters RTB - Blocked.</p>
+<div class="ac"><div><span class="t t-auto">AUTO</span> <code>RTB Blocked Reason</code> set based on which condition is missing:</div></div>
+<div class="card">
+<table>
+<tr><th>Scenario</th><th>Blocked Reason</th></tr>
+<tr><td>Permit issued, IC pending</td><td>"Waiting on Interconnection Approval"</td></tr>
+<tr><td>IC approved, permit pending</td><td>"Waiting on Permit"</td></tr>
+<tr><td>Both pending</td><td>Deal stays in Permitting &amp; IC stage</td></tr>
+</table>
+</div>
+<p>When the second condition clears, the deal auto-advances from RTB - Blocked to Ready To Build.</p>
+
+<h2>Ready To Build Stage</h2>
+<div class="ac"><div><span class="t t-auto">AUTO</span> Deal stage → Ready To Build</div><div><span class="t t-calc">CALC</span> <code>Time to RTB</code> (sale to RTB)</div><div><span class="t t-calc">CALC</span> <code>Time Between Permit &amp; RTB</code></div><div><span class="t t-not">NOTIF</span> <code>RTB Update - SMS</code> + <code>RTB Update - Email</code></div></div>
+
+<h2>Key Fields</h2>
+<div class="card">
+<table>
+<tr><th>Field</th><th>Set By</th><th>Purpose</th></tr>
+<tr><td><code>Is Permit Issued?</code></td><td><span class="t t-auto">AUTO</span></td><td>Gate condition 1</td></tr>
+<tr><td><code>Is Interconnection Approved?</code></td><td><span class="t t-auto">AUTO</span></td><td>Gate condition 2</td></tr>
+<tr><td><code>RTB Blocked Reason</code></td><td><span class="t t-auto">AUTO</span></td><td>Why project is blocked from RTB</td></tr>
+<tr><td><code>Time to RTB</code></td><td><span class="t t-calc">CALC</span></td><td>Total time from sale to RTB</td></tr>
+</table>
+</div>
+</div>
+
+<!-- ===== CONSTRUCTION ===== -->
+<div class="section" id="con">
+<h1>Construction</h1>
+<p class="subtitle">Physical installation of solar system. Status driven by Zuper Pro field sync with HubSpot checklist for completion.</p>
+
+<h2>Status Flow <code>Construction Status</code></h2>
+<div class="sf">
+<span class="sp">Ready to Build</span><span class="fa">→</span>
+<span class="sp">Scheduled</span><span class="fa">→</span>
+<span class="sp">On Our Way</span><span class="fa">→</span>
+<span class="sp">Started</span><span class="fa">→</span>
+<span class="sp">In Progress</span><span class="fa">→</span>
+<span class="sp">Construction Complete</span>
+</div>
+<div class="sf" style="margin-top:2px;">
+<span style="font-size:11px;color:var(--gray-400);">Revision path:</span>
+<span class="sp sp-r">Revisions Needed</span><span class="fa">→</span>
+<span class="sp">In Design For Revisions</span><span class="fa">→</span>
+<span class="sp">Revisions Complete</span>
+</div>
+<div class="sf" style="margin-top:2px;">
+<span style="font-size:11px;color:var(--gray-400);">Other:</span>
+<span class="sp sp-h">Blocked</span>
+<span class="sp sp-r">Rejected</span>
+<span class="sp">Loose Ends Remaining</span>
+<span class="sp sp-h">Pending New Construction Design Review</span>
+</div>
+
+<h2>Procedure</h2>
+
+<h3>1. Schedule Installation <span class="t t-zup">ZUPER SYNC</span></h3>
+<p>When construction is scheduled in the scheduler or directly in Zuper, <code>Construction Status</code> auto-updates to "Scheduled".</p>
+<div class="ac ac-zup"><div><span class="t t-zup">ZUPER</span> Construction scheduled in Zuper/scheduler → <code>Construction Status</code> → "Scheduled"</div></div>
+<div class="ac"><div><span class="t t-auto">AUTO</span> Deal stage → Construction (if not already there)</div><div><span class="t t-auto">AUTO</span> <code>Is Construction Scheduled?</code> → Yes</div><div><span class="t t-not">NOTIF</span> <code>Construction Update - SMS</code> + <code>Construction Update - Email</code></div></div>
+
+<h3>2. Field Installation <span class="t t-zup">ZUPER SYNC</span></h3>
+<p>Field crew updates job status in Zuper Pro. Auto-syncs to HubSpot:</p>
+<div class="ac ac-zup"><div><span class="t t-zup">ZUPER</span> <code>Construction Status</code>: On Our Way → Started → In Progress</div><div><span class="t t-zup">ZUPER</span> <code>Project Manager - Zuper</code> assigned</div></div>
+
+<h3>3. Complete Construction <span class="t t-chk">CHECKLIST</span></h3>
+<p>Submit the <strong>Construction Complete Checklist</strong> in HubSpot.</p>
+<div class="ac ac-chk"><div><span class="t t-chk">CHECKLIST</span> Construction Complete Checklist submitted</div></div>
+<div class="ac"><div><span class="t t-auto">AUTO</span> <code>Construction Status</code> → Construction Complete</div><div><span class="t t-auto">AUTO</span> <code>Construction Complete Date</code> recorded</div><div><span class="t t-auto">AUTO</span> <code>Is Construction Complete?</code> → Yes</div><div><span class="t t-calc">CALC</span> <code>Construction Turnaround Time</code></div><div><span class="t t-calc">CALC</span> <code>Time from RTB to CC</code></div><div><span class="t t-calc">CALC</span> <code>Time to CC</code> (total sale to construction complete)</div><div><span class="t t-auto">AUTO</span> Deal stage → Inspection</div><div><span class="t t-auto">AUTO</span> M1 invoice workflow triggered</div><div><span class="t t-not">NOTIF</span> <code>Construction Update - SMS</code> + <code>Construction Update - Email</code></div></div>
+
+<div class="warn"><strong>Do NOT submit the Construction Complete Checklist</strong> if installation is only partial. Use "Partial Install" status and document what remains. Submitting the checklist triggers the stage advance and M1 invoicing.</div>
+
+<h2>Key Fields</h2>
+<div class="card">
+<table>
+<tr><th>Field</th><th>Set By</th><th>Purpose</th></tr>
+<tr><td><code>Construction Status</code></td><td><span class="t t-zup">ZUPER</span> / <span class="t t-auto">AUTO</span></td><td>Current installation status</td></tr>
+<tr><td><code>Construction Schedule Date</code></td><td><span class="t t-zup">ZUPER</span></td><td>Scheduled installation date (set from Zuper/scheduler)</td></tr>
+<tr><td><code>Is Construction Scheduled?</code></td><td><span class="t t-auto">AUTO</span></td><td>Flips when Zuper/scheduler sets status to Scheduled</td></tr>
+<tr><td><code>Is Construction Complete?</code></td><td><span class="t t-auto">AUTO</span></td><td>Flips when checklist submitted</td></tr>
+<tr><td><code>Construction Complete Date</code></td><td><span class="t t-auto">AUTO</span></td><td>Date construction completed</td></tr>
+<tr><td><code>Construction Turnaround Time</code></td><td><span class="t t-calc">CALC</span></td><td>Schedule to completion duration</td></tr>
+<tr><td><code>Time from RTB to CC</code></td><td><span class="t t-calc">CALC</span></td><td>RTB to construction complete</td></tr>
+<tr><td><code>Time to CC</code></td><td><span class="t t-calc">CALC</span></td><td>Total sale to construction complete</td></tr>
+<tr><td><code>Project Manager - Zuper</code></td><td><span class="t t-zup">ZUPER</span></td><td>PM assigned from Zuper</td></tr>
+</table>
+</div>
+</div>
+
+<!-- ===== INSPECTION ===== -->
+<div class="section" id="insp">
+<h1>Inspection</h1>
+<p class="subtitle">Final building inspection by the AHJ. Pass or fail with distinct automation paths for each outcome.</p>
+
+<h2>Status Flow <code>Final Inspection Status</code></h2>
+<div class="sf">
+<span class="sp">Ready For Inspection</span><span class="fa">→</span>
+<span class="sp">Scheduled</span><span class="fa">→</span>
+<span class="sp">On Our Way</span><span class="fa">→</span>
+<span class="sp">Started</span><span class="fa">→</span>
+<span class="sp">In Progress</span><span class="fa">→</span>
+<span class="sp">Passed</span>
+</div>
+<div class="sf" style="margin-top:2px;">
+<span style="font-size:11px;color:var(--gray-400);">Fail path:</span>
+<span class="sp sp-r">Failed</span>
+<span class="sp sp-r">Rejected</span><span class="fa">→</span>
+<span class="sp sp-h">Waiting on Permit Revisions</span><span class="fa">→</span>
+<span class="sp">Revisions Complete</span>
+</div>
+<div class="sf" style="margin-top:2px;">
+<span style="font-size:11px;color:var(--gray-400);">Other:</span>
+<span class="sp">Partial Pass</span>
+<span class="sp">Not Needed</span>
+<span class="sp sp-h">Pending New Construction Sign Off</span>
+<span class="sp sp-h">Pending Fire Inspection</span>
+<span class="sp sp-h">Pending BUS Install</span>
+<span class="sp sp-h">Pending New Construction</span>
+</div>
+
+<h2>Procedure</h2>
+
+<h3>1. Schedule Inspection <span class="t t-zup">ZUPER SYNC</span></h3>
+<p>When the inspection is scheduled in the scheduler or directly in Zuper, <code>Final Inspection Status</code> auto-updates to "Scheduled".</p>
+<div class="ac ac-zup"><div><span class="t t-zup">ZUPER</span> Inspection scheduled in Zuper/scheduler → <code>Final Inspection Status</code> → "Scheduled"</div></div>
+
+<h3>2. Day of Inspection <span class="t t-zup">ZUPER SYNC</span></h3>
+<p>Zuper auto-syncs field status: On Our Way → Started → In Progress.</p>
+<div class="ac ac-zup"><div><span class="t t-zup">ZUPER</span> <code>Final Inspection Status</code> synced from field</div></div>
+
+<h3>3a. Inspection Passed <span class="t t-zup">ZUPER SYNC</span></h3>
+<p>When the inspector passes in the field, Zuper syncs <code>Final Inspection Status</code> → "Passed" to HubSpot.</p>
+<div class="ac ac-zup"><div><span class="t t-zup">ZUPER</span> Inspection passes in field → <code>Final Inspection Status</code> syncs to "Passed"</div></div>
+<div class="ac"><div><span class="t t-auto">AUTO</span> <code>Is Inspection Passed?</code> → Yes</div><div><span class="t t-auto">AUTO</span> <code>Inspections Pass Date</code> recorded</div><div><span class="t t-auto">AUTO</span> <code>PTO Status</code> → "Inspection Passed - Ready for PTO Submission"</div><div><span class="t t-auto">AUTO</span> Deal stage → Permission To Operate (PTO)</div><div><span class="t t-not">NOTIF</span> <code>Inspection Update - SMS</code> + <code>Inspection Update - Email</code></div></div>
+
+<h3>3b. Inspection Failed <span class="t t-chk">CHECKLIST</span></h3>
+<div class="warn"><strong>Known Race Condition — Zuper Inspection Sync:</strong> When an inspection fails in Zuper, the system auto-creates a new job, overwriting the "Failed" status before HubSpot captures it. <strong>Always use the Inspection Failed Checklist in HubSpot</strong> as the reliable method for failure tracking.</div>
+<p>Submit the <strong>Inspection Failed Checklist</strong> in HubSpot (do NOT rely on Zuper sync for failures).</p>
+<div class="ac ac-chk"><div><span class="t t-chk">CHECKLIST</span> Inspection Failed Checklist submitted</div></div>
+<div class="ac"><div><span class="t t-auto">AUTO</span> <code>Final Inspection Status</code> → Failed</div><div><span class="t t-auto">AUTO</span> <code>Inspection Failure Reason</code> captured</div><div><span class="t t-auto">AUTO</span> <code>Inspection Fail Count</code> incremented</div></div>
+<p><span class="t t-man">MANUAL</span> Address corrections. Set <code>Final Inspection Status</code> → "Corrections In Progress" → "Re-Inspection Scheduled".</p>
+
+<h2>Key Fields</h2>
+<div class="card">
+<table>
+<tr><th>Field</th><th>Set By</th><th>Purpose</th></tr>
+<tr><td><code>Final Inspection Status</code></td><td><span class="t t-zup">ZUPER</span> / <span class="t t-auto">AUTO</span></td><td>Current inspection status</td></tr>
+<tr><td><code>Is Inspection Passed?</code></td><td><span class="t t-auto">AUTO</span></td><td>Flips when passed</td></tr>
+<tr><td><code>Inspection Booked Date</code></td><td><span class="t t-zup">ZUPER</span></td><td>Scheduled inspection date (set from Zuper/scheduler)</td></tr>
+<tr><td><code>Inspections Pass Date</code></td><td><span class="t t-auto">AUTO</span></td><td>Date inspection passed</td></tr>
+<tr><td><code>Inspection Failure Reason</code></td><td><span class="t t-auto">AUTO</span></td><td>Why inspection failed (from checklist)</td></tr>
+<tr><td><code>Inspection Fail Count</code></td><td><span class="t t-auto">AUTO</span></td><td>Number of inspection failures</td></tr>
+</table>
+</div>
+</div>
+
+<!-- ===== PTO ===== -->
+<div class="section" id="pto">
+<h1>Permission To Operate (PTO)</h1>
+<p class="subtitle">Utility permission to energize the solar system. Includes PTO application, monitoring setup, and Xcel-specific photo submission path.</p>
+
+<h2>Status Flow <code>PTO Status</code></h2>
+<div class="sf">
+<span class="sp">Inspection Passed - Ready for PTO Submission</span><span class="fa">→</span>
+<span class="sp">Inspection Submitted to Utility</span><span class="fa">→</span>
+<span class="sp">PTO Granted</span>
+</div>
+<div class="sf" style="margin-top:2px;">
+<span style="font-size:11px;color:var(--gray-400);">Rejection path:</span>
+<span class="sp sp-r">Inspection Rejected By Utility</span>
+<span class="sp sp-r">Ops Related PTO Rejection</span><span class="fa">→</span>
+<span class="sp">PTO Revision Resubmitted</span>
+</div>
+<div class="sf" style="margin-top:2px;">
+<span style="font-size:11px;color:var(--gray-400);">Xcel Photos path:</span>
+<span class="sp">Xcel Photos Ready to Submit</span><span class="fa">→</span>
+<span class="sp">Xcel Photos Submitted</span><span class="fa">→</span>
+<span class="sp">Xcel Photos Approved</span>
+</div>
+<div class="sf" style="margin-top:2px;">
+<span style="font-size:11px;color:var(--gray-400);">Xcel Photos rejection:</span>
+<span class="sp sp-r">XCEL Photos Rejected</span><span class="fa">→</span>
+<span class="sp">Xcel Photos Ready to Resubmit</span><span class="fa">→</span>
+<span class="sp">Xcel Photos Resubmitted</span>
+</div>
+<div class="sf" style="margin-top:2px;">
+<span style="font-size:11px;color:var(--gray-400);">Blocked / Waiting:</span>
+<span class="sp sp-h">PTO Waiting on Interconnection Approval</span>
+<span class="sp sp-h">Waiting On Information</span>
+<span class="sp sp-h">Waiting on New Construction</span>
+<span class="sp sp-h">Conditional PTO - Pending Transformer Upgrade</span>
+<span class="sp sp-h">Pending Truck Roll</span>
+</div>
+<div class="sf" style="margin-top:2px;">
+<span style="font-size:11px;color:var(--gray-400);">Other:</span>
+<span class="sp">Not Needed</span>
+</div>
+
+<h2>Procedure</h2>
+
+<h3>1. PTO Entry <span class="t t-auto">AUTO</span></h3>
+<p>When inspection passes, deal auto-advances to PTO stage with status "Inspection Passed - Ready for PTO Submission".</p>
+
+<h3>2. Submit PTO Application <span class="t t-man">MANUAL</span></h3>
+<p>Submit inspection docs to utility. Set <code>PTO Status</code> → "Inspection Submitted to Utility".</p>
+<div class="ac"><div><span class="t t-auto">AUTO</span> <code>PTO Submit Date</code> recorded</div></div>
+
+<h3>3. Xcel Photo Path (if applicable) <span class="t t-man">MANUAL</span></h3>
+<p>For Xcel Energy projects, photo documentation is required. Set <code>PTO Status</code> → "Xcel Photos Ready to Submit" → "Xcel Photos Submitted" → "Xcel Photos Approved". If rejected: "XCEL Photos Rejected" → "Xcel Photos Ready to Resubmit" → "Xcel Photos Resubmitted".</p>
+
+<h3>4. PTO Granted <span class="t t-trig">TRIGGER</span></h3>
+<p>Set <code>PTO Status</code> → "PTO Granted"</p>
+<div class="ac ac-trig"><div><span class="t t-trig">TRIGGER</span> <code>PTO Status</code> changes to "PTO Granted"</div></div>
+<div class="ac"><div><span class="t t-auto">AUTO</span> <code>Is PTO Granted?</code> → Yes</div><div><span class="t t-auto">AUTO</span> <code>PTO Granted Date</code> recorded</div><div><span class="t t-calc">CALC</span> <code>PTO Turnaround Time</code> (submission to granted)</div><div><span class="t t-calc">CALC</span> <code>Time To PTO</code> (total sale to PTO)</div><div><span class="t t-calc">CALC</span> <code>Time Between CC &amp; PTO</code></div><div><span class="t t-auto">AUTO</span> Deal stage → Close Out</div><div><span class="t t-auto">AUTO</span> PTO invoice workflow triggered</div><div><span class="t t-not">NOTIF</span> <code>PTO Update - SMS</code> + <code>PTO Update - Email</code></div></div>
+
+<h3>5. Monitoring Setup <span class="t t-man">MANUAL</span></h3>
+<p>After PTO, set up system monitoring. Track via <code>Monitoring Setup Status</code>.</p>
+
+<h2>PTO Blockers</h2>
+<p>Track delays with <code>PTO Blocker</code> field. Common blockers:</p>
+<div class="card">
+<table>
+<tr><th>Blocker</th><th>Resolution</th></tr>
+<tr><td>Pending Meter Install</td><td>Utility schedules meter swap — track date</td></tr>
+<tr><td>Corrections Needed</td><td>Submit corrections → resubmit</td></tr>
+<tr><td>Pending Design Changes</td><td>Coordinate with design team for plan updates</td></tr>
+</table>
+</div>
+
+<h2>Key Fields</h2>
+<div class="card">
+<table>
+<tr><th>Field</th><th>Set By</th><th>Purpose</th></tr>
+<tr><td><code>PTO Status</code></td><td><span class="t t-man">MANUAL</span> / <span class="t t-auto">AUTO</span></td><td>Current PTO status</td></tr>
+<tr><td><code>Is PTO Granted?</code></td><td><span class="t t-auto">AUTO</span></td><td>Flips when PTO granted</td></tr>
+<tr><td><code>PTO Granted Date</code></td><td><span class="t t-auto">AUTO</span></td><td>Date PTO was granted</td></tr>
+<tr><td><code>PTO Submit Date</code></td><td><span class="t t-auto">AUTO</span></td><td>Date PTO was submitted</td></tr>
+<tr><td><code>PTO Turnaround Time</code></td><td><span class="t t-calc">CALC</span></td><td>Submission to granted</td></tr>
+<tr><td><code>Time To PTO</code></td><td><span class="t t-calc">CALC</span></td><td>Total sale to PTO</td></tr>
+<tr><td><code>PTO Blocker</code></td><td><span class="t t-man">MANUAL</span></td><td>Current PTO blocker reason</td></tr>
+<tr><td><code>Monitoring Setup Status</code></td><td><span class="t t-man">MANUAL</span></td><td>Post-PTO monitoring setup status</td></tr>
+</table>
+</div>
+</div>
+
+<!-- ===== CLOSE OUT ===== -->
+<div class="section" id="close">
+<h1>Close Out</h1>
+<p class="subtitle">Final project wrap-up after PTO. Verify invoicing, incentives, documentation, and customer satisfaction before marking project complete.</p>
+
+<h2>Procedure</h2>
+
+<h3>1. Close Out Entry <span class="t t-auto">AUTO</span></h3>
+<p>Deal auto-advances to Close Out when PTO is granted.</p>
+<div class="ac ac-not"><div><span class="t t-not">NOTIF</span> <code>Closeout Update - SMS</code> + <code>Closeout Update - Email</code></div></div>
+
+<h3>2. Invoice Verification <span class="t t-man">MANUAL</span></h3>
+<p>Verify all milestone invoices are issued and paid:</p>
+<div class="card">
+<table>
+<tr><th>Invoice</th><th>Trigger</th><th>Fields</th></tr>
+<tr><td>M1 — Construction Complete</td><td>Construction Complete Checklist</td><td><code>M1 Invoice Status</code></td></tr>
+<tr><td>M2 — Inspection Passed (if applicable)</td><td>Inspection passed</td><td><code>M2 Invoice Status</code></td></tr>
+<tr><td>PTO Invoice</td><td>PTO Granted</td><td><code>PTO Invoice Status</code></td></tr>
+</table>
+</div>
+
+<h3>3. Incentive Verification <span class="t t-man">MANUAL</span></h3>
+<p>Confirm all applicable incentive/rebate applications are submitted or approved. See <a href="#" onclick="go('inc')">Incentives &amp; Rebates</a>.</p>
+
+<h3>4. As-Built Documentation <span class="t t-man">MANUAL</span></h3>
+<p>Ensure as-built permits submitted if required by AHJ.</p>
+
+<h3>5. Project Complete <span class="t t-man">MANUAL</span></h3>
+<p>When all items verified, move deal stage to <strong>Project Complete</strong>.</p>
+<div class="ac"><div><span class="t t-auto">AUTO</span> <code>Project Completion Date</code> recorded</div><div><span class="t t-calc">CALC</span> <code>Total Project Duration</code> (sale to project complete)</div></div>
+</div>
+
+<!-- ===== ON-HOLD & CANCEL ===== -->
+<div class="section" id="hold">
+<h1>On-Hold &amp; Cancellation</h1>
+<p class="subtitle">Procedures for pausing or cancelling projects at any stage.</p>
+
+<h2>On-Hold</h2>
+<p>Any deal can be placed on hold at any stage. The On-Hold stage is tracked separately from the main pipeline flow.</p>
+
+<h3>Place on Hold <span class="t t-man">MANUAL</span></h3>
+<p>Move deal stage to <strong>On-Hold</strong>. Set the hold reason:</p>
+<div class="ac"><div><span class="t t-man">MANUAL</span> Set <code>On-Hold Reason</code> — choose from:</div></div>
+<div class="card">
+<table>
+<tr><th>Hold Reason</th></tr>
+<tr><td>3CE - 2025 Install</td></tr>
+<tr><td>Customer Decision Pending / Requested Hold</td></tr>
+<tr><td>Customer Dissatisfaction</td></tr>
+<tr><td>Customer Health Concerns</td></tr>
+<tr><td>Financing Issues</td></tr>
+<tr><td>Internal Process Issues / Missing Documentation</td></tr>
+<tr><td>Legal / Property Issues</td></tr>
+<tr><td>New Construction / Remodel Not Ready</td></tr>
+<tr><td>Pending Rebate Approval</td></tr>
+<tr><td>Permitting / Regulatory Issues</td></tr>
+<tr><td>Rebate/Incentive Issues</td></tr>
+<tr><td>Technical / Design Issues</td></tr>
+<tr><td>Waiting for Equipment Availability</td></tr>
+<tr><td>Waiting for External Factors</td></tr>
+<tr><td>Waiting for Other Work to be Completed</td></tr>
+<tr><td>Waiting on Customer Information or Action</td></tr>
+<tr><td>Waiting on Internal Processes</td></tr>
+</table>
+</div>
+<div class="ac"><div><span class="t t-auto">AUTO</span> <code>On-Hold Date</code> recorded</div><div><span class="t t-auto">AUTO</span> HubSpot tracks time in On-Hold stage</div></div>
+
+<h3>Resume from Hold <span class="t t-man">MANUAL</span></h3>
+<p>Move deal back to the appropriate active stage. The system will track total time spent on hold.</p>
+
+<h2>Cancellation</h2>
+
+<h3>Cancel Project <span class="t t-man">MANUAL</span></h3>
+<p>Move deal stage to <strong>Cancelled</strong>.</p>
+<div class="ac"><div><span class="t t-man">MANUAL</span> Set <code>Cancellation Reason</code></div><div><span class="t t-man">MANUAL</span> Set <code>Cancellation Notes</code> with details</div><div><span class="t t-auto">AUTO</span> <code>Cancellation Date</code> recorded</div></div>
+
+<div class="warn"><strong>Cancellations are tracked but not easily reversed.</strong> Ensure the cancellation is confirmed before moving the deal. If a cancelled project restarts, create documentation of the restart reason.</div>
+</div>
+
+<!-- ===== D&R PIPELINE ===== -->
+<div class="section" id="dr">
+<h1>Detach &amp; Reset (D&amp;R) Pipeline</h1>
+<p class="subtitle">Separate pipeline for projects requiring solar panel removal for roof work, then reinstallation. Runs parallel to or before the main project pipeline.</p>
+
+<h2>Pipeline Stages</h2>
+<div class="pv">
+<span class="ps ps-d">D&R Kickoff</span><span class="pa">→</span>
+<span class="ps ps-d">D&R Survey</span><span class="pa">→</span>
+<span class="ps ps-d">D&R Design</span><span class="pa">→</span>
+<span class="ps ps-d">D&R Permitting</span><span class="pa">→</span>
+<span class="ps ps-d">Detach</span><span class="pa">→</span>
+<span class="ps ps-d">Roof Work</span><span class="pa">→</span>
+<span class="ps ps-d">Reset</span><span class="pa">→</span>
+<span class="ps ps-d">D&R Inspection</span><span class="pa">→</span>
+<span class="ps ps-d">D&R Complete</span>
+</div>
+
+<h2>Detach Status Flow <code>Detach Status</code></h2>
+<div class="sf">
+<span class="sp">Ready To Schedule</span><span class="fa">→</span>
+<span class="sp">Scheduled</span><span class="fa">→</span>
+<span class="sp">Started</span><span class="fa">→</span>
+<span class="sp">On Our Way</span><span class="fa">→</span>
+<span class="sp">Completed</span>
+</div>
+
+<h2>Reset Status Flow <code>Reset Status</code></h2>
+<div class="sf">
+<span class="sp">Ready To Schedule</span><span class="fa">→</span>
+<span class="sp">Scheduled</span><span class="fa">→</span>
+<span class="sp">On Our Way</span><span class="fa">→</span>
+<span class="sp">Started</span><span class="fa">→</span>
+<span class="sp">Completed</span>
+</div>
+
+<h2>Procedure</h2>
+
+<h3>1. D&amp;R Kickoff <span class="t t-man">MANUAL</span></h3>
+<p>Create D&amp;R deal or move existing deal to D&amp;R pipeline. Document roof work scope and coordination with roofer.</p>
+
+<h3>2. D&amp;R Survey <span class="t t-man">MANUAL</span></h3>
+<p>Survey existing system for detach plan. Document panel layout, conduit runs, attachment points.</p>
+
+<h3>3. D&amp;R Design &amp; Permitting <span class="t t-man">MANUAL</span></h3>
+<p>Create detach/reset plans if needed. Pull permits for the work.</p>
+
+<h3>4. Detach <span class="t t-zup">ZUPER SYNC</span></h3>
+<p>Field crew removes panels. Zuper syncs <code>Detach Status</code> through the flow.</p>
+<div class="ac ac-zup"><div><span class="t t-zup">ZUPER</span> <code>Detach Status</code>: Scheduled → On Our Way → Started → In Progress → Completed</div></div>
+<div class="ac"><div><span class="t t-auto">AUTO</span> <code>Detach Completion Date</code> recorded when completed</div></div>
+
+<h3>5. Roof Work <span class="t t-man">MANUAL</span></h3>
+<p>Roofer performs roof replacement/repair. Track externally and update deal when complete.</p>
+
+<h3>6. Reset <span class="t t-zup">ZUPER SYNC</span></h3>
+<p>Field crew reinstalls panels. Zuper syncs <code>Reset Status</code>.</p>
+<div class="ac ac-zup"><div><span class="t t-zup">ZUPER</span> <code>Reset Status</code>: Scheduled → On Our Way → Started → In Progress → Completed</div></div>
+<div class="ac"><div><span class="t t-auto">AUTO</span> <code>Reset Completion Date</code> recorded when completed</div></div>
+
+<h3>7. D&amp;R Inspection <span class="t t-man">MANUAL</span></h3>
+<p>Schedule and pass inspection for the reset installation.</p>
+
+<h3>8. D&amp;R Complete <span class="t t-man">MANUAL</span></h3>
+<p>Move deal to D&amp;R Complete. If this was blocking the main project, resume main pipeline.</p>
+
+<h2>Key Fields</h2>
+<div class="card">
+<table>
+<tr><th>Field</th><th>Set By</th><th>Purpose</th></tr>
+<tr><td><code>Detach Status</code></td><td><span class="t t-zup">ZUPER</span></td><td>Detach job status</td></tr>
+<tr><td><code>Reset Status</code></td><td><span class="t t-zup">ZUPER</span></td><td>Reset job status</td></tr>
+<tr><td><code>Detach Completion Date</code></td><td><span class="t t-auto">AUTO</span></td><td>When detach was completed</td></tr>
+<tr><td><code>Reset Completion Date</code></td><td><span class="t t-auto">AUTO</span></td><td>When reset was completed</td></tr>
+</table>
+</div>
+</div>
+
+<!-- ===== SERVICE PIPELINE ===== -->
+<div class="section" id="svc">
+<h1>Service Pipeline</h1>
+<p class="subtitle">Post-installation service and warranty work. Handles troubleshooting, repairs, and system maintenance.</p>
+
+<h2>Pipeline Stages</h2>
+<div class="pv">
+<span class="ps ps-v">Service Prep</span><span class="pa">→</span>
+<span class="ps ps-v">Site Visit Scheduled</span><span class="pa">→</span>
+<span class="ps ps-v">Work In Progress</span><span class="pa">→</span>
+<span class="ps ps-v">Inspection</span><span class="pa">→</span>
+<span class="ps ps-v">Invoicing</span><span class="pa">→</span>
+<span class="ps ps-v">Service Complete</span>
+</div>
+<div class="pv" style="margin-top:0;"><span style="font-size:12px;color:var(--gray-400);">Other:</span><span class="ps ps-g">On-Hold</span><span class="ps ps-g">Cancelled</span></div>
+
+<h2>Procedure</h2>
+
+<h3>1. Service Prep <span class="t t-man">MANUAL</span></h3>
+<p>Receive service request. Diagnose issue, determine if warranty or billable. Create service deal.</p>
+<p>Document issue in deal notes. Assign appropriate service tech.</p>
+
+<h3>2. Site Visit <span class="t t-man">MANUAL</span> / <span class="t t-zup">ZUPER SYNC</span></h3>
+<p>Schedule and conduct site visit. Zuper sync tracks field status.</p>
+
+<h3>3. Work In Progress <span class="t t-zup">ZUPER SYNC</span></h3>
+<p>Service work performed. Parts ordered if needed. Track through Zuper.</p>
+
+<h3>4. Inspection (if needed) <span class="t t-man">MANUAL</span></h3>
+<p>If work requires inspection, schedule with AHJ.</p>
+
+<h3>5. Invoicing <span class="t t-man">MANUAL</span></h3>
+<p>Issue invoice for non-warranty work. Warranty work noted for manufacturer claim.</p>
+
+<h3>6. Service Complete <span class="t t-man">MANUAL</span></h3>
+<p>Close out service deal. Document resolution for future reference.</p>
+</div>
+
+<!-- ===== ROOFING PIPELINE ===== -->
+<div class="section" id="roof">
+<h1>Roofing Pipeline</h1>
+<p class="subtitle">Standalone roofing projects managed through a separate sales and execution pipeline. Integrates with Roofr for measurements.</p>
+
+<h2>Pipeline Stages</h2>
+<div class="pv">
+<span class="ps ps-r">Appointment Set</span><span class="pa">→</span>
+<span class="ps ps-r">Qualified</span><span class="pa">→</span>
+<span class="ps ps-r">Presentation</span><span class="pa">→</span>
+<span class="ps ps-r">Contract Sent</span><span class="pa">→</span>
+<span class="ps ps-r">Closed Won</span>
+</div>
+<div class="pv" style="margin-top:0;"><span style="font-size:12px;color:var(--gray-400);">Other:</span><span class="ps ps-g">Closed Lost</span><span class="ps ps-g">Nurture</span></div>
+
+<h2>Procedure</h2>
+
+<h3>1. Appointment Set <span class="t t-man">MANUAL</span></h3>
+<p>Roof lead comes in. Schedule inspection appointment.</p>
+
+<h3>2. Qualification <span class="t t-man">MANUAL</span></h3>
+<p>Inspect roof condition. Use Roofr integration for measurements and report generation.</p>
+<div class="ac"><div><span class="t t-auto">AUTO</span> Roofr measurement data syncs to deal when available</div></div>
+
+<h3>3. Presentation &amp; Contract <span class="t t-man">MANUAL</span></h3>
+<p>Present roofing proposal. Send contract via DocuSign.</p>
+
+<h3>4. Closed Won <span class="t t-man">MANUAL</span></h3>
+<p>Contract signed. Coordinate with roofing crew for scheduling.</p>
+<p>If D&amp;R is needed (solar panels on the roof), create a linked D&amp;R deal.</p>
+
+<div class="info"><strong>Roofing + Solar:</strong> When a roofing project involves a home with existing solar, create both a Roofing deal and a D&amp;R deal. The D&amp;R deal handles panel detach/reset around the roof work.</div>
+</div>
+
+<!-- ===== INCENTIVES & REBATES ===== -->
+<div class="section" id="inc">
+<h1>Incentives &amp; Rebates</h1>
+<p class="subtitle">Parallel workflows for incentive and rebate programs. These run alongside the main project pipeline and have their own status tracking.</p>
+
+<div class="info"><strong>Parallel workflows:</strong> Incentive statuses are independent of the main deal stage. A deal can be in Construction while its CPA application is still pending. Assign <code>Incentive Lead</code> (Incentive Lead) for management.</div>
+
+<h2>CPA (California Property Assessed) <code>CPA Status</code></h2>
+<div class="sf">
+<span class="sp">Incentive(s) Selected - Ready for Review</span><span class="fa">→</span>
+<span class="sp">Ready To Submit</span><span class="fa">→</span>
+<span class="sp">Submitted for Preapproval</span><span class="fa">→</span>
+<span class="sp">Rebate Preapproved</span><span class="fa">→</span>
+<span class="sp">Submitted for Payment</span>
+</div>
+<div class="sf" style="margin-top:2px;">
+<span style="font-size:11px;color:var(--gray-400);">Waiting:</span>
+<span class="sp sp-h">Waiting on Construction Complete</span>
+<span class="sp sp-h">Waiting on PTO</span>
+<span class="sp sp-h">Waiting on Information</span>
+<span class="sp sp-h">On Hold</span>
+<span class="sp sp-h">Pending Paid In Full</span>
+</div>
+<div class="sf" style="margin-top:2px;">
+<span style="font-size:11px;color:var(--gray-400);">Other:</span>
+<span class="sp sp-r">Cancelled</span>
+</div>
+
+<h2>RRF (Rebate Reservation Form) <code>RRF Status</code></h2>
+<div class="sf">
+<span class="sp">Ready for RRF</span><span class="fa">→</span>
+<span class="sp">Sent For Signature</span><span class="fa">→</span>
+<span class="sp">Signed</span><span class="fa">→</span>
+<span class="sp">Submitted</span><span class="fa">→</span>
+<span class="sp">Confirmed</span>
+</div>
+<div class="sf" style="margin-top:2px;">
+<span style="font-size:11px;color:var(--gray-400);">Other:</span>
+<span class="sp sp-h">Incomplete</span>
+<span class="sp sp-h">Awaiting Information</span>
+<span class="sp sp-h">Submitted To Waitlist</span>
+<span class="sp sp-h">Suspended</span>
+<span class="sp">Resubmitted</span>
+<span class="sp sp-r">Canceled</span>
+<span class="sp sp-r">Rejected (Non-FZ)</span>
+<span class="sp sp-h">Pending Paid In Full</span>
+<span class="sp sp-h">Pending Demand Response Enrollment</span>
+</div>
+
+<h2>Incentive Status (General) <code>Incentive Status</code></h2>
+<div class="sf">
+<span class="sp">Incentive(s) Selected - Ready for Review</span><span class="fa">→</span>
+<span class="sp">Ready To Submit</span><span class="fa">→</span>
+<span class="sp">Submitted</span>
+</div>
+<div class="sf" style="margin-top:2px;">
+<span style="font-size:11px;color:var(--gray-400);">Waiting:</span>
+<span class="sp sp-h">Waiting on Construction Complete</span>
+<span class="sp sp-h">Waiting on PTO</span>
+<span class="sp sp-h">Waiting on Information</span>
+<span class="sp sp-h">On Hold</span>
+</div>
+<div class="sf" style="margin-top:2px;">
+<span style="font-size:11px;color:var(--gray-400);">Other:</span>
+<span class="sp sp-r">Cancelled</span>
+</div>
+
+<h2>Other Incentive Programs</h2>
+<p>Additional incentive programs (3CE, ICF, PBSR) are tracked through similar status flows. Managed by the Incentive Lead (<code>Incentive Lead</code>).</p>
+
+<h2>Blocker Tracking</h2>
+<p>Each incentive program has a corresponding blocker field for tracking delays:</p>
+<div class="card">
+<table>
+<tr><th>Program</th><th>Blocker Field</th><th>Set By</th></tr>
+<tr><td>SGIP</td><td><code>SGIP Blocker</code></td><td><span class="t t-man">MANUAL</span></td></tr>
+<tr><td>CPA</td><td><code>CPA Blocker</code></td><td><span class="t t-man">MANUAL</span></td></tr>
+<tr><td>RRF</td><td><code>RRF Blocker</code></td><td><span class="t t-man">MANUAL</span></td></tr>
+<tr><td>Interconnection</td><td><code>Interconnection Blocker</code></td><td><span class="t t-man">MANUAL</span></td></tr>
+<tr><td>PTO</td><td><code>PTO Blocker</code></td><td><span class="t t-man">MANUAL</span></td></tr>
+</table>
+</div>
+</div>
+
+<!-- ===== CUSTOMER NOTIFICATIONS ===== -->
+<div class="section" id="notif">
+<h1>Customer Notifications</h1>
+<p class="subtitle">Automated paired SMS + Email notifications triggered at every major status change. Keeps homeowners informed without manual outreach.</p>
+
+<div class="info">All notifications are <span class="t t-not">NOTIFICATION</span> — they fire automatically when the triggering status change occurs. No manual action needed.</div>
+
+<h2>Notification Map</h2>
+<div class="card">
+<table>
+<tr><th>Stage Change</th><th>SMS Field</th><th>Email Field</th><th>Trigger</th></tr>
+<tr><td>Site Survey Scheduled</td><td><code>Site Survey Update - SMS</code></td><td><code>Site Survey Update - Email</code></td><td><code>Site Survey Status</code> → Scheduled</td></tr>
+<tr><td>Design Approval Sent</td><td><code>Design Approval Update - SMS</code></td><td><code>Design Approval Update - Email</code></td><td><code>Design Approval Status</code> → Sent For Approval</td></tr>
+<tr><td>Permit Issued</td><td><code>Permit Status Update - SMS</code></td><td><code>Permit Status Update - Email</code></td><td><code>Permitting Status</code> → Permit Issued</td></tr>
+<tr><td>IC Approved</td><td><code>Interconnection Status Update - SMS</code></td><td><code>Interconnection Status Update - Email</code></td><td><code>Interconnection Status</code> → Approved</td></tr>
+<tr><td>Ready To Build</td><td><code>RTB Update - SMS</code></td><td><code>RTB Update - Email</code></td><td>Deal enters RTB stage</td></tr>
+<tr><td>Construction Update</td><td><code>Construction Update - SMS</code></td><td><code>Construction Update - Email</code></td><td><code>Construction Status</code> changes</td></tr>
+<tr><td>Inspection Update</td><td><code>Inspection Update - SMS</code></td><td><code>Inspection Update - Email</code></td><td><code>Final Inspection Status</code> → Passed</td></tr>
+<tr><td>PTO Granted</td><td><code>PTO Update - SMS</code></td><td><code>PTO Update - Email</code></td><td><code>PTO Status</code> → PTO Granted</td></tr>
+<tr><td>Close Out</td><td><code>Closeout Update - SMS</code></td><td><code>Closeout Update - Email</code></td><td>Deal enters Close Out stage</td></tr>
+</table>
+</div>
+</div>
+
+<!-- ===== INVOICING ===== -->
+<div class="section" id="inv">
+<h1>Invoicing</h1>
+<p class="subtitle">Milestone-based invoicing triggered by project stage completions. Invoice workflows fire automatically from checklists and status changes.</p>
+
+<h2>Invoice Milestones</h2>
+<div class="card">
+<table>
+<tr><th>Milestone</th><th>Trigger</th><th>Type</th><th>Status Field</th></tr>
+<tr><td><strong>M1 — Construction Complete</strong></td><td>Construction Complete Checklist submitted</td><td><span class="t t-auto">AUTO</span></td><td><code>M1 Invoice Status</code></td></tr>
+<tr><td><strong>M2 — Inspection (if applicable)</strong></td><td>Inspection passed (for ESA/lease deals)</td><td><span class="t t-auto">AUTO</span></td><td><code>M2 Invoice Status</code></td></tr>
+<tr><td><strong>M3 — Additional Milestone</strong></td><td>Varies by deal type</td><td><span class="t t-man">MANUAL</span></td><td><code>M3 Invoice Status</code></td></tr>
+<tr><td><strong>PTO Invoice</strong></td><td>PTO Granted</td><td><span class="t t-auto">AUTO</span></td><td><code>PTO Invoice Status</code></td></tr>
+</table>
+</div>
+
+<h2>Invoice Status Flow</h2>
+<div class="sf">
+<span class="sp">Not Issued</span><span class="fa">→</span>
+<span class="sp">Issued</span><span class="fa">→</span>
+<span class="sp">Paid</span>
+</div>
+<div class="sf" style="margin-top:2px;">
+<span style="font-size:11px;color:var(--gray-400);">Other:</span>
+<span class="sp sp-r">Disputed</span>
+<span class="sp sp-h">Pending Correction</span>
+</div>
+
+<h2>ESA (Energy Service Agreement) Variants</h2>
+<p>ESA/lease deals may have different milestone structures. The invoice workflows detect the <code>Payment Method</code> field to determine which milestones apply.</p>
+<div class="info"><code>Payment Method</code> drives invoice workflow selection. Cash, loan, ESA, and lease deals each follow slightly different milestone sequences.</div>
+</div>
+
+<!-- ===== TIMING METRICS ===== -->
+<div class="section" id="met">
+<h1>Timing Metrics</h1>
+<p class="subtitle">Auto-calculated timing fields that measure process efficiency. All are <span class="t t-calc">CALCULATED</span> — they compute automatically when the relevant date fields are populated.</p>
+
+<div class="info"><strong>Never set these manually.</strong> They auto-compute from date field pairs. If a metric shows blank, the upstream date hasn't been recorded yet.</div>
+
+<h2>Sales Metrics</h2>
+<div class="card">
+<table>
+<tr><th>Metric</th><th>Measures</th><th>From → To</th></tr>
+<tr><td><code>Time Waiting on Sales</code></td><td>Sales responsiveness</td><td>Sale → sales communication complete</td></tr>
+</table>
+</div>
+
+<h2>Site Survey Metrics</h2>
+<div class="card">
+<table>
+<tr><th>Metric</th><th>Measures</th><th>From → To</th></tr>
+<tr><td><code>Time Taken to Schedule Site Survey</code></td><td>Scheduling speed</td><td>Deal entry → survey scheduled</td></tr>
+<tr><td><code>Sale to Survey Completion</code></td><td>Total survey phase</td><td>Sale → survey completed</td></tr>
+<tr><td><code>Time Between Close Date &amp; Survey Completion</code></td><td>Close to survey</td><td>Close date → survey done</td></tr>
+</table>
+</div>
+
+<h2>Design Metrics</h2>
+<div class="card">
+<table>
+<tr><th>Metric</th><th>Measures</th><th>From → To</th></tr>
+<tr><td><code>Time between DA Ready and DA Sent</code></td><td>DA prep time</td><td>DA ready → DA sent</td></tr>
+<tr><td><code>DA Turnaround Time</code></td><td>DA turnaround</td><td>DA sent → DA approved</td></tr>
+<tr><td><code>Time to DA</code></td><td>Total to DA</td><td>Sale → DA approved</td></tr>
+<tr><td><code>Time Between Survey Schedule Date &amp; DA Ready Date</code></td><td>Survey to DA ready</td><td>Survey scheduled → DA ready</td></tr>
+<tr><td><code>Time Between Survey Schedule Date &amp; DA Sent Date</code></td><td>Survey to DA sent</td><td>Survey scheduled → DA sent</td></tr>
+<tr><td><code>Design Turnaround Time</code></td><td>Design phase duration</td><td>Survey → design complete</td></tr>
+<tr><td><code>DA To Permit</code></td><td>DA to design complete</td><td>DA approved → design complete</td></tr>
+</table>
+</div>
+
+<h2>Permitting &amp; IC Metrics</h2>
+<div class="card">
+<table>
+<tr><th>Metric</th><th>Measures</th><th>From → To</th></tr>
+<tr><td><code>Permit Turnaround Time</code></td><td>Permit processing</td><td>Submission → issued</td></tr>
+<tr><td><code>Time to Permit</code></td><td>Total to permit</td><td>Sale → permit issued</td></tr>
+<tr><td><code>Interconnection Turnaround Time</code></td><td>IC processing</td><td>Submission → approved</td></tr>
+<tr><td><code>Time to Interconnection</code></td><td>Total to IC</td><td>Sale → IC approved</td></tr>
+<tr><td><code>Time to RTB</code></td><td>Total to RTB</td><td>Sale → Ready To Build</td></tr>
+<tr><td><code>Time Between Permit &amp; RTB</code></td><td>Permit to RTB</td><td>Permit issued → RTB</td></tr>
+</table>
+</div>
+
+<h2>Construction &amp; Completion Metrics</h2>
+<div class="card">
+<table>
+<tr><th>Metric</th><th>Measures</th><th>From → To</th></tr>
+<tr><td><code>Construction Turnaround Time</code></td><td>Construction speed</td><td>Scheduled → construction complete</td></tr>
+<tr><td><code>Time from RTB to CC</code></td><td>RTB to build</td><td>RTB → construction complete</td></tr>
+<tr><td><code>Time to CC</code></td><td>Total to construction</td><td>Sale → construction complete</td></tr>
+<tr><td><code>PTO Turnaround Time</code></td><td>PTO processing</td><td>PTO submitted → granted</td></tr>
+<tr><td><code>Time To PTO</code></td><td>Total to PTO</td><td>Sale → PTO granted</td></tr>
+<tr><td><code>Time Between CC &amp; PTO</code></td><td>Post-construction</td><td>Construction complete → PTO</td></tr>
+<tr><td><code>Total Project Duration</code></td><td>Full lifecycle</td><td>Sale → project complete</td></tr>
+</table>
+</div>
+
+<h2>HubSpot Auto-Tracked Stage Times</h2>
+<p>HubSpot automatically records the following for <strong>every</strong> pipeline stage:</p>
+<div class="card">
+<table>
+<tr><th>Field Pattern</th><th>Description</th></tr>
+<tr><td><code>hs_v2_date_entered_[stage]</code></td><td>Date deal entered the stage</td></tr>
+<tr><td><code>hs_v2_date_exited_[stage]</code></td><td>Date deal left the stage</td></tr>
+<tr><td><code>hs_v2_cumulative_time_in_[stage]</code></td><td>Total time spent in stage (even if re-entered)</td></tr>
+<tr><td><code>hs_v2_time_in_current_stage</code></td><td>How long deal has been in its current stage</td></tr>
+</table>
+</div>
+<div class="warn"><strong>Never set <code>hs_v2_*</code> fields manually.</strong> These are managed by HubSpot's internal pipeline tracking. Manual edits will corrupt the timing data.</div>
+</div>
+
+<!-- ===== FIELD REFERENCE ===== -->
+<div class="section" id="ref">
+<h1>Field Reference</h1>
+<p class="subtitle">Comprehensive reference of key HubSpot fields organized by workflow area. Shows who/what sets each field.</p>
+
+<h2>Status Fields (Workflow Drivers)</h2>
+<div class="card">
+<table>
+<tr><th>Field</th><th>Pipeline Area</th><th>Set By</th><th>Drives</th></tr>
+<tr><td><code>Site Survey Status</code></td><td>Site Survey</td><td><span class="t t-zup">ZUPER</span> / <span class="t t-man">MANUAL</span></td><td>Survey workflow + stage advance</td></tr>
+<tr><td><code>Design Approval Status</code></td><td>Design Approval</td><td><span class="t t-auto">AUTO</span></td><td>Fully PandaDoc-driven — auto-set on send, approve, or reject</td></tr>
+<tr><td><code>Design Status</code></td><td>Design &amp; Engineering</td><td><span class="t t-auto">AUTO</span></td><td>Driven by 6-step task workflow (Vishtik + Design Lead)</td></tr>
+<tr><td><code>Permitting Status</code></td><td>Permitting</td><td><span class="t t-auto">AUTO</span> (task) / <span class="t t-man">MANUAL</span></td><td>Task-driven through normal flow; "Permit Issued" set manually + RTB gate (condition 1)</td></tr>
+<tr><td><code>Interconnection Status</code></td><td>Interconnection</td><td><span class="t t-auto">AUTO</span> (task) / <span class="t t-man">MANUAL</span></td><td>Task-driven through normal flow; "Application Approved" set manually + RTB gate (condition 2)</td></tr>
+<tr><td><code>Construction Status</code></td><td>Construction</td><td><span class="t t-zup">ZUPER</span> / <span class="t t-auto">AUTO</span></td><td>Construction workflow + stage advance</td></tr>
+<tr><td><code>Final Inspection Status</code></td><td>Inspection</td><td><span class="t t-zup">ZUPER</span> / <span class="t t-auto">AUTO</span></td><td>Inspection workflow + stage advance</td></tr>
+<tr><td><code>PTO Status</code></td><td>PTO</td><td><span class="t t-man">MANUAL</span> / <span class="t t-auto">AUTO</span></td><td>PTO workflow + stage advance + invoice</td></tr>
+<tr><td><code>Loan Status</code></td><td>Sales</td><td><span class="t t-man">MANUAL</span></td><td>Financing verification gate</td></tr>
+<tr><td><code>Detach Status</code></td><td>D&amp;R</td><td><span class="t t-zup">ZUPER</span></td><td>Detach job tracking</td></tr>
+<tr><td><code>Reset Status</code></td><td>D&amp;R</td><td><span class="t t-zup">ZUPER</span></td><td>Reset job tracking</td></tr>
+</table>
+</div>
+
+<h2>Boolean Flag Fields (Auto-Set)</h2>
+<div class="card">
+<table>
+<tr><th>Field</th><th>Flips When</th></tr>
+<tr><td><code>Is Site Survey Scheduled?</code></td><td><code>Site Survey Status</code> → Scheduled</td></tr>
+<tr><td><code>Is Site Survey Completed?</code></td><td><code>Site Survey Status</code> → Completed (Zuper sync)</td></tr>
+<tr><td><code>Is DA sent?</code></td><td><code>Design Approval Status</code> → Sent For Approval (PandaDoc sent)</td></tr>
+<tr><td><code>Is Design Approved?</code></td><td><code>Design Approval Status</code> → Design Approved (PandaDoc approved)</td></tr>
+<tr><td><code>Is Design Completed?</code></td><td><code>Design Status</code> → Design Complete (Upload Stamped Plans task completed)</td></tr>
+<tr><td><code>Is Permit Issued?</code></td><td><code>Permitting Status</code> → Permit Issued</td></tr>
+<tr><td><code>Is Interconnection Approved?</code></td><td><code>Interconnection Status</code> → Approved</td></tr>
+<tr><td><code>Is Construction Scheduled?</code></td><td><code>Construction Status</code> → Scheduled</td></tr>
+<tr><td><code>Is Construction Complete?</code></td><td>Construction Complete Checklist submitted</td></tr>
+<tr><td><code>Is Inspection Passed?</code></td><td><code>Final Inspection Status</code> → Passed (Zuper sync)</td></tr>
+<tr><td><code>Is PTO Granted?</code></td><td><code>PTO Status</code> → PTO Granted</td></tr>
+<tr><td><code>DA Last 365 Days</code></td><td>DA approved within rolling year</td></tr>
+</table>
+</div>
+
+<h2>Date Fields (Auto-Recorded)</h2>
+<div class="card">
+<table>
+<tr><th>Field</th><th>Recorded When</th></tr>
+<tr><td><code>Design Approval Sent Date</code></td><td>DA sent for approval</td></tr>
+<tr><td><code>Design Approval Date</code></td><td>Customer approves DA</td></tr>
+<tr><td><code>Design Approval Ready Date</code></td><td>Design enters review</td></tr>
+<tr><td><code>Design Completion Date</code></td><td>Design marked complete</td></tr>
+<tr><td><code>Engineering Submission Date</code></td><td>Engineering plans submitted</td></tr>
+<tr><td><code>Engineering Stamped Date</code></td><td>Stamped plans received</td></tr>
+<tr><td><code>Permit Submit Date</code></td><td>Permit application submitted</td></tr>
+<tr><td><code>Permit Issue Date</code></td><td>Permit issued</td></tr>
+<tr><td><code>Interconnection Submit Date</code></td><td>IC application submitted</td></tr>
+<tr><td><code>Interconnection Approval Date</code></td><td>IC approved</td></tr>
+<tr><td><code>Construction Complete Date</code></td><td>Construction checklist submitted</td></tr>
+<tr><td><code>Inspections Pass Date</code></td><td>Inspection passed</td></tr>
+<tr><td><code>PTO Submit Date</code></td><td>PTO application submitted</td></tr>
+<tr><td><code>PTO Granted Date</code></td><td>PTO granted</td></tr>
+<tr><td><code>DA Revision Complete Date</code></td><td>DA resent after revision</td></tr>
+<tr><td><code>On-Hold Date</code></td><td>Deal placed on hold</td></tr>
+<tr><td><code>Cancellation Date</code></td><td>Deal cancelled</td></tr>
+</table>
+</div>
+
+<h2>Counter Fields (Auto-Incremented)</h2>
+<div class="card">
+<table>
+<tr><th>Field</th><th>Increments When</th></tr>
+<tr><td><code>DA Revision Counter</code></td><td>Each DA rejection/revision cycle</td></tr>
+<tr><td><code>Revision Counter</code></td><td>Each design revision cycle</td></tr>
+<tr><td><code>Inspection Fail Count</code></td><td>Each inspection failure</td></tr>
+</table>
+</div>
+
+<h2>Owner Fields</h2>
+<div class="card">
+<table>
+<tr><th>Field</th><th>Role</th><th>Set By</th></tr>
+<tr><td><code>Deal owner</code></td><td>Deal Owner</td><td><span class="t t-man">MANUAL</span></td></tr>
+<tr><td><code>Site Survey Lead</code></td><td>Site Survey Lead</td><td><span class="t t-man">MANUAL</span></td></tr>
+<tr><td><code>Site Surveyor - Zuper</code></td><td>Surveyor (Zuper)</td><td><span class="t t-zup">ZUPER</span></td></tr>
+<tr><td><code>Design Lead</code></td><td>Design Lead</td><td><span class="t t-man">MANUAL</span></td></tr>
+<tr><td><code>Permit Lead</code></td><td>Permit Lead</td><td><span class="t t-man">MANUAL</span></td></tr>
+<tr><td><code>Interconnections Lead</code></td><td>Interconnections Lead</td><td><span class="t t-man">MANUAL</span></td></tr>
+<tr><td><code>Project Manager - Zuper</code></td><td>PM (Zuper)</td><td><span class="t t-zup">ZUPER</span></td></tr>
+<tr><td><code>Incentive Lead</code></td><td>Incentive Lead</td><td><span class="t t-man">MANUAL</span></td></tr>
+</table>
+</div>
+</div>
+
+</main>
+</div>
+
+<script>
+// Navigation
+function go(id){
+  document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+  const target=document.getElementById(id);
+  if(target){target.classList.add('active');window.scrollTo(0,0);}
+  document.querySelectorAll('.sidebar a').forEach(a=>{
+    a.classList.toggle('active',a.dataset.s===id);
+  });
+}
+
+// Search
+function handleSearch(query){
+  if(!query.trim())return;
+  const q=query.toLowerCase();
+  const sections=document.querySelectorAll('.section');
+  let found=false;
+  sections.forEach(s=>{
+    if(s.textContent.toLowerCase().includes(q)&&!found){
+      go(s.id);
+      found=true;
+      // Highlight matches
+      setTimeout(()=>{
+        const walker=document.createTreeWalker(s,NodeFilter.SHOW_TEXT);
+        while(walker.nextNode()){
+          const node=walker.currentNode;
+          const idx=node.textContent.toLowerCase().indexOf(q);
+          if(idx!==-1){
+            const range=document.createRange();
+            range.setStart(node,idx);
+            range.setEnd(node,idx+q.length);
+            const span=document.createElement('mark');
+            span.style.background='#fde68a';
+            span.style.padding='1px 2px';
+            span.style.borderRadius='2px';
+            range.surroundContents(span);
+            span.scrollIntoView({behavior:'smooth',block:'center'});
+            setTimeout(()=>{
+              const parent=span.parentNode;
+              parent.replaceChild(document.createTextNode(span.textContent),span);
+              parent.normalize();
+            },3000);
+            break;
+          }
+        }
+      },100);
+    }
+  });
+  if(!found){
+    alert('No results found for: '+query);
+  }
+}
+
+// Ctrl+K shortcut
+document.addEventListener('keydown',e=>{
+  if((e.ctrlKey||e.metaKey)&&e.key==='k'){
+    e.preventDefault();
+    document.getElementById('si').focus();
+    document.getElementById('si').select();
+  }
+});
+
+// Show first section
+go('overview');
+</script>
+</body>
+</html>

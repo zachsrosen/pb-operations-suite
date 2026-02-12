@@ -63,6 +63,20 @@ const TESTING_DASHBOARDS = [
     tag: "PE",
     tagColor: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
   },
+  {
+    href: "/prototypes/solar-checkout",
+    title: "Solar Checkout Experience",
+    description: "Customer-facing solar checkout flow prototype.",
+    tag: "PROTOTYPE",
+    tagColor: "bg-pink-500/20 text-pink-400 border-pink-500/30",
+  },
+  {
+    href: "/prototypes/solar-surveyor",
+    title: "Solar Surveyor v11",
+    description: "Next-generation solar site surveyor tool prototype.",
+    tag: "PROTOTYPE",
+    tagColor: "bg-pink-500/20 text-pink-400 border-pink-500/30",
+  },
 ];
 
 const DOCUMENTATION = [
@@ -93,6 +107,13 @@ const DOCUMENTATION = [
     description: "Comprehensive guide to dashboards, features, and workflows.",
     tag: "HANDBOOK",
     tagColor: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+  },
+  {
+    href: "/sop",
+    title: "SOPs",
+    description: "Standard operating procedures for operations, scheduling, and workflows.",
+    tag: "SOP",
+    tagColor: "bg-teal-500/20 text-teal-400 border-teal-500/30",
   },
 ];
 

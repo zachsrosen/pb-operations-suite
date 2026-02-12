@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Photon Brothers — Solar Checkout</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&display=swap" rel="stylesheet">
+<style>
+:root {
+  --navy-950: #020617;
+  --navy-900: #0F172A;
+  --navy-800: #1E293B;
+  --navy-700: #334155;
+  --navy-600: #475569;
+  --navy-500: #64748B;
+  --navy-400: #94A3B8;
+  --navy-300: #CBD5E1;
+  --navy-200: #E2E8F0;
+  --navy-100: #F1F5F9;
+  --navy-50: #F8FAFC;
+  --amber-500: #F59E0B;
+  --amber-400: #FBBF24;
+  --amber-600: #D97706;
+  --amber-700: #B45309;
+  --amber-100: #FEF3C7;
+  --amber-50: #FFFBEB;
+  --green-500: #10B981;
+  --green-400: #34D399;
+  --green-600: #059669;
+  --green-100: #D1FAE5;
+  --green-50: #ECFDF5;
+  --red-500: #EF4444;
+  --white: #FFFFFF;
+  --font-display: 'Syne', sans-serif;
+  --font-body: 'DM Sans', sans-serif;
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-out-back: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 16px; -webkit-font-smoothing: antialiased; scroll-behavior: smooth; }
+body { font-family: var(--font-body); background: var(--navy-950); color: var(--navy-300); min-height: 100vh; overflow-x: hidden; }
+
+.ambient-bg { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+.ambient-bg::before { content: ''; position: absolute; top: -30%; right: -20%; width: 800px; height: 800px; background: radial-gradient(circle, rgba(245,158,11,0.06) 0%, transparent 70%); animation: ambientFloat 20s ease-in-out infinite; }
+.ambient-bg::after { content: ''; position: absolute; bottom: -20%; left: -10%; width: 600px; height: 600px; background: radial-gradient(circle, rgba(16,185,129,0.04) 0%, transparent 70%); animation: ambientFloat 25s ease-in-out infinite reverse; }
+@keyframes ambientFloat { 0%, 100% { transform: translate(0, 0); } 50% { transform: translate(-40px, 30px); } }
+
+.app-container { position: relative; z-index: 1; max-width: 1120px; margin: 0 auto; padding: 0 24px; min-height: 100vh; }
+
+.top-bar { display: flex; align-items: center; justify-content: space-between; padding: 20px 0; border-bottom: 1px solid rgba(148,163,184,0.08); }
+.logo { font-family: var(--font-display); font-weight: 800; font-size: 1.15rem; color: var(--white); letter-spacing: -0.02em; display: flex; align-items: center; gap: 8px; }
+.logo-sun { width: 28px; height: 28px; background: conic-gradient(from 0deg, var(--amber-500), var(--amber-400), var(--amber-500)); border-radius: 50%; position: relative; }
+.logo-sun::after { content: ''; position: absolute; inset: 4px; background: var(--navy-950); border-radius: 50%; }
+.top-bar-right { font-size: 0.82rem; color: var(--navy-500); display: flex; align-items: center; gap: 6px; }
+.top-bar-right .secure-icon { color: var(--green-500); }
+
+.progress-container { padding: 28px 0 8px; }
+.progress-steps { display: flex; align-items: center; gap: 0; }
+.progress-step { display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 8px 0; flex: 1; }
+.progress-step:not(:last-child)::after { content: ''; flex: 1; height: 2px; background: var(--navy-800); margin-left: 8px; transition: background 0.5s var(--ease-out-expo); }
+.progress-step.completed:not(:last-child)::after { background: var(--amber-500); }
+.step-dot { width: 28px; height: 28px; border-radius: 50%; background: var(--navy-800); border: 2px solid var(--navy-700); display: flex; align-items: center; justify-content: center; font-family: var(--font-display); font-weight: 600; font-size: 0.7rem; color: var(--navy-500); transition: all 0.4s var(--ease-out-expo); flex-shrink: 0; }
+.progress-step.active .step-dot { background: var(--amber-500); border-color: var(--amber-400); color: var(--navy-900); box-shadow: 0 0 20px rgba(245,158,11,0.3); }
+.progress-step.completed .step-dot { background: var(--green-500); border-color: var(--green-400); color: var(--white); }
+.step-label { font-size: 0.72rem; font-weight: 500; color: var(--navy-600); white-space: nowrap; transition: color 0.3s; display: none; }
+@media (min-width: 768px) { .step-label { display: block; } }
+.progress-step.active .step-label { color: var(--amber-400); }
+.progress-step.completed .step-label { color: var(--green-400); }
+
+.steps-wrapper { position: relative; min-height: 70vh; padding: 32px 0 60px; }
+.step { display: none; animation: stepIn 0.6s var(--ease-out-expo); }
+.step.active { display: block; }
+@keyframes stepIn { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: translateY(0); } }
+
+.step-header { margin-bottom: 32px; }
+.step-eyebrow { font-family: var(--font-display); font-weight: 600; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--amber-500); margin-bottom: 8px; }
+.step-title { font-family: var(--font-display); font-weight: 700; font-size: clamp(1.6rem, 4vw, 2.2rem); color: var(--white); letter-spacing: -0.03em; line-height: 1.15; }
+.step-subtitle { font-size: 0.95rem; color: var(--navy-400); margin-top: 8px; line-height: 1.5; }
+
+.form-grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
+@media (min-width: 640px) { .form-grid-2col { grid-template-columns: 1fr 1fr; } }
+.form-group { display: flex; flex-direction: column; gap: 6px; }
+.form-group.full-width { grid-column: 1 / -1; }
+.form-label { font-size: 0.78rem; font-weight: 500; color: var(--navy-400); letter-spacing: 0.02em; }
+.form-input, .form-select { background: var(--navy-900); border: 1px solid var(--navy-700); border-radius: 10px; padding: 12px 16px; font-family: var(--font-body); font-size: 0.92rem; color: var(--white); transition: all 0.25s; outline: none; width: 100%; }
+.form-input::placeholder { color: var(--navy-600); }
+.form-input:focus, .form-select:focus { border-color: var(--amber-500); box-shadow: 0 0 0 3px rgba(245,158,11,0.1); }
+.form-select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2 4l4 4 4-4' stroke='%2364748B' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 36px; cursor: pointer; }
+.form-select option { background: var(--navy-900); color: var(--white); }
+
+.bill-slider-container { display: flex; flex-direction: column; gap: 10px; }
+.bill-display { display: flex; align-items: baseline; gap: 4px; }
+.bill-amount { font-family: var(--font-display); font-weight: 700; font-size: 2rem; color: var(--white); }
+.bill-period { font-size: 0.82rem; color: var(--navy-500); }
+.range-slider { -webkit-appearance: none; appearance: none; width: 100%; height: 6px; border-radius: 3px; background: linear-gradient(to right, var(--amber-500) 0%, var(--amber-500) var(--value-pct, 50%), var(--navy-700) var(--value-pct, 50%), var(--navy-700) 100%); outline: none; cursor: pointer; }
+.range-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; height: 22px; border-radius: 50%; background: var(--white); border: 3px solid var(--amber-500); cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.3); transition: transform 0.15s; }
+.range-slider::-webkit-slider-thumb:hover { transform: scale(1.15); }
+.range-labels { display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--navy-600); }
+
+.satellite-preview { background: var(--navy-900); border: 1px solid var(--navy-700); border-radius: 14px; height: 200px; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 8px; overflow: hidden; position: relative; margin-top: 8px; }
+.satellite-preview .sat-grid { position: absolute; inset: 0; background-image: linear-gradient(rgba(148,163,184,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(148,163,184,0.05) 1px, transparent 1px); background-size: 24px 24px; }
+.satellite-preview .sat-icon { font-size: 2rem; opacity: 0.4; }
+.satellite-preview .sat-text { font-size: 0.78rem; color: var(--navy-600); }
+
+.cta-row { display: flex; align-items: center; gap: 12px; margin-top: 32px; }
+.btn-primary { background: linear-gradient(135deg, var(--amber-500), var(--amber-600)); color: var(--navy-900); font-family: var(--font-display); font-weight: 700; font-size: 0.92rem; padding: 14px 32px; border: none; border-radius: 12px; cursor: pointer; transition: all 0.25s var(--ease-out-expo); letter-spacing: -0.01em; display: inline-flex; align-items: center; gap: 8px; }
+.btn-primary:hover { transform: translateY(-1px); box-shadow: 0 8px 30px rgba(245,158,11,0.3); }
+.btn-primary:active { transform: translateY(0); }
+.btn-secondary { background: transparent; color: var(--navy-400); font-family: var(--font-display); font-weight: 600; font-size: 0.85rem; padding: 14px 24px; border: 1px solid var(--navy-700); border-radius: 12px; cursor: pointer; transition: all 0.25s; }
+.btn-secondary:hover { border-color: var(--navy-500); color: var(--navy-300); }
+
+.step1-layout { display: grid; grid-template-columns: 1fr; gap: 32px; }
+@media (min-width: 768px) { .step1-layout { grid-template-columns: 1fr 1fr; } }
+
+/* Step 2 */
+.design-hero { background: var(--navy-900); border: 1px solid var(--navy-800); border-radius: 20px; overflow: hidden; margin-bottom: 28px; }
+.roof-viewport { height: 340px; background: linear-gradient(180deg, #0c1629 0%, #162033 100%); position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.roof-scene { transform: perspective(600px) rotateX(35deg) rotateZ(-25deg); width: 280px; height: 200px; position: relative; }
+.roof-base { width: 100%; height: 100%; background: linear-gradient(135deg, #2d3748, #374151); border-radius: 4px; position: relative; box-shadow: 0 20px 60px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.05); }
+.solar-panel { position: absolute; width: 40px; height: 28px; background: linear-gradient(135deg, #1e3a5f, #1a4a7a); border: 1px solid rgba(100,180,255,0.15); border-radius: 2px; box-shadow: 0 1px 3px rgba(0,0,0,0.3), inset 0 0 8px rgba(100,180,255,0.05); }
+.solar-panel::before { content: ''; position: absolute; inset: 2px; background: linear-gradient(135deg, transparent 48%, rgba(100,180,255,0.08) 50%, transparent 52%); }
+.solar-panel.glow { animation: panelGlow 3s ease-in-out infinite; }
+@keyframes panelGlow { 0%, 100% { box-shadow: 0 1px 3px rgba(0,0,0,0.3), inset 0 0 8px rgba(100,180,255,0.05); } 50% { box-shadow: 0 1px 3px rgba(0,0,0,0.3), inset 0 0 12px rgba(100,180,255,0.15), 0 0 20px rgba(100,180,255,0.05); } }
+@keyframes panelAppear { from { opacity: 0; transform: scale(0.5); } to { opacity: 1; transform: scale(1); } }
+.roof-label { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); background: rgba(15,23,42,0.85); backdrop-filter: blur(8px); padding: 6px 14px; border-radius: 20px; font-size: 0.72rem; color: var(--navy-400); border: 1px solid var(--navy-700); white-space: nowrap; }
+.design-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px; background: var(--navy-800); }
+@media (min-width: 640px) { .design-stats { grid-template-columns: repeat(5, 1fr); } }
+.stat-cell { background: var(--navy-900); padding: 20px; text-align: center; }
+.stat-value { font-family: var(--font-display); font-weight: 700; font-size: 1.5rem; color: var(--white); letter-spacing: -0.02em; }
+.stat-value .stat-unit { font-size: 0.8rem; font-weight: 500; color: var(--navy-400); margin-left: 2px; }
+.stat-label { font-size: 0.7rem; color: var(--navy-500); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.06em; }
+.shade-badge { display: inline-flex; align-items: center; gap: 6px; background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.2); color: var(--green-400); padding: 8px 16px; border-radius: 20px; font-size: 0.78rem; font-weight: 500; margin-top: 20px; }
+.shade-dot { width: 8px; height: 8px; background: var(--green-400); border-radius: 50%; }
+
+/* Step 3 */
+.config-layout { display: grid; grid-template-columns: 1fr; gap: 28px; }
+@media (min-width: 768px) { .config-layout { grid-template-columns: 1fr 340px; } }
+.config-section { background: var(--navy-900); border: 1px solid var(--navy-800); border-radius: 14px; padding: 20px; margin-bottom: 16px; }
+.config-section-title { font-family: var(--font-display); font-weight: 600; font-size: 0.85rem; color: var(--white); margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+.config-section-icon { font-size: 1rem; }
+.panel-adjuster { display: flex; align-items: center; gap: 16px; justify-content: center; }
+.adj-btn { width: 40px; height: 40px; border-radius: 10px; background: var(--navy-800); border: 1px solid var(--navy-700); color: var(--white); font-size: 1.2rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; font-family: var(--font-display); font-weight: 700; }
+.adj-btn:hover { background: var(--navy-700); border-color: var(--amber-500); }
+.panel-count-display { text-align: center; min-width: 80px; }
+.panel-count-num { font-family: var(--font-display); font-weight: 800; font-size: 2.4rem; color: var(--white); line-height: 1; }
+.panel-count-label { font-size: 0.72rem; color: var(--navy-500); text-transform: uppercase; letter-spacing: 0.08em; }
+.toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; }
+.toggle-row:not(:last-child) { border-bottom: 1px solid var(--navy-800); }
+.toggle-info { display: flex; flex-direction: column; gap: 2px; }
+.toggle-name { font-size: 0.88rem; color: var(--white); font-weight: 500; }
+.toggle-detail { font-size: 0.75rem; color: var(--navy-500); }
+.toggle-price { font-size: 0.78rem; color: var(--amber-400); font-weight: 500; }
+.toggle-switch { width: 44px; height: 24px; background: var(--navy-700); border-radius: 12px; position: relative; cursor: pointer; transition: background 0.25s; flex-shrink: 0; margin-left: 12px; }
+.toggle-switch.on { background: var(--amber-500); }
+.toggle-switch .toggle-knob { width: 20px; height: 20px; background: var(--white); border-radius: 50%; position: absolute; top: 2px; left: 2px; transition: transform 0.25s var(--ease-out-back); box-shadow: 0 1px 4px rgba(0,0,0,0.2); }
+.toggle-switch.on .toggle-knob { transform: translateX(20px); }
+.qty-selector { display: flex; align-items: center; gap: 8px; margin-left: 12px; }
+.qty-btn { width: 28px; height: 28px; border-radius: 6px; background: var(--navy-800); border: 1px solid var(--navy-700); color: var(--white); font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; justify-content: center; font-family: var(--font-display); font-weight: 700; }
+.qty-num { font-family: var(--font-display); font-weight: 700; font-size: 1rem; color: var(--white); min-width: 20px; text-align: center; }
+
+.config-summary { background: var(--navy-900); border: 1px solid var(--navy-800); border-radius: 14px; padding: 24px; position: sticky; top: 20px; }
+.summary-title { font-family: var(--font-display); font-weight: 700; font-size: 0.85rem; color: var(--white); margin-bottom: 20px; text-transform: uppercase; letter-spacing: 0.06em; }
+.summary-line { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; font-size: 0.85rem; }
+.summary-line-label { color: var(--navy-400); }
+.summary-line-value { color: var(--white); font-weight: 500; }
+.summary-divider { height: 1px; background: var(--navy-800); margin: 12px 0; }
+.summary-total { display: flex; justify-content: space-between; align-items: baseline; padding: 12px 0; }
+.summary-total-label { font-size: 0.85rem; color: var(--navy-400); }
+.summary-total-value { font-family: var(--font-display); font-weight: 800; font-size: 1.6rem; color: var(--white); }
+.summary-itc { text-align: right; font-size: 0.78rem; color: var(--green-400); margin-top: -4px; }
+.summary-monthly { background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.15); border-radius: 10px; padding: 14px; margin-top: 16px; text-align: center; }
+.summary-monthly-label { font-size: 0.72rem; color: var(--amber-400); text-transform: uppercase; letter-spacing: 0.06em; }
+.summary-monthly-value { font-family: var(--font-display); font-weight: 800; font-size: 1.3rem; color: var(--amber-400); margin-top: 2px; }
+
+/* Step 4 */
+.savings-hero { text-align: center; padding: 40px 0 32px; }
+.savings-hero-label { font-size: 0.85rem; color: var(--navy-400); margin-bottom: 8px; }
+.savings-hero-amount { font-family: var(--font-display); font-weight: 800; font-size: clamp(2.2rem, 6vw, 3.5rem); color: var(--green-400); letter-spacing: -0.03em; }
+.savings-hero-sub { font-size: 0.88rem; color: var(--navy-500); margin-top: 6px; }
+.financing-cards { display: grid; grid-template-columns: 1fr; gap: 16px; margin: 28px 0; }
+@media (min-width: 640px) { .financing-cards { grid-template-columns: repeat(3, 1fr); } }
+.fin-card { background: var(--navy-900); border: 2px solid var(--navy-800); border-radius: 14px; padding: 24px 20px; cursor: pointer; transition: all 0.3s var(--ease-out-expo); position: relative; }
+.fin-card:hover { border-color: var(--navy-600); }
+.fin-card.selected { border-color: var(--amber-500); background: rgba(245,158,11,0.03); }
+.fin-card-badge { position: absolute; top: -10px; right: 16px; background: var(--amber-500); color: var(--navy-900); font-family: var(--font-display); font-weight: 700; font-size: 0.65rem; padding: 3px 10px; border-radius: 10px; text-transform: uppercase; letter-spacing: 0.06em; }
+.fin-card-type { font-family: var(--font-display); font-weight: 600; font-size: 0.82rem; color: var(--navy-400); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 12px; }
+.fin-card-amount { font-family: var(--font-display); font-weight: 800; font-size: 1.8rem; color: var(--white); letter-spacing: -0.02em; }
+.fin-card-period { font-size: 0.78rem; color: var(--navy-500); }
+.fin-card-details { margin-top: 16px; display: flex; flex-direction: column; gap: 6px; }
+.fin-detail { display: flex; justify-content: space-between; font-size: 0.78rem; }
+.fin-detail-label { color: var(--navy-500); }
+.fin-detail-value { color: var(--navy-300); font-weight: 500; }
+
+.incentives-section { background: var(--navy-900); border: 1px solid var(--navy-800); border-radius: 14px; padding: 24px; margin: 24px 0; }
+.incentive-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; }
+.incentive-row:not(:last-child) { border-bottom: 1px solid var(--navy-800); }
+.incentive-name { font-size: 0.88rem; color: var(--navy-300); }
+.incentive-value { font-family: var(--font-display); font-weight: 700; color: var(--green-400); font-size: 0.95rem; }
+
+.chart-container { background: var(--navy-900); border: 1px solid var(--navy-800); border-radius: 14px; padding: 24px; margin: 24px 0; }
+.chart-title { font-family: var(--font-display); font-weight: 600; font-size: 0.92rem; color: var(--white); margin-bottom: 20px; }
+.chart-canvas-wrap { position: relative; height: 220px; }
+.chart-canvas-wrap canvas { width: 100%; height: 100%; }
+.chart-legend { display: flex; gap: 24px; margin-top: 16px; justify-content: center; }
+.legend-item { display: flex; align-items: center; gap: 6px; font-size: 0.78rem; color: var(--navy-400); }
+.legend-dot { width: 10px; height: 10px; border-radius: 3px; }
+
+.bill-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 24px 0; }
+.bill-card { background: var(--navy-900); border: 1px solid var(--navy-800); border-radius: 14px; padding: 20px; text-align: center; }
+.bill-card-label { font-size: 0.75rem; color: var(--navy-500); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
+.bill-card-amount { font-family: var(--font-display); font-weight: 800; font-size: 1.8rem; letter-spacing: -0.02em; }
+.bill-card-amount.old { color: var(--red-500); text-decoration: line-through; text-decoration-thickness: 2px; }
+.bill-card-amount.new { color: var(--green-400); }
+.bill-card-sub { font-size: 0.75rem; color: var(--navy-500); margin-top: 4px; }
+
+/* Step 5 */
+.proposal-card { background: var(--navy-900); border: 1px solid var(--navy-800); border-radius: 14px; overflow: hidden; margin-bottom: 20px; }
+.proposal-card-header { padding: 20px 24px; border-bottom: 1px solid var(--navy-800); font-family: var(--font-display); font-weight: 600; font-size: 0.88rem; color: var(--white); }
+.proposal-card-body { padding: 20px 24px; }
+.proposal-specs { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+@media (min-width: 640px) { .proposal-specs { grid-template-columns: repeat(3, 1fr); } }
+.proposal-spec { display: flex; flex-direction: column; gap: 2px; }
+.proposal-spec-label { font-size: 0.72rem; color: var(--navy-500); text-transform: uppercase; letter-spacing: 0.06em; }
+.proposal-spec-value { font-family: var(--font-display); font-weight: 600; font-size: 1.05rem; color: var(--white); }
+
+.timeline { display: flex; flex-direction: column; gap: 0; padding: 8px 0; }
+.timeline-item { display: flex; gap: 16px; position: relative; padding-bottom: 24px; }
+.timeline-item:last-child { padding-bottom: 0; }
+.timeline-item:not(:last-child)::before { content: ''; position: absolute; left: 14px; top: 32px; bottom: 0; width: 2px; background: var(--navy-700); }
+.timeline-dot { width: 30px; height: 30px; border-radius: 50%; background: var(--navy-800); border: 2px solid var(--navy-700); display: flex; align-items: center; justify-content: center; font-size: 0.7rem; flex-shrink: 0; }
+.timeline-content { padding-top: 4px; }
+.timeline-title { font-size: 0.88rem; color: var(--white); font-weight: 500; }
+.timeline-desc { font-size: 0.78rem; color: var(--navy-500); margin-top: 2px; }
+
+.pandadoc-embed { background: var(--navy-900); border: 2px dashed var(--navy-700); border-radius: 14px; height: 200px; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 10px; margin: 20px 0; }
+.pandadoc-embed-icon { font-size: 2rem; opacity: 0.4; }
+.pandadoc-embed-text { font-size: 0.82rem; color: var(--navy-600); }
+.pandadoc-embed-sub { font-size: 0.72rem; color: var(--navy-700); }
+
+.terms-row { display: flex; align-items: flex-start; gap: 10px; padding: 16px 0; }
+.custom-checkbox { width: 20px; height: 20px; border: 2px solid var(--navy-600); border-radius: 5px; cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center; transition: all 0.2s; margin-top: 1px; }
+.custom-checkbox.checked { background: var(--amber-500); border-color: var(--amber-500); }
+.custom-checkbox.checked::after { content: '\2713'; color: var(--navy-900); font-size: 0.7rem; font-weight: 700; }
+.terms-text { font-size: 0.82rem; color: var(--navy-400); line-height: 1.5; }
+.terms-text a { color: var(--amber-400); text-decoration: none; }
+
+/* Step 6 */
+.confirm-hero { text-align: center; padding: 48px 0 32px; }
+.confirm-icon { width: 80px; height: 80px; background: linear-gradient(135deg, var(--green-500), var(--green-600)); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2rem; margin: 0 auto 20px; animation: confirmPop 0.6s var(--ease-out-back); box-shadow: 0 0 40px rgba(16,185,129,0.3); }
+@keyframes confirmPop { from { transform: scale(0); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.confirm-title { font-family: var(--font-display); font-weight: 800; font-size: clamp(1.8rem, 5vw, 2.6rem); color: var(--white); letter-spacing: -0.03em; }
+.confirm-subtitle { font-size: 1rem; color: var(--navy-400); margin-top: 8px; max-width: 480px; margin-left: auto; margin-right: auto; }
+.next-steps-grid { display: grid; grid-template-columns: 1fr; gap: 12px; margin: 32px auto; max-width: 600px; }
+.next-step-card { background: var(--navy-900); border: 1px solid var(--navy-800); border-radius: 12px; padding: 16px 20px; display: flex; align-items: center; gap: 16px; }
+.next-step-num { width: 36px; height: 36px; background: var(--navy-800); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-family: var(--font-display); font-weight: 700; font-size: 0.85rem; color: var(--amber-400); flex-shrink: 0; }
+.next-step-info { flex: 1; }
+.next-step-title { font-size: 0.88rem; color: var(--white); font-weight: 500; }
+.next-step-date { font-size: 0.75rem; color: var(--navy-500); margin-top: 2px; }
+.confirm-actions { display: flex; flex-direction: column; align-items: center; gap: 12px; margin-top: 32px; }
+.btn-consult { background: linear-gradient(135deg, var(--amber-500), var(--amber-600)); color: var(--navy-900); font-family: var(--font-display); font-weight: 700; font-size: 0.95rem; padding: 16px 40px; border: none; border-radius: 12px; cursor: pointer; transition: all 0.25s; }
+.btn-consult:hover { transform: translateY(-1px); box-shadow: 0 8px 30px rgba(245,158,11,0.3); }
+.referral-banner { background: linear-gradient(135deg, rgba(16,185,129,0.08), rgba(16,185,129,0.03)); border: 1px solid rgba(16,185,129,0.15); border-radius: 14px; padding: 24px; text-align: center; margin-top: 32px; max-width: 500px; margin-left: auto; margin-right: auto; }
+.referral-amount { font-family: var(--font-display); font-weight: 800; font-size: 1.8rem; color: var(--green-400); }
+.referral-text { font-size: 0.88rem; color: var(--navy-300); margin-top: 4px; }
+.referral-btn { margin-top: 14px; background: transparent; border: 1px solid var(--green-500); color: var(--green-400); font-family: var(--font-display); font-weight: 600; font-size: 0.82rem; padding: 10px 24px; border-radius: 10px; cursor: pointer; transition: all 0.25s; }
+.referral-btn:hover { background: rgba(16,185,129,0.1); }
+
+.app-footer { padding: 24px 0; border-top: 1px solid var(--navy-800); text-align: center; font-size: 0.72rem; color: var(--navy-600); margin-top: 40px; }
+</style>
+</head>
+<body>
+<div class="ambient-bg"></div>
+<div class="app-container">
+  <header class="top-bar">
+    <div class="logo"><div class="logo-sun"></div>Photon Brothers</div>
+    <div class="top-bar-right"><span class="secure-icon">&#x1f512;</span> Secure Checkout</div>
+  </header>
+  <nav class="progress-container">
+    <div class="progress-steps" id="progressSteps">
+      <div class="progress-step active" data-step="1"><div class="step-dot">1</div><span class="step-label">Your Home</span></div>
+      <div class="progress-step" data-step="2"><div class="step-dot">2</div><span class="step-label">Design</span></div>
+      <div class="progress-step" data-step="3"><div class="step-dot">3</div><span class="step-label">Configure</span></div>
+      <div class="progress-step" data-step="4"><div class="step-dot">4</div><span class="step-label">Savings</span></div>
+      <div class="progress-step" data-step="5"><div class="step-dot">5</div><span class="step-label">Proposal</span></div>
+      <div class="progress-step" data-step="6"><div class="step-dot">6</div><span class="step-label">Done</span></div>
+    </div>
+  </nav>
+  <main class="steps-wrapper">
+    <!-- STEP 1 -->
+    <section class="step active" id="step1">
+      <div class="step-header">
+        <div class="step-eyebrow">Step 1 of 6</div>
+        <h1 class="step-title">Let's design solar<br>for your home</h1>
+        <p class="step-subtitle">Enter your address and we'll create a custom solar design with real savings estimates.</p>
+      </div>
+      <div class="step1-layout">
+        <div>
+          <div class="form-grid form-grid-2col">
+            <div class="form-group full-width"><label class="form-label">Property Address</label><input type="text" class="form-input" id="addressInput" placeholder="123 Main Street, Denver, CO 80202" value="8788 S Zante St, Aurora, CO 80016"></div>
+            <div class="form-group"><label class="form-label">First Name</label><input type="text" class="form-input" placeholder="First name" value="Bob"></div>
+            <div class="form-group"><label class="form-label">Last Name</label><input type="text" class="form-input" placeholder="Last name" value="Beeman"></div>
+            <div class="form-group"><label class="form-label">Email</label><input type="email" class="form-input" placeholder="you@email.com" value="bobbeeman@msn.com"></div>
+            <div class="form-group"><label class="form-label">Phone</label><input type="tel" class="form-input" placeholder="(303) 555-0123" value="(303) 995-2335"></div>
+            <div class="form-group full-width"><label class="form-label">Utility Company</label>
+              <select class="form-select" id="utilitySelect">
+                <option value="xcel" selected>Xcel Energy</option>
+                <option value="psco">PSCO (Public Service Company of Colorado)</option>
+                <option value="csu">Colorado Springs Utilities</option>
+                <option value="irea">IREA (Intermountain Rural Electric)</option>
+                <option value="united">United Power</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div class="form-group full-width"><label class="form-label">Monthly Electric Bill</label>
+              <div class="bill-slider-container">
+                <div class="bill-display"><span class="bill-amount" id="billAmount">$185</span><span class="bill-period">/month</span></div>
+                <input type="range" class="range-slider" id="billSlider" min="50" max="500" value="185" step="5">
+                <div class="range-labels"><span>$50</span><span>$500+</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="satellite-preview"><div class="sat-grid"></div><div class="sat-icon">&#x1f6f0;&#xfe0f;</div><div class="sat-text">Satellite view will load for your address</div></div>
+        </div>
+      </div>
+      <div class="cta-row"><button class="btn-primary" onclick="goToStep(2)">See Your Solar Design &#8594;</button></div>
+    </section>
+
+    <!-- STEP 2 -->
+    <section class="step" id="step2">
+      <div class="step-header">
+        <div class="step-eyebrow">Step 2 of 6</div>
+        <h1 class="step-title">Your solar design</h1>
+        <p class="step-subtitle">Here's a preliminary layout based on your roof. Our engineers will refine this after you sign.</p>
+      </div>
+      <div class="design-hero">
+        <div class="roof-viewport" id="roofViewport">
+          <div class="roof-scene"><div class="roof-base" id="roofBase"></div></div>
+          <div class="roof-label">&#x1f504; Interactive 3D model powered by Scanifly</div>
+        </div>
+        <div class="design-stats" id="designStats">
+          <div class="stat-cell"><div class="stat-value"><span id="statKw">8.4</span><span class="stat-unit"> kW</span></div><div class="stat-label">System Size</div></div>
+          <div class="stat-cell"><div class="stat-value"><span id="statPanels">20</span></div><div class="stat-label">Panels</div></div>
+          <div class="stat-cell"><div class="stat-value"><span id="statProduction">12,600</span><span class="stat-unit"> kWh</span></div><div class="stat-label">Annual Production</div></div>
+          <div class="stat-cell"><div class="stat-value"><span id="statOffset">94</span><span class="stat-unit">%</span></div><div class="stat-label">Utility Offset</div></div>
+          <div class="stat-cell"><div class="stat-value"><span id="statCO2">8.9</span><span class="stat-unit"> tons</span></div><div class="stat-label">CO&#x2082; Avoided/Year</div></div>
+        </div>
+      </div>
+      <div class="shade-badge"><span class="shade-dot"></span>Excellent Sun Exposure &#8212; 94% Solar Access Value</div>
+      <div class="cta-row">
+        <button class="btn-secondary" onclick="goToStep(1)">&#8592; Back</button>
+        <button class="btn-primary" onclick="goToStep(3)">Customize Your System &#8594;</button>
+      </div>
+    </section>
+
+    <!-- STEP 3 -->
+    <section class="step" id="step3">
+      <div class="step-header">
+        <div class="step-eyebrow">Step 3 of 6</div>
+        <h1 class="step-title">Configure your system</h1>
+        <p class="step-subtitle">Adjust your solar setup. Pricing updates in real-time.</p>
+      </div>
+      <div class="config-layout">
+        <div>
+          <div class="config-section">
+            <div class="config-section-title"><span class="config-section-icon">&#x2B1B;</span> Solar Panels</div>
+            <div class="panel-adjuster">
+              <button class="adj-btn" onclick="adjustPanels(-1)">&#x2212;</button>
+              <div class="panel-count-display"><div class="panel-count-num" id="panelCountNum">20</div><div class="panel-count-label">panels</div></div>
+              <button class="adj-btn" onclick="adjustPanels(1)">+</button>
+            </div>
+            <div style="margin-top:16px">
+              <label class="form-label">Module</label>
+              <select class="form-select" id="moduleSelect" onchange="updateConfig()">
+                <option value="rec430" data-watt="430" data-price="1.05">REC Alpha Pure 430W &#8212; Premium</option>
+                <option value="cs420" data-watt="420" data-price="0.92">Canadian Solar 420W &#8212; Value</option>
+                <option value="qcell425" data-watt="425" data-price="0.98">Q Cells Q.PEAK DUO 425W &#8212; Standard</option>
+                <option value="longi440" data-watt="440" data-price="1.10">LONGi Hi-MO 6 440W &#8212; High Output</option>
+              </select>
+            </div>
+          </div>
+          <div class="config-section">
+            <div class="config-section-title"><span class="config-section-icon">&#x26A1;</span> Inverter</div>
+            <select class="form-select" id="inverterSelect" onchange="updateConfig()">
+              <option value="enphase" data-price="0.38">Enphase IQ8+ Microinverters &#8212; Panel-level optimization</option>
+              <option value="solaredge" data-price="0.28">SolarEdge SE7600H &#8212; String inverter w/ optimizers</option>
+            </select>
+          </div>
+          <div class="config-section">
+            <div class="config-section-title"><span class="config-section-icon">&#x1F50B;</span> Add-Ons</div>
+            <div class="toggle-row">
+              <div class="toggle-info">
+                <div class="toggle-name">Tesla Powerwall 3</div>
+                <div class="toggle-detail">13.5 kWh backup battery</div>
+                <div class="toggle-price">+$11,500 each</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <div class="qty-selector" id="batteryQty" style="display:none;">
+                  <button class="qty-btn" onclick="adjustBattery(-1)">&#x2212;</button>
+                  <span class="qty-num" id="batteryNum">1</span>
+                  <button class="qty-btn" onclick="adjustBattery(1)">+</button>
+                </div>
+                <div class="toggle-switch" id="batteryToggle" onclick="toggleBattery()"><div class="toggle-knob"></div></div>
+              </div>
+            </div>
+            <div class="toggle-row">
+              <div class="toggle-info">
+                <div class="toggle-name">Tesla Wall Connector</div>
+                <div class="toggle-detail">EV charger &#8212; up to 44 mi/hr charging</div>
+                <div class="toggle-price">+$1,800</div>
+              </div>
+              <div class="toggle-switch" id="evToggle" onclick="toggleEV()"><div class="toggle-knob"></div></div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="config-summary" id="configSummary">
+            <div class="summary-title">System Summary</div>
+            <div class="summary-line"><span class="summary-line-label">System Size</span><span class="summary-line-value" id="sumKw">8.60 kW</span></div>
+            <div class="summary-line"><span class="summary-line-label">Panels</span><span class="summary-line-value" id="sumPanels">20 &#215; REC 430W</span></div>
+            <div class="summary-line"><span class="summary-line-label">Inverter</span><span class="summary-line-value" id="sumInverter">Enphase IQ8+</span></div>
+            <div class="summary-line"><span class="summary-line-label">Annual Production</span><span class="summary-line-value" id="sumProduction">12,600 kWh</span></div>
+            <div class="summary-line"><span class="summary-line-label">Utility Offset</span><span class="summary-line-value" id="sumOffset">94%</span></div>
+            <div id="sumBatteryRow" class="summary-line" style="display:none"><span class="summary-line-label">Battery</span><span class="summary-line-value" id="sumBattery">1&#215; Powerwall 3</span></div>
+            <div id="sumEVRow" class="summary-line" style="display:none"><span class="summary-line-label">EV Charger</span><span class="summary-line-value">Wall Connector</span></div>
+            <div class="summary-divider"></div>
+            <div class="summary-total"><span class="summary-total-label">Estimated Cost</span><span class="summary-total-value" id="sumTotal">$28,380</span></div>
+            <div class="summary-itc" id="sumITC">After 30% ITC: $19,866</div>
+            <div class="summary-monthly"><div class="summary-monthly-label">Est. Monthly Payment</div><div class="summary-monthly-value" id="sumMonthly">$138/mo</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="cta-row">
+        <button class="btn-secondary" onclick="goToStep(2)">&#8592; Back</button>
+        <button class="btn-primary" onclick="goToStep(4)">View Savings &amp; Financing &#8594;</button>
+      </div>
+    </section>
+
+    <!-- STEP 4 -->
+    <section class="step" id="step4">
+      <div class="step-header">
+        <div class="step-eyebrow">Step 4 of 6</div>
+        <h1 class="step-title">Your solar savings</h1>
+      </div>
+      <div class="savings-hero">
+        <div class="savings-hero-label">Estimated 25-Year Savings</div>
+        <div class="savings-hero-amount" id="savingsHeroAmt">$47,200</div>
+        <div class="savings-hero-sub">Based on your current utility rate and projected energy costs</div>
+      </div>
+      <div class="bill-compare">
+        <div class="bill-card"><div class="bill-card-label">Current Monthly Bill</div><div class="bill-card-amount old" id="billOld">$185</div><div class="bill-card-sub">Without solar</div></div>
+        <div class="bill-card"><div class="bill-card-label">Projected Monthly Bill</div><div class="bill-card-amount new" id="billNew">$11</div><div class="bill-card-sub">With solar</div></div>
+      </div>
+      <div class="financing-cards" id="financingCards">
+        <div class="fin-card selected" data-option="cash" onclick="selectFinancing('cash')">
+          <div class="fin-card-type">Cash Purchase</div>
+          <div class="fin-card-amount" id="finCashTotal">$19,866</div>
+          <div class="fin-card-period">after 30% ITC</div>
+          <div class="fin-card-details">
+            <div class="fin-detail"><span class="fin-detail-label">Gross Cost</span><span class="fin-detail-value" id="finCashGross">$28,380</span></div>
+            <div class="fin-detail"><span class="fin-detail-label">Federal ITC</span><span class="fin-detail-value" id="finCashITC">&#x2212;$8,514</span></div>
+            <div class="fin-detail"><span class="fin-detail-label">Payback Period</span><span class="fin-detail-value" id="finCashPayback">7.5 years</span></div>
+          </div>
+        </div>
+        <div class="fin-card" data-option="loan" onclick="selectFinancing('loan')">
+          <div class="fin-card-badge">Most Popular</div>
+          <div class="fin-card-type">Solar Loan</div>
+          <div class="fin-card-amount" id="finLoanMo">$138</div>
+          <div class="fin-card-period">/month for 25 years</div>
+          <div class="fin-card-details">
+            <div class="fin-detail"><span class="fin-detail-label">APR</span><span class="fin-detail-value">5.99%</span></div>
+            <div class="fin-detail"><span class="fin-detail-label">Down Payment</span><span class="fin-detail-value">$0</span></div>
+            <div class="fin-detail"><span class="fin-detail-label">Day-1 Savings</span><span class="fin-detail-value" style="color:var(--green-400)">$47/mo</span></div>
+          </div>
+        </div>
+        <div class="fin-card" data-option="lease" onclick="selectFinancing('lease')">
+          <div class="fin-card-type">Lease / PPA</div>
+          <div class="fin-card-amount" id="finLeaseMo">$112</div>
+          <div class="fin-card-period">/month</div>
+          <div class="fin-card-details">
+            <div class="fin-detail"><span class="fin-detail-label">Escalator</span><span class="fin-detail-value">2.9%/year</span></div>
+            <div class="fin-detail"><span class="fin-detail-label">Term</span><span class="fin-detail-value">25 years</span></div>
+            <div class="fin-detail"><span class="fin-detail-label">Day-1 Savings</span><span class="fin-detail-value" style="color:var(--green-400)">$73/mo</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="incentives-section">
+        <div class="config-section-title"><span class="config-section-icon">&#x1F3DB;&#xFE0F;</span> Incentives &amp; Rebates</div>
+        <div class="incentive-row"><span class="incentive-name">Federal Investment Tax Credit (30%)</span><span class="incentive-value" id="incITC">&#x2212;$8,514</span></div>
+        <div class="incentive-row"><span class="incentive-name">Xcel Energy Solar Rewards</span><span class="incentive-value">&#x2212;$0.05/kWh (REC)</span></div>
+        <div class="incentive-row"><span class="incentive-name">CO Sales Tax Exemption</span><span class="incentive-value">Included</span></div>
+        <div class="incentive-row"><span class="incentive-name">Net Metering Credit</span><span class="incentive-value">Full retail rate</span></div>
+      </div>
+      <div class="chart-container">
+        <div class="chart-title">Cumulative Savings Over 25 Years</div>
+        <div class="chart-canvas-wrap"><canvas id="savingsChart"></canvas></div>
+        <div class="chart-legend">
+          <div class="legend-item"><div class="legend-dot" style="background:var(--red-500)"></div> Without Solar</div>
+          <div class="legend-item"><div class="legend-dot" style="background:var(--green-400)"></div> With Solar</div>
+          <div class="legend-item"><div class="legend-dot" style="background:var(--amber-400)"></div> Your Savings</div>
+        </div>
+      </div>
+      <div class="cta-row">
+        <button class="btn-secondary" onclick="goToStep(3)">&#8592; Back</button>
+        <button class="btn-primary" onclick="goToStep(5)">Review Your Proposal &#8594;</button>
+      </div>
+    </section>
+
+    <!-- STEP 5 -->
+    <section class="step" id="step5">
+      <div class="step-header">
+        <div class="step-eyebrow">Step 5 of 6</div>
+        <h1 class="step-title">Your solar proposal</h1>
+        <p class="step-subtitle">Review your system details and sign to get started.</p>
+      </div>
+      <div class="proposal-card">
+        <div class="proposal-card-header">System Specifications</div>
+        <div class="proposal-card-body">
+          <div class="proposal-specs">
+            <div class="proposal-spec"><div class="proposal-spec-label">System Size</div><div class="proposal-spec-value" id="propKw">8.60 kW</div></div>
+            <div class="proposal-spec"><div class="proposal-spec-label">Panel Count</div><div class="proposal-spec-value" id="propPanels">20 panels</div></div>
+            <div class="proposal-spec"><div class="proposal-spec-label">Module</div><div class="proposal-spec-value" id="propModule">REC Alpha Pure 430W</div></div>
+            <div class="proposal-spec"><div class="proposal-spec-label">Inverter</div><div class="proposal-spec-value" id="propInverter">Enphase IQ8+</div></div>
+            <div class="proposal-spec"><div class="proposal-spec-label">Annual Production</div><div class="proposal-spec-value" id="propProd">12,600 kWh</div></div>
+            <div class="proposal-spec"><div class="proposal-spec-label">Utility Offset</div><div class="proposal-spec-value" id="propOffset">94%</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="proposal-card">
+        <div class="proposal-card-header">Financial Summary</div>
+        <div class="proposal-card-body">
+          <div class="proposal-specs">
+            <div class="proposal-spec"><div class="proposal-spec-label">Financing</div><div class="proposal-spec-value" id="propFinType">Cash Purchase</div></div>
+            <div class="proposal-spec"><div class="proposal-spec-label">System Cost</div><div class="proposal-spec-value" id="propCost">$28,380</div></div>
+            <div class="proposal-spec"><div class="proposal-spec-label">Federal ITC (30%)</div><div class="proposal-spec-value" id="propITC" style="color:var(--green-400)">&#x2212;$8,514</div></div>
+            <div class="proposal-spec"><div class="proposal-spec-label">Net Cost</div><div class="proposal-spec-value" id="propNet">$19,866</div></div>
+            <div class="proposal-spec"><div class="proposal-spec-label">25-Year Savings</div><div class="proposal-spec-value" id="propSavings" style="color:var(--green-400)">$47,200</div></div>
+            <div class="proposal-spec"><div class="proposal-spec-label">Payback Period</div><div class="proposal-spec-value" id="propPayback">7.5 years</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="proposal-card">
+        <div class="proposal-card-header">What Happens Next</div>
+        <div class="proposal-card-body">
+          <div class="timeline">
+            <div class="timeline-item"><div class="timeline-dot">&#x1F4DE;</div><div class="timeline-content"><div class="timeline-title">Virtual Consultation</div><div class="timeline-desc">A solar advisor confirms your design and answers questions</div></div></div>
+            <div class="timeline-item"><div class="timeline-dot">&#x1F4D0;</div><div class="timeline-content"><div class="timeline-title">Site Survey</div><div class="timeline-desc">We inspect your roof and electrical panel in person</div></div></div>
+            <div class="timeline-item"><div class="timeline-dot">&#x1F4CB;</div><div class="timeline-content"><div class="timeline-title">Engineering &amp; Design</div><div class="timeline-desc">Our engineers finalize your system design with exact specs</div></div></div>
+            <div class="timeline-item"><div class="timeline-dot">&#x1F3D7;&#xFE0F;</div><div class="timeline-content"><div class="timeline-title">Permitting &amp; Installation</div><div class="timeline-desc">We handle all permits. Installation takes 1-2 days.</div></div></div>
+            <div class="timeline-item"><div class="timeline-dot">&#x2600;&#xFE0F;</div><div class="timeline-content"><div class="timeline-title">Permission to Operate</div><div class="timeline-desc">Your system goes live and starts saving you money</div></div></div>
+          </div>
+        </div>
+      </div>
+      <div class="pandadoc-embed">
+        <div class="pandadoc-embed-icon">&#x1F4DD;</div>
+        <div class="pandadoc-embed-text">PandaDoc Signing Area</div>
+        <div class="pandadoc-embed-sub">Embedded e-signature will appear here in production</div>
+      </div>
+      <div class="terms-row">
+        <div class="custom-checkbox" id="termsCheck" onclick="toggleTerms()"></div>
+        <div class="terms-text">I agree to the <a href="#">Terms of Service</a> and <a href="#">Solar Agreement</a>. I understand this is a preliminary proposal and final system design may vary after site survey.</div>
+      </div>
+      <div class="cta-row">
+        <button class="btn-secondary" onclick="goToStep(4)">&#8592; Back</button>
+        <button class="btn-primary" id="signBtn" onclick="goToStep(6)" style="opacity:0.5;pointer-events:none;">Sign &amp; Get Started &#8594;</button>
+      </div>
+    </section>
+
+    <!-- STEP 6 -->
+    <section class="step" id="step6">
+      <div class="confirm-hero">
+        <div class="confirm-icon">&#x2713;</div>
+        <h1 class="confirm-title">Welcome to solar!</h1>
+        <p class="confirm-subtitle">Your proposal has been signed. A solar advisor will reach out within 24 hours to schedule your consultation.</p>
+      </div>
+      <div class="next-steps-grid">
+        <div class="next-step-card"><div class="next-step-num">1</div><div class="next-step-info"><div class="next-step-title">Virtual Consultation</div><div class="next-step-date">Within 24-48 hours</div></div></div>
+        <div class="next-step-card"><div class="next-step-num">2</div><div class="next-step-info"><div class="next-step-title">Site Survey</div><div class="next-step-date">Within 1-2 weeks</div></div></div>
+        <div class="next-step-card"><div class="next-step-num">3</div><div class="next-step-info"><div class="next-step-title">Design &amp; Permitting</div><div class="next-step-date">2-4 weeks</div></div></div>
+        <div class="next-step-card"><div class="next-step-num">4</div><div class="next-step-info"><div class="next-step-title">Installation Day</div><div class="next-step-date">1-2 days on-site</div></div></div>
+        <div class="next-step-card"><div class="next-step-num">5</div><div class="next-step-info"><div class="next-step-title">System Goes Live</div><div class="next-step-date">After final inspection &amp; PTO</div></div></div>
+      </div>
+      <div class="confirm-actions"><button class="btn-consult">Schedule Your Consultation</button></div>
+      <div class="referral-banner">
+        <div class="referral-amount">$500</div>
+        <div class="referral-text">Know someone who'd love solar? Refer a friend and you both get $500.</div>
+        <button class="referral-btn">Share Referral Link</button>
+      </div>
+    </section>
+  </main>
+  <footer class="app-footer">&#169; 2026 Photon Brothers Solar &#183; Denver, CO &#183; Licensed &amp; Insured</footer>
+</div>
+
+<script>
+/* STATE */
+var state = {
+  currentStep: 1, panelCount: 20, moduleWatt: 430,
+  moduleName: 'REC Alpha Pure 430W', modulePricePerWatt: 1.05,
+  inverterName: 'Enphase IQ8+', inverterPricePerWatt: 0.38,
+  batteryOn: false, batteryCount: 1, batteryPrice: 11500,
+  evOn: false, evPrice: 1800, monthlyBill: 185,
+  utilityRate: 0.21, financing: 'cash', termsAccepted: false
+};
+
+/* NAV */
+function goToStep(n) {
+  if (n < 1 || n > 6) return;
+  document.getElementById('step' + state.currentStep).classList.remove('active');
+  state.currentStep = n;
+  var el = document.getElementById('step' + n);
+  void el.offsetWidth;
+  el.classList.add('active');
+  updateProgress();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  if (n === 2) buildRoof();
+  if (n === 4) drawChart();
+  if (n === 5) updateProposal();
+}
+
+function updateProgress() {
+  var steps = document.querySelectorAll('.progress-step');
+  for (var i = 0; i < steps.length; i++) {
+    var sn = i + 1;
+    steps[i].classList.remove('active', 'completed');
+    if (sn === state.currentStep) steps[i].classList.add('active');
+    else if (sn < state.currentStep) steps[i].classList.add('completed');
+    var dot = steps[i].querySelector('.step-dot');
+    dot.textContent = sn < state.currentStep ? '\u2713' : sn;
+  }
+}
+
+/* BILL SLIDER */
+var billSlider = document.getElementById('billSlider');
+var billAmountEl = document.getElementById('billAmount');
+function updateBillSlider() {
+  var val = parseInt(billSlider.value);
+  state.monthlyBill = val;
+  billAmountEl.textContent = '$' + val;
+  var pct = ((val - 50) / (500 - 50)) * 100;
+  billSlider.style.setProperty('--value-pct', pct + '%');
+}
+billSlider.addEventListener('input', updateBillSlider);
+updateBillSlider();
+
+/* ROOF BUILDER */
+function buildRoof() {
+  var base = document.getElementById('roofBase');
+  while (base.firstChild) base.removeChild(base.firstChild);
+  var cols = 5, startX = 15, startY = 15, gapX = 48, gapY = 34;
+  var count = Math.min(state.panelCount, 25);
+  for (var i = 0; i < count; i++) {
+    var row = Math.floor(i / cols);
+    var col = i % cols;
+    var panel = document.createElement('div');
+    panel.className = 'solar-panel' + (i % 3 === 0 ? ' glow' : '');
+    panel.style.left = (startX + col * gapX) + 'px';
+    panel.style.top = (startY + row * gapY) + 'px';
+    panel.style.opacity = '0';
+    panel.style.animation = 'panelAppear 0.4s cubic-bezier(0.34,1.56,0.64,1) ' + (i * 0.04) + 's forwards' + (i % 3 === 0 ? ', panelGlow 3s ease-in-out ' + (i * 0.2) + 's infinite' : '');
+    base.appendChild(panel);
+  }
+  updateDesignStats();
+}
+
+/* CALCS */
+function calcSystemSize() { return (state.panelCount * state.moduleWatt) / 1000; }
+function calcAnnualProduction() { return Math.round(calcSystemSize() * 1500); }
+function calcOffset() {
+  var annualBill = state.monthlyBill * 12;
+  var annualProdValue = calcAnnualProduction() * state.utilityRate;
+  return Math.min(Math.round((annualProdValue / annualBill) * 100), 100);
+}
+function calcCO2() { return (calcAnnualProduction() * 0.0007).toFixed(1); }
+function calcSystemCost() {
+  var solar = calcSystemSize() * 1000 * (state.modulePricePerWatt + state.inverterPricePerWatt);
+  var battery = state.batteryOn ? state.batteryCount * state.batteryPrice : 0;
+  var ev = state.evOn ? state.evPrice : 0;
+  return Math.round(solar + battery + ev);
+}
+function calcITC() { return Math.round(calcSystemCost() * 0.30); }
+function calcNetCost() { return calcSystemCost() - calcITC(); }
+function calcMonthlyLoan() {
+  var p = calcNetCost(), r = 0.0599 / 12, n = 300;
+  return Math.round(p * r * Math.pow(1+r,n) / (Math.pow(1+r,n)-1));
+}
+function calc25YearSavings() {
+  var annual = calcAnnualProduction() * state.utilityRate, total = 0;
+  for (var y = 0; y < 25; y++) total += annual * Math.pow(1.03, y);
+  return Math.round(total / 100) * 100;
+}
+function calcPayback() { return (calcNetCost() / (calcAnnualProduction() * state.utilityRate)).toFixed(1); }
+function fmt(n) { return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+
+/* UPDATE FUNCTIONS */
+function updateDesignStats() {
+  document.getElementById('statKw').textContent = calcSystemSize().toFixed(1);
+  document.getElementById('statPanels').textContent = state.panelCount;
+  document.getElementById('statProduction').textContent = fmt(calcAnnualProduction());
+  document.getElementById('statOffset').textContent = calcOffset();
+  document.getElementById('statCO2').textContent = calcCO2();
+}
+
+function updateConfig() {
+  var ms = document.getElementById('moduleSelect'), mo = ms.options[ms.selectedIndex];
+  state.moduleWatt = parseInt(mo.dataset.watt);
+  state.modulePricePerWatt = parseFloat(mo.dataset.price);
+  state.moduleName = mo.textContent.split('\u2014')[0].trim();
+  var is = document.getElementById('inverterSelect'), io = is.options[is.selectedIndex];
+  state.inverterPricePerWatt = parseFloat(io.dataset.price);
+  state.inverterName = io.textContent.split('\u2014')[0].trim();
+  updateSummary();
+}
+
+function updateSummary() {
+  var kw = calcSystemSize(), prod = calcAnnualProduction(), off = calcOffset();
+  var cost = calcSystemCost(), itc = calcITC(), net = calcNetCost(), mo = calcMonthlyLoan();
+  document.getElementById('sumKw').textContent = kw.toFixed(2) + ' kW';
+  var shortMod = state.moduleName.split(' ').slice(0,2).join(' ');
+  document.getElementById('sumPanels').textContent = state.panelCount + ' \u00d7 ' + shortMod + ' ' + state.moduleWatt + 'W';
+  document.getElementById('sumInverter').textContent = state.inverterName;
+  document.getElementById('sumProduction').textContent = fmt(prod) + ' kWh';
+  document.getElementById('sumOffset').textContent = off + '%';
+  document.getElementById('sumTotal').textContent = '$' + fmt(cost);
+  document.getElementById('sumITC').textContent = 'After 30% ITC: $' + fmt(net);
+  document.getElementById('sumMonthly').textContent = '$' + mo + '/mo';
+  document.getElementById('sumBatteryRow').style.display = state.batteryOn ? 'flex' : 'none';
+  document.getElementById('sumBattery').textContent = state.batteryCount + '\u00d7 Powerwall 3';
+  document.getElementById('sumEVRow').style.display = state.evOn ? 'flex' : 'none';
+  updateFinancingNumbers();
+}
+
+function updateFinancingNumbers() {
+  var cost = calcSystemCost(), itc = calcITC(), net = calcNetCost();
+  var monthly = calcMonthlyLoan(), savings = calc25YearSavings(), payback = calcPayback();
+  var leaseMo = Math.round(calcAnnualProduction() * state.utilityRate * 0.85 / 12);
+  document.getElementById('savingsHeroAmt').textContent = '$' + fmt(savings);
+  document.getElementById('billOld').textContent = '$' + state.monthlyBill;
+  var projBill = Math.max(Math.round(state.monthlyBill * (1 - calcOffset()/100)), 5);
+  document.getElementById('billNew').textContent = '$' + projBill;
+  document.getElementById('finCashTotal').textContent = '$' + fmt(net);
+  document.getElementById('finCashGross').textContent = '$' + fmt(cost);
+  document.getElementById('finCashITC').textContent = '\u2212$' + fmt(itc);
+  document.getElementById('finCashPayback').textContent = payback + ' years';
+  document.getElementById('finLoanMo').textContent = '$' + monthly;
+  document.getElementById('finLeaseMo').textContent = '$' + leaseMo;
+  document.getElementById('incITC').textContent = '\u2212$' + fmt(itc);
+}
+
+/* ADJUSTERS */
+function adjustPanels(d) {
+  state.panelCount = Math.max(8, Math.min(40, state.panelCount + d));
+  document.getElementById('panelCountNum').textContent = state.panelCount;
+  updateConfig();
+}
+function toggleBattery() {
+  state.batteryOn = !state.batteryOn;
+  document.getElementById('batteryToggle').classList.toggle('on', state.batteryOn);
+  document.getElementById('batteryQty').style.display = state.batteryOn ? 'flex' : 'none';
+  updateConfig();
+}
+function adjustBattery(d) {
+  state.batteryCount = Math.max(1, Math.min(4, state.batteryCount + d));
+  document.getElementById('batteryNum').textContent = state.batteryCount;
+  updateConfig();
+}
+function toggleEV() {
+  state.evOn = !state.evOn;
+  document.getElementById('evToggle').classList.toggle('on', state.evOn);
+  updateConfig();
+}
+function toggleTerms() {
+  state.termsAccepted = !state.termsAccepted;
+  document.getElementById('termsCheck').classList.toggle('checked', state.termsAccepted);
+  var btn = document.getElementById('signBtn');
+  btn.style.opacity = state.termsAccepted ? '1' : '0.5';
+  btn.style.pointerEvents = state.termsAccepted ? 'auto' : 'none';
+}
+function selectFinancing(opt) {
+  state.financing = opt;
+  var cards = document.querySelectorAll('.fin-card');
+  for (var i = 0; i < cards.length; i++) cards[i].classList.remove('selected');
+  document.querySelector('.fin-card[data-option="' + opt + '"]').classList.add('selected');
+}
+
+/* PROPOSAL */
+function updateProposal() {
+  var kw = calcSystemSize();
+  document.getElementById('propKw').textContent = kw.toFixed(2) + ' kW';
+  document.getElementById('propPanels').textContent = state.panelCount + ' panels';
+  document.getElementById('propModule').textContent = state.moduleName;
+  document.getElementById('propInverter').textContent = state.inverterName;
+  document.getElementById('propProd').textContent = fmt(calcAnnualProduction()) + ' kWh';
+  document.getElementById('propOffset').textContent = calcOffset() + '%';
+  var labels = { cash: 'Cash Purchase', loan: 'Solar Loan', lease: 'Lease / PPA' };
+  document.getElementById('propFinType').textContent = labels[state.financing];
+  document.getElementById('propCost').textContent = '$' + fmt(calcSystemCost());
+  document.getElementById('propITC').textContent = '\u2212$' + fmt(calcITC());
+  document.getElementById('propNet').textContent = '$' + fmt(calcNetCost());
+  document.getElementById('propSavings').textContent = '$' + fmt(calc25YearSavings());
+  document.getElementById('propPayback').textContent = calcPayback() + ' years';
+}
+
+/* CHART */
+function drawChart() {
+  var canvas = document.getElementById('savingsChart');
+  var ctx = canvas.getContext('2d');
+  var dpr = window.devicePixelRatio || 1;
+  var rect = canvas.parentElement.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = 220 * dpr;
+  canvas.style.width = rect.width + 'px';
+  canvas.style.height = '220px';
+  ctx.scale(dpr, dpr);
+  var W = rect.width, H = 220;
+  var pad = { top: 20, right: 20, bottom: 30, left: 55 };
+  var pW = W - pad.left - pad.right, pH = H - pad.top - pad.bottom;
+  var years = 26, annualBill = state.monthlyBill * 12;
+  var annualProd = calcAnnualProduction(), uRate = state.utilityRate;
+  var cumW = [0], cumS = [0];
+  for (var y = 1; y < years; y++) {
+    var esc = Math.pow(1.03, y);
+    cumW.push(cumW[y-1] + annualBill * esc);
+    var savings = annualProd * uRate * esc;
+    var nc = y === 1 ? calcNetCost() : 0;
+    cumS.push(cumS[y-1] + (annualBill * esc - savings) + nc);
+  }
+  var maxV = Math.max.apply(null, cumW);
+  function toX(i) { return pad.left + (i/(years-1))*pW; }
+  function toY(v) { return pad.top + pH - (v/maxV)*pH; }
+  ctx.clearRect(0, 0, W, H);
+  ctx.strokeStyle = 'rgba(148,163,184,0.06)'; ctx.lineWidth = 1;
+  for (var i = 0; i <= 4; i++) { var yp = pad.top + (pH/4)*i; ctx.beginPath(); ctx.moveTo(pad.left, yp); ctx.lineTo(W-pad.right, yp); ctx.stroke(); }
+  ctx.fillStyle = '#475569'; ctx.font = '10px "DM Sans"'; ctx.textAlign = 'right';
+  for (var i = 0; i <= 4; i++) { var v = maxV - (maxV/4)*i; var yp = pad.top + (pH/4)*i; ctx.fillText('$' + Math.round(v/1000) + 'k', pad.left-8, yp+3); }
+  ctx.textAlign = 'center';
+  for (var y = 0; y < years; y += 5) ctx.fillText('Yr ' + y, toX(y), H-8);
+  // Fill
+  ctx.beginPath(); ctx.moveTo(toX(0), toY(cumW[0]));
+  for (var i = 1; i < years; i++) ctx.lineTo(toX(i), toY(cumW[i]));
+  for (var i = years-1; i >= 0; i--) ctx.lineTo(toX(i), toY(Math.max(cumS[i],0)));
+  ctx.closePath();
+  var grad = ctx.createLinearGradient(0, pad.top, 0, pad.top+pH);
+  grad.addColorStop(0, 'rgba(251,191,36,0.12)'); grad.addColorStop(1, 'rgba(251,191,36,0.02)');
+  ctx.fillStyle = grad; ctx.fill();
+  // Lines
+  ctx.beginPath(); ctx.moveTo(toX(0), toY(cumW[0]));
+  for (var i = 1; i < years; i++) ctx.lineTo(toX(i), toY(cumW[i]));
+  ctx.strokeStyle = '#EF4444'; ctx.lineWidth = 2.5; ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(toX(0), toY(Math.max(cumS[0],0)));
+  for (var i = 1; i < years; i++) ctx.lineTo(toX(i), toY(Math.max(cumS[i],0)));
+  ctx.strokeStyle = '#34D399'; ctx.lineWidth = 2.5; ctx.stroke();
+  // Dots
+  ctx.beginPath(); ctx.arc(toX(years-1), toY(cumW[years-1]), 4, 0, Math.PI*2); ctx.fillStyle = '#EF4444'; ctx.fill();
+  ctx.beginPath(); ctx.arc(toX(years-1), toY(Math.max(cumS[years-1],0)), 4, 0, Math.PI*2); ctx.fillStyle = '#34D399'; ctx.fill();
+  // Label
+  var sy = (toY(cumW[years-1]) + toY(Math.max(cumS[years-1],0))) / 2;
+  ctx.fillStyle = '#FBBF24'; ctx.font = 'bold 13px "Syne"'; ctx.textAlign = 'left';
+  ctx.fillText('$' + fmt(calc25YearSavings()), toX(years-1)+10, sy+4);
+}
+
+/* INIT */
+updateConfig();
+window.addEventListener('resize', function() { if (state.currentStep === 4) drawChart(); });
+</script>
+</body>
+</html>
