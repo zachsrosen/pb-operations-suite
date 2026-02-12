@@ -89,6 +89,37 @@ export interface ZuperUser {
   team_uid?: string;
 }
 
+export interface ZuperUserFull {
+  user_uid: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  designation?: string;
+  role?: { role_uid?: string; role_name?: string };
+  home_phone_number?: string;
+  work_phone_number?: string;
+  mobile_phone_number?: string;
+  profile_picture?: string;
+  is_active?: boolean;
+  status?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ZuperTeamDetail {
+  team_uid: string;
+  team_name: string;
+  team_description?: string;
+  team_color?: string;
+  users?: Array<{
+    user_uid: string;
+    first_name: string;
+    last_name: string;
+    email?: string;
+    designation?: string;
+  }>;
+}
+
 export interface ZuperApiResponse<T> {
   type: "success" | "error";
   data?: T;
@@ -527,17 +558,40 @@ export class ZuperClient {
   // ========== USER/TECHNICIAN OPERATIONS ==========
 
   /**
-   * Get all users/technicians
+   * Get all users/technicians (legacy /users endpoint)
    */
   async getUsers(): Promise<ZuperApiResponse<ZuperUser[]>> {
     return this.request<ZuperUser[]>("/users");
   }
 
   /**
-   * Get user by ID
+   * Get ALL users via /user/all endpoint
+   * Returns full user details including email, role, status, etc.
    */
-  async getUser(userUid: string): Promise<ZuperApiResponse<ZuperUser>> {
-    return this.request<ZuperUser>(`/users/${userUid}`);
+  async getAllUsers(): Promise<ZuperApiResponse<ZuperUserFull[]>> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await this.request<any>("/user/all");
+    if (result.type === "success" && result.data) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const raw = result.data as any;
+      const users = Array.isArray(raw) ? raw : (raw?.data ?? []);
+      return { type: "success", data: users };
+    }
+    return { type: result.type, error: result.error, data: [] };
+  }
+
+  /**
+   * Get user by ID via /user/{user_uid}
+   */
+  async getUser(userUid: string): Promise<ZuperApiResponse<ZuperUserFull>> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await this.request<any>(`/user/${userUid}`);
+    if (result.type === "success" && result.data) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const raw = result.data as any;
+      return { type: "success", data: raw?.data ?? raw };
+    }
+    return { type: result.type, error: result.error };
   }
 
   /**
@@ -548,8 +602,7 @@ export class ZuperClient {
   }
 
   /**
-   * Get all teams
-   * Useful for finding team UIDs for assignment
+   * Get all teams summary
    */
   async getTeams(): Promise<ZuperApiResponse<{ team_uid: string; team_name: string }[]>> {
     const result = await this.request<{ type: string; data: { team_uid: string; team_name: string }[] }>(
@@ -562,6 +615,20 @@ export class ZuperClient {
       return { type: "success", data: data?.data ?? data ?? [] };
     }
     return result as unknown as ZuperApiResponse<{ team_uid: string; team_name: string }[]>;
+  }
+
+  /**
+   * Get team detail with members via /team/{team_uid}
+   */
+  async getTeamDetail(teamUid: string): Promise<ZuperApiResponse<ZuperTeamDetail>> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await this.request<any>(`/team/${teamUid}`);
+    if (result.type === "success" && result.data) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const raw = result.data as any;
+      return { type: "success", data: raw?.data ?? raw };
+    }
+    return { type: result.type, error: result.error };
   }
 
   // ========== TIME OFF / AVAILABILITY ==========
