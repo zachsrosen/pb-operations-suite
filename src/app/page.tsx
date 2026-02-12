@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, useCallback, useMemo, memo, useRef } from "react";
+import { useEffect, useState, useCallback, useMemo, memo } from "react";
 import { useSSE } from "@/hooks/useSSE";
-import { useFavorites } from "@/hooks/useFavorites";
+
 import { formatMoney } from "@/lib/format";
 import { STAGE_COLORS } from "@/lib/constants";
 import { StatCard, MiniStat } from "@/components/ui/MetricCard";
@@ -145,7 +145,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [isStale, setIsStale] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
-  const { favorites, toggleFavorite, isFavorite } = useFavorites();
+
   const isMac = useIsMac();
   const modKey = isMac ? "\u2318" : "Ctrl";
 
@@ -245,9 +245,6 @@ export default function Home() {
     setSelectedLocations([]);
   }, []);
 
-  const favoriteDashboards = ALL_DASHBOARDS.filter((d) =>
-    favorites.includes(d.href)
-  );
   const sections = [
     "Operations Dashboards",
     "Department Dashboards",
@@ -586,25 +583,6 @@ export default function Home() {
           )
         )}
 
-        {/* Favorited Dashboards */}
-        {favoriteDashboards.length > 0 && (
-          <>
-            <h2 className="text-lg font-semibold text-zinc-300 mb-4 mt-8 flex items-center gap-2">
-              <span className="text-yellow-400">&#9733;</span> Favorites
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-              {favoriteDashboards.map((d) => (
-                <DashboardLink
-                  key={d.href}
-                  {...d}
-                  isFavorite={true}
-                  onToggleFavorite={() => toggleFavorite(d.href)}
-                />
-              ))}
-            </div>
-          </>
-        )}
-
         {/* Dashboard sections */}
         {sections.map((section) => {
           const dashboards = ALL_DASHBOARDS.filter(
@@ -617,12 +595,7 @@ export default function Home() {
               </h2>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
                 {dashboards.map((d) => (
-                  <DashboardLink
-                    key={d.href}
-                    {...d}
-                    isFavorite={isFavorite(d.href)}
-                    onToggleFavorite={() => toggleFavorite(d.href)}
-                  />
+                  <DashboardLink key={d.href} {...d} />
                 ))}
               </div>
             </div>
@@ -695,12 +668,6 @@ const StageBar = memo(function StageBar({
   const percentage = (count / total) * 100;
   const colorClass = STAGE_COLORS[stage]?.tw || "bg-zinc-600";
 
-  const _formatValue = (v: number) => {
-    if (v >= 1000000) return `$${(v / 1000000).toFixed(1)}M`;
-    if (v >= 1000) return `$${(v / 1000).toFixed(0)}k`;
-    return `$${v}`;
-  };
-
   return (
     <div className="flex items-center gap-4">
       <div className="w-40 text-sm text-zinc-400 truncate" title={stage}>
@@ -732,12 +699,7 @@ const DashboardLink = memo(function DashboardLink({
   description,
   tag,
   tagColor,
-  isFavorite,
-  onToggleFavorite,
-}: DashboardLinkData & {
-  isFavorite: boolean;
-  onToggleFavorite: () => void;
-}) {
+}: DashboardLinkData) {
   const tagColors: Record<string, string> = {
     orange: "bg-orange-500/20 text-orange-400 border-orange-500/30",
     purple: "bg-purple-500/20 text-purple-400 border-purple-500/30",
@@ -757,40 +719,24 @@ const DashboardLink = memo(function DashboardLink({
   }, [dashboardName]);
 
   return (
-    <div className="relative group" onMouseEnter={handleMouseEnter}>
-      <Link
-        href={href}
-        className="block bg-zinc-900/50 border border-zinc-800 rounded-xl p-5 hover:border-orange-500/50 hover:bg-zinc-900 transition-all"
-      >
-        <div className="flex items-center justify-between mb-1">
-          <h3 className="font-semibold text-white group-hover:text-orange-400 transition-colors">
-            {title}
-          </h3>
-          {tag && (
-            <span
-              className={`text-xs font-medium px-2 py-0.5 rounded border ${tagColors[tagColor || "blue"]}`}
-            >
-              {tag}
-            </span>
-          )}
-        </div>
-        <p className="text-sm text-zinc-500">{description}</p>
-      </Link>
-      <button
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          onToggleFavorite();
-        }}
-        className={`absolute top-3 right-14 p-1 rounded transition-all ${
-          isFavorite
-            ? "text-yellow-400 opacity-100"
-            : "text-zinc-600 opacity-0 group-hover:opacity-100 hover:text-yellow-400"
-        }`}
-        title={isFavorite ? "Remove from favorites" : "Add to favorites"}
-      >
-        {isFavorite ? "\u2605" : "\u2606"}
-      </button>
-    </div>
+    <Link
+      href={href}
+      onMouseEnter={handleMouseEnter}
+      className="group block bg-zinc-900/50 border border-zinc-800 rounded-xl p-5 hover:border-orange-500/50 hover:bg-zinc-900 transition-all"
+    >
+      <div className="flex items-center justify-between mb-1">
+        <h3 className="font-semibold text-white group-hover:text-orange-400 transition-colors">
+          {title}
+        </h3>
+        {tag && (
+          <span
+            className={`text-xs font-medium px-2 py-0.5 rounded border ${tagColors[tagColor || "blue"]}`}
+          >
+            {tag}
+          </span>
+        )}
+      </div>
+      <p className="text-sm text-zinc-500">{description}</p>
+    </Link>
   );
 });
