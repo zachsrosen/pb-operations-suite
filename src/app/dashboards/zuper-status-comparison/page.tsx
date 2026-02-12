@@ -178,19 +178,30 @@ export default function ZuperStatusComparisonPage() {
   const hasTrackedView = useRef(false);
 
   /* ---- Admin access guard (JWT role is stale, so check via API) ---- */
-  const [, setAccessChecked] = useState(false);
+  const [accessChecked, setAccessChecked] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   useEffect(() => {
-    fetch("/api/auth/sync")
-      .then(r => r.json())
+    fetch("/api/auth/sync", { cache: "no-store" })
+      .then((r) => {
+        if (!r.ok) throw new Error(`Auth check failed (${r.status})`);
+        return r.json();
+      })
       .then(data => {
         const role = data.role || "VIEWER";
         setAccessChecked(true);
         if (role !== "ADMIN") {
-          window.location.href = "/";
+          setIsAdmin(false);
+          setError("Admin access required for this dashboard.");
+          setLoading(false);
+          return;
         }
+        setIsAdmin(true);
       })
       .catch(() => {
-        window.location.href = "/";
+        setAccessChecked(true);
+        setIsAdmin(false);
+        setError("Unable to verify access. Please refresh and try again.");
+        setLoading(false);
       });
   }, []);
 
@@ -223,8 +234,9 @@ export default function ZuperStatusComparisonPage() {
   }, []);
 
   useEffect(() => {
+    if (!accessChecked || !isAdmin) return;
     fetchData();
-  }, [fetchData]);
+  }, [accessChecked, isAdmin, fetchData]);
 
   useEffect(() => {
     if (!loading && !hasTrackedView.current) {
