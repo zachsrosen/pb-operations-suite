@@ -1,5 +1,5 @@
-const CACHE_NAME = "pb-ops-v1";
-const STATIC_ASSETS = ["/", "/login"];
+const CACHE_NAME = "pb-ops-v2";
+const STATIC_ASSETS = ["/login"];
 
 // Install: cache shell assets
 self.addEventListener("install", (event) => {
@@ -31,6 +31,12 @@ self.addEventListener("fetch", (event) => {
   // Skip non-GET and cross-origin
   if (request.method !== "GET" || url.origin !== self.location.origin) return;
 
+  // Never cache document navigations; always fetch the latest app route HTML.
+  if (request.mode === "navigate") {
+    event.respondWith(fetch(request));
+    return;
+  }
+
   // Never cache SSE stream or auth endpoints
   if (url.pathname.startsWith("/api/stream") || url.pathname.startsWith("/api/auth")) return;
 
@@ -39,8 +45,10 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+          if (response.ok) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+          }
           return response;
         })
         .catch(() => caches.match(request))
@@ -48,15 +56,26 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Static assets: stale-while-revalidate
-  event.respondWith(
-    caches.match(request).then((cached) => {
-      const fetchPromise = fetch(request).then((response) => {
-        const clone = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-        return response;
-      });
-      return cached || fetchPromise;
-    })
-  );
+  // Cache-only static file assets (images/fonts/css/js), not app documents.
+  const isStaticAsset =
+    url.pathname.startsWith("/_next/static/") ||
+    /\.(?:js|css|png|jpg|jpeg|gif|svg|ico|webp|woff2?)$/i.test(url.pathname);
+
+  if (isStaticAsset) {
+    event.respondWith(
+      caches.match(request).then((cached) => {
+        const fetchPromise = fetch(request).then((response) => {
+          if (response.ok) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+          }
+          return response;
+        });
+        return cached || fetchPromise;
+      })
+    );
+    return;
+  }
+
+  event.respondWith(fetch(request));
 });
