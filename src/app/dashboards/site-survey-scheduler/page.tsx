@@ -1001,7 +1001,7 @@ export default function SiteSurveySchedulerPage() {
     if (s.includes("ready")) return "bg-cyan-500/20 text-cyan-400 border-cyan-500/30";
     if (s.includes("awaiting") || s.includes("pending")) return "bg-purple-500/20 text-purple-400 border-purple-500/30";
     if (s.includes("hold") || s.includes("revisit")) return "bg-orange-500/20 text-orange-400 border-orange-500/30";
-    return "bg-zinc-500/20 text-zinc-400 border-zinc-500/30";
+    return "bg-zinc-500/20 text-muted border-muted/30";
   };
 
   /* ================================================================ */
@@ -1010,10 +1010,10 @@ export default function SiteSurveySchedulerPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#0a0a0f] text-white flex items-center justify-center">
+      <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-cyan-500 mx-auto mb-4" />
-          <p className="text-zinc-400">Loading Site Surveys...</p>
+          <p className="text-muted">Loading Site Surveys...</p>
         </div>
       </div>
     );
@@ -1021,10 +1021,10 @@ export default function SiteSurveySchedulerPage() {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-[#0a0a0f] text-white flex items-center justify-center">
+      <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
         <div className="text-center">
           <p className="text-red-400 text-xl mb-2">Error loading data</p>
-          <p className="text-zinc-500 text-sm mb-4">{error}</p>
+          <p className="text-muted text-sm mb-4">{error}</p>
           <button onClick={fetchProjects} className="px-4 py-2 bg-cyan-600 rounded-lg hover:bg-cyan-700">
             Retry
           </button>
@@ -1036,7 +1036,7 @@ export default function SiteSurveySchedulerPage() {
   const todayStr = getTodayStr();
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-white dashboard-bg">
+    <div className="min-h-screen bg-background text-foreground">
       {/* Toast */}
       {toast && (
         <div className={`fixed top-4 right-4 z-[9999] px-4 py-3 rounded-lg shadow-lg ${
@@ -1047,28 +1047,28 @@ export default function SiteSurveySchedulerPage() {
       )}
 
       {/* Header */}
-      <div className="sticky top-0 z-50 bg-[#0a0a0f]/95 backdrop-blur border-b border-zinc-800 dashboard-header">
+      <div className="sticky top-0 z-50 bg-background/95 backdrop-blur border-b border-t-border">
         <div className="max-w-[1800px] mx-auto px-3 sm:px-4 py-2 sm:py-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 sm:gap-4 min-w-0">
-              <Link href="/" className="text-zinc-500 hover:text-white shrink-0">
+              <Link href="/" className="text-muted hover:text-foreground shrink-0">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
                 </svg>
               </Link>
               <h1 className="text-base sm:text-xl font-bold text-cyan-400 truncate">Site Survey Scheduler</h1>
-              <span className="text-xs text-zinc-500 bg-zinc-800 px-2 py-1 rounded hidden sm:inline-block">
+              <span className="text-xs text-muted bg-surface-2 px-2 py-1 rounded hidden sm:inline-block">
                 {stats.total} surveys
               </span>
             </div>
 
             <div className="flex items-center gap-2 sm:gap-3">
               {/* View Toggle */}
-              <div className="flex bg-zinc-900 rounded-lg p-0.5">
+              <div className="flex bg-surface rounded-lg p-0.5">
                 <button
                   onClick={() => setCurrentView("calendar")}
                   className={`px-2 sm:px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                    currentView === "calendar" ? "bg-cyan-600 text-white" : "text-zinc-400 hover:text-white"
+                    currentView === "calendar" ? "bg-cyan-600 text-white" : "text-muted hover:text-foreground"
                   }`}
                 >
                   Calendar
@@ -1076,7 +1076,7 @@ export default function SiteSurveySchedulerPage() {
                 <button
                   onClick={() => setCurrentView("list")}
                   className={`px-2 sm:px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                    currentView === "list" ? "bg-cyan-600 text-white" : "text-zinc-400 hover:text-white"
+                    currentView === "list" ? "bg-cyan-600 text-white" : "text-muted hover:text-foreground"
                   }`}
                 >
                   List
@@ -1086,7 +1086,7 @@ export default function SiteSurveySchedulerPage() {
               {isLinkedSurveyor && (
                 <button
                   onClick={() => setShowMyAvailability(true)}
-                  className="px-2 sm:px-3 py-1.5 text-xs font-medium rounded-md bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors hidden sm:inline-flex items-center gap-1"
+                  className="px-2 sm:px-3 py-1.5 text-xs font-medium rounded-md bg-surface-2 text-foreground/80 hover:bg-surface-2 transition-colors hidden sm:inline-flex items-center gap-1"
                 >
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -1098,7 +1098,7 @@ export default function SiteSurveySchedulerPage() {
               {(userRole === "ADMIN" || userRole === "OPERATIONS_MANAGER" || userRole === "OPERATIONS") && (
                 <Link
                   href="/admin/crew-availability"
-                  className="px-2 sm:px-3 py-1.5 text-xs font-medium rounded-md bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors hidden sm:inline-flex items-center gap-1"
+                  className="px-2 sm:px-3 py-1.5 text-xs font-medium rounded-md bg-surface-2 text-foreground/80 hover:bg-surface-2 transition-colors hidden sm:inline-flex items-center gap-1"
                 >
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -1110,7 +1110,7 @@ export default function SiteSurveySchedulerPage() {
 
               <ThemeToggle />
 
-              <button onClick={fetchProjects} className="p-2 hover:bg-zinc-800 rounded-lg">
+              <button onClick={fetchProjects} className="p-2 hover:bg-surface-2 rounded-lg">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
@@ -1121,15 +1121,15 @@ export default function SiteSurveySchedulerPage() {
           {/* Stats Row */}
           <div className="flex items-center gap-3 sm:gap-6 mt-2 sm:mt-3 text-xs sm:text-sm overflow-x-auto">
             <div className="flex items-center gap-1 sm:gap-2 shrink-0">
-              <span className="text-zinc-500">Ready:</span>
+              <span className="text-muted">Ready:</span>
               <span className="text-cyan-400 font-semibold">{stats.needsScheduling}</span>
             </div>
             <div className="flex items-center gap-1 sm:gap-2 shrink-0">
-              <span className="text-zinc-500">Scheduled:</span>
+              <span className="text-muted">Scheduled:</span>
               <span className="text-blue-400 font-semibold">{stats.scheduled}</span>
             </div>
             <div className="flex items-center gap-1 sm:gap-2 shrink-0">
-              <span className="text-zinc-500">Completed:</span>
+              <span className="text-muted">Completed:</span>
               <span className="text-green-400 font-semibold">{stats.completed}</span>
             </div>
             {stats.overdue > 0 && (
@@ -1139,7 +1139,7 @@ export default function SiteSurveySchedulerPage() {
               </div>
             )}
             <div className="flex items-center gap-1 sm:gap-2 shrink-0">
-              <span className="text-zinc-500">Value:</span>
+              <span className="text-muted">Value:</span>
               <span className="text-orange-400 font-semibold">{formatCurrency(stats.totalValue)}</span>
             </div>
           </div>
@@ -1151,7 +1151,7 @@ export default function SiteSurveySchedulerPage() {
               placeholder="Search..."
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
-              className="px-3 py-1.5 bg-zinc-900 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:border-cyan-500 w-32 sm:w-48"
+              className="px-3 py-1.5 bg-surface border border-t-border rounded-lg text-sm focus:outline-none focus:border-cyan-500 w-32 sm:w-48"
             />
 
             {/* Multi-select Location Filter */}
@@ -1169,7 +1169,7 @@ export default function SiteSurveySchedulerPage() {
                   className={`px-2 py-1 text-xs rounded-md border transition-colors shrink-0 ${
                     selectedLocations.includes(loc)
                       ? "bg-cyan-600 border-cyan-500 text-white"
-                      : "bg-zinc-900 border-zinc-700 text-zinc-400 hover:border-zinc-600"
+                      : "bg-surface border-t-border text-muted hover:border-muted"
                   }`}
                 >
                   {loc.replace("Colorado Springs", "CO Spgs").replace("San Luis Obispo", "SLO")}
@@ -1178,7 +1178,7 @@ export default function SiteSurveySchedulerPage() {
               {selectedLocations.length > 0 && (
                 <button
                   onClick={() => setSelectedLocations([])}
-                  className="px-2 py-1 text-xs text-zinc-500 hover:text-white shrink-0"
+                  className="px-2 py-1 text-xs text-muted hover:text-foreground shrink-0"
                 >
                   Clear
                 </button>
@@ -1197,7 +1197,7 @@ export default function SiteSurveySchedulerPage() {
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value)}
-              className="px-3 py-1.5 bg-zinc-900 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:border-cyan-500"
+              className="px-3 py-1.5 bg-surface border border-t-border rounded-lg text-sm focus:outline-none focus:border-cyan-500"
             >
               <option value="amount">Sort: Amount</option>
               <option value="date">Sort: Date</option>
@@ -1211,7 +1211,7 @@ export default function SiteSurveySchedulerPage() {
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm border transition-colors ${
                   showAvailability
                     ? "bg-emerald-600/20 border-emerald-500 text-emerald-400"
-                    : "bg-zinc-900 border-zinc-700 text-zinc-400 hover:border-zinc-600"
+                    : "bg-surface border-t-border text-muted hover:border-muted"
                 }`}
               >
                 <div className={`w-2 h-2 rounded-full ${showAvailability ? "bg-emerald-500" : "bg-zinc-600"}`} />
@@ -1228,18 +1228,18 @@ export default function SiteSurveySchedulerPage() {
         <div className="flex flex-col lg:flex-row gap-3 sm:gap-4">
           {/* Left Sidebar - Unscheduled Projects */}
           <div className="w-full lg:w-80 lg:flex-shrink-0">
-            <div className="lg:sticky lg:top-[180px] bg-[#12121a] border border-zinc-800 rounded-xl overflow-hidden dashboard-card">
-              <div className="p-3 border-b border-zinc-800 bg-zinc-900/50">
+            <div className="lg:sticky lg:top-[180px] bg-surface border border-t-border rounded-xl overflow-hidden">
+              <div className="p-3 border-b border-t-border bg-surface/50">
                 <h2 className="text-sm font-semibold text-cyan-400">
                   Ready to Schedule ({unscheduledProjects.length})
                 </h2>
-                <p className="text-xs text-zinc-500 mt-1 hidden sm:block">
+                <p className="text-xs text-muted mt-1 hidden sm:block">
                   Drag to calendar or click to select
                 </p>
               </div>
               <div className="max-h-[40vh] lg:max-h-[calc(100vh-280px)] overflow-y-auto">
                 {unscheduledProjects.length === 0 ? (
-                  <div className="p-4 text-center text-zinc-500 text-sm">
+                  <div className="p-4 text-center text-muted text-sm">
                     No projects need scheduling
                   </div>
                 ) : (
@@ -1249,19 +1249,19 @@ export default function SiteSurveySchedulerPage() {
                       draggable
                       onDragStart={() => handleDragStart(project.id)}
                       onClick={() => setSelectedProject(selectedProject?.id === project.id ? null : project)}
-                      className={`p-3 border-b border-zinc-800 cursor-pointer hover:bg-zinc-800/50 transition-colors ${
+                      className={`p-3 border-b border-t-border cursor-pointer hover:bg-skeleton transition-colors ${
                         selectedProject?.id === project.id ? "bg-cyan-900/20 border-l-2 border-l-cyan-500" : ""
                       }`}
                     >
                       <div className="flex items-start justify-between">
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-white truncate">
+                          <p className="text-sm font-medium text-foreground truncate">
                             {getCustomerName(project.name)}
                           </p>
-                          <p className="text-xs text-zinc-500 truncate">
+                          <p className="text-xs text-muted truncate">
                             {getProjectId(project.name)}
                           </p>
-                          <p className="text-xs text-zinc-500 truncate mt-0.5">
+                          <p className="text-xs text-muted truncate mt-0.5">
                             {project.location}
                           </p>
                         </div>
@@ -1279,7 +1279,7 @@ export default function SiteSurveySchedulerPage() {
                           {project.surveyStatus}
                         </span>
                         {project.systemSize > 0 && (
-                          <span className="text-xs text-zinc-500">
+                          <span className="text-xs text-muted">
                             {project.systemSize.toFixed(1)}kW
                           </span>
                         )}
@@ -1294,11 +1294,11 @@ export default function SiteSurveySchedulerPage() {
           {/* Main Area - Calendar or List */}
           <div className="flex-1">
             {currentView === "calendar" ? (
-              <div className="bg-[#12121a] border border-zinc-800 rounded-xl overflow-hidden dashboard-card">
+              <div className="bg-surface border border-t-border rounded-xl overflow-hidden">
                 {/* Calendar Header */}
-                <div className="p-2 sm:p-3 border-b border-zinc-800 flex items-center justify-between flex-wrap gap-2">
+                <div className="p-2 sm:p-3 border-b border-t-border flex items-center justify-between flex-wrap gap-2">
                   <div className="flex items-center gap-2">
-                    <button onClick={goToPrevMonth} className="p-1.5 hover:bg-zinc-800 rounded">
+                    <button onClick={goToPrevMonth} className="p-1.5 hover:bg-surface-2 rounded">
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                       </svg>
@@ -1306,18 +1306,18 @@ export default function SiteSurveySchedulerPage() {
                     <span className="text-sm sm:text-lg font-semibold min-w-[140px] sm:min-w-[180px] text-center">
                       {MONTH_NAMES[currentMonth]} {currentYear}
                     </span>
-                    <button onClick={goToNextMonth} className="p-1.5 hover:bg-zinc-800 rounded">
+                    <button onClick={goToNextMonth} className="p-1.5 hover:bg-surface-2 rounded">
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                       </svg>
                     </button>
                   </div>
-                  <button onClick={goToToday} className="px-3 py-1 text-xs bg-zinc-800 hover:bg-zinc-700 rounded">
+                  <button onClick={goToToday} className="px-3 py-1 text-xs bg-surface-2 hover:bg-surface-2 rounded">
                     Today
                   </button>
                   {/* Availability Legend */}
                   {showAvailability && zuperConfigured && (
-                    <div className="flex items-center gap-3 text-xs text-zinc-500">
+                    <div className="flex items-center gap-3 text-xs text-muted">
                       <div className="flex items-center gap-1">
                         <div className="w-2 h-2 bg-emerald-500 rounded-full" />
                         <span>Available</span>
@@ -1335,9 +1335,9 @@ export default function SiteSurveySchedulerPage() {
                 </div>
 
                 {/* Day Headers */}
-                <div className="grid grid-cols-7 border-b border-zinc-800">
+                <div className="grid grid-cols-7 border-b border-t-border">
                   {DAY_NAMES.map((day) => (
-                    <div key={day} className="p-1 sm:p-2 text-center text-[0.65rem] sm:text-xs font-medium text-zinc-500">
+                    <div key={day} className="p-1 sm:p-2 text-center text-[0.65rem] sm:text-xs font-medium text-muted">
                       {day}
                     </div>
                   ))}
@@ -1363,13 +1363,13 @@ export default function SiteSurveySchedulerPage() {
                         onDragOver={!isPast ? handleDragOver : undefined}
                         onDrop={() => handleDrop(dateStr)}
                         onClick={() => handleDateClick(dateStr)}
-                        className={`min-h-[70px] sm:min-h-[120px] max-h-[120px] sm:max-h-[200px] overflow-y-auto p-1 sm:p-1.5 border-b border-r border-zinc-800 transition-colors ${
-                          isPast ? "opacity-50 cursor-not-allowed bg-zinc-900/40" : "cursor-pointer"
+                        className={`min-h-[70px] sm:min-h-[120px] max-h-[120px] sm:max-h-[200px] overflow-y-auto p-1 sm:p-1.5 border-b border-r border-t-border transition-colors ${
+                          isPast ? "opacity-50 cursor-not-allowed bg-surface/40" : "cursor-pointer"
                         } ${
                           isCurrentMonth && !isPast ? "" : !isPast ? "opacity-40" : ""
-                        } ${weekend && !isPast ? "bg-zinc-900/30" : ""} ${
+                        } ${weekend && !isPast ? "bg-surface/30" : ""} ${
                           isToday ? "bg-cyan-900/20" : ""
-                        } ${!isPast && selectedProject ? "hover:bg-cyan-900/10" : !isPast ? "hover:bg-zinc-800/50" : ""} ${
+                        } ${!isPast && selectedProject ? "hover:bg-cyan-900/10" : !isPast ? "hover:bg-skeleton" : ""} ${
                           showAvailability && hasAvailability && selectedProject && !isPast
                             ? "ring-2 ring-inset ring-emerald-500/30 bg-emerald-900/10"
                             : ""
@@ -1381,7 +1381,7 @@ export default function SiteSurveySchedulerPage() {
                       >
                         <div className="flex items-center justify-between mb-1">
                           <span className={`text-xs font-medium ${
-                            isToday ? "text-cyan-400" : "text-zinc-500"
+                            isToday ? "text-cyan-400" : "text-muted"
                           }`}>
                             {parseInt(dateStr.split("-")[2])}
                           </span>
@@ -1553,38 +1553,38 @@ export default function SiteSurveySchedulerPage() {
               </div>
             ) : (
               /* List View */
-              <div className="bg-[#12121a] border border-zinc-800 rounded-xl overflow-hidden">
-                <div className="p-3 border-b border-zinc-800">
+              <div className="bg-surface border border-t-border rounded-xl overflow-hidden">
+                <div className="p-3 border-b border-t-border">
                   <h2 className="text-sm font-semibold">All Site Surveys ({filteredProjects.length})</h2>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full">
-                    <thead className="bg-zinc-900">
+                    <thead className="bg-surface">
                       <tr>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Project</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Location</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Status</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Surveyor</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Scheduled</th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase">Amount</th>
-                        <th className="px-4 py-3 text-center text-xs font-medium text-zinc-400 uppercase">Links</th>
-                        <th className="px-4 py-3 text-center text-xs font-medium text-zinc-400 uppercase">Actions</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Project</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Location</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Status</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Surveyor</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Scheduled</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-muted uppercase">Amount</th>
+                        <th className="px-4 py-3 text-center text-xs font-medium text-muted uppercase">Links</th>
+                        <th className="px-4 py-3 text-center text-xs font-medium text-muted uppercase">Actions</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-zinc-800">
+                    <tbody className="divide-y divide-t-border">
                       {filteredProjects.map((project) => {
                         const schedDate = manualSchedules[project.id] || project.scheduleDate;
                         const overdue = isSurveyOverdue(project, manualSchedules[project.id]);
                         return (
-                          <tr key={project.id} className={`hover:bg-zinc-900/50 ${overdue ? "bg-red-500/5" : ""}`}>
+                          <tr key={project.id} className={`hover:bg-surface/50 ${overdue ? "bg-red-500/5" : ""}`}>
                             <td className="px-4 py-3">
-                              <a href={project.hubspotUrl} target="_blank" rel="noopener noreferrer" className="font-medium text-white hover:text-cyan-400">
+                              <a href={project.hubspotUrl} target="_blank" rel="noopener noreferrer" className="font-medium text-foreground hover:text-cyan-400">
                                 {overdue && <span className="text-red-400 mr-1">⚠</span>}
                                 {getCustomerName(project.name)}
                               </a>
-                              <div className="text-xs text-zinc-500">{getProjectId(project.name)}</div>
+                              <div className="text-xs text-muted">{getProjectId(project.name)}</div>
                             </td>
-                            <td className="px-4 py-3 text-sm text-zinc-400">{project.location}</td>
+                            <td className="px-4 py-3 text-sm text-muted">{project.location}</td>
                             <td className="px-4 py-3">
                               <div className="flex items-center gap-1.5">
                                 <span className={`text-xs px-2 py-1 rounded border ${getStatusColor(project.surveyStatus)}`}>
@@ -1599,10 +1599,10 @@ export default function SiteSurveySchedulerPage() {
                             </td>
                             <td className="px-4 py-3 text-sm text-emerald-400">
                               {project.assignedSurveyor ? (
-                                <span>{project.assignedSurveyor}{project.zuperScheduledTime ? <span className="text-zinc-500 ml-1">@ {project.zuperScheduledTime}</span> : null}</span>
-                              ) : <span className="text-zinc-600">—</span>}
+                                <span>{project.assignedSurveyor}{project.zuperScheduledTime ? <span className="text-muted ml-1">@ {project.zuperScheduledTime}</span> : null}</span>
+                              ) : <span className="text-muted/70">—</span>}
                             </td>
-                            <td className={`px-4 py-3 text-sm ${overdue ? "text-red-400" : schedDate ? "text-cyan-400" : "text-zinc-500"}`}>
+                            <td className={`px-4 py-3 text-sm ${overdue ? "text-red-400" : schedDate ? "text-cyan-400" : "text-muted"}`}>
                               {schedDate ? formatShortDate(schedDate) : "—"}
                             </td>
                             <td className="px-4 py-3 text-right font-mono text-sm text-orange-400">
@@ -1614,7 +1614,7 @@ export default function SiteSurveySchedulerPage() {
                                   href={project.hubspotUrl}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="p-1 hover:bg-zinc-700 rounded transition-colors"
+                                  className="p-1 hover:bg-surface-2 rounded transition-colors"
                                   title="Open in HubSpot"
                                 >
                                   <svg className="w-4 h-4 text-orange-400" viewBox="0 0 24 24" fill="currentColor">
@@ -1626,7 +1626,7 @@ export default function SiteSurveySchedulerPage() {
                                     href={`${zuperWebBaseUrl}/jobs/${project.zuperJobUid}/details`}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="p-1 hover:bg-zinc-700 rounded transition-colors"
+                                    className="p-1 hover:bg-surface-2 rounded transition-colors"
                                     title="Open in Zuper"
                                   >
                                     <svg className="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1678,7 +1678,7 @@ export default function SiteSurveySchedulerPage() {
             if (e.target === e.currentTarget) setScheduleModal(null);
           }}
         >
-          <div className="bg-[#12121a] border border-zinc-800 rounded-xl p-5 max-w-md w-[90%]">
+          <div className="bg-surface border border-t-border rounded-xl p-5 max-w-md w-[90%]">
             <h3 className="text-lg font-semibold mb-4">
               {scheduleModal.currentSlot && !scheduleModal.isRescheduling
                 ? "Site Survey Details"
@@ -1689,25 +1689,25 @@ export default function SiteSurveySchedulerPage() {
 
             <div className="space-y-3 mb-4">
               <div>
-                <span className="text-xs text-zinc-500">Project</span>
+                <span className="text-xs text-muted">Project</span>
                 <p className="text-sm font-medium">{getCustomerName(scheduleModal.project.name)}</p>
-                <p className="text-xs text-zinc-500">{getProjectId(scheduleModal.project.name)}</p>
+                <p className="text-xs text-muted">{getProjectId(scheduleModal.project.name)}</p>
               </div>
 
               <div>
-                <span className="text-xs text-zinc-500">Location</span>
+                <span className="text-xs text-muted">Location</span>
                 <p className="text-sm">{scheduleModal.project.location}</p>
               </div>
 
               {scheduleModal.project.address && (
                 <div>
-                  <span className="text-xs text-zinc-500">Address</span>
+                  <span className="text-xs text-muted">Address</span>
                   <p className="text-sm">{scheduleModal.project.address}</p>
                 </div>
               )}
 
               <div>
-                <span className="text-xs text-zinc-500">Date</span>
+                <span className="text-xs text-muted">Date</span>
                 <p className="text-sm font-medium text-cyan-400">{formatDate(scheduleModal.date)}</p>
               </div>
 
@@ -1718,7 +1718,7 @@ export default function SiteSurveySchedulerPage() {
                   <span className="text-xs text-cyan-400 font-medium">Currently Scheduled</span>
                   <p className="text-sm text-white mt-1">
                     <span className="font-medium">{scheduleModal.currentSlot.userName}</span>
-                    <span className="text-zinc-400 mx-2">&bull;</span>
+                    <span className="text-muted mx-2">&bull;</span>
                     <span>{scheduleModal.currentSlot.displayTime}</span>
                   </p>
                   <button
@@ -1737,19 +1737,19 @@ export default function SiteSurveySchedulerPage() {
                   <p className="text-sm text-white mt-1">
                     {scheduleModal.slot.userName} &bull; {formatTime12h(scheduleModal.slot.startTime)} - {formatTime12h(scheduleModal.slot.endTime)}
                   </p>
-                  <p className="text-xs text-zinc-400 mt-0.5">
+                  <p className="text-xs text-muted mt-0.5">
                     This 1-hour slot will be reserved
                   </p>
                   <button
                     onClick={() => setScheduleModal({ ...scheduleModal, slot: undefined })}
-                    className="text-xs text-zinc-500 hover:text-zinc-300 mt-1"
+                    className="text-xs text-muted hover:text-foreground mt-1"
                   >
                     Change time slot
                   </button>
                   {scheduleModal.currentSlot && (
                     <button
                       onClick={() => setScheduleModal({ ...scheduleModal, isRescheduling: false, slot: undefined })}
-                      className="text-xs text-zinc-500 hover:text-zinc-300 mt-1 ml-3"
+                      className="text-xs text-muted hover:text-foreground mt-1 ml-3"
                     >
                       Cancel reschedule
                     </button>
@@ -1758,7 +1758,7 @@ export default function SiteSurveySchedulerPage() {
               ) : (
                 /* Time slot picker for new scheduling or rescheduling */
                 <div>
-                  <span className="text-xs text-zinc-500">
+                  <span className="text-xs text-muted">
                     {scheduleModal.isRescheduling ? "Select New Time Slot" : "Select Time Slot"}
                   </span>
                   <div className="mt-1 max-h-32 overflow-y-auto space-y-1">
@@ -1776,7 +1776,7 @@ export default function SiteSurveySchedulerPage() {
 
                       if (availableSlots.length === 0) {
                         return (
-                          <p className="text-xs text-zinc-500 italic">No available slots for this location on this date</p>
+                          <p className="text-xs text-muted italic">No available slots for this location on this date</p>
                         );
                       }
 
@@ -1795,10 +1795,10 @@ export default function SiteSurveySchedulerPage() {
                               timezone: slot.timezone, // IANA timezone for CA slots
                             }
                           })}
-                          className="w-full text-left px-2 py-1.5 text-sm rounded bg-zinc-800 hover:bg-emerald-900/30 hover:border-emerald-500/30 border border-transparent transition-colors"
+                          className="w-full text-left px-2 py-1.5 text-sm rounded bg-surface-2 hover:bg-emerald-900/30 hover:border-emerald-500/30 border border-transparent transition-colors"
                         >
                           <span className="text-emerald-400">{slot.user_name}</span>
-                          <span className="text-zinc-400 ml-2">{slot.display_time}</span>
+                          <span className="text-muted ml-2">{slot.display_time}</span>
                         </button>
                       ));
                     })()}
@@ -1806,7 +1806,7 @@ export default function SiteSurveySchedulerPage() {
                   {scheduleModal.isRescheduling && scheduleModal.currentSlot && (
                     <button
                       onClick={() => setScheduleModal({ ...scheduleModal, isRescheduling: false })}
-                      className="text-xs text-zinc-500 hover:text-zinc-300 mt-2"
+                      className="text-xs text-muted hover:text-foreground mt-2"
                     >
                       Cancel reschedule
                     </button>
@@ -1823,13 +1823,13 @@ export default function SiteSurveySchedulerPage() {
               )}
 
               <div>
-                <span className="text-xs text-zinc-500">Amount</span>
+                <span className="text-xs text-muted">Amount</span>
                 <p className="text-sm font-mono text-orange-400">{formatCurrency(scheduleModal.project.amount)}</p>
               </div>
 
               {/* External Links */}
               <div>
-                <span className="text-xs text-zinc-500">Links</span>
+                <span className="text-xs text-muted">Links</span>
                 <div className="flex items-center gap-3 mt-1">
                   <a
                     href={scheduleModal.project.hubspotUrl}
@@ -1861,13 +1861,13 @@ export default function SiteSurveySchedulerPage() {
 
             {/* Zuper Sync Option - only show when scheduling/rescheduling */}
             {zuperConfigured && (scheduleModal.slot || scheduleModal.isRescheduling) && (
-              <div className="mb-4 p-3 bg-zinc-900 rounded-lg border border-zinc-800">
+              <div className="mb-4 p-3 bg-surface rounded-lg border border-t-border">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={syncToZuper}
                     onChange={(e) => setSyncToZuper(e.target.checked)}
-                    className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-cyan-500 focus:ring-cyan-500"
+                    className="w-4 h-4 rounded border-t-border bg-surface-2 text-cyan-500 focus:ring-cyan-500"
                   />
                   <span className="text-sm">Sync to Zuper FSM</span>
                 </label>
@@ -1884,7 +1884,7 @@ export default function SiteSurveySchedulerPage() {
                 /* Viewing mode - just show Close button */
                 <button
                   onClick={() => setScheduleModal(null)}
-                  className="px-4 py-2 text-sm bg-zinc-700 hover:bg-zinc-600 rounded-lg font-medium"
+                  className="px-4 py-2 text-sm bg-surface-2 hover:bg-zinc-600 rounded-lg font-medium"
                 >
                   Close
                 </button>
@@ -1893,7 +1893,7 @@ export default function SiteSurveySchedulerPage() {
                 <>
                   <button
                     onClick={() => setScheduleModal(null)}
-                    className="px-4 py-2 text-sm text-zinc-400 hover:text-white"
+                    className="px-4 py-2 text-sm text-muted hover:text-foreground"
                   >
                     Cancel
                   </button>

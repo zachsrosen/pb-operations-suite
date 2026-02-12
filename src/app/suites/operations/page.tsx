@@ -41,14 +41,14 @@ const LINKS = [
 
 export default function OperationsSuitePage() {
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-white dashboard-bg">
+    <div className="min-h-screen bg-background text-foreground">
       <main className="max-w-7xl mx-auto px-6 py-8">
         <div className="mb-6">
-          <Link href="/" className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors">
+          <Link href="/" className="text-xs text-muted hover:text-foreground transition-colors">
             &larr; Back to Dashboard
           </Link>
           <h1 className="text-2xl font-bold mt-3">Operations Suite</h1>
-          <p className="text-sm text-zinc-400 mt-1">
+          <p className="text-sm text-muted mt-1">
             Core operations and scheduling dashboards.
           </p>
         </div>
@@ -58,17 +58,17 @@ export default function OperationsSuitePage() {
             <Link
               key={item.href}
               href={item.href}
-              className="group block bg-zinc-900/50 border border-zinc-800 rounded-xl p-5 hover:border-orange-500/50 hover:bg-zinc-900 transition-all"
+              className="group block bg-surface/50 border border-t-border rounded-xl p-5 hover:border-orange-500/50 hover:bg-surface transition-all"
             >
               <div className="flex items-center justify-between mb-1">
-                <h3 className="font-semibold text-white group-hover:text-orange-400 transition-colors">
+                <h3 className="font-semibold text-foreground group-hover:text-orange-400 transition-colors">
                   {item.title}
                 </h3>
                 <span className="text-xs font-medium px-2 py-0.5 rounded border bg-blue-500/20 text-blue-400 border-blue-500/30">
                   {item.tag}
                 </span>
               </div>
-              <p className="text-sm text-zinc-500">{item.description}</p>
+              <p className="text-sm text-muted">{item.description}</p>
             </Link>
           ))}
         </div>

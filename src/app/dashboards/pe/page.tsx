@@ -204,7 +204,7 @@ function StatusBadge({
 }) {
   if (days === null || days === undefined) {
     return (
-      <span className="px-2 py-1 rounded-full text-xs font-medium bg-zinc-800 text-zinc-400">
+      <span className="px-2 py-1 rounded-full text-xs font-medium bg-surface-2 text-muted">
         N/A
       </span>
     );
@@ -261,9 +261,9 @@ function StatCard({
 
   return (
     <div
-      className={`bg-[#12121a] border border-zinc-800 rounded-lg p-4 border-l-4 ${borderColors[accent]}`}
+      className={`bg-surface border border-t-border rounded-lg p-4 border-l-4 ${borderColors[accent]}`}
     >
-      <div className="text-sm text-zinc-400">{label}</div>
+      <div className="text-sm text-muted">{label}</div>
       <div className={`text-2xl font-bold ${textColors[accent]}`}>{value}</div>
     </div>
   );
@@ -286,27 +286,27 @@ function MilestoneSummaryCard({
   const onTrackPercent = total > 0 ? (stats.onTrack / total) * 100 : 0;
 
   return (
-    <div className="bg-[#12121a] border border-zinc-800 rounded-lg p-4">
-      <h3 className="font-semibold text-zinc-200 mb-3 flex items-center gap-2">
+    <div className="bg-surface border border-t-border rounded-lg p-4">
+      <h3 className="font-semibold text-foreground/90 mb-3 flex items-center gap-2">
         <span className={`w-3 h-3 rounded-full ${dotColor}`} />
         {title}
       </h3>
       <div className="space-y-2 text-sm">
         <div className="flex justify-between">
           <span className="text-red-400">Overdue:</span>
-          <strong className="text-zinc-200">{stats.overdue}</strong>
+          <strong className="text-foreground/90">{stats.overdue}</strong>
         </div>
         <div className="flex justify-between">
           <span className="text-yellow-400">{soonLabel}:</span>
-          <strong className="text-zinc-200">{stats.soon}</strong>
+          <strong className="text-foreground/90">{stats.soon}</strong>
         </div>
         <div className="flex justify-between">
           <span className="text-green-400">On Track:</span>
-          <strong className="text-zinc-200">{stats.onTrack}</strong>
+          <strong className="text-foreground/90">{stats.onTrack}</strong>
         </div>
       </div>
       {/* Progress bar */}
-      <div className="mt-3 h-2 rounded-full bg-zinc-800 flex overflow-hidden">
+      <div className="mt-3 h-2 rounded-full bg-surface-2 flex overflow-hidden">
         {overduePercent > 0 && (
           <div
             className="bg-red-500 h-full"
@@ -337,8 +337,8 @@ function CSSBarChart({ data }: { data: ForecastMonth[] }) {
   );
 
   return (
-    <div className="bg-[#12121a] border border-zinc-800 rounded-lg p-4">
-      <h3 className="font-semibold text-zinc-200 mb-4">
+    <div className="bg-surface border border-t-border rounded-lg p-4">
+      <h3 className="font-semibold text-foreground/90 mb-4">
         6-Month Milestone Forecast
       </h3>
       <div className="flex items-end gap-2 h-52">
@@ -348,7 +348,7 @@ function CSSBarChart({ data }: { data: ForecastMonth[] }) {
               {/* Install bar */}
               <div className="flex flex-col items-center flex-1 max-w-6 h-full justify-end">
                 {month.installs > 0 && (
-                  <span className="text-[10px] text-zinc-400 mb-1">
+                  <span className="text-[10px] text-muted mb-1">
                     {month.installs}
                   </span>
                 )}
@@ -363,7 +363,7 @@ function CSSBarChart({ data }: { data: ForecastMonth[] }) {
               {/* Inspection bar */}
               <div className="flex flex-col items-center flex-1 max-w-6 h-full justify-end">
                 {month.inspections > 0 && (
-                  <span className="text-[10px] text-zinc-400 mb-1">
+                  <span className="text-[10px] text-muted mb-1">
                     {month.inspections}
                   </span>
                 )}
@@ -378,7 +378,7 @@ function CSSBarChart({ data }: { data: ForecastMonth[] }) {
               {/* PTO bar */}
               <div className="flex flex-col items-center flex-1 max-w-6 h-full justify-end">
                 {month.ptos > 0 && (
-                  <span className="text-[10px] text-zinc-400 mb-1">
+                  <span className="text-[10px] text-muted mb-1">
                     {month.ptos}
                   </span>
                 )}
@@ -391,12 +391,12 @@ function CSSBarChart({ data }: { data: ForecastMonth[] }) {
                 />
               </div>
             </div>
-            <div className="text-xs text-zinc-500 mt-2">{month.label}</div>
+            <div className="text-xs text-muted mt-2">{month.label}</div>
           </div>
         ))}
       </div>
       {/* Legend */}
-      <div className="flex justify-center gap-6 mt-4 text-xs text-zinc-400">
+      <div className="flex justify-center gap-6 mt-4 text-xs text-muted">
         <div className="flex items-center gap-1.5">
           <div className="w-3 h-3 rounded bg-blue-500" />
           Installations
@@ -436,21 +436,21 @@ function MilestoneGroup({
   threshold: number;
 }) {
   return (
-    <div className="bg-[#12121a] border border-zinc-800 rounded-lg overflow-hidden">
-      <div className={`p-4 border-b border-zinc-800 ${accentBg}`}>
+    <div className="bg-surface border border-t-border rounded-lg overflow-hidden">
+      <div className={`p-4 border-b border-t-border ${accentBg}`}>
         <h3 className={`font-semibold text-lg ${accentTitle}`}>{title}</h3>
         <p className={`text-sm ${accentDesc}`}>{description}</p>
       </div>
       <div className="max-h-80 overflow-y-auto">
         {projects.length === 0 && (
-          <div className="p-6 text-center text-zinc-500">
+          <div className="p-6 text-center text-muted">
             No projects in this category
           </div>
         )}
         {projects.map((p) => (
           <div
             key={p.id}
-            className="flex items-center justify-between p-3 border-b border-zinc-800/50 hover:bg-zinc-800/30 transition-colors"
+            className="flex items-center justify-between p-3 border-b border-t-border/50 hover:bg-surface-2/30 transition-colors"
           >
             <div>
               <a
@@ -461,13 +461,13 @@ function MilestoneGroup({
               >
                 {displayName(p.name)}
               </a>
-              <div className="text-xs text-zinc-500">
+              <div className="text-xs text-muted">
                 {p.pb_location} | {p.ahj}
               </div>
             </div>
             <div className="text-right">
-              <div className="text-xs text-zinc-500 mb-1">Forecasted</div>
-              <div className="text-sm text-zinc-300">
+              <div className="text-xs text-muted mb-1">Forecasted</div>
+              <div className="text-sm text-foreground/80">
                 {p[dateField] as string}
               </div>
               <StatusBadge
@@ -619,40 +619,40 @@ function RevenueView({
     <div className="space-y-6">
       {/* Pipeline Strength */}
       <div>
-        <h2 className="text-lg font-semibold text-zinc-200 mb-3">Pipeline Strength</h2>
+        <h2 className="text-lg font-semibold text-foreground/90 mb-3">Pipeline Strength</h2>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="bg-[#12121a] border border-zinc-800 rounded-lg p-4 border-l-4 border-l-green-500">
-            <div className="text-sm text-zinc-400">RTB Projects</div>
+          <div className="bg-surface border border-t-border rounded-lg p-4 border-l-4 border-l-green-500">
+            <div className="text-sm text-muted">RTB Projects</div>
             <div className="text-2xl font-bold text-green-400">{pipelineStrength.rtb.count}</div>
-            <div className="text-sm text-zinc-500">{formatRevenueShort(pipelineStrength.rtb.value)}</div>
+            <div className="text-sm text-muted">{formatRevenueShort(pipelineStrength.rtb.value)}</div>
           </div>
-          <div className="bg-[#12121a] border border-zinc-800 rounded-lg p-4 border-l-4 border-l-blue-500">
-            <div className="text-sm text-zinc-400">Scheduled Construction</div>
+          <div className="bg-surface border border-t-border rounded-lg p-4 border-l-4 border-l-blue-500">
+            <div className="text-sm text-muted">Scheduled Construction</div>
             <div className="text-2xl font-bold text-blue-400">{pipelineStrength.scheduled.count}</div>
-            <div className="text-sm text-zinc-500">{formatRevenueShort(pipelineStrength.scheduled.value)}</div>
+            <div className="text-sm text-muted">{formatRevenueShort(pipelineStrength.scheduled.value)}</div>
           </div>
-          <div className="bg-[#12121a] border border-zinc-800 rounded-lg p-4 border-l-4 border-l-emerald-500">
-            <div className="text-sm text-zinc-400">Upcoming Inspections</div>
+          <div className="bg-surface border border-t-border rounded-lg p-4 border-l-4 border-l-emerald-500">
+            <div className="text-sm text-muted">Upcoming Inspections</div>
             <div className="text-2xl font-bold text-emerald-400">{pipelineStrength.inspections.count}</div>
-            <div className="text-sm text-zinc-500">{formatRevenueShort(pipelineStrength.inspections.value)}</div>
+            <div className="text-sm text-muted">{formatRevenueShort(pipelineStrength.inspections.value)}</div>
           </div>
-          <div className="bg-[#12121a] border border-zinc-800 rounded-lg p-4 border-l-4 border-l-amber-500">
-            <div className="text-sm text-zinc-400">Awaiting PTO</div>
+          <div className="bg-surface border border-t-border rounded-lg p-4 border-l-4 border-l-amber-500">
+            <div className="text-sm text-muted">Awaiting PTO</div>
             <div className="text-2xl font-bold text-amber-400">{pipelineStrength.pto.count}</div>
-            <div className="text-sm text-zinc-500">{formatRevenueShort(pipelineStrength.pto.value)}</div>
+            <div className="text-sm text-muted">{formatRevenueShort(pipelineStrength.pto.value)}</div>
           </div>
         </div>
       </div>
 
       {/* Period Toggle */}
       <div className="flex items-center gap-2">
-        <div className="flex bg-[#12121a] border border-zinc-800 rounded-lg p-1">
+        <div className="flex bg-surface border border-t-border rounded-lg p-1">
           <button
             onClick={() => setRevenuePeriod("monthly")}
             className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
               revenuePeriod === "monthly"
                 ? "bg-green-600 text-white"
-                : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800"
+                : "text-muted hover:text-foreground/90 hover:bg-surface-2"
             }`}
           >
             Monthly
@@ -662,7 +662,7 @@ function RevenueView({
             className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
               revenuePeriod === "weekly"
                 ? "bg-green-600 text-white"
-                : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800"
+                : "text-muted hover:text-foreground/90 hover:bg-surface-2"
             }`}
           >
             Weekly
@@ -674,19 +674,19 @@ function RevenueView({
       {milestoneData.map(({ config, periodData, totalCompletions, totalRevenue, maxRevenue }) => (
         <div
           key={config.title}
-          className={`bg-[#12121a] border border-zinc-800 rounded-lg overflow-hidden border-l-4 ${config.borderColor}`}
+          className={`bg-surface border border-t-border rounded-lg overflow-hidden border-l-4 ${config.borderColor}`}
         >
-          <div className={`p-4 border-b border-zinc-800 ${config.headerBg}`}>
-            <h3 className="font-semibold text-zinc-200">{config.title}</h3>
+          <div className={`p-4 border-b border-t-border ${config.headerBg}`}>
+            <h3 className="font-semibold text-foreground/90">{config.title}</h3>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-zinc-800 bg-zinc-900/50">
-                  <th className="text-left p-3 text-sm font-medium text-zinc-400 w-32">Period</th>
-                  <th className="text-right p-3 text-sm font-medium text-zinc-400 w-28">Completions</th>
-                  <th className="text-right p-3 text-sm font-medium text-zinc-400 w-28">Revenue</th>
-                  <th className="p-3 text-sm font-medium text-zinc-400"></th>
+                <tr className="border-b border-t-border bg-surface/50">
+                  <th className="text-left p-3 text-sm font-medium text-muted w-32">Period</th>
+                  <th className="text-right p-3 text-sm font-medium text-muted w-28">Completions</th>
+                  <th className="text-right p-3 text-sm font-medium text-muted w-28">Revenue</th>
+                  <th className="p-3 text-sm font-medium text-muted"></th>
                 </tr>
               </thead>
               <tbody>
@@ -696,15 +696,15 @@ function RevenueView({
                   return (
                     <tr
                       key={period.label}
-                      className={`border-b border-zinc-800/50 transition-colors ${
+                      className={`border-b border-t-border/50 transition-colors ${
                         period.isCurrent
-                          ? "bg-zinc-800/40"
+                          ? "bg-surface-2/40"
                           : period.isPast
                             ? "opacity-60"
                             : ""
                       }`}
                     >
-                      <td className="p-3 text-sm text-zinc-300">
+                      <td className="p-3 text-sm text-foreground/80">
                         <span className={period.isCurrent ? "font-semibold text-green-400" : ""}>
                           {period.label}
                           {period.isCurrent && (
@@ -714,15 +714,15 @@ function RevenueView({
                           )}
                         </span>
                       </td>
-                      <td className="p-3 text-sm text-right text-zinc-300 font-medium">
+                      <td className="p-3 text-sm text-right text-foreground/80 font-medium">
                         {data.completions || "-"}
                       </td>
-                      <td className="p-3 text-sm text-right text-zinc-300 font-medium">
+                      <td className="p-3 text-sm text-right text-foreground/80 font-medium">
                         {data.revenue > 0 ? formatRevenueShort(data.revenue) : "-"}
                       </td>
                       <td className="p-3 pr-4">
                         {data.revenue > 0 && (
-                          <div className="h-2 rounded-full bg-zinc-800 overflow-hidden">
+                          <div className="h-2 rounded-full bg-surface-2 overflow-hidden">
                             <div
                               className={`h-full rounded-full ${config.barColor} transition-all duration-300`}
                               style={{ width: `${barWidth}%` }}
@@ -734,12 +734,12 @@ function RevenueView({
                   );
                 })}
                 {/* Total row */}
-                <tr className="bg-zinc-900/70 border-t border-zinc-700">
-                  <td className="p-3 text-sm font-semibold text-zinc-200">Total</td>
-                  <td className="p-3 text-sm text-right font-semibold text-zinc-200">
+                <tr className="bg-surface/70 border-t border-t-border">
+                  <td className="p-3 text-sm font-semibold text-foreground/90">Total</td>
+                  <td className="p-3 text-sm text-right font-semibold text-foreground/90">
                     {totalCompletions}
                   </td>
-                  <td className="p-3 text-sm text-right font-semibold text-zinc-200">
+                  <td className="p-3 text-sm text-right font-semibold text-foreground/90">
                     {totalRevenue > 0 ? formatRevenueShort(totalRevenue) : "-"}
                   </td>
                   <td className="p-3"></td>
@@ -1052,7 +1052,7 @@ export default function PEDashboardPage() {
           </span>
           <button
             onClick={handleExport}
-            className="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded border border-zinc-700 transition-colors"
+            className="px-3 py-1.5 text-xs bg-surface-2 hover:bg-surface-2 text-foreground/80 rounded border border-t-border transition-colors"
           >
             Export CSV
           </button>
@@ -1060,7 +1060,7 @@ export default function PEDashboardPage() {
       }
     >
       {/* Tab Navigation */}
-      <div className="flex gap-1 mb-6 bg-[#12121a] border border-zinc-800 rounded-lg p-1 w-fit">
+      <div className="flex gap-1 mb-6 bg-surface border border-t-border rounded-lg p-1 w-fit">
         {(["overview", "projects", "milestones", "revenue"] as ViewType[]).map((v) => (
           <button
             key={v}
@@ -1068,7 +1068,7 @@ export default function PEDashboardPage() {
             className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
               view === v
                 ? "bg-green-600 text-white"
-                : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800"
+                : "text-muted hover:text-foreground/90 hover:bg-surface-2"
             }`}
           >
             {v.charAt(0).toUpperCase() + v.slice(1)}
@@ -1138,23 +1138,23 @@ export default function PEDashboardPage() {
       {view === "projects" && (
         <>
           {/* Filters */}
-          <div className="bg-[#12121a] border border-zinc-800 rounded-lg p-4 mb-4 flex flex-wrap gap-4 items-center">
+          <div className="bg-surface border border-t-border rounded-lg p-4 mb-4 flex flex-wrap gap-4 items-center">
             <div className="flex items-center gap-2">
-              <span className="text-sm text-zinc-400">Search:</span>
+              <span className="text-sm text-muted">Search:</span>
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Project name, location..."
-                className="bg-zinc-900 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-green-600 w-56"
+                className="bg-surface border border-t-border rounded px-3 py-1.5 text-sm text-foreground/90 placeholder-zinc-600 focus:outline-none focus:border-green-600 w-56"
               />
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-sm text-zinc-400">Sort by:</span>
+              <span className="text-sm text-muted">Sort by:</span>
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as SortKey)}
-                className="bg-zinc-900 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-200"
+                className="bg-surface border border-t-border rounded px-3 py-1.5 text-sm text-foreground/90"
               >
                 <option value="pto">Days to PTO</option>
                 <option value="inspection">Days to Inspection</option>
@@ -1163,11 +1163,11 @@ export default function PEDashboardPage() {
               </select>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-sm text-zinc-400">Milestone:</span>
+              <span className="text-sm text-muted">Milestone:</span>
               <select
                 value={filterMilestone}
                 onChange={(e) => setFilterMilestone(e.target.value)}
-                className="bg-zinc-900 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-200"
+                className="bg-surface border border-t-border rounded px-3 py-1.5 text-sm text-foreground/90"
               >
                 <option value="all">All</option>
                 <option value="install">Install</option>
@@ -1176,13 +1176,13 @@ export default function PEDashboardPage() {
               </select>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-sm text-zinc-400">Status:</span>
+              <span className="text-sm text-muted">Status:</span>
               <select
                 value={filterStatus}
                 onChange={(e) =>
                   setFilterStatus(e.target.value as FilterStatus)
                 }
-                className="bg-zinc-900 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-200"
+                className="bg-surface border border-t-border rounded px-3 py-1.5 text-sm text-foreground/90"
               >
                 <option value="all">All</option>
                 <option value="overdue">Overdue</option>
@@ -1190,33 +1190,33 @@ export default function PEDashboardPage() {
                 <option value="ontrack">On Track</option>
               </select>
             </div>
-            <div className="ml-auto text-xs text-zinc-500">
+            <div className="ml-auto text-xs text-muted">
               {filteredProjects.length} projects
             </div>
           </div>
 
           {/* Project Table */}
-          <div className="bg-[#12121a] border border-zinc-800 rounded-lg overflow-hidden">
+          <div className="bg-surface border border-t-border rounded-lg overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="border-b border-zinc-800 bg-zinc-900/50">
-                    <th className="text-left p-3 text-sm font-medium text-zinc-400">
+                  <tr className="border-b border-t-border bg-surface/50">
+                    <th className="text-left p-3 text-sm font-medium text-muted">
                       Project
                     </th>
-                    <th className="text-left p-3 text-sm font-medium text-zinc-400">
+                    <th className="text-left p-3 text-sm font-medium text-muted">
                       Location
                     </th>
-                    <th className="text-right p-3 text-sm font-medium text-zinc-400">
+                    <th className="text-right p-3 text-sm font-medium text-muted">
                       Value
                     </th>
-                    <th className="text-center p-3 text-sm font-medium text-zinc-400">
+                    <th className="text-center p-3 text-sm font-medium text-muted">
                       Forecasted Install
                     </th>
-                    <th className="text-center p-3 text-sm font-medium text-zinc-400">
+                    <th className="text-center p-3 text-sm font-medium text-muted">
                       Forecasted Inspection
                     </th>
-                    <th className="text-center p-3 text-sm font-medium text-zinc-400">
+                    <th className="text-center p-3 text-sm font-medium text-muted">
                       Forecasted PTO
                     </th>
                   </tr>
@@ -1225,8 +1225,8 @@ export default function PEDashboardPage() {
                   {filteredProjects.slice(0, 50).map((p, idx) => (
                     <tr
                       key={p.id}
-                      className={`border-b border-zinc-800/50 transition-colors hover:bg-zinc-800/30 ${
-                        idx % 2 === 0 ? "" : "bg-zinc-900/30"
+                      className={`border-b border-t-border/50 transition-colors hover:bg-surface-2/30 ${
+                        idx % 2 === 0 ? "" : "bg-surface/30"
                       }`}
                     >
                       <td className="p-3">
@@ -1238,28 +1238,28 @@ export default function PEDashboardPage() {
                         >
                           {displayName(p.name)}
                         </a>
-                        <div className="text-xs text-zinc-500">{p.stage}</div>
+                        <div className="text-xs text-muted">{p.stage}</div>
                       </td>
-                      <td className="p-3 text-sm text-zinc-400">
+                      <td className="p-3 text-sm text-muted">
                         {p.pb_location}
                       </td>
-                      <td className="p-3 text-right font-medium text-zinc-200">
+                      <td className="p-3 text-right font-medium text-foreground/90">
                         {formatCurrency(p.amount || 0)}
                       </td>
                       <td className="p-3 text-center">
-                        <div className="text-xs text-zinc-500 mb-1">
+                        <div className="text-xs text-muted mb-1">
                           {p.forecast_install}
                         </div>
                         <StatusBadge days={p.days_to_install} />
                       </td>
                       <td className="p-3 text-center">
-                        <div className="text-xs text-zinc-500 mb-1">
+                        <div className="text-xs text-muted mb-1">
                           {p.forecast_inspection}
                         </div>
                         <StatusBadge days={p.days_to_inspection} />
                       </td>
                       <td className="p-3 text-center">
-                        <div className="text-xs text-zinc-500 mb-1">
+                        <div className="text-xs text-muted mb-1">
                           {p.forecast_pto}
                         </div>
                         <StatusBadge days={p.days_to_pto} threshold={30} />
@@ -1270,12 +1270,12 @@ export default function PEDashboardPage() {
               </table>
             </div>
             {filteredProjects.length > 50 && (
-              <div className="p-3 text-center text-sm text-zinc-500 border-t border-zinc-800">
+              <div className="p-3 text-center text-sm text-muted border-t border-t-border">
                 Showing 50 of {filteredProjects.length} projects
               </div>
             )}
             {filteredProjects.length === 0 && (
-              <div className="p-8 text-center text-zinc-500">
+              <div className="p-8 text-center text-muted">
                 No projects match the current filters
               </div>
             )}

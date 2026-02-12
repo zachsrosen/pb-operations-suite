@@ -347,7 +347,7 @@ export default function EquipmentBacklogPage() {
   };
 
   const SortIcon = ({ field }: { field: typeof sortField }) => (
-    <span className="ml-1 text-zinc-600">
+    <span className="ml-1 text-muted/70">
       {sortField === field ? (sortDir === "asc" ? "\u25B2" : "\u25BC") : "\u25BC"}
     </span>
   );
@@ -432,11 +432,11 @@ export default function EquipmentBacklogPage() {
           accentColor="blue"
         />
         <ProjectSearchBar onSearch={setSearchQuery} />
-        <div className="ml-auto flex bg-zinc-800 rounded-lg p-0.5">
+        <div className="ml-auto flex bg-surface-2 rounded-lg p-0.5">
           <button
             onClick={() => setView("summary")}
             className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-              view === "summary" ? "bg-cyan-600 text-white" : "text-zinc-400 hover:text-white"
+              view === "summary" ? "bg-cyan-600 text-white" : "text-muted hover:text-foreground"
             }`}
           >
             Summary
@@ -444,7 +444,7 @@ export default function EquipmentBacklogPage() {
           <button
             onClick={() => setView("projects")}
             className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-              view === "projects" ? "bg-cyan-600 text-white" : "text-zinc-400 hover:text-white"
+              view === "projects" ? "bg-cyan-600 text-white" : "text-muted hover:text-foreground"
             }`}
           >
             Projects
@@ -465,9 +465,9 @@ export default function EquipmentBacklogPage() {
           { label: "EV Chargers", value: totals.totalEv.toLocaleString(), color: "text-pink-400" },
           { label: "Pipeline Value", value: formatMoney(totals.totalValue), color: "text-orange-400" },
         ].map((stat) => (
-          <div key={stat.label} className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-3 text-center">
+          <div key={stat.label} className="bg-surface/50 border border-t-border rounded-lg p-3 text-center">
             <div className={`text-xl font-bold ${stat.color}`}>{stat.value}</div>
-            <div className="text-xs text-zinc-500 mt-0.5">{stat.label}</div>
+            <div className="text-xs text-muted mt-0.5">{stat.label}</div>
           </div>
         ))}
       </div>
@@ -475,12 +475,12 @@ export default function EquipmentBacklogPage() {
       {view === "summary" ? (
         <>
           {/* Stage Breakdown */}
-          <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6 mb-6">
+          <div className="bg-surface/50 border border-t-border rounded-xl p-6 mb-6">
             <h2 className="text-lg font-semibold mb-4">Equipment by Stage</h2>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-zinc-500 text-left border-b border-zinc-800">
+                  <tr className="text-muted text-left border-b border-t-border">
                     <th className="pb-2 pr-4">Stage</th>
                     <th className="pb-2 pr-4 text-right">Projects</th>
                     <th className="pb-2 pr-4 text-right">kW DC</th>
@@ -494,7 +494,7 @@ export default function EquipmentBacklogPage() {
                 </thead>
                 <tbody>
                   {stageBreakdown.map(([stage, data]) => (
-                    <tr key={stage} className="border-b border-zinc-800/50 hover:bg-zinc-800/30">
+                    <tr key={stage} className="border-b border-t-border/50 hover:bg-surface-2/30">
                       <td className="py-2 pr-4">
                         <div className="flex items-center gap-2">
                           <span
@@ -504,14 +504,14 @@ export default function EquipmentBacklogPage() {
                           {stage}
                         </div>
                       </td>
-                      <td className="py-2 pr-4 text-right text-zinc-300">{data.count}</td>
+                      <td className="py-2 pr-4 text-right text-foreground/80">{data.count}</td>
                       <td className="py-2 pr-4 text-right text-orange-400">{Math.round(data.kwdc).toLocaleString()}</td>
                       <td className="py-2 pr-4 text-right text-amber-400">{Math.round(data.kwac).toLocaleString()}</td>
                       <td className="py-2 pr-4 text-right text-blue-400">{data.modules.toLocaleString()}</td>
                       <td className="py-2 pr-4 text-right text-purple-400">{data.inverters.toLocaleString()}</td>
                       <td className="py-2 pr-4 text-right text-emerald-400">{data.batteries.toLocaleString()}</td>
                       <td className="py-2 pr-4 text-right text-green-400">{Math.round(data.kwh).toLocaleString()}</td>
-                      <td className="py-2 text-right text-zinc-400">{formatMoney(data.value)}</td>
+                      <td className="py-2 text-right text-muted">{formatMoney(data.value)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -520,12 +520,12 @@ export default function EquipmentBacklogPage() {
           </div>
 
           {/* Location Breakdown */}
-          <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6 mb-6">
+          <div className="bg-surface/50 border border-t-border rounded-xl p-6 mb-6">
             <h2 className="text-lg font-semibold mb-4">Equipment by Location</h2>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-zinc-500 text-left border-b border-zinc-800">
+                  <tr className="text-muted text-left border-b border-t-border">
                     <th className="pb-2 pr-4">Location</th>
                     <th className="pb-2 pr-4 text-right">Projects</th>
                     <th className="pb-2 pr-4 text-right">kW DC</th>
@@ -539,16 +539,16 @@ export default function EquipmentBacklogPage() {
                 </thead>
                 <tbody>
                   {locationBreakdown.map(([location, data]) => (
-                    <tr key={location} className="border-b border-zinc-800/50 hover:bg-zinc-800/30">
-                      <td className="py-2 pr-4 text-zinc-300">{location}</td>
-                      <td className="py-2 pr-4 text-right text-zinc-300">{data.count}</td>
+                    <tr key={location} className="border-b border-t-border/50 hover:bg-surface-2/30">
+                      <td className="py-2 pr-4 text-foreground/80">{location}</td>
+                      <td className="py-2 pr-4 text-right text-foreground/80">{data.count}</td>
                       <td className="py-2 pr-4 text-right text-orange-400">{Math.round(data.kwdc).toLocaleString()}</td>
                       <td className="py-2 pr-4 text-right text-amber-400">{Math.round(data.kwac).toLocaleString()}</td>
                       <td className="py-2 pr-4 text-right text-blue-400">{data.modules.toLocaleString()}</td>
                       <td className="py-2 pr-4 text-right text-purple-400">{data.inverters.toLocaleString()}</td>
                       <td className="py-2 pr-4 text-right text-emerald-400">{data.batteries.toLocaleString()}</td>
                       <td className="py-2 pr-4 text-right text-green-400">{Math.round(data.kwh).toLocaleString()}</td>
-                      <td className="py-2 text-right text-zinc-400">{formatMoney(data.value)}</td>
+                      <td className="py-2 text-right text-muted">{formatMoney(data.value)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -559,10 +559,10 @@ export default function EquipmentBacklogPage() {
           {/* Equipment Breakdowns */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
             {/* Modules */}
-            <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6">
+            <div className="bg-surface/50 border border-t-border rounded-xl p-6">
               <h3 className="text-sm font-semibold text-blue-400 mb-3">Modules by Brand / Model</h3>
               {moduleSummary.length === 0 ? (
-                <p className="text-zinc-500 text-sm">No module data</p>
+                <p className="text-muted text-sm">No module data</p>
               ) : (
                 <div className="space-y-2">
                   {moduleSummary.map((m, i) => {
@@ -579,14 +579,14 @@ export default function EquipmentBacklogPage() {
                     return (
                       <div key={i} className="flex items-center justify-between text-sm">
                         <div className="truncate mr-2">
-                          <span className="text-zinc-300">{m.brand}</span>
+                          <span className="text-foreground/80">{m.brand}</span>
                           {m.model !== "Unknown" && (
-                            <span className="text-zinc-500 ml-1">{m.model}{wattageDisplay}</span>
+                            <span className="text-muted ml-1">{m.model}{wattageDisplay}</span>
                           )}
                         </div>
                         <div className="flex items-center gap-3 shrink-0">
                           <span className="text-blue-400 font-medium">{m.totalCount.toLocaleString()}</span>
-                          <span className="text-zinc-600 text-xs">{m.projects} jobs</span>
+                          <span className="text-muted/70 text-xs">{m.projects} jobs</span>
                         </div>
                       </div>
                     );
@@ -596,10 +596,10 @@ export default function EquipmentBacklogPage() {
             </div>
 
             {/* Inverters */}
-            <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6">
+            <div className="bg-surface/50 border border-t-border rounded-xl p-6">
               <h3 className="text-sm font-semibold text-purple-400 mb-3">Inverters by Brand / Model</h3>
               {inverterSummary.length === 0 ? (
-                <p className="text-zinc-500 text-sm">No inverter data</p>
+                <p className="text-muted text-sm">No inverter data</p>
               ) : (
                 <div className="space-y-2">
                   {inverterSummary.map((inv, i) => {
@@ -614,14 +614,14 @@ export default function EquipmentBacklogPage() {
                     return (
                       <div key={i} className="flex items-center justify-between text-sm">
                         <div className="truncate mr-2">
-                          <span className="text-zinc-300">{inv.brand}</span>
+                          <span className="text-foreground/80">{inv.brand}</span>
                           {inv.model !== "Unknown" && (
-                            <span className="text-zinc-500 ml-1">{inv.model}{kwacDisplay}</span>
+                            <span className="text-muted ml-1">{inv.model}{kwacDisplay}</span>
                           )}
                         </div>
                         <div className="flex items-center gap-3 shrink-0">
                           <span className="text-purple-400 font-medium">{inv.totalCount.toLocaleString()}</span>
-                          <span className="text-zinc-600 text-xs">{inv.projects} jobs</span>
+                          <span className="text-muted/70 text-xs">{inv.projects} jobs</span>
                         </div>
                       </div>
                     );
@@ -631,24 +631,24 @@ export default function EquipmentBacklogPage() {
             </div>
 
             {/* Batteries */}
-            <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6">
+            <div className="bg-surface/50 border border-t-border rounded-xl p-6">
               <h3 className="text-sm font-semibold text-emerald-400 mb-3">Batteries by Brand / Model</h3>
               {batterySummary.length === 0 ? (
-                <p className="text-zinc-500 text-sm">No battery data</p>
+                <p className="text-muted text-sm">No battery data</p>
               ) : (
                 <div className="space-y-2">
                   {batterySummary.map((bat, i) => (
                     <div key={i} className="flex items-center justify-between text-sm">
                       <div className="truncate mr-2">
-                        <span className="text-zinc-300">{bat.brand}</span>
+                        <span className="text-foreground/80">{bat.brand}</span>
                         {bat.model !== "Unknown" && (
-                          <span className="text-zinc-500 ml-1">{bat.model}</span>
+                          <span className="text-muted ml-1">{bat.model}</span>
                         )}
                       </div>
                       <div className="flex items-center gap-3 shrink-0">
                         <span className="text-emerald-400 font-medium">{bat.totalCount.toLocaleString()}</span>
-                        <span className="text-zinc-500 text-xs">{Math.round(bat.totalKwh).toLocaleString()} kWh</span>
-                        <span className="text-zinc-600 text-xs">{bat.projects} jobs</span>
+                        <span className="text-muted text-xs">{Math.round(bat.totalKwh).toLocaleString()} kWh</span>
+                        <span className="text-muted/70 text-xs">{bat.projects} jobs</span>
                       </div>
                     </div>
                   ))}
@@ -659,31 +659,31 @@ export default function EquipmentBacklogPage() {
         </>
       ) : (
         /* ---- Projects Table View ---- */
-        <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl overflow-hidden">
+        <div className="bg-surface/50 border border-t-border rounded-xl overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-zinc-500 text-left border-b border-zinc-800 bg-zinc-900/80">
-                  <th className="px-4 py-3 cursor-pointer hover:text-zinc-300" onClick={() => handleSort("name")}>
+                <tr className="text-muted text-left border-b border-t-border bg-surface/80">
+                  <th className="px-4 py-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("name")}>
                     Project <SortIcon field="name" />
                   </th>
-                  <th className="px-4 py-3 cursor-pointer hover:text-zinc-300" onClick={() => handleSort("location")}>
+                  <th className="px-4 py-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("location")}>
                     Location <SortIcon field="location" />
                   </th>
-                  <th className="px-4 py-3 cursor-pointer hover:text-zinc-300" onClick={() => handleSort("stage")}>
+                  <th className="px-4 py-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("stage")}>
                     Stage <SortIcon field="stage" />
                   </th>
-                  <th className="px-4 py-3 cursor-pointer hover:text-zinc-300 text-right" onClick={() => handleSort("systemSize")}>
+                  <th className="px-4 py-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("systemSize")}>
                     kW DC <SortIcon field="systemSize" />
                   </th>
                   <th className="px-4 py-3 text-right">kW AC</th>
-                  <th className="px-4 py-3 cursor-pointer hover:text-zinc-300 text-right" onClick={() => handleSort("modules")}>
+                  <th className="px-4 py-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("modules")}>
                     Modules <SortIcon field="modules" />
                   </th>
                   <th className="px-4 py-3 text-right">Inverters</th>
                   <th className="px-4 py-3 text-right">Batteries</th>
                   <th className="px-4 py-3 text-right">EV</th>
-                  <th className="px-4 py-3 cursor-pointer hover:text-zinc-300 text-right" onClick={() => handleSort("value")}>
+                  <th className="px-4 py-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("value")}>
                     Value <SortIcon field="value" />
                   </th>
                 </tr>
@@ -693,12 +693,12 @@ export default function EquipmentBacklogPage() {
                   const eq = p.equipment;
                   const wattageDisplay = eq?.modules?.wattage ? ` × ${eq.modules.wattage}W` : "";
                   return (
-                    <tr key={p.id} className="border-b border-zinc-800/50 hover:bg-zinc-800/30">
+                    <tr key={p.id} className="border-b border-t-border/50 hover:bg-surface-2/30">
                       <td className="px-4 py-2.5">
-                        <div className="font-medium text-zinc-200 truncate max-w-[220px]">{p.name}</div>
-                        <div className="text-xs text-zinc-500">{p.projectNumber}</div>
+                        <div className="font-medium text-foreground/90 truncate max-w-[220px]">{p.name}</div>
+                        <div className="text-xs text-muted">{p.projectNumber}</div>
                       </td>
-                      <td className="px-4 py-2.5 text-zinc-400">{p.pbLocation}</td>
+                      <td className="px-4 py-2.5 text-muted">{p.pbLocation}</td>
                       <td className="px-4 py-2.5">
                         <span
                           className="inline-flex items-center gap-1.5 text-xs"
@@ -707,7 +707,7 @@ export default function EquipmentBacklogPage() {
                             className="w-2 h-2 rounded-full"
                             style={{ backgroundColor: STAGE_COLORS[p.stage]?.hex || "#71717A" }}
                           />
-                          <span className="text-zinc-300">{p.stage}</span>
+                          <span className="text-foreground/80">{p.stage}</span>
                         </span>
                       </td>
                       <td className="px-4 py-2.5 text-right">
@@ -719,25 +719,25 @@ export default function EquipmentBacklogPage() {
                       <td className="px-4 py-2.5 text-right">
                         <div className="text-blue-400">{eq?.modules?.count || 0}{wattageDisplay}</div>
                         {eq?.modules?.brand && (
-                          <div className="text-xs text-zinc-600 truncate max-w-[120px]">{eq.modules.brand}</div>
+                          <div className="text-xs text-muted/70 truncate max-w-[120px]">{eq.modules.brand}</div>
                         )}
                       </td>
                       <td className="px-4 py-2.5 text-right">
                         <div className="text-purple-400">{eq?.inverter?.count || 0}</div>
                         {eq?.inverter?.brand && (
-                          <div className="text-xs text-zinc-600 truncate max-w-[120px]">{eq.inverter.brand}</div>
+                          <div className="text-xs text-muted/70 truncate max-w-[120px]">{eq.inverter.brand}</div>
                         )}
                       </td>
                       <td className="px-4 py-2.5 text-right">
                         <div className="text-emerald-400">{eq?.battery?.count || 0}</div>
                         {eq?.battery?.sizeKwh > 0 && (
-                          <div className="text-xs text-zinc-600">{eq.battery.sizeKwh} kWh</div>
+                          <div className="text-xs text-muted/70">{eq.battery.sizeKwh} kWh</div>
                         )}
                       </td>
                       <td className="px-4 py-2.5 text-right text-pink-400">
                         {eq?.evCount || 0}
                       </td>
-                      <td className="px-4 py-2.5 text-right text-zinc-400">
+                      <td className="px-4 py-2.5 text-right text-muted">
                         {formatMoney(p.amount)}
                       </td>
                     </tr>
@@ -745,7 +745,7 @@ export default function EquipmentBacklogPage() {
                 })}
                 {sortedProjects.length === 0 && (
                   <tr>
-                    <td colSpan={10} className="text-center py-12 text-zinc-500">
+                    <td colSpan={10} className="text-center py-12 text-muted">
                       No projects match the current filters
                     </td>
                   </tr>
@@ -757,7 +757,7 @@ export default function EquipmentBacklogPage() {
       )}
 
       {/* Pipeline Value Footer */}
-      <div className="mt-6 text-center text-sm text-zinc-500">
+      <div className="mt-6 text-center text-sm text-muted">
         Filtered pipeline value: <span className="text-orange-400 font-medium">{formatMoney(totals.totalValue)}</span>
         {filterLocations.length > 0 && (
           <span className="ml-2">

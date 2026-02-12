@@ -226,11 +226,11 @@ export default function AtRiskPage() {
   const filterBar = (
     <div className="flex flex-wrap gap-4 items-center">
       <div className="flex items-center gap-2">
-        <span className="text-sm text-zinc-400">Risk:</span>
+        <span className="text-sm text-muted">Risk:</span>
         <select
           value={filterRiskType}
           onChange={(e) => setFilterRiskType(e.target.value as RiskTypeFilter)}
-          className="bg-[#0a0a0f] border border-zinc-700 rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-red-500"
+          className="bg-background border border-t-border rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-red-500"
         >
           {riskTypes.map((t) => (
             <option key={t} value={t}>
@@ -240,11 +240,11 @@ export default function AtRiskPage() {
         </select>
       </div>
       <div className="flex items-center gap-2">
-        <span className="text-sm text-zinc-400">Location:</span>
+        <span className="text-sm text-muted">Location:</span>
         <select
           value={filterLocation}
           onChange={(e) => setFilterLocation(e.target.value)}
-          className="bg-[#0a0a0f] border border-zinc-700 rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-red-500"
+          className="bg-background border border-t-border rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-red-500"
         >
           {locations.map((loc) => (
             <option key={loc} value={loc}>
@@ -254,11 +254,11 @@ export default function AtRiskPage() {
         </select>
       </div>
       <div className="flex items-center gap-2">
-        <span className="text-sm text-zinc-400">Sort:</span>
+        <span className="text-sm text-muted">Sort:</span>
         <select
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value as SortOption)}
-          className="bg-[#0a0a0f] border border-zinc-700 rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-red-500"
+          className="bg-background border border-t-border rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-red-500"
         >
           <option value="severity">By Severity</option>
           <option value="amount">By Value</option>
@@ -303,7 +303,7 @@ export default function AtRiskPage() {
           <LiveIndicator label="Auto-Refresh" />
           <button
             onClick={refetch}
-            className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors"
+            className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg text-sm font-medium text-foreground transition-colors"
           >
             Refresh
           </button>
@@ -337,19 +337,19 @@ export default function AtRiskPage() {
           <div className="text-3xl font-bold text-yellow-400">{stats.warnings.length}</div>
           <div className="text-sm text-yellow-300">Warnings</div>
         </div>
-        <div className="bg-[#12121a] border border-zinc-800 rounded-lg p-4 animate-fadeIn">
-          <div className="text-3xl font-bold text-white">{filteredProjects.length}</div>
-          <div className="text-sm text-zinc-400">Total At-Risk</div>
+        <div className="bg-surface border border-t-border rounded-lg p-4 animate-fadeIn">
+          <div className="text-3xl font-bold text-foreground">{filteredProjects.length}</div>
+          <div className="text-sm text-muted">Total At-Risk</div>
         </div>
-        <div className="bg-[#12121a] border border-zinc-800 rounded-lg p-4 animate-fadeIn">
+        <div className="bg-surface border border-t-border rounded-lg p-4 animate-fadeIn">
           <div className="text-3xl font-bold text-purple-400">{formatCurrency(stats.totalValue)}</div>
-          <div className="text-sm text-zinc-400">Total Value</div>
+          <div className="text-sm text-muted">Total Value</div>
         </div>
       </div>
 
       {/* Risk Type Breakdown */}
-      <div className="bg-[#12121a] border border-zinc-800 rounded-lg p-4 mb-6">
-        <h3 className="text-sm font-medium text-zinc-400 mb-3">Risk Breakdown</h3>
+      <div className="bg-surface border border-t-border rounded-lg p-4 mb-6">
+        <h3 className="text-sm font-medium text-muted mb-3">Risk Breakdown</h3>
         <div className="flex flex-wrap gap-4">
           {Object.entries(stats.byRiskType)
             .sort((a, b) => b[1].count - a[1].count)
@@ -362,9 +362,9 @@ export default function AtRiskPage() {
                       : "bg-yellow-500"
                   }`}
                 />
-                <span className="text-sm text-zinc-300">{type}:</span>
-                <span className="text-sm font-medium text-white">{data.count}</span>
-                <span className="text-xs text-zinc-500">({formatMoney(data.value)})</span>
+                <span className="text-sm text-foreground/80">{type}:</span>
+                <span className="text-sm font-medium text-foreground">{data.count}</span>
+                <span className="text-xs text-muted">({formatMoney(data.value)})</span>
               </div>
             ))}
         </div>
@@ -384,7 +384,7 @@ export default function AtRiskPage() {
             <div className="flex items-start justify-between gap-4">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="text-xs text-zinc-500">#{idx + 1}</span>
+                  <span className="text-xs text-muted">#{idx + 1}</span>
                   <a
                     href={project.url}
                     target="_blank"
@@ -394,7 +394,7 @@ export default function AtRiskPage() {
                     {project.name.split("|")[0].trim()}
                   </a>
                 </div>
-                <div className="text-sm text-zinc-400 mb-2">
+                <div className="text-sm text-muted mb-2">
                   {project.pb_location} | {project.ahj} | {project.utility} | {project.stage}
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -402,16 +402,16 @@ export default function AtRiskPage() {
                 </div>
               </div>
               <div className="text-right flex-shrink-0">
-                <div className="text-xl font-bold text-white">{formatMoney(project.amount)}</div>
-                <div className="text-xs text-zinc-500">
+                <div className="text-xl font-bold text-foreground">{formatMoney(project.amount)}</div>
+                <div className="text-xs text-muted">
                   Risk Score: {project.riskScore.toFixed(0)}
                 </div>
               </div>
             </div>
 
-            <div className="mt-3 pt-3 border-t border-zinc-700/50 grid grid-cols-3 gap-4 text-sm">
+            <div className="mt-3 pt-3 border-t border-t-border/50 grid grid-cols-3 gap-4 text-sm">
               <div>
-                <div className="text-zinc-500">Forecast Install</div>
+                <div className="text-muted">Forecast Install</div>
                 <div className="text-white">
                   {project.forecast_install
                     ? new Date(project.forecast_install).toLocaleDateString()
@@ -419,7 +419,7 @@ export default function AtRiskPage() {
                 </div>
               </div>
               <div>
-                <div className="text-zinc-500">Forecast Inspection</div>
+                <div className="text-muted">Forecast Inspection</div>
                 <div className="text-white">
                   {project.forecast_inspection
                     ? new Date(project.forecast_inspection).toLocaleDateString()
@@ -427,7 +427,7 @@ export default function AtRiskPage() {
                 </div>
               </div>
               <div>
-                <div className="text-zinc-500">Forecast PTO</div>
+                <div className="text-muted">Forecast PTO</div>
                 <div className="text-white">
                   {project.forecast_pto
                     ? new Date(project.forecast_pto).toLocaleDateString()
@@ -441,14 +441,14 @@ export default function AtRiskPage() {
 
       {/* Empty state */}
       {filteredProjects.length === 0 && (
-        <div className="text-center py-12 text-zinc-500">
+        <div className="text-center py-12 text-muted">
           <div className="text-4xl mb-2">&#10003;</div>
           <div>No at-risk projects found with current filters</div>
         </div>
       )}
 
       {/* Footer */}
-      <div className="mt-8 text-center text-sm text-zinc-500">
+      <div className="mt-8 text-center text-sm text-muted">
         Data synced from HubSpot &middot; Auto-refreshes every 5 minutes
       </div>
     </DashboardShell>

@@ -115,10 +115,10 @@ export const MultiSelectFilter = memo(function MultiSelectFilter({
         className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm border transition-colors ${
           selected.length > 0
             ? accentClasses[accentColor] || accentClasses.indigo
-            : "bg-zinc-800 border-zinc-700 text-zinc-300 hover:border-zinc-600"
+            : "bg-surface-2 border-t-border text-foreground/80 hover:border-muted"
         }`}
       >
-        <span className="text-zinc-500 text-xs">{label}:</span>
+        <span className="text-muted text-xs">{label}:</span>
         <span className="font-medium">{displayText}</span>
         <svg
           className={`w-4 h-4 transition-transform ${isOpen ? "rotate-180" : ""}`}
@@ -132,30 +132,30 @@ export const MultiSelectFilter = memo(function MultiSelectFilter({
 
       {/* Dropdown */}
       {isOpen && (
-        <div className="absolute z-50 mt-1 w-72 max-h-96 overflow-auto bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl">
+        <div className="absolute z-50 mt-1 w-72 max-h-96 overflow-auto bg-surface border border-t-border rounded-lg shadow-card-lg">
           {/* Search */}
-          <div className="p-2 border-b border-zinc-800 sticky top-0 bg-zinc-900">
+          <div className="p-2 border-b border-t-border sticky top-0 bg-surface">
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search..."
-              className="w-full px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded text-sm focus:outline-none focus:border-zinc-600"
+              className="w-full px-3 py-1.5 bg-surface-2 border border-t-border rounded text-sm focus:outline-none focus:border-muted"
               autoFocus
             />
           </div>
 
           {/* Quick actions */}
-          <div className="flex gap-2 p-2 border-b border-zinc-800">
+          <div className="flex gap-2 p-2 border-b border-t-border">
             <button
               onClick={selectAll}
-              className="text-xs px-2 py-1 bg-zinc-800 hover:bg-zinc-700 rounded"
+              className="text-xs px-2 py-1 bg-surface-2 hover:bg-surface-elevated rounded"
             >
               Select All
             </button>
             <button
               onClick={clearAll}
-              className="text-xs px-2 py-1 bg-zinc-800 hover:bg-zinc-700 rounded"
+              className="text-xs px-2 py-1 bg-surface-2 hover:bg-surface-elevated rounded"
             >
               Clear All
             </button>
@@ -184,11 +184,11 @@ export const MultiSelectFilter = memo(function MultiSelectFilter({
                     {/* Group header */}
                     <button
                       onClick={() => selectGroup(filteredGroupOptions)}
-                      className="flex items-center gap-2 w-full px-2 py-1.5 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider hover:bg-zinc-800 rounded"
+                      className="flex items-center gap-2 w-full px-2 py-1.5 text-left text-xs font-semibold text-muted uppercase tracking-wider hover:bg-surface-2 rounded"
                     >
                       <span className={`w-3 h-3 border rounded-sm flex items-center justify-center ${
                         allSelected ? "bg-indigo-500 border-indigo-500" :
-                        someSelected ? "bg-indigo-500/50 border-indigo-500" : "border-zinc-600"
+                        someSelected ? "bg-indigo-500/50 border-indigo-500" : "border-muted"
                       }`}>
                         {(allSelected || someSelected) && (
                           <svg className="w-2 h-2 text-white" fill="currentColor" viewBox="0 0 20 20">
@@ -211,11 +211,11 @@ export const MultiSelectFilter = memo(function MultiSelectFilter({
                         <div key={subgroup.name} className="ml-3">
                           <button
                             onClick={() => selectGroup(filteredSubOptions)}
-                            className="flex items-center gap-2 w-full px-2 py-1 text-left text-xs text-zinc-500 hover:bg-zinc-800 rounded"
+                            className="flex items-center gap-2 w-full px-2 py-1 text-left text-xs text-muted hover:bg-surface-2 rounded"
                           >
                             <span className={`w-2.5 h-2.5 border rounded-sm flex items-center justify-center ${
                               subAllSelected ? "bg-indigo-500 border-indigo-500" :
-                              subSomeSelected ? "bg-indigo-500/50 border-indigo-500" : "border-zinc-600"
+                              subSomeSelected ? "bg-indigo-500/50 border-indigo-500" : "border-muted"
                             }`}>
                               {(subAllSelected || subSomeSelected) && (
                                 <svg className="w-1.5 h-1.5 text-white" fill="currentColor" viewBox="0 0 20 20">
@@ -230,10 +230,10 @@ export const MultiSelectFilter = memo(function MultiSelectFilter({
                             <button
                               key={option.value}
                               onClick={() => toggleOption(option.value)}
-                              className="flex items-center gap-2 w-full px-2 py-1 ml-3 text-left text-sm text-zinc-300 hover:bg-zinc-800 rounded"
+                              className="flex items-center gap-2 w-full px-2 py-1 ml-3 text-left text-sm text-foreground/80 hover:bg-surface-2 rounded"
                             >
                               <span className={`w-3 h-3 border rounded flex items-center justify-center ${
-                                selected.includes(option.value) ? "bg-indigo-500 border-indigo-500" : "border-zinc-600"
+                                selected.includes(option.value) ? "bg-indigo-500 border-indigo-500" : "border-muted"
                               }`}>
                                 {selected.includes(option.value) && (
                                   <svg className="w-2 h-2 text-white" fill="currentColor" viewBox="0 0 20 20">
@@ -253,10 +253,10 @@ export const MultiSelectFilter = memo(function MultiSelectFilter({
                       <button
                         key={option.value}
                         onClick={() => toggleOption(option.value)}
-                        className="flex items-center gap-2 w-full px-2 py-1 ml-3 text-left text-sm text-zinc-300 hover:bg-zinc-800 rounded"
+                        className="flex items-center gap-2 w-full px-2 py-1 ml-3 text-left text-sm text-foreground/80 hover:bg-surface-2 rounded"
                       >
                         <span className={`w-3 h-3 border rounded flex items-center justify-center ${
-                          selected.includes(option.value) ? "bg-indigo-500 border-indigo-500" : "border-zinc-600"
+                          selected.includes(option.value) ? "bg-indigo-500 border-indigo-500" : "border-muted"
                         }`}>
                           {selected.includes(option.value) && (
                             <svg className="w-2 h-2 text-white" fill="currentColor" viewBox="0 0 20 20">
@@ -276,10 +276,10 @@ export const MultiSelectFilter = memo(function MultiSelectFilter({
                 <button
                   key={option.value}
                   onClick={() => toggleOption(option.value)}
-                  className="flex items-center gap-2 w-full px-2 py-1.5 text-left text-sm text-zinc-300 hover:bg-zinc-800 rounded"
+                  className="flex items-center gap-2 w-full px-2 py-1.5 text-left text-sm text-foreground/80 hover:bg-surface-2 rounded"
                 >
                   <span className={`w-3 h-3 border rounded flex items-center justify-center ${
-                    selected.includes(option.value) ? "bg-indigo-500 border-indigo-500" : "border-zinc-600"
+                    selected.includes(option.value) ? "bg-indigo-500 border-indigo-500" : "border-muted"
                   }`}>
                     {selected.includes(option.value) && (
                       <svg className="w-2 h-2 text-white" fill="currentColor" viewBox="0 0 20 20">
@@ -325,7 +325,7 @@ export const ProjectSearchBar = memo(function ProjectSearchBar({
   return (
     <div className="relative flex-1 max-w-md">
       <svg
-        className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500"
+        className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted"
         fill="none"
         stroke="currentColor"
         viewBox="0 0 24 24"
@@ -342,12 +342,12 @@ export const ProjectSearchBar = memo(function ProjectSearchBar({
         value={query}
         onChange={handleChange}
         placeholder={placeholder}
-        className="w-full pl-10 pr-8 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:border-zinc-600 focus:ring-1 focus:ring-zinc-600"
+        className="w-full pl-10 pr-8 py-2 bg-surface-2 border border-t-border rounded-lg text-sm focus:outline-none focus:border-muted focus:ring-1 focus:ring-muted"
       />
       {query && (
         <button
           onClick={handleClear}
-          className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300"
+          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-foreground"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

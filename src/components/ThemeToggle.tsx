@@ -8,7 +8,7 @@ export function ThemeToggle() {
   return (
     <button
       onClick={toggleTheme}
-      className="p-1.5 rounded-lg border border-zinc-700 dark:border-zinc-800 hover:border-zinc-500 dark:hover:border-zinc-600 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-1"
+      className="p-1.5 rounded-lg border border-t-border hover:border-muted text-muted hover:text-foreground transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-1"
       title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
       aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
       aria-pressed={theme === "light"}

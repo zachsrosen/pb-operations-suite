@@ -384,7 +384,7 @@ function StatCard({
     accent: "border-orange-500 bg-orange-500/10",
     pe: "border-emerald-500 bg-emerald-500/10",
     danger: "border-red-500 bg-red-500/10",
-    default: "border-zinc-800 bg-[#12121a]",
+    default: "border-t-border bg-surface",
   };
   const cls = variantClasses[variant || "default"];
   const style = borderColor && !variant ? { borderColor } : undefined;
@@ -395,8 +395,8 @@ function StatCard({
       style={style}
     >
       <div className="text-3xl font-bold font-mono">{value}</div>
-      <div className="text-[0.7rem] text-zinc-500 mt-1">{label}</div>
-      {sub && <div className="text-[0.65rem] text-zinc-500 mt-0.5">{sub}</div>}
+      <div className="text-[0.7rem] text-muted mt-1">{label}</div>
+      {sub && <div className="text-[0.65rem] text-muted mt-0.5">{sub}</div>}
     </div>
   );
 }
@@ -421,7 +421,7 @@ function FilterBtn({
             ? peStyle
               ? "bg-emerald-500 border-emerald-500 text-black"
               : "bg-orange-500 border-orange-500 text-black"
-            : "bg-[#0a0a0f] border-zinc-800 text-zinc-300 hover:border-orange-500 hover:text-orange-500"
+            : "bg-background border-t-border text-foreground/80 hover:border-orange-500 hover:text-orange-500"
         }`}
     >
       {children}
@@ -533,11 +533,11 @@ function PipelineView({ projects }: { projects: Project[] }) {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-4 items-center bg-[#12121a] border border-zinc-800 rounded-xl p-4 mb-6">
+      <div className="flex flex-wrap gap-4 items-center bg-surface border border-t-border rounded-xl p-4 mb-6">
         <div className="flex items-center gap-2">
-          <span className="text-[0.7rem] text-zinc-500">Location:</span>
+          <span className="text-[0.7rem] text-muted">Location:</span>
           <select
-            className="bg-[#0a0a0f] border border-zinc-800 text-zinc-300 px-3 py-2 rounded-md text-xs focus:outline-none focus:border-orange-500"
+            className="bg-background border border-t-border text-foreground/80 px-3 py-2 rounded-md text-xs focus:outline-none focus:border-orange-500"
             value={filters.location}
             onChange={(e) => updateFilter("location", e.target.value)}
           >
@@ -550,7 +550,7 @@ function PipelineView({ projects }: { projects: Project[] }) {
           </select>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-[0.7rem] text-zinc-500">Type:</span>
+          <span className="text-[0.7rem] text-muted">Type:</span>
           <FilterBtn
             active={filters.pe === "all"}
             onClick={() => updateFilter("pe", "all")}
@@ -572,7 +572,7 @@ function PipelineView({ projects }: { projects: Project[] }) {
           </FilterBtn>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-[0.7rem] text-zinc-500">Status:</span>
+          <span className="text-[0.7rem] text-muted">Status:</span>
           <FilterBtn
             active={filters.status === "all"}
             onClick={() => updateFilter("status", "all")}
@@ -596,7 +596,7 @@ function PipelineView({ projects }: { projects: Project[] }) {
           <input
             type="text"
             placeholder="Search projects..."
-            className="bg-[#0a0a0f] border border-zinc-800 text-zinc-300 px-3 py-2 rounded-md text-xs w-52 focus:outline-none focus:border-orange-500"
+            className="bg-background border border-t-border text-foreground/80 px-3 py-2 rounded-md text-xs w-52 focus:outline-none focus:border-orange-500"
             value={filters.search}
             onChange={(e) => updateFilter("search", e.target.value)}
           />
@@ -604,9 +604,9 @@ function PipelineView({ projects }: { projects: Project[] }) {
       </div>
 
       {/* Table */}
-      <div className="bg-[#12121a] border border-zinc-800 rounded-xl overflow-hidden">
+      <div className="bg-surface border border-t-border rounded-xl overflow-hidden">
         {/* Header */}
-        <div className="hidden lg:grid grid-cols-[50px_2fr_1fr_100px_100px_100px_100px_80px_120px] gap-2 px-4 py-3 bg-[#0a0a0f] border-b border-zinc-800 text-[0.7rem] font-semibold text-zinc-500">
+        <div className="hidden lg:grid grid-cols-[50px_2fr_1fr_100px_100px_100px_100px_80px_120px] gap-2 px-4 py-3 bg-background border-b border-t-border text-[0.7rem] font-semibold text-muted">
           <div>#</div>
           <div>Project</div>
           <div>Location / AHJ</div>
@@ -635,11 +635,11 @@ function PipelineView({ projects }: { projects: Project[] }) {
             return (
               <div
                 key={p.id}
-                className={`grid grid-cols-1 lg:grid-cols-[50px_2fr_1fr_100px_100px_100px_100px_80px_120px] gap-2 px-4 py-3 border-b border-zinc-800 text-[0.75rem] items-center transition-colors hover:bg-[#1a1a24] ${
+                className={`grid grid-cols-1 lg:grid-cols-[50px_2fr_1fr_100px_100px_100px_100px_80px_120px] gap-2 px-4 py-3 border-b border-t-border text-[0.75rem] items-center transition-colors hover:bg-surface-elevated ${
                   p.is_participate_energy ? "border-l-[3px] border-l-emerald-500" : ""
                 } ${isOverdue ? "bg-red-500/5" : ""}`}
               >
-                <div className="text-zinc-500">{i + 1}</div>
+                <div className="text-muted">{i + 1}</div>
                 <div>
                   <div className="flex items-center gap-1.5 flex-wrap">
                     {p.is_participate_energy && (
@@ -661,11 +661,11 @@ function PipelineView({ projects }: { projects: Project[] }) {
                       {p.name.split("|")[0].trim()}
                     </a>
                   </div>
-                  <div className="text-[0.65rem] text-zinc-500">{p.stage}</div>
+                  <div className="text-[0.65rem] text-muted">{p.stage}</div>
                 </div>
                 <div>
                   <div>{p.pb_location}</div>
-                  <div className="text-[0.65rem] text-zinc-500">
+                  <div className="text-[0.65rem] text-muted">
                     {p.ahj || "-"}
                   </div>
                 </div>
@@ -688,7 +688,7 @@ function PipelineView({ projects }: { projects: Project[] }) {
                   {formatDays(p.days_to_pto, p.pto_granted)}
                 </div>
                 <div>
-                  <div className="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                  <div className="w-full h-1.5 bg-surface-2 rounded-full overflow-hidden">
                     <div
                       className="h-full rounded-full transition-all"
                       style={{
@@ -697,7 +697,7 @@ function PipelineView({ projects }: { projects: Project[] }) {
                       }}
                     />
                   </div>
-                  <div className="text-[0.6rem] text-zinc-500 mt-0.5">
+                  <div className="text-[0.6rem] text-muted mt-0.5">
                     {p.priority_score.toFixed(0)}
                   </div>
                 </div>
@@ -705,7 +705,7 @@ function PipelineView({ projects }: { projects: Project[] }) {
                   {p.is_schedulable && (
                     <Link
                       href="/dashboards/scheduler"
-                      className="text-[0.65rem] px-2 py-1 rounded-md border border-zinc-800 text-zinc-300 hover:border-orange-500 hover:text-orange-500 transition-all"
+                      className="text-[0.65rem] px-2 py-1 rounded-md border border-t-border text-foreground/80 hover:border-orange-500 hover:text-orange-500 transition-all"
                       onMouseEnter={() => prefetchDashboard("scheduler")}
                     >
                       Schedule
@@ -716,7 +716,7 @@ function PipelineView({ projects }: { projects: Project[] }) {
             );
           })}
           {filtered.length === 0 && (
-            <div className="p-8 text-center text-zinc-500 text-sm">
+            <div className="p-8 text-center text-muted text-sm">
               No projects match the current filters.
             </div>
           )}
@@ -933,12 +933,12 @@ function RevenueView({ projects }: { projects: Project[] }) {
       </div>
 
       {/* Revenue by Stage */}
-      <div className="bg-[#12121a] border border-zinc-800 rounded-xl p-5 mt-6">
+      <div className="bg-surface border border-t-border rounded-xl p-5 mt-6">
         <h3 className="text-base font-semibold mb-4 text-orange-500">
           Revenue by Deal Stage
         </h3>
         <div>
-          <div className="grid grid-cols-[2fr_1fr_1fr_1fr] py-3 border-b border-zinc-800 font-semibold text-[0.7rem] text-zinc-500 uppercase tracking-wider">
+          <div className="grid grid-cols-[2fr_1fr_1fr_1fr] py-3 border-b border-t-border font-semibold text-[0.7rem] text-muted uppercase tracking-wider">
             <div>Stage</div>
             <div className="text-right">Projects</div>
             <div className="text-right">Value</div>
@@ -951,15 +951,15 @@ function RevenueView({ projects }: { projects: Project[] }) {
             return (
               <div
                 key={stage}
-                className="grid grid-cols-[2fr_1fr_1fr_1fr] py-3 border-b border-zinc-800 items-center text-sm"
+                className="grid grid-cols-[2fr_1fr_1fr_1fr] py-3 border-b border-t-border items-center text-sm"
               >
                 <div className="font-medium">{stage}</div>
-                <div className="text-right text-zinc-500 text-sm">{data.count}</div>
+                <div className="text-right text-muted text-sm">{data.count}</div>
                 <div className="text-right font-mono font-semibold text-orange-500">
                   {formatCurrency(data.value)}
                 </div>
                 <div>
-                  <div className="h-2 bg-[#0a0a0f] rounded overflow-hidden">
+                  <div className="h-2 bg-background rounded overflow-hidden">
                     <div
                       className="h-full rounded transition-all"
                       style={{ width: `${pct}%`, background: color }}
@@ -969,7 +969,7 @@ function RevenueView({ projects }: { projects: Project[] }) {
               </div>
             );
           })}
-          <div className="grid grid-cols-[2fr_1fr_1fr_1fr] py-3 font-bold bg-[#0a0a0f] rounded-lg mt-2 px-3">
+          <div className="grid grid-cols-[2fr_1fr_1fr_1fr] py-3 font-bold bg-background rounded-lg mt-2 px-3">
             <div>Total</div>
             <div className="text-right">{projects.length}</div>
             <div className="text-right font-mono text-orange-500">
@@ -981,37 +981,37 @@ function RevenueView({ projects }: { projects: Project[] }) {
       </div>
 
       {/* Backlog Forecasted Revenue */}
-      <div className="bg-[#12121a] border border-emerald-500 rounded-xl p-5 mt-6">
+      <div className="bg-surface border border-emerald-500 rounded-xl p-5 mt-6">
         <h3 className="text-base font-semibold mb-1 text-emerald-500">
           Backlog Forecasted Revenue
         </h3>
-        <p className="text-xs text-zinc-500 mb-4">
+        <p className="text-xs text-muted mb-4">
           Revenue from RTB, RTB-Blocked, and pre-construction stages based on forecasted install dates
         </p>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div className="bg-[#0a0a0f] p-4 rounded-lg text-center">
+          <div className="bg-background p-4 rounded-lg text-center">
             <div className="text-2xl font-bold font-mono text-emerald-500">
               {formatCurrency(backlogData.totalBacklogValue, "M")}
             </div>
-            <div className="text-[0.7rem] text-zinc-500">Total Backlog Value</div>
+            <div className="text-[0.7rem] text-muted">Total Backlog Value</div>
           </div>
-          <div className="bg-[#0a0a0f] p-4 rounded-lg text-center">
+          <div className="bg-background p-4 rounded-lg text-center">
             <div className="text-2xl font-bold font-mono">
               {backlogData.totalBacklogCount}
             </div>
-            <div className="text-[0.7rem] text-zinc-500">Backlog Projects</div>
+            <div className="text-[0.7rem] text-muted">Backlog Projects</div>
           </div>
-          <div className="bg-[#0a0a0f] p-4 rounded-lg text-center">
+          <div className="bg-background p-4 rounded-lg text-center">
             <div className="text-2xl font-bold font-mono text-red-500">
               {formatCurrency(backlogData.overdueValue, "M")}
             </div>
-            <div className="text-[0.7rem] text-zinc-500">Overdue (Past Forecast)</div>
+            <div className="text-[0.7rem] text-muted">Overdue (Past Forecast)</div>
           </div>
         </div>
 
         <div className="text-sm">
-          <div className="grid grid-cols-[1.2fr_1fr_1fr_80px] py-3 border-b border-zinc-800 font-semibold text-[0.7rem] text-zinc-500">
+          <div className="grid grid-cols-[1.2fr_1fr_1fr_80px] py-3 border-b border-t-border font-semibold text-[0.7rem] text-muted">
             <div>Forecasted Month</div>
             <div className="text-right">Projects</div>
             <div className="text-right">Revenue</div>
@@ -1031,14 +1031,14 @@ function RevenueView({ projects }: { projects: Project[] }) {
             return (
               <div
                 key={period.key}
-                className={`grid grid-cols-[1.2fr_1fr_1fr_80px] py-3 border-b border-zinc-800 items-center text-sm ${
+                className={`grid grid-cols-[1.2fr_1fr_1fr_80px] py-3 border-b border-t-border items-center text-sm ${
                   isOverdue ? "bg-red-500/10" : ""
                 }`}
               >
                 <div className={`font-medium ${isOverdue ? "text-red-500" : ""}`}>
                   {period.label}
                 </div>
-                <div className="text-right text-zinc-500">{period.count}</div>
+                <div className="text-right text-muted">{period.count}</div>
                 <div
                   className={`text-right font-mono font-semibold ${
                     isOverdue ? "text-red-500" : "text-emerald-500"
@@ -1048,7 +1048,7 @@ function RevenueView({ projects }: { projects: Project[] }) {
                 </div>
                 <div>
                   <button
-                    className="text-[0.6rem] px-1.5 py-0.5 rounded border border-zinc-800 text-zinc-300 hover:border-orange-500 hover:text-orange-500"
+                    className="text-[0.6rem] px-1.5 py-0.5 rounded border border-t-border text-foreground/80 hover:border-orange-500 hover:text-orange-500"
                     onClick={() =>
                       setExpandedBacklog((prev) => ({
                         ...prev,
@@ -1059,7 +1059,7 @@ function RevenueView({ projects }: { projects: Project[] }) {
                     {expandedBacklog[period.key] ? "-" : "+"}
                   </button>
                   {expandedBacklog[period.key] && (
-                    <div className="text-[0.7rem] text-zinc-500 mt-1">
+                    <div className="text-[0.7rem] text-muted mt-1">
                       <div className="mb-1">
                         <strong>By Stage:</strong> {stageBreakdown || "N/A"}
                       </div>
@@ -1078,12 +1078,12 @@ function RevenueView({ projects }: { projects: Project[] }) {
       {/* Location Revenue + Timeline */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
         {/* By Location */}
-        <div className="bg-[#12121a] border border-zinc-800 rounded-xl p-5">
+        <div className="bg-surface border border-t-border rounded-xl p-5">
           <h3 className="text-base font-semibold mb-4 text-orange-500">
             Scheduled Revenue by Location
           </h3>
           <div className="text-sm">
-            <div className="grid grid-cols-[1.5fr_1fr_1fr_1fr_1fr] py-2 font-semibold text-[0.7rem] text-zinc-500 uppercase border-b border-zinc-800">
+            <div className="grid grid-cols-[1.5fr_1fr_1fr_1fr_1fr] py-2 font-semibold text-[0.7rem] text-muted uppercase border-b border-t-border">
               <div>Location</div>
               <div className="text-right">Projects</div>
               <div className="text-right">Total</div>
@@ -1095,10 +1095,10 @@ function RevenueView({ projects }: { projects: Project[] }) {
               return (
                 <div
                   key={loc}
-                  className="grid grid-cols-[1.5fr_1fr_1fr_1fr_1fr] py-2.5 border-b border-zinc-800 text-sm"
+                  className="grid grid-cols-[1.5fr_1fr_1fr_1fr_1fr] py-2.5 border-b border-t-border text-sm"
                 >
                   <div className="font-medium">{loc}</div>
-                  <div className="text-right text-zinc-500">{data.count}</div>
+                  <div className="text-right text-muted">{data.count}</div>
                   <div className="text-right font-mono font-semibold text-orange-500">
                     {formatCurrency(data.value)}
                   </div>
@@ -1115,7 +1115,7 @@ function RevenueView({ projects }: { projects: Project[] }) {
         </div>
 
         {/* Timeline */}
-        <div className="bg-[#12121a] border border-zinc-800 rounded-xl p-5">
+        <div className="bg-surface border border-t-border rounded-xl p-5">
           <h3 className="text-base font-semibold mb-4 text-orange-500">
             Scheduled Revenue Timeline
           </h3>
@@ -1134,7 +1134,7 @@ function RevenueView({ projects }: { projects: Project[] }) {
             </FilterBtn>
           </div>
           <div className="text-sm max-h-[400px] overflow-y-auto">
-            <div className="grid grid-cols-[1.2fr_1fr_1fr_80px] py-3 font-semibold text-[0.7rem] text-zinc-500 border-b border-zinc-800">
+            <div className="grid grid-cols-[1.2fr_1fr_1fr_80px] py-3 font-semibold text-[0.7rem] text-muted border-b border-t-border">
               <div>Period</div>
               <div className="text-right">Projects</div>
               <div className="text-right">Revenue</div>
@@ -1149,16 +1149,16 @@ function RevenueView({ projects }: { projects: Project[] }) {
               return (
                 <div
                   key={idx}
-                  className="grid grid-cols-[1.2fr_1fr_1fr_80px] py-3 border-b border-zinc-800 items-center text-sm"
+                  className="grid grid-cols-[1.2fr_1fr_1fr_80px] py-3 border-b border-t-border items-center text-sm"
                 >
                   <div className="font-medium">{period.label}</div>
-                  <div className="text-right text-zinc-500">{period.count}</div>
+                  <div className="text-right text-muted">{period.count}</div>
                   <div className="text-right font-mono font-semibold text-orange-500">
                     {formatCurrency(period.total)}
                   </div>
                   <div>
                     <button
-                      className="text-[0.6rem] px-1.5 py-0.5 rounded border border-zinc-800 text-zinc-300 hover:border-orange-500 hover:text-orange-500"
+                      className="text-[0.6rem] px-1.5 py-0.5 rounded border border-t-border text-foreground/80 hover:border-orange-500 hover:text-orange-500"
                       onClick={() =>
                         setExpandedTimeline((prev) => ({
                           ...prev,
@@ -1169,7 +1169,7 @@ function RevenueView({ projects }: { projects: Project[] }) {
                       {expandedTimeline[idx] ? "-" : "+"}
                     </button>
                     {expandedTimeline[idx] && (
-                      <div className="text-[0.7rem] text-zinc-500 mt-1">
+                      <div className="text-[0.7rem] text-muted mt-1">
                         {locationBreakdown || "No scheduled installs"}
                       </div>
                     )}
@@ -1177,7 +1177,7 @@ function RevenueView({ projects }: { projects: Project[] }) {
                 </div>
               );
             })}
-            <div className="grid grid-cols-[1.2fr_1fr_1fr_80px] py-3 font-bold bg-[#0a0a0f] rounded-lg mt-2 px-3">
+            <div className="grid grid-cols-[1.2fr_1fr_1fr_80px] py-3 font-bold bg-background rounded-lg mt-2 px-3">
               <div>Total</div>
               <div className="text-right">
                 {timelineData.reduce((s, p) => s + p.count, 0)}
@@ -1314,13 +1314,13 @@ function MilestoneRevenueSection({
       {/* Header with toggle */}
       <div className="flex items-center justify-between">
         <h3 className="text-base font-bold">Milestone Revenue Breakdown</h3>
-        <div className="flex gap-1 bg-zinc-800 rounded-lg p-0.5">
+        <div className="flex gap-1 bg-surface-2 rounded-lg p-0.5">
           <button
             onClick={() => setRevenueViewMode("weekly")}
             className={`px-3 py-1 text-xs rounded-md transition-colors ${
               revenueViewMode === "weekly"
                 ? "bg-orange-500 text-white"
-                : "text-zinc-400 hover:text-zinc-200"
+                : "text-muted hover:text-foreground/90"
             }`}
           >
             Weekly
@@ -1330,7 +1330,7 @@ function MilestoneRevenueSection({
             className={`px-3 py-1 text-xs rounded-md transition-colors ${
               revenueViewMode === "monthly"
                 ? "bg-orange-500 text-white"
-                : "text-zinc-400 hover:text-zinc-200"
+                : "text-muted hover:text-foreground/90"
             }`}
           >
             Monthly
@@ -1343,7 +1343,7 @@ function MilestoneRevenueSection({
         {pipelineStrength.map((item) => (
           <div
             key={item.label}
-            className={`rounded-lg border p-3 ${colorMap[item.color] || "bg-zinc-800 border-zinc-700"}`}
+            className={`rounded-lg border p-3 ${colorMap[item.color] || "bg-surface-2 border-t-border"}`}
           >
             <div className="text-[0.65rem] font-medium opacity-80">{item.label}</div>
             <div className="text-xl font-bold mt-1">{item.count}</div>
@@ -1356,12 +1356,12 @@ function MilestoneRevenueSection({
       {milestoneData.map(({ config, periodData, maxRevenue }) => (
         <div
           key={config.title}
-          className={`bg-[#12121a] rounded-lg border border-zinc-800 ${config.borderColor} border-l-4 overflow-hidden`}
+          className={`bg-surface rounded-lg border border-t-border ${config.borderColor} border-l-4 overflow-hidden`}
         >
           {/* Table Header */}
           <div className={`${config.headerBg} px-4 py-2.5 flex items-center justify-between`}>
             <span className="text-sm font-bold">{config.title}</span>
-            <span className="text-xs text-zinc-400">
+            <span className="text-xs text-muted">
               {periodData.reduce((s, d) => s + d.count, 0)} total &middot;{" "}
               {formatRevenueShort(periodData.reduce((s, d) => s + d.revenue, 0))}
             </span>
@@ -1371,12 +1371,12 @@ function MilestoneRevenueSection({
           <div className="overflow-x-auto">
             <div className="min-w-[600px]">
               {/* Period labels */}
-              <div className="grid gap-px px-4 py-2 border-b border-zinc-800" style={{ gridTemplateColumns: `repeat(${periods.length}, 1fr)` }}>
+              <div className="grid gap-px px-4 py-2 border-b border-t-border" style={{ gridTemplateColumns: `repeat(${periods.length}, 1fr)` }}>
                 {periods.map((p, i) => (
                   <div
                     key={i}
                     className={`text-[0.6rem] text-center ${
-                      p.isCurrent ? "text-orange-400 font-bold" : p.isPast ? "text-zinc-600" : "text-zinc-400"
+                      p.isCurrent ? "text-orange-400 font-bold" : p.isPast ? "text-muted/70" : "text-muted"
                     }`}
                   >
                     {p.label}
@@ -1390,7 +1390,7 @@ function MilestoneRevenueSection({
                   <div
                     key={i}
                     className={`text-center text-sm font-bold ${
-                      periods[i].isCurrent ? "text-orange-400" : periods[i].isPast ? "text-zinc-600" : "text-zinc-200"
+                      periods[i].isCurrent ? "text-orange-400" : periods[i].isPast ? "text-muted/70" : "text-foreground/90"
                     }`}
                   >
                     {d.count || "—"}
@@ -1404,7 +1404,7 @@ function MilestoneRevenueSection({
                   <div
                     key={i}
                     className={`text-center text-[0.6rem] font-mono ${
-                      periods[i].isPast ? "text-zinc-600" : "text-zinc-400"
+                      periods[i].isPast ? "text-muted/70" : "text-muted"
                     }`}
                   >
                     {d.revenue > 0 ? formatRevenueShort(d.revenue) : "—"}
@@ -1416,7 +1416,7 @@ function MilestoneRevenueSection({
               <div className="grid gap-px px-4 py-2 pb-3" style={{ gridTemplateColumns: `repeat(${periods.length}, 1fr)` }}>
                 {periodData.map((d, i) => (
                   <div key={i} className="flex justify-center">
-                    <div className="w-full max-w-[40px] h-6 bg-zinc-800 rounded-sm overflow-hidden relative">
+                    <div className="w-full max-w-[40px] h-6 bg-surface-2 rounded-sm overflow-hidden relative">
                       <div
                         className={`absolute bottom-0 w-full rounded-sm transition-all ${config.barColor} ${
                           periods[i].isPast ? "opacity-40" : ""
@@ -1481,7 +1481,7 @@ function CapacityView({
         <div className="text-base font-semibold text-orange-500 mb-3">
           AI Capacity Optimizer
         </div>
-        <p className="text-xs text-zinc-500 mb-4">
+        <p className="text-xs text-muted mb-4">
           Analyze forecasted installs vs. available crew capacity across all locations
         </p>
         <button
@@ -1496,25 +1496,25 @@ function CapacityView({
               <div className="text-2xl font-bold font-mono text-red-500">
                 {optStats.totalGap}
               </div>
-              <div className="text-[0.65rem] text-zinc-500">Days Over Capacity</div>
+              <div className="text-[0.65rem] text-muted">Days Over Capacity</div>
             </div>
             <div className="text-center">
               <div className="text-2xl font-bold font-mono text-yellow-500">
                 {optStats.overCapacity}
               </div>
-              <div className="text-[0.65rem] text-zinc-500">Months Overloaded</div>
+              <div className="text-[0.65rem] text-muted">Months Overloaded</div>
             </div>
             <div className="text-center">
               <div className="text-2xl font-bold font-mono text-emerald-500">
                 {optStats.underCapacity}
               </div>
-              <div className="text-[0.65rem] text-zinc-500">Months OK</div>
+              <div className="text-[0.65rem] text-muted">Months OK</div>
             </div>
             <div className="text-center">
               <div className="text-2xl font-bold font-mono">
                 {optStats.locationCount}
               </div>
-              <div className="text-[0.65rem] text-zinc-500">Locations</div>
+              <div className="text-[0.65rem] text-muted">Locations</div>
             </div>
           </div>
         )}
@@ -1532,11 +1532,11 @@ function CapacityView({
           return (
             <div
               key={location}
-              className="bg-[#12121a] border border-zinc-800 rounded-xl p-5"
+              className="bg-surface border border-t-border rounded-xl p-5"
             >
               <div className="flex justify-between items-center mb-4">
                 <div className="text-base font-semibold">{location}</div>
-                <div className="text-[0.7rem] text-zinc-500">
+                <div className="text-[0.7rem] text-muted">
                   {cap.crews.length} crew(s) - {cap.monthly_capacity} days/mo
                 </div>
               </div>
@@ -1568,21 +1568,21 @@ function CapacityView({
                           style={{ height: `${forecastPct}%`, minHeight: forecast > 0 ? "4px" : "0" }}
                           title={`${forecast} days forecasted`}
                         />
-                        <div className="text-[0.6rem] text-zinc-500 mt-1">
+                        <div className="text-[0.6rem] text-muted mt-1">
                           {k.substring(5)}
                         </div>
                       </div>
                     );
                   })
                 ) : (
-                  <div className="flex-1 flex items-center justify-center text-zinc-600 text-xs">
+                  <div className="flex-1 flex items-center justify-center text-muted/70 text-xs">
                     No forecast data
                   </div>
                 )}
               </div>
 
               {/* Legend */}
-              <div className="flex gap-4 justify-center mb-4 text-[0.6rem] text-zinc-500">
+              <div className="flex gap-4 justify-center mb-4 text-[0.6rem] text-muted">
                 <div className="flex items-center gap-1">
                   <div className="w-3 h-3 rounded-sm bg-blue-500/70" />
                   Forecasted
@@ -1595,21 +1595,21 @@ function CapacityView({
 
               {/* Stats */}
               <div className="grid grid-cols-3 gap-2">
-                <div className="text-center p-2 bg-[#0a0a0f] rounded-md">
+                <div className="text-center p-2 bg-background rounded-md">
                   <div className="text-xl font-bold font-mono">{cap.total_projects}</div>
-                  <div className="text-[0.6rem] text-zinc-500">Projects</div>
+                  <div className="text-[0.6rem] text-muted">Projects</div>
                 </div>
-                <div className="text-center p-2 bg-[#0a0a0f] rounded-md">
+                <div className="text-center p-2 bg-background rounded-md">
                   <div className="text-xl font-bold font-mono text-emerald-500">
                     {cap.rtb_count}
                   </div>
-                  <div className="text-[0.6rem] text-zinc-500">RTB</div>
+                  <div className="text-[0.6rem] text-muted">RTB</div>
                 </div>
-                <div className="text-center p-2 bg-[#0a0a0f] rounded-md">
+                <div className="text-center p-2 bg-background rounded-md">
                   <div className="text-xl font-bold font-mono text-emerald-500">
                     {cap.pe_count}
                   </div>
-                  <div className="text-[0.6rem] text-zinc-500">PE Projects</div>
+                  <div className="text-[0.6rem] text-muted">PE Projects</div>
                 </div>
               </div>
             </div>
@@ -1728,7 +1728,7 @@ function PEView({ projects }: { projects: Project[] }) {
       {/* Dashboard Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Inspection Milestones */}
-        <div className="bg-[#12121a] border border-emerald-500 rounded-xl p-5">
+        <div className="bg-surface border border-emerald-500 rounded-xl p-5">
           <div className="text-sm font-semibold text-emerald-500 mb-4 flex items-center gap-2">
             Inspection Complete (Milestone 1)
           </div>
@@ -1737,13 +1737,13 @@ function PEView({ projects }: { projects: Project[] }) {
               inspProjects.map((p) => (
                 <div
                   key={p.id}
-                  className="flex justify-between items-center p-2.5 bg-[#0a0a0f] rounded-md mb-1.5"
+                  className="flex justify-between items-center p-2.5 bg-background rounded-md mb-1.5"
                 >
                   <div>
                     <div className="font-semibold text-[0.8rem]">
                       {p.name.split("|")[1]?.trim() || p.name}
                     </div>
-                    <div className="text-[0.65rem] text-zinc-500">
+                    <div className="text-[0.65rem] text-muted">
                       {p.pb_location} - {p.forecast_inspection || "No date"}
                     </div>
                   </div>
@@ -1755,13 +1755,13 @@ function PEView({ projects }: { projects: Project[] }) {
                 </div>
               ))
             ) : (
-              <div className="text-zinc-500 text-xs">No upcoming inspections</div>
+              <div className="text-muted text-xs">No upcoming inspections</div>
             )}
           </div>
         </div>
 
         {/* PTO Milestones */}
-        <div className="bg-[#12121a] border border-emerald-500 rounded-xl p-5">
+        <div className="bg-surface border border-emerald-500 rounded-xl p-5">
           <div className="text-sm font-semibold text-emerald-500 mb-4 flex items-center gap-2">
             Project Complete / PTO (Milestone 2)
           </div>
@@ -1770,13 +1770,13 @@ function PEView({ projects }: { projects: Project[] }) {
               ptoProjects.map((p) => (
                 <div
                   key={p.id}
-                  className="flex justify-between items-center p-2.5 bg-[#0a0a0f] rounded-md mb-1.5"
+                  className="flex justify-between items-center p-2.5 bg-background rounded-md mb-1.5"
                 >
                   <div>
                     <div className="font-semibold text-[0.8rem]">
                       {p.name.split("|")[1]?.trim() || p.name}
                     </div>
-                    <div className="text-[0.65rem] text-zinc-500">
+                    <div className="text-[0.65rem] text-muted">
                       {p.pb_location} - {p.forecast_pto || "No date"}
                     </div>
                   </div>
@@ -1788,17 +1788,17 @@ function PEView({ projects }: { projects: Project[] }) {
                 </div>
               ))
             ) : (
-              <div className="text-zinc-500 text-xs">No upcoming PTO</div>
+              <div className="text-muted text-xs">No upcoming PTO</div>
             )}
           </div>
         </div>
 
         {/* Export */}
-        <div className="bg-[#12121a] border border-emerald-500 rounded-xl p-5 lg:col-span-2">
+        <div className="bg-surface border border-emerald-500 rounded-xl p-5 lg:col-span-2">
           <div className="text-sm font-semibold text-emerald-500 mb-4 flex items-center gap-2">
             Export for Participate Energy
           </div>
-          <p className="text-xs text-zinc-500 mb-4">
+          <p className="text-xs text-muted mb-4">
             Generate reports with forecasted and scheduled dates for PE submission
           </p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1853,7 +1853,7 @@ function AlertsView({ alerts }: { alerts: Alert[] }) {
         {alerts.slice(0, 20).map((a, i) => (
           <div
             key={i}
-            className={`bg-[#12121a] border rounded-lg p-4 ${
+            className={`bg-surface border rounded-lg p-4 ${
               a.type === "danger" ? "border-red-500" : "border-yellow-500"
             }`}
           >
@@ -1867,7 +1867,7 @@ function AlertsView({ alerts }: { alerts: Alert[] }) {
               </span>
               <span className="font-semibold">{a.title}</span>
             </div>
-            <div className="text-sm text-zinc-500">{a.message}</div>
+            <div className="text-sm text-muted">{a.message}</div>
             {a.project && (
               <a
                 href={a.project.url}
@@ -1881,7 +1881,7 @@ function AlertsView({ alerts }: { alerts: Alert[] }) {
           </div>
         ))}
         {alerts.length === 0 && (
-          <div className="text-center text-zinc-500 text-sm py-8">
+          <div className="text-center text-muted text-sm py-8">
             No alerts at this time.
           </div>
         )}
@@ -1995,14 +1995,14 @@ export default function CommandCenterPage() {
   // Wait for access check before rendering
   if (!accessChecked) {
     return (
-      <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
-        <div className="text-zinc-400 text-lg">Checking access...</div>
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-muted text-lg">Checking access...</div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-zinc-200 dashboard-bg">
+    <div className="min-h-screen bg-background text-foreground/90">
       {/* Navigation */}
       <nav className="bg-gradient-to-br from-[#12121a] to-[#1a1a28] border-b border-[#1e1e2e] sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
@@ -2010,7 +2010,7 @@ export default function CommandCenterPage() {
             <div className="flex items-center gap-3 sm:gap-4 min-w-0">
               <Link
                 href="/"
-                className="text-zinc-500 hover:text-zinc-300 transition-colors text-sm shrink-0"
+                className="text-muted hover:text-foreground transition-colors text-sm shrink-0"
               >
                 &larr; Back
               </Link>
@@ -2018,14 +2018,14 @@ export default function CommandCenterPage() {
                 <div className="text-lg sm:text-xl font-bold bg-gradient-to-br from-amber-500 to-orange-400 bg-clip-text text-transparent">
                   Executive Suite
                 </div>
-                <div className="text-[0.65rem] text-zinc-500 truncate">
+                <div className="text-[0.65rem] text-muted truncate">
                   Pipeline, Revenue &amp; Executive Dashboards - Live Data
                 </div>
               </div>
             </div>
             <div className="flex items-center gap-3">
               <ThemeToggle />
-              <div className="text-right text-[0.7rem] text-zinc-500 shrink-0 hidden sm:block">
+              <div className="text-right text-[0.7rem] text-muted shrink-0 hidden sm:block">
                 <div>{lastUpdated && `Updated: ${lastUpdated}`}</div>
                 <div>
                   {summary.total_value > 0 &&
@@ -2049,10 +2049,10 @@ export default function CommandCenterPage() {
                 }}
                 className={`px-4 sm:px-5 py-2 sm:py-2.5 text-[0.75rem] sm:text-[0.8rem] font-semibold rounded-t-lg cursor-pointer border border-b-0 transition-all whitespace-nowrap ${
                   currentView === tab.key
-                    ? "bg-[#12121a] text-orange-500 border-orange-500"
+                    ? "bg-surface text-orange-500 border-orange-500"
                     : tab.href
-                      ? "bg-[#0a0a0f] text-zinc-600 border-[#1e1e2e] hover:text-zinc-400 italic"
-                      : "bg-[#0a0a0f] text-zinc-500 border-[#1e1e2e] hover:text-zinc-300"
+                      ? "bg-background text-muted/70 border-[#1e1e2e] hover:text-muted italic"
+                      : "bg-background text-muted border-[#1e1e2e] hover:text-foreground"
                 }`}
               >
                 {tab.label}
@@ -2067,7 +2067,7 @@ export default function CommandCenterPage() {
             ))}
             <Link
               href="/dashboards/scheduler"
-              className="px-4 sm:px-5 py-2 sm:py-2.5 text-[0.75rem] sm:text-[0.8rem] font-semibold rounded-t-lg cursor-pointer border border-b-0 bg-[#0a0a0f] text-zinc-500 border-[#1e1e2e] hover:text-zinc-300 transition-all no-underline whitespace-nowrap"
+              className="px-4 sm:px-5 py-2 sm:py-2.5 text-[0.75rem] sm:text-[0.8rem] font-semibold rounded-t-lg cursor-pointer border border-b-0 bg-background text-muted border-[#1e1e2e] hover:text-foreground transition-all no-underline whitespace-nowrap"
               onMouseEnter={() => prefetchDashboard("scheduler")}
             >
               Scheduler &rarr;
@@ -2079,13 +2079,13 @@ export default function CommandCenterPage() {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
         {loading && projects.length === 0 ? (
-          <div className="bg-[#12121a] border border-zinc-800 rounded-xl p-8 text-center">
-            <div className="text-lg text-zinc-500">Loading live data from HubSpot...</div>
+          <div className="bg-surface border border-t-border rounded-xl p-8 text-center">
+            <div className="text-lg text-muted">Loading live data from HubSpot...</div>
           </div>
         ) : error && projects.length === 0 ? (
-          <div className="bg-[#12121a] border border-red-500 rounded-xl p-8 text-center">
+          <div className="bg-surface border border-red-500 rounded-xl p-8 text-center">
             <div className="text-lg">Error loading data</div>
-            <div className="text-sm text-zinc-500 mt-2">{error}</div>
+            <div className="text-sm text-muted mt-2">{error}</div>
             <button
               onClick={fetchData}
               className="mt-4 px-4 py-2 bg-orange-500 border-none rounded-md cursor-pointer text-black font-semibold"

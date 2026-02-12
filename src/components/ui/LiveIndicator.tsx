@@ -27,7 +27,7 @@ export const LiveIndicator = memo(function LiveIndicator({
 
   if (!connected) {
     return (
-      <div className="inline-flex items-center px-3 py-1 bg-zinc-800 text-zinc-400 rounded-full text-sm border border-zinc-700">
+      <div className="inline-flex items-center px-3 py-1 bg-surface-2 text-muted rounded-full text-sm border border-t-border">
         <span className="w-2 h-2 bg-zinc-500 rounded-full mr-2" />
         Offline
       </div>

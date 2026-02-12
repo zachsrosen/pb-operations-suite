@@ -465,7 +465,7 @@ export default function InterconnectionPage() {
         <div className="flex items-center justify-center min-h-[400px]">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-amber-500 mx-auto mb-4"></div>
-            <p className="text-zinc-400">Loading Interconnection & PTO Data...</p>
+            <p className="text-muted">Loading Interconnection & PTO Data...</p>
           </div>
         </div>
       </DashboardShell>
@@ -478,7 +478,7 @@ export default function InterconnectionPage() {
         <div className="flex items-center justify-center min-h-[400px]">
           <div className="text-center text-red-500">
             <p className="text-xl mb-2">Error loading data</p>
-            <p className="text-sm text-zinc-400">{error}</p>
+            <p className="text-sm text-muted">{error}</p>
             <button onClick={fetchData} className="mt-4 px-4 py-2 bg-amber-600 rounded-lg hover:bg-amber-700">
               Retry
             </button>
@@ -489,24 +489,24 @@ export default function InterconnectionPage() {
   }
 
   const getIcStatusColor = (status: string | undefined): string => {
-    if (!status) return 'bg-zinc-500/20 text-zinc-400';
+    if (!status) return 'bg-zinc-500/20 text-muted';
     const lower = status.toLowerCase();
     if (lower.includes('approved') || lower.includes('complete')) return 'bg-green-500/20 text-green-400';
     if (lower.includes('submitted') || lower.includes('in review')) return 'bg-blue-500/20 text-blue-400';
     if (lower.includes('rejected') || lower.includes('revision')) return 'bg-orange-500/20 text-orange-400';
     if (lower.includes('waiting') || lower.includes('pending')) return 'bg-yellow-500/20 text-yellow-400';
-    return 'bg-zinc-500/20 text-zinc-400';
+    return 'bg-zinc-500/20 text-muted';
   };
 
   const getPtoStatusColor = (status: string | undefined): string => {
-    if (!status) return 'bg-zinc-500/20 text-zinc-400';
+    if (!status) return 'bg-zinc-500/20 text-muted';
     const lower = status.toLowerCase();
     if (lower.includes('granted') || lower.includes('approved')) return 'bg-emerald-500/20 text-emerald-400';
     if (lower.includes('submitted') || lower.includes('resubmitted')) return 'bg-cyan-500/20 text-cyan-400';
     if (lower.includes('rejected')) return 'bg-red-500/20 text-red-400';
     if (lower.includes('waiting') || lower.includes('pending')) return 'bg-orange-500/20 text-orange-400';
     if (lower.includes('xcel') || lower.includes('photos')) return 'bg-purple-500/20 text-purple-400';
-    return 'bg-zinc-500/20 text-zinc-400';
+    return 'bg-zinc-500/20 text-muted';
   };
 
   return (
@@ -571,7 +571,7 @@ export default function InterconnectionPage() {
           {hasActiveFilters && (
             <button
               onClick={clearAllFilters}
-              className="text-xs text-zinc-400 hover:text-white px-3 py-2 border border-zinc-700 rounded-lg hover:border-zinc-600 transition-colors"
+              className="text-xs text-muted hover:text-foreground px-3 py-2 border border-t-border rounded-lg hover:border-muted transition-colors"
             >
               Clear All
             </button>
@@ -581,64 +581,64 @@ export default function InterconnectionPage() {
 
       {/* Summary Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <div className="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+        <div className="bg-surface rounded-xl p-4 border border-t-border">
           <div className="text-2xl font-bold text-amber-400">{stats.total}</div>
-          <div className="text-sm text-zinc-400">Total Projects</div>
-          <div className="text-xs text-zinc-500">{formatMoney(stats.totalValue)}</div>
+          <div className="text-sm text-muted">Total Projects</div>
+          <div className="text-xs text-muted">{formatMoney(stats.totalValue)}</div>
         </div>
-        <div className="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+        <div className="bg-surface rounded-xl p-4 border border-t-border">
           <div className="text-2xl font-bold text-yellow-400">{stats.icPending.length}</div>
-          <div className="text-sm text-zinc-400">IC Pending</div>
-          <div className="text-xs text-zinc-500">{formatMoney(stats.icPending.reduce((s, p) => s + (p.amount || 0), 0))}</div>
+          <div className="text-sm text-muted">IC Pending</div>
+          <div className="text-xs text-muted">{formatMoney(stats.icPending.reduce((s, p) => s + (p.amount || 0), 0))}</div>
         </div>
-        <div className="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+        <div className="bg-surface rounded-xl p-4 border border-t-border">
           <div className="text-2xl font-bold text-green-400">{stats.icApproved.length}</div>
-          <div className="text-sm text-zinc-400">IC Approved</div>
-          <div className="text-xs text-zinc-500">{formatMoney(stats.icApproved.reduce((s, p) => s + (p.amount || 0), 0))}</div>
+          <div className="text-sm text-muted">IC Approved</div>
+          <div className="text-xs text-muted">{formatMoney(stats.icApproved.reduce((s, p) => s + (p.amount || 0), 0))}</div>
         </div>
-        <div className="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+        <div className="bg-surface rounded-xl p-4 border border-t-border">
           <div className="text-2xl font-bold text-cyan-400">{stats.avgTurnaround}d</div>
-          <div className="text-sm text-zinc-400">Avg IC Turnaround</div>
+          <div className="text-sm text-muted">Avg IC Turnaround</div>
         </div>
       </div>
 
       {/* PTO Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <div className="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+        <div className="bg-surface rounded-xl p-4 border border-t-border">
           <div className="text-2xl font-bold text-orange-400">{stats.ptoPending.length}</div>
-          <div className="text-sm text-zinc-400">PTO Pending</div>
-          <div className="text-xs text-zinc-500">{formatMoney(stats.ptoPending.reduce((s, p) => s + (p.amount || 0), 0))}</div>
+          <div className="text-sm text-muted">PTO Pending</div>
+          <div className="text-xs text-muted">{formatMoney(stats.ptoPending.reduce((s, p) => s + (p.amount || 0), 0))}</div>
         </div>
-        <div className="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+        <div className="bg-surface rounded-xl p-4 border border-t-border">
           <div className="text-2xl font-bold text-emerald-400">{stats.ptoGranted.length}</div>
-          <div className="text-sm text-zinc-400">PTO Granted</div>
-          <div className="text-xs text-zinc-500">{formatMoney(stats.ptoGranted.reduce((s, p) => s + (p.amount || 0), 0))}</div>
+          <div className="text-sm text-muted">PTO Granted</div>
+          <div className="text-xs text-muted">{formatMoney(stats.ptoGranted.reduce((s, p) => s + (p.amount || 0), 0))}</div>
         </div>
-        <div className="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+        <div className="bg-surface rounded-xl p-4 border border-t-border">
           <div className="text-2xl font-bold text-purple-400">{stats.avgDaysInPto}d</div>
-          <div className="text-sm text-zinc-400">Avg Days in PTO</div>
+          <div className="text-sm text-muted">Avg Days in PTO</div>
         </div>
-        <div className="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+        <div className="bg-surface rounded-xl p-4 border border-t-border">
           <div className="text-2xl font-bold text-blue-400">{stats.avgDaysWaitingIc}d</div>
-          <div className="text-sm text-zinc-400">Avg Days IC Pending</div>
+          <div className="text-sm text-muted">Avg Days IC Pending</div>
         </div>
       </div>
 
       {/* Status Breakdown */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
         {/* IC Status Breakdown */}
-        <div className="bg-[#12121a] rounded-xl border border-zinc-800 p-4">
+        <div className="bg-surface rounded-xl border border-t-border p-4">
           <h2 className="text-lg font-semibold mb-4 text-amber-400">By IC Status</h2>
           <div className="space-y-2 max-h-[250px] overflow-y-auto">
             {Object.keys(stats.icStatusStats).length === 0 ? (
-              <p className="text-zinc-500 text-sm">No IC status data available</p>
+              <p className="text-muted text-sm">No IC status data available</p>
             ) : (
               Object.entries(stats.icStatusStats)
                 .sort((a, b) => b[1] - a[1])
                 .map(([status, count]) => (
                   <div
                     key={status}
-                    className={`flex items-center justify-between p-2 bg-zinc-800/50 rounded-lg cursor-pointer hover:bg-zinc-800 transition-colors ${
+                    className={`flex items-center justify-between p-2 bg-skeleton rounded-lg cursor-pointer hover:bg-surface-2 transition-colors ${
                       filterIcStatuses.includes(status) ? 'ring-1 ring-amber-500' : ''
                     }`}
                     onClick={() => {
@@ -649,7 +649,7 @@ export default function InterconnectionPage() {
                       }
                     }}
                   >
-                    <span className="text-sm text-zinc-300">{getDisplayName(status)}</span>
+                    <span className="text-sm text-foreground/80">{getDisplayName(status)}</span>
                     <span className="text-lg font-bold text-amber-400">{count}</span>
                   </div>
                 ))
@@ -658,18 +658,18 @@ export default function InterconnectionPage() {
         </div>
 
         {/* PTO Status Breakdown */}
-        <div className="bg-[#12121a] rounded-xl border border-zinc-800 p-4">
+        <div className="bg-surface rounded-xl border border-t-border p-4">
           <h2 className="text-lg font-semibold mb-4 text-orange-400">By PTO Status</h2>
           <div className="space-y-2 max-h-[250px] overflow-y-auto">
             {Object.keys(stats.ptoStatusStats).length === 0 ? (
-              <p className="text-zinc-500 text-sm">No PTO status data available</p>
+              <p className="text-muted text-sm">No PTO status data available</p>
             ) : (
               Object.entries(stats.ptoStatusStats)
                 .sort((a, b) => b[1] - a[1])
                 .map(([status, count]) => (
                   <div
                     key={status}
-                    className={`flex items-center justify-between p-2 bg-zinc-800/50 rounded-lg cursor-pointer hover:bg-zinc-800 transition-colors ${
+                    className={`flex items-center justify-between p-2 bg-skeleton rounded-lg cursor-pointer hover:bg-surface-2 transition-colors ${
                       filterPtoStatuses.includes(status) ? 'ring-1 ring-orange-500' : ''
                     }`}
                     onClick={() => {
@@ -680,7 +680,7 @@ export default function InterconnectionPage() {
                       }
                     }}
                   >
-                    <span className="text-sm text-zinc-300">{getDisplayName(status)}</span>
+                    <span className="text-sm text-foreground/80">{getDisplayName(status)}</span>
                     <span className="text-lg font-bold text-orange-400">{count}</span>
                   </div>
                 ))
@@ -690,7 +690,7 @@ export default function InterconnectionPage() {
       </div>
 
       {/* Utility Breakdown */}
-      <div className="bg-[#12121a] rounded-xl border border-zinc-800 p-4 mb-6">
+      <div className="bg-surface rounded-xl border border-t-border p-4 mb-6">
         <h2 className="text-lg font-semibold mb-4">By Utility</h2>
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
           {Object.entries(stats.utilityStats)
@@ -704,7 +704,7 @@ export default function InterconnectionPage() {
               return (
                 <div
                   key={utility}
-                  className={`bg-zinc-800/50 rounded-lg p-3 cursor-pointer hover:bg-zinc-800 transition-colors ${
+                  className={`bg-skeleton rounded-lg p-3 cursor-pointer hover:bg-surface-2 transition-colors ${
                     filterUtilities.includes(utility) ? 'ring-1 ring-amber-500' : ''
                   }`}
                   onClick={() => {
@@ -715,16 +715,16 @@ export default function InterconnectionPage() {
                     }
                   }}
                 >
-                  <div className="text-sm font-medium text-white truncate" title={utility}>{utility}</div>
+                  <div className="text-sm font-medium text-foreground truncate" title={utility}>{utility}</div>
                   <div className="flex items-center gap-2 mt-1">
                     <span className="text-yellow-400 text-lg font-bold">{utilityData.icPending}</span>
-                    <span className="text-zinc-500 text-xs">IC</span>
+                    <span className="text-muted text-xs">IC</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-orange-400 text-sm">{utilityData.ptoPending}</span>
-                    <span className="text-zinc-500 text-xs">PTO</span>
+                    <span className="text-muted text-xs">PTO</span>
                   </div>
-                  {avgDays !== null && <div className="text-xs text-zinc-500 mt-1">~{avgDays}d turnaround</div>}
+                  {avgDays !== null && <div className="text-xs text-muted mt-1">~{avgDays}d turnaround</div>}
                 </div>
               );
             })}
@@ -732,32 +732,32 @@ export default function InterconnectionPage() {
       </div>
 
       {/* Projects Table */}
-      <div className="bg-[#12121a] rounded-xl border border-zinc-800 overflow-hidden">
-        <div className="p-4 border-b border-zinc-800 flex items-center justify-between">
+      <div className="bg-surface rounded-xl border border-t-border overflow-hidden">
+        <div className="p-4 border-b border-t-border flex items-center justify-between">
           <h2 className="text-lg font-semibold">Projects ({filteredProjects.length})</h2>
           {hasActiveFilters && (
-            <span className="text-xs text-zinc-500">Filtered from {projects.length} total</span>
+            <span className="text-xs text-muted">Filtered from {projects.length} total</span>
           )}
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-zinc-900">
+            <thead className="bg-surface">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Project</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Utility</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Interconnection</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">IC Submitted</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">IC Approved</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">PTO Status</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">PTO Submitted</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">PTO Granted</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase">Amount</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Project</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Utility</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Interconnection</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">IC Submitted</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">IC Approved</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">PTO Status</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">PTO Submitted</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">PTO Granted</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-muted uppercase">Amount</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-800">
+            <tbody className="divide-y divide-t-border">
               {filteredProjects.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center text-zinc-500">No projects found</td>
+                  <td colSpan={9} className="px-4 py-8 text-center text-muted">No projects found</td>
                 </tr>
               ) : (
                 filteredProjects
@@ -786,24 +786,24 @@ export default function InterconnectionPage() {
                     }
 
                     return (
-                      <tr key={project.id} className="hover:bg-zinc-900/50">
+                      <tr key={project.id} className="hover:bg-surface/50">
                         <td className="px-4 py-3">
-                          <a href={project.url} target="_blank" rel="noopener noreferrer" className="font-medium text-white hover:text-amber-400">
+                          <a href={project.url} target="_blank" rel="noopener noreferrer" className="font-medium text-foreground hover:text-amber-400">
                             {project.name.split('|')[0].trim()}
                           </a>
-                          <div className="text-xs text-zinc-400">{project.name.split('|')[1]?.trim() || ''}</div>
-                          <div className="text-xs text-zinc-500">{project.pbLocation}</div>
+                          <div className="text-xs text-muted">{project.name.split('|')[1]?.trim() || ''}</div>
+                          <div className="text-xs text-muted">{project.pbLocation}</div>
                         </td>
-                        <td className="px-4 py-3 text-sm text-zinc-300">{project.utility || '-'}</td>
+                        <td className="px-4 py-3 text-sm text-foreground/80">{project.utility || '-'}</td>
                         <td className="px-4 py-3">
                           <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getIcStatusColor(project.interconnectionStatus)}`}>
                             {icLabel}
                           </span>
                         </td>
-                        <td className={`px-4 py-3 text-sm ${project.interconnectionSubmitDate ? 'text-blue-400' : 'text-zinc-500'}`}>
+                        <td className={`px-4 py-3 text-sm ${project.interconnectionSubmitDate ? 'text-blue-400' : 'text-muted'}`}>
                           {project.interconnectionSubmitDate || '-'}
                         </td>
-                        <td className={`px-4 py-3 text-sm ${project.interconnectionApprovalDate ? 'text-green-400' : 'text-zinc-500'}`}>
+                        <td className={`px-4 py-3 text-sm ${project.interconnectionApprovalDate ? 'text-green-400' : 'text-muted'}`}>
                           {project.interconnectionApprovalDate || '-'}
                         </td>
                         <td className="px-4 py-3">
@@ -811,13 +811,13 @@ export default function InterconnectionPage() {
                             {ptoLabel}
                           </span>
                         </td>
-                        <td className={`px-4 py-3 text-sm ${project.ptoSubmitDate ? 'text-cyan-400' : 'text-zinc-500'}`}>
+                        <td className={`px-4 py-3 text-sm ${project.ptoSubmitDate ? 'text-cyan-400' : 'text-muted'}`}>
                           {project.ptoSubmitDate || '-'}
                         </td>
-                        <td className={`px-4 py-3 text-sm ${project.ptoGrantedDate ? 'text-emerald-400' : 'text-zinc-500'}`}>
+                        <td className={`px-4 py-3 text-sm ${project.ptoGrantedDate ? 'text-emerald-400' : 'text-muted'}`}>
                           {project.ptoGrantedDate || '-'}
                         </td>
-                        <td className={`px-4 py-3 text-right font-mono text-sm ${(project.amount || 0) > 0 ? 'text-green-400' : 'text-zinc-500'}`}>
+                        <td className={`px-4 py-3 text-right font-mono text-sm ${(project.amount || 0) > 0 ? 'text-green-400' : 'text-muted'}`}>
                           {formatMoney(project.amount || 0)}
                         </td>
                       </tr>

@@ -7,17 +7,25 @@
   --foreground: #171717;
   --surface: #f4f4f5;
   --surface-2: #e4e4e7;
+  --surface-elevated: #ffffff;
   --border: #d4d4d8;
   --muted: #71717a;
+  --skeleton: rgba(228, 228, 231, 0.5);
+  --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --card-shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
 }
 
 html.dark {
-  --background: #0a0a0a;
+  --background: #0a0a0f;
   --foreground: #ededed;
   --surface: #18181b;
   --surface-2: #27272a;
+  --surface-elevated: #1a1a24;
   --border: #3f3f46;
   --muted: #a1a1aa;
+  --skeleton: rgba(39, 39, 42, 0.5);
+  --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --card-shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.5), 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
 @theme inline {
@@ -25,8 +33,12 @@ html.dark {
   --color-foreground: var(--foreground);
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
+  --color-surface-elevated: var(--surface-elevated);
   --color-t-border: var(--border);
   --color-muted: var(--muted);
+  --color-skeleton: var(--skeleton);
+  --shadow-card: var(--card-shadow);
+  --shadow-card-lg: var(--card-shadow-lg);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -37,46 +49,35 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
-/* ---- Light theme overrides ---- */
-/* Broad overrides to invert hardcoded dark-theme Tailwind classes */
+/* ---- Dark theme atmosphere ---- */
 
-html.light .dashboard-bg {
-  background: #f8fafc !important;
-  color: #18181b !important;
+html.dark body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at 50% 0%, rgba(249, 115, 22, 0.03) 0%, transparent 60%),
+              radial-gradient(ellipse at 80% 100%, rgba(59, 130, 246, 0.02) 0%, transparent 50%);
 }
 
-html.light .dashboard-header {
-  background: #ffffff !important;
-  border-color: #e4e4e7 !important;
+html.dark body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 256px 256px;
 }
 
-html.light .dashboard-card {
-  background: #ffffff !important;
-  border-color: #e4e4e7 !important;
-  color: #18181b !important;
+/* Ensure main content sits above atmosphere layers */
+body > * {
+  position: relative;
+  z-index: 1;
 }
-
-html.light .dashboard-card-alt {
-  background: #f4f4f5 !important;
-  border-color: #e4e4e7 !important;
-  color: #18181b !important;
-}
-
-html.light .dashboard-text-primary {
-  color: #18181b !important;
-}
-
-html.light .dashboard-text-secondary {
-  color: #52525b !important;
-}
-
-html.light .dashboard-text-muted {
-  color: #71717a !important;
-}
-
-/* NOTE: Attribute-selector overrides (e.g. [class*="bg-zinc-900"])
-   are injected at runtime via ThemeContext.tsx because Tailwind v4's
-   PostCSS pipeline strips them from static CSS. */
 
 /* ---- Animations ---- */
 
@@ -84,6 +85,17 @@ html.light .dashboard-text-muted {
   from {
     opacity: 0;
     transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes staggerFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
@@ -120,6 +132,17 @@ html.light .dashboard-text-muted {
   }
 }
 
+@keyframes valueFlash {
+  0% {
+    background-color: rgba(249, 115, 22, 0.15);
+    transform: scale(1.02);
+  }
+  100% {
+    background-color: transparent;
+    transform: scale(1);
+  }
+}
+
 .animate-fadeIn {
   animation: fadeIn 0.3s ease-out;
 }
@@ -135,6 +158,25 @@ html.light .dashboard-text-muted {
 .animate-pulse-red {
   animation: pulseRed 2s ease-in-out infinite;
 }
+
+.animate-value-flash {
+  animation: valueFlash 0.6s ease-out;
+  border-radius: 4px;
+}
+
+/* ---- Staggered grid entry ---- */
+
+.stagger-grid > * {
+  animation: staggerFadeIn 0.4s ease-out backwards;
+}
+.stagger-grid > *:nth-child(1) { animation-delay: 0s; }
+.stagger-grid > *:nth-child(2) { animation-delay: 0.05s; }
+.stagger-grid > *:nth-child(3) { animation-delay: 0.1s; }
+.stagger-grid > *:nth-child(4) { animation-delay: 0.15s; }
+.stagger-grid > *:nth-child(5) { animation-delay: 0.2s; }
+.stagger-grid > *:nth-child(6) { animation-delay: 0.25s; }
+.stagger-grid > *:nth-child(7) { animation-delay: 0.3s; }
+.stagger-grid > *:nth-child(8) { animation-delay: 0.35s; }
 
 /* ---- Scrollbar styling ---- */
 

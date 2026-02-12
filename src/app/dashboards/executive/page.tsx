@@ -56,16 +56,16 @@ function HorizontalBarChart({
   const maxValue = Math.max(...items.map((i) => i.value), 1);
 
   return (
-    <div className="bg-[#12121a] rounded-xl border border-zinc-800 p-5">
-      <h3 className="text-sm font-semibold text-zinc-300 mb-4">{title}</h3>
+    <div className="bg-surface rounded-xl border border-t-border p-5">
+      <h3 className="text-sm font-semibold text-foreground/80 mb-4">{title}</h3>
       <div className="space-y-3">
         {items.map((item) => (
           <div key={item.label}>
             <div className="flex items-center justify-between text-xs mb-1">
-              <span className="text-zinc-400 truncate mr-2" title={item.label}>{item.label}</span>
-              <span className="text-zinc-300 font-medium shrink-0">{item.value}</span>
+              <span className="text-muted truncate mr-2" title={item.label}>{item.label}</span>
+              <span className="text-foreground/80 font-medium shrink-0">{item.value}</span>
             </div>
-            <div className="h-3 bg-zinc-800 rounded-full overflow-hidden">
+            <div className="h-3 bg-surface-2 rounded-full overflow-hidden">
               <div
                 className={`h-full rounded-full ${item.color} transition-all duration-500`}
                 style={{ width: `${maxValue > 0 ? (item.value / maxValue) * 100 : 0}%` }}
@@ -88,9 +88,9 @@ function ValueDistributionChart({
   const total = items.reduce((s, i) => s + i.value, 0);
 
   return (
-    <div className="bg-[#12121a] rounded-xl border border-zinc-800 p-5">
-      <h3 className="text-sm font-semibold text-zinc-300 mb-4">{title}</h3>
-      <div className="h-5 rounded-full overflow-hidden flex bg-zinc-800 mb-5">
+    <div className="bg-surface rounded-xl border border-t-border p-5">
+      <h3 className="text-sm font-semibold text-foreground/80 mb-4">{title}</h3>
+      <div className="h-5 rounded-full overflow-hidden flex bg-surface-2 mb-5">
         {items.map((item) => {
           const pct = total > 0 ? (item.value / total) * 100 : 0;
           if (pct === 0) return null;
@@ -110,8 +110,8 @@ function ValueDistributionChart({
           return (
             <div key={item.label} className="flex items-center gap-2 text-xs">
               <span className={`w-3 h-3 rounded-sm shrink-0 ${item.color}`} />
-              <span className="text-zinc-400 truncate">{item.label}</span>
-              <span className="text-zinc-500 ml-auto shrink-0">
+              <span className="text-muted truncate">{item.label}</span>
+              <span className="text-muted ml-auto shrink-0">
                 {formatCurrencyCompact(item.value)} ({pct.toFixed(0)}%)
               </span>
             </div>
@@ -132,22 +132,22 @@ function TimelineChart({
   const maxCount = Math.max(...items.map((i) => i.count), 1);
 
   return (
-    <div className="bg-[#12121a] rounded-xl border border-zinc-800 p-5">
-      <h3 className="text-sm font-semibold text-zinc-300 mb-4">{title}</h3>
+    <div className="bg-surface rounded-xl border border-t-border p-5">
+      <h3 className="text-sm font-semibold text-foreground/80 mb-4">{title}</h3>
       {items.length === 0 ? (
-        <p className="text-zinc-500 text-sm">No forecast data available</p>
+        <p className="text-muted text-sm">No forecast data available</p>
       ) : (
         <div className="flex items-end gap-2 h-40">
           {items.map((item) => {
             const heightPct = maxCount > 0 ? (item.count / maxCount) * 100 : 0;
             return (
               <div key={item.label} className="flex-1 flex flex-col items-center justify-end h-full">
-                <span className="text-xs text-zinc-300 font-medium mb-1">{item.count}</span>
+                <span className="text-xs text-foreground/80 font-medium mb-1">{item.count}</span>
                 <div
                   className="w-full bg-emerald-500/80 rounded-t transition-all duration-500"
                   style={{ height: `${heightPct}%`, minHeight: item.count > 0 ? "4px" : "0px" }}
                 />
-                <span className="text-[10px] text-zinc-500 mt-2 text-center leading-tight">{item.label}</span>
+                <span className="text-[10px] text-muted mt-2 text-center leading-tight">{item.label}</span>
               </div>
             );
           })}
@@ -336,7 +336,7 @@ export default function ExecutiveSummaryPage() {
           <LiveIndicator label="Auto-Refresh" />
           <button
             onClick={refetch}
-            className="bg-orange-600 hover:bg-orange-700 px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors"
+            className="bg-orange-600 hover:bg-orange-700 px-4 py-2 rounded-lg text-sm font-medium text-foreground transition-colors"
           >
             Refresh
           </button>
@@ -350,7 +350,7 @@ export default function ExecutiveSummaryPage() {
           value={formatCurrency(metrics.totalValue)}
           sub={`${metrics.total} projects`}
           valueColor="text-white"
-          subColor="text-zinc-500"
+          subColor="text-muted"
         />
         <MetricCard
           label="PTO Overdue"
@@ -390,17 +390,17 @@ export default function ExecutiveSummaryPage() {
       </div>
 
       {/* Location Performance Table */}
-      <div className="bg-[#12121a] rounded-xl border border-zinc-800 p-5 mb-6">
-        <h3 className="text-sm font-semibold text-zinc-300 mb-4">Location Performance</h3>
+      <div className="bg-surface rounded-xl border border-t-border p-5 mb-6">
+        <h3 className="text-sm font-semibold text-foreground/80 mb-4">Location Performance</h3>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-zinc-800">
-                <th className="text-left py-3 text-zinc-400 font-medium">Location</th>
-                <th className="text-right py-3 text-zinc-400 font-medium">Projects</th>
-                <th className="text-right py-3 text-zinc-400 font-medium">Value</th>
-                <th className="text-right py-3 text-zinc-400 font-medium">Overdue</th>
-                <th className="text-right py-3 text-zinc-400 font-medium">Health</th>
+              <tr className="border-b border-t-border">
+                <th className="text-left py-3 text-muted font-medium">Location</th>
+                <th className="text-right py-3 text-muted font-medium">Projects</th>
+                <th className="text-right py-3 text-muted font-medium">Value</th>
+                <th className="text-right py-3 text-muted font-medium">Overdue</th>
+                <th className="text-right py-3 text-muted font-medium">Health</th>
               </tr>
             </thead>
             <tbody>
@@ -415,10 +415,10 @@ export default function ExecutiveSummaryPage() {
                         ? "bg-yellow-500/10 text-yellow-400"
                         : "bg-red-500/10 text-red-400";
                   return (
-                    <tr key={loc} className="border-b border-zinc-800/50 last:border-0 hover:bg-white/[0.02] transition-colors">
+                    <tr key={loc} className="border-b border-t-border/50 last:border-0 hover:bg-white/[0.02] transition-colors">
                       <td className="py-3 text-white font-medium">{loc}</td>
-                      <td className="py-3 text-right text-zinc-300">{data.count}</td>
-                      <td className="py-3 text-right text-zinc-300">{formatCurrencyCompact(data.value)}</td>
+                      <td className="py-3 text-right text-foreground/80">{data.count}</td>
+                      <td className="py-3 text-right text-foreground/80">{formatCurrencyCompact(data.value)}</td>
                       <td className="py-3 text-right text-red-400">{data.overdue}</td>
                       <td className="py-3 text-right">
                         <span className={`px-2 py-1 rounded text-xs font-medium ${healthColor}`}>{health}%</span>
@@ -432,7 +432,7 @@ export default function ExecutiveSummaryPage() {
       </div>
 
       {/* Footer */}
-      <div className="text-center text-xs text-zinc-600">
+      <div className="text-center text-xs text-muted/70">
         Data synced from HubSpot &bull; Auto-refreshes every 5 minutes
       </div>
     </DashboardShell>

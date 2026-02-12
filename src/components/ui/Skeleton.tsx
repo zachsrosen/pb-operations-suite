@@ -9,7 +9,7 @@ export const SkeletonBlock = memo(function SkeletonBlock({
   className?: string;
 }) {
   return (
-    <div className={`bg-zinc-800/50 rounded animate-pulse ${className}`} />
+    <div className={`bg-skeleton rounded animate-pulse ${className}`} />
   );
 });
 
@@ -24,10 +24,10 @@ export const SkeletonStatCards = memo(function SkeletonStatCards({
       {Array.from({ length: count }).map((_, i) => (
         <div
           key={i}
-          className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6 animate-pulse"
+          className="bg-surface/50 border border-t-border rounded-xl p-6 shadow-card animate-pulse"
         >
-          <div className="h-9 w-20 bg-zinc-800/50 rounded mb-2" />
-          <div className="h-4 w-24 bg-zinc-800/50 rounded" />
+          <div className="h-9 w-20 bg-skeleton rounded mb-2" />
+          <div className="h-4 w-24 bg-skeleton rounded" />
         </div>
       ))}
     </div>
@@ -41,14 +41,14 @@ export const SkeletonSection = memo(function SkeletonSection({
   rows?: number;
 }) {
   return (
-    <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6 mb-8 animate-pulse">
-      <div className="h-6 w-48 bg-zinc-800 rounded mb-4" />
+    <div className="bg-surface/50 border border-t-border rounded-xl p-6 shadow-card mb-8 animate-pulse">
+      <div className="h-6 w-48 bg-surface-2 rounded mb-4" />
       <div className="space-y-3">
         {Array.from({ length: rows }).map((_, i) => (
           <div key={i} className="flex items-center gap-4">
-            <div className="w-40 h-4 bg-zinc-800 rounded" />
-            <div className="flex-1 h-6 bg-zinc-800 rounded-full" />
-            <div className="w-12 h-4 bg-zinc-800 rounded" />
+            <div className="w-40 h-4 bg-surface-2 rounded" />
+            <div className="flex-1 h-6 bg-surface-2 rounded-full" />
+            <div className="w-12 h-4 bg-surface-2 rounded" />
           </div>
         ))}
       </div>
@@ -65,15 +65,15 @@ export const SkeletonTable = memo(function SkeletonTable({
   cols?: number;
 }) {
   return (
-    <div className="bg-[#12121a] border border-zinc-800 rounded-xl p-5 animate-pulse">
-      <div className="h-5 w-40 bg-zinc-800 rounded mb-4" />
+    <div className="bg-surface border border-t-border rounded-xl p-5 shadow-card animate-pulse">
+      <div className="h-5 w-40 bg-surface-2 rounded mb-4" />
       <div className="space-y-3">
         {Array.from({ length: rows }).map((_, i) => (
           <div key={i} className="flex gap-4">
             {Array.from({ length: cols }).map((_, j) => (
               <div
                 key={j}
-                className="flex-1 h-4 bg-zinc-800 rounded"
+                className="flex-1 h-4 bg-surface-2 rounded"
               />
             ))}
           </div>
@@ -94,10 +94,10 @@ export const SkeletonLocationCards = memo(function SkeletonLocationCards({
       {Array.from({ length: count }).map((_, i) => (
         <div
           key={i}
-          className="bg-zinc-800/50 rounded-lg p-4 text-center animate-pulse"
+          className="bg-skeleton rounded-lg p-4 text-center animate-pulse"
         >
-          <div className="h-8 w-12 mx-auto bg-zinc-700/50 rounded mb-2" />
-          <div className="h-4 w-20 mx-auto bg-zinc-700/50 rounded" />
+          <div className="h-8 w-12 mx-auto bg-skeleton rounded mb-2" />
+          <div className="h-4 w-20 mx-auto bg-skeleton rounded" />
         </div>
       ))}
     </div>

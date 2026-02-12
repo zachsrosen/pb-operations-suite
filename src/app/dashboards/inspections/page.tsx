@@ -337,7 +337,7 @@ export default function InspectionsPage() {
         <div className="flex items-center justify-center min-h-[400px]">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-orange-500 mx-auto mb-4"></div>
-            <p className="text-zinc-400">Loading Inspections Data...</p>
+            <p className="text-muted">Loading Inspections Data...</p>
           </div>
         </div>
       </DashboardShell>
@@ -350,7 +350,7 @@ export default function InspectionsPage() {
         <div className="flex items-center justify-center min-h-[400px]">
           <div className="text-center text-red-500">
             <p className="text-xl mb-2">Error loading data</p>
-            <p className="text-sm text-zinc-400">{error}</p>
+            <p className="text-sm text-muted">{error}</p>
             <button onClick={fetchData} className="mt-4 px-4 py-2 bg-orange-600 rounded-lg hover:bg-orange-700">
               Retry
             </button>
@@ -361,7 +361,7 @@ export default function InspectionsPage() {
   }
 
   const getInspectionStatusColor = (status: string | undefined): string => {
-    if (!status) return 'bg-zinc-500/20 text-zinc-400';
+    if (!status) return 'bg-zinc-500/20 text-muted';
     const lower = status.toLowerCase();
     if (lower.includes('passed')) return 'bg-emerald-500/20 text-emerald-400';
     if (lower.includes('failed') || lower.includes('rejected')) return 'bg-red-500/20 text-red-400';
@@ -369,7 +369,7 @@ export default function InspectionsPage() {
     if (lower.includes('progress') || lower.includes('started') || lower.includes('way')) return 'bg-cyan-500/20 text-cyan-400';
     if (lower.includes('waiting') || lower.includes('pending')) return 'bg-orange-500/20 text-orange-400';
     if (lower.includes('revision')) return 'bg-yellow-500/20 text-yellow-400';
-    return 'bg-zinc-500/20 text-zinc-400';
+    return 'bg-zinc-500/20 text-muted';
   };
 
   return (
@@ -423,7 +423,7 @@ export default function InspectionsPage() {
           {hasActiveFilters && (
             <button
               onClick={clearAllFilters}
-              className="text-xs text-zinc-400 hover:text-white px-3 py-2 border border-zinc-700 rounded-lg hover:border-zinc-600 transition-colors"
+              className="text-xs text-muted hover:text-foreground px-3 py-2 border border-t-border rounded-lg hover:border-muted transition-colors"
             >
               Clear All
             </button>
@@ -433,48 +433,48 @@ export default function InspectionsPage() {
 
       {/* Summary Stats */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-        <div className="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+        <div className="bg-surface rounded-xl p-4 border border-t-border">
           <div className="text-2xl font-bold text-orange-400">{stats.total}</div>
-          <div className="text-sm text-zinc-400">Total Projects</div>
-          <div className="text-xs text-zinc-500">{formatMoney(stats.totalValue)}</div>
+          <div className="text-sm text-muted">Total Projects</div>
+          <div className="text-xs text-muted">{formatMoney(stats.totalValue)}</div>
         </div>
-        <div className="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+        <div className="bg-surface rounded-xl p-4 border border-t-border">
           <div className="text-2xl font-bold text-yellow-400">{stats.inspectionPending.length}</div>
-          <div className="text-sm text-zinc-400">Pending Inspection</div>
-          <div className="text-xs text-zinc-500">{formatMoney(stats.inspectionPending.reduce((s, p) => s + (p.amount || 0), 0))}</div>
+          <div className="text-sm text-muted">Pending Inspection</div>
+          <div className="text-xs text-muted">{formatMoney(stats.inspectionPending.reduce((s, p) => s + (p.amount || 0), 0))}</div>
         </div>
-        <div className="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+        <div className="bg-surface rounded-xl p-4 border border-t-border">
           <div className="text-2xl font-bold text-emerald-400">{stats.inspectionPassed.length}</div>
-          <div className="text-sm text-zinc-400">Passed</div>
-          <div className="text-xs text-zinc-500">{formatMoney(stats.inspectionPassed.reduce((s, p) => s + (p.amount || 0), 0))}</div>
+          <div className="text-sm text-muted">Passed</div>
+          <div className="text-xs text-muted">{formatMoney(stats.inspectionPassed.reduce((s, p) => s + (p.amount || 0), 0))}</div>
         </div>
-        <div className="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+        <div className="bg-surface rounded-xl p-4 border border-t-border">
           <div className="text-2xl font-bold text-amber-400">{stats.avgDaysInInspection}d</div>
-          <div className="text-sm text-zinc-400">Avg Days Pending</div>
-          <div className="text-xs text-zinc-500">{stats.avgTurnaround}d avg turnaround</div>
+          <div className="text-sm text-muted">Avg Days Pending</div>
+          <div className="text-xs text-muted">{stats.avgTurnaround}d avg turnaround</div>
         </div>
-        <div className="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+        <div className="bg-surface rounded-xl p-4 border border-t-border">
           <div className="text-2xl font-bold text-cyan-400">{stats.passRate}%</div>
-          <div className="text-sm text-zinc-400">Pass Rate</div>
-          <div className="text-xs text-zinc-500">{stats.inspectionFailed.length} failed</div>
+          <div className="text-sm text-muted">Pass Rate</div>
+          <div className="text-xs text-muted">{stats.inspectionFailed.length} failed</div>
         </div>
       </div>
 
       {/* Status Breakdown & AHJ side-by-side */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
         {/* Inspection Status Breakdown */}
-        <div className="bg-[#12121a] rounded-xl border border-zinc-800 p-4">
+        <div className="bg-surface rounded-xl border border-t-border p-4">
           <h2 className="text-lg font-semibold mb-4 text-orange-400">By Inspection Status</h2>
           <div className="space-y-2 max-h-[300px] overflow-y-auto">
             {Object.keys(stats.inspectionStatusStats).length === 0 ? (
-              <p className="text-zinc-500 text-sm">No inspection status data available</p>
+              <p className="text-muted text-sm">No inspection status data available</p>
             ) : (
               Object.entries(stats.inspectionStatusStats)
                 .sort((a, b) => b[1] - a[1])
                 .map(([status, count]) => (
                   <div
                     key={status}
-                    className={`flex items-center justify-between p-2 bg-zinc-800/50 rounded-lg cursor-pointer hover:bg-zinc-800 transition-colors ${
+                    className={`flex items-center justify-between p-2 bg-skeleton rounded-lg cursor-pointer hover:bg-surface-2 transition-colors ${
                       filterInspectionStatuses.includes(status) ? 'ring-1 ring-orange-500' : ''
                     }`}
                     onClick={() => {
@@ -498,7 +498,7 @@ export default function InspectionsPage() {
         </div>
 
         {/* AHJ Breakdown */}
-        <div className="bg-[#12121a] rounded-xl border border-zinc-800 p-4">
+        <div className="bg-surface rounded-xl border border-t-border p-4">
           <h2 className="text-lg font-semibold mb-4">By AHJ (Authority Having Jurisdiction)</h2>
           <div className="space-y-2 max-h-[300px] overflow-y-auto">
             {Object.entries(stats.ahjStats)
@@ -512,7 +512,7 @@ export default function InspectionsPage() {
                 return (
                   <div
                     key={ahj}
-                    className={`flex items-center justify-between p-2 bg-zinc-800/50 rounded-lg cursor-pointer hover:bg-zinc-800 transition-colors ${
+                    className={`flex items-center justify-between p-2 bg-skeleton rounded-lg cursor-pointer hover:bg-surface-2 transition-colors ${
                       filterAhjs.includes(ahj) ? 'ring-1 ring-orange-500' : ''
                     }`}
                     onClick={() => {
@@ -524,14 +524,14 @@ export default function InspectionsPage() {
                     }}
                   >
                     <div>
-                      <span className="text-sm text-zinc-300">{ahj}</span>
-                      {avgDays !== null && <span className="text-xs text-zinc-500 ml-2">~{avgDays}d avg</span>}
+                      <span className="text-sm text-foreground/80">{ahj}</span>
+                      {avgDays !== null && <span className="text-xs text-muted ml-2">~{avgDays}d avg</span>}
                     </div>
                     <div className="flex items-center gap-3">
                       <span className="text-yellow-400 font-bold">{ahjData.inspectionPending}</span>
-                      <span className="text-zinc-600 text-xs">pending</span>
+                      <span className="text-muted/70 text-xs">pending</span>
                       <span className="text-emerald-400 font-medium">{ahjData.inspectionPassed}</span>
-                      <span className="text-zinc-600 text-xs">passed</span>
+                      <span className="text-muted/70 text-xs">passed</span>
                     </div>
                   </div>
                 );
@@ -541,30 +541,30 @@ export default function InspectionsPage() {
       </div>
 
       {/* Projects Table */}
-      <div className="bg-[#12121a] rounded-xl border border-zinc-800 overflow-hidden">
-        <div className="p-4 border-b border-zinc-800 flex items-center justify-between">
+      <div className="bg-surface rounded-xl border border-t-border overflow-hidden">
+        <div className="p-4 border-b border-t-border flex items-center justify-between">
           <h2 className="text-lg font-semibold">Projects ({filteredProjects.length})</h2>
           {hasActiveFilters && (
-            <span className="text-xs text-zinc-500">Filtered from {projects.length} total</span>
+            <span className="text-xs text-muted">Filtered from {projects.length} total</span>
           )}
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-zinc-900">
+            <thead className="bg-surface">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Project</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">AHJ</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Stage</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Inspection Status</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Scheduled</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Passed</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase">Amount</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Project</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">AHJ</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Stage</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Inspection Status</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Scheduled</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Passed</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-muted uppercase">Amount</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-800">
+            <tbody className="divide-y divide-t-border">
               {filteredProjects.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-zinc-500">No projects found</td>
+                  <td colSpan={7} className="px-4 py-8 text-center text-muted">No projects found</td>
                 </tr>
               ) : (
                 filteredProjects
@@ -591,28 +591,28 @@ export default function InspectionsPage() {
                     }
 
                     return (
-                      <tr key={project.id} className="hover:bg-zinc-900/50">
+                      <tr key={project.id} className="hover:bg-surface/50">
                         <td className="px-4 py-3">
-                          <a href={project.url} target="_blank" rel="noopener noreferrer" className="font-medium text-white hover:text-orange-400">
+                          <a href={project.url} target="_blank" rel="noopener noreferrer" className="font-medium text-foreground hover:text-orange-400">
                             {project.name.split('|')[0].trim()}
                           </a>
-                          <div className="text-xs text-zinc-400">{project.name.split('|')[1]?.trim() || ''}</div>
-                          <div className="text-xs text-zinc-500">{project.pbLocation}</div>
+                          <div className="text-xs text-muted">{project.name.split('|')[1]?.trim() || ''}</div>
+                          <div className="text-xs text-muted">{project.pbLocation}</div>
                         </td>
-                        <td className="px-4 py-3 text-sm text-zinc-300">{project.ahj || '-'}</td>
-                        <td className="px-4 py-3 text-sm text-zinc-300">{project.stage || '-'}</td>
+                        <td className="px-4 py-3 text-sm text-foreground/80">{project.ahj || '-'}</td>
+                        <td className="px-4 py-3 text-sm text-foreground/80">{project.stage || '-'}</td>
                         <td className="px-4 py-3">
                           <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getInspectionStatusColor(project.finalInspectionStatus)}`}>
                             {inspectionLabel}
                           </span>
                         </td>
-                        <td className={`px-4 py-3 text-sm ${project.inspectionScheduleDate ? 'text-blue-400' : 'text-zinc-500'}`}>
+                        <td className={`px-4 py-3 text-sm ${project.inspectionScheduleDate ? 'text-blue-400' : 'text-muted'}`}>
                           {project.inspectionScheduleDate || '-'}
                         </td>
-                        <td className={`px-4 py-3 text-sm ${project.inspectionPassDate ? 'text-emerald-400' : 'text-zinc-500'}`}>
+                        <td className={`px-4 py-3 text-sm ${project.inspectionPassDate ? 'text-emerald-400' : 'text-muted'}`}>
                           {project.inspectionPassDate || '-'}
                         </td>
-                        <td className={`px-4 py-3 text-right font-mono text-sm ${(project.amount || 0) > 0 ? 'text-green-400' : 'text-zinc-500'}`}>
+                        <td className={`px-4 py-3 text-right font-mono text-sm ${(project.amount || 0) > 0 ? 'text-green-400' : 'text-muted'}`}>
                           {formatMoney(project.amount || 0)}
                         </td>
                       </tr>

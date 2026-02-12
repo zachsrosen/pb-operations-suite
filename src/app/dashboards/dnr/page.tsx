@@ -101,7 +101,7 @@ function truncateStage(stage: string, max = 25): string {
 function ageColorClass(days: number): string {
   if (days > 60) return "text-red-400";
   if (days > 30) return "text-yellow-400";
-  return "text-zinc-400";
+  return "text-muted";
 }
 
 // ---------------------------------------------------------------------------
@@ -236,7 +236,7 @@ export default function DNRPipelinePage() {
           <select
             value={filterLocation}
             onChange={(e) => setFilterLocation(e.target.value)}
-            className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white"
+            className="bg-surface-2 border border-t-border rounded-lg px-3 py-2 text-sm text-white"
           >
             <option value="all">All Locations</option>
             {locations.map((loc) => (
@@ -250,7 +250,7 @@ export default function DNRPipelinePage() {
           <select
             value={filterStage}
             onChange={(e) => setFilterStage(e.target.value)}
-            className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white"
+            className="bg-surface-2 border border-t-border rounded-lg px-3 py-2 text-sm text-white"
           >
             <option value="all">All Stages</option>
             {STAGES.map((s) => (
@@ -263,7 +263,7 @@ export default function DNRPipelinePage() {
           {/* Refresh */}
           <button
             onClick={fetchData}
-            className="bg-violet-600 hover:bg-violet-700 px-4 py-2 rounded-lg text-sm font-medium text-white"
+            className="bg-violet-600 hover:bg-violet-700 px-4 py-2 rounded-lg text-sm font-medium text-foreground"
           >
             Refresh
           </button>
@@ -292,20 +292,20 @@ export default function DNRPipelinePage() {
         {Object.entries(STAGE_GROUPS).map(([group, stages]) => (
           <div
             key={group}
-            className="bg-[#12121a] rounded-xl border border-zinc-800 p-4"
+            className="bg-surface rounded-xl border border-t-border p-4"
           >
-            <h3 className="text-sm font-semibold text-zinc-400 mb-3">
+            <h3 className="text-sm font-semibold text-muted mb-3">
               {group}
             </h3>
             <div className="space-y-2">
               {stages.map((stage) => (
                 <div key={stage} className="flex items-center justify-between">
-                  <span className="text-xs text-zinc-300 truncate">
+                  <span className="text-xs text-foreground/80 truncate">
                     {STAGE_SHORT_LABELS[stage] ?? stage}
                   </span>
                   <span
                     className={`text-sm font-bold ${
-                      stageCounts[stage] > 0 ? "text-white" : "text-zinc-600"
+                      stageCounts[stage] > 0 ? "text-white" : "text-muted/70"
                     }`}
                   >
                     {stageCounts[stage] ?? 0}
@@ -318,7 +318,7 @@ export default function DNRPipelinePage() {
       </div>
 
       {/* Search bar */}
-      <div className="bg-[#12121a] rounded-xl border border-zinc-800 p-4 mb-6">
+      <div className="bg-surface rounded-xl border border-t-border p-4 mb-6">
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex-1 min-w-[200px]">
             <ProjectSearchBar
@@ -332,7 +332,7 @@ export default function DNRPipelinePage() {
               onClick={() => {
                 setSearchQuery("");
               }}
-              className="text-xs text-zinc-500 hover:text-zinc-300 px-2 py-1"
+              className="text-xs text-muted hover:text-foreground px-2 py-1"
             >
               Clear Search
             </button>
@@ -341,25 +341,25 @@ export default function DNRPipelinePage() {
       </div>
 
       {/* Deals table */}
-      <div className="bg-[#12121a] rounded-xl border border-zinc-800 overflow-hidden">
-        <div className="p-4 border-b border-zinc-800">
+      <div className="bg-surface rounded-xl border border-t-border overflow-hidden">
+        <div className="p-4 border-b border-t-border">
           <div className="flex items-center gap-3">
             <h2 className="text-lg font-semibold">
               D&R Projects ({filteredDeals.length})
               {filteredDeals.length !== activeDeals.length && (
-                <span className="text-sm font-normal text-zinc-500 ml-2">
+                <span className="text-sm font-normal text-muted ml-2">
                   {activeDeals.length} active
                 </span>
               )}
             </h2>
             {loadingMore && progress && (
-              <span className="text-xs text-zinc-500">
+              <span className="text-xs text-muted">
                 Loading {progress.loaded}{progress.total ? ` of ${progress.total}` : ""} deals...
               </span>
             )}
           </div>
           {loadingMore && (
-            <div className="mt-2 h-1 bg-zinc-800 rounded-full overflow-hidden">
+            <div className="mt-2 h-1 bg-surface-2 rounded-full overflow-hidden">
               {progress?.total ? (
                 <div
                   className="h-full bg-violet-500 rounded-full transition-all duration-300"
@@ -373,40 +373,40 @@ export default function DNRPipelinePage() {
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-zinc-900">
+            <thead className="bg-surface">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">
                   Project
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">
                   Location
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">
                   Stage
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">
                   Detach Status
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">
                   Reset Status
                 </th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase">
+                <th className="px-4 py-3 text-right text-xs font-medium text-muted uppercase">
                   Amount
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">
                   Age
                 </th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-zinc-400 uppercase">
+                <th className="px-4 py-3 text-center text-xs font-medium text-muted uppercase">
                   Actions
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-800">
+            <tbody className="divide-y divide-t-border">
               {filteredDeals.length === 0 ? (
                 <tr>
                   <td
                     colSpan={8}
-                    className="px-4 py-8 text-center text-zinc-500"
+                    className="px-4 py-8 text-center text-muted"
                   >
                     No projects found
                   </td>
@@ -415,17 +415,17 @@ export default function DNRPipelinePage() {
                 filteredDeals.map((deal, idx) => (
                   <tr
                     key={`${deal.name}-${idx}`}
-                    className={`hover:bg-zinc-900/50 ${
+                    className={`hover:bg-surface/50 ${
                       !deal.isActive ? "opacity-50" : ""
                     } ${deal.stage.includes("Blocked") ? "bg-red-900/10" : ""}`}
                   >
                     <td className="px-4 py-3">
-                      <div className="font-medium text-white">{deal.name}</div>
-                      <div className="text-xs text-zinc-500">
+                      <div className="font-medium text-foreground">{deal.name}</div>
+                      <div className="text-xs text-muted">
                         {deal.city || ""} {deal.state || ""}
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-sm text-zinc-300">
+                    <td className="px-4 py-3 text-sm text-foreground/80">
                       {deal.pbLocation}
                     </td>
                     <td className="px-4 py-3">
@@ -443,7 +443,7 @@ export default function DNRPipelinePage() {
                           {deal.detachStatus}
                         </span>
                       ) : (
-                        <span className="text-zinc-600">-</span>
+                        <span className="text-muted/70">-</span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-sm">
@@ -452,12 +452,12 @@ export default function DNRPipelinePage() {
                           {deal.resetStatus}
                         </span>
                       ) : (
-                        <span className="text-zinc-600">-</span>
+                        <span className="text-muted/70">-</span>
                       )}
                     </td>
                     <td
                       className={`px-4 py-3 text-right font-mono text-sm ${
-                        deal.amount > 0 ? "text-green-400" : "text-zinc-500"
+                        deal.amount > 0 ? "text-green-400" : "text-muted"
                       }`}
                     >
                       {formatCurrency(deal.amount)}
@@ -502,9 +502,9 @@ function StatCard({
   color: string;
 }) {
   return (
-    <div className="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+    <div className="bg-surface rounded-xl p-4 border border-t-border">
       <div className={`text-2xl font-bold ${color}`}>{value}</div>
-      <div className="text-sm text-zinc-400">{label}</div>
+      <div className="text-sm text-muted">{label}</div>
     </div>
   );
 }

@@ -688,7 +688,7 @@ export default function ConstructionSchedulerPage() {
     if (s.includes("progress")) return "bg-yellow-500/20 text-yellow-400 border-yellow-500/30";
     if (s.includes("ready")) return "bg-emerald-500/20 text-emerald-400 border-emerald-500/30";
     if (s.includes("hold")) return "bg-orange-500/20 text-orange-400 border-orange-500/30";
-    return "bg-zinc-500/20 text-zinc-400 border-zinc-500/30";
+    return "bg-zinc-500/20 text-muted border-muted/30";
   };
 
   /* ================================================================ */
@@ -697,10 +697,10 @@ export default function ConstructionSchedulerPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#0a0a0f] text-white flex items-center justify-center">
+      <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-emerald-500 mx-auto mb-4" />
-          <p className="text-zinc-400">Loading Construction Projects...</p>
+          <p className="text-muted">Loading Construction Projects...</p>
         </div>
       </div>
     );
@@ -708,10 +708,10 @@ export default function ConstructionSchedulerPage() {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-[#0a0a0f] text-white flex items-center justify-center">
+      <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
         <div className="text-center">
           <p className="text-red-400 text-xl mb-2">Error loading data</p>
-          <p className="text-zinc-500 text-sm mb-4">{error}</p>
+          <p className="text-muted text-sm mb-4">{error}</p>
           <button onClick={fetchProjects} className="px-4 py-2 bg-emerald-600 rounded-lg hover:bg-emerald-700">
             Retry
           </button>
@@ -723,7 +723,7 @@ export default function ConstructionSchedulerPage() {
   const todayStr = getTodayStr();
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-white dashboard-bg">
+    <div className="min-h-screen bg-background text-foreground">
       {/* Toast */}
       {toast && (
         <div className={`fixed top-4 right-4 z-[9999] px-4 py-3 rounded-lg shadow-lg ${
@@ -734,28 +734,28 @@ export default function ConstructionSchedulerPage() {
       )}
 
       {/* Header */}
-      <div className="sticky top-0 z-50 bg-[#0a0a0f]/95 backdrop-blur border-b border-zinc-800">
+      <div className="sticky top-0 z-50 bg-background/95 backdrop-blur border-b border-t-border">
         <div className="max-w-[1800px] mx-auto px-4 py-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <Link href="/" className="text-zinc-500 hover:text-white">
+              <Link href="/" className="text-muted hover:text-foreground">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
                 </svg>
               </Link>
               <h1 className="text-xl font-bold text-emerald-400">Construction Scheduler</h1>
-              <span className="text-xs text-zinc-500 bg-zinc-800 px-2 py-1 rounded">
+              <span className="text-xs text-muted bg-surface-2 px-2 py-1 rounded">
                 {stats.total} installs
               </span>
             </div>
 
             <div className="flex items-center gap-3">
               {/* View Toggle */}
-              <div className="flex bg-zinc-900 rounded-lg p-0.5">
+              <div className="flex bg-surface rounded-lg p-0.5">
                 <button
                   onClick={() => setCurrentView("calendar")}
                   className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                    currentView === "calendar" ? "bg-emerald-600 text-white" : "text-zinc-400 hover:text-white"
+                    currentView === "calendar" ? "bg-emerald-600 text-white" : "text-muted hover:text-foreground"
                   }`}
                 >
                   Calendar
@@ -763,7 +763,7 @@ export default function ConstructionSchedulerPage() {
                 <button
                   onClick={() => setCurrentView("list")}
                   className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                    currentView === "list" ? "bg-emerald-600 text-white" : "text-zinc-400 hover:text-white"
+                    currentView === "list" ? "bg-emerald-600 text-white" : "text-muted hover:text-foreground"
                   }`}
                 >
                   List
@@ -772,7 +772,7 @@ export default function ConstructionSchedulerPage() {
 
               <ThemeToggle />
 
-              <button onClick={fetchProjects} className="p-2 hover:bg-zinc-800 rounded-lg">
+              <button onClick={fetchProjects} className="p-2 hover:bg-surface-2 rounded-lg">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
@@ -783,15 +783,15 @@ export default function ConstructionSchedulerPage() {
           {/* Stats Row */}
           <div className="flex items-center gap-6 mt-3 text-sm">
             <div className="flex items-center gap-2">
-              <span className="text-zinc-500">Ready:</span>
+              <span className="text-muted">Ready:</span>
               <span className="text-emerald-400 font-semibold">{stats.needsScheduling}</span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-zinc-500">Scheduled:</span>
+              <span className="text-muted">Scheduled:</span>
               <span className="text-blue-400 font-semibold">{stats.scheduled}</span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-zinc-500">Completed:</span>
+              <span className="text-muted">Completed:</span>
               <span className="text-green-400 font-semibold">{stats.completed}</span>
             </div>
             {stats.overdue > 0 && (
@@ -801,7 +801,7 @@ export default function ConstructionSchedulerPage() {
               </div>
             )}
             <div className="flex items-center gap-2">
-              <span className="text-zinc-500">Value:</span>
+              <span className="text-muted">Value:</span>
               <span className="text-orange-400 font-semibold">{formatCurrency(stats.totalValue)}</span>
             </div>
           </div>
@@ -813,7 +813,7 @@ export default function ConstructionSchedulerPage() {
               placeholder="Search projects..."
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
-              className="px-3 py-1.5 bg-zinc-900 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:border-emerald-500 w-48"
+              className="px-3 py-1.5 bg-surface border border-t-border rounded-lg text-sm focus:outline-none focus:border-emerald-500 w-48"
             />
 
             {/* Multi-select Location Filter */}
@@ -831,7 +831,7 @@ export default function ConstructionSchedulerPage() {
                   className={`px-2 py-1 text-xs rounded-md border transition-colors ${
                     selectedLocations.includes(loc)
                       ? "bg-emerald-600 border-emerald-500 text-white"
-                      : "bg-zinc-900 border-zinc-700 text-zinc-400 hover:border-zinc-600"
+                      : "bg-surface border-t-border text-muted hover:border-muted"
                   }`}
                 >
                   {loc.replace("Colorado Springs", "CO Spgs").replace("San Luis Obispo", "SLO")}
@@ -840,7 +840,7 @@ export default function ConstructionSchedulerPage() {
               {selectedLocations.length > 0 && (
                 <button
                   onClick={() => setSelectedLocations([])}
-                  className="px-2 py-1 text-xs text-zinc-500 hover:text-white"
+                  className="px-2 py-1 text-xs text-muted hover:text-foreground"
                 >
                   Clear
                 </button>
@@ -859,7 +859,7 @@ export default function ConstructionSchedulerPage() {
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value)}
-              className="px-3 py-1.5 bg-zinc-900 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:border-emerald-500"
+              className="px-3 py-1.5 bg-surface border border-t-border rounded-lg text-sm focus:outline-none focus:border-emerald-500"
             >
               <option value="amount">Sort: Amount</option>
               <option value="date">Sort: Date</option>
@@ -873,7 +873,7 @@ export default function ConstructionSchedulerPage() {
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm border transition-colors ${
                   showAvailability
                     ? "bg-emerald-600/20 border-emerald-500 text-emerald-400"
-                    : "bg-zinc-900 border-zinc-700 text-zinc-400 hover:border-zinc-600"
+                    : "bg-surface border-t-border text-muted hover:border-muted"
                 }`}
               >
                 <div className={`w-2 h-2 rounded-full ${showAvailability ? "bg-emerald-500" : "bg-zinc-600"}`} />
@@ -890,18 +890,18 @@ export default function ConstructionSchedulerPage() {
         <div className="flex gap-4">
           {/* Left Sidebar - Unscheduled Projects */}
           <div className="w-80 flex-shrink-0">
-            <div className="sticky top-[180px] bg-[#12121a] border border-zinc-800 rounded-xl overflow-hidden">
-              <div className="p-3 border-b border-zinc-800 bg-zinc-900/50">
+            <div className="sticky top-[180px] bg-surface border border-t-border rounded-xl overflow-hidden">
+              <div className="p-3 border-b border-t-border bg-surface/50">
                 <h2 className="text-sm font-semibold text-emerald-400">
                   Ready to Schedule ({unscheduledProjects.length})
                 </h2>
-                <p className="text-xs text-zinc-500 mt-1">
+                <p className="text-xs text-muted mt-1">
                   Drag to calendar or click to select
                 </p>
               </div>
               <div className="max-h-[calc(100vh-280px)] overflow-y-auto">
                 {unscheduledProjects.length === 0 ? (
-                  <div className="p-4 text-center text-zinc-500 text-sm">
+                  <div className="p-4 text-center text-muted text-sm">
                     No projects need scheduling
                   </div>
                 ) : (
@@ -911,19 +911,19 @@ export default function ConstructionSchedulerPage() {
                       draggable
                       onDragStart={() => handleDragStart(project.id)}
                       onClick={() => setSelectedProject(selectedProject?.id === project.id ? null : project)}
-                      className={`p-3 border-b border-zinc-800 cursor-pointer hover:bg-zinc-800/50 transition-colors ${
+                      className={`p-3 border-b border-t-border cursor-pointer hover:bg-skeleton transition-colors ${
                         selectedProject?.id === project.id ? "bg-emerald-900/20 border-l-2 border-l-emerald-500" : ""
                       }`}
                     >
                       <div className="flex items-start justify-between">
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-white truncate">
+                          <p className="text-sm font-medium text-foreground truncate">
                             {getCustomerName(project.name)}
                           </p>
-                          <p className="text-xs text-zinc-500 truncate">
+                          <p className="text-xs text-muted truncate">
                             {getProjectId(project.name)}
                           </p>
-                          <p className="text-xs text-zinc-500 truncate mt-0.5">
+                          <p className="text-xs text-muted truncate mt-0.5">
                             {project.location}
                           </p>
                         </div>
@@ -941,7 +941,7 @@ export default function ConstructionSchedulerPage() {
                           {project.installStatus}
                         </span>
                         {project.systemSize > 0 && (
-                          <span className="text-xs text-zinc-500">
+                          <span className="text-xs text-muted">
                             {project.systemSize.toFixed(1)}kW
                           </span>
                         )}
@@ -966,11 +966,11 @@ export default function ConstructionSchedulerPage() {
           {/* Main Area - Calendar or List */}
           <div className="flex-1">
             {currentView === "calendar" ? (
-              <div className="bg-[#12121a] border border-zinc-800 rounded-xl overflow-hidden">
+              <div className="bg-surface border border-t-border rounded-xl overflow-hidden">
                 {/* Calendar Header */}
-                <div className="p-3 border-b border-zinc-800 flex items-center justify-between">
+                <div className="p-3 border-b border-t-border flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <button onClick={goToPrevMonth} className="p-1.5 hover:bg-zinc-800 rounded">
+                    <button onClick={goToPrevMonth} className="p-1.5 hover:bg-surface-2 rounded">
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                       </svg>
@@ -978,18 +978,18 @@ export default function ConstructionSchedulerPage() {
                     <span className="text-lg font-semibold min-w-[180px] text-center">
                       {MONTH_NAMES[currentMonth]} {currentYear}
                     </span>
-                    <button onClick={goToNextMonth} className="p-1.5 hover:bg-zinc-800 rounded">
+                    <button onClick={goToNextMonth} className="p-1.5 hover:bg-surface-2 rounded">
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                       </svg>
                     </button>
                   </div>
-                  <button onClick={goToToday} className="px-3 py-1 text-xs bg-zinc-800 hover:bg-zinc-700 rounded">
+                  <button onClick={goToToday} className="px-3 py-1 text-xs bg-surface-2 hover:bg-surface-2 rounded">
                     Today
                   </button>
                   {/* Availability Legend */}
                   {showAvailability && zuperConfigured && (
-                    <div className="flex items-center gap-3 text-xs text-zinc-500">
+                    <div className="flex items-center gap-3 text-xs text-muted">
                       <div className="flex items-center gap-1">
                         <div className="w-2 h-2 bg-emerald-500 rounded-full" />
                         <span>Available</span>
@@ -1007,9 +1007,9 @@ export default function ConstructionSchedulerPage() {
                 </div>
 
                 {/* Day Headers */}
-                <div className="grid grid-cols-7 border-b border-zinc-800">
+                <div className="grid grid-cols-7 border-b border-t-border">
                   {DAY_NAMES.map((day) => (
-                    <div key={day} className="p-2 text-center text-xs font-medium text-zinc-500">
+                    <div key={day} className="p-2 text-center text-xs font-medium text-muted">
                       {day}
                     </div>
                   ))}
@@ -1034,11 +1034,11 @@ export default function ConstructionSchedulerPage() {
                         onDragOver={handleDragOver}
                         onDrop={() => handleDrop(dateStr)}
                         onClick={() => handleDateClick(dateStr)}
-                        className={`min-h-[110px] max-h-[180px] overflow-y-auto p-1.5 border-b border-r border-zinc-800 cursor-pointer transition-colors ${
+                        className={`min-h-[110px] max-h-[180px] overflow-y-auto p-1.5 border-b border-r border-t-border cursor-pointer transition-colors ${
                           isCurrentMonth ? "" : "opacity-40"
-                        } ${weekend ? "bg-zinc-900/30" : ""} ${
+                        } ${weekend ? "bg-surface/30" : ""} ${
                           isToday ? "bg-emerald-900/20" : ""
-                        } ${selectedProject ? "hover:bg-emerald-900/10" : "hover:bg-zinc-800/50"} ${
+                        } ${selectedProject ? "hover:bg-emerald-900/10" : "hover:bg-skeleton"} ${
                           showAvailability && hasAvailability && selectedProject
                             ? "ring-2 ring-inset ring-emerald-500/30 bg-emerald-900/10"
                             : ""
@@ -1050,7 +1050,7 @@ export default function ConstructionSchedulerPage() {
                       >
                         <div className="flex items-center justify-between mb-1">
                           <span className={`text-xs font-medium ${
-                            isToday ? "text-emerald-400" : "text-zinc-500"
+                            isToday ? "text-emerald-400" : "text-muted"
                           }`}>
                             {parseInt(dateStr.split("-")[2])}
                           </span>
@@ -1129,38 +1129,38 @@ export default function ConstructionSchedulerPage() {
               </div>
             ) : (
               /* List View */
-              <div className="bg-[#12121a] border border-zinc-800 rounded-xl overflow-hidden">
-                <div className="p-3 border-b border-zinc-800">
+              <div className="bg-surface border border-t-border rounded-xl overflow-hidden">
+                <div className="p-3 border-b border-t-border">
                   <h2 className="text-sm font-semibold">All Construction Projects ({filteredProjects.length})</h2>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full">
-                    <thead className="bg-zinc-900">
+                    <thead className="bg-surface">
                       <tr>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Project</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Location</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Status</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Install Date</th>
-                        <th className="px-4 py-3 text-center text-xs font-medium text-zinc-400 uppercase">Days</th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase">Amount</th>
-                        <th className="px-4 py-3 text-center text-xs font-medium text-zinc-400 uppercase">Links</th>
-                        <th className="px-4 py-3 text-center text-xs font-medium text-zinc-400 uppercase">Actions</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Project</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Location</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Status</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Install Date</th>
+                        <th className="px-4 py-3 text-center text-xs font-medium text-muted uppercase">Days</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-muted uppercase">Amount</th>
+                        <th className="px-4 py-3 text-center text-xs font-medium text-muted uppercase">Links</th>
+                        <th className="px-4 py-3 text-center text-xs font-medium text-muted uppercase">Actions</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-zinc-800">
+                    <tbody className="divide-y divide-t-border">
                       {filteredProjects.map((project) => {
                         const schedDate = manualSchedules[project.id] || project.scheduleDate;
                         const overdue = isInstallOverdue(project, manualSchedules[project.id]);
                         return (
-                          <tr key={project.id} className={`hover:bg-zinc-900/50 ${overdue ? "bg-red-500/5" : ""}`}>
+                          <tr key={project.id} className={`hover:bg-surface/50 ${overdue ? "bg-red-500/5" : ""}`}>
                             <td className="px-4 py-3">
-                              <a href={project.hubspotUrl} target="_blank" rel="noopener noreferrer" className="font-medium text-white hover:text-emerald-400">
+                              <a href={project.hubspotUrl} target="_blank" rel="noopener noreferrer" className="font-medium text-foreground hover:text-emerald-400">
                                 {overdue && <span className="text-red-400 mr-1">⚠</span>}
                                 {getCustomerName(project.name)}
                               </a>
-                              <div className="text-xs text-zinc-500">{getProjectId(project.name)}</div>
+                              <div className="text-xs text-muted">{getProjectId(project.name)}</div>
                             </td>
-                            <td className="px-4 py-3 text-sm text-zinc-400">{project.location}</td>
+                            <td className="px-4 py-3 text-sm text-muted">{project.location}</td>
                             <td className="px-4 py-3">
                               <div className="flex items-center gap-1.5">
                                 <span className={`text-xs px-2 py-1 rounded border ${getStatusColor(project.installStatus)}`}>
@@ -1173,10 +1173,10 @@ export default function ConstructionSchedulerPage() {
                                 )}
                               </div>
                             </td>
-                            <td className={`px-4 py-3 text-sm ${overdue ? "text-red-400" : schedDate ? "text-emerald-400" : "text-zinc-500"}`}>
+                            <td className={`px-4 py-3 text-sm ${overdue ? "text-red-400" : schedDate ? "text-emerald-400" : "text-muted"}`}>
                               {schedDate ? formatShortDate(schedDate) : "—"}
                             </td>
-                            <td className="px-4 py-3 text-center text-sm text-zinc-400">
+                            <td className="px-4 py-3 text-center text-sm text-muted">
                               {project.installDays}d
                             </td>
                             <td className="px-4 py-3 text-right font-mono text-sm text-orange-400">
@@ -1188,7 +1188,7 @@ export default function ConstructionSchedulerPage() {
                                   href={project.hubspotUrl}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="p-1 hover:bg-zinc-700 rounded transition-colors"
+                                  className="p-1 hover:bg-surface-2 rounded transition-colors"
                                   title="Open in HubSpot"
                                 >
                                   <svg className="w-4 h-4 text-orange-400" viewBox="0 0 24 24" fill="currentColor">
@@ -1200,7 +1200,7 @@ export default function ConstructionSchedulerPage() {
                                     href={`${zuperWebBaseUrl}/jobs/${project.zuperJobUid}/details`}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="p-1 hover:bg-zinc-700 rounded transition-colors"
+                                    className="p-1 hover:bg-surface-2 rounded transition-colors"
                                     title="Open in Zuper"
                                   >
                                     <svg className="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1247,45 +1247,45 @@ export default function ConstructionSchedulerPage() {
             if (e.target === e.currentTarget) setScheduleModal(null);
           }}
         >
-          <div className="bg-[#12121a] border border-zinc-800 rounded-xl p-5 max-w-md w-[90%]">
+          <div className="bg-surface border border-t-border rounded-xl p-5 max-w-md w-[90%]">
             <h3 className="text-lg font-semibold mb-4">Schedule Construction</h3>
 
             <div className="space-y-3 mb-4">
               <div>
-                <span className="text-xs text-zinc-500">Project</span>
+                <span className="text-xs text-muted">Project</span>
                 <p className="text-sm font-medium">{getCustomerName(scheduleModal.project.name)}</p>
-                <p className="text-xs text-zinc-500">{getProjectId(scheduleModal.project.name)}</p>
+                <p className="text-xs text-muted">{getProjectId(scheduleModal.project.name)}</p>
               </div>
 
               <div>
-                <span className="text-xs text-zinc-500">Location</span>
+                <span className="text-xs text-muted">Location</span>
                 <p className="text-sm">{scheduleModal.project.location}</p>
               </div>
 
               <div>
-                <span className="text-xs text-zinc-500">Install Date</span>
+                <span className="text-xs text-muted">Install Date</span>
                 <p className="text-sm font-medium text-emerald-400">{formatDate(scheduleModal.date)}</p>
               </div>
 
               <div className="flex gap-6">
                 <div>
-                  <span className="text-xs text-zinc-500">System Size</span>
+                  <span className="text-xs text-muted">System Size</span>
                   <p className="text-sm">{scheduleModal.project.systemSize.toFixed(1)} kW {scheduleModal.project.batteries > 0 && `+ ${scheduleModal.project.batteries} batteries`}</p>
                 </div>
                 <div>
-                  <span className="text-xs text-zinc-500">Install Days</span>
+                  <span className="text-xs text-muted">Install Days</span>
                   <p className="text-sm font-medium">{scheduleModal.project.installDays}d</p>
                 </div>
               </div>
 
               <div>
-                <span className="text-xs text-zinc-500">Amount</span>
+                <span className="text-xs text-muted">Amount</span>
                 <p className="text-sm font-mono text-orange-400">{formatCurrency(scheduleModal.project.amount)}</p>
               </div>
 
               {/* External Links */}
               <div>
-                <span className="text-xs text-zinc-500">Links</span>
+                <span className="text-xs text-muted">Links</span>
                 <div className="flex items-center gap-3 mt-1">
                   <a
                     href={scheduleModal.project.hubspotUrl}
@@ -1317,13 +1317,13 @@ export default function ConstructionSchedulerPage() {
 
             {/* Zuper Sync Option */}
             {zuperConfigured && (
-              <div className="mb-4 p-3 bg-zinc-900 rounded-lg border border-zinc-800">
+              <div className="mb-4 p-3 bg-surface rounded-lg border border-t-border">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={syncToZuper}
                     onChange={(e) => setSyncToZuper(e.target.checked)}
-                    className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-emerald-500 focus:ring-emerald-500"
+                    className="w-4 h-4 rounded border-t-border bg-surface-2 text-emerald-500 focus:ring-emerald-500"
                   />
                   <span className="text-sm">Sync to Zuper FSM</span>
                 </label>
@@ -1338,7 +1338,7 @@ export default function ConstructionSchedulerPage() {
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => setScheduleModal(null)}
-                className="px-4 py-2 text-sm text-zinc-400 hover:text-white"
+                className="px-4 py-2 text-sm text-muted hover:text-foreground"
               >
                 Cancel
               </button>

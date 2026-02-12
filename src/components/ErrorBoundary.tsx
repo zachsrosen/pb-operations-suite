@@ -32,17 +32,17 @@ export class ErrorBoundary extends Component<Props, State> {
       if (this.props.fallback) return this.props.fallback;
 
       return (
-        <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center p-6" role="alert" aria-live="assertive">
-          <div className="text-center bg-[#12121a] rounded-xl p-8 border border-zinc-800 max-w-md">
+        <div className="min-h-screen bg-background flex items-center justify-center p-6" role="alert" aria-live="assertive">
+          <div className="text-center bg-surface rounded-xl p-8 border border-t-border shadow-card max-w-md">
             <div className="text-red-500 text-5xl mb-4" aria-hidden="true">!</div>
-            <h2 className="text-xl font-bold text-white mb-2">
+            <h2 className="text-xl font-bold text-foreground mb-2">
               Something went wrong
             </h2>
-            <p className="text-zinc-400 mb-2">
+            <p className="text-muted mb-2">
               This dashboard encountered an unexpected error.
             </p>
             {this.state.error && (
-              <p className="text-xs text-zinc-600 mb-4 font-mono">
+              <p className="text-xs text-muted/60 mb-4 font-mono">
                 {this.state.error.message}
               </p>
             )}
@@ -55,7 +55,7 @@ export class ErrorBoundary extends Component<Props, State> {
               </button>
               <Link
                 href="/"
-                className="px-4 py-2 bg-zinc-700 text-white rounded-lg hover:bg-zinc-600 transition-colors"
+                className="px-4 py-2 bg-surface-2 text-foreground rounded-lg hover:bg-surface-elevated transition-colors"
               >
                 Go Home
               </Link>

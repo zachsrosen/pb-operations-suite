@@ -98,7 +98,7 @@ function CollapsibleSection({
           <span className="text-sm text-gray-400 font-mono">
             {open ? "\u25BC" : "\u25B6"}
           </span>
-          <h2 className="text-base font-semibold text-white">{title}</h2>
+          <h2 className="text-base font-semibold text-foreground">{title}</h2>
           {count !== undefined && (
             <span className="text-xs text-gray-400 bg-gray-700 px-2 py-0.5 rounded-full">
               {count}
@@ -204,7 +204,7 @@ export default function SecurityAuditPage() {
         <div className="max-w-6xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <Link href="/" className="text-gray-400 hover:text-white">
+              <Link href="/" className="text-gray-400 hover:text-foreground">
                 <svg
                   className="w-5 h-5"
                   fill="none"
@@ -228,7 +228,7 @@ export default function SecurityAuditPage() {
               </span>
               <button
                 onClick={fetchData}
-                className="text-gray-400 hover:text-white p-2 rounded-lg hover:bg-gray-800 transition-colors"
+                className="text-gray-400 hover:text-foreground p-2 rounded-lg hover:bg-gray-800 transition-colors"
                 title="Refresh"
               >
                 <svg
@@ -249,13 +249,13 @@ export default function SecurityAuditPage() {
               {/* Nav links */}
               <Link
                 href="/admin/users"
-                className="text-xs text-gray-400 hover:text-white px-3 py-1.5 rounded-lg hover:bg-gray-800 transition-colors"
+                className="text-xs text-gray-400 hover:text-foreground px-3 py-1.5 rounded-lg hover:bg-gray-800 transition-colors"
               >
                 Users
               </Link>
               <Link
                 href="/admin/activity"
-                className="text-xs text-gray-400 hover:text-white px-3 py-1.5 rounded-lg hover:bg-gray-800 transition-colors"
+                className="text-xs text-gray-400 hover:text-foreground px-3 py-1.5 rounded-lg hover:bg-gray-800 transition-colors"
               >
                 Activity
               </Link>
@@ -317,7 +317,7 @@ export default function SecurityAuditPage() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
             <div className="text-xs text-gray-400 mb-1">Total Users</div>
-            <div className="text-2xl font-bold text-white">
+            <div className="text-2xl font-bold text-foreground">
               {data.users.length}
             </div>
           </div>
@@ -347,7 +347,7 @@ export default function SecurityAuditPage() {
 
         {/* Section 3: Admin Users */}
         <div>
-          <h2 className="text-base font-semibold text-white mb-3">
+          <h2 className="text-base font-semibold text-foreground mb-3">
             Admin Users
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">

@@ -196,7 +196,7 @@ export default function TimelineViewPage() {
           <select
             value={filterLocation}
             onChange={(e) => setFilterLocation(e.target.value)}
-            className="bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-white"
+            className="bg-surface-2 border border-t-border rounded px-3 py-1.5 text-sm text-white"
           >
             <option value="all">All Locations</option>
             {locations.map((l) => (
@@ -206,23 +206,23 @@ export default function TimelineViewPage() {
           <select
             value={filterStage}
             onChange={(e) => setFilterStage(e.target.value)}
-            className="bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-white"
+            className="bg-surface-2 border border-t-border rounded px-3 py-1.5 text-sm text-white"
           >
             <option value="all">All Stages</option>
             {stages.map((s) => (
               <option key={s} value={s}>{s}</option>
             ))}
           </select>
-          <div className="flex bg-zinc-800 border border-zinc-700 rounded overflow-hidden">
+          <div className="flex bg-surface-2 border border-t-border rounded overflow-hidden">
             <button
               onClick={() => setZoomLevel("month")}
-              className={`px-3 py-1.5 text-xs ${zoomLevel === "month" ? "bg-purple-600 text-white" : "text-zinc-400"}`}
+              className={`px-3 py-1.5 text-xs ${zoomLevel === "month" ? "bg-purple-600 text-white" : "text-muted"}`}
             >
               Month
             </button>
             <button
               onClick={() => setZoomLevel("quarter")}
-              className={`px-3 py-1.5 text-xs ${zoomLevel === "quarter" ? "bg-purple-600 text-white" : "text-zinc-400"}`}
+              className={`px-3 py-1.5 text-xs ${zoomLevel === "quarter" ? "bg-purple-600 text-white" : "text-muted"}`}
             >
               Quarter
             </button>
@@ -232,36 +232,36 @@ export default function TimelineViewPage() {
     >
       {/* Summary Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <div className="bg-[#12121a] border border-zinc-800 rounded-lg p-4">
-          <div className="text-2xl font-bold text-white">{filteredProjects.length}</div>
-          <div className="text-sm text-zinc-400">Total Projects</div>
+        <div className="bg-surface border border-t-border rounded-lg p-4">
+          <div className="text-2xl font-bold text-foreground">{filteredProjects.length}</div>
+          <div className="text-sm text-muted">Total Projects</div>
         </div>
-        <div className="bg-[#12121a] border border-zinc-800 rounded-lg p-4">
+        <div className="bg-surface border border-t-border rounded-lg p-4">
           <div className="text-2xl font-bold text-emerald-400">
             {formatCurrencyCompact(filteredProjects.reduce((s, p) => s + (p.amount || 0), 0))}
           </div>
-          <div className="text-sm text-zinc-400">Pipeline Value</div>
+          <div className="text-sm text-muted">Pipeline Value</div>
         </div>
-        <div className="bg-[#12121a] border border-zinc-800 rounded-lg p-4">
+        <div className="bg-surface border border-t-border rounded-lg p-4">
           <div className="text-2xl font-bold text-red-400">
             {filteredProjects.filter((p) => p.days_to_pto !== null && p.days_to_pto < 0).length}
           </div>
-          <div className="text-sm text-zinc-400">PTO Overdue</div>
+          <div className="text-sm text-muted">PTO Overdue</div>
         </div>
-        <div className="bg-[#12121a] border border-zinc-800 rounded-lg p-4">
+        <div className="bg-surface border border-t-border rounded-lg p-4">
           <div className="text-2xl font-bold text-purple-400">
             {timelineRange ? timelineRange.months.length : 0}
           </div>
-          <div className="text-sm text-zinc-400">Month Span</div>
+          <div className="text-sm text-muted">Month Span</div>
         </div>
       </div>
 
       {/* Timeline Chart */}
       {timelineRange && (
-        <div className="bg-[#12121a] rounded-xl border border-zinc-800 overflow-hidden mb-6">
+        <div className="bg-surface rounded-xl border border-t-border overflow-hidden mb-6">
           {/* Month headers */}
-          <div className="flex border-b border-zinc-800 sticky top-0 bg-[#12121a] z-10">
-            <div className="w-48 shrink-0 px-4 py-3 text-xs font-medium text-zinc-400 border-r border-zinc-800">
+          <div className="flex border-b border-t-border sticky top-0 bg-surface z-10">
+            <div className="w-48 shrink-0 px-4 py-3 text-xs font-medium text-muted border-r border-t-border">
               Project
             </div>
             <div className="flex-1 flex relative">
@@ -270,8 +270,8 @@ export default function TimelineViewPage() {
                 return (
                   <div
                     key={`${month.label}-${i}`}
-                    className={`flex-1 px-2 py-3 text-xs text-center font-medium border-r border-zinc-800/50 last:border-0 ${
-                      isToday ? "bg-purple-500/10 text-purple-400" : "text-zinc-500"
+                    className={`flex-1 px-2 py-3 text-xs text-center font-medium border-r border-t-border/50 last:border-0 ${
+                      isToday ? "bg-purple-500/10 text-purple-400" : "text-muted"
                     }`}
                   >
                     {month.label}
@@ -284,17 +284,17 @@ export default function TimelineViewPage() {
           {/* Project rows */}
           <div className="max-h-[60vh] overflow-y-auto">
             {timelineItems.length === 0 ? (
-              <div className="text-center py-12 text-zinc-500 text-sm">
+              <div className="text-center py-12 text-muted text-sm">
                 No projects with timeline data
               </div>
             ) : (
               timelineItems.slice(0, 50).map((item) => (
                 <div
                   key={item.id}
-                  className="flex border-b border-zinc-800/30 hover:bg-zinc-800/20 transition-colors group"
+                  className="flex border-b border-t-border/30 hover:bg-surface-2/20 transition-colors group"
                 >
                   {/* Project name */}
-                  <div className="w-48 shrink-0 px-4 py-2.5 border-r border-zinc-800 flex items-center">
+                  <div className="w-48 shrink-0 px-4 py-2.5 border-r border-t-border flex items-center">
                     <div className="min-w-0">
                       <a
                         href={item.url}
@@ -304,7 +304,7 @@ export default function TimelineViewPage() {
                       >
                         {item.displayName}
                       </a>
-                      <div className="text-[10px] text-zinc-500 truncate">
+                      <div className="text-[10px] text-muted truncate">
                         {item.pb_location}
                       </div>
                     </div>
@@ -329,7 +329,7 @@ export default function TimelineViewPage() {
 
           {/* Footer */}
           {timelineItems.length > 50 && (
-            <div className="px-4 py-2 text-center text-xs text-zinc-500 border-t border-zinc-800">
+            <div className="px-4 py-2 text-center text-xs text-muted border-t border-t-border">
               Showing 50 of {timelineItems.length} projects
             </div>
           )}
@@ -337,16 +337,16 @@ export default function TimelineViewPage() {
       )}
 
       {/* Legend */}
-      <div className="bg-[#12121a] rounded-xl border border-zinc-800 p-4">
-        <div className="text-xs text-zinc-400 mb-3">Stage Legend</div>
+      <div className="bg-surface rounded-xl border border-t-border p-4">
+        <div className="text-xs text-muted mb-3">Stage Legend</div>
         <div className="flex flex-wrap gap-3">
           {Object.entries(STAGE_COLORS).map(([stage, colors]) => (
-            <div key={stage} className="flex items-center gap-1.5 text-xs text-zinc-400">
+            <div key={stage} className="flex items-center gap-1.5 text-xs text-muted">
               <div className={`w-3 h-3 rounded-full ${colors.tw}`} />
               {stage}
             </div>
           ))}
-          <div className="flex items-center gap-1.5 text-xs text-zinc-400">
+          <div className="flex items-center gap-1.5 text-xs text-muted">
             <div className="w-3 h-3 rounded-full bg-red-500" />
             Overdue
           </div>

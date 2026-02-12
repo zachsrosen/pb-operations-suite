@@ -309,9 +309,9 @@ export default function Home() {
   }, [userRole]);
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-white dashboard-bg">
+    <div className="min-h-screen bg-background text-foreground">
       {/* Header */}
-      <header className="border-b border-zinc-800 px-6 py-4 dashboard-header">
+      <header className="border-b border-t-border px-6 py-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <h1 className="text-xl font-bold bg-gradient-to-r from-orange-500 to-orange-400 bg-clip-text text-transparent">
             PB Operations Suite
@@ -329,7 +329,7 @@ export default function Home() {
                   })
                 );
               }}
-              className="hidden sm:flex items-center gap-2 text-xs text-zinc-500 border border-zinc-800 rounded-lg px-3 py-1.5 hover:border-zinc-600 hover:text-zinc-400 transition-colors"
+              className="hidden sm:flex items-center gap-2 text-xs text-muted border border-t-border rounded-lg px-3 py-1.5 hover:border-muted hover:text-muted transition-colors"
             >
               <svg
                 className="w-3.5 h-3.5"
@@ -345,14 +345,14 @@ export default function Home() {
                 />
               </svg>
               Search
-              <kbd className="text-[10px] border border-zinc-700 rounded px-1 py-0.5 font-mono">
+              <kbd className="text-[10px] border border-t-border rounded px-1 py-0.5 font-mono">
                 {modKey}+K
               </kbd>
             </button>
 
             <Link
               href="/updates"
-              className="hidden sm:flex items-center gap-2 text-xs text-zinc-500 border border-zinc-800 rounded-lg px-3 py-1.5 hover:border-emerald-500/50 hover:text-emerald-400 transition-colors"
+              className="hidden sm:flex items-center gap-2 text-xs text-muted border border-t-border rounded-lg px-3 py-1.5 hover:border-emerald-500/50 hover:text-emerald-400 transition-colors"
             >
               <svg
                 className="w-3.5 h-3.5"
@@ -372,7 +372,7 @@ export default function Home() {
 
             <Link
               href="/roadmap"
-              className="hidden sm:flex items-center gap-2 text-xs text-zinc-500 border border-zinc-800 rounded-lg px-3 py-1.5 hover:border-purple-500/50 hover:text-purple-400 transition-colors"
+              className="hidden sm:flex items-center gap-2 text-xs text-muted border border-t-border rounded-lg px-3 py-1.5 hover:border-purple-500/50 hover:text-purple-400 transition-colors"
             >
               <svg
                 className="w-3.5 h-3.5"
@@ -392,7 +392,7 @@ export default function Home() {
 
             <Link
               href="/guide"
-              className="hidden sm:flex items-center gap-2 text-xs text-zinc-500 border border-zinc-800 rounded-lg px-3 py-1.5 hover:border-orange-500/50 hover:text-orange-400 transition-colors"
+              className="hidden sm:flex items-center gap-2 text-xs text-muted border border-t-border rounded-lg px-3 py-1.5 hover:border-orange-500/50 hover:text-orange-400 transition-colors"
             >
               <svg
                 className="w-3.5 h-3.5"
@@ -417,7 +417,7 @@ export default function Home() {
                 Refreshing...
               </span>
             )}
-            <span className="text-sm text-zinc-500 hidden md:inline">
+            <span className="text-sm text-muted hidden md:inline">
               {loading
                 ? "Loading..."
                 : error
@@ -453,7 +453,7 @@ export default function Home() {
         )}
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8 stagger-grid">
           <StatCard
             label="Active Projects"
             value={loading ? null : stats?.totalProjects ?? null}
@@ -494,7 +494,7 @@ export default function Home() {
         </div>
 
         {/* Secondary Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8 stagger-grid">
           <MiniStat
             label="Construction"
             value={loading ? null : stats?.constructionCount ?? null}
@@ -539,7 +539,7 @@ export default function Home() {
           <SkeletonSection />
         ) : (
           stats?.stageCounts && (
-            <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6 mb-8 animate-fadeIn">
+            <div className="bg-surface/50 border border-t-border rounded-xl p-6 mb-8 animate-fadeIn">
               <h2 className="text-lg font-semibold mb-4">Pipeline by Stage</h2>
               <div className="space-y-3">
                 {(() => {
@@ -585,7 +585,7 @@ export default function Home() {
           <SkeletonSection rows={2} />
         ) : (
           allLocations.length > 0 && (
-            <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6 mb-8 animate-fadeIn">
+            <div className="bg-surface/50 border border-t-border rounded-xl p-6 mb-8 animate-fadeIn">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-semibold">
                   Projects by Location
@@ -598,14 +598,14 @@ export default function Home() {
                 {selectedLocations.length > 0 && (
                   <button
                     onClick={clearLocations}
-                    className="text-xs text-zinc-500 hover:text-zinc-300 underline transition-colors"
+                    className="text-xs text-muted hover:text-foreground underline transition-colors"
                   >
                     Clear filter
                   </button>
                 )}
               </div>
-              <p className="text-xs text-zinc-500 mb-3">Click a location to filter all data above</p>
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+              <p className="text-xs text-muted mb-3">Click a location to filter all data above</p>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4 stagger-grid">
                 {allLocations.map((location) => {
                   const count = unfilteredStats.locationCounts[location] || 0;
                   const value = unfilteredStats.locationValues[location];
@@ -618,14 +618,14 @@ export default function Home() {
                         isSelected
                           ? "bg-orange-500/15 border-orange-500/50 ring-1 ring-orange-500/30 scale-[1.02]"
                           : selectedLocations.length > 0
-                            ? "bg-zinc-800/30 border-transparent hover:bg-zinc-800/50 opacity-60 hover:opacity-100"
-                            : "bg-zinc-800/50 border-transparent hover:bg-zinc-800/70"
+                            ? "bg-surface-2/30 border-transparent hover:bg-skeleton opacity-60 hover:opacity-100"
+                            : "bg-skeleton border-transparent hover:bg-surface-2/70"
                       }`}
                     >
-                      <div className={`text-2xl font-bold ${isSelected ? "text-orange-400" : "text-white"}`}>
+                      <div className={`text-2xl font-bold ${isSelected ? "text-orange-400" : "text-foreground"}`}>
                         {count}
                       </div>
-                      <div className={`text-sm ${isSelected ? "text-orange-300" : "text-zinc-400"}`}>{location}</div>
+                      <div className={`text-sm ${isSelected ? "text-orange-300" : "text-muted"}`}>{location}</div>
                       {value != null && (
                         <div className="text-xs text-orange-400 mt-0.5">
                           {formatMoney(value)}
@@ -642,8 +642,8 @@ export default function Home() {
         {/* Suites */}
         {visibleSuites.length > 0 && (
           <div>
-            <h2 className="text-lg font-semibold text-zinc-300 mb-4 mt-8">Suites</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+            <h2 className="text-lg font-semibold text-foreground/80 mb-4 mt-8">Suites</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 stagger-grid">
               {visibleSuites.map((suite) => (
                 <DashboardLink key={suite.href} {...suite} />
               ))}
@@ -674,23 +674,23 @@ const StageBar = memo(function StageBar({
 
   return (
     <div className="flex items-center gap-4">
-      <div className="w-40 text-sm text-zinc-400 truncate" title={stage}>
+      <div className="w-40 text-sm text-muted truncate" title={stage}>
         {stage}
       </div>
-      <div className="flex-1 bg-zinc-800 rounded-full h-6 overflow-hidden">
+      <div className="flex-1 bg-surface-2 rounded-full h-6 overflow-hidden">
         <div
           className={`h-full ${colorClass} flex items-center justify-end pr-2 transition-all duration-500`}
           style={{ width: `${Math.max(percentage, 5)}%` }}
         >
-          <span className="text-xs font-medium text-white">{count}</span>
+          <span className="text-xs font-medium text-foreground">{count}</span>
         </div>
       </div>
       {value !== undefined && (
-        <div className="w-16 text-right text-sm text-zinc-400 font-medium">
+        <div className="w-16 text-right text-sm text-muted font-medium">
           {formatMoney(value)}
         </div>
       )}
-      <div className="w-12 text-right text-sm text-zinc-500">
+      <div className="w-12 text-right text-sm text-muted">
         {percentage.toFixed(0)}%
       </div>
     </div>
@@ -713,7 +713,7 @@ const DashboardLink = memo(function DashboardLink({
     green: "bg-green-500/20 text-green-400 border-green-500/30",
     cyan: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
     amber: "bg-amber-500/20 text-amber-400 border-amber-500/30",
-    zinc: "bg-zinc-500/20 text-zinc-300 border-zinc-500/30",
+    zinc: "bg-zinc-500/20 text-foreground/80 border-muted/30",
   };
 
   // Extract dashboard name from href for prefetching
@@ -728,10 +728,10 @@ const DashboardLink = memo(function DashboardLink({
     <Link
       href={href}
       onMouseEnter={handleMouseEnter}
-      className="group block bg-zinc-900/50 border border-zinc-800 rounded-xl p-5 hover:border-orange-500/50 hover:bg-zinc-900 transition-all"
+      className="group block bg-surface/50 border border-t-border rounded-xl p-5 hover:border-orange-500/50 hover:bg-surface transition-all"
     >
       <div className="flex items-center justify-between mb-1">
-        <h3 className="font-semibold text-white group-hover:text-orange-400 transition-colors">
+        <h3 className="font-semibold text-foreground group-hover:text-orange-400 transition-colors">
           {title}
         </h3>
         {tag && (
@@ -742,7 +742,7 @@ const DashboardLink = memo(function DashboardLink({
           </span>
         )}
       </div>
-      <p className="text-sm text-zinc-500">{description}</p>
+      <p className="text-sm text-muted">{description}</p>
     </Link>
   );
 });

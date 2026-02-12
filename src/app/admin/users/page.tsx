@@ -428,7 +428,7 @@ export default function AdminUsersPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#0a0a0f] text-white flex items-center justify-center">
+      <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-cyan-500" />
       </div>
     );
@@ -436,11 +436,11 @@ export default function AdminUsersPage() {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-[#0a0a0f] text-white flex items-center justify-center">
+      <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
         <div className="text-center">
           <p className="text-red-400 text-xl mb-2">Error</p>
-          <p className="text-zinc-500 text-sm mb-4">{error}</p>
-          <Link href="/" className="px-4 py-2 bg-zinc-700 rounded-lg hover:bg-zinc-600">
+          <p className="text-muted text-sm mb-4">{error}</p>
+          <Link href="/" className="px-4 py-2 bg-surface-2 rounded-lg hover:bg-zinc-600">
             Go Home
           </Link>
         </div>
@@ -449,7 +449,7 @@ export default function AdminUsersPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-white">
+    <div className="min-h-screen bg-background text-foreground">
       {/* Toast */}
       {toast && (
         <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg ${
@@ -463,15 +463,15 @@ export default function AdminUsersPage() {
       {editingUser && editPermissions && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={closePermissionsModal} />
-          <div className="relative bg-zinc-900 rounded-2xl border border-zinc-700 w-full max-w-lg mx-4 p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-6 sticky top-0 bg-zinc-900">
+          <div className="relative bg-surface rounded-2xl border border-t-border w-full max-w-lg mx-4 p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-6 sticky top-0 bg-surface">
               <div>
                 <h2 className="text-lg font-bold">Edit Permissions</h2>
-                <p className="text-sm text-zinc-400">{editingUser.name || editingUser.email}</p>
+                <p className="text-sm text-muted">{editingUser.name || editingUser.email}</p>
               </div>
               <button
                 onClick={closePermissionsModal}
-                className="p-2 hover:bg-zinc-800 rounded-lg transition-colors"
+                className="p-2 hover:bg-surface-2 rounded-lg transition-colors"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -481,15 +481,15 @@ export default function AdminUsersPage() {
 
             {/* Permission Toggles */}
             <div className="space-y-3 mb-6">
-              <h3 className="text-sm font-medium text-zinc-400 mb-2">Action Permissions</h3>
+              <h3 className="text-sm font-medium text-muted mb-2">Action Permissions</h3>
               {(Object.keys(PERMISSION_LABELS) as Array<keyof Omit<UserPermissions, "allowedLocations">>).map(key => (
                 <label
                   key={key}
-                  className="flex items-center justify-between p-3 bg-zinc-800 rounded-lg cursor-pointer hover:bg-zinc-750 transition-colors"
+                  className="flex items-center justify-between p-3 bg-surface-2 rounded-lg cursor-pointer hover:bg-zinc-750 transition-colors"
                 >
                   <div>
                     <p className="font-medium text-sm">{PERMISSION_LABELS[key].label}</p>
-                    <p className="text-xs text-zinc-500">{PERMISSION_LABELS[key].description}</p>
+                    <p className="text-xs text-muted">{PERMISSION_LABELS[key].description}</p>
                   </div>
                   <button
                     type="button"
@@ -510,8 +510,8 @@ export default function AdminUsersPage() {
 
             {/* Location Restrictions */}
             <div className="mb-6">
-              <h3 className="text-sm font-medium text-zinc-400 mb-2">Location Access</h3>
-              <p className="text-xs text-zinc-500 mb-3">Empty = access to all locations</p>
+              <h3 className="text-sm font-medium text-muted mb-2">Location Access</h3>
+              <p className="text-xs text-muted mb-3">Empty = access to all locations</p>
               <div className="grid grid-cols-2 gap-2">
                 {LOCATIONS.map(location => (
                   <label
@@ -519,7 +519,7 @@ export default function AdminUsersPage() {
                     className={`flex items-center gap-2 p-3 rounded-lg cursor-pointer transition-colors ${
                       editPermissions.allowedLocations.includes(location)
                         ? "bg-cyan-500/20 border border-cyan-500/50"
-                        : "bg-zinc-800 border border-transparent hover:bg-zinc-750"
+                        : "bg-surface-2 border border-transparent hover:bg-zinc-750"
                     }`}
                   >
                     <input
@@ -531,7 +531,7 @@ export default function AdminUsersPage() {
                     <div className={`w-4 h-4 rounded border-2 flex items-center justify-center ${
                       editPermissions.allowedLocations.includes(location)
                         ? "border-cyan-500 bg-cyan-500"
-                        : "border-zinc-600"
+                        : "border-t-border"
                     }`}>
                       {editPermissions.allowedLocations.includes(location) && (
                         <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -547,13 +547,13 @@ export default function AdminUsersPage() {
 
             {/* Recent Changes */}
             {activityLogs[editingUser.id] && activityLogs[editingUser.id].length > 0 && (
-              <div className="mb-6 pb-6 border-t border-zinc-700 pt-4">
-                <h3 className="text-sm font-medium text-zinc-400 mb-3">Recent Changes</h3>
+              <div className="mb-6 pb-6 border-t border-t-border pt-4">
+                <h3 className="text-sm font-medium text-muted mb-3">Recent Changes</h3>
                 <div className="space-y-2">
                   {activityLogs[editingUser.id].map(log => (
-                    <div key={log.id} className="p-2 bg-zinc-800/50 rounded text-xs">
-                      <p className="text-zinc-300">{log.description}</p>
-                      <p className="text-zinc-600 text-xs mt-0.5">
+                    <div key={log.id} className="p-2 bg-skeleton rounded text-xs">
+                      <p className="text-foreground/80">{log.description}</p>
+                      <p className="text-muted/70 text-xs mt-0.5">
                         {new Date(log.timestamp).toLocaleDateString("en-US", {
                           month: "short",
                           day: "numeric",
@@ -568,10 +568,10 @@ export default function AdminUsersPage() {
             )}
 
             {/* Actions */}
-            <div className="flex gap-3 sticky bottom-0 bg-zinc-900 pt-4 border-t border-zinc-700">
+            <div className="flex gap-3 sticky bottom-0 bg-surface pt-4 border-t border-t-border">
               <button
                 onClick={closePermissionsModal}
-                className="flex-1 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm font-medium transition-colors"
+                className="flex-1 px-4 py-2.5 bg-surface-2 hover:bg-surface-2 rounded-lg text-sm font-medium transition-colors"
               >
                 Cancel
               </button>
@@ -588,35 +588,35 @@ export default function AdminUsersPage() {
       )}
 
       {/* Header */}
-      <div className="sticky top-0 z-40 bg-[#0a0a0f]/95 backdrop-blur border-b border-zinc-800">
+      <div className="sticky top-0 z-40 bg-background/95 backdrop-blur border-b border-t-border">
         <div className="max-w-5xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <Link href="/" className="text-zinc-500 hover:text-white">
+              <Link href="/" className="text-muted hover:text-foreground">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
                 </svg>
               </Link>
               <h1 className="text-xl font-bold">User Management</h1>
-              <span className="text-xs text-zinc-500 bg-zinc-800 px-2 py-1 rounded">
+              <span className="text-xs text-muted bg-surface-2 px-2 py-1 rounded">
                 {users.length} users
               </span>
             </div>
 
             {/* Navigation */}
             <div className="flex items-center gap-2">
-              <span className="text-xs text-white px-3 py-1.5 rounded-lg bg-zinc-800">
+              <span className="text-xs text-white px-3 py-1.5 rounded-lg bg-surface-2">
                 Users
               </span>
               <Link
                 href="/admin/crew-availability"
-                className="text-xs text-zinc-400 hover:text-white px-3 py-1.5 rounded-lg hover:bg-zinc-800 transition-colors"
+                className="text-xs text-muted hover:text-foreground px-3 py-1.5 rounded-lg hover:bg-surface-2 transition-colors"
               >
                 Crew Availability
               </Link>
               <Link
                 href="/admin/activity"
-                className="text-xs text-zinc-400 hover:text-white px-3 py-1.5 rounded-lg hover:bg-zinc-800 transition-colors"
+                className="text-xs text-muted hover:text-foreground px-3 py-1.5 rounded-lg hover:bg-surface-2 transition-colors"
               >
                 Activity
               </Link>
@@ -658,10 +658,10 @@ export default function AdminUsersPage() {
               </svg>
               <div>
                 <h3 className="text-sm font-medium text-yellow-400">Google Workspace sync not configured</h3>
-                <p className="text-xs text-zinc-400 mt-1">
+                <p className="text-xs text-muted mt-1">
                   To enable automatic user sync, add these environment variables:
                 </p>
-                <ul className="text-xs text-zinc-500 mt-2 space-y-1 font-mono">
+                <ul className="text-xs text-muted mt-2 space-y-1 font-mono">
                   <li>GOOGLE_SERVICE_ACCOUNT_EMAIL</li>
                   <li>GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY</li>
                   <li>GOOGLE_ADMIN_EMAIL</li>
@@ -679,7 +679,7 @@ export default function AdminUsersPage() {
               </svg>
               <div>
                 <h3 className="text-sm font-medium text-blue-400">Google Workspace connected</h3>
-                <p className="text-xs text-zinc-400 mt-0.5">
+                <p className="text-xs text-muted mt-0.5">
                   Click &quot;Sync Google Workspace&quot; to import all users from <strong>{workspaceDomain}</strong>
                 </p>
               </div>
@@ -689,13 +689,13 @@ export default function AdminUsersPage() {
 
         {/* User Count Summary */}
         {users.length > 0 && (
-          <div className="mb-6 p-4 bg-zinc-900 rounded-xl border border-zinc-800">
+          <div className="mb-6 p-4 bg-surface rounded-xl border border-t-border">
             <div className="flex items-center gap-2 text-sm">
-              <span className="text-zinc-300 font-medium">{users.length} users total</span>
-              <span className="text-zinc-600">•</span>
-              <span className="text-zinc-300">{getAdminCount()} admins</span>
-              <span className="text-zinc-600">•</span>
-              <span className="text-zinc-300">{getActiveCount()} active in last 7 days</span>
+              <span className="text-foreground/80 font-medium">{users.length} users total</span>
+              <span className="text-muted/70">•</span>
+              <span className="text-foreground/80">{getAdminCount()} admins</span>
+              <span className="text-muted/70">•</span>
+              <span className="text-foreground/80">{getActiveCount()} active in last 7 days</span>
             </div>
           </div>
         )}
@@ -704,7 +704,7 @@ export default function AdminUsersPage() {
         <div className="mb-6 space-y-4">
           {/* Search Input */}
           <div className="relative">
-            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
             <input
@@ -712,7 +712,7 @@ export default function AdminUsersPage() {
               placeholder="Search by name or email..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 bg-zinc-800 border border-zinc-700 rounded-lg text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+              className="w-full pl-10 pr-4 py-2.5 bg-surface-2 border border-t-border rounded-lg text-white placeholder-muted focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
             />
           </div>
 
@@ -725,7 +725,7 @@ export default function AdminUsersPage() {
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                   selectedRole === role
                     ? "bg-cyan-600 text-white"
-                    : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+                    : "bg-surface-2 text-foreground/80 hover:bg-surface-2"
                 }`}
               >
                 {role === "All" ? "All" : getRoleLabel(role)}
@@ -744,7 +744,7 @@ export default function AdminUsersPage() {
               <select
                 value={bulkUpdateRole || ""}
                 onChange={(e) => setBulkUpdateRole(e.target.value || null)}
-                className="px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                className="px-3 py-1.5 bg-surface-2 border border-t-border rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
               >
                 <option value="">Select role...</option>
                 {ROLES.map(role => (
@@ -765,24 +765,24 @@ export default function AdminUsersPage() {
         )}
 
         {/* Role Legend */}
-        <div className="mb-6 p-4 bg-zinc-900 rounded-xl border border-zinc-800">
-          <h2 className="text-sm font-semibold mb-3 text-zinc-400">Role Permissions</h2>
+        <div className="mb-6 p-4 bg-surface rounded-xl border border-t-border">
+          <h2 className="text-sm font-semibold mb-3 text-muted">Role Permissions</h2>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
             {ROLES.map(role => (
               <div key={role} className="text-xs">
-                <span className={`inline-block px-2 py-1 rounded border ${ROLE_COLORS[role] || "bg-zinc-500/20 text-zinc-400 border-zinc-500/30"}`}>
+                <span className={`inline-block px-2 py-1 rounded border ${ROLE_COLORS[role] || "bg-zinc-500/20 text-muted border-muted/30"}`}>
                   {getRoleLabel(role)}
                 </span>
-                <p className="mt-1 text-zinc-500">{ROLE_DESCRIPTIONS[role]}</p>
+                <p className="mt-1 text-muted">{ROLE_DESCRIPTIONS[role]}</p>
               </div>
             ))}
           </div>
         </div>
 
         {/* Users Table */}
-        <div className="bg-zinc-900 rounded-xl border border-zinc-800 overflow-hidden">
+        <div className="bg-surface rounded-xl border border-t-border overflow-hidden">
           <table className="w-full">
-            <thead className="bg-zinc-800">
+            <thead className="bg-surface-2">
               <tr>
                 <th className="px-4 py-3 text-left w-8">
                   <input
@@ -792,18 +792,18 @@ export default function AdminUsersPage() {
                     className="cursor-pointer"
                   />
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">User</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Role</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Status</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Permissions</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Actions</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">User</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Role</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Status</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Permissions</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-800">
+            <tbody className="divide-y divide-t-border">
               {filterUsers().map(user => {
                 const indicator = getLastActiveIndicator(user.lastLoginAt);
                 return (
-                  <tr key={user.id} className="hover:bg-zinc-800/50">
+                  <tr key={user.id} className="hover:bg-skeleton">
                     <td className="px-4 py-3">
                       <input
                         type="checkbox"
@@ -815,7 +815,7 @@ export default function AdminUsersPage() {
                     <td className="px-4 py-3">
                       <div>
                         <p className="font-medium">{user.name || "No name"}</p>
-                        <p className="text-xs text-zinc-500">{user.email}</p>
+                        <p className="text-xs text-muted">{user.email}</p>
                       </div>
                     </td>
                     <td className="px-4 py-3">
@@ -823,10 +823,10 @@ export default function AdminUsersPage() {
                         value={user.role}
                         onChange={(e) => updateRole(user.id, e.target.value)}
                         disabled={updating === user.id}
-                        className={`px-3 py-1.5 rounded border text-sm bg-transparent cursor-pointer focus:outline-none focus:ring-2 focus:ring-cyan-500 ${ROLE_COLORS[user.role] || "bg-zinc-500/20 text-zinc-400 border-zinc-500/30"} ${updating === user.id ? "opacity-50" : ""}`}
+                        className={`px-3 py-1.5 rounded border text-sm bg-transparent cursor-pointer focus:outline-none focus:ring-2 focus:ring-cyan-500 ${ROLE_COLORS[user.role] || "bg-zinc-500/20 text-muted border-muted/30"} ${updating === user.id ? "opacity-50" : ""}`}
                       >
                         {ROLES.map(role => (
-                          <option key={role} value={role} className="bg-zinc-900 text-white">
+                          <option key={role} value={role} className="bg-surface text-white">
                             {getRoleLabel(role)}
                           </option>
                         ))}
@@ -835,13 +835,13 @@ export default function AdminUsersPage() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <div className={`w-2 h-2 rounded-full ${indicator.color}`} title={indicator.time} />
-                        <span className="text-xs text-zinc-400">{indicator.label}</span>
+                        <span className="text-xs text-muted">{indicator.label}</span>
                       </div>
                     </td>
                     <td className="px-4 py-3">
                       <button
                         onClick={() => openPermissionsModal(user)}
-                        className="flex items-center gap-2 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm transition-colors"
+                        className="flex items-center gap-2 px-3 py-1.5 bg-surface-2 hover:bg-surface-2 rounded-lg text-sm transition-colors"
                       >
                         {hasCustomPermissions(user) ? (
                           <>
@@ -850,10 +850,10 @@ export default function AdminUsersPage() {
                           </>
                         ) : (
                           <>
-                            <span className="text-zinc-400">Default</span>
+                            <span className="text-muted">Default</span>
                           </>
                         )}
-                        <svg className="w-4 h-4 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-4 h-4 text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                         </svg>
@@ -884,7 +884,7 @@ export default function AdminUsersPage() {
                         </button>
                       )}
                       {user.role === "ADMIN" && user.email !== currentUserEmail && (
-                        <span className="text-xs text-zinc-600">Cannot impersonate admins</span>
+                        <span className="text-xs text-muted/70">Cannot impersonate admins</span>
                       )}
                     </td>
                   </tr>
@@ -894,7 +894,7 @@ export default function AdminUsersPage() {
           </table>
 
           {filterUsers().length === 0 && (
-            <div className="p-8 text-center text-zinc-500">
+            <div className="p-8 text-center text-muted">
               {users.length === 0
                 ? (workspaceConfigured ? "Click \"Sync Google Workspace\" to import users." : "Users will appear here after they log in.")
                 : "No users match your filters."

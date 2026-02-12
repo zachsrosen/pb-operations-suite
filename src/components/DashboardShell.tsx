@@ -58,27 +58,27 @@ export default function DashboardShell({
     : "max-w-7xl mx-auto px-4 sm:px-6";
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] dark:bg-[#0a0a0f] light:bg-[#f8fafc] text-white dashboard-bg">
-      <header className="bg-[#12121a] border-b border-zinc-800 sticky top-0 z-40 dashboard-header">
+    <div className="min-h-screen bg-background text-foreground">
+      <header className="bg-surface border-b border-t-border sticky top-0 z-40">
         <div className={`${containerClass} py-3 sm:py-4`}>
           {/* Breadcrumbs */}
           {breadcrumbs && breadcrumbs.length > 0 && (
-            <nav className="flex items-center gap-1 text-xs text-zinc-500 dashboard-text-muted mb-2">
-              <Link href="/" className="hover:text-zinc-300 transition-colors">
+            <nav className="flex items-center gap-1 text-xs text-muted mb-2">
+              <Link href="/" className="hover:text-foreground transition-colors">
                 Home
               </Link>
               {breadcrumbs.map((crumb, i) => (
                 <span key={i} className="flex items-center gap-1">
-                  <span className="text-zinc-700">/</span>
+                  <span className="text-muted/50">/</span>
                   {crumb.href ? (
                     <Link
                       href={crumb.href}
-                      className="hover:text-zinc-300 transition-colors"
+                      className="hover:text-foreground transition-colors"
                     >
                       {crumb.label}
                     </Link>
                   ) : (
-                    <span className="text-zinc-400 dashboard-text-secondary">{crumb.label}</span>
+                    <span className="text-foreground/70">{crumb.label}</span>
                   )}
                 </span>
               ))}
@@ -89,7 +89,7 @@ export default function DashboardShell({
             <div className="flex items-center gap-3 sm:gap-4 min-w-0">
               <Link
                 href="/"
-                className="text-zinc-400 hover:text-white transition-colors shrink-0"
+                className="text-muted hover:text-foreground transition-colors shrink-0"
                 title="Back to Home"
               >
                 <svg
@@ -113,20 +113,20 @@ export default function DashboardShell({
                   {title}
                 </h1>
                 {subtitle && (
-                  <p className="text-xs text-zinc-500 dashboard-text-muted truncate">{subtitle}</p>
+                  <p className="text-xs text-muted truncate">{subtitle}</p>
                 )}
               </div>
             </div>
             <div className="flex items-center gap-2 sm:gap-3 shrink-0">
               {lastUpdated && (
-                <span className="text-xs text-zinc-500 dashboard-text-muted hidden sm:inline">
+                <span className="text-xs text-muted hidden sm:inline">
                   Updated {lastUpdated}
                 </span>
               )}
               {exportData && (
                 <button
                   onClick={handleExport}
-                  className="text-zinc-400 hover:text-white transition-colors p-1.5 rounded hover:bg-zinc-800"
+                  className="text-muted hover:text-foreground transition-colors p-1.5 rounded hover:bg-surface-2"
                   title="Export to CSV"
                 >
                   <svg

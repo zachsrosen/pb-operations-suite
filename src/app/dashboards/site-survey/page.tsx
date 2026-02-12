@@ -235,7 +235,7 @@ export default function SiteSurveyDashboardPage() {
         <div className="flex items-center justify-center min-h-[400px]">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-teal-500 mx-auto mb-4"></div>
-            <p className="text-zinc-400">Loading Site Survey Data...</p>
+            <p className="text-muted">Loading Site Survey Data...</p>
           </div>
         </div>
       </DashboardShell>
@@ -248,7 +248,7 @@ export default function SiteSurveyDashboardPage() {
         <div className="flex items-center justify-center min-h-[400px]">
           <div className="text-center text-red-500">
             <p className="text-xl mb-2">Error loading data</p>
-            <p className="text-sm text-zinc-400">{error}</p>
+            <p className="text-sm text-muted">{error}</p>
             <button onClick={fetchData} className="mt-4 px-4 py-2 bg-teal-600 rounded-lg hover:bg-teal-700">
               Retry
             </button>
@@ -259,16 +259,16 @@ export default function SiteSurveyDashboardPage() {
   }
 
   const getSiteSurveyStatusColor = (status: string | undefined): string => {
-    if (!status) return 'bg-zinc-500/20 text-zinc-400';
+    if (!status) return 'bg-zinc-500/20 text-muted';
     const lower = status.toLowerCase();
     if (lower.includes('complete') || lower.includes('completed')) return 'bg-green-500/20 text-green-400';
     if (lower.includes('progress') || lower.includes('started') || lower.includes('on our way')) return 'bg-yellow-500/20 text-yellow-400';
     if (lower.includes('scheduled')) return 'bg-blue-500/20 text-blue-400';
     if (lower.includes('ready')) return 'bg-cyan-500/20 text-cyan-400';
     if (lower.includes('awaiting') || lower.includes('pending') || lower.includes('waiting')) return 'bg-purple-500/20 text-purple-400';
-    if (lower.includes('hold') || lower.includes('no site survey')) return 'bg-zinc-500/20 text-zinc-400';
+    if (lower.includes('hold') || lower.includes('no site survey')) return 'bg-zinc-500/20 text-muted';
     if (lower.includes('revisit') || lower.includes('needs')) return 'bg-orange-500/20 text-orange-400';
-    return 'bg-zinc-500/20 text-zinc-400';
+    return 'bg-zinc-500/20 text-muted';
   };
 
   const clearAllFilters = () => {
@@ -326,7 +326,7 @@ export default function SiteSurveyDashboardPage() {
           {hasActiveFilters && (
             <button
               onClick={clearAllFilters}
-              className="text-xs text-zinc-400 hover:text-white px-3 py-2 border border-zinc-700 rounded-lg hover:border-zinc-600 transition-colors"
+              className="text-xs text-muted hover:text-foreground px-3 py-2 border border-t-border rounded-lg hover:border-muted transition-colors"
             >
               Clear All
             </button>
@@ -336,43 +336,43 @@ export default function SiteSurveyDashboardPage() {
 
       {/* Summary Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <div className="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+        <div className="bg-surface rounded-xl p-4 border border-t-border">
           <div className="text-2xl font-bold text-teal-400">{stats.total}</div>
-          <div className="text-sm text-zinc-400">Total Projects</div>
-          <div className="text-xs text-zinc-500">{formatMoney(stats.totalValue)}</div>
+          <div className="text-sm text-muted">Total Projects</div>
+          <div className="text-xs text-muted">{formatMoney(stats.totalValue)}</div>
         </div>
-        <div className="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+        <div className="bg-surface rounded-xl p-4 border border-t-border">
           <div className="text-2xl font-bold text-cyan-400">{stats.needsScheduling.length}</div>
-          <div className="text-sm text-zinc-400">Needs Scheduling</div>
-          <div className="text-xs text-zinc-500">{formatMoney(stats.needsScheduling.reduce((s, p) => s + (p.amount || 0), 0))}</div>
+          <div className="text-sm text-muted">Needs Scheduling</div>
+          <div className="text-xs text-muted">{formatMoney(stats.needsScheduling.reduce((s, p) => s + (p.amount || 0), 0))}</div>
         </div>
-        <div className="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+        <div className="bg-surface rounded-xl p-4 border border-t-border">
           <div className="text-2xl font-bold text-blue-400">{stats.scheduled.length}</div>
-          <div className="text-sm text-zinc-400">Scheduled</div>
-          <div className="text-xs text-zinc-500">{formatMoney(stats.scheduled.reduce((s, p) => s + (p.amount || 0), 0))}</div>
+          <div className="text-sm text-muted">Scheduled</div>
+          <div className="text-xs text-muted">{formatMoney(stats.scheduled.reduce((s, p) => s + (p.amount || 0), 0))}</div>
         </div>
-        <div className="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+        <div className="bg-surface rounded-xl p-4 border border-t-border">
           <div className="text-2xl font-bold text-green-400">{stats.completed.length}</div>
-          <div className="text-sm text-zinc-400">Completed</div>
-          <div className="text-xs text-zinc-500">{formatMoney(stats.completed.reduce((s, p) => s + (p.amount || 0), 0))}</div>
+          <div className="text-sm text-muted">Completed</div>
+          <div className="text-xs text-muted">{formatMoney(stats.completed.reduce((s, p) => s + (p.amount || 0), 0))}</div>
         </div>
       </div>
 
       {/* Additional Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <div className="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+        <div className="bg-surface rounded-xl p-4 border border-t-border">
           <div className="text-2xl font-bold text-yellow-400">{stats.inSiteSurveyStage.length}</div>
-          <div className="text-sm text-zinc-400">In Site Survey Stage</div>
+          <div className="text-sm text-muted">In Site Survey Stage</div>
         </div>
-        <div className="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+        <div className="bg-surface rounded-xl p-4 border border-t-border">
           <div className="text-2xl font-bold text-purple-400">{stats.avgSurveyTurnaround}d</div>
-          <div className="text-sm text-zinc-400">Avg Survey Turnaround</div>
+          <div className="text-sm text-muted">Avg Survey Turnaround</div>
         </div>
-        <div className="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+        <div className="bg-surface rounded-xl p-4 border border-t-border">
           <div className="text-2xl font-bold text-amber-400">{Object.keys(stats.siteSurveyStatusStats).length}</div>
-          <div className="text-sm text-zinc-400">Active Statuses</div>
+          <div className="text-sm text-muted">Active Statuses</div>
         </div>
-        <div className="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+        <div className="bg-surface rounded-xl p-4 border border-t-border">
           <div className="text-2xl font-bold text-red-400">
             {filteredProjects.filter(p =>
               p.siteSurveyStatus?.toLowerCase().includes('hold') ||
@@ -380,23 +380,23 @@ export default function SiteSurveyDashboardPage() {
               p.siteSurveyStatus?.toLowerCase().includes('pending')
             ).length}
           </div>
-          <div className="text-sm text-zinc-400">On Hold/Waiting</div>
+          <div className="text-sm text-muted">On Hold/Waiting</div>
         </div>
       </div>
 
       {/* Status Breakdown */}
-      <div className="bg-[#12121a] rounded-xl border border-zinc-800 p-4 mb-6">
+      <div className="bg-surface rounded-xl border border-t-border p-4 mb-6">
         <h2 className="text-lg font-semibold mb-4 text-teal-400">By Site Survey Status</h2>
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
           {Object.keys(stats.siteSurveyStatusStats).length === 0 ? (
-            <p className="text-zinc-500 text-sm col-span-full">No site survey status data available</p>
+            <p className="text-muted text-sm col-span-full">No site survey status data available</p>
           ) : (
             Object.entries(stats.siteSurveyStatusStats)
               .sort((a, b) => b[1] - a[1])
               .map(([status, count]) => (
                 <div
                   key={status}
-                  className={`flex items-center justify-between p-3 bg-zinc-800/50 rounded-lg cursor-pointer hover:bg-zinc-800 transition-colors ${
+                  className={`flex items-center justify-between p-3 bg-skeleton rounded-lg cursor-pointer hover:bg-surface-2 transition-colors ${
                     filterSiteSurveyStatuses.includes(status) ? 'ring-1 ring-teal-500' : ''
                   }`}
                   onClick={() => {
@@ -407,7 +407,7 @@ export default function SiteSurveyDashboardPage() {
                     }
                   }}
                 >
-                  <span className="text-xs text-zinc-300 truncate mr-2">{status}</span>
+                  <span className="text-xs text-foreground/80 truncate mr-2">{status}</span>
                   <span className="text-lg font-bold text-teal-400">{count}</span>
                 </div>
               ))
@@ -416,29 +416,29 @@ export default function SiteSurveyDashboardPage() {
       </div>
 
       {/* Projects Table */}
-      <div className="bg-[#12121a] rounded-xl border border-zinc-800 overflow-hidden">
-        <div className="p-4 border-b border-zinc-800 flex items-center justify-between">
+      <div className="bg-surface rounded-xl border border-t-border overflow-hidden">
+        <div className="p-4 border-b border-t-border flex items-center justify-between">
           <h2 className="text-lg font-semibold">Projects ({filteredProjects.length})</h2>
           {hasActiveFilters && (
-            <span className="text-xs text-zinc-500">Filtered from {projects.filter(isInSiteSurveyPhase).length} total</span>
+            <span className="text-xs text-muted">Filtered from {projects.filter(isInSiteSurveyPhase).length} total</span>
           )}
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-zinc-900">
+            <thead className="bg-surface">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Project</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Stage</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Site Survey Status</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Scheduled</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Completed</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase">Amount</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Project</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Stage</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Site Survey Status</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Scheduled</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Completed</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-muted uppercase">Amount</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-800">
+            <tbody className="divide-y divide-t-border">
               {filteredProjects.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-zinc-500">No projects found</td>
+                  <td colSpan={6} className="px-4 py-8 text-center text-muted">No projects found</td>
                 </tr>
               ) : (
                 filteredProjects
@@ -455,31 +455,31 @@ export default function SiteSurveyDashboardPage() {
                   })
                   .slice(0, 100)
                   .map(project => (
-                    <tr key={project.id} className="hover:bg-zinc-900/50">
+                    <tr key={project.id} className="hover:bg-surface/50">
                       <td className="px-4 py-3">
-                        <a href={project.url} target="_blank" rel="noopener noreferrer" className="font-medium text-white hover:text-teal-400">
+                        <a href={project.url} target="_blank" rel="noopener noreferrer" className="font-medium text-foreground hover:text-teal-400">
                           {project.name.split('|')[0].trim()}
                         </a>
-                        <div className="text-xs text-zinc-400">{project.name.split('|')[1]?.trim() || ''}</div>
-                        <div className="text-xs text-zinc-500">{project.pbLocation}</div>
+                        <div className="text-xs text-muted">{project.name.split('|')[1]?.trim() || ''}</div>
+                        <div className="text-xs text-muted">{project.pbLocation}</div>
                       </td>
-                      <td className="px-4 py-3 text-sm text-zinc-400">{project.stage}</td>
+                      <td className="px-4 py-3 text-sm text-muted">{project.stage}</td>
                       <td className="px-4 py-3">
                         {project.siteSurveyStatus ? (
                           <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getSiteSurveyStatusColor(project.siteSurveyStatus)}`}>
                             {project.siteSurveyStatus}
                           </span>
                         ) : (
-                          <span className="text-zinc-500">-</span>
+                          <span className="text-muted">-</span>
                         )}
                       </td>
-                      <td className={`px-4 py-3 text-sm ${project.siteSurveyScheduleDate ? 'text-blue-400' : 'text-zinc-500'}`}>
+                      <td className={`px-4 py-3 text-sm ${project.siteSurveyScheduleDate ? 'text-blue-400' : 'text-muted'}`}>
                         {project.siteSurveyScheduleDate || '-'}
                       </td>
-                      <td className={`px-4 py-3 text-sm ${project.siteSurveyCompletionDate ? 'text-green-400' : 'text-zinc-500'}`}>
+                      <td className={`px-4 py-3 text-sm ${project.siteSurveyCompletionDate ? 'text-green-400' : 'text-muted'}`}>
                         {project.siteSurveyCompletionDate || '-'}
                       </td>
-                      <td className={`px-4 py-3 text-right font-mono text-sm ${(project.amount || 0) > 0 ? 'text-green-400' : 'text-zinc-500'}`}>
+                      <td className={`px-4 py-3 text-right font-mono text-sm ${(project.amount || 0) > 0 ? 'text-green-400' : 'text-muted'}`}>
                         {formatMoney(project.amount || 0)}
                       </td>
                     </tr>

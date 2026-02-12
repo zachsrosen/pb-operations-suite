@@ -30,16 +30,18 @@ export const StatCard = memo(function StatCard({
 }: StatCardProps) {
   return (
     <div
-      className={`bg-gradient-to-br ${ACCENT_CLASSES[color] || ACCENT_CLASSES.blue} border rounded-xl p-6 animate-fadeIn`}
+      className={`bg-gradient-to-br ${ACCENT_CLASSES[color] || ACCENT_CLASSES.blue} border rounded-xl p-6 shadow-card`}
     >
       {value === null ? (
-        <div className="h-9 w-20 bg-zinc-800/50 rounded animate-pulse mb-1" />
+        <div className="h-9 w-20 bg-skeleton rounded animate-pulse mb-1" />
       ) : (
-        <div className="text-3xl font-bold text-white mb-1">{value}</div>
+        <div key={String(value)} className="text-3xl font-bold text-foreground mb-1 animate-value-flash">
+          {value}
+        </div>
       )}
-      <div className="text-sm text-zinc-400">{label}</div>
+      <div className="text-sm text-muted">{label}</div>
       {subtitle && (
-        <div className="text-xs text-zinc-500 mt-0.5">{subtitle}</div>
+        <div className="text-xs text-muted mt-0.5">{subtitle}</div>
       )}
     </div>
   );
@@ -62,23 +64,24 @@ export const MiniStat = memo(function MiniStat({
 }: MiniStatProps) {
   return (
     <div
-      className={`bg-zinc-900/50 border rounded-lg p-4 text-center animate-fadeIn ${
-        alert ? "border-red-500/50" : "border-zinc-800"
+      className={`bg-surface/50 border rounded-lg p-4 text-center shadow-card ${
+        alert ? "border-red-500/50" : "border-t-border"
       }`}
     >
       {value === null ? (
-        <div className="h-7 w-12 mx-auto bg-zinc-800/50 rounded animate-pulse" />
+        <div className="h-7 w-12 mx-auto bg-skeleton rounded animate-pulse" />
       ) : (
         <div
-          className={`text-xl font-bold ${alert ? "text-red-400" : "text-white"}`}
+          key={String(value)}
+          className={`text-xl font-bold animate-value-flash ${alert ? "text-red-400" : "text-foreground"}`}
         >
           {value}
         </div>
       )}
-      <div className="text-xs text-zinc-500">{label}</div>
+      <div className="text-xs text-muted">{label}</div>
       {subtitle && (
         <div
-          className={`text-xs mt-0.5 ${alert ? "text-red-400/70" : "text-zinc-500"}`}
+          className={`text-xs mt-0.5 ${alert ? "text-red-400/70" : "text-muted"}`}
         >
           {subtitle}
         </div>
@@ -108,16 +111,17 @@ export const MetricCard = memo(function MetricCard({
 }: MetricCardProps) {
   return (
     <div
-      className={`bg-[#12121a] rounded-xl border border-zinc-800 p-5 animate-fadeIn ${border || ""}`}
+      className={`bg-surface rounded-xl border border-t-border p-5 shadow-card ${border || ""}`}
     >
-      <div className="text-zinc-400 text-sm font-medium">{label}</div>
+      <div className="text-muted text-sm font-medium">{label}</div>
       <div
-        className={`text-3xl font-bold mt-1 ${valueColor || "text-white"}`}
+        key={value}
+        className={`text-3xl font-bold mt-1 animate-value-flash ${valueColor || "text-foreground"}`}
       >
         {value}
       </div>
       {sub && (
-        <div className={`text-sm mt-1 ${subColor || "text-zinc-500"}`}>
+        <div className={`text-sm mt-1 ${subColor || "text-muted"}`}>
           {sub}
         </div>
       )}
@@ -139,11 +143,11 @@ export const SummaryCard = memo(function SummaryCard({
   color,
 }: SummaryCardProps) {
   return (
-    <div className="bg-[#12121a] border border-zinc-800 rounded-lg p-4 animate-fadeIn">
-      <div className={`text-3xl font-bold ${color || "text-white"}`}>
+    <div className="bg-surface border border-t-border rounded-lg p-4 shadow-card">
+      <div key={value} className={`text-3xl font-bold animate-value-flash ${color || "text-foreground"}`}>
         {value}
       </div>
-      <div className="text-sm text-zinc-500">{label}</div>
+      <div className="text-sm text-muted">{label}</div>
     </div>
   );
 });

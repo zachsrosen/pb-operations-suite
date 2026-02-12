@@ -25,7 +25,7 @@ const colorClasses: Record<string, string> = {
   emerald: "border-emerald-500",
   purple: "border-purple-500",
   cyan: "border-cyan-500",
-  white: "border-white",
+  white: "border-foreground",
 };
 
 export const LoadingSpinner = memo(function LoadingSpinner({
@@ -39,7 +39,7 @@ export const LoadingSpinner = memo(function LoadingSpinner({
         <div
           className={`animate-spin rounded-full ${sizeClasses[size]} border-b-2 ${colorClasses[color] || colorClasses.orange} mx-auto mb-4`}
         />
-        {message && <p className="text-zinc-400">{message}</p>}
+        {message && <p className="text-muted">{message}</p>}
       </div>
     </div>
   );

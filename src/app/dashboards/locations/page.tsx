@@ -148,7 +148,7 @@ export default function LocationComparisonPage() {
           <LiveIndicator label="Auto-Refresh" />
           <button
             onClick={refetch}
-            className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors"
+            className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-medium text-foreground transition-colors"
           >
             Refresh
           </button>
@@ -166,8 +166,8 @@ export default function LocationComparisonPage() {
             <button
               key={loc.name}
               onClick={() => setSelectedLocation(isSelected ? null : loc.name)}
-              className={`text-left bg-[#12121a] border rounded-lg p-4 transition-all hover:bg-zinc-800/50 ${
-                isSelected ? "border-blue-500 ring-1 ring-blue-500/30" : "border-zinc-800"
+              className={`text-left bg-surface border rounded-lg p-4 transition-all hover:bg-skeleton ${
+                isSelected ? "border-blue-500 ring-1 ring-blue-500/30" : "border-t-border"
               }`}
             >
               <div className="flex items-center gap-2 mb-2">
@@ -175,12 +175,12 @@ export default function LocationComparisonPage() {
                   className="w-3 h-3 rounded-full shrink-0"
                   style={{ backgroundColor: color.hex }}
                 />
-                <span className="font-semibold text-white text-sm truncate">{loc.name}</span>
+                <span className="font-semibold text-foreground text-sm truncate">{loc.name}</span>
               </div>
-              <div className="text-2xl font-bold text-white mb-1">{loc.count}</div>
-              <div className="text-xs text-zinc-400 mb-2">{formatCurrencyCompact(loc.totalValue)}</div>
+              <div className="text-2xl font-bold text-foreground mb-1">{loc.count}</div>
+              <div className="text-xs text-muted mb-2">{formatCurrencyCompact(loc.totalValue)}</div>
               <div className="flex items-center justify-between text-xs">
-                <span className={`${loc.overdue > 0 ? "text-red-400" : "text-zinc-500"}`}>
+                <span className={`${loc.overdue > 0 ? "text-red-400" : "text-muted"}`}>
                   {loc.overdue} overdue
                 </span>
                 <span
@@ -201,32 +201,32 @@ export default function LocationComparisonPage() {
       </div>
 
       {/* Stage Comparison Table */}
-      <div className="bg-[#12121a] rounded-xl border border-zinc-800 p-5 mb-6">
-        <h3 className="text-sm font-semibold text-zinc-300 mb-4">Stage Distribution by Location</h3>
+      <div className="bg-surface rounded-xl border border-t-border p-5 mb-6">
+        <h3 className="text-sm font-semibold text-foreground/80 mb-4">Stage Distribution by Location</h3>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-zinc-800">
-                <th className="text-left py-3 text-zinc-400 font-medium sticky left-0 bg-[#12121a] z-10">
+              <tr className="border-b border-t-border">
+                <th className="text-left py-3 text-muted font-medium sticky left-0 bg-surface z-10">
                   Location
                 </th>
                 {COMPARE_STAGES.map((stage) => (
-                  <th key={stage} className="text-center py-3 text-zinc-500 font-medium px-2 min-w-[80px]">
+                  <th key={stage} className="text-center py-3 text-muted font-medium px-2 min-w-[80px]">
                     <span className="text-[10px] leading-tight block">{stage}</span>
                   </th>
                 ))}
-                <th className="text-right py-3 text-zinc-400 font-medium px-2">Total</th>
+                <th className="text-right py-3 text-muted font-medium px-2">Total</th>
               </tr>
             </thead>
             <tbody>
               {locationStats.map((loc) => (
                 <tr
                   key={loc.name}
-                  className={`border-b border-zinc-800/50 last:border-0 hover:bg-white/[0.02] transition-colors ${
+                  className={`border-b border-t-border/50 last:border-0 hover:bg-white/[0.02] transition-colors ${
                     selectedLocation === loc.name ? "bg-blue-500/5" : ""
                   }`}
                 >
-                  <td className="py-3 text-white font-medium sticky left-0 bg-[#12121a] z-10">
+                  <td className="py-3 text-white font-medium sticky left-0 bg-surface z-10">
                     <div className="flex items-center gap-2">
                       <div
                         className="w-2 h-2 rounded-full shrink-0"
@@ -243,18 +243,18 @@ export default function LocationComparisonPage() {
                         {count > 0 ? (
                           <span
                             className={`inline-flex items-center justify-center w-8 h-8 rounded-md text-xs font-bold ${
-                              stageColor ? `${stageColor.tw} bg-opacity-20` : "bg-zinc-800"
+                              stageColor ? `${stageColor.tw} bg-opacity-20` : "bg-surface-2"
                             } text-white`}
                           >
                             {count}
                           </span>
                         ) : (
-                          <span className="text-zinc-700">-</span>
+                          <span className="text-muted/50">-</span>
                         )}
                       </td>
                     );
                   })}
-                  <td className="py-3 text-right text-zinc-300 font-bold px-2">{loc.count}</td>
+                  <td className="py-3 text-right text-foreground/80 font-bold px-2">{loc.count}</td>
                 </tr>
               ))}
             </tbody>
@@ -264,8 +264,8 @@ export default function LocationComparisonPage() {
 
       {/* Selected Location Detail */}
       {selectedData && (
-        <div className="bg-[#12121a] rounded-xl border border-blue-800/40 p-5 mb-6 animate-fadeIn">
-          <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+        <div className="bg-surface rounded-xl border border-blue-800/40 p-5 mb-6 animate-fadeIn">
+          <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
             <div
               className="w-4 h-4 rounded-full"
               style={{ backgroundColor: (LOCATION_COLORS[selectedData.name] || { hex: "#71717a" }).hex }}
@@ -275,28 +275,28 @@ export default function LocationComparisonPage() {
 
           {/* Summary stats */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
-            <div className="bg-zinc-800/50 rounded-lg p-3">
-              <div className="text-2xl font-bold text-white">{selectedData.count}</div>
-              <div className="text-xs text-zinc-400">Total Projects</div>
+            <div className="bg-skeleton rounded-lg p-3">
+              <div className="text-2xl font-bold text-foreground">{selectedData.count}</div>
+              <div className="text-xs text-muted">Total Projects</div>
             </div>
-            <div className="bg-zinc-800/50 rounded-lg p-3">
+            <div className="bg-skeleton rounded-lg p-3">
               <div className="text-2xl font-bold text-emerald-400">{formatCurrencyCompact(selectedData.totalValue)}</div>
-              <div className="text-xs text-zinc-400">Pipeline Value</div>
+              <div className="text-xs text-muted">Pipeline Value</div>
             </div>
-            <div className="bg-zinc-800/50 rounded-lg p-3">
+            <div className="bg-skeleton rounded-lg p-3">
               <div className="text-2xl font-bold text-red-400">{selectedData.overdue}</div>
-              <div className="text-xs text-zinc-400">Overdue</div>
+              <div className="text-xs text-muted">Overdue</div>
             </div>
-            <div className="bg-zinc-800/50 rounded-lg p-3">
+            <div className="bg-skeleton rounded-lg p-3">
               <div className="text-2xl font-bold text-blue-400">{selectedData.avgDaysInPipeline}d</div>
-              <div className="text-xs text-zinc-400">Avg Days in Pipeline</div>
+              <div className="text-xs text-muted">Avg Days in Pipeline</div>
             </div>
           </div>
 
           {/* Stage breakdown bar */}
           <div className="mb-5">
-            <div className="text-xs text-zinc-400 mb-2">Stage Breakdown</div>
-            <div className="h-6 rounded-full overflow-hidden flex bg-zinc-800">
+            <div className="text-xs text-muted mb-2">Stage Breakdown</div>
+            <div className="h-6 rounded-full overflow-hidden flex bg-surface-2">
               {COMPARE_STAGES.map((stage) => {
                 const count = selectedData.stageCounts[stage] || 0;
                 const pct = selectedData.count > 0 ? (count / selectedData.count) * 100 : 0;
@@ -314,7 +314,7 @@ export default function LocationComparisonPage() {
             </div>
             <div className="flex flex-wrap gap-3 mt-2">
               {COMPARE_STAGES.filter((s) => (selectedData.stageCounts[s] || 0) > 0).map((stage) => (
-                <div key={stage} className="flex items-center gap-1 text-xs text-zinc-400">
+                <div key={stage} className="flex items-center gap-1 text-xs text-muted">
                   <div className={`w-2 h-2 rounded-full ${STAGE_COLORS[stage]?.tw || "bg-zinc-600"}`} />
                   {stage}: <span className="text-white font-medium">{selectedData.stageCounts[stage]}</span>
                 </div>
@@ -323,14 +323,14 @@ export default function LocationComparisonPage() {
           </div>
 
           {/* Projects list */}
-          <div className="text-xs text-zinc-400 mb-2">Projects ({selectedData.projects.length})</div>
+          <div className="text-xs text-muted mb-2">Projects ({selectedData.projects.length})</div>
           <div className="max-h-80 overflow-y-auto space-y-1">
             {selectedData.projects
               .sort((a, b) => (b.amount || 0) - (a.amount || 0))
               .map((p) => (
                 <div
                   key={p.id}
-                  className="flex items-center justify-between py-2 px-3 bg-zinc-800/30 rounded hover:bg-zinc-800/50 transition-colors"
+                  className="flex items-center justify-between py-2 px-3 bg-surface-2/30 rounded hover:bg-skeleton transition-colors"
                 >
                   <div className="flex-1 min-w-0">
                     <a
@@ -341,9 +341,9 @@ export default function LocationComparisonPage() {
                     >
                       {p.name.split("|")[0].trim()}
                     </a>
-                    <div className="text-xs text-zinc-500">{p.stage}</div>
+                    <div className="text-xs text-muted">{p.stage}</div>
                   </div>
-                  <div className="text-sm text-zinc-300 font-medium ml-2 shrink-0">
+                  <div className="text-sm text-foreground/80 font-medium ml-2 shrink-0">
                     {formatCurrencyCompact(p.amount)}
                   </div>
                 </div>
@@ -353,7 +353,7 @@ export default function LocationComparisonPage() {
       )}
 
       {/* Footer */}
-      <div className="text-center text-xs text-zinc-600">
+      <div className="text-center text-xs text-muted/70">
         Data synced from HubSpot &bull; Auto-refreshes every 5 minutes
       </div>
     </DashboardShell>

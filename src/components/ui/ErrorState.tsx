@@ -27,12 +27,12 @@ export const ErrorState = memo(function ErrorState({
 }: ErrorStateProps) {
   return (
     <div className="flex items-center justify-center py-32">
-      <div className="text-center bg-[#12121a] rounded-xl p-8 border border-zinc-800 max-w-sm">
+      <div className="text-center bg-surface rounded-xl p-8 border border-t-border shadow-card max-w-sm">
         <div className="text-red-500 text-4xl mb-4">!</div>
-        <h2 className="text-xl font-bold text-white mb-2">
+        <h2 className="text-xl font-bold text-foreground mb-2">
           Failed to Load Data
         </h2>
-        <p className="text-zinc-400 mb-4">{message}</p>
+        <p className="text-muted mb-4">{message}</p>
         {onRetry && (
           <button
             onClick={onRetry}

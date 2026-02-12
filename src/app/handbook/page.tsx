@@ -388,7 +388,7 @@ const colorMap: Record<string, string> = {
   rose: "border-rose-500/30 from-rose-500/10 to-rose-500/5 text-rose-400",
   teal: "border-teal-500/30 from-teal-500/10 to-teal-500/5 text-teal-400",
   sky: "border-sky-500/30 from-sky-500/10 to-sky-500/5 text-sky-400",
-  zinc: "border-zinc-500/30 from-zinc-500/10 to-zinc-500/5 text-zinc-400",
+  zinc: "border-muted/30 from-zinc-500/10 to-zinc-500/5 text-muted",
 };
 
 const crewTeams = [
@@ -418,9 +418,9 @@ const crewTeams = [
 
 export default function HandbookPage() {
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-white print:bg-white print:text-black">
+    <div className="min-h-screen bg-background text-foreground print:bg-white print:text-black">
       {/* Header */}
-      <header className="border-b border-zinc-800 px-6 py-4 print:border-zinc-300">
+      <header className="border-b border-t-border px-6 py-4 print:border-t-border">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <Link
             href="/"
@@ -431,13 +431,13 @@ export default function HandbookPage() {
           <div className="flex items-center gap-4 print:hidden">
             <button
               onClick={() => window.print()}
-              className="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-lg text-sm font-medium transition-colors"
+              className="px-4 py-2 bg-surface-2 hover:bg-zinc-600 rounded-lg text-sm font-medium transition-colors"
             >
               Print / Save PDF
             </button>
             <Link
               href="/"
-              className="text-sm text-zinc-400 hover:text-orange-400 transition-colors"
+              className="text-sm text-muted hover:text-orange-400 transition-colors"
             >
               &larr; Back to Dashboard
             </Link>
@@ -447,41 +447,41 @@ export default function HandbookPage() {
 
       <main className="max-w-5xl mx-auto px-6 py-8">
         <h1 className="text-3xl font-bold mb-2">PB Tech Ops Handbook</h1>
-        <p className="text-zinc-400 mb-2 print:text-zinc-600">
+        <p className="text-muted mb-2 print:text-muted/70">
           Comprehensive guide to every dashboard in the PB Operations Suite
         </p>
-        <p className="text-xs text-zinc-500 mb-8 print:text-zinc-500">
+        <p className="text-xs text-muted mb-8 print:text-muted">
           Last updated: {new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
         </p>
 
         {/* Table of Contents */}
-        <section className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6 mb-10 print:bg-zinc-50 print:border-zinc-300">
+        <section className="bg-surface/50 border border-t-border rounded-xl p-6 mb-10 print:bg-zinc-50 print:border-t-border">
           <h2 className="text-lg font-semibold mb-4">Table of Contents</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-1 text-sm">
             {sections.map((s, i) => (
               <a
                 key={s.route}
                 href={`#${s.title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
-                className="text-zinc-400 hover:text-orange-400 transition-colors print:text-zinc-700"
+                className="text-muted hover:text-orange-400 transition-colors print:text-muted/50"
               >
                 {i + 1}. {s.title}
               </a>
             ))}
-            <div className="col-span-full border-t border-zinc-800 mt-2 pt-2 print:border-zinc-300">
-              <span className="text-zinc-500 text-xs uppercase tracking-wider">Admin</span>
+            <div className="col-span-full border-t border-t-border mt-2 pt-2 print:border-t-border">
+              <span className="text-muted text-xs uppercase tracking-wider">Admin</span>
             </div>
             {adminSections.map((s, i) => (
               <a
                 key={s.route}
                 href={`#admin-${s.title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
-                className="text-zinc-400 hover:text-orange-400 transition-colors print:text-zinc-700"
+                className="text-muted hover:text-orange-400 transition-colors print:text-muted/50"
               >
                 A{i + 1}. {s.title}
               </a>
             ))}
             <a
               href="#crew-teams"
-              className="text-zinc-400 hover:text-orange-400 transition-colors print:text-zinc-700"
+              className="text-muted hover:text-orange-400 transition-colors print:text-muted/50"
             >
               Crew Teams & Capabilities
             </a>
@@ -491,14 +491,14 @@ export default function HandbookPage() {
         {/* Quick Start */}
         <section className="bg-gradient-to-br from-orange-500/10 to-orange-500/5 border border-orange-500/30 rounded-xl p-6 mb-10 print:bg-orange-50 print:border-orange-300">
           <h2 className="text-xl font-semibold text-orange-400 mb-3 print:text-orange-600">Quick Start</h2>
-          <div className="space-y-3 text-sm text-zinc-300 print:text-zinc-700">
+          <div className="space-y-3 text-sm text-foreground/80 print:text-muted/50">
             <p>
               <strong className="text-white print:text-black">Global Search:</strong> Press{" "}
-              <kbd className="bg-zinc-800 px-1.5 py-0.5 rounded text-xs font-mono print:bg-zinc-200">
+              <kbd className="bg-surface-2 px-1.5 py-0.5 rounded text-xs font-mono print:bg-zinc-200">
                 ⌘K
               </kbd>{" "}
               (Mac) or{" "}
-              <kbd className="bg-zinc-800 px-1.5 py-0.5 rounded text-xs font-mono print:bg-zinc-200">
+              <kbd className="bg-surface-2 px-1.5 py-0.5 rounded text-xs font-mono print:bg-zinc-200">
                 Ctrl+K
               </kbd>{" "}
               (Windows) to search dashboards and projects from anywhere.
@@ -526,34 +526,34 @@ export default function HandbookPage() {
               <section
                 key={section.route}
                 id={section.title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}
-                className={`bg-gradient-to-br ${colors} border rounded-xl p-6 print:bg-white print:border-zinc-300 break-inside-avoid`}
+                className={`bg-gradient-to-br ${colors} border rounded-xl p-6 print:bg-white print:border-t-border break-inside-avoid`}
               >
                 <div className="flex items-start justify-between gap-4 mb-3">
                   <div>
-                    <h3 className="text-lg font-semibold text-white print:text-black">
+                    <h3 className="text-lg font-semibold text-foreground print:text-black">
                       {section.title}
                     </h3>
-                    <p className="text-xs text-zinc-500 print:text-zinc-500">
+                    <p className="text-xs text-muted print:text-muted">
                       {section.route} &middot; {section.audience}
                     </p>
                   </div>
                   <Link
                     href={section.route}
-                    className="shrink-0 text-xs px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors print:hidden"
+                    className="shrink-0 text-xs px-3 py-1.5 rounded-lg bg-surface-2 hover:bg-surface-2 text-foreground/80 transition-colors print:hidden"
                   >
                     Open
                   </Link>
                 </div>
-                <p className="text-sm text-zinc-300 mb-3 print:text-zinc-700">
+                <p className="text-sm text-foreground/80 mb-3 print:text-muted/50">
                   {section.description}
                 </p>
                 <ul className="space-y-1">
                   {section.features.map((f, i) => (
                     <li
                       key={i}
-                      className="text-sm text-zinc-400 print:text-zinc-600 flex items-start gap-2"
+                      className="text-sm text-muted print:text-muted/70 flex items-start gap-2"
                     >
-                      <span className="text-zinc-600 mt-0.5 print:text-zinc-400">&#8226;</span>
+                      <span className="text-muted/70 mt-0.5 print:text-muted">&#8226;</span>
                       {f}
                     </li>
                   ))}
@@ -571,32 +571,32 @@ export default function HandbookPage() {
             <section
               key={section.route}
               id={`admin-${section.title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
-              className="bg-gradient-to-br from-zinc-500/10 to-zinc-500/5 border border-zinc-500/30 rounded-xl p-6 print:bg-white print:border-zinc-300 break-inside-avoid"
+              className="bg-gradient-to-br from-zinc-500/10 to-zinc-500/5 border border-muted/30 rounded-xl p-6 print:bg-white print:border-t-border break-inside-avoid"
             >
               <div className="flex items-start justify-between gap-4 mb-3">
                 <div>
-                  <h3 className="text-lg font-semibold text-white print:text-black">
+                  <h3 className="text-lg font-semibold text-foreground print:text-black">
                     {section.title}
                   </h3>
-                  <p className="text-xs text-zinc-500">{section.route}</p>
+                  <p className="text-xs text-muted">{section.route}</p>
                 </div>
                 <Link
                   href={section.route}
-                  className="shrink-0 text-xs px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors print:hidden"
+                  className="shrink-0 text-xs px-3 py-1.5 rounded-lg bg-surface-2 hover:bg-surface-2 text-foreground/80 transition-colors print:hidden"
                 >
                   Open
                 </Link>
               </div>
-              <p className="text-sm text-zinc-300 mb-3 print:text-zinc-700">
+              <p className="text-sm text-foreground/80 mb-3 print:text-muted/50">
                 {section.description}
               </p>
               <ul className="space-y-1">
                 {section.features.map((f, i) => (
                   <li
                     key={i}
-                    className="text-sm text-zinc-400 print:text-zinc-600 flex items-start gap-2"
+                    className="text-sm text-muted print:text-muted/70 flex items-start gap-2"
                   >
-                    <span className="text-zinc-600 mt-0.5 print:text-zinc-400">&#8226;</span>
+                    <span className="text-muted/70 mt-0.5 print:text-muted">&#8226;</span>
                     {f}
                   </li>
                 ))}
@@ -619,17 +619,17 @@ export default function HandbookPage() {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm border-collapse">
                   <thead>
-                    <tr className="border-b border-zinc-700 print:border-zinc-300">
-                      <th className="text-left py-2 px-3 text-zinc-400 font-medium print:text-zinc-600">
+                    <tr className="border-b border-t-border print:border-t-border">
+                      <th className="text-left py-2 px-3 text-muted font-medium print:text-muted/70">
                         Team
                       </th>
-                      <th className="text-left py-2 px-3 text-zinc-400 font-medium print:text-zinc-600">
+                      <th className="text-left py-2 px-3 text-muted font-medium print:text-muted/70">
                         Member(s)
                       </th>
-                      <th className="text-left py-2 px-3 text-zinc-400 font-medium print:text-zinc-600">
+                      <th className="text-left py-2 px-3 text-muted font-medium print:text-muted/70">
                         Type
                       </th>
-                      <th className="text-left py-2 px-3 text-zinc-400 font-medium print:text-zinc-600">
+                      <th className="text-left py-2 px-3 text-muted font-medium print:text-muted/70">
                         Capabilities
                       </th>
                     </tr>
@@ -638,18 +638,18 @@ export default function HandbookPage() {
                     {loc.teams.map((team) => (
                       <tr
                         key={team.name}
-                        className="border-b border-zinc-800 print:border-zinc-200"
+                        className="border-b border-t-border print:border-t-border"
                       >
-                        <td className="py-2 px-3 font-medium text-white print:text-black">
+                        <td className="py-2 px-3 font-medium text-foreground print:text-black">
                           {team.name}
                         </td>
-                        <td className="py-2 px-3 text-zinc-300 print:text-zinc-700">
+                        <td className="py-2 px-3 text-foreground/80 print:text-muted/50">
                           {team.lead}
                         </td>
-                        <td className="py-2 px-3 text-zinc-400 print:text-zinc-600">
+                        <td className="py-2 px-3 text-muted print:text-muted/70">
                           {team.type}
                         </td>
-                        <td className="py-2 px-3 text-zinc-400 print:text-zinc-600">
+                        <td className="py-2 px-3 text-muted print:text-muted/70">
                           {team.capabilities}
                         </td>
                       </tr>
@@ -667,15 +667,15 @@ export default function HandbookPage() {
         <div className="overflow-x-auto">
           <table className="w-full text-xs border-collapse">
             <thead>
-              <tr className="border-b border-zinc-700 print:border-zinc-300">
-                <th className="text-left py-2 px-2 text-zinc-400 font-medium">Role</th>
-                <th className="py-2 px-2 text-zinc-400 font-medium text-center">Surveys</th>
-                <th className="py-2 px-2 text-zinc-400 font-medium text-center">Installs</th>
-                <th className="py-2 px-2 text-zinc-400 font-medium text-center">Inspections</th>
-                <th className="py-2 px-2 text-zinc-400 font-medium text-center">Zuper</th>
-                <th className="py-2 px-2 text-zinc-400 font-medium text-center">Users</th>
-                <th className="py-2 px-2 text-zinc-400 font-medium text-center">Availability</th>
-                <th className="py-2 px-2 text-zinc-400 font-medium text-center">All Locations</th>
+              <tr className="border-b border-t-border print:border-t-border">
+                <th className="text-left py-2 px-2 text-muted font-medium">Role</th>
+                <th className="py-2 px-2 text-muted font-medium text-center">Surveys</th>
+                <th className="py-2 px-2 text-muted font-medium text-center">Installs</th>
+                <th className="py-2 px-2 text-muted font-medium text-center">Inspections</th>
+                <th className="py-2 px-2 text-muted font-medium text-center">Zuper</th>
+                <th className="py-2 px-2 text-muted font-medium text-center">Users</th>
+                <th className="py-2 px-2 text-muted font-medium text-center">Availability</th>
+                <th className="py-2 px-2 text-muted font-medium text-center">All Locations</th>
               </tr>
             </thead>
             <tbody>
@@ -693,9 +693,9 @@ export default function HandbookPage() {
               ].map((row) => (
                 <tr
                   key={row.role}
-                  className="border-b border-zinc-800 print:border-zinc-200"
+                  className="border-b border-t-border print:border-t-border"
                 >
-                  <td className="py-1.5 px-2 font-medium text-white print:text-black">
+                  <td className="py-1.5 px-2 font-medium text-foreground print:text-black">
                     {row.role}
                   </td>
                   {[row.s, row.i, row.ins, row.z, row.u, row.a, row.l].map(
@@ -707,7 +707,7 @@ export default function HandbookPage() {
                         {v ? (
                           <span className="text-green-400 print:text-green-600">Y</span>
                         ) : (
-                          <span className="text-zinc-600 print:text-zinc-400">&ndash;</span>
+                          <span className="text-muted/70 print:text-muted">&ndash;</span>
                         )}
                       </td>
                     )
@@ -719,7 +719,7 @@ export default function HandbookPage() {
         </div>
 
         {/* Footer */}
-        <div className="mt-12 pt-6 border-t border-zinc-800 text-center text-xs text-zinc-500 print:border-zinc-300">
+        <div className="mt-12 pt-6 border-t border-t-border text-center text-xs text-muted print:border-t-border">
           <p>PB Operations Suite &middot; Photon Brothers &middot; pbtechops.com</p>
         </div>
       </main>

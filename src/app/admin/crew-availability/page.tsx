@@ -397,7 +397,7 @@ export default function CrewAvailabilityPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#0a0a0f] text-white flex items-center justify-center">
+      <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-cyan-500" />
       </div>
     );
@@ -405,11 +405,11 @@ export default function CrewAvailabilityPage() {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-[#0a0a0f] text-white flex items-center justify-center">
+      <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
         <div className="text-center">
           <p className="text-red-400 text-xl mb-2">Error</p>
-          <p className="text-zinc-500 text-sm mb-4">{error}</p>
-          <Link href="/" className="px-4 py-2 bg-zinc-700 rounded-lg hover:bg-zinc-600">
+          <p className="text-muted text-sm mb-4">{error}</p>
+          <Link href="/" className="px-4 py-2 bg-surface-2 rounded-lg hover:bg-zinc-600">
             Go Home
           </Link>
         </div>
@@ -418,10 +418,10 @@ export default function CrewAvailabilityPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-white">
+    <div className="min-h-screen bg-background text-foreground">
       {/* Toast */}
       {toast && (
-        <div className="fixed top-4 right-4 z-50 bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 shadow-lg">
+        <div className="fixed top-4 right-4 z-50 bg-surface-2 border border-t-border rounded-lg px-4 py-3 shadow-lg">
           <p className="text-sm">{toast}</p>
         </div>
       )}
@@ -432,18 +432,18 @@ export default function CrewAvailabilityPage() {
           <div className="flex items-center gap-4">
             <Link
               href="/admin/users"
-              className="text-zinc-500 hover:text-white transition-colors"
+              className="text-muted hover:text-foreground transition-colors"
             >
               &larr; Admin
             </Link>
             <h1 className="text-2xl font-bold">Crew Availability</h1>
-            <span className="text-zinc-500 text-sm">{records.length} slots</span>
+            <span className="text-muted text-sm">{records.length} slots</span>
           </div>
           <div className="flex items-center gap-3">
             <button
               onClick={handleSeed}
               disabled={seeding}
-              className="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+              className="px-4 py-2 bg-surface-2 hover:bg-zinc-600 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
             >
               {seeding ? "Seeding..." : "Sync from Code"}
             </button>
@@ -477,7 +477,7 @@ export default function CrewAvailabilityPage() {
           <select
             value={filterCrew}
             onChange={e => setFilterCrew(e.target.value)}
-            className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+            className="bg-surface-2 border border-t-border rounded-lg px-3 py-2 text-sm"
           >
             <option value="All">All Crew</option>
             {uniqueCrewNames.map(n => (
@@ -487,7 +487,7 @@ export default function CrewAvailabilityPage() {
           <select
             value={filterLocation}
             onChange={e => setFilterLocation(e.target.value)}
-            className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+            className="bg-surface-2 border border-t-border rounded-lg px-3 py-2 text-sm"
           >
             <option value="All">All Locations</option>
             {uniqueLocations.map(l => (
@@ -497,7 +497,7 @@ export default function CrewAvailabilityPage() {
           <select
             value={filterDay}
             onChange={e => setFilterDay(e.target.value)}
-            className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+            className="bg-surface-2 border border-t-border rounded-lg px-3 py-2 text-sm"
           >
             <option value="All">All Days</option>
             {DAYS.map((d, i) => (
@@ -507,25 +507,25 @@ export default function CrewAvailabilityPage() {
         </div>
 
         {/* Table */}
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+        <div className="bg-surface border border-t-border rounded-xl overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-zinc-800 bg-zinc-900/50">
-                  <th className="text-left px-4 py-3 text-zinc-400 font-medium">Crew Member</th>
-                  <th className="text-left px-4 py-3 text-zinc-400 font-medium">Location</th>
-                  <th className="text-left px-4 py-3 text-zinc-400 font-medium">Day</th>
-                  <th className="text-left px-4 py-3 text-zinc-400 font-medium">Time Range</th>
-                  <th className="text-left px-4 py-3 text-zinc-400 font-medium">Job Type</th>
-                  <th className="text-left px-4 py-3 text-zinc-400 font-medium">TZ</th>
-                  <th className="text-center px-4 py-3 text-zinc-400 font-medium">Active</th>
-                  <th className="text-right px-4 py-3 text-zinc-400 font-medium">Actions</th>
+                <tr className="border-b border-t-border bg-surface/50">
+                  <th className="text-left px-4 py-3 text-muted font-medium">Crew Member</th>
+                  <th className="text-left px-4 py-3 text-muted font-medium">Location</th>
+                  <th className="text-left px-4 py-3 text-muted font-medium">Day</th>
+                  <th className="text-left px-4 py-3 text-muted font-medium">Time Range</th>
+                  <th className="text-left px-4 py-3 text-muted font-medium">Job Type</th>
+                  <th className="text-left px-4 py-3 text-muted font-medium">TZ</th>
+                  <th className="text-center px-4 py-3 text-muted font-medium">Active</th>
+                  <th className="text-right px-4 py-3 text-muted font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredRecords.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-4 py-12 text-center text-zinc-500">
+                    <td colSpan={8} className="px-4 py-12 text-center text-muted">
                       {records.length === 0
                         ? "No availability records. Click \"Sync from Code\" to import existing schedules."
                         : "No records match your filters."}
@@ -533,15 +533,15 @@ export default function CrewAvailabilityPage() {
                   </tr>
                 ) : (
                   filteredRecords.map(record => (
-                    <tr key={record.id} className="border-b border-zinc-800/50 hover:bg-zinc-800/30">
+                    <tr key={record.id} className="border-b border-t-border/50 hover:bg-surface-2/30">
                       <td className="px-4 py-3 font-medium">{record.crewMember.name}</td>
-                      <td className="px-4 py-3 text-zinc-300">{record.location}</td>
+                      <td className="px-4 py-3 text-foreground/80">{record.location}</td>
                       <td className="px-4 py-3">
-                        <span className="px-2 py-0.5 bg-zinc-800 rounded text-xs">
+                        <span className="px-2 py-0.5 bg-surface-2 rounded text-xs">
                           {DAY_ABBREV[record.dayOfWeek]}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-zinc-300 text-xs">
+                      <td className="px-4 py-3 text-foreground/80 text-xs">
                         {formatTimeRange12h(record.startTime, record.endTime)}
                       </td>
                       <td className="px-4 py-3">
@@ -555,7 +555,7 @@ export default function CrewAvailabilityPage() {
                           {record.jobType}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-zinc-500 text-xs">
+                      <td className="px-4 py-3 text-muted text-xs">
                         {record.timezone === "America/Los_Angeles" ? "PT" : "MT"}
                       </td>
                       <td className="px-4 py-3 text-center">
@@ -573,13 +573,13 @@ export default function CrewAvailabilityPage() {
                         </button>
                         <button
                           onClick={() => openEditModal(record)}
-                          className="text-zinc-400 hover:text-white text-xs mr-3"
+                          className="text-muted hover:text-foreground text-xs mr-3"
                         >
                           Edit
                         </button>
                         <button
                           onClick={() => handleDelete(record.id)}
-                          className="text-zinc-500 hover:text-red-400 text-xs"
+                          className="text-muted hover:text-red-400 text-xs"
                         >
                           Delete
                         </button>
@@ -597,37 +597,37 @@ export default function CrewAvailabilityPage() {
           <div className="mt-8">
             <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
               <span className="text-amber-400">Blocked Dates</span>
-              <span className="text-zinc-500 text-sm font-normal">{overrides.length} upcoming</span>
+              <span className="text-muted text-sm font-normal">{overrides.length} upcoming</span>
             </h2>
-            <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+            <div className="bg-surface border border-t-border rounded-xl overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-zinc-800 bg-zinc-900/50">
-                      <th className="text-left px-4 py-3 text-zinc-400 font-medium">Crew Member</th>
-                      <th className="text-left px-4 py-3 text-zinc-400 font-medium">Date</th>
-                      <th className="text-left px-4 py-3 text-zinc-400 font-medium">Day</th>
-                      <th className="text-left px-4 py-3 text-zinc-400 font-medium">Reason</th>
-                      <th className="text-right px-4 py-3 text-zinc-400 font-medium">Actions</th>
+                    <tr className="border-b border-t-border bg-surface/50">
+                      <th className="text-left px-4 py-3 text-muted font-medium">Crew Member</th>
+                      <th className="text-left px-4 py-3 text-muted font-medium">Date</th>
+                      <th className="text-left px-4 py-3 text-muted font-medium">Day</th>
+                      <th className="text-left px-4 py-3 text-muted font-medium">Reason</th>
+                      <th className="text-right px-4 py-3 text-muted font-medium">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {overrides.map(ov => {
                       const d = new Date(ov.date + "T12:00:00");
                       return (
-                        <tr key={ov.id} className="border-b border-zinc-800/50 hover:bg-zinc-800/30">
+                        <tr key={ov.id} className="border-b border-t-border/50 hover:bg-surface-2/30">
                           <td className="px-4 py-3 font-medium">{ov.crewMember.name}</td>
-                          <td className="px-4 py-3 text-zinc-300">{ov.date}</td>
+                          <td className="px-4 py-3 text-foreground/80">{ov.date}</td>
                           <td className="px-4 py-3">
                             <span className="px-2 py-0.5 bg-amber-900/30 text-amber-300 rounded text-xs">
                               {DAY_ABBREV[d.getDay()]}
                             </span>
                           </td>
-                          <td className="px-4 py-3 text-zinc-400 text-xs">{ov.reason || "—"}</td>
+                          <td className="px-4 py-3 text-muted text-xs">{ov.reason || "—"}</td>
                           <td className="px-4 py-3 text-right">
                             <button
                               onClick={() => handleDeleteOverride(ov.id)}
-                              className="text-zinc-500 hover:text-red-400 text-xs"
+                              className="text-muted hover:text-red-400 text-xs"
                             >
                               Remove
                             </button>
@@ -646,19 +646,19 @@ export default function CrewAvailabilityPage() {
       {/* Block Date Modal */}
       {showOverrideModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-          <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 w-full max-w-md mx-4">
+          <div className="bg-surface border border-t-border rounded-xl p-6 w-full max-w-md mx-4">
             <h2 className="text-lg font-bold mb-4">Block a Date</h2>
-            <p className="text-sm text-zinc-400 mb-4">
+            <p className="text-sm text-muted mb-4">
               Block a crew member from being scheduled on a specific date without affecting their recurring weekly schedule.
             </p>
 
             <div className="space-y-4">
               <div>
-                <label className="block text-sm text-zinc-400 mb-1">Crew Member</label>
+                <label className="block text-sm text-muted mb-1">Crew Member</label>
                 <select
                   value={overrideForm.crewMemberId}
                   onChange={e => setOverrideForm(prev => ({ ...prev, crewMemberId: e.target.value }))}
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+                  className="w-full bg-surface-2 border border-t-border rounded-lg px-3 py-2 text-sm"
                 >
                   <option value="">Select crew member...</option>
                   {crewMembers.filter(c => c.isActive).map(c => (
@@ -668,23 +668,23 @@ export default function CrewAvailabilityPage() {
               </div>
 
               <div>
-                <label className="block text-sm text-zinc-400 mb-1">Date</label>
+                <label className="block text-sm text-muted mb-1">Date</label>
                 <input
                   type="date"
                   value={overrideForm.date}
                   onChange={e => setOverrideForm(prev => ({ ...prev, date: e.target.value }))}
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+                  className="w-full bg-surface-2 border border-t-border rounded-lg px-3 py-2 text-sm"
                 />
               </div>
 
               <div>
-                <label className="block text-sm text-zinc-400 mb-1">Reason (optional)</label>
+                <label className="block text-sm text-muted mb-1">Reason (optional)</label>
                 <input
                   type="text"
                   value={overrideForm.reason}
                   onChange={e => setOverrideForm(prev => ({ ...prev, reason: e.target.value }))}
                   placeholder="PTO, training, appointment..."
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+                  className="w-full bg-surface-2 border border-t-border rounded-lg px-3 py-2 text-sm"
                 />
               </div>
             </div>
@@ -692,7 +692,7 @@ export default function CrewAvailabilityPage() {
             <div className="flex justify-end gap-3 mt-6">
               <button
                 onClick={() => setShowOverrideModal(false)}
-                className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm"
+                className="px-4 py-2 bg-surface-2 hover:bg-surface-2 rounded-lg text-sm"
               >
                 Cancel
               </button>
@@ -710,7 +710,7 @@ export default function CrewAvailabilityPage() {
       {/* Add/Edit Modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-          <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 w-full max-w-md mx-4">
+          <div className="bg-surface border border-t-border rounded-xl p-6 w-full max-w-md mx-4">
             <h2 className="text-lg font-bold mb-4">
               {editingId ? "Edit Availability Slot" : "Add Availability Slot"}
             </h2>
@@ -718,11 +718,11 @@ export default function CrewAvailabilityPage() {
             <div className="space-y-4">
               {/* Crew Member */}
               <div>
-                <label className="block text-sm text-zinc-400 mb-1">Crew Member</label>
+                <label className="block text-sm text-muted mb-1">Crew Member</label>
                 <select
                   value={formData.crewMemberId}
                   onChange={e => setFormData(prev => ({ ...prev, crewMemberId: e.target.value }))}
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+                  className="w-full bg-surface-2 border border-t-border rounded-lg px-3 py-2 text-sm"
                 >
                   <option value="">Select crew member...</option>
                   {crewMembers.filter(c => c.isActive).map(c => (
@@ -733,11 +733,11 @@ export default function CrewAvailabilityPage() {
 
               {/* Location */}
               <div>
-                <label className="block text-sm text-zinc-400 mb-1">Location</label>
+                <label className="block text-sm text-muted mb-1">Location</label>
                 <select
                   value={formData.location}
                   onChange={e => handleLocationChange(e.target.value)}
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+                  className="w-full bg-surface-2 border border-t-border rounded-lg px-3 py-2 text-sm"
                 >
                   <option value="">Select location...</option>
                   {LOCATIONS.map(l => (
@@ -748,11 +748,11 @@ export default function CrewAvailabilityPage() {
 
               {/* Day of Week */}
               <div>
-                <label className="block text-sm text-zinc-400 mb-1">Day of Week</label>
+                <label className="block text-sm text-muted mb-1">Day of Week</label>
                 <select
                   value={formData.dayOfWeek}
                   onChange={e => setFormData(prev => ({ ...prev, dayOfWeek: parseInt(e.target.value) }))}
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+                  className="w-full bg-surface-2 border border-t-border rounded-lg px-3 py-2 text-sm"
                 >
                   {DAYS.map((d, i) => (
                     <option key={i} value={i}>{d}</option>
@@ -763,28 +763,28 @@ export default function CrewAvailabilityPage() {
               {/* Time Range */}
               <div className="flex gap-3">
                 <div className="flex-1">
-                  <label className="block text-sm text-zinc-400 mb-1">Start Time</label>
+                  <label className="block text-sm text-muted mb-1">Start Time</label>
                   <input
                     type="time"
                     value={formData.startTime}
                     onChange={e => setFormData(prev => ({ ...prev, startTime: e.target.value }))}
-                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+                    className="w-full bg-surface-2 border border-t-border rounded-lg px-3 py-2 text-sm"
                   />
                 </div>
                 <div className="flex-1">
-                  <label className="block text-sm text-zinc-400 mb-1">End Time</label>
+                  <label className="block text-sm text-muted mb-1">End Time</label>
                   <input
                     type="time"
                     value={formData.endTime}
                     onChange={e => setFormData(prev => ({ ...prev, endTime: e.target.value }))}
-                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+                    className="w-full bg-surface-2 border border-t-border rounded-lg px-3 py-2 text-sm"
                   />
                 </div>
               </div>
 
               {/* Job Type */}
               <div>
-                <label className="block text-sm text-zinc-400 mb-1">Job Type</label>
+                <label className="block text-sm text-muted mb-1">Job Type</label>
                 <div className="flex gap-2">
                   {JOB_TYPES.map(type => (
                     <button
@@ -793,7 +793,7 @@ export default function CrewAvailabilityPage() {
                       className={`px-3 py-1.5 rounded-lg text-sm capitalize ${
                         formData.jobType === type
                           ? "bg-cyan-600 text-white"
-                          : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
+                          : "bg-surface-2 text-muted hover:bg-surface-2"
                       }`}
                     >
                       {type}
@@ -804,11 +804,11 @@ export default function CrewAvailabilityPage() {
 
               {/* Timezone */}
               <div>
-                <label className="block text-sm text-zinc-400 mb-1">Timezone</label>
+                <label className="block text-sm text-muted mb-1">Timezone</label>
                 <select
                   value={formData.timezone}
                   onChange={e => setFormData(prev => ({ ...prev, timezone: e.target.value }))}
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+                  className="w-full bg-surface-2 border border-t-border rounded-lg px-3 py-2 text-sm"
                 >
                   <option value="America/Denver">Mountain Time (MT)</option>
                   <option value="America/Los_Angeles">Pacific Time (PT)</option>
@@ -816,7 +816,7 @@ export default function CrewAvailabilityPage() {
               </div>
 
               {/* Active Toggle */}
-              <label className="flex items-center justify-between p-3 bg-zinc-800 rounded-lg cursor-pointer">
+              <label className="flex items-center justify-between p-3 bg-surface-2 rounded-lg cursor-pointer">
                 <span className="text-sm">Active</span>
                 <button
                   type="button"
@@ -838,7 +838,7 @@ export default function CrewAvailabilityPage() {
             <div className="flex justify-end gap-3 mt-6">
               <button
                 onClick={() => setShowModal(false)}
-                className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm"
+                className="px-4 py-2 bg-surface-2 hover:bg-surface-2 rounded-lg text-sm"
               >
                 Cancel
               </button>

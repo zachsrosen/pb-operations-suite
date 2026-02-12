@@ -30,7 +30,7 @@ const CATEGORY_STYLES = {
 };
 
 const STATUS_STYLES = {
-  "planned": { bg: "bg-zinc-500/20", text: "text-zinc-400", label: "Planned" },
+  "planned": { bg: "bg-zinc-500/20", text: "text-muted", label: "Planned" },
   "in-progress": { bg: "bg-orange-500/20", text: "text-orange-400", label: "In Progress" },
   "completed": { bg: "bg-green-500/20", text: "text-green-400", label: "Completed" },
   "under-review": { bg: "bg-indigo-500/20", text: "text-indigo-400", label: "Under Review" },
@@ -220,7 +220,7 @@ export default function RoadmapPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-white">
+    <div className="min-h-screen bg-background text-foreground">
       {/* Toast Notification */}
       {toast && (
         <div className={`fixed top-4 right-4 z-[100] px-4 py-3 rounded-lg shadow-lg transition-all ${
@@ -231,12 +231,12 @@ export default function RoadmapPage() {
       )}
 
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-[#0a0a0f]/95 backdrop-blur border-b border-zinc-800">
+      <header className="sticky top-0 z-50 bg-background/95 backdrop-blur border-b border-t-border">
         <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Link
               href="/"
-              className="p-2 hover:bg-zinc-800 rounded-lg transition-colors"
+              className="p-2 hover:bg-surface-2 rounded-lg transition-colors"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -251,13 +251,13 @@ export default function RoadmapPage() {
                   </span>
                 )}
               </h1>
-              <p className="text-xs text-zinc-500">Vote on features & submit ideas</p>
+              <p className="text-xs text-muted">Vote on features & submit ideas</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
             <Link
               href="/updates"
-              className="flex items-center gap-2 text-xs text-zinc-400 hover:text-emerald-400 transition-colors"
+              className="flex items-center gap-2 text-xs text-muted hover:text-emerald-400 transition-colors"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
@@ -281,7 +281,7 @@ export default function RoadmapPage() {
       <main className="max-w-5xl mx-auto px-4 py-8">
         {/* Intro */}
         <div className="mb-8 p-4 bg-gradient-to-br from-orange-500/10 to-orange-500/5 border border-orange-500/30 rounded-xl">
-          <p className="text-zinc-300">
+          <p className="text-foreground/80">
             Help shape the future of PB Operations Suite! Vote on features you want to see,
             or submit your own ideas. The most popular requests help us prioritize what to build next.
           </p>
@@ -290,19 +290,19 @@ export default function RoadmapPage() {
         {/* Filters */}
         <div className="flex flex-wrap gap-4 mb-6">
           {/* Status filter */}
-          <div className="flex gap-1 bg-zinc-900/50 p-1 rounded-lg">
+          <div className="flex gap-1 bg-surface/50 p-1 rounded-lg">
             {(["all", "planned", "in-progress", "under-review", "completed"] as const).map((status) => (
               <button
                 key={status}
                 onClick={() => setFilter(status)}
                 className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
                   filter === status
-                    ? "bg-zinc-700 text-white"
-                    : "text-zinc-400 hover:text-white"
+                    ? "bg-surface-2 text-white"
+                    : "text-muted hover:text-foreground"
                 }`}
               >
                 {status === "all" ? "All" : STATUS_STYLES[status].label}
-                <span className="ml-1 text-xs text-zinc-500">({statusCounts[status]})</span>
+                <span className="ml-1 text-xs text-muted">({statusCounts[status]})</span>
               </button>
             ))}
           </div>
@@ -311,7 +311,7 @@ export default function RoadmapPage() {
           <select
             value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value as typeof categoryFilter)}
-            className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-300 focus:outline-none focus:border-orange-500"
+            className="bg-surface border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground/80 focus:outline-none focus:border-orange-500"
           >
             <option value="all">All Categories</option>
             {Object.entries(CATEGORY_STYLES).map(([key, style]) => (
@@ -323,7 +323,7 @@ export default function RoadmapPage() {
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-            className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-300 focus:outline-none focus:border-orange-500"
+            className="bg-surface border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground/80 focus:outline-none focus:border-orange-500"
           >
             <option value="votes">Most Votes</option>
             <option value="newest">Newest</option>
@@ -337,7 +337,7 @@ export default function RoadmapPage() {
           </div>
         ) : filteredItems.length === 0 ? (
           <div className="text-center py-12">
-            <p className="text-zinc-500">No items match your filters</p>
+            <p className="text-muted">No items match your filters</p>
           </div>
         ) : (
           <div className="space-y-4">
@@ -349,7 +349,7 @@ export default function RoadmapPage() {
               return (
                 <div
                   key={item.id}
-                  className="bg-[#12121a] border border-zinc-800 rounded-xl p-4 hover:border-zinc-700 transition-colors"
+                  className="bg-surface border border-t-border rounded-xl p-4 hover:border-t-border transition-colors"
                 >
                   <div className="flex gap-4">
                     {/* Vote button */}
@@ -359,7 +359,7 @@ export default function RoadmapPage() {
                       className={`flex flex-col items-center justify-center w-16 h-16 rounded-lg transition-colors ${
                         hasVoted
                           ? "bg-orange-500/20 text-orange-400 cursor-default"
-                          : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-white"
+                          : "bg-surface-2 text-muted hover:bg-surface-2 hover:text-foreground"
                       }`}
                     >
                       <svg
@@ -381,7 +381,7 @@ export default function RoadmapPage() {
                     {/* Content */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-2 mb-2">
-                        <h3 className="font-semibold text-white">{item.title}</h3>
+                        <h3 className="font-semibold text-foreground">{item.title}</h3>
                         <div className="flex items-center gap-2 flex-shrink-0">
                           {item.isOfficial && (
                             <span className="text-[0.65rem] px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400 font-medium">
@@ -401,10 +401,10 @@ export default function RoadmapPage() {
                                 } ${statusStyle.bg} ${statusStyle.text} border-${statusStyle.text.replace("text-", "")}/30 focus:ring-2 focus:ring-orange-500 focus:outline-none`}
                                 style={{ minWidth: "110px" }}
                               >
-                                <option value="planned" className="bg-zinc-900 text-zinc-300">📋 Planned</option>
-                                <option value="in-progress" className="bg-zinc-900 text-orange-300">🔨 In Progress</option>
-                                <option value="under-review" className="bg-zinc-900 text-indigo-300">🔍 Under Review</option>
-                                <option value="completed" className="bg-zinc-900 text-green-300">✅ Completed</option>
+                                <option value="planned" className="bg-surface text-foreground/80">📋 Planned</option>
+                                <option value="in-progress" className="bg-surface text-orange-300">🔨 In Progress</option>
+                                <option value="under-review" className="bg-surface text-indigo-300">🔍 Under Review</option>
+                                <option value="completed" className="bg-surface text-green-300">✅ Completed</option>
                               </select>
                               <div className="absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none">
                                 {updatingStatus === item.id ? (
@@ -423,17 +423,17 @@ export default function RoadmapPage() {
                           )}
                         </div>
                       </div>
-                      <p className="text-sm text-zinc-400 mb-3">{item.description}</p>
+                      <p className="text-sm text-muted mb-3">{item.description}</p>
                       <div className="flex items-center gap-3 text-xs">
                         <span className={`px-2 py-0.5 rounded ${categoryStyle.bg} ${categoryStyle.text}`}>
                           {categoryStyle.label}
                         </span>
                         {item.submittedBy && (
-                          <span className="text-zinc-600">
+                          <span className="text-muted/70">
                             Submitted by {item.submittedBy}
                           </span>
                         )}
-                        <span className="text-zinc-600">
+                        <span className="text-muted/70">
                           {new Date(item.createdAt).toLocaleDateString()}
                         </span>
                       </div>
@@ -446,7 +446,7 @@ export default function RoadmapPage() {
         )}
 
         {/* Footer */}
-        <div className="mt-12 text-center text-sm text-zinc-600">
+        <div className="mt-12 text-center text-sm text-muted/70">
           <p>Have a specific bug report or urgent request?</p>
           <p className="mt-1">
             Contact:{" "}
@@ -460,12 +460,12 @@ export default function RoadmapPage() {
       {/* New Idea Modal */}
       {showNewIdeaModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className="bg-[#12121a] border border-zinc-800 rounded-xl w-full max-w-lg p-6">
+          <div className="bg-surface border border-t-border rounded-xl w-full max-w-lg p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold">Submit an Idea</h2>
               <button
                 onClick={() => setShowNewIdeaModal(false)}
-                className="p-1 hover:bg-zinc-800 rounded-lg transition-colors"
+                className="p-1 hover:bg-surface-2 rounded-lg transition-colors"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -476,7 +476,7 @@ export default function RoadmapPage() {
             <form onSubmit={handleSubmitIdea}>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-zinc-400 mb-1">
+                  <label className="block text-sm font-medium text-muted mb-1">
                     Title <span className="text-red-400">*</span>
                   </label>
                   <input
@@ -484,14 +484,14 @@ export default function RoadmapPage() {
                     value={newIdea.title}
                     onChange={(e) => setNewIdea(prev => ({ ...prev, title: e.target.value }))}
                     placeholder="Brief summary of your idea"
-                    className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-white placeholder-zinc-500 focus:outline-none focus:border-orange-500"
+                    className="w-full bg-surface border border-t-border rounded-lg px-3 py-2 text-white placeholder-muted focus:outline-none focus:border-orange-500"
                     required
                     maxLength={100}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-zinc-400 mb-1">
+                  <label className="block text-sm font-medium text-muted mb-1">
                     Description <span className="text-red-400">*</span>
                   </label>
                   <textarea
@@ -499,20 +499,20 @@ export default function RoadmapPage() {
                     onChange={(e) => setNewIdea(prev => ({ ...prev, description: e.target.value }))}
                     placeholder="Describe your idea in more detail. What problem does it solve? How would it help your workflow?"
                     rows={4}
-                    className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-white placeholder-zinc-500 focus:outline-none focus:border-orange-500 resize-none"
+                    className="w-full bg-surface border border-t-border rounded-lg px-3 py-2 text-white placeholder-muted focus:outline-none focus:border-orange-500 resize-none"
                     required
                     maxLength={500}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-zinc-400 mb-1">
+                  <label className="block text-sm font-medium text-muted mb-1">
                     Category
                   </label>
                   <select
                     value={newIdea.category}
                     onChange={(e) => setNewIdea(prev => ({ ...prev, category: e.target.value as NewIdea["category"] }))}
-                    className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-orange-500"
+                    className="w-full bg-surface border border-t-border rounded-lg px-3 py-2 text-white focus:outline-none focus:border-orange-500"
                   >
                     {Object.entries(CATEGORY_STYLES).map(([key, style]) => (
                       <option key={key} value={key}>{style.label}</option>
@@ -525,7 +525,7 @@ export default function RoadmapPage() {
                 <button
                   type="button"
                   onClick={() => setShowNewIdeaModal(false)}
-                  className="flex-1 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg transition-colors"
+                  className="flex-1 px-4 py-2 bg-surface-2 hover:bg-surface-2 text-white rounded-lg transition-colors"
                 >
                   Cancel
                 </button>

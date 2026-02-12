@@ -56,14 +56,14 @@ export default async function AdminSuitePage() {
   if (!user || user.role !== "ADMIN") redirect("/");
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-white dashboard-bg">
+    <div className="min-h-screen bg-background text-foreground">
       <main className="max-w-7xl mx-auto px-6 py-8">
         <div className="mb-6">
-          <Link href="/" className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors">
+          <Link href="/" className="text-xs text-muted hover:text-foreground transition-colors">
             &larr; Back to Dashboard
           </Link>
           <h1 className="text-2xl font-bold mt-3">Admin Suite</h1>
-          <p className="text-sm text-zinc-400 mt-1">
+          <p className="text-sm text-muted mt-1">
             Admin-only tools and in-progress dashboards.
           </p>
         </div>
@@ -73,22 +73,22 @@ export default async function AdminSuitePage() {
             <Link
               key={item.href}
               href={item.href}
-              className="group block bg-zinc-900/50 border border-zinc-800 rounded-xl p-5 hover:border-orange-500/50 hover:bg-zinc-900 transition-all"
+              className="group block bg-surface/50 border border-t-border rounded-xl p-5 hover:border-orange-500/50 hover:bg-surface transition-all"
             >
               <div className="flex items-center justify-between mb-1">
-                <h3 className="font-semibold text-white group-hover:text-orange-400 transition-colors">
+                <h3 className="font-semibold text-foreground group-hover:text-orange-400 transition-colors">
                   {item.title}
                 </h3>
-                <span className="text-xs font-medium px-2 py-0.5 rounded border bg-zinc-500/20 text-zinc-300 border-zinc-500/30">
+                <span className="text-xs font-medium px-2 py-0.5 rounded border bg-zinc-500/20 text-foreground/80 border-muted/30">
                   {item.tag}
                 </span>
               </div>
-              <p className="text-sm text-zinc-500">{item.description}</p>
+              <p className="text-sm text-muted">{item.description}</p>
             </Link>
           ))}
         </div>
 
-        <h2 className="text-lg font-semibold text-zinc-300 mt-10 mb-4">
+        <h2 className="text-lg font-semibold text-foreground/80 mt-10 mb-4">
           API Endpoints
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -96,13 +96,13 @@ export default async function AdminSuitePage() {
             href="/api/projects?stats=true"
             target="_blank"
             rel="noopener noreferrer"
-            className="block bg-zinc-900/50 border border-zinc-800 rounded-xl p-5 hover:border-green-500/50 transition-all"
+            className="block bg-surface/50 border border-t-border rounded-xl p-5 hover:border-green-500/50 transition-all"
           >
             <div className="flex items-center gap-2 mb-1">
               <span className="text-green-500 font-mono text-sm">GET</span>
-              <span className="font-semibold text-white">Projects + Stats</span>
+              <span className="font-semibold text-foreground">Projects + Stats</span>
             </div>
-            <p className="text-sm text-zinc-500">
+            <p className="text-sm text-muted">
               Full project data with statistics.
             </p>
           </a>
@@ -110,13 +110,13 @@ export default async function AdminSuitePage() {
             href="/api/projects?context=pe"
             target="_blank"
             rel="noopener noreferrer"
-            className="block bg-zinc-900/50 border border-zinc-800 rounded-xl p-5 hover:border-green-500/50 transition-all"
+            className="block bg-surface/50 border border-t-border rounded-xl p-5 hover:border-green-500/50 transition-all"
           >
             <div className="flex items-center gap-2 mb-1">
               <span className="text-green-500 font-mono text-sm">GET</span>
-              <span className="font-semibold text-white">PE Projects</span>
+              <span className="font-semibold text-foreground">PE Projects</span>
             </div>
-            <p className="text-sm text-zinc-500">
+            <p className="text-sm text-muted">
               Participate Energy project data.
             </p>
           </a>
@@ -124,13 +124,13 @@ export default async function AdminSuitePage() {
             href="/api/projects?context=scheduling"
             target="_blank"
             rel="noopener noreferrer"
-            className="block bg-zinc-900/50 border border-zinc-800 rounded-xl p-5 hover:border-green-500/50 transition-all"
+            className="block bg-surface/50 border border-t-border rounded-xl p-5 hover:border-green-500/50 transition-all"
           >
             <div className="flex items-center gap-2 mb-1">
               <span className="text-green-500 font-mono text-sm">GET</span>
-              <span className="font-semibold text-white">Scheduling</span>
+              <span className="font-semibold text-foreground">Scheduling</span>
             </div>
-            <p className="text-sm text-zinc-500">
+            <p className="text-sm text-muted">
               RTB and schedulable projects.
             </p>
           </a>

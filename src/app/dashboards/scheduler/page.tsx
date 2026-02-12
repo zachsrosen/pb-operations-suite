@@ -1230,21 +1230,21 @@ export default function SchedulerPage() {
   /* ================================================================ */
 
   return (
-    <div className="h-screen overflow-hidden bg-[#0a0a0f] text-zinc-200 font-sans max-[900px]:h-auto max-[900px]:min-h-screen max-[900px]:overflow-auto dashboard-bg">
+    <div className="h-screen overflow-hidden bg-background text-foreground/90 font-sans max-[900px]:h-auto max-[900px]:min-h-screen max-[900px]:overflow-auto">
       {/* 3-column grid layout */}
       <div className="grid grid-cols-[360px_1fr_280px] h-full max-[1400px]:grid-cols-[320px_1fr_240px] max-[1100px]:grid-cols-[320px_1fr] max-[900px]:grid-cols-[1fr] max-[900px]:h-auto">
         {/* ============================================================ */}
         {/* LEFT SIDEBAR - Pipeline Queue                                */}
         {/* ============================================================ */}
-        <aside className="bg-[#12121a] border-r border-zinc-800 flex flex-col overflow-hidden max-[900px]:max-h-[50vh] max-[900px]:border-r-0 max-[900px]:border-b">
+        <aside className="bg-surface border-r border-t-border flex flex-col overflow-hidden max-[900px]:max-h-[50vh] max-[900px]:border-r-0 max-[900px]:border-b">
           {/* Header */}
-          <header className="p-4 border-b border-zinc-800 bg-gradient-to-br from-[#12121a] to-[#1a1a28]">
+          <header className="p-4 border-b border-t-border bg-gradient-to-br from-[#12121a] to-[#1a1a28]">
             <div className="flex justify-between items-center">
               <div>
                 <h1 className="text-lg font-bold bg-gradient-to-r from-orange-500 to-orange-400 bg-clip-text text-transparent">
                   PB Master Scheduler
                 </h1>
-                <div className="text-[0.65rem] text-zinc-500 mt-0.5">
+                <div className="text-[0.65rem] text-muted mt-0.5">
                   RTB + Construction &bull; Live HubSpot Data
                 </div>
               </div>
@@ -1252,13 +1252,13 @@ export default function SchedulerPage() {
                 <ThemeToggle />
                 <Link
                   href="/"
-                  className="px-2.5 py-1.5 text-[0.7rem] rounded-md bg-[#0a0a0f] border border-zinc-800 text-zinc-300 hover:border-orange-500 hover:text-orange-400 transition-colors"
+                  className="px-2.5 py-1.5 text-[0.7rem] rounded-md bg-background border border-t-border text-foreground/80 hover:border-orange-500 hover:text-orange-400 transition-colors"
                 >
                   &larr; Back
                 </Link>
                 <button
                   onClick={exportCSV}
-                  className="px-2.5 py-1.5 text-[0.7rem] rounded-md bg-[#0a0a0f] border border-zinc-800 text-zinc-300 hover:border-orange-500 hover:text-orange-400 transition-colors"
+                  className="px-2.5 py-1.5 text-[0.7rem] rounded-md bg-background border border-t-border text-foreground/80 hover:border-orange-500 hover:text-orange-400 transition-colors"
                 >
                   CSV
                 </button>
@@ -1267,7 +1267,7 @@ export default function SchedulerPage() {
           </header>
 
           {/* Queue header with filters */}
-          <div className="p-3 border-b border-zinc-800">
+          <div className="p-3 border-b border-t-border">
             <h2 className="text-[0.8rem] font-semibold mb-2 flex items-center gap-1.5">
               Install Pipeline
             </h2>
@@ -1283,7 +1283,7 @@ export default function SchedulerPage() {
                   className={`px-2 py-1 text-[0.6rem] rounded border transition-colors ${
                     selectedStage === st.key
                       ? STAGE_TAB_ACTIVE[st.key]
-                      : "bg-[#0a0a0f] border-zinc-800 text-zinc-500 hover:border-zinc-600"
+                      : "bg-background border-t-border text-muted hover:border-muted"
                   }`}
                 >
                   {st.label}
@@ -1297,12 +1297,12 @@ export default function SchedulerPage() {
                 placeholder="Search projects..."
                 value={searchText}
                 onChange={(e) => setSearchText(e.target.value)}
-                className="w-full bg-[#0a0a0f] border border-zinc-800 text-zinc-200 px-2 py-1.5 rounded-md text-[0.7rem] focus:outline-none focus:border-orange-500 placeholder:text-zinc-600"
+                className="w-full bg-background border border-t-border text-foreground/90 px-2 py-1.5 rounded-md text-[0.7rem] focus:outline-none focus:border-orange-500 placeholder:text-muted/70"
               />
               <select
                 value={typeFilter}
                 onChange={(e) => setTypeFilter(e.target.value)}
-                className="w-full bg-[#0a0a0f] border border-zinc-800 text-zinc-200 px-2 py-1.5 rounded-md text-[0.7rem] focus:outline-none focus:border-orange-500"
+                className="w-full bg-background border border-t-border text-foreground/90 px-2 py-1.5 rounded-md text-[0.7rem] focus:outline-none focus:border-orange-500"
               >
                 <option value="">All Types</option>
                 <option value="Solar">Solar</option>
@@ -1312,7 +1312,7 @@ export default function SchedulerPage() {
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value)}
-                className="w-full bg-[#0a0a0f] border border-zinc-800 text-zinc-200 px-2 py-1.5 rounded-md text-[0.7rem] focus:outline-none focus:border-orange-500"
+                className="w-full bg-background border border-t-border text-foreground/90 px-2 py-1.5 rounded-md text-[0.7rem] focus:outline-none focus:border-orange-500"
               >
                 <option value="amount">Sort: Revenue</option>
                 <option value="date">Sort: Date</option>
@@ -1333,7 +1333,7 @@ export default function SchedulerPage() {
                     className={`px-1.5 py-0.5 text-[0.6rem] rounded border transition-colors ${
                       selectedLocations.includes(loc)
                         ? "bg-orange-500 border-orange-400 text-black"
-                        : "bg-[#0a0a0f] border-zinc-700 text-zinc-400 hover:border-zinc-600"
+                        : "bg-background border-t-border text-muted hover:border-muted"
                     }`}
                   >
                     {loc.replace("Colorado Springs", "CO Spgs").replace("San Luis Obispo", "SLO")}
@@ -1342,7 +1342,7 @@ export default function SchedulerPage() {
                 {selectedLocations.length > 0 && (
                   <button
                     onClick={() => setSelectedLocations([])}
-                    className="px-1.5 py-0.5 text-[0.6rem] text-zinc-500 hover:text-white"
+                    className="px-1.5 py-0.5 text-[0.6rem] text-muted hover:text-foreground"
                   >
                     Clear
                   </button>
@@ -1352,7 +1352,7 @@ export default function SchedulerPage() {
           </div>
 
           {/* Queue count */}
-          <div className="text-[0.65rem] text-zinc-500 px-3 py-2 border-b border-zinc-800 bg-[#0a0a0f] flex justify-between">
+          <div className="text-[0.65rem] text-muted px-3 py-2 border-b border-t-border bg-background flex justify-between">
             <span>{filteredProjects.length} projects</span>
             <span>${queueRevenue}</span>
           </div>
@@ -1360,7 +1360,7 @@ export default function SchedulerPage() {
           {/* Queue list */}
           <div className="flex-1 overflow-y-auto p-2">
             {loading && (
-              <div className="p-8 text-center text-zinc-500">
+              <div className="p-8 text-center text-muted">
                 Loading projects from HubSpot...
               </div>
             )}
@@ -1396,12 +1396,12 @@ export default function SchedulerPage() {
                     onDragStart={(e) => handleDragStart(e, p.id)}
                     onDragEnd={handleDragEnd}
                     onClick={() => handleSelectProject(p.id)}
-                    className={`bg-[#0a0a0f] border rounded-lg p-2.5 mb-1.5 cursor-grab transition-all hover:border-orange-500 hover:translate-x-0.5 border-l-[3px] ${
+                    className={`bg-background border rounded-lg p-2.5 mb-1.5 cursor-grab transition-all hover:border-orange-500 hover:translate-x-0.5 border-l-[3px] ${
                       STAGE_BORDER_COLORS[p.stage] || "border-l-zinc-600"
                     } ${
                       selectedProject?.id === p.id
                         ? "border-orange-500 bg-orange-500/10 shadow-[0_0_0_1px] shadow-orange-500"
-                        : "border-zinc-800"
+                        : "border-t-border"
                     }`}
                   >
                     <div className="flex justify-between items-start mb-0.5">
@@ -1416,7 +1416,7 @@ export default function SchedulerPage() {
                       </div>
                     </div>
                     <div
-                      className="text-[0.6rem] text-zinc-500 mb-1 truncate"
+                      className="text-[0.6rem] text-muted mb-1 truncate"
                       title={p.address}
                     >
                       {p.address}
@@ -1434,7 +1434,7 @@ export default function SchedulerPage() {
                                   ? "bg-cyan-500/20 text-cyan-400"
                                   : p.stage === "inspection"
                                     ? "bg-violet-500/20 text-violet-400"
-                                    : "bg-zinc-700 text-zinc-400"
+                                    : "bg-surface-2 text-muted"
                         }`}
                       >
                         {STAGE_ICONS[p.stage] || p.stage}
@@ -1464,7 +1464,7 @@ export default function SchedulerPage() {
                               ? "bg-cyan-500/20 text-cyan-400"
                               : t.toLowerCase().includes("battery")
                                 ? "bg-purple-500/20 text-purple-400"
-                                : "bg-zinc-700 text-zinc-400"
+                                : "bg-surface-2 text-muted"
                           }`}
                         >
                           {t.trim()}
@@ -1473,48 +1473,48 @@ export default function SchedulerPage() {
                     </div>
                     <div className="flex gap-1.5 mt-1 flex-wrap">
                       {p.systemSize > 0 && (
-                        <span className="text-[0.55rem] text-zinc-500">
-                          <strong className="text-zinc-300">
+                        <span className="text-[0.55rem] text-muted">
+                          <strong className="text-foreground/80">
                             {p.systemSize.toFixed(1)}
                           </strong>{" "}
                           kW
                         </span>
                       )}
                       {p.moduleCount > 0 && (
-                        <span className="text-[0.55rem] text-zinc-500">
-                          <strong className="text-zinc-300">
+                        <span className="text-[0.55rem] text-muted">
+                          <strong className="text-foreground/80">
                             {p.moduleCount}
                           </strong>{" "}
                           mod
                         </span>
                       )}
                       {p.inverterCount > 0 && (
-                        <span className="text-[0.55rem] text-zinc-500">
-                          <strong className="text-zinc-300">
+                        <span className="text-[0.55rem] text-muted">
+                          <strong className="text-foreground/80">
                             {p.inverterCount}
                           </strong>{" "}
                           inv
                         </span>
                       )}
                       {p.batteries > 0 && (
-                        <span className="text-[0.55rem] text-zinc-500">
-                          <strong className="text-zinc-300">
+                        <span className="text-[0.55rem] text-muted">
+                          <strong className="text-foreground/80">
                             {p.batteries}
                           </strong>{" "}
                           batt
                         </span>
                       )}
                       {p.batteryExpansion > 0 && (
-                        <span className="text-[0.55rem] text-zinc-500">
-                          <strong className="text-zinc-300">
+                        <span className="text-[0.55rem] text-muted">
+                          <strong className="text-foreground/80">
                             +{p.batteryExpansion}
                           </strong>{" "}
                           exp
                         </span>
                       )}
                       {p.evCount > 0 && (
-                        <span className="text-[0.55rem] text-zinc-500">
-                          <strong className="text-zinc-300">{p.evCount}</strong>{" "}
+                        <span className="text-[0.55rem] text-muted">
+                          <strong className="text-foreground/80">{p.evCount}</strong>{" "}
                           EV
                         </span>
                       )}
@@ -1522,12 +1522,12 @@ export default function SchedulerPage() {
                     {isSurveyOrInspection ? (
                       <div className="flex gap-1.5 mt-0.5 flex-wrap">
                         {p.ahj && (
-                          <span className="text-[0.55rem] text-zinc-500">
+                          <span className="text-[0.55rem] text-muted">
                             AHJ: {p.ahj}
                           </span>
                         )}
                         {p.utility && (
-                          <span className="text-[0.55rem] text-zinc-500">
+                          <span className="text-[0.55rem] text-muted">
                             Util: {p.utility}
                           </span>
                         )}
@@ -1536,48 +1536,48 @@ export default function SchedulerPage() {
                       <>
                         <div className="flex gap-1.5 mt-0.5 flex-wrap">
                           {p.daysInstall > 0 && (
-                            <span className="text-[0.55rem] text-zinc-500">
-                              <strong className="text-zinc-300">
+                            <span className="text-[0.55rem] text-muted">
+                              <strong className="text-foreground/80">
                                 {p.daysInstall}
                               </strong>
                               d inst
                             </span>
                           )}
                           {p.daysElec > 0 && (
-                            <span className="text-[0.55rem] text-zinc-500">
-                              <strong className="text-zinc-300">
+                            <span className="text-[0.55rem] text-muted">
+                              <strong className="text-foreground/80">
                                 {p.daysElec}
                               </strong>
                               d elec
                             </span>
                           )}
                           {!p.daysInstall && !p.daysElec && p.totalDays > 0 && (
-                            <span className="text-[0.55rem] text-zinc-500">
-                              <strong className="text-zinc-300">
+                            <span className="text-[0.55rem] text-muted">
+                              <strong className="text-foreground/80">
                                 {p.totalDays}
                               </strong>
                               d
                             </span>
                           )}
                           {p.roofersCount > 0 && (
-                            <span className="text-[0.55rem] text-zinc-500">
+                            <span className="text-[0.55rem] text-muted">
                               Inst:{p.roofersCount}
                             </span>
                           )}
                           {p.electriciansCount > 0 && (
-                            <span className="text-[0.55rem] text-zinc-500">
+                            <span className="text-[0.55rem] text-muted">
                               Elec:{p.electriciansCount}
                             </span>
                           )}
                           {p.difficulty > 0 && (
-                            <span className="text-[0.55rem] text-zinc-500">
+                            <span className="text-[0.55rem] text-muted">
                               D{p.difficulty}
                             </span>
                           )}
                         </div>
                         {p.installNotes && (
                           <div
-                            className="text-[0.55rem] text-zinc-500 mt-1 italic truncate"
+                            className="text-[0.55rem] text-muted mt-1 italic truncate"
                             title={p.installNotes}
                           >
                             {p.installNotes}
@@ -1596,7 +1596,7 @@ export default function SchedulerPage() {
         {/* ============================================================ */}
         <main className="flex flex-col overflow-hidden max-[900px]:min-h-[60vh]">
           {/* View tabs */}
-          <div className="flex gap-0.5 p-2 bg-[#0a0a0f] border-b border-zinc-800">
+          <div className="flex gap-0.5 p-2 bg-background border-b border-t-border">
             {(
               [
                 { key: "calendar", label: "Month" },
@@ -1610,7 +1610,7 @@ export default function SchedulerPage() {
                 className={`flex-1 py-2 text-[0.7rem] font-semibold rounded-md border transition-colors text-center ${
                   currentView === v.key
                     ? "border-orange-500 text-orange-400 bg-orange-500/10"
-                    : "bg-[#12121a] border-zinc-800 text-zinc-500 hover:border-zinc-600"
+                    : "bg-surface border-t-border text-muted hover:border-muted"
                 }`}
               >
                 {v.label}
@@ -1619,7 +1619,7 @@ export default function SchedulerPage() {
           </div>
 
           {/* Calendar Filters */}
-          <div className="flex items-center gap-2 p-2 bg-[#0a0a0f] border-b border-zinc-800">
+          <div className="flex items-center gap-2 p-2 bg-background border-b border-t-border">
             <MultiSelectFilter
               label="Location"
               options={[
@@ -1651,7 +1651,7 @@ export default function SchedulerPage() {
             {(calendarLocations.length > 0 || calendarScheduleTypes.length > 0) && (
               <button
                 onClick={() => { setCalendarLocations([]); setCalendarScheduleTypes([]); }}
-                className="px-2 py-1.5 text-[0.65rem] font-medium rounded-md border border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500 transition-colors"
+                className="px-2 py-1.5 text-[0.65rem] font-medium rounded-md border border-t-border text-muted hover:text-foreground/90 hover:border-muted transition-colors"
               >
                 Clear filters
               </button>
@@ -1661,12 +1661,12 @@ export default function SchedulerPage() {
                 onClick={() => setShowCompleted(!showCompleted)}
                 className={`flex items-center gap-1 px-2 py-1.5 text-[0.65rem] font-medium rounded-md border transition-colors ${
                   showCompleted
-                    ? "border-zinc-600 text-zinc-300 bg-zinc-800"
-                    : "border-zinc-700 text-zinc-500"
+                    ? "border-t-border text-foreground/80 bg-surface-2"
+                    : "border-t-border text-muted"
                 }`}
               >
                 <span className={`w-3 h-3 rounded border flex items-center justify-center ${
-                  showCompleted ? "bg-emerald-500 border-emerald-500" : "border-zinc-600"
+                  showCompleted ? "bg-emerald-500 border-emerald-500" : "border-t-border"
                 }`}>
                   {showCompleted && <svg className="w-2 h-2 text-white" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>}
                 </span>
@@ -1676,7 +1676,7 @@ export default function SchedulerPage() {
           </div>
 
           {/* Stats bar */}
-          <div className="flex gap-1.5 p-2 bg-[#0a0a0f] border-b border-zinc-800 flex-wrap">
+          <div className="flex gap-1.5 p-2 bg-background border-b border-t-border flex-wrap">
             {[
               { color: "bg-cyan-500", value: stats.survey, label: "Survey" },
               { color: "bg-emerald-500", value: stats.rtb, label: "RTB" },
@@ -1698,13 +1698,13 @@ export default function SchedulerPage() {
             ].map((s, i) => (
               <div
                 key={i}
-                className="flex items-center gap-1 px-2 py-1 bg-[#12121a] rounded-md border border-zinc-800"
+                className="flex items-center gap-1 px-2 py-1 bg-surface rounded-md border border-t-border"
               >
                 <div className={`w-2 h-2 rounded-sm ${s.color}`} />
                 <span className="font-mono font-semibold text-[0.8rem]">
                   {s.value}
                 </span>
-                <span className="text-[0.55rem] text-zinc-500 uppercase">
+                <span className="text-[0.55rem] text-muted uppercase">
                   {s.label}
                 </span>
               </div>
@@ -1729,7 +1729,7 @@ export default function SchedulerPage() {
                 <div className="flex items-center justify-between mb-2 px-2">
                   <button
                     onClick={prevMonth}
-                    className="bg-[#12121a] border border-zinc-800 text-zinc-300 px-3 py-1.5 rounded-md text-[0.7rem] hover:bg-zinc-800 transition-colors"
+                    className="bg-surface border border-t-border text-foreground/80 px-3 py-1.5 rounded-md text-[0.7rem] hover:bg-surface-2 transition-colors"
                   >
                     &larr; Prev
                   </button>
@@ -1739,25 +1739,25 @@ export default function SchedulerPage() {
                   <div className="flex gap-2">
                     <button
                       onClick={nextMonth}
-                      className="bg-[#12121a] border border-zinc-800 text-zinc-300 px-3 py-1.5 rounded-md text-[0.7rem] hover:bg-zinc-800 transition-colors"
+                      className="bg-surface border border-t-border text-foreground/80 px-3 py-1.5 rounded-md text-[0.7rem] hover:bg-surface-2 transition-colors"
                     >
                       Next &rarr;
                     </button>
                     <button
                       onClick={goToToday}
-                      className="bg-[#12121a] border border-zinc-800 text-zinc-300 px-2 py-1 rounded-md text-[0.65rem] hover:bg-zinc-800 transition-colors"
+                      className="bg-surface border border-t-border text-foreground/80 px-2 py-1 rounded-md text-[0.65rem] hover:bg-surface-2 transition-colors"
                     >
                       Today
                     </button>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-7 gap-0.5 bg-zinc-800 rounded-lg overflow-hidden p-0.5">
+                <div className="grid grid-cols-7 gap-0.5 bg-surface-2 rounded-lg overflow-hidden p-0.5">
                   {/* Day headers */}
                   {DAY_NAMES.map((d) => (
                     <div
                       key={d}
-                      className="bg-[#12121a] py-2 text-center font-semibold text-[0.65rem] text-zinc-500"
+                      className="bg-surface py-2 text-center font-semibold text-[0.65rem] text-muted"
                     >
                       {d}
                     </div>
@@ -1773,9 +1773,9 @@ export default function SchedulerPage() {
                     return (
                       <div
                         key={`prev-${i}`}
-                        className="bg-[#12121a] min-h-[90px] p-1 opacity-40"
+                        className="bg-surface min-h-[90px] p-1 opacity-40"
                       >
-                        <div className="text-[0.7rem] font-semibold text-zinc-500">
+                        <div className="text-[0.7rem] font-semibold text-muted">
                           {prevDays - calendarData.startDay + i + 1}
                         </div>
                       </div>
@@ -1804,7 +1804,7 @@ export default function SchedulerPage() {
                       return (
                         <div
                           key={day}
-                          className={`bg-[#12121a] min-h-[110px] max-h-[180px] overflow-y-auto p-1 relative transition-colors ${
+                          className={`bg-surface min-h-[110px] max-h-[180px] overflow-y-auto p-1 relative transition-colors ${
                             isToday
                               ? "ring-2 ring-inset ring-orange-500"
                               : ""
@@ -1815,7 +1815,7 @@ export default function SchedulerPage() {
                           } ${
                             isWkEnd
                               ? "bg-black/30 opacity-60 cursor-default"
-                              : "cursor-pointer hover:bg-[#1a1a24]"
+                              : "cursor-pointer hover:bg-surface-elevated"
                           }`}
                           onClick={
                             !isWkEnd
@@ -1835,7 +1835,7 @@ export default function SchedulerPage() {
                         >
                           <div
                             className={`text-[0.7rem] font-semibold mb-0.5 ${
-                              isToday ? "text-orange-400" : "text-zinc-500"
+                              isToday ? "text-orange-400" : "text-muted"
                             }`}
                           >
                             {day}
@@ -1906,9 +1906,9 @@ export default function SchedulerPage() {
                       return Array.from({ length: rem }).map((_, i) => (
                         <div
                           key={`next-${i}`}
-                          className="bg-[#12121a] min-h-[90px] p-1 opacity-40"
+                          className="bg-surface min-h-[90px] p-1 opacity-40"
                         >
-                          <div className="text-[0.7rem] font-semibold text-zinc-500">
+                          <div className="text-[0.7rem] font-semibold text-muted">
                             {i + 1}
                           </div>
                         </div>
@@ -1926,7 +1926,7 @@ export default function SchedulerPage() {
                 <div className="flex items-center justify-between mb-3 px-2">
                   <button
                     onClick={() => setWeekOffset((w) => w - 1)}
-                    className="bg-[#12121a] border border-zinc-800 text-zinc-300 px-3 py-1.5 rounded-md text-[0.7rem] hover:bg-zinc-800 transition-colors"
+                    className="bg-surface border border-t-border text-foreground/80 px-3 py-1.5 rounded-md text-[0.7rem] hover:bg-surface-2 transition-colors"
                   >
                     &larr; Prev Week
                   </button>
@@ -1945,15 +1945,15 @@ export default function SchedulerPage() {
                   </div>
                   <button
                     onClick={() => setWeekOffset((w) => w + 1)}
-                    className="bg-[#12121a] border border-zinc-800 text-zinc-300 px-3 py-1.5 rounded-md text-[0.7rem] hover:bg-zinc-800 transition-colors"
+                    className="bg-surface border border-t-border text-foreground/80 px-3 py-1.5 rounded-md text-[0.7rem] hover:bg-surface-2 transition-colors"
                   >
                     Next Week &rarr;
                   </button>
                 </div>
 
-                <div className="grid gap-px bg-zinc-800 rounded-lg overflow-hidden" style={{ gridTemplateColumns: "100px repeat(5, 1fr)" }}>
+                <div className="grid gap-px bg-surface-2 rounded-lg overflow-hidden" style={{ gridTemplateColumns: "100px repeat(5, 1fr)" }}>
                   {/* Header row */}
-                  <div className="bg-[#0a0a0f] p-2" />
+                  <div className="bg-background p-2" />
                   {weekDates.map((d, i) => {
                     const isToday =
                       d.toDateString() === new Date().toDateString();
@@ -1963,11 +1963,11 @@ export default function SchedulerPage() {
                         className={`p-2.5 text-center text-[0.7rem] font-semibold ${
                           isToday
                             ? "text-orange-400 bg-orange-500/10"
-                            : "text-zinc-500 bg-[#12121a]"
+                            : "text-muted bg-surface"
                         }`}
                       >
                         {d.toLocaleDateString("en-US", { weekday: "short" })}
-                        <span className="text-base font-bold block mt-0.5 text-zinc-200">
+                        <span className="text-base font-bold block mt-0.5 text-foreground/90">
                           {d.getDate()}
                         </span>
                       </div>
@@ -1984,11 +1984,11 @@ export default function SchedulerPage() {
                     return locationCrews.map((crew) => (
                       <React.Fragment key={crew.name}>
                         <div
-                          className="bg-[#0a0a0f] p-2.5 text-[0.7rem] font-semibold flex flex-col gap-1"
+                          className="bg-background p-2.5 text-[0.7rem] font-semibold flex flex-col gap-1"
                           style={{ borderRight: `3px solid ${crew.color}` }}
                         >
-                          <span className="text-zinc-200">{crew.name}</span>
-                          <span className="text-[0.55rem] text-zinc-500 font-normal">
+                          <span className="text-foreground/90">{crew.name}</span>
+                          <span className="text-[0.55rem] text-muted font-normal">
                             Inst:{crew.roofers} | Elec:{crew.electricians}
                           </span>
                         </div>
@@ -2019,7 +2019,7 @@ export default function SchedulerPage() {
                           return (
                             <div
                               key={di}
-                              className={`bg-[#12121a] min-h-[70px] p-1 cursor-pointer transition-colors hover:bg-[#1a1a24] ${
+                              className={`bg-surface min-h-[70px] p-1 cursor-pointer transition-colors hover:bg-surface-elevated ${
                                 canDrop
                                   ? "hover:bg-orange-500/10 hover:ring-2 hover:ring-inset hover:ring-orange-500"
                                   : ""
@@ -2106,7 +2106,7 @@ export default function SchedulerPage() {
                   </div>
                 </div>
 
-                <div className="bg-zinc-800 rounded-lg overflow-hidden">
+                <div className="bg-surface-2 rounded-lg overflow-hidden">
                   {/* Header timeline */}
                   <div
                     className="grid gap-px"
@@ -2114,7 +2114,7 @@ export default function SchedulerPage() {
                       gridTemplateColumns: `140px repeat(${ganttDates.length}, 1fr)`,
                     }}
                   >
-                    <div className="bg-[#0a0a0f] p-1.5 text-[0.7rem] font-semibold">
+                    <div className="bg-background p-1.5 text-[0.7rem] font-semibold">
                       Crew
                     </div>
                     {ganttDates.map((d, i) => {
@@ -2126,7 +2126,7 @@ export default function SchedulerPage() {
                           className={`p-1.5 text-center text-[0.55rem] ${
                             isToday
                               ? "bg-orange-500/10 text-orange-400"
-                              : "bg-[#12121a] text-zinc-500"
+                              : "bg-surface text-muted"
                           }`}
                         >
                           <span className="font-semibold">
@@ -2134,7 +2134,7 @@ export default function SchedulerPage() {
                               weekday: "short",
                             })}
                           </span>
-                          <span className="text-[0.7rem] text-zinc-200 block">
+                          <span className="text-[0.7rem] text-foreground/90 block">
                             {d.getDate()}
                           </span>
                         </div>
@@ -2158,7 +2158,7 @@ export default function SchedulerPage() {
                         }}
                       >
                         <div
-                          className="bg-[#0a0a0f] p-2 text-[0.7rem] font-semibold"
+                          className="bg-background p-2 text-[0.7rem] font-semibold"
                           style={{ borderLeft: `3px solid ${crew.color}` }}
                         >
                           {crew.name}
@@ -2166,7 +2166,7 @@ export default function SchedulerPage() {
                         {ganttDates.map((d, idx) => (
                           <div
                             key={idx}
-                            className="bg-[#12121a] relative"
+                            className="bg-surface relative"
                           >
                             {filteredScheduledEvents
                               .filter((e) => {
@@ -2242,9 +2242,9 @@ export default function SchedulerPage() {
         {/* ============================================================ */}
         {/* RIGHT PANEL - Crew & Optimization                            */}
         {/* ============================================================ */}
-        <aside className="bg-[#12121a] border-l border-zinc-800 flex flex-col overflow-hidden max-[1100px]:hidden">
+        <aside className="bg-surface border-l border-t-border flex flex-col overflow-hidden max-[1100px]:hidden">
           {/* Auto-optimize */}
-          <div className="p-3 border-b border-zinc-800">
+          <div className="p-3 border-b border-t-border">
             <div className="text-[0.75rem] font-semibold mb-2 flex items-center gap-1.5">
               Auto-Optimize
             </div>
@@ -2254,13 +2254,13 @@ export default function SchedulerPage() {
             >
               Optimize Schedule
             </button>
-            <div className="mt-2 text-[0.6rem] text-zinc-500">
+            <div className="mt-2 text-[0.6rem] text-muted">
               {optimizeStats}
             </div>
           </div>
 
           {/* Crew Capacity */}
-          <div className="p-3 border-b border-zinc-800">
+          <div className="p-3 border-b border-t-border">
             <div className="text-[0.75rem] font-semibold mb-2 flex items-center gap-1.5">
               Crew Capacity
             </div>
@@ -2272,7 +2272,7 @@ export default function SchedulerPage() {
 
               if (crewsToShow.length === 0) {
                 return (
-                  <div className="text-[0.65rem] text-zinc-500">
+                  <div className="text-[0.65rem] text-muted">
                     Select location to view crews
                   </div>
                 );
@@ -2293,7 +2293,7 @@ export default function SchedulerPage() {
                 return (
                   <div
                     key={c.name}
-                    className="bg-[#0a0a0f] border border-zinc-800 rounded-md p-2 mb-1.5"
+                    className="bg-background border border-t-border rounded-md p-2 mb-1.5"
                   >
                     <div
                       className="text-[0.7rem] font-semibold mb-1"
@@ -2313,9 +2313,9 @@ export default function SchedulerPage() {
                         </span>
                       )}
                     </div>
-                    <div className="text-[0.6rem] text-zinc-500">
+                    <div className="text-[0.6rem] text-muted">
                       <div className="flex items-center gap-2">
-                        <div className="h-1 bg-zinc-800 rounded-full flex-1 overflow-hidden w-[100px]">
+                        <div className="h-1 bg-surface-2 rounded-full flex-1 overflow-hidden w-[100px]">
                           <div
                             className={`h-full transition-all ${
                               utilization > 90
@@ -2339,12 +2339,12 @@ export default function SchedulerPage() {
           </div>
 
           {/* Conflicts */}
-          <div className="p-3 border-b border-zinc-800">
+          <div className="p-3 border-b border-t-border">
             <div className="text-[0.75rem] font-semibold mb-2 flex items-center gap-1.5">
               Conflicts ({conflicts.length})
             </div>
             {conflicts.length === 0 ? (
-              <div className="text-[0.65rem] text-zinc-500">
+              <div className="text-[0.65rem] text-muted">
                 No scheduling conflicts
               </div>
             ) : (
@@ -2356,33 +2356,33 @@ export default function SchedulerPage() {
                   <div className="font-semibold text-red-400 mb-1">
                     {c.crew} - {formatShortDate(c.date)}
                   </div>
-                  <div className="text-zinc-500">{c.projects.join(", ")}</div>
+                  <div className="text-muted">{c.projects.join(", ")}</div>
                 </div>
               ))
             )}
           </div>
 
           {/* Export */}
-          <div className="p-3 border-b border-zinc-800">
+          <div className="p-3 border-b border-t-border">
             <div className="text-[0.75rem] font-semibold mb-2 flex items-center gap-1.5">
               Export
             </div>
             <div className="flex flex-col gap-1.5">
               <button
                 onClick={exportCSV}
-                className="p-2 text-[0.7rem] rounded-md bg-[#0a0a0f] border border-zinc-800 text-zinc-300 text-left hover:border-orange-500 transition-colors"
+                className="p-2 text-[0.7rem] rounded-md bg-background border border-t-border text-foreground/80 text-left hover:border-orange-500 transition-colors"
               >
                 Download CSV
               </button>
               <button
                 onClick={exportICal}
-                className="p-2 text-[0.7rem] rounded-md bg-[#0a0a0f] border border-zinc-800 text-zinc-300 text-left hover:border-orange-500 transition-colors"
+                className="p-2 text-[0.7rem] rounded-md bg-background border border-t-border text-foreground/80 text-left hover:border-orange-500 transition-colors"
               >
                 Export iCal
               </button>
               <button
                 onClick={copySchedule}
-                className="p-2 text-[0.7rem] rounded-md bg-[#0a0a0f] border border-zinc-800 text-zinc-300 text-left hover:border-orange-500 transition-colors"
+                className="p-2 text-[0.7rem] rounded-md bg-background border border-t-border text-foreground/80 text-left hover:border-orange-500 transition-colors"
               >
                 Copy to Clipboard
               </button>
@@ -2394,39 +2394,39 @@ export default function SchedulerPage() {
             <div className="text-[0.75rem] font-semibold mb-2 flex items-center gap-1.5">
               Keyboard Shortcuts
             </div>
-            <div className="text-[0.6rem] text-zinc-500 leading-relaxed space-y-1">
+            <div className="text-[0.6rem] text-muted leading-relaxed space-y-1">
               <div>
-                <kbd className="bg-[#0a0a0f] px-1 py-0.5 rounded font-mono">
+                <kbd className="bg-background px-1 py-0.5 rounded font-mono">
                   1
                 </kbd>{" "}
-                <kbd className="bg-[#0a0a0f] px-1 py-0.5 rounded font-mono">
+                <kbd className="bg-background px-1 py-0.5 rounded font-mono">
                   2
                 </kbd>{" "}
-                <kbd className="bg-[#0a0a0f] px-1 py-0.5 rounded font-mono">
+                <kbd className="bg-background px-1 py-0.5 rounded font-mono">
                   3
                 </kbd>{" "}
                 Switch views
               </div>
               <div>
-                <kbd className="bg-[#0a0a0f] px-1 py-0.5 rounded font-mono">
+                <kbd className="bg-background px-1 py-0.5 rounded font-mono">
                   Alt+Arrows
                 </kbd>{" "}
                 Navigate
               </div>
               <div>
-                <kbd className="bg-[#0a0a0f] px-1 py-0.5 rounded font-mono">
+                <kbd className="bg-background px-1 py-0.5 rounded font-mono">
                   Ctrl+O
                 </kbd>{" "}
                 Auto-optimize
               </div>
               <div>
-                <kbd className="bg-[#0a0a0f] px-1 py-0.5 rounded font-mono">
+                <kbd className="bg-background px-1 py-0.5 rounded font-mono">
                   Ctrl+E
                 </kbd>{" "}
                 Export CSV
               </div>
               <div>
-                <kbd className="bg-[#0a0a0f] px-1 py-0.5 rounded font-mono">
+                <kbd className="bg-background px-1 py-0.5 rounded font-mono">
                   Esc
                 </kbd>{" "}
                 Close / Deselect
@@ -2446,7 +2446,7 @@ export default function SchedulerPage() {
             if (e.target === e.currentTarget) setScheduleModal(null);
           }}
         >
-          <div className="bg-[#12121a] border border-zinc-800 rounded-xl p-5 max-w-[500px] w-[90%] max-h-[85vh] overflow-y-auto">
+          <div className="bg-surface border border-t-border rounded-xl p-5 max-w-[500px] w-[90%] max-h-[85vh] overflow-y-auto">
             <h3 className="text-base mb-3 flex items-center gap-2">
               {scheduleModal.project.stage === "survey"
                 ? "Schedule Survey"
@@ -2486,7 +2486,7 @@ export default function SchedulerPage() {
                   valueClass={STAGE_TEXT_COLORS[scheduleModal.project.stage]}
                 />
                 <div className="flex items-center gap-2 mt-1">
-                  <span className="text-[0.7rem] text-zinc-500 w-20">Links</span>
+                  <span className="text-[0.7rem] text-muted w-20">Links</span>
                   <div className="flex items-center gap-2">
                     <a
                       href={scheduleModal.project.hubspotUrl}
@@ -2498,7 +2498,7 @@ export default function SchedulerPage() {
                     </a>
                     {scheduleModal.project.zuperJobUid && (
                       <>
-                        <span className="text-zinc-600">|</span>
+                        <span className="text-muted/70">|</span>
                         <a
                           href={`${zuperWebBaseUrl}/jobs/${scheduleModal.project.zuperJobUid}/details`}
                           target="_blank"
@@ -2520,12 +2520,12 @@ export default function SchedulerPage() {
                   <ModalRow
                     label="AHJ"
                     value={scheduleModal.project.ahj || "Not set"}
-                    valueClass={!scheduleModal.project.ahj ? "text-zinc-500" : ""}
+                    valueClass={!scheduleModal.project.ahj ? "text-muted" : ""}
                   />
                   <ModalRow
                     label="Utility"
                     value={scheduleModal.project.utility || "Not set"}
-                    valueClass={!scheduleModal.project.utility ? "text-zinc-500" : ""}
+                    valueClass={!scheduleModal.project.utility ? "text-muted" : ""}
                   />
                 </ModalSection>
               )}
@@ -2624,7 +2624,7 @@ export default function SchedulerPage() {
                   valueClass="font-bold"
                 />
                 <div className="flex gap-2.5 mt-2 flex-wrap items-center">
-                  <label className="text-[0.7rem] text-zinc-500">Days:</label>
+                  <label className="text-[0.7rem] text-muted">Days:</label>
                   <input
                     type="number"
                     value={installDaysInput}
@@ -2634,13 +2634,13 @@ export default function SchedulerPage() {
                     min={0.25}
                     max={10}
                     step={0.25}
-                    className="bg-[#0a0a0f] border border-zinc-800 text-zinc-200 px-2 py-1.5 rounded font-mono text-[0.75rem] w-[60px] text-center focus:outline-none focus:border-orange-500"
+                    className="bg-background border border-t-border text-foreground/90 px-2 py-1.5 rounded font-mono text-[0.75rem] w-[60px] text-center focus:outline-none focus:border-orange-500"
                   />
-                  <label className="text-[0.7rem] text-zinc-500">Crew:</label>
+                  <label className="text-[0.7rem] text-muted">Crew:</label>
                   <select
                     value={crewSelectInput}
                     onChange={(e) => setCrewSelectInput(e.target.value)}
-                    className="bg-[#0a0a0f] border border-zinc-800 text-zinc-200 px-2 py-1.5 rounded font-mono text-[0.75rem] focus:outline-none focus:border-orange-500"
+                    className="bg-background border border-t-border text-foreground/90 px-2 py-1.5 rounded font-mono text-[0.75rem] focus:outline-none focus:border-orange-500"
                   >
                     {(CREWS[scheduleModal.project.location] || []).map((c) => (
                       <option key={c.name} value={c.name}>
@@ -2666,11 +2666,11 @@ export default function SchedulerPage() {
                       onChange={(e) => setSyncToZuper(e.target.checked)}
                       className="w-4 h-4 accent-orange-500"
                     />
-                    <label htmlFor="syncZuper" className="text-[0.7rem] text-zinc-300 cursor-pointer">
+                    <label htmlFor="syncZuper" className="text-[0.7rem] text-foreground/80 cursor-pointer">
                       Sync schedule to Zuper
                     </label>
                   </div>
-                  <div className="text-[0.6rem] text-zinc-500 mt-1">
+                  <div className="text-[0.6rem] text-muted mt-1">
                     Updates the existing {scheduleModal.project.stage === "survey" ? "Site Survey" : scheduleModal.project.stage === "inspection" ? "Inspection" : "Installation"} job in Zuper (or creates one if none exists)
                   </div>
                   {syncToZuper && (
@@ -2686,7 +2686,7 @@ export default function SchedulerPage() {
               <button
                 onClick={() => setScheduleModal(null)}
                 disabled={syncingToZuper}
-                className="px-3.5 py-2 rounded-md bg-[#0a0a0f] border border-zinc-800 text-zinc-300 text-[0.75rem] cursor-pointer hover:bg-zinc-800 transition-colors disabled:opacity-50"
+                className="px-3.5 py-2 rounded-md bg-background border border-t-border text-foreground/80 text-[0.75rem] cursor-pointer hover:bg-surface-2 transition-colors disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -2712,7 +2712,7 @@ export default function SchedulerPage() {
             if (e.target === e.currentTarget) setDetailModal(null);
           }}
         >
-          <div className="bg-[#12121a] border border-zinc-800 rounded-xl p-5 max-w-[500px] w-[90%] max-h-[85vh] overflow-y-auto">
+          <div className="bg-surface border border-t-border rounded-xl p-5 max-w-[500px] w-[90%] max-h-[85vh] overflow-y-auto">
             <h3 className="text-base mb-3">Project Details</h3>
             <div className="mb-4 space-y-3">
               {/* Project Info */}
@@ -2760,12 +2760,12 @@ export default function SchedulerPage() {
                   <ModalRow
                     label="AHJ"
                     value={detailModal.ahj || "Not set"}
-                    valueClass={!detailModal.ahj ? "text-zinc-500" : ""}
+                    valueClass={!detailModal.ahj ? "text-muted" : ""}
                   />
                   <ModalRow
                     label="Utility"
                     value={detailModal.utility || "Not set"}
-                    valueClass={!detailModal.utility ? "text-zinc-500" : ""}
+                    valueClass={!detailModal.utility ? "text-muted" : ""}
                   />
                 </ModalSection>
               )}
@@ -2924,7 +2924,7 @@ export default function SchedulerPage() {
               )}
               <button
                 onClick={() => setDetailModal(null)}
-                className="px-3.5 py-2 rounded-md bg-[#0a0a0f] border border-zinc-800 text-zinc-300 text-[0.75rem] cursor-pointer hover:bg-zinc-800 transition-colors"
+                className="px-3.5 py-2 rounded-md bg-background border border-t-border text-foreground/80 text-[0.75rem] cursor-pointer hover:bg-surface-2 transition-colors"
               >
                 Close
               </button>
@@ -2966,7 +2966,7 @@ function ModalSection({
 }) {
   return (
     <div>
-      <div className="text-[0.65rem] text-zinc-500 uppercase mb-1 font-semibold">
+      <div className="text-[0.65rem] text-muted uppercase mb-1 font-semibold">
         {title}
       </div>
       {children}
@@ -2984,9 +2984,9 @@ function ModalRow({
   valueClass?: string;
 }) {
   return (
-    <div className="flex justify-between py-1 border-b border-zinc-800 last:border-b-0 text-[0.75rem]">
-      <span className="text-zinc-500">{label}</span>
-      <span className={valueClass || "text-zinc-200"}>{value}</span>
+    <div className="flex justify-between py-1 border-b border-t-border last:border-b-0 text-[0.75rem]">
+      <span className="text-muted">{label}</span>
+      <span className={valueClass || "text-foreground/90"}>{value}</span>
     </div>
   );
 }

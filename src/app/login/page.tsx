@@ -79,7 +79,7 @@ function LoginForm() {
         <span>{loading ? "Signing in..." : "Sign in with Google"}</span>
       </button>
 
-      <p className="text-center text-zinc-500 text-xs mt-6">
+      <p className="text-center text-muted text-xs mt-6">
         Only @photonbrothers.com accounts are allowed
       </p>
     </div>
@@ -88,23 +88,23 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center p-4">
+    <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-md">
-        <div className="bg-[#12121a] border border-[#1e1e2e] rounded-xl p-8">
+        <div className="bg-surface border border-[#1e1e2e] rounded-xl p-8">
           <div className="text-center mb-8">
             <h1 className="text-2xl font-bold bg-gradient-to-r from-orange-500 to-orange-400 bg-clip-text text-transparent">
               PB Operations Suite
             </h1>
-            <p className="text-zinc-500 text-sm mt-2">
+            <p className="text-muted text-sm mt-2">
               Sign in with your Photon Brothers account
             </p>
           </div>
 
-          <Suspense fallback={<div className="text-center text-zinc-500">Loading...</div>}>
+          <Suspense fallback={<div className="text-center text-muted">Loading...</div>}>
             <LoginForm />
           </Suspense>
 
-          <p className="text-center text-zinc-600 text-xs mt-6">
+          <p className="text-center text-muted/70 text-xs mt-6">
             By Zach Rosen
           </p>
         </div>

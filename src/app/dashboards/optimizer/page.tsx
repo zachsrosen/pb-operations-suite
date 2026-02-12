@@ -312,16 +312,16 @@ function HorizontalBarChart({
               : "bg-emerald-500";
         return (
           <div key={item.label} className="flex items-center gap-3">
-            <span className="w-36 text-xs text-zinc-300 truncate shrink-0">
+            <span className="w-36 text-xs text-foreground/80 truncate shrink-0">
               {item.label}
             </span>
-            <div className="flex-1 h-6 bg-zinc-800 rounded overflow-hidden">
+            <div className="flex-1 h-6 bg-surface-2 rounded overflow-hidden">
               <div
                 className={`h-full ${color} rounded transition-all duration-500`}
                 style={{ width: `${pct}%` }}
               />
             </div>
-            <span className="w-10 text-right text-xs font-semibold text-zinc-300">
+            <span className="w-10 text-right text-xs font-semibold text-foreground/80">
               {item.value}
             </span>
           </div>
@@ -377,8 +377,8 @@ function LocationDistributionChart({
             <span
               className={`w-3 h-3 rounded-full ${dotColors[i % dotColors.length]} shrink-0`}
             />
-            <span className="text-zinc-300 truncate">{item.label}</span>
-            <span className="text-zinc-500 ml-auto">
+            <span className="text-foreground/80 truncate">{item.label}</span>
+            <span className="text-muted ml-auto">
               {item.value} ({((item.value / total) * 100).toFixed(0)}%)
             </span>
           </div>
@@ -767,13 +767,13 @@ export default function OptimizerDashboard() {
               fetchProjects();
               showToast("Data refreshed");
             }}
-            className="px-3 py-1.5 text-xs bg-zinc-800 border border-zinc-700 rounded-md text-zinc-300 hover:bg-zinc-700 transition-colors"
+            className="px-3 py-1.5 text-xs bg-surface-2 border border-t-border rounded-md text-foreground/80 hover:bg-surface-2 transition-colors"
           >
             Refresh Data
           </button>
           <Link
             href="/dashboards/timeline"
-            className="px-3 py-1.5 text-xs bg-zinc-800 border border-zinc-700 rounded-md text-zinc-300 hover:bg-zinc-700 transition-colors no-underline"
+            className="px-3 py-1.5 text-xs bg-surface-2 border border-t-border rounded-md text-foreground/80 hover:bg-surface-2 transition-colors no-underline"
           >
             Open Scheduler
           </Link>
@@ -796,25 +796,25 @@ export default function OptimizerDashboard() {
       {/* Header Stats */}
       {!loading && !error && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-          <div className="bg-[#12121a] border border-zinc-800 rounded-xl p-4 text-center">
-            <div className="text-2xl font-bold text-white">
+          <div className="bg-surface border border-t-border rounded-xl p-4 text-center">
+            <div className="text-2xl font-bold text-foreground">
               {projects.length}
             </div>
-            <div className="text-xs text-zinc-500">Active Projects</div>
+            <div className="text-xs text-muted">Active Projects</div>
           </div>
-          <div className="bg-[#12121a] border border-zinc-800 rounded-xl p-4 text-center">
+          <div className="bg-surface border border-t-border rounded-xl p-4 text-center">
             <div className="text-2xl font-bold text-orange-400">{rtbCount}</div>
-            <div className="text-xs text-zinc-500">Ready to Schedule</div>
+            <div className="text-xs text-muted">Ready to Schedule</div>
           </div>
-          <div className="bg-[#12121a] border border-zinc-800 rounded-xl p-4 text-center">
+          <div className="bg-surface border border-t-border rounded-xl p-4 text-center">
             <div className="text-2xl font-bold text-amber-400">
               {bottlenecks.length}
             </div>
-            <div className="text-xs text-zinc-500">Bottlenecks</div>
+            <div className="text-xs text-muted">Bottlenecks</div>
           </div>
-          <div className="bg-[#12121a] border border-zinc-800 rounded-xl p-4 text-center">
+          <div className="bg-surface border border-t-border rounded-xl p-4 text-center">
             <div className="text-2xl font-bold text-emerald-400">{peCount}</div>
-            <div className="text-xs text-zinc-500">PE Projects</div>
+            <div className="text-xs text-muted">PE Projects</div>
           </div>
         </div>
       )}
@@ -824,7 +824,7 @@ export default function OptimizerDashboard() {
         <h3 className="text-orange-400 font-semibold text-lg mb-1">
           Auto-Optimize Schedule
         </h3>
-        <p className="text-zinc-400 text-sm mb-4">
+        <p className="text-muted text-sm mb-4">
           Automatically generate an optimized installation schedule based on
           revenue priority, crew availability, and PE milestone deadlines.
         </p>
@@ -838,34 +838,34 @@ export default function OptimizerDashboard() {
 
         {/* Optimization Results */}
         {showOptimizeResults && optimizedSchedule && (
-          <div className="mt-4 p-4 bg-[#12121a] rounded-lg">
+          <div className="mt-4 p-4 bg-surface rounded-lg">
             <h4 className="text-emerald-400 font-semibold mb-1">
               Optimization Complete
             </h4>
-            <p className="text-zinc-400 text-sm mb-4">
+            <p className="text-muted text-sm mb-4">
               {optimizedSchedule.length} projects scheduled over the next{" "}
               {Math.ceil(optimizedSchedule.length / 5)} weeks
             </p>
 
             {/* Summary Stats */}
             <div className="grid grid-cols-3 gap-4 mb-4">
-              <div className="bg-zinc-800/50 p-4 rounded-lg text-center">
+              <div className="bg-skeleton p-4 rounded-lg text-center">
                 <div className="text-2xl font-bold text-emerald-400">
                   {optimizedSchedule.length}
                 </div>
-                <div className="text-xs text-zinc-500">Projects</div>
+                <div className="text-xs text-muted">Projects</div>
               </div>
-              <div className="bg-zinc-800/50 p-4 rounded-lg text-center">
+              <div className="bg-skeleton p-4 rounded-lg text-center">
                 <div className="text-2xl font-bold text-blue-400">
                   {formatCurrencyCompact(optimizationTotalValue)}
                 </div>
-                <div className="text-xs text-zinc-500">Revenue</div>
+                <div className="text-xs text-muted">Revenue</div>
               </div>
-              <div className="bg-zinc-800/50 p-4 rounded-lg text-center">
+              <div className="bg-skeleton p-4 rounded-lg text-center">
                 <div className="text-2xl font-bold text-green-400">
                   {optimizationPeCount}
                 </div>
-                <div className="text-xs text-zinc-500">PE Projects</div>
+                <div className="text-xs text-muted">PE Projects</div>
               </div>
             </div>
 
@@ -873,17 +873,17 @@ export default function OptimizerDashboard() {
             <div className="max-h-72 overflow-y-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-zinc-700">
-                    <th className="py-2 px-3 text-left text-xs text-zinc-400 font-semibold">
+                  <tr className="border-b border-t-border">
+                    <th className="py-2 px-3 text-left text-xs text-muted font-semibold">
                       Project
                     </th>
-                    <th className="py-2 px-3 text-center text-xs text-zinc-400 font-semibold">
+                    <th className="py-2 px-3 text-center text-xs text-muted font-semibold">
                       Crew
                     </th>
-                    <th className="py-2 px-3 text-center text-xs text-zinc-400 font-semibold">
+                    <th className="py-2 px-3 text-center text-xs text-muted font-semibold">
                       Date
                     </th>
-                    <th className="py-2 px-3 text-center text-xs text-zinc-400 font-semibold">
+                    <th className="py-2 px-3 text-center text-xs text-muted font-semibold">
                       Days
                     </th>
                   </tr>
@@ -892,9 +892,9 @@ export default function OptimizerDashboard() {
                   {optimizedSchedule.slice(0, 20).map((s, i) => (
                     <tr
                       key={`opt-${i}`}
-                      className="border-b border-zinc-800 hover:bg-zinc-800/50"
+                      className="border-b border-t-border hover:bg-skeleton"
                     >
-                      <td className="py-2 px-3 text-zinc-200">
+                      <td className="py-2 px-3 text-foreground/90">
                         {getProjectDisplayName(s.project)}
                         {s.project.isParticipateEnergy && (
                           <span className="ml-2 bg-emerald-500 text-white text-[0.6rem] font-semibold px-1.5 py-0.5 rounded">
@@ -902,13 +902,13 @@ export default function OptimizerDashboard() {
                           </span>
                         )}
                       </td>
-                      <td className="py-2 px-3 text-center text-zinc-400">
+                      <td className="py-2 px-3 text-center text-muted">
                         {s.crew}
                       </td>
-                      <td className="py-2 px-3 text-center text-zinc-400">
+                      <td className="py-2 px-3 text-center text-muted">
                         {s.startDate}
                       </td>
-                      <td className="py-2 px-3 text-center text-zinc-400">
+                      <td className="py-2 px-3 text-center text-muted">
                         {s.days}
                       </td>
                     </tr>
@@ -917,7 +917,7 @@ export default function OptimizerDashboard() {
                     <tr>
                       <td
                         colSpan={4}
-                        className="py-2 px-3 text-center text-zinc-500 text-sm"
+                        className="py-2 px-3 text-center text-muted text-sm"
                       >
                         ... and {optimizedSchedule.length - 20} more
                       </td>
@@ -937,7 +937,7 @@ export default function OptimizerDashboard() {
               </Link>
               <button
                 onClick={exportOptimizedSchedule}
-                className="px-4 py-2 bg-zinc-700 border border-zinc-600 rounded-lg text-zinc-300 text-sm cursor-pointer hover:bg-zinc-600 transition-colors"
+                className="px-4 py-2 bg-surface-2 border border-t-border rounded-lg text-foreground/80 text-sm cursor-pointer hover:bg-zinc-600 transition-colors"
               >
                 Export CSV
               </button>
@@ -971,8 +971,8 @@ export default function OptimizerDashboard() {
 
       {/* Main loading state */}
       {loading && (
-        <div className="text-center py-12 text-zinc-500">
-          <div className="inline-block w-6 h-6 border-2 border-zinc-700 border-t-orange-500 rounded-full animate-spin mb-3" />
+        <div className="text-center py-12 text-muted">
+          <div className="inline-block w-6 h-6 border-2 border-t-border border-t-orange-500 rounded-full animate-spin mb-3" />
           <div>Loading projects...</div>
         </div>
       )}
@@ -982,8 +982,8 @@ export default function OptimizerDashboard() {
           {/* Bottlenecks + Priority Queue */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
             {/* Bottleneck Detection */}
-            <div className="bg-[#12121a] border border-zinc-800 rounded-xl p-5">
-              <h3 className="text-base font-semibold mb-4 text-zinc-200">
+            <div className="bg-surface border border-t-border rounded-xl p-5">
+              <h3 className="text-base font-semibold mb-4 text-foreground/90">
                 Bottleneck Detection
               </h3>
               {bottlenecks.length === 0 ? (
@@ -1011,19 +1011,19 @@ export default function OptimizerDashboard() {
                         >
                           {b.severity.toUpperCase()}
                         </span>
-                        <span className="text-zinc-200">{b.title}</span>
+                        <span className="text-foreground/90">{b.title}</span>
                       </div>
-                      <div className="text-sm text-zinc-400 mb-1">
+                      <div className="text-sm text-muted mb-1">
                         {b.description}
                       </div>
                       <div className="text-sm text-amber-400 mb-2">
                         {b.impact}
                       </div>
-                      <div className="text-sm bg-zinc-800/50 p-2 rounded">
-                        <strong className="text-zinc-300">
+                      <div className="text-sm bg-skeleton p-2 rounded">
+                        <strong className="text-foreground/80">
                           Recommendation:
                         </strong>{" "}
-                        <span className="text-zinc-400">
+                        <span className="text-muted">
                           {b.recommendation}
                         </span>
                       </div>
@@ -1034,8 +1034,8 @@ export default function OptimizerDashboard() {
             </div>
 
             {/* Priority Queue (Top 10) */}
-            <div className="bg-[#12121a] border border-zinc-800 rounded-xl p-5">
-              <h3 className="text-base font-semibold mb-4 text-zinc-200">
+            <div className="bg-surface border border-t-border rounded-xl p-5">
+              <h3 className="text-base font-semibold mb-4 text-foreground/90">
                 Optimized Priority Queue
               </h3>
               <div className="space-y-2">
@@ -1045,7 +1045,7 @@ export default function OptimizerDashboard() {
                     href={p.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center gap-3 py-2.5 px-3 bg-zinc-800/50 rounded-lg hover:bg-zinc-700/50 transition-all hover:translate-x-1 cursor-pointer no-underline group"
+                    className="flex items-center gap-3 py-2.5 px-3 bg-skeleton rounded-lg hover:bg-surface-2 transition-all hover:translate-x-1 cursor-pointer no-underline group"
                   >
                     <div
                       className={`w-8 h-8 flex items-center justify-center rounded-full font-bold text-sm shrink-0 ${
@@ -1061,7 +1061,7 @@ export default function OptimizerDashboard() {
                       {i + 1}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="font-medium text-sm text-zinc-200 truncate group-hover:text-white">
+                      <div className="font-medium text-sm text-foreground/90 truncate group-hover:text-foreground">
                         {getProjectDisplayName(p)}
                         {p.isParticipateEnergy && (
                           <span className="ml-2 bg-emerald-500 text-white text-[0.6rem] font-semibold px-1.5 py-0.5 rounded">
@@ -1069,7 +1069,7 @@ export default function OptimizerDashboard() {
                           </span>
                         )}
                       </div>
-                      <div className="text-xs text-zinc-500">
+                      <div className="text-xs text-muted">
                         {p.pbLocation || "Unknown"} |{" "}
                         {formatDaysToInstall(p.daysToInstall)} |{" "}
                         {formatCurrencyCompact(p.amount || 0)}
@@ -1079,7 +1079,7 @@ export default function OptimizerDashboard() {
                       <div className="text-lg font-bold text-orange-400">
                         {p.score.toFixed(0)}
                       </div>
-                      <div className="text-[0.6rem] text-zinc-500">score</div>
+                      <div className="text-[0.6rem] text-muted">score</div>
                     </div>
                   </a>
                 ))}
@@ -1088,8 +1088,8 @@ export default function OptimizerDashboard() {
           </div>
 
           {/* Location Efficiency */}
-          <div className="bg-[#12121a] border border-zinc-800 rounded-xl p-5 mb-6">
-            <h3 className="text-base font-semibold mb-4 text-zinc-200">
+          <div className="bg-surface border border-t-border rounded-xl p-5 mb-6">
+            <h3 className="text-base font-semibold mb-4 text-foreground/90">
               Location Efficiency Scores
             </h3>
             <div className="space-y-2">
@@ -1109,10 +1109,10 @@ export default function OptimizerDashboard() {
                       : "text-red-400";
                 return (
                   <div key={loc} className="flex items-center gap-3 py-1">
-                    <span className="w-36 font-medium text-sm text-zinc-300 truncate shrink-0">
+                    <span className="w-36 font-medium text-sm text-foreground/80 truncate shrink-0">
                       {loc}
                     </span>
-                    <div className="flex-1 h-6 bg-zinc-800 rounded overflow-hidden">
+                    <div className="flex-1 h-6 bg-surface-2 rounded overflow-hidden">
                       <div
                         className={`h-full ${color} rounded transition-all duration-500`}
                         style={{ width: `${normalizedScore}%` }}
@@ -1131,8 +1131,8 @@ export default function OptimizerDashboard() {
 
           {/* Charts: Stage Distribution + Location Distribution */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-            <div className="bg-[#12121a] border border-zinc-800 rounded-xl p-5">
-              <h3 className="text-base font-semibold mb-4 text-zinc-200">
+            <div className="bg-surface border border-t-border rounded-xl p-5">
+              <h3 className="text-base font-semibold mb-4 text-foreground/90">
                 Projects by Stage
               </h3>
               <HorizontalBarChart
@@ -1142,8 +1142,8 @@ export default function OptimizerDashboard() {
                 }))}
               />
             </div>
-            <div className="bg-[#12121a] border border-zinc-800 rounded-xl p-5">
-              <h3 className="text-base font-semibold mb-4 text-zinc-200">
+            <div className="bg-surface border border-t-border rounded-xl p-5">
+              <h3 className="text-base font-semibold mb-4 text-foreground/90">
                 Schedule Distribution by Location
               </h3>
               <LocationDistributionChart
@@ -1156,36 +1156,36 @@ export default function OptimizerDashboard() {
           </div>
 
           {/* Full Priority Table */}
-          <h2 className="text-lg font-semibold mb-4 text-zinc-200">
+          <h2 className="text-lg font-semibold mb-4 text-foreground/90">
             Complete Optimized Schedule Queue
           </h2>
-          <div className="bg-[#12121a] border border-zinc-800 rounded-xl overflow-hidden">
+          <div className="bg-surface border border-t-border rounded-xl overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="border-b border-zinc-700">
-                    <th className="py-3 px-4 text-left text-xs font-semibold text-zinc-500 bg-zinc-800/50">
+                  <tr className="border-b border-t-border">
+                    <th className="py-3 px-4 text-left text-xs font-semibold text-muted bg-skeleton">
                       #
                     </th>
-                    <th className="py-3 px-4 text-left text-xs font-semibold text-zinc-500 bg-zinc-800/50">
+                    <th className="py-3 px-4 text-left text-xs font-semibold text-muted bg-skeleton">
                       Project
                     </th>
-                    <th className="py-3 px-4 text-left text-xs font-semibold text-zinc-500 bg-zinc-800/50">
+                    <th className="py-3 px-4 text-left text-xs font-semibold text-muted bg-skeleton">
                       Location
                     </th>
-                    <th className="py-3 px-4 text-left text-xs font-semibold text-zinc-500 bg-zinc-800/50">
+                    <th className="py-3 px-4 text-left text-xs font-semibold text-muted bg-skeleton">
                       Stage
                     </th>
-                    <th className="py-3 px-4 text-left text-xs font-semibold text-zinc-500 bg-zinc-800/50">
+                    <th className="py-3 px-4 text-left text-xs font-semibold text-muted bg-skeleton">
                       Install Timeline
                     </th>
-                    <th className="py-3 px-4 text-left text-xs font-semibold text-zinc-500 bg-zinc-800/50">
+                    <th className="py-3 px-4 text-left text-xs font-semibold text-muted bg-skeleton">
                       Value
                     </th>
-                    <th className="py-3 px-4 text-left text-xs font-semibold text-zinc-500 bg-zinc-800/50">
+                    <th className="py-3 px-4 text-left text-xs font-semibold text-muted bg-skeleton">
                       Score
                     </th>
-                    <th className="py-3 px-4 text-left text-xs font-semibold text-zinc-500 bg-zinc-800/50">
+                    <th className="py-3 px-4 text-left text-xs font-semibold text-muted bg-skeleton">
                       Rec. Date
                     </th>
                   </tr>
@@ -1196,9 +1196,9 @@ export default function OptimizerDashboard() {
                     return (
                       <tr
                         key={p.id || i}
-                        className="border-b border-zinc-800 hover:bg-zinc-800/50 transition-colors"
+                        className="border-b border-t-border hover:bg-skeleton transition-colors"
                       >
-                        <td className="py-3 px-4 text-sm text-zinc-400">
+                        <td className="py-3 px-4 text-sm text-muted">
                           {i + 1}
                         </td>
                         <td className="py-3 px-4 text-sm">
@@ -1216,10 +1216,10 @@ export default function OptimizerDashboard() {
                             </span>
                           )}
                         </td>
-                        <td className="py-3 px-4 text-sm text-zinc-400">
+                        <td className="py-3 px-4 text-sm text-muted">
                           {p.pbLocation || "Unknown"}
                         </td>
-                        <td className="py-3 px-4 text-sm text-zinc-400">
+                        <td className="py-3 px-4 text-sm text-muted">
                           {p.stage}
                         </td>
                         <td className="py-3 px-4 text-sm">
@@ -1229,13 +1229,13 @@ export default function OptimizerDashboard() {
                             {formatDaysToInstall(p.daysToInstall)}
                           </span>
                         </td>
-                        <td className="py-3 px-4 text-sm text-zinc-300">
+                        <td className="py-3 px-4 text-sm text-foreground/80">
                           {formatCurrencyCompact(p.amount || 0)}
                         </td>
-                        <td className="py-3 px-4 text-sm font-bold text-zinc-200">
+                        <td className="py-3 px-4 text-sm font-bold text-foreground/90">
                           {p.score.toFixed(0)}
                         </td>
-                        <td className="py-3 px-4 text-sm text-zinc-400">
+                        <td className="py-3 px-4 text-sm text-muted">
                           {p.stage === "Ready To Build"
                             ? recommendedDate
                             : "-"}
@@ -1247,7 +1247,7 @@ export default function OptimizerDashboard() {
                     <tr>
                       <td
                         colSpan={8}
-                        className="py-8 text-center text-zinc-500"
+                        className="py-8 text-center text-muted"
                       >
                         No schedulable projects found
                       </td>
@@ -1263,9 +1263,9 @@ export default function OptimizerDashboard() {
       {/* Zuper Confirmation Modal */}
       {showZuperConfirmModal && optimizedSchedule && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-[#1a1a24] border border-zinc-700 rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-zinc-700">
-              <h3 className="text-xl font-bold text-white flex items-center gap-2">
+          <div className="bg-surface-elevated border border-t-border rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-t-border">
+              <h3 className="text-xl font-bold text-foreground flex items-center gap-2">
                 <span className="text-2xl">⚠️</span>
                 Confirm Zuper Sync
               </h3>
@@ -1285,28 +1285,28 @@ export default function OptimizerDashboard() {
               </div>
 
               {/* Summary */}
-              <div className="p-4 bg-zinc-800/50 rounded-lg">
+              <div className="p-4 bg-skeleton rounded-lg">
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
-                    <span className="text-zinc-500">Total Projects</span>
+                    <span className="text-muted">Total Projects</span>
                     <div className="text-white font-semibold">
                       {optimizedSchedule.length}
                     </div>
                   </div>
                   <div>
-                    <span className="text-zinc-500">PE Projects</span>
+                    <span className="text-muted">PE Projects</span>
                     <div className="text-emerald-400 font-semibold">
                       {optimizedSchedule.filter((s) => s.project.isParticipateEnergy).length}
                     </div>
                   </div>
                   <div>
-                    <span className="text-zinc-500">Total Revenue</span>
+                    <span className="text-muted">Total Revenue</span>
                     <div className="text-white font-semibold">
                       {formatCurrencyCompact(optimizedSchedule.reduce((sum, s) => sum + (s.project.amount || 0), 0))}
                     </div>
                   </div>
                   <div>
-                    <span className="text-zinc-500">Date Range</span>
+                    <span className="text-muted">Date Range</span>
                     <div className="text-white font-semibold">
                       {optimizedSchedule[0]?.startDate} -{" "}
                       {optimizedSchedule[optimizedSchedule.length - 1]?.startDate}
@@ -1317,7 +1317,7 @@ export default function OptimizerDashboard() {
 
               {/* Confirmation Input */}
               <div>
-                <label className="block text-zinc-400 text-sm mb-2">
+                <label className="block text-muted text-sm mb-2">
                   Type <strong className="text-white">CONFIRM</strong> to proceed:
                 </label>
                 <input
@@ -1326,7 +1326,7 @@ export default function OptimizerDashboard() {
                   onChange={(e) => setZuperConfirmText(e.target.value)}
                   placeholder="Type CONFIRM"
                   disabled={syncingToZuper}
-                  className="w-full px-4 py-3 bg-zinc-800 border border-zinc-600 rounded-lg text-white text-center font-mono text-lg focus:outline-none focus:border-orange-500 disabled:opacity-50"
+                  className="w-full px-4 py-3 bg-surface-2 border border-t-border rounded-lg text-white text-center font-mono text-lg focus:outline-none focus:border-orange-500 disabled:opacity-50"
                 />
               </div>
 
@@ -1340,7 +1340,7 @@ export default function OptimizerDashboard() {
                       {zuperSyncProgress.total}
                     </span>
                   </div>
-                  <div className="h-2 bg-zinc-700 rounded-full overflow-hidden">
+                  <div className="h-2 bg-surface-2 rounded-full overflow-hidden">
                     <div
                       className="h-full bg-blue-500 transition-all duration-200"
                       style={{
@@ -1348,7 +1348,7 @@ export default function OptimizerDashboard() {
                       }}
                     />
                   </div>
-                  <div className="text-xs text-zinc-500 mt-2 truncate">
+                  <div className="text-xs text-muted mt-2 truncate">
                     Current: {zuperSyncProgress.current}
                   </div>
                   {zuperSyncProgress.failed > 0 && (
@@ -1361,14 +1361,14 @@ export default function OptimizerDashboard() {
             </div>
 
             {/* Actions */}
-            <div className="p-6 border-t border-zinc-700 flex gap-3 justify-end">
+            <div className="p-6 border-t border-t-border flex gap-3 justify-end">
               <button
                 onClick={() => {
                   setShowZuperConfirmModal(false);
                   setZuperConfirmText("");
                 }}
                 disabled={syncingToZuper}
-                className="px-4 py-2 bg-zinc-700 border border-zinc-600 rounded-lg text-zinc-300 text-sm cursor-pointer hover:bg-zinc-600 transition-colors disabled:opacity-50"
+                className="px-4 py-2 bg-surface-2 border border-t-border rounded-lg text-foreground/80 text-sm cursor-pointer hover:bg-zinc-600 transition-colors disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -1386,7 +1386,7 @@ export default function OptimizerDashboard() {
 
       {/* Toast Notification */}
       <div
-        className={`fixed bottom-6 left-1/2 -translate-x-1/2 px-6 py-3 rounded-lg font-medium text-white z-50 transition-all duration-300 ${
+        className={`fixed bottom-6 left-1/2 -translate-x-1/2 px-6 py-3 rounded-lg font-medium text-foreground z-50 transition-all duration-300 ${
           toast
             ? "translate-y-0 opacity-100"
             : "translate-y-24 opacity-0 pointer-events-none"

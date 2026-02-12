@@ -292,7 +292,7 @@ export default function IncentivesPage() {
         <div className="flex items-center justify-center min-h-[400px]">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-emerald-500 mx-auto mb-4"></div>
-            <p className="text-zinc-400">Loading Incentives Data...</p>
+            <p className="text-muted">Loading Incentives Data...</p>
           </div>
         </div>
       </DashboardShell>
@@ -305,7 +305,7 @@ export default function IncentivesPage() {
         <div className="flex items-center justify-center min-h-[400px]">
           <div className="text-center text-red-500">
             <p className="text-xl mb-2">Error loading data</p>
-            <p className="text-sm text-zinc-400">{error}</p>
+            <p className="text-sm text-muted">{error}</p>
             <button onClick={fetchData} className="mt-4 px-4 py-2 bg-emerald-600 rounded-lg hover:bg-emerald-700">
               Retry
             </button>
@@ -375,7 +375,7 @@ export default function IncentivesPage() {
           {hasActiveFilters && (
             <button
               onClick={clearAllFilters}
-              className="text-xs text-zinc-400 hover:text-white px-3 py-2 border border-zinc-700 rounded-lg hover:border-zinc-600 transition-colors"
+              className="text-xs text-muted hover:text-foreground px-3 py-2 border border-t-border rounded-lg hover:border-muted transition-colors"
             >
               Clear All
             </button>
@@ -385,30 +385,30 @@ export default function IncentivesPage() {
 
       {/* Summary Stats */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-        <div className="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+        <div className="bg-surface rounded-xl p-4 border border-t-border">
           <div className="text-2xl font-bold text-emerald-400">{filteredProjects.length}</div>
-          <div className="text-sm text-zinc-400">Projects with Incentives</div>
-          <div className="text-xs text-zinc-500">{formatMoney(filteredProjects.reduce((s, p) => s + (p.amount || 0), 0))}</div>
+          <div className="text-sm text-muted">Projects with Incentives</div>
+          <div className="text-xs text-muted">{formatMoney(filteredProjects.reduce((s, p) => s + (p.amount || 0), 0))}</div>
         </div>
-        <div className="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+        <div className="bg-surface rounded-xl p-4 border border-t-border">
           <div className="text-2xl font-bold text-green-400">{programStats.sgip.count}</div>
-          <div className="text-sm text-zinc-400">SGIP</div>
-          <div className="text-xs text-zinc-500">{formatMoney(programStats.sgip.value)}</div>
+          <div className="text-sm text-muted">SGIP</div>
+          <div className="text-xs text-muted">{formatMoney(programStats.sgip.value)}</div>
         </div>
-        <div className="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+        <div className="bg-surface rounded-xl p-4 border border-t-border">
           <div className="text-2xl font-bold text-blue-400">{programStats['3ce_ev'].count + programStats['3ce_battery'].count}</div>
-          <div className="text-sm text-zinc-400">3CE (EV + Battery)</div>
-          <div className="text-xs text-zinc-500">{formatMoney(programStats['3ce_ev'].value + programStats['3ce_battery'].value)}</div>
+          <div className="text-sm text-muted">3CE (EV + Battery)</div>
+          <div className="text-xs text-muted">{formatMoney(programStats['3ce_ev'].value + programStats['3ce_battery'].value)}</div>
         </div>
-        <div className="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+        <div className="bg-surface rounded-xl p-4 border border-t-border">
           <div className="text-2xl font-bold text-amber-400">{programStats.pbsr.count}</div>
-          <div className="text-sm text-zinc-400">PBSR</div>
-          <div className="text-xs text-zinc-500">{formatMoney(programStats.pbsr.value)}</div>
+          <div className="text-sm text-muted">PBSR</div>
+          <div className="text-xs text-muted">{formatMoney(programStats.pbsr.value)}</div>
         </div>
-        <div className="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+        <div className="bg-surface rounded-xl p-4 border border-t-border">
           <div className="text-2xl font-bold text-pink-400">{programStats.cpa.count}</div>
-          <div className="text-sm text-zinc-400">CPA</div>
-          <div className="text-xs text-zinc-500">{formatMoney(programStats.cpa.value)}</div>
+          <div className="text-sm text-muted">CPA</div>
+          <div className="text-xs text-muted">{formatMoney(programStats.cpa.value)}</div>
         </div>
       </div>
 
@@ -429,8 +429,8 @@ export default function IncentivesPage() {
           return (
             <div
               key={prog.key}
-              className={`bg-[#12121a] rounded-xl border p-4 cursor-pointer transition-colors ${
-                filterPrograms.includes(prog.key) ? 'border-emerald-500 ring-1 ring-emerald-500/30' : 'border-zinc-800'
+              className={`bg-surface rounded-xl border p-4 cursor-pointer transition-colors ${
+                filterPrograms.includes(prog.key) ? 'border-emerald-500 ring-1 ring-emerald-500/30' : 'border-t-border'
               } ${colorMap[prog.color]}`}
               onClick={() => {
                 if (filterPrograms.includes(prog.key)) {
@@ -442,7 +442,7 @@ export default function IncentivesPage() {
             >
               <div className="flex items-center justify-between mb-3">
                 <h3 className={`font-semibold ${colorMap[prog.color]}`}>{prog.name}</h3>
-                <span className="text-2xl font-bold text-white">{stats.count}</span>
+                <span className="text-2xl font-bold text-foreground">{stats.count}</span>
               </div>
               <div className="text-sm text-green-400 mb-3">{formatMoney(stats.value)}</div>
               <div className="space-y-1">
@@ -451,8 +451,8 @@ export default function IncentivesPage() {
                   .slice(0, 5)
                   .map(([status, count]) => (
                     <div key={status} className="flex items-center justify-between text-xs">
-                      <span className="text-zinc-400 truncate mr-2">{getDisplayName(status)}</span>
-                      <span className="text-zinc-300 font-medium">{count}</span>
+                      <span className="text-muted truncate mr-2">{getDisplayName(status)}</span>
+                      <span className="text-foreground/80 font-medium">{count}</span>
                     </div>
                   ))}
               </div>
@@ -462,28 +462,28 @@ export default function IncentivesPage() {
       </div>
 
       {/* Projects Table */}
-      <div className="bg-[#12121a] rounded-xl border border-zinc-800 overflow-hidden">
-        <div className="p-4 border-b border-zinc-800 flex items-center justify-between">
+      <div className="bg-surface rounded-xl border border-t-border overflow-hidden">
+        <div className="p-4 border-b border-t-border flex items-center justify-between">
           <h2 className="text-lg font-semibold">Incentive Projects ({filteredProjects.length})</h2>
           {hasActiveFilters && (
-            <span className="text-xs text-zinc-500">Filtered from {projects.filter(hasIncentive).length} total</span>
+            <span className="text-xs text-muted">Filtered from {projects.filter(hasIncentive).length} total</span>
           )}
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-zinc-900">
+            <thead className="bg-surface">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Project</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Location</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Stage</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Programs</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase">Amount</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Project</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Location</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Stage</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Programs</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-muted uppercase">Amount</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-800">
+            <tbody className="divide-y divide-t-border">
               {filteredProjects.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-zinc-500">No projects found</td>
+                  <td colSpan={5} className="px-4 py-8 text-center text-muted">No projects found</td>
                 </tr>
               ) : (
                 filteredProjects
@@ -492,15 +492,15 @@ export default function IncentivesPage() {
                   .map(project => {
                     const programs = getProjectPrograms(project);
                     return (
-                      <tr key={project.id} className="hover:bg-zinc-900/50">
+                      <tr key={project.id} className="hover:bg-surface/50">
                         <td className="px-4 py-3">
-                          <a href={project.url} target="_blank" rel="noopener noreferrer" className="font-medium text-white hover:text-emerald-400">
+                          <a href={project.url} target="_blank" rel="noopener noreferrer" className="font-medium text-foreground hover:text-emerald-400">
                             {project.name.split('|')[0].trim()}
                           </a>
-                          <div className="text-xs text-zinc-400">{project.name.split('|')[1]?.trim() || ''}</div>
+                          <div className="text-xs text-muted">{project.name.split('|')[1]?.trim() || ''}</div>
                         </td>
-                        <td className="px-4 py-3 text-sm text-zinc-300">{project.pbLocation}</td>
-                        <td className="px-4 py-3 text-sm text-zinc-400">{project.stage}</td>
+                        <td className="px-4 py-3 text-sm text-foreground/80">{project.pbLocation}</td>
+                        <td className="px-4 py-3 text-sm text-muted">{project.stage}</td>
                         <td className="px-4 py-3">
                           <div className="flex flex-wrap gap-1">
                             {programs.map((prog, idx) => (
@@ -514,7 +514,7 @@ export default function IncentivesPage() {
                             ))}
                           </div>
                         </td>
-                        <td className={`px-4 py-3 text-right font-mono text-sm ${(project.amount || 0) > 0 ? 'text-green-400' : 'text-zinc-500'}`}>
+                        <td className={`px-4 py-3 text-right font-mono text-sm ${(project.amount || 0) > 0 ? 'text-green-400' : 'text-muted'}`}>
                           {formatMoney(project.amount || 0)}
                         </td>
                       </tr>

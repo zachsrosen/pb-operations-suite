@@ -75,8 +75,8 @@ const formatCurrency = formatMoney;
 
 function LoadingSpinner() {
   return (
-    <div className="flex flex-col items-center justify-center py-12 text-zinc-500">
-      <div className="w-10 h-10 border-3 border-zinc-700 border-t-orange-500 rounded-full animate-spin mb-4" />
+    <div className="flex flex-col items-center justify-center py-12 text-muted">
+      <div className="w-10 h-10 border-3 border-t-border border-t-orange-500 rounded-full animate-spin mb-4" />
       <div className="text-sm">Loading pipeline data...</div>
     </div>
   );
@@ -134,7 +134,7 @@ function ProjectCard({
           </span>
         )}
       </div>
-      <div className="text-[0.7rem] text-zinc-400">
+      <div className="text-[0.7rem] text-muted">
         {project.pbLocation || "Unknown"}
         {(variant === "priority" || variant === "overdue") &&
           ` | ${formatOverdue(project.daysOverdue)}`}
@@ -164,12 +164,12 @@ function SectionHeader({
 }) {
   return (
     <div className="flex justify-between items-center mb-4">
-      <h2 className="text-xs uppercase tracking-wide text-zinc-400 font-semibold">
+      <h2 className="text-xs uppercase tracking-wide text-muted font-semibold">
         {title}
       </h2>
       <button
         onClick={onBack}
-        className="bg-[#1e293b] border-none text-zinc-300 px-3 py-1.5 rounded text-sm hover:bg-[#334155] transition-colors"
+        className="bg-[#1e293b] border-none text-foreground/80 px-3 py-1.5 rounded text-sm hover:bg-[#334155] transition-colors"
       >
         &larr; Back
       </button>
@@ -401,46 +401,46 @@ export default function MobileDashboardPage() {
       <div>
         {/* Quick Actions */}
         <div className="p-4">
-          <h2 className="text-xs uppercase tracking-wide text-zinc-400 font-semibold mb-3">
+          <h2 className="text-xs uppercase tracking-wide text-muted font-semibold mb-3">
             Quick Actions
           </h2>
           <div className="grid grid-cols-2 gap-3">
             <button
               onClick={() => switchView("rtb")}
-              className="bg-[#1e293b] border border-zinc-700 rounded-xl p-4 text-center active:bg-[#334155] transition-colors"
+              className="bg-[#1e293b] border border-t-border rounded-xl p-4 text-center active:bg-[#334155] transition-colors"
             >
               <div className="text-2xl mb-1">&#128296;</div>
-              <div className="text-[0.8rem] text-zinc-300">Ready to Build</div>
+              <div className="text-[0.8rem] text-foreground/80">Ready to Build</div>
               <div className="text-xl font-bold text-orange-400 mt-1">
                 {stats.rtb}
               </div>
             </button>
             <button
               onClick={() => switchView("overdue")}
-              className="bg-[#1e293b] border border-zinc-700 rounded-xl p-4 text-center active:bg-[#334155] transition-colors"
+              className="bg-[#1e293b] border border-t-border rounded-xl p-4 text-center active:bg-[#334155] transition-colors"
             >
               <div className="text-2xl mb-1">&#9888;&#65039;</div>
-              <div className="text-[0.8rem] text-zinc-300">Overdue</div>
+              <div className="text-[0.8rem] text-foreground/80">Overdue</div>
               <div className="text-xl font-bold text-red-400 mt-1">
                 {stats.overdue}
               </div>
             </button>
             <button
               onClick={() => switchView("pe")}
-              className="bg-[#1e293b] border border-zinc-700 rounded-xl p-4 text-center active:bg-[#334155] transition-colors"
+              className="bg-[#1e293b] border border-t-border rounded-xl p-4 text-center active:bg-[#334155] transition-colors"
             >
               <div className="text-2xl mb-1">&#127793;</div>
-              <div className="text-[0.8rem] text-zinc-300">PE Projects</div>
+              <div className="text-[0.8rem] text-foreground/80">PE Projects</div>
               <div className="text-xl font-bold text-green-400 mt-1">
                 {stats.pe}
               </div>
             </button>
             <button
               onClick={() => switchView("inspection")}
-              className="bg-[#1e293b] border border-zinc-700 rounded-xl p-4 text-center active:bg-[#334155] transition-colors"
+              className="bg-[#1e293b] border border-t-border rounded-xl p-4 text-center active:bg-[#334155] transition-colors"
             >
               <div className="text-2xl mb-1">&#128269;</div>
-              <div className="text-[0.8rem] text-zinc-300">Inspection</div>
+              <div className="text-[0.8rem] text-foreground/80">Inspection</div>
               <div className="text-xl font-bold text-orange-400 mt-1">
                 {stats.inspection}
               </div>
@@ -450,7 +450,7 @@ export default function MobileDashboardPage() {
 
         {/* Today's Priority */}
         <div className="p-4">
-          <h2 className="text-xs uppercase tracking-wide text-zinc-400 font-semibold mb-3">
+          <h2 className="text-xs uppercase tracking-wide text-muted font-semibold mb-3">
             Today&apos;s Priority
           </h2>
           {priorityProjects.length > 0 ? (
@@ -458,7 +458,7 @@ export default function MobileDashboardPage() {
               <ProjectCard key={p.id} project={p} variant="priority" />
             ))
           ) : (
-            <div className="text-zinc-500 text-center py-4 text-sm">
+            <div className="text-muted text-center py-4 text-sm">
               No priority projects
             </div>
           )}
@@ -466,7 +466,7 @@ export default function MobileDashboardPage() {
 
         {/* By Location */}
         <div className="p-4">
-          <h2 className="text-xs uppercase tracking-wide text-zinc-400 font-semibold mb-3">
+          <h2 className="text-xs uppercase tracking-wide text-muted font-semibold mb-3">
             By Location
           </h2>
           <div className="grid grid-cols-2 gap-2">
@@ -475,9 +475,9 @@ export default function MobileDashboardPage() {
                 key={loc}
                 className="bg-[#334155] rounded-lg p-3"
               >
-                <div className="text-[0.75rem] text-zinc-400">{loc}</div>
-                <div className="text-xl font-bold text-white">{data.count}</div>
-                <div className="text-[0.65rem] text-zinc-400">
+                <div className="text-[0.75rem] text-muted">{loc}</div>
+                <div className="text-xl font-bold text-foreground">{data.count}</div>
+                <div className="text-[0.65rem] text-muted">
                   {data.rtb} RTB | {data.pe} PE
                 </div>
               </div>
@@ -497,7 +497,7 @@ export default function MobileDashboardPage() {
             <ProjectCard key={p.id} project={p} variant="rtb" />
           ))
         ) : (
-          <div className="text-zinc-500 text-sm">No RTB projects</div>
+          <div className="text-muted text-sm">No RTB projects</div>
         )}
       </div>
     );
@@ -512,7 +512,7 @@ export default function MobileDashboardPage() {
             <ProjectCard key={p.id} project={p} variant="overdue" />
           ))
         ) : (
-          <div className="text-zinc-500 text-sm">No overdue projects</div>
+          <div className="text-muted text-sm">No overdue projects</div>
         )}
       </div>
     );
@@ -527,7 +527,7 @@ export default function MobileDashboardPage() {
             <ProjectCard key={p.id} project={p} variant="pe" />
           ))
         ) : (
-          <div className="text-zinc-500 text-sm">No PE projects</div>
+          <div className="text-muted text-sm">No PE projects</div>
         )}
       </div>
     );
@@ -542,7 +542,7 @@ export default function MobileDashboardPage() {
             <ProjectCard key={p.id} project={p} variant="inspection" />
           ))
         ) : (
-          <div className="text-zinc-500 text-sm">No inspection projects</div>
+          <div className="text-muted text-sm">No inspection projects</div>
         )}
       </div>
     );
@@ -565,7 +565,7 @@ export default function MobileDashboardPage() {
 
   /* ---- Main render ---- */
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-white flex flex-col dashboard-bg">
+    <div className="min-h-screen bg-background text-foreground flex flex-col">
       {/* Mobile-optimized full-bleed layout (no DashboardShell) */}
       <div className="max-w-lg mx-auto w-full flex-1 pb-16">
         {/* Gradient header with live stats */}
@@ -581,13 +581,13 @@ export default function MobileDashboardPage() {
               <ThemeToggle />
               <Link
                 href="/"
-                className="text-orange-100 hover:text-white text-xs font-medium transition-colors"
+                className="text-orange-100 hover:text-foreground text-xs font-medium transition-colors"
               >
                 &larr; Home
               </Link>
             </div>
           </div>
-          <h1 className="text-lg font-bold text-white mt-2">PB Pipeline</h1>
+          <h1 className="text-lg font-bold text-foreground mt-2">PB Pipeline</h1>
           <div className="flex gap-3 mt-3 overflow-x-auto pb-1">
             {[
               { value: loading ? "--" : stats.total, label: "Projects" },
@@ -605,7 +605,7 @@ export default function MobileDashboardPage() {
                 key={s.label}
                 className="bg-white/10 backdrop-blur-sm px-3 py-2 rounded-lg text-center shrink-0"
               >
-                <div className="text-xl font-bold text-white">{s.value}</div>
+                <div className="text-xl font-bold text-foreground">{s.value}</div>
                 <div className="text-[0.65rem] text-orange-100 opacity-80">
                   {s.label}
                 </div>
@@ -636,7 +636,7 @@ export default function MobileDashboardPage() {
       </div>
 
       {/* Bottom Navigation - scoped to max-w-lg */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-[#12121a] border-t border-zinc-800 z-50 pb-[env(safe-area-inset-bottom)]">
+      <nav className="fixed bottom-0 left-0 right-0 bg-surface border-t border-t-border z-50 pb-[env(safe-area-inset-bottom)]">
         <div className="max-w-lg mx-auto flex">
           {navItems.map(({ view, label, Icon }) => (
             <button
@@ -645,7 +645,7 @@ export default function MobileDashboardPage() {
               className={`flex-1 text-center py-3 text-[0.7rem] transition-colors ${
                 currentView === view
                   ? "text-orange-400"
-                  : "text-zinc-500 hover:text-zinc-300"
+                  : "text-muted hover:text-foreground"
               }`}
             >
               <Icon active={currentView === view} />

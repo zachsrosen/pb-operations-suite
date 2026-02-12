@@ -4,19 +4,19 @@ import Link from "next/link";
 
 export default function GuidePage() {
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-white">
+    <div className="min-h-screen bg-background text-foreground">
       {/* Header */}
-      <header className="border-b border-zinc-800 px-6 py-4">
+      <header className="border-b border-t-border px-6 py-4">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
           <Link href="/" className="text-xl font-bold bg-gradient-to-r from-orange-500 to-orange-400 bg-clip-text text-transparent hover:opacity-80 transition-opacity">
             PB Operations Suite
           </Link>
           <div className="flex items-center gap-4">
-            <kbd className="hidden sm:inline-flex text-xs text-zinc-500 border border-zinc-700 rounded px-2 py-1">
+            <kbd className="hidden sm:inline-flex text-xs text-muted border border-t-border rounded px-2 py-1">
               <span className="font-mono">⌘K</span>
-              <span className="ml-1 text-zinc-600">Search</span>
+              <span className="ml-1 text-muted/70">Search</span>
             </kbd>
-            <Link href="/" className="text-sm text-zinc-400 hover:text-orange-400 transition-colors">
+            <Link href="/" className="text-sm text-muted hover:text-orange-400 transition-colors">
               &larr; Back to Dashboard
             </Link>
           </div>
@@ -25,26 +25,26 @@ export default function GuidePage() {
 
       <main className="max-w-4xl mx-auto px-6 py-8">
         <h1 className="text-3xl font-bold mb-2">Dashboard Guide</h1>
-        <p className="text-zinc-400 mb-8">Learn how to use each dashboard in the PB Operations Suite</p>
+        <p className="text-muted mb-8">Learn how to use each dashboard in the PB Operations Suite</p>
 
         {/* Global Navigation */}
         <section className="bg-gradient-to-br from-orange-500/10 to-orange-500/5 border border-orange-500/30 rounded-xl p-6 mb-8">
           <h2 className="text-xl font-semibold text-orange-400 mb-4">Global Navigation</h2>
           <div className="space-y-4">
             <div>
-              <h3 className="font-semibold text-white mb-2 flex items-center gap-2">
-                <kbd className="bg-zinc-800 px-2 py-0.5 rounded text-xs font-mono text-orange-400">⌘K</kbd>
+              <h3 className="font-semibold text-foreground mb-2 flex items-center gap-2">
+                <kbd className="bg-surface-2 px-2 py-0.5 rounded text-xs font-mono text-orange-400">⌘K</kbd>
                 or
-                <kbd className="bg-zinc-800 px-2 py-0.5 rounded text-xs font-mono text-orange-400">Ctrl+K</kbd>
+                <kbd className="bg-surface-2 px-2 py-0.5 rounded text-xs font-mono text-orange-400">Ctrl+K</kbd>
                 Quick Search
               </h3>
-              <p className="text-zinc-300 mb-3">
-                Press <kbd className="bg-zinc-800 px-1.5 py-0.5 rounded text-xs font-mono">⌘K</kbd> (Mac) or <kbd className="bg-zinc-800 px-1.5 py-0.5 rounded text-xs font-mono">Ctrl+K</kbd> (Windows) anywhere to open the global search. You can:
+              <p className="text-foreground/80 mb-3">
+                Press <kbd className="bg-surface-2 px-1.5 py-0.5 rounded text-xs font-mono">⌘K</kbd> (Mac) or <kbd className="bg-surface-2 px-1.5 py-0.5 rounded text-xs font-mono">Ctrl+K</kbd> (Windows) anywhere to open the global search. You can:
               </p>
-              <ul className="list-disc list-inside space-y-1 text-sm text-zinc-400 ml-2">
-                <li><strong className="text-zinc-300">Search dashboards</strong> - Type a dashboard name to quickly navigate (e.g., &quot;scheduler&quot;, &quot;design&quot;, &quot;PE&quot;)</li>
-                <li><strong className="text-zinc-300">Search projects</strong> - Type a project name, PROJ #, or address to find specific projects</li>
-                <li><strong className="text-zinc-300">Navigate with keyboard</strong> - Use <kbd className="bg-zinc-800 px-1 py-0.5 rounded text-xs font-mono">↑↓</kbd> arrows and <kbd className="bg-zinc-800 px-1 py-0.5 rounded text-xs font-mono">Enter</kbd> to select</li>
+              <ul className="list-disc list-inside space-y-1 text-sm text-muted ml-2">
+                <li><strong className="text-foreground/80">Search dashboards</strong> - Type a dashboard name to quickly navigate (e.g., &quot;scheduler&quot;, &quot;design&quot;, &quot;PE&quot;)</li>
+                <li><strong className="text-foreground/80">Search projects</strong> - Type a project name, PROJ #, or address to find specific projects</li>
+                <li><strong className="text-foreground/80">Navigate with keyboard</strong> - Use <kbd className="bg-surface-2 px-1 py-0.5 rounded text-xs font-mono">↑↓</kbd> arrows and <kbd className="bg-surface-2 px-1 py-0.5 rounded text-xs font-mono">Enter</kbd> to select</li>
               </ul>
             </div>
           </div>
@@ -53,13 +53,13 @@ export default function GuidePage() {
         {/* Multi-Select Filters */}
         <section className="bg-gradient-to-br from-indigo-500/10 to-indigo-500/5 border border-indigo-500/30 rounded-xl p-6 mb-8">
           <h2 className="text-xl font-semibold text-indigo-400 mb-4">Multi-Select Filters</h2>
-          <p className="text-zinc-300 mb-4">
+          <p className="text-foreground/80 mb-4">
             The department dashboards (Design, Permitting, Interconnection) now feature advanced multi-select filters
             that allow you to filter by multiple values simultaneously.
           </p>
 
-          <h3 className="font-semibold text-white mb-2">How to Use Multi-Select Filters:</h3>
-          <ol className="list-decimal list-inside space-y-2 text-zinc-300 mb-4">
+          <h3 className="font-semibold text-foreground mb-2">How to Use Multi-Select Filters:</h3>
+          <ol className="list-decimal list-inside space-y-2 text-foreground/80 mb-4">
             <li>Click any filter button to open the dropdown</li>
             <li>Use the search box at the top to find specific options</li>
             <li>Click individual options to select/deselect them</li>
@@ -67,39 +67,39 @@ export default function GuidePage() {
             <li>Use &quot;Select All&quot; or &quot;Clear All&quot; for bulk actions</li>
           </ol>
 
-          <h3 className="font-semibold text-white mb-2">Status Groups:</h3>
-          <p className="text-zinc-400 text-sm mb-3">
+          <h3 className="font-semibold text-foreground mb-2">Status Groups:</h3>
+          <p className="text-muted text-sm mb-3">
             Statuses are organized into logical groups to make filtering easier. Click a group header to toggle all statuses in that group.
           </p>
 
           <div className="grid md:grid-cols-2 gap-4 text-sm">
-            <div className="bg-zinc-800/50 rounded-lg p-3">
+            <div className="bg-skeleton rounded-lg p-3">
               <h4 className="font-medium text-indigo-400 mb-2">Design Dashboard</h4>
-              <ul className="space-y-1 text-zinc-400">
-                <li><span className="text-zinc-300">Design Status:</span> Initial Design, Engineering, DA Revisions, etc.</li>
-                <li><span className="text-zinc-300">Design Approval:</span> In Review, Sent to Customer, Approved/Rejected</li>
+              <ul className="space-y-1 text-muted">
+                <li><span className="text-foreground/80">Design Status:</span> Initial Design, Engineering, DA Revisions, etc.</li>
+                <li><span className="text-foreground/80">Design Approval:</span> In Review, Sent to Customer, Approved/Rejected</li>
               </ul>
             </div>
-            <div className="bg-zinc-800/50 rounded-lg p-3">
+            <div className="bg-skeleton rounded-lg p-3">
               <h4 className="font-medium text-purple-400 mb-2">Permitting Dashboard</h4>
-              <ul className="space-y-1 text-zinc-400">
-                <li><span className="text-zinc-300">Permit Status:</span> Pre-Submission, Submitted, Rejections, Completed</li>
-                <li><span className="text-zinc-300">Inspection Status:</span> Pre-Inspection, In Progress, Failed, Passed</li>
+              <ul className="space-y-1 text-muted">
+                <li><span className="text-foreground/80">Permit Status:</span> Pre-Submission, Submitted, Rejections, Completed</li>
+                <li><span className="text-foreground/80">Inspection Status:</span> Pre-Inspection, In Progress, Failed, Passed</li>
               </ul>
             </div>
-            <div className="bg-zinc-800/50 rounded-lg p-3">
+            <div className="bg-skeleton rounded-lg p-3">
               <h4 className="font-medium text-orange-400 mb-2">Interconnection Dashboard</h4>
-              <ul className="space-y-1 text-zinc-400">
-                <li><span className="text-zinc-300">IC Status:</span> Initial Submission, Waiting, Rejections, Approved</li>
-                <li><span className="text-zinc-300">PTO Status:</span> Pre-Submission, Submitted, Waiting, Completed</li>
+              <ul className="space-y-1 text-muted">
+                <li><span className="text-foreground/80">IC Status:</span> Initial Submission, Waiting, Rejections, Approved</li>
+                <li><span className="text-foreground/80">PTO Status:</span> Pre-Submission, Submitted, Waiting, Completed</li>
               </ul>
             </div>
-            <div className="bg-zinc-800/50 rounded-lg p-3">
-              <h4 className="font-medium text-zinc-400 mb-2">Visual Indicators</h4>
-              <ul className="space-y-1 text-zinc-400">
+            <div className="bg-skeleton rounded-lg p-3">
+              <h4 className="font-medium text-muted mb-2">Visual Indicators</h4>
+              <ul className="space-y-1 text-muted">
                 <li><span className="text-indigo-400">Colored button</span> = Filters are active</li>
-                <li><span className="text-zinc-300">Gray button</span> = No filters (showing all)</li>
-                <li><span className="text-zinc-300">Checkbox filled</span> = Selected / partial selection</li>
+                <li><span className="text-foreground/80">Gray button</span> = No filters (showing all)</li>
+                <li><span className="text-foreground/80">Checkbox filled</span> = Selected / partial selection</li>
               </ul>
             </div>
           </div>
@@ -108,96 +108,96 @@ export default function GuidePage() {
         {/* Project Search Bar */}
         <section className="bg-gradient-to-br from-blue-500/10 to-blue-500/5 border border-blue-500/30 rounded-xl p-6 mb-8">
           <h2 className="text-xl font-semibold text-blue-400 mb-4">Project Search Bar</h2>
-          <p className="text-zinc-300 mb-4">
+          <p className="text-foreground/80 mb-4">
             Each department dashboard includes a dedicated search bar for finding specific projects within the current view.
           </p>
 
-          <h3 className="font-semibold text-white mb-2">Search Capabilities:</h3>
-          <ul className="list-disc list-inside space-y-1 text-zinc-300">
+          <h3 className="font-semibold text-foreground mb-2">Search Capabilities:</h3>
+          <ul className="list-disc list-inside space-y-1 text-foreground/80">
             <li><strong>PROJ #</strong> - Search by project number (e.g., &quot;PROJ-12345&quot;)</li>
             <li><strong>Customer Name</strong> - Search by the project or customer name</li>
             <li><strong>Address/Location</strong> - Search by street address or city</li>
           </ul>
 
-          <p className="text-zinc-400 text-sm mt-3">
+          <p className="text-muted text-sm mt-3">
             The search is instant - results filter as you type. The search works in combination with your multi-select filters.
           </p>
         </section>
 
         {/* Quick Reference */}
-        <section className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6 mb-8">
+        <section className="bg-surface/50 border border-t-border rounded-xl p-6 mb-8">
           <h2 className="text-xl font-semibold text-orange-400 mb-4">Quick Reference</h2>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left border-b border-zinc-700">
+                <tr className="text-left border-b border-t-border">
                   <th className="pb-3 text-orange-400">Dashboard</th>
                   <th className="pb-3 text-orange-400">Best For</th>
                   <th className="pb-3 text-orange-400">Use When You Need To...</th>
                 </tr>
               </thead>
-              <tbody className="text-zinc-300">
-                <tr className="border-b border-zinc-800">
+              <tbody className="text-foreground/80">
+                <tr className="border-b border-t-border">
                   <td className="py-3 font-medium">Command Center</td>
                   <td className="py-3">Daily Operations</td>
                   <td className="py-3">Get complete pipeline overview</td>
                 </tr>
-                <tr className="border-b border-zinc-800">
+                <tr className="border-b border-t-border">
                   <td className="py-3 font-medium">Master Scheduler</td>
                   <td className="py-3">Scheduling</td>
                   <td className="py-3">Schedule installs, manage crews</td>
                 </tr>
-                <tr className="border-b border-zinc-800">
+                <tr className="border-b border-t-border">
                   <td className="py-3 font-medium">Site Survey Scheduler</td>
                   <td className="py-3">Survey Team</td>
                   <td className="py-3">Schedule surveys with Zuper sync</td>
                 </tr>
-                <tr className="border-b border-zinc-800">
+                <tr className="border-b border-t-border">
                   <td className="py-3 font-medium">Construction Scheduler</td>
                   <td className="py-3">Install Team</td>
                   <td className="py-3">Schedule installs with Zuper sync</td>
                 </tr>
-                <tr className="border-b border-zinc-800">
+                <tr className="border-b border-t-border">
                   <td className="py-3 font-medium">Inspection Scheduler</td>
                   <td className="py-3">Inspection Team</td>
                   <td className="py-3">Schedule inspections with Zuper sync</td>
                 </tr>
-                <tr className="border-b border-zinc-800">
+                <tr className="border-b border-t-border">
                   <td className="py-3 font-medium">Design & Engineering</td>
                   <td className="py-3">Design Team</td>
                   <td className="py-3">Track design progress & approvals</td>
                 </tr>
-                <tr className="border-b border-zinc-800">
+                <tr className="border-b border-t-border">
                   <td className="py-3 font-medium">Permitting</td>
                   <td className="py-3">Permit Team</td>
                   <td className="py-3">Track permits & inspections</td>
                 </tr>
-                <tr className="border-b border-zinc-800">
+                <tr className="border-b border-t-border">
                   <td className="py-3 font-medium">Site Survey</td>
                   <td className="py-3">Survey Team</td>
                   <td className="py-3">Schedule & track site surveys</td>
                 </tr>
-                <tr className="border-b border-zinc-800">
+                <tr className="border-b border-t-border">
                   <td className="py-3 font-medium">Construction</td>
                   <td className="py-3">Ops Team</td>
                   <td className="py-3">Track construction progress</td>
                 </tr>
-                <tr className="border-b border-zinc-800">
+                <tr className="border-b border-t-border">
                   <td className="py-3 font-medium">Interconnection</td>
                   <td className="py-3">IC Team</td>
                   <td className="py-3">Track IC apps & PTO status</td>
                 </tr>
-                <tr className="border-b border-zinc-800">
+                <tr className="border-b border-t-border">
                   <td className="py-3 font-medium">Incentives</td>
                   <td className="py-3">Admin Team</td>
                   <td className="py-3">Track 3CE, SGIP, CPA programs</td>
                 </tr>
-                <tr className="border-b border-zinc-800">
+                <tr className="border-b border-t-border">
                   <td className="py-3 font-medium">At-Risk Projects</td>
                   <td className="py-3">Problem Solving</td>
                   <td className="py-3">Find overdue or stalled projects</td>
                 </tr>
-                <tr className="border-b border-zinc-800">
+                <tr className="border-b border-t-border">
                   <td className="py-3 font-medium">Equipment Backlog</td>
                   <td className="py-3">Procurement</td>
                   <td className="py-3">Equipment forecasting by brand &amp; stage</td>
@@ -388,13 +388,13 @@ export default function GuidePage() {
         {/* How Auto-Optimize Works */}
         <section className="bg-gradient-to-br from-blue-500/10 to-blue-500/5 border border-blue-500/30 rounded-xl p-6 mb-8">
           <h3 className="text-xl font-semibold text-blue-400 mb-4">How &quot;Optimize Schedule&quot; Works</h3>
-          <p className="text-zinc-300 mb-4">
+          <p className="text-foreground/80 mb-4">
             The Auto-Optimize feature in the Master Scheduler automatically schedules RTB (Ready To Build) projects
             AND their inspections, prioritizing easier projects first to maximize throughput.
           </p>
 
-          <h4 className="font-semibold text-white mb-2">The Algorithm:</h4>
-          <ol className="list-decimal list-inside space-y-2 text-zinc-300 mb-4">
+          <h4 className="font-semibold text-foreground mb-2">The Algorithm:</h4>
+          <ol className="list-decimal list-inside space-y-2 text-foreground/80 mb-4">
             <li><strong>Finds unscheduled RTB projects</strong> - Projects that are Ready To Build but don&apos;t have a scheduled date</li>
             <li><strong>Sorts by difficulty, then revenue</strong> - Easiest projects first (difficulty 1-5), then by highest revenue within same difficulty</li>
             <li><strong>Checks crew availability</strong> - Looks at each crew&apos;s existing schedule to find their next open date</li>
@@ -403,8 +403,8 @@ export default function GuidePage() {
             <li><strong>Schedules pending inspections</strong> - Also schedules any projects already in the Inspection stage</li>
           </ol>
 
-          <h4 className="font-semibold text-white mb-2">Key Features:</h4>
-          <ul className="list-disc list-inside space-y-1 text-zinc-300">
+          <h4 className="font-semibold text-foreground mb-2">Key Features:</h4>
+          <ul className="list-disc list-inside space-y-1 text-foreground/80">
             <li><span className="text-green-400">Difficulty-First Prioritization</span> - Easier projects (D1-D2) scheduled before harder ones (D4-D5)</li>
             <li><span className="text-green-400">Revenue as Tiebreaker</span> - Within same difficulty, higher-value projects go first</li>
             <li><span className="text-green-400">Automatic Inspection Scheduling</span> - Inspections scheduled 2 business days after construction</li>
@@ -718,13 +718,13 @@ export default function GuidePage() {
 
         <section className="bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 border border-emerald-500/30 rounded-xl p-6 mb-8">
           <h3 className="text-xl font-semibold text-emerald-400 mb-4">Product Updates</h3>
-          <p className="text-zinc-300 mb-4">
+          <p className="text-foreground/80 mb-4">
             Stay informed about new features, improvements, and fixes with the Product Updates page.
           </p>
-          <ul className="list-disc list-inside space-y-2 text-zinc-300 mb-4">
+          <ul className="list-disc list-inside space-y-2 text-foreground/80 mb-4">
             <li>Click the <strong>&quot;Updates&quot;</strong> link in the header to view the changelog</li>
             <li>Each release is version-tagged with a date and description</li>
-            <li>Changes are categorized: <span className="text-emerald-400">New</span> (features), <span className="text-blue-400">Improved</span> (enhancements), <span className="text-orange-400">Fixed</span> (bug fixes), <span className="text-zinc-400">Internal</span> (technical changes)</li>
+            <li>Changes are categorized: <span className="text-emerald-400">New</span> (features), <span className="text-blue-400">Improved</span> (enhancements), <span className="text-orange-400">Fixed</span> (bug fixes), <span className="text-muted">Internal</span> (technical changes)</li>
             <li>The current version is shown in the top right of the Updates page</li>
           </ul>
           <Link href="/updates" className="inline-block text-sm text-emerald-400 hover:text-emerald-300 font-mono">
@@ -732,26 +732,26 @@ export default function GuidePage() {
           </Link>
         </section>
 
-        <section className="bg-gradient-to-br from-zinc-500/10 to-zinc-500/5 border border-zinc-500/30 rounded-xl p-6 mb-8">
-          <h3 className="text-xl font-semibold text-zinc-300 mb-4">Maintenance Mode</h3>
-          <p className="text-zinc-300 mb-4">
+        <section className="bg-gradient-to-br from-zinc-500/10 to-zinc-500/5 border border-muted/30 rounded-xl p-6 mb-8">
+          <h3 className="text-xl font-semibold text-foreground/80 mb-4">Maintenance Mode</h3>
+          <p className="text-foreground/80 mb-4">
             During deployments and updates, you may see the &quot;Updates in Progress&quot; page.
           </p>
-          <ul className="list-disc list-inside space-y-2 text-zinc-300 mb-4">
+          <ul className="list-disc list-inside space-y-2 text-foreground/80 mb-4">
             <li>This means we&apos;re deploying improvements - usually takes less than a minute</li>
             <li>The page will <strong>automatically refresh</strong> when updates are complete</li>
             <li>You can also click &quot;Try again now&quot; to manually check</li>
             <li>No data is lost during maintenance - your work is preserved in HubSpot</li>
           </ul>
-          <p className="text-zinc-500 text-sm">
+          <p className="text-muted text-sm">
             If you see this page for more than 5 minutes, contact zach@photonbrothers.com
           </p>
         </section>
 
         {/* Common Features */}
-        <section className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6 mb-8">
+        <section className="bg-surface/50 border border-t-border rounded-xl p-6 mb-8">
           <h2 className="text-xl font-semibold text-orange-400 mb-4">Common Features Across All Dashboards</h2>
-          <ul className="space-y-3 text-zinc-300">
+          <ul className="space-y-3 text-foreground/80">
             <li className="flex items-start gap-3">
               <span className="text-green-400 mt-1">&#9679;</span>
               <span><strong>Live Data:</strong> All dashboards connect to HubSpot with 5-minute auto-refresh</span>
@@ -769,12 +769,12 @@ export default function GuidePage() {
               <span><strong>Export Options:</strong> CSV, Excel, and clipboard exports available</span>
             </li>
             <li className="flex items-start gap-3">
-              <span className="text-zinc-400 mt-1">&#9679;</span>
+              <span className="text-muted mt-1">&#9679;</span>
               <span><strong>Color Coding:</strong> Red = Overdue/Critical, Yellow = Warning/Due Soon, Green = On Track</span>
             </li>
             <li className="flex items-start gap-3">
               <span className="text-indigo-400 mt-1">&#9679;</span>
-              <span><strong>Global Search:</strong> Press <kbd className="bg-zinc-800 px-1.5 py-0.5 rounded text-xs font-mono">⌘K</kbd> or <kbd className="bg-zinc-800 px-1.5 py-0.5 rounded text-xs font-mono">Ctrl+K</kbd> to search anywhere</span>
+              <span><strong>Global Search:</strong> Press <kbd className="bg-surface-2 px-1.5 py-0.5 rounded text-xs font-mono">⌘K</kbd> or <kbd className="bg-surface-2 px-1.5 py-0.5 rounded text-xs font-mono">Ctrl+K</kbd> to search anywhere</span>
             </li>
             <li className="flex items-start gap-3">
               <span className="text-blue-400 mt-1">&#9679;</span>
@@ -786,7 +786,7 @@ export default function GuidePage() {
         {/* Getting Started */}
         <section className="bg-gradient-to-br from-orange-500/10 to-orange-500/5 border border-orange-500/30 rounded-xl p-6">
           <h2 className="text-xl font-semibold text-orange-400 mb-4">Getting Started</h2>
-          <ol className="list-decimal list-inside space-y-2 text-zinc-300">
+          <ol className="list-decimal list-inside space-y-2 text-foreground/80">
             <li>Start with the <strong>Command Center</strong> for a complete pipeline overview</li>
             <li>Use <strong>At-Risk Projects</strong> to identify problems needing immediate attention</li>
             <li>Check <strong>Design & Engineering</strong>, <strong>Permitting</strong>, or <strong>Interconnection</strong> for stage-specific status</li>
@@ -798,10 +798,10 @@ export default function GuidePage() {
             <li>Check <strong>Updates</strong> to see the latest features and improvements</li>
           </ol>
 
-          <div className="mt-6 p-4 bg-zinc-800/50 rounded-lg">
-            <h3 className="font-semibold text-white mb-2">Pro Tips:</h3>
-            <ul className="list-disc list-inside space-y-1 text-sm text-zinc-400">
-              <li>Use <kbd className="bg-zinc-800 px-1 py-0.5 rounded text-xs font-mono">⌘K</kbd> to quickly jump between dashboards</li>
+          <div className="mt-6 p-4 bg-skeleton rounded-lg">
+            <h3 className="font-semibold text-foreground mb-2">Pro Tips:</h3>
+            <ul className="list-disc list-inside space-y-1 text-sm text-muted">
+              <li>Use <kbd className="bg-surface-2 px-1 py-0.5 rounded text-xs font-mono">⌘K</kbd> to quickly jump between dashboards</li>
               <li>Multi-select filters let you see multiple status groups at once</li>
               <li>Click column headers to sort tables by any field</li>
               <li>All times and dates are in your local timezone</li>
@@ -810,7 +810,7 @@ export default function GuidePage() {
         </section>
 
         {/* Footer */}
-        <footer className="mt-12 pt-6 border-t border-zinc-800 text-center text-zinc-500 text-sm">
+        <footer className="mt-12 pt-6 border-t border-t-border text-center text-muted text-sm">
           <p>PB Operations Suite | Photon Brothers</p>
           <p className="mt-1">Data refreshes automatically every 5 minutes from HubSpot</p>
         </footer>
@@ -859,21 +859,21 @@ function DashboardCard({
   };
 
   return (
-    <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6 mb-6">
+    <div className="bg-surface/50 border border-t-border rounded-xl p-6 mb-6">
       <div className="flex items-center gap-3 mb-3">
-        <h3 className="text-lg font-semibold text-white">{title}</h3>
+        <h3 className="text-lg font-semibold text-foreground">{title}</h3>
         <span className={`text-xs font-medium px-2 py-0.5 rounded border ${tagColors[tagColor]}`}>
           {tag}
         </span>
       </div>
 
-      <p className="text-zinc-400 mb-4">
-        <strong className="text-zinc-300">Purpose:</strong> {purpose}
+      <p className="text-muted mb-4">
+        <strong className="text-foreground/80">Purpose:</strong> {purpose}
       </p>
 
       <div className="mb-4">
-        <h4 className="text-sm font-semibold text-zinc-300 mb-2">Key Features:</h4>
-        <ul className="list-disc list-inside space-y-1 text-sm text-zinc-400">
+        <h4 className="text-sm font-semibold text-foreground/80 mb-2">Key Features:</h4>
+        <ul className="list-disc list-inside space-y-1 text-sm text-muted">
           {features.map((feature, i) => (
             <li key={i}>{feature}</li>
           ))}
@@ -882,8 +882,8 @@ function DashboardCard({
 
       {howToUse && (
         <div className="mb-4">
-          <h4 className="text-sm font-semibold text-zinc-300 mb-2">How to Use:</h4>
-          <ul className="list-disc list-inside space-y-1 text-sm text-zinc-400">
+          <h4 className="text-sm font-semibold text-foreground/80 mb-2">How to Use:</h4>
+          <ul className="list-disc list-inside space-y-1 text-sm text-muted">
             {howToUse.map((step, i) => (
               <li key={i}>{step}</li>
             ))}
@@ -893,12 +893,12 @@ function DashboardCard({
 
       {keyboardShortcuts && (
         <div className="mb-4">
-          <h4 className="text-sm font-semibold text-zinc-300 mb-2">Keyboard Shortcuts:</h4>
+          <h4 className="text-sm font-semibold text-foreground/80 mb-2">Keyboard Shortcuts:</h4>
           <div className="grid grid-cols-2 gap-2 text-sm">
             {keyboardShortcuts.map((shortcut, i) => (
               <div key={i} className="flex items-center gap-2">
-                <kbd className="bg-zinc-800 px-2 py-0.5 rounded text-xs font-mono text-orange-400">{shortcut.keys}</kbd>
-                <span className="text-zinc-400">{shortcut.action}</span>
+                <kbd className="bg-surface-2 px-2 py-0.5 rounded text-xs font-mono text-orange-400">{shortcut.keys}</kbd>
+                <span className="text-muted">{shortcut.action}</span>
               </div>
             ))}
           </div>
@@ -907,10 +907,10 @@ function DashboardCard({
 
       {riskTypes && (
         <div className="mb-4">
-          <h4 className="text-sm font-semibold text-zinc-300 mb-2">Risk Types:</h4>
+          <h4 className="text-sm font-semibold text-foreground/80 mb-2">Risk Types:</h4>
           <ul className="space-y-1 text-sm">
             {riskTypes.map((risk, i) => (
-              <li key={i} className="text-zinc-400">
+              <li key={i} className="text-muted">
                 <strong className="text-red-400">{risk.type}</strong> - {risk.desc}
               </li>
             ))}
@@ -920,12 +920,12 @@ function DashboardCard({
 
       {colorLegend && (
         <div className="mb-4">
-          <h4 className="text-sm font-semibold text-zinc-300 mb-2">Health Score Colors:</h4>
+          <h4 className="text-sm font-semibold text-foreground/80 mb-2">Health Score Colors:</h4>
           <div className="flex gap-4 text-sm">
             {colorLegend.map((item, i) => (
               <div key={i} className="flex items-center gap-2">
                 <div className={`w-4 h-4 rounded ${item.color}`}></div>
-                <span className="text-zinc-400">{item.label}</span>
+                <span className="text-muted">{item.label}</span>
               </div>
             ))}
           </div>
@@ -934,12 +934,12 @@ function DashboardCard({
 
       {statusGroups && (
         <div className="mb-4">
-          <h4 className="text-sm font-semibold text-zinc-300 mb-2">Status Filter Groups:</h4>
+          <h4 className="text-sm font-semibold text-foreground/80 mb-2">Status Filter Groups:</h4>
           <div className="space-y-2">
             {statusGroups.map((group, i) => (
               <div key={i} className="text-sm">
-                <span className="text-zinc-400">{group.name}: </span>
-                <span className="text-zinc-500">{group.items.join(", ")}</span>
+                <span className="text-muted">{group.name}: </span>
+                <span className="text-muted">{group.items.join(", ")}</span>
               </div>
             ))}
           </div>
@@ -947,9 +947,9 @@ function DashboardCard({
       )}
 
       {tips && (
-        <div className="mb-4 p-3 bg-zinc-800/50 rounded-lg">
+        <div className="mb-4 p-3 bg-skeleton rounded-lg">
           <h4 className="text-sm font-semibold text-yellow-400 mb-2">Tips:</h4>
-          <ul className="list-disc list-inside space-y-1 text-sm text-zinc-400">
+          <ul className="list-disc list-inside space-y-1 text-sm text-muted">
             {tips.map((tip, i) => (
               <li key={i}>{tip}</li>
             ))}

@@ -167,12 +167,12 @@ export default function SalesPipelinePage() {
       breadcrumbs={[{ label: "Dashboards", href: "/" }, { label: "Sales Pipeline" }]}
       headerRight={
         <div className="flex items-center gap-3">
-          <label className="flex items-center gap-2 text-sm text-zinc-400 cursor-pointer">
+          <label className="flex items-center gap-2 text-sm text-muted cursor-pointer">
             <input
               type="checkbox"
               checked={showActiveOnly}
               onChange={() => setShowActiveOnly((prev) => !prev)}
-              className="rounded bg-zinc-800 border-zinc-600"
+              className="rounded bg-surface-2 border-t-border"
             />
             Active only
           </label>
@@ -180,7 +180,7 @@ export default function SalesPipelinePage() {
           <select
             value={filterLocation}
             onChange={(e) => setFilterLocation(e.target.value)}
-            className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white"
+            className="bg-surface-2 border border-t-border rounded-lg px-3 py-2 text-sm text-white"
           >
             <option value="all">All Locations</option>
             {locations.map((l) => (
@@ -193,7 +193,7 @@ export default function SalesPipelinePage() {
           <select
             value={filterStage}
             onChange={(e) => setFilterStage(e.target.value)}
-            className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white"
+            className="bg-surface-2 border border-t-border rounded-lg px-3 py-2 text-sm text-white"
           >
             <option value="all">All Stages</option>
             {STAGES.map((s) => (
@@ -205,7 +205,7 @@ export default function SalesPipelinePage() {
 
           <button
             onClick={fetchData}
-            className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg text-sm font-medium text-white"
+            className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg text-sm font-medium text-foreground"
           >
             Refresh
           </button>
@@ -214,46 +214,46 @@ export default function SalesPipelinePage() {
     >
       {/* Stats Row */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-        <div className="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+        <div className="bg-surface rounded-xl p-4 border border-t-border">
           <div className="text-2xl font-bold text-green-400">
             {activeDeals.length}
           </div>
-          <div className="text-sm text-zinc-400">Active Deals</div>
+          <div className="text-sm text-muted">Active Deals</div>
         </div>
 
-        <div className="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+        <div className="bg-surface rounded-xl p-4 border border-t-border">
           <div className="text-2xl font-bold text-emerald-400">
             {formatCurrency(totalValue)}
           </div>
-          <div className="text-sm text-zinc-400">Pipeline Value</div>
+          <div className="text-sm text-muted">Pipeline Value</div>
         </div>
 
-        <div className="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+        <div className="bg-surface rounded-xl p-4 border border-t-border">
           <div className="text-2xl font-bold text-purple-400">
             {formatCurrency(proposalValue)}
           </div>
-          <div className="text-sm text-zinc-400">Proposal Value</div>
+          <div className="text-sm text-muted">Proposal Value</div>
         </div>
 
-        <div className="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+        <div className="bg-surface rounded-xl p-4 border border-t-border">
           <div className="text-2xl font-bold text-violet-400">
             {stageCounts["Finalizing Deal"]}
           </div>
-          <div className="text-sm text-zinc-400">Finalizing</div>
+          <div className="text-sm text-muted">Finalizing</div>
         </div>
 
-        <div className="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+        <div className="bg-surface rounded-xl p-4 border border-t-border">
           <div
             className={`text-2xl font-bold ${Number(winRate) >= 50 ? "text-green-400" : "text-yellow-400"}`}
           >
             {winRate}%
           </div>
-          <div className="text-sm text-zinc-400">Win Rate</div>
+          <div className="text-sm text-muted">Win Rate</div>
         </div>
       </div>
 
       {/* Sales Funnel */}
-      <div className="bg-[#12121a] rounded-xl border border-zinc-800 p-4 mb-6">
+      <div className="bg-surface rounded-xl border border-t-border p-4 mb-6">
         <h2 className="text-lg font-semibold mb-4">Sales Funnel</h2>
         <div className="space-y-2">
           {ACTIVE_STAGES.map((stage) => {
@@ -267,21 +267,21 @@ export default function SalesPipelinePage() {
 
             return (
               <div key={stage} className="flex items-center gap-4">
-                <div className="w-36 text-sm text-zinc-300 truncate">
+                <div className="w-36 text-sm text-foreground/80 truncate">
                   {stage}
                 </div>
-                <div className="flex-1 bg-zinc-800 rounded-full h-8 overflow-hidden">
+                <div className="flex-1 bg-surface-2 rounded-full h-8 overflow-hidden">
                   <div
                     className={`${STAGE_BG[stage]} h-full rounded-full flex items-center justify-end pr-3 transition-all`}
                     style={{ width: `${barWidth}%` }}
                   >
-                    <span className="text-xs font-bold text-white">
+                    <span className="text-xs font-bold text-foreground">
                       {count}
                     </span>
                   </div>
                 </div>
                 <div
-                  className={`w-28 text-right text-sm font-mono ${value > 0 ? "text-green-400" : "text-zinc-600"}`}
+                  className={`w-28 text-right text-sm font-mono ${value > 0 ? "text-green-400" : "text-muted/70"}`}
                 >
                   {formatCurrency(value)}
                 </div>
@@ -292,20 +292,20 @@ export default function SalesPipelinePage() {
       </div>
 
       {/* Deals Table */}
-      <div className="bg-[#12121a] rounded-xl border border-zinc-800 overflow-hidden">
-        <div className="p-4 border-b border-zinc-800">
+      <div className="bg-surface rounded-xl border border-t-border overflow-hidden">
+        <div className="p-4 border-b border-t-border">
           <div className="flex items-center gap-3">
             <h2 className="text-lg font-semibold">
               Deals ({filteredDeals.length})
             </h2>
             {loadingMore && progress && (
-              <span className="text-xs text-zinc-500">
+              <span className="text-xs text-muted">
                 Loading {progress.loaded}{progress.total ? ` of ${progress.total}` : ""} deals...
               </span>
             )}
           </div>
           {loadingMore && (
-            <div className="mt-2 h-1 bg-zinc-800 rounded-full overflow-hidden">
+            <div className="mt-2 h-1 bg-surface-2 rounded-full overflow-hidden">
               {progress?.total ? (
                 <div
                   className="h-full bg-green-500 rounded-full transition-all duration-300"
@@ -319,34 +319,34 @@ export default function SalesPipelinePage() {
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-zinc-900">
+            <thead className="bg-surface">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">
                   Deal
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">
                   Location
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">
                   Stage
                 </th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase">
+                <th className="px-4 py-3 text-right text-xs font-medium text-muted uppercase">
                   Amount
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">
                   Close Date
                 </th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-zinc-400 uppercase">
+                <th className="px-4 py-3 text-center text-xs font-medium text-muted uppercase">
                   Actions
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-800">
+            <tbody className="divide-y divide-t-border">
               {filteredDeals.length === 0 ? (
                 <tr>
                   <td
                     colSpan={6}
-                    className="px-4 py-8 text-center text-zinc-500"
+                    className="px-4 py-8 text-center text-muted"
                   >
                     No deals found
                   </td>
@@ -363,17 +363,17 @@ export default function SalesPipelinePage() {
                   return (
                     <tr
                       key={`${deal.name}-${idx}`}
-                      className={`hover:bg-zinc-900/50 ${rowClass}`}
+                      className={`hover:bg-surface/50 ${rowClass}`}
                     >
                       <td className="px-4 py-3">
-                        <div className="font-medium text-white">
+                        <div className="font-medium text-foreground">
                           {deal.name}
                         </div>
-                        <div className="text-xs text-zinc-500">
+                        <div className="text-xs text-muted">
                           {deal.city || ""} {deal.state || ""}
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-sm text-zinc-300">
+                      <td className="px-4 py-3 text-sm text-foreground/80">
                         {deal.pbLocation}
                       </td>
                       <td className="px-4 py-3">
@@ -384,11 +384,11 @@ export default function SalesPipelinePage() {
                         </span>
                       </td>
                       <td
-                        className={`px-4 py-3 text-right font-mono text-sm ${deal.amount > 0 ? "text-green-400" : "text-zinc-500"}`}
+                        className={`px-4 py-3 text-right font-mono text-sm ${deal.amount > 0 ? "text-green-400" : "text-muted"}`}
                       >
                         {formatCurrency(deal.amount)}
                       </td>
-                      <td className="px-4 py-3 text-sm text-zinc-400">
+                      <td className="px-4 py-3 text-sm text-muted">
                         {deal.closeDate || "-"}
                       </td>
                       <td className="px-4 py-3 text-center">
@@ -402,7 +402,7 @@ export default function SalesPipelinePage() {
                             Open &rarr;
                           </a>
                         ) : (
-                          <span className="text-zinc-600 text-sm">-</span>
+                          <span className="text-muted/70 text-sm">-</span>
                         )}
                       </td>
                     </tr>

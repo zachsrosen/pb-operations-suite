@@ -43,7 +43,7 @@ export default function MaintenancePage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center p-4">
+    <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="text-center max-w-md">
         {/* Logo/Icon */}
         <div className="mb-8">
@@ -71,29 +71,29 @@ export default function MaintenancePage() {
         </div>
 
         {/* Title */}
-        <h1 className="text-3xl font-bold text-white mb-4">
+        <h1 className="text-3xl font-bold text-foreground mb-4">
           Updates in Progress{dots}
         </h1>
 
         {/* Description */}
-        <p className="text-zinc-400 mb-8 text-lg">
+        <p className="text-muted mb-8 text-lg">
           We&apos;re deploying improvements to make your experience better.
           This usually takes less than a minute.
         </p>
 
         {/* Progress indicator */}
         <div className="mb-8">
-          <div className="h-1 bg-zinc-800 rounded-full overflow-hidden">
+          <div className="h-1 bg-surface-2 rounded-full overflow-hidden">
             <div className="h-full bg-gradient-to-r from-orange-500 to-orange-400 rounded-full animate-pulse w-2/3" />
           </div>
         </div>
 
         {/* What's happening */}
-        <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4 text-left">
-          <h3 className="text-sm font-semibold text-zinc-300 mb-3">
+        <div className="bg-surface/50 border border-t-border rounded-xl p-4 text-left">
+          <h3 className="text-sm font-semibold text-foreground/80 mb-3">
             What&apos;s happening:
           </h3>
-          <ul className="space-y-2 text-sm text-zinc-500">
+          <ul className="space-y-2 text-sm text-muted">
             <li className="flex items-center gap-2">
               <div className="w-1.5 h-1.5 bg-orange-500 rounded-full animate-pulse" />
               Deploying latest updates
@@ -110,10 +110,10 @@ export default function MaintenancePage() {
         </div>
 
         {/* Auto-refresh notice */}
-        <p className="text-xs text-zinc-600 mt-6">
+        <p className="text-xs text-muted/70 mt-6">
           This page will automatically refresh when updates are complete.
           {checkCount > 0 && (
-            <span className="block mt-1 text-zinc-700">
+            <span className="block mt-1 text-muted/50">
               Checked {checkCount} time{checkCount !== 1 ? "s" : ""}...
             </span>
           )}
@@ -122,7 +122,7 @@ export default function MaintenancePage() {
         {/* Manual refresh button */}
         <button
           onClick={() => window.location.href = "/"}
-          className="mt-4 px-4 py-2 text-sm text-zinc-400 hover:text-white transition-colors"
+          className="mt-4 px-4 py-2 text-sm text-muted hover:text-foreground transition-colors"
         >
           Try again now
         </button>

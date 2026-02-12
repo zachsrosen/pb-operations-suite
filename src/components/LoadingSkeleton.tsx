@@ -8,7 +8,7 @@
  */
 
 // Basic shimmer animation
-const shimmerClass = "animate-pulse bg-zinc-800";
+const shimmerClass = "animate-pulse bg-surface-2";
 
 export function SkeletonText({ width = "w-24", className = "" }: { width?: string; className?: string }) {
   return <div className={`h-4 ${shimmerClass} rounded ${width} ${className}`} />;
@@ -16,7 +16,7 @@ export function SkeletonText({ width = "w-24", className = "" }: { width?: strin
 
 export function SkeletonCard({ className = "" }: { className?: string }) {
   return (
-    <div className={`bg-[#12121a] border border-zinc-800 rounded-xl p-4 ${className}`}>
+    <div className={`bg-surface border border-t-border rounded-xl p-4 shadow-card ${className}`}>
       <div className="flex justify-between items-start mb-3">
         <SkeletonText width="w-32" />
         <SkeletonText width="w-16" />
@@ -29,7 +29,7 @@ export function SkeletonCard({ className = "" }: { className?: string }) {
 
 export function SkeletonStatCard() {
   return (
-    <div className="bg-[#12121a] border border-zinc-800 rounded-xl p-4">
+    <div className="bg-surface border border-t-border rounded-xl p-4 shadow-card">
       <div className={`h-8 ${shimmerClass} rounded w-20 mb-2`} />
       <SkeletonText width="w-24" />
     </div>
@@ -38,16 +38,16 @@ export function SkeletonStatCard() {
 
 export function SkeletonTable({ rows = 5 }: { rows?: number }) {
   return (
-    <div className="bg-[#12121a] border border-zinc-800 rounded-xl overflow-hidden">
+    <div className="bg-surface border border-t-border rounded-xl overflow-hidden shadow-card">
       {/* Header */}
-      <div className="grid grid-cols-6 gap-4 px-4 py-3 bg-[#0a0a0f] border-b border-zinc-800">
+      <div className="grid grid-cols-6 gap-4 px-4 py-3 bg-background border-b border-t-border">
         {[...Array(6)].map((_, i) => (
           <SkeletonText key={i} width="w-16" />
         ))}
       </div>
       {/* Rows */}
       {[...Array(rows)].map((_, rowIdx) => (
-        <div key={rowIdx} className="grid grid-cols-6 gap-4 px-4 py-3 border-b border-zinc-800">
+        <div key={rowIdx} className="grid grid-cols-6 gap-4 px-4 py-3 border-b border-t-border">
           {[...Array(6)].map((_, colIdx) => (
             <SkeletonText key={colIdx} width={colIdx === 0 ? "w-32" : "w-20"} />
           ))}
@@ -59,7 +59,7 @@ export function SkeletonTable({ rows = 5 }: { rows?: number }) {
 
 export function SkeletonCalendar() {
   return (
-    <div className="bg-[#12121a] border border-zinc-800 rounded-xl p-4">
+    <div className="bg-surface border border-t-border rounded-xl p-4 shadow-card">
       {/* Header */}
       <div className="flex justify-between items-center mb-4">
         <SkeletonText width="w-32" />
@@ -88,7 +88,7 @@ export function SkeletonProjectQueue({ items = 5 }: { items?: number }) {
   return (
     <div className="space-y-2">
       {[...Array(items)].map((_, i) => (
-        <div key={i} className="bg-[#12121a] border border-zinc-800 rounded-lg p-3">
+        <div key={i} className="bg-surface border border-t-border rounded-lg p-3 shadow-card">
           <div className="flex justify-between items-start mb-2">
             <SkeletonText width="w-40" />
             <SkeletonText width="w-16" />
@@ -137,10 +137,10 @@ export function SkeletonScheduler() {
 // Full page loading state
 export function LoadingPage({ message = "Loading..." }: { message?: string }) {
   return (
-    <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
+    <div className="min-h-screen bg-background flex items-center justify-center">
       <div className="text-center">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-orange-500 mx-auto mb-4" />
-        <p className="text-zinc-500">{message}</p>
+        <p className="text-muted">{message}</p>
       </div>
     </div>
   );

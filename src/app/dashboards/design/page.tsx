@@ -564,7 +564,7 @@ export default function DesignEngineeringPage() {
         <div className="flex items-center justify-center min-h-[400px]">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500 mx-auto mb-4"></div>
-            <p className="text-zinc-400">Loading Design & Engineering Data...</p>
+            <p className="text-muted">Loading Design & Engineering Data...</p>
           </div>
         </div>
       </DashboardShell>
@@ -577,7 +577,7 @@ export default function DesignEngineeringPage() {
         <div className="flex items-center justify-center min-h-[400px]">
           <div className="text-center text-red-500">
             <p className="text-xl mb-2">Error loading data</p>
-            <p className="text-sm text-zinc-400">{error}</p>
+            <p className="text-sm text-muted">{error}</p>
             <button onClick={fetchData} className="mt-4 px-4 py-2 bg-indigo-600 rounded-lg hover:bg-indigo-700">
               Retry
             </button>
@@ -588,18 +588,18 @@ export default function DesignEngineeringPage() {
   }
 
   const getDesignStatusColor = (status: string | undefined): string => {
-    if (!status) return 'bg-zinc-500/20 text-zinc-400';
+    if (!status) return 'bg-zinc-500/20 text-muted';
     const lower = status.toLowerCase();
     if (lower.includes('complete') || lower.includes('approved') || lower.includes('done')) return 'bg-green-500/20 text-green-400';
     if (lower.includes('progress') || lower.includes('review') || lower.includes('stamping')) return 'bg-yellow-500/20 text-yellow-400';
     if (lower.includes('revision') || lower.includes('rejected')) return 'bg-orange-500/20 text-orange-400';
     if (lower.includes('clarification') || lower.includes('pending')) return 'bg-blue-500/20 text-blue-400';
-    if (lower.includes('hold') || lower.includes('archived')) return 'bg-zinc-500/20 text-zinc-400';
+    if (lower.includes('hold') || lower.includes('archived')) return 'bg-zinc-500/20 text-muted';
     return 'bg-indigo-500/20 text-indigo-400';
   };
 
   const getDesignApprovalStatusColor = (status: string | undefined): string => {
-    if (!status) return 'bg-zinc-500/20 text-zinc-400';
+    if (!status) return 'bg-zinc-500/20 text-muted';
     const lower = status.toLowerCase();
     if (lower.includes('approved')) return 'bg-emerald-500/20 text-emerald-400';
     if (lower.includes('rejected')) return 'bg-red-500/20 text-red-400';
@@ -607,7 +607,7 @@ export default function DesignEngineeringPage() {
     if (lower.includes('sent') || lower.includes('resent')) return 'bg-cyan-500/20 text-cyan-400';
     if (lower.includes('revision')) return 'bg-orange-500/20 text-orange-400';
     if (lower.includes('pending') || lower.includes('clarification')) return 'bg-yellow-500/20 text-yellow-400';
-    return 'bg-zinc-500/20 text-zinc-400';
+    return 'bg-zinc-500/20 text-muted';
   };
 
   const clearAllFilters = () => {
@@ -675,7 +675,7 @@ export default function DesignEngineeringPage() {
           {hasActiveFilters && (
             <button
               onClick={clearAllFilters}
-              className="text-xs text-zinc-400 hover:text-white px-3 py-2 border border-zinc-700 rounded-lg hover:border-zinc-600 transition-colors"
+              className="text-xs text-muted hover:text-foreground px-3 py-2 border border-t-border rounded-lg hover:border-muted transition-colors"
             >
               Clear All
             </button>
@@ -685,63 +685,63 @@ export default function DesignEngineeringPage() {
 
       {/* Summary Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <div className="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+        <div className="bg-surface rounded-xl p-4 border border-t-border">
           <div className="text-2xl font-bold text-indigo-400">{stats.total}</div>
-          <div className="text-sm text-zinc-400">Total Projects</div>
-          <div className="text-xs text-zinc-500">{formatMoney(stats.totalValue)}</div>
+          <div className="text-sm text-muted">Total Projects</div>
+          <div className="text-xs text-muted">{formatMoney(stats.totalValue)}</div>
         </div>
-        <div className="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+        <div className="bg-surface rounded-xl p-4 border border-t-border">
           <div className="text-2xl font-bold text-yellow-400">{stats.inDesignStage.length}</div>
-          <div className="text-sm text-zinc-400">In Design Stage</div>
-          <div className="text-xs text-zinc-500">{formatMoney(stats.inDesignStage.reduce((s, p) => s + (p.amount || 0), 0))}</div>
+          <div className="text-sm text-muted">In Design Stage</div>
+          <div className="text-xs text-muted">{formatMoney(stats.inDesignStage.reduce((s, p) => s + (p.amount || 0), 0))}</div>
         </div>
-        <div className="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+        <div className="bg-surface rounded-xl p-4 border border-t-border">
           <div className="text-2xl font-bold text-blue-400">{stats.designComplete.length}</div>
-          <div className="text-sm text-zinc-400">Design Complete</div>
-          <div className="text-xs text-zinc-500">Awaiting approval</div>
+          <div className="text-sm text-muted">Design Complete</div>
+          <div className="text-xs text-muted">Awaiting approval</div>
         </div>
-        <div className="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+        <div className="bg-surface rounded-xl p-4 border border-t-border">
           <div className="text-2xl font-bold text-green-400">{stats.designApproved.length}</div>
-          <div className="text-sm text-zinc-400">Design Approved</div>
-          <div className="text-xs text-zinc-500">{formatMoney(stats.designApproved.reduce((s, p) => s + (p.amount || 0), 0))}</div>
+          <div className="text-sm text-muted">Design Approved</div>
+          <div className="text-xs text-muted">{formatMoney(stats.designApproved.reduce((s, p) => s + (p.amount || 0), 0))}</div>
         </div>
       </div>
 
       {/* Timing Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <div className="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+        <div className="bg-surface rounded-xl p-4 border border-t-border">
           <div className="text-2xl font-bold text-cyan-400">{stats.avgDaysInDesign}d</div>
-          <div className="text-sm text-zinc-400">Avg Days in Design</div>
+          <div className="text-sm text-muted">Avg Days in Design</div>
         </div>
-        <div className="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+        <div className="bg-surface rounded-xl p-4 border border-t-border">
           <div className="text-2xl font-bold text-purple-400">{stats.avgDesignTurnaround}d</div>
-          <div className="text-sm text-zinc-400">Avg Design Turnaround</div>
+          <div className="text-sm text-muted">Avg Design Turnaround</div>
         </div>
-        <div className="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+        <div className="bg-surface rounded-xl p-4 border border-t-border">
           <div className="text-2xl font-bold text-amber-400">{Object.keys(stats.designStatusStats).length}</div>
-          <div className="text-sm text-zinc-400">Design Statuses</div>
+          <div className="text-sm text-muted">Design Statuses</div>
         </div>
-        <div className="bg-[#12121a] rounded-xl p-4 border border-zinc-800">
+        <div className="bg-surface rounded-xl p-4 border border-t-border">
           <div className="text-2xl font-bold text-pink-400">{Object.keys(stats.designApprovalStatusStats).length}</div>
-          <div className="text-sm text-zinc-400">Approval Statuses</div>
+          <div className="text-sm text-muted">Approval Statuses</div>
         </div>
       </div>
 
       {/* Status Breakdown */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
         {/* Design Status Breakdown */}
-        <div className="bg-[#12121a] rounded-xl border border-zinc-800 p-4">
+        <div className="bg-surface rounded-xl border border-t-border p-4">
           <h2 className="text-lg font-semibold mb-4 text-indigo-400">By Design Status</h2>
           <div className="space-y-2 max-h-[300px] overflow-y-auto">
             {Object.keys(stats.designStatusStats).length === 0 ? (
-              <p className="text-zinc-500 text-sm">No design status data available</p>
+              <p className="text-muted text-sm">No design status data available</p>
             ) : (
               Object.entries(stats.designStatusStats)
                 .sort((a, b) => b[1] - a[1])
                 .map(([status, count]) => (
                   <div
                     key={status}
-                    className={`flex items-center justify-between p-2 bg-zinc-800/50 rounded-lg cursor-pointer hover:bg-zinc-800 transition-colors ${
+                    className={`flex items-center justify-between p-2 bg-skeleton rounded-lg cursor-pointer hover:bg-surface-2 transition-colors ${
                       filterDesignStatuses.includes(status) ? 'ring-1 ring-indigo-500' : ''
                     }`}
                     onClick={() => {
@@ -752,7 +752,7 @@ export default function DesignEngineeringPage() {
                       }
                     }}
                   >
-                    <span className="text-sm text-zinc-300">{getDisplayName(status)}</span>
+                    <span className="text-sm text-foreground/80">{getDisplayName(status)}</span>
                     <span className="text-lg font-bold text-indigo-400">{count}</span>
                   </div>
                 ))
@@ -761,18 +761,18 @@ export default function DesignEngineeringPage() {
         </div>
 
         {/* Design Approval Status Breakdown */}
-        <div className="bg-[#12121a] rounded-xl border border-zinc-800 p-4">
+        <div className="bg-surface rounded-xl border border-t-border p-4">
           <h2 className="text-lg font-semibold mb-4 text-purple-400">By Design Approval Status</h2>
           <div className="space-y-2 max-h-[300px] overflow-y-auto">
             {Object.keys(stats.designApprovalStatusStats).length === 0 ? (
-              <p className="text-zinc-500 text-sm">No design approval status data available</p>
+              <p className="text-muted text-sm">No design approval status data available</p>
             ) : (
               Object.entries(stats.designApprovalStatusStats)
                 .sort((a, b) => b[1] - a[1])
                 .map(([status, count]) => (
                   <div
                     key={status}
-                    className={`flex items-center justify-between p-2 bg-zinc-800/50 rounded-lg cursor-pointer hover:bg-zinc-800 transition-colors ${
+                    className={`flex items-center justify-between p-2 bg-skeleton rounded-lg cursor-pointer hover:bg-surface-2 transition-colors ${
                       filterDesignApprovalStatuses.includes(status) ? 'ring-1 ring-purple-500' : ''
                     }`}
                     onClick={() => {
@@ -783,7 +783,7 @@ export default function DesignEngineeringPage() {
                       }
                     }}
                   >
-                    <span className="text-sm text-zinc-300">{getDisplayName(status)}</span>
+                    <span className="text-sm text-foreground/80">{getDisplayName(status)}</span>
                     <span className="text-lg font-bold text-purple-400">{count}</span>
                   </div>
                 ))
@@ -793,14 +793,14 @@ export default function DesignEngineeringPage() {
       </div>
 
       {/* Clipping Detection Tool */}
-      <div className="bg-[#12121a] rounded-xl border border-zinc-800 mb-6 overflow-hidden">
+      <div className="bg-surface rounded-xl border border-t-border mb-6 overflow-hidden">
         <button
           onClick={() => setShowClippingTool(!showClippingTool)}
-          className="w-full p-4 flex items-center justify-between hover:bg-zinc-900/50 transition-colors"
+          className="w-full p-4 flex items-center justify-between hover:bg-surface/50 transition-colors"
         >
           <div className="flex items-center gap-3">
             <h2 className="text-lg font-semibold text-amber-400">Clipping Detection</h2>
-            <span className="text-xs text-zinc-500">Seasonal TSRF Decomposition</span>
+            <span className="text-xs text-muted">Seasonal TSRF Decomposition</span>
             {clippingAnalyses.atRisk.length > 0 && (
               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-500/20 text-amber-400">
                 {clippingAnalyses.atRisk.length} at risk
@@ -808,7 +808,7 @@ export default function DesignEngineeringPage() {
             )}
           </div>
           <svg
-            className={`w-5 h-5 text-zinc-400 transition-transform ${showClippingTool ? 'rotate-180' : ''}`}
+            className={`w-5 h-5 text-muted transition-transform ${showClippingTool ? 'rotate-180' : ''}`}
             fill="none" viewBox="0 0 24 24" stroke="currentColor"
           >
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -816,34 +816,34 @@ export default function DesignEngineeringPage() {
         </button>
 
         {showClippingTool && (
-          <div className="p-4 border-t border-zinc-800">
+          <div className="p-4 border-t border-t-border">
             {/* Summary Stats */}
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
-              <div className="bg-zinc-900/50 rounded-lg p-3 border border-zinc-700/50">
-                <div className="text-xl font-bold text-zinc-300">{clippingAnalyses.all.length}</div>
-                <div className="text-xs text-zinc-500">Analyzed</div>
+              <div className="bg-surface/50 rounded-lg p-3 border border-t-border/50">
+                <div className="text-xl font-bold text-foreground/80">{clippingAnalyses.all.length}</div>
+                <div className="text-xs text-muted">Analyzed</div>
               </div>
-              <div className="bg-zinc-900/50 rounded-lg p-3 border border-red-500/20">
+              <div className="bg-surface/50 rounded-lg p-3 border border-red-500/20">
                 <div className="text-xl font-bold text-red-400">{clippingAnalyses.high.length}</div>
-                <div className="text-xs text-zinc-500">High Risk</div>
+                <div className="text-xs text-muted">High Risk</div>
               </div>
-              <div className="bg-zinc-900/50 rounded-lg p-3 border border-amber-500/20">
+              <div className="bg-surface/50 rounded-lg p-3 border border-amber-500/20">
                 <div className="text-xl font-bold text-amber-400">{clippingAnalyses.moderate.length}</div>
-                <div className="text-xs text-zinc-500">Moderate Risk</div>
+                <div className="text-xs text-muted">Moderate Risk</div>
               </div>
-              <div className="bg-zinc-900/50 rounded-lg p-3 border border-yellow-500/20">
+              <div className="bg-surface/50 rounded-lg p-3 border border-yellow-500/20">
                 <div className="text-xl font-bold text-yellow-400">{clippingAnalyses.low.length}</div>
-                <div className="text-xs text-zinc-500">Low Risk</div>
+                <div className="text-xs text-muted">Low Risk</div>
               </div>
-              <div className="bg-zinc-900/50 rounded-lg p-3 border border-cyan-500/20">
+              <div className="bg-surface/50 rounded-lg p-3 border border-cyan-500/20">
                 <div className="text-xl font-bold text-cyan-400">{clippingAnalyses.withBattery.length}</div>
-                <div className="text-xs text-zinc-500">Battery Mitigated</div>
+                <div className="text-xs text-muted">Battery Mitigated</div>
               </div>
             </div>
 
             {/* Explanation */}
             <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg p-3 mb-4">
-              <p className="text-xs text-zinc-400 leading-relaxed">
+              <p className="text-xs text-muted leading-relaxed">
                 <span className="text-amber-400 font-medium">How it works:</span> Without EVIA 30-min shade profiles,
                 annual-average TSRF suppresses summer peaks. This tool decomposes TSRF seasonally — summer TSRF is ~{Math.round(getSeasonalTSRF(DEFAULT_TSRF) * 100)}%
                 vs annual avg ~{Math.round(DEFAULT_TSRF * 100)}% — revealing systems where summer DC output exceeds inverter AC capacity.
@@ -856,19 +856,19 @@ export default function DesignEngineeringPage() {
             {clippingAnalyses.atRisk.length > 0 ? (
               <div className="overflow-x-auto">
                 <table className="w-full">
-                  <thead className="bg-zinc-900/80">
+                  <thead className="bg-surface/80">
                     <tr>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-zinc-400 uppercase">Project</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-zinc-400 uppercase">Equipment</th>
-                      <th className="px-3 py-2 text-center text-xs font-medium text-zinc-400 uppercase">DC kW</th>
-                      <th className="px-3 py-2 text-center text-xs font-medium text-zinc-400 uppercase">AC kW</th>
-                      <th className="px-3 py-2 text-center text-xs font-medium text-zinc-400 uppercase">Nameplate DC/AC</th>
-                      <th className="px-3 py-2 text-center text-xs font-medium text-zinc-400 uppercase">Summer DC/AC</th>
-                      <th className="px-3 py-2 text-center text-xs font-medium text-zinc-400 uppercase">Battery</th>
-                      <th className="px-3 py-2 text-center text-xs font-medium text-zinc-400 uppercase">Risk</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-muted uppercase">Project</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-muted uppercase">Equipment</th>
+                      <th className="px-3 py-2 text-center text-xs font-medium text-muted uppercase">DC kW</th>
+                      <th className="px-3 py-2 text-center text-xs font-medium text-muted uppercase">AC kW</th>
+                      <th className="px-3 py-2 text-center text-xs font-medium text-muted uppercase">Nameplate DC/AC</th>
+                      <th className="px-3 py-2 text-center text-xs font-medium text-muted uppercase">Summer DC/AC</th>
+                      <th className="px-3 py-2 text-center text-xs font-medium text-muted uppercase">Battery</th>
+                      <th className="px-3 py-2 text-center text-xs font-medium text-muted uppercase">Risk</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-zinc-800/50">
+                  <tbody className="divide-y divide-t-border/50">
                     {clippingAnalyses.atRisk
                       .sort((a, b) => b.nameplateDcAcRatio - a.nameplateDcAcRatio)
                       .map(analysis => {
@@ -879,26 +879,26 @@ export default function DesignEngineeringPage() {
                           none: "bg-green-500/20 text-green-400 border-green-500/30",
                         };
                         return (
-                          <tr key={analysis.projectId} className="hover:bg-zinc-900/30">
+                          <tr key={analysis.projectId} className="hover:bg-surface/30">
                             <td className="px-3 py-2">
                               <a
                                 href={analysis.projectUrl}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="text-sm font-medium text-white hover:text-amber-400"
+                                className="text-sm font-medium text-foreground hover:text-amber-400"
                               >
                                 {analysis.projectName.split('|')[0].trim()}
                               </a>
-                              <div className="text-xs text-zinc-500">{analysis.stage}</div>
+                              <div className="text-xs text-muted">{analysis.stage}</div>
                             </td>
-                            <td className="px-3 py-2 text-xs text-zinc-400">
+                            <td className="px-3 py-2 text-xs text-muted">
                               {analysis.panelCount}x {analysis.panelWattage}W
-                              <div className="text-zinc-500">{analysis.inverterCount}x inv</div>
+                              <div className="text-muted">{analysis.inverterCount}x inv</div>
                             </td>
-                            <td className="px-3 py-2 text-center text-sm font-mono text-zinc-300">
+                            <td className="px-3 py-2 text-center text-sm font-mono text-foreground/80">
                               {analysis.dcCapacityKw.toFixed(1)}
                             </td>
-                            <td className="px-3 py-2 text-center text-sm font-mono text-zinc-300">
+                            <td className="px-3 py-2 text-center text-sm font-mono text-foreground/80">
                               {analysis.acCapacityKw.toFixed(1)}
                             </td>
                             <td className="px-3 py-2 text-center">
@@ -909,7 +909,7 @@ export default function DesignEngineeringPage() {
                               }`}>
                                 {analysis.nameplateDcAcRatio.toFixed(2)}
                               </span>
-                              <div className="text-[10px] text-zinc-500">{(analysis.nameplateDcAcRatio * 100).toFixed(0)}%</div>
+                              <div className="text-[10px] text-muted">{(analysis.nameplateDcAcRatio * 100).toFixed(0)}%</div>
                             </td>
                             <td className="px-3 py-2 text-center">
                               <span className={`text-sm font-mono font-bold ${
@@ -918,13 +918,13 @@ export default function DesignEngineeringPage() {
                               }`}>
                                 {analysis.estimatedSummerDcAcRatio.toFixed(2)}
                               </span>
-                              <div className="text-[10px] text-zinc-500">~{Math.round(analysis.estimatedSummerTsrf * 100)}% TSRF</div>
+                              <div className="text-[10px] text-muted">~{Math.round(analysis.estimatedSummerTsrf * 100)}% TSRF</div>
                             </td>
                             <td className="px-3 py-2 text-center text-xs">
                               {analysis.batteryKwh > 0 ? (
                                 <span className="text-cyan-400">{analysis.batteryKwh.toFixed(0)} kWh</span>
                               ) : (
-                                <span className="text-zinc-600">None</span>
+                                <span className="text-muted/70">None</span>
                               )}
                             </td>
                             <td className="px-3 py-2 text-center">
@@ -939,7 +939,7 @@ export default function DesignEngineeringPage() {
                 </table>
               </div>
             ) : (
-              <div className="text-center py-6 text-zinc-500 text-sm">
+              <div className="text-center py-6 text-muted text-sm">
                 {clippingAnalyses.all.length === 0
                   ? "No projects with equipment data available for clipping analysis"
                   : "No clipping risk detected across analyzed projects"}
@@ -950,33 +950,33 @@ export default function DesignEngineeringPage() {
       </div>
 
       {/* Projects Table */}
-      <div className="bg-[#12121a] rounded-xl border border-zinc-800 overflow-hidden">
-        <div className="p-4 border-b border-zinc-800 flex items-center justify-between">
+      <div className="bg-surface rounded-xl border border-t-border overflow-hidden">
+        <div className="p-4 border-b border-t-border flex items-center justify-between">
           <h2 className="text-lg font-semibold">Projects ({filteredProjects.length})</h2>
           {hasActiveFilters && (
-            <span className="text-xs text-zinc-500">Filtered from {projects.filter(isInDesignPhase).length} total</span>
+            <span className="text-xs text-muted">Filtered from {projects.filter(isInDesignPhase).length} total</span>
           )}
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-zinc-900">
+            <thead className="bg-surface">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Project</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Stage</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Design Status</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Design Approval</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Design Complete</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Design Approved</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Type</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Tags</th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-zinc-400 uppercase">DC/AC</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase">Amount</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Project</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Stage</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Design Status</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Design Approval</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Design Complete</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Design Approved</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Type</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Tags</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-muted uppercase">DC/AC</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-muted uppercase">Amount</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-800">
+            <tbody className="divide-y divide-t-border">
               {filteredProjects.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="px-4 py-8 text-center text-zinc-500">No projects found</td>
+                  <td colSpan={10} className="px-4 py-8 text-center text-muted">No projects found</td>
                 </tr>
               ) : (
                 filteredProjects
@@ -987,22 +987,22 @@ export default function DesignEngineeringPage() {
                   })
                   .slice(0, 100)
                   .map(project => (
-                    <tr key={project.id} className="hover:bg-zinc-900/50">
+                    <tr key={project.id} className="hover:bg-surface/50">
                       <td className="px-4 py-3">
-                        <a href={project.url} target="_blank" rel="noopener noreferrer" className="font-medium text-white hover:text-indigo-400">
+                        <a href={project.url} target="_blank" rel="noopener noreferrer" className="font-medium text-foreground hover:text-indigo-400">
                           {project.name.split('|')[0].trim()}
                         </a>
-                        <div className="text-xs text-zinc-400">{project.name.split('|')[1]?.trim() || ''}</div>
-                        <div className="text-xs text-zinc-500">{project.pbLocation}</div>
+                        <div className="text-xs text-muted">{project.name.split('|')[1]?.trim() || ''}</div>
+                        <div className="text-xs text-muted">{project.pbLocation}</div>
                       </td>
-                      <td className="px-4 py-3 text-sm text-zinc-400">{project.stage}</td>
+                      <td className="px-4 py-3 text-sm text-muted">{project.stage}</td>
                       <td className="px-4 py-3">
                         {project.designStatus ? (
                           <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getDesignStatusColor(project.designStatus)}`}>
                             {getDisplayName(project.designStatus)}
                           </span>
                         ) : (
-                          <span className="text-zinc-500">-</span>
+                          <span className="text-muted">-</span>
                         )}
                       </td>
                       <td className="px-4 py-3">
@@ -1011,16 +1011,16 @@ export default function DesignEngineeringPage() {
                             {getDisplayName(project.layoutStatus)}
                           </span>
                         ) : (
-                          <span className="text-zinc-500">-</span>
+                          <span className="text-muted">-</span>
                         )}
                       </td>
-                      <td className={`px-4 py-3 text-sm ${project.designCompletionDate ? 'text-green-400' : 'text-zinc-500'}`}>
+                      <td className={`px-4 py-3 text-sm ${project.designCompletionDate ? 'text-green-400' : 'text-muted'}`}>
                         {project.designCompletionDate || '-'}
                       </td>
-                      <td className={`px-4 py-3 text-sm ${project.designApprovalDate ? 'text-emerald-400' : 'text-zinc-500'}`}>
+                      <td className={`px-4 py-3 text-sm ${project.designApprovalDate ? 'text-emerald-400' : 'text-muted'}`}>
                         {project.designApprovalDate || '-'}
                       </td>
-                      <td className="px-4 py-3 text-sm text-zinc-300">
+                      <td className="px-4 py-3 text-sm text-foreground/80">
                         {project.projectType || '-'}
                       </td>
                       <td className="px-4 py-3">
@@ -1036,13 +1036,13 @@ export default function DesignEngineeringPage() {
                             ))}
                           </div>
                         ) : (
-                          <span className="text-zinc-500">-</span>
+                          <span className="text-muted">-</span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-center">
                         {(() => {
                           const clip = analyzeClipping(project);
-                          if (!clip) return <span className="text-zinc-600 text-xs">-</span>;
+                          if (!clip) return <span className="text-muted/70 text-xs">-</span>;
                           const colors = {
                             high: "text-red-400",
                             moderate: "text-amber-400",
@@ -1056,7 +1056,7 @@ export default function DesignEngineeringPage() {
                           );
                         })()}
                       </td>
-                      <td className={`px-4 py-3 text-right font-mono text-sm ${(project.amount || 0) > 0 ? 'text-green-400' : 'text-zinc-500'}`}>
+                      <td className={`px-4 py-3 text-right font-mono text-sm ${(project.amount || 0) > 0 ? 'text-green-400' : 'text-muted'}`}>
                         {formatMoney(project.amount || 0)}
                       </td>
                     </tr>
