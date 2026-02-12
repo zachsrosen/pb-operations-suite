@@ -28,6 +28,7 @@ type ComparisonCategory = "site_survey" | "construction" | "inspection";
 interface HubSpotDealData {
   dealId: string;
   dealName: string;
+  pbLocation: string | null;
   // Status fields
   siteSurveyStatus: string | null;
   constructionStatus: string | null;
@@ -47,6 +48,7 @@ export interface ComparisonRecord {
   dealId: string | null;
   dealName: string | null;
   dealUrl: string | null;
+  pbLocation: string | null;
   zuperJobUid: string;
   zuperJobTitle: string;
   zuperStatus: string;
@@ -75,6 +77,7 @@ export interface ProjectGroupedRecord {
   dealId: string | null;
   dealName: string | null;
   dealUrl: string | null;
+  pbLocation: string | null;
   // Site Survey
   survey: {
     zuperJobUid: string | null;
@@ -284,6 +287,17 @@ function compareDates(date1: string | null, date2: string | null): boolean | nul
   }
 }
 
+function isWithinDateWindow(dateStr: string | null, fromDate?: string, toDate?: string): boolean {
+  if (!fromDate || !toDate) return !!dateStr;
+  if (!dateStr) return false;
+  try {
+    const value = new Date(dateStr).toISOString().split("T")[0];
+    return value >= fromDate && value <= toDate;
+  } catch {
+    return false;
+  }
+}
+
 // Fetch all Zuper jobs for a category with pagination (filtered by date range)
 async function fetchAllZuperJobs(categoryUid: string, fromDate?: string, toDate?: string): Promise<ZuperJobSummary[]> {
   const allJobs: ZuperJobSummary[] = [];
@@ -355,7 +369,8 @@ async function fetchAllZuperJobs(categoryUid: string, fromDate?: string, toDate?
     }
   }
 
-  return allJobs;
+  // Enforce local windowing by scheduled start date only.
+  return allJobs.filter((job) => isWithinDateWindow(job.scheduledStart, fromDate, toDate));
 }
 
 // Batch fetch HubSpot deals by deal id with all date fields
@@ -374,6 +389,7 @@ async function fetchHubspotDealsByDealIds(
         properties: [
           "project_number",
           "dealname",
+          "pb_location",
           // Status fields
           "site_survey_status",
           "install_status",
@@ -394,6 +410,7 @@ async function fetchHubspotDealsByDealIds(
         dealMap.set(deal.id, {
           dealId: deal.id,
           dealName: deal.properties.dealname || "",
+          pbLocation: deal.properties.pb_location || null,
           siteSurveyStatus: deal.properties.site_survey_status || null,
           constructionStatus: deal.properties.install_status || null,
           inspectionStatus: deal.properties.final_inspection_status || null,
@@ -493,6 +510,7 @@ export async function GET() {
         dealUrl: resolvedDealId
           ? `https://app.hubspot.com/contacts/21710069/record/0-3/${resolvedDealId}`
           : null,
+        pbLocation: deal?.pbLocation || null,
         zuperJobUid: job.jobUid,
         zuperJobTitle: job.jobTitle,
         zuperStatus: job.zuperStatus,
@@ -576,6 +594,7 @@ export async function GET() {
           dealId: record.dealId,
           dealName: record.dealName,
           dealUrl: record.dealUrl,
+          pbLocation: record.pbLocation,
           survey: { ...emptyCategorySlot },
           construction: { ...emptyCategorySlot },
           inspection: { ...emptyCategorySlot },
@@ -589,6 +608,9 @@ export async function GET() {
         grouped.dealId = record.dealId;
         grouped.dealName = record.dealName;
         grouped.dealUrl = record.dealUrl;
+      }
+      if (!grouped.pbLocation && record.pbLocation) {
+        grouped.pbLocation = record.pbLocation;
       }
 
       const slot = {

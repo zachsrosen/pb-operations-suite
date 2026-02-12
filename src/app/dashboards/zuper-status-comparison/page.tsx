@@ -11,6 +11,7 @@ interface ComparisonRecord {
   dealId: string | null;
   dealName: string | null;
   dealUrl: string | null;
+  pbLocation: string | null;
   zuperJobUid: string;
   zuperJobTitle: string;
   zuperStatus: string;
@@ -49,6 +50,7 @@ interface ProjectGroupedRecord {
   dealId: string | null;
   dealName: string | null;
   dealUrl: string | null;
+  pbLocation: string | null;
   survey: CategorySlot;
   construction: CategorySlot;
   inspection: CategorySlot;
@@ -213,6 +215,7 @@ export default function ZuperStatusComparisonPage() {
   const [activeCategory, setActiveCategory] = useState<string>("all");
   const [showMismatchesOnly, setShowMismatchesOnly] = useState(false);
   const [showDateMismatchesOnly, setShowDateMismatchesOnly] = useState(false);
+  const [selectedPbLocations, setSelectedPbLocations] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortField, setSortField] = useState<string>("projectNumber");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
@@ -247,6 +250,22 @@ export default function ZuperStatusComparisonPage() {
     }
   }, [loading, trackDashboardView, data]);
 
+  const pbLocations = useMemo(() => {
+    if (!data?.records) return [];
+    return [...new Set(
+      data.records
+        .map((r) => r.pbLocation || "Unknown")
+    )].sort((a, b) => a.localeCompare(b));
+  }, [data]);
+
+  const togglePbLocation = useCallback((location: string) => {
+    setSelectedPbLocations((prev) =>
+      prev.includes(location)
+        ? prev.filter((l) => l !== location)
+        : [...prev, location]
+    );
+  }, []);
+
   // Filtered and sorted records
   const filteredRecords = useMemo(() => {
     if (!data) return [];
@@ -261,12 +280,16 @@ export default function ZuperStatusComparisonPage() {
     if (showDateMismatchesOnly) {
       records = records.filter((r) => r.scheduleDateMatch === false || r.completionDateMatch === false);
     }
+    if (selectedPbLocations.length > 0) {
+      records = records.filter((r) => selectedPbLocations.includes(r.pbLocation || "Unknown"));
+    }
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       records = records.filter(
         (r) =>
           r.projectNumber.toLowerCase().includes(q) ||
           (r.dealName || "").toLowerCase().includes(q) ||
+          (r.pbLocation || "").toLowerCase().includes(q) ||
           r.zuperStatus.toLowerCase().includes(q) ||
           (r.hubspotStatus || "").toLowerCase().includes(q) ||
           (r.team || "").toLowerCase().includes(q) ||
@@ -314,7 +337,7 @@ export default function ZuperStatusComparisonPage() {
     });
 
     return records;
-  }, [data, activeCategory, showMismatchesOnly, showDateMismatchesOnly, searchQuery, sortField, sortDir]);
+  }, [data, activeCategory, showMismatchesOnly, showDateMismatchesOnly, selectedPbLocations, searchQuery, sortField, sortDir]);
 
   // Filtered project-grouped records
   const filteredProjectRecords = useMemo(() => {
@@ -327,12 +350,16 @@ export default function ZuperStatusComparisonPage() {
     if (showDateMismatchesOnly) {
       records = records.filter((r) => r.hasAnyDateMismatch);
     }
+    if (selectedPbLocations.length > 0) {
+      records = records.filter((r) => selectedPbLocations.includes(r.pbLocation || "Unknown"));
+    }
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       records = records.filter(
         (r) =>
           r.projectNumber.toLowerCase().includes(q) ||
           (r.dealName || "").toLowerCase().includes(q) ||
+          (r.pbLocation || "").toLowerCase().includes(q) ||
           (r.survey.zuperStatus || "").toLowerCase().includes(q) ||
           (r.construction.zuperStatus || "").toLowerCase().includes(q) ||
           (r.inspection.zuperStatus || "").toLowerCase().includes(q) ||
@@ -342,7 +369,7 @@ export default function ZuperStatusComparisonPage() {
       );
     }
     return records;
-  }, [data, showMismatchesOnly, showDateMismatchesOnly, searchQuery]);
+  }, [data, showMismatchesOnly, showDateMismatchesOnly, selectedPbLocations, searchQuery]);
 
   const isProjectView = viewMode === "project-status" || viewMode === "project-dates";
 
@@ -352,6 +379,7 @@ export default function ZuperStatusComparisonPage() {
     const data = filteredRecords.map((r) => ({
       "Project Number": r.projectNumber,
       "Deal Name": r.dealName || "-",
+      "PB Location": r.pbLocation || "Unknown",
       Category: CATEGORY_LABELS[r.category] || r.category,
       "Zuper Status": r.zuperStatus,
       "HubSpot Status": r.hubspotStatus || "-",
@@ -562,6 +590,27 @@ export default function ZuperStatusComparisonPage() {
           </svg>
         </div>
 
+        <div className="flex flex-wrap items-center gap-1.5">
+          {pbLocations.map((location) => {
+            const isSelected = selectedPbLocations.includes(location);
+            return (
+              <button
+                key={location}
+                onClick={() => togglePbLocation(location)}
+                className={`px-2 py-1 rounded-md text-xs border transition-colors ${
+                  isSelected
+                    ? "bg-cyan-500/15 border-cyan-500/60 text-cyan-700 dark:text-cyan-300"
+                    : "bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:border-zinc-300 dark:hover:border-zinc-600"
+                }`}
+                aria-pressed={isSelected}
+                type="button"
+              >
+                {location}
+              </button>
+            );
+          })}
+        </div>
+
         <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
           <input
             type="checkbox"
@@ -582,9 +631,12 @@ export default function ZuperStatusComparisonPage() {
           <span className="text-zinc-700 dark:text-zinc-300">Date mismatches</span>
         </label>
 
-        {activeCategory !== "all" && (
+        {(activeCategory !== "all" || selectedPbLocations.length > 0) && (
           <button
-            onClick={() => setActiveCategory("all")}
+            onClick={() => {
+              setActiveCategory("all");
+              setSelectedPbLocations([]);
+            }}
             className="text-xs text-cyan-600 dark:text-cyan-400 hover:underline"
           >
             Clear filter
