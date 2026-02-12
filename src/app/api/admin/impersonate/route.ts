@@ -1,6 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma, getUserByEmail, logActivity } from "@/lib/db";
+import { normalizeRole, type UserRole } from "@/lib/role-permissions";
+
+function withEffectiveRoleCookie(response: NextResponse, role: string): NextResponse {
+  response.cookies.set("pb_effective_role", role, {
+    path: "/",
+    httpOnly: false,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    maxAge: 60 * 60 * 8,
+  });
+  return response;
+}
 
 /**
  * POST /api/admin/impersonate
@@ -69,20 +81,21 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    return NextResponse.json({
+    const normalizedTargetRole = normalizeRole(targetUser.role as UserRole);
+    return withEffectiveRoleCookie(NextResponse.json({
       success: true,
       impersonating: {
         id: targetUser.id,
         email: targetUser.email,
         name: targetUser.name,
-        role: targetUser.role,
+        role: normalizedTargetRole,
       },
       admin: {
         id: adminUser.id,
         email: adminUser.email,
       },
       startedAt: new Date().toISOString(),
-    });
+    }), normalizedTargetRole);
   } catch (error) {
     console.error("Error starting impersonation:", error);
     return NextResponse.json({ error: "Failed to start impersonation" }, { status: 500 });
@@ -152,11 +165,12 @@ export async function DELETE() {
       });
     }
 
-    return NextResponse.json({
+    const normalizedRole = normalizeRole(user.role as UserRole);
+    return withEffectiveRoleCookie(NextResponse.json({
       success: true,
       message: "Impersonation ended",
       endedAt: new Date().toISOString(),
-    });
+    }), normalizedRole);
   } catch (error) {
     console.error("Error ending impersonation:", error);
     return NextResponse.json({ error: "Failed to end impersonation" }, { status: 500 });
@@ -201,18 +215,19 @@ export async function GET() {
     return NextResponse.json({ isImpersonating: false });
   }
 
-  return NextResponse.json({
+  const normalizedTargetRole = normalizeRole(targetUser.role as UserRole);
+  return withEffectiveRoleCookie(NextResponse.json({
     isImpersonating: true,
     impersonating: {
       id: targetUser.id,
       email: targetUser.email,
       name: targetUser.name,
-      role: targetUser.role,
+      role: normalizedTargetRole,
     },
     admin: {
       id: user.id,
       email: user.email,
       name: user.name,
     },
-  });
+  }), normalizedTargetRole);
 }
