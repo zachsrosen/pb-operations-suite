@@ -87,6 +87,54 @@ export default async function AdminSuitePage() {
             </Link>
           ))}
         </div>
+
+        <h2 className="text-lg font-semibold text-zinc-300 mt-10 mb-4">
+          API Endpoints
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <a
+            href="/api/projects?stats=true"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block bg-zinc-900/50 border border-zinc-800 rounded-xl p-5 hover:border-green-500/50 transition-all"
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-green-500 font-mono text-sm">GET</span>
+              <span className="font-semibold text-white">Projects + Stats</span>
+            </div>
+            <p className="text-sm text-zinc-500">
+              Full project data with statistics.
+            </p>
+          </a>
+          <a
+            href="/api/projects?context=pe"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block bg-zinc-900/50 border border-zinc-800 rounded-xl p-5 hover:border-green-500/50 transition-all"
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-green-500 font-mono text-sm">GET</span>
+              <span className="font-semibold text-white">PE Projects</span>
+            </div>
+            <p className="text-sm text-zinc-500">
+              Participate Energy project data.
+            </p>
+          </a>
+          <a
+            href="/api/projects?context=scheduling"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block bg-zinc-900/50 border border-zinc-800 rounded-xl p-5 hover:border-green-500/50 transition-all"
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-green-500 font-mono text-sm">GET</span>
+              <span className="font-semibold text-white">Scheduling</span>
+            </div>
+            <p className="text-sm text-zinc-500">
+              RTB and schedulable projects.
+            </p>
+          </a>
+        </div>
       </main>
     </div>
   );

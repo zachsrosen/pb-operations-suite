@@ -45,34 +45,6 @@ interface Stats {
   lastUpdated: string;
 }
 
-// ---- Dashboard link data ----
-
-interface DashboardLinkData {
-  href: string;
-  title: string;
-  description: string;
-  tag: string;
-  tagColor: string;
-  section: string;
-}
-
-const ALL_DASHBOARDS: DashboardLinkData[] = [
-  { href: "/dashboards/scheduler", title: "Master Schedule", description: "Drag-and-drop scheduling calendar with crew management", tag: "SCHEDULING", tagColor: "blue", section: "Operations Dashboards" },
-  { href: "/dashboards/site-survey-scheduler", title: "Site Survey Scheduler", description: "Dedicated calendar for scheduling site surveys with Zuper integration", tag: "SCHEDULING", tagColor: "cyan", section: "Operations Dashboards" },
-  { href: "/dashboards/construction-scheduler", title: "Construction Scheduler", description: "Dedicated calendar for scheduling construction installs with Zuper integration", tag: "SCHEDULING", tagColor: "emerald", section: "Operations Dashboards" },
-  { href: "/dashboards/inspection-scheduler", title: "Inspection Scheduler", description: "Dedicated calendar for scheduling inspections with Zuper integration", tag: "SCHEDULING", tagColor: "purple", section: "Operations Dashboards" },
-  { href: "/dashboards/timeline", title: "Timeline View", description: "Gantt-style timeline showing project progression and milestones", tag: "PLANNING", tagColor: "blue", section: "Operations Dashboards" },
-  { href: "/dashboards/equipment-backlog", title: "Equipment Backlog", description: "Equipment forecasting by brand, model, and stage with location filtering", tag: "EQUIPMENT", tagColor: "cyan", section: "Operations Dashboards" },
-  { href: "/dashboards/zuper-status-comparison", title: "Zuper Status Comparison", description: "Compare Zuper job statuses and dates with HubSpot deal data for surveys, construction, and inspections", tag: "ZUPER", tagColor: "cyan", section: "Admin Suite" },
-  { href: "/dashboards/site-survey", title: "Site Survey", description: "Site survey scheduling, status tracking, and completion monitoring", tag: "SURVEY", tagColor: "blue", section: "Department Dashboards" },
-  { href: "/dashboards/design", title: "Design & Engineering", description: "Track design progress, engineering approvals, and plan sets", tag: "DESIGN", tagColor: "indigo", section: "Department Dashboards" },
-  { href: "/dashboards/permitting", title: "Permitting", description: "Permit status tracking, submission dates, and approval monitoring", tag: "PERMITTING", tagColor: "yellow", section: "Department Dashboards" },
-  { href: "/dashboards/inspections", title: "Inspections", description: "Inspection scheduling, status tracking, pass rates, and AHJ analysis", tag: "INSPECTIONS", tagColor: "orange", section: "Department Dashboards" },
-  { href: "/dashboards/interconnection", title: "Interconnection", description: "Utility interconnection applications, approvals, and meter installations", tag: "UTILITY", tagColor: "cyan", section: "Department Dashboards" },
-  { href: "/dashboards/construction", title: "Construction", description: "Construction status, scheduling, and progress tracking", tag: "CONSTRUCTION", tagColor: "orange", section: "Department Dashboards" },
-  { href: "/dashboards/incentives", title: "Incentives", description: "Rebate and incentive program tracking and application status", tag: "INCENTIVES", tagColor: "green", section: "Department Dashboards" },
-];
-
 interface SuiteLinkData {
   href: string;
   title: string;
@@ -83,6 +55,22 @@ interface SuiteLinkData {
 }
 
 const SUITE_LINKS: SuiteLinkData[] = [
+  {
+    href: "/suites/operations",
+    title: "Operations Suite",
+    description: "Core operations dashboards and scheduling workspaces.",
+    tag: "OPERATIONS",
+    tagColor: "blue",
+    visibility: "all",
+  },
+  {
+    href: "/suites/department",
+    title: "Department Suite",
+    description: "Department-level dashboards for downstream execution teams.",
+    tag: "DEPARTMENTS",
+    tagColor: "green",
+    visibility: "all",
+  },
   {
     href: "/suites/executive",
     title: "Executive Suite",
@@ -283,11 +271,6 @@ export default function Home() {
   const clearLocations = useCallback(() => {
     setSelectedLocations([]);
   }, []);
-
-  const sections = [
-    "Operations Dashboards",
-    "Department Dashboards",
-  ];
 
   const visibleSuites = useMemo(() => {
     const isAdmin = userRole === "ADMIN";
@@ -636,76 +619,12 @@ export default function Home() {
             <h2 className="text-lg font-semibold text-zinc-300 mb-4 mt-8">Suites</h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
               {visibleSuites.map((suite) => (
-                <DashboardLink key={suite.href} {...suite} section="Suites" />
+                <DashboardLink key={suite.href} {...suite} />
               ))}
             </div>
           </div>
         )}
 
-        {/* Dashboard sections */}
-        {sections.map((section) => {
-          const dashboards = ALL_DASHBOARDS.filter(
-            (d) => d.section === section
-          );
-          return (
-            <div key={section}>
-              <h2 className="text-lg font-semibold text-zinc-300 mb-4 mt-8">
-                {section}
-              </h2>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-                {dashboards.map((d) => (
-                  <DashboardLink key={d.href} {...d} />
-                ))}
-              </div>
-            </div>
-          );
-        })}
-
-        {/* API Endpoints */}
-        <h2 className="text-lg font-semibold text-zinc-300 mb-4">
-          API Endpoints
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <a
-            href="/api/projects?stats=true"
-            target="_blank"
-            className="block bg-zinc-900/50 border border-zinc-800 rounded-xl p-5 hover:border-green-500/50 transition-all"
-          >
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-green-500 font-mono text-sm">GET</span>
-              <span className="font-semibold text-white">Projects + Stats</span>
-            </div>
-            <p className="text-sm text-zinc-500">
-              Full project data with statistics
-            </p>
-          </a>
-          <a
-            href="/api/projects?context=pe"
-            target="_blank"
-            className="block bg-zinc-900/50 border border-zinc-800 rounded-xl p-5 hover:border-green-500/50 transition-all"
-          >
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-green-500 font-mono text-sm">GET</span>
-              <span className="font-semibold text-white">PE Projects</span>
-            </div>
-            <p className="text-sm text-zinc-500">
-              Participate Energy project data
-            </p>
-          </a>
-          <a
-            href="/api/projects?context=scheduling"
-            target="_blank"
-            className="block bg-zinc-900/50 border border-zinc-800 rounded-xl p-5 hover:border-green-500/50 transition-all"
-          >
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-green-500 font-mono text-sm">GET</span>
-              <span className="font-semibold text-white">Scheduling</span>
-            </div>
-            <p className="text-sm text-zinc-500">
-              RTB and schedulable projects
-            </p>
-          </a>
-        </div>
       </main>
     </div>
   );
@@ -758,7 +677,7 @@ const DashboardLink = memo(function DashboardLink({
   description,
   tag,
   tagColor,
-}: DashboardLinkData) {
+}: Pick<SuiteLinkData, "href" | "title" | "description" | "tag" | "tagColor">) {
   const tagColors: Record<string, string> = {
     orange: "bg-orange-500/20 text-orange-400 border-orange-500/30",
     purple: "bg-purple-500/20 text-purple-400 border-purple-500/30",
