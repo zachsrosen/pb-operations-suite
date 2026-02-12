@@ -3,50 +3,122 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { getUserByEmail } from "@/lib/db";
 
-const LINKS = [
-  {
-    href: "/dashboards/zuper-status-comparison",
-    title: "Zuper Status Comparison",
-    description: "Compare Zuper job statuses and dates with HubSpot deal data.",
-    tag: "ZUPER",
-  },
-  {
-    href: "/dashboards/mobile",
-    title: "Mobile Dashboard",
-    description: "Touch-optimized view for field teams and fast project lookup.",
-    tag: "MOBILE",
-  },
-  {
-    href: "/dashboards/pe",
-    title: "PE Dashboard",
-    description: "Participate Energy milestone tracking and compliance monitoring.",
-    tag: "PE",
-  },
+const ADMIN_TOOLS = [
   {
     href: "/admin/users",
     title: "Users",
     description: "Manage user accounts, roles, and access controls.",
     tag: "ADMIN",
+    tagColor: "bg-red-500/20 text-red-400 border-red-500/30",
   },
   {
     href: "/admin/activity",
     title: "Activity Log",
     description: "Audit user actions, dashboard views, and system events.",
     tag: "AUDIT",
+    tagColor: "bg-amber-500/20 text-amber-400 border-amber-500/30",
   },
   {
     href: "/admin/security",
     title: "Security",
     description: "Review security events, impersonation, and admin activity.",
     tag: "SECURITY",
+    tagColor: "bg-red-500/20 text-red-400 border-red-500/30",
+  },
+];
+
+const TESTING_DASHBOARDS = [
+  {
+    href: "/dashboards/at-risk",
+    title: "At-Risk Projects",
+    description: "Projects with overdue milestones, stalled stages, and severity scoring.",
+    tag: "AT-RISK",
+    tagColor: "bg-orange-500/20 text-orange-400 border-orange-500/30",
+  },
+  {
+    href: "/dashboards/optimizer",
+    title: "Pipeline Optimizer",
+    description: "Identify scheduling opportunities and optimize project throughput.",
+    tag: "OPTIMIZER",
+    tagColor: "bg-purple-500/20 text-purple-400 border-purple-500/30",
+  },
+  {
+    href: "/dashboards/zuper-status-comparison",
+    title: "Zuper Status Comparison",
+    description: "Compare Zuper job statuses and dates with HubSpot deal data.",
+    tag: "ZUPER",
+    tagColor: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
+  },
+  {
+    href: "/dashboards/mobile",
+    title: "Mobile Dashboard",
+    description: "Touch-optimized view for field teams and fast project lookup.",
+    tag: "MOBILE",
+    tagColor: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+  },
+  {
+    href: "/dashboards/pe",
+    title: "PE Dashboard",
+    description: "Participate Energy milestone tracking and compliance monitoring.",
+    tag: "PE",
+    tagColor: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
+  },
+];
+
+const DOCUMENTATION = [
+  {
+    href: "/updates",
+    title: "Updates",
+    description: "Release notes, changelog, and recent feature updates.",
+    tag: "CHANGELOG",
+    tagColor: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
+  },
+  {
+    href: "/guide",
+    title: "Guide",
+    description: "User guide for navigating dashboards and features.",
+    tag: "GUIDE",
+    tagColor: "bg-orange-500/20 text-orange-400 border-orange-500/30",
+  },
+  {
+    href: "/roadmap",
+    title: "Roadmap",
+    description: "Planned features, upcoming work, and development priorities.",
+    tag: "ROADMAP",
+    tagColor: "bg-purple-500/20 text-purple-400 border-purple-500/30",
   },
   {
     href: "/handbook",
     title: "Handbook",
     description: "Comprehensive guide to dashboards, features, and workflows.",
-    tag: "GUIDE",
+    tag: "HANDBOOK",
+    tagColor: "bg-blue-500/20 text-blue-400 border-blue-500/30",
   },
 ];
+
+function SectionGrid({ items }: { items: typeof ADMIN_TOOLS }) {
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {items.map((item) => (
+        <Link
+          key={item.href}
+          href={item.href}
+          className="group block bg-surface/50 border border-t-border rounded-xl p-5 hover:border-orange-500/50 hover:bg-surface transition-all"
+        >
+          <div className="flex items-center justify-between mb-1">
+            <h3 className="font-semibold text-foreground group-hover:text-orange-400 transition-colors">
+              {item.title}
+            </h3>
+            <span className={`text-xs font-medium px-2 py-0.5 rounded border ${item.tagColor}`}>
+              {item.tag}
+            </span>
+          </div>
+          <p className="text-sm text-muted">{item.description}</p>
+        </Link>
+      ))}
+    </div>
+  );
+}
 
 export default async function AdminSuitePage() {
   const session = await auth();
@@ -64,30 +136,23 @@ export default async function AdminSuitePage() {
           </Link>
           <h1 className="text-2xl font-bold mt-3">Admin Suite</h1>
           <p className="text-sm text-muted mt-1">
-            Admin-only tools and in-progress dashboards.
+            Admin tools, testing dashboards, and documentation.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {LINKS.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="group block bg-surface/50 border border-t-border rounded-xl p-5 hover:border-orange-500/50 hover:bg-surface transition-all"
-            >
-              <div className="flex items-center justify-between mb-1">
-                <h3 className="font-semibold text-foreground group-hover:text-orange-400 transition-colors">
-                  {item.title}
-                </h3>
-                <span className="text-xs font-medium px-2 py-0.5 rounded border bg-zinc-500/20 text-foreground/80 border-muted/30">
-                  {item.tag}
-                </span>
-              </div>
-              <p className="text-sm text-muted">{item.description}</p>
-            </Link>
-          ))}
-        </div>
+        {/* Admin Tools */}
+        <h2 className="text-lg font-semibold text-foreground/80 mb-4">Admin Tools</h2>
+        <SectionGrid items={ADMIN_TOOLS} />
 
+        {/* Testing Dashboards */}
+        <h2 className="text-lg font-semibold text-foreground/80 mt-10 mb-4">Testing</h2>
+        <SectionGrid items={TESTING_DASHBOARDS} />
+
+        {/* Documentation */}
+        <h2 className="text-lg font-semibold text-foreground/80 mt-10 mb-4">Documentation</h2>
+        <SectionGrid items={DOCUMENTATION} />
+
+        {/* API Endpoints */}
         <h2 className="text-lg font-semibold text-foreground/80 mt-10 mb-4">
           API Endpoints
         </h2>

@@ -1987,8 +1987,6 @@ export default function CommandCenterPage() {
       badgeStyle: "bg-red-500",
     },
     { key: "executive", label: "Executive Summary", href: "/dashboards/executive" },
-    { key: "at-risk", label: "At-Risk Projects", href: "/dashboards/at-risk" },
-    { key: "optimizer", label: "Pipeline Optimizer", href: "/dashboards/optimizer" },
     { key: "locations", label: "Location Comparison", href: "/dashboards/locations" },
   ];
 

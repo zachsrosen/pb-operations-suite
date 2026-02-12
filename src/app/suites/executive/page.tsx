@@ -19,20 +19,6 @@ const LINKS = [
     tagColor: "bg-orange-500/20 text-orange-400 border-orange-500/30",
   },
   {
-    href: "/dashboards/at-risk",
-    title: "At-Risk Projects",
-    description: "Projects with overdue milestones, stalled stages, and severity scoring.",
-    tag: "AT-RISK",
-    tagColor: "bg-red-500/20 text-red-400 border-red-500/30",
-  },
-  {
-    href: "/dashboards/optimizer",
-    title: "Pipeline Optimizer",
-    description: "Identify scheduling opportunities and optimize project throughput.",
-    tag: "OPTIMIZER",
-    tagColor: "bg-purple-500/20 text-purple-400 border-purple-500/30",
-  },
-  {
     href: "/dashboards/locations",
     title: "Location Comparison",
     description: "Side-by-side location performance, capacity, and pipeline breakdown.",

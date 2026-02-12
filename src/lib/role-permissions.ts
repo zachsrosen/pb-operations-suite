@@ -156,7 +156,6 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/construction-scheduler",
       "/dashboards/inspection-scheduler",
       "/dashboards/equipment-backlog",
-      "/dashboards/at-risk",
       "/dashboards/timeline",
       "/dashboards/site-survey",
       "/dashboards/design",
