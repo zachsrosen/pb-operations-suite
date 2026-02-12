@@ -510,28 +510,6 @@ export default function InspectionSchedulerPage() {
     });
   }, [loading, selectedLocations, filterStatuses, sortBy, currentView, showAvailability, trackFilter]);
 
-  useEffect(() => {
-    if (loading) return;
-    if (searchDebounceRef.current) {
-      clearTimeout(searchDebounceRef.current);
-      searchDebounceRef.current = null;
-    }
-
-    const query = searchText.trim();
-    if (query.length < 2) return;
-
-    searchDebounceRef.current = setTimeout(() => {
-      trackSearch(query, filteredProjects.length, "inspection-scheduler");
-    }, 500);
-
-    return () => {
-      if (searchDebounceRef.current) {
-        clearTimeout(searchDebounceRef.current);
-        searchDebounceRef.current = null;
-      }
-    };
-  }, [loading, searchText, filteredProjects.length, trackSearch]);
-
   const selectProjectWithTracking = useCallback((project: InspectionProject, source: string) => {
     const shouldDeselect = selectedProject?.id === project.id;
     if (!shouldDeselect) {
@@ -586,6 +564,28 @@ export default function InspectionSchedulerPage() {
     }
     return filtered;
   }, [projects, selectedLocations, filterStatuses, searchText, sortBy, manualSchedules]);
+
+  useEffect(() => {
+    if (loading) return;
+    if (searchDebounceRef.current) {
+      clearTimeout(searchDebounceRef.current);
+      searchDebounceRef.current = null;
+    }
+
+    const query = searchText.trim();
+    if (query.length < 2) return;
+
+    searchDebounceRef.current = setTimeout(() => {
+      trackSearch(query, filteredProjects.length, "inspection-scheduler");
+    }, 500);
+
+    return () => {
+      if (searchDebounceRef.current) {
+        clearTimeout(searchDebounceRef.current);
+        searchDebounceRef.current = null;
+      }
+    };
+  }, [loading, searchText, filteredProjects.length, trackSearch]);
 
   const unscheduledProjects = useMemo(() => {
     return filteredProjects.filter(p =>

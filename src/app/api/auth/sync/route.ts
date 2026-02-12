@@ -21,7 +21,7 @@ export async function POST() {
       email: session.user.email,
       name: session.user.name ?? undefined,
       image: session.user.image ?? undefined,
-    });
+    }, { touchLastLogin: true });
 
     if (!user) {
       // Database not configured, return default role

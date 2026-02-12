@@ -129,7 +129,10 @@ export async function POST() {
           }
         } else {
           // Create new user with VIEWER role by default
-          await getOrCreateUser({ email, name, image: image || undefined });
+          await getOrCreateUser(
+            { email, name, image: image || undefined },
+            { touchLastLogin: false }
+          );
           results.created++;
         }
       } catch (err) {

@@ -49,7 +49,7 @@ async function syncRoleToToken(token: JWT): Promise<JWT> {
       email: token.email,
       name: typeof token.name === "string" ? token.name : undefined,
       image: typeof token.picture === "string" ? token.picture : undefined,
-    });
+    }, { touchLastLogin: false });
 
     token.role = dbUser?.role || token.role || "VIEWER";
     token.roleSyncedAt = Date.now();

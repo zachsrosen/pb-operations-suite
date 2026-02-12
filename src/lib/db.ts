@@ -88,8 +88,12 @@ export async function getOrCreateUser(userData: {
   name?: string;
   image?: string;
   googleId?: string;
+}, options?: {
+  touchLastLogin?: boolean;
 }) {
   if (!prisma) return null;
+
+  const touchLastLogin = options?.touchLastLogin === true;
 
   return prisma.user.upsert({
     where: { email: userData.email },
@@ -97,7 +101,7 @@ export async function getOrCreateUser(userData: {
       name: userData.name,
       image: userData.image,
       googleId: userData.googleId,
-      lastLoginAt: new Date(),
+      ...(touchLastLogin ? { lastLoginAt: new Date() } : {}),
     },
     create: {
       email: userData.email,
@@ -105,7 +109,7 @@ export async function getOrCreateUser(userData: {
       image: userData.image,
       googleId: userData.googleId,
       role: "VIEWER", // Default role for new users
-      lastLoginAt: new Date(),
+      ...(touchLastLogin ? { lastLoginAt: new Date() } : {}),
     },
   });
 }
