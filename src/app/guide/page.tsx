@@ -143,22 +143,22 @@ export default function GuidePage() {
                   <td className="py-3">Get complete pipeline overview</td>
                 </tr>
                 <tr className="border-b border-t-border">
-                  <td className="py-3 font-medium">Master Scheduler</td>
+                  <td className="py-3 font-medium">Master Schedule</td>
                   <td className="py-3">Scheduling</td>
                   <td className="py-3">Schedule installs, manage crews</td>
                 </tr>
                 <tr className="border-b border-t-border">
-                  <td className="py-3 font-medium">Site Survey Scheduler</td>
+                  <td className="py-3 font-medium">Site Survey Schedule</td>
                   <td className="py-3">Survey Team</td>
                   <td className="py-3">Schedule surveys with Zuper sync</td>
                 </tr>
                 <tr className="border-b border-t-border">
-                  <td className="py-3 font-medium">Construction Scheduler</td>
+                  <td className="py-3 font-medium">Construction Schedule</td>
                   <td className="py-3">Install Team</td>
                   <td className="py-3">Schedule installs with Zuper sync</td>
                 </tr>
                 <tr className="border-b border-t-border">
-                  <td className="py-3 font-medium">Inspection Scheduler</td>
+                  <td className="py-3 font-medium">Inspection Schedule</td>
                   <td className="py-3">Inspection Team</td>
                   <td className="py-3">Schedule inspections with Zuper sync</td>
                 </tr>
@@ -232,7 +232,7 @@ export default function GuidePage() {
             "Filter by location using the dropdown",
             "Filter by PE status (All/PE Only/Non-PE)",
             "Search for specific projects by name or AHJ",
-            "Click 'Scheduler' to jump to the Master Scheduler"
+            "Click 'Schedule' to jump to the Master Schedule"
           ]}
           tips={[
             "Start your day here to get an overview of the entire pipeline",
@@ -243,7 +243,7 @@ export default function GuidePage() {
         />
 
         <DashboardCard
-          title="Master Scheduler"
+          title="Master Schedule"
           tag="SCHEDULING"
           tagColor="blue"
           purpose="Schedule installations and inspections with crew management"
@@ -281,7 +281,7 @@ export default function GuidePage() {
         />
 
         <DashboardCard
-          title="Site Survey Scheduler"
+          title="Site Survey Schedule"
           tag="SCHEDULING"
           tagColor="cyan"
           purpose="Dedicated calendar for scheduling site surveys with Zuper FSM integration"
@@ -310,7 +310,7 @@ export default function GuidePage() {
         />
 
         <DashboardCard
-          title="Construction Scheduler"
+          title="Construction Schedule"
           tag="SCHEDULING"
           tagColor="emerald"
           purpose="Dedicated calendar for scheduling construction/installation jobs with Zuper FSM integration"
@@ -338,7 +338,7 @@ export default function GuidePage() {
         />
 
         <DashboardCard
-          title="Inspection Scheduler"
+          title="Inspection Schedule"
           tag="SCHEDULING"
           tagColor="purple"
           purpose="Dedicated calendar for scheduling inspections with Zuper FSM integration"
@@ -389,7 +389,7 @@ export default function GuidePage() {
         <section className="bg-gradient-to-br from-blue-500/10 to-blue-500/5 border border-blue-500/30 rounded-xl p-6 mb-8">
           <h3 className="text-xl font-semibold text-blue-400 mb-4">How &quot;Optimize Schedule&quot; Works</h3>
           <p className="text-foreground/80 mb-4">
-            The Auto-Optimize feature in the Master Scheduler automatically schedules RTB (Ready To Build) projects
+            The Auto-Optimize feature in the Master Schedule automatically schedules RTB (Ready To Build) projects
             AND their inspections, prioritizing easier projects first to maximize throughput.
           </p>
 
@@ -790,8 +790,8 @@ export default function GuidePage() {
             <li>Start with the <strong>Command Center</strong> for a complete pipeline overview</li>
             <li>Use <strong>At-Risk Projects</strong> to identify problems needing immediate attention</li>
             <li>Check <strong>Design & Engineering</strong>, <strong>Permitting</strong>, or <strong>Interconnection</strong> for stage-specific status</li>
-            <li>Schedule site surveys in the <strong>Site Survey Scheduler</strong> with Zuper integration</li>
-            <li>Schedule installs in the <strong>Master Scheduler</strong> - use Auto-Optimize for quick scheduling</li>
+            <li>Schedule site surveys in the <strong>Site Survey Schedule</strong> with Zuper integration</li>
+            <li>Schedule installs in the <strong>Master Schedule</strong> - use Auto-Optimize for quick scheduling</li>
             <li>Monitor <strong>Incentives</strong> for program application status</li>
             <li>Check <strong>PE Dashboard</strong> for Participate Energy compliance</li>
             <li>Share <strong>Executive Summary</strong> with leadership for KPI reviews</li>

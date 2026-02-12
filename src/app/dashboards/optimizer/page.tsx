@@ -775,7 +775,7 @@ export default function OptimizerDashboard() {
             href="/dashboards/timeline"
             className="px-3 py-1.5 text-xs bg-surface-2 border border-t-border rounded-md text-foreground/80 hover:bg-surface-2 transition-colors no-underline"
           >
-            Open Scheduler
+            Open Schedule
           </Link>
         </div>
       }
@@ -933,7 +933,7 @@ export default function OptimizerDashboard() {
                 href="/dashboards/timeline"
                 className="px-4 py-2 bg-orange-500 rounded-lg text-white text-sm font-semibold no-underline hover:bg-orange-600 transition-colors"
               >
-                Open in Scheduler
+                Open in Schedule
               </Link>
               <button
                 onClick={exportOptimizedSchedule}

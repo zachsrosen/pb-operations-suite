@@ -34,7 +34,7 @@ const sections = [
     ],
   },
   {
-    title: "Master Scheduler",
+    title: "Master Schedule",
     route: "/dashboards/scheduler",
     color: "purple",
     audience: "Operations Managers, Schedulers",
@@ -49,7 +49,7 @@ const sections = [
     ],
   },
   {
-    title: "Site Survey Scheduler",
+    title: "Site Survey Schedule",
     route: "/dashboards/site-survey-scheduler",
     color: "cyan",
     audience: "Survey Schedulers, Operations, Sales (limited)",
@@ -67,7 +67,7 @@ const sections = [
     ],
   },
   {
-    title: "Inspection Scheduler",
+    title: "Inspection Schedule",
     route: "/dashboards/inspection-scheduler",
     color: "purple",
     audience: "Inspection Schedulers, Operations, Inspectors",
@@ -85,7 +85,7 @@ const sections = [
     ],
   },
   {
-    title: "Construction Scheduler",
+    title: "Construction Schedule",
     route: "/dashboards/construction-scheduler",
     color: "orange",
     audience: "Construction Schedulers, Crew Leads",

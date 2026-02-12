@@ -35,7 +35,7 @@ export async function PUT(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { project, schedule } = body;
+    const { project, schedule, rescheduleOnly } = body;
 
     // Validate schedule type early for permission check
     const scheduleType = schedule?.type as "survey" | "installation" | "inspection";
@@ -388,6 +388,14 @@ export async function PUT(request: NextRequest) {
         existingJobId: existingJob.job_uid,
         assignmentFailed,
         assignmentError,
+      });
+    } else if (rescheduleOnly) {
+      // Reschedule-only mode: don't create new jobs, just report that none was found
+      console.log(`[Zuper Schedule] RESCHEDULE ONLY: No existing job found for "${project.name}" with category "${schedule.type}" — skipping creation`);
+      return NextResponse.json({
+        success: true,
+        action: "no_job_found",
+        message: `No existing ${schedule.type} job found in Zuper for "${project.name}". Create the job in Zuper first, then reschedule from here.`,
       });
     } else {
       // No existing job found - create new one

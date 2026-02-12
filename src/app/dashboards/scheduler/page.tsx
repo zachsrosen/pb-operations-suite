@@ -353,7 +353,7 @@ function transformProject(p: RawProject): SchedulerProject | null {
 
 export default function SchedulerPage() {
   /* ---- activity tracking ---- */
-  const { trackDashboardView } = useActivityTracking();
+  const { trackDashboardView, trackFeature } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
   /* ---- core data ---- */
@@ -782,9 +782,16 @@ export default function SchedulerPage() {
       setCrewSelectInput(
         project.crew || locationCrews[0]?.name || ""
       );
+      trackFeature("schedule-modal-open", "Opened master schedule modal", {
+        scheduler: "master",
+        projectId: project.id,
+        projectName: project.name,
+        date: adjustedDate,
+        stage: project.stage,
+      });
       setScheduleModal({ project, date: adjustedDate });
     },
-    []
+    [trackFeature]
   );
 
   const confirmSchedule = useCallback(async () => {
@@ -792,6 +799,21 @@ export default function SchedulerPage() {
     const { project, date } = scheduleModal;
     const days = installDaysInput || 2;
     const crew = crewSelectInput || project.crew || "";
+
+    const scheduleType = project.stage === "survey" ? "survey"
+      : project.stage === "inspection" ? "inspection"
+      : "installation";
+    trackFeature(`${scheduleType}-scheduled`, `${scheduleType} scheduled via master`, {
+      scheduler: "master",
+      projectId: project.id,
+      projectName: project.name,
+      date,
+      stage: project.stage,
+      days,
+      crew,
+      syncToZuper,
+      isReschedule: !!project.zuperJobUid,
+    });
 
     setManualSchedules((prev) => ({
       ...prev,
@@ -832,23 +854,34 @@ export default function SchedulerPage() {
               date: date,
               days: days,
               crew: crew,
-              notes: `Scheduled via Master Scheduler`,
+              notes: `Scheduled via Master Schedule`,
             },
+            rescheduleOnly: true,
           }),
         });
 
         if (response.ok) {
           const data = await response.json();
-          showToast(
-            `${getCustomerName(project.name)} scheduled - ${data.action === "rescheduled" ? "Zuper job updated" : "Zuper job created"} (customer notified)`
-          );
+          if (data.action === "no_job_found") {
+            showToast(
+              `${getCustomerName(project.name)} — no existing Zuper job found to reschedule`,
+              "error"
+            );
+          } else {
+            showToast(
+              `${getCustomerName(project.name)} scheduled - Zuper job updated (customer notified)`
+            );
+          }
         } else {
+          const errData = await response.json().catch(() => ({}));
+          console.error("[Master Schedule] Zuper sync failed:", errData);
           showToast(
-            `${getCustomerName(project.name)} scheduled locally (Zuper sync failed)`,
+            `${getCustomerName(project.name)} scheduled locally (Zuper sync failed: ${errData.error || response.status})`,
             "error"
           );
         }
-      } catch {
+      } catch (err) {
+        console.error("[Master Schedule] Zuper error:", err);
         showToast(
           `${getCustomerName(project.name)} scheduled locally (Zuper sync failed)`,
           "error"
@@ -897,7 +930,7 @@ export default function SchedulerPage() {
 
     setScheduleModal(null);
     setSelectedProject(null);
-  }, [scheduleModal, installDaysInput, crewSelectInput, showToast, zuperConfigured, syncToZuper]);
+  }, [scheduleModal, installDaysInput, crewSelectInput, showToast, zuperConfigured, syncToZuper, trackFeature]);
 
   const handleDragStart = useCallback(
     (e: React.DragEvent, projectId: string) => {
@@ -1242,7 +1275,7 @@ export default function SchedulerPage() {
             <div className="flex justify-between items-center">
               <div>
                 <h1 className="text-lg font-bold bg-gradient-to-r from-orange-500 to-orange-400 bg-clip-text text-transparent">
-                  PB Master Scheduler
+                  PB Master Schedule
                 </h1>
                 <div className="text-[0.65rem] text-muted mt-0.5">
                   RTB + Construction &bull; Live HubSpot Data

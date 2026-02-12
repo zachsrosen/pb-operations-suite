@@ -4,8 +4,8 @@ import type { JWT } from "next-auth/jwt";
 import { assertProductionEnvConfigured } from "@/lib/env";
 import { normalizeRole, type UserRole } from "@/lib/role-permissions";
 
-// Allowed email domain for authentication
-const ALLOWED_DOMAIN = process.env.ALLOWED_EMAIL_DOMAIN || "photonbrothers.com";
+// Allowed email domains for authentication (comma-separated)
+const ALLOWED_DOMAINS = (process.env.ALLOWED_EMAIL_DOMAIN || "photonbrothers.com,pb-contractor.com");
 
 // Note: Database operations are done via API routes, not in auth callbacks
 // This is because auth callbacks run in Edge Runtime which doesn't support Prisma
@@ -72,8 +72,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           prompt: "consent",
           access_type: "offline",
           response_type: "code",
-          // Restrict to Google Workspace domain
-          hd: ALLOWED_DOMAIN.split(",")[0].trim(),
+          // Allow multiple Google Workspace domains — actual enforcement is in signIn callback
+          hd: "*",
         },
       },
     }),
@@ -84,9 +84,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   },
   callbacks: {
     async signIn({ user }) {
-      // Verify email is from allowed domain
+      // Verify email is from allowed domain(s)
       if (user.email) {
-        const domains = ALLOWED_DOMAIN.split(",").map((d) => d.trim().toLowerCase());
+        const domains = ALLOWED_DOMAINS.split(",").map((d) => d.trim().toLowerCase());
         const emailDomain = user.email.split("@")[1]?.toLowerCase();
         if (!domains.includes(emailDomain)) {
           return false; // Reject sign-in

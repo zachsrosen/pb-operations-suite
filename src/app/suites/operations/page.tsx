@@ -9,19 +9,19 @@ const LINKS = [
   },
   {
     href: "/dashboards/site-survey-scheduler",
-    title: "Site Survey Scheduler",
+    title: "Site Survey Schedule",
     description: "Dedicated calendar for scheduling site surveys with Zuper integration.",
     tag: "SCHEDULING",
   },
   {
     href: "/dashboards/construction-scheduler",
-    title: "Construction Scheduler",
+    title: "Construction Schedule",
     description: "Dedicated calendar for scheduling construction installs with Zuper integration.",
     tag: "SCHEDULING",
   },
   {
     href: "/dashboards/inspection-scheduler",
-    title: "Inspection Scheduler",
+    title: "Inspection Schedule",
     description: "Dedicated calendar for scheduling inspections with Zuper integration.",
     tag: "SCHEDULING",
   },

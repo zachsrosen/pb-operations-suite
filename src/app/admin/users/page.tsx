@@ -54,7 +54,7 @@ const ROLE_DESCRIPTIONS: Record<string, string> = {
   PROJECT_MANAGER: "Can access Operations Suite and Department Suite",
   OPERATIONS: "Only access to Operations Suite",
   TECH_OPS: "Only access to Department Suite",
-  SALES: "Only access to Site Survey Scheduler",
+  SALES: "Only access to Site Survey Schedule",
 };
 
 const ROLE_COLORS: Record<string, string> = {

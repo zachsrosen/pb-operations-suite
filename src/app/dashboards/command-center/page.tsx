@@ -2068,7 +2068,7 @@ export default function CommandCenterPage() {
               className="px-4 sm:px-5 py-2 sm:py-2.5 text-[0.75rem] sm:text-[0.8rem] font-semibold rounded-t-lg cursor-pointer border border-b-0 bg-background text-muted border-[#1e1e2e] hover:text-foreground transition-all no-underline whitespace-nowrap"
               onMouseEnter={() => prefetchDashboard("scheduler")}
             >
-              Scheduler &rarr;
+              Schedule &rarr;
             </Link>
           </div>
         </div>

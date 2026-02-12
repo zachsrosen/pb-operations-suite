@@ -717,10 +717,11 @@ export default function InspectionSchedulerPage() {
     const project = projects.find(p => p.id === draggedProjectId);
     if (project) {
       const currentSlot = findCurrentSlotForProject(project.id, date, project.name, project.zuperJobUid);
+      trackFeature("schedule-modal-open", "Opened inspection schedule modal via drag", { scheduler: "inspection", projectId: project.id, projectName: project.name, date, method: "drag" });
       setScheduleModal({ project, date, currentSlot });
     }
     setDraggedProjectId(null);
-  }, [draggedProjectId, projects, showToast, findCurrentSlotForProject]);
+  }, [draggedProjectId, projects, showToast, findCurrentSlotForProject, trackFeature]);
 
   const handleDateClick = useCallback((date: string, project?: InspectionProject) => {
     if (isPastDate(date)) {
@@ -784,28 +785,42 @@ export default function InspectionSchedulerPage() {
               timezone: slot?.timezone,
               notes: slot
                 ? `Inspector: ${slot.userName} at ${slot.startTime}`
-                : "Scheduled via Inspection Scheduler",
+                : "Scheduled via Inspection Schedule",
             },
+            rescheduleOnly: true,
           }),
         });
 
         if (response.ok) {
           const data = await response.json();
-          scheduledZuperJobUid = data.job?.job_uid || data.existingJobId || project.zuperJobUid;
-          const slotInfo = slot ? ` (${slot.userName} ${formatTime12h(slot.startTime)})` : "";
-          if (data.assignmentFailed) {
+
+          // No existing Zuper job found — warn user
+          if (data.action === "no_job_found") {
+            console.warn(`[Inspection Schedule] No Zuper job found for "${project.name}"`);
             showToast(
-              `${getCustomerName(project.name)} scheduled${slotInfo} - please assign ${slot?.userName || "inspector"} in Zuper`,
+              `${getCustomerName(project.name)} scheduled locally — no matching Zuper job found. Create the job in Zuper first.`,
               "warning"
             );
           } else {
-            showToast(
-              `${getCustomerName(project.name)} scheduled${slotInfo} - ${data.action === "rescheduled" ? "Zuper job updated" : "Zuper job created"}`
-            );
+            scheduledZuperJobUid = data.job?.job_uid || data.existingJobId || project.zuperJobUid;
+            const slotInfo = slot ? ` (${slot.userName} ${formatTime12h(slot.startTime)})` : "";
+            if (data.assignmentFailed) {
+              showToast(
+                `${getCustomerName(project.name)} scheduled${slotInfo} - please assign ${slot?.userName || "inspector"} in Zuper`,
+                "warning"
+              );
+            } else {
+              showToast(
+                `${getCustomerName(project.name)} scheduled${slotInfo} - ${data.action === "rescheduled" ? "Zuper job updated" : "Zuper job created"}`
+              );
+            }
           }
         } else {
+          const errorData = await response.json().catch(() => null);
+          const errorMsg = errorData?.error || "Zuper sync failed";
+          console.error(`[Inspection Schedule] Zuper sync error for "${project.name}":`, errorMsg);
           showToast(
-            `${getCustomerName(project.name)} scheduled locally (Zuper sync failed)`,
+            `${getCustomerName(project.name)} scheduled locally (${errorMsg})`,
             "warning"
           );
         }
@@ -941,13 +956,19 @@ export default function InspectionSchedulerPage() {
   }, [scheduleModal, zuperConfigured, syncToZuper, showToast, fetchAvailability, saveInspectorAssignment, trackFeature]);
 
   const cancelSchedule = useCallback((projectId: string) => {
+    const project = projects.find(p => p.id === projectId);
+    trackFeature("inspection-cancelled", "Inspection schedule removed", {
+      scheduler: "inspection",
+      projectId,
+      projectName: project?.name || projectId,
+    });
     setManualSchedules((prev) => {
       const next = { ...prev };
       delete next[projectId];
       return next;
     });
     showToast("Schedule removed");
-  }, [showToast]);
+  }, [showToast, projects, trackFeature]);
 
   /* ================================================================ */
   /*  Navigation                                                       */
@@ -1044,7 +1065,7 @@ export default function InspectionSchedulerPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
                 </svg>
               </Link>
-              <h1 className="text-base sm:text-xl font-bold text-purple-400 truncate">Inspection Scheduler</h1>
+              <h1 className="text-base sm:text-xl font-bold text-purple-400 truncate">Inspection Schedule</h1>
               <span className="text-xs text-muted bg-surface-2 px-2 py-1 rounded hidden sm:inline-block">
                 {stats.total} inspections
               </span>

@@ -214,7 +214,7 @@ function transformProject(p: RawProject): ConstructionProject | null {
 
 export default function ConstructionSchedulerPage() {
   /* ---- activity tracking ---- */
-  const { trackDashboardView } = useActivityTracking();
+  const { trackDashboardView, trackFeature } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
   /* ---- core data ---- */
@@ -520,23 +520,36 @@ export default function ConstructionSchedulerPage() {
     if (!draggedProjectId) return;
     const project = projects.find(p => p.id === draggedProjectId);
     if (project) {
+      trackFeature("schedule-modal-open", "Opened install schedule modal via drag", { scheduler: "construction", projectId: project.id, projectName: project.name, date, method: "drag" });
       setScheduleModal({ project, date });
     }
     setDraggedProjectId(null);
-  }, [draggedProjectId, projects]);
+  }, [draggedProjectId, projects, trackFeature]);
 
   const handleDateClick = useCallback((date: string, project?: ConstructionProject) => {
     if (project) {
+      trackFeature("schedule-modal-open", "Opened install schedule modal via click", { scheduler: "construction", projectId: project.id, projectName: project.name, date, method: "click" });
       setScheduleModal({ project, date });
     } else if (selectedProject) {
+      trackFeature("schedule-modal-open", "Opened install schedule modal via click", { scheduler: "construction", projectId: selectedProject.id, projectName: selectedProject.name, date, method: "click" });
       setScheduleModal({ project: selectedProject, date });
       setSelectedProject(null);
     }
-  }, [selectedProject]);
+  }, [selectedProject, trackFeature]);
 
   const confirmSchedule = useCallback(async () => {
     if (!scheduleModal) return;
     const { project, date } = scheduleModal;
+
+    trackFeature("install-scheduled", "Installation scheduled", {
+      scheduler: "construction",
+      projectId: project.id,
+      projectName: project.name,
+      date,
+      installDays: project.installDays || 2,
+      syncToZuper,
+      isReschedule: !!project.zuperJobUid,
+    });
 
     setManualSchedules((prev) => ({
       ...prev,
@@ -575,23 +588,34 @@ export default function ConstructionSchedulerPage() {
               days: project.installDays || 2,
               crew: director?.userUid,
               teamUid: director?.teamUid,
-              notes: `Scheduled via Construction Scheduler${director ? ` — Director: ${director.name}` : ""}`,
+              notes: `Scheduled via Construction Schedule${director ? ` — Director: ${director.name}` : ""}`,
             },
+            rescheduleOnly: true,
           }),
         });
 
         if (response.ok) {
           const data = await response.json();
-          showToast(
-            `${getCustomerName(project.name)} scheduled - ${data.action === "rescheduled" ? "Zuper job updated" : "Zuper job created"} (customer notified)`
-          );
+          if (data.action === "no_job_found") {
+            showToast(
+              `${getCustomerName(project.name)} — no existing Zuper job found to reschedule`,
+              "warning"
+            );
+          } else {
+            showToast(
+              `${getCustomerName(project.name)} scheduled - Zuper job updated (customer notified)`
+            );
+          }
         } else {
+          const errData = await response.json().catch(() => ({}));
+          console.error("[Construction Schedule] Zuper sync failed:", errData);
           showToast(
-            `${getCustomerName(project.name)} scheduled locally (Zuper sync failed)`,
+            `${getCustomerName(project.name)} scheduled locally (Zuper sync failed: ${errData.error || response.status})`,
             "warning"
           );
         }
-      } catch {
+      } catch (err) {
+        console.error("[Construction Schedule] Zuper error:", err);
         showToast(
           `${getCustomerName(project.name)} scheduled locally (Zuper error)`,
           "warning"
@@ -638,16 +662,22 @@ export default function ConstructionSchedulerPage() {
     }
 
     setScheduleModal(null);
-  }, [scheduleModal, zuperConfigured, syncToZuper, showToast]);
+  }, [scheduleModal, zuperConfigured, syncToZuper, showToast, trackFeature]);
 
   const cancelSchedule = useCallback((projectId: string) => {
+    const project = projects.find(p => p.id === projectId);
+    trackFeature("install-cancelled", "Installation schedule removed", {
+      scheduler: "construction",
+      projectId,
+      projectName: project?.name || projectId,
+    });
     setManualSchedules((prev) => {
       const next = { ...prev };
       delete next[projectId];
       return next;
     });
     showToast("Schedule removed");
-  }, [showToast]);
+  }, [showToast, projects, trackFeature]);
 
   /* ================================================================ */
   /*  Navigation                                                       */
@@ -743,7 +773,7 @@ export default function ConstructionSchedulerPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
                 </svg>
               </Link>
-              <h1 className="text-xl font-bold text-emerald-400">Construction Scheduler</h1>
+              <h1 className="text-xl font-bold text-emerald-400">Construction Schedule</h1>
               <span className="text-xs text-muted bg-surface-2 px-2 py-1 rounded">
                 {stats.total} installs
               </span>
