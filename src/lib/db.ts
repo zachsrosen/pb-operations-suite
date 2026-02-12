@@ -1061,6 +1061,28 @@ export async function upsertAvailabilityOverride(data: {
     });
   }
 
+  // Check for existing override to prevent duplicates (NULL != NULL in SQL unique constraints)
+  const existing = await prisma.availabilityOverride.findFirst({
+    where: {
+      crewMemberId: data.crewMemberId,
+      date: data.date,
+      availabilityId: data.availabilityId ?? null,
+    },
+  });
+
+  if (existing) {
+    return prisma.availabilityOverride.update({
+      where: { id: existing.id },
+      data: {
+        type: data.type,
+        reason: data.reason,
+        startTime: data.startTime,
+        endTime: data.endTime,
+        updatedBy: data.updatedBy,
+      },
+    });
+  }
+
   return prisma.availabilityOverride.create({
     data: {
       crewMemberId: data.crewMemberId,
