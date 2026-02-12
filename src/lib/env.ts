@@ -1,8 +1,6 @@
 const REQUIRED_ENV_IN_PRODUCTION = [
-  "NEXTAUTH_SECRET",
   "GOOGLE_CLIENT_ID",
   "GOOGLE_CLIENT_SECRET",
-  "ALLOWED_EMAIL_DOMAIN",
 ] as const;
 
 type RequiredEnvKey = (typeof REQUIRED_ENV_IN_PRODUCTION)[number];
@@ -21,11 +19,17 @@ export function getMissingProductionEnv(): RequiredEnvKey[] {
 export function assertProductionEnvConfigured(): void {
   if (process.env.NODE_ENV !== "production") return;
 
-  const missing = getMissingProductionEnv();
+  const missing: string[] = [...getMissingProductionEnv()];
+  const hasAuthSecret = !!(getValue("NEXTAUTH_SECRET") || getValue("AUTH_SECRET"));
+  if (!hasAuthSecret) {
+    missing.push("NEXTAUTH_SECRET or AUTH_SECRET");
+  }
+
   if (missing.length === 0) return;
 
+  const formattedMissing = [...new Set(missing)];
+
   throw new Error(
-    `Missing required production environment variables: ${missing.join(", ")}`
+    `Missing required production environment variables: ${formattedMissing.join(", ")}`
   );
 }
-

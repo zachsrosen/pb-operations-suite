@@ -56,8 +56,6 @@ function main() {
     "HUBSPOT_ACCESS_TOKEN",
     "GOOGLE_CLIENT_ID",
     "GOOGLE_CLIENT_SECRET",
-    "NEXTAUTH_SECRET",
-    "ALLOWED_EMAIL_DOMAIN",
   ];
 
   const requiredProdOnly = [
@@ -66,6 +64,7 @@ function main() {
   ];
 
   const recommended = [
+    "ALLOWED_EMAIL_DOMAIN",
     "API_SECRET_TOKEN",
     "AUTH_TOKEN_SECRET",
     "AUTH_SALT",
@@ -73,6 +72,10 @@ function main() {
 
   for (const key of requiredCommon) {
     if (!hasValue(key)) errors.push(`Missing required env: ${key}`);
+  }
+
+  if (!hasValue("NEXTAUTH_SECRET") && !hasValue("AUTH_SECRET")) {
+    errors.push("Missing required env: NEXTAUTH_SECRET or AUTH_SECRET");
   }
 
   if (isProd) {
@@ -88,7 +91,11 @@ function main() {
   if (isProd) {
     checkMinLength("NEXTAUTH_SECRET", 32, errors);
     checkMinLength("DEPLOYMENT_WEBHOOK_SECRET", 24, errors);
-    checkUrlHttps("NEXTAUTH_URL", errors);
+    if (hasValue("NEXTAUTH_URL")) {
+      checkUrlHttps("NEXTAUTH_URL", errors);
+    } else if (hasValue("AUTH_URL")) {
+      checkUrlHttps("AUTH_URL", errors);
+    }
     if (isTruthy("DEBUG_API_ENABLED")) {
       errors.push("DEBUG_API_ENABLED must be false in production");
     }
