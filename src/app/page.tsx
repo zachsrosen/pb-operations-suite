@@ -71,13 +71,42 @@ const ALL_DASHBOARDS: DashboardLinkData[] = [
   { href: "/dashboards/interconnection", title: "Interconnection", description: "Utility interconnection applications, approvals, and meter installations", tag: "UTILITY", tagColor: "cyan", section: "Department Dashboards" },
   { href: "/dashboards/construction", title: "Construction", description: "Construction status, scheduling, and progress tracking", tag: "CONSTRUCTION", tagColor: "orange", section: "Department Dashboards" },
   { href: "/dashboards/incentives", title: "Incentives", description: "Rebate and incentive program tracking and application status", tag: "INCENTIVES", tagColor: "green", section: "Department Dashboards" },
-  { href: "/dashboards/command-center", title: "Executive Suite", description: "Pipeline, revenue milestones, capacity, PE tracking, and executive dashboards", tag: "EXECUTIVE", tagColor: "amber", section: "Executive Suite" },
-  { href: "/dashboards/pe", title: "PE Dashboard", description: "Dedicated PE tracking with milestone status and compliance monitoring", tag: "PE", tagColor: "emerald", section: "Admin Suite" },
-  { href: "/dashboards/mobile", title: "Mobile Dashboard", description: "Touch-optimized view for field teams with quick project lookup", tag: "MOBILE", tagColor: "blue", section: "Admin Suite" },
-  { href: "/dashboards/sales", title: "Sales Pipeline", description: "Active deals, funnel visualization, and proposal tracking", tag: "SALES", tagColor: "green", section: "Additional Pipeline Suite" },
-  { href: "/dashboards/service", title: "Service Pipeline", description: "Service jobs, scheduling, and work in progress tracking", tag: "SERVICE", tagColor: "cyan", section: "Additional Pipeline Suite" },
-  { href: "/dashboards/dnr", title: "D&R Pipeline", description: "Detach & Reset projects with phase tracking", tag: "D&R", tagColor: "purple", section: "Additional Pipeline Suite" },
-  { href: "/handbook", title: "Handbook", description: "Comprehensive guide to all dashboards, features, and workflows", tag: "GUIDE", tagColor: "zinc", section: "Executive Suite" },
+];
+
+interface SuiteLinkData {
+  href: string;
+  title: string;
+  description: string;
+  tag: string;
+  tagColor: string;
+  visibility: "all" | "owner_admin" | "admin";
+}
+
+const SUITE_LINKS: SuiteLinkData[] = [
+  {
+    href: "/suites/executive",
+    title: "Executive Suite",
+    description: "Leadership and executive views grouped in one place.",
+    tag: "EXECUTIVE",
+    tagColor: "amber",
+    visibility: "owner_admin",
+  },
+  {
+    href: "/suites/admin",
+    title: "Admin Suite",
+    description: "In-progress and admin-only dashboards, tools, and security pages.",
+    tag: "ADMIN",
+    tagColor: "red",
+    visibility: "admin",
+  },
+  {
+    href: "/suites/additional-pipeline",
+    title: "Additional Pipeline Suite",
+    description: "Supplemental pipeline dashboards grouped outside the core flow.",
+    tag: "PIPELINES",
+    tagColor: "cyan",
+    visibility: "all",
+  },
 ];
 
 // ---- Main page ----
@@ -145,6 +174,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [isStale, setIsStale] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const [userRole, setUserRole] = useState<string>("VIEWER");
 
   const isMac = useIsMac();
   const modKey = isMac ? "\u2318" : "Ctrl";
@@ -213,6 +243,15 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [loadProjects]);
 
+  useEffect(() => {
+    fetch("/api/auth/sync", { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.role) setUserRole(data.role);
+      })
+      .catch(() => {});
+  }, []);
+
   const { connected, reconnecting } = useSSE(loadProjects);
 
   // All locations (from unfiltered data)
@@ -248,10 +287,17 @@ export default function Home() {
   const sections = [
     "Operations Dashboards",
     "Department Dashboards",
-    "Executive Suite",
-    "Admin Suite",
-    "Additional Pipeline Suite",
   ];
+
+  const visibleSuites = useMemo(() => {
+    const isAdmin = userRole === "ADMIN";
+    const isOwnerOrAdmin = isAdmin || userRole === "OWNER";
+    return SUITE_LINKS.filter((suite) => {
+      if (suite.visibility === "all") return true;
+      if (suite.visibility === "owner_admin") return isOwnerOrAdmin;
+      return isAdmin;
+    });
+  }, [userRole]);
 
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-white dashboard-bg">
@@ -582,6 +628,18 @@ export default function Home() {
               </div>
             </div>
           )
+        )}
+
+        {/* Suites */}
+        {visibleSuites.length > 0 && (
+          <div>
+            <h2 className="text-lg font-semibold text-zinc-300 mb-4 mt-8">Suites</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+              {visibleSuites.map((suite) => (
+                <DashboardLink key={suite.href} {...suite} section="Suites" />
+              ))}
+            </div>
+          </div>
         )}
 
         {/* Dashboard sections */}
