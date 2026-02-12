@@ -6,9 +6,38 @@ import { getUserByEmail } from "@/lib/db";
 const LINKS = [
   {
     href: "/dashboards/command-center",
-    title: "Executive Suite Dashboard",
-    description: "Pipeline, capacity, revenue milestones, and leadership views.",
-    tag: "EXECUTIVE",
+    title: "Command Center",
+    description: "Pipeline overview, revenue breakdowns, capacity planning, PE tracking, and alerts.",
+    tag: "COMMAND CENTER",
+    tagColor: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+  },
+  {
+    href: "/dashboards/executive",
+    title: "Executive Summary",
+    description: "High-level pipeline and stage analysis with location and monthly trends.",
+    tag: "SUMMARY",
+    tagColor: "bg-orange-500/20 text-orange-400 border-orange-500/30",
+  },
+  {
+    href: "/dashboards/at-risk",
+    title: "At-Risk Projects",
+    description: "Projects with overdue milestones, stalled stages, and severity scoring.",
+    tag: "AT-RISK",
+    tagColor: "bg-red-500/20 text-red-400 border-red-500/30",
+  },
+  {
+    href: "/dashboards/optimizer",
+    title: "Pipeline Optimizer",
+    description: "Identify scheduling opportunities and optimize project throughput.",
+    tag: "OPTIMIZER",
+    tagColor: "bg-purple-500/20 text-purple-400 border-purple-500/30",
+  },
+  {
+    href: "/dashboards/locations",
+    title: "Location Comparison",
+    description: "Side-by-side location performance, capacity, and pipeline breakdown.",
+    tag: "LOCATIONS",
+    tagColor: "bg-blue-500/20 text-blue-400 border-blue-500/30",
   },
 ];
 
@@ -28,7 +57,7 @@ export default async function ExecutiveSuitePage() {
           </Link>
           <h1 className="text-2xl font-bold mt-3">Executive Suite</h1>
           <p className="text-sm text-zinc-400 mt-1">
-            Executive/Admin-only leadership dashboards.
+            Leadership dashboards, pipeline intelligence, and executive views.
           </p>
         </div>
 
@@ -43,7 +72,7 @@ export default async function ExecutiveSuitePage() {
                 <h3 className="font-semibold text-white group-hover:text-orange-400 transition-colors">
                   {item.title}
                 </h3>
-                <span className="text-xs font-medium px-2 py-0.5 rounded border bg-amber-500/20 text-amber-400 border-amber-500/30">
+                <span className={`text-xs font-medium px-2 py-0.5 rounded border ${item.tagColor}`}>
                   {item.tag}
                 </span>
               </div>

@@ -70,6 +70,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
   MANAGER: {
     // Legacy role: normalized to PROJECT_MANAGER at runtime
     allowedRoutes: [
+      "/",
       "/suites/operations",
       "/suites/department",
       "/dashboards/scheduler",
@@ -147,6 +148,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
   },
   PROJECT_MANAGER: {
     allowedRoutes: [
+      "/",
       "/suites/operations",
       "/suites/department",
       "/dashboards/scheduler",
@@ -315,7 +317,7 @@ export function canAccessRoute(role: UserRole, route: string): boolean {
 
   // Check specific routes
   return permissions.allowedRoutes.some(allowed =>
-    route.startsWith(allowed)
+    allowed === "/" ? route === "/" : route.startsWith(allowed)
   );
 }
 
