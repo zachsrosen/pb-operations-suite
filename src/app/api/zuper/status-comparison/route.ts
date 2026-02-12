@@ -23,6 +23,8 @@ interface ZuperJobSummary {
   category: string;
 }
 
+type ComparisonCategory = "site_survey" | "construction" | "inspection";
+
 interface HubSpotDealData {
   dealId: string;
   dealName: string;
@@ -304,11 +306,31 @@ async function fetchAllZuperJobs(categoryUid: string, fromDate?: string, toDate?
     }
 
     for (const job of result.data.jobs) {
+      // Zuper search can return mixed categories; enforce category match locally.
+      const actualCategoryUid =
+        typeof job.job_category === "string"
+          ? job.job_category
+          : job.job_category?.category_uid;
+
+      if (actualCategoryUid && actualCategoryUid !== categoryUid) {
+        continue;
+      }
+
       const projectNumber = extractProjectNumber(job.job_title || "");
       if (!projectNumber) continue;
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const rawJob = job as any;
+
+      let mappedCategory: ComparisonCategory;
+      const categoryForMapping = actualCategoryUid || categoryUid;
+      if (categoryForMapping === JOB_CATEGORY_UIDS.SITE_SURVEY) {
+        mappedCategory = "site_survey";
+      } else if (categoryForMapping === JOB_CATEGORY_UIDS.CONSTRUCTION) {
+        mappedCategory = "construction";
+      } else {
+        mappedCategory = "inspection";
+      }
 
       allJobs.push({
         jobUid: job.job_uid || "",
@@ -322,12 +344,7 @@ async function fetchAllZuperJobs(categoryUid: string, fromDate?: string, toDate?
         completedAt: rawJob.completed_time || rawJob.completed_at || rawJob.completedAt || null,
         team: getTeamName(rawJob),
         assignedTo: getAssignedNames(rawJob),
-        category:
-          categoryUid === JOB_CATEGORY_UIDS.SITE_SURVEY
-            ? "site_survey"
-            : categoryUid === JOB_CATEGORY_UIDS.CONSTRUCTION
-            ? "construction"
-            : "inspection",
+        category: mappedCategory,
       });
     }
 
