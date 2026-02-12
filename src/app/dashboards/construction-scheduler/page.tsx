@@ -214,7 +214,7 @@ function transformProject(p: RawProject): ConstructionProject | null {
 
 export default function ConstructionSchedulerPage() {
   /* ---- activity tracking ---- */
-  const { trackDashboardView, trackFeature } = useActivityTracking();
+  const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
   /* ---- core data ---- */

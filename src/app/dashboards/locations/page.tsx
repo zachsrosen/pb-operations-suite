@@ -8,7 +8,7 @@ import { LiveIndicator } from "@/components/ui/LiveIndicator";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { transformProject } from "@/lib/transforms";
-import { formatCurrency, formatCurrencyCompact } from "@/lib/format";
+import { formatCurrencyCompact } from "@/lib/format";
 import { STAGE_ORDER_ASC, STAGE_COLORS, LOCATION_COLORS } from "@/lib/constants";
 import type { RawProject, TransformedProject } from "@/lib/types";
 
@@ -50,7 +50,7 @@ export default function LocationComparisonPage() {
     transform: (res: unknown) => ((res as { projects: RawProject[] }).projects || []).map(transformProject),
   });
 
-  const allProjects = projectData || [];
+  const allProjects = useMemo(() => projectData || [], [projectData]);
 
   /* ---- Track dashboard view on load ---- */
   useEffect(() => {
@@ -157,7 +157,7 @@ export default function LocationComparisonPage() {
     >
       {/* Location Grid */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-6">
-        {locationStats.map((loc, i) => {
+        {locationStats.map((loc) => {
           const color = LOCATION_COLORS[loc.name] || { hex: "#71717a" };
           const isSelected = selectedLocation === loc.name;
           const healthPct = loc.count > 0 ? Math.round((1 - loc.overdue / loc.count) * 100) : 100;

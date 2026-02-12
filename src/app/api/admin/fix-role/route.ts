@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 
@@ -7,7 +7,12 @@ import { prisma } from "@/lib/db";
  * Emergency endpoint to restore admin role for specific user
  * Only works for zach@photonbrothers.com
  */
-export async function POST(_request: NextRequest) {
+export async function POST() {
+  // Explicit kill-switch: this recovery endpoint should remain disabled unless needed.
+  if (process.env.ENABLE_ADMIN_ROLE_RECOVERY !== "true") {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   const session = await auth();
 
   if (!session?.user?.email) {

@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build",
+    "preflight": "node scripts/preflight-check.js",
+    "preflight:prod": "node scripts/preflight-check.js --prod",
     "db:migrate": "prisma migrate deploy",
     "start": "next start",
     "lint": "eslint",

@@ -9,7 +9,6 @@ import {
 
 export const PipelineDashboardsDemo: React.FC = () => {
   const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
 
   const titleOpacity = interpolate(frame, [0, 30], [0, 1], {
     extrapolateRight: "clamp",

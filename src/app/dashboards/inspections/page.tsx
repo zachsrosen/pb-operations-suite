@@ -105,7 +105,7 @@ const INSPECTION_STATUS_GROUPS: FilterGroup[] = [
 const ALL_INSPECTION_STATUS_OPTIONS = INSPECTION_STATUS_GROUPS.flatMap(g => g.options || []);
 
 export default function InspectionsPage() {
-  const { trackDashboardView, trackSearch, trackFilter } = useActivityTracking();
+  const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
   const [projects, setProjects] = useState<ExtendedProject[]>([]);

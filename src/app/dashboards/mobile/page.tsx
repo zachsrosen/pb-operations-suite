@@ -191,7 +191,7 @@ function HomeIcon({ active }: { active: boolean }) {
 
 function HammerIcon({ active }: { active: boolean }) {
   return (
-    <svg className="w-5 h-5 mx-auto mb-0.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+    <svg className="w-5 h-5 mx-auto mb-0.5" fill="none" stroke={active ? "currentColor" : "currentColor"} strokeWidth={2} viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" d="M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 004.486-6.336l-3.276 3.277a3.004 3.004 0 01-2.25-2.25l3.276-3.276a4.5 4.5 0 00-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085" />
     </svg>
   );
@@ -199,7 +199,7 @@ function HammerIcon({ active }: { active: boolean }) {
 
 function AlertIcon({ active }: { active: boolean }) {
   return (
-    <svg className="w-5 h-5 mx-auto mb-0.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+    <svg className="w-5 h-5 mx-auto mb-0.5" fill="none" stroke={active ? "currentColor" : "currentColor"} strokeWidth={2} viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
     </svg>
   );
@@ -207,7 +207,7 @@ function AlertIcon({ active }: { active: boolean }) {
 
 function LeafIcon({ active }: { active: boolean }) {
   return (
-    <svg className="w-5 h-5 mx-auto mb-0.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+    <svg className="w-5 h-5 mx-auto mb-0.5" fill="none" stroke={active ? "currentColor" : "currentColor"} strokeWidth={2} viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" d="M12 21c-4-4-8-7.5-8-12a8 8 0 0116 0c0 4.5-4 8-8 12z" />
     </svg>
   );
@@ -215,7 +215,7 @@ function LeafIcon({ active }: { active: boolean }) {
 
 function SearchIcon({ active }: { active: boolean }) {
   return (
-    <svg className="w-5 h-5 mx-auto mb-0.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+    <svg className="w-5 h-5 mx-auto mb-0.5" fill="none" stroke={active ? "currentColor" : "currentColor"} strokeWidth={2} viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
     </svg>
   );

@@ -87,17 +87,6 @@ interface PendingSchedule {
   };
 }
 
-interface AssistedSlot {
-  date: string;
-  start_time: string;
-  end_time: string;
-  user_uid?: string;
-  user_name?: string;
-  team_uid?: string;
-  team_name?: string;
-  available: boolean;
-}
-
 interface DayAvailability {
   date: string;
   availableSlots: Array<{
@@ -268,7 +257,7 @@ function transformProject(p: RawProject): SurveyProject | null {
 
 export default function SiteSurveySchedulerPage() {
   /* ---- activity tracking ---- */
-  const { trackDashboardView, trackSearch, trackFilter, trackFeature } = useActivityTracking();
+  const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
   /* ---- core data ---- */
@@ -302,9 +291,7 @@ export default function SiteSurveySchedulerPage() {
   const [syncingToZuper, setSyncingToZuper] = useState(false);
 
   /* ---- Assisted scheduling ---- */
-  const [availableSlots, setAvailableSlots] = useState<AssistedSlot[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
-  const [selectedSlot, setSelectedSlot] = useState<AssistedSlot | null>(null);
   const [availabilityByDate, setAvailabilityByDate] = useState<Record<string, DayAvailability>>({});
   const [showAvailability, setShowAvailability] = useState(true);
 
@@ -316,7 +303,7 @@ export default function SiteSurveySchedulerPage() {
   const [showMyAvailability, setShowMyAvailability] = useState(false);
 
   /* ---- surveyor assignments (stored locally) ---- */
-  const [surveyorAssignments, setSurveyorAssignments] = useState<Record<string, string>>({});
+  const [, setSurveyorAssignments] = useState<Record<string, string>>({});
 
   // Load surveyor assignments from localStorage on mount
   useEffect(() => {
@@ -581,12 +568,6 @@ export default function SiteSurveySchedulerPage() {
       !manualSchedules[p.id] &&
       !p.completionDate &&
       p.surveyStatus !== "Completed"
-    );
-  }, [filteredProjects, manualSchedules]);
-
-  const scheduledProjects = useMemo(() => {
-    return filteredProjects.filter(p =>
-      p.scheduleDate || manualSchedules[p.id]
     );
   }, [filteredProjects, manualSchedules]);
 

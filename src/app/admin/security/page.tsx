@@ -358,6 +358,7 @@ export default function SecurityAuditPage() {
               >
                 <div className="flex items-center gap-3">
                   {admin.image ? (
+                    // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={admin.image}
                       alt=""
@@ -414,6 +415,7 @@ export default function SecurityAuditPage() {
                     <td className="py-2 pr-4">
                       <div className="flex items-center gap-2">
                         {u.image ? (
+                          // eslint-disable-next-line @next/next/no-img-element
                           <img
                             src={u.image}
                             alt=""

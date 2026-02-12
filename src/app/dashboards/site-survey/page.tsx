@@ -54,7 +54,7 @@ const ALL_SITE_SURVEY_STATUS_OPTIONS = SITE_SURVEY_STATUS_GROUPS.flatMap(g => g.
 
 export default function SiteSurveyDashboardPage() {
   /* ---- activity tracking ---- */
-  const { trackDashboardView, trackSearch, trackFilter } = useActivityTracking();
+  const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
   const [projects, setProjects] = useState<ExtendedProject[]>([]);
@@ -132,7 +132,6 @@ export default function SiteSurveyDashboardPage() {
   }, [projects, filterLocations, filterStages, filterSiteSurveyStatuses, searchQuery, isInSiteSurveyPhase]);
 
   const stats = useMemo(() => {
-    const today = new Date();
     const inSiteSurveyStage = filteredProjects.filter(p => p.stage === 'Site Survey');
     const scheduled = filteredProjects.filter(p => p.siteSurveyScheduleDate && !p.siteSurveyCompletionDate);
     const completed = filteredProjects.filter(p => p.siteSurveyCompletionDate);

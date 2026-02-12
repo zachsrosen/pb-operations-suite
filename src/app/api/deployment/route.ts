@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import crypto from "crypto";
 
 /**
  * POST /api/deployment
@@ -39,8 +40,70 @@ interface VercelWebhookPayload {
   };
 }
 
+function signatureMatches(rawHeader: string | null, rawBody: string, secret: string): boolean {
+  if (!rawHeader) return false;
+
+  const normalized = rawHeader.trim();
+  const headerValue = normalized.includes("=") ? normalized.split("=").pop() || "" : normalized;
+  if (!headerValue) return false;
+
+  const expectedSha1 = crypto.createHmac("sha1", secret).update(rawBody).digest("hex");
+  const expectedSha256 = crypto.createHmac("sha256", secret).update(rawBody).digest("hex");
+
+  const candidates = [expectedSha1, expectedSha256];
+  return candidates.some((expected) =>
+    headerValue.length === expected.length &&
+    crypto.timingSafeEqual(Buffer.from(headerValue), Buffer.from(expected))
+  );
+}
+
 export async function POST(request: NextRequest) {
   try {
+    const webhookSecret = process.env.DEPLOYMENT_WEBHOOK_SECRET;
+    if (process.env.NODE_ENV === "production" && !webhookSecret) {
+      return NextResponse.json(
+        { error: "Deployment webhook is not configured" },
+        { status: 503 }
+      );
+    }
+
+    if (webhookSecret) {
+      const authHeader = request.headers.get("authorization");
+      const sharedSecretHeader = request.headers.get("x-webhook-secret");
+      const signatureHeader = request.headers.get("x-vercel-signature");
+      const rawBody = await request.text();
+
+      const hasBearerMatch = authHeader === `Bearer ${webhookSecret}`;
+      const hasSharedSecretMatch = sharedSecretHeader === webhookSecret;
+      const hasSignatureMatch = signatureMatches(signatureHeader, rawBody, webhookSecret);
+
+      if (!hasBearerMatch && !hasSharedSecretMatch && !hasSignatureMatch) {
+        return NextResponse.json({ error: "Unauthorized webhook request" }, { status: 401 });
+      }
+
+      let body: VercelWebhookPayload;
+      try {
+        body = JSON.parse(rawBody) as VercelWebhookPayload;
+      } catch {
+        return NextResponse.json({ error: "Invalid JSON in request body" }, { status: 400 });
+      }
+
+      // Log deployment events
+      console.log(`[Deployment] Event: ${body.type}`, {
+        deploymentId: body.payload?.deployment?.id,
+        state: body.payload?.deployment?.state,
+        url: body.payload?.deployment?.url,
+        user: body.payload?.user?.username,
+        timestamp: new Date(body.createdAt).toISOString(),
+      });
+
+      return NextResponse.json({
+        received: true,
+        event: body.type,
+        timestamp: new Date().toISOString(),
+      });
+    }
+
     let body: VercelWebhookPayload;
     try {
       body = await request.json();

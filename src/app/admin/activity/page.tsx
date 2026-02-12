@@ -122,28 +122,26 @@ export default function AdminActivityPage() {
     }
   };
 
-  const getDateRangeFilter = (): Date | null => {
-    const now = new Date();
-    switch (dateRange) {
-      case "today":
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        return today;
-      case "7d":
-        const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-        return sevenDaysAgo;
-      case "30d":
-        const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-        return thirtyDaysAgo;
-      default:
-        return null;
-    }
-  };
-
   const filteredActivities = useMemo(() => {
     let result = [...activities];
 
-    const dateFilterDate = getDateRangeFilter();
+    const now = new Date();
+    const dateFilterDate = (() => {
+      switch (dateRange) {
+        case "today": {
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          return today;
+        }
+        case "7d":
+          return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        case "30d":
+          return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        default:
+          return null;
+      }
+    })();
+
     if (dateFilterDate) {
       result = result.filter(
         activity => new Date(activity.createdAt) >= dateFilterDate

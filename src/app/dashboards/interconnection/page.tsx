@@ -174,7 +174,7 @@ const ALL_PTO_STATUS_OPTIONS = PTO_STATUS_GROUPS.flatMap(g => g.options || []);
 
 export default function InterconnectionPage() {
   /* ---- activity tracking ---- */
-  const { trackDashboardView, trackSearch, trackFilter } = useActivityTracking();
+  const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
   const [projects, setProjects] = useState<ExtendedProject[]>([]);

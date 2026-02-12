@@ -10,7 +10,6 @@ import {
   generateMonthlyPeriods,
   generateWeeklyPeriods,
   formatRevenueShort,
-  type RevenuePeriod,
   type MilestoneConfig,
 } from "@/lib/revenue-utils";
 
@@ -1653,33 +1652,25 @@ function PEView({ projects }: { projects: Project[] }) {
   ).length;
   const totalValue = peProjects.reduce((s, p) => s + p.amount, 0);
 
-  const inspProjects = useMemo(
-    () =>
-      peProjects
-        .filter(
-          (p) =>
-            !p.inspection_pass &&
-            p.days_to_inspection !== null &&
-            p.days_to_inspection <= 30
-        )
-        .sort((a, b) => (a.days_to_inspection ?? 0) - (b.days_to_inspection ?? 0))
-        .slice(0, 15),
-    [peProjects]
-  );
+  const inspProjects = peProjects
+    .filter(
+      (p) =>
+        !p.inspection_pass &&
+        p.days_to_inspection !== null &&
+        p.days_to_inspection <= 30
+    )
+    .sort((a, b) => (a.days_to_inspection ?? 0) - (b.days_to_inspection ?? 0))
+    .slice(0, 15);
 
-  const ptoProjects = useMemo(
-    () =>
-      peProjects
-        .filter(
-          (p) =>
-            !p.pto_granted &&
-            p.days_to_pto !== null &&
-            p.days_to_pto <= 45
-        )
-        .sort((a, b) => (a.days_to_pto ?? 0) - (b.days_to_pto ?? 0))
-        .slice(0, 15),
-    [peProjects]
-  );
+  const ptoProjects = peProjects
+    .filter(
+      (p) =>
+        !p.pto_granted &&
+        p.days_to_pto !== null &&
+        p.days_to_pto <= 45
+    )
+    .sort((a, b) => (a.days_to_pto ?? 0) - (b.days_to_pto ?? 0))
+    .slice(0, 15);
 
   const exportPEReport = (format: "excel" | "csv" | "clipboard") => {
     if (format === "clipboard") {

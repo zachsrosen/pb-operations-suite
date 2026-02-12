@@ -1,5 +1,7 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
+import type { JWT } from "next-auth/jwt";
+import { assertProductionEnvConfigured } from "@/lib/env";
 
 // Allowed email domain for authentication
 const ALLOWED_DOMAIN = process.env.ALLOWED_EMAIL_DOMAIN || "photonbrothers.com";
@@ -17,6 +19,45 @@ declare module "next-auth" {
       image?: string | null;
       role?: string;
     };
+  }
+}
+
+declare module "next-auth/jwt" {
+  interface JWT {
+    role?: string;
+    roleSyncedAt?: number;
+  }
+}
+
+const ROLE_SYNC_INTERVAL_MS = 5 * 60 * 1000;
+
+assertProductionEnvConfigured();
+
+async function syncRoleToToken(token: JWT): Promise<JWT> {
+  // Prisma is not edge-compatible; skip DB sync if this callback executes in edge runtime.
+  if (process.env.NEXT_RUNTIME === "edge") {
+    return token;
+  }
+
+  if (!token.email) {
+    return token;
+  }
+
+  try {
+    const { getOrCreateUser } = await import("@/lib/db");
+    const dbUser = await getOrCreateUser({
+      email: token.email,
+      name: typeof token.name === "string" ? token.name : undefined,
+      image: typeof token.picture === "string" ? token.picture : undefined,
+    });
+
+    token.role = dbUser?.role || token.role || "VIEWER";
+    token.roleSyncedAt = Date.now();
+    return token;
+  } catch (error) {
+    console.error("[auth] Failed to sync role to token:", error);
+    token.role = token.role || "VIEWER";
+    return token;
   }
 }
 
@@ -67,10 +108,18 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       if (user) {
         token.id = user.id;
       }
-      // Default role - actual role fetched from DB via API
-      if (!token.role) {
-        token.role = "VIEWER";
+
+      const needsRoleSync =
+        !!user ||
+        !token.role ||
+        !token.roleSyncedAt ||
+        Date.now() - token.roleSyncedAt > ROLE_SYNC_INTERVAL_MS;
+
+      if (needsRoleSync) {
+        return syncRoleToToken(token);
       }
+
+      token.role = token.role || "VIEWER";
       return token;
     },
   },

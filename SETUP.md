@@ -45,8 +45,13 @@
 3. **Add environment variables in Vercel dashboard:**
    - `HUBSPOT_ACCESS_TOKEN` - Your HubSpot Private App token
    - `HUBSPOT_PORTAL_ID` - Your HubSpot portal ID (default: 21710069)
-   - `SITE_PASSWORD` - (Optional) Password to protect the site
+   - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` - Google OAuth credentials
+   - `NEXTAUTH_SECRET` - Random secret for auth/JWT signing
+   - `NEXTAUTH_URL` - Your production app URL
+   - `ALLOWED_EMAIL_DOMAIN` - Allowed Google Workspace domain(s)
+   - `DEPLOYMENT_WEBHOOK_SECRET` - Secret required by `/api/deployment` in production
    - `API_SECRET_TOKEN` - (Optional) Token for external API access
+   - `SITE_PASSWORD` - (Optional) Legacy password gate
 
 ### Option 2: GitHub Integration
 
@@ -157,6 +162,15 @@ For external API access, set `API_SECRET_TOKEN` and include it in requests:
 ```bash
 curl -H "Authorization: Bearer your-token" "https://your-app.vercel.app/api/projects"
 ```
+
+### Production Hardening Checklist
+
+- Set `NEXTAUTH_SECRET` and `NEXTAUTH_URL` in all environments.
+- Set `DEPLOYMENT_WEBHOOK_SECRET` in production before enabling deployment webhooks.
+- Keep `DEBUG_API_ENABLED` unset or `false` in production.
+- Keep `ENABLE_ADMIN_ROLE_RECOVERY` unset or `false` in production.
+- Optionally set `AUTH_TOKEN_SECRET` and `AUTH_SALT` for stricter auth-token separation.
+- In production, startup auth config validates critical env vars and will fail fast if required values are missing.
 
 ---
 

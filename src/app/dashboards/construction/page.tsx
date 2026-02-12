@@ -56,7 +56,7 @@ const ALL_CONSTRUCTION_STATUS_OPTIONS = CONSTRUCTION_STATUS_GROUPS.flatMap(g => 
 
 export default function ConstructionDashboardPage() {
   /* ---- activity tracking ---- */
-  const { trackDashboardView, trackSearch, trackFilter } = useActivityTracking();
+  const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
   const [projects, setProjects] = useState<ExtendedProject[]>([]);

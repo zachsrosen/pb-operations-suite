@@ -4,6 +4,7 @@ import { ROLE_PERMISSIONS, canAccessRoute, type UserRole } from "@/lib/role-perm
 
 // Routes that are always accessible (login, auth callbacks)
 const ALWAYS_ALLOWED = ["/login", "/api/auth", "/maintenance"];
+const PUBLIC_API_ROUTES = ["/api/deployment"];
 
 // Security headers for all responses
 function addSecurityHeaders(response: NextResponse): NextResponse {
@@ -29,7 +30,7 @@ function addSecurityHeaders(response: NextResponse): NextResponse {
   // Note: unsafe-inline required for Next.js inline scripts; unsafe-eval removed for security
   response.headers.set(
     "Content-Security-Policy",
-    "default-src 'self'; script-src 'self' 'unsafe-inline' https://va.vercel-scripts.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https:; frame-ancestors 'none';"
+    "default-src 'self'; script-src 'self' 'unsafe-inline' https://va.vercel-scripts.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https:; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self';"
   );
 
   // Strict Transport Security (HTTPS only in production)
@@ -63,11 +64,14 @@ export default auth((req) => {
   const isLoginPage = pathname === "/login";
   const isAuthRoute = pathname.startsWith("/api/auth");
   const isApiRoute = pathname.startsWith("/api/");
+  const isPublicApiRoute = PUBLIC_API_ROUTES.some(
+    (route) => pathname === route || pathname.startsWith(`${route}/`)
+  );
   const isMaintenancePage = pathname === "/maintenance";
   const isStaticFile =
     pathname.startsWith("/_next/") ||
     pathname.startsWith("/static/") ||
-    pathname.includes(".");
+    /\/[^/]+\.[^/]+$/.test(pathname);
 
   // Check for maintenance mode
   const maintenanceMode = process.env.MAINTENANCE_MODE === "true";
@@ -89,6 +93,10 @@ export default auth((req) => {
 
   // API routes - require authentication + role-based access
   if (isApiRoute) {
+    if (isPublicApiRoute) {
+      return addSecurityHeaders(NextResponse.next());
+    }
+
     // Allow auth endpoints without session check
     if (pathname.startsWith("/api/auth")) {
       return addSecurityHeaders(NextResponse.next());
@@ -134,10 +142,6 @@ export default auth((req) => {
     if (ALWAYS_ALLOWED.some(route => pathname.startsWith(route))) {
       return addSecurityHeaders(NextResponse.next());
     }
-
-    // Note: Executive Suite access is enforced client-side in the page component
-    // because JWT role is not synced from DB (always defaults to VIEWER in Edge Runtime).
-    // The client fetches the real role from /api/auth/sync and redirects if unauthorized.
 
     // Check role permissions
     if (!canAccessRoute(userRole, pathname)) {

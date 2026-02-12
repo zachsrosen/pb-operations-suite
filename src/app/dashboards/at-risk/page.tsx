@@ -43,7 +43,7 @@ export default function AtRiskPage() {
     transform: (res: unknown) => ((res as { projects: RawProject[] }).projects || []).map(transformProject),
   });
 
-  const allProjects = projects || [];
+  const allProjects = useMemo(() => projects || [], [projects]);
 
   /* ---- Track dashboard view on load ---- */
   useEffect(() => {

@@ -179,7 +179,7 @@ export default function ExecutiveSummaryPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
-  const allProjects = projectData || [];
+  const allProjects = useMemo(() => projectData || [], [projectData]);
 
   /* ---- Track dashboard view on load ---- */
   useEffect(() => {

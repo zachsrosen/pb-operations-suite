@@ -4,8 +4,14 @@ import crypto from "crypto";
 // The verification code is encoded in an encrypted token that's stored client-side
 
 const getSecretKey = (): Buffer => {
-  // Use RESEND_API_KEY as part of the secret (it's already secret and available)
-  const base = process.env.RESEND_API_KEY || process.env.SITE_PASSWORD || "pb-ops-default-key-2024";
+  const base =
+    process.env.AUTH_TOKEN_SECRET ||
+    process.env.NEXTAUTH_SECRET ||
+    process.env.RESEND_API_KEY ||
+    process.env.SITE_PASSWORD;
+  if (!base) {
+    throw new Error("Missing auth secret. Set AUTH_TOKEN_SECRET (recommended) or NEXTAUTH_SECRET.");
+  }
   return crypto.createHash("sha256").update(base + "-pb-auth-secret-v2").digest();
 };
 

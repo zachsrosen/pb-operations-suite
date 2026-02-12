@@ -102,7 +102,7 @@ const ALL_PERMITTING_STATUS_OPTIONS = PERMITTING_STATUS_GROUPS.flatMap(g => g.op
 
 export default function PermittingPage() {
   /* ---- activity tracking ---- */
-  const { trackDashboardView, trackSearch, trackFilter } = useActivityTracking();
+  const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
   const [projects, setProjects] = useState<ExtendedProject[]>([]);

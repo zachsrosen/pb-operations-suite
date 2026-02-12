@@ -6,7 +6,6 @@ import DashboardShell from "@/components/DashboardShell";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { formatCurrency } from "@/lib/format";
-import { SERVICE_STAGES } from "@/lib/constants";
 import { useProgressiveDeals } from "@/hooks/useProgressiveDeals";
 
 // --- Types ---

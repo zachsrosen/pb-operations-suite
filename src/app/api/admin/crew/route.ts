@@ -243,7 +243,7 @@ const TEAM_SEED_DATA: Array<{
 ];
 
 // Verify admin role
-async function verifyAdmin(_request: NextRequest): Promise<{ authorized: boolean; error?: string }> {
+async function verifyAdmin(): Promise<{ authorized: boolean; error?: string }> {
   const session = await auth();
 
   if (!session?.user?.email) {
@@ -270,7 +270,7 @@ async function verifyAdmin(_request: NextRequest): Promise<{ authorized: boolean
  * GET /api/admin/crew - List all crew members
  */
 export async function GET(request: NextRequest) {
-  const authResult = await verifyAdmin(request);
+  const authResult = await verifyAdmin();
   if (!authResult.authorized) {
     return NextResponse.json({ error: authResult.error }, { status: 401 });
   }
@@ -297,7 +297,7 @@ export async function GET(request: NextRequest) {
  * POST /api/admin/crew - Create/update crew member or seed data
  */
 export async function POST(request: NextRequest) {
-  const adminCheck = await verifyAdmin(request);
+  const adminCheck = await verifyAdmin();
   if (!adminCheck.authorized) {
     return NextResponse.json({ error: adminCheck.error }, { status: 401 });
   }

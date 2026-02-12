@@ -568,7 +568,6 @@ export default function EquipmentBacklogPage() {
                   {moduleSummary.map((m, i) => {
                     const wattageDisplay = m.totalCount > 0
                       ? (() => {
-                          const totalWattage = moduleSummary.reduce((sum, mod) => sum + (mod.totalCount > 0 ? mod.totalCount : 0), 0);
                           const matchingProjects = filteredProjects.filter(p =>
                             p.equipment?.modules?.brand === m.brand &&
                             p.equipment?.modules?.model === m.model

@@ -294,7 +294,7 @@ export default function InspectionSchedulerPage() {
   const [showMyAvailability, setShowMyAvailability] = useState(false);
 
   /* ---- inspector assignments (stored locally) ---- */
-  const [inspectorAssignments, setInspectorAssignments] = useState<Record<string, string>>({});
+  const [, setInspectorAssignments] = useState<Record<string, string>>({});
 
   // Load inspector assignments from localStorage on mount
   useEffect(() => {

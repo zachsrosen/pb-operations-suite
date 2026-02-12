@@ -33,7 +33,7 @@ function LoginForm() {
     setError("");
     try {
       await signIn("google", { callbackUrl });
-    } catch (err) {
+    } catch {
       setError("Failed to initiate sign in. Please try again.");
       setLoading(false);
     }

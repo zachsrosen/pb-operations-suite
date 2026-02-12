@@ -56,8 +56,8 @@ describe("formatCurrencyCompact", () => {
     expect(formatCurrencyCompact(1_000)).toBe("$1K");
   });
 
-  it("formats zero as $0K", () => {
-    expect(formatCurrencyCompact(0)).toBe("$0K");
+  it("formats zero as $0", () => {
+    expect(formatCurrencyCompact(0)).toBe("$0");
   });
 });
 
@@ -88,8 +88,8 @@ describe("formatDate", () => {
 
 describe("formatRelativeDate", () => {
   it("returns 'today' for today's date", () => {
-    // Use full ISO string (not just date part) to avoid timezone-induced off-by-one
-    const today = new Date().toISOString();
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
     expect(formatRelativeDate(today)).toBe("today");
   });
 

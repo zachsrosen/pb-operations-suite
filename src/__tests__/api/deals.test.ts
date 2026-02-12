@@ -62,6 +62,15 @@ jest.mock("@/lib/cache", () => ({
   },
 }));
 
+jest.mock("@/lib/api-auth", () => ({
+  requireApiAuth: jest.fn(async () => ({
+    email: "test@photonbrothers.com",
+    role: "ADMIN",
+    ip: "127.0.0.1",
+    userAgent: "jest",
+  })),
+}));
+
 import { GET } from "@/app/api/deals/route";
 import { NextRequest } from "next/server";
 

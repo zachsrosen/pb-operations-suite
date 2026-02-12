@@ -317,7 +317,7 @@ const ALL_DESIGN_APPROVAL_OPTIONS = DESIGN_APPROVAL_GROUPS.flatMap(g => g.option
 
 export default function DesignEngineeringPage() {
   /* ---- activity tracking ---- */
-  const { trackDashboardView, trackSearch, trackFilter } = useActivityTracking();
+  const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
   const [projects, setProjects] = useState<ExtendedProject[]>([]);

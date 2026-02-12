@@ -353,7 +353,7 @@ function transformProject(p: RawProject): SchedulerProject | null {
 
 export default function SchedulerPage() {
   /* ---- activity tracking ---- */
-  const { trackDashboardView, trackSearch, trackFilter, trackFeature } = useActivityTracking();
+  const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
   /* ---- core data ---- */
@@ -369,7 +369,6 @@ export default function SchedulerPage() {
 
   /* ---- filters ---- */
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]); // For project list filtering (multi-select)
-  const [selectedLocation, setSelectedLocation] = useState("All"); // For calendar view (single-select)
   const [calendarLocations, setCalendarLocations] = useState<string[]>([]); // Multi-select for calendar
   const [calendarScheduleTypes, setCalendarScheduleTypes] = useState<string[]>([]); // Multi-select for calendar
   const [showCompleted, setShowCompleted] = useState(true); // Toggle completed events on calendar
@@ -1005,7 +1004,6 @@ export default function SchedulerPage() {
     setManualSchedules(newSchedules);
 
     // Build summary message
-    const totalScheduled = scheduledInstalls + scheduledInspections;
     let msg = "";
     if (scheduledInstalls > 0 && scheduledInspections > 0) {
       msg = `Scheduled ${scheduledInstalls} installs + ${scheduledInspections} inspections`;

@@ -18,13 +18,6 @@ import { useActivityTracking } from "@/hooks/useActivityTracking";
 
 const MS_PER_DAY = 86_400_000;
 
-function monthsBetween(startDate: Date, endDate: Date): number {
-  return (
-    (endDate.getFullYear() - startDate.getFullYear()) * 12 +
-    (endDate.getMonth() - startDate.getMonth())
-  );
-}
-
 /* ------------------------------------------------------------------ */
 /*  Main Component                                                     */
 /* ------------------------------------------------------------------ */
@@ -43,7 +36,7 @@ export default function TimelineViewPage() {
     transform: (res: unknown) => ((res as { projects: RawProject[] }).projects || []).map(transformProject),
   });
 
-  const allProjects = projectData || [];
+  const allProjects = useMemo(() => projectData || [], [projectData]);
 
   /* ---- Track dashboard view on load ---- */
   useEffect(() => {

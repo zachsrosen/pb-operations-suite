@@ -7,7 +7,6 @@ import { exportToCSV, exportToJSON } from "@/lib/export";
 const mockCreateObjectURL = jest.fn().mockReturnValue("blob:mock-url");
 const mockRevokeObjectURL = jest.fn();
 const mockClick = jest.fn();
-let appendedChild: HTMLAnchorElement | null = null;
 
 beforeAll(() => {
   global.URL.createObjectURL = mockCreateObjectURL;
@@ -26,7 +25,6 @@ beforeAll(() => {
   });
 
   jest.spyOn(document.body, "appendChild").mockImplementation((node) => {
-    appendedChild = node as HTMLAnchorElement;
     return node;
   });
 
@@ -37,7 +35,6 @@ beforeEach(() => {
   mockCreateObjectURL.mockClear();
   mockRevokeObjectURL.mockClear();
   mockClick.mockClear();
-  appendedChild = null;
 });
 
 describe("exportToCSV", () => {

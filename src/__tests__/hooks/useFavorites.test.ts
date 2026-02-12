@@ -41,7 +41,7 @@ describe("useFavorites", () => {
   it("loads favorites from localStorage on mount", () => {
     localStorageMock.setItem("pb-ops-favorites", JSON.stringify(["/dashboards/sales"]));
 
-    const { result } = renderHook(() => useFavorites());
+    renderHook(() => useFavorites());
 
     // useEffect runs asynchronously, but the initial state will be overridden
     // We need to wait for the effect

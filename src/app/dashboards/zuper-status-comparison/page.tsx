@@ -121,17 +121,6 @@ type ViewMode = "status" | "dates" | "all" | "project-status" | "project-dates";
 
 // ---- Helpers ----
 
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return "-";
-  try {
-    const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return dateStr;
-    return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-  } catch {
-    return dateStr;
-  }
-}
-
 function formatShortDate(dateStr: string | null): string {
   if (!dateStr) return "-";
   try {
@@ -189,7 +178,7 @@ export default function ZuperStatusComparisonPage() {
   const hasTrackedView = useRef(false);
 
   /* ---- Admin access guard (JWT role is stale, so check via API) ---- */
-  const [accessChecked, setAccessChecked] = useState(false);
+  const [, setAccessChecked] = useState(false);
   useEffect(() => {
     fetch("/api/auth/sync")
       .then(r => r.json())

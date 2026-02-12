@@ -4,14 +4,20 @@
  */
 
 // Mock the hubspot module and cache
+interface MockProject {
+  isActive: boolean;
+  pbLocation: string;
+  name: string;
+}
+
 jest.mock("@/lib/hubspot", () => ({
   fetchAllProjects: jest.fn(),
   calculateStats: jest.fn().mockReturnValue({
     totalProjects: 2,
     totalValue: 100000,
   }),
-  filterProjectsForContext: jest.fn((projects, context) => {
-    if (context === "executive") return projects.filter((p: any) => p.isActive);
+  filterProjectsForContext: jest.fn((projects: MockProject[], context: string) => {
+    if (context === "executive") return projects.filter((p) => p.isActive);
     return projects;
   }),
 }));
@@ -72,7 +78,7 @@ describe("GET /api/projects", () => {
       makeProject({ id: "1", amount: 50000, pbLocation: "Westminster" }),
       makeProject({ id: "2", amount: 75000, pbLocation: "Centennial", stage: "Inspection" }),
       makeProject({ id: "3", amount: 25000, pbLocation: "Westminster", isActive: false }),
-    ] as any);
+    ]);
   });
 
   it("returns all projects when no limit is set (the pagination fix)", async () => {
@@ -115,7 +121,7 @@ describe("GET /api/projects", () => {
     const res = await GET(req);
     const body = await res.json();
 
-    expect(body.projects.every((p: any) => p.pbLocation === "Westminster")).toBe(true);
+    expect(body.projects.every((p: MockProject) => p.pbLocation === "Westminster")).toBe(true);
   });
 
   it("filters by stage", async () => {
@@ -131,7 +137,7 @@ describe("GET /api/projects", () => {
     mockFetchAllProjects.mockResolvedValue([
       makeProject({ id: "1", name: "Smith Residence" }),
       makeProject({ id: "2", name: "Johnson Solar" }),
-    ] as any);
+    ]);
 
     const req = makeRequest({ context: "all", active: "false", search: "smith" });
     const res = await GET(req);
