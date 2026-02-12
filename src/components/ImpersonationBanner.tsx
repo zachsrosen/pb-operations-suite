@@ -46,8 +46,8 @@ export default function ImpersonationBanner() {
       const res = await fetch("/api/admin/impersonate", { method: "DELETE" });
       const data = await res.json();
       if (res.ok && data.success) {
-        // Refresh the page to reset all state
-        window.location.reload();
+        // Navigate to home to reset all state (don't reload — may be on a locked route)
+        window.location.href = "/";
       } else {
         alert("Failed to exit impersonation: " + (data.error || "Unknown error"));
       }

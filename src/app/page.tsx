@@ -162,7 +162,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [isStale, setIsStale] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
-  const [userRole, setUserRole] = useState<string>("TECH_OPS");
+  const [userRole, setUserRole] = useState<string | null>(null);
 
   const isMac = useIsMac();
   const modKey = isMac ? "\u2318" : "Ctrl";
@@ -241,6 +241,7 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (!userRole) return; // Wait for role to load before redirecting
     if (userRole === "VIEWER") {
       window.location.replace("/unassigned");
     }
@@ -288,6 +289,7 @@ export default function Home() {
   }, []);
 
   const visibleSuites = useMemo(() => {
+    if (!userRole) return []; // Still loading
     if (userRole === "VIEWER") return [];
     if (userRole === "SALES") return [];
     if (userRole === "OPERATIONS" || userRole === "OPERATIONS_MANAGER") return [];
