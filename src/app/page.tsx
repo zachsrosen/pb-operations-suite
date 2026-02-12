@@ -63,7 +63,7 @@ const ALL_DASHBOARDS: DashboardLinkData[] = [
   { href: "/dashboards/inspection-scheduler", title: "Inspection Scheduler", description: "Dedicated calendar for scheduling inspections with Zuper integration", tag: "SCHEDULING", tagColor: "purple", section: "Operations Dashboards" },
   { href: "/dashboards/timeline", title: "Timeline View", description: "Gantt-style timeline showing project progression and milestones", tag: "PLANNING", tagColor: "blue", section: "Operations Dashboards" },
   { href: "/dashboards/equipment-backlog", title: "Equipment Backlog", description: "Equipment forecasting by brand, model, and stage with location filtering", tag: "EQUIPMENT", tagColor: "cyan", section: "Operations Dashboards" },
-  { href: "/dashboards/zuper-status-comparison", title: "Zuper Status Comparison", description: "Compare Zuper job statuses and dates with HubSpot deal data for surveys, construction, and inspections", tag: "ZUPER", tagColor: "cyan", section: "Operations Dashboards" },
+  { href: "/dashboards/zuper-status-comparison", title: "Zuper Status Comparison", description: "Compare Zuper job statuses and dates with HubSpot deal data for surveys, construction, and inspections", tag: "ZUPER", tagColor: "cyan", section: "Admin Suite" },
   { href: "/dashboards/site-survey", title: "Site Survey", description: "Site survey scheduling, status tracking, and completion monitoring", tag: "SURVEY", tagColor: "blue", section: "Department Dashboards" },
   { href: "/dashboards/design", title: "Design & Engineering", description: "Track design progress, engineering approvals, and plan sets", tag: "DESIGN", tagColor: "indigo", section: "Department Dashboards" },
   { href: "/dashboards/permitting", title: "Permitting", description: "Permit status tracking, submission dates, and approval monitoring", tag: "PERMITTING", tagColor: "yellow", section: "Department Dashboards" },
@@ -71,13 +71,13 @@ const ALL_DASHBOARDS: DashboardLinkData[] = [
   { href: "/dashboards/interconnection", title: "Interconnection", description: "Utility interconnection applications, approvals, and meter installations", tag: "UTILITY", tagColor: "cyan", section: "Department Dashboards" },
   { href: "/dashboards/construction", title: "Construction", description: "Construction status, scheduling, and progress tracking", tag: "CONSTRUCTION", tagColor: "orange", section: "Department Dashboards" },
   { href: "/dashboards/incentives", title: "Incentives", description: "Rebate and incentive program tracking and application status", tag: "INCENTIVES", tagColor: "green", section: "Department Dashboards" },
-  { href: "/dashboards/sales", title: "Sales Pipeline", description: "Active deals, funnel visualization, and proposal tracking", tag: "SALES", tagColor: "green", section: "Other Pipelines" },
-  { href: "/dashboards/service", title: "Service Pipeline", description: "Service jobs, scheduling, and work in progress tracking", tag: "SERVICE", tagColor: "cyan", section: "Other Pipelines" },
-  { href: "/dashboards/dnr", title: "D&R Pipeline", description: "Detach & Reset projects with phase tracking", tag: "D&R", tagColor: "purple", section: "Other Pipelines" },
-  { href: "/dashboards/command-center", title: "Executive Suite", description: "Pipeline, revenue milestones, capacity, PE tracking, and executive dashboards", tag: "EXECUTIVE", tagColor: "amber", section: "Participate Energy & Leadership" },
-  { href: "/dashboards/pe", title: "PE Dashboard", description: "Dedicated PE tracking with milestone status and compliance monitoring", tag: "PE", tagColor: "emerald", section: "Participate Energy & Leadership" },
-  { href: "/dashboards/mobile", title: "Mobile Dashboard", description: "Touch-optimized view for field teams with quick project lookup", tag: "MOBILE", tagColor: "blue", section: "Participate Energy & Leadership" },
-  { href: "/handbook", title: "Handbook", description: "Comprehensive guide to all dashboards, features, and workflows", tag: "GUIDE", tagColor: "zinc", section: "Participate Energy & Leadership" },
+  { href: "/dashboards/command-center", title: "Executive Suite", description: "Pipeline, revenue milestones, capacity, PE tracking, and executive dashboards", tag: "EXECUTIVE", tagColor: "amber", section: "Executive Suite" },
+  { href: "/dashboards/pe", title: "PE Dashboard", description: "Dedicated PE tracking with milestone status and compliance monitoring", tag: "PE", tagColor: "emerald", section: "Admin Suite" },
+  { href: "/dashboards/mobile", title: "Mobile Dashboard", description: "Touch-optimized view for field teams with quick project lookup", tag: "MOBILE", tagColor: "blue", section: "Admin Suite" },
+  { href: "/dashboards/sales", title: "Sales Pipeline", description: "Active deals, funnel visualization, and proposal tracking", tag: "SALES", tagColor: "green", section: "Additional Pipeline Suite" },
+  { href: "/dashboards/service", title: "Service Pipeline", description: "Service jobs, scheduling, and work in progress tracking", tag: "SERVICE", tagColor: "cyan", section: "Additional Pipeline Suite" },
+  { href: "/dashboards/dnr", title: "D&R Pipeline", description: "Detach & Reset projects with phase tracking", tag: "D&R", tagColor: "purple", section: "Additional Pipeline Suite" },
+  { href: "/handbook", title: "Handbook", description: "Comprehensive guide to all dashboards, features, and workflows", tag: "GUIDE", tagColor: "zinc", section: "Executive Suite" },
 ];
 
 // ---- Main page ----
@@ -248,8 +248,9 @@ export default function Home() {
   const sections = [
     "Operations Dashboards",
     "Department Dashboards",
-    "Other Pipelines",
-    "Participate Energy & Leadership",
+    "Executive Suite",
+    "Admin Suite",
+    "Additional Pipeline Suite",
   ];
 
   return (
@@ -708,6 +709,8 @@ const DashboardLink = memo(function DashboardLink({
     emerald: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
     green: "bg-green-500/20 text-green-400 border-green-500/30",
     cyan: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
+    amber: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+    zinc: "bg-zinc-500/20 text-zinc-300 border-zinc-500/30",
   };
 
   // Extract dashboard name from href for prefetching
