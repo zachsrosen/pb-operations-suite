@@ -188,13 +188,12 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
   SALES: {
     allowedRoutes: [
       "/dashboards/site-survey-scheduler",
-      "/dashboards/sales",
-      "/handbook",
       "/api/projects",
       "/api/zuper/availability",
       "/api/zuper/status",
       "/api/zuper/jobs/lookup",
       "/api/zuper/jobs/schedule",
+      "/api/zuper/my-availability",
     ],
     canScheduleSurveys: true,
     canScheduleInstalls: false,

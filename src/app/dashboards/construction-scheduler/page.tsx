@@ -543,7 +543,13 @@ export default function ConstructionSchedulerPage() {
       [project.id]: date,
     }));
 
-    if (zuperConfigured && syncToZuper) {
+    if (syncToZuper) {
+      if (!zuperConfigured) {
+        showToast(
+          `${getCustomerName(project.name)} scheduled locally (Zuper not configured)`,
+          "warning"
+        );
+      } else {
       setSyncingToZuper(true);
       try {
         // Auto-assign location director
@@ -593,8 +599,42 @@ export default function ConstructionSchedulerPage() {
       } finally {
         setSyncingToZuper(false);
       }
+      }
     } else {
-      showToast(`${getCustomerName(project.name)} scheduled for ${formatDate(date)}`);
+      try {
+        const director = CONSTRUCTION_DIRECTORS[project.location];
+        const response = await fetch("/api/zuper/jobs/schedule/tentative", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            project: {
+              id: project.id,
+              name: project.name,
+              address: project.address,
+              city: "",
+              state: "",
+            },
+            schedule: {
+              type: "installation",
+              date,
+              days: project.installDays || 2,
+              crew: director?.userUid,
+              userUid: director?.userUid,
+              teamUid: director?.teamUid,
+              assignedUser: director?.name,
+              notes: `Tentatively scheduled via Construction Scheduler${director ? ` — Director: ${director.name}` : ""}`,
+            },
+          }),
+        });
+
+        if (response.ok) {
+          showToast(`${getCustomerName(project.name)} tentatively scheduled for ${formatDate(date)}`);
+        } else {
+          showToast(`${getCustomerName(project.name)} scheduled locally (tentative save failed)`, "warning");
+        }
+      } catch {
+        showToast(`${getCustomerName(project.name)} scheduled locally (tentative save failed)`, "warning");
+      }
     }
 
     setScheduleModal(null);

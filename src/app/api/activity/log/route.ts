@@ -41,6 +41,25 @@ export async function POST(request: NextRequest) {
 
     // Handle different action types
     switch (action) {
+      case "page_view":
+        await logActivity({
+          type: "DASHBOARD_VIEWED",
+          description: `Viewed page ${data.path || "unknown"}`,
+          userEmail,
+          userName,
+          entityType: "page",
+          entityId: data.path,
+          entityName: data.title || data.path,
+          metadata: {
+            source: data.source,
+            title: data.title,
+          },
+          ipAddress,
+          userAgent,
+          sessionId: data.sessionId,
+        });
+        break;
+
       case "dashboard_view":
         await logDashboardView({
           dashboard: data.dashboard,

@@ -768,7 +768,13 @@ export default function SiteSurveySchedulerPage() {
     let scheduledZuperJobUid: string | undefined = project.zuperJobUid;
 
     // Sync to Zuper FIRST if enabled (so we get the job UID for local booking)
-    if (zuperConfigured && syncToZuper) {
+    if (syncToZuper) {
+      if (!zuperConfigured) {
+        showToast(
+          `${getCustomerName(project.name)} scheduled locally (Zuper not configured)`,
+          "warning"
+        );
+      } else {
       setSyncingToZuper(true);
       try {
         const response = await fetch("/api/zuper/jobs/schedule", {
@@ -832,9 +838,45 @@ export default function SiteSurveySchedulerPage() {
       } finally {
         setSyncingToZuper(false);
       }
+      }
     } else {
-      const slotInfo = slot ? ` with ${slot.userName} at ${slot.startTime.replace(/^0/, "")}` : "";
-      showToast(`${getCustomerName(project.name)} scheduled for ${formatDate(date)}${slotInfo}`);
+      try {
+        const response = await fetch("/api/zuper/jobs/schedule/tentative", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            project: {
+              id: project.id,
+              name: project.name,
+              address: project.address,
+              city: "",
+              state: "",
+            },
+            schedule: {
+              type: "survey",
+              date,
+              startTime: slot?.startTime,
+              endTime: slot?.endTime,
+              crew: slot?.userUid,
+              assignedUser: slot?.userName,
+              userUid: slot?.userUid,
+              teamUid: slot?.teamUid,
+              notes: slot
+                ? `Tentative surveyor: ${slot.userName} at ${slot.startTime}`
+                : "Tentatively scheduled via Site Survey Scheduler",
+            },
+          }),
+        });
+
+        const slotInfo = slot ? ` (${slot.userName} ${slot.startTime.replace(/^0/, "")})` : "";
+        if (response.ok) {
+          showToast(`${getCustomerName(project.name)} tentatively scheduled${slotInfo}`);
+        } else {
+          showToast(`${getCustomerName(project.name)} scheduled locally (tentative save failed)`, "warning");
+        }
+      } catch {
+        showToast(`${getCustomerName(project.name)} scheduled locally (tentative save failed)`, "warning");
+      }
     }
 
     // Book the time slot locally AFTER Zuper sync (so we have the job UID)

@@ -15,6 +15,7 @@ const getSessionId = () => {
 };
 
 interface ActivityTracker {
+  trackPageView: (path: string, title?: string, source?: string) => void;
   trackDashboardView: (dashboard: string, options?: {
     filters?: Record<string, unknown>;
     projectCount?: number;
@@ -67,6 +68,18 @@ export function useActivityTracking(): ActivityTracker {
       console.debug("Activity tracking failed:", error);
     }
   }, []);
+
+  const trackPageView = useCallback((
+    path: string,
+    title?: string,
+    source?: string
+  ) => {
+    logActivity("page_view", {
+      path,
+      title,
+      source: source || "app-navigation",
+    });
+  }, [logActivity]);
 
   const trackDashboardView = useCallback((
     dashboard: string,
@@ -148,6 +161,7 @@ export function useActivityTracking(): ActivityTracker {
   }, [logActivity]);
 
   return {
+    trackPageView,
     trackDashboardView,
     trackProjectView,
     trackSearch,

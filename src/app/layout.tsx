@@ -4,6 +4,7 @@ import { Analytics } from "@vercel/analytics/react";
 import { Providers } from "./providers";
 import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistration";
 import ImpersonationBanner from "@/components/ImpersonationBanner";
+import PageViewTracker from "@/components/PageViewTracker";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -65,6 +66,7 @@ export default function RootLayout({
       >
         <Providers>
           <ImpersonationBanner />
+          <PageViewTracker />
           {children}
         </Providers>
         <ServiceWorkerRegistration />

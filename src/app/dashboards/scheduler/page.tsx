@@ -799,7 +799,13 @@ export default function SchedulerPage() {
     }));
 
     // Sync to Zuper if enabled
-    if (zuperConfigured && syncToZuper) {
+    if (syncToZuper) {
+      if (!zuperConfigured) {
+        showToast(
+          `${getCustomerName(project.name)} scheduled locally (Zuper not configured)`,
+          "error"
+        );
+      } else {
       setSyncingToZuper(true);
       try {
         const scheduleType = project.stage === "survey" ? "survey"
@@ -850,10 +856,43 @@ export default function SchedulerPage() {
       } finally {
         setSyncingToZuper(false);
       }
+      }
     } else {
-      showToast(
-        `${getCustomerName(project.name)} scheduled for ${formatDate(date)}`
-      );
+      try {
+        const scheduleType = project.stage === "survey" ? "survey"
+          : project.stage === "inspection" ? "inspection"
+          : "installation";
+
+        const response = await fetch("/api/zuper/jobs/schedule/tentative", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            project: {
+              id: project.id,
+              name: project.name,
+              address: project.address,
+              city: "",
+              state: "",
+            },
+            schedule: {
+              type: scheduleType,
+              date,
+              days,
+              crew,
+              assignedUser: crew,
+              notes: "Tentatively scheduled via Master Scheduler",
+            },
+          }),
+        });
+
+        if (response.ok) {
+          showToast(`${getCustomerName(project.name)} tentatively scheduled for ${formatDate(date)}`);
+        } else {
+          showToast(`${getCustomerName(project.name)} scheduled locally (tentative save failed)`, "error");
+        }
+      } catch {
+        showToast(`${getCustomerName(project.name)} scheduled locally (tentative save failed)`, "error");
+      }
     }
 
     setScheduleModal(null);

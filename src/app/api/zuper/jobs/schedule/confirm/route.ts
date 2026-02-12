@@ -264,8 +264,15 @@ export async function POST(request: NextRequest) {
     const ip = hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
     const userAgent = hdrs.get("user-agent") || "unknown";
 
+    const activityType =
+      scheduleType === "survey"
+        ? "SURVEY_SCHEDULED"
+        : scheduleType === "inspection"
+          ? "INSPECTION_SCHEDULED"
+          : "INSTALL_SCHEDULED";
+
     await logActivity({
-      type: "INSTALL_SCHEDULED",
+      type: activityType,
       description: `Confirmed tentative ${scheduleType} for ${record.projectName}`,
       userEmail: session.user.email,
       userName: session.user.name || undefined,

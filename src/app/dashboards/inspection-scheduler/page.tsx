@@ -250,8 +250,10 @@ function transformProject(p: RawProject): InspectionProject | null {
 
 export default function InspectionSchedulerPage() {
   /* ---- activity tracking ---- */
-  const { trackDashboardView } = useActivityTracking();
+  const { trackDashboardView, trackProjectView, trackSearch, trackFilter, trackFeature } = useActivityTracking();
   const hasTrackedView = useRef(false);
+  const hasTrackedFilters = useRef(false);
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /* ---- core data ---- */
   const [projects, setProjects] = useState<InspectionProject[]>([]);
@@ -493,6 +495,51 @@ export default function InspectionSchedulerPage() {
     }
   }, [loading, projects.length, trackDashboardView]);
 
+  useEffect(() => {
+    if (loading) return;
+    if (!hasTrackedFilters.current) {
+      hasTrackedFilters.current = true;
+      return;
+    }
+    trackFilter("inspection-scheduler", {
+      selectedLocations,
+      filterStatuses,
+      sortBy,
+      view: currentView,
+      showAvailability,
+    });
+  }, [loading, selectedLocations, filterStatuses, sortBy, currentView, showAvailability, trackFilter]);
+
+  useEffect(() => {
+    if (loading) return;
+    if (searchDebounceRef.current) {
+      clearTimeout(searchDebounceRef.current);
+      searchDebounceRef.current = null;
+    }
+
+    const query = searchText.trim();
+    if (query.length < 2) return;
+
+    searchDebounceRef.current = setTimeout(() => {
+      trackSearch(query, filteredProjects.length, "inspection-scheduler");
+    }, 500);
+
+    return () => {
+      if (searchDebounceRef.current) {
+        clearTimeout(searchDebounceRef.current);
+        searchDebounceRef.current = null;
+      }
+    };
+  }, [loading, searchText, filteredProjects.length, trackSearch]);
+
+  const selectProjectWithTracking = useCallback((project: InspectionProject, source: string) => {
+    const shouldDeselect = selectedProject?.id === project.id;
+    if (!shouldDeselect) {
+      trackProjectView(project.id, project.name, source);
+    }
+    setSelectedProject(shouldDeselect ? null : project);
+  }, [selectedProject, trackProjectView]);
+
   /* ================================================================ */
   /*  Toast                                                            */
   /* ================================================================ */
@@ -681,6 +728,7 @@ export default function InspectionSchedulerPage() {
       return;
     }
     if (project) {
+      trackProjectView(project.id, project.name, "inspection-scheduler:date-click");
       const currentSlot = findCurrentSlotForProject(project.id, date, project.name, project.zuperJobUid);
       setScheduleModal({ project, date, currentSlot });
     } else if (selectedProject) {
@@ -688,7 +736,7 @@ export default function InspectionSchedulerPage() {
       setScheduleModal({ project: selectedProject, date, currentSlot });
       setSelectedProject(null);
     }
-  }, [selectedProject, showToast, findCurrentSlotForProject]);
+  }, [selectedProject, showToast, findCurrentSlotForProject, trackProjectView]);
 
   const confirmSchedule = useCallback(async () => {
     if (!scheduleModal) return;
@@ -700,7 +748,13 @@ export default function InspectionSchedulerPage() {
       [project.id]: date,
     }));
 
-    if (zuperConfigured && syncToZuper) {
+    if (syncToZuper) {
+      if (!zuperConfigured) {
+        showToast(
+          `${getCustomerName(project.name)} scheduled locally (Zuper not configured)`,
+          "warning"
+        );
+      } else {
       setSyncingToZuper(true);
       try {
         const response = await fetch("/api/zuper/jobs/schedule", {
@@ -763,10 +817,59 @@ export default function InspectionSchedulerPage() {
       } finally {
         setSyncingToZuper(false);
       }
+      }
     } else {
-      const slotInfo = slot ? ` with ${slot.userName} at ${formatTime12h(slot.startTime)}` : "";
-      showToast(`${getCustomerName(project.name)} scheduled for ${formatDate(date)}${slotInfo}`);
+      try {
+        const response = await fetch("/api/zuper/jobs/schedule/tentative", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            project: {
+              id: project.id,
+              name: project.name,
+              address: project.address,
+              city: "",
+              state: "",
+            },
+            schedule: {
+              type: "inspection",
+              date,
+              startTime: slot?.startTime,
+              endTime: slot?.endTime,
+              crew: slot?.userUid,
+              assignedUser: slot?.userName,
+              userUid: slot?.userUid,
+              teamUid: slot?.teamUid,
+              notes: slot
+                ? `Tentative inspector: ${slot.userName} at ${slot.startTime}`
+                : "Tentatively scheduled via Inspection Scheduler",
+            },
+          }),
+        });
+
+        const slotInfo = slot ? ` (${slot.userName} ${formatTime12h(slot.startTime)})` : "";
+        if (response.ok) {
+          showToast(`${getCustomerName(project.name)} tentatively scheduled${slotInfo}`);
+        } else {
+          showToast(`${getCustomerName(project.name)} scheduled locally (tentative save failed)`, "warning");
+        }
+      } catch {
+        showToast(`${getCustomerName(project.name)} scheduled locally (tentative save failed)`, "warning");
+      }
     }
+
+    trackFeature(
+      scheduleModal.currentSlot ? "inspection_rescheduled" : "inspection_scheduled",
+      `Inspection ${scheduleModal.currentSlot ? "rescheduled" : "scheduled"} for ${project.name}`,
+      {
+        projectId: project.id,
+        date,
+        syncToZuper,
+        assignedInspector: slot?.userName,
+        startTime: slot?.startTime,
+        endTime: slot?.endTime,
+      }
+    );
 
     // Store inspector assignment locally
     if (slot?.userName) {
@@ -835,7 +938,7 @@ export default function InspectionSchedulerPage() {
     }
 
     setScheduleModal(null);
-  }, [scheduleModal, zuperConfigured, syncToZuper, showToast, fetchAvailability, saveInspectorAssignment]);
+  }, [scheduleModal, zuperConfigured, syncToZuper, showToast, fetchAvailability, saveInspectorAssignment, trackFeature]);
 
   const cancelSchedule = useCallback((projectId: string) => {
     setManualSchedules((prev) => {
@@ -1133,7 +1236,7 @@ export default function InspectionSchedulerPage() {
                       key={project.id}
                       draggable
                       onDragStart={() => handleDragStart(project.id)}
-                      onClick={() => setSelectedProject(selectedProject?.id === project.id ? null : project)}
+                      onClick={() => selectProjectWithTracking(project, "inspection-scheduler:unscheduled-list")}
                       className={`p-3 border-b border-zinc-800 cursor-pointer hover:bg-zinc-800/50 transition-colors ${
                         selectedProject?.id === project.id ? "bg-purple-900/20 border-l-2 border-l-purple-500" : ""
                       }`}
@@ -1314,6 +1417,7 @@ export default function InspectionSchedulerPage() {
                               }}
                               onClick={(e) => {
                                 e.stopPropagation();
+                                trackProjectView(ev.id, ev.name, "inspection-scheduler:calendar-event");
                                 setScheduleModal({ project: ev, date: dateStr, currentSlot: evSlot });
                               }}
                               className={`text-xs p-1 rounded cursor-grab active:cursor-grabbing ${
@@ -1535,7 +1639,7 @@ export default function InspectionSchedulerPage() {
                                 </button>
                               ) : (
                                 <button
-                                  onClick={() => setSelectedProject(project)}
+                                  onClick={() => selectProjectWithTracking(project, "inspection-scheduler:list-table")}
                                   className="text-xs text-purple-400 hover:text-purple-300"
                                 >
                                   Schedule
