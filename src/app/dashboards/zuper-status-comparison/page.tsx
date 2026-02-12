@@ -29,6 +29,33 @@ interface ComparisonRecord {
   assignedTo: string | null;
 }
 
+interface CategorySlot {
+  zuperJobUid: string | null;
+  zuperStatus: string | null;
+  hubspotStatus: string | null;
+  isMismatch: boolean;
+  zuperScheduledStart: string | null;
+  hubspotScheduleDate: string | null;
+  scheduleDateMatch: boolean | null;
+  zuperCompletedAt: string | null;
+  hubspotCompletionDate: string | null;
+  completionDateMatch: boolean | null;
+  team: string | null;
+  assignedTo: string | null;
+}
+
+interface ProjectGroupedRecord {
+  projectNumber: string;
+  dealId: string | null;
+  dealName: string | null;
+  dealUrl: string | null;
+  survey: CategorySlot;
+  construction: CategorySlot;
+  inspection: CategorySlot;
+  hasAnyMismatch: boolean;
+  hasAnyDateMismatch: boolean;
+}
+
 interface CategoryStats {
   total: number;
   mismatches: number;
@@ -38,6 +65,7 @@ interface CategoryStats {
 
 interface ApiResponse {
   records: ComparisonRecord[];
+  projectRecords: ProjectGroupedRecord[];
   stats: {
     total: number;
     mismatches: number;
@@ -51,6 +79,7 @@ interface ApiResponse {
       inspection: CategoryStats;
     };
   };
+  dateRange: { from: string; to: string };
   lastUpdated: string;
 }
 
@@ -88,7 +117,7 @@ const COMPLETION_DATE_LABELS: Record<string, string> = {
   inspection: "Inspection Pass",
 };
 
-type ViewMode = "status" | "dates" | "all";
+type ViewMode = "status" | "dates" | "all" | "project-status" | "project-dates";
 
 // ---- Helpers ----
 
@@ -268,6 +297,36 @@ export default function ZuperStatusComparisonPage() {
 
     return records;
   }, [data, activeCategory, showMismatchesOnly, showDateMismatchesOnly, searchQuery, sortField, sortDir]);
+
+  // Filtered project-grouped records
+  const filteredProjectRecords = useMemo(() => {
+    if (!data?.projectRecords) return [];
+    let records = data.projectRecords;
+
+    if (showMismatchesOnly) {
+      records = records.filter((r) => r.hasAnyMismatch);
+    }
+    if (showDateMismatchesOnly) {
+      records = records.filter((r) => r.hasAnyDateMismatch);
+    }
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      records = records.filter(
+        (r) =>
+          r.projectNumber.toLowerCase().includes(q) ||
+          (r.dealName || "").toLowerCase().includes(q) ||
+          (r.survey.zuperStatus || "").toLowerCase().includes(q) ||
+          (r.construction.zuperStatus || "").toLowerCase().includes(q) ||
+          (r.inspection.zuperStatus || "").toLowerCase().includes(q) ||
+          (r.survey.hubspotStatus || "").toLowerCase().includes(q) ||
+          (r.construction.hubspotStatus || "").toLowerCase().includes(q) ||
+          (r.inspection.hubspotStatus || "").toLowerCase().includes(q)
+      );
+    }
+    return records;
+  }, [data, showMismatchesOnly, showDateMismatchesOnly, searchQuery]);
+
+  const isProjectView = viewMode === "project-status" || viewMode === "project-dates";
 
   // CSV export
   const exportData = useMemo(() => {
@@ -451,17 +510,23 @@ export default function ZuperStatusComparisonPage() {
       <div className="flex flex-wrap items-center gap-3 mb-4">
         {/* View mode toggles */}
         <div className="flex rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden">
-          {(["all", "status", "dates"] as ViewMode[]).map((mode) => (
+          {([
+            { key: "all", label: "All" },
+            { key: "status", label: "Status" },
+            { key: "dates", label: "Dates" },
+            { key: "project-status", label: "Project Status" },
+            { key: "project-dates", label: "Project Dates" },
+          ] as { key: ViewMode; label: string }[]).map(({ key, label }) => (
             <button
-              key={mode}
-              onClick={() => setViewMode(mode)}
+              key={key}
+              onClick={() => setViewMode(key)}
               className={`px-3 py-1.5 text-xs font-medium transition-colors ${
-                viewMode === mode
+                viewMode === key
                   ? "bg-cyan-600 text-white"
                   : "bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800"
               }`}
             >
-              {mode === "all" ? "All Columns" : mode === "status" ? "Status View" : "Dates View"}
+              {label}
             </button>
           ))}
         </div>
@@ -509,11 +574,164 @@ export default function ZuperStatusComparisonPage() {
         )}
 
         <span className="ml-auto text-xs text-zinc-500 dark:text-zinc-400">
-          {filteredRecords.length} records
+          {isProjectView ? `${filteredProjectRecords.length} projects` : `${filteredRecords.length} records`}
+          {data?.dateRange && (
+            <span className="ml-2 text-zinc-400">
+              ({formatShortDate(data.dateRange.from)} - {formatShortDate(data.dateRange.to)})
+            </span>
+          )}
         </span>
       </div>
 
-      {/* Results Table */}
+      {/* Project View Tables */}
+      {isProjectView && (
+        <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-zinc-50 dark:bg-zinc-800/50 border-b border-zinc-200 dark:border-zinc-700">
+                  <th className="px-3 py-2.5 text-left font-medium text-zinc-600 dark:text-zinc-300 text-xs sticky left-0 bg-zinc-50 dark:bg-zinc-800/50 z-10">
+                    Project
+                  </th>
+                  {viewMode === "project-status" ? (
+                    <>
+                      <th colSpan={3} className="px-2 py-1 text-center font-medium text-xs border-l border-zinc-200 dark:border-zinc-700">
+                        <span className={`px-2 py-0.5 rounded-full ${CATEGORY_BADGE.site_survey}`}>Site Survey</span>
+                      </th>
+                      <th colSpan={3} className="px-2 py-1 text-center font-medium text-xs border-l border-zinc-200 dark:border-zinc-700">
+                        <span className={`px-2 py-0.5 rounded-full ${CATEGORY_BADGE.construction}`}>Construction</span>
+                      </th>
+                      <th colSpan={3} className="px-2 py-1 text-center font-medium text-xs border-l border-zinc-200 dark:border-zinc-700">
+                        <span className={`px-2 py-0.5 rounded-full ${CATEGORY_BADGE.inspection}`}>Inspection</span>
+                      </th>
+                    </>
+                  ) : (
+                    <>
+                      <th colSpan={5} className="px-2 py-1 text-center font-medium text-xs border-l border-zinc-200 dark:border-zinc-700">
+                        <span className={`px-2 py-0.5 rounded-full ${CATEGORY_BADGE.site_survey}`}>Site Survey</span>
+                      </th>
+                      <th colSpan={5} className="px-2 py-1 text-center font-medium text-xs border-l border-zinc-200 dark:border-zinc-700">
+                        <span className={`px-2 py-0.5 rounded-full ${CATEGORY_BADGE.construction}`}>Construction</span>
+                      </th>
+                      <th colSpan={5} className="px-2 py-1 text-center font-medium text-xs border-l border-zinc-200 dark:border-zinc-700">
+                        <span className={`px-2 py-0.5 rounded-full ${CATEGORY_BADGE.inspection}`}>Inspection</span>
+                      </th>
+                    </>
+                  )}
+                  <th className="px-3 py-2.5 text-center font-medium text-zinc-600 dark:text-zinc-300 text-xs border-l border-zinc-200 dark:border-zinc-700">
+                    Links
+                  </th>
+                </tr>
+                <tr className="bg-zinc-50/50 dark:bg-zinc-800/30 border-b border-zinc-200 dark:border-zinc-700 text-[10px] font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
+                  <th className="px-3 py-1.5 text-left sticky left-0 bg-zinc-50/50 dark:bg-zinc-800/30 z-10">&nbsp;</th>
+                  {viewMode === "project-status" ? (
+                    <>
+                      {/* Survey status sub-headers */}
+                      <th className="px-2 py-1.5 text-left border-l border-zinc-200 dark:border-zinc-700">Zuper</th>
+                      <th className="px-2 py-1.5 text-left">HubSpot</th>
+                      <th className="px-2 py-1.5 text-center">Match</th>
+                      {/* Construction status sub-headers */}
+                      <th className="px-2 py-1.5 text-left border-l border-zinc-200 dark:border-zinc-700">Zuper</th>
+                      <th className="px-2 py-1.5 text-left">HubSpot</th>
+                      <th className="px-2 py-1.5 text-center">Match</th>
+                      {/* Inspection status sub-headers */}
+                      <th className="px-2 py-1.5 text-left border-l border-zinc-200 dark:border-zinc-700">Zuper</th>
+                      <th className="px-2 py-1.5 text-left">HubSpot</th>
+                      <th className="px-2 py-1.5 text-center">Match</th>
+                    </>
+                  ) : (
+                    <>
+                      {/* Survey date sub-headers */}
+                      <th className="px-2 py-1.5 text-left border-l border-zinc-200 dark:border-zinc-700">Z Sched</th>
+                      <th className="px-2 py-1.5 text-left">HS Sched</th>
+                      <th className="px-2 py-1.5 text-left">Z Compl</th>
+                      <th className="px-2 py-1.5 text-left">HS Compl</th>
+                      <th className="px-2 py-1.5 text-center">Match</th>
+                      {/* Construction date sub-headers */}
+                      <th className="px-2 py-1.5 text-left border-l border-zinc-200 dark:border-zinc-700">Z Sched</th>
+                      <th className="px-2 py-1.5 text-left">HS Sched</th>
+                      <th className="px-2 py-1.5 text-left">Z Compl</th>
+                      <th className="px-2 py-1.5 text-left">HS Compl</th>
+                      <th className="px-2 py-1.5 text-center">Match</th>
+                      {/* Inspection date sub-headers */}
+                      <th className="px-2 py-1.5 text-left border-l border-zinc-200 dark:border-zinc-700">Z Sched</th>
+                      <th className="px-2 py-1.5 text-left">HS Sched</th>
+                      <th className="px-2 py-1.5 text-left">Z Compl</th>
+                      <th className="px-2 py-1.5 text-left">HS Compl</th>
+                      <th className="px-2 py-1.5 text-center">Match</th>
+                    </>
+                  )}
+                  <th className="px-3 py-1.5 border-l border-zinc-200 dark:border-zinc-700">&nbsp;</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                {filteredProjectRecords.length === 0 ? (
+                  <tr>
+                    <td colSpan={20} className="px-4 py-12 text-center text-zinc-500 dark:text-zinc-400">
+                      No records found matching your filters.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredProjectRecords.map((rec) => (
+                    <tr
+                      key={rec.projectNumber}
+                      className={`hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors ${
+                        (viewMode === "project-status" && rec.hasAnyMismatch) || (viewMode === "project-dates" && rec.hasAnyDateMismatch)
+                          ? "bg-red-50/40 dark:bg-red-950/10"
+                          : ""
+                      }`}
+                    >
+                      <td className="px-3 py-2 sticky left-0 bg-white dark:bg-zinc-900 z-10">
+                        <div className="font-mono font-medium text-zinc-900 dark:text-zinc-100 text-xs">
+                          {rec.projectNumber}
+                        </div>
+                        {rec.dealName && (
+                          <div className="text-[10px] text-zinc-500 dark:text-zinc-400 truncate max-w-[140px]" title={rec.dealName}>
+                            {rec.dealName.replace(/^PROJ-\d+\s*\|\s*/, "").split("|")[0]?.trim()}
+                          </div>
+                        )}
+                      </td>
+
+                      {viewMode === "project-status" ? (
+                        <>
+                          {/* Survey status */}
+                          <ProjectStatusCells slot={rec.survey} />
+                          {/* Construction status */}
+                          <ProjectStatusCells slot={rec.construction} />
+                          {/* Inspection status */}
+                          <ProjectStatusCells slot={rec.inspection} />
+                        </>
+                      ) : (
+                        <>
+                          {/* Survey dates */}
+                          <ProjectDateCells slot={rec.survey} />
+                          {/* Construction dates */}
+                          <ProjectDateCells slot={rec.construction} />
+                          {/* Inspection dates */}
+                          <ProjectDateCells slot={rec.inspection} />
+                        </>
+                      )}
+
+                      <td className="px-3 py-2 text-center border-l border-zinc-200 dark:border-zinc-700">
+                        <div className="flex items-center justify-center gap-1.5">
+                          {rec.dealUrl && (
+                            <a href={rec.dealUrl} target="_blank" rel="noopener noreferrer" className="text-orange-600 dark:text-orange-400 hover:text-orange-800" title="HubSpot">
+                              <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" /></svg>
+                            </a>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Per-Job Results Table */}
+      {!isProjectView && (
       <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -706,6 +924,7 @@ export default function ZuperStatusComparisonPage() {
           </table>
         </div>
       </div>
+      )}
 
       {/* Mismatch Breakdown */}
       {data && stats && (stats.mismatches > 0 || stats.scheduleDateMismatches > 0 || stats.completionDateMismatches > 0) && (
@@ -816,6 +1035,76 @@ function StatusBadge({ status }: { status: string }) {
       <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${statusDotColor(status)}`} />
       {status}
     </span>
+  );
+}
+
+function ProjectStatusCells({ slot }: { slot: CategorySlot }) {
+  if (!slot.zuperStatus) {
+    return (
+      <>
+        <td className="px-2 py-2 border-l border-zinc-200 dark:border-zinc-700">
+          <span className="text-[10px] text-zinc-400 italic">No job</span>
+        </td>
+        <td className="px-2 py-2"><span className="text-[10px] text-zinc-400">-</span></td>
+        <td className="px-2 py-2 text-center"><span className="text-[10px] text-zinc-400">-</span></td>
+      </>
+    );
+  }
+  return (
+    <>
+      <td className="px-2 py-2 border-l border-zinc-200 dark:border-zinc-700">
+        <StatusBadge status={slot.zuperStatus} />
+      </td>
+      <td className="px-2 py-2">
+        {slot.hubspotStatus ? (
+          <StatusBadge status={slot.hubspotStatus} />
+        ) : (
+          <span className="text-[10px] text-zinc-400 italic">Not set</span>
+        )}
+      </td>
+      <td className="px-2 py-2 text-center">
+        <MatchIcon match={!slot.isMismatch} />
+      </td>
+    </>
+  );
+}
+
+function ProjectDateCells({ slot }: { slot: CategorySlot }) {
+  if (!slot.zuperStatus) {
+    return (
+      <>
+        <td className="px-2 py-2 border-l border-zinc-200 dark:border-zinc-700">
+          <span className="text-[10px] text-zinc-400 italic">No job</span>
+        </td>
+        <td className="px-2 py-2"><span className="text-[10px] text-zinc-400">-</span></td>
+        <td className="px-2 py-2"><span className="text-[10px] text-zinc-400">-</span></td>
+        <td className="px-2 py-2"><span className="text-[10px] text-zinc-400">-</span></td>
+        <td className="px-2 py-2 text-center"><span className="text-[10px] text-zinc-400">-</span></td>
+      </>
+    );
+  }
+  const hasDateMismatch = slot.scheduleDateMatch === false || slot.completionDateMatch === false;
+  return (
+    <>
+      <td className={`px-2 py-2 text-[11px] whitespace-nowrap border-l border-zinc-200 dark:border-zinc-700 ${hasDateMismatch ? "text-red-600 dark:text-red-400" : "text-zinc-600 dark:text-zinc-400"}`}>
+        {formatShortDate(slot.zuperScheduledStart)}
+      </td>
+      <td className={`px-2 py-2 text-[11px] whitespace-nowrap ${hasDateMismatch ? "text-red-600 dark:text-red-400" : "text-zinc-600 dark:text-zinc-400"}`}>
+        {formatShortDate(slot.hubspotScheduleDate)}
+      </td>
+      <td className={`px-2 py-2 text-[11px] whitespace-nowrap ${hasDateMismatch ? "text-red-600 dark:text-red-400" : "text-zinc-600 dark:text-zinc-400"}`}>
+        {formatShortDate(slot.zuperCompletedAt)}
+      </td>
+      <td className={`px-2 py-2 text-[11px] whitespace-nowrap ${hasDateMismatch ? "text-red-600 dark:text-red-400" : "text-zinc-600 dark:text-zinc-400"}`}>
+        {formatShortDate(slot.hubspotCompletionDate)}
+      </td>
+      <td className="px-2 py-2 text-center">
+        <div className="flex items-center justify-center gap-0.5">
+          <DateMatchBadge match={slot.scheduleDateMatch} />
+          <DateMatchBadge match={slot.completionDateMatch} />
+        </div>
+      </td>
+    </>
   );
 }
 

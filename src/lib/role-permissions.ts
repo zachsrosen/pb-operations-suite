@@ -213,8 +213,6 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
  * New dashboards/features go here until confirmed ready for wider access.
  */
 export const ADMIN_ONLY_ROUTES: string[] = [
-  "/admin",
-  "/api/admin",
   "/dashboards/zuper-status-comparison",
   "/api/zuper/status-comparison",
 ];

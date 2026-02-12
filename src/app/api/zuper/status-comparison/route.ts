@@ -66,6 +66,61 @@ export interface ComparisonRecord {
   assignedTo: string | null;
 }
 
+// Project-level grouped view: all 3 categories side by side per project
+export interface ProjectGroupedRecord {
+  projectNumber: string;
+  dealId: string | null;
+  dealName: string | null;
+  dealUrl: string | null;
+  // Site Survey
+  survey: {
+    zuperJobUid: string | null;
+    zuperStatus: string | null;
+    hubspotStatus: string | null;
+    isMismatch: boolean;
+    zuperScheduledStart: string | null;
+    hubspotScheduleDate: string | null;
+    scheduleDateMatch: boolean | null;
+    zuperCompletedAt: string | null;
+    hubspotCompletionDate: string | null;
+    completionDateMatch: boolean | null;
+    team: string | null;
+    assignedTo: string | null;
+  };
+  // Construction
+  construction: {
+    zuperJobUid: string | null;
+    zuperStatus: string | null;
+    hubspotStatus: string | null;
+    isMismatch: boolean;
+    zuperScheduledStart: string | null;
+    hubspotScheduleDate: string | null;
+    scheduleDateMatch: boolean | null;
+    zuperCompletedAt: string | null;
+    hubspotCompletionDate: string | null;
+    completionDateMatch: boolean | null;
+    team: string | null;
+    assignedTo: string | null;
+  };
+  // Inspection
+  inspection: {
+    zuperJobUid: string | null;
+    zuperStatus: string | null;
+    hubspotStatus: string | null;
+    isMismatch: boolean;
+    zuperScheduledStart: string | null;
+    hubspotScheduleDate: string | null;
+    scheduleDateMatch: boolean | null;
+    zuperCompletedAt: string | null;
+    hubspotCompletionDate: string | null;
+    completionDateMatch: boolean | null;
+    team: string | null;
+    assignedTo: string | null;
+  };
+  hasAnyMismatch: boolean;
+  hasAnyDateMismatch: boolean;
+}
+
 // Extract project number (e.g., "PROJ-7710") from a Zuper job title
 function extractProjectNumber(title: string): string | null {
   const match = title.match(/PROJ-(\d+)/i);
@@ -173,8 +228,8 @@ function compareDates(date1: string | null, date2: string | null): boolean | nul
   }
 }
 
-// Fetch all Zuper jobs for a category with pagination
-async function fetchAllZuperJobs(categoryUid: string): Promise<ZuperJobSummary[]> {
+// Fetch all Zuper jobs for a category with pagination (filtered by date range)
+async function fetchAllZuperJobs(categoryUid: string, fromDate?: string, toDate?: string): Promise<ZuperJobSummary[]> {
   const allJobs: ZuperJobSummary[] = [];
   let page = 1;
   const limit = 100;
@@ -183,6 +238,8 @@ async function fetchAllZuperJobs(categoryUid: string): Promise<ZuperJobSummary[]
   while (hasMore) {
     const result = await zuper.searchJobs({
       category: categoryUid,
+      from_date: fromDate,
+      to_date: toDate,
       page,
       limit,
     });
@@ -313,11 +370,18 @@ export async function GET() {
       );
     }
 
-    // Fetch Zuper jobs for all three categories in parallel
+    // Default to last 3 months
+    const now = new Date();
+    const threeMonthsAgo = new Date(now);
+    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+    const fromDate = threeMonthsAgo.toISOString().split("T")[0];
+    const toDate = now.toISOString().split("T")[0];
+
+    // Fetch Zuper jobs for all three categories in parallel (last 3 months)
     const [surveyJobs, constructionJobs, inspectionJobs] = await Promise.all([
-      fetchAllZuperJobs(JOB_CATEGORY_UIDS.SITE_SURVEY),
-      fetchAllZuperJobs(JOB_CATEGORY_UIDS.CONSTRUCTION),
-      fetchAllZuperJobs(JOB_CATEGORY_UIDS.INSPECTION),
+      fetchAllZuperJobs(JOB_CATEGORY_UIDS.SITE_SURVEY, fromDate, toDate),
+      fetchAllZuperJobs(JOB_CATEGORY_UIDS.CONSTRUCTION, fromDate, toDate),
+      fetchAllZuperJobs(JOB_CATEGORY_UIDS.INSPECTION, fromDate, toDate),
     ]);
 
     const allJobs = [...surveyJobs, ...constructionJobs, ...inspectionJobs];
@@ -420,9 +484,82 @@ export async function GET() {
       },
     };
 
+    // Build project-grouped records (all 3 categories side by side per project)
+    const emptyCategorySlot = {
+      zuperJobUid: null,
+      zuperStatus: null,
+      hubspotStatus: null,
+      isMismatch: false,
+      zuperScheduledStart: null,
+      hubspotScheduleDate: null,
+      scheduleDateMatch: null,
+      zuperCompletedAt: null,
+      hubspotCompletionDate: null,
+      completionDateMatch: null,
+      team: null,
+      assignedTo: null,
+    };
+
+    const projectMap = new Map<string, ProjectGroupedRecord>();
+    for (const record of records) {
+      let grouped = projectMap.get(record.projectNumber);
+      if (!grouped) {
+        grouped = {
+          projectNumber: record.projectNumber,
+          dealId: record.dealId,
+          dealName: record.dealName,
+          dealUrl: record.dealUrl,
+          survey: { ...emptyCategorySlot },
+          construction: { ...emptyCategorySlot },
+          inspection: { ...emptyCategorySlot },
+          hasAnyMismatch: false,
+          hasAnyDateMismatch: false,
+        };
+        projectMap.set(record.projectNumber, grouped);
+      }
+      // Use deal info from whichever record has it
+      if (!grouped.dealId && record.dealId) {
+        grouped.dealId = record.dealId;
+        grouped.dealName = record.dealName;
+        grouped.dealUrl = record.dealUrl;
+      }
+
+      const slot = {
+        zuperJobUid: record.zuperJobUid,
+        zuperStatus: record.zuperStatus,
+        hubspotStatus: record.hubspotStatus,
+        isMismatch: record.isMismatch,
+        zuperScheduledStart: record.zuperScheduledStart,
+        hubspotScheduleDate: record.hubspotScheduleDate,
+        scheduleDateMatch: record.scheduleDateMatch,
+        zuperCompletedAt: record.zuperCompletedAt,
+        hubspotCompletionDate: record.hubspotCompletionDate,
+        completionDateMatch: record.completionDateMatch,
+        team: record.team,
+        assignedTo: record.assignedTo,
+      };
+
+      if (record.category === "site_survey") grouped.survey = slot;
+      else if (record.category === "construction") grouped.construction = slot;
+      else if (record.category === "inspection") grouped.inspection = slot;
+
+      if (record.isMismatch) grouped.hasAnyMismatch = true;
+      if (record.scheduleDateMatch === false || record.completionDateMatch === false) {
+        grouped.hasAnyDateMismatch = true;
+      }
+    }
+
+    const projectRecords = [...projectMap.values()].sort((a, b) => {
+      const aNum = parseInt(a.projectNumber.replace(/\D/g, "")) || 0;
+      const bNum = parseInt(b.projectNumber.replace(/\D/g, "")) || 0;
+      return aNum - bNum;
+    });
+
     return NextResponse.json({
       records,
+      projectRecords,
       stats,
+      dateRange: { from: fromDate, to: toDate },
       lastUpdated: new Date().toISOString(),
     });
   } catch (error) {
