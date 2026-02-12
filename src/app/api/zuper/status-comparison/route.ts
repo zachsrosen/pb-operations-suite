@@ -3,7 +3,6 @@ import { requireApiAuth } from "@/lib/api-auth";
 import { getUserByEmail } from "@/lib/db";
 import { zuper, JOB_CATEGORY_UIDS } from "@/lib/zuper";
 import { Client } from "@hubspot/api-client";
-import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
 
 const hubspotClient = new Client({
   accessToken: process.env.HUBSPOT_ACCESS_TOKEN,
@@ -13,6 +12,7 @@ interface ZuperJobSummary {
   jobUid: string;
   jobTitle: string;
   projectNumber: string;
+  hubspotDealId: string | null;
   zuperStatus: string;
   scheduledStart: string | null;
   scheduledEnd: string | null;
@@ -126,6 +126,59 @@ export interface ProjectGroupedRecord {
 function extractProjectNumber(title: string): string | null {
   const match = title.match(/PROJ-(\d+)/i);
   return match ? `PROJ-${match[1]}` : null;
+}
+
+// Extract HubSpot deal id from Zuper job metadata (custom fields, tags, notes)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractHubspotDealId(job: any): string | null {
+  const normalizeId = (value: unknown): string | null => {
+    if (!value) return null;
+    const raw = String(value).trim();
+    const numericMatch = raw.match(/\b\d{6,}\b/);
+    return numericMatch ? numericMatch[0] : null;
+  };
+
+  const customFields = job.custom_fields;
+  if (Array.isArray(customFields)) {
+    const directField = customFields.find((f) => {
+      const label = String(f?.label || "").toLowerCase();
+      const name = String(f?.name || "").toLowerCase();
+      return (
+        label === "hubspot deal id" ||
+        label === "hubspot_deal_id" ||
+        name === "hubspot_deal_id" ||
+        name === "hubspot deal id"
+      );
+    });
+    const directValue = normalizeId(directField?.value);
+    if (directValue) return directValue;
+
+    const linkField = customFields.find((f) => {
+      const label = String(f?.label || "").toLowerCase();
+      const name = String(f?.name || "").toLowerCase();
+      return (
+        (label.includes("hubspot") && label.includes("link")) ||
+        (name.includes("hubspot") && name.includes("link"))
+      );
+    });
+    const linkMatch = String(linkField?.value || "").match(/\/record\/0-3\/(\d+)/);
+    if (linkMatch?.[1]) return linkMatch[1];
+  } else if (customFields && typeof customFields === "object") {
+    const directValue = normalizeId((customFields as Record<string, unknown>).hubspot_deal_id);
+    if (directValue) return directValue;
+  }
+
+  if (Array.isArray(job.job_tags)) {
+    for (const tag of job.job_tags) {
+      const tagMatch = String(tag).match(/^hubspot-(\d+)$/i);
+      if (tagMatch?.[1]) return tagMatch[1];
+    }
+  }
+
+  const notesMatch = String(job.job_notes || "").match(/hubspot\s*deal\s*id\s*:\s*(\d+)/i);
+  if (notesMatch?.[1]) return notesMatch[1];
+
+  return null;
 }
 
 // Determine the "current" Zuper status from job data
@@ -261,6 +314,7 @@ async function fetchAllZuperJobs(categoryUid: string, fromDate?: string, toDate?
         jobUid: job.job_uid || "",
         jobTitle: job.job_title || "",
         projectNumber,
+        hubspotDealId: extractHubspotDealId(rawJob),
         zuperStatus: getZuperCurrentStatus(rawJob),
         scheduledStart: job.scheduled_start_time || null,
         scheduledEnd: job.scheduled_end_time || null,
@@ -287,32 +341,22 @@ async function fetchAllZuperJobs(categoryUid: string, fromDate?: string, toDate?
   return allJobs;
 }
 
-// Batch fetch HubSpot deals by project number with all date fields
-async function fetchHubspotDealsByProjectNumbers(
-  projectNumbers: string[]
+// Batch fetch HubSpot deals by deal id with all date fields
+async function fetchHubspotDealsByDealIds(
+  dealIds: string[]
 ): Promise<Map<string, HubSpotDealData>> {
   const dealMap = new Map<string, HubSpotDealData>();
 
-  const batchSize = 50;
-  for (let i = 0; i < projectNumbers.length; i += batchSize) {
-    const batch = projectNumbers.slice(i, i + batchSize);
+  const batchSize = 100;
+  for (let i = 0; i < dealIds.length; i += batchSize) {
+    const batch = dealIds.slice(i, i + batchSize);
 
     try {
-      const response = await hubspotClient.crm.deals.searchApi.doSearch({
-        filterGroups: [
-          {
-            filters: [
-              {
-                propertyName: "project_number",
-                operator: FilterOperatorEnum.In,
-                values: batch,
-              },
-            ],
-          },
-        ],
+      const response = await hubspotClient.crm.deals.batchApi.read({
+        inputs: batch.map((id) => ({ id })),
         properties: [
-          "dealname",
           "project_number",
+          "dealname",
           // Status fields
           "site_survey_status",
           "install_status",
@@ -326,32 +370,29 @@ async function fetchHubspotDealsByProjectNumbers(
           "construction_complete_date",
           "inspections_completion_date", // inspection pass date
         ],
-        limit: batchSize,
+        propertiesWithHistory: [],
       });
 
       for (const deal of response.results) {
-        const projNum = deal.properties.project_number;
-        if (projNum) {
-          dealMap.set(projNum, {
-            dealId: deal.id,
-            dealName: deal.properties.dealname || "",
-            siteSurveyStatus: deal.properties.site_survey_status || null,
-            constructionStatus: deal.properties.install_status || null,
-            inspectionStatus: deal.properties.final_inspection_status || null,
-            siteSurveyScheduleDate: deal.properties.site_survey_schedule_date || null,
-            constructionScheduleDate: deal.properties.install_schedule_date || null,
-            inspectionScheduleDate: deal.properties.inspections_schedule_date || null,
-            siteSurveyCompletionDate: deal.properties.site_survey_date || null,
-            constructionCompleteDate: deal.properties.construction_complete_date || null,
-            inspectionPassDate: deal.properties.inspections_completion_date || null,
-          });
-        }
+        dealMap.set(deal.id, {
+          dealId: deal.id,
+          dealName: deal.properties.dealname || "",
+          siteSurveyStatus: deal.properties.site_survey_status || null,
+          constructionStatus: deal.properties.install_status || null,
+          inspectionStatus: deal.properties.final_inspection_status || null,
+          siteSurveyScheduleDate: deal.properties.site_survey_schedule_date || null,
+          constructionScheduleDate: deal.properties.install_schedule_date || null,
+          inspectionScheduleDate: deal.properties.inspections_schedule_date || null,
+          siteSurveyCompletionDate: deal.properties.site_survey_date || null,
+          constructionCompleteDate: deal.properties.construction_complete_date || null,
+          inspectionPassDate: deal.properties.inspections_completion_date || null,
+        });
       }
     } catch (err) {
-      console.error(`[status-comparison] Error fetching HubSpot deals batch ${i}:`, err);
+      console.error(`[status-comparison] Error fetching HubSpot deals by id batch ${i}:`, err);
     }
 
-    if (i + batchSize < projectNumbers.length) {
+    if (i + batchSize < dealIds.length) {
       await new Promise((r) => setTimeout(r, 200));
     }
   }
@@ -393,15 +434,15 @@ export async function GET() {
 
     const allJobs = [...surveyJobs, ...constructionJobs, ...inspectionJobs];
 
-    // Collect unique project numbers
-    const projectNumbers = [...new Set(allJobs.map((j) => j.projectNumber))];
+    // Collect unique HubSpot deal IDs from Zuper job metadata
+    const dealIds = [...new Set(allJobs.map((j) => j.hubspotDealId).filter((id): id is string => !!id))];
 
-    // Fetch HubSpot deals for all project numbers
-    const dealMap = await fetchHubspotDealsByProjectNumbers(projectNumbers);
+    // Fetch HubSpot deals by deal ID
+    const dealMap = await fetchHubspotDealsByDealIds(dealIds);
 
     // Build comparison records
     const records: ComparisonRecord[] = allJobs.map((job) => {
-      const deal = dealMap.get(job.projectNumber);
+      const deal = job.hubspotDealId ? dealMap.get(job.hubspotDealId) : undefined;
       let hubspotStatus: string | null = null;
       let hubspotScheduleDate: string | null = null;
       let hubspotCompletionDate: string | null = null;
@@ -426,12 +467,14 @@ export async function GET() {
         }
       }
 
+      const resolvedDealId = deal?.dealId || job.hubspotDealId || null;
+
       return {
         projectNumber: job.projectNumber,
-        dealId: deal?.dealId || null,
+        dealId: resolvedDealId,
         dealName: deal?.dealName || null,
-        dealUrl: deal?.dealId
-          ? `https://app.hubspot.com/contacts/21710069/record/0-3/${deal.dealId}`
+        dealUrl: resolvedDealId
+          ? `https://app.hubspot.com/contacts/21710069/record/0-3/${resolvedDealId}`
           : null,
         zuperJobUid: job.jobUid,
         zuperJobTitle: job.jobTitle,
