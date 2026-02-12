@@ -244,6 +244,9 @@ export default function Home() {
     if (userRole === "SALES") {
       window.location.replace("/dashboards/site-survey-scheduler");
     }
+    if (userRole === "OPERATIONS" || userRole === "OPERATIONS_MANAGER") {
+      window.location.replace("/suites/operations");
+    }
   }, [userRole]);
 
   const { connected, reconnecting } = useSSE(loadProjects);
@@ -280,6 +283,7 @@ export default function Home() {
 
   const visibleSuites = useMemo(() => {
     if (userRole === "SALES") return [];
+    if (userRole === "OPERATIONS" || userRole === "OPERATIONS_MANAGER") return [];
     const isAdmin = userRole === "ADMIN";
     const isOwnerOrAdmin = isAdmin || userRole === "OWNER";
     return SUITE_LINKS.filter((suite) => {

@@ -51,6 +51,10 @@ function getDefaultRouteForRole(role: UserRole): string {
   const permissions = ROLE_PERMISSIONS[role];
   if (!permissions || permissions.allowedRoutes.includes("*")) return "/";
 
+  // Prefer suite landing pages when available
+  const suiteRoute = permissions.allowedRoutes.find(r => r.startsWith("/suites/"));
+  if (suiteRoute) return suiteRoute;
+
   // Find first dashboard route as default landing page
   const dashboardRoute = permissions.allowedRoutes.find(r => r.startsWith("/dashboards/"));
   return dashboardRoute || "/";
