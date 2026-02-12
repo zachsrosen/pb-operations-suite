@@ -45,7 +45,7 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
     email: session.user.email,
     name: session.user.name ?? undefined,
     image: session.user.image ?? undefined,
-    role: "TECH_OPS", // Default for users not yet in DB
+    role: "VIEWER", // Unassigned until admin assigns access
   };
 }
 

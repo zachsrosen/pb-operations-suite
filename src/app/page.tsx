@@ -241,6 +241,9 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (userRole === "VIEWER") {
+      window.location.replace("/unassigned");
+    }
     if (userRole === "SALES") {
       window.location.replace("/dashboards/site-survey-scheduler");
     }
@@ -285,6 +288,7 @@ export default function Home() {
   }, []);
 
   const visibleSuites = useMemo(() => {
+    if (userRole === "VIEWER") return [];
     if (userRole === "SALES") return [];
     if (userRole === "OPERATIONS" || userRole === "OPERATIONS_MANAGER") return [];
     if (userRole === "TECH_OPS") return [];

@@ -45,7 +45,7 @@ export async function requireApiAuth(): Promise<AuthenticatedUser | NextResponse
   return {
     email: session.user.email,
     name: session.user.name || undefined,
-    role: session.user.role || "TECH_OPS",
+    role: session.user.role || "VIEWER",
     ip,
     userAgent,
   };

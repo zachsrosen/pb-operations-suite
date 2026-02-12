@@ -42,6 +42,7 @@ const ROLES = ["ADMIN", "OWNER", "OPERATIONS_MANAGER", "PROJECT_MANAGER", "OPERA
 
 const ROLE_LABELS: Record<string, string> = {
   OWNER: "EXECUTIVE",
+  VIEWER: "UNASSIGNED",
 };
 
 const getRoleLabel = (role: string): string => ROLE_LABELS[role] || role;

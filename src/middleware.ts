@@ -58,12 +58,15 @@ function getDefaultRouteForRole(role: UserRole): string {
 
   // Find first dashboard route as default landing page
   const dashboardRoute = permissions.allowedRoutes.find(r => r.startsWith("/dashboards/"));
-  return dashboardRoute || "/";
+  if (dashboardRoute) return dashboardRoute;
+
+  // Fallback to the first explicitly allowed route
+  return permissions.allowedRoutes[0] || "/";
 }
 
 export default auth((req) => {
   const isLoggedIn = !!req.auth;
-  const userRole = normalizeRole((req.auth?.user?.role || "TECH_OPS") as UserRole);
+  const userRole = normalizeRole((req.auth?.user?.role || "VIEWER") as UserRole);
   const pathname = req.nextUrl.pathname;
 
   const isLoginPage = pathname === "/login";

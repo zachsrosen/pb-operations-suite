@@ -35,7 +35,6 @@ export interface RolePermissions {
  */
 export function normalizeRole(role: UserRole): UserRole {
   if (role === "MANAGER") return "PROJECT_MANAGER";
-  if (role === "VIEWER") return "TECH_OPS";
   if (role === "DESIGNER" || role === "PERMITTING") return "TECH_OPS";
   return role;
 }
@@ -250,19 +249,11 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     canViewAllLocations: true,
   },
   VIEWER: {
-    // Legacy role: normalized to TECH_OPS at runtime
+    // Unassigned role (new users default here until explicitly assigned)
     allowedRoutes: [
-      "/suites/department",
-      "/dashboards/site-survey",
-      "/dashboards/design",
-      "/dashboards/permitting",
-      "/dashboards/inspections",
-      "/dashboards/interconnection",
-      "/dashboards/construction",
-      "/dashboards/incentives",
-      "/dashboards/timeline",
-      "/api/projects",
+      "/unassigned",
       "/api/activity/log",
+      "/api/user/me",
     ],
     canScheduleSurveys: false,
     canScheduleInstalls: false,
@@ -302,7 +293,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
  */
 export const ADMIN_ONLY_ROUTES: string[] = [
   // Note: Don't add dashboard/API routes here — JWT role in middleware defaults
-  // to VIEWER (not synced from DB), so admin-only gating must happen client-side
+  // to TECH_OPS (not synced from DB), so admin-only gating must happen client-side
   // (for pages) or server-side in the route handler (for APIs).
 ];
 

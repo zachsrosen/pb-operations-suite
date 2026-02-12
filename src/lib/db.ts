@@ -108,7 +108,7 @@ export async function getOrCreateUser(userData: {
       name: userData.name,
       image: userData.image,
       googleId: userData.googleId,
-      role: "TECH_OPS", // Default role for new users
+      role: "VIEWER", // Unassigned by default until admin assigns access
       ...(touchLastLogin ? { lastLoginAt: new Date() } : {}),
     },
   });

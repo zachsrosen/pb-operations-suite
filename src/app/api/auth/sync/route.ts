@@ -26,7 +26,7 @@ export async function POST() {
 
     if (!user) {
       // Database not configured, return default role
-      return NextResponse.json({ role: "TECH_OPS", synced: false });
+      return NextResponse.json({ role: "VIEWER", synced: false });
     }
 
     const normalizedRole = normalizeRole(user.role as UserRole);
@@ -58,7 +58,7 @@ export async function POST() {
     });
   } catch (error) {
     console.error("Error syncing user:", error);
-    return NextResponse.json({ role: "TECH_OPS", synced: false, error: "Sync failed" });
+    return NextResponse.json({ role: "VIEWER", synced: false, error: "Sync failed" });
   }
 }
 
@@ -78,7 +78,7 @@ export async function GET() {
     const user = await getUserByEmail(session.user.email);
 
     if (!user) {
-      return NextResponse.json({ role: "TECH_OPS", found: false });
+      return NextResponse.json({ role: "VIEWER", found: false });
     }
 
     // Check if admin is impersonating another user
@@ -128,6 +128,6 @@ export async function GET() {
     });
   } catch (error) {
     console.error("Error fetching user role:", error);
-    return NextResponse.json({ role: "TECH_OPS", found: false, error: "Fetch failed" });
+    return NextResponse.json({ role: "VIEWER", found: false, error: "Fetch failed" });
   }
 }

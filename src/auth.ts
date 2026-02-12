@@ -52,12 +52,12 @@ async function syncRoleToToken(token: JWT): Promise<JWT> {
       image: typeof token.picture === "string" ? token.picture : undefined,
     }, { touchLastLogin: false });
 
-    token.role = normalizeRole((dbUser?.role || token.role || "TECH_OPS") as UserRole);
+    token.role = normalizeRole((dbUser?.role || token.role || "VIEWER") as UserRole);
     token.roleSyncedAt = Date.now();
     return token;
   } catch (error) {
     console.error("[auth] Failed to sync role to token:", error);
-    token.role = normalizeRole((token.role || "TECH_OPS") as UserRole);
+    token.role = normalizeRole((token.role || "VIEWER") as UserRole);
     return token;
   }
 }
@@ -120,7 +120,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         return syncRoleToToken(token);
       }
 
-      token.role = normalizeRole((token.role || "TECH_OPS") as UserRole);
+      token.role = normalizeRole((token.role || "VIEWER") as UserRole);
       return token;
     },
   },

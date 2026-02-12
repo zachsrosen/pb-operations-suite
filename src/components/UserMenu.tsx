@@ -56,7 +56,10 @@ export function UserMenu() {
   const isAdmin = userRole === "ADMIN";
   const isOwner = userRole === "OWNER";
   const isAdminOrOwner = isAdmin || isOwner;
-  const roleLabel = userRole === "OWNER" ? "EXECUTIVE" : userRole;
+  const roleLabel =
+    userRole === "OWNER" ? "EXECUTIVE" :
+    userRole === "VIEWER" ? "UNASSIGNED" :
+    userRole;
 
   return (
     <div className="relative" ref={menuRef}>
