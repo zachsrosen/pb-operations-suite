@@ -1095,7 +1095,7 @@ export default function SiteSurveySchedulerPage() {
                 </button>
               )}
 
-              {(userRole === "ADMIN" || userRole === "MANAGER" || userRole === "OPERATIONS") && (
+              {(userRole === "ADMIN" || userRole === "OPERATIONS_MANAGER" || userRole === "OPERATIONS") && (
                 <Link
                   href="/admin/crew-availability"
                   className="px-2 sm:px-3 py-1.5 text-xs font-medium rounded-md bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors hidden sm:inline-flex items-center gap-1"

@@ -1900,13 +1900,13 @@ export default function CommandCenterPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
-  /* ---- Executive access guard (ADMIN / OWNER only) ---- */
+  /* ---- Executive access guard (ADMIN / EXECUTIVE only) ---- */
   const [accessChecked, setAccessChecked] = useState(false);
   useEffect(() => {
     fetch("/api/auth/sync")
       .then(r => r.json())
       .then(data => {
-        const role = data.role || "VIEWER";
+        const role = data.role || "TECH_OPS";
         setAccessChecked(true);
         if (role !== "ADMIN" && role !== "OWNER") {
           router.push("/");

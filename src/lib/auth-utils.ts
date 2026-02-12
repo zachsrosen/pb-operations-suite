@@ -6,7 +6,7 @@
 
 import { auth } from "@/auth";
 import { getUserByEmail } from "./db";
-import { canAccessRoute, UserRole, ROLE_PERMISSIONS } from "./role-permissions";
+import { canAccessRoute, normalizeRole, UserRole, ROLE_PERMISSIONS } from "./role-permissions";
 
 export interface SessionUser {
   id?: string;
@@ -30,12 +30,13 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
   const dbUser = await getUserByEmail(session.user.email);
 
   if (dbUser) {
+    const normalizedRole = normalizeRole(dbUser.role as UserRole);
     return {
       id: dbUser.id,
       email: dbUser.email,
       name: dbUser.name ?? undefined,
       image: dbUser.image ?? undefined,
-      role: dbUser.role as UserRole,
+      role: normalizedRole,
     };
   }
 
@@ -44,7 +45,7 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
     email: session.user.email,
     name: session.user.name ?? undefined,
     image: session.user.image ?? undefined,
-    role: "VIEWER", // Default for users not yet in DB
+    role: "TECH_OPS", // Default for users not yet in DB
   };
 }
 
@@ -62,7 +63,7 @@ export async function checkRouteAccess(route: string): Promise<{
     return { allowed: false, user: null, reason: "Not authenticated" };
   }
 
-  const allowed = canAccessRoute(user.role, route);
+  const allowed = canAccessRoute(normalizeRole(user.role), route);
 
   if (!allowed) {
     return {
@@ -87,7 +88,7 @@ export async function getCurrentUserPermissions() {
 
   return {
     user,
-    permissions: ROLE_PERMISSIONS[user.role],
+    permissions: ROLE_PERMISSIONS[normalizeRole(user.role)],
   };
 }
 
@@ -101,7 +102,7 @@ export async function requireRole(...allowedRoles: UserRole[]): Promise<SessionU
     throw new Error("Not authenticated");
   }
 
-  if (!allowedRoles.includes(user.role)) {
+  if (!allowedRoles.includes(normalizeRole(user.role))) {
     throw new Error(`Required role: ${allowedRoles.join(" or ")}. Current role: ${user.role}`);
   }
 

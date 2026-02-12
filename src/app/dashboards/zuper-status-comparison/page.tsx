@@ -189,7 +189,7 @@ export default function ZuperStatusComparisonPage() {
         return r.json();
       })
       .then(data => {
-        const role = data.role || "VIEWER";
+        const role = data.role || "TECH_OPS";
         setAccessChecked(true);
         if (role !== "ADMIN") {
           setIsAdmin(false);

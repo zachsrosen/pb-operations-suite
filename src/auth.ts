@@ -2,6 +2,7 @@ import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
 import type { JWT } from "next-auth/jwt";
 import { assertProductionEnvConfigured } from "@/lib/env";
+import { normalizeRole, type UserRole } from "@/lib/role-permissions";
 
 // Allowed email domain for authentication
 const ALLOWED_DOMAIN = process.env.ALLOWED_EMAIL_DOMAIN || "photonbrothers.com";
@@ -51,12 +52,12 @@ async function syncRoleToToken(token: JWT): Promise<JWT> {
       image: typeof token.picture === "string" ? token.picture : undefined,
     }, { touchLastLogin: false });
 
-    token.role = dbUser?.role || token.role || "VIEWER";
+    token.role = normalizeRole((dbUser?.role || token.role || "TECH_OPS") as UserRole);
     token.roleSyncedAt = Date.now();
     return token;
   } catch (error) {
     console.error("[auth] Failed to sync role to token:", error);
-    token.role = token.role || "VIEWER";
+    token.role = normalizeRole((token.role || "TECH_OPS") as UserRole);
     return token;
   }
 }
@@ -119,7 +120,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         return syncRoleToToken(token);
       }
 
-      token.role = token.role || "VIEWER";
+      token.role = normalizeRole((token.role || "TECH_OPS") as UserRole);
       return token;
     },
   },

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma, getAllUsers, updateUserRole, UserRole, getUserByEmail, logActivity } from "@/lib/db";
+import { normalizeRole } from "@/lib/role-permissions";
 
 // Inline validation for role update request
 interface UpdateUserRoleRequest {
@@ -12,7 +13,7 @@ function validateRoleUpdate(data: unknown): data is { userId: string; role: User
   if (!data || typeof data !== "object") return false;
   const req = data as UpdateUserRoleRequest;
 
-  const validRoles: UserRole[] = ["ADMIN", "OWNER", "MANAGER", "OPERATIONS_MANAGER", "PROJECT_MANAGER", "OPERATIONS", "TECH_OPS", "DESIGNER", "PERMITTING", "VIEWER", "SALES"];
+  const validRoles: UserRole[] = ["ADMIN", "OWNER", "OPERATIONS_MANAGER", "PROJECT_MANAGER", "OPERATIONS", "TECH_OPS", "SALES"];
 
   return (
     typeof req.userId === "string" &&
@@ -44,7 +45,10 @@ export async function GET() {
   }
 
   try {
-    const users = await getAllUsers();
+    const users = (await getAllUsers()).map((u) => ({
+      ...u,
+      role: normalizeRole(u.role as UserRole),
+    }));
     return NextResponse.json({ users });
   } catch (error) {
     console.error("Error fetching users:", error);

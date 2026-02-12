@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma, getUserByEmail } from "@/lib/db";
+import { normalizeRole, type UserRole } from "@/lib/role-permissions";
 
 /**
  * GET /api/user/me
@@ -28,12 +29,13 @@ export async function GET() {
       });
 
       if (impersonatedUser) {
+        const normalizedRole = normalizeRole(impersonatedUser.role as UserRole);
         return NextResponse.json({
           user: {
             id: impersonatedUser.id,
             email: impersonatedUser.email,
             name: impersonatedUser.name,
-            role: impersonatedUser.role,
+            role: normalizedRole,
             canScheduleSurveys: impersonatedUser.canScheduleSurveys,
             canScheduleInstalls: impersonatedUser.canScheduleInstalls,
             canSyncToZuper: impersonatedUser.canSyncToZuper,
@@ -53,10 +55,10 @@ export async function GET() {
 
     return NextResponse.json({
       user: {
+        role: normalizeRole(user.role as UserRole),
         id: user.id,
         email: user.email,
         name: user.name,
-        role: user.role,
         canScheduleSurveys: user.canScheduleSurveys,
         canScheduleInstalls: user.canScheduleInstalls,
         canSyncToZuper: user.canSyncToZuper,

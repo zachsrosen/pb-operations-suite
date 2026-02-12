@@ -1072,7 +1072,7 @@ export default function InspectionSchedulerPage() {
               </div>
 
               {/* Manage Availability (admin link) */}
-              {(userRole === "ADMIN" || userRole === "MANAGER" || userRole === "OPERATIONS") && (
+              {(userRole === "ADMIN" || userRole === "OPERATIONS_MANAGER" || userRole === "OPERATIONS") && (
                 <Link
                   href="/admin/crew-availability"
                   className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-lg text-zinc-400 hover:text-white transition-colors"

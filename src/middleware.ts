@@ -1,6 +1,6 @@
 import { auth } from "@/auth";
 import { NextResponse } from "next/server";
-import { ROLE_PERMISSIONS, canAccessRoute, type UserRole } from "@/lib/role-permissions";
+import { ROLE_PERMISSIONS, canAccessRoute, normalizeRole, type UserRole } from "@/lib/role-permissions";
 
 // Routes that are always accessible (login, auth callbacks)
 const ALWAYS_ALLOWED = ["/login", "/api/auth", "/maintenance"];
@@ -48,7 +48,8 @@ function addSecurityHeaders(response: NextResponse): NextResponse {
  * Get the default redirect route for a role (first dashboard route, or /)
  */
 function getDefaultRouteForRole(role: UserRole): string {
-  const permissions = ROLE_PERMISSIONS[role];
+  const effectiveRole = normalizeRole(role);
+  const permissions = ROLE_PERMISSIONS[effectiveRole];
   if (!permissions || permissions.allowedRoutes.includes("*")) return "/";
 
   // Prefer suite landing pages when available
@@ -62,7 +63,7 @@ function getDefaultRouteForRole(role: UserRole): string {
 
 export default auth((req) => {
   const isLoggedIn = !!req.auth;
-  const userRole = (req.auth?.user?.role || "VIEWER") as UserRole;
+  const userRole = normalizeRole((req.auth?.user?.role || "TECH_OPS") as UserRole);
   const pathname = req.nextUrl.pathname;
 
   const isLoginPage = pathname === "/login";

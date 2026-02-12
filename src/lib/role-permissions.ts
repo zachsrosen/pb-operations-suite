@@ -30,6 +30,17 @@ export interface RolePermissions {
 }
 
 /**
+ * Normalize legacy roles to the current role model.
+ * This keeps old DB enum values working without granting unintended access.
+ */
+export function normalizeRole(role: UserRole): UserRole {
+  if (role === "MANAGER") return "PROJECT_MANAGER";
+  if (role === "VIEWER") return "TECH_OPS";
+  if (role === "DESIGNER" || role === "PERMITTING") return "TECH_OPS";
+  return role;
+}
+
+/**
  * Define which routes and actions each role can access
  */
 export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
@@ -58,7 +69,27 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     canViewAllLocations: true,
   },
   MANAGER: {
-    allowedRoutes: ["*"], // All routes
+    // Legacy role: normalized to PROJECT_MANAGER at runtime
+    allowedRoutes: [
+      "/suites/operations",
+      "/suites/department",
+      "/dashboards/scheduler",
+      "/dashboards/site-survey-scheduler",
+      "/dashboards/construction-scheduler",
+      "/dashboards/inspection-scheduler",
+      "/dashboards/equipment-backlog",
+      "/dashboards/timeline",
+      "/dashboards/site-survey",
+      "/dashboards/design",
+      "/dashboards/permitting",
+      "/dashboards/inspections",
+      "/dashboards/interconnection",
+      "/dashboards/construction",
+      "/dashboards/incentives",
+      "/api/projects",
+      "/api/zuper",
+      "/api/activity/log",
+    ],
     canScheduleSurveys: true,
     canScheduleInstalls: true,
     canScheduleInspections: true,
@@ -77,7 +108,6 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/construction-scheduler",
       "/dashboards/inspection-scheduler",
       "/dashboards/equipment-backlog",
-      "/dashboards/at-risk",
       "/dashboards/timeline",
       "/api/projects",
       "/api/zuper",
@@ -101,7 +131,6 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/construction-scheduler",
       "/dashboards/inspection-scheduler",
       "/dashboards/equipment-backlog",
-      "/dashboards/at-risk",
       "/dashboards/timeline",
       "/api/projects",
       "/api/zuper",
@@ -118,7 +147,27 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     canViewAllLocations: true,
   },
   PROJECT_MANAGER: {
-    allowedRoutes: ["*"], // All routes — project tracking & scheduling
+    allowedRoutes: [
+      "/suites/operations",
+      "/suites/department",
+      "/dashboards/scheduler",
+      "/dashboards/site-survey-scheduler",
+      "/dashboards/construction-scheduler",
+      "/dashboards/inspection-scheduler",
+      "/dashboards/equipment-backlog",
+      "/dashboards/at-risk",
+      "/dashboards/timeline",
+      "/dashboards/site-survey",
+      "/dashboards/design",
+      "/dashboards/permitting",
+      "/dashboards/inspections",
+      "/dashboards/interconnection",
+      "/dashboards/construction",
+      "/dashboards/incentives",
+      "/api/projects",
+      "/api/zuper",
+      "/api/activity/log",
+    ],
     canScheduleSurveys: true,
     canScheduleInstalls: true,
     canScheduleInspections: true,
@@ -131,15 +180,16 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
   },
   TECH_OPS: {
     allowedRoutes: [
+      "/suites/department",
+      "/dashboards/site-survey",
+      "/dashboards/design",
+      "/dashboards/permitting",
+      "/dashboards/inspections",
+      "/dashboards/interconnection",
       "/dashboards/construction",
-      "/dashboards/construction-scheduler",
-      "/dashboards/inspection-scheduler",
-      "/dashboards/scheduler",
-      "/dashboards/site-survey-scheduler",
-      "/dashboards/timeline",
-      "/handbook",
+      "/dashboards/incentives",
       "/api/projects",
-      "/api/zuper",
+      "/api/activity/log",
     ],
     canScheduleSurveys: false,
     canScheduleInstalls: false,
@@ -152,12 +202,18 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     canViewAllLocations: false, // Only their location
   },
   DESIGNER: {
+    // Legacy role: normalized to TECH_OPS at runtime
     allowedRoutes: [
+      "/suites/department",
+      "/dashboards/site-survey",
       "/dashboards/design",
-      "/dashboards/pe",
-      "/dashboards/timeline",
-      "/handbook",
+      "/dashboards/permitting",
+      "/dashboards/inspections",
+      "/dashboards/interconnection",
+      "/dashboards/construction",
+      "/dashboards/incentives",
       "/api/projects",
+      "/api/activity/log",
     ],
     canScheduleSurveys: false,
     canScheduleInstalls: false,
@@ -170,12 +226,18 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     canViewAllLocations: true,
   },
   PERMITTING: {
+    // Legacy role: normalized to TECH_OPS at runtime
     allowedRoutes: [
+      "/suites/department",
+      "/dashboards/site-survey",
+      "/dashboards/design",
       "/dashboards/permitting",
+      "/dashboards/inspections",
       "/dashboards/interconnection",
-      "/dashboards/timeline",
-      "/handbook",
+      "/dashboards/construction",
+      "/dashboards/incentives",
       "/api/projects",
+      "/api/activity/log",
     ],
     canScheduleSurveys: false,
     canScheduleInstalls: false,
@@ -188,7 +250,20 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     canViewAllLocations: true,
   },
   VIEWER: {
-    allowedRoutes: ["*"], // All routes, read-only
+    // Legacy role: normalized to TECH_OPS at runtime
+    allowedRoutes: [
+      "/suites/department",
+      "/dashboards/site-survey",
+      "/dashboards/design",
+      "/dashboards/permitting",
+      "/dashboards/inspections",
+      "/dashboards/interconnection",
+      "/dashboards/construction",
+      "/dashboards/incentives",
+      "/dashboards/timeline",
+      "/api/projects",
+      "/api/activity/log",
+    ],
     canScheduleSurveys: false,
     canScheduleInstalls: false,
     canScheduleInspections: false,
@@ -235,12 +310,13 @@ export const ADMIN_ONLY_ROUTES: string[] = [
  * Check if a user role can access a specific route
  */
 export function canAccessRoute(role: UserRole, route: string): boolean {
-  const permissions = ROLE_PERMISSIONS[role];
+  const effectiveRole = normalizeRole(role);
+  const permissions = ROLE_PERMISSIONS[effectiveRole];
   if (!permissions) return false;
 
   // Check admin-only routes first — only ADMIN can access these
   if (ADMIN_ONLY_ROUTES.some(restricted => route.startsWith(restricted))) {
-    return role === "ADMIN";
+    return effectiveRole === "ADMIN";
   }
 
   // Roles with "*" can access all routes
@@ -256,7 +332,7 @@ export function canAccessRoute(role: UserRole, route: string): boolean {
  * Check if user can schedule a specific type
  */
 export function canScheduleType(role: UserRole, scheduleType: "survey" | "installation" | "inspection"): boolean {
-  const permissions = ROLE_PERMISSIONS[role];
+  const permissions = ROLE_PERMISSIONS[normalizeRole(role)];
   if (!permissions) return false;
 
   switch (scheduleType) {
@@ -275,7 +351,7 @@ export function canScheduleType(role: UserRole, scheduleType: "survey" | "instal
  * Check if user can perform any scheduling actions (legacy support)
  */
 export function canSchedule(role: UserRole): boolean {
-  const permissions = ROLE_PERMISSIONS[role];
+  const permissions = ROLE_PERMISSIONS[normalizeRole(role)];
   if (!permissions) return false;
   return permissions.canScheduleSurveys || permissions.canScheduleInstalls || permissions.canScheduleInspections;
 }
@@ -284,5 +360,5 @@ export function canSchedule(role: UserRole): boolean {
  * Check if user can sync to Zuper
  */
 export function canSyncZuper(role: UserRole): boolean {
-  return ROLE_PERMISSIONS[role]?.canSyncZuper ?? false;
+  return ROLE_PERMISSIONS[normalizeRole(role)]?.canSyncZuper ?? false;
 }

@@ -12,7 +12,7 @@ import { PrismaNeon } from "@prisma/adapter-neon";
 
 // Import for local use + re-export role permissions from edge-compatible module
 import { UserRole, ROLE_PERMISSIONS, type RolePermissions } from "./role-permissions";
-export { UserRole, ROLE_PERMISSIONS, canAccessRoute, canScheduleType, canSchedule, canSyncZuper } from "./role-permissions";
+export { UserRole, ROLE_PERMISSIONS, normalizeRole, canAccessRoute, canScheduleType, canSchedule, canSyncZuper } from "./role-permissions";
 export type { RolePermissions } from "./role-permissions";
 
 // Re-export types
@@ -108,7 +108,7 @@ export async function getOrCreateUser(userData: {
       name: userData.name,
       image: userData.image,
       googleId: userData.googleId,
-      role: "VIEWER", // Default role for new users
+      role: "TECH_OPS", // Default role for new users
       ...(touchLastLogin ? { lastLoginAt: new Date() } : {}),
     },
   });

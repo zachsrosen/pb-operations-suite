@@ -162,7 +162,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [isStale, setIsStale] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
-  const [userRole, setUserRole] = useState<string>("VIEWER");
+  const [userRole, setUserRole] = useState<string>("TECH_OPS");
 
   const isMac = useIsMac();
   const modKey = isMac ? "\u2318" : "Ctrl";
@@ -247,6 +247,9 @@ export default function Home() {
     if (userRole === "OPERATIONS" || userRole === "OPERATIONS_MANAGER") {
       window.location.replace("/suites/operations");
     }
+    if (userRole === "TECH_OPS") {
+      window.location.replace("/suites/department");
+    }
   }, [userRole]);
 
   const { connected, reconnecting } = useSSE(loadProjects);
@@ -284,6 +287,12 @@ export default function Home() {
   const visibleSuites = useMemo(() => {
     if (userRole === "SALES") return [];
     if (userRole === "OPERATIONS" || userRole === "OPERATIONS_MANAGER") return [];
+    if (userRole === "TECH_OPS") return [];
+    if (userRole === "PROJECT_MANAGER") {
+      return SUITE_LINKS.filter((suite) =>
+        suite.href === "/suites/operations" || suite.href === "/suites/department"
+      );
+    }
     const isAdmin = userRole === "ADMIN";
     const isOwnerOrAdmin = isAdmin || userRole === "OWNER";
     return SUITE_LINKS.filter((suite) => {

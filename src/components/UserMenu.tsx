@@ -56,6 +56,7 @@ export function UserMenu() {
   const isAdmin = userRole === "ADMIN";
   const isOwner = userRole === "OWNER";
   const isAdminOrOwner = isAdmin || isOwner;
+  const roleLabel = userRole === "OWNER" ? "EXECUTIVE" : userRole;
 
   return (
     <div className="relative" ref={menuRef}>
@@ -86,11 +87,10 @@ export function UserMenu() {
               <span className={`inline-block mt-1 text-[10px] px-1.5 py-0.5 rounded ${
                 userRole === "ADMIN" ? "bg-red-500/20 text-red-400" :
                 userRole === "OWNER" ? "bg-amber-500/20 text-amber-400" :
-                userRole === "MANAGER" ? "bg-purple-500/20 text-purple-400" :
                 userRole === "SALES" ? "bg-cyan-500/20 text-cyan-400" :
                 "bg-zinc-500/20 text-zinc-400"
               }`}>
-                {userRole}
+                {roleLabel}
               </span>
             )}
           </div>

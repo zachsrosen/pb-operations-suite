@@ -28,7 +28,7 @@ export default async function ExecutiveSuitePage() {
           </Link>
           <h1 className="text-2xl font-bold mt-3">Executive Suite</h1>
           <p className="text-sm text-zinc-400 mt-1">
-            Owner/Admin-only executive and leadership dashboards.
+            Executive/Admin-only leadership dashboards.
           </p>
         </div>
 

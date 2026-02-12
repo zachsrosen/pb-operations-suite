@@ -14,7 +14,7 @@ import type { ZuperUserFull, ZuperTeamDetail } from "@/lib/zuper";
  * - GET /team/{team_uid} — team detail with members
  *
  * For each Zuper user:
- * - Creates/updates a User record (by email) with role VIEWER if new
+ * - Creates/updates a User record (by email) with role TECH_OPS if new
  * - Creates/updates a CrewMember record (by name) with Zuper UIDs
  */
 export async function POST() {
@@ -131,7 +131,7 @@ export async function POST() {
               data: {
                 email,
                 name: fullName,
-                role: "VIEWER",
+                role: "TECH_OPS",
               },
             });
             results.usersCreated++;

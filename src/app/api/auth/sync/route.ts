@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { auth } from "@/auth";
 import { prisma, getOrCreateUser, getUserByEmail, logActivity } from "@/lib/db";
+import { normalizeRole, type UserRole } from "@/lib/role-permissions";
 
 /**
  * POST /api/auth/sync
@@ -25,8 +26,10 @@ export async function POST() {
 
     if (!user) {
       // Database not configured, return default role
-      return NextResponse.json({ role: "VIEWER", synced: false });
+      return NextResponse.json({ role: "TECH_OPS", synced: false });
     }
+
+    const normalizedRole = normalizeRole(user.role as UserRole);
 
     // Log the login activity
     const headersList = await headers();
@@ -44,18 +47,18 @@ export async function POST() {
     });
 
     return NextResponse.json({
-      role: user.role,
+      role: normalizedRole,
       synced: true,
       user: {
         id: user.id,
         email: user.email,
         name: user.name,
-        role: user.role,
+        role: normalizedRole,
       }
     });
   } catch (error) {
     console.error("Error syncing user:", error);
-    return NextResponse.json({ role: "VIEWER", synced: false, error: "Sync failed" });
+    return NextResponse.json({ role: "TECH_OPS", synced: false, error: "Sync failed" });
   }
 }
 
@@ -75,7 +78,7 @@ export async function GET() {
     const user = await getUserByEmail(session.user.email);
 
     if (!user) {
-      return NextResponse.json({ role: "VIEWER", found: false });
+      return NextResponse.json({ role: "TECH_OPS", found: false });
     }
 
     // Check if admin is impersonating another user
@@ -85,21 +88,22 @@ export async function GET() {
       });
 
       if (impersonatedUser) {
+        const normalizedRole = normalizeRole(impersonatedUser.role as UserRole);
         return NextResponse.json({
-          role: impersonatedUser.role,
+          role: normalizedRole,
           found: true,
           isImpersonating: true,
           user: {
             id: impersonatedUser.id,
             email: impersonatedUser.email,
             name: impersonatedUser.name,
-            role: impersonatedUser.role,
+            role: normalizedRole,
           },
           impersonatedUser: {
             id: impersonatedUser.id,
             email: impersonatedUser.email,
             name: impersonatedUser.name,
-            role: impersonatedUser.role,
+            role: normalizedRole,
           },
           adminUser: {
             id: user.id,
@@ -110,19 +114,20 @@ export async function GET() {
       }
     }
 
+    const normalizedRole = normalizeRole(user.role as UserRole);
     return NextResponse.json({
-      role: user.role,
+      role: normalizedRole,
       found: true,
       isImpersonating: false,
       user: {
         id: user.id,
         email: user.email,
         name: user.name,
-        role: user.role,
+        role: normalizedRole,
       }
     });
   } catch (error) {
     console.error("Error fetching user role:", error);
-    return NextResponse.json({ role: "VIEWER", found: false, error: "Fetch failed" });
+    return NextResponse.json({ role: "TECH_OPS", found: false, error: "Fetch failed" });
   }
 }
