@@ -240,6 +240,12 @@ export default function Home() {
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    if (userRole === "SALES") {
+      window.location.replace("/dashboards/site-survey-scheduler");
+    }
+  }, [userRole]);
+
   const { connected, reconnecting } = useSSE(loadProjects);
 
   // All locations (from unfiltered data)
@@ -273,6 +279,7 @@ export default function Home() {
   }, []);
 
   const visibleSuites = useMemo(() => {
+    if (userRole === "SALES") return [];
     const isAdmin = userRole === "ADMIN";
     const isOwnerOrAdmin = isAdmin || userRole === "OWNER";
     return SUITE_LINKS.filter((suite) => {
