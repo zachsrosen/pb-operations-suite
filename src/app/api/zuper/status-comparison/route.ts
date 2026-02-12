@@ -569,6 +569,86 @@ export async function GET() {
       },
     };
 
+    // One-time operational audit: check if mismatch deals also have non-core categories
+    // (e.g., Additional Visit / Service Visit) that may have affected status workflows.
+    try {
+      const mismatchDealIds = [...new Set(records.filter((r) => r.isMismatch && !!r.dealId).map((r) => r.dealId as string))];
+      if (mismatchDealIds.length > 0) {
+        const mismatchDealSet = new Set(mismatchDealIds);
+        const coreCategoryUids = new Set<string>([
+          JOB_CATEGORY_UIDS.SITE_SURVEY,
+          JOB_CATEGORY_UIDS.CONSTRUCTION,
+          JOB_CATEGORY_UIDS.INSPECTION,
+        ]);
+
+        let page = 1;
+        const limit = 100;
+        let hasMore = true;
+        let mismatchesWithAdditionalOrService = 0;
+        let mismatchesWithNonCore = 0;
+        const dealFlags = new Map<string, { hasAdditionalOrService: boolean; hasNonCore: boolean }>();
+
+        while (hasMore) {
+          const allJobsResult = await zuper.searchJobs({
+            from_date: fromDate,
+            to_date: toDate,
+            page,
+            limit,
+          });
+
+          if (allJobsResult.type === "error" || !allJobsResult.data?.jobs?.length) {
+            break;
+          }
+
+          for (const job of allJobsResult.data.jobs) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const rawJob = job as any;
+            const dealId = extractHubspotDealId(rawJob);
+            if (!dealId || !mismatchDealSet.has(dealId)) continue;
+
+            const categoryUid =
+              typeof job.job_category === "string"
+                ? job.job_category
+                : job.job_category?.category_uid || "";
+            const categoryName = (
+              typeof job.job_category === "string"
+                ? job.job_category
+                : job.job_category?.category_name || ""
+            ).toLowerCase();
+
+            const hasAdditionalOrService =
+              categoryName.includes("additional visit") || categoryName.includes("service visit");
+            const hasNonCore = !!categoryUid && !coreCategoryUids.has(categoryUid);
+
+            if (!hasAdditionalOrService && !hasNonCore) continue;
+
+            const current = dealFlags.get(dealId) || { hasAdditionalOrService: false, hasNonCore: false };
+            current.hasAdditionalOrService = current.hasAdditionalOrService || hasAdditionalOrService;
+            current.hasNonCore = current.hasNonCore || hasNonCore;
+            dealFlags.set(dealId, current);
+          }
+
+          if (allJobsResult.data.jobs.length < limit) {
+            hasMore = false;
+          } else {
+            page += 1;
+          }
+        }
+
+        for (const flags of dealFlags.values()) {
+          if (flags.hasAdditionalOrService) mismatchesWithAdditionalOrService += 1;
+          if (flags.hasNonCore) mismatchesWithNonCore += 1;
+        }
+
+        console.info(
+          `[status-comparison-audit] mismatches=${mismatchDealIds.length} ` +
+          `withAdditionalOrService=${mismatchesWithAdditionalOrService} withNonCore=${mismatchesWithNonCore}`
+        );
+      }
+    } catch (auditError) {
+      console.warn("[status-comparison-audit] failed:", auditError);
+    }
+
     // Build project-grouped records (all 3 categories side by side per project)
     const emptyCategorySlot = {
       zuperJobUid: null,
