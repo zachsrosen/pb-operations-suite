@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { zuper, createJobFromProject, ZuperJob } from "@/lib/zuper";
 import { auth } from "@/auth";
-import { getUserByEmail, logActivity, createScheduleRecord, cacheZuperJob, canScheduleType, getCrewMemberByName, UserRole } from "@/lib/db";
+import { getUserByEmail, logActivity, createScheduleRecord, cacheZuperJob, canScheduleType, getCrewMemberByName, getCachedZuperJobByDealId, UserRole } from "@/lib/db";
 import { sendSchedulingNotification } from "@/lib/email";
 import { updateDealProperty } from "@/lib/hubspot";
 
@@ -81,104 +81,181 @@ export async function PUT(request: NextRequest) {
     console.log(`  - Known Zuper Job UID: ${existingJobUid || "none"}`);
     console.log(`  - Schedule Type: ${schedule.type}`);
 
-    let existingJob: ZuperJob | undefined;
+    // Map schedule type to Zuper category names and UIDs
+    const categoryConfig: Record<string, { name: string; uid: string }> = {
+      survey: { name: "Site Survey", uid: "002bac33-84d3-4083-a35d-50626fc49288" },
+      installation: { name: "Construction", uid: "6ffbc218-6dad-4a46-b378-1fb02b3ab4bf" },
+      inspection: { name: "Inspection", uid: "b7dc03d2-25d0-40df-a2fc-b1a477b16b65" },
+    };
+    const targetCategoryName = categoryConfig[schedule.type].name;
+    const targetCategoryUid = categoryConfig[schedule.type].uid;
 
-    // If we already have the Zuper job UID from the lookup, use it directly
+    // Helper to get category info from job
+    const getJobCategoryInfo = (job: ZuperJob): { name: string; uid: string } => {
+      if (typeof job.job_category === "string") {
+        return { name: job.job_category, uid: job.job_category };
+      }
+      return {
+        name: job.job_category?.category_name || "",
+        uid: job.job_category?.category_uid || "",
+      };
+    };
+
+    // Helper to check if job matches target category
+    const categoryMatches = (job: ZuperJob): boolean => {
+      const catInfo = getJobCategoryInfo(job);
+      return catInfo.name.toLowerCase() === targetCategoryName.toLowerCase() ||
+             catInfo.uid === targetCategoryUid;
+    };
+
+    // Helper to get HubSpot Deal ID from custom fields (same logic as lookup API)
+    const getHubSpotDealId = (job: ZuperJob): string | null => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const customFields = (job as any).custom_fields as Array<{ label?: string; name?: string; value?: string }> | undefined;
+      if (!customFields || !Array.isArray(customFields)) return null;
+      const dealIdField = customFields.find((f) => {
+        const label = f.label?.toLowerCase() || "";
+        const name = f.name?.toLowerCase() || "";
+        return label === "hubspot deal id" || label === "hubspot_deal_id" ||
+               name === "hubspot_deal_id" || name === "hubspot deal id";
+      });
+      if (dealIdField?.value) return dealIdField.value;
+      const dealLinkField = customFields.find((f) => {
+        const label = f.label?.toLowerCase() || "";
+        const name = f.name?.toLowerCase() || "";
+        return (label.includes("hubspot") && label.includes("link")) ||
+               (name.includes("hubspot") && name.includes("link"));
+      });
+      if (dealLinkField?.value) {
+        const urlMatch = dealLinkField.value.match(/\/record\/0-3\/(\d+)/);
+        if (urlMatch) return urlMatch[1];
+      }
+      return null;
+    };
+
+    let existingJob: ZuperJob | undefined;
+    let matchMethod = "";
+
+    // --- Strategy 1: Client already knows the Zuper job UID (from page-load lookup) ---
     if (existingJobUid) {
       console.log(`[Zuper Schedule] Using provided Zuper job UID: ${existingJobUid}`);
       existingJob = { job_uid: existingJobUid, job_title: project.name } as ZuperJob;
-    } else {
-      // Otherwise, search for existing job
-      // Extract customer name for searching
+      matchMethod = "client_uid";
+    }
+
+    // --- Strategy 2: Check DB cache (set when jobs are scheduled through the app) ---
+    if (!existingJob) {
+      try {
+        const cached = await getCachedZuperJobByDealId(project.id, targetCategoryName);
+        if (cached?.jobUid) {
+          console.log(`[Zuper Schedule] DB cache hit: project ${project.id} → job ${cached.jobUid}`);
+          existingJob = { job_uid: cached.jobUid, job_title: cached.jobTitle || project.name } as ZuperJob;
+          matchMethod = "db_cache";
+        }
+      } catch (dbErr) {
+        console.warn(`[Zuper Schedule] DB cache lookup failed:`, dbErr);
+      }
+    }
+
+    // --- Strategy 3: Search Zuper API with multiple matching methods ---
+    if (!existingJob) {
+      // Extract customer name parts for matching
       // HubSpot format: "PROJ-9031 | LastName, FirstName | Address"
-      // Zuper job title format: "Inspection - PROJ-7637 | Smith, Victor" (created by our system)
-      //                     or: "LastName, FirstName | Address" (created by HubSpot workflow)
       const nameParts = project.name?.split(" | ") || [];
       const customerName = nameParts.length >= 2
-        ? nameParts[1]?.trim()  // "LastName, FirstName" from HubSpot format
-        : nameParts[0]?.trim() || "";  // Fallback to first part if only one part
-
-      // Also extract just the last name for looser matching
+        ? nameParts[1]?.trim()
+        : nameParts[0]?.trim() || "";
       const customerLastName = customerName.split(",")[0]?.trim() || "";
-
-      // Extract PROJ number (e.g. "PROJ-7637") for strongest matching
       const projNumber = nameParts[0]?.trim().match(/PROJ-\d+/i)?.[0] || "";
 
-      console.log(`[Zuper Schedule] No known job UID, searching by name:`);
-      console.log(`  - Customer Name: ${customerName}`);
+      console.log(`[Zuper Schedule] Searching Zuper API:`);
       console.log(`  - Customer Last Name: ${customerLastName}`);
       console.log(`  - PROJ Number: ${projNumber || "none"}`);
       console.log(`  - HubSpot Tag: ${hubspotTag}`);
 
-      // Search for existing job by customer last name (Zuper search is fuzzy)
-      const searchResult = await zuper.searchJobs({
-        limit: 100,
-        search: customerLastName, // Use last name for broader search
-      });
+      // Do TWO searches in parallel for maximum coverage:
+      // 1. Name-based search (fuzzy, finds by customer name in title)
+      // 2. Broad date-range search (finds by deal ID custom field, tags, PROJ number)
+      const [nameSearch, broadSearch] = await Promise.all([
+        customerLastName
+          ? zuper.searchJobs({ limit: 100, search: customerLastName })
+          : Promise.resolve({ type: "success" as const, data: { jobs: [] as ZuperJob[], total: 0 } }),
+        zuper.searchJobs({
+          limit: 500,
+          from_date: new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+          to_date: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+        }),
+      ]);
 
-      if (searchResult.type === "success" && searchResult.data?.jobs) {
-        console.log(`[Zuper Schedule] Found ${searchResult.data.jobs.length} jobs in search results`);
-
-        // Map schedule type to Zuper category names AND UIDs (for flexible matching)
-        const categoryConfig: Record<string, { name: string; uid: string }> = {
-          survey: { name: "Site Survey", uid: "002bac33-84d3-4083-a35d-50626fc49288" },
-          installation: { name: "Construction", uid: "6ffbc218-6dad-4a46-b378-1fb02b3ab4bf" },
-          inspection: { name: "Inspection", uid: "b7dc03d2-25d0-40df-a2fc-b1a477b16b65" },
-        };
-        const targetCategoryName = categoryConfig[schedule.type].name;
-        const targetCategoryUid = categoryConfig[schedule.type].uid;
-
-        // Helper to get category info from job
-        const getJobCategoryInfo = (job: ZuperJob): { name: string; uid: string } => {
-          if (typeof job.job_category === "string") {
-            return { name: job.job_category, uid: job.job_category };
-          }
-          return {
-            name: job.job_category?.category_name || "",
-            uid: job.job_category?.category_uid || "",
-          };
-        };
-
-        // Helper to check if job matches target category
-        const categoryMatches = (job: ZuperJob): boolean => {
-          const catInfo = getJobCategoryInfo(job);
-          return catInfo.name.toLowerCase() === targetCategoryName.toLowerCase() ||
-                 catInfo.uid === targetCategoryUid;
-        };
-
-        // First try to find by HubSpot tag
-        existingJob = searchResult.data.jobs.find(
-          (job) => job.job_tags?.includes(hubspotTag) && categoryMatches(job)
-        );
-
-        // If not found by tag, try PROJ number match first (strongest), then last name
-        if (!existingJob && (customerLastName || projNumber)) {
-          const normalizedLastName = customerLastName.toLowerCase().trim();
-          const normalizedProjNumber = projNumber.toLowerCase().trim();
-          existingJob = searchResult.data.jobs.find((job) => {
-            const jobTitle = job.job_title?.toLowerCase() || "";
-            if (!categoryMatches(job)) return false;
-            // PROJ number in title is strongest match
-            if (normalizedProjNumber && jobTitle.includes(normalizedProjNumber)) return true;
-            // Last name matching — use includes() instead of startsWith() because
-            // our job titles are "Inspection - PROJ-7637 | Smith, Victor", not "Smith, Victor ..."
-            if (normalizedLastName.length > 2) {
-              return jobTitle.includes(normalizedLastName + ",") ||
-                     jobTitle.startsWith(normalizedLastName + " ");
+      // Merge results, deduplicating by job_uid
+      const allJobs = new Map<string, ZuperJob>();
+      for (const result of [nameSearch, broadSearch]) {
+        if (result.type === "success" && result.data?.jobs) {
+          for (const job of result.data.jobs) {
+            if (job.job_uid && !allJobs.has(job.job_uid)) {
+              allJobs.set(job.job_uid, job);
             }
-            return false;
-          });
+          }
         }
-
-        if (existingJob) {
-          console.log(`[Zuper Schedule] Found existing job: ${existingJob.job_uid}`);
-        } else {
-          console.log(`[Zuper Schedule] No matching job found for "${customerLastName}"`);
-        }
-      } else {
-        console.log(`[Zuper Schedule] Search failed or returned no jobs`);
       }
-    } // End of else block (no provided zuperJobUid)
+
+      console.log(`[Zuper Schedule] Combined search: ${allJobs.size} unique jobs (name: ${nameSearch.data?.jobs?.length || 0}, broad: ${broadSearch.data?.jobs?.length || 0})`);
+
+      // Filter to target category
+      const categoryJobs = [...allJobs.values()].filter(categoryMatches);
+
+      // Match 3a: HubSpot Deal ID custom field (most reliable API match)
+      if (!existingJob) {
+        for (const job of categoryJobs) {
+          const dealId = getHubSpotDealId(job);
+          if (dealId === project.id) {
+            existingJob = job;
+            matchMethod = "hubspot_deal_id";
+            break;
+          }
+        }
+      }
+
+      // Match 3b: HubSpot tag (hubspot-{dealId})
+      if (!existingJob) {
+        existingJob = categoryJobs.find((job) => job.job_tags?.includes(hubspotTag));
+        if (existingJob) matchMethod = "hubspot_tag";
+      }
+
+      // Match 3c: PROJ number tag
+      if (!existingJob && projNumber) {
+        existingJob = categoryJobs.find((job) =>
+          job.job_tags?.some(t => t.toLowerCase() === projNumber.toLowerCase())
+        );
+        if (existingJob) matchMethod = "proj_tag";
+      }
+
+      // Match 3d: PROJ number in job title
+      if (!existingJob && projNumber) {
+        const normalizedProj = projNumber.toLowerCase();
+        existingJob = categoryJobs.find((job) =>
+          (job.job_title?.toLowerCase() || "").includes(normalizedProj)
+        );
+        if (existingJob) matchMethod = "proj_in_title";
+      }
+
+      // Match 3e: Customer last name in job title
+      if (!existingJob && customerLastName.length > 2) {
+        const normalizedLastName = customerLastName.toLowerCase().trim();
+        existingJob = categoryJobs.find((job) => {
+          const title = job.job_title?.toLowerCase() || "";
+          return title.includes(normalizedLastName + ",") ||
+                 title.startsWith(normalizedLastName + " ");
+        });
+        if (existingJob) matchMethod = "name_in_title";
+      }
+
+      if (existingJob) {
+        console.log(`[Zuper Schedule] Found existing job: ${existingJob.job_uid} (matched by: ${matchMethod})`);
+      } else {
+        console.log(`[Zuper Schedule] No matching ${targetCategoryName} job found for "${project.name}"`);
+      }
+    }
 
     // Calculate schedule times
     // Slot times are in the crew member's local timezone (e.g. Mountain Time for CO, Pacific for CA)
