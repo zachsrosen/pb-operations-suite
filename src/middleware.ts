@@ -78,6 +78,7 @@ export default auth((req) => {
   const isPublicApiRoute = PUBLIC_API_ROUTES.some(
     (route) => pathname === route || pathname.startsWith(`${route}/`)
   );
+  const isImpersonationApiRoute = pathname === "/api/admin/impersonate";
   const isMaintenancePage = pathname === "/maintenance";
   const isStaticFile =
     pathname.startsWith("/_next/") ||
@@ -120,6 +121,12 @@ export default auth((req) => {
         { status: 401 }
       );
       return addSecurityHeaders(response);
+    }
+
+    // Allow authenticated users to check/exit impersonation state.
+    // The route handler itself enforces admin requirements for start/stop.
+    if (isImpersonationApiRoute) {
+      return addSecurityHeaders(NextResponse.next());
     }
 
     // Enforce role-based API access (check if the role can access this API path)
