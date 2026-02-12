@@ -5,7 +5,7 @@ const REQUIRED_ENV_IN_PRODUCTION = [
 
 type RequiredEnvKey = (typeof REQUIRED_ENV_IN_PRODUCTION)[number];
 
-function getValue(key: RequiredEnvKey): string | undefined {
+function getValue(key: string): string | undefined {
   const value = process.env[key];
   if (!value) return undefined;
   const trimmed = value.trim();
