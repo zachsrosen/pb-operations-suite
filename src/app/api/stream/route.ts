@@ -3,21 +3,25 @@ import { NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
+const STREAM_TTL_MS = 50_000; // Close before Vercel's ~60s timeout and ask client to reconnect
 
 export async function GET() {
   const authResult = await requireApiAuth();
   if (authResult instanceof NextResponse) return authResult;
 
   const encoder = new TextEncoder();
+  let cleanupRef: (() => void) | null = null;
 
   const stream = new ReadableStream({
     start(controller) {
       let isClosed = false;
+      let closeScheduled = false;
       let unsubscribe: (() => void) | null = null;
       let heartbeat: NodeJS.Timeout | null = null;
       let timeoutHandle: NodeJS.Timeout | null = null;
 
       const cleanup = () => {
+        if (isClosed) return;
         isClosed = true;
         if (heartbeat) {
           clearInterval(heartbeat);
@@ -30,6 +34,18 @@ export async function GET() {
         if (unsubscribe) {
           unsubscribe();
           unsubscribe = null;
+        }
+      };
+      cleanupRef = cleanup;
+
+      const safeClose = () => {
+        if (closeScheduled) return;
+        closeScheduled = true;
+        cleanup();
+        try {
+          controller.close();
+        } catch {
+          // Already closed
         }
       };
 
@@ -60,7 +76,7 @@ export async function GET() {
             });
           } catch {
             // Error during cache update handling
-            cleanup();
+            safeClose();
           }
         });
 
@@ -70,34 +86,32 @@ export async function GET() {
             enqueueMessage({ type: "heartbeat", timestamp: Date.now() });
           } catch {
             // Stream closed, cleanup
-            cleanup();
+            safeClose();
           }
         }, 30000);
 
-        // Auto-close after 5 minutes to prevent stale connections
+        // Auto-close before platform timeout; client reconnects automatically.
         timeoutHandle = setTimeout(() => {
           try {
             enqueueMessage({
               type: "reconnect",
-              reason: "timeout",
+              reason: "ttl",
             });
-            cleanup();
-            controller.close();
+            safeClose();
           } catch {
             // Already closed
-            cleanup();
+            safeClose();
           }
-        }, 5 * 60 * 1000);
+        }, STREAM_TTL_MS);
       } catch (setupError) {
         // Error during initial setup
         console.error("Error setting up SSE stream:", setupError);
-        cleanup();
-        try {
-          controller.close();
-        } catch {
-          // Already closed
-        }
+        safeClose();
       }
+    },
+    cancel() {
+      cleanupRef?.();
+      cleanupRef = null;
     },
   });
 
