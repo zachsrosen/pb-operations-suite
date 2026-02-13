@@ -2966,16 +2966,15 @@ export default function SchedulerPage() {
         )}
         {/* Collapsed sidebar toggle — thin strip to reopen */}
         {!revenueSidebarOpen && (
-          <div className="bg-surface border-l border-t-border flex flex-col items-center pt-3 max-[900px]:hidden" style={{ width: "28px" }}>
-            <button
-              onClick={() => setRevenueSidebarOpen(true)}
-              className="p-1 text-muted hover:text-orange-400 rounded hover:bg-surface-2 transition-colors"
-              title="Show revenue sidebar"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7M19 19l-7-7 7-7" /></svg>
-            </button>
-            <span className="text-[0.45rem] text-muted mt-1 [writing-mode:vertical-lr]">Construction Revenue</span>
-          </div>
+          <button
+            onClick={() => setRevenueSidebarOpen(true)}
+            className="bg-surface border-l border-t-border flex flex-col items-center justify-center gap-1.5 py-4 max-[900px]:hidden cursor-pointer hover:bg-surface-2 transition-colors group"
+            style={{ width: "32px" }}
+            title="Show construction revenue sidebar"
+          >
+            <svg className="w-4 h-4 text-muted group-hover:text-orange-400 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+            <span className="text-[0.5rem] text-muted group-hover:text-foreground/80 font-medium tracking-wide [writing-mode:vertical-lr] transition-colors">Construction Revenue</span>
+          </button>
         )}
       </div>
 
