@@ -417,6 +417,9 @@ export default function SchedulerPage() {
   const [syncToZuper, setSyncToZuper] = useState(true);
   const [syncingToZuper, setSyncingToZuper] = useState(false);
 
+  /* ---- revenue sidebar ---- */
+  const [revenueSidebarOpen, setRevenueSidebarOpen] = useState(true);
+
   /* ---- toast ---- */
   const [toast, setToast] = useState<{ message: string; type: string } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -688,37 +691,6 @@ export default function SchedulerPage() {
       return true;
     });
   }, [scheduledEvents, calendarLocations, calendarScheduleTypes, showCompleted, showOverdue]);
-
-  const stats = useMemo(() => {
-    // Use calendar filters for stats
-    let fp = calendarLocations.length > 0
-      ? projects.filter((p) => calendarLocations.includes(p.location))
-      : projects;
-    if (calendarScheduleTypes.length > 0) {
-      fp = fp.filter((p) => calendarScheduleTypes.includes(p.stage));
-    }
-    const rtbProjects = fp.filter((p) => p.stage === "rtb");
-    const constructionProjects = fp.filter((p) => p.stage === "construction");
-    const inspectionProjects = fp.filter((p) => p.stage === "inspection");
-    const surveyProjects = fp.filter((p) => p.stage === "survey");
-    // Scheduled = has a schedule date but is NOT already completed
-    const scheduledProjects = fp.filter((p) => p.scheduleDate && !p.constructionCompleted && !p.inspectionCompleted);
-    const unscheduledRtb = rtbProjects.filter((p) => !p.scheduleDate);
-    return {
-      survey: surveyProjects.length,
-      rtb: rtbProjects.length,
-      construction: constructionProjects.length,
-      inspection: inspectionProjects.length,
-      totalRevenue: formatRevenueCompact(fp.reduce((s, p) => s + p.amount, 0)),
-      rtbRevenue: formatRevenueCompact(rtbProjects.reduce((s, p) => s + p.amount, 0)),
-      constructionRevenue: formatRevenueCompact(constructionProjects.reduce((s, p) => s + p.amount, 0)),
-      scheduledRevenue: formatRevenueCompact(scheduledProjects.reduce((s, p) => s + p.amount, 0)),
-      scheduledCount: scheduledProjects.length,
-      unscheduledRtbRevenue: formatRevenueCompact(unscheduledRtb.reduce((s, p) => s + p.amount, 0)),
-      unscheduledRtbCount: unscheduledRtb.length,
-      avgDealSize: fp.length > 0 ? formatRevenueCompact(fp.reduce((s, p) => s + p.amount, 0) / fp.length) : "0",
-    };
-  }, [projects, calendarLocations, calendarScheduleTypes]);
 
   const queueRevenue = useMemo(
     () => formatRevenueCompact(filteredProjects.reduce((s, p) => s + p.amount, 0)),
@@ -1280,8 +1252,12 @@ export default function SchedulerPage() {
 
   return (
     <div className="h-screen overflow-hidden bg-background text-foreground/90 font-sans max-[900px]:h-auto max-[900px]:min-h-screen max-[900px]:overflow-auto">
-      {/* 3-column grid layout: project queue | calendar | revenue sidebar */}
-      <div className="grid h-full max-[900px]:h-auto grid-cols-[360px_1fr_200px] max-[1400px]:grid-cols-[320px_1fr_180px] max-[1100px]:grid-cols-[300px_1fr] max-[900px]:grid-cols-[1fr]">
+      {/* Grid layout: project queue | calendar | optional revenue sidebar */}
+      <div className={`grid h-full max-[900px]:h-auto max-[900px]:grid-cols-[1fr] ${
+        revenueSidebarOpen
+          ? "grid-cols-[360px_1fr_200px] max-[1400px]:grid-cols-[320px_1fr_180px] max-[1100px]:grid-cols-[300px_1fr]"
+          : "grid-cols-[360px_1fr] max-[1400px]:grid-cols-[320px_1fr] max-[900px]:grid-cols-[1fr]"
+      }`}>
         {/* ============================================================ */}
         {/* LEFT SIDEBAR - Pipeline Queue                                */}
         {/* ============================================================ */}
@@ -1776,47 +1752,10 @@ export default function SchedulerPage() {
                 </span>
                 Completed
               </button>
-            </div>
-          </div>
-
-          {/* Stats bar */}
-          <div className="flex gap-1.5 p-2 bg-background border-b border-t-border flex-wrap">
-            {[
-              { color: "bg-cyan-500", value: stats.survey, label: "Survey" },
-              { color: "bg-emerald-500", value: stats.rtb, label: "RTB" },
-              { color: "bg-blue-500", value: stats.construction, label: "Construction" },
-              { color: "bg-violet-500", value: stats.inspection, label: "Inspect" },
-            ].map((s, i) => (
-              <div key={i} className="flex items-center gap-1 px-2 py-1 bg-surface rounded-md border border-t-border">
-                <div className={`w-2 h-2 rounded-sm ${s.color}`} />
-                <span className="font-mono font-semibold text-[0.8rem]">{s.value}</span>
-                <span className="text-[0.55rem] text-muted uppercase">{s.label}</span>
-              </div>
-            ))}
-            <div className="h-5 w-px bg-t-border self-center mx-0.5" />
-            {[
-              { color: "bg-orange-500", value: `$${stats.totalRevenue}`, label: "Pipeline" },
-              { color: "bg-emerald-500", value: `$${stats.rtbRevenue}`, label: "RTB Rev" },
-              { color: "bg-blue-500", value: `$${stats.constructionRevenue}`, label: "Constr Rev" },
-              { color: "bg-amber-500", value: `$${stats.scheduledRevenue}`, label: `Sched (${stats.scheduledCount})` },
-            ].map((s, i) => (
-              <div key={`r${i}`} className="flex items-center gap-1 px-2 py-1 bg-surface rounded-md border border-t-border">
-                <div className={`w-2 h-2 rounded-sm ${s.color}`} />
-                <span className="font-mono font-semibold text-[0.8rem]">{s.value}</span>
-                <span className="text-[0.55rem] text-muted uppercase">{s.label}</span>
-              </div>
-            ))}
-            {stats.unscheduledRtbCount > 0 && (
-              <div className="flex items-center gap-1 px-2 py-1 bg-red-500/10 rounded-md border border-red-500/30">
-                <div className="w-2 h-2 rounded-sm bg-red-500" />
-                <span className="font-mono font-semibold text-[0.8rem] text-red-400">${stats.unscheduledRtbRevenue}</span>
-                <span className="text-[0.55rem] text-red-400/70 uppercase">Unsched RTB ({stats.unscheduledRtbCount})</span>
-              </div>
-            )}
-            <div className="ml-auto flex items-center gap-1">
-              <button onClick={exportCSV} className="px-2 py-1 text-[0.6rem] text-muted hover:text-foreground rounded border border-t-border hover:border-orange-500/50 transition-colors" title="Export CSV">CSV</button>
-              <button onClick={exportICal} className="px-2 py-1 text-[0.6rem] text-muted hover:text-foreground rounded border border-t-border hover:border-orange-500/50 transition-colors" title="Export iCal">iCal</button>
-              <button onClick={copySchedule} className="px-2 py-1 text-[0.6rem] text-muted hover:text-foreground rounded border border-t-border hover:border-orange-500/50 transition-colors" title="Copy to clipboard">Copy</button>
+              <div className="h-4 w-px bg-t-border mx-0.5" />
+              <button onClick={exportCSV} className="px-1.5 py-1 text-[0.55rem] text-muted hover:text-foreground rounded border border-t-border hover:border-orange-500/50 transition-colors" title="Export CSV">CSV</button>
+              <button onClick={exportICal} className="px-1.5 py-1 text-[0.55rem] text-muted hover:text-foreground rounded border border-t-border hover:border-orange-500/50 transition-colors" title="Export iCal">iCal</button>
+              <button onClick={copySchedule} className="px-1.5 py-1 text-[0.55rem] text-muted hover:text-foreground rounded border border-t-border hover:border-orange-500/50 transition-colors" title="Copy">Copy</button>
             </div>
           </div>
 
@@ -1929,10 +1868,20 @@ export default function SchedulerPage() {
                             const isDraggable = isActiveType && !ev.isOverdue;
 
                             // Color mapping by event type (distinct for each type)
+                            // Overdue events keep a colored left border so you can
+                            // identify the job type (blue=construction, cyan=survey, etc.)
+                            const overdueStageColor =
+                              ev.eventType === "construction" ? "border-l-2 border-l-blue-400" :
+                              ev.eventType === "survey" ? "border-l-2 border-l-cyan-400" :
+                              ev.eventType === "inspection" ? "border-l-2 border-l-violet-400" :
+                              ev.eventType === "rtb" ? "border-l-2 border-l-emerald-400" :
+                              ev.eventType === "blocked" ? "border-l-2 border-l-yellow-400" :
+                              "border-l-2 border-l-red-400";
+
                             const eventColorClass =
                               isFailedType ? "bg-amber-900/70 text-amber-200 ring-1 ring-amber-500 opacity-70 line-through" :
                               isCompletedType ? "bg-green-900/60 text-green-300 opacity-50" :
-                              ev.isOverdue ? "ring-1 ring-red-500 bg-red-900/70 text-red-200 animate-pulse" :
+                              ev.isOverdue ? `ring-1 ring-red-500 bg-red-900/70 text-red-200 animate-pulse ${overdueStageColor}` :
                               ev.eventType === "rtb" ? "bg-emerald-500 text-black" :
                               ev.eventType === "blocked" ? "bg-yellow-500 text-black" :
                               ev.eventType === "construction" ? "bg-blue-500 text-white" :
@@ -1967,7 +1916,12 @@ export default function SchedulerPage() {
                                 {ev.isOverdue && isActiveType && <span className="mr-0.5 text-red-200">!</span>}
                                 {dayLabel}
                                 <span className={isCompletedType ? "line-through" : ""}>{shortName}</span>
-                                {showRevenue && <span className="ml-0.5 opacity-80">${formatRevenueCompact(ev.amount)}</span>}
+                                {ev.isOverdue && isActiveType && (
+                                  <span className="ml-0.5 text-[0.45rem] opacity-70">
+                                    {ev.eventType === "construction" ? "🔨" : ev.eventType === "survey" ? "📋" : ev.eventType === "inspection" ? "🔍" : ""}
+                                  </span>
+                                )}
+                                {showRevenue && !ev.isOverdue && <span className="ml-0.5 opacity-80">${formatRevenueCompact(ev.amount)}</span>}
                               </div>
                             );
                           })}
@@ -2117,10 +2071,18 @@ export default function SchedulerPage() {
                                 const isFailedType = ev.eventType === "inspection-fail";
                                 const isActiveType = !isCompletedType && !isFailedType;
 
+                                const overdueStageColorW =
+                                  ev.eventType === "construction" ? "border-l-2 border-l-blue-400" :
+                                  ev.eventType === "survey" ? "border-l-2 border-l-cyan-400" :
+                                  ev.eventType === "inspection" ? "border-l-2 border-l-violet-400" :
+                                  ev.eventType === "rtb" ? "border-l-2 border-l-emerald-400" :
+                                  ev.eventType === "blocked" ? "border-l-2 border-l-yellow-400" :
+                                  "border-l-2 border-l-red-400";
+
                                 const eventColorClass =
                                   isFailedType ? "bg-amber-900/70 text-amber-200 ring-1 ring-amber-500 opacity-70 line-through" :
                                   isCompletedType ? "bg-green-900/60 text-green-300 opacity-50" :
-                                  ev.isOverdue ? "ring-1 ring-red-500 bg-red-900/70 text-red-200" :
+                                  ev.isOverdue ? `ring-1 ring-red-500 bg-red-900/70 text-red-200 ${overdueStageColorW}` :
                                   ev.eventType === "rtb" ? "bg-emerald-500 text-black" :
                                   ev.eventType === "blocked" ? "bg-yellow-500 text-black" :
                                   ev.eventType === "construction" ? "bg-blue-500 text-white" :
@@ -2270,10 +2232,18 @@ export default function SchedulerPage() {
                                 const isFailedType = e.eventType === "inspection-fail";
                                 const isActiveType = !isCompletedType && !isFailedType;
 
+                                const overdueStageColorG =
+                                  e.eventType === "construction" ? "border-l-2 border-l-blue-400" :
+                                  e.eventType === "survey" ? "border-l-2 border-l-cyan-400" :
+                                  e.eventType === "inspection" ? "border-l-2 border-l-violet-400" :
+                                  e.eventType === "rtb" ? "border-l-2 border-l-emerald-400" :
+                                  e.eventType === "blocked" ? "border-l-2 border-l-yellow-400" :
+                                  "border-l-2 border-l-red-400";
+
                                 const eventColorClass =
                                   isFailedType ? "bg-amber-900/70 text-amber-200 ring-1 ring-amber-500 opacity-70 line-through" :
                                   isCompletedType ? "bg-green-900/60 text-green-300 opacity-50" :
-                                  e.isOverdue ? "ring-1 ring-red-500 bg-red-900/70 text-red-200" :
+                                  e.isOverdue ? `ring-1 ring-red-500 bg-red-900/70 text-red-200 ${overdueStageColorG}` :
                                   e.eventType === "construction" ? "bg-blue-500 text-white" :
                                   e.eventType === "rtb" ? "bg-emerald-500 text-black" :
                                   e.eventType === "scheduled" ? "bg-cyan-500 text-white" :
@@ -2319,14 +2289,24 @@ export default function SchedulerPage() {
         </main>
 
         {/* ============================================================ */}
-        {/* RIGHT SIDEBAR - Weekly Revenue                                */}
+        {/* RIGHT SIDEBAR - Weekly Revenue (collapsible)                  */}
         {/* ============================================================ */}
+        {revenueSidebarOpen && (
         <aside className="bg-surface border-l border-t-border flex flex-col overflow-y-auto max-[1100px]:hidden">
-          <div className="p-3 border-b border-t-border">
-            <h2 className="text-[0.7rem] font-bold text-foreground/90 uppercase tracking-wide">
-              Weekly Revenue
-            </h2>
-            <div className="text-[0.55rem] text-muted mt-0.5">Construction Scheduled vs Complete</div>
+          <div className="p-2.5 border-b border-t-border flex items-center justify-between">
+            <div>
+              <h2 className="text-[0.65rem] font-bold text-foreground/90 uppercase tracking-wide">
+                Weekly Revenue
+              </h2>
+              <div className="text-[0.5rem] text-muted mt-0.5">Scheduled vs Complete</div>
+            </div>
+            <button
+              onClick={() => setRevenueSidebarOpen(false)}
+              className="p-1 text-muted hover:text-foreground rounded hover:bg-surface-2 transition-colors"
+              title="Close sidebar"
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" /></svg>
+            </button>
           </div>
 
           <div className="flex-1 p-2 space-y-0.5">
@@ -2404,6 +2384,20 @@ export default function SchedulerPage() {
             </div>
           </div>
         </aside>
+        )}
+        {/* Collapsed sidebar toggle — thin strip to reopen */}
+        {!revenueSidebarOpen && (
+          <div className="bg-surface border-l border-t-border flex flex-col items-center pt-3 max-[900px]:hidden" style={{ width: "28px" }}>
+            <button
+              onClick={() => setRevenueSidebarOpen(true)}
+              className="p-1 text-muted hover:text-orange-400 rounded hover:bg-surface-2 transition-colors"
+              title="Show revenue sidebar"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7M19 19l-7-7 7-7" /></svg>
+            </button>
+            <span className="text-[0.45rem] text-muted mt-1 [writing-mode:vertical-lr]">Revenue</span>
+          </div>
+        )}
       </div>
 
       {/* ============================================================ */}

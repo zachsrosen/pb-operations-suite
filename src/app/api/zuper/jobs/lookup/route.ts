@@ -276,17 +276,53 @@ export async function GET(request: NextRequest) {
       console.warn("Zuper: DB cache lookup failed, falling back to API:", dbErr);
     }
 
-    // --- Zuper API search (for projects not found in DB cache) ---
-    const result = await zuper.searchJobs({
-      limit: 500,
-      from_date: new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-      to_date: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+    // --- Zuper API search (paginated — fetch ALL jobs, not just first 500) ---
+    const PAGE_SIZE = 500;
+    const MAX_PAGES = 10; // Safety cap: 5000 jobs max
+    const allJobs: ZuperJob[] = [];
+
+    const fromDate = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+    const toDate = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+
+    // Fetch first page
+    const result_page1 = await zuper.searchJobs({
+      limit: PAGE_SIZE,
+      page: 1,
+      from_date: fromDate,
+      to_date: toDate,
     });
 
-    console.log(`Zuper lookup: searching ${result.data?.jobs?.length || 0} jobs for ${projectIds.length} projects, category filter: ${targetCategory || 'none'}`);
+    if (result_page1.type === "success" && result_page1.data?.jobs) {
+      allJobs.push(...result_page1.data.jobs);
+      const totalJobs = result_page1.data.total || 0;
 
-    if (result.type === "success" && result.data?.jobs) {
-      for (const job of result.data.jobs) {
+      // Fetch remaining pages if needed
+      if (totalJobs > PAGE_SIZE) {
+        const totalPages = Math.min(Math.ceil(totalJobs / PAGE_SIZE), MAX_PAGES);
+        const pagePromises = [];
+        for (let p = 2; p <= totalPages; p++) {
+          pagePromises.push(
+            zuper.searchJobs({
+              limit: PAGE_SIZE,
+              page: p,
+              from_date: fromDate,
+              to_date: toDate,
+            })
+          );
+        }
+        const pageResults = await Promise.all(pagePromises);
+        for (const pr of pageResults) {
+          if (pr.type === "success" && pr.data?.jobs) {
+            allJobs.push(...pr.data.jobs);
+          }
+        }
+      }
+    }
+
+    console.log(`Zuper lookup: searching ${allJobs.length} jobs (total from API) for ${projectIds.length} projects, category filter: ${targetCategory || 'none'}`);
+
+    if (allJobs.length > 0) {
+      for (const job of allJobs) {
         const jobCategoryName = getJobCategoryName(job);
         if (targetCategory && jobCategoryName !== targetCategory) continue;
         if (!job.job_uid) continue;
