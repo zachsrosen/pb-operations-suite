@@ -1021,10 +1021,10 @@ export async function createJobFromProject(project: {
     // Default to 8am-4pm local time for multi-day jobs (construction)
     startDateTime = localToUtc(schedule.date, "08:00");
 
-    // Calculate end date
+    // Calculate end date — ensure at least same-day (days < 1 means partial day, still same day)
     const [year, month, day] = schedule.date.split('-').map(Number);
-    const endDay = day + schedule.days - 1;
-    const endDateObj = new Date(year, month - 1, endDay);
+    const extraDays = Math.max(Math.ceil(schedule.days) - 1, 0); // 0.25d → 0 extra, 1d → 0 extra, 2d → 1 extra
+    const endDateObj = new Date(year, month - 1, day + extraDays);
     const endYear = endDateObj.getFullYear();
     const endMonth = String(endDateObj.getMonth() + 1).padStart(2, '0');
     const endDayStr = String(endDateObj.getDate()).padStart(2, '0');
