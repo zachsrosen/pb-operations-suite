@@ -467,8 +467,9 @@ async function handleLookup(projectIds: string[], projectNames: string[], catego
           // Count calendar days: if start and end are on different dates, count the span
           const startDate = new Date(start.getFullYear(), start.getMonth(), start.getDate());
           const endDate = new Date(end.getFullYear(), end.getMonth(), end.getDate());
-          const calendarDays = Math.round((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-          scheduledDays = Math.max(calendarDays, 1); // At least 1 day
+          const calendarDaysDiff = Math.round((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+          // +1 because the span is inclusive: Feb 19→20 = 2 days, not 1
+          scheduledDays = Math.max(calendarDaysDiff + 1, 1);
         }
       }
 

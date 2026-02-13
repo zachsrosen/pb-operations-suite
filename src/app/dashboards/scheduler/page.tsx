@@ -102,6 +102,9 @@ interface ManualSchedule {
   startDate: string;
   days: number;
   crew: string;
+  isTentative?: boolean;
+  recordId?: string;
+  scheduleType?: string;
 }
 
 interface ScheduledEvent extends SchedulerProject {
@@ -111,6 +114,8 @@ interface ScheduledEvent extends SchedulerProject {
   isCompleted?: boolean;
   isOverdue?: boolean;
   isInspectionFailed?: boolean;
+  isTentative?: boolean;
+  tentativeRecordId?: string;
 }
 
 interface PendingSchedule {
@@ -589,6 +594,37 @@ export default function SchedulerPage() {
       }
 
       setProjects(transformed);
+
+      // Rehydrate tentative schedules from DB so they survive page refresh
+      if (transformed.length > 0) {
+        try {
+          const ids = transformed.map((p: SchedulerProject) => p.id).join(",");
+          const tentRes = await fetch(`/api/zuper/schedule-records?projectIds=${encodeURIComponent(ids)}&status=tentative`);
+          if (tentRes.ok) {
+            const tentData = await tentRes.json();
+            const records = tentData.records as Record<string, {
+              id: string; projectId: string; scheduledDate: string; assignedUser?: string;
+              scheduleType?: string; scheduledStart?: string; scheduledEnd?: string;
+            }>;
+            if (records && Object.keys(records).length > 0) {
+              const restored: Record<string, ManualSchedule> = {};
+              for (const [projId, rec] of Object.entries(records)) {
+                restored[projId] = {
+                  startDate: rec.scheduledDate,
+                  days: 1,
+                  crew: rec.assignedUser || "",
+                  isTentative: true,
+                  recordId: rec.id,
+                  scheduleType: rec.scheduleType,
+                };
+              }
+              setManualSchedules(prev => ({ ...restored, ...prev }));
+            }
+          }
+        } catch (tentErr) {
+          console.warn("Failed to rehydrate tentative schedules:", tentErr);
+        }
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Unknown error";
       setError(msg);
@@ -852,9 +888,11 @@ export default function SchedulerPage() {
         events.push({
           ...project,
           date: data.startDate,
-          eventType: "scheduled",
+          eventType: data.isTentative ? "tentative" : "scheduled",
           days: data.days,
           crew: data.crew,
+          isTentative: data.isTentative,
+          tentativeRecordId: data.recordId,
         });
       }
     });
@@ -871,7 +909,8 @@ export default function SchedulerPage() {
       inspection: ["inspection", "inspection-pass", "inspection-fail"],
       rtb: ["rtb"],
       blocked: ["blocked"],
-      scheduled: ["scheduled"],
+      scheduled: ["scheduled", "tentative"],
+      tentative: ["tentative"],
     };
     // Expand selected base types into all their variants
     const expandedTypes = calendarScheduleTypes.length > 0
@@ -915,11 +954,11 @@ export default function SchedulerPage() {
 
   const computeRevenueBuckets = useCallback((events: typeof filteredScheduledEvents) => {
     const scheduledEvts = events.filter((e) =>
-      (e.eventType === "construction" || e.eventType === "rtb" || e.eventType === "blocked" || e.eventType === "scheduled") && !e.isOverdue
+      (e.eventType === "construction" || e.eventType === "rtb" || e.eventType === "blocked" || e.eventType === "scheduled" || e.eventType === "tentative") && !e.isOverdue
     );
     const completedEvts = events.filter((e) => e.eventType === "construction-complete");
     const overdueEvts = events.filter((e) =>
-      (e.eventType === "construction" || e.eventType === "rtb" || e.eventType === "blocked" || e.eventType === "scheduled") && e.isOverdue
+      (e.eventType === "construction" || e.eventType === "rtb" || e.eventType === "blocked" || e.eventType === "scheduled" || e.eventType === "tentative") && e.isOverdue
     );
     const dedupeRevenue = (evts: typeof events) => {
       const ids = new Set(evts.map((e) => e.id));
@@ -1177,7 +1216,15 @@ export default function SchedulerPage() {
 
     setManualSchedules((prev) => ({
       ...prev,
-      [project.id]: { startDate: date, days, crew },
+      [project.id]: {
+        startDate: date,
+        days,
+        crew,
+        isTentative: !syncToZuper,
+        scheduleType: project.stage === "survey" ? "survey"
+          : project.stage === "inspection" ? "inspection"
+          : "installation",
+      },
     }));
 
     // Resolve Zuper assignee based on schedule type, location, and selected crew/user
@@ -1304,6 +1351,14 @@ export default function SchedulerPage() {
         });
 
         if (response.ok) {
+          const tentData = await response.json();
+          // Store the record ID so we can confirm/cancel later
+          if (tentData.record?.id) {
+            setManualSchedules((prev) => ({
+              ...prev,
+              [project.id]: { ...prev[project.id], recordId: tentData.record.id },
+            }));
+          }
           showToast(`${getCustomerName(project.name)} tentatively scheduled for ${formatDate(date)}`);
         } else {
           showToast(`${getCustomerName(project.name)} scheduled locally (tentative save failed)`, "error");
@@ -1330,6 +1385,85 @@ export default function SchedulerPage() {
     setDraggedProjectId(null);
     (e.target as HTMLElement).style.opacity = "1";
   }, []);
+
+  /* ---- Tentative: Confirm & Cancel handlers ---- */
+  const [confirmingTentative, setConfirmingTentative] = useState(false);
+  const [cancellingTentative, setCancellingTentative] = useState(false);
+
+  const handleConfirmTentative = useCallback(async (projectId: string) => {
+    const schedule = manualSchedules[projectId];
+    if (!schedule?.recordId) {
+      showToast("No tentative record found to confirm", "error");
+      return;
+    }
+    setConfirmingTentative(true);
+    try {
+      const res = await fetch("/api/zuper/jobs/schedule/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scheduleRecordId: schedule.recordId }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        // Move from tentative to confirmed in local state
+        setManualSchedules((prev) => ({
+          ...prev,
+          [projectId]: { ...prev[projectId], isTentative: false, recordId: undefined },
+        }));
+        showToast(
+          data.zuperSynced
+            ? `Confirmed & synced to Zuper!`
+            : `Confirmed (Zuper sync issue: ${data.zuperError})`
+        );
+        setDetailModal(null);
+      } else {
+        showToast(data.error || "Failed to confirm", "error");
+      }
+    } catch {
+      showToast("Failed to confirm tentative schedule", "error");
+    } finally {
+      setConfirmingTentative(false);
+    }
+  }, [manualSchedules, showToast]);
+
+  const handleCancelTentative = useCallback(async (projectId: string) => {
+    const schedule = manualSchedules[projectId];
+    if (!schedule?.recordId) {
+      // No DB record — just remove from local state
+      setManualSchedules((prev) => {
+        const next = { ...prev };
+        delete next[projectId];
+        return next;
+      });
+      showToast("Tentative schedule removed");
+      setDetailModal(null);
+      return;
+    }
+    setCancellingTentative(true);
+    try {
+      const res = await fetch("/api/zuper/schedule-records", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ recordId: schedule.recordId }),
+      });
+      if (res.ok) {
+        setManualSchedules((prev) => {
+          const next = { ...prev };
+          delete next[projectId];
+          return next;
+        });
+        showToast("Tentative schedule cancelled");
+        setDetailModal(null);
+      } else {
+        const data = await res.json();
+        showToast(data.error || "Failed to cancel", "error");
+      }
+    } catch {
+      showToast("Failed to cancel tentative schedule", "error");
+    } finally {
+      setCancellingTentative(false);
+    }
+  }, [manualSchedules, showToast]);
 
   const handleDrop = useCallback(
     (e: React.DragEvent, dateStr: string, crewName?: string) => {
@@ -2167,6 +2301,7 @@ export default function SchedulerPage() {
                               ev.eventType === "survey" ? "bg-cyan-500 text-white" :
                               ev.eventType === "inspection" ? "bg-violet-500 text-white" :
                               ev.eventType === "scheduled" ? "bg-cyan-500 text-white" :
+                              ev.eventType === "tentative" ? "bg-amber-500/70 text-black border border-dashed border-amber-300" :
                               "bg-zinc-600 text-white";
 
                             return (
@@ -2190,6 +2325,7 @@ export default function SchedulerPage() {
                                   isDraggable ? "cursor-grab active:cursor-grabbing" : "cursor-default"
                                 } ${eventColorClass}`}
                               >
+                                {ev.isTentative && <span className="mr-0.5 text-[0.45rem] font-bold opacity-80">TENT</span>}
                                 {isFailedType && <span className="mr-0.5">✗</span>}
                                 {isCompletedType && <span className="mr-0.5">✓</span>}
                                 {ev.isOverdue && isActiveType && <span className="mr-0.5 text-red-200">!</span>}
@@ -2374,6 +2510,7 @@ export default function SchedulerPage() {
                                   ev.eventType === "survey" ? "bg-cyan-500 text-white" :
                                   ev.eventType === "inspection" ? "bg-violet-500 text-white" :
                                   ev.eventType === "scheduled" ? "bg-cyan-500 text-white" :
+                                  ev.eventType === "tentative" ? "bg-amber-500/70 text-black border border-dashed border-amber-300" :
                                   "bg-zinc-600 text-white";
 
                                 return (
@@ -2538,6 +2675,7 @@ export default function SchedulerPage() {
                                   e.eventType === "construction" ? "bg-blue-500 text-white" :
                                   e.eventType === "rtb" ? "bg-emerald-500 text-black" :
                                   e.eventType === "scheduled" ? "bg-cyan-500 text-white" :
+                                  e.eventType === "tentative" ? "bg-amber-500/70 text-black border border-dashed border-amber-300" :
                                   e.eventType === "blocked" ? "bg-yellow-500 text-black" :
                                   e.eventType === "survey" ? "bg-cyan-500 text-white" :
                                   e.eventType === "inspection" ? "bg-violet-500 text-white" :
@@ -3412,6 +3550,32 @@ export default function SchedulerPage() {
                 })()}
               </ModalSection>
             </div>
+
+            {/* Tentative action banner */}
+            {manualSchedules[detailModal.id]?.isTentative && (
+              <div className="mb-4 p-3 rounded-lg bg-amber-500/10 border border-dashed border-amber-400/50">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-amber-400 text-[0.7rem] font-bold uppercase tracking-wide">⏳ Tentative</span>
+                  <span className="text-[0.65rem] text-muted">Not yet synced to Zuper</span>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleConfirmTentative(detailModal.id)}
+                    disabled={confirmingTentative}
+                    className="px-3 py-1.5 rounded-md bg-emerald-600 text-white text-[0.7rem] font-semibold hover:bg-emerald-700 transition-colors disabled:opacity-50 cursor-pointer"
+                  >
+                    {confirmingTentative ? "Confirming..." : "✓ Confirm & Sync to Zuper"}
+                  </button>
+                  <button
+                    onClick={() => handleCancelTentative(detailModal.id)}
+                    disabled={cancellingTentative}
+                    className="px-3 py-1.5 rounded-md bg-red-600/80 text-white text-[0.7rem] font-semibold hover:bg-red-700 transition-colors disabled:opacity-50 cursor-pointer"
+                  >
+                    {cancellingTentative ? "Cancelling..." : "✗ Cancel"}
+                  </button>
+                </div>
+              </div>
+            )}
 
             <div className="flex gap-2 justify-end flex-wrap">
               <a
