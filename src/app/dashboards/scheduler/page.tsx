@@ -1927,17 +1927,6 @@ export default function SchedulerPage() {
                             const isActiveType = !isCompletedType && !isFailedType;
                             const isDraggable = isActiveType && !ev.isOverdue;
 
-                            // Color mapping by event type (distinct for each type)
-                            // Overdue events keep a colored left border so you can
-                            // identify the job type (blue=construction, cyan=survey, etc.)
-                            const overdueStageColor =
-                              ev.eventType === "construction" ? "border-l-2 border-l-blue-400" :
-                              ev.eventType === "survey" ? "border-l-2 border-l-cyan-400" :
-                              ev.eventType === "inspection" ? "border-l-2 border-l-violet-400" :
-                              ev.eventType === "rtb" ? "border-l-2 border-l-emerald-400" :
-                              ev.eventType === "blocked" ? "border-l-2 border-l-yellow-400" :
-                              "border-l-2 border-l-red-400";
-
                             // Completed events use same base color at low opacity
                             const completedColorClass =
                               ev.eventType === "construction-complete" ? "bg-blue-500/30 text-blue-300/70" :
@@ -1945,10 +1934,19 @@ export default function SchedulerPage() {
                               ev.eventType === "survey-complete" ? "bg-cyan-500/30 text-cyan-300/70" :
                               "bg-zinc-600/30 text-zinc-300/70";
 
+                            // Overdue events keep their base color but dimmed, with a red ring
+                            const overdueColorClass =
+                              ev.eventType === "construction" ? "bg-blue-500/60 text-white ring-2 ring-red-500" :
+                              ev.eventType === "survey" ? "bg-cyan-500/60 text-white ring-2 ring-red-500" :
+                              ev.eventType === "inspection" ? "bg-violet-500/60 text-white ring-2 ring-red-500" :
+                              ev.eventType === "rtb" ? "bg-emerald-500/60 text-black ring-2 ring-red-500" :
+                              ev.eventType === "blocked" ? "bg-yellow-500/60 text-black ring-2 ring-red-500" :
+                              "bg-zinc-600/60 text-white ring-2 ring-red-500";
+
                             const eventColorClass =
                               isFailedType ? "bg-amber-900/70 text-amber-200 ring-1 ring-amber-500 opacity-70 line-through" :
                               isCompletedType ? completedColorClass :
-                              ev.isOverdue ? `ring-1 ring-red-500 bg-red-900/70 text-red-200 ${overdueStageColor}` :
+                              ev.isOverdue ? overdueColorClass :
                               ev.eventType === "rtb" ? "bg-emerald-500 text-black" :
                               ev.eventType === "blocked" ? "bg-yellow-500 text-black" :
                               ev.eventType === "construction" ? "bg-blue-500 text-white" :
@@ -1988,7 +1986,7 @@ export default function SchedulerPage() {
                                     {ev.eventType === "construction" ? "🔨" : ev.eventType === "survey" ? "📋" : ev.eventType === "inspection" ? "🔍" : ""}
                                   </span>
                                 )}
-                                {showRevenue && !ev.isOverdue && <span className="ml-0.5 opacity-80">${formatRevenueCompact(ev.amount)}</span>}
+                                {showRevenue && <span className="ml-0.5 opacity-80">${formatRevenueCompact(ev.amount)}</span>}
                               </div>
                             );
                           })}
@@ -2138,24 +2136,24 @@ export default function SchedulerPage() {
                                 const isFailedType = ev.eventType === "inspection-fail";
                                 const isActiveType = !isCompletedType && !isFailedType;
 
-                                const overdueStageColorW =
-                                  ev.eventType === "construction" ? "border-l-2 border-l-blue-400" :
-                                  ev.eventType === "survey" ? "border-l-2 border-l-cyan-400" :
-                                  ev.eventType === "inspection" ? "border-l-2 border-l-violet-400" :
-                                  ev.eventType === "rtb" ? "border-l-2 border-l-emerald-400" :
-                                  ev.eventType === "blocked" ? "border-l-2 border-l-yellow-400" :
-                                  "border-l-2 border-l-red-400";
-
                                 const completedColorClassW =
                                   ev.eventType === "construction-complete" ? "bg-blue-500/30 text-blue-300/70" :
                                   ev.eventType === "inspection-pass" ? "bg-violet-500/30 text-violet-300/70" :
                                   ev.eventType === "survey-complete" ? "bg-cyan-500/30 text-cyan-300/70" :
                                   "bg-zinc-600/30 text-zinc-300/70";
 
+                                const overdueColorClassW =
+                                  ev.eventType === "construction" ? "bg-blue-500/60 text-white ring-2 ring-red-500" :
+                                  ev.eventType === "survey" ? "bg-cyan-500/60 text-white ring-2 ring-red-500" :
+                                  ev.eventType === "inspection" ? "bg-violet-500/60 text-white ring-2 ring-red-500" :
+                                  ev.eventType === "rtb" ? "bg-emerald-500/60 text-black ring-2 ring-red-500" :
+                                  ev.eventType === "blocked" ? "bg-yellow-500/60 text-black ring-2 ring-red-500" :
+                                  "bg-zinc-600/60 text-white ring-2 ring-red-500";
+
                                 const eventColorClass =
                                   isFailedType ? "bg-amber-900/70 text-amber-200 ring-1 ring-amber-500 opacity-70 line-through" :
                                   isCompletedType ? completedColorClassW :
-                                  ev.isOverdue ? `ring-1 ring-red-500 bg-red-900/70 text-red-200 ${overdueStageColorW}` :
+                                  ev.isOverdue ? overdueColorClassW :
                                   ev.eventType === "rtb" ? "bg-emerald-500 text-black" :
                                   ev.eventType === "blocked" ? "bg-yellow-500 text-black" :
                                   ev.eventType === "construction" ? "bg-blue-500 text-white" :
@@ -2305,24 +2303,24 @@ export default function SchedulerPage() {
                                 const isFailedType = e.eventType === "inspection-fail";
                                 const isActiveType = !isCompletedType && !isFailedType;
 
-                                const overdueStageColorG =
-                                  e.eventType === "construction" ? "border-l-2 border-l-blue-400" :
-                                  e.eventType === "survey" ? "border-l-2 border-l-cyan-400" :
-                                  e.eventType === "inspection" ? "border-l-2 border-l-violet-400" :
-                                  e.eventType === "rtb" ? "border-l-2 border-l-emerald-400" :
-                                  e.eventType === "blocked" ? "border-l-2 border-l-yellow-400" :
-                                  "border-l-2 border-l-red-400";
-
                                 const completedColorClassG =
                                   e.eventType === "construction-complete" ? "bg-blue-500/30 text-blue-300/70" :
                                   e.eventType === "inspection-pass" ? "bg-violet-500/30 text-violet-300/70" :
                                   e.eventType === "survey-complete" ? "bg-cyan-500/30 text-cyan-300/70" :
                                   "bg-zinc-600/30 text-zinc-300/70";
 
+                                const overdueColorClassG =
+                                  e.eventType === "construction" ? "bg-blue-500/60 text-white ring-2 ring-red-500" :
+                                  e.eventType === "survey" ? "bg-cyan-500/60 text-white ring-2 ring-red-500" :
+                                  e.eventType === "inspection" ? "bg-violet-500/60 text-white ring-2 ring-red-500" :
+                                  e.eventType === "rtb" ? "bg-emerald-500/60 text-black ring-2 ring-red-500" :
+                                  e.eventType === "blocked" ? "bg-yellow-500/60 text-black ring-2 ring-red-500" :
+                                  "bg-zinc-600/60 text-white ring-2 ring-red-500";
+
                                 const eventColorClass =
                                   isFailedType ? "bg-amber-900/70 text-amber-200 ring-1 ring-amber-500 opacity-70 line-through" :
                                   isCompletedType ? completedColorClassG :
-                                  e.isOverdue ? `ring-1 ring-red-500 bg-red-900/70 text-red-200 ${overdueStageColorG}` :
+                                  e.isOverdue ? overdueColorClassG :
                                   e.eventType === "construction" ? "bg-blue-500 text-white" :
                                   e.eventType === "rtb" ? "bg-emerald-500 text-black" :
                                   e.eventType === "scheduled" ? "bg-cyan-500 text-white" :

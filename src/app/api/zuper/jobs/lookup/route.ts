@@ -276,50 +276,57 @@ export async function GET(request: NextRequest) {
       console.warn("Zuper: DB cache lookup failed, falling back to API:", dbErr);
     }
 
-    // --- Zuper API search (paginated — fetch ALL jobs, not just first 500) ---
+    // --- Zuper API search (paginated — fetch ALL jobs) ---
+    // Two passes: first with date range, then without for any remaining unmatched projects
     const PAGE_SIZE = 500;
     const MAX_PAGES = 10; // Safety cap: 5000 jobs max
     const allJobs: ZuperJob[] = [];
+    const seenJobUids = new Set<string>();
 
-    const fromDate = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-    const toDate = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-
-    // Fetch first page
-    const result_page1 = await zuper.searchJobs({
-      limit: PAGE_SIZE,
-      page: 1,
-      from_date: fromDate,
-      to_date: toDate,
-    });
-
-    if (result_page1.type === "success" && result_page1.data?.jobs) {
-      allJobs.push(...result_page1.data.jobs);
-      const totalJobs = result_page1.data.total || 0;
-
-      // Fetch remaining pages if needed
-      if (totalJobs > PAGE_SIZE) {
-        const totalPages = Math.min(Math.ceil(totalJobs / PAGE_SIZE), MAX_PAGES);
-        const pagePromises = [];
-        for (let p = 2; p <= totalPages; p++) {
-          pagePromises.push(
-            zuper.searchJobs({
-              limit: PAGE_SIZE,
-              page: p,
-              from_date: fromDate,
-              to_date: toDate,
-            })
-          );
-        }
-        const pageResults = await Promise.all(pagePromises);
-        for (const pr of pageResults) {
-          if (pr.type === "success" && pr.data?.jobs) {
-            allJobs.push(...pr.data.jobs);
+    // Helper: fetch all pages of a search query
+    const fetchAllPages = async (searchParams: Parameters<typeof zuper.searchJobs>[0]): Promise<ZuperJob[]> => {
+      const jobs: ZuperJob[] = [];
+      const page1 = await zuper.searchJobs({ ...searchParams, limit: PAGE_SIZE, page: 1 });
+      if (page1.type === "success" && page1.data?.jobs) {
+        jobs.push(...page1.data.jobs);
+        const total = page1.data.total || 0;
+        if (total > PAGE_SIZE) {
+          const totalPages = Math.min(Math.ceil(total / PAGE_SIZE), MAX_PAGES);
+          const promises = [];
+          for (let p = 2; p <= totalPages; p++) {
+            promises.push(zuper.searchJobs({ ...searchParams, limit: PAGE_SIZE, page: p }));
+          }
+          const results = await Promise.all(promises);
+          for (const r of results) {
+            if (r.type === "success" && r.data?.jobs) jobs.push(...r.data.jobs);
           }
         }
       }
+      return jobs;
+    };
+
+    // Pass 1: Date-ranged search (365 days back, 180 days forward — wider window)
+    const fromDate = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+    const toDate = new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+
+    const datedJobs = await fetchAllPages({ from_date: fromDate, to_date: toDate });
+    for (const j of datedJobs) {
+      if (j.job_uid && !seenJobUids.has(j.job_uid)) {
+        seenJobUids.add(j.job_uid);
+        allJobs.push(j);
+      }
     }
 
-    console.log(`Zuper lookup: searching ${allJobs.length} jobs (total from API) for ${projectIds.length} projects, category filter: ${targetCategory || 'none'}`);
+    // Pass 2: No date filter — catches unscheduled jobs or those outside the date window
+    const undatedJobs = await fetchAllPages({});
+    for (const j of undatedJobs) {
+      if (j.job_uid && !seenJobUids.has(j.job_uid)) {
+        seenJobUids.add(j.job_uid);
+        allJobs.push(j);
+      }
+    }
+
+    console.log(`Zuper lookup: searching ${allJobs.length} jobs (${datedJobs.length} dated + ${undatedJobs.length} undated, ${seenJobUids.size} unique) for ${projectIds.length} projects, category filter: ${targetCategory || 'none'}`);
 
     if (allJobs.length > 0) {
       for (const job of allJobs) {
