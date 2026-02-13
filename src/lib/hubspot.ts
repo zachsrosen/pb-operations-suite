@@ -994,8 +994,15 @@ export function filterProjectsForContext(
   switch (context) {
     case "scheduling":
       // Projects that need to be scheduled or are in construction/inspection stages
+      // Also include projects that already completed construction (moved to PTO/Close Out)
+      // so they still appear on the calendar at their scheduled date
       return projects.filter(
-        (p) => p.isSchedulable || p.stage === "Construction" || p.stage === "Inspection"
+        (p) =>
+          p.isSchedulable ||
+          p.stage === "Construction" ||
+          p.stage === "Inspection" ||
+          (p.constructionScheduleDate && p.constructionCompleteDate) ||
+          (p.inspectionScheduleDate && p.inspectionPassDate)
       );
 
     case "equipment":

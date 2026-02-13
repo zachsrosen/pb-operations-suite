@@ -4,7 +4,6 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import Link from "next/link";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
-import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -36,6 +35,7 @@ interface RawProject {
   installNotes?: string;
   ahj?: string;
   utility?: string;
+  isParticipateEnergy?: boolean;
   equipment?: {
     systemSizeKwdc?: number;
     modules?: { count?: number };
@@ -76,6 +76,7 @@ interface SchedulerProject {
   constructionCompleted: string | null;
   inspectionCompleted: string | null;
   hubspotUrl: string;
+  isPE: boolean;
   zuperJobUid?: string;
   zuperJobStatus?: string;
 }
@@ -99,12 +100,6 @@ interface ScheduledEvent extends SchedulerProject {
   days: number;
   isCompleted?: boolean;
   isOverdue?: boolean;
-}
-
-interface Conflict {
-  crew: string;
-  date: string;
-  projects: string[];
 }
 
 interface PendingSchedule {
@@ -166,7 +161,7 @@ const STAGE_ICONS: Record<string, string> = {
   survey: "Survey",
   rtb: "RTB",
   blocked: "Blocked",
-  construction: "Build",
+  construction: "Construction",
   inspection: "Inspect",
 };
 
@@ -292,12 +287,27 @@ function transformProject(p: RawProject): SchedulerProject | null {
     stage === "blocked" ||
     stage === "construction" ||
     stage === "inspection";
-  if (!isSchedulable) return null;
+
+  // Also include projects that have moved past construction/inspection but had schedule dates
+  // (these are completed projects that should still show on the calendar)
+  const isCompletedWithSchedule =
+    !isSchedulable &&
+    ((p.constructionScheduleDate && p.constructionCompleteDate) ||
+      (p.inspectionScheduleDate && p.inspectionPassDate));
+
+  if (!isSchedulable && !isCompletedWithSchedule) return null;
+
+  // For completed projects that moved past mapped stages, determine their effective stage
+  const effectiveStage = isSchedulable
+    ? stage
+    : p.inspectionPassDate
+      ? "inspection"
+      : "construction";
 
   let scheduleDate: string | null = null;
-  if (stage === "survey") {
+  if (effectiveStage === "survey") {
     scheduleDate = p.siteSurveyScheduleDate || null;
-  } else if (stage === "inspection") {
+  } else if (effectiveStage === "inspection") {
     scheduleDate = p.inspectionScheduleDate || null;
   } else {
     scheduleDate = p.constructionScheduleDate || null;
@@ -305,7 +315,7 @@ function transformProject(p: RawProject): SchedulerProject | null {
 
   const loc = p.pbLocation || "Unknown";
   const isBuildStage =
-    stage === "rtb" || stage === "blocked" || stage === "construction";
+    effectiveStage === "rtb" || effectiveStage === "blocked" || effectiveStage === "construction";
 
   return {
     id: String(p.id),
@@ -314,7 +324,7 @@ function transformProject(p: RawProject): SchedulerProject | null {
     location: loc,
     amount: p.amount || 0,
     type: p.projectType || "Solar",
-    stage,
+    stage: effectiveStage,
     systemSize: p.equipment?.systemSizeKwdc || 0,
     moduleCount: p.equipment?.modules?.count || 0,
     inverterCount: p.equipment?.inverter?.count || 0,
@@ -341,6 +351,7 @@ function transformProject(p: RawProject): SchedulerProject | null {
     surveyCompleted: p.siteSurveyCompletionDate || null,
     constructionCompleted: p.constructionCompleteDate || null,
     inspectionCompleted: p.inspectionPassDate || null,
+    isPE: !!p.isParticipateEnergy,
     hubspotUrl:
       p.url ||
       `https://app.hubspot.com/contacts/21710069/record/0-3/${p.id}`,
@@ -399,11 +410,7 @@ export default function SchedulerPage() {
   const [toast, setToast] = useState<{ message: string; type: string } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  /* ---- optimize stats ---- */
-  const [rightPanelOpen, setRightPanelOpen] = useState(true);
-  const [optimizeStats, setOptimizeStats] = useState<string>(
-    "Schedules RTB projects + inspections | Priority: Easiest first, then by revenue"
-  );
+  /* (right panel removed — optimize/conflicts moved to testing) */
 
   /* ================================================================ */
   /*  Data fetching                                                    */
@@ -606,38 +613,6 @@ export default function SchedulerPage() {
       return true;
     });
   }, [scheduledEvents, calendarLocations, calendarScheduleTypes, showCompleted, showOverdue]);
-
-  const conflicts = useMemo((): Conflict[] => {
-    const result: Conflict[] = [];
-    const crewSchedules: Record<string, { date: string; project: ScheduledEvent }[]> = {};
-    scheduledEvents.forEach((e) => {
-      if (!e.crew) return;
-      if (!crewSchedules[e.crew]) crewSchedules[e.crew] = [];
-      const start = new Date(e.date + "T12:00:00");
-      for (let i = 0; i < Math.ceil(e.days || 1); i++) {
-        const d = new Date(start);
-        d.setDate(d.getDate() + i);
-        crewSchedules[e.crew].push({ date: toDateStr(d), project: e });
-      }
-    });
-    Object.entries(crewSchedules).forEach(([crew, days]) => {
-      const dateMap: Record<string, ScheduledEvent[]> = {};
-      days.forEach((d) => {
-        if (!dateMap[d.date]) dateMap[d.date] = [];
-        dateMap[d.date].push(d.project);
-      });
-      Object.entries(dateMap).forEach(([date, projs]) => {
-        if (projs.length > 1) {
-          result.push({
-            crew,
-            date,
-            projects: projs.map((p) => getCustomerName(p.name)),
-          });
-        }
-      });
-    });
-    return result;
-  }, [scheduledEvents]);
 
   const stats = useMemo(() => {
     // Use calendar filters for stats
@@ -1004,124 +979,6 @@ export default function SchedulerPage() {
     [selectedProject, showToast, openScheduleModal]
   );
 
-  /* ---- Auto optimize ---- */
-  const autoOptimize = useCallback(() => {
-    // Get RTB projects (for construction) and Inspection projects
-    const rtbProjects = projects.filter(
-      (p) => p.stage === "rtb" && !manualSchedules[p.id] && !p.scheduleDate
-    );
-    const inspectionProjects = projects.filter(
-      (p) => p.stage === "inspection" && !manualSchedules[p.id] && !p.scheduleDate
-    );
-
-    if (rtbProjects.length === 0 && inspectionProjects.length === 0) {
-      showToast("No unscheduled RTB or Inspection projects to optimize", "error");
-      return;
-    }
-
-    // Sort RTB projects by difficulty first (easiest = 1), then by revenue (highest first)
-    rtbProjects.sort((a, b) => {
-      const diffA = a.difficulty || 3; // Default to medium difficulty (3) if not set
-      const diffB = b.difficulty || 3;
-      if (diffA !== diffB) {
-        return diffA - diffB; // Easier projects first (lower number = easier)
-      }
-      return b.amount - a.amount; // Then by revenue (highest first)
-    });
-
-    // Sort inspection projects by revenue (highest first)
-    inspectionProjects.sort((a, b) => b.amount - a.amount);
-
-    const crewNextDate: Record<string, string> = {};
-    const baseDate = new Date();
-    baseDate.setDate(baseDate.getDate() + 1);
-    const baseDateStr = toDateStr(baseDate);
-
-    Object.values(CREWS)
-      .flat()
-      .forEach((c) => {
-        crewNextDate[c.name] = getNextWorkday(baseDateStr);
-      });
-
-    scheduledEvents.forEach((e) => {
-      if (e.crew && crewNextDate[e.crew]) {
-        const endDate = addBusinessDays(e.date, Math.ceil(e.days || 1));
-        const nextAvailable = getNextWorkday(endDate);
-        if (nextAvailable > crewNextDate[e.crew]) {
-          crewNextDate[e.crew] = nextAvailable;
-        }
-      }
-    });
-
-    let scheduledInstalls = 0;
-    let scheduledInspections = 0;
-    const newSchedules: Record<string, ManualSchedule> = { ...manualSchedules };
-
-    // Schedule RTB projects (construction) AND their inspections
-    rtbProjects.forEach((p) => {
-      const preferredCrew = p.crew;
-      if (preferredCrew && crewNextDate[preferredCrew]) {
-        const startDate = getNextWorkday(crewNextDate[preferredCrew]);
-        const jobDays = Math.ceil(p.daysInstall || 2);
-
-        newSchedules[p.id] = {
-          startDate,
-          days: p.daysInstall || 2,
-          crew: preferredCrew,
-        };
-
-        // Calculate construction end date and schedule inspection 2 business days after
-        const constructionEndDate = addBusinessDays(startDate, jobDays);
-        const inspectionDate = addBusinessDays(constructionEndDate, 2);
-
-        // Note: Inspection is logged but not stored separately as it would need a separate tracking mechanism
-        console.log(`Scheduled ${p.name}: Install ${startDate}, Inspection ${inspectionDate}`);
-
-        crewNextDate[preferredCrew] = getNextWorkday(
-          addBusinessDays(startDate, jobDays)
-        );
-        scheduledInstalls++;
-      }
-    });
-
-    // Schedule standalone inspection projects (projects already in Inspection stage)
-    inspectionProjects.forEach((p) => {
-      const preferredCrew = p.crew;
-      if (preferredCrew && crewNextDate[preferredCrew]) {
-        const startDate = getNextWorkday(crewNextDate[preferredCrew]);
-        newSchedules[p.id] = {
-          startDate,
-          days: 0.25, // Inspections are quick (quarter day)
-          crew: preferredCrew,
-        };
-        // Inspections are quick, so next crew availability is the next workday
-        crewNextDate[preferredCrew] = getNextWorkday(startDate);
-        scheduledInspections++;
-      }
-    });
-
-    setManualSchedules(newSchedules);
-
-    // Build summary message
-    let msg = "";
-    if (scheduledInstalls > 0 && scheduledInspections > 0) {
-      msg = `Scheduled ${scheduledInstalls} installs + ${scheduledInspections} inspections`;
-    } else if (scheduledInstalls > 0) {
-      msg = `Scheduled ${scheduledInstalls} installs (easiest first) + inspections`;
-    } else {
-      msg = `Scheduled ${scheduledInspections} inspections`;
-    }
-    showToast(msg);
-
-    const totalRevValue = rtbProjects
-        .slice(0, scheduledInstalls)
-        .reduce((s, p) => s + p.amount, 0);
-    const totalRev = formatRevenueCompact(totalRevValue);
-    setOptimizeStats(
-      `${scheduledInstalls} installs, ${scheduledInstalls} inspections | $${totalRev} | Sorted: Easiest → Hardest`
-    );
-  }, [projects, manualSchedules, scheduledEvents, showToast]);
-
   /* ---- Export functions ---- */
   const exportCSV = useCallback(() => {
     const headers = [
@@ -1247,10 +1104,6 @@ export default function SchedulerPage() {
         if (currentView === "calendar") nextMonth();
         if (currentView === "week") setWeekOffset((w) => w + 1);
       }
-      if (e.key === "o" && (e.ctrlKey || e.metaKey)) {
-        e.preventDefault();
-        autoOptimize();
-      }
       if (e.key === "e" && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
         exportCSV();
@@ -1265,7 +1118,6 @@ export default function SchedulerPage() {
     currentView,
     prevMonth,
     nextMonth,
-    autoOptimize,
     exportCSV,
   ]);
 
@@ -1279,9 +1131,9 @@ export default function SchedulerPage() {
   const stageTabs = [
     { key: "all", label: "All" },
     { key: "survey", label: "Survey" },
-    { key: "rtb", label: "RTB" },
     { key: "blocked", label: "Blocked" },
-    { key: "construction", label: "Build" },
+    { key: "rtb", label: "RTB" },
+    { key: "construction", label: "Construction" },
     { key: "inspection", label: "Inspect" },
   ];
 
@@ -1292,11 +1144,7 @@ export default function SchedulerPage() {
   return (
     <div className="h-screen overflow-hidden bg-background text-foreground/90 font-sans max-[900px]:h-auto max-[900px]:min-h-screen max-[900px]:overflow-auto">
       {/* 3-column grid layout */}
-      <div className={`grid h-full max-[900px]:h-auto ${
-        rightPanelOpen
-          ? "grid-cols-[360px_1fr_280px] max-[1400px]:grid-cols-[320px_1fr_240px] max-[1100px]:grid-cols-[320px_1fr]"
-          : "grid-cols-[360px_1fr] max-[1400px]:grid-cols-[320px_1fr]"
-      } max-[900px]:grid-cols-[1fr]`}>
+      <div className="grid h-full max-[900px]:h-auto grid-cols-[360px_1fr] max-[1400px]:grid-cols-[320px_1fr] max-[900px]:grid-cols-[1fr]">
         {/* ============================================================ */}
         {/* LEFT SIDEBAR - Pipeline Queue                                */}
         {/* ============================================================ */}
@@ -1363,25 +1211,36 @@ export default function SchedulerPage() {
                 onChange={(e) => setSearchText(e.target.value)}
                 className="w-full bg-background border border-t-border text-foreground/90 px-2 py-1.5 rounded-md text-[0.7rem] focus:outline-none focus:border-orange-500 placeholder:text-muted/70"
               />
-              <select
-                value={typeFilter}
-                onChange={(e) => setTypeFilter(e.target.value)}
-                className="w-full bg-background border border-t-border text-foreground/90 px-2 py-1.5 rounded-md text-[0.7rem] focus:outline-none focus:border-orange-500"
-              >
-                <option value="">All Types</option>
-                <option value="Solar">Solar</option>
-                <option value="Battery">Battery</option>
-                <option value="EV">EV Charger</option>
-              </select>
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value)}
-                className="w-full bg-background border border-t-border text-foreground/90 px-2 py-1.5 rounded-md text-[0.7rem] focus:outline-none focus:border-orange-500"
-              >
-                <option value="amount">Sort: Revenue</option>
-                <option value="date">Sort: Date</option>
-                <option value="days">Sort: Install Days</option>
-              </select>
+              {/* Job type toggle buttons */}
+              <div className="flex flex-wrap gap-1">
+                {["Solar", "Battery", "EV"].map((type) => (
+                  <button
+                    key={type}
+                    onClick={() => setTypeFilter(typeFilter === type ? "" : type)}
+                    className={`px-2 py-1 text-[0.6rem] rounded border transition-colors ${
+                      typeFilter === type
+                        ? "bg-orange-500 border-orange-400 text-black"
+                        : "bg-background border-t-border text-muted hover:border-muted"
+                    }`}
+                  >
+                    {type === "EV" ? "EV Charger" : type}
+                  </button>
+                ))}
+                {/* Sort toggle */}
+                {["amount", "date", "days"].map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setSortBy(s)}
+                    className={`px-2 py-1 text-[0.6rem] rounded border transition-colors ${
+                      sortBy === s
+                        ? "bg-surface-2 border-muted text-foreground"
+                        : "bg-background border-t-border text-muted hover:border-muted"
+                    }`}
+                  >
+                    {s === "amount" ? "$ Rev" : s === "date" ? "Date" : "Days"}
+                  </button>
+                ))}
+              </div>
               {/* Multi-select Location Filter */}
               <div className="flex flex-wrap gap-1 mt-1">
                 {LOCATIONS.filter(l => l !== "All").map((loc) => (
@@ -1503,6 +1362,11 @@ export default function SchedulerPage() {
                       >
                         {STAGE_ICONS[p.stage] || p.stage}
                       </span>
+                      {p.isPE && (
+                        <span className="text-[0.5rem] px-1 py-0.5 rounded bg-green-500/20 text-green-400 font-semibold">
+                          PE
+                        </span>
+                      )}
                       {isScheduled && (
                         <span className="text-[0.5rem] px-1 py-0.5 rounded bg-blue-500/30 text-blue-400 font-semibold">
                           {formatShortDate(schedDate)}
@@ -1682,42 +1546,66 @@ export default function SchedulerPage() {
             ))}
           </div>
 
-          {/* Calendar Filters */}
-          <div className="flex items-center gap-2 p-2 bg-background border-b border-t-border">
-            <MultiSelectFilter
-              label="Location"
-              options={[
-                { value: "Westminster", label: "Westminster" },
-                { value: "Centennial", label: "Centennial" },
-                { value: "Colorado Springs", label: "CO Springs" },
-                { value: "San Luis Obispo", label: "SLO" },
-                { value: "Camarillo", label: "Camarillo" },
-              ]}
-              selected={calendarLocations}
-              onChange={setCalendarLocations}
-              placeholder="All Locations"
-              accentColor="orange"
-            />
-            <MultiSelectFilter
-              label="Type"
-              options={[
-                { value: "survey", label: "Survey" },
-                { value: "rtb", label: "RTB" },
-                { value: "blocked", label: "Blocked" },
-                { value: "construction", label: "Construction" },
-                { value: "inspection", label: "Inspection" },
-              ]}
-              selected={calendarScheduleTypes}
-              onChange={setCalendarScheduleTypes}
-              placeholder="All Types"
-              accentColor="blue"
-            />
+          {/* Calendar Filters — Inline Toggle Boxes */}
+          <div className="flex flex-wrap items-center gap-1.5 p-2 bg-background border-b border-t-border">
+            <span className="text-[0.6rem] text-muted uppercase tracking-wide mr-0.5">Loc</span>
+            {[
+              { value: "Westminster", label: "Westy" },
+              { value: "Centennial", label: "DTC" },
+              { value: "Colorado Springs", label: "CO Spgs" },
+              { value: "San Luis Obispo", label: "SLO" },
+              { value: "Camarillo", label: "Cam" },
+            ].map((loc) => (
+              <button
+                key={loc.value}
+                onClick={() => {
+                  if (calendarLocations.includes(loc.value)) {
+                    setCalendarLocations(calendarLocations.filter(l => l !== loc.value));
+                  } else {
+                    setCalendarLocations([...calendarLocations, loc.value]);
+                  }
+                }}
+                className={`px-1.5 py-0.5 text-[0.6rem] rounded border transition-colors ${
+                  calendarLocations.includes(loc.value)
+                    ? "bg-orange-500 border-orange-400 text-black font-semibold"
+                    : "bg-surface border-t-border text-muted hover:border-muted"
+                }`}
+              >
+                {loc.label}
+              </button>
+            ))}
+            <span className="text-[0.6rem] text-muted uppercase tracking-wide ml-2 mr-0.5">Stage</span>
+            {([
+              { value: "survey", label: "Survey", active: "bg-cyan-500 border-cyan-400 text-black font-semibold" },
+              { value: "rtb", label: "RTB", active: "bg-emerald-500 border-emerald-400 text-black font-semibold" },
+              { value: "blocked", label: "Blocked", active: "bg-yellow-500 border-yellow-400 text-black font-semibold" },
+              { value: "construction", label: "Build", active: "bg-blue-500 border-blue-400 text-white font-semibold" },
+              { value: "inspection", label: "Inspect", active: "bg-violet-500 border-violet-400 text-white font-semibold" },
+            ] as const).map((st) => (
+              <button
+                key={st.value}
+                onClick={() => {
+                  if (calendarScheduleTypes.includes(st.value)) {
+                    setCalendarScheduleTypes(calendarScheduleTypes.filter(s => s !== st.value));
+                  } else {
+                    setCalendarScheduleTypes([...calendarScheduleTypes, st.value]);
+                  }
+                }}
+                className={`px-1.5 py-0.5 text-[0.6rem] rounded border transition-colors ${
+                  calendarScheduleTypes.includes(st.value)
+                    ? st.active
+                    : "bg-surface border-t-border text-muted hover:border-muted"
+                }`}
+              >
+                {st.label}
+              </button>
+            ))}
             {(calendarLocations.length > 0 || calendarScheduleTypes.length > 0) && (
               <button
                 onClick={() => { setCalendarLocations([]); setCalendarScheduleTypes([]); }}
-                className="px-2 py-1.5 text-[0.65rem] font-medium rounded-md border border-t-border text-muted hover:text-foreground/90 hover:border-muted transition-colors"
+                className="px-1.5 py-0.5 text-[0.6rem] text-muted hover:text-foreground transition-colors"
               >
-                Clear filters
+                ✕ Clear
               </button>
             )}
             <div className="ml-auto flex items-center gap-1.5">
@@ -1788,16 +1676,10 @@ export default function SchedulerPage() {
                 <span className="text-[0.55rem] text-red-400/70 uppercase">Unsched RTB ({stats.unscheduledRtbCount})</span>
               </div>
             )}
-            <div className="ml-auto flex items-center">
-              <button
-                onClick={() => setRightPanelOpen(!rightPanelOpen)}
-                className="flex items-center gap-1 px-2 py-1 text-[0.65rem] text-muted hover:text-foreground transition-colors max-[1100px]:hidden"
-                title={rightPanelOpen ? "Hide panel" : "Show panel"}
-              >
-                <svg className={`w-3.5 h-3.5 transition-transform ${rightPanelOpen ? "" : "rotate-180"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
-                </svg>
-              </button>
+            <div className="ml-auto flex items-center gap-1">
+              <button onClick={exportCSV} className="px-2 py-1 text-[0.6rem] text-muted hover:text-foreground rounded border border-t-border hover:border-orange-500/50 transition-colors" title="Export CSV">CSV</button>
+              <button onClick={exportICal} className="px-2 py-1 text-[0.6rem] text-muted hover:text-foreground rounded border border-t-border hover:border-orange-500/50 transition-colors" title="Export iCal">iCal</button>
+              <button onClick={copySchedule} className="px-2 py-1 text-[0.6rem] text-muted hover:text-foreground rounded border border-t-border hover:border-orange-500/50 transition-colors" title="Copy to clipboard">Copy</button>
             </div>
           </div>
 
@@ -1922,11 +1804,12 @@ export default function SchedulerPage() {
                                 title={`${ev.name} - ${ev.crew || "No crew"}${showRevenue ? ` - $${formatRevenueCompact(ev.amount)}` : ""}${ev.isCompleted ? " ✓ Completed" : ev.isOverdue ? " ⚠ Overdue" : " (drag to reschedule)"}`}
                                 className={`text-[0.55rem] px-1 py-0.5 rounded mb-0.5 transition-transform hover:scale-[1.02] hover:shadow-lg hover:z-10 relative overflow-hidden truncate ${
                                   ev.isCompleted
-                                    ? "opacity-40 cursor-default"
+                                    ? "opacity-50 cursor-default bg-green-900/60 text-green-300 line-through"
                                     : ev.isOverdue
-                                      ? "ring-1 ring-red-500 cursor-grab active:cursor-grabbing"
+                                      ? "ring-1 ring-red-500 bg-red-900/70 text-red-200 cursor-grab active:cursor-grabbing animate-pulse"
                                       : "cursor-grab active:cursor-grabbing"
                                 } ${
+                                  !ev.isCompleted && !ev.isOverdue ? (
                                   ev.eventType === "rtb"
                                     ? "bg-emerald-500 text-black"
                                     : ev.eventType === "blocked"
@@ -1940,6 +1823,7 @@ export default function SchedulerPage() {
                                             : ev.eventType === "scheduled"
                                               ? "bg-cyan-500 text-white"
                                               : "bg-zinc-600 text-white"
+                                  ) : ""
                                 }`}
                               >
                                 {ev.isCompleted && <span className="mr-0.5">✓</span>}
@@ -2295,201 +2179,7 @@ export default function SchedulerPage() {
           </div>
         </main>
 
-        {/* ============================================================ */}
-        {/* RIGHT PANEL - Crew & Optimization                            */}
-        {/* ============================================================ */}
-        <aside className={`bg-surface border-l border-t-border flex flex-col overflow-hidden max-[1100px]:hidden ${rightPanelOpen ? "" : "hidden"}`}>
-          {/* Auto-optimize */}
-          <div className="p-3 border-b border-t-border">
-            <div className="text-[0.75rem] font-semibold mb-2 flex items-center gap-1.5">
-              Auto-Optimize
-            </div>
-            <button
-              onClick={autoOptimize}
-              className="w-full py-2.5 text-[0.75rem] rounded-md cursor-pointer bg-gradient-to-r from-orange-500 to-orange-400 border-none text-black font-semibold transition-all hover:-translate-y-0.5 hover:shadow-lg hover:shadow-orange-500/30"
-            >
-              Optimize Schedule
-            </button>
-            <div className="mt-2 text-[0.6rem] text-muted">
-              {optimizeStats}
-            </div>
-          </div>
-
-          {/* Crew Capacity */}
-          <div className="p-3 border-b border-t-border">
-            <div className="text-[0.75rem] font-semibold mb-2 flex items-center gap-1.5">
-              Crew Capacity
-            </div>
-            {(() => {
-              // Get crews based on calendar multi-select locations
-              const crewsToShow = calendarLocations.length > 0
-                ? calendarLocations.flatMap(loc => CREWS[loc] || [])
-                : [];
-
-              if (crewsToShow.length === 0) {
-                return (
-                  <div className="text-[0.65rem] text-muted">
-                    Select location to view crews
-                  </div>
-                );
-              }
-
-              return crewsToShow.map((c) => {
-                const crewEvents = scheduledEvents.filter(
-                  (e) => e.crew === c.name
-                );
-                const totalDays = crewEvents.reduce(
-                  (sum, e) => sum + (e.days || 1),
-                  0
-                );
-                const utilization = Math.min(
-                  100,
-                  Math.round((totalDays / 10) * 100)
-                );
-                return (
-                  <div
-                    key={c.name}
-                    className="bg-background border border-t-border rounded-md p-2 mb-1.5"
-                  >
-                    <div
-                      className="text-[0.7rem] font-semibold mb-1"
-                      style={{ color: c.color }}
-                    >
-                      {c.name}
-                    </div>
-                    <div className="flex gap-2 mb-1.5">
-                      {c.roofers > 0 && (
-                        <span className="text-[0.6rem] flex items-center gap-1">
-                          Inst: {c.roofers}
-                        </span>
-                      )}
-                      {c.electricians > 0 && (
-                        <span className="text-[0.6rem] flex items-center gap-1">
-                          Elec: {c.electricians}
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-[0.6rem] text-muted">
-                      <div className="flex items-center gap-2">
-                        <div className="h-1 bg-surface-2 rounded-full flex-1 overflow-hidden w-[100px]">
-                          <div
-                            className={`h-full transition-all ${
-                              utilization > 90
-                                ? "bg-red-500"
-                                : utilization > 70
-                                  ? "bg-yellow-500"
-                                  : "bg-emerald-500"
-                            }`}
-                            style={{ width: `${utilization}%` }}
-                          />
-                        </div>
-                        <span>
-                          {utilization}% ({crewEvents.length} jobs)
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              });
-            })()}
-          </div>
-
-          {/* Conflicts */}
-          <div className="p-3 border-b border-t-border">
-            <div className="text-[0.75rem] font-semibold mb-2 flex items-center gap-1.5">
-              Conflicts ({conflicts.length})
-            </div>
-            {conflicts.length === 0 ? (
-              <div className="text-[0.65rem] text-muted">
-                No scheduling conflicts
-              </div>
-            ) : (
-              conflicts.map((c, i) => (
-                <div
-                  key={i}
-                  className="bg-red-500/10 border border-red-500 rounded-md p-2 mb-1.5 text-[0.65rem]"
-                >
-                  <div className="font-semibold text-red-400 mb-1">
-                    {c.crew} - {formatShortDate(c.date)}
-                  </div>
-                  <div className="text-muted">{c.projects.join(", ")}</div>
-                </div>
-              ))
-            )}
-          </div>
-
-          {/* Export */}
-          <div className="p-3 border-b border-t-border">
-            <div className="text-[0.75rem] font-semibold mb-2 flex items-center gap-1.5">
-              Export
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <button
-                onClick={exportCSV}
-                className="p-2 text-[0.7rem] rounded-md bg-background border border-t-border text-foreground/80 text-left hover:border-orange-500 transition-colors"
-              >
-                Download CSV
-              </button>
-              <button
-                onClick={exportICal}
-                className="p-2 text-[0.7rem] rounded-md bg-background border border-t-border text-foreground/80 text-left hover:border-orange-500 transition-colors"
-              >
-                Export iCal
-              </button>
-              <button
-                onClick={copySchedule}
-                className="p-2 text-[0.7rem] rounded-md bg-background border border-t-border text-foreground/80 text-left hover:border-orange-500 transition-colors"
-              >
-                Copy to Clipboard
-              </button>
-            </div>
-          </div>
-
-          {/* Keyboard Shortcuts */}
-          <div className="p-3">
-            <div className="text-[0.75rem] font-semibold mb-2 flex items-center gap-1.5">
-              Keyboard Shortcuts
-            </div>
-            <div className="text-[0.6rem] text-muted leading-relaxed space-y-1">
-              <div>
-                <kbd className="bg-background px-1 py-0.5 rounded font-mono">
-                  1
-                </kbd>{" "}
-                <kbd className="bg-background px-1 py-0.5 rounded font-mono">
-                  2
-                </kbd>{" "}
-                <kbd className="bg-background px-1 py-0.5 rounded font-mono">
-                  3
-                </kbd>{" "}
-                Switch views
-              </div>
-              <div>
-                <kbd className="bg-background px-1 py-0.5 rounded font-mono">
-                  Alt+Arrows
-                </kbd>{" "}
-                Navigate
-              </div>
-              <div>
-                <kbd className="bg-background px-1 py-0.5 rounded font-mono">
-                  Ctrl+O
-                </kbd>{" "}
-                Auto-optimize
-              </div>
-              <div>
-                <kbd className="bg-background px-1 py-0.5 rounded font-mono">
-                  Ctrl+E
-                </kbd>{" "}
-                Export CSV
-              </div>
-              <div>
-                <kbd className="bg-background px-1 py-0.5 rounded font-mono">
-                  Esc
-                </kbd>{" "}
-                Close / Deselect
-              </div>
-            </div>
-          </div>
-        </aside>
+        {/* Right panel removed — Optimize & Conflicts moved to testing dashboard */}
       </div>
 
       {/* ============================================================ */}
