@@ -89,6 +89,7 @@ interface SchedulerProject {
   zuperScheduledStart?: string; // ISO date from Zuper
   zuperScheduledEnd?: string;   // ISO date from Zuper
   zuperJobCategory?: string;    // Which Zuper category matched: "survey" | "construction" | "inspection"
+  isCompletedPastStage: boolean; // Project moved past its stage (e.g. Close Out with inspection data) — calendar only, not sidebar
 }
 
 interface CrewConfig {
@@ -442,6 +443,7 @@ function transformProject(p: RawProject): SchedulerProject | null {
     inspectionCompleted: p.inspectionPassDate || null,
     inspectionStatus: p.finalInspectionStatus || null,
     isPE: !!p.isParticipateEnergy,
+    isCompletedPastStage: !!isCompletedWithSchedule,
     hubspotUrl:
       p.url ||
       `https://app.hubspot.com/contacts/21710069/record/0-3/${p.id}`,
@@ -749,6 +751,8 @@ export default function SchedulerPage() {
 
   const filteredProjects = useMemo(() => {
     const filtered = projects.filter((p) => {
+      // Exclude completed-past-stage projects from sidebar (they only exist for calendar events)
+      if (p.isCompletedPastStage) return false;
       if (selectedLocations.length > 0 && !selectedLocations.includes(p.location))
         return false;
       if (selectedStages.length > 0 && !selectedStages.includes(p.stage)) return false;
