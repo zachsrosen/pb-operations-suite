@@ -571,91 +571,78 @@ export default function SchedulerPage() {
     const seenKeys = new Set<string>();
 
     projects.forEach((p) => {
-      // Generate events for EACH milestone that has a schedule date.
-      // This ensures completed construction shows even for projects now in Inspection/PTO.
+      // Generate separate events per milestone. Completed milestones get their own
+      // event type so they render distinctly (no confusion between active vs done).
 
-      // -- Construction event --
+      // -- Construction --
       if (p.constructionScheduleDate) {
         const schedDate = new Date(p.constructionScheduleDate + "T12:00:00");
-        const isCompleted = !!p.constructionCompleted;
-        const isOverdue = !isCompleted && schedDate < today;
+        const done = !!p.constructionCompleted;
         const key = `${p.id}-construction`;
         if (!seenKeys.has(key)) {
           seenKeys.add(key);
           events.push({
             ...p,
             date: p.constructionScheduleDate,
-            eventType: "construction",
+            eventType: done ? "construction-complete" : "construction",
             days: p.daysInstall || 1,
-            isCompleted,
-            isOverdue,
+            isCompleted: done,
+            isOverdue: !done && schedDate < today,
           });
         }
       }
 
-      // -- Inspection event --
+      // -- Inspection --
       if (p.inspectionScheduleDate) {
         const schedDate = new Date(p.inspectionScheduleDate + "T12:00:00");
-        const isCompleted = !!p.inspectionCompleted;
-        const isOverdue = !isCompleted && schedDate < today;
-        const isFailed = !!(p.inspectionStatus && p.inspectionStatus.toLowerCase().includes("fail"));
+        const done = !!p.inspectionCompleted;
+        const failed = !!(p.inspectionStatus && p.inspectionStatus.toLowerCase().includes("fail"));
         const key = `${p.id}-inspection`;
         if (!seenKeys.has(key)) {
           seenKeys.add(key);
           events.push({
             ...p,
             date: p.inspectionScheduleDate,
-            eventType: "inspection",
+            eventType: done ? (failed ? "inspection-fail" : "inspection-pass") : "inspection",
             days: 0.25,
-            isCompleted,
-            isOverdue,
-            isInspectionFailed: isFailed,
+            isCompleted: done,
+            isOverdue: !done && schedDate < today,
+            isInspectionFailed: failed,
           });
         }
       }
 
-      // -- Survey event --
+      // -- Survey --
       if (p.surveyScheduleDate) {
         const schedDate = new Date(p.surveyScheduleDate + "T12:00:00");
-        const isCompleted = !!p.surveyCompleted;
-        const isOverdue = !isCompleted && schedDate < today;
+        const done = !!p.surveyCompleted;
         const key = `${p.id}-survey`;
         if (!seenKeys.has(key)) {
           seenKeys.add(key);
           events.push({
             ...p,
             date: p.surveyScheduleDate,
-            eventType: "survey",
+            eventType: done ? "survey-complete" : "survey",
             days: 0.25,
-            isCompleted,
-            isOverdue,
+            isCompleted: done,
+            isOverdue: !done && schedDate < today,
           });
         }
       }
 
-      // -- Fallback: if a project has a generic scheduleDate not yet covered --
-      if (p.scheduleDate && !seenKeys.has(`${p.id}-${p.stage}`)) {
+      // -- Fallback for RTB/Blocked projects with scheduleDate but no constructionScheduleDate --
+      if (p.scheduleDate && (p.stage === "rtb" || p.stage === "blocked") && !seenKeys.has(`${p.id}-construction`)) {
         const schedDate = new Date(p.scheduleDate + "T12:00:00");
-        let isCompleted = false;
-        let isOverdue = false;
-
-        if (p.stage === "survey") {
-          isCompleted = !!p.surveyCompleted;
-        } else if (p.stage === "construction" || p.stage === "rtb" || p.stage === "blocked") {
-          isCompleted = !!p.constructionCompleted;
-        } else if (p.stage === "inspection") {
-          isCompleted = !!p.inspectionCompleted;
-        }
-        isOverdue = !isCompleted && schedDate < today;
-
-        seenKeys.add(`${p.id}-${p.stage}`);
+        const done = !!p.constructionCompleted;
+        const key = `${p.id}-construction`;
+        seenKeys.add(key);
         events.push({
           ...p,
           date: p.scheduleDate,
-          eventType: p.stage,
+          eventType: done ? "construction-complete" : p.stage,
           days: p.daysInstall || 1,
-          isCompleted,
-          isOverdue,
+          isCompleted: done,
+          isOverdue: !done && schedDate < today,
         });
       }
     });
@@ -677,10 +664,25 @@ export default function SchedulerPage() {
   }, [projects, manualSchedules]);
 
   // Apply calendar multi-select filters for all views (month, week, Gantt)
+  // Map base stage types to include their completed variants so the stage
+  // toggle buttons also show completed/failed events for that stage.
   const filteredScheduledEvents = useMemo(() => {
+    const typeVariants: Record<string, string[]> = {
+      survey: ["survey", "survey-complete"],
+      construction: ["construction", "construction-complete"],
+      inspection: ["inspection", "inspection-pass", "inspection-fail"],
+      rtb: ["rtb"],
+      blocked: ["blocked"],
+      scheduled: ["scheduled"],
+    };
+    // Expand selected base types into all their variants
+    const expandedTypes = calendarScheduleTypes.length > 0
+      ? calendarScheduleTypes.flatMap(t => typeVariants[t] || [t])
+      : [];
+
     return scheduledEvents.filter((e) => {
       if (calendarLocations.length > 0 && !calendarLocations.includes(e.location)) return false;
-      if (calendarScheduleTypes.length > 0 && !calendarScheduleTypes.includes(e.eventType)) return false;
+      if (expandedTypes.length > 0 && !expandedTypes.includes(e.eventType)) return false;
       if (!showCompleted && e.isCompleted) return false;
       if (!showOverdue && e.isOverdue && !e.isCompleted) return false;
       return true;
@@ -721,6 +723,66 @@ export default function SchedulerPage() {
     () => formatRevenueCompact(filteredProjects.reduce((s, p) => s + p.amount, 0)),
     [filteredProjects]
   );
+
+  /* Weekly revenue summary — 6 weeks starting from the current week's Monday */
+  const weeklyRevenueSummary = useMemo(() => {
+    const today = new Date();
+    const dayOfWeek = today.getDay();
+    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const thisMonday = new Date(today);
+    thisMonday.setDate(today.getDate() + mondayOffset);
+    thisMonday.setHours(0, 0, 0, 0);
+
+    const weeks: { weekStart: Date; weekLabel: string; construction: { count: number; revenue: number }; survey: { count: number; revenue: number }; inspection: { count: number; revenue: number }; total: { count: number; revenue: number } }[] = [];
+
+    for (let w = 0; w < 6; w++) {
+      const weekStart = new Date(thisMonday);
+      weekStart.setDate(thisMonday.getDate() + w * 7);
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekStart.getDate() + 5); // Mon-Fri
+
+      const label = `${weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
+
+      const weekEvents = filteredScheduledEvents.filter((e) => {
+        const d = new Date(e.date + "T12:00:00");
+        return d >= weekStart && d < weekEnd;
+      });
+
+      const constructionEvents = weekEvents.filter((e) =>
+        e.eventType === "construction" || e.eventType === "rtb" || e.eventType === "blocked" || e.eventType === "scheduled"
+      );
+      const surveyEvents = weekEvents.filter((e) => e.eventType === "survey");
+      const inspectionEvents = weekEvents.filter((e) => e.eventType === "inspection");
+      // Count unique projects per category (avoid double-counting multi-day events)
+      const constructionIds = new Set(constructionEvents.map((e) => e.id));
+      const surveyIds = new Set(surveyEvents.map((e) => e.id));
+      const inspectionIds = new Set(inspectionEvents.map((e) => e.id));
+      const constructionRevenue = [...constructionIds].reduce((sum, id) => {
+        const ev = constructionEvents.find((e) => e.id === id);
+        return sum + (ev?.amount || 0);
+      }, 0);
+      const surveyRevenue = [...surveyIds].reduce((sum, id) => {
+        const ev = surveyEvents.find((e) => e.id === id);
+        return sum + (ev?.amount || 0);
+      }, 0);
+      const inspectionRevenue = [...inspectionIds].reduce((sum, id) => {
+        const ev = inspectionEvents.find((e) => e.id === id);
+        return sum + (ev?.amount || 0);
+      }, 0);
+      const totalRevenue = constructionRevenue + surveyRevenue + inspectionRevenue;
+      const totalCount = constructionIds.size + surveyIds.size + inspectionIds.size;
+
+      weeks.push({
+        weekStart,
+        weekLabel: label,
+        construction: { count: constructionIds.size, revenue: constructionRevenue },
+        survey: { count: surveyIds.size, revenue: surveyRevenue },
+        inspection: { count: inspectionIds.size, revenue: inspectionRevenue },
+        total: { count: totalCount, revenue: totalRevenue },
+      });
+    }
+    return weeks;
+  }, [filteredScheduledEvents]);
 
   /* ================================================================ */
   /*  Calendar logic                                                   */
@@ -1756,6 +1818,93 @@ export default function SchedulerPage() {
             </div>
           </div>
 
+          {/* Weekly Revenue Summary — collapsible table for ownership */}
+          <details className="bg-background border-b border-t-border">
+            <summary className="flex items-center gap-2 px-3 py-1.5 cursor-pointer text-[0.65rem] font-semibold text-muted uppercase tracking-wide hover:text-foreground transition-colors select-none">
+              <svg className="w-3 h-3 transition-transform [details[open]>&]:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+              Weekly Revenue Outlook (6 Weeks)
+            </summary>
+            <div className="px-3 pb-2 overflow-x-auto">
+              <table className="w-full text-[0.6rem] border-collapse">
+                <thead>
+                  <tr className="text-muted uppercase tracking-wider">
+                    <th className="text-left py-1 px-1.5 font-semibold">Week</th>
+                    <th className="text-right py-1 px-1.5 font-semibold">
+                      <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-blue-500 inline-block" /> Construction</span>
+                    </th>
+                    <th className="text-right py-1 px-1.5 font-semibold">
+                      <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-cyan-500 inline-block" /> Survey</span>
+                    </th>
+                    <th className="text-right py-1 px-1.5 font-semibold">
+                      <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-violet-500 inline-block" /> Inspection</span>
+                    </th>
+                    <th className="text-right py-1 px-1.5 font-semibold text-orange-400">Week Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {weeklyRevenueSummary.map((week, i) => {
+                    const isThisWeek = i === 0;
+                    return (
+                      <tr key={i} className={`border-t border-t-border/50 ${isThisWeek ? "bg-orange-500/5" : "hover:bg-surface-2"}`}>
+                        <td className={`py-1.5 px-1.5 font-medium ${isThisWeek ? "text-orange-400" : "text-foreground/80"}`}>
+                          {isThisWeek ? "▸ " : ""}{week.weekLabel}
+                        </td>
+                        <td className="py-1.5 px-1.5 text-right font-mono">
+                          {week.construction.count > 0 ? (
+                            <span className="text-blue-400">
+                              <span className="font-semibold">{week.construction.count}</span>
+                              <span className="text-muted mx-0.5">·</span>
+                              ${formatRevenueCompact(week.construction.revenue)}
+                            </span>
+                          ) : <span className="text-muted">—</span>}
+                        </td>
+                        <td className="py-1.5 px-1.5 text-right font-mono">
+                          {week.survey.count > 0 ? (
+                            <span className="text-cyan-400">
+                              <span className="font-semibold">{week.survey.count}</span>
+                              <span className="text-muted mx-0.5">·</span>
+                              ${formatRevenueCompact(week.survey.revenue)}
+                            </span>
+                          ) : <span className="text-muted">—</span>}
+                        </td>
+                        <td className="py-1.5 px-1.5 text-right font-mono">
+                          {week.inspection.count > 0 ? (
+                            <span className="text-violet-400">
+                              <span className="font-semibold">{week.inspection.count}</span>
+                              <span className="text-muted mx-0.5">·</span>
+                              ${formatRevenueCompact(week.inspection.revenue)}
+                            </span>
+                          ) : <span className="text-muted">—</span>}
+                        </td>
+                        <td className={`py-1.5 px-1.5 text-right font-mono font-semibold ${isThisWeek ? "text-orange-400" : "text-foreground/90"}`}>
+                          {week.total.count > 0 ? (
+                            <><span>{week.total.count}</span> <span className="text-muted mx-0.5">·</span> ${formatRevenueCompact(week.total.revenue)}</>
+                          ) : <span className="text-muted">—</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {/* 6-week totals row */}
+                  <tr className="border-t-2 border-orange-500/30 bg-surface-2">
+                    <td className="py-1.5 px-1.5 font-bold text-foreground/90">6-Week Total</td>
+                    <td className="py-1.5 px-1.5 text-right font-mono font-bold text-blue-400">
+                      {weeklyRevenueSummary.reduce((s, w) => s + w.construction.count, 0)} · ${formatRevenueCompact(weeklyRevenueSummary.reduce((s, w) => s + w.construction.revenue, 0))}
+                    </td>
+                    <td className="py-1.5 px-1.5 text-right font-mono font-bold text-cyan-400">
+                      {weeklyRevenueSummary.reduce((s, w) => s + w.survey.count, 0)} · ${formatRevenueCompact(weeklyRevenueSummary.reduce((s, w) => s + w.survey.revenue, 0))}
+                    </td>
+                    <td className="py-1.5 px-1.5 text-right font-mono font-bold text-violet-400">
+                      {weeklyRevenueSummary.reduce((s, w) => s + w.inspection.count, 0)} · ${formatRevenueCompact(weeklyRevenueSummary.reduce((s, w) => s + w.inspection.revenue, 0))}
+                    </td>
+                    <td className="py-1.5 px-1.5 text-right font-mono font-bold text-orange-400">
+                      {weeklyRevenueSummary.reduce((s, w) => s + w.total.count, 0)} · ${formatRevenueCompact(weeklyRevenueSummary.reduce((s, w) => s + w.total.revenue, 0))}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </details>
+
           {/* Calendar container */}
           <div className="flex-1 p-3 overflow-y-auto">
             {/* Instruction banner */}
@@ -1858,12 +2007,31 @@ export default function SchedulerPage() {
                             );
                             const dayLabel =
                               ev.totalCalDays > 1 ? `D${ev.dayNum} ` : "";
-                            const showRevenue = ev.eventType === "construction" && ev.amount > 0;
+                            const showRevenue = (ev.eventType === "construction" || ev.eventType === "construction-complete") && ev.amount > 0;
+                            const isCompletedType = ev.eventType === "construction-complete" || ev.eventType === "inspection-pass" || ev.eventType === "survey-complete";
+                            const isFailedType = ev.eventType === "inspection-fail";
+                            const isActiveType = !isCompletedType && !isFailedType;
+                            const isDraggable = isActiveType && !ev.isOverdue;
+
+                            // Color mapping by event type (distinct for each type)
+                            const eventColorClass =
+                              isFailedType ? "bg-red-800/70 text-red-200 ring-1 ring-red-500 opacity-70" :
+                              isCompletedType ? "bg-green-900/60 text-green-300 opacity-50" :
+                              ev.isOverdue ? "ring-1 ring-red-500 bg-red-900/70 text-red-200 animate-pulse" :
+                              ev.eventType === "rtb" ? "bg-emerald-500 text-black" :
+                              ev.eventType === "blocked" ? "bg-yellow-500 text-black" :
+                              ev.eventType === "construction" ? "bg-blue-500 text-white" :
+                              ev.eventType === "survey" ? "bg-cyan-500 text-white" :
+                              ev.eventType === "inspection" ? "bg-violet-500 text-white" :
+                              ev.eventType === "scheduled" ? "bg-cyan-500 text-white" :
+                              "bg-zinc-600 text-white";
+
                             return (
                               <div
                                 key={ei}
-                                draggable
+                                draggable={isDraggable}
                                 onDragStart={(e) => {
+                                  if (!isDraggable) { e.preventDefault(); return; }
                                   e.stopPropagation();
                                   handleDragStart(e, ev.id);
                                 }}
@@ -1874,38 +2042,16 @@ export default function SchedulerPage() {
                                       null
                                   );
                                 }}
-                                title={`${ev.name} - ${ev.crew || "No crew"}${showRevenue ? ` - $${formatRevenueCompact(ev.amount)}` : ""}${ev.isInspectionFailed ? " ✗ Inspection Failed" : ev.isCompleted ? " ✓ Completed" : ev.isOverdue ? " ⚠ Overdue" : " (drag to reschedule)"}`}
+                                title={`${ev.name} - ${ev.crew || "No crew"}${showRevenue ? ` - $${formatRevenueCompact(ev.amount)}` : ""}${isFailedType ? " ✗ Inspection Failed" : isCompletedType ? " ✓ Completed" : ev.isOverdue ? " ⚠ Overdue" : " (drag to reschedule)"}`}
                                 className={`text-[0.55rem] px-1 py-0.5 rounded mb-0.5 transition-transform hover:scale-[1.02] hover:shadow-lg hover:z-10 relative overflow-hidden truncate ${
-                                  ev.isInspectionFailed
-                                    ? "opacity-70 cursor-default bg-red-800/70 text-red-200 ring-1 ring-red-500"
-                                    : ev.isCompleted
-                                      ? "opacity-50 cursor-default bg-green-900/60 text-green-300 line-through"
-                                      : ev.isOverdue
-                                        ? "ring-1 ring-red-500 bg-red-900/70 text-red-200 cursor-grab active:cursor-grabbing animate-pulse"
-                                        : "cursor-grab active:cursor-grabbing"
-                                } ${
-                                  !ev.isCompleted && !ev.isOverdue && !ev.isInspectionFailed ? (
-                                  ev.eventType === "rtb"
-                                    ? "bg-emerald-500 text-black"
-                                    : ev.eventType === "blocked"
-                                      ? "bg-yellow-500 text-black"
-                                      : ev.eventType === "construction"
-                                        ? "bg-blue-500 text-white"
-                                        : ev.eventType === "survey"
-                                          ? "bg-cyan-500 text-white"
-                                          : ev.eventType === "inspection"
-                                            ? "bg-violet-500 text-white"
-                                            : ev.eventType === "scheduled"
-                                              ? "bg-cyan-500 text-white"
-                                              : "bg-zinc-600 text-white"
-                                  ) : ""
-                                }`}
+                                  isDraggable ? "cursor-grab active:cursor-grabbing" : "cursor-default"
+                                } ${eventColorClass}`}
                               >
-                                {ev.isInspectionFailed && <span className="mr-0.5">✗</span>}
-                                {!ev.isInspectionFailed && ev.isCompleted && <span className="mr-0.5">✓</span>}
-                                {ev.isOverdue && !ev.isInspectionFailed && <span className="mr-0.5 text-red-200">!</span>}
+                                {isFailedType && <span className="mr-0.5">✗</span>}
+                                {isCompletedType && <span className="mr-0.5">✓</span>}
+                                {ev.isOverdue && isActiveType && <span className="mr-0.5 text-red-200">!</span>}
                                 {dayLabel}
-                                <span className={ev.isCompleted && !ev.isInspectionFailed ? "line-through" : ""}>{shortName}</span>
+                                <span className={isCompletedType ? "line-through" : ""}>{shortName}</span>
                                 {showRevenue && <span className="ml-0.5 opacity-80">${formatRevenueCompact(ev.amount)}</span>}
                               </div>
                             );
@@ -2052,6 +2198,22 @@ export default function SchedulerPage() {
                                 const shortName = getCustomerName(
                                   ev.name
                                 ).substring(0, 10);
+                                const isCompletedType = ev.eventType === "construction-complete" || ev.eventType === "inspection-pass" || ev.eventType === "survey-complete";
+                                const isFailedType = ev.eventType === "inspection-fail";
+                                const isActiveType = !isCompletedType && !isFailedType;
+
+                                const eventColorClass =
+                                  isFailedType ? "bg-red-800/70 text-red-200 ring-1 ring-red-500 opacity-70" :
+                                  isCompletedType ? "bg-green-900/60 text-green-300 opacity-50" :
+                                  ev.isOverdue ? "ring-1 ring-red-500 bg-red-900/70 text-red-200" :
+                                  ev.eventType === "rtb" ? "bg-emerald-500 text-black" :
+                                  ev.eventType === "blocked" ? "bg-yellow-500 text-black" :
+                                  ev.eventType === "construction" ? "bg-blue-500 text-white" :
+                                  ev.eventType === "survey" ? "bg-cyan-500 text-white" :
+                                  ev.eventType === "inspection" ? "bg-violet-500 text-white" :
+                                  ev.eventType === "scheduled" ? "bg-cyan-500 text-white" :
+                                  "bg-zinc-600 text-white";
+
                                 return (
                                   <div
                                     key={ei}
@@ -2063,32 +2225,14 @@ export default function SchedulerPage() {
                                         ) || null
                                       );
                                     }}
-                                    title={`${ev.name}${ev.isInspectionFailed ? " ✗ Inspection Failed" : ev.isCompleted ? " ✓ Completed" : ev.isOverdue ? " ⚠ Overdue" : ""}`}
-                                    className={`text-[0.6rem] px-1.5 py-1 rounded mb-1 cursor-pointer transition-transform hover:scale-[1.02] hover:shadow-lg ${
-                                      ev.isInspectionFailed ? "opacity-70 ring-1 ring-red-500 bg-red-800/70 text-red-200" : ev.isCompleted ? "opacity-40" : ev.isOverdue ? "ring-1 ring-red-500" : ""
-                                    } ${
-                                      !ev.isInspectionFailed ? (
-                                        ev.eventType === "rtb"
-                                          ? "bg-emerald-500 text-black"
-                                          : ev.eventType === "blocked"
-                                            ? "bg-yellow-500 text-black"
-                                            : ev.eventType === "construction"
-                                              ? "bg-blue-500 text-white"
-                                              : ev.eventType === "survey"
-                                                ? "bg-cyan-500 text-white"
-                                                : ev.eventType === "inspection"
-                                                  ? "bg-violet-500 text-white"
-                                                  : ev.eventType === "scheduled"
-                                                    ? "bg-cyan-500 text-white"
-                                                    : "bg-zinc-600 text-white"
-                                      ) : ""
-                                    }`}
+                                    title={`${ev.name}${isFailedType ? " ✗ Inspection Failed" : isCompletedType ? " ✓ Completed" : ev.isOverdue ? " ⚠ Overdue" : ""}`}
+                                    className={`text-[0.6rem] px-1.5 py-1 rounded mb-1 cursor-pointer transition-transform hover:scale-[1.02] hover:shadow-lg ${eventColorClass}`}
                                   >
-                                    {ev.isInspectionFailed && <span className="mr-0.5">✗</span>}
-                                    {!ev.isInspectionFailed && ev.isCompleted && <span className="mr-0.5">✓</span>}
-                                    {ev.isOverdue && !ev.isInspectionFailed && <span className="mr-0.5 text-red-200">!</span>}
+                                    {isFailedType && <span className="mr-0.5">✗</span>}
+                                    {isCompletedType && <span className="mr-0.5">✓</span>}
+                                    {ev.isOverdue && isActiveType && <span className="mr-0.5 text-red-200">!</span>}
                                     {ev.days > 1 ? `D${dayNum} ` : ""}
-                                    <span className={ev.isCompleted && !ev.isInspectionFailed ? "line-through" : ""}>{shortName}</span>
+                                    <span className={isCompletedType ? "line-through" : ""}>{shortName}</span>
                                   </div>
                                 );
                               })}
@@ -2207,6 +2351,22 @@ export default function SchedulerPage() {
                                   days < 1
                                     ? `${days * 4}/4d`
                                     : `${days}d`;
+                                const isCompletedType = e.eventType === "construction-complete" || e.eventType === "inspection-pass" || e.eventType === "survey-complete";
+                                const isFailedType = e.eventType === "inspection-fail";
+                                const isActiveType = !isCompletedType && !isFailedType;
+
+                                const eventColorClass =
+                                  isFailedType ? "bg-red-800/70 text-red-200 ring-1 ring-red-500 opacity-70" :
+                                  isCompletedType ? "bg-green-900/60 text-green-300 opacity-50" :
+                                  e.isOverdue ? "ring-1 ring-red-500 bg-red-900/70 text-red-200" :
+                                  e.eventType === "construction" ? "bg-blue-500 text-white" :
+                                  e.eventType === "rtb" ? "bg-emerald-500 text-black" :
+                                  e.eventType === "scheduled" ? "bg-cyan-500 text-white" :
+                                  e.eventType === "blocked" ? "bg-yellow-500 text-black" :
+                                  e.eventType === "survey" ? "bg-cyan-500 text-white" :
+                                  e.eventType === "inspection" ? "bg-violet-500 text-white" :
+                                  "bg-zinc-500 text-white";
+
                                 return (
                                   <div
                                     key={ei}
@@ -2217,36 +2377,18 @@ export default function SchedulerPage() {
                                         ) || null
                                       )
                                     }
-                                    title={`${e.name} - ${daysLabel} - ${amount}${e.isInspectionFailed ? " ✗ Inspection Failed" : e.isCompleted ? " ✓ Completed" : e.isOverdue ? " ⚠ Overdue" : ""}`}
-                                    className={`absolute top-2 bottom-2 rounded flex items-center px-1.5 text-[0.55rem] font-medium cursor-pointer transition-transform hover:scale-y-110 hover:shadow-lg hover:z-10 overflow-hidden truncate ${
-                                      e.isInspectionFailed ? "opacity-70 ring-1 ring-red-500 bg-red-800/70 text-red-200" : e.isCompleted ? "opacity-40" : e.isOverdue ? "ring-1 ring-red-500" : ""
-                                    } ${
-                                      !e.isInspectionFailed ? (
-                                        e.eventType === "construction"
-                                          ? "bg-blue-500 text-white"
-                                          : e.eventType === "rtb"
-                                            ? "bg-emerald-500 text-black"
-                                            : e.eventType === "scheduled"
-                                              ? "bg-cyan-500 text-white"
-                                              : e.eventType === "blocked"
-                                                ? "bg-yellow-500 text-black"
-                                                : e.eventType === "survey"
-                                                  ? "bg-cyan-500 text-white"
-                                                  : e.eventType === "inspection"
-                                                    ? "bg-violet-500 text-white"
-                                                    : "bg-zinc-500 text-white"
-                                      ) : ""
-                                    }`}
+                                    title={`${e.name} - ${daysLabel} - ${amount}${isFailedType ? " ✗ Inspection Failed" : isCompletedType ? " ✓ Completed" : e.isOverdue ? " ⚠ Overdue" : ""}`}
+                                    className={`absolute top-2 bottom-2 rounded flex items-center px-1.5 text-[0.55rem] font-medium cursor-pointer transition-transform hover:scale-y-110 hover:shadow-lg hover:z-10 overflow-hidden truncate ${eventColorClass}`}
                                     style={{
                                       left: 0,
                                       width: `calc(${calendarDays * 100}% + ${calendarDays - 1}px)`,
                                       zIndex: 1,
                                     }}
                                   >
-                                    {e.isInspectionFailed && <span className="mr-0.5">✗</span>}
-                                    {!e.isInspectionFailed && e.isCompleted && <span className="mr-0.5">✓</span>}
-                                    {e.isOverdue && !e.isInspectionFailed && <span className="mr-0.5 text-red-200">!</span>}
-                                    <span className={e.isCompleted && !e.isInspectionFailed ? "line-through" : ""}>{shortName}</span> ({daysLabel})
+                                    {isFailedType && <span className="mr-0.5">✗</span>}
+                                    {isCompletedType && <span className="mr-0.5">✓</span>}
+                                    {e.isOverdue && isActiveType && <span className="mr-0.5 text-red-200">!</span>}
+                                    <span className={isCompletedType ? "line-through" : ""}>{shortName}</span> ({daysLabel})
                                   </div>
                                 );
                               })}
