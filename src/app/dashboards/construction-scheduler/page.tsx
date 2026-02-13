@@ -186,8 +186,8 @@ function isInstallOverdue(project: ConstructionProject, manualScheduleDate?: str
 /* ------------------------------------------------------------------ */
 
 function transformProject(p: RawProject): ConstructionProject | null {
-  // Only include projects in Construction stage
-  if (p.stage !== "Construction") return null;
+  // Include projects in Construction or Ready To Build stages
+  if (p.stage !== "Construction" && p.stage !== "Ready To Build") return null;
 
   return {
     id: String(p.id),
@@ -201,7 +201,7 @@ function transformProject(p: RawProject): ConstructionProject | null {
     evCount: p.equipment?.evCount || 0,
     installDays: p.daysForInstallers || p.expectedDaysForInstall || 2,
     scheduleDate: p.constructionScheduleDate || null,
-    installStatus: p.constructionStatus || "Ready to Schedule",
+    installStatus: p.constructionStatus || (p.stage === "Ready To Build" ? "Ready to Build" : "Ready to Schedule"),
     completionDate: p.constructionCompleteDate || null,
     closeDate: p.closeDate || null,
     hubspotUrl: p.url || `https://app.hubspot.com/contacts/21710069/record/0-3/${p.id}`,
