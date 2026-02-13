@@ -14,8 +14,12 @@ interface SearchResult {
 }
 
 const DASHBOARD_LINKS = [
+  // Executive Dashboards
+  { name: "Pipeline Overview", path: "/dashboards/pipeline", description: "Full pipeline with filters and priority scoring" },
+  { name: "Revenue", path: "/dashboards/revenue", description: "Revenue by stage, backlog, and milestones" },
+  { name: "Capacity Planning", path: "/dashboards/capacity", description: "Crew capacity vs. forecasted installs" },
+  { name: "Alerts", path: "/dashboards/alerts", description: "Overdue installs, PE risks, and capacity warnings" },
   // Operations Dashboards
-  { name: "Command Center", path: "/dashboards/command-center", description: "Pipeline overview and scheduling" },
   { name: "Pipeline Optimizer", path: "/dashboards/optimizer", description: "AI-powered scheduling optimization" },
   { name: "Master Schedule", path: "/dashboards/scheduler", description: "Drag-and-drop scheduling calendar" },
   { name: "Site Survey Schedule", path: "/dashboards/site-survey-scheduler", description: "Schedule site surveys with Zuper" },

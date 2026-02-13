@@ -399,6 +399,7 @@ export default function SchedulerPage() {
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /* ---- optimize stats ---- */
+  const [rightPanelOpen, setRightPanelOpen] = useState(true);
   const [optimizeStats, setOptimizeStats] = useState<string>(
     "Schedules RTB projects + inspections | Priority: Easiest first, then by revenue"
   );
@@ -644,12 +645,25 @@ export default function SchedulerPage() {
     if (calendarScheduleTypes.length > 0) {
       fp = fp.filter((p) => calendarScheduleTypes.includes(p.stage));
     }
+    const rtbProjects = fp.filter((p) => p.stage === "rtb");
+    const constructionProjects = fp.filter((p) => p.stage === "construction");
+    const inspectionProjects = fp.filter((p) => p.stage === "inspection");
+    const surveyProjects = fp.filter((p) => p.stage === "survey");
+    const scheduledProjects = fp.filter((p) => p.scheduleDate);
+    const unscheduledRtb = rtbProjects.filter((p) => !p.scheduleDate);
     return {
-      survey: fp.filter((p) => p.stage === "survey").length,
-      rtb: fp.filter((p) => p.stage === "rtb").length,
-      construction: fp.filter((p) => p.stage === "construction").length,
-      inspection: fp.filter((p) => p.stage === "inspection").length,
+      survey: surveyProjects.length,
+      rtb: rtbProjects.length,
+      construction: constructionProjects.length,
+      inspection: inspectionProjects.length,
       totalRevenue: formatRevenueCompact(fp.reduce((s, p) => s + p.amount, 0)),
+      rtbRevenue: formatRevenueCompact(rtbProjects.reduce((s, p) => s + p.amount, 0)),
+      constructionRevenue: formatRevenueCompact(constructionProjects.reduce((s, p) => s + p.amount, 0)),
+      scheduledRevenue: formatRevenueCompact(scheduledProjects.reduce((s, p) => s + p.amount, 0)),
+      scheduledCount: scheduledProjects.length,
+      unscheduledRtbRevenue: formatRevenueCompact(unscheduledRtb.reduce((s, p) => s + p.amount, 0)),
+      unscheduledRtbCount: unscheduledRtb.length,
+      avgDealSize: fp.length > 0 ? formatRevenueCompact(fp.reduce((s, p) => s + p.amount, 0) / fp.length) : "0",
     };
   }, [projects, calendarLocations, calendarScheduleTypes]);
 
@@ -1265,7 +1279,11 @@ export default function SchedulerPage() {
   return (
     <div className="h-screen overflow-hidden bg-background text-foreground/90 font-sans max-[900px]:h-auto max-[900px]:min-h-screen max-[900px]:overflow-auto">
       {/* 3-column grid layout */}
-      <div className="grid grid-cols-[360px_1fr_280px] h-full max-[1400px]:grid-cols-[320px_1fr_240px] max-[1100px]:grid-cols-[320px_1fr] max-[900px]:grid-cols-[1fr] max-[900px]:h-auto">
+      <div className={`grid h-full max-[900px]:h-auto ${
+        rightPanelOpen
+          ? "grid-cols-[360px_1fr_280px] max-[1400px]:grid-cols-[320px_1fr_240px] max-[1100px]:grid-cols-[320px_1fr]"
+          : "grid-cols-[360px_1fr] max-[1400px]:grid-cols-[320px_1fr]"
+      } max-[900px]:grid-cols-[1fr]`}>
         {/* ============================================================ */}
         {/* LEFT SIDEBAR - Pipeline Queue                                */}
         {/* ============================================================ */}
@@ -1713,35 +1731,46 @@ export default function SchedulerPage() {
             {[
               { color: "bg-cyan-500", value: stats.survey, label: "Survey" },
               { color: "bg-emerald-500", value: stats.rtb, label: "RTB" },
-              {
-                color: "bg-blue-500",
-                value: stats.construction,
-                label: "Building",
-              },
-              {
-                color: "bg-violet-500",
-                value: stats.inspection,
-                label: "Inspect",
-              },
-              {
-                color: "bg-orange-500",
-                value: `$${stats.totalRevenue}`,
-                label: "Pipeline",
-              },
+              { color: "bg-blue-500", value: stats.construction, label: "Building" },
+              { color: "bg-violet-500", value: stats.inspection, label: "Inspect" },
             ].map((s, i) => (
-              <div
-                key={i}
-                className="flex items-center gap-1 px-2 py-1 bg-surface rounded-md border border-t-border"
-              >
+              <div key={i} className="flex items-center gap-1 px-2 py-1 bg-surface rounded-md border border-t-border">
                 <div className={`w-2 h-2 rounded-sm ${s.color}`} />
-                <span className="font-mono font-semibold text-[0.8rem]">
-                  {s.value}
-                </span>
-                <span className="text-[0.55rem] text-muted uppercase">
-                  {s.label}
-                </span>
+                <span className="font-mono font-semibold text-[0.8rem]">{s.value}</span>
+                <span className="text-[0.55rem] text-muted uppercase">{s.label}</span>
               </div>
             ))}
+            <div className="h-5 w-px bg-t-border self-center mx-0.5" />
+            {[
+              { color: "bg-orange-500", value: `$${stats.totalRevenue}`, label: "Pipeline" },
+              { color: "bg-emerald-500", value: `$${stats.rtbRevenue}`, label: "RTB Rev" },
+              { color: "bg-blue-500", value: `$${stats.constructionRevenue}`, label: "Constr Rev" },
+              { color: "bg-amber-500", value: `$${stats.scheduledRevenue}`, label: `Sched (${stats.scheduledCount})` },
+            ].map((s, i) => (
+              <div key={`r${i}`} className="flex items-center gap-1 px-2 py-1 bg-surface rounded-md border border-t-border">
+                <div className={`w-2 h-2 rounded-sm ${s.color}`} />
+                <span className="font-mono font-semibold text-[0.8rem]">{s.value}</span>
+                <span className="text-[0.55rem] text-muted uppercase">{s.label}</span>
+              </div>
+            ))}
+            {stats.unscheduledRtbCount > 0 && (
+              <div className="flex items-center gap-1 px-2 py-1 bg-red-500/10 rounded-md border border-red-500/30">
+                <div className="w-2 h-2 rounded-sm bg-red-500" />
+                <span className="font-mono font-semibold text-[0.8rem] text-red-400">${stats.unscheduledRtbRevenue}</span>
+                <span className="text-[0.55rem] text-red-400/70 uppercase">Unsched RTB ({stats.unscheduledRtbCount})</span>
+              </div>
+            )}
+            <div className="ml-auto flex items-center">
+              <button
+                onClick={() => setRightPanelOpen(!rightPanelOpen)}
+                className="flex items-center gap-1 px-2 py-1 text-[0.65rem] text-muted hover:text-foreground transition-colors max-[1100px]:hidden"
+                title={rightPanelOpen ? "Hide panel" : "Show panel"}
+              >
+                <svg className={`w-3.5 h-3.5 transition-transform ${rightPanelOpen ? "" : "rotate-180"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+                </svg>
+              </button>
+            </div>
           </div>
 
           {/* Calendar container */}
@@ -2275,7 +2304,7 @@ export default function SchedulerPage() {
         {/* ============================================================ */}
         {/* RIGHT PANEL - Crew & Optimization                            */}
         {/* ============================================================ */}
-        <aside className="bg-surface border-l border-t-border flex flex-col overflow-hidden max-[1100px]:hidden">
+        <aside className={`bg-surface border-l border-t-border flex flex-col overflow-hidden max-[1100px]:hidden ${rightPanelOpen ? "" : "hidden"}`}>
           {/* Auto-optimize */}
           <div className="p-3 border-b border-t-border">
             <div className="text-[0.75rem] font-semibold mb-2 flex items-center gap-1.5">

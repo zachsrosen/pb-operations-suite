@@ -24,6 +24,11 @@ const SUITE_MAP: Record<string, { href: string; label: string }> = {
   "/dashboards/incentives": { href: "/suites/department", label: "Departments" },
   // Executive Suite
   "/dashboards/command-center": { href: "/suites/executive", label: "Executive" },
+  "/dashboards/pipeline": { href: "/suites/executive", label: "Executive" },
+  "/dashboards/revenue": { href: "/suites/executive", label: "Executive" },
+  "/dashboards/capacity": { href: "/suites/executive", label: "Executive" },
+  "/dashboards/alerts": { href: "/suites/executive", label: "Executive" },
+  "/dashboards/pe": { href: "/suites/executive", label: "Executive" },
   "/dashboards/executive": { href: "/suites/executive", label: "Executive" },
   "/dashboards/locations": { href: "/suites/executive", label: "Executive" },
   // Admin Suite
@@ -31,7 +36,6 @@ const SUITE_MAP: Record<string, { href: string; label: string }> = {
   "/dashboards/optimizer": { href: "/suites/admin", label: "Admin" },
   "/dashboards/zuper-status-comparison": { href: "/suites/admin", label: "Admin" },
   "/dashboards/mobile": { href: "/suites/admin", label: "Admin" },
-  "/dashboards/pe": { href: "/suites/admin", label: "Admin" },
   // Additional Pipeline Suite
   "/dashboards/sales": { href: "/suites/additional-pipeline", label: "Pipelines" },
   "/dashboards/service": { href: "/suites/additional-pipeline", label: "Pipelines" },

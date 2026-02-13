@@ -41,6 +41,10 @@ export async function prefetchData(url: string): Promise<void> {
 export function prefetchDashboard(dashboard: string): void {
   const apiMap: Record<string, string> = {
     "command-center": "/api/projects?context=executive",
+    "pipeline": "/api/projects?context=executive",
+    "revenue": "/api/projects?context=executive",
+    "capacity": "/api/projects?context=executive",
+    "alerts": "/api/projects?context=executive",
     "scheduler": "/api/projects?context=scheduling",
     "site-survey-scheduler": "/api/projects?context=scheduling",
     "construction-scheduler": "/api/projects?context=scheduling",
