@@ -97,10 +97,235 @@ function StockOverviewTab(props: {
   filterLocations: string[];
   filterCategories: string[];
 }) {
-  void props;
+  const { stock, needsReport } = props;
+
+  const [sortField, setSortField] = useState<
+    "category" | "brand" | "model" | "spec" | "location" | "onHand" | "demand" | "gap" | "lastCounted"
+  >("category");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [showShortfallsOnly, setShowShortfallsOnly] = useState(false);
+
+  /* Build demand lookup map from needsReport */
+  const demandMap = useMemo(() => {
+    const map = new Map<string, { weightedDemand: number; rawDemand: number }>();
+    if (!needsReport?.needs) return map;
+    for (const n of needsReport.needs) {
+      const key = `${n.category}:${n.brand}:${n.model}:${n.location}`;
+      map.set(key, { weightedDemand: n.weightedDemand, rawDemand: n.rawDemand });
+    }
+    return map;
+  }, [needsReport]);
+
+  /* Category badge config */
+  const CATEGORY_BADGES: Record<string, { short: string; color: string }> = {
+    MODULE: { short: "MOD", color: "text-blue-400" },
+    INVERTER: { short: "INV", color: "text-amber-400" },
+    BATTERY: { short: "BAT", color: "text-green-400" },
+    EV_CHARGER: { short: "EV", color: "text-purple-400" },
+  };
+
+  /* Compute relative time string */
+  const relativeTime = (dateStr: string | null): { text: string; isStale: boolean } => {
+    if (!dateStr) return { text: "Never", isStale: true };
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    if (days > 30) return { text: "30+ days", isStale: true };
+    if (days === 0) return { text: "Today", isStale: false };
+    if (days === 1) return { text: "1 day ago", isStale: false };
+    return { text: `${days} days ago`, isStale: false };
+  };
+
+  /* Sorted and filtered rows */
+  const rows = useMemo(() => {
+    const enriched = stock.map((s) => {
+      const key = `${s.sku.category}:${s.sku.brand}:${s.sku.model}:${s.location}`;
+      const demand = demandMap.get(key);
+      const weightedDemand = demand?.weightedDemand ?? 0;
+      const gap = s.quantityOnHand - weightedDemand;
+      return { ...s, weightedDemand, gap };
+    });
+
+    const filtered = showShortfallsOnly
+      ? enriched.filter((r) => r.gap < 0)
+      : enriched;
+
+    const sorted = [...filtered].sort((a, b) => {
+      let cmp = 0;
+      switch (sortField) {
+        case "category":
+          cmp = CATEGORY_ORDER.indexOf(a.sku.category) - CATEGORY_ORDER.indexOf(b.sku.category);
+          if (cmp === 0) cmp = a.sku.brand.localeCompare(b.sku.brand);
+          break;
+        case "brand":
+          cmp = a.sku.brand.localeCompare(b.sku.brand);
+          break;
+        case "model":
+          cmp = a.sku.model.localeCompare(b.sku.model);
+          break;
+        case "spec":
+          cmp = (a.sku.unitSpec ?? 0) - (b.sku.unitSpec ?? 0);
+          break;
+        case "location":
+          cmp = a.location.localeCompare(b.location);
+          break;
+        case "onHand":
+          cmp = a.quantityOnHand - b.quantityOnHand;
+          break;
+        case "demand":
+          cmp = a.weightedDemand - b.weightedDemand;
+          break;
+        case "gap":
+          cmp = a.gap - b.gap;
+          break;
+        case "lastCounted": {
+          const aTime = a.lastCountedAt ? new Date(a.lastCountedAt).getTime() : 0;
+          const bTime = b.lastCountedAt ? new Date(b.lastCountedAt).getTime() : 0;
+          cmp = aTime - bTime;
+          break;
+        }
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+
+    return sorted;
+  }, [stock, demandMap, showShortfallsOnly, sortField, sortDir]);
+
+  /* Toggle sort handler */
+  const handleSort = (field: typeof sortField) => {
+    if (sortField === field) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortField(field);
+      setSortDir("asc");
+    }
+  };
+
+  const SortIndicator = ({ field }: { field: typeof sortField }) => (
+    <span className="ml-1 text-[10px]">
+      {sortField === field ? (sortDir === "asc" ? "\u2191" : "\u2193") : ""}
+    </span>
+  );
+
+  /* Empty state */
+  if (stock.length === 0) {
+    return (
+      <div className="text-muted text-sm text-center py-12">
+        No stock records yet. Use the Receive tab to add inventory.
+      </div>
+    );
+  }
+
   return (
-    <div className="text-muted text-sm text-center py-8">
-      Stock Overview — building...
+    <div>
+      {/* Shortfalls toggle */}
+      <div className="flex items-center gap-2 mb-3">
+        <label className="flex items-center gap-2 text-xs text-muted cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={showShortfallsOnly}
+            onChange={(e) => setShowShortfallsOnly(e.target.checked)}
+            className="rounded border-t-border bg-surface-2 text-cyan-500 focus:ring-cyan-500/30 h-3.5 w-3.5"
+          />
+          Show shortfalls only
+        </label>
+        <span className="text-xs text-muted ml-auto">
+          {rows.length} record{rows.length !== 1 ? "s" : ""}
+        </span>
+      </div>
+
+      {/* Table */}
+      <div className="bg-surface/50 border border-t-border rounded-xl overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead>
+              <tr className="bg-surface-2/50">
+                {([
+                  { field: "category" as const, label: "Cat" },
+                  { field: "brand" as const, label: "Brand" },
+                  { field: "model" as const, label: "Model" },
+                  { field: "spec" as const, label: "Spec" },
+                  { field: "location" as const, label: "Location" },
+                  { field: "onHand" as const, label: "On Hand" },
+                  { field: "demand" as const, label: "Demand" },
+                  { field: "gap" as const, label: "Gap" },
+                  { field: "lastCounted" as const, label: "Last Counted" },
+                ]).map((col) => (
+                  <th
+                    key={col.field}
+                    onClick={() => handleSort(col.field)}
+                    className="px-4 py-2.5 text-xs text-muted uppercase tracking-wider font-medium cursor-pointer hover:text-foreground transition-colors whitespace-nowrap"
+                  >
+                    {col.label}
+                    <SortIndicator field={col.field} />
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="px-4 py-8 text-center text-muted text-sm">
+                    No shortfalls found.
+                  </td>
+                </tr>
+              ) : (
+                rows.map((row) => {
+                  const badge = CATEGORY_BADGES[row.sku.category] || {
+                    short: row.sku.category.slice(0, 3),
+                    color: "text-muted",
+                  };
+                  const counted = relativeTime(row.lastCountedAt);
+                  const specStr =
+                    row.sku.unitSpec != null
+                      ? `${row.sku.unitSpec}${row.sku.unitLabel ? ` ${row.sku.unitLabel}` : ""}`
+                      : "\u2014";
+
+                  return (
+                    <tr
+                      key={row.id}
+                      className="border-b border-t-border hover:bg-surface-2/30 transition-colors"
+                    >
+                      <td className="px-4 py-3 text-sm">
+                        <span className={`font-mono text-xs font-semibold ${badge.color}`}>
+                          {badge.short}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-foreground">{row.sku.brand}</td>
+                      <td className="px-4 py-3 text-sm text-foreground">{row.sku.model}</td>
+                      <td className="px-4 py-3 text-sm text-muted">{specStr}</td>
+                      <td className="px-4 py-3 text-sm text-foreground">{row.location}</td>
+                      <td className="px-4 py-3 text-sm font-medium text-foreground">
+                        {row.quantityOnHand.toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-muted">
+                        {row.weightedDemand > 0 ? row.weightedDemand.toLocaleString() : "\u2014"}
+                      </td>
+                      <td className="px-4 py-3 text-sm font-medium">
+                        <span
+                          className={
+                            row.gap < 0
+                              ? "text-red-400"
+                              : row.gap > 0
+                                ? "text-green-400"
+                                : "text-muted"
+                          }
+                        >
+                          {row.gap < 0 ? row.gap.toLocaleString() : row.gap > 0 ? `+${row.gap.toLocaleString()}` : "0"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        <span className={counted.isStale ? "text-amber-400" : "text-muted"}>
+                          {counted.text}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }
