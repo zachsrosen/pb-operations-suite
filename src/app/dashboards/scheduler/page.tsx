@@ -2788,7 +2788,7 @@ export default function SchedulerPage() {
                   <div className="flex items-center justify-between mb-0.5">
                     <div className="flex items-center gap-1">
                       <div className="w-1.5 h-1.5 rounded-sm bg-emerald-500" />
-                      <span className="text-[0.55rem] text-muted">Done</span>
+                      <span className="text-[0.55rem] text-muted">Complete</span>
                     </div>
                     {hasComp ? (
                       <span className="text-[0.6rem] font-mono font-semibold text-emerald-400">
@@ -2897,7 +2897,7 @@ export default function SchedulerPage() {
                   <div className="flex items-center justify-between mb-0.5">
                     <div className="flex items-center gap-1">
                       <div className="w-1.5 h-1.5 rounded-sm bg-emerald-500" />
-                      <span className="text-[0.55rem] text-muted">Done</span>
+                      <span className="text-[0.55rem] text-muted">Complete</span>
                     </div>
                     {hasComp ? (
                       <span className="text-[0.6rem] font-mono font-semibold text-emerald-400">
