@@ -152,6 +152,66 @@ const LOCATIONS = [
   "Camarillo",
 ];
 
+/* ---- Zuper default assignees per location (for auto-assignment when scheduling) ---- */
+// Construction: assign to location director (same as construction scheduler)
+const ZUPER_CONSTRUCTION_DIRECTORS: Record<string, { name: string; userUid: string; teamUid: string }> = {
+  Westminster: { name: "Joe Lynch", userUid: "f203f99b-4aaf-488e-8e6a-8ee5e94ec217", teamUid: "1c23adb9-cefa-44c7-8506-804949afc56f" },
+  Centennial: { name: "Drew Perry", userUid: "0ddc7e1d-62e1-49df-b89d-905a39c1e353", teamUid: "76b94bd3-e2fc-4cfe-8c2a-357b9a850b3c" },
+  DTC: { name: "Drew Perry", userUid: "0ddc7e1d-62e1-49df-b89d-905a39c1e353", teamUid: "76b94bd3-e2fc-4cfe-8c2a-357b9a850b3c" },
+  "Colorado Springs": { name: "Rolando", userUid: "a89ed2f5-222b-4b09-8bb0-14dc45c2a51b", teamUid: "1a914a0e-b633-4f12-8ed6-3348285d6b93" },
+  "San Luis Obispo": { name: "Nick Scarpellino", userUid: "8e67159c-48fe-4fb0-acc3-b1c905ff6e95", teamUid: "699cec60-f9f8-4e57-b41a-bb29b1f3649c" },
+  Camarillo: { name: "Nick Scarpellino", userUid: "8e67159c-48fe-4fb0-acc3-b1c905ff6e95", teamUid: "0168d963-84af-4214-ad81-d6c43cee8e65" },
+};
+
+// Survey: available surveyors per location (first entry is the default)
+// userUid can be empty string — the schedule API will resolve by name at runtime
+const ZUPER_SURVEY_USERS: Record<string, { name: string; userUid: string; teamUid: string }[]> = {
+  Westminster: [
+    { name: "Joe Lynch", userUid: "f203f99b-4aaf-488e-8e6a-8ee5e94ec217", teamUid: "1c23adb9-cefa-44c7-8506-804949afc56f" },
+    { name: "Ryszard Szymanski", userUid: "e043bf1d-006b-4033-a46e-3b5d06ed3d00", teamUid: "1c23adb9-cefa-44c7-8506-804949afc56f" },
+    { name: "Derek Pomar", userUid: "f3bb40c0-d548-4355-ab39-6c27532a6d36", teamUid: "1c23adb9-cefa-44c7-8506-804949afc56f" },
+  ],
+  Centennial: [
+    { name: "Drew Perry", userUid: "0ddc7e1d-62e1-49df-b89d-905a39c1e353", teamUid: "76b94bd3-e2fc-4cfe-8c2a-357b9a850b3c" },
+    { name: "Derek Pomar", userUid: "f3bb40c0-d548-4355-ab39-6c27532a6d36", teamUid: "76b94bd3-e2fc-4cfe-8c2a-357b9a850b3c" },
+  ],
+  DTC: [
+    { name: "Drew Perry", userUid: "0ddc7e1d-62e1-49df-b89d-905a39c1e353", teamUid: "76b94bd3-e2fc-4cfe-8c2a-357b9a850b3c" },
+    { name: "Derek Pomar", userUid: "f3bb40c0-d548-4355-ab39-6c27532a6d36", teamUid: "76b94bd3-e2fc-4cfe-8c2a-357b9a850b3c" },
+  ],
+  "Colorado Springs": [
+    { name: "Rolando", userUid: "a89ed2f5-222b-4b09-8bb0-14dc45c2a51b", teamUid: "1a914a0e-b633-4f12-8ed6-3348285d6b93" },
+  ],
+  "San Luis Obispo": [
+    { name: "Nick Scarpellino", userUid: "8e67159c-48fe-4fb0-acc3-b1c905ff6e95", teamUid: "699cec60-f9f8-4e57-b41a-bb29b1f3649c" },
+  ],
+  Camarillo: [
+    { name: "Nick Scarpellino", userUid: "8e67159c-48fe-4fb0-acc3-b1c905ff6e95", teamUid: "0168d963-84af-4214-ad81-d6c43cee8e65" },
+  ],
+};
+
+// Inspection: available inspectors per location (first entry is the default)
+// userUid can be empty string — the schedule API will resolve by name at runtime
+const ZUPER_INSPECTION_USERS: Record<string, { name: string; userUid: string; teamUid: string }[]> = {
+  Westminster: [
+    { name: "Daniel Kelly", userUid: "f0a5aca8-0137-478c-a910-1380b9a31a79", teamUid: "1c23adb9-cefa-44c7-8506-804949afc56f" },
+    { name: "Chad Schollman", userUid: "", teamUid: "1c23adb9-cefa-44c7-8506-804949afc56f" },
+  ],
+  Centennial: [
+    { name: "Daniel Kelly", userUid: "f0a5aca8-0137-478c-a910-1380b9a31a79", teamUid: "76b94bd3-e2fc-4cfe-8c2a-357b9a850b3c" },
+  ],
+  DTC: [
+    { name: "Daniel Kelly", userUid: "f0a5aca8-0137-478c-a910-1380b9a31a79", teamUid: "76b94bd3-e2fc-4cfe-8c2a-357b9a850b3c" },
+  ],
+  "Colorado Springs": [
+    { name: "Rolando", userUid: "a89ed2f5-222b-4b09-8bb0-14dc45c2a51b", teamUid: "1a914a0e-b633-4f12-8ed6-3348285d6b93" },
+    { name: "Alexander Swope", userUid: "", teamUid: "1a914a0e-b633-4f12-8ed6-3348285d6b93" },
+  ],
+  "San Luis Obispo": [
+    { name: "Anthony Villanueva", userUid: "", teamUid: "699cec60-f9f8-4e57-b41a-bb29b1f3649c" },
+  ],
+};
+
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
@@ -970,10 +1030,17 @@ export default function SchedulerPage() {
       const isSurveyOrInspection =
         project.stage === "survey" || project.stage === "inspection";
       setInstallDaysInput(isSurveyOrInspection ? 0.25 : project.zuperScheduledDays || project.daysInstall || 2);
-      const locationCrews = CREWS[project.location] || [];
-      setCrewSelectInput(
-        project.crew || locationCrews[0]?.name || ""
-      );
+      // Pre-select the default user/crew based on schedule type
+      if (project.stage === "survey") {
+        const surveyUsers = ZUPER_SURVEY_USERS[project.location] || [];
+        setCrewSelectInput(surveyUsers[0]?.name || "");
+      } else if (project.stage === "inspection") {
+        const inspUsers = ZUPER_INSPECTION_USERS[project.location] || [];
+        setCrewSelectInput(inspUsers[0]?.name || "");
+      } else {
+        const locationCrews = CREWS[project.location] || [];
+        setCrewSelectInput(project.crew || locationCrews[0]?.name || "");
+      }
       trackFeature("schedule-modal-open", "Opened master schedule modal", {
         scheduler: "master",
         projectId: project.id,
@@ -1012,6 +1079,19 @@ export default function SchedulerPage() {
       [project.id]: { startDate: date, days, crew },
     }));
 
+    // Resolve Zuper assignee based on schedule type, location, and selected crew/user
+    const resolveZuperAssignee = (type: string, location: string, selectedName: string) => {
+      if (type === "survey") {
+        const users = ZUPER_SURVEY_USERS[location] || [];
+        return users.find(u => u.name === selectedName) || users[0];
+      }
+      if (type === "inspection") {
+        const users = ZUPER_INSPECTION_USERS[location] || [];
+        return users.find(u => u.name === selectedName) || users[0];
+      }
+      return ZUPER_CONSTRUCTION_DIRECTORS[location]; // installation/rtb/blocked
+    };
+
     // Sync to Zuper if enabled
     if (syncToZuper) {
       if (!zuperConfigured) {
@@ -1025,6 +1105,7 @@ export default function SchedulerPage() {
         const scheduleType = project.stage === "survey" ? "survey"
           : project.stage === "inspection" ? "inspection"
           : "installation";
+        const assignee = resolveZuperAssignee(scheduleType, project.location, crew);
 
         const response = await fetch("/api/zuper/jobs/schedule", {
           method: "PUT",
@@ -1045,8 +1126,10 @@ export default function SchedulerPage() {
               type: scheduleType,
               date: date,
               days: days,
-              crew: crew,
-              notes: `Scheduled via Master Schedule`,
+              crew: assignee?.userUid,
+              teamUid: assignee?.teamUid,
+              assignedUser: assignee?.name,
+              notes: `Scheduled via Master Schedule${assignee ? ` — ${assignee.name}` : ""}`,
             },
             rescheduleOnly: true,
           }),
@@ -1087,6 +1170,7 @@ export default function SchedulerPage() {
         const scheduleType = project.stage === "survey" ? "survey"
           : project.stage === "inspection" ? "inspection"
           : "installation";
+        const assignee = resolveZuperAssignee(scheduleType, project.location, crew);
 
         const response = await fetch("/api/zuper/jobs/schedule/tentative", {
           method: "PUT",
@@ -1103,9 +1187,11 @@ export default function SchedulerPage() {
               type: scheduleType,
               date,
               days,
-              crew,
-              assignedUser: crew,
-              notes: "Tentatively scheduled via Master Scheduler",
+              crew: assignee?.userUid || crew,
+              userUid: assignee?.userUid,
+              teamUid: assignee?.teamUid,
+              assignedUser: assignee?.name || crew,
+              notes: `Tentatively scheduled via Master Scheduler${assignee ? ` — ${assignee.name}` : ""}`,
             },
           }),
         });
@@ -2869,19 +2955,39 @@ export default function SchedulerPage() {
                     step={0.25}
                     className="bg-background border border-t-border text-foreground/90 px-2 py-1.5 rounded font-mono text-[0.75rem] w-[60px] text-center focus:outline-none focus:border-orange-500"
                   />
-                  <label className="text-[0.7rem] text-muted">Crew:</label>
+                  <label className="text-[0.7rem] text-muted">
+                    {scheduleModal.project.stage === "survey" ? "Surveyor:" :
+                     scheduleModal.project.stage === "inspection" ? "Inspector:" : "Crew:"}
+                  </label>
                   <select
                     value={crewSelectInput}
                     onChange={(e) => setCrewSelectInput(e.target.value)}
                     className="bg-background border border-t-border text-foreground/90 px-2 py-1.5 rounded font-mono text-[0.75rem] focus:outline-none focus:border-orange-500"
                   >
-                    {(CREWS[scheduleModal.project.location] || []).map((c) => (
-                      <option key={c.name} value={c.name}>
-                        {c.name}
-                      </option>
-                    ))}
-                    {(!CREWS[scheduleModal.project.location] ||
-                      CREWS[scheduleModal.project.location].length === 0) && (
+                    {scheduleModal.project.stage === "survey" ? (
+                      (ZUPER_SURVEY_USERS[scheduleModal.project.location] || []).map((u) => (
+                        <option key={u.name} value={u.name}>{u.name}</option>
+                      ))
+                    ) : scheduleModal.project.stage === "inspection" ? (
+                      (ZUPER_INSPECTION_USERS[scheduleModal.project.location] || []).map((u) => (
+                        <option key={u.name} value={u.name}>{u.name}</option>
+                      ))
+                    ) : (
+                      (CREWS[scheduleModal.project.location] || []).map((c) => (
+                        <option key={c.name} value={c.name}>{c.name}</option>
+                      ))
+                    )}
+                    {scheduleModal.project.stage === "survey" &&
+                      !(ZUPER_SURVEY_USERS[scheduleModal.project.location]?.length) && (
+                      <option>No surveyors</option>
+                    )}
+                    {scheduleModal.project.stage === "inspection" &&
+                      !(ZUPER_INSPECTION_USERS[scheduleModal.project.location]?.length) && (
+                      <option>No inspectors</option>
+                    )}
+                    {scheduleModal.project.stage !== "survey" &&
+                      scheduleModal.project.stage !== "inspection" &&
+                      !(CREWS[scheduleModal.project.location]?.length) && (
                       <option>No crews</option>
                     )}
                   </select>

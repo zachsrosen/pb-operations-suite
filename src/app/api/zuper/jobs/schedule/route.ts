@@ -360,16 +360,33 @@ export async function PUT(request: NextRequest) {
 
     console.log(`[Zuper Schedule] Schedule times (UTC for Zuper): ${startDateTime} to ${endDateTime}`);
 
+    // Resolve user UID from name if crew is empty but assignedUser is provided
+    // This handles users whose UIDs aren't hardcoded in the frontend
+    const isUuid = (s: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+    let resolvedCrew = schedule.crew || "";
+    let resolvedTeamUid = schedule.teamUid || "";
+    if ((!resolvedCrew || !isUuid(resolvedCrew)) && schedule.assignedUser) {
+      console.log(`[Zuper Schedule] Resolving UID for "${schedule.assignedUser}" (crew was "${resolvedCrew}")`);
+      const resolved = await zuper.resolveUserUid(schedule.assignedUser);
+      if (resolved) {
+        resolvedCrew = resolved.userUid;
+        if (!resolvedTeamUid && resolved.teamUid) resolvedTeamUid = resolved.teamUid;
+        console.log(`[Zuper Schedule] Resolved "${schedule.assignedUser}" → userUid: ${resolvedCrew}, teamUid: ${resolvedTeamUid}`);
+      } else {
+        console.warn(`[Zuper Schedule] Could not resolve UID for "${schedule.assignedUser}"`);
+      }
+    }
+
     if (existingJob && existingJob.job_uid) {
       // Reschedule existing job
       console.log(`[Zuper Schedule] ACTION: RESCHEDULE - Job UID: ${existingJob.job_uid}`);
 
       // Get user UIDs from crew selection (crew can be a user UID or comma-separated list)
-      const userUids = schedule.crew ? schedule.crew.split(",").map((u: string) => u.trim()).filter(Boolean) : [];
-      const teamUid = schedule.teamUid; // Team UID required for assignment API
+      const userUids = resolvedCrew ? resolvedCrew.split(",").map((u: string) => u.trim()).filter(Boolean) : [];
+      const teamUid = resolvedTeamUid; // Team UID required for assignment API
 
-      console.log(`[Zuper Schedule] Input schedule.crew: "${schedule.crew}"`);
-      console.log(`[Zuper Schedule] Input schedule.teamUid: "${schedule.teamUid}"`);
+      console.log(`[Zuper Schedule] Input schedule.crew: "${schedule.crew}" → resolved: "${resolvedCrew}"`);
+      console.log(`[Zuper Schedule] Input schedule.teamUid: "${schedule.teamUid}" → resolved: "${resolvedTeamUid}"`);
       console.log(`[Zuper Schedule] Parsed userUids:`, userUids);
       console.log(`[Zuper Schedule] Assigning to users:`, userUids, `team:`, teamUid || "NOT PROVIDED");
 
@@ -419,8 +436,8 @@ export async function PUT(request: NextRequest) {
         scheduledStart: schedule.startTime,
         scheduledEnd: schedule.endTime,
         assignedUser: schedule.assignedUser,
-        assignedUserUid: schedule.crew,
-        assignedTeamUid: schedule.teamUid,
+        assignedUserUid: resolvedCrew || schedule.crew,
+        assignedTeamUid: resolvedTeamUid || schedule.teamUid,
         zuperJobUid: existingJob.job_uid,
         zuperSynced: true,
         zuperAssigned: !assignmentFailed,
@@ -488,8 +505,8 @@ export async function PUT(request: NextRequest) {
         days: days,
         startTime: schedule.startTime,
         endTime: schedule.endTime,
-        crew: schedule.crew,
-        teamUid: schedule.teamUid, // Team UID required for user assignment
+        crew: resolvedCrew || schedule.crew,
+        teamUid: resolvedTeamUid || schedule.teamUid, // Team UID required for user assignment
         timezone: schedule.timezone, // IANA timezone for correct UTC conversion (e.g. "America/Los_Angeles")
         notes: schedule.notes,
       });
@@ -520,11 +537,11 @@ export async function PUT(request: NextRequest) {
         scheduledStart: schedule.startTime,
         scheduledEnd: schedule.endTime,
         assignedUser: schedule.assignedUser,
-        assignedUserUid: schedule.crew,
-        assignedTeamUid: schedule.teamUid,
+        assignedUserUid: resolvedCrew || schedule.crew,
+        assignedTeamUid: resolvedTeamUid || schedule.teamUid,
         zuperJobUid: newJobUid,
         zuperSynced: true,
-        zuperAssigned: !!schedule.crew, // Assume assigned if crew was provided at creation
+        zuperAssigned: !!(resolvedCrew || schedule.crew), // Assume assigned if crew was provided at creation
         notes: schedule.notes,
       });
 
