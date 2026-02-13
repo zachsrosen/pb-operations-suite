@@ -597,8 +597,8 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
     priorityScore,
 
     // Crew & Install planning
-    expectedDaysForInstall: Number(deal.expected_days_for_install) || 2,
-    daysForInstallers: Number(deal.days_for_installers) || 2,
+    expectedDaysForInstall: Number(deal.expected_days_for_install) || 0,
+    daysForInstallers: Number(deal.days_for_installers) || 0,
     daysForElectricians: Number(deal.days_for_electricians) || 1,
     installCrew: String(deal.install_crew || "Unassigned"),
     installDifficulty: Number(deal.install_difficulty) || 3,

@@ -29,10 +29,6 @@ async function handleLookup(projectIds: string[], projectNames: string[], catego
     return NextResponse.json({ configured: true, jobs: {} });
   }
 
-  if (projectIds.length === 0) {
-    return NextResponse.json({ configured: true, jobs: {} });
-  }
-
   // Map URL category param to Zuper job category names
   const categoryMap: Record<string, string> = {
     "site-survey": "Site Survey",
