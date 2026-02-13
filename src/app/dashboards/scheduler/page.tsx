@@ -549,7 +549,7 @@ export default function SchedulerPage() {
   const showToast = useCallback((message: string, type = "success") => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
     setToast({ message, type });
-    toastTimer.current = setTimeout(() => setToast(null), 3000);
+    toastTimer.current = setTimeout(() => setToast(null), type === "error" ? 8000 : 3000);
   }, []);
 
   /* ================================================================ */

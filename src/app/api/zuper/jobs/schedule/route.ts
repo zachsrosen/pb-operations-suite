@@ -344,13 +344,13 @@ export async function PUT(request: NextRequest) {
       endDateTime = localToUtc(schedule.date, schedule.endTime);
       console.log(`[Zuper Schedule] Converting ${slotTimezone} time ${schedule.startTime}-${schedule.endTime} to UTC`);
     } else {
-      // Default to 8am-4pm local time for multi-day jobs (construction)
+      // Default to 8am-4pm local time for construction/survey jobs without specific time slots
       startDateTime = localToUtc(schedule.date, "08:00");
 
-      // Calculate end date
+      // Calculate end date — ensure at least same-day (days < 1 means partial day, still same day)
       const [year, month, day] = schedule.date.split('-').map(Number);
-      const endDay = day + days - 1;
-      const endDateObj = new Date(year, month - 1, endDay);
+      const extraDays = Math.max(Math.ceil(days) - 1, 0); // 0.25d → 0 extra, 1d → 0 extra, 2d → 1 extra, 3d → 2 extra
+      const endDateObj = new Date(year, month - 1, day + extraDays);
       const endYear = endDateObj.getFullYear();
       const endMonth = String(endDateObj.getMonth() + 1).padStart(2, '0');
       const endDayStr = String(endDateObj.getDate()).padStart(2, '0');
