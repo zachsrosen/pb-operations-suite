@@ -98,6 +98,13 @@ const TESTING_DASHBOARDS = [
     tag: "PROTOTYPE",
     tagColor: "bg-pink-500/20 text-pink-400 border-pink-500/30",
   },
+  {
+    href: "/dashboards/inventory",
+    title: "Inventory Hub",
+    description: "Warehouse stock levels, receiving, and demand vs. supply gap analysis.",
+    tag: "INVENTORY",
+    tagColor: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
+  },
 ];
 
 const DOCUMENTATION = [

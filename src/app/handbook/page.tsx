@@ -230,6 +230,21 @@ const sections = [
     ],
   },
   {
+    title: "Inventory Hub",
+    route: "/dashboards/inventory",
+    color: "cyan",
+    audience: "Warehouse Staff, Procurement, Operations Managers",
+    description:
+      "Warehouse stock levels, receiving, and demand vs. supply gap analysis — track what you have, record what arrives, and know what to order.",
+    features: [
+      "Stock Overview: sortable table with on-hand, demand, and gap indicators per SKU/location",
+      "Receive & Adjust: quick entry form for deliveries, returns, adjustments, and allocations",
+      "Needs Report: stage-weighted demand vs. supply with expandable location detail and CSV export",
+      "Auto-sync SKU catalog from HubSpot project equipment data",
+      "Multi-select filtering by location and equipment category",
+    ],
+  },
+  {
     title: "Incentives Dashboard",
     route: "/dashboards/incentives",
     color: "yellow",

@@ -202,6 +202,11 @@ export default function GuidePage() {
                   <td className="py-3">Procurement</td>
                   <td className="py-3">Equipment forecasting by brand &amp; stage</td>
                 </tr>
+                <tr className="border-b border-t-border">
+                  <td className="py-3 font-medium">Inventory Hub</td>
+                  <td className="py-3">Warehouse, Procurement</td>
+                  <td className="py-3">Stock levels, receiving, and demand vs. supply gaps</td>
+                </tr>
                 <tr>
                   <td className="py-3 font-medium">PE Dashboard</td>
                   <td className="py-3">PE Compliance</td>
@@ -662,6 +667,28 @@ export default function GuidePage() {
             "Export to CSV for sharing with procurement teams"
           ]}
           url="/dashboards/equipment-backlog"
+        />
+
+        <DashboardCard
+          title="Inventory Hub"
+          tag="INVENTORY"
+          tagColor="cyan"
+          purpose="Warehouse stock levels, receiving, and demand vs. supply gap analysis"
+          features={[
+            "Stock Overview: sortable table with on-hand, demand, and gap indicators per SKU/location",
+            "Receive & Adjust: quick entry form for deliveries, returns, adjustments, and allocations",
+            "Needs Report: stage-weighted demand vs. supply with expandable location detail",
+            "Auto-sync SKU catalog from HubSpot project equipment data",
+            "CSV export for purchasing teams"
+          ]}
+          howToUse={[
+            "Click Sync SKUs to populate the catalog from HubSpot projects",
+            "Use the Receive tab to record incoming deliveries or adjust stock",
+            "Check the Needs tab to see what to order based on pipeline demand",
+            "Filter by location to view specific warehouse stock levels",
+            "Export the needs report to CSV for procurement planning"
+          ]}
+          url="/dashboards/inventory"
         />
 
         {/* PE & Leadership */}
