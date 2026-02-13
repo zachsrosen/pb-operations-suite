@@ -577,11 +577,20 @@ export default function SchedulerPage() {
     // - Construction: overdue the day after the scheduled end date
     //   (e.g. 3-day install starting Mon → end Wed → overdue on Thu)
     // - Surveys/Inspections: overdue the day after the scheduled date
+    //   (e.g. inspection on Mon → overdue on Tue)
     const isOverdueCheck = (schedDate: Date, days: number, done: boolean, isConstruction: boolean) => {
       if (done) return false;
-      const endDate = new Date(schedDate);
-      endDate.setDate(endDate.getDate() + (isConstruction ? Math.ceil(days) : 1));
-      return endDate < today;
+      // Normalize to midnight for clean day comparison
+      const schedMidnight = new Date(schedDate);
+      schedMidnight.setHours(0, 0, 0, 0);
+      if (isConstruction) {
+        // End date = start + ceil(days), overdue the next day
+        const endDate = new Date(schedMidnight);
+        endDate.setDate(schedMidnight.getDate() + Math.ceil(days));
+        return endDate < today;
+      }
+      // Surveys/inspections: overdue if scheduled date is before today
+      return schedMidnight < today;
     };
 
     projects.forEach((p) => {
@@ -608,18 +617,17 @@ export default function SchedulerPage() {
       }
 
       // -- Inspection --
-      // Only show: active inspections + failed inspections (passed inspections are hidden)
       if (p.inspectionScheduleDate) {
         const schedDate = new Date(p.inspectionScheduleDate + "T12:00:00");
         const done = !!p.inspectionCompleted;
         const failed = !!(p.inspectionStatus && p.inspectionStatus.toLowerCase().includes("fail"));
         const key = `${p.id}-inspection`;
-        if (!seenKeys.has(key) && (!done || failed)) {
+        if (!seenKeys.has(key)) {
           seenKeys.add(key);
           events.push({
             ...p,
             date: p.inspectionScheduleDate,
-            eventType: done ? "inspection-fail" : "inspection",
+            eventType: done ? (failed ? "inspection-fail" : "inspection-pass") : "inspection",
             days: 0.25,
             isCompleted: done,
             isOverdue: isOverdueCheck(schedDate, 0.25, done, false),
@@ -629,20 +637,19 @@ export default function SchedulerPage() {
       }
 
       // -- Survey --
-      // Only show active/pending surveys (completed surveys are hidden)
       if (p.surveyScheduleDate) {
         const schedDate = new Date(p.surveyScheduleDate + "T12:00:00");
         const done = !!p.surveyCompleted;
         const key = `${p.id}-survey`;
-        if (!seenKeys.has(key) && !done) {
+        if (!seenKeys.has(key)) {
           seenKeys.add(key);
           events.push({
             ...p,
             date: p.surveyScheduleDate,
-            eventType: "survey",
+            eventType: done ? "survey-complete" : "survey",
             days: 0.25,
-            isCompleted: false,
-            isOverdue: isOverdueCheck(schedDate, 0.25, false, false),
+            isCompleted: done,
+            isOverdue: isOverdueCheck(schedDate, 0.25, done, false),
           });
         }
       }
@@ -686,9 +693,9 @@ export default function SchedulerPage() {
   // toggle buttons also show completed/failed events for that stage.
   const filteredScheduledEvents = useMemo(() => {
     const typeVariants: Record<string, string[]> = {
-      survey: ["survey"],
+      survey: ["survey", "survey-complete"],
       construction: ["construction", "construction-complete"],
-      inspection: ["inspection", "inspection-fail"],
+      inspection: ["inspection", "inspection-pass", "inspection-fail"],
       rtb: ["rtb"],
       blocked: ["blocked"],
       scheduled: ["scheduled"],
@@ -1891,7 +1898,7 @@ export default function SchedulerPage() {
                             const dayLabel =
                               ev.totalCalDays > 1 ? `D${ev.dayNum} ` : "";
                             const showRevenue = (ev.eventType === "construction" || ev.eventType === "construction-complete") && ev.amount > 0;
-                            const isCompletedType = ev.eventType === "construction-complete";
+                            const isCompletedType = ev.eventType === "construction-complete" || ev.eventType === "inspection-pass" || ev.eventType === "survey-complete";
                             const isFailedType = ev.eventType === "inspection-fail";
                             const isActiveType = !isCompletedType && !isFailedType;
                             const isDraggable = isActiveType && !ev.isOverdue;
@@ -1907,9 +1914,16 @@ export default function SchedulerPage() {
                               ev.eventType === "blocked" ? "border-l-2 border-l-yellow-400" :
                               "border-l-2 border-l-red-400";
 
+                            // Completed events use same base color at low opacity
+                            const completedColorClass =
+                              ev.eventType === "construction-complete" ? "bg-blue-500/30 text-blue-300/70" :
+                              ev.eventType === "inspection-pass" ? "bg-violet-500/30 text-violet-300/70" :
+                              ev.eventType === "survey-complete" ? "bg-cyan-500/30 text-cyan-300/70" :
+                              "bg-zinc-600/30 text-zinc-300/70";
+
                             const eventColorClass =
                               isFailedType ? "bg-amber-900/70 text-amber-200 ring-1 ring-amber-500 opacity-70 line-through" :
-                              isCompletedType ? "bg-green-900/60 text-green-300 opacity-50" :
+                              isCompletedType ? completedColorClass :
                               ev.isOverdue ? `ring-1 ring-red-500 bg-red-900/70 text-red-200 animate-pulse ${overdueStageColor}` :
                               ev.eventType === "rtb" ? "bg-emerald-500 text-black" :
                               ev.eventType === "blocked" ? "bg-yellow-500 text-black" :
@@ -2096,7 +2110,7 @@ export default function SchedulerPage() {
                                 const shortName = getCustomerName(
                                   ev.name
                                 ).substring(0, 10);
-                                const isCompletedType = ev.eventType === "construction-complete";
+                                const isCompletedType = ev.eventType === "construction-complete" || ev.eventType === "inspection-pass" || ev.eventType === "survey-complete";
                                 const isFailedType = ev.eventType === "inspection-fail";
                                 const isActiveType = !isCompletedType && !isFailedType;
 
@@ -2108,9 +2122,15 @@ export default function SchedulerPage() {
                                   ev.eventType === "blocked" ? "border-l-2 border-l-yellow-400" :
                                   "border-l-2 border-l-red-400";
 
+                                const completedColorClassW =
+                                  ev.eventType === "construction-complete" ? "bg-blue-500/30 text-blue-300/70" :
+                                  ev.eventType === "inspection-pass" ? "bg-violet-500/30 text-violet-300/70" :
+                                  ev.eventType === "survey-complete" ? "bg-cyan-500/30 text-cyan-300/70" :
+                                  "bg-zinc-600/30 text-zinc-300/70";
+
                                 const eventColorClass =
                                   isFailedType ? "bg-amber-900/70 text-amber-200 ring-1 ring-amber-500 opacity-70 line-through" :
-                                  isCompletedType ? "bg-green-900/60 text-green-300 opacity-50" :
+                                  isCompletedType ? completedColorClassW :
                                   ev.isOverdue ? `ring-1 ring-red-500 bg-red-900/70 text-red-200 ${overdueStageColorW}` :
                                   ev.eventType === "rtb" ? "bg-emerald-500 text-black" :
                                   ev.eventType === "blocked" ? "bg-yellow-500 text-black" :
@@ -2257,7 +2277,7 @@ export default function SchedulerPage() {
                                   days < 1
                                     ? `${days * 4}/4d`
                                     : `${days}d`;
-                                const isCompletedType = e.eventType === "construction-complete";
+                                const isCompletedType = e.eventType === "construction-complete" || e.eventType === "inspection-pass" || e.eventType === "survey-complete";
                                 const isFailedType = e.eventType === "inspection-fail";
                                 const isActiveType = !isCompletedType && !isFailedType;
 
@@ -2269,9 +2289,15 @@ export default function SchedulerPage() {
                                   e.eventType === "blocked" ? "border-l-2 border-l-yellow-400" :
                                   "border-l-2 border-l-red-400";
 
+                                const completedColorClassG =
+                                  e.eventType === "construction-complete" ? "bg-blue-500/30 text-blue-300/70" :
+                                  e.eventType === "inspection-pass" ? "bg-violet-500/30 text-violet-300/70" :
+                                  e.eventType === "survey-complete" ? "bg-cyan-500/30 text-cyan-300/70" :
+                                  "bg-zinc-600/30 text-zinc-300/70";
+
                                 const eventColorClass =
                                   isFailedType ? "bg-amber-900/70 text-amber-200 ring-1 ring-amber-500 opacity-70 line-through" :
-                                  isCompletedType ? "bg-green-900/60 text-green-300 opacity-50" :
+                                  isCompletedType ? completedColorClassG :
                                   e.isOverdue ? `ring-1 ring-red-500 bg-red-900/70 text-red-200 ${overdueStageColorG}` :
                                   e.eventType === "construction" ? "bg-blue-500 text-white" :
                                   e.eventType === "rtb" ? "bg-emerald-500 text-black" :
