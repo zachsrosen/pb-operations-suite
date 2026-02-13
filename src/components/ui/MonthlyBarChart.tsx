@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useMemo } from "react";
+import { memo, useMemo, useState } from "react";
 import { formatMoney } from "@/lib/format";
 
 export interface MonthlyDataPoint {
@@ -21,6 +21,8 @@ interface MonthlyBarChartProps {
   secondaryData?: MonthlyDataPoint[];
   secondaryLabel?: string;
   primaryLabel?: string;
+  /** Start collapsed (default false) */
+  defaultCollapsed?: boolean;
 }
 
 const ACCENT_MAP: Record<string, { bar: string; glow: string; text: string; barLight: string }> = {
@@ -79,7 +81,9 @@ export const MonthlyBarChart = memo(function MonthlyBarChart({
   secondaryData,
   secondaryLabel,
   primaryLabel,
+  defaultCollapsed = false,
 }: MonthlyBarChartProps) {
+  const [collapsed, setCollapsed] = useState(defaultCollapsed);
   const accent = ACCENT_MAP[accentColor] || ACCENT_MAP.emerald;
 
   // Merge data into month buckets
@@ -133,112 +137,145 @@ export const MonthlyBarChart = memo(function MonthlyBarChart({
   const BAR_HEIGHT = 140;
 
   return (
-    <div className="bg-surface/50 border border-t-border rounded-xl p-6 animate-fadeIn">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-1">
-        <h3 className="text-base font-semibold text-foreground">{title}</h3>
-        <div className="flex items-center gap-4 text-xs text-muted">
-          {primaryLabel && (
-            <span className="flex items-center gap-1.5">
-              <span className={`w-2.5 h-2.5 rounded-sm ${accent.bar}`} />
-              {primaryLabel}
-            </span>
-          )}
-          {secondaryLabel && (
-            <span className="flex items-center gap-1.5">
-              <span className={`w-2.5 h-2.5 rounded-sm ${accent.barLight}`} />
-              {secondaryLabel}
-            </span>
-          )}
+    <div className="bg-surface/50 border border-t-border rounded-xl animate-fadeIn overflow-hidden">
+      {/* Clickable Header */}
+      <button
+        onClick={() => setCollapsed(!collapsed)}
+        className="w-full flex items-center justify-between p-6 pb-0 hover:bg-surface/30 transition-colors cursor-pointer"
+      >
+        <div className="flex items-center gap-3">
+          <h3 className="text-base font-semibold text-foreground">{title}</h3>
+          <div className="flex items-center gap-4 text-xs text-muted">
+            {primaryLabel && (
+              <span className="flex items-center gap-1.5">
+                <span className={`w-2.5 h-2.5 rounded-sm ${accent.bar}`} />
+                {primaryLabel}
+              </span>
+            )}
+            {secondaryLabel && (
+              <span className="flex items-center gap-1.5">
+                <span className={`w-2.5 h-2.5 rounded-sm ${accent.barLight}`} />
+                {secondaryLabel}
+              </span>
+            )}
+          </div>
         </div>
-      </div>
-
-      {/* Summary line */}
-      <div className="flex items-center gap-4 mb-5 text-sm">
-        <span className={`font-semibold ${accent.text}`}>
-          {totalCount} {primaryLabel || "completed"}
-        </span>
-        <span className="text-muted">{formatMoney(totalValue)}</span>
-        {secondaryData && secondaryTotalCount > 0 && (
-          <>
-            <span className="text-muted/50">|</span>
-            <span className="text-muted">
-              {secondaryTotalCount} {secondaryLabel || "secondary"}
+        <div className="flex items-center gap-3">
+          {/* Collapsed summary */}
+          {collapsed && (
+            <span className={`text-sm font-semibold ${accent.text}`}>
+              {totalCount} {primaryLabel || "completed"} — {formatMoney(totalValue)}
+              {secondaryData && secondaryTotalCount > 0 && (
+                <span className="text-muted font-normal ml-2">
+                  | {secondaryTotalCount} {secondaryLabel || "secondary"} — {formatMoney(secondaryTotalValue)}
+                </span>
+              )}
             </span>
-            <span className="text-muted/70">{formatMoney(secondaryTotalValue)}</span>
-          </>
-        )}
-        <span className="text-muted/50 text-xs ml-auto">Last {months} months</span>
-      </div>
+          )}
+          <svg
+            className={`w-5 h-5 text-muted transition-transform ${collapsed ? '' : 'rotate-180'}`}
+            fill="none" viewBox="0 0 24 24" stroke="currentColor"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </div>
+      </button>
 
-      {/* Chart */}
-      <div className="flex items-end gap-2" style={{ height: BAR_HEIGHT + 28 }}>
-        {chartData.map((d, i) => {
-          const pHeight = maxCount > 0 ? (d.primary.count / maxCount) * BAR_HEIGHT : 0;
-          const sHeight = d.secondary && maxCount > 0 ? (d.secondary.count / maxCount) * BAR_HEIGHT : 0;
-          const hasSecondary = d.secondary !== null;
+      {!collapsed && (
+        <div className="p-6 pt-1">
+          {/* Summary line */}
+          <div className="flex items-center gap-4 mb-5 text-sm">
+            <span className={`font-semibold ${accent.text}`}>
+              {totalCount} {primaryLabel || "completed"}
+            </span>
+            <span className="text-muted">{formatMoney(totalValue)}</span>
+            {secondaryData && secondaryTotalCount > 0 && (
+              <>
+                <span className="text-muted/50">|</span>
+                <span className="text-muted">
+                  {secondaryTotalCount} {secondaryLabel || "secondary"}
+                </span>
+                <span className="text-muted/70">{formatMoney(secondaryTotalValue)}</span>
+              </>
+            )}
+            <span className="text-muted/50 text-xs ml-auto">Last {months} months</span>
+          </div>
 
-          return (
-            <div key={d.month} className="flex-1 flex flex-col items-center gap-1 group">
-              {/* Bars container */}
-              <div
-                className="w-full flex items-end justify-center gap-1"
-                style={{ height: BAR_HEIGHT }}
-              >
-                {/* Primary bar */}
-                <div className="flex flex-col items-center" style={{ width: hasSecondary ? "45%" : "70%" }}>
-                  {d.primary.count > 0 && (
-                    <span className={`text-[10px] font-medium ${accent.text} mb-1 opacity-0 group-hover:opacity-100 transition-opacity`}>
-                      {d.primary.count}
-                    </span>
-                  )}
+          {/* Chart */}
+          <div className="flex items-end gap-2" style={{ height: BAR_HEIGHT + 28 }}>
+            {chartData.map((d, i) => {
+              const pHeight = maxCount > 0 ? (d.primary.count / maxCount) * BAR_HEIGHT : 0;
+              const sHeight = d.secondary && maxCount > 0 ? (d.secondary.count / maxCount) * BAR_HEIGHT : 0;
+              const hasSecondary = d.secondary !== null;
+
+              return (
+                <div key={d.month} className="flex-1 flex flex-col items-center gap-1 group">
+                  {/* Bars container */}
                   <div
-                    className={`w-full rounded-t-md ${accent.bar} ${d.primary.count > 0 ? accent.glow : ""} transition-all duration-500`}
-                    style={{
-                      height: Math.max(pHeight, d.primary.count > 0 ? 4 : 0),
-                      animationDelay: `${i * 60}ms`,
-                    }}
-                    title={`${d.primary.count} projects — ${formatMoney(d.primary.value)}`}
-                  />
-                </div>
+                    className="w-full flex items-end justify-center gap-1"
+                    style={{ height: BAR_HEIGHT }}
+                  >
+                    {/* Primary bar */}
+                    <div className="flex flex-col items-center" style={{ width: hasSecondary ? "45%" : "70%" }}>
+                      {d.primary.count > 0 && (
+                        <span className={`text-[10px] font-medium ${accent.text} mb-1 opacity-0 group-hover:opacity-100 transition-opacity`}>
+                          {d.primary.count}
+                        </span>
+                      )}
+                      <div
+                        className={`w-full rounded-t-md ${accent.bar} ${d.primary.count > 0 ? accent.glow : ""} transition-all duration-500`}
+                        style={{
+                          height: Math.max(pHeight, d.primary.count > 0 ? 4 : 0),
+                          animationDelay: `${i * 60}ms`,
+                        }}
+                        title={`${d.primary.count} projects — ${formatMoney(d.primary.value)}`}
+                      />
+                    </div>
 
-                {/* Secondary bar */}
-                {hasSecondary && (
-                  <div className="flex flex-col items-center" style={{ width: "45%" }}>
-                    {(d.secondary?.count || 0) > 0 && (
-                      <span className="text-[10px] font-medium text-muted mb-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        {d.secondary?.count}
-                      </span>
+                    {/* Secondary bar */}
+                    {hasSecondary && (
+                      <div className="flex flex-col items-center" style={{ width: "45%" }}>
+                        {(d.secondary?.count || 0) > 0 && (
+                          <span className="text-[10px] font-medium text-muted mb-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            {d.secondary?.count}
+                          </span>
+                        )}
+                        <div
+                          className={`w-full rounded-t-md ${accent.barLight} transition-all duration-500`}
+                          style={{
+                            height: Math.max(sHeight, (d.secondary?.count || 0) > 0 ? 4 : 0),
+                            animationDelay: `${i * 60 + 30}ms`,
+                          }}
+                          title={`${d.secondary?.count || 0} projects — ${formatMoney(d.secondary?.value || 0)}`}
+                        />
+                      </div>
                     )}
-                    <div
-                      className={`w-full rounded-t-md ${accent.barLight} transition-all duration-500`}
-                      style={{
-                        height: Math.max(sHeight, (d.secondary?.count || 0) > 0 ? 4 : 0),
-                        animationDelay: `${i * 60 + 30}ms`,
-                      }}
-                      title={`${d.secondary?.count || 0} projects — ${formatMoney(d.secondary?.value || 0)}`}
-                    />
                   </div>
+
+                  {/* Month label */}
+                  <span className="text-[10px] text-muted mt-1">{d.monthShort}</span>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Value subtotals per month */}
+          <div className="flex gap-2 mt-1">
+            {chartData.map((d) => (
+              <div key={d.month + "-val"} className="flex-1 text-center">
+                <span className={`text-[9px] ${accent.text} opacity-70`}>
+                  {d.primary.value > 0 ? formatMoney(d.primary.value) : ""}
+                </span>
+                {d.secondary && d.secondary.value > 0 && (
+                  <span className="text-[9px] text-muted/60 block">
+                    {formatMoney(d.secondary.value)}
+                  </span>
                 )}
               </div>
-
-              {/* Month label */}
-              <span className="text-[10px] text-muted mt-1">{d.monthShort}</span>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Value subtotals per month (on hover row) */}
-      <div className="flex gap-2 mt-1">
-        {chartData.map((d) => (
-          <div key={d.month + "-val"} className="flex-1 text-center">
-            <span className="text-[9px] text-muted/60">
-              {d.primary.value > 0 ? formatMoney(d.primary.value) : ""}
-            </span>
+            ))}
           </div>
-        ))}
-      </div>
+        </div>
+      )}
     </div>
   );
 });

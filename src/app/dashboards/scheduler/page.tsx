@@ -152,7 +152,7 @@ const MONTH_NAMES = [
   "July", "August", "September", "October", "November", "December",
 ];
 
-const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]; // Week starts on Monday
+const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri"]; // Weekdays only
 
 const STAGE_MAP: Record<string, string> = {
   "Site Survey": "survey",
@@ -372,6 +372,7 @@ export default function SchedulerPage() {
   const [calendarLocations, setCalendarLocations] = useState<string[]>([]); // Multi-select for calendar
   const [calendarScheduleTypes, setCalendarScheduleTypes] = useState<string[]>([]); // Multi-select for calendar
   const [showCompleted, setShowCompleted] = useState(true); // Toggle completed events on calendar
+  const [showOverdue, setShowOverdue] = useState(true); // Toggle overdue events on calendar
   const [selectedStage, setSelectedStage] = useState("all");
   const [searchText, setSearchText] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
@@ -601,9 +602,10 @@ export default function SchedulerPage() {
       if (calendarLocations.length > 0 && !calendarLocations.includes(e.location)) return false;
       if (calendarScheduleTypes.length > 0 && !calendarScheduleTypes.includes(e.eventType)) return false;
       if (!showCompleted && e.isCompleted) return false;
+      if (!showOverdue && e.isOverdue && !e.isCompleted) return false;
       return true;
     });
-  }, [scheduledEvents, calendarLocations, calendarScheduleTypes, showCompleted]);
+  }, [scheduledEvents, calendarLocations, calendarScheduleTypes, showCompleted, showOverdue]);
 
   const conflicts = useMemo((): Conflict[] => {
     const result: Conflict[] = [];
@@ -679,11 +681,20 @@ export default function SchedulerPage() {
   const calendarData = useMemo(() => {
     const firstDay = new Date(currentYear, currentMonth, 1);
     const lastDay = new Date(currentYear, currentMonth + 1, 0);
-    // Convert Sunday=0 to Monday-first index (Mon=0, Tue=1, ..., Sun=6)
+    // Convert to weekday-only index (Mon=0, Tue=1, Wed=2, Thu=3, Fri=4)
     const jsDay = firstDay.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
-    const startDay = jsDay === 0 ? 6 : jsDay - 1; // Convert to Mon=0, Sun=6
+    // If the month starts on Sat(6) or Sun(0), startDay=0 (Mon column, first weekday)
+    const startDay = jsDay === 0 ? 4 : jsDay === 6 ? 0 : jsDay - 1;
     const daysInMonth = lastDay.getDate();
     const today = new Date();
+
+    // Build list of weekday-only dates for this month
+    const weekdays: number[] = [];
+    for (let d = 1; d <= daysInMonth; d++) {
+      const date = new Date(currentYear, currentMonth, d);
+      const dow = date.getDay();
+      if (dow !== 0 && dow !== 6) weekdays.push(d);
+    }
 
     const eventsByDate: Record<number, (ScheduledEvent & { dayNum: number; totalCalDays: number })[]> = {};
     filteredScheduledEvents.forEach((e) => {
@@ -716,7 +727,7 @@ export default function SchedulerPage() {
       }
     });
 
-    return { startDay, daysInMonth, today, eventsByDate };
+    return { startDay, daysInMonth, today, eventsByDate, weekdays };
   }, [currentYear, currentMonth, filteredScheduledEvents]);
 
   /* ================================================================ */
@@ -1709,6 +1720,21 @@ export default function SchedulerPage() {
             )}
             <div className="ml-auto flex items-center gap-1.5">
               <button
+                onClick={() => setShowOverdue(!showOverdue)}
+                className={`flex items-center gap-1 px-2 py-1.5 text-[0.65rem] font-medium rounded-md border transition-colors ${
+                  showOverdue
+                    ? "border-t-border text-foreground/80 bg-surface-2"
+                    : "border-t-border text-muted"
+                }`}
+              >
+                <span className={`w-3 h-3 rounded border flex items-center justify-center ${
+                  showOverdue ? "bg-red-500 border-red-500" : "border-t-border"
+                }`}>
+                  {showOverdue && <svg className="w-2 h-2 text-white" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>}
+                </span>
+                Overdue
+              </button>
+              <button
                 onClick={() => setShowCompleted(!showCompleted)}
                 className={`flex items-center gap-1 px-2 py-1.5 text-[0.65rem] font-medium rounded-md border transition-colors ${
                   showCompleted
@@ -1731,7 +1757,7 @@ export default function SchedulerPage() {
             {[
               { color: "bg-cyan-500", value: stats.survey, label: "Survey" },
               { color: "bg-emerald-500", value: stats.rtb, label: "RTB" },
-              { color: "bg-blue-500", value: stats.construction, label: "Building" },
+              { color: "bg-blue-500", value: stats.construction, label: "Construction" },
               { color: "bg-violet-500", value: stats.inspection, label: "Inspect" },
             ].map((s, i) => (
               <div key={i} className="flex items-center gap-1 px-2 py-1 bg-surface rounded-md border border-t-border">
@@ -1814,8 +1840,8 @@ export default function SchedulerPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-7 gap-0.5 bg-surface-2 rounded-lg overflow-hidden p-0.5">
-                  {/* Day headers */}
+                <div className="grid grid-cols-5 gap-0.5 bg-surface-2 rounded-lg overflow-hidden p-0.5">
+                  {/* Day headers — weekdays only */}
                   {DAY_NAMES.map((d) => (
                     <div
                       key={d}
@@ -1825,41 +1851,23 @@ export default function SchedulerPage() {
                     </div>
                   ))}
 
-                  {/* Previous month padding */}
-                  {Array.from({ length: calendarData.startDay }).map((_, i) => {
-                    const prevDays = new Date(
-                      currentYear,
-                      currentMonth,
-                      0
-                    ).getDate();
-                    return (
-                      <div
-                        key={`prev-${i}`}
-                        className="bg-surface min-h-[90px] p-1 opacity-40"
-                      >
-                        <div className="text-[0.7rem] font-semibold text-muted">
-                          {prevDays - calendarData.startDay + i + 1}
-                        </div>
-                      </div>
-                    );
-                  })}
+                  {/* Previous month padding (weekdays only) */}
+                  {Array.from({ length: calendarData.startDay }).map((_, i) => (
+                    <div
+                      key={`prev-${i}`}
+                      className="bg-surface min-h-[90px] p-1 opacity-40"
+                    >
+                      <div className="text-[0.7rem] font-semibold text-muted" />
+                    </div>
+                  ))}
 
-                  {/* Current month days */}
-                  {Array.from({ length: calendarData.daysInMonth }).map(
-                    (_, idx) => {
-                      const day = idx + 1;
-                      const currentDate = new Date(
-                        currentYear,
-                        currentMonth,
-                        day
-                      );
+                  {/* Current month weekdays only */}
+                  {calendarData.weekdays.map(
+                    (day) => {
                       const isToday =
                         calendarData.today.getDate() === day &&
                         calendarData.today.getMonth() === currentMonth &&
                         calendarData.today.getFullYear() === currentYear;
-                      const isWkEnd =
-                        currentDate.getDay() === 0 ||
-                        currentDate.getDay() === 6;
                       const dayEvents = calendarData.eventsByDate[day] || [];
                       const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 
@@ -1871,29 +1879,13 @@ export default function SchedulerPage() {
                               ? "ring-2 ring-inset ring-orange-500"
                               : ""
                           } ${
-                            canDrop && !isWkEnd
+                            canDrop
                               ? "hover:bg-orange-500/10 hover:ring-2 hover:ring-inset hover:ring-orange-500"
                               : ""
-                          } ${
-                            isWkEnd
-                              ? "bg-black/30 opacity-60 cursor-default"
-                              : "cursor-pointer hover:bg-surface-elevated"
-                          }`}
-                          onClick={
-                            !isWkEnd
-                              ? () => handleDayClick(dateStr)
-                              : undefined
-                          }
-                          onDragOver={
-                            !isWkEnd
-                              ? (e) => e.preventDefault()
-                              : undefined
-                          }
-                          onDrop={
-                            !isWkEnd
-                              ? (e) => handleDrop(e, dateStr)
-                              : undefined
-                          }
+                          } cursor-pointer hover:bg-surface-elevated`}
+                          onClick={() => handleDayClick(dateStr)}
+                          onDragOver={(e) => e.preventDefault()}
+                          onDrop={(e) => handleDrop(e, dateStr)}
                         >
                           <div
                             className={`text-[0.7rem] font-semibold mb-0.5 ${
@@ -1905,10 +1897,11 @@ export default function SchedulerPage() {
                           {dayEvents.map((ev, ei) => {
                             const shortName = getCustomerName(ev.name).substring(
                               0,
-                              8
+                              10
                             );
                             const dayLabel =
                               ev.totalCalDays > 1 ? `D${ev.dayNum} ` : "";
+                            const showRevenue = ev.eventType === "construction" && ev.amount > 0;
                             return (
                               <div
                                 key={ei}
@@ -1924,7 +1917,7 @@ export default function SchedulerPage() {
                                       null
                                   );
                                 }}
-                                title={`${ev.name} - ${ev.crew || "No crew"}${ev.isCompleted ? " ✓ Completed" : ev.isOverdue ? " ⚠ Overdue" : " (drag to reschedule)"}`}
+                                title={`${ev.name} - ${ev.crew || "No crew"}${showRevenue ? ` - $${formatRevenueCompact(ev.amount)}` : ""}${ev.isCompleted ? " ✓ Completed" : ev.isOverdue ? " ⚠ Overdue" : " (drag to reschedule)"}`}
                                 className={`text-[0.55rem] px-1 py-0.5 rounded mb-0.5 transition-transform hover:scale-[1.02] hover:shadow-lg hover:z-10 relative overflow-hidden truncate ${
                                   ev.isCompleted
                                     ? "opacity-40 cursor-default"
@@ -1951,28 +1944,27 @@ export default function SchedulerPage() {
                                 {ev.isOverdue && <span className="mr-0.5 text-red-200">!</span>}
                                 {dayLabel}
                                 <span className={ev.isCompleted ? "line-through" : ""}>{shortName}</span>
+                                {showRevenue && <span className="ml-0.5 opacity-80">${formatRevenueCompact(ev.amount)}</span>}
                               </div>
                             );
                           })}
-                                                  </div>
+                        </div>
                       );
                     }
                   )}
 
-                  {/* Next month padding */}
+                  {/* Next month padding — fill remaining row */}
                   {(() => {
                     const total =
-                      calendarData.startDay + calendarData.daysInMonth;
-                    const rem = 7 - (total % 7);
-                    if (rem < 7) {
+                      calendarData.startDay + calendarData.weekdays.length;
+                    const rem = 5 - (total % 5);
+                    if (rem < 5) {
                       return Array.from({ length: rem }).map((_, i) => (
                         <div
                           key={`next-${i}`}
                           className="bg-surface min-h-[90px] p-1 opacity-40"
                         >
-                          <div className="text-[0.7rem] font-semibold text-muted">
-                            {i + 1}
-                          </div>
+                          <div className="text-[0.7rem] font-semibold text-muted" />
                         </div>
                       ));
                     }

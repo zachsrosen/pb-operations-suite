@@ -746,6 +746,7 @@ export default function DesignEngineeringPage() {
             accentColor="blue"
             primaryLabel="DA Approved"
             secondaryLabel="Design Complete"
+            defaultCollapsed
           />
         </div>
       )}

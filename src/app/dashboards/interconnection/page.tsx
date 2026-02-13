@@ -625,6 +625,7 @@ export default function InterconnectionPage() {
             accentColor="emerald"
             primaryLabel="IC Approved"
             secondaryLabel="PTO Granted"
+            defaultCollapsed
           />
         </div>
       )}

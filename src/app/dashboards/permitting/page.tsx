@@ -440,17 +440,25 @@ export default function PermittingPage() {
         </div>
       </div>
 
-      {/* Permits Issued by Month */}
-      {!loading && stats.permitIssued.length > 0 && (
+      {/* Permits Submitted & Issued by Month */}
+      {!loading && (stats.permitIssued.length > 0 || filteredProjects.some(p => p.permitSubmitDate)) && (
         <div className="mb-6">
           <MonthlyBarChart
-            title="Permits Issued by Month"
+            title="Permits Submitted & Issued by Month"
             data={aggregateMonthly(
               stats.permitIssued.map(p => ({ date: p.permitIssueDate, amount: p.amount })),
               6,
             )}
+            secondaryData={aggregateMonthly(
+              filteredProjects
+                .filter(p => p.permitSubmitDate)
+                .map(p => ({ date: p.permitSubmitDate, amount: p.amount })),
+              6,
+            )}
             accentColor="green"
             primaryLabel="Permits Issued"
+            secondaryLabel="Permits Submitted"
+            defaultCollapsed
           />
         </div>
       )}
