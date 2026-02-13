@@ -573,6 +573,17 @@ export default function SchedulerPage() {
     today.setHours(0, 0, 0, 0);
     const seenKeys = new Set<string>();
 
+    // Overdue logic:
+    // - Construction: overdue the day after the scheduled end date
+    //   (e.g. 3-day install starting Mon → end Wed → overdue on Thu)
+    // - Surveys/Inspections: overdue the day after the scheduled date
+    const isOverdueCheck = (schedDate: Date, days: number, done: boolean, isConstruction: boolean) => {
+      if (done) return false;
+      const endDate = new Date(schedDate);
+      endDate.setDate(endDate.getDate() + (isConstruction ? Math.ceil(days) : 1));
+      return endDate < today;
+    };
+
     projects.forEach((p) => {
       // Generate separate events per milestone. Completed milestones get their own
       // event type so they render distinctly (no confusion between active vs done).
@@ -581,6 +592,7 @@ export default function SchedulerPage() {
       if (p.constructionScheduleDate) {
         const schedDate = new Date(p.constructionScheduleDate + "T12:00:00");
         const done = !!p.constructionCompleted;
+        const days = p.daysInstall || 1;
         const key = `${p.id}-construction`;
         if (!seenKeys.has(key)) {
           seenKeys.add(key);
@@ -588,47 +600,49 @@ export default function SchedulerPage() {
             ...p,
             date: p.constructionScheduleDate,
             eventType: done ? "construction-complete" : "construction",
-            days: p.daysInstall || 1,
+            days,
             isCompleted: done,
-            isOverdue: !done && schedDate < today,
+            isOverdue: isOverdueCheck(schedDate, days, done, true),
           });
         }
       }
 
       // -- Inspection --
+      // Only show: active inspections + failed inspections (passed inspections are hidden)
       if (p.inspectionScheduleDate) {
         const schedDate = new Date(p.inspectionScheduleDate + "T12:00:00");
         const done = !!p.inspectionCompleted;
         const failed = !!(p.inspectionStatus && p.inspectionStatus.toLowerCase().includes("fail"));
         const key = `${p.id}-inspection`;
-        if (!seenKeys.has(key)) {
+        if (!seenKeys.has(key) && (!done || failed)) {
           seenKeys.add(key);
           events.push({
             ...p,
             date: p.inspectionScheduleDate,
-            eventType: done ? (failed ? "inspection-fail" : "inspection-pass") : "inspection",
+            eventType: done ? "inspection-fail" : "inspection",
             days: 0.25,
             isCompleted: done,
-            isOverdue: !done && schedDate < today,
+            isOverdue: isOverdueCheck(schedDate, 0.25, done, false),
             isInspectionFailed: failed,
           });
         }
       }
 
       // -- Survey --
+      // Only show active/pending surveys (completed surveys are hidden)
       if (p.surveyScheduleDate) {
         const schedDate = new Date(p.surveyScheduleDate + "T12:00:00");
         const done = !!p.surveyCompleted;
         const key = `${p.id}-survey`;
-        if (!seenKeys.has(key)) {
+        if (!seenKeys.has(key) && !done) {
           seenKeys.add(key);
           events.push({
             ...p,
             date: p.surveyScheduleDate,
-            eventType: done ? "survey-complete" : "survey",
+            eventType: "survey",
             days: 0.25,
-            isCompleted: done,
-            isOverdue: !done && schedDate < today,
+            isCompleted: false,
+            isOverdue: isOverdueCheck(schedDate, 0.25, false, false),
           });
         }
       }
@@ -637,15 +651,16 @@ export default function SchedulerPage() {
       if (p.scheduleDate && (p.stage === "rtb" || p.stage === "blocked") && !seenKeys.has(`${p.id}-construction`)) {
         const schedDate = new Date(p.scheduleDate + "T12:00:00");
         const done = !!p.constructionCompleted;
+        const days = p.daysInstall || 1;
         const key = `${p.id}-construction`;
         seenKeys.add(key);
         events.push({
           ...p,
           date: p.scheduleDate,
           eventType: done ? "construction-complete" : p.stage,
-          days: p.daysInstall || 1,
+          days,
           isCompleted: done,
-          isOverdue: !done && schedDate < today,
+          isOverdue: isOverdueCheck(schedDate, days, done, true),
         });
       }
     });
@@ -671,9 +686,9 @@ export default function SchedulerPage() {
   // toggle buttons also show completed/failed events for that stage.
   const filteredScheduledEvents = useMemo(() => {
     const typeVariants: Record<string, string[]> = {
-      survey: ["survey", "survey-complete"],
+      survey: ["survey"],
       construction: ["construction", "construction-complete"],
-      inspection: ["inspection", "inspection-pass", "inspection-fail"],
+      inspection: ["inspection", "inspection-fail"],
       rtb: ["rtb"],
       blocked: ["blocked"],
       scheduled: ["scheduled"],
@@ -697,7 +712,7 @@ export default function SchedulerPage() {
     [filteredProjects]
   );
 
-  /* Weekly revenue sidebar — construction scheduled vs completed, week by week */
+  /* Weekly revenue sidebar — construction scheduled vs completed vs overdue, week by week */
   const weeklyRevenueSummary = useMemo(() => {
     const today = new Date();
     const dayOfWeek = today.getDay();
@@ -709,8 +724,10 @@ export default function SchedulerPage() {
     type WeekData = {
       weekStart: Date;
       weekLabel: string;
+      isPast: boolean;
       scheduled: { count: number; revenue: number };
       completed: { count: number; revenue: number };
+      overdue: { count: number; revenue: number };
     };
     const weeks: WeekData[] = [];
 
@@ -721,6 +738,7 @@ export default function SchedulerPage() {
       const weekEnd = new Date(weekStart);
       weekEnd.setDate(weekStart.getDate() + 5); // Mon-Fri
 
+      const isPast = w < 0;
       const label = weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
       const weekEvents = filteredScheduledEvents.filter((e) => {
@@ -729,30 +747,41 @@ export default function SchedulerPage() {
       });
 
       // Construction scheduled (active installs: construction, rtb, blocked, scheduled)
-      const scheduledEvents = weekEvents.filter((e) =>
-        e.eventType === "construction" || e.eventType === "rtb" || e.eventType === "blocked" || e.eventType === "scheduled"
+      const scheduledEvts = weekEvents.filter((e) =>
+        (e.eventType === "construction" || e.eventType === "rtb" || e.eventType === "blocked" || e.eventType === "scheduled") && !e.isOverdue
       );
       // Construction completed
-      const completedEvents = weekEvents.filter((e) => e.eventType === "construction-complete");
+      const completedEvts = weekEvents.filter((e) => e.eventType === "construction-complete");
+      // Overdue construction events
+      const overdueEvts = weekEvents.filter((e) =>
+        (e.eventType === "construction" || e.eventType === "rtb" || e.eventType === "blocked" || e.eventType === "scheduled") && e.isOverdue
+      );
 
       // Dedupe by project ID
-      const schedIds = new Set(scheduledEvents.map((e) => e.id));
-      const compIds = new Set(completedEvents.map((e) => e.id));
+      const schedIds = new Set(scheduledEvts.map((e) => e.id));
+      const compIds = new Set(completedEvts.map((e) => e.id));
+      const overdueIds = new Set(overdueEvts.map((e) => e.id));
 
       const schedRevenue = [...schedIds].reduce((sum, id) => {
-        const ev = scheduledEvents.find((e) => e.id === id);
+        const ev = scheduledEvts.find((e) => e.id === id);
         return sum + (ev?.amount || 0);
       }, 0);
       const compRevenue = [...compIds].reduce((sum, id) => {
-        const ev = completedEvents.find((e) => e.id === id);
+        const ev = completedEvts.find((e) => e.id === id);
+        return sum + (ev?.amount || 0);
+      }, 0);
+      const overdueRevenue = [...overdueIds].reduce((sum, id) => {
+        const ev = overdueEvts.find((e) => e.id === id);
         return sum + (ev?.amount || 0);
       }, 0);
 
       weeks.push({
         weekStart,
         weekLabel: label,
+        isPast,
         scheduled: { count: schedIds.size, revenue: schedRevenue },
         completed: { count: compIds.size, revenue: compRevenue },
+        overdue: { count: overdueIds.size, revenue: overdueRevenue },
       });
     }
     return weeks;
@@ -1862,7 +1891,7 @@ export default function SchedulerPage() {
                             const dayLabel =
                               ev.totalCalDays > 1 ? `D${ev.dayNum} ` : "";
                             const showRevenue = (ev.eventType === "construction" || ev.eventType === "construction-complete") && ev.amount > 0;
-                            const isCompletedType = ev.eventType === "construction-complete" || ev.eventType === "inspection-pass" || ev.eventType === "survey-complete";
+                            const isCompletedType = ev.eventType === "construction-complete";
                             const isFailedType = ev.eventType === "inspection-fail";
                             const isActiveType = !isCompletedType && !isFailedType;
                             const isDraggable = isActiveType && !ev.isOverdue;
@@ -2067,7 +2096,7 @@ export default function SchedulerPage() {
                                 const shortName = getCustomerName(
                                   ev.name
                                 ).substring(0, 10);
-                                const isCompletedType = ev.eventType === "construction-complete" || ev.eventType === "inspection-pass" || ev.eventType === "survey-complete";
+                                const isCompletedType = ev.eventType === "construction-complete";
                                 const isFailedType = ev.eventType === "inspection-fail";
                                 const isActiveType = !isCompletedType && !isFailedType;
 
@@ -2228,7 +2257,7 @@ export default function SchedulerPage() {
                                   days < 1
                                     ? `${days * 4}/4d`
                                     : `${days}d`;
-                                const isCompletedType = e.eventType === "construction-complete" || e.eventType === "inspection-pass" || e.eventType === "survey-complete";
+                                const isCompletedType = e.eventType === "construction-complete";
                                 const isFailedType = e.eventType === "inspection-fail";
                                 const isActiveType = !isCompletedType && !isFailedType;
 
@@ -2298,7 +2327,7 @@ export default function SchedulerPage() {
               <h2 className="text-[0.65rem] font-bold text-foreground/90 uppercase tracking-wide">
                 Weekly Revenue
               </h2>
-              <div className="text-[0.5rem] text-muted mt-0.5">Scheduled vs Complete</div>
+              <div className="text-[0.5rem] text-muted mt-0.5">Sched · Done · Overdue</div>
             </div>
             <button
               onClick={() => setRevenueSidebarOpen(false)}
@@ -2314,6 +2343,7 @@ export default function SchedulerPage() {
               const isThisWeek = i === 2; // index 2 = current week (2 past weeks before it)
               const hasSched = week.scheduled.count > 0;
               const hasComp = week.completed.count > 0;
+              const hasOverdue = week.overdue.count > 0;
               return (
                 <div
                   key={i}
@@ -2324,26 +2354,28 @@ export default function SchedulerPage() {
                   }`}
                 >
                   <div className={`text-[0.6rem] font-semibold mb-1 ${isThisWeek ? "text-orange-400" : "text-muted"}`}>
-                    {isThisWeek ? "▸ " : ""}{week.weekLabel}
+                    {isThisWeek ? "▸ " : ""}{week.weekLabel}{week.isPast ? " (past)" : ""}
                   </div>
 
-                  {/* Scheduled */}
-                  <div className="flex items-center justify-between mb-0.5">
-                    <div className="flex items-center gap-1">
-                      <div className="w-1.5 h-1.5 rounded-sm bg-blue-500" />
-                      <span className="text-[0.55rem] text-muted">Sched</span>
+                  {/* Scheduled — hidden for past weeks (those are now overdue) */}
+                  {!week.isPast && (
+                    <div className="flex items-center justify-between mb-0.5">
+                      <div className="flex items-center gap-1">
+                        <div className="w-1.5 h-1.5 rounded-sm bg-blue-500" />
+                        <span className="text-[0.55rem] text-muted">Sched</span>
+                      </div>
+                      {hasSched ? (
+                        <span className="text-[0.6rem] font-mono font-semibold text-blue-400">
+                          {week.scheduled.count} · ${formatRevenueCompact(week.scheduled.revenue)}
+                        </span>
+                      ) : (
+                        <span className="text-[0.55rem] text-muted/50">—</span>
+                      )}
                     </div>
-                    {hasSched ? (
-                      <span className="text-[0.6rem] font-mono font-semibold text-blue-400">
-                        {week.scheduled.count} · ${formatRevenueCompact(week.scheduled.revenue)}
-                      </span>
-                    ) : (
-                      <span className="text-[0.55rem] text-muted/50">—</span>
-                    )}
-                  </div>
+                  )}
 
                   {/* Completed */}
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between mb-0.5">
                     <div className="flex items-center gap-1">
                       <div className="w-1.5 h-1.5 rounded-sm bg-emerald-500" />
                       <span className="text-[0.55rem] text-muted">Done</span>
@@ -2351,6 +2383,21 @@ export default function SchedulerPage() {
                     {hasComp ? (
                       <span className="text-[0.6rem] font-mono font-semibold text-emerald-400">
                         {week.completed.count} · ${formatRevenueCompact(week.completed.revenue)}
+                      </span>
+                    ) : (
+                      <span className="text-[0.55rem] text-muted/50">—</span>
+                    )}
+                  </div>
+
+                  {/* Overdue */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1">
+                      <div className="w-1.5 h-1.5 rounded-sm bg-red-500" />
+                      <span className="text-[0.55rem] text-muted">Overdue</span>
+                    </div>
+                    {hasOverdue ? (
+                      <span className="text-[0.6rem] font-mono font-semibold text-red-400">
+                        {week.overdue.count} · ${formatRevenueCompact(week.overdue.revenue)}
                       </span>
                     ) : (
                       <span className="text-[0.55rem] text-muted/50">—</span>
@@ -2373,13 +2420,22 @@ export default function SchedulerPage() {
                 ${formatRevenueCompact(weeklyRevenueSummary.reduce((s, w) => s + w.scheduled.revenue, 0))}
               </span>
             </div>
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between mb-1">
               <div className="flex items-center gap-1">
                 <div className="w-2 h-2 rounded-sm bg-emerald-500" />
                 <span className="text-[0.6rem] text-foreground/80">Completed</span>
               </div>
               <span className="text-[0.65rem] font-mono font-bold text-emerald-400">
                 ${formatRevenueCompact(weeklyRevenueSummary.reduce((s, w) => s + w.completed.revenue, 0))}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1">
+                <div className="w-2 h-2 rounded-sm bg-red-500" />
+                <span className="text-[0.6rem] text-foreground/80">Overdue</span>
+              </div>
+              <span className="text-[0.65rem] font-mono font-bold text-red-400">
+                ${formatRevenueCompact(weeklyRevenueSummary.reduce((s, w) => s + w.overdue.revenue, 0))}
               </span>
             </div>
           </div>
