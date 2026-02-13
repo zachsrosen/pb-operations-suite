@@ -5,6 +5,7 @@ import DashboardShell from "@/components/DashboardShell";
 import { formatMoney } from "@/lib/format";
 import { RawProject } from "@/lib/types";
 import { MultiSelectFilter, ProjectSearchBar, FilterGroup } from "@/components/ui/MultiSelectFilter";
+import { MonthlyBarChart, aggregateMonthly } from "@/components/ui/MonthlyBarChart";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 
 // Display name mappings — HubSpot internal enum values → display labels
@@ -605,6 +606,28 @@ export default function InterconnectionPage() {
           <div className="text-sm text-muted">Avg Days IC Pending</div>
         </div>
       </div>
+
+      {/* IC Approvals & PTO Granted by Month */}
+      {!loading && (stats.icApproved.length > 0 || stats.ptoGranted.length > 0) && (
+        <div className="mb-6">
+          <MonthlyBarChart
+            title="Approvals & PTO by Month"
+            data={aggregateMonthly(
+              stats.icApproved
+                .filter((p: ExtendedProject) => p.interconnectionApprovalDate)
+                .map((p: ExtendedProject) => ({ date: p.interconnectionApprovalDate, amount: p.amount })),
+              6,
+            )}
+            secondaryData={aggregateMonthly(
+              stats.ptoGranted.map(p => ({ date: p.ptoGrantedDate, amount: p.amount })),
+              6,
+            )}
+            accentColor="emerald"
+            primaryLabel="IC Approved"
+            secondaryLabel="PTO Granted"
+          />
+        </div>
+      )}
 
       {/* Status Breakdown */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">

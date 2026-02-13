@@ -5,6 +5,7 @@ import DashboardShell from "@/components/DashboardShell";
 import { formatMoney } from "@/lib/format";
 import { RawProject } from "@/lib/types";
 import { MultiSelectFilter, ProjectSearchBar, FilterGroup } from "@/components/ui/MultiSelectFilter";
+import { MonthlyBarChart, aggregateMonthly } from "@/components/ui/MonthlyBarChart";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 
 // Display name mappings for status values
@@ -726,6 +727,26 @@ export default function DesignEngineeringPage() {
           <div className="text-sm text-muted">Approval Statuses</div>
         </div>
       </div>
+
+      {/* Design Completions by Month */}
+      {!loading && (stats.designApproved.length > 0 || stats.designComplete.length > 0) && (
+        <div className="mb-6">
+          <MonthlyBarChart
+            title="Design Completions by Month"
+            data={aggregateMonthly(
+              stats.designApproved.map(p => ({ date: p.designApprovalDate, amount: p.amount })),
+              6,
+            )}
+            secondaryData={aggregateMonthly(
+              stats.designComplete.map(p => ({ date: p.designCompletionDate, amount: p.amount })),
+              6,
+            )}
+            accentColor="blue"
+            primaryLabel="DA Approved"
+            secondaryLabel="Design Complete"
+          />
+        </div>
+      )}
 
       {/* Status Breakdown */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">

@@ -6,7 +6,7 @@ import { useSSE } from "@/hooks/useSSE";
 
 import { formatMoney } from "@/lib/format";
 import { STAGE_COLORS } from "@/lib/constants";
-import { StatCard, MiniStat } from "@/components/ui/MetricCard";
+import { StatCard } from "@/components/ui/MetricCard";
 import { SkeletonSection } from "@/components/ui/Skeleton";
 import { LiveIndicator } from "@/components/ui/LiveIndicator";
 import { UserMenu } from "@/components/UserMenu";
@@ -28,20 +28,10 @@ interface Stats {
   peValue: number;
   rtbCount: number;
   rtbValue: number;
-  blockedCount: number;
-  blockedValue: number;
-  constructionCount: number;
-  constructionValue: number;
-  inspectionBacklog: number;
-  inspectionValue: number;
-  ptoBacklog: number;
-  ptoValue: number;
   locationCounts: Record<string, number>;
   locationValues: Record<string, number>;
   stageCounts: Record<string, number>;
   stageValues: Record<string, number>;
-  totalSystemSizeKw: number;
-  totalBatteryKwh: number;
   lastUpdated: string;
 }
 
@@ -106,17 +96,12 @@ interface ProjectRecord {
   pbLocation: string;
   isParticipateEnergy: boolean;
   isRtb: boolean;
-  isBlocked: boolean;
 }
 
 function computeStats(projects: ProjectRecord[]): Stats {
   const totalValue = projects.reduce((s, p) => s + p.amount, 0);
   const pe = projects.filter((p) => p.isParticipateEnergy);
   const rtb = projects.filter((p) => p.isRtb);
-  const blocked = projects.filter((p) => p.isBlocked);
-  const construction = projects.filter((p) => p.stage === "Construction");
-  const inspection = projects.filter((p) => p.stage === "Inspection");
-  const pto = projects.filter((p) => p.stage === "Permission To Operate");
 
   const locationCounts: Record<string, number> = {};
   const locationValues: Record<string, number> = {};
@@ -137,20 +122,10 @@ function computeStats(projects: ProjectRecord[]): Stats {
     peValue: pe.reduce((s, p) => s + p.amount, 0),
     rtbCount: rtb.length,
     rtbValue: rtb.reduce((s, p) => s + p.amount, 0),
-    blockedCount: blocked.length,
-    blockedValue: blocked.reduce((s, p) => s + p.amount, 0),
-    constructionCount: construction.length,
-    constructionValue: construction.reduce((s, p) => s + p.amount, 0),
-    inspectionBacklog: inspection.length,
-    inspectionValue: inspection.reduce((s, p) => s + p.amount, 0),
-    ptoBacklog: pto.length,
-    ptoValue: pto.reduce((s, p) => s + p.amount, 0),
     locationCounts,
     locationValues,
     stageCounts,
     stageValues,
-    totalSystemSizeKw: 0,
-    totalBatteryKwh: 0,
     lastUpdated: new Date().toISOString(),
   };
 }
@@ -171,7 +146,7 @@ export default function Home() {
   const loadProjects = useCallback(async () => {
     try {
       const res = await fetch(
-        "/api/projects?context=executive&limit=0&fields=stage,amount,pbLocation,isParticipateEnergy,isRtb,isBlocked"
+        "/api/projects?context=executive&limit=0&fields=stage,amount,pbLocation,isParticipateEnergy,isRtb"
       );
       if (!res.ok) throw new Error("Failed to fetch");
       const data = await res.json();
@@ -182,7 +157,6 @@ export default function Home() {
           pbLocation: p.pbLocation || "Unknown",
           isParticipateEnergy: !!p.isParticipateEnergy,
           isRtb: !!p.isRtb,
-          isBlocked: !!p.isBlocked,
         }))
       );
       setIsStale(data.stale || false);
@@ -208,7 +182,6 @@ export default function Home() {
               pbLocation: "Unknown",
               isParticipateEnergy: false,
               isRtb: stage === "Ready To Build",
-              isBlocked: stage === "RTB - Blocked",
             });
           }
         }
@@ -433,48 +406,66 @@ export default function Home() {
           />
         </div>
 
-        {/* Secondary Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8 stagger-grid">
-          <MiniStat
-            label="Construction"
-            value={loading ? null : stats?.constructionCount ?? null}
-            subtitle={
-              !loading && stats?.constructionValue
-                ? formatMoney(stats.constructionValue)
-                : null
-            }
-          />
-          <MiniStat
-            label="Inspection Backlog"
-            value={loading ? null : stats?.inspectionBacklog ?? null}
-            subtitle={
-              !loading && stats?.inspectionValue
-                ? formatMoney(stats.inspectionValue)
-                : null
-            }
-            alert={!loading && (stats?.inspectionBacklog ?? 0) > 50}
-          />
-          <MiniStat
-            label="PTO Backlog"
-            value={loading ? null : stats?.ptoBacklog ?? null}
-            subtitle={
-              !loading && stats?.ptoValue ? formatMoney(stats.ptoValue) : null
-            }
-            alert={!loading && (stats?.ptoBacklog ?? 0) > 50}
-          />
-          <MiniStat
-            label="Blocked"
-            value={loading ? null : stats?.blockedCount ?? null}
-            subtitle={
-              !loading && stats?.blockedValue
-                ? formatMoney(stats.blockedValue)
-                : null
-            }
-            alert={!loading && (stats?.blockedCount ?? 0) > 20}
-          />
-        </div>
+        {/* Location Filter - click to filter all data */}
+        {loading ? (
+          <SkeletonSection rows={2} />
+        ) : (
+          allLocations.length > 0 && (
+            <div className="bg-surface/50 border border-t-border rounded-xl p-6 mb-8 animate-fadeIn">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold">
+                  Projects by Location
+                  {selectedLocations.length > 0 && (
+                    <span className="text-sm text-orange-400 font-normal ml-2">
+                      ({selectedLocations.length} filtered)
+                    </span>
+                  )}
+                </h2>
+                {selectedLocations.length > 0 && (
+                  <button
+                    onClick={clearLocations}
+                    className="text-xs text-muted hover:text-foreground underline transition-colors"
+                  >
+                    Clear filter
+                  </button>
+                )}
+              </div>
+              <p className="text-xs text-muted mb-3">Click a location to filter all data</p>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4 stagger-grid">
+                {allLocations.map((location) => {
+                  const count = unfilteredStats.locationCounts[location] || 0;
+                  const value = unfilteredStats.locationValues[location];
+                  const isSelected = selectedLocations.includes(location);
+                  return (
+                    <button
+                      key={location}
+                      onClick={() => toggleLocation(location)}
+                      className={`rounded-lg p-4 text-center transition-all cursor-pointer border ${
+                        isSelected
+                          ? "bg-orange-500/15 border-orange-500/50 ring-1 ring-orange-500/30 scale-[1.02]"
+                          : selectedLocations.length > 0
+                            ? "bg-surface-2/30 border-transparent hover:bg-skeleton opacity-60 hover:opacity-100"
+                            : "bg-skeleton border-transparent hover:bg-surface-2/70"
+                      }`}
+                    >
+                      <div className={`text-2xl font-bold ${isSelected ? "text-orange-400" : "text-foreground"}`}>
+                        {count}
+                      </div>
+                      <div className={`text-sm ${isSelected ? "text-orange-300" : "text-muted"}`}>{location}</div>
+                      {value != null && (
+                        <div className="text-xs text-orange-400 mt-0.5">
+                          {formatMoney(value)}
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )
+        )}
 
-        {/* Stage Breakdown */}
+        {/* Pipeline by Stage */}
         {loading ? (
           <SkeletonSection />
         ) : (
@@ -515,65 +506,6 @@ export default function Home() {
                       />
                     ));
                 })()}
-              </div>
-            </div>
-          )
-        )}
-
-        {/* Location Breakdown - always shows unfiltered counts, click to filter */}
-        {loading ? (
-          <SkeletonSection rows={2} />
-        ) : (
-          allLocations.length > 0 && (
-            <div className="bg-surface/50 border border-t-border rounded-xl p-6 mb-8 animate-fadeIn">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold">
-                  Projects by Location
-                  {selectedLocations.length > 0 && (
-                    <span className="text-sm text-orange-400 font-normal ml-2">
-                      ({selectedLocations.length} filtered)
-                    </span>
-                  )}
-                </h2>
-                {selectedLocations.length > 0 && (
-                  <button
-                    onClick={clearLocations}
-                    className="text-xs text-muted hover:text-foreground underline transition-colors"
-                  >
-                    Clear filter
-                  </button>
-                )}
-              </div>
-              <p className="text-xs text-muted mb-3">Click a location to filter all data above</p>
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4 stagger-grid">
-                {allLocations.map((location) => {
-                  const count = unfilteredStats.locationCounts[location] || 0;
-                  const value = unfilteredStats.locationValues[location];
-                  const isSelected = selectedLocations.includes(location);
-                  return (
-                    <button
-                      key={location}
-                      onClick={() => toggleLocation(location)}
-                      className={`rounded-lg p-4 text-center transition-all cursor-pointer border ${
-                        isSelected
-                          ? "bg-orange-500/15 border-orange-500/50 ring-1 ring-orange-500/30 scale-[1.02]"
-                          : selectedLocations.length > 0
-                            ? "bg-surface-2/30 border-transparent hover:bg-skeleton opacity-60 hover:opacity-100"
-                            : "bg-skeleton border-transparent hover:bg-surface-2/70"
-                      }`}
-                    >
-                      <div className={`text-2xl font-bold ${isSelected ? "text-orange-400" : "text-foreground"}`}>
-                        {count}
-                      </div>
-                      <div className={`text-sm ${isSelected ? "text-orange-300" : "text-muted"}`}>{location}</div>
-                      {value != null && (
-                        <div className="text-xs text-orange-400 mt-0.5">
-                          {formatMoney(value)}
-                        </div>
-                      )}
-                    </button>
-                  );
-                })}
               </div>
             </div>
           )

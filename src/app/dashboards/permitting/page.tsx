@@ -5,6 +5,7 @@ import DashboardShell from "@/components/DashboardShell";
 import { formatMoney } from "@/lib/format";
 import { RawProject } from "@/lib/types";
 import { MultiSelectFilter, ProjectSearchBar, FilterGroup } from "@/components/ui/MultiSelectFilter";
+import { MonthlyBarChart, aggregateMonthly } from "@/components/ui/MonthlyBarChart";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 
 // Display name mappings — HubSpot internal enum values → display labels
@@ -438,6 +439,21 @@ export default function PermittingPage() {
           <div className="text-sm text-muted">Avg Permit Turnaround</div>
         </div>
       </div>
+
+      {/* Permits Issued by Month */}
+      {!loading && stats.permitIssued.length > 0 && (
+        <div className="mb-6">
+          <MonthlyBarChart
+            title="Permits Issued by Month"
+            data={aggregateMonthly(
+              stats.permitIssued.map(p => ({ date: p.permitIssueDate, amount: p.amount })),
+              6,
+            )}
+            accentColor="green"
+            primaryLabel="Permits Issued"
+          />
+        </div>
+      )}
 
       {/* Status Breakdown */}
       <div className="grid grid-cols-1 gap-6 mb-6">
