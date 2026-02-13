@@ -472,6 +472,7 @@ export default function SchedulerPage() {
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]); // For project list filtering (multi-select)
   const [calendarLocations, setCalendarLocations] = useState<string[]>([]); // Multi-select for calendar
   const [calendarScheduleTypes, setCalendarScheduleTypes] = useState<string[]>([]); // Multi-select for calendar
+  const [showScheduled, setShowScheduled] = useState(true); // Toggle active/upcoming events on calendar
   const [showCompleted, setShowCompleted] = useState(true); // Toggle completed events on calendar
   const [showOverdue, setShowOverdue] = useState(true); // Toggle overdue events on calendar
   const [selectedStage, setSelectedStage] = useState("all");
@@ -928,9 +929,10 @@ export default function SchedulerPage() {
       if (expandedTypes.length > 0 && !expandedTypes.includes(e.eventType)) return false;
       if (!showCompleted && e.isCompleted) return false;
       if (!showOverdue && e.isOverdue && !e.isCompleted) return false;
+      if (!showScheduled && !e.isCompleted && !e.isOverdue) return false;
       return true;
     });
-  }, [scheduledEvents, calendarLocations, calendarScheduleTypes, showCompleted, showOverdue]);
+  }, [scheduledEvents, calendarLocations, calendarScheduleTypes, showScheduled, showCompleted, showOverdue]);
 
   const queueRevenue = useMemo(
     () => formatRevenueCompact(filteredProjects.reduce((s, p) => s + p.amount, 0)),
@@ -2136,6 +2138,21 @@ export default function SchedulerPage() {
               </button>
             )}
             <div className="ml-auto flex items-center gap-1.5">
+              <button
+                onClick={() => setShowScheduled(!showScheduled)}
+                className={`flex items-center gap-1 px-2 py-1.5 text-[0.65rem] font-medium rounded-md border transition-colors ${
+                  showScheduled
+                    ? "border-t-border text-foreground/80 bg-surface-2"
+                    : "border-t-border text-muted"
+                }`}
+              >
+                <span className={`w-3 h-3 rounded border flex items-center justify-center ${
+                  showScheduled ? "bg-blue-500 border-blue-500" : "border-t-border"
+                }`}>
+                  {showScheduled && <svg className="w-2 h-2 text-white" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>}
+                </span>
+                Scheduled
+              </button>
               <button
                 onClick={() => setShowOverdue(!showOverdue)}
                 className={`flex items-center gap-1 px-2 py-1.5 text-[0.65rem] font-medium rounded-md border transition-colors ${
