@@ -2139,9 +2139,9 @@ export default function SchedulerPage() {
             )}
             <div className="ml-auto flex items-center gap-1">
               {([
-                { key: "scheduled", label: "Sched", color: "bg-blue-500 border-blue-500", active: showScheduled, toggle: () => setShowScheduled(!showScheduled) },
-                { key: "overdue", label: "Over", color: "bg-red-500 border-red-500", active: showOverdue, toggle: () => setShowOverdue(!showOverdue) },
-                { key: "completed", label: "Done", color: "bg-emerald-500 border-emerald-500", active: showCompleted, toggle: () => setShowCompleted(!showCompleted) },
+                { key: "scheduled", label: "Scheduled", color: "bg-blue-500 border-blue-500", active: showScheduled, toggle: () => setShowScheduled(!showScheduled) },
+                { key: "overdue", label: "Overdue", color: "bg-red-500 border-red-500", active: showOverdue, toggle: () => setShowOverdue(!showOverdue) },
+                { key: "completed", label: "Completed", color: "bg-emerald-500 border-emerald-500", active: showCompleted, toggle: () => setShowCompleted(!showCompleted) },
               ] as const).map((t) => (
                 <button
                   key={t.key}
