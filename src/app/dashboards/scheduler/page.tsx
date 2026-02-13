@@ -2721,7 +2721,7 @@ export default function SchedulerPage() {
           <div className="p-2.5 border-b border-t-border flex items-center justify-between">
             <div>
               <h2 className="text-[0.65rem] font-bold text-foreground/90 uppercase tracking-wide">
-                Revenue
+                Construction Revenue
               </h2>
               {/* Tab toggle */}
               <div className="flex gap-1 mt-1">
@@ -2974,7 +2974,7 @@ export default function SchedulerPage() {
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7M19 19l-7-7 7-7" /></svg>
             </button>
-            <span className="text-[0.45rem] text-muted mt-1 [writing-mode:vertical-lr]">Revenue</span>
+            <span className="text-[0.45rem] text-muted mt-1 [writing-mode:vertical-lr]">Construction Revenue</span>
           </div>
         )}
       </div>
