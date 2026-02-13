@@ -885,10 +885,17 @@ export default function SchedulerPage() {
       if (project) {
         const existingIdx = events.findIndex((e) => e.id === id);
         if (existingIdx > -1) events.splice(existingIdx, 1);
+        // Use the project's actual stage as eventType so tentative events
+        // still appear under the correct filter (Construction, Survey, etc.)
+        const tentativeEventType = data.scheduleType === "survey" ? "survey"
+          : data.scheduleType === "inspection" ? "inspection"
+          : project.stage === "survey" ? "survey"
+          : project.stage === "inspection" ? "inspection"
+          : "construction";
         events.push({
           ...project,
           date: data.startDate,
-          eventType: data.isTentative ? "tentative" : "scheduled",
+          eventType: data.isTentative ? tentativeEventType : "scheduled",
           days: data.days,
           crew: data.crew,
           isTentative: data.isTentative,
@@ -909,8 +916,7 @@ export default function SchedulerPage() {
       inspection: ["inspection", "inspection-pass", "inspection-fail"],
       rtb: ["rtb"],
       blocked: ["blocked"],
-      scheduled: ["scheduled", "tentative"],
-      tentative: ["tentative"],
+      scheduled: ["scheduled"],
     };
     // Expand selected base types into all their variants
     const expandedTypes = calendarScheduleTypes.length > 0
@@ -954,11 +960,11 @@ export default function SchedulerPage() {
 
   const computeRevenueBuckets = useCallback((events: typeof filteredScheduledEvents) => {
     const scheduledEvts = events.filter((e) =>
-      (e.eventType === "construction" || e.eventType === "rtb" || e.eventType === "blocked" || e.eventType === "scheduled" || e.eventType === "tentative") && !e.isOverdue
+      (e.eventType === "construction" || e.eventType === "rtb" || e.eventType === "blocked" || e.eventType === "scheduled") && !e.isOverdue
     );
     const completedEvts = events.filter((e) => e.eventType === "construction-complete");
     const overdueEvts = events.filter((e) =>
-      (e.eventType === "construction" || e.eventType === "rtb" || e.eventType === "blocked" || e.eventType === "scheduled" || e.eventType === "tentative") && e.isOverdue
+      (e.eventType === "construction" || e.eventType === "rtb" || e.eventType === "blocked" || e.eventType === "scheduled") && e.isOverdue
     );
     const dedupeRevenue = (evts: typeof events) => {
       const ids = new Set(evts.map((e) => e.id));
@@ -2295,13 +2301,13 @@ export default function SchedulerPage() {
                               isFailedType ? "bg-amber-900/70 text-amber-200 ring-1 ring-amber-500 opacity-70 line-through" :
                               isCompletedType ? completedColorClass :
                               ev.isOverdue ? overdueColorClass :
+                              ev.isTentative ? "bg-amber-500/70 text-black border border-dashed border-amber-300" :
                               ev.eventType === "rtb" ? "bg-emerald-500 text-black" :
                               ev.eventType === "blocked" ? "bg-yellow-500 text-black" :
                               ev.eventType === "construction" ? "bg-blue-500 text-white" :
                               ev.eventType === "survey" ? "bg-cyan-500 text-white" :
                               ev.eventType === "inspection" ? "bg-violet-500 text-white" :
                               ev.eventType === "scheduled" ? "bg-cyan-500 text-white" :
-                              ev.eventType === "tentative" ? "bg-amber-500/70 text-black border border-dashed border-amber-300" :
                               "bg-zinc-600 text-white";
 
                             return (
@@ -2504,13 +2510,13 @@ export default function SchedulerPage() {
                                   isFailedType ? "bg-amber-900/70 text-amber-200 ring-1 ring-amber-500 opacity-70 line-through" :
                                   isCompletedType ? completedColorClassW :
                                   ev.isOverdue ? overdueColorClassW :
+                                  ev.isTentative ? "bg-amber-500/70 text-black border border-dashed border-amber-300" :
                                   ev.eventType === "rtb" ? "bg-emerald-500 text-black" :
                                   ev.eventType === "blocked" ? "bg-yellow-500 text-black" :
                                   ev.eventType === "construction" ? "bg-blue-500 text-white" :
                                   ev.eventType === "survey" ? "bg-cyan-500 text-white" :
                                   ev.eventType === "inspection" ? "bg-violet-500 text-white" :
                                   ev.eventType === "scheduled" ? "bg-cyan-500 text-white" :
-                                  ev.eventType === "tentative" ? "bg-amber-500/70 text-black border border-dashed border-amber-300" :
                                   "bg-zinc-600 text-white";
 
                                 return (
@@ -2672,10 +2678,10 @@ export default function SchedulerPage() {
                                   isFailedType ? "bg-amber-900/70 text-amber-200 ring-1 ring-amber-500 opacity-70 line-through" :
                                   isCompletedType ? completedColorClassG :
                                   e.isOverdue ? overdueColorClassG :
+                                  e.isTentative ? "bg-amber-500/70 text-black border border-dashed border-amber-300" :
                                   e.eventType === "construction" ? "bg-blue-500 text-white" :
                                   e.eventType === "rtb" ? "bg-emerald-500 text-black" :
                                   e.eventType === "scheduled" ? "bg-cyan-500 text-white" :
-                                  e.eventType === "tentative" ? "bg-amber-500/70 text-black border border-dashed border-amber-300" :
                                   e.eventType === "blocked" ? "bg-yellow-500 text-black" :
                                   e.eventType === "survey" ? "bg-cyan-500 text-white" :
                                   e.eventType === "inspection" ? "bg-violet-500 text-white" :
