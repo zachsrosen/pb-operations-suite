@@ -29,6 +29,7 @@ const DASHBOARD_LINKS = [
   { name: "Location Comparison", path: "/dashboards/locations", description: "Performance across locations" },
   { name: "Timeline View", path: "/dashboards/timeline", description: "Gantt-style project timeline" },
   { name: "Equipment Backlog", path: "/dashboards/equipment-backlog", description: "Equipment forecasting by brand, model, and stage" },
+  { name: "Inventory Hub", path: "/dashboards/inventory", description: "Stock levels, receiving, and procurement gap analysis" },
   // Department Dashboards
   { name: "Design & Engineering", path: "/dashboards/design", description: "Track design progress and approvals" },
   { name: "Permitting & Inspections", path: "/dashboards/permitting", description: "Permit status and inspection tracking" },

@@ -14,6 +14,7 @@ const SUITE_MAP: Record<string, { href: string; label: string }> = {
   "/dashboards/inspection-scheduler": { href: "/suites/operations", label: "Operations" },
   "/dashboards/timeline": { href: "/suites/operations", label: "Operations" },
   "/dashboards/equipment-backlog": { href: "/suites/operations", label: "Operations" },
+  "/dashboards/inventory": { href: "/suites/operations", label: "Operations" },
   // Department Suite
   "/dashboards/site-survey": { href: "/suites/department", label: "Departments" },
   "/dashboards/design": { href: "/suites/department", label: "Departments" },

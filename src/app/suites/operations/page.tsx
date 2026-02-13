@@ -37,6 +37,12 @@ const LINKS = [
     description: "Equipment forecasting by brand, model, and stage with location filtering.",
     tag: "EQUIPMENT",
   },
+  {
+    href: "/dashboards/inventory",
+    title: "Inventory Hub",
+    description: "Warehouse stock levels, receiving, and demand vs. supply gap analysis.",
+    tag: "INVENTORY",
+  },
 ];
 
 export default function OperationsSuitePage() {
