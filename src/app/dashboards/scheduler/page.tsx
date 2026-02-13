@@ -2139,18 +2139,20 @@ export default function SchedulerPage() {
             )}
             <div className="ml-auto flex items-center gap-1">
               {([
-                { key: "scheduled", label: "Sched", color: "bg-blue-500", active: showScheduled, toggle: () => setShowScheduled(!showScheduled) },
-                { key: "overdue", label: "Over", color: "bg-red-500", active: showOverdue, toggle: () => setShowOverdue(!showOverdue) },
-                { key: "completed", label: "Done", color: "bg-emerald-500", active: showCompleted, toggle: () => setShowCompleted(!showCompleted) },
+                { key: "scheduled", label: "Sched", color: "bg-blue-500 border-blue-500", active: showScheduled, toggle: () => setShowScheduled(!showScheduled) },
+                { key: "overdue", label: "Over", color: "bg-red-500 border-red-500", active: showOverdue, toggle: () => setShowOverdue(!showOverdue) },
+                { key: "completed", label: "Done", color: "bg-emerald-500 border-emerald-500", active: showCompleted, toggle: () => setShowCompleted(!showCompleted) },
               ] as const).map((t) => (
                 <button
                   key={t.key}
                   onClick={t.toggle}
-                  className={`flex items-center gap-1 px-1.5 py-1 text-[0.6rem] font-medium rounded border transition-colors ${
+                  className={`flex items-center gap-0.5 px-1.5 py-1 text-[0.6rem] font-medium rounded border transition-colors ${
                     t.active ? "border-t-border text-foreground/80 bg-surface-2" : "border-t-border text-muted opacity-60"
                   }`}
                 >
-                  <span className={`w-2 h-2 rounded-full ${t.active ? t.color : "bg-zinc-600"}`} />
+                  <span className={`w-2.5 h-2.5 rounded-sm border flex items-center justify-center shrink-0 ${t.active ? t.color : "border-t-border"}`}>
+                    {t.active && <svg className="w-2 h-2 text-white" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>}
+                  </span>
                   {t.label}
                 </button>
               ))}
