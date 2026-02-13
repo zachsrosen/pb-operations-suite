@@ -386,6 +386,20 @@ const adminSections = [
       "Auto-refresh toggle for real-time monitoring",
     ],
   },
+  {
+    title: "Bug Reports",
+    route: "/admin/tickets",
+    description:
+      "View and manage user-submitted bug reports. Track ticket status, add admin notes, and monitor resolution.",
+    features: [
+      "All users (except Viewers) can submit bug reports via the floating button",
+      "Reports include title, description, and auto-captured page URL",
+      "Email notification sent to TechOps on every submission",
+      "Status workflow: Open → In Progress → Resolved → Closed",
+      "Admin notes for internal tracking and resolution details",
+      "Filter by status with count indicators",
+    ],
+  },
 ];
 
 const colorMap: Record<string, string> = {

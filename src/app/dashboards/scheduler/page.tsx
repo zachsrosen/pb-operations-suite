@@ -948,6 +948,7 @@ export default function SchedulerPage() {
     isFuture: boolean;
     isCurrent: boolean;
     scheduled: RevenueBucket;
+    tentative: RevenueBucket;
     completed: RevenueBucket;
     overdue: RevenueBucket;
   };
@@ -956,17 +957,19 @@ export default function SchedulerPage() {
     isPast: boolean;
     isCurrent: boolean;
     scheduled: RevenueBucket;
+    tentative: RevenueBucket;
     completed: RevenueBucket;
     overdue: RevenueBucket;
   };
 
   const computeRevenueBuckets = useCallback((events: typeof filteredScheduledEvents) => {
     const scheduledEvts = events.filter((e) =>
-      (e.eventType === "construction" || e.eventType === "rtb" || e.eventType === "blocked" || e.eventType === "scheduled") && !e.isOverdue
+      (e.eventType === "construction" || e.eventType === "rtb" || e.eventType === "blocked" || e.eventType === "scheduled") && !e.isOverdue && !e.isTentative
     );
+    const tentativeEvts = events.filter((e) => e.isTentative);
     const completedEvts = events.filter((e) => e.eventType === "construction-complete");
     const overdueEvts = events.filter((e) =>
-      (e.eventType === "construction" || e.eventType === "rtb" || e.eventType === "blocked" || e.eventType === "scheduled") && e.isOverdue
+      (e.eventType === "construction" || e.eventType === "rtb" || e.eventType === "blocked" || e.eventType === "scheduled") && e.isOverdue && !e.isTentative
     );
     const dedupeRevenue = (evts: typeof events) => {
       const ids = new Set(evts.map((e) => e.id));
@@ -975,7 +978,7 @@ export default function SchedulerPage() {
         revenue: [...ids].reduce((sum, id) => sum + (evts.find((e) => e.id === id)?.amount || 0), 0),
       };
     };
-    return { scheduled: dedupeRevenue(scheduledEvts), completed: dedupeRevenue(completedEvts), overdue: dedupeRevenue(overdueEvts) };
+    return { scheduled: dedupeRevenue(scheduledEvts), tentative: dedupeRevenue(tentativeEvts), completed: dedupeRevenue(completedEvts), overdue: dedupeRevenue(overdueEvts) };
   }, []);
 
   const weeklyRevenueSummary = useMemo((): WeekData[] => {
@@ -2763,6 +2766,7 @@ export default function SchedulerPage() {
               const hasSched = week.scheduled.count > 0;
               const hasComp = week.completed.count > 0;
               const hasOverdue = week.overdue.count > 0;
+              const hasAny = hasSched || hasComp || hasOverdue || week.tentative.count > 0;
               // Only show overdue for past + current week (not future)
               const showOverdueRow = !week.isFuture;
               return (
@@ -2774,56 +2778,59 @@ export default function SchedulerPage() {
                       : "bg-background border border-t-border/50 hover:border-t-border"
                   }`}
                 >
-                  <div className={`text-[0.6rem] font-semibold mb-1 ${week.isCurrent ? "text-orange-400" : "text-muted"}`}>
+                  <div className={`text-[0.6rem] font-semibold ${hasAny ? "mb-1" : ""} ${week.isCurrent ? "text-orange-400" : "text-muted"}`}>
                     {week.isCurrent ? "▸ " : ""}{week.weekLabel}
                   </div>
 
-                  {/* Scheduled — hidden for past weeks */}
-                  {!week.isPast && (
+                  {/* Scheduled — hidden for past weeks, only if data present */}
+                  {!week.isPast && hasSched && (
                     <div className="flex items-center justify-between mb-0.5">
                       <div className="flex items-center gap-1">
                         <div className="w-1.5 h-1.5 rounded-sm bg-blue-500" />
-                        <span className="text-[0.55rem] text-muted">Sched</span>
+                        <span className="text-[0.55rem] text-muted">Scheduled</span>
                       </div>
-                      {hasSched ? (
-                        <span className="text-[0.6rem] font-mono font-semibold text-blue-400">
-                          {week.scheduled.count} · ${formatRevenueCompact(week.scheduled.revenue)}
-                        </span>
-                      ) : (
-                        <span className="text-[0.55rem] text-muted/50">—</span>
-                      )}
+                      <span className="text-[0.6rem] font-mono font-semibold text-blue-400">
+                        {week.scheduled.count} · ${formatRevenueCompact(week.scheduled.revenue)}
+                      </span>
                     </div>
                   )}
 
-                  {/* Completed */}
-                  <div className="flex items-center justify-between mb-0.5">
-                    <div className="flex items-center gap-1">
-                      <div className="w-1.5 h-1.5 rounded-sm bg-emerald-500" />
-                      <span className="text-[0.55rem] text-muted">Complete</span>
+                  {/* Tentative — only show if data present */}
+                  {week.tentative.count > 0 && (
+                    <div className="flex items-center justify-between mb-0.5">
+                      <div className="flex items-center gap-1">
+                        <div className="w-1.5 h-1.5 rounded-sm bg-amber-500" />
+                        <span className="text-[0.55rem] text-muted">Tentative</span>
+                      </div>
+                      <span className="text-[0.6rem] font-mono font-semibold text-amber-400">
+                        {week.tentative.count} · ${formatRevenueCompact(week.tentative.revenue)}
+                      </span>
                     </div>
-                    {hasComp ? (
+                  )}
+
+                  {/* Completed — only show if data present */}
+                  {hasComp && (
+                    <div className="flex items-center justify-between mb-0.5">
+                      <div className="flex items-center gap-1">
+                        <div className="w-1.5 h-1.5 rounded-sm bg-emerald-500" />
+                        <span className="text-[0.55rem] text-muted">Complete</span>
+                      </div>
                       <span className="text-[0.6rem] font-mono font-semibold text-emerald-400">
                         {week.completed.count} · ${formatRevenueCompact(week.completed.revenue)}
                       </span>
-                    ) : (
-                      <span className="text-[0.55rem] text-muted/50">—</span>
-                    )}
-                  </div>
+                    </div>
+                  )}
 
-                  {/* Overdue — only for past + current week */}
-                  {showOverdueRow && (
+                  {/* Overdue — only for past + current week, only if data present */}
+                  {showOverdueRow && hasOverdue && (
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1">
                         <div className="w-1.5 h-1.5 rounded-sm bg-red-500" />
                         <span className="text-[0.55rem] text-muted">Overdue</span>
                       </div>
-                      {hasOverdue ? (
-                        <span className="text-[0.6rem] font-mono font-semibold text-red-400">
-                          {week.overdue.count} · ${formatRevenueCompact(week.overdue.revenue)}
-                        </span>
-                      ) : (
-                        <span className="text-[0.55rem] text-muted/50">—</span>
-                      )}
+                      <span className="text-[0.6rem] font-mono font-semibold text-red-400">
+                        {week.overdue.count} · ${formatRevenueCompact(week.overdue.revenue)}
+                      </span>
                     </div>
                   )}
                 </div>
@@ -2834,6 +2841,7 @@ export default function SchedulerPage() {
           {/* Weekly Totals */}
           <div className="p-3 border-t border-t-border bg-surface-2">
             <div className="text-[0.55rem] font-semibold text-muted uppercase tracking-wide mb-1.5">Totals</div>
+            {weeklyRevenueSummary.some(w => w.scheduled.count > 0) && (
             <div className="flex items-center justify-between mb-1">
               <div className="flex items-center gap-1">
                 <div className="w-2 h-2 rounded-sm bg-blue-500" />
@@ -2843,6 +2851,19 @@ export default function SchedulerPage() {
                 ${formatRevenueCompact(weeklyRevenueSummary.reduce((s, w) => s + w.scheduled.revenue, 0))}
               </span>
             </div>
+            )}
+            {weeklyRevenueSummary.some(w => w.tentative.count > 0) && (
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-1">
+                <div className="w-2 h-2 rounded-sm bg-amber-500" />
+                <span className="text-[0.6rem] text-foreground/80">Tentative</span>
+              </div>
+              <span className="text-[0.65rem] font-mono font-bold text-amber-400">
+                ${formatRevenueCompact(weeklyRevenueSummary.reduce((s, w) => s + w.tentative.revenue, 0))}
+              </span>
+            </div>
+            )}
+            {weeklyRevenueSummary.some(w => w.completed.count > 0) && (
             <div className="flex items-center justify-between mb-1">
               <div className="flex items-center gap-1">
                 <div className="w-2 h-2 rounded-sm bg-emerald-500" />
@@ -2852,6 +2873,8 @@ export default function SchedulerPage() {
                 ${formatRevenueCompact(weeklyRevenueSummary.reduce((s, w) => s + w.completed.revenue, 0))}
               </span>
             </div>
+            )}
+            {weeklyRevenueSummary.some(w => w.overdue.count > 0) && (
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1">
                 <div className="w-2 h-2 rounded-sm bg-red-500" />
@@ -2861,6 +2884,7 @@ export default function SchedulerPage() {
                 ${formatRevenueCompact(weeklyRevenueSummary.reduce((s, w) => s + w.overdue.revenue, 0))}
               </span>
             </div>
+            )}
           </div>
           </>
           )}
@@ -2873,6 +2897,7 @@ export default function SchedulerPage() {
               const hasSched = month.scheduled.count > 0;
               const hasComp = month.completed.count > 0;
               const hasOverdue = month.overdue.count > 0;
+              const hasAny = hasSched || hasComp || hasOverdue || month.tentative.count > 0;
               const showOverdueRow = month.isPast || month.isCurrent;
               return (
                 <div
@@ -2883,56 +2908,59 @@ export default function SchedulerPage() {
                       : "bg-background border border-t-border/50 hover:border-t-border"
                   }`}
                 >
-                  <div className={`text-[0.6rem] font-semibold mb-1 ${month.isCurrent ? "text-orange-400" : "text-muted"}`}>
+                  <div className={`text-[0.6rem] font-semibold ${hasAny ? "mb-1" : ""} ${month.isCurrent ? "text-orange-400" : "text-muted"}`}>
                     {month.isCurrent ? "▸ " : ""}{month.monthLabel}
                   </div>
 
-                  {/* Scheduled — hidden for past months */}
-                  {!month.isPast && (
+                  {/* Scheduled — hidden for past months, only if data present */}
+                  {!month.isPast && hasSched && (
                     <div className="flex items-center justify-between mb-0.5">
                       <div className="flex items-center gap-1">
                         <div className="w-1.5 h-1.5 rounded-sm bg-blue-500" />
-                        <span className="text-[0.55rem] text-muted">Sched</span>
+                        <span className="text-[0.55rem] text-muted">Scheduled</span>
                       </div>
-                      {hasSched ? (
-                        <span className="text-[0.6rem] font-mono font-semibold text-blue-400">
-                          {month.scheduled.count} · ${formatRevenueCompact(month.scheduled.revenue)}
-                        </span>
-                      ) : (
-                        <span className="text-[0.55rem] text-muted/50">—</span>
-                      )}
+                      <span className="text-[0.6rem] font-mono font-semibold text-blue-400">
+                        {month.scheduled.count} · ${formatRevenueCompact(month.scheduled.revenue)}
+                      </span>
                     </div>
                   )}
 
-                  {/* Completed */}
-                  <div className="flex items-center justify-between mb-0.5">
-                    <div className="flex items-center gap-1">
-                      <div className="w-1.5 h-1.5 rounded-sm bg-emerald-500" />
-                      <span className="text-[0.55rem] text-muted">Complete</span>
+                  {/* Tentative — only show if data present */}
+                  {month.tentative.count > 0 && (
+                    <div className="flex items-center justify-between mb-0.5">
+                      <div className="flex items-center gap-1">
+                        <div className="w-1.5 h-1.5 rounded-sm bg-amber-500" />
+                        <span className="text-[0.55rem] text-muted">Tentative</span>
+                      </div>
+                      <span className="text-[0.6rem] font-mono font-semibold text-amber-400">
+                        {month.tentative.count} · ${formatRevenueCompact(month.tentative.revenue)}
+                      </span>
                     </div>
-                    {hasComp ? (
+                  )}
+
+                  {/* Completed — only show if data present */}
+                  {hasComp && (
+                    <div className="flex items-center justify-between mb-0.5">
+                      <div className="flex items-center gap-1">
+                        <div className="w-1.5 h-1.5 rounded-sm bg-emerald-500" />
+                        <span className="text-[0.55rem] text-muted">Complete</span>
+                      </div>
                       <span className="text-[0.6rem] font-mono font-semibold text-emerald-400">
                         {month.completed.count} · ${formatRevenueCompact(month.completed.revenue)}
                       </span>
-                    ) : (
-                      <span className="text-[0.55rem] text-muted/50">—</span>
-                    )}
-                  </div>
+                    </div>
+                  )}
 
-                  {/* Overdue — only for past + current month */}
-                  {showOverdueRow && (
+                  {/* Overdue — only for past + current month, only if data present */}
+                  {showOverdueRow && hasOverdue && (
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1">
                         <div className="w-1.5 h-1.5 rounded-sm bg-red-500" />
                         <span className="text-[0.55rem] text-muted">Overdue</span>
                       </div>
-                      {hasOverdue ? (
-                        <span className="text-[0.6rem] font-mono font-semibold text-red-400">
-                          {month.overdue.count} · ${formatRevenueCompact(month.overdue.revenue)}
-                        </span>
-                      ) : (
-                        <span className="text-[0.55rem] text-muted/50">—</span>
-                      )}
+                      <span className="text-[0.6rem] font-mono font-semibold text-red-400">
+                        {month.overdue.count} · ${formatRevenueCompact(month.overdue.revenue)}
+                      </span>
                     </div>
                   )}
                 </div>
@@ -2943,6 +2971,7 @@ export default function SchedulerPage() {
           {/* Monthly Totals */}
           <div className="p-3 border-t border-t-border bg-surface-2">
             <div className="text-[0.55rem] font-semibold text-muted uppercase tracking-wide mb-1.5">Totals</div>
+            {monthlyRevenueSummary.some(m => m.scheduled.count > 0) && (
             <div className="flex items-center justify-between mb-1">
               <div className="flex items-center gap-1">
                 <div className="w-2 h-2 rounded-sm bg-blue-500" />
@@ -2952,6 +2981,19 @@ export default function SchedulerPage() {
                 ${formatRevenueCompact(monthlyRevenueSummary.reduce((s, m) => s + m.scheduled.revenue, 0))}
               </span>
             </div>
+            )}
+            {monthlyRevenueSummary.some(m => m.tentative.count > 0) && (
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-1">
+                <div className="w-2 h-2 rounded-sm bg-amber-500" />
+                <span className="text-[0.6rem] text-foreground/80">Tentative</span>
+              </div>
+              <span className="text-[0.65rem] font-mono font-bold text-amber-400">
+                ${formatRevenueCompact(monthlyRevenueSummary.reduce((s, m) => s + m.tentative.revenue, 0))}
+              </span>
+            </div>
+            )}
+            {monthlyRevenueSummary.some(m => m.completed.count > 0) && (
             <div className="flex items-center justify-between mb-1">
               <div className="flex items-center gap-1">
                 <div className="w-2 h-2 rounded-sm bg-emerald-500" />
@@ -2961,6 +3003,8 @@ export default function SchedulerPage() {
                 ${formatRevenueCompact(monthlyRevenueSummary.reduce((s, m) => s + m.completed.revenue, 0))}
               </span>
             </div>
+            )}
+            {monthlyRevenueSummary.some(m => m.overdue.count > 0) && (
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1">
                 <div className="w-2 h-2 rounded-sm bg-red-500" />
@@ -2970,6 +3014,7 @@ export default function SchedulerPage() {
                 ${formatRevenueCompact(monthlyRevenueSummary.reduce((s, m) => s + m.overdue.revenue, 0))}
               </span>
             </div>
+            )}
           </div>
           </>
           )}

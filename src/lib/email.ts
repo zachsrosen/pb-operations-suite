@@ -268,3 +268,140 @@ Please check your Zuper app for complete details.
     return { success: false, error: "Failed to send notification email" };
   }
 }
+
+/**
+ * Send bug report notification email to techops
+ */
+interface SendBugReportEmailParams {
+  reportId: string;
+  title: string;
+  description: string;
+  pageUrl?: string;
+  reporterName?: string;
+  reporterEmail: string;
+}
+
+export async function sendBugReportEmail(
+  params: SendBugReportEmailParams
+): Promise<{ success: boolean; error?: string }> {
+  const resend = getResendClient();
+  const recipient = "techops@photonbrothers.com";
+
+  const timestamp = new Date().toLocaleString("en-US", {
+    weekday: "short",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+  });
+
+  // If no Resend API key, log for development
+  if (!resend) {
+    console.log(`
+    ==========================================
+    BUG REPORT NOTIFICATION for ${recipient}
+    Title: ${params.title}
+    Description: ${params.description}
+    Page: ${params.pageUrl || "N/A"}
+    Reporter: ${params.reporterName || "Unknown"} (${params.reporterEmail})
+    Time: ${timestamp}
+    (Set RESEND_API_KEY to send real emails)
+    ==========================================
+    `);
+    return { success: true };
+  }
+
+  try {
+    const { error } = await resend.emails.send({
+      from: process.env.EMAIL_FROM || "PB Operations <noreply@photonbrothers.com>",
+      to: [recipient],
+      subject: `Bug Report: ${params.title}`,
+      html: `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          </head>
+          <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #0a0a0f; color: #ffffff; padding: 40px 20px; margin: 0;">
+            <div style="max-width: 500px; margin: 0 auto; background-color: #12121a; border: 1px solid #1e1e2e; border-radius: 12px; padding: 32px;">
+              <h1 style="font-size: 24px; font-weight: bold; background: linear-gradient(to right, #f97316, #fb923c); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin: 0 0 8px 0; text-align: center;">
+                PB Operations Suite
+              </h1>
+              <p style="color: #71717a; font-size: 14px; text-align: center; margin: 0 0 32px 0;">
+                New Bug Report Submitted
+              </p>
+
+              <div style="background-color: #0a0a0f; border: 1px solid #1e1e2e; border-radius: 8px; padding: 20px; margin-bottom: 24px;">
+                <div style="margin-bottom: 16px;">
+                  <span style="background: #dc2626; color: white; padding: 4px 12px; border-radius: 4px; font-size: 12px; font-weight: 600; text-transform: uppercase;">
+                    Bug Report
+                  </span>
+                </div>
+
+                <h2 style="font-size: 18px; color: #ffffff; margin: 0 0 16px 0;">
+                  ${params.title}
+                </h2>
+
+                <div style="background-color: #1e1e2e; border-radius: 6px; padding: 12px; margin-bottom: 16px;">
+                  <p style="color: #ffffff; font-size: 13px; margin: 0; white-space: pre-wrap;">${params.description}</p>
+                </div>
+
+                <table style="width: 100%; border-collapse: collapse;">
+                  ${params.pageUrl ? `
+                  <tr>
+                    <td style="color: #71717a; font-size: 13px; padding: 8px 0; border-bottom: 1px solid #1e1e2e;">Page</td>
+                    <td style="color: #60a5fa; font-size: 13px; padding: 8px 0; border-bottom: 1px solid #1e1e2e; text-align: right; word-break: break-all;">${params.pageUrl}</td>
+                  </tr>
+                  ` : ""}
+                  <tr>
+                    <td style="color: #71717a; font-size: 13px; padding: 8px 0; border-bottom: 1px solid #1e1e2e;">Reported by</td>
+                    <td style="color: #ffffff; font-size: 13px; padding: 8px 0; border-bottom: 1px solid #1e1e2e; text-align: right;">${params.reporterName || params.reporterEmail}</td>
+                  </tr>
+                  <tr>
+                    <td style="color: #71717a; font-size: 13px; padding: 8px 0; border-bottom: 1px solid #1e1e2e;">Email</td>
+                    <td style="color: #ffffff; font-size: 13px; padding: 8px 0; border-bottom: 1px solid #1e1e2e; text-align: right;">${params.reporterEmail}</td>
+                  </tr>
+                  <tr>
+                    <td style="color: #71717a; font-size: 13px; padding: 8px 0;">Time</td>
+                    <td style="color: #ffffff; font-size: 13px; padding: 8px 0; text-align: right;">${timestamp}</td>
+                  </tr>
+                </table>
+              </div>
+
+              <p style="color: #71717a; font-size: 12px; text-align: center; margin: 0;">
+                Ticket ID: ${params.reportId}
+              </p>
+            </div>
+
+            <p style="color: #3f3f46; font-size: 11px; text-align: center; margin-top: 24px;">
+              Photon Brothers Operations Suite
+            </p>
+          </body>
+        </html>
+      `,
+      text: `Bug Report: ${params.title}
+
+${params.description}
+
+Page: ${params.pageUrl || "N/A"}
+Reported by: ${params.reporterName || "Unknown"} (${params.reporterEmail})
+Time: ${timestamp}
+Ticket ID: ${params.reportId}
+
+- PB Operations`,
+    });
+
+    if (error) {
+      console.error("Failed to send bug report email:", error);
+      return { success: false, error: error.message };
+    }
+
+    return { success: true };
+  } catch (err) {
+    console.error("Failed to send bug report email:", err);
+    return { success: false, error: "Failed to send bug report email" };
+  }
+}

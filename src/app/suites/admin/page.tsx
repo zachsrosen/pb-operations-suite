@@ -25,6 +25,13 @@ const ADMIN_TOOLS = [
     tag: "SECURITY",
     tagColor: "bg-red-500/20 text-red-400 border-red-500/30",
   },
+  {
+    href: "/admin/tickets",
+    title: "Bug Reports",
+    description: "View and manage user-submitted bug reports and issues.",
+    tag: "TICKETS",
+    tagColor: "bg-orange-500/20 text-orange-400 border-orange-500/30",
+  },
 ];
 
 const TESTING_DASHBOARDS = [

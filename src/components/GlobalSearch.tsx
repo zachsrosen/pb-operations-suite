@@ -49,6 +49,7 @@ const DASHBOARD_LINKS = [
   { name: "Dashboard Guide", path: "/guide", description: "How to use each dashboard" },
   { name: "Product Updates", path: "/updates", description: "Changelog and release notes" },
   { name: "Product Roadmap", path: "/roadmap", description: "Vote on features and submit ideas" },
+  { name: "Bug Reports", path: "/admin/tickets", description: "View and manage user-submitted bug reports" },
 ];
 
 function useIsMac() {

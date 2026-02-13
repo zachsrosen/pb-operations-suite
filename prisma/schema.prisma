@@ -137,6 +137,10 @@ enum ActivityType {
   INVENTORY_ALLOCATED
   INVENTORY_TRANSFERRED
   INVENTORY_SKU_SYNCED
+
+  // Bug Reports
+  BUG_REPORTED
+  BUG_STATUS_CHANGED
 }
 
 model ActivityLog {
@@ -632,5 +636,44 @@ model StockTransaction {
   @@index([stockId])
   @@index([type])
   @@index([projectId])
+  @@index([createdAt])
+}
+
+// ===========================================
+// BUG REPORTS / TICKETS
+// ===========================================
+
+enum BugReportStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+model BugReport {
+  id            String          @id @default(cuid())
+
+  // Report content
+  title         String
+  description   String
+  pageUrl       String?         // Auto-captured URL where the bug was reported
+
+  // Reporter info
+  reporterEmail String
+  reporterName  String?
+
+  // Status tracking
+  status        BugReportStatus @default(OPEN)
+  adminNotes    String?         // Internal notes from admin/developer
+
+  // Notification
+  emailSent     Boolean         @default(false)
+
+  // Timestamps
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([status])
+  @@index([reporterEmail])
   @@index([createdAt])
 }
