@@ -130,6 +130,13 @@ enum ActivityType {
   ERROR_OCCURRED
   API_ERROR
   FEATURE_USED
+
+  // Inventory
+  INVENTORY_RECEIVED
+  INVENTORY_ADJUSTED
+  INVENTORY_ALLOCATED
+  INVENTORY_TRANSFERRED
+  INVENTORY_SKU_SYNCED
 }
 
 model ActivityLog {
@@ -549,4 +556,81 @@ model RoadmapItem {
   @@index([status])
   @@index([category])
   @@index([votes])
+}
+
+// ===========================================
+// INVENTORY MANAGEMENT
+// ===========================================
+
+enum EquipmentCategory {
+  MODULE
+  INVERTER
+  BATTERY
+  EV_CHARGER
+}
+
+enum TransactionType {
+  RECEIVED
+  ALLOCATED
+  ADJUSTED
+  TRANSFERRED
+  RETURNED
+}
+
+model EquipmentSku {
+  id          String            @id @default(cuid())
+  category    EquipmentCategory
+  brand       String
+  model       String
+  unitSpec    Float?            // Wattage for modules, kW for inverters, kWh for batteries
+  unitLabel   String?           // "W", "kW AC", "kWh"
+  isActive    Boolean           @default(true)
+
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  // Relations
+  stockLevels InventoryStock[]
+
+  @@unique([category, brand, model])
+  @@index([category])
+  @@index([isActive])
+}
+
+model InventoryStock {
+  id              String       @id @default(cuid())
+  skuId           String
+  sku             EquipmentSku @relation(fields: [skuId], references: [id], onDelete: Cascade)
+  location        String       // PB Location = warehouse
+  quantityOnHand  Int          @default(0)
+  minStockLevel   Int?         // Optional reorder threshold (future)
+  lastCountedAt   DateTime?
+
+  updatedAt       DateTime     @updatedAt
+
+  // Relations
+  transactions    StockTransaction[]
+
+  @@unique([skuId, location])
+  @@index([skuId])
+  @@index([location])
+}
+
+model StockTransaction {
+  id            String          @id @default(cuid())
+  stockId       String
+  stock         InventoryStock  @relation(fields: [stockId], references: [id], onDelete: Cascade)
+  type          TransactionType
+  quantity      Int             // Positive = added, negative = removed
+  reason        String?
+  projectId     String?         // HubSpot deal ID if project-related
+  projectName   String?
+  performedBy   String?         // User name or email
+
+  createdAt     DateTime        @default(now())
+
+  @@index([stockId])
+  @@index([type])
+  @@index([projectId])
+  @@index([createdAt])
 }
