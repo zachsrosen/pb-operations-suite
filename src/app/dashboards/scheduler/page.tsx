@@ -212,6 +212,16 @@ const ZUPER_INSPECTION_USERS: Record<string, { name: string; userUid: string; te
   ],
 };
 
+// Location → IANA timezone (matches availability route)
+const LOCATION_TIMEZONES: Record<string, string> = {
+  Westminster: "America/Denver",
+  Centennial: "America/Denver",
+  DTC: "America/Denver",
+  "Colorado Springs": "America/Denver",
+  "San Luis Obispo": "America/Los_Angeles",
+  Camarillo: "America/Los_Angeles",
+};
+
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
@@ -1126,9 +1136,12 @@ export default function SchedulerPage() {
               type: scheduleType,
               date: date,
               days: days,
+              startTime: scheduleType === "survey" ? "08:00" : scheduleType === "inspection" ? "08:00" : "08:00",
+              endTime: scheduleType === "survey" ? "09:00" : scheduleType === "inspection" ? "16:00" : "16:00",
               crew: assignee?.userUid,
               teamUid: assignee?.teamUid,
               assignedUser: assignee?.name,
+              timezone: LOCATION_TIMEZONES[project.location] || "America/Denver",
               notes: `Scheduled via Master Schedule${assignee ? ` — ${assignee.name}` : ""}`,
             },
             rescheduleOnly: true,
@@ -1187,10 +1200,13 @@ export default function SchedulerPage() {
               type: scheduleType,
               date,
               days,
+              startTime: scheduleType === "survey" ? "08:00" : scheduleType === "inspection" ? "08:00" : "08:00",
+              endTime: scheduleType === "survey" ? "09:00" : scheduleType === "inspection" ? "16:00" : "16:00",
               crew: assignee?.userUid || crew,
               userUid: assignee?.userUid,
               teamUid: assignee?.teamUid,
               assignedUser: assignee?.name || crew,
+              timezone: LOCATION_TIMEZONES[project.location] || "America/Denver",
               notes: `Tentatively scheduled via Master Scheduler${assignee ? ` — ${assignee.name}` : ""}`,
             },
           }),
