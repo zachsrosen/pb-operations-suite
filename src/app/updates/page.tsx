@@ -15,6 +15,19 @@ interface UpdateEntry {
 
 const UPDATES: UpdateEntry[] = [
   {
+    version: "1.31.0",
+    date: "2026-02-13",
+    title: "Master Schedule — Multi-Select Filters & Calendar Cleanup",
+    description: "Sidebar stage and type filters are now multi-select for flexible filtering. Removed RTB and Blocked from calendar stage filters since projects in those stages aren't scheduled on the calendar. Renamed 'Inspect' to 'Inspection' across all filter labels.",
+    changes: [
+      { type: "improvement", text: "Left sidebar stage filter tabs are now multi-select — toggle multiple stages at once" },
+      { type: "improvement", text: "Left sidebar job type filter (Solar, Battery, EV) is now multi-select" },
+      { type: "improvement", text: "Removed RTB and Blocked from calendar top-bar stage filters (not applicable to calendar events)" },
+      { type: "improvement", text: "Renamed 'Inspect' to 'Inspection' across all filter tabs and labels" },
+      { type: "improvement", text: "Added 'Clear' button to stage filter tabs when any stages are selected" },
+    ],
+  },
+  {
     version: "1.30.0",
     date: "2026-02-13",
     title: "Bug Report System & Admin UX Cleanup",

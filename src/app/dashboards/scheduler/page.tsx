@@ -248,7 +248,7 @@ const STAGE_ICONS: Record<string, string> = {
   rtb: "RTB",
   blocked: "Blocked",
   construction: "Construction",
-  inspection: "Inspect",
+  inspection: "Inspection",
 };
 
 const STAGE_BORDER_COLORS: Record<string, string> = {
@@ -475,9 +475,9 @@ export default function SchedulerPage() {
   const [showScheduled, setShowScheduled] = useState(true); // Toggle active/upcoming events on calendar
   const [showCompleted, setShowCompleted] = useState(true); // Toggle completed events on calendar
   const [showOverdue, setShowOverdue] = useState(true); // Toggle overdue events on calendar
-  const [selectedStage, setSelectedStage] = useState("all");
+  const [selectedStages, setSelectedStages] = useState<string[]>([]);
   const [searchText, setSearchText] = useState("");
-  const [typeFilter, setTypeFilter] = useState("");
+  const [typeFilters, setTypeFilters] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState("amount");
 
   /* ---- selection / scheduling ---- */
@@ -751,14 +751,14 @@ export default function SchedulerPage() {
     const filtered = projects.filter((p) => {
       if (selectedLocations.length > 0 && !selectedLocations.includes(p.location))
         return false;
-      if (selectedStage !== "all" && p.stage !== selectedStage) return false;
+      if (selectedStages.length > 0 && !selectedStages.includes(p.stage)) return false;
       if (
         searchText &&
         !p.name.toLowerCase().includes(searchText.toLowerCase()) &&
         !p.address.toLowerCase().includes(searchText.toLowerCase())
       )
         return false;
-      if (typeFilter && (!p.type || !p.type.includes(typeFilter))) return false;
+      if (typeFilters.length > 0 && (!p.type || !typeFilters.some(f => p.type.includes(f)))) return false;
       return true;
     });
     if (sortBy === "amount") filtered.sort((a, b) => b.amount - a.amount);
@@ -769,7 +769,7 @@ export default function SchedulerPage() {
     else if (sortBy === "days")
       filtered.sort((a, b) => (a.daysInstall || 1) - (b.daysInstall || 1));
     return filtered;
-  }, [projects, selectedLocations, selectedStage, searchText, typeFilter, sortBy]);
+  }, [projects, selectedLocations, selectedStages, searchText, typeFilters, sortBy]);
 
   const scheduledEvents = useMemo((): ScheduledEvent[] => {
     const events: ScheduledEvent[] = [];
@@ -915,8 +915,6 @@ export default function SchedulerPage() {
       survey: ["survey", "survey-complete"],
       construction: ["construction", "construction-complete"],
       inspection: ["inspection", "inspection-pass", "inspection-fail"],
-      rtb: ["rtb"],
-      blocked: ["blocked"],
       scheduled: ["scheduled"],
     };
     // Expand selected base types into all their variants
@@ -1657,12 +1655,11 @@ export default function SchedulerPage() {
 
   /* -- Stage tab helper -- */
   const stageTabs = [
-    { key: "all", label: "All" },
     { key: "survey", label: "Survey" },
     { key: "blocked", label: "Blocked" },
     { key: "rtb", label: "RTB" },
     { key: "construction", label: "Construction" },
-    { key: "inspection", label: "Inspect" },
+    { key: "inspection", label: "Inspection" },
   ];
 
   /* ================================================================ */
@@ -1736,11 +1733,15 @@ export default function SchedulerPage() {
                 <button
                   key={st.key}
                   onClick={() => {
-                    setSelectedStage(st.key);
+                    if (selectedStages.includes(st.key)) {
+                      setSelectedStages(selectedStages.filter(s => s !== st.key));
+                    } else {
+                      setSelectedStages([...selectedStages, st.key]);
+                    }
                     setSelectedProject(null);
                   }}
                   className={`px-2 py-1 text-[0.6rem] rounded border transition-colors ${
-                    selectedStage === st.key
+                    selectedStages.includes(st.key)
                       ? STAGE_TAB_ACTIVE[st.key]
                       : "bg-background border-t-border text-muted hover:border-muted"
                   }`}
@@ -1748,6 +1749,14 @@ export default function SchedulerPage() {
                   {st.label}
                 </button>
               ))}
+              {selectedStages.length > 0 && (
+                <button
+                  onClick={() => { setSelectedStages([]); setSelectedProject(null); }}
+                  className="px-1.5 py-0.5 text-[0.6rem] text-muted hover:text-foreground"
+                >
+                  Clear
+                </button>
+              )}
             </div>
             {/* Filters */}
             <div className="flex flex-col gap-1">
@@ -1763,9 +1772,15 @@ export default function SchedulerPage() {
                 {["Solar", "Battery", "EV"].map((type) => (
                   <button
                     key={type}
-                    onClick={() => setTypeFilter(typeFilter === type ? "" : type)}
+                    onClick={() => {
+                      if (typeFilters.includes(type)) {
+                        setTypeFilters(typeFilters.filter(t => t !== type));
+                      } else {
+                        setTypeFilters([...typeFilters, type]);
+                      }
+                    }}
                     className={`px-2 py-1 text-[0.6rem] rounded border transition-colors ${
-                      typeFilter === type
+                      typeFilters.includes(type)
                         ? "bg-orange-500 border-orange-400 text-black"
                         : "bg-background border-t-border text-muted hover:border-muted"
                     }`}
@@ -2124,10 +2139,8 @@ export default function SchedulerPage() {
             <span className="text-[0.6rem] text-muted uppercase tracking-wide ml-2 mr-0.5">Stage</span>
             {([
               { value: "survey", label: "Survey", active: "bg-cyan-500 border-cyan-400 text-black font-semibold" },
-              { value: "rtb", label: "RTB", active: "bg-emerald-500 border-emerald-400 text-black font-semibold" },
-              { value: "blocked", label: "Blocked", active: "bg-yellow-500 border-yellow-400 text-black font-semibold" },
               { value: "construction", label: "Construction", active: "bg-blue-500 border-blue-400 text-white font-semibold" },
-              { value: "inspection", label: "Inspect", active: "bg-violet-500 border-violet-400 text-white font-semibold" },
+              { value: "inspection", label: "Inspection", active: "bg-violet-500 border-violet-400 text-white font-semibold" },
             ] as const).map((st) => (
               <button
                 key={st.value}
