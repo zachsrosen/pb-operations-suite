@@ -7,42 +7,24 @@ import { RawProject } from "@/lib/types";
 import { MultiSelectFilter, ProjectSearchBar, FilterGroup } from "@/components/ui/MultiSelectFilter";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 
-// Display name mappings — remap HubSpot internal values to user-friendly labels
+// Display name mappings — HubSpot internal enum values → display labels
+// Source: HubSpot property definitions for interconnection_status and pto_status
 const DISPLAY_NAMES: Record<string, string> = {
-  'ic_submitted': 'IC Submitted',
-  'ic_approved': 'IC Approved',
-  'interconnection_submitted': 'Interconnection Submitted',
-  'interconnection_approved': 'Interconnection Approved',
-  'awaiting_nem': 'Awaiting NEM',
-  'nem_approved': 'NEM Approved',
-  'upgrade_required': 'Upgrade Required',
-  'pending_utility': 'Pending Utility',
-  'ready_to_submit': 'Ready to Submit',
-  'pto_submitted': 'PTO Submitted',
-  'pto_granted': 'PTO Granted',
-  'pto_pending': 'PTO Pending',
-  'awaiting_inspection': 'Awaiting Inspection',
-  'awaiting_meter': 'Awaiting Meter',
-  'meter_installed': 'Meter Installed',
-  'submitted': 'Submitted',
-  'pending': 'Pending',
-  'approved': 'Approved',
-  'granted': 'Granted',
-  'complete': 'Approved',
-  'completed': 'Approved',
-  'in_progress': 'In Progress',
-  'in_review': 'In Review',
-  'not_started': 'Not Started',
-  'on_hold': 'On Hold',
-  'not_applicable': 'Not Applicable',
-  'n_a': 'N/A',
-  'na': 'N/A',
+  // Interconnection status
+  'Signature Acquired By Customer': 'Ready To Submit',
+  'Rejected (New)': 'Rejected',
+  'Rejected': 'Rejected - Revisions Needed',
+  'In Design For Revisions': 'Design Revision In Progress',
+  'Revision Returned From Design': 'Revision Ready To Resubmit',
+  // PTO status
+  'Inspection Passed - Ready for Utility': 'Inspection Passed - Ready for PTO Submission',
+  'Resubmitted to Utility': 'PTO Revision Resubmitted',
+  'PTO': 'PTO Granted',
 };
 
 function getDisplayName(value: string | undefined): string {
   if (!value) return value || '';
-  const key = value.toLowerCase().replace(/[\s-]+/g, '_');
-  return DISPLAY_NAMES[key] || value;
+  return DISPLAY_NAMES[value] || value;
 }
 
 interface ExtendedProject extends RawProject {
@@ -61,7 +43,7 @@ const IC_STATUS_GROUPS: FilterGroup[] = [
       { value: "Ready for Interconnection", label: "Ready for Interconnection" },
       { value: "Submitted To Customer", label: "Submitted To Customer" },
       { value: "Ready To Submit - Pending Design", label: "Ready To Submit - Pending Design" },
-      { value: "Ready To Submit", label: "Signature Acquired" },
+      { value: "Signature Acquired By Customer", label: "Ready To Submit" },
       { value: "Submitted To Utility", label: "Submitted To Utility" },
     ]
   },
@@ -78,10 +60,10 @@ const IC_STATUS_GROUPS: FilterGroup[] = [
     name: "Rejections & Revisions",
     options: [
       { value: "Non-Design Related Rejection", label: "Non-Design Related Rejection" },
-      { value: "Rejected", label: "Rejected (New)" },
-      { value: "Rejected - Revisions Needed", label: "Rejected - Revisions Needed" },
-      { value: "Design Revision In Progress", label: "Design Revision In Progress" },
-      { value: "Revision Ready To Resubmit", label: "Revision Ready To Resubmit" },
+      { value: "Rejected (New)", label: "Rejected" },
+      { value: "Rejected", label: "Rejected - Revisions Needed" },
+      { value: "In Design For Revisions", label: "Design Revision In Progress" },
+      { value: "Revision Returned From Design", label: "Revision Ready To Resubmit" },
       { value: "Resubmitted To Utility", label: "Resubmitted To Utility" },
     ]
   },
@@ -89,8 +71,8 @@ const IC_STATUS_GROUPS: FilterGroup[] = [
     name: "Approved",
     options: [
       { value: "Application Approved", label: "Application Approved" },
-      { value: "Application Approved - Pending Signatures", label: "Approved - Pending Signatures" },
-      { value: "Conditional Application Approval", label: "Conditional Approval" },
+      { value: "Application Approved - Pending Signatures", label: "Application Approved - Pending Signatures" },
+      { value: "Conditional Application Approval", label: "Conditional Application Approval" },
     ]
   },
   {
@@ -117,14 +99,14 @@ const PTO_STATUS_GROUPS: FilterGroup[] = [
     name: "Pre-Submission",
     options: [
       { value: "PTO Waiting on Interconnection Approval", label: "Waiting on IC Approval" },
-      { value: "Inspection Passed - Ready for PTO Submission", label: "Ready for Utility" },
+      { value: "Inspection Passed - Ready for Utility", label: "Ready for PTO Submission" },
     ]
   },
   {
     name: "Submitted",
     options: [
       { value: "Inspection Submitted to Utility", label: "Submitted to Utility" },
-      { value: "PTO Revision Resubmitted", label: "Revision Resubmitted" },
+      { value: "Resubmitted to Utility", label: "PTO Revision Resubmitted" },
     ]
   },
   {
@@ -156,7 +138,7 @@ const PTO_STATUS_GROUPS: FilterGroup[] = [
   {
     name: "Completed",
     options: [
-      { value: "PTO Granted", label: "PTO Granted" },
+      { value: "PTO", label: "PTO Granted" },
       { value: "Conditional PTO - Pending Transformer Upgrade", label: "Conditional PTO" },
     ]
   },
@@ -501,7 +483,7 @@ export default function InterconnectionPage() {
   const getPtoStatusColor = (status: string | undefined): string => {
     if (!status) return 'bg-zinc-500/20 text-muted';
     const lower = status.toLowerCase();
-    if (lower.includes('granted') || lower.includes('approved')) return 'bg-emerald-500/20 text-emerald-400';
+    if (lower === 'pto' || lower.includes('granted') || lower.includes('approved')) return 'bg-emerald-500/20 text-emerald-400';
     if (lower.includes('submitted') || lower.includes('resubmitted')) return 'bg-cyan-500/20 text-cyan-400';
     if (lower.includes('rejected')) return 'bg-red-500/20 text-red-400';
     if (lower.includes('waiting') || lower.includes('pending')) return 'bg-orange-500/20 text-orange-400';
@@ -778,7 +760,7 @@ export default function InterconnectionPage() {
 
                     let ptoLabel = '-';
                     const rawPtoStatus = (project.ptoStatus || '').toLowerCase();
-                    if (project.ptoGrantedDate || ['granted', 'complete', 'approved', 'received'].some(s => rawPtoStatus.includes(s))) {
+                    if (project.ptoGrantedDate || rawPtoStatus === 'pto' || ['granted', 'complete', 'approved', 'received'].some(s => rawPtoStatus.includes(s))) {
                       ptoLabel = getDisplayName(project.ptoStatus) || 'Granted';
                     } else if (project.stage === 'Permission To Operate' || ['pending', 'submitted', 'in progress', 'in review'].some(s => rawPtoStatus.includes(s))) {
                       ptoLabel = getDisplayName(project.ptoStatus) || (project.ptoSubmitDate ? 'Submitted' : 'Pending');

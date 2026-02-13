@@ -7,38 +7,19 @@ import { RawProject } from "@/lib/types";
 import { MultiSelectFilter, ProjectSearchBar, FilterGroup } from "@/components/ui/MultiSelectFilter";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 
-// Display name mappings — remap HubSpot internal values to user-friendly labels
+// Display name mappings — HubSpot internal enum values → display labels
+// Source: HubSpot property definitions for permitting_status
 const DISPLAY_NAMES: Record<string, string> = {
-  'permit_submitted': 'Permit Submitted',
-  'permit_issued': 'Permit Issued',
-  'permit_approved': 'Permit Approved',
-  'in_review': 'In Review',
-  'pending_corrections': 'Pending Corrections',
-  'corrections_submitted': 'Corrections Submitted',
-  'ready_to_submit': 'Ready to Submit',
-  'not_started': 'Not Started',
-  'on_hold': 'On Hold',
-  'submitted': 'Submitted',
-  'pending': 'Pending',
-  'approved': 'Approved',
-  'issued': 'Permit Issued',
-  'complete': 'Permit Issued',
-  'completed': 'Permit Issued',
-  'in_progress': 'In Progress',
-  'passed': 'Passed',
-  'failed': 'Failed',
-  'scheduled': 'Scheduled',
-  'not_applicable': 'Not Applicable',
-  'n_a': 'N/A',
-  'na': 'N/A',
-  'revision_ready_to_resubmit': 'Revision Returned',
-  'utility_revision_ready_to_submit': 'Revision Returned',
+  'Complete': 'Permit Issued',
+  'Rejected': 'Permit Rejected - Needs Revision',
+  'In Design For Revision': 'Design Revision In Progress',
+  'Returned from Design': 'Revision Ready To Resubmit',
+  'Pending SolarApp': 'Ready to Submit for SolarApp',
 };
 
 function getDisplayName(value: string | undefined): string {
   if (!value) return value || '';
-  const key = value.toLowerCase().replace(/[\s-]+/g, '_');
-  return DISPLAY_NAMES[key] || value;
+  return DISPLAY_NAMES[value] || value;
 }
 
 interface ExtendedProject extends RawProject {
@@ -46,7 +27,7 @@ interface ExtendedProject extends RawProject {
   finalInspectionStatus?: string;
 }
 
-// Permitting Status Groups
+// Permitting Status Groups — values are HubSpot internal enum values, labels are display names
 const PERMITTING_STATUS_GROUPS: FilterGroup[] = [
   {
     name: "Pre-Submission",
@@ -69,9 +50,9 @@ const PERMITTING_STATUS_GROUPS: FilterGroup[] = [
     name: "Rejections & Revisions",
     options: [
       { value: "Non-Design Related Rejection", label: "Non-Design Related Rejection" },
-      { value: "Permit Rejected - Needs Revision", label: "Permit Rejected" },
-      { value: "Design Revision In Progress", label: "Design Revision In Progress" },
-      { value: "Revision Ready To Resubmit", label: "Revision Ready To Resubmit" },
+      { value: "Rejected", label: "Permit Rejected - Needs Revision" },
+      { value: "In Design For Revision", label: "Design Revision In Progress" },
+      { value: "Returned from Design", label: "Revision Ready To Resubmit" },
       { value: "As-Built Revision Needed", label: "As-Built Revision Needed" },
       { value: "As-Built Revision In Progress", label: "As-Built Revision In Progress" },
       { value: "As-Built Ready To Resubmit", label: "As-Built Ready To Resubmit" },
@@ -81,14 +62,14 @@ const PERMITTING_STATUS_GROUPS: FilterGroup[] = [
   {
     name: "SolarApp",
     options: [
-      { value: "Ready to Submit for SolarApp", label: "Ready for SolarApp" },
+      { value: "Pending SolarApp", label: "Ready to Submit for SolarApp" },
       { value: "Submit SolarApp to AHJ", label: "Submit SolarApp to AHJ" },
     ]
   },
   {
     name: "Completed",
     options: [
-      { value: "Permit Issued", label: "Permit Issued" },
+      { value: "Complete", label: "Permit Issued" },
     ]
   },
   {
