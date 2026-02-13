@@ -335,10 +335,429 @@ function ReceiveAdjustTab(props: {
   transactions: Transaction[];
   onTransactionCreated: () => Promise<void>;
 }) {
-  void props;
+  const { addToast } = useToast();
+
+  /* ---- Form state ---- */
+  const [skuId, setSkuId] = useState("");
+  const [skuFilter, setSkuFilter] = useState("");
+  const [location, setLocation] = useState("");
+  const [quantity, setQuantity] = useState(1);
+  const [txType, setTxType] = useState<"RECEIVED" | "ADJUSTED" | "RETURNED" | "ALLOCATED">("RECEIVED");
+  const [reason, setReason] = useState("");
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [projectName, setProjectName] = useState<string | null>(null);
+  const [projectSearch, setProjectSearch] = useState("");
+  const [projectResults, setProjectResults] = useState<{ id: string; name: string; projectNumber?: string }[]>([]);
+  const [showProjectDropdown, setShowProjectDropdown] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  const PB_LOCATIONS = ["Westminster", "Centennial", "Colorado Springs", "San Luis Obispo", "Camarillo"];
+
+  /* ---- SKU options grouped by category ---- */
+  const skusByCategory = useMemo(() => {
+    const groups: Record<string, EquipmentSku[]> = {};
+    const filtered = props.skus.filter((s) => {
+      if (!skuFilter) return true;
+      const term = skuFilter.toLowerCase();
+      return (
+        s.brand.toLowerCase().includes(term) ||
+        s.model.toLowerCase().includes(term) ||
+        (s.unitSpec !== null && String(s.unitSpec).includes(term)) ||
+        s.category.toLowerCase().includes(term)
+      );
+    });
+    for (const sku of filtered) {
+      if (!groups[sku.category]) groups[sku.category] = [];
+      groups[sku.category].push(sku);
+    }
+    return groups;
+  }, [props.skus, skuFilter]);
+
+  /* ---- Debounced project search ---- */
+  useEffect(() => {
+    if (txType !== "ALLOCATED" || !projectSearch.trim()) {
+      setProjectResults([]);
+      setShowProjectDropdown(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `/api/projects?search=${encodeURIComponent(projectSearch)}&limit=10&fields=id,name,projectNumber`
+        );
+        if (res.ok) {
+          const data = await res.json();
+          const results = (data.projects || []).map((p: { id: string; name: string; projectNumber?: string }) => ({
+            id: p.id,
+            name: p.name,
+            projectNumber: p.projectNumber,
+          }));
+          setProjectResults(results);
+          setShowProjectDropdown(results.length > 0);
+        }
+      } catch {
+        /* ignore search errors */
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [projectSearch, txType]);
+
+  /* ---- Clear project when type changes away from ALLOCATED ---- */
+  useEffect(() => {
+    if (txType !== "ALLOCATED") {
+      setProjectId(null);
+      setProjectName(null);
+      setProjectSearch("");
+    }
+  }, [txType]);
+
+  /* ---- Submit handler ---- */
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!skuId || !location || quantity < 1) return;
+
+    setSubmitting(true);
+    try {
+      const body: Record<string, unknown> = {
+        skuId,
+        location,
+        type: txType,
+        quantity,
+      };
+      if (reason.trim()) body.reason = reason.trim();
+      if (txType === "ALLOCATED" && projectId) {
+        body.projectId = projectId;
+        body.projectName = projectName;
+      }
+
+      const res = await fetch("/api/inventory/transactions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to record transaction");
+      }
+
+      addToast({
+        type: "success",
+        title: "Transaction Recorded",
+        message: `${txType} ${quantity} unit${quantity > 1 ? "s" : ""} at ${location}`,
+      });
+
+      // Reset form
+      setSkuId("");
+      setQuantity(1);
+      setReason("");
+      setProjectId(null);
+      setProjectName(null);
+      setProjectSearch("");
+
+      await props.onTransactionCreated();
+    } catch (err) {
+      addToast({
+        type: "error",
+        title: "Transaction Failed",
+        message: err instanceof Error ? err.message : "An error occurred",
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  /* ---- Relative time helper ---- */
+  const relativeTime = (dateStr: string) => {
+    const now = Date.now();
+    const then = new Date(dateStr).getTime();
+    const diff = now - then;
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return "just now";
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    const days = Math.floor(hrs / 24);
+    if (days < 7) return `${days}d ago`;
+    return new Date(dateStr).toLocaleDateString();
+  };
+
+  /* ---- Transaction type config ---- */
+  const TX_TYPES = [
+    { value: "RECEIVED" as const, label: "Received", color: "text-emerald-400", accent: "accent-green-500" },
+    { value: "ADJUSTED" as const, label: "Adjusted", color: "text-amber-400", accent: "accent-amber-500" },
+    { value: "RETURNED" as const, label: "Returned", color: "text-blue-400", accent: "accent-blue-500" },
+    { value: "ALLOCATED" as const, label: "Allocated", color: "text-orange-400", accent: "accent-orange-500" },
+  ];
+
+  const TX_BADGE_COLORS: Record<string, string> = {
+    RECEIVED: "bg-emerald-500/15 text-emerald-400",
+    ADJUSTED: "bg-amber-500/15 text-amber-400",
+    RETURNED: "bg-blue-500/15 text-blue-400",
+    ALLOCATED: "bg-orange-500/15 text-orange-400",
+    TRANSFERRED: "bg-purple-500/15 text-purple-400",
+  };
+
   return (
-    <div className="text-muted text-sm text-center py-8">
-      Receive &amp; Adjust — building...
+    <div className="space-y-6">
+      {/* ---- Quick Entry Form ---- */}
+      <div className="bg-surface/50 border border-t-border rounded-xl p-6">
+        <h3 className="text-sm font-semibold text-foreground mb-4">Record Stock Change</h3>
+
+        <form onSubmit={handleSubmit}>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* SKU Selector */}
+            <div className="flex flex-col">
+              <label className="text-xs font-medium text-muted mb-1">SKU</label>
+              <input
+                type="text"
+                placeholder="Filter SKUs..."
+                value={skuFilter}
+                onChange={(e) => setSkuFilter(e.target.value)}
+                className="bg-surface-2 border border-t-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-cyan-500/50 mb-1"
+              />
+              <select
+                value={skuId}
+                onChange={(e) => setSkuId(e.target.value)}
+                required
+                className="bg-surface-2 border border-t-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
+              >
+                <option value="">Select SKU...</option>
+                {CATEGORY_ORDER.map((cat) => {
+                  const items = skusByCategory[cat];
+                  if (!items || items.length === 0) return null;
+                  return (
+                    <optgroup key={cat} label={CATEGORY_LABELS[cat] || cat}>
+                      {items.map((sku) => (
+                        <option key={sku.id} value={sku.id}>
+                          {sku.brand} — {sku.model}
+                          {sku.unitSpec !== null ? ` (${sku.unitSpec} ${sku.unitLabel || ""})` : ""}
+                        </option>
+                      ))}
+                    </optgroup>
+                  );
+                })}
+              </select>
+            </div>
+
+            {/* Location Selector */}
+            <div className="flex flex-col">
+              <label className="text-xs font-medium text-muted mb-1">Location</label>
+              <select
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                required
+                className="bg-surface-2 border border-t-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
+              >
+                <option value="">Select Location...</option>
+                {PB_LOCATIONS.map((loc) => (
+                  <option key={loc} value={loc}>{loc}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Quantity */}
+            <div className="flex flex-col">
+              <label className="text-xs font-medium text-muted mb-1">Quantity</label>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+                  className="w-8 h-8 flex items-center justify-center bg-surface-2 border border-t-border rounded-lg text-foreground hover:bg-surface-elevated transition-colors text-sm font-medium"
+                >
+                  -
+                </button>
+                <input
+                  type="number"
+                  min={1}
+                  value={quantity}
+                  onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                  className="bg-surface-2 border border-t-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-cyan-500/50 w-20 text-center"
+                />
+                <button
+                  type="button"
+                  onClick={() => setQuantity((q) => q + 1)}
+                  className="w-8 h-8 flex items-center justify-center bg-surface-2 border border-t-border rounded-lg text-foreground hover:bg-surface-elevated transition-colors text-sm font-medium"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+
+            {/* Transaction Type */}
+            <div className="flex flex-col">
+              <label className="text-xs font-medium text-muted mb-1">Type</label>
+              <div className="flex flex-wrap gap-3 mt-1">
+                {TX_TYPES.map((t) => (
+                  <label key={t.value} className="flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="txType"
+                      value={t.value}
+                      checked={txType === t.value}
+                      onChange={() => setTxType(t.value)}
+                      className={`${t.accent}`}
+                    />
+                    <span className={`text-xs font-medium ${t.color}`}>{t.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Project Search (when ALLOCATED) */}
+            {txType === "ALLOCATED" && (
+              <div className="flex flex-col relative">
+                <label className="text-xs font-medium text-muted mb-1">Project</label>
+                {projectName ? (
+                  <div className="flex items-center gap-2 bg-surface-2 border border-t-border rounded-lg px-3 py-2 text-sm">
+                    <span className="text-foreground truncate flex-1">{projectName}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setProjectId(null);
+                        setProjectName(null);
+                        setProjectSearch("");
+                      }}
+                      className="text-muted hover:text-red-400 text-xs transition-colors"
+                    >
+                      clear
+                    </button>
+                  </div>
+                ) : (
+                  <input
+                    type="text"
+                    placeholder="Search projects..."
+                    value={projectSearch}
+                    onChange={(e) => setProjectSearch(e.target.value)}
+                    onFocus={() => projectResults.length > 0 && setShowProjectDropdown(true)}
+                    onBlur={() => setTimeout(() => setShowProjectDropdown(false), 200)}
+                    className="bg-surface-2 border border-t-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
+                  />
+                )}
+                {showProjectDropdown && projectResults.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 z-10 mt-1 bg-surface-elevated border border-t-border rounded-lg shadow-card-lg overflow-hidden max-h-48 overflow-y-auto">
+                    {projectResults.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                          setProjectId(p.id);
+                          setProjectName(p.name);
+                          setProjectSearch("");
+                          setShowProjectDropdown(false);
+                        }}
+                        className="w-full text-left px-3 py-2 text-sm text-foreground hover:bg-surface-2 transition-colors border-b border-t-border last:border-b-0"
+                      >
+                        <span className="font-medium">{p.name}</span>
+                        {p.projectNumber && (
+                          <span className="text-muted ml-2 text-xs">#{p.projectNumber}</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Reason */}
+            <div className="flex flex-col">
+              <label className="text-xs font-medium text-muted mb-1">Reason (optional)</label>
+              <input
+                type="text"
+                placeholder="e.g. New shipment, cycle count adjustment..."
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                className="bg-surface-2 border border-t-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
+              />
+            </div>
+          </div>
+
+          {/* Submit */}
+          <button
+            type="submit"
+            disabled={submitting || !skuId || !location || quantity < 1}
+            className="mt-4 w-full px-4 py-2.5 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+          >
+            {submitting ? (
+              <>
+                <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+                Recording...
+              </>
+            ) : (
+              "Record Transaction"
+            )}
+          </button>
+        </form>
+      </div>
+
+      {/* ---- Recent Transactions ---- */}
+      <div className="bg-surface/50 border border-t-border rounded-xl overflow-hidden">
+        <div className="px-4 py-3 border-b border-t-border">
+          <h3 className="text-sm font-semibold text-foreground">Recent Transactions</h3>
+        </div>
+
+        {props.transactions.length === 0 ? (
+          <div className="text-muted text-sm text-center py-8">
+            No transactions recorded yet.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-surface-2/50 text-muted text-xs">
+                  <th className="text-left px-4 py-2 font-medium">Time</th>
+                  <th className="text-left px-4 py-2 font-medium">SKU</th>
+                  <th className="text-left px-4 py-2 font-medium">Location</th>
+                  <th className="text-left px-4 py-2 font-medium">Type</th>
+                  <th className="text-right px-4 py-2 font-medium">Qty</th>
+                  <th className="text-left px-4 py-2 font-medium">Note</th>
+                  <th className="text-left px-4 py-2 font-medium">By</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-t-border">
+                {props.transactions.map((tx) => (
+                  <tr key={tx.id} className="hover:bg-surface-2/30 transition-colors">
+                    <td className="px-4 py-2 text-muted text-xs whitespace-nowrap">
+                      {relativeTime(tx.createdAt)}
+                    </td>
+                    <td className="px-4 py-2 text-foreground text-xs whitespace-nowrap">
+                      {tx.stock.sku.brand} {tx.stock.sku.model}
+                    </td>
+                    <td className="px-4 py-2 text-muted text-xs whitespace-nowrap">
+                      {tx.stock.location}
+                    </td>
+                    <td className="px-4 py-2">
+                      <span
+                        className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
+                          TX_BADGE_COLORS[tx.type] || "bg-zinc-500/15 text-zinc-400"
+                        }`}
+                      >
+                        {tx.type}
+                      </span>
+                    </td>
+                    <td
+                      className={`px-4 py-2 text-right text-xs font-mono font-medium whitespace-nowrap ${
+                        tx.quantity >= 0 ? "text-emerald-400" : "text-red-400"
+                      }`}
+                    >
+                      {tx.quantity >= 0 ? `+${tx.quantity}` : `\u2212${Math.abs(tx.quantity)}`}
+                    </td>
+                    <td className="px-4 py-2 text-muted text-xs max-w-[200px] truncate">
+                      {tx.reason || (tx.projectName ? `Project: ${tx.projectName}` : "\u2014")}
+                    </td>
+                    <td className="px-4 py-2 text-muted text-xs whitespace-nowrap">
+                      {tx.performedBy}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
