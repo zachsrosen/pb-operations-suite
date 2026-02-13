@@ -2784,6 +2784,32 @@ export default function SchedulerPage() {
                   }
                   valueClass={STAGE_TEXT_COLORS[detailModal.stage]}
                 />
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-[0.7rem] text-muted w-20">Links</span>
+                  <div className="flex items-center gap-2">
+                    <a
+                      href={detailModal.hubspotUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[0.7rem] text-orange-400 hover:text-orange-300"
+                    >
+                      HubSpot
+                    </a>
+                    {detailModal.zuperJobUid && (
+                      <>
+                        <span className="text-muted/70">|</span>
+                        <a
+                          href={`${zuperWebBaseUrl}/jobs/${detailModal.zuperJobUid}/details`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[0.7rem] text-cyan-400 hover:text-cyan-300"
+                        >
+                          Zuper
+                        </a>
+                      </>
+                    )}
+                  </div>
+                </div>
               </ModalSection>
 
               {/* Jurisdiction (survey/inspection) */}

@@ -7,7 +7,7 @@ import { RawProject } from "@/lib/types";
 import { MultiSelectFilter, ProjectSearchBar, FilterGroup } from "@/components/ui/MultiSelectFilter";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 
-// Display name mappings
+// Display name mappings — remap HubSpot internal values to user-friendly labels
 const DISPLAY_NAMES: Record<string, string> = {
   'permit_submitted': 'Permit Submitted',
   'permit_issued': 'Permit Issued',
@@ -21,16 +21,18 @@ const DISPLAY_NAMES: Record<string, string> = {
   'submitted': 'Submitted',
   'pending': 'Pending',
   'approved': 'Approved',
-  'issued': 'Issued',
-  'complete': 'Complete',
-  'completed': 'Completed',
+  'issued': 'Permit Issued',
+  'complete': 'Permit Issued',
+  'completed': 'Permit Issued',
   'in_progress': 'In Progress',
   'passed': 'Passed',
   'failed': 'Failed',
   'scheduled': 'Scheduled',
   'not_applicable': 'Not Applicable',
   'n_a': 'N/A',
-  'na': 'N/A'
+  'na': 'N/A',
+  'revision_ready_to_resubmit': 'Revision Returned',
+  'utility_revision_ready_to_submit': 'Revision Returned',
 };
 
 function getDisplayName(value: string | undefined): string {
@@ -308,7 +310,7 @@ export default function PermittingPage() {
     if (uncategorized.length > 0) {
       filtered.push({
         name: "Other",
-        options: uncategorized.map(status => ({ value: status as string, label: status as string }))
+        options: uncategorized.map(status => ({ value: status as string, label: getDisplayName(status as string) }))
       });
     }
 
@@ -541,6 +543,7 @@ export default function PermittingPage() {
             <thead className="bg-surface">
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Project</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Deal Stage</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">AHJ</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Permit Status</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Permit Submitted</th>
@@ -551,7 +554,7 @@ export default function PermittingPage() {
             <tbody className="divide-y divide-t-border">
               {filteredProjects.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-muted">No projects found</td>
+                  <td colSpan={7} className="px-4 py-8 text-center text-muted">No projects found</td>
                 </tr>
               ) : (
                 filteredProjects
@@ -577,6 +580,9 @@ export default function PermittingPage() {
                           </a>
                           <div className="text-xs text-muted">{project.name.split('|')[1]?.trim() || ''}</div>
                           <div className="text-xs text-muted">{project.pbLocation}</div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="text-xs text-muted">{project.stage || '-'}</span>
                         </td>
                         <td className="px-4 py-3 text-sm text-foreground/80">{project.ahj || '-'}</td>
                         <td className="px-4 py-3">

@@ -7,7 +7,7 @@ import { RawProject } from "@/lib/types";
 import { MultiSelectFilter, ProjectSearchBar, FilterGroup } from "@/components/ui/MultiSelectFilter";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 
-// Display name mappings
+// Display name mappings — remap HubSpot internal values to user-friendly labels
 const DISPLAY_NAMES: Record<string, string> = {
   'ic_submitted': 'IC Submitted',
   'ic_approved': 'IC Approved',
@@ -28,15 +28,15 @@ const DISPLAY_NAMES: Record<string, string> = {
   'pending': 'Pending',
   'approved': 'Approved',
   'granted': 'Granted',
-  'complete': 'Complete',
-  'completed': 'Completed',
+  'complete': 'Approved',
+  'completed': 'Approved',
   'in_progress': 'In Progress',
   'in_review': 'In Review',
   'not_started': 'Not Started',
   'on_hold': 'On Hold',
   'not_applicable': 'Not Applicable',
   'n_a': 'N/A',
-  'na': 'N/A'
+  'na': 'N/A',
 };
 
 function getDisplayName(value: string | undefined): string {
@@ -410,7 +410,7 @@ export default function InterconnectionPage() {
     if (uncategorized.length > 0) {
       filtered.push({
         name: "Other",
-        options: uncategorized.map(status => ({ value: status as string, label: status as string }))
+        options: uncategorized.map(status => ({ value: status as string, label: getDisplayName(status as string) }))
       });
     }
 
@@ -429,7 +429,7 @@ export default function InterconnectionPage() {
     if (uncategorized.length > 0) {
       filtered.push({
         name: "Other",
-        options: uncategorized.map(status => ({ value: status as string, label: status as string }))
+        options: uncategorized.map(status => ({ value: status as string, label: getDisplayName(status as string) }))
       });
     }
 
@@ -744,6 +744,7 @@ export default function InterconnectionPage() {
             <thead className="bg-surface">
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Project</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Deal Stage</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Utility</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Interconnection</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">IC Submitted</th>
@@ -757,7 +758,7 @@ export default function InterconnectionPage() {
             <tbody className="divide-y divide-t-border">
               {filteredProjects.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center text-muted">No projects found</td>
+                  <td colSpan={10} className="px-4 py-8 text-center text-muted">No projects found</td>
                 </tr>
               ) : (
                 filteredProjects
@@ -793,6 +794,9 @@ export default function InterconnectionPage() {
                           </a>
                           <div className="text-xs text-muted">{project.name.split('|')[1]?.trim() || ''}</div>
                           <div className="text-xs text-muted">{project.pbLocation}</div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="text-xs text-muted">{project.stage || '-'}</span>
                         </td>
                         <td className="px-4 py-3 text-sm text-foreground/80">{project.utility || '-'}</td>
                         <td className="px-4 py-3">
