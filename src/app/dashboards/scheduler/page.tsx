@@ -701,7 +701,8 @@ export default function SchedulerPage() {
     const constructionProjects = fp.filter((p) => p.stage === "construction");
     const inspectionProjects = fp.filter((p) => p.stage === "inspection");
     const surveyProjects = fp.filter((p) => p.stage === "survey");
-    const scheduledProjects = fp.filter((p) => p.scheduleDate);
+    // Scheduled = has a schedule date but is NOT already completed
+    const scheduledProjects = fp.filter((p) => p.scheduleDate && !p.constructionCompleted && !p.inspectionCompleted);
     const unscheduledRtb = rtbProjects.filter((p) => !p.scheduleDate);
     return {
       survey: surveyProjects.length,
@@ -724,7 +725,7 @@ export default function SchedulerPage() {
     [filteredProjects]
   );
 
-  /* Weekly revenue summary — 6 weeks starting from the current week's Monday */
+  /* Weekly revenue sidebar — construction scheduled vs completed, week by week */
   const weeklyRevenueSummary = useMemo(() => {
     const today = new Date();
     const dayOfWeek = today.getDay();
@@ -733,52 +734,53 @@ export default function SchedulerPage() {
     thisMonday.setDate(today.getDate() + mondayOffset);
     thisMonday.setHours(0, 0, 0, 0);
 
-    const weeks: { weekStart: Date; weekLabel: string; construction: { count: number; revenue: number }; survey: { count: number; revenue: number }; inspection: { count: number; revenue: number }; total: { count: number; revenue: number } }[] = [];
+    type WeekData = {
+      weekStart: Date;
+      weekLabel: string;
+      scheduled: { count: number; revenue: number };
+      completed: { count: number; revenue: number };
+    };
+    const weeks: WeekData[] = [];
 
-    for (let w = 0; w < 6; w++) {
+    // 2 weeks back + current week + 5 weeks forward = 8 weeks
+    for (let w = -2; w < 6; w++) {
       const weekStart = new Date(thisMonday);
       weekStart.setDate(thisMonday.getDate() + w * 7);
       const weekEnd = new Date(weekStart);
       weekEnd.setDate(weekStart.getDate() + 5); // Mon-Fri
 
-      const label = `${weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
+      const label = weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
       const weekEvents = filteredScheduledEvents.filter((e) => {
         const d = new Date(e.date + "T12:00:00");
         return d >= weekStart && d < weekEnd;
       });
 
-      const constructionEvents = weekEvents.filter((e) =>
+      // Construction scheduled (active installs: construction, rtb, blocked, scheduled)
+      const scheduledEvents = weekEvents.filter((e) =>
         e.eventType === "construction" || e.eventType === "rtb" || e.eventType === "blocked" || e.eventType === "scheduled"
       );
-      const surveyEvents = weekEvents.filter((e) => e.eventType === "survey");
-      const inspectionEvents = weekEvents.filter((e) => e.eventType === "inspection");
-      // Count unique projects per category (avoid double-counting multi-day events)
-      const constructionIds = new Set(constructionEvents.map((e) => e.id));
-      const surveyIds = new Set(surveyEvents.map((e) => e.id));
-      const inspectionIds = new Set(inspectionEvents.map((e) => e.id));
-      const constructionRevenue = [...constructionIds].reduce((sum, id) => {
-        const ev = constructionEvents.find((e) => e.id === id);
+      // Construction completed
+      const completedEvents = weekEvents.filter((e) => e.eventType === "construction-complete");
+
+      // Dedupe by project ID
+      const schedIds = new Set(scheduledEvents.map((e) => e.id));
+      const compIds = new Set(completedEvents.map((e) => e.id));
+
+      const schedRevenue = [...schedIds].reduce((sum, id) => {
+        const ev = scheduledEvents.find((e) => e.id === id);
         return sum + (ev?.amount || 0);
       }, 0);
-      const surveyRevenue = [...surveyIds].reduce((sum, id) => {
-        const ev = surveyEvents.find((e) => e.id === id);
+      const compRevenue = [...compIds].reduce((sum, id) => {
+        const ev = completedEvents.find((e) => e.id === id);
         return sum + (ev?.amount || 0);
       }, 0);
-      const inspectionRevenue = [...inspectionIds].reduce((sum, id) => {
-        const ev = inspectionEvents.find((e) => e.id === id);
-        return sum + (ev?.amount || 0);
-      }, 0);
-      const totalRevenue = constructionRevenue + surveyRevenue + inspectionRevenue;
-      const totalCount = constructionIds.size + surveyIds.size + inspectionIds.size;
 
       weeks.push({
         weekStart,
         weekLabel: label,
-        construction: { count: constructionIds.size, revenue: constructionRevenue },
-        survey: { count: surveyIds.size, revenue: surveyRevenue },
-        inspection: { count: inspectionIds.size, revenue: inspectionRevenue },
-        total: { count: totalCount, revenue: totalRevenue },
+        scheduled: { count: schedIds.size, revenue: schedRevenue },
+        completed: { count: compIds.size, revenue: compRevenue },
       });
     }
     return weeks;
@@ -1278,8 +1280,8 @@ export default function SchedulerPage() {
 
   return (
     <div className="h-screen overflow-hidden bg-background text-foreground/90 font-sans max-[900px]:h-auto max-[900px]:min-h-screen max-[900px]:overflow-auto">
-      {/* 3-column grid layout */}
-      <div className="grid h-full max-[900px]:h-auto grid-cols-[360px_1fr] max-[1400px]:grid-cols-[320px_1fr] max-[900px]:grid-cols-[1fr]">
+      {/* 3-column grid layout: project queue | calendar | revenue sidebar */}
+      <div className="grid h-full max-[900px]:h-auto grid-cols-[360px_1fr_200px] max-[1400px]:grid-cols-[320px_1fr_180px] max-[1100px]:grid-cols-[300px_1fr] max-[900px]:grid-cols-[1fr]">
         {/* ============================================================ */}
         {/* LEFT SIDEBAR - Pipeline Queue                                */}
         {/* ============================================================ */}
@@ -1818,93 +1820,6 @@ export default function SchedulerPage() {
             </div>
           </div>
 
-          {/* Weekly Revenue Summary — collapsible table for ownership */}
-          <details className="bg-background border-b border-t-border">
-            <summary className="flex items-center gap-2 px-3 py-1.5 cursor-pointer text-[0.65rem] font-semibold text-muted uppercase tracking-wide hover:text-foreground transition-colors select-none">
-              <svg className="w-3 h-3 transition-transform [details[open]>&]:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-              Weekly Revenue Outlook (6 Weeks)
-            </summary>
-            <div className="px-3 pb-2 overflow-x-auto">
-              <table className="w-full text-[0.6rem] border-collapse">
-                <thead>
-                  <tr className="text-muted uppercase tracking-wider">
-                    <th className="text-left py-1 px-1.5 font-semibold">Week</th>
-                    <th className="text-right py-1 px-1.5 font-semibold">
-                      <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-blue-500 inline-block" /> Construction</span>
-                    </th>
-                    <th className="text-right py-1 px-1.5 font-semibold">
-                      <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-cyan-500 inline-block" /> Survey</span>
-                    </th>
-                    <th className="text-right py-1 px-1.5 font-semibold">
-                      <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-violet-500 inline-block" /> Inspection</span>
-                    </th>
-                    <th className="text-right py-1 px-1.5 font-semibold text-orange-400">Week Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {weeklyRevenueSummary.map((week, i) => {
-                    const isThisWeek = i === 0;
-                    return (
-                      <tr key={i} className={`border-t border-t-border/50 ${isThisWeek ? "bg-orange-500/5" : "hover:bg-surface-2"}`}>
-                        <td className={`py-1.5 px-1.5 font-medium ${isThisWeek ? "text-orange-400" : "text-foreground/80"}`}>
-                          {isThisWeek ? "▸ " : ""}{week.weekLabel}
-                        </td>
-                        <td className="py-1.5 px-1.5 text-right font-mono">
-                          {week.construction.count > 0 ? (
-                            <span className="text-blue-400">
-                              <span className="font-semibold">{week.construction.count}</span>
-                              <span className="text-muted mx-0.5">·</span>
-                              ${formatRevenueCompact(week.construction.revenue)}
-                            </span>
-                          ) : <span className="text-muted">—</span>}
-                        </td>
-                        <td className="py-1.5 px-1.5 text-right font-mono">
-                          {week.survey.count > 0 ? (
-                            <span className="text-cyan-400">
-                              <span className="font-semibold">{week.survey.count}</span>
-                              <span className="text-muted mx-0.5">·</span>
-                              ${formatRevenueCompact(week.survey.revenue)}
-                            </span>
-                          ) : <span className="text-muted">—</span>}
-                        </td>
-                        <td className="py-1.5 px-1.5 text-right font-mono">
-                          {week.inspection.count > 0 ? (
-                            <span className="text-violet-400">
-                              <span className="font-semibold">{week.inspection.count}</span>
-                              <span className="text-muted mx-0.5">·</span>
-                              ${formatRevenueCompact(week.inspection.revenue)}
-                            </span>
-                          ) : <span className="text-muted">—</span>}
-                        </td>
-                        <td className={`py-1.5 px-1.5 text-right font-mono font-semibold ${isThisWeek ? "text-orange-400" : "text-foreground/90"}`}>
-                          {week.total.count > 0 ? (
-                            <><span>{week.total.count}</span> <span className="text-muted mx-0.5">·</span> ${formatRevenueCompact(week.total.revenue)}</>
-                          ) : <span className="text-muted">—</span>}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {/* 6-week totals row */}
-                  <tr className="border-t-2 border-orange-500/30 bg-surface-2">
-                    <td className="py-1.5 px-1.5 font-bold text-foreground/90">6-Week Total</td>
-                    <td className="py-1.5 px-1.5 text-right font-mono font-bold text-blue-400">
-                      {weeklyRevenueSummary.reduce((s, w) => s + w.construction.count, 0)} · ${formatRevenueCompact(weeklyRevenueSummary.reduce((s, w) => s + w.construction.revenue, 0))}
-                    </td>
-                    <td className="py-1.5 px-1.5 text-right font-mono font-bold text-cyan-400">
-                      {weeklyRevenueSummary.reduce((s, w) => s + w.survey.count, 0)} · ${formatRevenueCompact(weeklyRevenueSummary.reduce((s, w) => s + w.survey.revenue, 0))}
-                    </td>
-                    <td className="py-1.5 px-1.5 text-right font-mono font-bold text-violet-400">
-                      {weeklyRevenueSummary.reduce((s, w) => s + w.inspection.count, 0)} · ${formatRevenueCompact(weeklyRevenueSummary.reduce((s, w) => s + w.inspection.revenue, 0))}
-                    </td>
-                    <td className="py-1.5 px-1.5 text-right font-mono font-bold text-orange-400">
-                      {weeklyRevenueSummary.reduce((s, w) => s + w.total.count, 0)} · ${formatRevenueCompact(weeklyRevenueSummary.reduce((s, w) => s + w.total.revenue, 0))}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </details>
-
           {/* Calendar container */}
           <div className="flex-1 p-3 overflow-y-auto">
             {/* Instruction banner */}
@@ -2015,7 +1930,7 @@ export default function SchedulerPage() {
 
                             // Color mapping by event type (distinct for each type)
                             const eventColorClass =
-                              isFailedType ? "bg-red-800/70 text-red-200 ring-1 ring-red-500 opacity-70" :
+                              isFailedType ? "bg-amber-900/70 text-amber-200 ring-1 ring-amber-500 opacity-70 line-through" :
                               isCompletedType ? "bg-green-900/60 text-green-300 opacity-50" :
                               ev.isOverdue ? "ring-1 ring-red-500 bg-red-900/70 text-red-200 animate-pulse" :
                               ev.eventType === "rtb" ? "bg-emerald-500 text-black" :
@@ -2203,7 +2118,7 @@ export default function SchedulerPage() {
                                 const isActiveType = !isCompletedType && !isFailedType;
 
                                 const eventColorClass =
-                                  isFailedType ? "bg-red-800/70 text-red-200 ring-1 ring-red-500 opacity-70" :
+                                  isFailedType ? "bg-amber-900/70 text-amber-200 ring-1 ring-amber-500 opacity-70 line-through" :
                                   isCompletedType ? "bg-green-900/60 text-green-300 opacity-50" :
                                   ev.isOverdue ? "ring-1 ring-red-500 bg-red-900/70 text-red-200" :
                                   ev.eventType === "rtb" ? "bg-emerald-500 text-black" :
@@ -2356,7 +2271,7 @@ export default function SchedulerPage() {
                                 const isActiveType = !isCompletedType && !isFailedType;
 
                                 const eventColorClass =
-                                  isFailedType ? "bg-red-800/70 text-red-200 ring-1 ring-red-500 opacity-70" :
+                                  isFailedType ? "bg-amber-900/70 text-amber-200 ring-1 ring-amber-500 opacity-70 line-through" :
                                   isCompletedType ? "bg-green-900/60 text-green-300 opacity-50" :
                                   e.isOverdue ? "ring-1 ring-red-500 bg-red-900/70 text-red-200" :
                                   e.eventType === "construction" ? "bg-blue-500 text-white" :
@@ -2403,7 +2318,92 @@ export default function SchedulerPage() {
           </div>
         </main>
 
-        {/* Right panel removed — Optimize & Conflicts moved to testing dashboard */}
+        {/* ============================================================ */}
+        {/* RIGHT SIDEBAR - Weekly Revenue                                */}
+        {/* ============================================================ */}
+        <aside className="bg-surface border-l border-t-border flex flex-col overflow-y-auto max-[1100px]:hidden">
+          <div className="p-3 border-b border-t-border">
+            <h2 className="text-[0.7rem] font-bold text-foreground/90 uppercase tracking-wide">
+              Weekly Revenue
+            </h2>
+            <div className="text-[0.55rem] text-muted mt-0.5">Construction Scheduled vs Complete</div>
+          </div>
+
+          <div className="flex-1 p-2 space-y-0.5">
+            {weeklyRevenueSummary.map((week, i) => {
+              const isThisWeek = i === 2; // index 2 = current week (2 past weeks before it)
+              const hasSched = week.scheduled.count > 0;
+              const hasComp = week.completed.count > 0;
+              return (
+                <div
+                  key={i}
+                  className={`rounded-lg p-2 transition-colors ${
+                    isThisWeek
+                      ? "bg-orange-500/10 border border-orange-500/30"
+                      : "bg-background border border-t-border/50 hover:border-t-border"
+                  }`}
+                >
+                  <div className={`text-[0.6rem] font-semibold mb-1 ${isThisWeek ? "text-orange-400" : "text-muted"}`}>
+                    {isThisWeek ? "▸ " : ""}{week.weekLabel}
+                  </div>
+
+                  {/* Scheduled */}
+                  <div className="flex items-center justify-between mb-0.5">
+                    <div className="flex items-center gap-1">
+                      <div className="w-1.5 h-1.5 rounded-sm bg-blue-500" />
+                      <span className="text-[0.55rem] text-muted">Sched</span>
+                    </div>
+                    {hasSched ? (
+                      <span className="text-[0.6rem] font-mono font-semibold text-blue-400">
+                        {week.scheduled.count} · ${formatRevenueCompact(week.scheduled.revenue)}
+                      </span>
+                    ) : (
+                      <span className="text-[0.55rem] text-muted/50">—</span>
+                    )}
+                  </div>
+
+                  {/* Completed */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1">
+                      <div className="w-1.5 h-1.5 rounded-sm bg-emerald-500" />
+                      <span className="text-[0.55rem] text-muted">Done</span>
+                    </div>
+                    {hasComp ? (
+                      <span className="text-[0.6rem] font-mono font-semibold text-emerald-400">
+                        {week.completed.count} · ${formatRevenueCompact(week.completed.revenue)}
+                      </span>
+                    ) : (
+                      <span className="text-[0.55rem] text-muted/50">—</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Totals */}
+          <div className="p-3 border-t border-t-border bg-surface-2">
+            <div className="text-[0.55rem] font-semibold text-muted uppercase tracking-wide mb-1.5">8-Week Totals</div>
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-1">
+                <div className="w-2 h-2 rounded-sm bg-blue-500" />
+                <span className="text-[0.6rem] text-foreground/80">Scheduled</span>
+              </div>
+              <span className="text-[0.65rem] font-mono font-bold text-blue-400">
+                ${formatRevenueCompact(weeklyRevenueSummary.reduce((s, w) => s + w.scheduled.revenue, 0))}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1">
+                <div className="w-2 h-2 rounded-sm bg-emerald-500" />
+                <span className="text-[0.6rem] text-foreground/80">Completed</span>
+              </div>
+              <span className="text-[0.65rem] font-mono font-bold text-emerald-400">
+                ${formatRevenueCompact(weeklyRevenueSummary.reduce((s, w) => s + w.completed.revenue, 0))}
+              </span>
+            </div>
+          </div>
+        </aside>
       </div>
 
       {/* ============================================================ */}
