@@ -728,17 +728,24 @@ export default function DesignEngineeringPage() {
         </div>
       </div>
 
-      {/* DA Approved by Month */}
-      {!loading && stats.designApproved.length > 0 && (
+      {/* Design Completions by Month */}
+      {!loading && (stats.designApproved.length > 0 || filteredProjects.some(p => p.designCompletionDate)) && (
         <div className="mb-6">
           <MonthlyBarChart
-            title="Design Approvals by Month"
+            title="Design Completions by Month"
             data={aggregateMonthly(
               stats.designApproved.map(p => ({ date: p.designApprovalDate, amount: p.amount })),
               6,
             )}
+            secondaryData={aggregateMonthly(
+              filteredProjects
+                .filter(p => p.designCompletionDate)
+                .map(p => ({ date: p.designCompletionDate, amount: p.amount })),
+              6,
+            )}
             accentColor="blue"
             primaryLabel="DA Approved"
+            secondaryLabel="Design Complete"
           />
         </div>
       )}
