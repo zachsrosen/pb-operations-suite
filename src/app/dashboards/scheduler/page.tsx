@@ -419,6 +419,7 @@ export default function SchedulerPage() {
 
   /* ---- revenue sidebar ---- */
   const [revenueSidebarOpen, setRevenueSidebarOpen] = useState(true);
+  const [revenueSidebarTab, setRevenueSidebarTab] = useState<"weekly" | "monthly">("weekly");
 
   /* ---- toast ---- */
   const [toast, setToast] = useState<{ message: string; type: string } | null>(null);
@@ -720,7 +721,45 @@ export default function SchedulerPage() {
   );
 
   /* Weekly revenue sidebar — construction scheduled vs completed vs overdue, week by week */
-  const weeklyRevenueSummary = useMemo(() => {
+  type RevenueBucket = { count: number; revenue: number };
+  type WeekData = {
+    weekStart: Date;
+    weekLabel: string;
+    isPast: boolean;
+    isFuture: boolean;
+    isCurrent: boolean;
+    scheduled: RevenueBucket;
+    completed: RevenueBucket;
+    overdue: RevenueBucket;
+  };
+  type MonthData = {
+    monthLabel: string;
+    isPast: boolean;
+    isCurrent: boolean;
+    scheduled: RevenueBucket;
+    completed: RevenueBucket;
+    overdue: RevenueBucket;
+  };
+
+  const computeRevenueBuckets = useCallback((events: typeof filteredScheduledEvents) => {
+    const scheduledEvts = events.filter((e) =>
+      (e.eventType === "construction" || e.eventType === "rtb" || e.eventType === "blocked" || e.eventType === "scheduled") && !e.isOverdue
+    );
+    const completedEvts = events.filter((e) => e.eventType === "construction-complete");
+    const overdueEvts = events.filter((e) =>
+      (e.eventType === "construction" || e.eventType === "rtb" || e.eventType === "blocked" || e.eventType === "scheduled") && e.isOverdue
+    );
+    const dedupeRevenue = (evts: typeof events) => {
+      const ids = new Set(evts.map((e) => e.id));
+      return {
+        count: ids.size,
+        revenue: [...ids].reduce((sum, id) => sum + (evts.find((e) => e.id === id)?.amount || 0), 0),
+      };
+    };
+    return { scheduled: dedupeRevenue(scheduledEvts), completed: dedupeRevenue(completedEvts), overdue: dedupeRevenue(overdueEvts) };
+  }, []);
+
+  const weeklyRevenueSummary = useMemo((): WeekData[] => {
     const today = new Date();
     const dayOfWeek = today.getDay();
     const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
@@ -728,24 +767,18 @@ export default function SchedulerPage() {
     thisMonday.setDate(today.getDate() + mondayOffset);
     thisMonday.setHours(0, 0, 0, 0);
 
-    type WeekData = {
-      weekStart: Date;
-      weekLabel: string;
-      isPast: boolean;
-      scheduled: { count: number; revenue: number };
-      completed: { count: number; revenue: number };
-      overdue: { count: number; revenue: number };
-    };
     const weeks: WeekData[] = [];
 
-    // 2 weeks back + current week + 5 weeks forward = 8 weeks
-    for (let w = -2; w < 6; w++) {
+    // 6 weeks back + current week + 5 weeks forward = 12 weeks
+    for (let w = -6; w < 6; w++) {
       const weekStart = new Date(thisMonday);
       weekStart.setDate(thisMonday.getDate() + w * 7);
       const weekEnd = new Date(weekStart);
       weekEnd.setDate(weekStart.getDate() + 5); // Mon-Fri
 
       const isPast = w < 0;
+      const isFuture = w > 0;
+      const isCurrent = w === 0;
       const label = weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
       const weekEvents = filteredScheduledEvents.filter((e) => {
@@ -753,46 +786,37 @@ export default function SchedulerPage() {
         return d >= weekStart && d < weekEnd;
       });
 
-      // Construction scheduled (active installs: construction, rtb, blocked, scheduled)
-      const scheduledEvts = weekEvents.filter((e) =>
-        (e.eventType === "construction" || e.eventType === "rtb" || e.eventType === "blocked" || e.eventType === "scheduled") && !e.isOverdue
-      );
-      // Construction completed
-      const completedEvts = weekEvents.filter((e) => e.eventType === "construction-complete");
-      // Overdue construction events
-      const overdueEvts = weekEvents.filter((e) =>
-        (e.eventType === "construction" || e.eventType === "rtb" || e.eventType === "blocked" || e.eventType === "scheduled") && e.isOverdue
-      );
-
-      // Dedupe by project ID
-      const schedIds = new Set(scheduledEvts.map((e) => e.id));
-      const compIds = new Set(completedEvts.map((e) => e.id));
-      const overdueIds = new Set(overdueEvts.map((e) => e.id));
-
-      const schedRevenue = [...schedIds].reduce((sum, id) => {
-        const ev = scheduledEvts.find((e) => e.id === id);
-        return sum + (ev?.amount || 0);
-      }, 0);
-      const compRevenue = [...compIds].reduce((sum, id) => {
-        const ev = completedEvts.find((e) => e.id === id);
-        return sum + (ev?.amount || 0);
-      }, 0);
-      const overdueRevenue = [...overdueIds].reduce((sum, id) => {
-        const ev = overdueEvts.find((e) => e.id === id);
-        return sum + (ev?.amount || 0);
-      }, 0);
-
-      weeks.push({
-        weekStart,
-        weekLabel: label,
-        isPast,
-        scheduled: { count: schedIds.size, revenue: schedRevenue },
-        completed: { count: compIds.size, revenue: compRevenue },
-        overdue: { count: overdueIds.size, revenue: overdueRevenue },
-      });
+      const buckets = computeRevenueBuckets(weekEvents);
+      weeks.push({ weekStart, weekLabel: label, isPast, isFuture, isCurrent, ...buckets });
     }
     return weeks;
-  }, [filteredScheduledEvents]);
+  }, [filteredScheduledEvents, computeRevenueBuckets]);
+
+  const monthlyRevenueSummary = useMemo((): MonthData[] => {
+    const today = new Date();
+    const thisMonth = today.getMonth();
+    const thisYear = today.getFullYear();
+    const months: MonthData[] = [];
+
+    // 6 months back + current month + 3 months forward = 10 months
+    for (let m = -6; m <= 3; m++) {
+      const d = new Date(thisYear, thisMonth + m, 1);
+      const monthStart = new Date(d.getFullYear(), d.getMonth(), 1);
+      const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+      const isPast = m < 0;
+      const isCurrent = m === 0;
+      const label = monthStart.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+
+      const monthEvents = filteredScheduledEvents.filter((e) => {
+        const ed = new Date(e.date + "T12:00:00");
+        return ed >= monthStart && ed < monthEnd;
+      });
+
+      const buckets = computeRevenueBuckets(monthEvents);
+      months.push({ monthLabel: label, isPast, isCurrent, ...buckets });
+    }
+    return months;
+  }, [filteredScheduledEvents, computeRevenueBuckets]);
 
   /* ================================================================ */
   /*  Calendar logic                                                   */
@@ -1924,7 +1948,7 @@ export default function SchedulerPage() {
                             const eventColorClass =
                               isFailedType ? "bg-amber-900/70 text-amber-200 ring-1 ring-amber-500 opacity-70 line-through" :
                               isCompletedType ? completedColorClass :
-                              ev.isOverdue ? `ring-1 ring-red-500 bg-red-900/70 text-red-200 animate-pulse ${overdueStageColor}` :
+                              ev.isOverdue ? `ring-1 ring-red-500 bg-red-900/70 text-red-200 ${overdueStageColor}` :
                               ev.eventType === "rtb" ? "bg-emerald-500 text-black" :
                               ev.eventType === "blocked" ? "bg-yellow-500 text-black" :
                               ev.eventType === "construction" ? "bg-blue-500 text-white" :
@@ -2351,9 +2375,19 @@ export default function SchedulerPage() {
           <div className="p-2.5 border-b border-t-border flex items-center justify-between">
             <div>
               <h2 className="text-[0.65rem] font-bold text-foreground/90 uppercase tracking-wide">
-                Weekly Revenue
+                Revenue
               </h2>
-              <div className="text-[0.5rem] text-muted mt-0.5">Sched · Done · Overdue</div>
+              {/* Tab toggle */}
+              <div className="flex gap-1 mt-1">
+                <button
+                  onClick={() => setRevenueSidebarTab("weekly")}
+                  className={`text-[0.5rem] px-1.5 py-0.5 rounded transition-colors ${revenueSidebarTab === "weekly" ? "bg-orange-500/20 text-orange-400 font-semibold" : "text-muted hover:text-foreground"}`}
+                >Weekly</button>
+                <button
+                  onClick={() => setRevenueSidebarTab("monthly")}
+                  className={`text-[0.5rem] px-1.5 py-0.5 rounded transition-colors ${revenueSidebarTab === "monthly" ? "bg-orange-500/20 text-orange-400 font-semibold" : "text-muted hover:text-foreground"}`}
+                >Monthly</button>
+              </div>
             </div>
             <button
               onClick={() => setRevenueSidebarOpen(false)}
@@ -2364,26 +2398,30 @@ export default function SchedulerPage() {
             </button>
           </div>
 
+          {/* Weekly view */}
+          {revenueSidebarTab === "weekly" && (
+          <>
           <div className="flex-1 p-2 space-y-0.5">
             {weeklyRevenueSummary.map((week, i) => {
-              const isThisWeek = i === 2; // index 2 = current week (2 past weeks before it)
               const hasSched = week.scheduled.count > 0;
               const hasComp = week.completed.count > 0;
               const hasOverdue = week.overdue.count > 0;
+              // Only show overdue for past + current week (not future)
+              const showOverdueRow = !week.isFuture;
               return (
                 <div
                   key={i}
                   className={`rounded-lg p-2 transition-colors ${
-                    isThisWeek
+                    week.isCurrent
                       ? "bg-orange-500/10 border border-orange-500/30"
                       : "bg-background border border-t-border/50 hover:border-t-border"
                   }`}
                 >
-                  <div className={`text-[0.6rem] font-semibold mb-1 ${isThisWeek ? "text-orange-400" : "text-muted"}`}>
-                    {isThisWeek ? "▸ " : ""}{week.weekLabel}{week.isPast ? " (past)" : ""}
+                  <div className={`text-[0.6rem] font-semibold mb-1 ${week.isCurrent ? "text-orange-400" : "text-muted"}`}>
+                    {week.isCurrent ? "▸ " : ""}{week.weekLabel}
                   </div>
 
-                  {/* Scheduled — hidden for past weeks (those are now overdue) */}
+                  {/* Scheduled — hidden for past weeks */}
                   {!week.isPast && (
                     <div className="flex items-center justify-between mb-0.5">
                       <div className="flex items-center gap-1">
@@ -2415,28 +2453,30 @@ export default function SchedulerPage() {
                     )}
                   </div>
 
-                  {/* Overdue */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1">
-                      <div className="w-1.5 h-1.5 rounded-sm bg-red-500" />
-                      <span className="text-[0.55rem] text-muted">Overdue</span>
+                  {/* Overdue — only for past + current week */}
+                  {showOverdueRow && (
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1">
+                        <div className="w-1.5 h-1.5 rounded-sm bg-red-500" />
+                        <span className="text-[0.55rem] text-muted">Overdue</span>
+                      </div>
+                      {hasOverdue ? (
+                        <span className="text-[0.6rem] font-mono font-semibold text-red-400">
+                          {week.overdue.count} · ${formatRevenueCompact(week.overdue.revenue)}
+                        </span>
+                      ) : (
+                        <span className="text-[0.55rem] text-muted/50">—</span>
+                      )}
                     </div>
-                    {hasOverdue ? (
-                      <span className="text-[0.6rem] font-mono font-semibold text-red-400">
-                        {week.overdue.count} · ${formatRevenueCompact(week.overdue.revenue)}
-                      </span>
-                    ) : (
-                      <span className="text-[0.55rem] text-muted/50">—</span>
-                    )}
-                  </div>
+                  )}
                 </div>
               );
             })}
           </div>
 
-          {/* Totals */}
+          {/* Weekly Totals */}
           <div className="p-3 border-t border-t-border bg-surface-2">
-            <div className="text-[0.55rem] font-semibold text-muted uppercase tracking-wide mb-1.5">8-Week Totals</div>
+            <div className="text-[0.55rem] font-semibold text-muted uppercase tracking-wide mb-1.5">Totals</div>
             <div className="flex items-center justify-between mb-1">
               <div className="flex items-center gap-1">
                 <div className="w-2 h-2 rounded-sm bg-blue-500" />
@@ -2465,6 +2505,117 @@ export default function SchedulerPage() {
               </span>
             </div>
           </div>
+          </>
+          )}
+
+          {/* Monthly view */}
+          {revenueSidebarTab === "monthly" && (
+          <>
+          <div className="flex-1 p-2 space-y-0.5">
+            {monthlyRevenueSummary.map((month, i) => {
+              const hasSched = month.scheduled.count > 0;
+              const hasComp = month.completed.count > 0;
+              const hasOverdue = month.overdue.count > 0;
+              const showOverdueRow = month.isPast || month.isCurrent;
+              return (
+                <div
+                  key={i}
+                  className={`rounded-lg p-2 transition-colors ${
+                    month.isCurrent
+                      ? "bg-orange-500/10 border border-orange-500/30"
+                      : "bg-background border border-t-border/50 hover:border-t-border"
+                  }`}
+                >
+                  <div className={`text-[0.6rem] font-semibold mb-1 ${month.isCurrent ? "text-orange-400" : "text-muted"}`}>
+                    {month.isCurrent ? "▸ " : ""}{month.monthLabel}
+                  </div>
+
+                  {/* Scheduled — hidden for past months */}
+                  {!month.isPast && (
+                    <div className="flex items-center justify-between mb-0.5">
+                      <div className="flex items-center gap-1">
+                        <div className="w-1.5 h-1.5 rounded-sm bg-blue-500" />
+                        <span className="text-[0.55rem] text-muted">Sched</span>
+                      </div>
+                      {hasSched ? (
+                        <span className="text-[0.6rem] font-mono font-semibold text-blue-400">
+                          {month.scheduled.count} · ${formatRevenueCompact(month.scheduled.revenue)}
+                        </span>
+                      ) : (
+                        <span className="text-[0.55rem] text-muted/50">—</span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Completed */}
+                  <div className="flex items-center justify-between mb-0.5">
+                    <div className="flex items-center gap-1">
+                      <div className="w-1.5 h-1.5 rounded-sm bg-emerald-500" />
+                      <span className="text-[0.55rem] text-muted">Done</span>
+                    </div>
+                    {hasComp ? (
+                      <span className="text-[0.6rem] font-mono font-semibold text-emerald-400">
+                        {month.completed.count} · ${formatRevenueCompact(month.completed.revenue)}
+                      </span>
+                    ) : (
+                      <span className="text-[0.55rem] text-muted/50">—</span>
+                    )}
+                  </div>
+
+                  {/* Overdue — only for past + current month */}
+                  {showOverdueRow && (
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1">
+                        <div className="w-1.5 h-1.5 rounded-sm bg-red-500" />
+                        <span className="text-[0.55rem] text-muted">Overdue</span>
+                      </div>
+                      {hasOverdue ? (
+                        <span className="text-[0.6rem] font-mono font-semibold text-red-400">
+                          {month.overdue.count} · ${formatRevenueCompact(month.overdue.revenue)}
+                        </span>
+                      ) : (
+                        <span className="text-[0.55rem] text-muted/50">—</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Monthly Totals */}
+          <div className="p-3 border-t border-t-border bg-surface-2">
+            <div className="text-[0.55rem] font-semibold text-muted uppercase tracking-wide mb-1.5">Totals</div>
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-1">
+                <div className="w-2 h-2 rounded-sm bg-blue-500" />
+                <span className="text-[0.6rem] text-foreground/80">Scheduled</span>
+              </div>
+              <span className="text-[0.65rem] font-mono font-bold text-blue-400">
+                ${formatRevenueCompact(monthlyRevenueSummary.reduce((s, m) => s + m.scheduled.revenue, 0))}
+              </span>
+            </div>
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-1">
+                <div className="w-2 h-2 rounded-sm bg-emerald-500" />
+                <span className="text-[0.6rem] text-foreground/80">Completed</span>
+              </div>
+              <span className="text-[0.65rem] font-mono font-bold text-emerald-400">
+                ${formatRevenueCompact(monthlyRevenueSummary.reduce((s, m) => s + m.completed.revenue, 0))}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1">
+                <div className="w-2 h-2 rounded-sm bg-red-500" />
+                <span className="text-[0.6rem] text-foreground/80">Overdue</span>
+              </div>
+              <span className="text-[0.65rem] font-mono font-bold text-red-400">
+                ${formatRevenueCompact(monthlyRevenueSummary.reduce((s, m) => s + m.overdue.revenue, 0))}
+              </span>
+            </div>
+          </div>
+          </>
+          )}
         </aside>
         )}
         {/* Collapsed sidebar toggle — thin strip to reopen */}
