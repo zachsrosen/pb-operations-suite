@@ -207,15 +207,20 @@ export class ZuperClient {
 
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    timeoutMs = 30000
   ): Promise<ZuperApiResponse<T>> {
     if (!this.apiKey) {
       return { type: "error", error: "Zuper API key not configured" };
     }
 
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
       const response = await fetch(`${this.baseUrl}${endpoint}`, {
         ...options,
+        signal: controller.signal,
         headers: {
           "Content-Type": "application/json",
           "x-api-key": this.apiKey,
@@ -223,6 +228,7 @@ export class ZuperClient {
         },
       });
 
+      clearTimeout(timeoutId);
       const data = await response.json();
 
       if (!response.ok) {
@@ -234,6 +240,10 @@ export class ZuperClient {
 
       return { type: "success", data };
     } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        console.error(`Zuper API timeout after ${timeoutMs}ms:`, endpoint);
+        return { type: "error", error: `Request timeout after ${timeoutMs}ms` };
+      }
       console.error("Zuper API error:", error);
       return {
         type: "error",

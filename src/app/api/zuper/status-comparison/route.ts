@@ -299,13 +299,16 @@ function isWithinDateWindow(dateStr: string | null, fromDate?: string, toDate?: 
 }
 
 // Fetch all Zuper jobs for a category with pagination (filtered by date range)
+const MAX_PAGES = 50; // Safety cap: 50 pages × 100 jobs = 5,000 jobs max per category
+
 async function fetchAllZuperJobs(categoryUid: string, fromDate?: string, toDate?: string): Promise<ZuperJobSummary[]> {
   const allJobs: ZuperJobSummary[] = [];
   let page = 1;
   const limit = 100;
   let hasMore = true;
+  let totalRecords = Infinity;
 
-  while (hasMore) {
+  while (hasMore && page <= MAX_PAGES) {
     const result = await zuper.searchJobs({
       category: categoryUid,
       from_date: fromDate,
@@ -315,8 +318,12 @@ async function fetchAllZuperJobs(categoryUid: string, fromDate?: string, toDate?
     });
 
     if (result.type === "error" || !result.data?.jobs?.length) {
-      hasMore = false;
       break;
+    }
+
+    // Use total from API to know when to stop
+    if (result.data.total && result.data.total < Infinity) {
+      totalRecords = result.data.total;
     }
 
     for (const job of result.data.jobs) {
@@ -362,11 +369,17 @@ async function fetchAllZuperJobs(categoryUid: string, fromDate?: string, toDate?
       });
     }
 
-    if (result.data.jobs.length < limit) {
+    // Stop if we've fetched all records or got fewer than requested
+    const fetchedSoFar = page * limit;
+    if (result.data.jobs.length < limit || fetchedSoFar >= totalRecords) {
       hasMore = false;
     } else {
       page++;
     }
+  }
+
+  if (page > MAX_PAGES) {
+    console.warn(`[status-comparison] Hit max page cap (${MAX_PAGES}) for category ${categoryUid}, fetched ${allJobs.length} jobs`);
   }
 
   // Enforce local windowing by scheduled start date only.
@@ -581,23 +594,28 @@ export async function GET() {
           JOB_CATEGORY_UIDS.INSPECTION,
         ]);
 
-        let page = 1;
-        const limit = 100;
-        let hasMore = true;
+        let auditPage = 1;
+        const auditLimit = 100;
+        let auditHasMore = true;
+        let auditTotalRecords = Infinity;
         let mismatchesWithAdditionalOrService = 0;
         let mismatchesWithNonCore = 0;
         const dealFlags = new Map<string, { hasAdditionalOrService: boolean; hasNonCore: boolean }>();
 
-        while (hasMore) {
+        while (auditHasMore && auditPage <= MAX_PAGES) {
           const allJobsResult = await zuper.searchJobs({
             from_date: fromDate,
             to_date: toDate,
-            page,
-            limit,
+            page: auditPage,
+            limit: auditLimit,
           });
 
           if (allJobsResult.type === "error" || !allJobsResult.data?.jobs?.length) {
             break;
+          }
+
+          if (allJobsResult.data.total && allJobsResult.data.total < Infinity) {
+            auditTotalRecords = allJobsResult.data.total;
           }
 
           for (const job of allJobsResult.data.jobs) {
@@ -628,10 +646,11 @@ export async function GET() {
             dealFlags.set(dealId, current);
           }
 
-          if (allJobsResult.data.jobs.length < limit) {
-            hasMore = false;
+          const auditFetchedSoFar = auditPage * auditLimit;
+          if (allJobsResult.data.jobs.length < auditLimit || auditFetchedSoFar >= auditTotalRecords) {
+            auditHasMore = false;
           } else {
-            page += 1;
+            auditPage += 1;
           }
         }
 

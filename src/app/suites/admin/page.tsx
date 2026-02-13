@@ -29,6 +29,34 @@ const ADMIN_TOOLS = [
 
 const TESTING_DASHBOARDS = [
   {
+    href: "/dashboards/alerts",
+    title: "Alerts",
+    description: "Overdue installs, PE PTO risks, and capacity overload warnings.",
+    tag: "ALERTS",
+    tagColor: "bg-red-500/20 text-red-400 border-red-500/30",
+  },
+  {
+    href: "/dashboards/pe",
+    title: "PE Dashboard",
+    description: "Participate Energy milestone tracking and compliance monitoring.",
+    tag: "PE",
+    tagColor: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
+  },
+  {
+    href: "/dashboards/capacity",
+    title: "Capacity Planning",
+    description: "Crew capacity vs. forecasted installs across all locations.",
+    tag: "CAPACITY",
+    tagColor: "bg-indigo-500/20 text-indigo-400 border-indigo-500/30",
+  },
+  {
+    href: "/dashboards/pipeline",
+    title: "Pipeline Overview",
+    description: "Full project pipeline with filters, priority scoring, and milestone tracking.",
+    tag: "PIPELINE",
+    tagColor: "bg-green-500/20 text-green-400 border-green-500/30",
+  },
+  {
     href: "/dashboards/at-risk",
     title: "At-Risk Projects",
     description: "Projects with overdue milestones, stalled stages, and severity scoring.",
@@ -55,13 +83,6 @@ const TESTING_DASHBOARDS = [
     description: "Touch-optimized view for field teams and fast project lookup.",
     tag: "MOBILE",
     tagColor: "bg-blue-500/20 text-blue-400 border-blue-500/30",
-  },
-  {
-    href: "/dashboards/pe",
-    title: "PE Dashboard",
-    description: "Participate Energy milestone tracking and compliance monitoring.",
-    tag: "PE",
-    tagColor: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
   },
   {
     href: "/prototypes/solar-checkout",

@@ -242,13 +242,20 @@ export default function ZuperStatusComparisonPage() {
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await fetch("/api/zuper/status-comparison");
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 min timeout
+      const response = await fetch("/api/zuper/status-comparison", { signal: controller.signal });
+      clearTimeout(timeoutId);
       if (!response.ok) throw new Error(`Failed to fetch: ${response.statusText}`);
       const json: ApiResponse = await response.json();
       setData(json);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load data");
+      if (err instanceof Error && err.name === "AbortError") {
+        setError("Request timed out after 2 minutes. The Zuper API may be slow — try again later.");
+      } else {
+        setError(err instanceof Error ? err.message : "Failed to load data");
+      }
     } finally {
       setLoading(false);
     }

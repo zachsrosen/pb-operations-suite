@@ -5,39 +5,11 @@ import { getUserByEmail } from "@/lib/db";
 
 const LINKS = [
   {
-    href: "/dashboards/pipeline",
-    title: "Pipeline Overview",
-    description: "Full project pipeline with filters, priority scoring, and milestone tracking.",
-    tag: "PIPELINE",
-    tagColor: "bg-orange-500/20 text-orange-400 border-orange-500/30",
-  },
-  {
     href: "/dashboards/revenue",
     title: "Revenue",
     description: "Revenue by stage, backlog forecasts, location breakdowns, and milestone timelines.",
     tag: "REVENUE",
     tagColor: "bg-amber-500/20 text-amber-400 border-amber-500/30",
-  },
-  {
-    href: "/dashboards/capacity",
-    title: "Capacity Planning",
-    description: "Crew capacity vs. forecasted installs across all locations.",
-    tag: "CAPACITY",
-    tagColor: "bg-blue-500/20 text-blue-400 border-blue-500/30",
-  },
-  {
-    href: "/dashboards/pe",
-    title: "Participate Energy",
-    description: "PE milestone tracking, inspection and PTO deadlines, and export tools.",
-    tag: "PE",
-    tagColor: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
-  },
-  {
-    href: "/dashboards/alerts",
-    title: "Alerts",
-    description: "Overdue installs, PE PTO risks, and capacity overload warnings.",
-    tag: "ALERTS",
-    tagColor: "bg-red-500/20 text-red-400 border-red-500/30",
   },
   {
     href: "/dashboards/executive",
