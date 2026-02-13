@@ -1672,7 +1672,7 @@ export default function SchedulerPage() {
       <div className={`grid h-full max-[900px]:h-auto max-[900px]:grid-cols-[1fr] ${
         revenueSidebarOpen
           ? "grid-cols-[360px_1fr_200px] max-[1400px]:grid-cols-[320px_1fr_180px] max-[1100px]:grid-cols-[300px_1fr]"
-          : "grid-cols-[360px_1fr] max-[1400px]:grid-cols-[320px_1fr] max-[900px]:grid-cols-[1fr]"
+          : "grid-cols-[360px_1fr_32px] max-[1100px]:grid-cols-[320px_1fr] max-[900px]:grid-cols-[1fr]"
       }`}>
         {/* ============================================================ */}
         {/* LEFT SIDEBAR - Pipeline Queue                                */}
@@ -2108,7 +2108,7 @@ export default function SchedulerPage() {
               { value: "survey", label: "Survey", active: "bg-cyan-500 border-cyan-400 text-black font-semibold" },
               { value: "rtb", label: "RTB", active: "bg-emerald-500 border-emerald-400 text-black font-semibold" },
               { value: "blocked", label: "Blocked", active: "bg-yellow-500 border-yellow-400 text-black font-semibold" },
-              { value: "construction", label: "Build", active: "bg-blue-500 border-blue-400 text-white font-semibold" },
+              { value: "construction", label: "Construction", active: "bg-blue-500 border-blue-400 text-white font-semibold" },
               { value: "inspection", label: "Inspect", active: "bg-violet-500 border-violet-400 text-white font-semibold" },
             ] as const).map((st) => (
               <button
@@ -2968,7 +2968,7 @@ export default function SchedulerPage() {
         {!revenueSidebarOpen && (
           <button
             onClick={() => setRevenueSidebarOpen(true)}
-            className="bg-surface border-l border-t-border flex flex-col items-center justify-center gap-1.5 py-4 max-[900px]:hidden cursor-pointer hover:bg-surface-2 transition-colors group"
+            className="bg-surface border-l border-t-border flex flex-col items-center justify-center gap-1.5 py-4 max-[1100px]:hidden cursor-pointer hover:bg-surface-2 transition-colors group"
             style={{ width: "32px" }}
             title="Show construction revenue sidebar"
           >
