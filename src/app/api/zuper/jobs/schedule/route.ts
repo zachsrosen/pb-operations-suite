@@ -428,8 +428,11 @@ export async function PUT(request: NextRequest) {
         notes: schedule.notes,
       });
 
-      // Cache the Zuper job
+      // Cache the Zuper job with scheduled times so lookup returns them on next page load
       if (rescheduleResult.data) {
+        // Parse the UTC start/end datetimes back into Date objects for the cache
+        const parsedStart = startDateTime ? new Date(startDateTime.replace(' ', 'T') + 'Z') : undefined;
+        const parsedEnd = endDateTime ? new Date(endDateTime.replace(' ', 'T') + 'Z') : undefined;
         await cacheZuperJob({
           jobUid: existingJob.job_uid,
           jobTitle: rescheduleResult.data.job_title || `${schedule.type} - ${project.name}`,
@@ -437,6 +440,8 @@ export async function PUT(request: NextRequest) {
           jobStatus: "SCHEDULED",
           hubspotDealId: project.id,
           projectName: project.name,
+          scheduledStart: parsedStart,
+          scheduledEnd: parsedEnd,
         });
       }
 
@@ -523,8 +528,10 @@ export async function PUT(request: NextRequest) {
         notes: schedule.notes,
       });
 
-      // Cache the Zuper job
+      // Cache the Zuper job with scheduled times
       if (createResult.data && newJobUid) {
+        const parsedStart = startDateTime ? new Date(startDateTime.replace(' ', 'T') + 'Z') : undefined;
+        const parsedEnd = endDateTime ? new Date(endDateTime.replace(' ', 'T') + 'Z') : undefined;
         await cacheZuperJob({
           jobUid: newJobUid,
           jobTitle: createResult.data.job_title || `${schedule.type} - ${project.name}`,
@@ -532,6 +539,8 @@ export async function PUT(request: NextRequest) {
           jobStatus: "SCHEDULED",
           hubspotDealId: project.id,
           projectName: project.name,
+          scheduledStart: parsedStart,
+          scheduledEnd: parsedEnd,
         });
       }
 

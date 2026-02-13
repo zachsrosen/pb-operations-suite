@@ -85,6 +85,9 @@ interface SchedulerProject {
   isPE: boolean;
   zuperJobUid?: string;
   zuperJobStatus?: string;
+  zuperScheduledDays?: number;
+  zuperScheduledStart?: string; // ISO date from Zuper
+  zuperScheduledEnd?: string;   // ISO date from Zuper
 }
 
 interface CrewConfig {
@@ -481,8 +484,12 @@ export default function SchedulerPage() {
             for (const idx of checkOrder) {
               const zuperData = results[idx];
               if (zuperData?.jobs?.[project.id]) {
-                project.zuperJobUid = zuperData.jobs[project.id].jobUid;
-                project.zuperJobStatus = zuperData.jobs[project.id].status;
+                const zJob = zuperData.jobs[project.id];
+                project.zuperJobUid = zJob.jobUid;
+                project.zuperJobStatus = zJob.status;
+                if (zJob.scheduledDays) project.zuperScheduledDays = zJob.scheduledDays;
+                if (zJob.scheduledDate) project.zuperScheduledStart = zJob.scheduledDate;
+                if (zJob.scheduledEnd) project.zuperScheduledEnd = zJob.scheduledEnd;
                 break;
               }
             }
@@ -604,16 +611,21 @@ export default function SchedulerPage() {
       // event type so they render distinctly (no confusion between active vs done).
 
       // -- Construction --
-      if (p.constructionScheduleDate) {
-        const schedDate = new Date(p.constructionScheduleDate + "T12:00:00");
+      // Date priority: Zuper scheduled start > HubSpot constructionScheduleDate
+      // Days priority: Zuper scheduled duration > HubSpot daysForInstallers > expectedDaysForInstall > 2
+      const constructionDate = (p.zuperScheduledStart
+        ? p.zuperScheduledStart.split("T")[0]
+        : null) || p.constructionScheduleDate;
+      if (constructionDate) {
+        const schedDate = new Date(constructionDate + "T12:00:00");
         const done = !!p.constructionCompleted;
-        const days = p.daysInstall || 1;
+        const days = p.zuperScheduledDays || p.daysInstall || 1;
         const key = `${p.id}-construction`;
         if (!seenKeys.has(key)) {
           seenKeys.add(key);
           events.push({
             ...p,
-            date: p.constructionScheduleDate,
+            date: constructionDate,
             eventType: done ? "construction-complete" : "construction",
             days,
             isCompleted: done,
@@ -664,7 +676,7 @@ export default function SchedulerPage() {
       if (p.scheduleDate && (p.stage === "rtb" || p.stage === "blocked") && !seenKeys.has(`${p.id}-construction`)) {
         const schedDate = new Date(p.scheduleDate + "T12:00:00");
         const done = !!p.constructionCompleted;
-        const days = p.daysInstall || 1;
+        const days = p.zuperScheduledDays || p.daysInstall || 1;
         const key = `${p.id}-construction`;
         seenKeys.add(key);
         events.push({
@@ -950,10 +962,14 @@ export default function SchedulerPage() {
 
   const openScheduleModal = useCallback(
     (project: SchedulerProject, dateStr: string) => {
-      const adjustedDate = getNextWorkday(dateStr);
+      // If Zuper has a scheduled start date, prefer it over the clicked/passed-in date
+      const zuperStart = project.zuperScheduledStart
+        ? project.zuperScheduledStart.split("T")[0]
+        : null;
+      const adjustedDate = getNextWorkday(zuperStart || dateStr);
       const isSurveyOrInspection =
         project.stage === "survey" || project.stage === "inspection";
-      setInstallDaysInput(isSurveyOrInspection ? 0.25 : project.daysInstall || 2);
+      setInstallDaysInput(isSurveyOrInspection ? 0.25 : project.zuperScheduledDays || project.daysInstall || 2);
       const locationCrews = CREWS[project.location] || [];
       setCrewSelectInput(
         project.crew || locationCrews[0]?.name || ""
@@ -2817,12 +2833,29 @@ export default function SchedulerPage() {
 
               {/* Schedule Date & Inputs */}
               <ModalSection title="Schedule">
-                {scheduleModal.date !== getNextWorkday(scheduleModal.date) ? null : null}
-                <ModalRow
-                  label="Start Date"
-                  value={formatDate(scheduleModal.date)}
-                  valueClass="font-bold"
-                />
+                <div className="flex gap-2.5 flex-wrap items-center">
+                  <label className="text-[0.7rem] text-muted w-20">Start Date</label>
+                  <input
+                    type="date"
+                    value={scheduleModal.date}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val) setScheduleModal(prev => prev ? { ...prev, date: val } : prev);
+                    }}
+                    className="bg-background border border-t-border text-foreground/90 px-2 py-1.5 rounded font-mono text-[0.75rem] focus:outline-none focus:border-orange-500"
+                  />
+                </div>
+                {scheduleModal.project.zuperScheduledStart && (
+                  <div className="text-[0.6rem] text-cyan-400/80 mt-1">
+                    Zuper: {formatShortDate(scheduleModal.project.zuperScheduledStart.split("T")[0])}
+                    {scheduleModal.project.zuperScheduledEnd && (
+                      <> → {formatShortDate(scheduleModal.project.zuperScheduledEnd.split("T")[0])}</>
+                    )}
+                    {scheduleModal.project.zuperScheduledDays && (
+                      <> ({scheduleModal.project.zuperScheduledDays}d)</>
+                    )}
+                  </div>
+                )}
                 <div className="flex gap-2.5 mt-2 flex-wrap items-center">
                   <label className="text-[0.7rem] text-muted">Days:</label>
                   <input
@@ -3097,16 +3130,21 @@ export default function SchedulerPage() {
                     detailModal.stage === "survey" ||
                     detailModal.stage === "inspection";
                   const displayDays =
+                    detailModal.zuperScheduledDays ||
                     scheduleInfo?.days ||
                     detailModal.daysInstall ||
                     (isSurveyOrInspection ? 0.25 : 2);
+                  // Prefer Zuper start date if available
+                  const displayDate = detailModal.zuperScheduledStart
+                    ? detailModal.zuperScheduledStart.split("T")[0]
+                    : scheduleInfo?.startDate || null;
                   return (
                     <>
                       <ModalRow
                         label="Date"
                         value={
-                          scheduleInfo
-                            ? formatDate(scheduleInfo.startDate)
+                          displayDate
+                            ? formatDate(displayDate)
                             : "Not scheduled"
                         }
                         valueClass="text-blue-400 font-semibold"
@@ -3123,6 +3161,14 @@ export default function SchedulerPage() {
                           "Unassigned"
                         }
                       />
+                      {detailModal.zuperScheduledStart && (
+                        <div className="text-[0.6rem] text-cyan-400/70 mt-1">
+                          Zuper: {formatShortDate(detailModal.zuperScheduledStart.split("T")[0])}
+                          {detailModal.zuperScheduledEnd && (
+                            <> → {formatShortDate(detailModal.zuperScheduledEnd.split("T")[0])}</>
+                          )}
+                        </div>
+                      )}
                     </>
                   );
                 })()}

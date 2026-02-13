@@ -410,6 +410,8 @@ async function handleLookup(projectIds: string[], projectNames: string[], catego
       jobTitle: string;
       status: string;
       scheduledDate?: string;
+      scheduledEnd?: string;
+      scheduledDays?: number;
       category?: string;
       matchedBy?: string;
       assignedTo?: string;
@@ -450,11 +452,33 @@ async function handleLookup(projectIds: string[], projectNames: string[], catego
       );
 
       const assignedUser = getAssignedUserName(best.job);
+
+      // Compute scheduled days from Zuper start/end times
+      let scheduledDays: number | undefined;
+      if (best.job.scheduled_start_time && best.job.scheduled_end_time) {
+        const start = new Date(best.job.scheduled_start_time);
+        const end = new Date(best.job.scheduled_end_time);
+        const diffMs = end.getTime() - start.getTime();
+        const diffDays = diffMs / (1000 * 60 * 60 * 24);
+        // Round to nearest 0.25 (quarter day) — Zuper often stores full-day windows
+        // A 1-day job is typically 8am-5pm (same day) = ~0.375 days, round to 1
+        // A 3-day job spans 3 calendar days
+        if (diffDays > 0) {
+          // Count calendar days: if start and end are on different dates, count the span
+          const startDate = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+          const endDate = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+          const calendarDays = Math.round((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+          scheduledDays = Math.max(calendarDays, 1); // At least 1 day
+        }
+      }
+
       jobsMap[projectId] = {
         jobUid: best.job.job_uid!,
         jobTitle: best.job.job_title || "",
         status: getJobStatus(best.job) || "UNKNOWN",
         scheduledDate: best.job.scheduled_start_time,
+        scheduledEnd: best.job.scheduled_end_time,
+        scheduledDays,
         category: best.categoryName,
         matchedBy: best.matchMethod,
         ...(assignedUser && { assignedTo: assignedUser }),
