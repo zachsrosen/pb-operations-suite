@@ -1841,6 +1841,22 @@ export default function SchedulerPage() {
             <span>{filteredProjects.length} projects</span>
             <span>${queueRevenue}</span>
           </div>
+          {/* Scheduled vs Needs Scheduling breakdown for survey/inspection */}
+          {(() => {
+            const showBreakdown = selectedStages.length > 0 && selectedStages.every(s => s === "survey" || s === "inspection");
+            if (!showBreakdown && !(selectedStages.length === 0)) return null;
+            const surveyOrInspect = filteredProjects.filter(p => p.stage === "survey" || p.stage === "inspection");
+            if (surveyOrInspect.length === 0) return null;
+            const scheduled = surveyOrInspect.filter(p => !!manualSchedules[p.id] || !!p.scheduleDate).length;
+            const unscheduled = surveyOrInspect.length - scheduled;
+            if (scheduled === 0 && unscheduled === 0) return null;
+            return (
+              <div className="text-[0.6rem] text-muted px-3 py-1.5 border-b border-t-border bg-surface flex gap-3">
+                {unscheduled > 0 && <span className="text-amber-400">{unscheduled} needs scheduling</span>}
+                {scheduled > 0 && <span className="text-blue-400">{scheduled} scheduled</span>}
+              </div>
+            );
+          })()}
 
           {/* Queue list */}
           <div className="flex-1 overflow-y-auto p-2">
@@ -1863,7 +1879,21 @@ export default function SchedulerPage() {
             )}
             {!loading &&
               !error &&
-              filteredProjects.map((p) => {
+              (() => {
+                // Sort survey/inspection: unscheduled first for visibility
+                const sorted = [...filteredProjects].sort((a, b) => {
+                  const aIsSI = a.stage === "survey" || a.stage === "inspection";
+                  const bIsSI = b.stage === "survey" || b.stage === "inspection";
+                  if (!aIsSI || !bIsSI) return 0;
+                  const aSched = !!(manualSchedules[a.id] || a.scheduleDate);
+                  const bSched = !!(manualSchedules[b.id] || b.scheduleDate);
+                  if (aSched === bSched) return 0;
+                  return aSched ? 1 : -1; // unscheduled first
+                });
+                // Track sub-group headers already rendered
+                let lastGroupKey = "";
+                return sorted;
+              })().map((p, _idx, arr) => {
                 const customerName = getCustomerName(p.name);
                 const types = (p.type || "")
                   .split(";")
@@ -1873,21 +1903,38 @@ export default function SchedulerPage() {
                   manualSchedules[p.id]?.startDate || p.scheduleDate;
                 const isSurveyOrInspection =
                   p.stage === "survey" || p.stage === "inspection";
+                // Determine if we need a sub-group header for survey/inspection grouping
+                const siGroupKey = isSurveyOrInspection ? `${p.stage}-${isScheduled ? "sched" : "unsched"}` : "";
+                const prevProject = _idx > 0 ? arr[_idx - 1] : null;
+                const prevIsSI = prevProject ? (prevProject.stage === "survey" || prevProject.stage === "inspection") : false;
+                const prevScheduled = prevProject ? !!(manualSchedules[prevProject.id] || prevProject.scheduleDate) : false;
+                const prevGroupKey = prevIsSI ? `${prevProject!.stage}-${prevScheduled ? "sched" : "unsched"}` : "";
+                const showGroupHeader = isSurveyOrInspection && siGroupKey !== prevGroupKey;
 
                 return (
-                  <div
-                    key={p.id}
-                    draggable
-                    onDragStart={(e) => handleDragStart(e, p.id)}
-                    onDragEnd={handleDragEnd}
-                    onClick={() => handleSelectProject(p.id)}
-                    className={`bg-background border rounded-lg p-2.5 mb-1.5 cursor-grab transition-all hover:border-orange-500 hover:translate-x-0.5 border-l-[3px] ${
-                      STAGE_BORDER_COLORS[p.stage] || "border-l-zinc-600"
-                    } ${
-                      selectedProject?.id === p.id
-                        ? "border-orange-500 bg-orange-500/10 shadow-[0_0_0_1px] shadow-orange-500"
-                        : "border-t-border"
-                    }`}
+                  <React.Fragment key={p.id}>
+                    {showGroupHeader && (
+                      <div className="flex items-center gap-2 px-1 pt-2 pb-1">
+                        <div className={`text-[0.6rem] font-semibold uppercase tracking-wider ${
+                          isScheduled ? "text-blue-400" : "text-amber-400"
+                        }`}>
+                          {isScheduled ? "✓ Scheduled" : "⚠ Needs Scheduling"}
+                        </div>
+                        <div className="flex-1 border-t border-t-border" />
+                      </div>
+                    )}
+                    <div
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, p.id)}
+                      onDragEnd={handleDragEnd}
+                      onClick={() => handleSelectProject(p.id)}
+                      className={`bg-background border rounded-lg p-2.5 mb-1.5 cursor-grab transition-all hover:border-orange-500 hover:translate-x-0.5 border-l-[3px] ${
+                        STAGE_BORDER_COLORS[p.stage] || "border-l-zinc-600"
+                      } ${
+                        selectedProject?.id === p.id
+                          ? "border-orange-500 bg-orange-500/10 shadow-[0_0_0_1px] shadow-orange-500"
+                          : "border-t-border"
+                      }`}
                   >
                     <div className="flex justify-between items-start mb-0.5">
                       <div
@@ -1932,6 +1979,11 @@ export default function SchedulerPage() {
                       {isScheduled && (
                         <span className="text-[0.5rem] px-1 py-0.5 rounded bg-blue-500/30 text-blue-400 font-semibold">
                           {formatShortDate(schedDate)}
+                        </span>
+                      )}
+                      {!isScheduled && isSurveyOrInspection && (
+                        <span className="text-[0.5rem] px-1 py-0.5 rounded bg-amber-500/20 text-amber-400 font-semibold">
+                          Unsched
                         </span>
                       )}
                       {p.zuperJobUid && (
@@ -2075,7 +2127,8 @@ export default function SchedulerPage() {
                         )}
                       </>
                     )}
-                  </div>
+                    </div>
+                  </React.Fragment>
                 );
               })}
           </div>

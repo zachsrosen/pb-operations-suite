@@ -15,6 +15,18 @@ interface UpdateEntry {
 
 const UPDATES: UpdateEntry[] = [
   {
+    version: "1.32.0",
+    date: "2026-02-13",
+    title: "Master Schedule — Survey & Inspection Scheduling Visibility",
+    description: "Added clear visual distinction between scheduled and unscheduled projects within Survey and Inspection stages. Projects needing scheduling surface first with amber indicators and group headers.",
+    changes: [
+      { type: "feature", text: "Sub-group headers in project queue: 'Needs Scheduling' and 'Scheduled' dividers for survey/inspection stages" },
+      { type: "feature", text: "Amber 'Unsched' badge on survey/inspection project cards that lack a schedule date" },
+      { type: "improvement", text: "Unscheduled survey/inspection projects sort to top of queue for visibility" },
+      { type: "improvement", text: "Scheduled vs needs-scheduling count bar shown when viewing survey/inspection projects" },
+    ],
+  },
+  {
     version: "1.31.0",
     date: "2026-02-13",
     title: "Master Schedule — Multi-Select Filters & Calendar Cleanup",
