@@ -1700,8 +1700,23 @@ export default function SchedulerPage() {
                 <button
                   onClick={exportCSV}
                   className="px-2.5 py-1.5 text-[0.7rem] rounded-md bg-background border border-t-border text-foreground/80 hover:border-orange-500 hover:text-orange-400 transition-colors"
+                  title="Export CSV"
                 >
                   CSV
+                </button>
+                <button
+                  onClick={exportICal}
+                  className="px-2.5 py-1.5 text-[0.7rem] rounded-md bg-background border border-t-border text-foreground/80 hover:border-orange-500 hover:text-orange-400 transition-colors"
+                  title="Export iCal"
+                >
+                  iCal
+                </button>
+                <button
+                  onClick={copySchedule}
+                  className="px-2.5 py-1.5 text-[0.7rem] rounded-md bg-background border border-t-border text-foreground/80 hover:border-orange-500 hover:text-orange-400 transition-colors"
+                  title="Copy schedule to clipboard"
+                >
+                  Copy
                 </button>
               </div>
             </div>
@@ -2156,10 +2171,6 @@ export default function SchedulerPage() {
                   {t.label}
                 </button>
               ))}
-              <div className="h-4 w-px bg-t-border mx-0.5" />
-              <button onClick={exportCSV} className="px-1.5 py-1 text-[0.55rem] text-muted hover:text-foreground rounded border border-t-border hover:border-orange-500/50 transition-colors" title="Export CSV">CSV</button>
-              <button onClick={exportICal} className="px-1.5 py-1 text-[0.55rem] text-muted hover:text-foreground rounded border border-t-border hover:border-orange-500/50 transition-colors" title="Export iCal">iCal</button>
-              <button onClick={copySchedule} className="px-1.5 py-1 text-[0.55rem] text-muted hover:text-foreground rounded border border-t-border hover:border-orange-500/50 transition-colors" title="Copy">Copy</button>
             </div>
           </div>
 
