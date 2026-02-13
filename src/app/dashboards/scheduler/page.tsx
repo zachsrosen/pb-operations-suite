@@ -484,6 +484,22 @@ export default function SchedulerPage() {
   const [installDaysInput, setInstallDaysInput] = useState(2);
   const [crewSelectInput, setCrewSelectInput] = useState("");
 
+  /* ---- Availability time slots (for survey/inspection scheduling) ---- */
+  interface AvailSlot {
+    startTime: string;
+    endTime: string;
+    displayTime: string;
+    userName: string;
+    userUid?: string;
+    teamUid?: string;
+    timezone?: string;
+  }
+  const [availableSlots, setAvailableSlots] = useState<AvailSlot[]>([]);
+  const [selectedSlotIdx, setSelectedSlotIdx] = useState(0);
+  const [loadingSlots, setLoadingSlots] = useState(false);
+  // Cache the full availability response so changing surveyor doesn't re-fetch
+  const [availCache, setAvailCache] = useState<{ date: string; location: string; type: string; slots: Record<string, AvailSlot[]> } | null>(null);
+
   /* ---- Zuper integration ---- */
   const [zuperConfigured, setZuperConfigured] = useState(false);
   const [zuperWebBaseUrl, setZuperWebBaseUrl] = useState("https://us-west-1c.zuperpro.com");
@@ -611,6 +627,72 @@ export default function SchedulerPage() {
       });
     }
   }, [loading, projects.length, trackDashboardView]);
+
+  /* ---- Fetch availability slots when schedule modal opens for survey/inspection ---- */
+  useEffect(() => {
+    if (!scheduleModal) { setAvailableSlots([]); setAvailCache(null); return; }
+    const { project, date } = scheduleModal;
+    const isSurveyOrInsp = project.stage === "survey" || project.stage === "inspection";
+    if (!isSurveyOrInsp || !zuperConfigured) { setAvailableSlots([]); return; }
+
+    const schedType = project.stage === "survey" ? "survey" : "inspection";
+
+    // If we already have a cache for this date+location+type, just re-filter by selected user
+    if (availCache && availCache.date === date && availCache.location === project.location && availCache.type === schedType) {
+      const userSlots = availCache.slots[crewSelectInput] || [];
+      setAvailableSlots(userSlots);
+      setSelectedSlotIdx(0);
+      return;
+    }
+
+    // Fetch availability for this date
+    let cancelled = false;
+    setLoadingSlots(true);
+    (async () => {
+      try {
+        const params = new URLSearchParams({
+          from_date: date,
+          to_date: date,
+          type: schedType,
+          location: project.location,
+        });
+        const resp = await fetch(`/api/zuper/availability?${params}`);
+        if (cancelled) return;
+        if (!resp.ok) { setAvailableSlots([]); setLoadingSlots(false); return; }
+        const data = await resp.json();
+        const dayData = data.availabilityByDate?.[date];
+        if (!dayData?.availableSlots) { setAvailableSlots([]); setLoadingSlots(false); return; }
+
+        // Group all slots by user_name for easy switching
+        const grouped: Record<string, AvailSlot[]> = {};
+        for (const s of dayData.availableSlots) {
+          const name = s.user_name || "Unknown";
+          if (!grouped[name]) grouped[name] = [];
+          grouped[name].push({
+            startTime: s.start_time,
+            endTime: s.end_time,
+            displayTime: s.display_time || `${s.start_time}-${s.end_time}`,
+            userName: name,
+            userUid: s.user_uid,
+            teamUid: s.team_uid,
+            timezone: s.timezone,
+          });
+        }
+
+        if (cancelled) return;
+        setAvailCache({ date, location: project.location, type: schedType, slots: grouped });
+        const userSlots = grouped[crewSelectInput] || [];
+        setAvailableSlots(userSlots);
+        setSelectedSlotIdx(0);
+      } catch {
+        if (!cancelled) setAvailableSlots([]);
+      } finally {
+        if (!cancelled) setLoadingSlots(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scheduleModal?.date, scheduleModal?.project?.id, scheduleModal?.project?.stage, crewSelectInput, zuperConfigured]);
 
   /* ================================================================ */
   /*  Toast                                                            */
@@ -1066,8 +1148,14 @@ export default function SchedulerPage() {
   const confirmSchedule = useCallback(async () => {
     if (!scheduleModal) return;
     const { project, date } = scheduleModal;
-    const days = installDaysInput || 2;
+    const isSurveyOrInsp = project.stage === "survey" || project.stage === "inspection";
+    const selectedSlot = isSurveyOrInsp ? availableSlots[selectedSlotIdx] : null;
+    const days = isSurveyOrInsp ? 0.25 : (installDaysInput || 2);
     const crew = crewSelectInput || project.crew || "";
+    // For survey/inspection, derive times from selected slot; for construction, use defaults
+    const slotStartTime = selectedSlot?.startTime || "08:00";
+    const slotEndTime = selectedSlot?.endTime || (isSurveyOrInsp ? "09:00" : "16:00");
+    const slotTimezone = selectedSlot?.timezone || LOCATION_TIMEZONES[project.location] || "America/Denver";
 
     const scheduleType = project.stage === "survey" ? "survey"
       : project.stage === "inspection" ? "inspection"
@@ -1136,13 +1224,13 @@ export default function SchedulerPage() {
               type: scheduleType,
               date: date,
               days: days,
-              startTime: scheduleType === "survey" ? "08:00" : scheduleType === "inspection" ? "08:00" : "08:00",
-              endTime: scheduleType === "survey" ? "09:00" : scheduleType === "inspection" ? "16:00" : "16:00",
-              crew: assignee?.userUid,
-              teamUid: assignee?.teamUid,
-              assignedUser: assignee?.name,
-              timezone: LOCATION_TIMEZONES[project.location] || "America/Denver",
-              notes: `Scheduled via Master Schedule${assignee ? ` — ${assignee.name}` : ""}`,
+              startTime: slotStartTime,
+              endTime: slotEndTime,
+              crew: selectedSlot?.userUid || assignee?.userUid,
+              teamUid: selectedSlot?.teamUid || assignee?.teamUid,
+              assignedUser: selectedSlot?.userName || assignee?.name,
+              timezone: slotTimezone,
+              notes: `Scheduled via Master Schedule${(selectedSlot?.userName || assignee?.name) ? ` — ${selectedSlot?.userName || assignee?.name}` : ""}`,
             },
             rescheduleOnly: true,
           }),
@@ -1200,13 +1288,13 @@ export default function SchedulerPage() {
               type: scheduleType,
               date,
               days,
-              startTime: scheduleType === "survey" ? "08:00" : scheduleType === "inspection" ? "08:00" : "08:00",
-              endTime: scheduleType === "survey" ? "09:00" : scheduleType === "inspection" ? "16:00" : "16:00",
-              crew: assignee?.userUid || crew,
-              userUid: assignee?.userUid,
-              teamUid: assignee?.teamUid,
-              assignedUser: assignee?.name || crew,
-              timezone: LOCATION_TIMEZONES[project.location] || "America/Denver",
+              startTime: slotStartTime,
+              endTime: slotEndTime,
+              crew: selectedSlot?.userUid || assignee?.userUid || crew,
+              userUid: selectedSlot?.userUid || assignee?.userUid,
+              teamUid: selectedSlot?.teamUid || assignee?.teamUid,
+              assignedUser: selectedSlot?.userName || assignee?.name || crew,
+              timezone: slotTimezone,
               notes: `Tentatively scheduled via Master Scheduler${assignee ? ` — ${assignee.name}` : ""}`,
             },
           }),
@@ -1224,7 +1312,7 @@ export default function SchedulerPage() {
 
     setScheduleModal(null);
     setSelectedProject(null);
-  }, [scheduleModal, installDaysInput, crewSelectInput, showToast, zuperConfigured, syncToZuper, trackFeature]);
+  }, [scheduleModal, installDaysInput, crewSelectInput, availableSlots, selectedSlotIdx, showToast, zuperConfigured, syncToZuper, trackFeature]);
 
   const handleDragStart = useCallback(
     (e: React.DragEvent, projectId: string) => {
@@ -2958,56 +3046,81 @@ export default function SchedulerPage() {
                     )}
                   </div>
                 )}
-                <div className="flex gap-2.5 mt-2 flex-wrap items-center">
-                  <label className="text-[0.7rem] text-muted">Days:</label>
-                  <input
-                    type="number"
-                    value={installDaysInput}
-                    onChange={(e) =>
-                      setInstallDaysInput(parseFloat(e.target.value) || 0.25)
-                    }
-                    min={0.25}
-                    max={10}
-                    step={0.25}
-                    className="bg-background border border-t-border text-foreground/90 px-2 py-1.5 rounded font-mono text-[0.75rem] w-[60px] text-center focus:outline-none focus:border-orange-500"
-                  />
-                  <label className="text-[0.7rem] text-muted">
-                    {scheduleModal.project.stage === "survey" ? "Surveyor:" :
-                     scheduleModal.project.stage === "inspection" ? "Inspector:" : "Crew:"}
-                  </label>
-                  <select
-                    value={crewSelectInput}
-                    onChange={(e) => setCrewSelectInput(e.target.value)}
-                    className="bg-background border border-t-border text-foreground/90 px-2 py-1.5 rounded font-mono text-[0.75rem] focus:outline-none focus:border-orange-500"
-                  >
-                    {scheduleModal.project.stage === "survey" ? (
-                      (ZUPER_SURVEY_USERS[scheduleModal.project.location] || []).map((u) => (
-                        <option key={u.name} value={u.name}>{u.name}</option>
-                      ))
-                    ) : scheduleModal.project.stage === "inspection" ? (
-                      (ZUPER_INSPECTION_USERS[scheduleModal.project.location] || []).map((u) => (
-                        <option key={u.name} value={u.name}>{u.name}</option>
-                      ))
-                    ) : (
-                      (CREWS[scheduleModal.project.location] || []).map((c) => (
+                {/* Survey/Inspection: Surveyor + Time slot */}
+                {(scheduleModal.project.stage === "survey" || scheduleModal.project.stage === "inspection") ? (
+                  <>
+                    <div className="flex gap-2.5 mt-2 flex-wrap items-center">
+                      <label className="text-[0.7rem] text-muted">
+                        {scheduleModal.project.stage === "survey" ? "Surveyor:" : "Inspector:"}
+                      </label>
+                      <select
+                        value={crewSelectInput}
+                        onChange={(e) => setCrewSelectInput(e.target.value)}
+                        className="bg-background border border-t-border text-foreground/90 px-2 py-1.5 rounded font-mono text-[0.75rem] focus:outline-none focus:border-orange-500"
+                      >
+                        {scheduleModal.project.stage === "survey" ? (
+                          (ZUPER_SURVEY_USERS[scheduleModal.project.location] || []).map((u) => (
+                            <option key={u.name} value={u.name}>{u.name}</option>
+                          ))
+                        ) : (
+                          (ZUPER_INSPECTION_USERS[scheduleModal.project.location] || []).map((u) => (
+                            <option key={u.name} value={u.name}>{u.name}</option>
+                          ))
+                        )}
+                      </select>
+                      <label className="text-[0.7rem] text-muted">Time:</label>
+                      <select
+                        value={selectedSlotIdx}
+                        onChange={(e) => setSelectedSlotIdx(parseInt(e.target.value) || 0)}
+                        className="bg-background border border-t-border text-foreground/90 px-2 py-1.5 rounded font-mono text-[0.75rem] focus:outline-none focus:border-orange-500"
+                      >
+                        {loadingSlots && <option>Loading...</option>}
+                        {!loadingSlots && availableSlots.length === 0 && (
+                          <option>No availability</option>
+                        )}
+                        {!loadingSlots && availableSlots.map((slot, idx) => (
+                          <option key={`${slot.startTime}-${slot.endTime}`} value={idx}>
+                            {slot.displayTime}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    {!loadingSlots && availableSlots.length === 0 && (
+                      <div className="text-[0.6rem] text-amber-400/80 mt-1">
+                        No open slots for {crewSelectInput} on this date
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  /* Construction: Days + Crew */
+                  <div className="flex gap-2.5 mt-2 flex-wrap items-center">
+                    <label className="text-[0.7rem] text-muted">Days:</label>
+                    <input
+                      type="number"
+                      value={installDaysInput}
+                      onChange={(e) =>
+                        setInstallDaysInput(parseFloat(e.target.value) || 0.25)
+                      }
+                      min={0.25}
+                      max={10}
+                      step={0.25}
+                      className="bg-background border border-t-border text-foreground/90 px-2 py-1.5 rounded font-mono text-[0.75rem] w-[60px] text-center focus:outline-none focus:border-orange-500"
+                    />
+                    <label className="text-[0.7rem] text-muted">Crew:</label>
+                    <select
+                      value={crewSelectInput}
+                      onChange={(e) => setCrewSelectInput(e.target.value)}
+                      className="bg-background border border-t-border text-foreground/90 px-2 py-1.5 rounded font-mono text-[0.75rem] focus:outline-none focus:border-orange-500"
+                    >
+                      {(CREWS[scheduleModal.project.location] || []).map((c) => (
                         <option key={c.name} value={c.name}>{c.name}</option>
-                      ))
-                    )}
-                    {scheduleModal.project.stage === "survey" &&
-                      !(ZUPER_SURVEY_USERS[scheduleModal.project.location]?.length) && (
-                      <option>No surveyors</option>
-                    )}
-                    {scheduleModal.project.stage === "inspection" &&
-                      !(ZUPER_INSPECTION_USERS[scheduleModal.project.location]?.length) && (
-                      <option>No inspectors</option>
-                    )}
-                    {scheduleModal.project.stage !== "survey" &&
-                      scheduleModal.project.stage !== "inspection" &&
-                      !(CREWS[scheduleModal.project.location]?.length) && (
-                      <option>No crews</option>
-                    )}
-                  </select>
-                </div>
+                      ))}
+                      {!(CREWS[scheduleModal.project.location]?.length) && (
+                        <option>No crews</option>
+                      )}
+                    </select>
+                  </div>
+                )}
               </ModalSection>
 
               {/* Zuper Integration */}
