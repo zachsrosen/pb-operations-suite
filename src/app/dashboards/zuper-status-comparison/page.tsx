@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
+import { formatMoney } from "@/lib/format";
 
 // ---- Types ----
 
@@ -121,6 +122,21 @@ const COMPLETION_DATE_LABELS: Record<string, string> = {
 
 type ViewMode = "status" | "dates" | "all" | "project-status" | "project-dates";
 
+interface LinkageCoverage {
+  configured: boolean;
+  totalProjects: number;
+  linkedCount: number;
+  unlinkedCount: number;
+  coveragePercent: number;
+  linkedValue: number;
+  unlinkedValue: number;
+  categoryBreakdown: Record<string, number>;
+  linkedByStage: Record<string, number>;
+  unlinkedByStage: Record<string, number>;
+  unlinkedByLocation: Record<string, number>;
+  unlinkedProjects: { id: string; name: string; stage: string; location: string; amount: number }[];
+}
+
 // ---- Helpers ----
 
 function formatShortDate(dateStr: string | null): string {
@@ -210,6 +226,8 @@ export default function ZuperStatusComparisonPage() {
   const [data, setData] = useState<ApiResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [linkage, setLinkage] = useState<LinkageCoverage | null>(null);
+  const [linkageCollapsed, setLinkageCollapsed] = useState(true);
 
   // Filters
   const [activeCategory, setActiveCategory] = useState<string>("all");
@@ -236,10 +254,22 @@ export default function ZuperStatusComparisonPage() {
     }
   }, []);
 
+  const fetchLinkage = useCallback(async () => {
+    try {
+      const response = await fetch("/api/zuper/linkage-coverage");
+      if (!response.ok) return;
+      const json: LinkageCoverage = await response.json();
+      if (json.configured) setLinkage(json);
+    } catch {
+      // Linkage data is supplementary, don't block on failure
+    }
+  }, []);
+
   useEffect(() => {
     if (!accessChecked || !isAdmin) return;
     fetchData();
-  }, [accessChecked, isAdmin, fetchData]);
+    fetchLinkage();
+  }, [accessChecked, isAdmin, fetchData, fetchLinkage]);
 
   useEffect(() => {
     if (!loading && !hasTrackedView.current) {
@@ -472,6 +502,152 @@ export default function ZuperStatusComparisonPage() {
         </button>
       }
     >
+      {/* Linkage Coverage Section */}
+      {linkage && (
+        <div className="mb-6 rounded-xl border border-t-border overflow-hidden bg-surface/50">
+          <button
+            onClick={() => setLinkageCollapsed(!linkageCollapsed)}
+            className="w-full flex items-center justify-between p-4 hover:bg-surface/30 transition-colors cursor-pointer"
+          >
+            <div className="flex items-center gap-3">
+              <h3 className="text-base font-semibold text-foreground">Zuper Linkage Coverage</h3>
+              <span className={`text-sm font-bold ${
+                linkage.coveragePercent >= 80 ? "text-green-500" :
+                linkage.coveragePercent >= 50 ? "text-yellow-500" : "text-red-500"
+              }`}>
+                {linkage.coveragePercent}%
+              </span>
+              <span className="text-xs text-muted">
+                {linkage.linkedCount}/{linkage.totalProjects} projects linked
+              </span>
+            </div>
+            <svg
+              className={`w-5 h-5 text-muted transition-transform ${linkageCollapsed ? "" : "rotate-180"}`}
+              fill="none" viewBox="0 0 24 24" stroke="currentColor"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+
+          {!linkageCollapsed && (
+            <div className="px-4 pb-4 space-y-4">
+              {/* Coverage bar */}
+              <div>
+                <div className="h-3 bg-zinc-200 dark:bg-surface-2 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all ${
+                      linkage.coveragePercent >= 80 ? "bg-green-500" :
+                      linkage.coveragePercent >= 50 ? "bg-yellow-500" : "bg-red-500"
+                    }`}
+                    style={{ width: `${linkage.coveragePercent}%` }}
+                  />
+                </div>
+                <div className="flex justify-between mt-1 text-xs text-muted">
+                  <span>Linked: {linkage.linkedCount} ({formatMoney(linkage.linkedValue)})</span>
+                  <span>Unlinked: {linkage.unlinkedCount} ({formatMoney(linkage.unlinkedValue)})</span>
+                </div>
+              </div>
+
+              {/* Breakdowns */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Category breakdown */}
+                {Object.keys(linkage.categoryBreakdown).length > 0 && (
+                  <div className="rounded-lg border border-t-border p-3">
+                    <div className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">
+                      Linked by Category
+                    </div>
+                    <div className="space-y-1.5">
+                      {Object.entries(linkage.categoryBreakdown)
+                        .sort(([, a], [, b]) => b - a)
+                        .map(([cat, count]) => (
+                          <div key={cat} className="flex items-center justify-between text-xs">
+                            <span className="text-muted truncate mr-2 capitalize">
+                              {cat.replace(/_/g, " ")}
+                            </span>
+                            <span className="font-mono font-medium text-foreground">{count}</span>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Unlinked by stage */}
+                {Object.keys(linkage.unlinkedByStage).length > 0 && (
+                  <div className="rounded-lg border border-t-border p-3">
+                    <div className="text-xs font-semibold text-red-500 uppercase tracking-wider mb-2">
+                      Unlinked by Stage
+                    </div>
+                    <div className="space-y-1.5">
+                      {Object.entries(linkage.unlinkedByStage)
+                        .sort(([, a], [, b]) => b - a)
+                        .map(([stage, count]) => (
+                          <div key={stage} className="flex items-center justify-between text-xs">
+                            <span className="text-muted truncate mr-2">{stage}</span>
+                            <span className="font-mono font-medium text-foreground">{count}</span>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Unlinked by location */}
+                {Object.keys(linkage.unlinkedByLocation).length > 0 && (
+                  <div className="rounded-lg border border-t-border p-3">
+                    <div className="text-xs font-semibold text-orange-500 uppercase tracking-wider mb-2">
+                      Unlinked by Location
+                    </div>
+                    <div className="space-y-1.5">
+                      {Object.entries(linkage.unlinkedByLocation)
+                        .sort(([, a], [, b]) => b - a)
+                        .map(([loc, count]) => (
+                          <div key={loc} className="flex items-center justify-between text-xs">
+                            <span className="text-muted truncate mr-2">{loc}</span>
+                            <span className="font-mono font-medium text-foreground">{count}</span>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Unlinked projects list */}
+              {linkage.unlinkedProjects.length > 0 && (
+                <details className="group">
+                  <summary className="text-xs font-semibold text-muted uppercase tracking-wider cursor-pointer hover:text-foreground transition-colors">
+                    Unlinked Projects ({linkage.unlinkedProjects.length}{linkage.unlinkedCount > 50 ? ` of ${linkage.unlinkedCount}` : ""})
+                    <span className="ml-1 text-muted group-open:rotate-90 inline-block transition-transform">&#9654;</span>
+                  </summary>
+                  <div className="mt-2 max-h-60 overflow-y-auto rounded-lg border border-t-border">
+                    <table className="w-full text-xs">
+                      <thead className="bg-zinc-50 dark:bg-skeleton sticky top-0">
+                        <tr>
+                          <th className="px-3 py-1.5 text-left font-medium text-muted">Name</th>
+                          <th className="px-3 py-1.5 text-left font-medium text-muted">Stage</th>
+                          <th className="px-3 py-1.5 text-left font-medium text-muted">Location</th>
+                          <th className="px-3 py-1.5 text-right font-medium text-muted">Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-zinc-100 dark:divide-t-border">
+                        {linkage.unlinkedProjects.map((p) => (
+                          <tr key={p.id} className="hover:bg-zinc-50 dark:hover:bg-skeleton">
+                            <td className="px-3 py-1.5 truncate max-w-[200px] text-foreground" title={p.name}>
+                              {p.name.replace(/^PROJ-\d+\s*\|\s*/, "").split("|")[0]?.trim()}
+                            </td>
+                            <td className="px-3 py-1.5 text-muted">{p.stage}</td>
+                            <td className="px-3 py-1.5 text-muted">{p.location}</td>
+                            <td className="px-3 py-1.5 text-right font-mono text-muted">{formatMoney(p.amount)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </details>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Summary Stats */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
         <StatCard label="Total Jobs" value={stats?.total || 0} />
