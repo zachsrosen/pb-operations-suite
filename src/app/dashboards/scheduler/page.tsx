@@ -681,10 +681,12 @@ export default function SchedulerPage() {
   const calendarData = useMemo(() => {
     const firstDay = new Date(currentYear, currentMonth, 1);
     const lastDay = new Date(currentYear, currentMonth + 1, 0);
-    // Convert to weekday-only index (Mon=0, Tue=1, Wed=2, Thu=3, Fri=4)
+    // Convert to weekday-only grid index: how many empty cells before the 1st weekday
+    // Grid columns: Mon=0, Tue=1, Wed=2, Thu=3, Fri=4
     const jsDay = firstDay.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
-    // If the month starts on Sat(6) or Sun(0), startDay=0 (Mon column, first weekday)
-    const startDay = jsDay === 0 ? 4 : jsDay === 6 ? 0 : jsDay - 1;
+    // Sun/Sat: first weekday is Monday → 0 padding
+    // Mon=0, Tue=1, Wed=2, Thu=3, Fri=4
+    const startDay = jsDay === 0 || jsDay === 6 ? 0 : jsDay - 1;
     const daysInMonth = lastDay.getDate();
     const today = new Date();
 
