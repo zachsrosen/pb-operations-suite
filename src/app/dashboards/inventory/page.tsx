@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, Fragment } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
@@ -348,10 +348,456 @@ function NeedsReportTab(props: {
   filterLocations: string[];
   filterCategories: string[];
 }) {
-  void props;
+  const { needsReport, filterLocations, filterCategories } = props;
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+
+  /* Toggle expand/collapse for a row */
+  const toggleRow = useCallback((key: string) => {
+    setExpandedRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  /* Filter needs by location and category */
+  const filteredNeeds = useMemo(() => {
+    if (!needsReport?.needs) return [];
+    return needsReport.needs.filter((n) => {
+      if (filterLocations.length > 0 && !filterLocations.includes(n.location))
+        return false;
+      if (filterCategories.length > 0 && !filterCategories.includes(n.category))
+        return false;
+      return true;
+    });
+  }, [needsReport, filterLocations, filterCategories]);
+
+  /* Aggregate to SKU level and group by category */
+  const groupedData = useMemo(() => {
+    // Aggregate by (category, brand, model)
+    const agg = new Map<
+      string,
+      {
+        category: string;
+        brand: string;
+        model: string;
+        unitSpec: number | null;
+        unitLabel: string | null;
+        weightedDemand: number;
+        onHand: number;
+        gap: number;
+        suggestedOrder: number;
+        locations: { location: string; weightedDemand: number; onHand: number; gap: number }[];
+      }
+    >();
+
+    for (const n of filteredNeeds) {
+      const key = `${n.category}:${n.brand}:${n.model}`;
+      const existing = agg.get(key);
+      if (existing) {
+        existing.weightedDemand += n.weightedDemand;
+        existing.onHand += n.onHand;
+        existing.gap += n.gap;
+        existing.suggestedOrder += n.suggestedOrder;
+        existing.locations.push({
+          location: n.location,
+          weightedDemand: n.weightedDemand,
+          onHand: n.onHand,
+          gap: n.gap,
+        });
+      } else {
+        agg.set(key, {
+          category: n.category,
+          brand: n.brand,
+          model: n.model,
+          unitSpec: n.unitSpec,
+          unitLabel: n.unitLabel,
+          weightedDemand: n.weightedDemand,
+          onHand: n.onHand,
+          gap: n.gap,
+          suggestedOrder: n.suggestedOrder,
+          locations: [
+            {
+              location: n.location,
+              weightedDemand: n.weightedDemand,
+              onHand: n.onHand,
+              gap: n.gap,
+            },
+          ],
+        });
+      }
+    }
+
+    // Group by category in CATEGORY_ORDER
+    const groups: {
+      category: string;
+      rows: (typeof agg extends Map<string, infer V> ? V : never)[];
+    }[] = [];
+
+    for (const cat of CATEGORY_ORDER) {
+      const catRows = [...agg.values()].filter((r) => r.category === cat);
+      if (catRows.length > 0) {
+        groups.push({ category: cat, rows: catRows });
+      }
+    }
+
+    return groups;
+  }, [filteredNeeds]);
+
+  /* Recompute summary from filtered data */
+  const filteredSummary = useMemo(() => {
+    let shortfalls = 0;
+    let surplus = 0;
+    let balanced = 0;
+    for (const group of groupedData) {
+      for (const row of group.rows) {
+        if (row.gap > 0) shortfalls++;
+        else if (row.gap < 0) surplus++;
+        else balanced++;
+      }
+    }
+    const total = shortfalls + surplus + balanced;
+    return { shortfalls, surplus, balanced, total };
+  }, [groupedData]);
+
+  /* CSV export */
+  const handleExportCsv = useCallback(() => {
+    if (!filteredNeeds.length) return;
+    const header = "Category,Brand,Model,Spec,Location,Weighted Demand,On Hand,Gap,Suggested Order";
+    const rows = filteredNeeds.map((n) => {
+      const spec =
+        n.unitSpec != null
+          ? `${n.unitSpec}${n.unitLabel ? ` ${n.unitLabel}` : ""}`
+          : "";
+      return [
+        CATEGORY_LABELS[n.category] || n.category,
+        `"${n.brand}"`,
+        `"${n.model}"`,
+        `"${spec}"`,
+        `"${n.location}"`,
+        n.weightedDemand,
+        n.onHand,
+        n.gap,
+        n.suggestedOrder,
+      ].join(",");
+    });
+    const csv = [header, ...rows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const date = new Date().toISOString().split("T")[0];
+    a.href = url;
+    a.download = `inventory-needs-report-${date}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [filteredNeeds]);
+
+  /* Empty state */
+  if (!needsReport || !needsReport.needs || needsReport.needs.length === 0) {
+    return (
+      <div className="text-muted text-sm text-center py-12">
+        No demand data available. Sync SKUs and ensure projects have equipment data.
+      </div>
+    );
+  }
+
   return (
-    <div className="text-muted text-sm text-center py-8">
-      Needs Report — building...
+    <div>
+      {/* Stage Weight Controls */}
+      <div className="bg-surface/50 border border-t-border rounded-xl p-4 mb-6">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-foreground/80">Stage Weights</h3>
+          <span className="text-xs text-muted">
+            {needsReport.projectsAnalyzed} project{needsReport.projectsAnalyzed !== 1 ? "s" : ""} analyzed
+          </span>
+        </div>
+        <div className="flex flex-wrap gap-3">
+          {Object.entries(needsReport.stageWeights).map(([stage, weight]) => (
+            <div
+              key={stage}
+              className="flex items-center gap-1.5 bg-surface-2/50 rounded-lg px-2.5 py-1.5"
+            >
+              <span className="text-xs text-muted whitespace-nowrap">{stage}:</span>
+              <span className="text-xs font-medium text-foreground tabular-nums w-10 text-right">
+                {Math.round(weight * 100)}%
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Summary Health Bar */}
+      <div className="mb-6">
+        <div className="h-3 rounded-full overflow-hidden flex bg-surface-2/50">
+          {filteredSummary.total > 0 && (
+            <>
+              {filteredSummary.shortfalls > 0 && (
+                <div
+                  className="bg-red-500 transition-all"
+                  style={{
+                    width: `${(filteredSummary.shortfalls / filteredSummary.total) * 100}%`,
+                  }}
+                />
+              )}
+              {filteredSummary.balanced > 0 && (
+                <div
+                  className="bg-zinc-500 transition-all"
+                  style={{
+                    width: `${(filteredSummary.balanced / filteredSummary.total) * 100}%`,
+                  }}
+                />
+              )}
+              {filteredSummary.surplus > 0 && (
+                <div
+                  className="bg-green-500 transition-all"
+                  style={{
+                    width: `${(filteredSummary.surplus / filteredSummary.total) * 100}%`,
+                  }}
+                />
+              )}
+            </>
+          )}
+        </div>
+        <div className="flex items-center justify-between mt-1.5">
+          <p className="text-xs text-muted">
+            <span className="text-red-400 font-medium">{filteredSummary.shortfalls}</span>
+            {" shortfall"}{filteredSummary.shortfalls !== 1 ? "s" : ""}
+            {" \u2022 "}
+            <span className="text-foreground/60 font-medium">{filteredSummary.balanced}</span>
+            {" balanced \u2022 "}
+            <span className="text-green-400 font-medium">{filteredSummary.surplus}</span>
+            {" surplus out of "}
+            <span className="text-foreground/80 font-medium">{filteredSummary.total}</span>
+            {" SKUs"}
+          </p>
+          <button
+            onClick={handleExportCsv}
+            disabled={filteredNeeds.length === 0}
+            className="px-3 py-1 bg-surface-2 hover:bg-surface-2/80 border border-t-border text-xs text-foreground rounded-lg transition-colors disabled:opacity-50"
+          >
+            Export CSV
+          </button>
+        </div>
+      </div>
+
+      {/* Needs Table — Grouped by Category */}
+      {groupedData.length === 0 ? (
+        <div className="text-muted text-sm text-center py-12">
+          No matching needs data for the current filters.
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {groupedData.map((group) => {
+            const subtotal = group.rows.reduce(
+              (acc, r) => ({
+                weightedDemand: acc.weightedDemand + r.weightedDemand,
+                onHand: acc.onHand + r.onHand,
+                gap: acc.gap + r.gap,
+                suggestedOrder: acc.suggestedOrder + r.suggestedOrder,
+              }),
+              { weightedDemand: 0, onHand: 0, gap: 0, suggestedOrder: 0 }
+            );
+
+            return (
+              <div key={group.category}>
+                <h4 className="text-sm font-semibold text-foreground/80 mb-2">
+                  {CATEGORY_LABELS[group.category] || group.category}{" "}
+                  <span className="text-muted font-normal">
+                    ({group.rows.length} SKU{group.rows.length !== 1 ? "s" : ""})
+                  </span>
+                </h4>
+                <div className="bg-surface/50 border border-t-border rounded-xl overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                      <thead>
+                        <tr className="bg-surface-2/50">
+                          <th className="px-4 py-2.5 text-xs text-muted uppercase tracking-wider font-medium w-6" />
+                          <th className="px-4 py-2.5 text-xs text-muted uppercase tracking-wider font-medium">Brand</th>
+                          <th className="px-4 py-2.5 text-xs text-muted uppercase tracking-wider font-medium">Model</th>
+                          <th className="px-4 py-2.5 text-xs text-muted uppercase tracking-wider font-medium">Spec</th>
+                          <th className="px-4 py-2.5 text-xs text-muted uppercase tracking-wider font-medium text-right">W. Demand</th>
+                          <th className="px-4 py-2.5 text-xs text-muted uppercase tracking-wider font-medium text-right">On Hand</th>
+                          <th className="px-4 py-2.5 text-xs text-muted uppercase tracking-wider font-medium text-right">Gap</th>
+                          <th className="px-4 py-2.5 text-xs text-muted uppercase tracking-wider font-medium text-right">Suggested Order</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {group.rows.map((row) => {
+                          const rowKey = `${row.category}:${row.brand}:${row.model}`;
+                          const isExpanded = expandedRows.has(rowKey);
+                          const specStr =
+                            row.unitSpec != null
+                              ? `${row.unitSpec}${row.unitLabel ? ` ${row.unitLabel}` : ""}`
+                              : "\u2014";
+
+                          return (
+                            <Fragment key={rowKey}>
+                              <tr
+                                onClick={() => toggleRow(rowKey)}
+                                className="border-b border-t-border hover:bg-surface-2/30 transition-colors cursor-pointer"
+                              >
+                                <td className="px-4 py-3 text-sm text-muted">
+                                  <span
+                                    className={`inline-block transition-transform text-xs ${
+                                      isExpanded ? "rotate-90" : ""
+                                    }`}
+                                  >
+                                    {"\u25B6"}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 text-sm text-foreground">{row.brand}</td>
+                                <td className="px-4 py-3 text-sm text-foreground">{row.model}</td>
+                                <td className="px-4 py-3 text-sm text-muted">{specStr}</td>
+                                <td className="px-4 py-3 text-sm text-foreground text-right tabular-nums">
+                                  {row.weightedDemand.toLocaleString()}
+                                </td>
+                                <td className="px-4 py-3 text-sm text-foreground text-right tabular-nums">
+                                  {row.onHand.toLocaleString()}
+                                </td>
+                                <td className="px-4 py-3 text-sm font-medium text-right">
+                                  <span
+                                    className={`inline-block px-2 py-0.5 rounded-md tabular-nums ${
+                                      row.gap > 0
+                                        ? "text-red-400 bg-red-500/10"
+                                        : row.gap < 0
+                                          ? "text-green-400 bg-green-500/10"
+                                          : "text-muted"
+                                    }`}
+                                  >
+                                    {row.gap > 0
+                                      ? `+${row.gap.toLocaleString()}`
+                                      : row.gap < 0
+                                        ? row.gap.toLocaleString()
+                                        : "0"}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 text-sm text-right tabular-nums">
+                                  {row.suggestedOrder > 0 ? (
+                                    <span className="font-bold text-cyan-400">
+                                      {row.suggestedOrder.toLocaleString()}
+                                    </span>
+                                  ) : (
+                                    <span className="text-muted">{"\u2014"}</span>
+                                  )}
+                                </td>
+                              </tr>
+                              {/* Expanded location detail */}
+                              {isExpanded && (
+                                <tr className="border-b border-t-border">
+                                  <td colSpan={8} className="p-0">
+                                    <div className="bg-surface-2/20 px-8 py-2">
+                                      <table className="w-full text-left">
+                                        <thead>
+                                          <tr>
+                                            <th className="px-3 py-1.5 text-[10px] text-muted uppercase tracking-wider font-medium">
+                                              Location
+                                            </th>
+                                            <th className="px-3 py-1.5 text-[10px] text-muted uppercase tracking-wider font-medium text-right">
+                                              Demand
+                                            </th>
+                                            <th className="px-3 py-1.5 text-[10px] text-muted uppercase tracking-wider font-medium text-right">
+                                              On Hand
+                                            </th>
+                                            <th className="px-3 py-1.5 text-[10px] text-muted uppercase tracking-wider font-medium text-right">
+                                              Gap
+                                            </th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {row.locations.map((loc) => (
+                                            <tr
+                                              key={loc.location}
+                                              className="border-b border-t-border/50 last:border-b-0"
+                                            >
+                                              <td className="px-3 py-1 text-xs text-foreground">
+                                                {loc.location}
+                                              </td>
+                                              <td className="px-3 py-1 text-xs text-muted text-right tabular-nums">
+                                                {loc.weightedDemand.toLocaleString()}
+                                              </td>
+                                              <td className="px-3 py-1 text-xs text-foreground text-right tabular-nums">
+                                                {loc.onHand.toLocaleString()}
+                                              </td>
+                                              <td className="px-3 py-1 text-xs font-medium text-right tabular-nums">
+                                                <span
+                                                  className={
+                                                    loc.gap > 0
+                                                      ? "text-red-400"
+                                                      : loc.gap < 0
+                                                        ? "text-green-400"
+                                                        : "text-muted"
+                                                  }
+                                                >
+                                                  {loc.gap > 0
+                                                    ? `+${loc.gap.toLocaleString()}`
+                                                    : loc.gap < 0
+                                                      ? loc.gap.toLocaleString()
+                                                      : "0"}
+                                                </span>
+                                              </td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </Fragment>
+                          );
+                        })}
+                        {/* Subtotal row */}
+                        <tr className="bg-surface-2/30 font-bold">
+                          <td className="px-4 py-2.5 text-xs text-muted" />
+                          <td
+                            colSpan={3}
+                            className="px-4 py-2.5 text-xs text-muted uppercase tracking-wider"
+                          >
+                            Subtotal
+                          </td>
+                          <td className="px-4 py-2.5 text-sm text-foreground text-right tabular-nums">
+                            {subtotal.weightedDemand.toLocaleString()}
+                          </td>
+                          <td className="px-4 py-2.5 text-sm text-foreground text-right tabular-nums">
+                            {subtotal.onHand.toLocaleString()}
+                          </td>
+                          <td className="px-4 py-2.5 text-sm text-right">
+                            <span
+                              className={`tabular-nums ${
+                                subtotal.gap > 0
+                                  ? "text-red-400"
+                                  : subtotal.gap < 0
+                                    ? "text-green-400"
+                                    : "text-muted"
+                              }`}
+                            >
+                              {subtotal.gap > 0
+                                ? `+${subtotal.gap.toLocaleString()}`
+                                : subtotal.gap < 0
+                                  ? subtotal.gap.toLocaleString()
+                                  : "0"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2.5 text-sm text-right tabular-nums">
+                            {subtotal.suggestedOrder > 0 ? (
+                              <span className="text-cyan-400">
+                                {subtotal.suggestedOrder.toLocaleString()}
+                              </span>
+                            ) : (
+                              <span className="text-muted">{"\u2014"}</span>
+                            )}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
