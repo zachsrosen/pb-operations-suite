@@ -88,6 +88,7 @@ interface SchedulerProject {
   zuperScheduledDays?: number;
   zuperScheduledStart?: string; // ISO date from Zuper
   zuperScheduledEnd?: string;   // ISO date from Zuper
+  zuperJobCategory?: string;    // Which Zuper category matched: "survey" | "construction" | "inspection"
 }
 
 interface CrewConfig {
@@ -573,6 +574,7 @@ export default function SchedulerPage() {
                 const zJob = zuperData.jobs[project.id];
                 project.zuperJobUid = zJob.jobUid;
                 project.zuperJobStatus = zJob.status;
+                project.zuperJobCategory = categories[idx]; // Track which category matched
                 if (zJob.scheduledDays) project.zuperScheduledDays = zJob.scheduledDays;
                 if (zJob.scheduledDate) project.zuperScheduledStart = zJob.scheduledDate;
                 if (zJob.scheduledEnd) project.zuperScheduledEnd = zJob.scheduledEnd;
@@ -763,15 +765,16 @@ export default function SchedulerPage() {
       // event type so they render distinctly (no confusion between active vs done).
 
       // -- Construction --
-      // Date priority: Zuper scheduled start > HubSpot constructionScheduleDate
-      // Days priority: Zuper scheduled duration > HubSpot daysForInstallers > expectedDaysForInstall > 2
-      const constructionDate = (p.zuperScheduledStart
+      // Only use Zuper dates for construction if the matched Zuper job is actually
+      // a construction job (not a survey/inspection job that happened to match).
+      const zuperIsConstruction = p.zuperJobCategory === "construction";
+      const constructionDate = (zuperIsConstruction && p.zuperScheduledStart
         ? p.zuperScheduledStart.split("T")[0]
         : null) || p.constructionScheduleDate;
       if (constructionDate) {
         const schedDate = new Date(constructionDate + "T12:00:00");
         const done = !!p.constructionCompleted;
-        const days = p.zuperScheduledDays || p.daysInstall || 1;
+        const days = (zuperIsConstruction ? p.zuperScheduledDays : null) || p.daysInstall || 1;
         const key = `${p.id}-construction`;
         if (!seenKeys.has(key)) {
           seenKeys.add(key);
@@ -828,7 +831,7 @@ export default function SchedulerPage() {
       if (p.scheduleDate && (p.stage === "rtb" || p.stage === "blocked") && !seenKeys.has(`${p.id}-construction`)) {
         const schedDate = new Date(p.scheduleDate + "T12:00:00");
         const done = !!p.constructionCompleted;
-        const days = p.zuperScheduledDays || p.daysInstall || 1;
+        const days = (zuperIsConstruction ? p.zuperScheduledDays : null) || p.daysInstall || 1;
         const key = `${p.id}-construction`;
         seenKeys.add(key);
         events.push({
