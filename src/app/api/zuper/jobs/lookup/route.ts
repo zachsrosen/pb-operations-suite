@@ -4,47 +4,30 @@ import { getCachedZuperJobsByDealIds } from "@/lib/db";
 import { requireApiAuth } from "@/lib/api-auth";
 
 /**
- * GET /api/zuper/jobs/lookup
+ * POST /api/zuper/jobs/lookup
  *
  * Look up Zuper jobs by HubSpot project IDs.
  * Returns a map of projectId -> zuperJobUid for projects that have Zuper jobs.
  *
- * Query params:
- * - projectIds: comma-separated list of HubSpot project IDs
- * - projectNames: comma-separated list of project names (for fallback matching)
+ * Body (JSON):
+ * - projectIds: string[] - HubSpot project IDs
+ * - projectNames: string[] - project names (for fallback matching)
  * - category: optional job category filter (e.g., "site-survey", "construction")
+ *
+ * Also supports GET with query params for backward compatibility.
  */
-export async function GET(request: NextRequest) {
-  const authResult = await requireApiAuth();
-  if (authResult instanceof NextResponse) return authResult;
 
+// Shared handler for both GET and POST
+async function handleLookup(projectIds: string[], projectNames: string[], category: string | null) {
   const zuper = new ZuperClient();
 
   if (!zuper.isConfigured()) {
-    return NextResponse.json({
-      configured: false,
-      jobs: {}
-    });
+    return NextResponse.json({ configured: false, jobs: {} });
   }
 
-  const { searchParams } = new URL(request.url);
-  const projectIdsParam = searchParams.get("projectIds");
-  const projectNamesParam = searchParams.get("projectNames");
-  const category = searchParams.get("category");
-
-  if (!projectIdsParam) {
-    return NextResponse.json(
-      { error: "projectIds parameter required" },
-      { status: 400 }
-    );
+  if (projectIds.length === 0) {
+    return NextResponse.json({ configured: true, jobs: {} });
   }
-
-  const projectIds = projectIdsParam.split(",").map(id => id.trim()).filter(Boolean);
-  // Project names use "|||" delimiter because names contain commas (e.g. "LastName, FirstName")
-  // which would break comma-based splitting after URL decoding
-  const projectNames = projectNamesParam
-    ? projectNamesParam.split("|||").map(n => decodeURIComponent(n.trim())).filter(Boolean)
-    : [];
 
   if (projectIds.length === 0) {
     return NextResponse.json({ configured: true, jobs: {} });
@@ -494,4 +477,48 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+// POST handler — accepts JSON body (no URL length limits)
+export async function POST(request: NextRequest) {
+  const authResult = await requireApiAuth();
+  if (authResult instanceof NextResponse) return authResult;
+
+  try {
+    const body = await request.json();
+    const projectIds: string[] = body.projectIds || [];
+    const projectNames: string[] = body.projectNames || [];
+    const category: string | null = body.category || null;
+    return handleLookup(projectIds, projectNames, category);
+  } catch {
+    return NextResponse.json(
+      { error: "Invalid JSON body", configured: true, jobs: {} },
+      { status: 400 }
+    );
+  }
+}
+
+// GET handler — backward compatible (query params)
+export async function GET(request: NextRequest) {
+  const authResult = await requireApiAuth();
+  if (authResult instanceof NextResponse) return authResult;
+
+  const { searchParams } = new URL(request.url);
+  const projectIdsParam = searchParams.get("projectIds");
+  const projectNamesParam = searchParams.get("projectNames");
+  const category = searchParams.get("category");
+
+  if (!projectIdsParam) {
+    return NextResponse.json(
+      { error: "projectIds parameter required" },
+      { status: 400 }
+    );
+  }
+
+  const projectIds = projectIdsParam.split(",").map(id => id.trim()).filter(Boolean);
+  const projectNames = projectNamesParam
+    ? projectNamesParam.split("|||").map(n => decodeURIComponent(n.trim())).filter(Boolean)
+    : [];
+
+  return handleLookup(projectIds, projectNames, category);
 }

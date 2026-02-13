@@ -443,15 +443,20 @@ export default function SchedulerPage() {
         .filter((p: SchedulerProject | null): p is SchedulerProject => p !== null);
 
       // Look up Zuper job UIDs for these projects (all job categories)
+      // Uses POST to avoid URL length limits with hundreds of projects
       if (transformed.length > 0) {
         try {
-          const projectIds = transformed.map((p: SchedulerProject) => p.id).join(",");
-          const projectNames = transformed.map((p: SchedulerProject) => encodeURIComponent(p.name)).join("|||");
+          const projectIds = transformed.map((p: SchedulerProject) => p.id);
+          const projectNames = transformed.map((p: SchedulerProject) => p.name);
 
           // Look up jobs for each category (survey, construction, inspection)
           const categories = ["survey", "construction", "inspection"];
           const lookupPromises = categories.map(category =>
-            fetch(`/api/zuper/jobs/lookup?projectIds=${projectIds}&projectNames=${projectNames}&category=${category}`)
+            fetch("/api/zuper/jobs/lookup", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ projectIds, projectNames, category }),
+            })
               .then(res => res.ok ? res.json() : null)
               .catch(() => null)
           );
