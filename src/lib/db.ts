@@ -369,30 +369,62 @@ export async function logDataExport(data: {
 }
 
 /**
- * Get recent activities
+ * Get recent activities with pagination and date filtering
  */
 export async function getRecentActivities(options?: {
   userId?: string;
   type?: ActivityType;
   entityType?: string;
   limit?: number;
+  offset?: number;
+  since?: Date;
+  userEmail?: string;
 }) {
+  if (!prisma) return { activities: [], total: 0 };
+
+  const where: Record<string, unknown> = {};
+  if (options?.userId) where.userId = options.userId;
+  if (options?.type) where.type = options.type;
+  if (options?.entityType) where.entityType = options.entityType;
+  if (options?.since) where.createdAt = { gte: options.since };
+  if (options?.userEmail) {
+    where.OR = [
+      { userEmail: { contains: options.userEmail, mode: "insensitive" } },
+      { user: { email: { contains: options.userEmail, mode: "insensitive" } } },
+    ];
+  }
+
+  const [activities, total] = await Promise.all([
+    prisma.activityLog.findMany({
+      where,
+      include: {
+        user: {
+          select: { name: true, email: true, image: true },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+      take: options?.limit ?? 50,
+      skip: options?.offset ?? 0,
+    }),
+    prisma.activityLog.count({ where }),
+  ]);
+
+  return { activities, total };
+}
+
+/**
+ * Get all distinct activity types that exist in the database
+ */
+export async function getActivityTypes() {
   if (!prisma) return [];
 
-  return prisma.activityLog.findMany({
-    where: {
-      userId: options?.userId,
-      type: options?.type,
-      entityType: options?.entityType,
-    },
-    include: {
-      user: {
-        select: { name: true, email: true, image: true },
-      },
-    },
-    orderBy: { createdAt: "desc" },
-    take: options?.limit ?? 50,
+  const result = await prisma.activityLog.findMany({
+    select: { type: true },
+    distinct: ["type"],
+    orderBy: { type: "asc" },
   });
+
+  return result.map((r) => r.type);
 }
 
 // ==========================================

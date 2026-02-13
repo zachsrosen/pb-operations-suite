@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
 
 interface ActivityLog {
@@ -34,53 +34,139 @@ const ACTIVITY_TYPES: Record<string, { color: string; icon: string }> = {
   SURVEY_RESCHEDULED: { color: "text-yellow-400", icon: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" },
   INSTALL_SCHEDULED: { color: "text-emerald-400", icon: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" },
   ZUPER_JOB_CREATED: { color: "text-orange-400", icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" },
+  DASHBOARD_VIEWED: { color: "text-blue-400", icon: "M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" },
   SETTINGS_CHANGED: { color: "text-muted", icon: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" },
   ERROR_OCCURRED: { color: "text-red-400", icon: "M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" },
+  INVENTORY_RECEIVED: { color: "text-emerald-400", icon: "M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" },
+  INVENTORY_ADJUSTED: { color: "text-amber-400", icon: "M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" },
+  INVENTORY_ALLOCATED: { color: "text-orange-400", icon: "M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" },
 };
 
 const DEFAULT_ACTIVITY = { color: "text-muted", icon: "M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" };
 
+const PAGE_SIZE = 100;
+
 export default function AdminActivityPage() {
   const [activities, setActivities] = useState<ActivityLog[]>([]);
+  const [total, setTotal] = useState(0);
+  const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<string>("all");
+  const [typeFilter, setTypeFilter] = useState<string>("all");
   const [dateRange, setDateRange] = useState<"today" | "7d" | "30d" | "all">("all");
   const [searchEmail, setSearchEmail] = useState<string>("");
-  const [limit, setLimit] = useState<number>(200);
+  const [debouncedEmail, setDebouncedEmail] = useState<string>("");
   const [autoRefresh, setAutoRefresh] = useState<boolean>(false);
+  const [allTypes, setAllTypes] = useState<string[]>([]);
 
-  const fetchActivities = useCallback(async () => {
-    try {
-      setLoading(true);
-      const params = new URLSearchParams({ limit: limit.toString() });
-      if (filter !== "all") {
-        params.set("type", filter);
-      }
-      const response = await fetch(`/api/admin/activity?${params}`);
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || "Failed to fetch activities");
-      }
-      const data = await response.json();
-      setActivities(data.activities);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
-    } finally {
-      setLoading(false);
-    }
-  }, [filter, limit]);
-
+  // Debounce email search
+  const emailTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => {
-    fetchActivities();
-  }, [fetchActivities]);
+    emailTimer.current = setTimeout(() => {
+      setDebouncedEmail(searchEmail);
+    }, 400);
+    return () => clearTimeout(emailTimer.current);
+  }, [searchEmail]);
 
+  // Fetch distinct activity types on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/admin/activity?meta=types");
+        if (res.ok) {
+          const data = await res.json();
+          setAllTypes(data.types || []);
+        }
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, []);
+
+  // Build the "since" date from dateRange
+  const sinceDate = useMemo(() => {
+    const now = new Date();
+    switch (dateRange) {
+      case "today": {
+        const today = new Date(now);
+        today.setHours(0, 0, 0, 0);
+        return today.toISOString();
+      }
+      case "7d":
+        return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      case "30d":
+        return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+      default:
+        return null;
+    }
+  }, [dateRange]);
+
+  const fetchActivities = useCallback(
+    async (appendMode = false, customOffset?: number) => {
+      try {
+        if (appendMode) {
+          setLoadingMore(true);
+        } else {
+          setLoading(true);
+        }
+
+        const params = new URLSearchParams({
+          limit: PAGE_SIZE.toString(),
+          offset: (customOffset ?? (appendMode ? offset : 0)).toString(),
+        });
+
+        if (typeFilter !== "all") params.set("type", typeFilter);
+        if (sinceDate) params.set("since", sinceDate);
+        if (debouncedEmail.trim()) params.set("email", debouncedEmail.trim());
+
+        const response = await fetch(`/api/admin/activity?${params}`);
+        if (!response.ok) {
+          const data = await response.json();
+          throw new Error(data.error || "Failed to fetch activities");
+        }
+
+        const data = await response.json();
+
+        if (appendMode) {
+          setActivities((prev) => [...prev, ...data.activities]);
+        } else {
+          setActivities(data.activities);
+          setOffset(0);
+        }
+
+        setTotal(data.total);
+        setError(null);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unknown error");
+      } finally {
+        setLoading(false);
+        setLoadingMore(false);
+      }
+    },
+    [typeFilter, sinceDate, debouncedEmail, offset]
+  );
+
+  // Re-fetch from start when filters change
+  useEffect(() => {
+    setOffset(0);
+    fetchActivities(false, 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [typeFilter, sinceDate, debouncedEmail]);
+
+  // Auto-refresh
   useEffect(() => {
     if (!autoRefresh) return;
-    const interval = setInterval(fetchActivities, 30000);
+    const interval = setInterval(() => fetchActivities(false, 0), 30000);
     return () => clearInterval(interval);
   }, [autoRefresh, fetchActivities]);
+
+  // Load more handler
+  const handleLoadMore = () => {
+    const nextOffset = offset + PAGE_SIZE;
+    setOffset(nextOffset);
+    fetchActivities(true, nextOffset);
+  };
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -122,64 +208,27 @@ export default function AdminActivityPage() {
     }
   };
 
-  const filteredActivities = useMemo(() => {
-    let result = [...activities];
-
-    const now = new Date();
-    const dateFilterDate = (() => {
-      switch (dateRange) {
-        case "today": {
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
-          return today;
-        }
-        case "7d":
-          return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-        case "30d":
-          return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-        default:
-          return null;
-      }
-    })();
-
-    if (dateFilterDate) {
-      result = result.filter(
-        activity => new Date(activity.createdAt) >= dateFilterDate
-      );
-    }
-
-    if (searchEmail.trim()) {
-      const query = searchEmail.toLowerCase();
-      result = result.filter(
-        activity =>
-          (activity.userEmail && activity.userEmail.toLowerCase().includes(query)) ||
-          (activity.user?.email && activity.user.email.toLowerCase().includes(query))
-      );
-    }
-
-    return result;
-  }, [activities, dateRange, searchEmail]);
-
+  // Summary counts from loaded activities
   const activityTypeCounts = useMemo(() => {
     return {
-      logins: filteredActivities.filter(a => a.type === "LOGIN").length,
-      dashboardViews: filteredActivities.filter(a => a.type === "DASHBOARD_VIEWED").length,
-      schedules: filteredActivities.filter(
+      logins: activities.filter(a => a.type === "LOGIN").length,
+      dashboardViews: activities.filter(a => a.type === "DASHBOARD_VIEWED").length,
+      schedules: activities.filter(
         a => a.type.includes("SCHEDULED") || a.type.includes("RESCHEDULED")
       ).length,
-      exports: filteredActivities.filter(a => a.type === "EXPORT").length,
-      searches: filteredActivities.filter(a => a.type === "SEARCH").length,
+      exports: activities.filter(a => a.type.includes("EXPORT") || a.type.includes("DOWNLOADED")).length,
+      inventory: activities.filter(a => a.type.startsWith("INVENTORY_")).length,
     };
-  }, [filteredActivities]);
+  }, [activities]);
 
   const exportToCSV = () => {
-    if (filteredActivities.length === 0) {
+    if (activities.length === 0) {
       alert("No activities to export");
       return;
     }
 
     const headers = ["Timestamp", "User", "Type", "Details", "IP"];
-    const rows = filteredActivities.map(activity => [
+    const rows = activities.map(activity => [
       new Date(activity.createdAt).toLocaleString(),
       activity.user?.email || activity.userEmail || "System",
       activity.type,
@@ -203,7 +252,7 @@ export default function AdminActivityPage() {
     return ACTIVITY_TYPES[type] || DEFAULT_ACTIVITY;
   };
 
-  const uniqueTypes = [...new Set(activities.map(a => a.type))];
+  const hasMore = activities.length < total;
 
   if (error) {
     return (
@@ -233,7 +282,7 @@ export default function AdminActivityPage() {
               </Link>
               <h1 className="text-xl font-bold">Activity Log</h1>
               <span className="text-xs text-muted bg-surface-2 px-2 py-1 rounded">
-                {activities.length} events
+                {total.toLocaleString()} total
               </span>
             </div>
 
@@ -274,8 +323,8 @@ export default function AdminActivityPage() {
             <div className="text-2xl font-bold text-orange-400">{activityTypeCounts.exports}</div>
           </div>
           <div className="bg-surface rounded-lg border border-t-border p-3">
-            <div className="text-xs text-muted mb-1">Searches</div>
-            <div className="text-2xl font-bold text-purple-400">{activityTypeCounts.searches}</div>
+            <div className="text-xs text-muted mb-1">Inventory</div>
+            <div className="text-2xl font-bold text-cyan-400">{activityTypeCounts.inventory}</div>
           </div>
         </div>
 
@@ -309,12 +358,12 @@ export default function AdminActivityPage() {
             <div className="flex items-center gap-3 flex-1">
               <span className="text-sm text-muted">Type:</span>
               <select
-                value={filter}
-                onChange={(e) => setFilter(e.target.value)}
+                value={typeFilter}
+                onChange={(e) => setTypeFilter(e.target.value)}
                 className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
               >
                 <option value="all">All Activities</option>
-                {uniqueTypes.map(type => (
+                {allTypes.map(type => (
                   <option key={type} value={type}>{type.replace(/_/g, " ")}</option>
                 ))}
               </select>
@@ -343,11 +392,12 @@ export default function AdminActivityPage() {
                 title={autoRefresh ? "Disable auto-refresh" : "Enable auto-refresh (every 30s)"}
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                 </svg>
               </button>
               <button
-                onClick={fetchActivities}
+                onClick={() => fetchActivities(false, 0)}
                 className="text-muted hover:text-foreground p-1.5 rounded-lg hover:bg-surface-2 transition-colors"
                 title="Refresh"
               >
@@ -374,7 +424,7 @@ export default function AdminActivityPage() {
           <div className="flex items-center justify-center py-12">
             <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-cyan-500" />
           </div>
-        ) : filteredActivities.length === 0 ? (
+        ) : activities.length === 0 ? (
           <div className="text-center py-12 text-muted">
             <svg className="w-12 h-12 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -385,7 +435,7 @@ export default function AdminActivityPage() {
         ) : (
           <>
             <div className="space-y-2">
-              {filteredActivities.map(activity => {
+              {activities.map(activity => {
                 const style = getActivityStyle(activity.type);
                 const metadataDisplay = formatMetadata(activity.type, activity.metadata);
                 return (
@@ -451,20 +501,28 @@ export default function AdminActivityPage() {
             </div>
 
             {/* Load More Button */}
-            {filteredActivities.length >= limit && (
+            {hasMore && (
               <div className="mt-6 flex justify-center">
                 <button
-                  onClick={() => setLimit(limit + 200)}
-                  className="px-4 py-2 bg-surface-2 hover:bg-surface-2 text-white rounded-lg transition-colors text-sm"
+                  onClick={handleLoadMore}
+                  disabled={loadingMore}
+                  className="px-4 py-2 bg-surface-2 hover:bg-surface-elevated text-white rounded-lg transition-colors text-sm disabled:opacity-50 flex items-center gap-2"
                 >
-                  Load More
+                  {loadingMore ? (
+                    <>
+                      <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+                      Loading...
+                    </>
+                  ) : (
+                    `Load More (${activities.length.toLocaleString()} of ${total.toLocaleString()})`
+                  )}
                 </button>
               </div>
             )}
 
             {/* Results Summary */}
             <div className="mt-4 text-center text-xs text-muted">
-              Showing {filteredActivities.length} of {activities.length} activities
+              Showing {activities.length.toLocaleString()} of {total.toLocaleString()} activities
             </div>
           </>
         )}
