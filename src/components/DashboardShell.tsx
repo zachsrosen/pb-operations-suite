@@ -2,7 +2,41 @@
 
 import Link from "next/link";
 import { ReactNode, useCallback } from "react";
+import { usePathname } from "next/navigation";
 import { ThemeToggle } from "./ThemeToggle";
+
+// Maps dashboard paths to their parent suite
+const SUITE_MAP: Record<string, { href: string; label: string }> = {
+  // Operations Suite
+  "/dashboards/scheduler": { href: "/suites/operations", label: "Operations" },
+  "/dashboards/site-survey-scheduler": { href: "/suites/operations", label: "Operations" },
+  "/dashboards/construction-scheduler": { href: "/suites/operations", label: "Operations" },
+  "/dashboards/inspection-scheduler": { href: "/suites/operations", label: "Operations" },
+  "/dashboards/timeline": { href: "/suites/operations", label: "Operations" },
+  "/dashboards/equipment-backlog": { href: "/suites/operations", label: "Operations" },
+  // Department Suite
+  "/dashboards/site-survey": { href: "/suites/department", label: "Departments" },
+  "/dashboards/design": { href: "/suites/department", label: "Departments" },
+  "/dashboards/permitting": { href: "/suites/department", label: "Departments" },
+  "/dashboards/inspections": { href: "/suites/department", label: "Departments" },
+  "/dashboards/interconnection": { href: "/suites/department", label: "Departments" },
+  "/dashboards/construction": { href: "/suites/department", label: "Departments" },
+  "/dashboards/incentives": { href: "/suites/department", label: "Departments" },
+  // Executive Suite
+  "/dashboards/command-center": { href: "/suites/executive", label: "Executive" },
+  "/dashboards/executive": { href: "/suites/executive", label: "Executive" },
+  "/dashboards/locations": { href: "/suites/executive", label: "Executive" },
+  // Admin Suite
+  "/dashboards/at-risk": { href: "/suites/admin", label: "Admin" },
+  "/dashboards/optimizer": { href: "/suites/admin", label: "Admin" },
+  "/dashboards/zuper-status-comparison": { href: "/suites/admin", label: "Admin" },
+  "/dashboards/mobile": { href: "/suites/admin", label: "Admin" },
+  "/dashboards/pe": { href: "/suites/admin", label: "Admin" },
+  // Additional Pipeline Suite
+  "/dashboards/sales": { href: "/suites/additional-pipeline", label: "Pipelines" },
+  "/dashboards/service": { href: "/suites/additional-pipeline", label: "Pipelines" },
+  "/dashboards/dnr": { href: "/suites/additional-pipeline", label: "Pipelines" },
+};
 
 interface Breadcrumb {
   label: string;
@@ -35,6 +69,15 @@ export default function DashboardShell({
   fullWidth = false,
   exportData,
 }: DashboardShellProps) {
+  const pathname = usePathname();
+  const parentSuite = SUITE_MAP[pathname] || null;
+  const backHref = parentSuite?.href || "/";
+
+  // Auto-generate breadcrumbs from suite mapping if not explicitly provided
+  const effectiveBreadcrumbs = breadcrumbs || (parentSuite
+    ? [{ label: parentSuite.label, href: parentSuite.href }]
+    : undefined);
+
   const colorMap: Record<string, string> = {
     orange: "text-orange-400",
     green: "text-green-400",
@@ -62,12 +105,12 @@ export default function DashboardShell({
       <header className="bg-surface border-b border-t-border sticky top-0 z-40">
         <div className={`${containerClass} py-3 sm:py-4`}>
           {/* Breadcrumbs */}
-          {breadcrumbs && breadcrumbs.length > 0 && (
+          {effectiveBreadcrumbs && effectiveBreadcrumbs.length > 0 && (
             <nav className="flex items-center gap-1 text-xs text-muted mb-2">
               <Link href="/" className="hover:text-foreground transition-colors">
                 Home
               </Link>
-              {breadcrumbs.map((crumb, i) => (
+              {effectiveBreadcrumbs.map((crumb, i) => (
                 <span key={i} className="flex items-center gap-1">
                   <span className="text-muted/50">/</span>
                   {crumb.href ? (
@@ -88,9 +131,9 @@ export default function DashboardShell({
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-3 sm:gap-4 min-w-0">
               <Link
-                href="/"
+                href={backHref}
                 className="text-muted hover:text-foreground transition-colors shrink-0"
-                title="Back to Home"
+                title={parentSuite ? `Back to ${parentSuite.label}` : "Back to Home"}
               >
                 <svg
                   className="w-5 h-5"
