@@ -569,9 +569,9 @@ export default function SchedulerPage() {
 
           const results = await Promise.all(lookupPromises);
 
-          // Merge Zuper job UIDs into projects (prefer matching stage category)
+          // Merge Zuper job UIDs into projects (only match the stage-appropriate category)
           for (const project of transformed) {
-            // Map project stage to category
+            // Map project stage to the Zuper job category it should link to
             const stageToCategory: Record<string, string> = {
               survey: "survey",
               rtb: "construction",
@@ -579,23 +579,20 @@ export default function SchedulerPage() {
               construction: "construction",
               inspection: "inspection",
             };
-            const preferredCategory = stageToCategory[project.stage] || "construction";
-            const preferredIndex = categories.indexOf(preferredCategory);
+            const matchCategory = stageToCategory[project.stage] || "construction";
+            const matchIndex = categories.indexOf(matchCategory);
 
-            // Check preferred category first, then others
-            const checkOrder = [preferredIndex, ...categories.map((_, i) => i).filter(i => i !== preferredIndex)];
-            for (const idx of checkOrder) {
-              const zuperData = results[idx];
-              if (zuperData?.jobs?.[project.id]) {
-                const zJob = zuperData.jobs[project.id];
-                project.zuperJobUid = zJob.jobUid;
-                project.zuperJobStatus = zJob.status;
-                project.zuperJobCategory = categories[idx]; // Track which category matched
-                if (zJob.scheduledDays) project.zuperScheduledDays = zJob.scheduledDays;
-                if (zJob.scheduledDate) project.zuperScheduledStart = zJob.scheduledDate;
-                if (zJob.scheduledEnd) project.zuperScheduledEnd = zJob.scheduledEnd;
-                break;
-              }
+            // Only link the Zuper job that matches the project's current stage
+            // Don't fall back to other categories (e.g. don't link survey job for a construction project)
+            const zuperData = results[matchIndex];
+            if (zuperData?.jobs?.[project.id]) {
+              const zJob = zuperData.jobs[project.id];
+              project.zuperJobUid = zJob.jobUid;
+              project.zuperJobStatus = zJob.status;
+              project.zuperJobCategory = categories[matchIndex];
+              if (zJob.scheduledDays) project.zuperScheduledDays = zJob.scheduledDays;
+              if (zJob.scheduledDate) project.zuperScheduledStart = zJob.scheduledDate;
+              if (zJob.scheduledEnd) project.zuperScheduledEnd = zJob.scheduledEnd;
             }
           }
         } catch (zuperErr) {
@@ -1190,11 +1187,8 @@ export default function SchedulerPage() {
 
   const openScheduleModal = useCallback(
     (project: SchedulerProject, dateStr: string) => {
-      // If Zuper has a scheduled start date, prefer it over the clicked/passed-in date
-      const zuperStart = project.zuperScheduledStart
-        ? project.zuperScheduledStart.split("T")[0]
-        : null;
-      const adjustedDate = getNextWorkday(zuperStart || dateStr);
+      // Always use the date the user clicked/selected, not the Zuper date
+      const adjustedDate = getNextWorkday(dateStr);
       const isSurveyOrInspection =
         project.stage === "survey" || project.stage === "inspection";
       setInstallDaysInput(isSurveyOrInspection ? 0.25 : project.zuperScheduledDays || project.daysInstall || 2);
