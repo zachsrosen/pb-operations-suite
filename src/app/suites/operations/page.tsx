@@ -26,6 +26,18 @@ const LINKS = [
     tag: "SCHEDULING",
   },
   {
+    href: "/dashboards/service-scheduler",
+    title: "Service Schedule",
+    description: "Calendar view of Zuper service visit and service revisit jobs.",
+    tag: "SCHEDULING",
+  },
+  {
+    href: "/dashboards/dnr-scheduler",
+    title: "D&R Schedule",
+    description: "Calendar view of Zuper detach, reset, and D&R inspection jobs.",
+    tag: "SCHEDULING",
+  },
+  {
     href: "/dashboards/timeline",
     title: "Timeline View",
     description: "Gantt-style timeline showing project progression and milestones.",

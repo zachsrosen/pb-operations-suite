@@ -1123,6 +1123,18 @@ export default function SchedulerPage() {
       }
     });
 
+    // Sort events within each day: construction → inspection → survey → other
+    const STAGE_ORDER: Record<string, number> = {
+      construction: 0, "construction-complete": 0,
+      inspection: 1, "inspection-pass": 1, "inspection-fail": 1,
+      survey: 2, "survey-complete": 2,
+    };
+    for (const day of Object.keys(eventsByDate)) {
+      eventsByDate[Number(day)].sort((a, b) =>
+        (STAGE_ORDER[a.eventType] ?? 9) - (STAGE_ORDER[b.eventType] ?? 9)
+      );
+    }
+
     return { startDay, daysInMonth, today, eventsByDate, weekdays };
   }, [currentYear, currentMonth, filteredScheduledEvents]);
 
@@ -1823,7 +1835,7 @@ export default function SchedulerPage() {
                 >
                   <option value="amount">Sort: Revenue</option>
                   <option value="location">Sort: Location</option>
-                  <option value="type">Sort: Job Type</option>
+                  <option value="type">Sort: Job Category</option>
                   <option value="date">Sort: Date</option>
                   <option value="days">Sort: Days</option>
                 </select>
@@ -2565,6 +2577,15 @@ export default function SchedulerPage() {
                               calOffset++;
                             }
                           });
+                          // Sort: construction → inspection → survey → other
+                          const WEEK_STAGE_ORDER: Record<string, number> = {
+                            construction: 0, "construction-complete": 0,
+                            inspection: 1, "inspection-pass": 1, "inspection-fail": 1,
+                            survey: 2, "survey-complete": 2,
+                          };
+                          dayEvents.sort((a, b) =>
+                            (WEEK_STAGE_ORDER[a.event.eventType] ?? 9) - (WEEK_STAGE_ORDER[b.event.eventType] ?? 9)
+                          );
                           return (
                             <div
                               key={di}
@@ -2737,6 +2758,14 @@ export default function SchedulerPage() {
                                   eventStart.toDateString() ===
                                   d.toDateString()
                                 );
+                              })
+                              .sort((a, b) => {
+                                const order: Record<string, number> = {
+                                  construction: 0, "construction-complete": 0,
+                                  inspection: 1, "inspection-pass": 1, "inspection-fail": 1,
+                                  survey: 2, "survey-complete": 2,
+                                };
+                                return (order[a.eventType] ?? 9) - (order[b.eventType] ?? 9);
                               })
                               .map((e, ei) => {
                                 const days = e.days || 1;

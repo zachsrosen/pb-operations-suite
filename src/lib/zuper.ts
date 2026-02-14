@@ -155,9 +155,14 @@ export interface TimeOffRequest {
 // These UIDs are specific to the photonbrothers Zuper account
 export const JOB_CATEGORY_UIDS = {
   SITE_SURVEY: "002bac33-84d3-4083-a35d-50626fc49288",
-  CONSTRUCTION: "6ffbc218-6dad-4a46-b378-1fb02b3ab4bf", // Zuper calls it "Construction", not "Installation"
+  CONSTRUCTION: "6ffbc218-6dad-4a46-b378-1fb02b3ab4bf",
   INSPECTION: "b7dc03d2-25d0-40df-a2fc-b1a477b16b65",
-  SERVICE: "cff6f839-c043-46ee-a09f-8d0e9f363437",
+  SERVICE_VISIT: "cff6f839-c043-46ee-a09f-8d0e9f363437",
+  SERVICE_REVISIT: "8a29a1c0-9141-4db6-b8bb-9d9a65e2a1de",
+  ADDITIONAL_VISIT: "d83c054f-69c1-470c-964c-2b79e88258f4",
+  DETACH: "d9d888a1-efc3-4f01-a8d6-c9e867374d71",
+  RESET: "43df49e9-3835-48f2-80ca-cc77ad7c3f0d",
+  DNR_INSPECTION: "a5e54b76-8b79-4cd7-a960-bad53d24e1c5",
 } as const;
 
 // Human-readable category names (for display/logging)
@@ -165,7 +170,12 @@ export const JOB_CATEGORIES = {
   SITE_SURVEY: "Site Survey",
   CONSTRUCTION: "Construction",
   INSPECTION: "Inspection",
-  SERVICE: "Service Visit",
+  SERVICE_VISIT: "Service Visit",
+  SERVICE_REVISIT: "Service Revisit",
+  ADDITIONAL_VISIT: "Additional Visit",
+  DETACH: "Detach",
+  RESET: "Reset",
+  DNR_INSPECTION: "D&R Inspection",
 } as const;
 
 // Job type mapping based on project type

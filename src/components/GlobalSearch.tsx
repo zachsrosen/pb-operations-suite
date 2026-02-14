@@ -25,6 +25,8 @@ const DASHBOARD_LINKS = [
   { name: "Site Survey Schedule", path: "/dashboards/site-survey-scheduler", description: "Schedule site surveys with Zuper" },
   { name: "Construction Schedule", path: "/dashboards/construction-scheduler", description: "Schedule construction installs with Zuper" },
   { name: "Inspection Schedule", path: "/dashboards/inspection-scheduler", description: "Schedule inspections with Zuper" },
+  { name: "Service Schedule", path: "/dashboards/service-scheduler", description: "Service visit and revisit scheduling" },
+  { name: "D&R Schedule", path: "/dashboards/dnr-scheduler", description: "Detach, reset, and D&R inspection scheduling" },
   { name: "At-Risk Projects", path: "/dashboards/at-risk", description: "Critical project alerts" },
   { name: "Location Comparison", path: "/dashboards/locations", description: "Performance across locations" },
   { name: "Timeline View", path: "/dashboards/timeline", description: "Gantt-style project timeline" },

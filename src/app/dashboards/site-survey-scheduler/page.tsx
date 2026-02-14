@@ -621,10 +621,17 @@ export default function SiteSurveySchedulerPage() {
   }, [currentYear, currentMonth]);
 
   const eventsForDate = useCallback((dateStr: string) => {
-    return filteredProjects.filter(p => {
-      const schedDate = manualSchedules[p.id] || p.scheduleDate;
-      return schedDate === dateStr;
-    });
+    return filteredProjects
+      .filter(p => {
+        const schedDate = manualSchedules[p.id] || p.scheduleDate;
+        return schedDate === dateStr;
+      })
+      .sort((a, b) => {
+        // Sort by time: use assigned slot start time, then Zuper scheduled time, then unscheduled last
+        const timeA = a.assignedSlot?.startTime || a.zuperScheduledTime || "zzz";
+        const timeB = b.assignedSlot?.startTime || b.zuperScheduledTime || "zzz";
+        return timeA.localeCompare(timeB);
+      });
   }, [filteredProjects, manualSchedules]);
 
   /* ================================================================ */
