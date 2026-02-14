@@ -25,6 +25,13 @@ const LINKS = [
     tag: "LOCATIONS",
     tagColor: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
   },
+  {
+    href: "/dashboards/executive-calendar",
+    title: "Revenue Calendar",
+    description: "Monthly calendar showing daily deal value of scheduled field service work.",
+    tag: "REVENUE",
+    tagColor: "bg-green-500/20 text-green-400 border-green-500/30",
+  },
 ];
 
 export default async function ExecutiveSuitePage() {

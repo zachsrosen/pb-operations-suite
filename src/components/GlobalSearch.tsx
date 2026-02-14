@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { formatMoney } from "@/lib/format";
+import { canAccessRoute, type UserRole } from "@/lib/role-permissions";
 
 interface SearchResult {
   id: string;
@@ -17,6 +19,7 @@ const DASHBOARD_LINKS = [
   // Executive Dashboards
   { name: "Pipeline Overview", path: "/dashboards/pipeline", description: "Full pipeline with filters and priority scoring" },
   { name: "Revenue", path: "/dashboards/revenue", description: "Revenue by stage, backlog, and milestones" },
+  { name: "Revenue Calendar", path: "/dashboards/executive-calendar", description: "Monthly calendar of scheduled revenue by day" },
   { name: "Capacity Planning", path: "/dashboards/capacity", description: "Crew capacity vs. forecasted installs" },
   { name: "Alerts", path: "/dashboards/alerts", description: "Overdue installs, PE risks, and capacity warnings" },
   // Operations Dashboards
@@ -47,6 +50,9 @@ const DASHBOARD_LINKS = [
   { name: "PE Dashboard", path: "/dashboards/pe", description: "Participate Energy tracking" },
   { name: "Executive Summary", path: "/dashboards/executive", description: "KPIs and charts for leadership" },
   { name: "Mobile Dashboard", path: "/dashboards/mobile", description: "Touch-optimized field view" },
+  // Admin
+  { name: "Zuper Compliance", path: "/dashboards/zuper-compliance", description: "Per-user compliance scorecards" },
+  { name: "Zuper Status Comparison", path: "/dashboards/zuper-status-comparison", description: "Compare Zuper job statuses with HubSpot" },
   // Help & Info
   { name: "Dashboard Guide", path: "/guide", description: "How to use each dashboard" },
   { name: "Product Updates", path: "/updates", description: "Changelog and release notes" },
@@ -73,15 +79,23 @@ export function GlobalSearch() {
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
   const isMac = useIsMac();
   const modKey = isMac ? "\u2318" : "Ctrl";
+  const { data: session } = useSession();
+  const userRole = (session?.user as { role?: string } | undefined)?.role as UserRole | undefined;
+
+  // Filter links to only those the user's role can access
+  const accessibleLinks = useMemo(() => {
+    if (!userRole) return DASHBOARD_LINKS; // Show all while session loads (render is gated by isOpen anyway)
+    return DASHBOARD_LINKS.filter((d) => canAccessRoute(userRole, d.path));
+  }, [userRole]);
 
   // Filter dashboards by query
   const filteredDashboards = query.length > 0
-    ? DASHBOARD_LINKS.filter(
+    ? accessibleLinks.filter(
         (d) =>
           d.name.toLowerCase().includes(query.toLowerCase()) ||
           d.description.toLowerCase().includes(query.toLowerCase())
       )
-    : DASHBOARD_LINKS;
+    : accessibleLinks;
 
   // Total selectable items
   const totalItems = filteredDashboards.length + results.length;

@@ -85,6 +85,13 @@ const TESTING_DASHBOARDS = [
     tagColor: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
   },
   {
+    href: "/dashboards/zuper-compliance",
+    title: "Zuper Compliance",
+    description: "Per-user compliance scorecards for Zuper field service status updates.",
+    tag: "COMPLIANCE",
+    tagColor: "bg-red-500/20 text-red-400 border-red-500/30",
+  },
+  {
     href: "/dashboards/mobile",
     title: "Mobile Dashboard",
     description: "Touch-optimized view for field teams and fast project lookup.",
