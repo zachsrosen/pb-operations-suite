@@ -15,6 +15,30 @@ interface UpdateEntry {
 
 const UPDATES: UpdateEntry[] = [
   {
+    version: "1.36.0",
+    date: "2026-02-13",
+    title: "Role-Filtered Search",
+    description: "Global search (Cmd+K) now only shows dashboards your role has access to. Non-admin users no longer see admin-only page names in search results.",
+    changes: [
+      { type: "improvement", text: "Global search filters dashboard links by user role using existing permission system" },
+      { type: "improvement", text: "New dashboards (Zuper Compliance, Revenue Calendar) added to search index" },
+    ],
+  },
+  {
+    version: "1.35.0",
+    date: "2026-02-13",
+    title: "Zuper Compliance Dashboard & Executive Revenue Calendar",
+    description: "Two new dashboards: per-user compliance scorecards for Zuper field service, and a monthly revenue calendar showing daily deal value from scheduled work.",
+    changes: [
+      { type: "feature", text: "Zuper Compliance Dashboard — per-user on-time %, stale jobs, never-started counts, and A-F grades with weighted scoring" },
+      { type: "feature", text: "Executive Revenue Calendar — monthly grid showing daily revenue from construction, D&R, and service jobs joined with HubSpot deal values" },
+      { type: "feature", text: "Compliance dashboard includes expandable rows with category breakdowns and stale job links to Zuper" },
+      { type: "feature", text: "Revenue calendar includes category toggles, team filters, and click-to-expand day detail panels" },
+      { type: "improvement", text: "Compliance dashboard added to Admin Suite navigation" },
+      { type: "improvement", text: "Revenue Calendar added to Executive Suite navigation" },
+    ],
+  },
+  {
     version: "1.34.0",
     date: "2026-02-13",
     title: "Master Schedule — Bug Fixes & Sort Dropdown",
