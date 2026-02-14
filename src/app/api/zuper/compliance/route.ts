@@ -353,8 +353,11 @@ export async function GET(request: NextRequest) {
       const scheduledEnd = job.scheduled_end_time
         ? new Date(job.scheduled_end_time)
         : null;
-      const completedTime = job.completed_time || job.completed_at
-        ? new Date(job.completed_time || job.completed_at)
+      // Zuper list API often doesn't return completed_time, so fall back to
+      // scheduled_end_time for completed jobs (best available proxy)
+      const rawCompletedTime = job.completed_time || job.completed_at || null;
+      const completedTime = rawCompletedTime
+        ? new Date(rawCompletedTime)
         : null;
 
       // Attribute job to each assigned user
@@ -383,14 +386,19 @@ export async function GET(request: NextRequest) {
         acc.totalJobs++;
         acc.byCategory[categoryName] = (acc.byCategory[categoryName] || 0) + 1;
 
-        // Check if completed
-        if (COMPLETED_STATUSES.has(statusLower) && completedTime) {
+        // Check if completed — count the job even if we don't have an exact
+        // completion timestamp (Zuper list API often omits it)
+        if (COMPLETED_STATUSES.has(statusLower)) {
           acc.completedJobs++;
 
+          // Use completedTime if available, otherwise fall back to
+          // scheduled_end_time as the best proxy for when work finished
+          const effectiveCompletedTime = completedTime || scheduledEnd;
+
           // On-time check: completed within scheduled_end + 1 day grace
-          if (scheduledEnd) {
+          if (scheduledEnd && effectiveCompletedTime) {
             const deadline = new Date(scheduledEnd.getTime() + GRACE_MS);
-            if (completedTime <= deadline) {
+            if (effectiveCompletedTime <= deadline) {
               acc.onTimeCompletions++;
             } else {
               acc.lateCompletions++;
@@ -400,9 +408,9 @@ export async function GET(request: NextRequest) {
             acc.onTimeCompletions++;
           }
 
-          // Avg days to complete: scheduled_start to completed_time
-          if (scheduledStart && completedTime > scheduledStart) {
-            const diffMs = completedTime.getTime() - scheduledStart.getTime();
+          // Avg days to complete: scheduled_start to completed/scheduled_end
+          if (scheduledStart && effectiveCompletedTime && effectiveCompletedTime > scheduledStart) {
+            const diffMs = effectiveCompletedTime.getTime() - scheduledStart.getTime();
             const diffDays = diffMs / (1000 * 60 * 60 * 24);
             acc.completionDays.push(diffDays);
           }

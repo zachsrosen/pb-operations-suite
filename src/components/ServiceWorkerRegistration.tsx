@@ -6,26 +6,27 @@ export function ServiceWorkerRegistration() {
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
 
-    // Disable service worker caching to avoid stale app-route/navigation behavior.
-    navigator.serviceWorker.getRegistrations()
-      .then((registrations) => Promise.all(registrations.map((reg) => reg.unregister())))
-      .catch(() => {
-        // Best effort only.
-      });
+    navigator.serviceWorker
+      .register("/sw.js")
+      .then((registration) => {
+        registration.addEventListener("updatefound", () => {
+          const newWorker = registration.installing;
+          if (!newWorker) return;
 
-    if ("caches" in window) {
-      caches.keys()
-        .then((keys) =>
-          Promise.all(
-            keys
-              .filter((key) => key.startsWith("pb-ops-"))
-              .map((key) => caches.delete(key))
-          )
-        )
-        .catch(() => {
-          // Best effort only.
+          newWorker.addEventListener("statechange", () => {
+            if (
+              newWorker.state === "activated" &&
+              navigator.serviceWorker.controller
+            ) {
+              // New SW activated — reload for latest version on next navigation
+              console.log("[SW] New version available");
+            }
+          });
         });
-    }
+      })
+      .catch(() => {
+        // Registration failed — not critical, app works without SW
+      });
   }, []);
 
   return null;

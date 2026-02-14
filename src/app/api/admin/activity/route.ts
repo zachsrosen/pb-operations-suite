@@ -50,6 +50,7 @@ export async function GET(request: NextRequest) {
     const entityType = searchParams.get("entityType");
     const sinceParam = searchParams.get("since");
     const emailParam = searchParams.get("email");
+    const roleParam = searchParams.get("role");
 
     let since: Date | undefined;
     if (sinceParam) {
@@ -65,6 +66,7 @@ export async function GET(request: NextRequest) {
       entityType: entityType || undefined,
       since,
       userEmail: emailParam || undefined,
+      userRole: roleParam || undefined,
     });
 
     return NextResponse.json({ activities, total, limit, offset });

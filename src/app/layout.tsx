@@ -4,6 +4,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/react";
 import { Providers } from "./providers";
 import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistration";
+import { InstallPrompt } from "@/components/InstallPrompt";
 import ImpersonationBanner from "@/components/ImpersonationBanner";
 import PageViewTracker from "@/components/PageViewTracker";
 import "./globals.css";
@@ -23,6 +24,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
+  viewportFit: "cover",
   themeColor: [
     { media: "(prefers-color-scheme: dark)", color: "#0a0a0f" },
     { media: "(prefers-color-scheme: light)", color: "#ffffff" },
@@ -73,6 +75,7 @@ export default function RootLayout({
           {children}
         </Providers>
         <ServiceWorkerRegistration />
+        <InstallPrompt />
         <Analytics />
       </body>
     </html>
