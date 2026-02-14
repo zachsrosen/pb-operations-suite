@@ -1,10 +1,10 @@
-const CACHE_NAME = "pb-ops-v2";
-const STATIC_ASSETS = ["/login"];
+const CACHE_NAME = "pb-ops-v3";
+const OFFLINE_URL = "/offline.html";
 
-// Install: cache shell assets
+// Install: cache offline fallback
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
+    caches.open(CACHE_NAME).then((cache) => cache.add(OFFLINE_URL))
   );
   self.skipWaiting();
 });
@@ -23,7 +23,7 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
-// Fetch: network-first for API, cache-first for static
+// Fetch: network-first for everything, offline fallback for navigations
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   const url = new URL(request.url);
@@ -31,16 +31,18 @@ self.addEventListener("fetch", (event) => {
   // Skip non-GET and cross-origin
   if (request.method !== "GET" || url.origin !== self.location.origin) return;
 
-  // Never cache document navigations; always fetch the latest app route HTML.
-  if (request.mode === "navigate") {
-    event.respondWith(fetch(request));
-    return;
-  }
-
   // Never cache SSE stream or auth endpoints
   if (url.pathname.startsWith("/api/stream") || url.pathname.startsWith("/api/auth")) return;
 
-  // API calls: network-first with short cache fallback
+  // Document navigations: network-only, offline fallback
+  if (request.mode === "navigate") {
+    event.respondWith(
+      fetch(request).catch(() => caches.match(OFFLINE_URL))
+    );
+    return;
+  }
+
+  // API calls: network-first with cache fallback
   if (url.pathname.startsWith("/api/")) {
     event.respondWith(
       fetch(request)
@@ -56,7 +58,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Cache-only static file assets (images/fonts/css/js), not app documents.
+  // Static assets: cache-first with network update
   const isStaticAsset =
     url.pathname.startsWith("/_next/static/") ||
     /\.(?:js|css|png|jpg|jpeg|gif|svg|ico|webp|woff2?)$/i.test(url.pathname);
