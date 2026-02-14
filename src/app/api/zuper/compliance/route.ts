@@ -332,6 +332,38 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // DEBUG: Log the shape of the first few completed jobs so we can identify
+    // where the completion timestamp actually lives in the Zuper response
+    let debugSampleLogged = 0;
+    const debugSamples: Record<string, unknown>[] = [];
+    for (const { job } of allJobs) {
+      const st = getStatusName(job).toLowerCase();
+      if (COMPLETED_STATUSES.has(st) && debugSampleLogged < 3) {
+        debugSampleLogged++;
+        debugSamples.push({
+          job_uid: job.job_uid,
+          status: st,
+          has_job_status: Array.isArray(job.job_status),
+          job_status_length: Array.isArray(job.job_status) ? job.job_status.length : 0,
+          job_status_sample: Array.isArray(job.job_status) ? job.job_status.slice(-2) : null,
+          completed_time: job.completed_time ?? "MISSING",
+          completed_at: job.completed_at ?? "MISSING",
+          completedAt: job.completedAt ?? "MISSING",
+          // Dump all top-level keys so we can see what fields exist
+          top_level_keys: Object.keys(job).sort(),
+        });
+      }
+    }
+    if (debugSamples.length > 0) {
+      console.log("[compliance] DEBUG completed job samples:", JSON.stringify(debugSamples, null, 2));
+    } else {
+      console.log("[compliance] DEBUG: No completed jobs found in", allJobs.length, "total jobs");
+      if (allJobs.length > 0) {
+        const sampleJob = allJobs[0].job;
+        console.log("[compliance] DEBUG first job status:", getStatusName(sampleJob), "| keys:", Object.keys(sampleJob).sort().join(", "));
+      }
+    }
+
     // Collect unique teams and categories for filter options
     const teamsSet = new Set<string>();
     const categoriesSet = new Set<string>();
@@ -562,7 +594,7 @@ export async function GET(request: NextRequest) {
       userCount: users.length,
     };
 
-    const response: ComplianceResponse = {
+    const response = {
       users,
       summary,
       filters: {
@@ -575,6 +607,13 @@ export async function GET(request: NextRequest) {
         days,
       },
       lastUpdated: new Date().toISOString(),
+      // TODO: Remove after debugging completion time issue
+      _debug: {
+        totalJobsFetched: allJobs.length,
+        completedJobSamples: debugSamples,
+        totalMeasurableOnTime: totalOnTime,
+        totalMeasurableLate: users.reduce((sum, u) => sum + u.lateCompletions, 0),
+      },
     };
 
     return NextResponse.json(response);
