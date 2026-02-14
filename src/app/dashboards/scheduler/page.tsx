@@ -617,9 +617,13 @@ export default function SchedulerPage() {
             if (records && Object.keys(records).length > 0) {
               const restored: Record<string, ManualSchedule> = {};
               for (const [projId, rec] of Object.entries(records)) {
+                // Use stored days, or fall back to the project's expected install days
+                const proj = transformed.find((p: SchedulerProject) => p.id === projId);
+                const isSI = proj?.stage === "survey" || proj?.stage === "inspection";
+                const fallbackDays = isSI ? 0.25 : (proj?.daysInstall || proj?.totalDays || 2);
                 restored[projId] = {
                   startDate: rec.scheduledDate,
-                  days: rec.scheduledDays || 1,
+                  days: rec.scheduledDays || fallbackDays,
                   crew: rec.assignedUser || "",
                   isTentative: true,
                   recordId: rec.id,
