@@ -501,6 +501,7 @@ model ScheduleRecord {
 
   // When
   scheduledDate   String   // YYYY-MM-DD
+  scheduledDays   Float?   // Number of days scheduled (e.g. 2, 0.25)
   scheduledStart  String?  // HH:mm (for time slots)
   scheduledEnd    String?  // HH:mm
 

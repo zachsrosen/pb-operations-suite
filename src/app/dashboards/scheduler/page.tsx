@@ -488,7 +488,7 @@ export default function SchedulerPage() {
   const [selectedStages, setSelectedStages] = useState<string[]>([]);
   const [searchText, setSearchText] = useState("");
   const [typeFilters, setTypeFilters] = useState<string[]>([]);
-  const [sortBy, setSortBy] = useState("amount");
+  const [sortBy, setSortBy] = useState<"amount" | "date" | "days" | "location" | "type">("amount");
 
   /* ---- selection / scheduling ---- */
   const [selectedProject, setSelectedProject] = useState<SchedulerProject | null>(null);
@@ -612,14 +612,14 @@ export default function SchedulerPage() {
             const tentData = await tentRes.json();
             const records = tentData.records as Record<string, {
               id: string; projectId: string; scheduledDate: string; assignedUser?: string;
-              scheduleType?: string; scheduledStart?: string; scheduledEnd?: string;
+              scheduleType?: string; scheduledDays?: number; scheduledStart?: string; scheduledEnd?: string;
             }>;
             if (records && Object.keys(records).length > 0) {
               const restored: Record<string, ManualSchedule> = {};
               for (const [projId, rec] of Object.entries(records)) {
                 restored[projId] = {
                   startDate: rec.scheduledDate,
-                  days: 1,
+                  days: rec.scheduledDays || 1,
                   crew: rec.assignedUser || "",
                   isTentative: true,
                   recordId: rec.id,
@@ -790,6 +790,10 @@ export default function SchedulerPage() {
       );
     else if (sortBy === "days")
       filtered.sort((a, b) => (a.daysInstall || 1) - (b.daysInstall || 1));
+    else if (sortBy === "location")
+      filtered.sort((a, b) => (a.location || "").localeCompare(b.location || ""));
+    else if (sortBy === "type")
+      filtered.sort((a, b) => (a.type || "").localeCompare(b.type || ""));
     return filtered;
   }, [projects, selectedLocations, selectedStages, searchText, typeFilters, sortBy]);
 
@@ -1807,20 +1811,18 @@ export default function SchedulerPage() {
                     {type === "EV" ? "EV Charger" : type}
                   </button>
                 ))}
-                {/* Sort toggle */}
-                {["amount", "date", "days"].map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => setSortBy(s)}
-                    className={`px-2 py-1 text-[0.6rem] rounded border transition-colors ${
-                      sortBy === s
-                        ? "bg-surface-2 border-muted text-foreground"
-                        : "bg-background border-t-border text-muted hover:border-muted"
-                    }`}
-                  >
-                    {s === "amount" ? "$ Rev" : s === "date" ? "Date" : "Days"}
-                  </button>
-                ))}
+                {/* Sort dropdown */}
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+                  className="px-1.5 py-1 text-[0.6rem] rounded border bg-background border-t-border text-muted hover:border-muted focus:outline-none focus:border-orange-500 cursor-pointer"
+                >
+                  <option value="amount">Sort: Revenue</option>
+                  <option value="location">Sort: Location</option>
+                  <option value="type">Sort: Job Type</option>
+                  <option value="date">Sort: Date</option>
+                  <option value="days">Sort: Days</option>
+                </select>
               </div>
               {/* Multi-select Location Filter */}
               <div className="flex flex-wrap gap-1 mt-1">
@@ -1862,8 +1864,10 @@ export default function SchedulerPage() {
           </div>
           {/* Scheduled vs Needs Scheduling breakdown for survey/inspection */}
           {(() => {
-            const showBreakdown = selectedStages.length > 0 && selectedStages.every(s => s === "survey" || s === "inspection");
-            if (!showBreakdown && !(selectedStages.length === 0)) return null;
+            const showBreakdown = selectedStages.length > 0
+              ? selectedStages.every(s => s === "survey" || s === "inspection")
+              : filteredProjects.length > 0 && filteredProjects.every(p => p.stage === "survey" || p.stage === "inspection");
+            if (!showBreakdown) return null;
             const surveyOrInspect = filteredProjects.filter(p => p.stage === "survey" || p.stage === "inspection");
             if (surveyOrInspect.length === 0) return null;
             const scheduled = surveyOrInspect.filter(p => !!manualSchedules[p.id] || !!p.scheduleDate).length;
@@ -1899,20 +1903,23 @@ export default function SchedulerPage() {
             {!loading &&
               !error &&
               (() => {
-                // Sort survey/inspection: unscheduled first for visibility
-                const sorted = [...filteredProjects].sort((a, b) => {
-                  const aIsSI = a.stage === "survey" || a.stage === "inspection";
-                  const bIsSI = b.stage === "survey" || b.stage === "inspection";
-                  if (!aIsSI || !bIsSI) return 0;
-                  const aSched = !!(manualSchedules[a.id] || a.scheduleDate);
-                  const bSched = !!(manualSchedules[b.id] || b.scheduleDate);
-                  if (aSched === bSched) return 0;
-                  return aSched ? 1 : -1; // unscheduled first
-                });
-                // Track sub-group headers already rendered
-                let lastGroupKey = "";
-                return sorted;
-              })().map((p, _idx, arr) => {
+                // Only show survey/inspection grouping when exclusively viewing those stages
+                const showSIGrouping = selectedStages.length > 0
+                  ? selectedStages.every(s => s === "survey" || s === "inspection")
+                  : filteredProjects.length > 0 && filteredProjects.every(p => p.stage === "survey" || p.stage === "inspection");
+                // Sort survey/inspection: unscheduled first for visibility (only when grouping)
+                const sorted = showSIGrouping
+                  ? [...filteredProjects].sort((a, b) => {
+                      const aIsSI = a.stage === "survey" || a.stage === "inspection";
+                      const bIsSI = b.stage === "survey" || b.stage === "inspection";
+                      if (!aIsSI || !bIsSI) return 0;
+                      const aSched = !!(manualSchedules[a.id] || a.scheduleDate);
+                      const bSched = !!(manualSchedules[b.id] || b.scheduleDate);
+                      if (aSched === bSched) return 0;
+                      return aSched ? 1 : -1; // unscheduled first
+                    })
+                  : filteredProjects;
+                return sorted.map((p, _idx, arr) => {
                 const customerName = getCustomerName(p.name);
                 const types = (p.type || "")
                   .split(";")
@@ -1928,7 +1935,7 @@ export default function SchedulerPage() {
                 const prevIsSI = prevProject ? (prevProject.stage === "survey" || prevProject.stage === "inspection") : false;
                 const prevScheduled = prevProject ? !!(manualSchedules[prevProject.id] || prevProject.scheduleDate) : false;
                 const prevGroupKey = prevIsSI ? `${prevProject!.stage}-${prevScheduled ? "sched" : "unsched"}` : "";
-                const showGroupHeader = isSurveyOrInspection && siGroupKey !== prevGroupKey;
+                const showGroupHeader = showSIGrouping && isSurveyOrInspection && siGroupKey !== prevGroupKey;
 
                 return (
                   <React.Fragment key={p.id}>
@@ -2149,7 +2156,8 @@ export default function SchedulerPage() {
                     </div>
                   </React.Fragment>
                 );
-              })}
+              });
+              })()}
           </div>
         </aside>
 

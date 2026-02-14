@@ -15,6 +15,20 @@ interface UpdateEntry {
 
 const UPDATES: UpdateEntry[] = [
   {
+    version: "1.34.0",
+    date: "2026-02-13",
+    title: "Master Schedule — Bug Fixes & Sort Dropdown",
+    description: "Fixed tentative schedules losing day count on refresh, cleaned up duplicate sidebar headers, and replaced sort toggle buttons with a compact dropdown.",
+    changes: [
+      { type: "fix", text: "Tentative scheduled projects now persist user-entered day count across page refresh (was resetting to 1)" },
+      { type: "fix", text: "Needs Scheduling / Scheduled sub-group headers only appear when viewing survey or inspection stages exclusively" },
+      { type: "fix", text: "Scheduled vs unscheduled count bar now hidden when viewing mixed stages" },
+      { type: "fix", text: "Schedule modal now always uses the clicked calendar date instead of defaulting to Zuper scheduled date" },
+      { type: "fix", text: "Zuper job linking now strictly matches stage category — no longer falls back to survey job for construction projects" },
+      { type: "improvement", text: "Replaced sort toggle buttons (Revenue, Date, Days) with a compact sort dropdown including Location and Job Type options" },
+    ],
+  },
+  {
     version: "1.33.0",
     date: "2026-02-13",
     title: "Master Schedule — Location Views, Smarter Filters & Label Updates",

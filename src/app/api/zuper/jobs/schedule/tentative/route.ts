@@ -53,6 +53,7 @@ export async function PUT(request: NextRequest) {
       projectId: String(project.id),
       projectName: project.name || "Unknown",
       scheduledDate: schedule.date,
+      scheduledDays: schedule.days ? Number(schedule.days) : undefined,
       scheduledStart: schedule.startTime,
       scheduledEnd: schedule.endTime,
       assignedUser: schedule.crew || schedule.assignedUser,

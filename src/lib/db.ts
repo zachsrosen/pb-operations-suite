@@ -601,6 +601,7 @@ export async function createScheduleRecord(data: {
   projectId: string;
   projectName: string;
   scheduledDate: string;
+  scheduledDays?: number;
   scheduledStart?: string;
   scheduledEnd?: string;
   assignedUser?: string;
@@ -622,6 +623,7 @@ export async function createScheduleRecord(data: {
         projectId: data.projectId,
         projectName: data.projectName,
         scheduledDate: data.scheduledDate,
+        scheduledDays: data.scheduledDays,
         scheduledStart: data.scheduledStart,
         scheduledEnd: data.scheduledEnd,
         assignedUser: data.assignedUser,
