@@ -127,6 +127,35 @@ function getStatusName(job: any): string {
 }
 
 /**
+ * Extract the completion timestamp from a job's status history.
+ * Zuper jobs have a `job_status` array tracking each status transition
+ * with a `created_at` timestamp. We find the most recent entry whose
+ * status_name matches a completed status.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function getCompletedTimeFromHistory(job: any): Date | null {
+  // First check direct fields (some endpoints include these)
+  const direct = job.completed_time || job.completed_at;
+  if (direct) return new Date(direct);
+
+  // Walk the job_status history array
+  const statusHistory = job.job_status;
+  if (!Array.isArray(statusHistory)) return null;
+
+  // Iterate in reverse to find the most recent completed status entry
+  for (let i = statusHistory.length - 1; i >= 0; i--) {
+    const entry = statusHistory[i];
+    if (!entry) continue;
+    const name = (entry.status_name || entry.name || "").toLowerCase();
+    if (COMPLETED_STATUSES.has(name) && (entry.created_at || entry.updated_at)) {
+      return new Date(entry.created_at || entry.updated_at);
+    }
+  }
+
+  return null;
+}
+
+/**
  * Extract assigned users from a job. Returns array of { userUid, userName, teamName }.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -353,12 +382,9 @@ export async function GET(request: NextRequest) {
       const scheduledEnd = job.scheduled_end_time
         ? new Date(job.scheduled_end_time)
         : null;
-      // Zuper list API often doesn't return completed_time, so fall back to
-      // scheduled_end_time for completed jobs (best available proxy)
-      const rawCompletedTime = job.completed_time || job.completed_at || null;
-      const completedTime = rawCompletedTime
-        ? new Date(rawCompletedTime)
-        : null;
+      // Extract completion time from job_status history array, falling back
+      // to direct fields, then scheduled_end_time as last resort
+      const completedTime = getCompletedTimeFromHistory(job);
 
       // Attribute job to each assigned user
       for (const { userUid, userName, teamName } of assignedUsers) {
@@ -441,9 +467,12 @@ export async function GET(request: NextRequest) {
     const users: UserMetrics[] = [];
 
     for (const acc of Array.from(userMap.values())) {
+      // Use measurable completions (on-time + late) as denominator so that
+      // jobs without a completion timestamp don't drag down the rate
+      const measurableCompletions = acc.onTimeCompletions + acc.lateCompletions;
       const onTimePercent =
-        acc.completedJobs > 0
-          ? Math.round((acc.onTimeCompletions / acc.completedJobs) * 100 * 10) / 10
+        measurableCompletions > 0
+          ? Math.round((acc.onTimeCompletions / measurableCompletions) * 100 * 10) / 10
           : 0;
 
       const avgDaysToComplete =
