@@ -15,6 +15,43 @@ interface UpdateEntry {
 
 const UPDATES: UpdateEntry[] = [
   {
+    version: "1.39.0",
+    date: "2026-02-13",
+    title: "Equipment Detail in Schedule Modals",
+    description: "Schedule and detail modals in the Master Scheduler now show full equipment specs — brand, model, wattage, kWac, and kWh — instead of just counts.",
+    changes: [
+      { type: "improvement", text: "Schedule modal shows module brand, model, and wattage (e.g., 30x REC Alpha Pure 430W)" },
+      { type: "improvement", text: "Schedule modal shows inverter brand, model, and kWac rating" },
+      { type: "improvement", text: "Battery display now includes kWh capacity alongside brand" },
+      { type: "improvement", text: "Detail modal updated with same equipment spec format" },
+    ],
+  },
+  {
+    version: "1.38.0",
+    date: "2026-02-13",
+    title: "Equipment Backlog — Brand & Model Display",
+    description: "Equipment backlog table now shows brand names, model numbers, and per-unit specs alongside counts for modules, inverters, and batteries.",
+    changes: [
+      { type: "improvement", text: "Module column shows brand + model name and wattage per panel" },
+      { type: "improvement", text: "Inverter column shows brand + model and kWac rating" },
+      { type: "improvement", text: "Battery column shows brand + model and kWh capacity" },
+      { type: "improvement", text: "Wider truncation limits (160px) for equipment brand/model text" },
+    ],
+  },
+  {
+    version: "1.37.0",
+    date: "2026-02-13",
+    title: "Survey Unschedule Sync & Non-Core Category Audit",
+    description: "Cancelling a survey now syncs the removal to both Zuper and HubSpot. Status comparison dashboard gains a non-core category audit section.",
+    changes: [
+      { type: "feature", text: "Cancelling a site survey schedule now clears the Zuper job dates and HubSpot schedule property" },
+      { type: "feature", text: "Zuper Status Comparison: non-core category audit identifies mismatched deals with Additional Visit or Service Visit jobs" },
+      { type: "feature", text: "Audit section shows summary stats and affected deals table with category badges and HubSpot links" },
+      { type: "internal", text: "Added DELETE endpoint to /api/zuper/jobs/schedule for survey unscheduling" },
+      { type: "internal", text: "Added unscheduleJob() method to Zuper client" },
+    ],
+  },
+  {
     version: "1.36.0",
     date: "2026-02-13",
     title: "Role-Filtered Search",
