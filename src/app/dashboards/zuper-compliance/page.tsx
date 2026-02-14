@@ -60,12 +60,42 @@ interface ComplianceSummary {
   userCount: number;
 }
 
+interface GroupComparison {
+  name: string;
+  totalJobs: number;
+  completedJobs: number;
+  onTimeCompletions: number;
+  lateCompletions: number;
+  onTimePercent: number;
+  stuckJobs: number;
+  neverStartedJobs: number;
+  avgDaysToComplete: number;
+  avgDaysLate: number;
+  onOurWayOnTime: number;
+  onOurWayLate: number;
+  onOurWayPercent: number;
+  complianceScore: number;
+  grade: string;
+  userCount: number;
+}
+
+interface DataQuality {
+  totalJobsFetched: number;
+  unassignedJobs: number;
+  filteredOutByTeam: number;
+  categoriesFetched: number;
+  totalCategories: number;
+}
+
 interface ComplianceData {
   users: UserMetrics[];
   summary: ComplianceSummary;
+  teamComparison: GroupComparison[];
+  categoryComparison: GroupComparison[];
   filters: { teams: string[]; categories: string[] };
   dateRange: { from: string; to: string; days: number };
   lastUpdated: string;
+  dataQuality?: DataQuality;
 }
 
 /* ------------------------------------------------------------------ */
@@ -185,6 +215,141 @@ function JobListTable({
                 )}
               </tr>
             ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Group comparison table (reused for team + category comparisons)    */
+/* ------------------------------------------------------------------ */
+
+function ComparisonTable({
+  rows,
+  title,
+  nameLabel,
+  accentColor,
+}: {
+  rows: GroupComparison[];
+  title: string;
+  nameLabel: string;
+  accentColor: string;
+}) {
+  const pctColor = (pct: number) => {
+    if (pct >= 80) return "text-green-400";
+    if (pct >= 60) return "text-yellow-400";
+    return "text-red-400";
+  };
+
+  const gradeClasses = (grade: string) => {
+    switch (grade) {
+      case "A":
+      case "B":
+        return "bg-green-500/20 text-green-400";
+      case "C":
+        return "bg-yellow-500/20 text-yellow-400";
+      case "D":
+      case "F":
+        return "bg-red-500/20 text-red-400";
+      default:
+        return "bg-surface-2 text-muted";
+    }
+  };
+
+  if (rows.length === 0) return null;
+
+  // Find best and worst for highlighting
+  const best = rows.reduce((a, b) => (a.complianceScore > b.complianceScore ? a : b));
+  const worst = rows.reduce((a, b) => (a.complianceScore < b.complianceScore ? a : b));
+
+  return (
+    <div className="bg-surface/50 border border-t-border rounded-xl overflow-hidden">
+      <div className={`px-4 py-3 border-b border-t-border bg-surface/80 flex items-center justify-between`}>
+        <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+        <span className="text-xs text-muted">{rows.length} groups</span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-muted text-left border-b border-t-border">
+              <th className="px-4 py-2.5">{nameLabel}</th>
+              <th className="px-4 py-2.5 text-right">Users</th>
+              <th className="px-4 py-2.5 text-right">Total</th>
+              <th className="px-4 py-2.5 text-right">Done</th>
+              <th className="px-4 py-2.5 text-right">On-Time %</th>
+              <th className="px-4 py-2.5 text-right">Late</th>
+              <th className="px-4 py-2.5 text-right">Stuck</th>
+              <th className="px-4 py-2.5 text-right">Not Started</th>
+              <th className="px-4 py-2.5 text-right">Avg Days</th>
+              <th className="px-4 py-2.5 text-right">Avg Late</th>
+              <th className="px-4 py-2.5 text-right">OOW %</th>
+              <th className="px-4 py-2.5 text-center">Grade</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const isBest = rows.length > 1 && r.name === best.name;
+              const isWorst = rows.length > 1 && r.name === worst.name;
+              return (
+                <tr
+                  key={r.name}
+                  className={`border-b border-t-border/50 ${
+                    isBest ? "bg-green-500/5" : isWorst ? "bg-red-500/5" : ""
+                  }`}
+                >
+                  <td className="px-4 py-2.5">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`w-2 h-2 rounded-full shrink-0`}
+                        style={{
+                          backgroundColor: isBest
+                            ? "rgb(74, 222, 128)"
+                            : isWorst
+                            ? "rgb(248, 113, 113)"
+                            : `var(--color-${accentColor}-400, rgb(148, 163, 184))`,
+                        }}
+                      />
+                      <span className="font-medium text-foreground/90">{r.name}</span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-2.5 text-right text-muted">{r.userCount}</td>
+                  <td className="px-4 py-2.5 text-right text-foreground/80">{r.totalJobs}</td>
+                  <td className="px-4 py-2.5 text-right text-foreground/80">{r.completedJobs}</td>
+                  <td className={`px-4 py-2.5 text-right font-medium ${pctColor(r.onTimePercent)}`}>
+                    {r.onTimePercent}%
+                  </td>
+                  <td className="px-4 py-2.5 text-right text-foreground/80">{r.lateCompletions}</td>
+                  <td className="px-4 py-2.5 text-right">
+                    <span className={r.stuckJobs > 0 ? "text-amber-400 font-medium" : "text-foreground/80"}>
+                      {r.stuckJobs}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2.5 text-right">
+                    <span className={r.neverStartedJobs > 0 ? "text-orange-400 font-medium" : "text-foreground/80"}>
+                      {r.neverStartedJobs}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2.5 text-right text-blue-400">{r.avgDaysToComplete}</td>
+                  <td className="px-4 py-2.5 text-right">
+                    <span className={r.avgDaysLate > 0 ? "text-rose-400 font-medium" : "text-foreground/80"}>
+                      {r.avgDaysLate > 0 ? `${r.avgDaysLate}d` : "\u2014"}
+                    </span>
+                  </td>
+                  <td className={`px-4 py-2.5 text-right font-medium ${pctColor(r.onOurWayPercent)}`}>
+                    {r.onOurWayOnTime + r.onOurWayLate > 0 ? `${r.onOurWayPercent}%` : "\u2014"}
+                  </td>
+                  <td className="px-4 py-2.5 text-center">
+                    <span
+                      className={`inline-flex items-center justify-center w-8 h-8 rounded-lg text-sm font-bold ${gradeClasses(r.grade)}`}
+                    >
+                      {r.grade}
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -600,6 +765,30 @@ export default function ZuperCompliancePage() {
         ))}
       </div>
 
+      {/* Team Comparison */}
+      {data?.teamComparison && data.teamComparison.length > 1 && (
+        <div className="mb-8">
+          <ComparisonTable
+            rows={data.teamComparison}
+            title="Team Comparison"
+            nameLabel="Team"
+            accentColor="orange"
+          />
+        </div>
+      )}
+
+      {/* Category Comparison */}
+      {data?.categoryComparison && data.categoryComparison.length > 1 && (
+        <div className="mb-8">
+          <ComparisonTable
+            rows={data.categoryComparison}
+            title="Job Category Comparison"
+            nameLabel="Category"
+            accentColor="blue"
+          />
+        </div>
+      )}
+
       {/* User Scorecard Table */}
       <div className="bg-surface/50 border border-t-border rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
@@ -841,17 +1030,30 @@ export default function ZuperCompliancePage() {
       </div>
 
       {/* Footer summary */}
-      <div className="mt-6 text-center text-sm text-muted">
-        {data?.dateRange && (
-          <span>
-            Date range: {data.dateRange.from} to {data.dateRange.to} ({data.dateRange.days} days)
-          </span>
-        )}
-        {filterTeams.length > 0 && (
-          <span className="ml-2">| Teams: {filterTeams.join(", ")}</span>
-        )}
-        {filterCategories.length > 0 && (
-          <span className="ml-2">| Categories: {filterCategories.join(", ")}</span>
+      <div className="mt-6 text-center text-sm text-muted space-y-1">
+        <div>
+          {data?.dateRange && (
+            <span>
+              Date range: {data.dateRange.from} to {data.dateRange.to} ({data.dateRange.days} days)
+            </span>
+          )}
+          {filterTeams.length > 0 && (
+            <span className="ml-2">| Teams: {filterTeams.join(", ")}</span>
+          )}
+          {filterCategories.length > 0 && (
+            <span className="ml-2">| Categories: {filterCategories.join(", ")}</span>
+          )}
+        </div>
+        {data?.dataQuality && (
+          <div className="text-xs text-muted/70">
+            {data.dataQuality.totalJobsFetched.toLocaleString()} jobs fetched across{" "}
+            {data.dataQuality.categoriesFetched}/{data.dataQuality.totalCategories} categories
+            {data.dataQuality.unassignedJobs > 0 && (
+              <span className="text-amber-400/70">
+                {" "}&bull; {data.dataQuality.unassignedJobs} unassigned (excluded)
+              </span>
+            )}
+          </div>
         )}
       </div>
     </DashboardShell>

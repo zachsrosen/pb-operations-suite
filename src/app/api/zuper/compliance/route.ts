@@ -59,6 +59,25 @@ interface ComplianceSummary {
   userCount: number;
 }
 
+interface GroupComparison {
+  name: string;
+  totalJobs: number;
+  completedJobs: number;
+  onTimeCompletions: number;
+  lateCompletions: number;
+  onTimePercent: number;
+  stuckJobs: number;
+  neverStartedJobs: number;
+  avgDaysToComplete: number;
+  avgDaysLate: number;
+  onOurWayOnTime: number;
+  onOurWayLate: number;
+  onOurWayPercent: number;
+  complianceScore: number;
+  grade: string;
+  userCount: number;
+}
+
 // ========== Constants ==========
 
 // Statuses that indicate a job is "in progress" but may be stuck
@@ -92,8 +111,8 @@ const COMPLETED_STATUSES = new Set(
 // 1 day grace period in milliseconds
 const GRACE_MS = 24 * 60 * 60 * 1000;
 
-// Max pages to fetch per category (safety cap)
-const MAX_PAGES_PER_CATEGORY = 20;
+// Max pages to fetch per category (safety cap — 50 pages × 100 = 5000 jobs per category)
+const MAX_PAGES_PER_CATEGORY = 50;
 
 // Category UID to display name mapping
 const CATEGORY_UID_TO_NAME: Record<string, string> = {};
@@ -354,38 +373,6 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // DEBUG: Log the shape of the first few completed jobs so we can identify
-    // where the completion timestamp actually lives in the Zuper response
-    let debugSampleLogged = 0;
-    const debugSamples: Record<string, unknown>[] = [];
-    for (const { job } of allJobs) {
-      const st = getStatusName(job).toLowerCase();
-      if (COMPLETED_STATUSES.has(st) && debugSampleLogged < 3) {
-        debugSampleLogged++;
-        debugSamples.push({
-          job_uid: job.job_uid,
-          status: st,
-          has_job_status: Array.isArray(job.job_status),
-          job_status_length: Array.isArray(job.job_status) ? job.job_status.length : 0,
-          job_status_sample: Array.isArray(job.job_status) ? job.job_status.slice(-2) : null,
-          completed_time: job.completed_time ?? "MISSING",
-          completed_at: job.completed_at ?? "MISSING",
-          completedAt: job.completedAt ?? "MISSING",
-          // Dump all top-level keys so we can see what fields exist
-          top_level_keys: Object.keys(job).sort(),
-        });
-      }
-    }
-    if (debugSamples.length > 0) {
-      console.log("[compliance] DEBUG completed job samples:", JSON.stringify(debugSamples, null, 2));
-    } else {
-      console.log("[compliance] DEBUG: No completed jobs found in", allJobs.length, "total jobs");
-      if (allJobs.length > 0) {
-        const sampleJob = allJobs[0].job;
-        console.log("[compliance] DEBUG first job status:", getStatusName(sampleJob), "| keys:", Object.keys(sampleJob).sort().join(", "));
-      }
-    }
-
     // Collect unique teams and categories for filter options
     const teamsSet = new Set<string>();
     const categoriesSet = new Set<string>();
@@ -414,6 +401,8 @@ export async function GET(request: NextRequest) {
     }
 
     const userMap = new Map<string, UserAccumulator>();
+    let unassignedJobCount = 0;
+    let filteredOutByTeam = 0;
 
     for (const { job, categoryName } of allJobs) {
       const statusName = getStatusName(job);
@@ -427,14 +416,20 @@ export async function GET(request: NextRequest) {
       }
 
       // Skip unassigned jobs
-      if (assignedUsers.length === 0) continue;
+      if (assignedUsers.length === 0) {
+        unassignedJobCount++;
+        continue;
+      }
 
       // Apply team filter if specified
       if (teamFilter) {
         const hasMatchingTeam = assignedUsers.some(
           (u) => u.teamName && u.teamName.toLowerCase().includes(teamFilter)
         );
-        if (!hasMatchingTeam) continue;
+        if (!hasMatchingTeam) {
+          filteredOutByTeam++;
+          continue;
+        }
       }
 
       const scheduledStart = job.scheduled_start_time
@@ -677,6 +672,194 @@ export async function GET(request: NextRequest) {
     // Sort by complianceScore ascending (worst first)
     users.sort((a, b) => a.complianceScore - b.complianceScore);
 
+    // ========== Team Comparison ==========
+    function aggregateGroup(groupUsers: UserMetrics[]): Omit<GroupComparison, "name"> {
+      const total = groupUsers.reduce((s, u) => s + u.totalJobs, 0);
+      const completed = groupUsers.reduce((s, u) => s + u.completedJobs, 0);
+      const onTime = groupUsers.reduce((s, u) => s + u.onTimeCompletions, 0);
+      const late = groupUsers.reduce((s, u) => s + u.lateCompletions, 0);
+      const stuck = groupUsers.reduce((s, u) => s + u.stuckJobs, 0);
+      const neverStarted = groupUsers.reduce((s, u) => s + u.neverStartedJobs, 0);
+      const oowOnTime = groupUsers.reduce((s, u) => s + u.onOurWayOnTime, 0);
+      const oowLate = groupUsers.reduce((s, u) => s + u.onOurWayLate, 0);
+      const oowTotal = oowOnTime + oowLate;
+
+      const measurable = onTime + late;
+      const onTimePercent = measurable > 0 ? Math.round((onTime / measurable) * 100 * 10) / 10 : 0;
+
+      // Weighted avg days to complete
+      const totalCompletionDays = groupUsers.reduce(
+        (s, u) => s + u.avgDaysToComplete * u.completedJobs, 0
+      );
+      const avgDaysToComplete = completed > 0 ? Math.round((totalCompletionDays / completed) * 10) / 10 : 0;
+
+      // Weighted avg days late
+      const totalDaysLate = groupUsers.reduce(
+        (s, u) => s + u.avgDaysLate * u.lateCompletions, 0
+      );
+      const avgDaysLate = late > 0 ? Math.round((totalDaysLate / late) * 10) / 10 : 0;
+
+      const onOurWayPercent = oowTotal > 0 ? Math.round((oowOnTime / oowTotal) * 100 * 10) / 10 : 0;
+
+      const stuckRate = total > 0 ? stuck / total : 0;
+      const neverStartedRate = total > 0 ? neverStarted / total : 0;
+      const complianceScore = Math.round(
+        (0.5 * onTimePercent + 0.3 * (1 - stuckRate) * 100 + 0.2 * (1 - neverStartedRate) * 100) * 10
+      ) / 10;
+
+      return {
+        totalJobs: total,
+        completedJobs: completed,
+        onTimeCompletions: onTime,
+        lateCompletions: late,
+        onTimePercent,
+        stuckJobs: stuck,
+        neverStartedJobs: neverStarted,
+        avgDaysToComplete,
+        avgDaysLate,
+        onOurWayOnTime: oowOnTime,
+        onOurWayLate: oowLate,
+        onOurWayPercent,
+        complianceScore,
+        grade: computeGrade(complianceScore),
+        userCount: groupUsers.length,
+      };
+    }
+
+    // Group users by team
+    const teamMap = new Map<string, UserMetrics[]>();
+    for (const u of users) {
+      const team = u.teamName || "Unassigned";
+      if (!teamMap.has(team)) teamMap.set(team, []);
+      teamMap.get(team)!.push(u);
+    }
+    const teamComparison: GroupComparison[] = Array.from(teamMap.entries())
+      .map(([name, teamUsers]) => ({ name, ...aggregateGroup(teamUsers) }))
+      .sort((a, b) => a.complianceScore - b.complianceScore);
+
+    // ========== Category Comparison ==========
+    // Re-aggregate jobs by category (not from user data, but from raw job data for accuracy)
+    interface CategoryAccumulator {
+      totalJobs: number;
+      completedJobs: number;
+      onTimeCompletions: number;
+      lateCompletions: number;
+      stuckJobs: number;
+      neverStartedJobs: number;
+      completionDays: number[];
+      daysLatePastEnd: number[];
+      onOurWayOnTime: number;
+      onOurWayLate: number;
+      assignedUsers: Set<string>;
+    }
+    const catAccMap = new Map<string, CategoryAccumulator>();
+
+    for (const { job, categoryName } of allJobs) {
+      const statusName = getStatusName(job);
+      const statusLower = statusName.toLowerCase();
+      const assignedUsers = extractAssignedUsers(job);
+
+      if (assignedUsers.length === 0) continue;
+
+      // Apply team filter if specified
+      if (teamFilter) {
+        const hasMatchingTeam = assignedUsers.some(
+          (u) => u.teamName && u.teamName.toLowerCase().includes(teamFilter)
+        );
+        if (!hasMatchingTeam) continue;
+      }
+
+      if (!catAccMap.has(categoryName)) {
+        catAccMap.set(categoryName, {
+          totalJobs: 0, completedJobs: 0, onTimeCompletions: 0, lateCompletions: 0,
+          stuckJobs: 0, neverStartedJobs: 0, completionDays: [], daysLatePastEnd: [],
+          onOurWayOnTime: 0, onOurWayLate: 0, assignedUsers: new Set(),
+        });
+      }
+      const catAcc = catAccMap.get(categoryName)!;
+      catAcc.totalJobs++;
+      for (const u of assignedUsers) catAcc.assignedUsers.add(u.userUid);
+
+      const scheduledStart = job.scheduled_start_time ? new Date(job.scheduled_start_time) : null;
+      const scheduledEnd = job.scheduled_end_time ? new Date(job.scheduled_end_time) : null;
+      const completedTime = getCompletedTimeFromHistory(job);
+      const onOurWayTime = getOnOurWayTime(job);
+      const effectiveCompletedTime = completedTime || scheduledEnd;
+
+      if (COMPLETED_STATUSES.has(statusLower)) {
+        catAcc.completedJobs++;
+        if (scheduledEnd && effectiveCompletedTime) {
+          const deadline = new Date(scheduledEnd.getTime() + GRACE_MS);
+          if (effectiveCompletedTime <= deadline) {
+            catAcc.onTimeCompletions++;
+          } else {
+            catAcc.lateCompletions++;
+          }
+          if (effectiveCompletedTime > scheduledEnd) {
+            const diffMs = effectiveCompletedTime.getTime() - scheduledEnd.getTime();
+            catAcc.daysLatePastEnd.push(Math.round((diffMs / (1000 * 60 * 60 * 24)) * 10) / 10);
+          }
+        } else {
+          catAcc.onTimeCompletions++;
+        }
+        if (scheduledStart && effectiveCompletedTime && effectiveCompletedTime > scheduledStart) {
+          const diffMs = effectiveCompletedTime.getTime() - scheduledStart.getTime();
+          catAcc.completionDays.push(Math.round((diffMs / (1000 * 60 * 60 * 24)) * 10) / 10);
+        }
+        if (onOurWayTime && scheduledStart) {
+          if (scheduledEnd && onOurWayTime > scheduledEnd) {
+            catAcc.onOurWayLate++;
+          } else {
+            catAcc.onOurWayOnTime++;
+          }
+        }
+      }
+      if (STUCK_STATUSES.has(statusLower) && scheduledEnd && scheduledEnd < now) {
+        catAcc.stuckJobs++;
+      }
+      if (NEVER_STARTED_STATUSES.has(statusLower) && scheduledStart && scheduledStart < now) {
+        catAcc.neverStartedJobs++;
+      }
+    }
+
+    const categoryComparison: GroupComparison[] = Array.from(catAccMap.entries())
+      .map(([name, acc]) => {
+        const measurable = acc.onTimeCompletions + acc.lateCompletions;
+        const onTimePercent = measurable > 0 ? Math.round((acc.onTimeCompletions / measurable) * 100 * 10) / 10 : 0;
+        const avgDaysToComplete = acc.completionDays.length > 0
+          ? Math.round((acc.completionDays.reduce((s, d) => s + d, 0) / acc.completionDays.length) * 10) / 10
+          : 0;
+        const avgDaysLate = acc.daysLatePastEnd.length > 0
+          ? Math.round((acc.daysLatePastEnd.reduce((s, d) => s + d, 0) / acc.daysLatePastEnd.length) * 10) / 10
+          : 0;
+        const oowTotal = acc.onOurWayOnTime + acc.onOurWayLate;
+        const onOurWayPercent = oowTotal > 0 ? Math.round((acc.onOurWayOnTime / oowTotal) * 100 * 10) / 10 : 0;
+        const stuckRate = acc.totalJobs > 0 ? acc.stuckJobs / acc.totalJobs : 0;
+        const neverStartedRate = acc.totalJobs > 0 ? acc.neverStartedJobs / acc.totalJobs : 0;
+        const complianceScore = Math.round(
+          (0.5 * onTimePercent + 0.3 * (1 - stuckRate) * 100 + 0.2 * (1 - neverStartedRate) * 100) * 10
+        ) / 10;
+        return {
+          name,
+          totalJobs: acc.totalJobs,
+          completedJobs: acc.completedJobs,
+          onTimeCompletions: acc.onTimeCompletions,
+          lateCompletions: acc.lateCompletions,
+          onTimePercent,
+          stuckJobs: acc.stuckJobs,
+          neverStartedJobs: acc.neverStartedJobs,
+          avgDaysToComplete,
+          avgDaysLate,
+          onOurWayOnTime: acc.onOurWayOnTime,
+          onOurWayLate: acc.onOurWayLate,
+          onOurWayPercent,
+          complianceScore,
+          grade: computeGrade(complianceScore),
+          userCount: acc.assignedUsers.size,
+        };
+      })
+      .sort((a, b) => a.complianceScore - b.complianceScore);
+
     // Compute summary
     const totalJobs = users.reduce((sum, u) => sum + u.totalJobs, 0);
     const totalCompleted = users.reduce((sum, u) => sum + u.completedJobs, 0);
@@ -742,6 +925,8 @@ export async function GET(request: NextRequest) {
     const response = {
       users,
       summary,
+      teamComparison,
+      categoryComparison,
       filters: {
         teams: Array.from(teamsSet).sort(),
         categories: Array.from(categoriesSet).sort(),
@@ -752,12 +937,12 @@ export async function GET(request: NextRequest) {
         days,
       },
       lastUpdated: new Date().toISOString(),
-      // TODO: Remove after debugging completion time issue
-      _debug: {
+      dataQuality: {
         totalJobsFetched: allJobs.length,
-        completedJobSamples: debugSamples,
-        totalMeasurableOnTime: totalOnTime,
-        totalMeasurableLate: users.reduce((sum, u) => sum + u.lateCompletions, 0),
+        unassignedJobs: unassignedJobCount,
+        filteredOutByTeam,
+        categoriesFetched: categoriesToFetch.length,
+        totalCategories: allCategoryEntries.length,
       },
     };
 
