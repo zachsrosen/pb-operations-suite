@@ -39,6 +39,10 @@ const SUITE_MAP: Record<string, { href: string; label: string }> = {
   "/dashboards/optimizer": { href: "/suites/admin", label: "Admin" },
   "/dashboards/zuper-status-comparison": { href: "/suites/admin", label: "Admin" },
   "/dashboards/mobile": { href: "/suites/admin", label: "Admin" },
+  "/dashboards/qc": { href: "/suites/admin", label: "Admin" },
+  "/dashboards/project-management": { href: "/suites/admin", label: "Admin" },
+  "/dashboards/design-engineering": { href: "/suites/admin", label: "Admin" },
+  "/dashboards/permitting-interconnection": { href: "/suites/admin", label: "Admin" },
   // Additional Pipeline Suite
   "/dashboards/sales": { href: "/suites/additional-pipeline", label: "Pipelines" },
   "/dashboards/service": { href: "/suites/additional-pipeline", label: "Pipelines" },

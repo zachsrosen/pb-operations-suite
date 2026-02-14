@@ -226,6 +226,28 @@ export interface Project {
   operationsManager: string;
   dealOwner: string;
   siteSurveyor: string;
+
+  // QC Time Metrics (pre-calculated by HubSpot, in days)
+  siteSurveyTurnaroundTime: number | null;
+  timeDAReadyToSent: number | null;
+  daTurnaroundTime: number | null;
+  timeToSubmitPermit: number | null;
+  timeToSubmitInterconnection: number | null;
+  daToRtb: number | null;
+  constructionTurnaroundTime: number | null;
+  timeCcToPto: number | null;
+  timeToCc: number | null;
+  timeToDa: number | null;
+  timeToPto: number | null;
+  interconnectionTurnaroundTime: number | null;
+  permitTurnaroundTime: number | null;
+  timeRtbToConstructionSchedule: number | null;
+  designTurnaroundTime: number | null;
+  projectTurnaroundTime: number | null;
+  timeToRtb: number | null;
+  timeRtbToCc: number | null;
+  daToCc: number | null;
+  daToPermit: number | null;
 }
 
 export interface LineItem {
@@ -358,6 +380,28 @@ const DEAL_PROPERTIES = [
   "operations_manager",
   "hubspot_owner_id",
   "site_surveyor",
+
+  // QC Time Metrics (pre-calculated by HubSpot, in days)
+  "site_survey_turnaround_time",
+  "time_between_da_ready_and_da_sent",
+  "time_between_da_sent_and_da_approved",
+  "time_to_submit_permit",
+  "time_to_submit_interconnection",
+  "da_to_rtb",
+  "construction_turnaround_time",
+  "time_between_cc___pto",
+  "time_to_cc",
+  "time_to_da",
+  "time_to_pto",
+  "interconnection_turnaround_time",
+  "permit_turnaround_time",
+  "time_between_rtb___construction_schedule_date",
+  "design_turnaround_time",
+  "project_turnaround_time",
+  "time_to_rtb",
+  "time_from_rtb_to_cc",
+  "da_to_cc",
+  "da_to_permit",
 ];
 
 function daysBetween(date1: Date, date2: Date): number {
@@ -620,6 +664,28 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
       // This handles both enum (ID→label) and text (raw name) properties
       return surveyorMap?.[raw] || raw;
     })(),
+
+    // QC Time Metrics (pre-calculated by HubSpot, in days)
+    siteSurveyTurnaroundTime: deal.site_survey_turnaround_time ? Number(deal.site_survey_turnaround_time) : null,
+    timeDAReadyToSent: deal.time_between_da_ready_and_da_sent ? Number(deal.time_between_da_ready_and_da_sent) : null,
+    daTurnaroundTime: deal.time_between_da_sent_and_da_approved ? Number(deal.time_between_da_sent_and_da_approved) : null,
+    timeToSubmitPermit: deal.time_to_submit_permit ? Number(deal.time_to_submit_permit) : null,
+    timeToSubmitInterconnection: deal.time_to_submit_interconnection ? Number(deal.time_to_submit_interconnection) : null,
+    daToRtb: deal.da_to_rtb ? Number(deal.da_to_rtb) : null,
+    constructionTurnaroundTime: deal.construction_turnaround_time ? Number(deal.construction_turnaround_time) : null,
+    timeCcToPto: deal.time_between_cc___pto ? Number(deal.time_between_cc___pto) : null,
+    timeToCc: deal.time_to_cc ? Number(deal.time_to_cc) : null,
+    timeToDa: deal.time_to_da ? Number(deal.time_to_da) : null,
+    timeToPto: deal.time_to_pto ? Number(deal.time_to_pto) : null,
+    interconnectionTurnaroundTime: deal.interconnection_turnaround_time ? Number(deal.interconnection_turnaround_time) : null,
+    permitTurnaroundTime: deal.permit_turnaround_time ? Number(deal.permit_turnaround_time) : null,
+    timeRtbToConstructionSchedule: deal.time_between_rtb___construction_schedule_date ? Number(deal.time_between_rtb___construction_schedule_date) : null,
+    designTurnaroundTime: deal.design_turnaround_time ? Number(deal.design_turnaround_time) : null,
+    projectTurnaroundTime: deal.project_turnaround_time ? Number(deal.project_turnaround_time) : null,
+    timeToRtb: deal.time_to_rtb ? Number(deal.time_to_rtb) : null,
+    timeRtbToCc: deal.time_from_rtb_to_cc ? Number(deal.time_from_rtb_to_cc) : null,
+    daToCc: deal.da_to_cc ? Number(deal.da_to_cc) : null,
+    daToPermit: deal.da_to_permit ? Number(deal.da_to_permit) : null,
   };
 }
 

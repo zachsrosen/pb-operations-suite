@@ -36,6 +36,34 @@ const ADMIN_TOOLS = [
 
 const TESTING_DASHBOARDS = [
   {
+    href: "/dashboards/qc",
+    title: "QC Metrics",
+    description: "Time-between-stages analytics by office and utility.",
+    tag: "QC",
+    tagColor: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+  },
+  {
+    href: "/dashboards/project-management",
+    title: "Project Management",
+    description: "PM workload, DA backlog, stuck deals, and revenue tracking.",
+    tag: "PM",
+    tagColor: "bg-green-500/20 text-green-400 border-green-500/30",
+  },
+  {
+    href: "/dashboards/design-engineering",
+    title: "Design & Engineering",
+    description: "Cross-state design analytics, status breakdowns, and ops clarification queue.",
+    tag: "D&E",
+    tagColor: "bg-purple-500/20 text-purple-400 border-purple-500/30",
+  },
+  {
+    href: "/dashboards/permitting-interconnection",
+    title: "Permitting & Interconnection",
+    description: "Combined P&I analytics, turnaround times, and action-needed views.",
+    tag: "P&I",
+    tagColor: "bg-teal-500/20 text-teal-400 border-teal-500/30",
+  },
+  {
     href: "/dashboards/alerts",
     title: "Alerts",
     description: "Overdue installs, PE PTO risks, and capacity overload warnings.",
