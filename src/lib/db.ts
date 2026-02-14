@@ -379,6 +379,7 @@ export async function getRecentActivities(options?: {
   offset?: number;
   since?: Date;
   userEmail?: string;
+  userRole?: string;
 }) {
   if (!prisma) return { activities: [], total: 0 };
 
@@ -387,6 +388,7 @@ export async function getRecentActivities(options?: {
   if (options?.type) where.type = options.type;
   if (options?.entityType) where.entityType = options.entityType;
   if (options?.since) where.createdAt = { gte: options.since };
+  if (options?.userRole) where.user = { role: options.userRole };
   if (options?.userEmail) {
     where.OR = [
       { userEmail: { contains: options.userEmail, mode: "insensitive" } },
@@ -399,7 +401,7 @@ export async function getRecentActivities(options?: {
       where,
       include: {
         user: {
-          select: { name: true, email: true, image: true },
+          select: { name: true, email: true, image: true, role: true },
         },
       },
       orderBy: { createdAt: "desc" },

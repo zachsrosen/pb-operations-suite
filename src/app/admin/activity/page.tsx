@@ -20,8 +20,23 @@ interface ActivityLog {
     name: string | null;
     email: string;
     image: string | null;
+    role: string;
   } | null;
 }
+
+const USER_ROLES = [
+  "ADMIN",
+  "OWNER",
+  "MANAGER",
+  "OPERATIONS",
+  "OPERATIONS_MANAGER",
+  "PROJECT_MANAGER",
+  "TECH_OPS",
+  "DESIGNER",
+  "PERMITTING",
+  "VIEWER",
+  "SALES",
+] as const;
 
 const ACTIVITY_TYPES: Record<string, { color: string; icon: string }> = {
   LOGIN: { color: "text-green-400", icon: "M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" },
@@ -54,6 +69,7 @@ export default function AdminActivityPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [roleFilter, setRoleFilter] = useState<string>("all");
   const [dateRange, setDateRange] = useState<"today" | "7d" | "30d" | "all">("all");
   const [searchEmail, setSearchEmail] = useState<string>("");
   const [debouncedEmail, setDebouncedEmail] = useState<string>("");
@@ -117,6 +133,7 @@ export default function AdminActivityPage() {
         });
 
         if (typeFilter !== "all") params.set("type", typeFilter);
+        if (roleFilter !== "all") params.set("role", roleFilter);
         if (sinceDate) params.set("since", sinceDate);
         if (debouncedEmail.trim()) params.set("email", debouncedEmail.trim());
 
@@ -144,7 +161,7 @@ export default function AdminActivityPage() {
         setLoadingMore(false);
       }
     },
-    [typeFilter, sinceDate, debouncedEmail, offset]
+    [typeFilter, roleFilter, sinceDate, debouncedEmail, offset]
   );
 
   // Re-fetch from start when filters change
@@ -152,7 +169,7 @@ export default function AdminActivityPage() {
     setOffset(0);
     fetchActivities(false, 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [typeFilter, sinceDate, debouncedEmail]);
+  }, [typeFilter, roleFilter, sinceDate, debouncedEmail]);
 
   // Auto-refresh
   useEffect(() => {
@@ -353,9 +370,9 @@ export default function AdminActivityPage() {
             </div>
           </div>
 
-          {/* Type Filter and Search */}
+          {/* Type Filter, Role Filter, and Search */}
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-            <div className="flex items-center gap-3 flex-1">
+            <div className="flex items-center gap-3">
               <span className="text-sm text-muted">Type:</span>
               <select
                 value={typeFilter}
@@ -365,6 +382,20 @@ export default function AdminActivityPage() {
                 <option value="all">All Activities</option>
                 {allTypes.map(type => (
                   <option key={type} value={type}>{type.replace(/_/g, " ")}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-muted">Role:</span>
+              <select
+                value={roleFilter}
+                onChange={(e) => setRoleFilter(e.target.value)}
+                className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              >
+                <option value="all">All Roles</option>
+                {USER_ROLES.map(role => (
+                  <option key={role} value={role}>{role.replace(/_/g, " ")}</option>
                 ))}
               </select>
             </div>
@@ -461,6 +492,11 @@ export default function AdminActivityPage() {
                             <span>{activity.userEmail}</span>
                           ) : (
                             <span>System</span>
+                          )}
+                          {activity.user?.role && (
+                            <span className="px-1.5 py-0.5 rounded bg-surface-2 text-[10px] uppercase tracking-wider text-muted">
+                              {activity.user.role.replace(/_/g, " ")}
+                            </span>
                           )}
                           <span>•</span>
                           <span>{formatDate(activity.createdAt)}</span>
