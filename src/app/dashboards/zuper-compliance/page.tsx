@@ -9,12 +9,18 @@ import { useActivityTracking } from "@/hooks/useActivityTracking";
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
 
-interface StuckJob {
+interface JobEntry {
   jobUid: string;
   title: string;
   status: string;
-  scheduledEnd: string | null;
   category: string;
+  scheduledStart: string | null;
+  scheduledEnd: string | null;
+  completedTime: string | null;
+  daysToComplete: number | null;
+  daysLate: number | null;
+  onOurWayTime: string | null;
+  onOurWayOnTime: boolean | null;
 }
 
 interface UserMetrics {
@@ -36,7 +42,10 @@ interface UserMetrics {
   complianceScore: number;
   grade: string;
   byCategory: Record<string, number>;
-  stuckJobsList: StuckJob[];
+  stuckJobsList: JobEntry[];
+  lateJobsList: JobEntry[];
+  neverStartedJobsList: JobEntry[];
+  completedJobsList: JobEntry[];
 }
 
 interface ComplianceSummary {
@@ -60,8 +69,10 @@ interface ComplianceData {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Sort field type                                                    */
+/*  Constants                                                          */
 /* ------------------------------------------------------------------ */
+
+const ZUPER_WEB_BASE = "https://us-west-1c.zuperpro.com";
 
 type SortField =
   | "userName"
@@ -76,11 +87,110 @@ type SortField =
   | "onOurWayPercent"
   | "complianceScore";
 
+const DATE_PRESETS = [7, 14, 30, 60, 90];
+
 /* ------------------------------------------------------------------ */
-/*  Date range presets                                                 */
+/*  Zuper job link                                                     */
 /* ------------------------------------------------------------------ */
 
-const DATE_PRESETS = [7, 14, 30, 60, 90];
+function zuperJobUrl(jobUid: string) {
+  return `${ZUPER_WEB_BASE}/jobs/${jobUid}/details`;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Job list table component (reused for stuck, late, never-started)   */
+/* ------------------------------------------------------------------ */
+
+function JobListTable({
+  jobs,
+  title,
+  emptyMessage,
+  showTiming,
+}: {
+  jobs: JobEntry[];
+  title: string;
+  emptyMessage: string;
+  showTiming?: boolean;
+}) {
+  if (jobs.length === 0) {
+    return (
+      <div>
+        <h4 className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">
+          {title} (0)
+        </h4>
+        <p className="text-sm text-emerald-400">{emptyMessage}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <h4 className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">
+        {title} ({jobs.length})
+      </h4>
+      <div className="bg-surface/50 border border-t-border rounded-lg overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-muted text-left border-b border-t-border">
+              <th className="px-3 py-2">Job</th>
+              <th className="px-3 py-2">Status</th>
+              <th className="px-3 py-2">Category</th>
+              <th className="px-3 py-2">Sched End</th>
+              {showTiming && <th className="px-3 py-2">Days Late</th>}
+              {showTiming && <th className="px-3 py-2">OOW</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {jobs.map((j) => (
+              <tr key={j.jobUid} className="border-b border-t-border/30">
+                <td className="px-3 py-1.5">
+                  <a
+                    href={zuperJobUrl(j.jobUid)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-red-400 hover:text-red-300 underline underline-offset-2"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {j.title || j.jobUid}
+                  </a>
+                </td>
+                <td className="px-3 py-1.5 text-amber-400">{j.status}</td>
+                <td className="px-3 py-1.5 text-muted">{j.category}</td>
+                <td className="px-3 py-1.5 text-muted">
+                  {j.scheduledEnd
+                    ? new Date(j.scheduledEnd).toLocaleDateString()
+                    : "\u2014"}
+                </td>
+                {showTiming && (
+                  <td className="px-3 py-1.5">
+                    {j.daysLate != null ? (
+                      <span className="text-rose-400">{j.daysLate}d</span>
+                    ) : (
+                      <span className="text-foreground/50">\u2014</span>
+                    )}
+                  </td>
+                )}
+                {showTiming && (
+                  <td className="px-3 py-1.5">
+                    {j.onOurWayOnTime === true && (
+                      <span className="text-green-400 text-xs">On time</span>
+                    )}
+                    {j.onOurWayOnTime === false && (
+                      <span className="text-rose-400 text-xs">Late</span>
+                    )}
+                    {j.onOurWayOnTime == null && (
+                      <span className="text-foreground/50">\u2014</span>
+                    )}
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
 
 /* ------------------------------------------------------------------ */
 /*  Page                                                               */
@@ -93,6 +203,7 @@ export default function ZuperCompliancePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const [showMethodology, setShowMethodology] = useState(false);
 
   // Date range
   const [days, setDays] = useState(30);
@@ -105,8 +216,9 @@ export default function ZuperCompliancePage() {
   const [sortField, setSortField] = useState<SortField>("complianceScore");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
-  // Expanded rows
+  // Expanded rows — track which tab is active per user
   const [expandedUser, setExpandedUser] = useState<string | null>(null);
+  const [detailTab, setDetailTab] = useState<"stuck" | "late" | "neverStarted" | "completed" | "categories">("stuck");
 
   /* ---- Data fetching ---- */
 
@@ -163,7 +275,6 @@ export default function ZuperCompliancePage() {
       if (filterTeams.length > 1 && !filterTeams.includes(u.teamName || ""))
         return false;
       if (filterCategories.length > 1) {
-        // Show user if they have jobs in any selected category
         const hasCategory = filterCategories.some(
           (cat) => (u.byCategory[cat] || 0) > 0
         );
@@ -235,7 +346,7 @@ export default function ZuperCompliancePage() {
     </span>
   );
 
-  /* ---- Grade badge styling ---- */
+  /* ---- Styling helpers ---- */
 
   const gradeClasses = (grade: string) => {
     switch (grade) {
@@ -251,8 +362,6 @@ export default function ZuperCompliancePage() {
         return "bg-surface-2 text-muted";
     }
   };
-
-  /* ---- On-time percent color ---- */
 
   const pctColor = (pct: number) => {
     if (pct >= 80) return "text-green-400";
@@ -327,7 +436,79 @@ export default function ZuperCompliancePage() {
         filename: "zuper-compliance",
       }}
     >
-      {/* Date Range Selector */}
+      {/* Methodology Toggle */}
+      <div className="mb-6">
+        <button
+          onClick={() => setShowMethodology((v) => !v)}
+          className="flex items-center gap-2 text-sm text-muted hover:text-foreground transition-colors"
+        >
+          <svg
+            className={`w-4 h-4 transition-transform ${showMethodology ? "rotate-90" : ""}`}
+            fill="currentColor"
+            viewBox="0 0 20 20"
+          >
+            <path
+              fillRule="evenodd"
+              d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
+              clipRule="evenodd"
+            />
+          </svg>
+          How is this calculated?
+        </button>
+
+        {showMethodology && (
+          <div className="mt-3 bg-surface/50 border border-t-border rounded-xl p-5 text-sm text-foreground/80 space-y-3">
+            <div>
+              <h4 className="font-semibold text-foreground mb-1">Compliance Score (0–100)</h4>
+              <p className="text-muted">
+                <span className="text-foreground/90 font-medium">50%</span> On-Time Completion Rate +{" "}
+                <span className="text-foreground/90 font-medium">30%</span> Non-Stuck Rate +{" "}
+                <span className="text-foreground/90 font-medium">20%</span> Started Rate
+              </p>
+              <p className="text-muted mt-1">
+                Grades: <span className="text-green-400">A</span> (90+) &bull;{" "}
+                <span className="text-green-400">B</span> (75–89) &bull;{" "}
+                <span className="text-yellow-400">C</span> (60–74) &bull;{" "}
+                <span className="text-red-400">D</span> (45–59) &bull;{" "}
+                <span className="text-red-400">F</span> (&lt;45)
+              </p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+              <div className="space-y-2">
+                <div>
+                  <span className="font-medium text-foreground">On-Time %</span>
+                  <span className="text-muted"> — % of completed jobs finished within 1 day of scheduled end.
+                  Completed statuses: Completed, Construction Complete, Passed, Partial Pass, Failed.</span>
+                </div>
+                <div>
+                  <span className="font-medium text-foreground">Stuck Jobs</span>
+                  <span className="text-muted"> — Jobs currently in &quot;On Our Way&quot;, &quot;Started&quot;, or &quot;In Progress&quot; where scheduled end has passed. These should be completed or updated.</span>
+                </div>
+                <div>
+                  <span className="font-medium text-foreground">Never Started</span>
+                  <span className="text-muted"> — Jobs in &quot;New&quot;, &quot;Scheduled&quot;, &quot;Unassigned&quot;, &quot;Ready to Schedule/Build/Inspect&quot; with scheduled start in the past.</span>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <div>
+                  <span className="font-medium text-foreground">Avg Days</span>
+                  <span className="text-muted"> — Average days from scheduled start to completion.</span>
+                </div>
+                <div>
+                  <span className="font-medium text-foreground">Avg Days Late</span>
+                  <span className="text-muted"> — Average days past scheduled end for late jobs only. If a job finishes 3 days after its scheduled end, that counts as 3 days late.</span>
+                </div>
+                <div>
+                  <span className="font-medium text-foreground">OOW % (On Our Way)</span>
+                  <span className="text-muted"> — % of completed jobs where &quot;On Our Way&quot; was triggered before or during the scheduled window. If it was set after the scheduled end, it counts as late — meaning they didn&apos;t use it in real-time and had to retroactively select it.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Date Range Selector + Filters */}
       <div className="flex flex-wrap items-center gap-3 mb-6">
         <div className="flex bg-surface-2 rounded-lg p-0.5">
           {DATE_PRESETS.map((d) => (
@@ -425,71 +606,37 @@ export default function ZuperCompliancePage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-muted text-left border-b border-t-border bg-surface/80">
-                <th
-                  className="px-4 py-3 cursor-pointer hover:text-foreground"
-                  onClick={() => handleSort("userName")}
-                >
+                <th className="px-4 py-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("userName")}>
                   User <SortIcon field="userName" />
                 </th>
-                <th
-                  className="px-4 py-3 cursor-pointer hover:text-foreground"
-                  onClick={() => handleSort("teamName")}
-                >
+                <th className="px-4 py-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("teamName")}>
                   Team <SortIcon field="teamName" />
                 </th>
-                <th
-                  className="px-4 py-3 cursor-pointer hover:text-foreground text-right"
-                  onClick={() => handleSort("totalJobs")}
-                >
+                <th className="px-4 py-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("totalJobs")}>
                   Total <SortIcon field="totalJobs" />
                 </th>
-                <th
-                  className="px-4 py-3 cursor-pointer hover:text-foreground text-right"
-                  onClick={() => handleSort("onTimePercent")}
-                >
+                <th className="px-4 py-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("onTimePercent")}>
                   On-Time % <SortIcon field="onTimePercent" />
                 </th>
-                <th
-                  className="px-4 py-3 cursor-pointer hover:text-foreground text-right"
-                  onClick={() => handleSort("lateCompletions")}
-                >
+                <th className="px-4 py-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("lateCompletions")}>
                   Late <SortIcon field="lateCompletions" />
                 </th>
-                <th
-                  className="px-4 py-3 cursor-pointer hover:text-foreground text-right"
-                  onClick={() => handleSort("stuckJobs")}
-                >
+                <th className="px-4 py-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("stuckJobs")}>
                   Stuck <SortIcon field="stuckJobs" />
                 </th>
-                <th
-                  className="px-4 py-3 cursor-pointer hover:text-foreground text-right"
-                  onClick={() => handleSort("neverStartedJobs")}
-                >
-                  Never Started <SortIcon field="neverStartedJobs" />
+                <th className="px-4 py-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("neverStartedJobs")}>
+                  Not Started <SortIcon field="neverStartedJobs" />
                 </th>
-                <th
-                  className="px-4 py-3 cursor-pointer hover:text-foreground text-right"
-                  onClick={() => handleSort("avgDaysToComplete")}
-                >
+                <th className="px-4 py-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("avgDaysToComplete")}>
                   Avg Days <SortIcon field="avgDaysToComplete" />
                 </th>
-                <th
-                  className="px-4 py-3 cursor-pointer hover:text-foreground text-right"
-                  onClick={() => handleSort("avgDaysLate")}
-                >
+                <th className="px-4 py-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("avgDaysLate")}>
                   Avg Late <SortIcon field="avgDaysLate" />
                 </th>
-                <th
-                  className="px-4 py-3 cursor-pointer hover:text-foreground text-right"
-                  onClick={() => handleSort("onOurWayPercent")}
-                  title="On Our Way set on time vs late"
-                >
+                <th className="px-4 py-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("onOurWayPercent")} title="On Our Way set on time vs late">
                   OOW % <SortIcon field="onOurWayPercent" />
                 </th>
-                <th
-                  className="px-4 py-3 cursor-pointer hover:text-foreground text-center"
-                  onClick={() => handleSort("complianceScore")}
-                >
+                <th className="px-4 py-3 cursor-pointer hover:text-foreground text-center" onClick={() => handleSort("complianceScore")}>
                   Grade <SortIcon field="complianceScore" />
                 </th>
               </tr>
@@ -497,9 +644,6 @@ export default function ZuperCompliancePage() {
             <tbody>
               {sortedUsers.map((u) => {
                 const isExpanded = expandedUser === u.userUid;
-                const categoryEntries = Object.entries(u.byCategory).sort(
-                  (a, b) => b[1] - a[1]
-                );
 
                 return (
                   <Fragment key={u.userUid}>
@@ -507,9 +651,10 @@ export default function ZuperCompliancePage() {
                       className={`border-b border-t-border/50 hover:bg-surface-2/30 cursor-pointer transition-colors ${
                         isExpanded ? "bg-surface-2/20" : ""
                       }`}
-                      onClick={() =>
-                        setExpandedUser(isExpanded ? null : u.userUid)
-                      }
+                      onClick={() => {
+                        setExpandedUser(isExpanded ? null : u.userUid);
+                        if (!isExpanded) setDetailTab("stuck");
+                      }}
                     >
                       <td className="px-4 py-2.5">
                         <div className="flex items-center gap-2">
@@ -526,78 +671,40 @@ export default function ZuperCompliancePage() {
                               clipRule="evenodd"
                             />
                           </svg>
-                          <span className="font-medium text-foreground/90">
-                            {u.userName}
-                          </span>
+                          <span className="font-medium text-foreground/90">{u.userName}</span>
                         </div>
                       </td>
-                      <td className="px-4 py-2.5 text-muted">
-                        {u.teamName || "\u2014"}
-                      </td>
-                      <td className="px-4 py-2.5 text-right text-foreground/80">
-                        {u.totalJobs}
-                      </td>
-                      <td
-                        className={`px-4 py-2.5 text-right font-medium ${pctColor(
-                          u.onTimePercent
-                        )}`}
-                      >
+                      <td className="px-4 py-2.5 text-muted">{u.teamName || "\u2014"}</td>
+                      <td className="px-4 py-2.5 text-right text-foreground/80">{u.totalJobs}</td>
+                      <td className={`px-4 py-2.5 text-right font-medium ${pctColor(u.onTimePercent)}`}>
                         {u.onTimePercent}%
                       </td>
-                      <td className="px-4 py-2.5 text-right text-foreground/80">
-                        {u.lateCompletions}
-                      </td>
+                      <td className="px-4 py-2.5 text-right text-foreground/80">{u.lateCompletions}</td>
                       <td className="px-4 py-2.5 text-right">
-                        <span
-                          className={
-                            u.stuckJobs > 0
-                              ? "text-amber-400 font-medium"
-                              : "text-foreground/80"
-                          }
-                        >
+                        <span className={u.stuckJobs > 0 ? "text-amber-400 font-medium" : "text-foreground/80"}>
                           {u.stuckJobs}
                         </span>
                       </td>
                       <td className="px-4 py-2.5 text-right">
-                        <span
-                          className={
-                            u.neverStartedJobs > 0
-                              ? "text-orange-400 font-medium"
-                              : "text-foreground/80"
-                          }
-                        >
+                        <span className={u.neverStartedJobs > 0 ? "text-orange-400 font-medium" : "text-foreground/80"}>
                           {u.neverStartedJobs}
                         </span>
                       </td>
-                      <td className="px-4 py-2.5 text-right text-blue-400">
-                        {u.avgDaysToComplete}
-                      </td>
+                      <td className="px-4 py-2.5 text-right text-blue-400">{u.avgDaysToComplete}</td>
                       <td className="px-4 py-2.5 text-right">
-                        <span
-                          className={
-                            u.avgDaysLate > 0
-                              ? "text-rose-400 font-medium"
-                              : "text-foreground/80"
-                          }
-                        >
+                        <span className={u.avgDaysLate > 0 ? "text-rose-400 font-medium" : "text-foreground/80"}>
                           {u.avgDaysLate > 0 ? `${u.avgDaysLate}d` : "\u2014"}
                         </span>
                       </td>
                       <td
-                        className={`px-4 py-2.5 text-right font-medium ${pctColor(
-                          u.onOurWayPercent
-                        )}`}
+                        className={`px-4 py-2.5 text-right font-medium ${pctColor(u.onOurWayPercent)}`}
                         title={`${u.onOurWayOnTime} on-time / ${u.onOurWayLate} late`}
                       >
-                        {u.onOurWayOnTime + u.onOurWayLate > 0
-                          ? `${u.onOurWayPercent}%`
-                          : "\u2014"}
+                        {u.onOurWayOnTime + u.onOurWayLate > 0 ? `${u.onOurWayPercent}%` : "\u2014"}
                       </td>
                       <td className="px-4 py-2.5 text-center">
                         <span
-                          className={`inline-flex items-center justify-center w-8 h-8 rounded-lg text-sm font-bold ${gradeClasses(
-                            u.grade
-                          )}`}
+                          className={`inline-flex items-center justify-center w-8 h-8 rounded-lg text-sm font-bold ${gradeClasses(u.grade)}`}
                         >
                           {u.grade}
                         </span>
@@ -607,117 +714,13 @@ export default function ZuperCompliancePage() {
                     {/* Expanded detail row */}
                     {isExpanded && (
                       <tr className="border-b border-t-border/50">
-                        <td colSpan={11} className="px-6 py-4 bg-surface-2/20">
-                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                            {/* Category Breakdown */}
-                            <div>
-                              <h4 className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">
-                                Jobs by Category
-                              </h4>
-                              {categoryEntries.length > 0 ? (
-                                <div className="bg-surface/50 border border-t-border rounded-lg overflow-hidden">
-                                  <table className="w-full text-sm">
-                                    <thead>
-                                      <tr className="text-muted text-left border-b border-t-border">
-                                        <th className="px-3 py-2">Category</th>
-                                        <th className="px-3 py-2 text-right">
-                                          Jobs
-                                        </th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {categoryEntries.map(([cat, count]) => (
-                                        <tr
-                                          key={cat}
-                                          className="border-b border-t-border/30"
-                                        >
-                                          <td className="px-3 py-1.5 text-foreground/80">
-                                            {cat}
-                                          </td>
-                                          <td className="px-3 py-1.5 text-right text-foreground/80">
-                                            {count}
-                                          </td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              ) : (
-                                <p className="text-muted text-sm">
-                                  No category data
-                                </p>
-                              )}
-                            </div>
-
-                            {/* Stuck Jobs List */}
-                            <div>
-                              <h4 className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">
-                                Stuck Jobs ({u.stuckJobsList.length})
-                              </h4>
-                              {u.stuckJobsList.length > 0 ? (
-                                <div className="bg-surface/50 border border-t-border rounded-lg overflow-hidden">
-                                  <table className="w-full text-sm">
-                                    <thead>
-                                      <tr className="text-muted text-left border-b border-t-border">
-                                        <th className="px-3 py-2">Job</th>
-                                        <th className="px-3 py-2">Status</th>
-                                        <th className="px-3 py-2">
-                                          Scheduled End
-                                        </th>
-                                        <th className="px-3 py-2">Category</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {u.stuckJobsList.map((sj) => (
-                                        <tr
-                                          key={sj.jobUid}
-                                          className="border-b border-t-border/30"
-                                        >
-                                          <td className="px-3 py-1.5">
-                                            <a
-                                              href={`https://us-west-1c.zuperpro.com/app/job/${sj.jobUid}`}
-                                              target="_blank"
-                                              rel="noopener noreferrer"
-                                              className="text-red-400 hover:text-red-300 underline underline-offset-2"
-                                              onClick={(e) => e.stopPropagation()}
-                                            >
-                                              {sj.title || sj.jobUid}
-                                            </a>
-                                          </td>
-                                          <td className="px-3 py-1.5 text-amber-400">
-                                            {sj.status}
-                                          </td>
-                                          <td className="px-3 py-1.5 text-muted">
-                                            {sj.scheduledEnd
-                                              ? new Date(
-                                                  sj.scheduledEnd
-                                                ).toLocaleDateString()
-                                              : "\u2014"}
-                                          </td>
-                                          <td className="px-3 py-1.5 text-muted">
-                                            {sj.category}
-                                          </td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              ) : (
-                                <p className="text-sm text-emerald-400">
-                                  No stuck jobs
-                                </p>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Detail metrics */}
-                          <div className="mt-4 flex flex-wrap items-center gap-4 text-xs text-muted">
+                        <td colSpan={11} className="px-4 py-4 bg-surface-2/20">
+                          {/* Score breakdown */}
+                          <div className="flex flex-wrap items-center gap-4 text-xs text-muted mb-4">
                             <span>
                               Score: <span className="text-foreground/80 font-medium">{u.complianceScore}</span>/100
                             </span>
-                            <span>
-                              = 50% on-time ({u.onTimePercent}%) + 30% non-stuck + 20% started
-                            </span>
+                            <span>= 50% on-time ({u.onTimePercent}%) + 30% non-stuck + 20% started</span>
                             {u.onOurWayOnTime + u.onOurWayLate > 0 && (
                               <span className="text-cyan-400">
                                 OOW: {u.onOurWayOnTime} on-time / {u.onOurWayLate} late
@@ -729,6 +732,95 @@ export default function ZuperCompliancePage() {
                               </span>
                             )}
                           </div>
+
+                          {/* Detail tabs */}
+                          <div className="flex gap-1 mb-4 bg-surface/50 rounded-lg p-0.5 w-fit">
+                            {([
+                              { key: "stuck" as const, label: "Stuck", count: u.stuckJobs },
+                              { key: "late" as const, label: "Late", count: u.lateCompletions },
+                              { key: "neverStarted" as const, label: "Not Started", count: u.neverStartedJobs },
+                              { key: "completed" as const, label: "Completed", count: u.completedJobs },
+                              { key: "categories" as const, label: "Categories", count: Object.keys(u.byCategory).length },
+                            ]).map((tab) => (
+                              <button
+                                key={tab.key}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setDetailTab(tab.key);
+                                }}
+                                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                                  detailTab === tab.key
+                                    ? "bg-red-600 text-white"
+                                    : "text-muted hover:text-foreground"
+                                }`}
+                              >
+                                {tab.label} ({tab.count})
+                              </button>
+                            ))}
+                          </div>
+
+                          {/* Tab content */}
+                          {detailTab === "stuck" && (
+                            <JobListTable
+                              jobs={u.stuckJobsList}
+                              title="Stuck Jobs"
+                              emptyMessage="No stuck jobs"
+                            />
+                          )}
+                          {detailTab === "late" && (
+                            <JobListTable
+                              jobs={u.lateJobsList}
+                              title="Late Completions"
+                              emptyMessage="No late completions"
+                              showTiming
+                            />
+                          )}
+                          {detailTab === "neverStarted" && (
+                            <JobListTable
+                              jobs={u.neverStartedJobsList}
+                              title="Never Started Jobs"
+                              emptyMessage="No never-started jobs"
+                            />
+                          )}
+                          {detailTab === "completed" && (
+                            <JobListTable
+                              jobs={u.completedJobsList}
+                              title="All Completed Jobs"
+                              emptyMessage="No completed jobs"
+                              showTiming
+                            />
+                          )}
+                          {detailTab === "categories" && (
+                            <div>
+                              <h4 className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">
+                                Jobs by Category
+                              </h4>
+                              {Object.keys(u.byCategory).length > 0 ? (
+                                <div className="bg-surface/50 border border-t-border rounded-lg overflow-hidden">
+                                  <table className="w-full text-sm">
+                                    <thead>
+                                      <tr className="text-muted text-left border-b border-t-border">
+                                        <th className="px-3 py-2">Category</th>
+                                        <th className="px-3 py-2 text-right">Jobs</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {Object.entries(u.byCategory)
+                                        .sort((a, b) => b[1] - a[1])
+                                        .map(([cat, count]) => (
+                                          <tr key={cat} className="border-b border-t-border/30">
+                                            <td className="px-3 py-1.5 text-foreground/80">{cat}</td>
+                                            <td className="px-3 py-1.5 text-right text-foreground/80">{count}</td>
+                                          </tr>
+                                        ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              ) : (
+                                <p className="text-muted text-sm">No category data</p>
+                              )}
+                            </div>
+                          )}
                         </td>
                       </tr>
                     )}
@@ -738,10 +830,7 @@ export default function ZuperCompliancePage() {
 
               {sortedUsers.length === 0 && (
                 <tr>
-                  <td
-                    colSpan={11}
-                    className="text-center py-12 text-muted"
-                  >
+                  <td colSpan={11} className="text-center py-12 text-muted">
                     No users match the current filters
                   </td>
                 </tr>
@@ -759,14 +848,10 @@ export default function ZuperCompliancePage() {
           </span>
         )}
         {filterTeams.length > 0 && (
-          <span className="ml-2">
-            | Teams: {filterTeams.join(", ")}
-          </span>
+          <span className="ml-2">| Teams: {filterTeams.join(", ")}</span>
         )}
         {filterCategories.length > 0 && (
-          <span className="ml-2">
-            | Categories: {filterCategories.join(", ")}
-          </span>
+          <span className="ml-2">| Categories: {filterCategories.join(", ")}</span>
         )}
       </div>
     </DashboardShell>

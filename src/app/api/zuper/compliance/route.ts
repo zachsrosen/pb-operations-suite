@@ -4,12 +4,18 @@ import { zuper, JOB_CATEGORY_UIDS, JOB_CATEGORIES } from "@/lib/zuper";
 
 // ========== Types ==========
 
-interface StuckJobEntry {
+interface JobEntry {
   jobUid: string;
   title: string;
   status: string;
-  scheduledEnd: string | null;
   category: string;
+  scheduledStart: string | null;
+  scheduledEnd: string | null;
+  completedTime: string | null;
+  daysToComplete: number | null;
+  daysLate: number | null;
+  onOurWayTime: string | null;
+  onOurWayOnTime: boolean | null; // null = no OOW data
 }
 
 interface CategoryBreakdown {
@@ -35,7 +41,10 @@ interface UserMetrics {
   complianceScore: number;
   grade: string;
   byCategory: CategoryBreakdown;
-  stuckJobsList: StuckJobEntry[];
+  stuckJobsList: JobEntry[];
+  lateJobsList: JobEntry[];
+  neverStartedJobsList: JobEntry[];
+  completedJobsList: JobEntry[];
 }
 
 interface ComplianceSummary {
@@ -393,12 +402,15 @@ export async function GET(request: NextRequest) {
       stuckJobs: number;
       neverStartedJobs: number;
       completionDays: number[];
-      daysLatePastEnd: number[]; // days between scheduledEnd and actual completion
-      onOurWayOnTime: number; // "On Our Way" set during or before scheduled window
-      onOurWayLate: number; // "On Our Way" set after scheduled start
-      onOurWayTotal: number; // total completed jobs that had "On Our Way" in history
+      daysLatePastEnd: number[];
+      onOurWayOnTime: number;
+      onOurWayLate: number;
+      onOurWayTotal: number;
       byCategory: CategoryBreakdown;
-      stuckJobsList: StuckJobEntry[];
+      stuckJobsList: JobEntry[];
+      lateJobsList: JobEntry[];
+      neverStartedJobsList: JobEntry[];
+      completedJobsList: JobEntry[];
     }
 
     const userMap = new Map<string, UserAccumulator>();
@@ -457,6 +469,9 @@ export async function GET(request: NextRequest) {
             onOurWayTotal: 0,
             byCategory: {},
             stuckJobsList: [],
+            lateJobsList: [],
+            neverStartedJobsList: [],
+            completedJobsList: [],
           });
         }
         const acc = userMap.get(userUid)!;
@@ -467,52 +482,74 @@ export async function GET(request: NextRequest) {
         acc.totalJobs++;
         acc.byCategory[categoryName] = (acc.byCategory[categoryName] || 0) + 1;
 
-        // Check if completed — count the job even if we don't have an exact
-        // completion timestamp (Zuper list API often omits it)
+        // Build a reusable job entry for detail lists
+        const effectiveCompletedTime = completedTime || scheduledEnd;
+        let jobDaysToComplete: number | null = null;
+        let jobDaysLate: number | null = null;
+        let jobOowOnTime: boolean | null = null;
+
+        // Check if completed
         if (COMPLETED_STATUSES.has(statusLower)) {
           acc.completedJobs++;
 
-          // Use completedTime if available, otherwise fall back to
-          // scheduled_end_time as the best proxy for when work finished
-          const effectiveCompletedTime = completedTime || scheduledEnd;
-
           // On-time check: completed within scheduled_end + 1 day grace
+          let isLate = false;
           if (scheduledEnd && effectiveCompletedTime) {
             const deadline = new Date(scheduledEnd.getTime() + GRACE_MS);
             if (effectiveCompletedTime <= deadline) {
               acc.onTimeCompletions++;
             } else {
               acc.lateCompletions++;
+              isLate = true;
             }
 
-            // Track how many days past scheduled end the job was completed
+            // Days past scheduled end
             if (effectiveCompletedTime > scheduledEnd) {
               const diffMs = effectiveCompletedTime.getTime() - scheduledEnd.getTime();
-              const diffDays = diffMs / (1000 * 60 * 60 * 24);
-              acc.daysLatePastEnd.push(diffDays);
+              jobDaysLate = Math.round((diffMs / (1000 * 60 * 60 * 24)) * 10) / 10;
+              acc.daysLatePastEnd.push(jobDaysLate);
             }
           } else {
-            // No scheduled end time, count as on-time (cannot measure)
             acc.onTimeCompletions++;
           }
 
-          // Avg days to complete: scheduled_start to completed/scheduled_end
+          // Days to complete: scheduled_start to completion
           if (scheduledStart && effectiveCompletedTime && effectiveCompletedTime > scheduledStart) {
             const diffMs = effectiveCompletedTime.getTime() - scheduledStart.getTime();
-            const diffDays = diffMs / (1000 * 60 * 60 * 24);
-            acc.completionDays.push(diffDays);
+            jobDaysToComplete = Math.round((diffMs / (1000 * 60 * 60 * 24)) * 10) / 10;
+            acc.completionDays.push(jobDaysToComplete);
           }
 
-          // "On Our Way" compliance: did they trigger it during/before the scheduled window?
+          // "On Our Way" compliance
           if (onOurWayTime && scheduledStart) {
             acc.onOurWayTotal++;
-            // On-time = "On Our Way" was set at or before scheduled end (generous window)
-            // Late = "On Our Way" was set after the scheduled end time
             if (scheduledEnd && onOurWayTime > scheduledEnd) {
               acc.onOurWayLate++;
+              jobOowOnTime = false;
             } else {
               acc.onOurWayOnTime++;
+              jobOowOnTime = true;
             }
+          }
+
+          // Build completed job entry
+          const completedEntry: JobEntry = {
+            jobUid: job.job_uid || "",
+            title: job.job_title || "",
+            status: statusName,
+            category: categoryName,
+            scheduledStart: job.scheduled_start_time || null,
+            scheduledEnd: job.scheduled_end_time || null,
+            completedTime: effectiveCompletedTime?.toISOString() || null,
+            daysToComplete: jobDaysToComplete,
+            daysLate: jobDaysLate,
+            onOurWayTime: onOurWayTime?.toISOString() || null,
+            onOurWayOnTime: jobOowOnTime,
+          };
+
+          acc.completedJobsList.push(completedEntry);
+          if (isLate) {
+            acc.lateJobsList.push(completedEntry);
           }
         }
 
@@ -523,8 +560,14 @@ export async function GET(request: NextRequest) {
             jobUid: job.job_uid || "",
             title: job.job_title || "",
             status: statusName,
-            scheduledEnd: job.scheduled_end_time || null,
             category: categoryName,
+            scheduledStart: job.scheduled_start_time || null,
+            scheduledEnd: job.scheduled_end_time || null,
+            completedTime: null,
+            daysToComplete: null,
+            daysLate: null,
+            onOurWayTime: onOurWayTime?.toISOString() || null,
+            onOurWayOnTime: null,
           });
         }
 
@@ -535,6 +578,19 @@ export async function GET(request: NextRequest) {
           scheduledStart < now
         ) {
           acc.neverStartedJobs++;
+          acc.neverStartedJobsList.push({
+            jobUid: job.job_uid || "",
+            title: job.job_title || "",
+            status: statusName,
+            category: categoryName,
+            scheduledStart: job.scheduled_start_time || null,
+            scheduledEnd: job.scheduled_end_time || null,
+            completedTime: null,
+            daysToComplete: null,
+            daysLate: null,
+            onOurWayTime: null,
+            onOurWayOnTime: null,
+          });
         }
       }
     }
@@ -612,6 +668,9 @@ export async function GET(request: NextRequest) {
         grade,
         byCategory: acc.byCategory,
         stuckJobsList: acc.stuckJobsList,
+        lateJobsList: acc.lateJobsList,
+        neverStartedJobsList: acc.neverStartedJobsList,
+        completedJobsList: acc.completedJobsList,
       });
     }
 
