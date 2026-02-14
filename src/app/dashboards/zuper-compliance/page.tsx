@@ -9,7 +9,7 @@ import { useActivityTracking } from "@/hooks/useActivityTracking";
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
 
-interface StaleJob {
+interface StuckJob {
   jobUid: string;
   title: string;
   status: string;
@@ -25,23 +25,29 @@ interface UserMetrics {
   completedJobs: number;
   onTimeCompletions: number;
   lateCompletions: number;
-  staleJobs: number;
+  stuckJobs: number;
   neverStartedJobs: number;
   avgDaysToComplete: number;
+  avgDaysLate: number;
   onTimePercent: number;
+  onOurWayOnTime: number;
+  onOurWayLate: number;
+  onOurWayPercent: number;
   complianceScore: number;
   grade: string;
   byCategory: Record<string, number>;
-  staleJobsList: StaleJob[];
+  stuckJobsList: StuckJob[];
 }
 
 interface ComplianceSummary {
   totalJobs: number;
   totalCompleted: number;
   overallOnTimePercent: number;
-  totalStale: number;
+  totalStuck: number;
   totalNeverStarted: number;
   avgCompletionDays: number;
+  avgDaysLate: number;
+  overallOnOurWayPercent: number;
   userCount: number;
 }
 
@@ -63,9 +69,11 @@ type SortField =
   | "totalJobs"
   | "onTimePercent"
   | "lateCompletions"
-  | "staleJobs"
+  | "stuckJobs"
   | "neverStartedJobs"
   | "avgDaysToComplete"
+  | "avgDaysLate"
+  | "onOurWayPercent"
   | "complianceScore";
 
 /* ------------------------------------------------------------------ */
@@ -186,14 +194,20 @@ export default function ZuperCompliancePage() {
         case "lateCompletions":
           cmp = a.lateCompletions - b.lateCompletions;
           break;
-        case "staleJobs":
-          cmp = a.staleJobs - b.staleJobs;
+        case "stuckJobs":
+          cmp = a.stuckJobs - b.stuckJobs;
           break;
         case "neverStartedJobs":
           cmp = a.neverStartedJobs - b.neverStartedJobs;
           break;
         case "avgDaysToComplete":
           cmp = a.avgDaysToComplete - b.avgDaysToComplete;
+          break;
+        case "avgDaysLate":
+          cmp = a.avgDaysLate - b.avgDaysLate;
+          break;
+        case "onOurWayPercent":
+          cmp = a.onOurWayPercent - b.onOurWayPercent;
           break;
         case "complianceScore":
           cmp = a.complianceScore - b.complianceScore;
@@ -240,7 +254,7 @@ export default function ZuperCompliancePage() {
 
   /* ---- On-time percent color ---- */
 
-  const onTimeColor = (pct: number) => {
+  const pctColor = (pct: number) => {
     if (pct >= 80) return "text-green-400";
     if (pct >= 60) return "text-yellow-400";
     return "text-red-400";
@@ -256,9 +270,11 @@ export default function ZuperCompliancePage() {
       Completed: u.completedJobs,
       "On-Time %": u.onTimePercent,
       Late: u.lateCompletions,
-      Stale: u.staleJobs,
+      Stuck: u.stuckJobs,
       "Never Started": u.neverStartedJobs,
       "Avg Days": u.avgDaysToComplete,
+      "Avg Days Late": u.avgDaysLate,
+      "OOW On-Time %": u.onOurWayPercent,
       Grade: u.grade,
       Score: u.complianceScore,
     }));
@@ -348,7 +364,7 @@ export default function ZuperCompliancePage() {
       </div>
 
       {/* Stat Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-8">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 mb-8">
         {[
           {
             label: "Total Jobs",
@@ -366,8 +382,8 @@ export default function ZuperCompliancePage() {
             color: "text-green-400",
           },
           {
-            label: "Stale Jobs",
-            value: (summary?.totalStale || 0).toLocaleString(),
+            label: "Stuck Jobs",
+            value: (summary?.totalStuck || 0).toLocaleString(),
             color: "text-amber-400",
           },
           {
@@ -379,6 +395,16 @@ export default function ZuperCompliancePage() {
             label: "Avg Days",
             value: String(summary?.avgCompletionDays || 0),
             color: "text-blue-400",
+          },
+          {
+            label: "Avg Days Late",
+            value: String(summary?.avgDaysLate || 0),
+            color: "text-rose-400",
+          },
+          {
+            label: "OOW On-Time %",
+            value: `${summary?.overallOnOurWayPercent || 0}%`,
+            color: "text-cyan-400",
           },
         ].map((stat) => (
           <div
@@ -431,9 +457,9 @@ export default function ZuperCompliancePage() {
                 </th>
                 <th
                   className="px-4 py-3 cursor-pointer hover:text-foreground text-right"
-                  onClick={() => handleSort("staleJobs")}
+                  onClick={() => handleSort("stuckJobs")}
                 >
-                  Stale <SortIcon field="staleJobs" />
+                  Stuck <SortIcon field="stuckJobs" />
                 </th>
                 <th
                   className="px-4 py-3 cursor-pointer hover:text-foreground text-right"
@@ -446,6 +472,19 @@ export default function ZuperCompliancePage() {
                   onClick={() => handleSort("avgDaysToComplete")}
                 >
                   Avg Days <SortIcon field="avgDaysToComplete" />
+                </th>
+                <th
+                  className="px-4 py-3 cursor-pointer hover:text-foreground text-right"
+                  onClick={() => handleSort("avgDaysLate")}
+                >
+                  Avg Late <SortIcon field="avgDaysLate" />
+                </th>
+                <th
+                  className="px-4 py-3 cursor-pointer hover:text-foreground text-right"
+                  onClick={() => handleSort("onOurWayPercent")}
+                  title="On Our Way set on time vs late"
+                >
+                  OOW % <SortIcon field="onOurWayPercent" />
                 </th>
                 <th
                   className="px-4 py-3 cursor-pointer hover:text-foreground text-center"
@@ -499,7 +538,7 @@ export default function ZuperCompliancePage() {
                         {u.totalJobs}
                       </td>
                       <td
-                        className={`px-4 py-2.5 text-right font-medium ${onTimeColor(
+                        className={`px-4 py-2.5 text-right font-medium ${pctColor(
                           u.onTimePercent
                         )}`}
                       >
@@ -511,12 +550,12 @@ export default function ZuperCompliancePage() {
                       <td className="px-4 py-2.5 text-right">
                         <span
                           className={
-                            u.staleJobs > 0
+                            u.stuckJobs > 0
                               ? "text-amber-400 font-medium"
                               : "text-foreground/80"
                           }
                         >
-                          {u.staleJobs}
+                          {u.stuckJobs}
                         </span>
                       </td>
                       <td className="px-4 py-2.5 text-right">
@@ -533,6 +572,27 @@ export default function ZuperCompliancePage() {
                       <td className="px-4 py-2.5 text-right text-blue-400">
                         {u.avgDaysToComplete}
                       </td>
+                      <td className="px-4 py-2.5 text-right">
+                        <span
+                          className={
+                            u.avgDaysLate > 0
+                              ? "text-rose-400 font-medium"
+                              : "text-foreground/80"
+                          }
+                        >
+                          {u.avgDaysLate > 0 ? `${u.avgDaysLate}d` : "\u2014"}
+                        </span>
+                      </td>
+                      <td
+                        className={`px-4 py-2.5 text-right font-medium ${pctColor(
+                          u.onOurWayPercent
+                        )}`}
+                        title={`${u.onOurWayOnTime} on-time / ${u.onOurWayLate} late`}
+                      >
+                        {u.onOurWayOnTime + u.onOurWayLate > 0
+                          ? `${u.onOurWayPercent}%`
+                          : "\u2014"}
+                      </td>
                       <td className="px-4 py-2.5 text-center">
                         <span
                           className={`inline-flex items-center justify-center w-8 h-8 rounded-lg text-sm font-bold ${gradeClasses(
@@ -547,7 +607,7 @@ export default function ZuperCompliancePage() {
                     {/* Expanded detail row */}
                     {isExpanded && (
                       <tr className="border-b border-t-border/50">
-                        <td colSpan={9} className="px-6 py-4 bg-surface-2/20">
+                        <td colSpan={11} className="px-6 py-4 bg-surface-2/20">
                           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                             {/* Category Breakdown */}
                             <div>
@@ -589,12 +649,12 @@ export default function ZuperCompliancePage() {
                               )}
                             </div>
 
-                            {/* Stale Jobs List */}
+                            {/* Stuck Jobs List */}
                             <div>
                               <h4 className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">
-                                Stale Jobs ({u.staleJobsList.length})
+                                Stuck Jobs ({u.stuckJobsList.length})
                               </h4>
-                              {u.staleJobsList.length > 0 ? (
+                              {u.stuckJobsList.length > 0 ? (
                                 <div className="bg-surface/50 border border-t-border rounded-lg overflow-hidden">
                                   <table className="w-full text-sm">
                                     <thead>
@@ -608,7 +668,7 @@ export default function ZuperCompliancePage() {
                                       </tr>
                                     </thead>
                                     <tbody>
-                                      {u.staleJobsList.map((sj) => (
+                                      {u.stuckJobsList.map((sj) => (
                                         <tr
                                           key={sj.jobUid}
                                           className="border-b border-t-border/30"
@@ -644,20 +704,30 @@ export default function ZuperCompliancePage() {
                                 </div>
                               ) : (
                                 <p className="text-sm text-emerald-400">
-                                  No stale jobs
+                                  No stuck jobs
                                 </p>
                               )}
                             </div>
                           </div>
 
-                          {/* Compliance Score Breakdown */}
-                          <div className="mt-4 flex items-center gap-4 text-xs text-muted">
+                          {/* Detail metrics */}
+                          <div className="mt-4 flex flex-wrap items-center gap-4 text-xs text-muted">
                             <span>
                               Score: <span className="text-foreground/80 font-medium">{u.complianceScore}</span>/100
                             </span>
                             <span>
-                              = 50% on-time ({u.onTimePercent}%) + 30% non-stale + 20% started
+                              = 50% on-time ({u.onTimePercent}%) + 30% non-stuck + 20% started
                             </span>
+                            {u.onOurWayOnTime + u.onOurWayLate > 0 && (
+                              <span className="text-cyan-400">
+                                OOW: {u.onOurWayOnTime} on-time / {u.onOurWayLate} late
+                              </span>
+                            )}
+                            {u.avgDaysLate > 0 && (
+                              <span className="text-rose-400">
+                                Avg {u.avgDaysLate}d past scheduled end
+                              </span>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -669,7 +739,7 @@ export default function ZuperCompliancePage() {
               {sortedUsers.length === 0 && (
                 <tr>
                   <td
-                    colSpan={9}
+                    colSpan={11}
                     className="text-center py-12 text-muted"
                   >
                     No users match the current filters

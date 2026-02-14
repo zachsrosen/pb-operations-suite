@@ -4,7 +4,7 @@ import { zuper, JOB_CATEGORY_UIDS, JOB_CATEGORIES } from "@/lib/zuper";
 
 // ========== Types ==========
 
-interface StaleJobEntry {
+interface StuckJobEntry {
   jobUid: string;
   title: string;
   status: string;
@@ -25,44 +25,35 @@ interface UserMetrics {
   onTimeCompletions: number;
   lateCompletions: number;
   onTimePercent: number;
-  staleJobs: number;
+  stuckJobs: number;
   neverStartedJobs: number;
   avgDaysToComplete: number;
+  avgDaysLate: number;
+  onOurWayOnTime: number;
+  onOurWayLate: number;
+  onOurWayPercent: number;
   complianceScore: number;
   grade: string;
   byCategory: CategoryBreakdown;
-  staleJobsList: StaleJobEntry[];
+  stuckJobsList: StuckJobEntry[];
 }
 
 interface ComplianceSummary {
   totalJobs: number;
   totalCompleted: number;
   overallOnTimePercent: number;
-  totalStale: number;
+  totalStuck: number;
   totalNeverStarted: number;
   avgCompletionDays: number;
+  avgDaysLate: number;
+  overallOnOurWayPercent: number;
   userCount: number;
-}
-
-interface ComplianceResponse {
-  users: UserMetrics[];
-  summary: ComplianceSummary;
-  filters: {
-    teams: string[];
-    categories: string[];
-  };
-  dateRange: {
-    from: string;
-    to: string;
-    days: number;
-  };
-  lastUpdated: string;
 }
 
 // ========== Constants ==========
 
-// Statuses that indicate a job is "in progress" but may be stale
-const STALE_STATUSES = new Set(
+// Statuses that indicate a job is "in progress" but may be stuck
+const STUCK_STATUSES = new Set(
   ["on our way", "started", "in progress"].map((s) => s.toLowerCase())
 );
 
@@ -85,6 +76,7 @@ const COMPLETED_STATUSES = new Set(
     "construction complete",
     "passed",
     "partial pass",
+    "failed",
   ].map((s) => s.toLowerCase())
 );
 
@@ -114,7 +106,7 @@ function getCategoryUid(job: any): string | null {
 }
 
 /**
- * Get current status name from a job, lowercased.
+ * Get current status name from a job.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function getStatusName(job: any): string {
@@ -148,6 +140,27 @@ function getCompletedTimeFromHistory(job: any): Date | null {
     if (!entry) continue;
     const name = (entry.status_name || entry.name || "").toLowerCase();
     if (COMPLETED_STATUSES.has(name) && (entry.created_at || entry.updated_at)) {
+      return new Date(entry.created_at || entry.updated_at);
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Extract the timestamp when "On Our Way" was first set from the job_status history.
+ * Returns null if the status was never used.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function getOnOurWayTime(job: any): Date | null {
+  const statusHistory = job.job_status;
+  if (!Array.isArray(statusHistory)) return null;
+
+  // Find the first "on our way" entry (chronological order)
+  for (const entry of statusHistory) {
+    if (!entry) continue;
+    const name = (entry.status_name || entry.name || "").toLowerCase();
+    if (name === "on our way" && (entry.created_at || entry.updated_at)) {
       return new Date(entry.created_at || entry.updated_at);
     }
   }
@@ -272,8 +285,8 @@ async function fetchJobsForCategory(
  * GET /api/zuper/compliance?days=30&team=Denver&category=Construction
  *
  * Fetches Zuper jobs across all field categories, groups by assigned user,
- * and computes per-user compliance metrics including on-time rate, stale jobs,
- * never-started jobs, and an overall compliance score.
+ * and computes per-user compliance metrics including on-time rate, stuck jobs,
+ * never-started jobs, On Our Way timing, and an overall compliance score.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -377,11 +390,15 @@ export async function GET(request: NextRequest) {
       completedJobs: number;
       onTimeCompletions: number;
       lateCompletions: number;
-      staleJobs: number;
+      stuckJobs: number;
       neverStartedJobs: number;
-      completionDays: number[]; // individual days-to-complete for averaging
+      completionDays: number[];
+      daysLatePastEnd: number[]; // days between scheduledEnd and actual completion
+      onOurWayOnTime: number; // "On Our Way" set during or before scheduled window
+      onOurWayLate: number; // "On Our Way" set after scheduled start
+      onOurWayTotal: number; // total completed jobs that had "On Our Way" in history
       byCategory: CategoryBreakdown;
-      staleJobsList: StaleJobEntry[];
+      stuckJobsList: StuckJobEntry[];
     }
 
     const userMap = new Map<string, UserAccumulator>();
@@ -415,8 +432,10 @@ export async function GET(request: NextRequest) {
         ? new Date(job.scheduled_end_time)
         : null;
       // Extract completion time from job_status history array, falling back
-      // to direct fields, then scheduled_end_time as last resort
+      // to direct fields
       const completedTime = getCompletedTimeFromHistory(job);
+      // Extract when "On Our Way" was triggered
+      const onOurWayTime = getOnOurWayTime(job);
 
       // Attribute job to each assigned user
       for (const { userUid, userName, teamName } of assignedUsers) {
@@ -429,11 +448,15 @@ export async function GET(request: NextRequest) {
             completedJobs: 0,
             onTimeCompletions: 0,
             lateCompletions: 0,
-            staleJobs: 0,
+            stuckJobs: 0,
             neverStartedJobs: 0,
             completionDays: [],
+            daysLatePastEnd: [],
+            onOurWayOnTime: 0,
+            onOurWayLate: 0,
+            onOurWayTotal: 0,
             byCategory: {},
-            staleJobsList: [],
+            stuckJobsList: [],
           });
         }
         const acc = userMap.get(userUid)!;
@@ -461,6 +484,13 @@ export async function GET(request: NextRequest) {
             } else {
               acc.lateCompletions++;
             }
+
+            // Track how many days past scheduled end the job was completed
+            if (effectiveCompletedTime > scheduledEnd) {
+              const diffMs = effectiveCompletedTime.getTime() - scheduledEnd.getTime();
+              const diffDays = diffMs / (1000 * 60 * 60 * 24);
+              acc.daysLatePastEnd.push(diffDays);
+            }
           } else {
             // No scheduled end time, count as on-time (cannot measure)
             acc.onTimeCompletions++;
@@ -472,12 +502,24 @@ export async function GET(request: NextRequest) {
             const diffDays = diffMs / (1000 * 60 * 60 * 24);
             acc.completionDays.push(diffDays);
           }
+
+          // "On Our Way" compliance: did they trigger it during/before the scheduled window?
+          if (onOurWayTime && scheduledStart) {
+            acc.onOurWayTotal++;
+            // On-time = "On Our Way" was set at or before scheduled end (generous window)
+            // Late = "On Our Way" was set after the scheduled end time
+            if (scheduledEnd && onOurWayTime > scheduledEnd) {
+              acc.onOurWayLate++;
+            } else {
+              acc.onOurWayOnTime++;
+            }
+          }
         }
 
-        // Check for stale jobs: in progress statuses with scheduled_end in the past
-        if (STALE_STATUSES.has(statusLower) && scheduledEnd && scheduledEnd < now) {
-          acc.staleJobs++;
-          acc.staleJobsList.push({
+        // Check for stuck jobs: in progress statuses with scheduled_end in the past
+        if (STUCK_STATUSES.has(statusLower) && scheduledEnd && scheduledEnd < now) {
+          acc.stuckJobs++;
+          acc.stuckJobsList.push({
             jobUid: job.job_uid || "",
             title: job.job_title || "",
             status: statusName,
@@ -518,16 +560,32 @@ export async function GET(request: NextRequest) {
             ) / 10
           : 0;
 
+      // Average days late past scheduled end (only for jobs that were late)
+      const avgDaysLate =
+        acc.daysLatePastEnd.length > 0
+          ? Math.round(
+              (acc.daysLatePastEnd.reduce((sum: number, d: number) => sum + d, 0) /
+                acc.daysLatePastEnd.length) *
+                10
+            ) / 10
+          : 0;
+
+      // On Our Way compliance percentage
+      const onOurWayPercent =
+        acc.onOurWayTotal > 0
+          ? Math.round((acc.onOurWayOnTime / acc.onOurWayTotal) * 100 * 10) / 10
+          : 0;
+
       // Compliance score:
-      // 50% on-time rate + 30% (1 - staleRate) * 100 + 20% (1 - neverStartedRate) * 100
-      const staleRate = acc.totalJobs > 0 ? acc.staleJobs / acc.totalJobs : 0;
+      // 50% on-time rate + 30% (1 - stuckRate) * 100 + 20% (1 - neverStartedRate) * 100
+      const stuckRate = acc.totalJobs > 0 ? acc.stuckJobs / acc.totalJobs : 0;
       const neverStartedRate =
         acc.totalJobs > 0 ? acc.neverStartedJobs / acc.totalJobs : 0;
 
       const complianceScore =
         Math.round(
           (0.5 * onTimePercent +
-            0.3 * (1 - staleRate) * 100 +
+            0.3 * (1 - stuckRate) * 100 +
             0.2 * (1 - neverStartedRate) * 100) *
             10
         ) / 10;
@@ -543,13 +601,17 @@ export async function GET(request: NextRequest) {
         onTimeCompletions: acc.onTimeCompletions,
         lateCompletions: acc.lateCompletions,
         onTimePercent,
-        staleJobs: acc.staleJobs,
+        stuckJobs: acc.stuckJobs,
         neverStartedJobs: acc.neverStartedJobs,
         avgDaysToComplete,
+        avgDaysLate,
+        onOurWayOnTime: acc.onOurWayOnTime,
+        onOurWayLate: acc.onOurWayLate,
+        onOurWayPercent,
         complianceScore,
         grade,
         byCategory: acc.byCategory,
-        staleJobsList: acc.staleJobsList,
+        stuckJobsList: acc.stuckJobsList,
       });
     }
 
@@ -560,17 +622,25 @@ export async function GET(request: NextRequest) {
     const totalJobs = users.reduce((sum, u) => sum + u.totalJobs, 0);
     const totalCompleted = users.reduce((sum, u) => sum + u.completedJobs, 0);
     const totalOnTime = users.reduce((sum, u) => sum + u.onTimeCompletions, 0);
-    const totalStale = users.reduce((sum, u) => sum + u.staleJobs, 0);
+    const totalStuck = users.reduce((sum, u) => sum + u.stuckJobs, 0);
     const totalNeverStarted = users.reduce((sum, u) => sum + u.neverStartedJobs, 0);
 
     const allCompletionDays = users.flatMap((u) => {
-      // Reconstruct individual completion days from the user's average and count
-      // Since we only stored the average, use it directly weighted by completed count
       if (u.avgDaysToComplete > 0 && u.completedJobs > 0) {
         return Array(u.completedJobs).fill(u.avgDaysToComplete);
       }
       return [];
     });
+
+    const allDaysLate = users.flatMap((u) => {
+      if (u.avgDaysLate > 0 && u.lateCompletions > 0) {
+        return Array(u.lateCompletions).fill(u.avgDaysLate);
+      }
+      return [];
+    });
+
+    const totalOnOurWayOnTime = users.reduce((sum, u) => sum + u.onOurWayOnTime, 0);
+    const totalOnOurWayTotal = users.reduce((sum, u) => sum + u.onOurWayOnTime + u.onOurWayLate, 0);
 
     const overallOnTimePercent =
       totalCompleted > 0
@@ -586,13 +656,27 @@ export async function GET(request: NextRequest) {
           ) / 10
         : 0;
 
+    const avgDaysLate =
+      allDaysLate.length > 0
+        ? Math.round(
+            (allDaysLate.reduce((sum, d) => sum + d, 0) / allDaysLate.length) * 10
+          ) / 10
+        : 0;
+
+    const overallOnOurWayPercent =
+      totalOnOurWayTotal > 0
+        ? Math.round((totalOnOurWayOnTime / totalOnOurWayTotal) * 100 * 10) / 10
+        : 0;
+
     const summary: ComplianceSummary = {
       totalJobs,
       totalCompleted,
       overallOnTimePercent,
-      totalStale,
+      totalStuck,
       totalNeverStarted,
       avgCompletionDays,
+      avgDaysLate,
+      overallOnOurWayPercent,
       userCount: users.length,
     };
 
