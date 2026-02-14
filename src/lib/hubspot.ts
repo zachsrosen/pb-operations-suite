@@ -404,6 +404,16 @@ const DEAL_PROPERTIES = [
   "da_to_permit",
 ];
 
+const MS_PER_DAY = 86_400_000;
+
+/** Convert a HubSpot millisecond duration to days (rounded to 1 decimal) */
+function msToDays(value: unknown): number | null {
+  if (!value) return null;
+  const ms = Number(value);
+  if (isNaN(ms)) return null;
+  return Math.round((ms / MS_PER_DAY) * 10) / 10;
+}
+
 function daysBetween(date1: Date, date2: Date): number {
   const diffTime = date2.getTime() - date1.getTime();
   return Math.round(diffTime / (1000 * 60 * 60 * 24));
@@ -665,27 +675,27 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
       return surveyorMap?.[raw] || raw;
     })(),
 
-    // QC Time Metrics (pre-calculated by HubSpot, in days)
-    siteSurveyTurnaroundTime: deal.site_survey_turnaround_time ? Number(deal.site_survey_turnaround_time) : null,
-    timeDAReadyToSent: deal.time_between_da_ready_and_da_sent ? Number(deal.time_between_da_ready_and_da_sent) : null,
-    daTurnaroundTime: deal.time_between_da_sent_and_da_approved ? Number(deal.time_between_da_sent_and_da_approved) : null,
-    timeToSubmitPermit: deal.time_to_submit_permit ? Number(deal.time_to_submit_permit) : null,
-    timeToSubmitInterconnection: deal.time_to_submit_interconnection ? Number(deal.time_to_submit_interconnection) : null,
-    daToRtb: deal.da_to_rtb ? Number(deal.da_to_rtb) : null,
-    constructionTurnaroundTime: deal.construction_turnaround_time ? Number(deal.construction_turnaround_time) : null,
-    timeCcToPto: deal.time_between_cc___pto ? Number(deal.time_between_cc___pto) : null,
-    timeToCc: deal.time_to_cc ? Number(deal.time_to_cc) : null,
-    timeToDa: deal.time_to_da ? Number(deal.time_to_da) : null,
-    timeToPto: deal.time_to_pto ? Number(deal.time_to_pto) : null,
-    interconnectionTurnaroundTime: deal.interconnection_turnaround_time ? Number(deal.interconnection_turnaround_time) : null,
-    permitTurnaroundTime: deal.permit_turnaround_time ? Number(deal.permit_turnaround_time) : null,
-    timeRtbToConstructionSchedule: deal.time_between_rtb___construction_schedule_date ? Number(deal.time_between_rtb___construction_schedule_date) : null,
-    designTurnaroundTime: deal.design_turnaround_time ? Number(deal.design_turnaround_time) : null,
-    projectTurnaroundTime: deal.project_turnaround_time ? Number(deal.project_turnaround_time) : null,
-    timeToRtb: deal.time_to_rtb ? Number(deal.time_to_rtb) : null,
-    timeRtbToCc: deal.time_from_rtb_to_cc ? Number(deal.time_from_rtb_to_cc) : null,
-    daToCc: deal.da_to_cc ? Number(deal.da_to_cc) : null,
-    daToPermit: deal.da_to_permit ? Number(deal.da_to_permit) : null,
+    // QC Time Metrics (HubSpot stores in milliseconds, convert to days)
+    siteSurveyTurnaroundTime: msToDays(deal.site_survey_turnaround_time),
+    timeDAReadyToSent: msToDays(deal.time_between_da_ready_and_da_sent),
+    daTurnaroundTime: msToDays(deal.time_between_da_sent_and_da_approved),
+    timeToSubmitPermit: msToDays(deal.time_to_submit_permit),
+    timeToSubmitInterconnection: msToDays(deal.time_to_submit_interconnection),
+    daToRtb: msToDays(deal.da_to_rtb),
+    constructionTurnaroundTime: msToDays(deal.construction_turnaround_time),
+    timeCcToPto: msToDays(deal.time_between_cc___pto),
+    timeToCc: msToDays(deal.time_to_cc),
+    timeToDa: msToDays(deal.time_to_da),
+    timeToPto: msToDays(deal.time_to_pto),
+    interconnectionTurnaroundTime: msToDays(deal.interconnection_turnaround_time),
+    permitTurnaroundTime: msToDays(deal.permit_turnaround_time),
+    timeRtbToConstructionSchedule: msToDays(deal.time_between_rtb___construction_schedule_date),
+    designTurnaroundTime: msToDays(deal.design_turnaround_time),
+    projectTurnaroundTime: msToDays(deal.project_turnaround_time),
+    timeToRtb: msToDays(deal.time_to_rtb),
+    timeRtbToCc: msToDays(deal.time_from_rtb_to_cc),
+    daToCc: msToDays(deal.da_to_cc),
+    daToPermit: msToDays(deal.da_to_permit),
   };
 }
 
