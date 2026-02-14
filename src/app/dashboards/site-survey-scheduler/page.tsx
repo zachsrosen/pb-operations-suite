@@ -987,18 +987,37 @@ export default function SiteSurveySchedulerPage() {
     setScheduleModal(null);
   }, [scheduleModal, zuperConfigured, syncToZuper, showToast, fetchAvailability, saveSurveyorAssignment, userRole, trackFeature]);
 
-  const cancelSchedule = useCallback((projectId: string) => {
+  const cancelSchedule = useCallback(async (projectId: string) => {
     const project = projects.find(p => p.id === projectId);
     trackFeature("survey-cancelled", "Survey schedule removed", {
       scheduler: "site-survey",
       projectId,
       projectName: project?.name || projectId,
     });
+
+    // Remove from local state immediately for responsive UI
     setManualSchedules((prev) => {
       const next = { ...prev };
       delete next[projectId];
       return next;
     });
+
+    // Sync to Zuper & HubSpot in background
+    try {
+      await fetch("/api/zuper/jobs/schedule", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          projectName: project?.name || projectId,
+          zuperJobUid: project?.zuperJobUid || null,
+          scheduleType: "survey",
+        }),
+      });
+    } catch (err) {
+      console.error("Failed to sync unschedule to Zuper:", err);
+    }
+
     showToast("Schedule removed");
   }, [showToast, projects, trackFeature]);
 

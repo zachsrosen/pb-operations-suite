@@ -582,10 +582,25 @@ export async function GET() {
       },
     };
 
-    // One-time operational audit: check if mismatch deals also have non-core categories
+    // Audit: check if mismatch deals also have non-core categories
     // (e.g., Additional Visit / Service Visit) that may have affected status workflows.
+    interface NonCoreAuditDeal {
+      dealId: string;
+      projectNumber: string;
+      dealName: string | null;
+      categories: string[];
+    }
+    let nonCoreAudit: {
+      totalMismatchDeals: number;
+      dealsWithNonCore: number;
+      dealsWithAdditionalOrService: number;
+      affectedDeals: NonCoreAuditDeal[];
+    } = { totalMismatchDeals: 0, dealsWithNonCore: 0, dealsWithAdditionalOrService: 0, affectedDeals: [] };
+
     try {
       const mismatchDealIds = [...new Set(records.filter((r) => r.isMismatch && !!r.dealId).map((r) => r.dealId as string))];
+      nonCoreAudit.totalMismatchDeals = mismatchDealIds.length;
+
       if (mismatchDealIds.length > 0) {
         const mismatchDealSet = new Set(mismatchDealIds);
         const coreCategoryUids = new Set<string>([
@@ -598,8 +613,8 @@ export async function GET() {
         const auditLimit = 100;
         let auditHasMore = true;
         let auditTotalRecords = Infinity;
-        let mismatchesWithAdditionalOrService = 0;
-        let mismatchesWithNonCore = 0;
+        // Track per-deal: which non-core categories exist
+        const dealNonCoreCategories = new Map<string, Set<string>>();
         const dealFlags = new Map<string, { hasAdditionalOrService: boolean; hasNonCore: boolean }>();
 
         while (auditHasMore && auditPage <= MAX_PAGES) {
@@ -628,14 +643,14 @@ export async function GET() {
               typeof job.job_category === "string"
                 ? job.job_category
                 : job.job_category?.category_uid || "";
-            const categoryName = (
+            const categoryName =
               typeof job.job_category === "string"
                 ? job.job_category
-                : job.job_category?.category_name || ""
-            ).toLowerCase();
+                : job.job_category?.category_name || "";
+            const categoryNameLower = categoryName.toLowerCase();
 
             const hasAdditionalOrService =
-              categoryName.includes("additional visit") || categoryName.includes("service visit");
+              categoryNameLower.includes("additional visit") || categoryNameLower.includes("service visit");
             const hasNonCore = !!categoryUid && !coreCategoryUids.has(categoryUid);
 
             if (!hasAdditionalOrService && !hasNonCore) continue;
@@ -644,6 +659,10 @@ export async function GET() {
             current.hasAdditionalOrService = current.hasAdditionalOrService || hasAdditionalOrService;
             current.hasNonCore = current.hasNonCore || hasNonCore;
             dealFlags.set(dealId, current);
+
+            // Track the specific category names
+            if (!dealNonCoreCategories.has(dealId)) dealNonCoreCategories.set(dealId, new Set());
+            dealNonCoreCategories.get(dealId)!.add(categoryName);
           }
 
           const auditFetchedSoFar = auditPage * auditLimit;
@@ -654,14 +673,36 @@ export async function GET() {
           }
         }
 
+        let dealsWithAdditionalOrService = 0;
+        let dealsWithNonCore = 0;
         for (const flags of dealFlags.values()) {
-          if (flags.hasAdditionalOrService) mismatchesWithAdditionalOrService += 1;
-          if (flags.hasNonCore) mismatchesWithNonCore += 1;
+          if (flags.hasAdditionalOrService) dealsWithAdditionalOrService += 1;
+          if (flags.hasNonCore) dealsWithNonCore += 1;
         }
+
+        // Build affected deals list with project info from records
+        const affectedDeals: NonCoreAuditDeal[] = [];
+        for (const [dealId, categories] of dealNonCoreCategories) {
+          const record = records.find((r) => r.dealId === dealId);
+          affectedDeals.push({
+            dealId,
+            projectNumber: record?.projectNumber || "",
+            dealName: record?.dealName || null,
+            categories: [...categories],
+          });
+        }
+        affectedDeals.sort((a, b) => a.projectNumber.localeCompare(b.projectNumber));
+
+        nonCoreAudit = {
+          totalMismatchDeals: mismatchDealIds.length,
+          dealsWithNonCore,
+          dealsWithAdditionalOrService,
+          affectedDeals,
+        };
 
         console.info(
           `[status-comparison-audit] mismatches=${mismatchDealIds.length} ` +
-          `withAdditionalOrService=${mismatchesWithAdditionalOrService} withNonCore=${mismatchesWithNonCore}`
+          `withAdditionalOrService=${dealsWithAdditionalOrService} withNonCore=${dealsWithNonCore}`
         );
       }
     } catch (auditError) {
@@ -747,6 +788,7 @@ export async function GET() {
       records,
       projectRecords,
       stats,
+      nonCoreAudit,
       dateRange: { from: fromDate, to: toDate },
       lastUpdated: new Date().toISOString(),
     });

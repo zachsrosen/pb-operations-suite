@@ -673,6 +673,114 @@ export async function GET(request: NextRequest) {
 }
 
 /**
+ * DELETE endpoint to unschedule a job (clear dates in Zuper + HubSpot)
+ */
+export async function DELETE(request: NextRequest) {
+  try {
+    // Check authentication
+    const session = await auth();
+    if (!session?.user?.email) {
+      return NextResponse.json(
+        { error: "Authentication required" },
+        { status: 401 }
+      );
+    }
+
+    // Get user and check permissions
+    const user = await getUserByEmail(session.user.email);
+    if (!user) {
+      return NextResponse.json(
+        { error: "User not found" },
+        { status: 403 }
+      );
+    }
+
+    // Check if user has permission to schedule surveys
+    if (!canScheduleType(user.role as UserRole, "survey")) {
+      return NextResponse.json(
+        { error: "You don't have permission to manage survey schedules." },
+        { status: 403 }
+      );
+    }
+
+    const body = await request.json();
+    const { projectId, projectName, zuperJobUid } = body;
+
+    if (!projectId) {
+      return NextResponse.json(
+        { error: "Missing required field: projectId" },
+        { status: 400 }
+      );
+    }
+
+    console.log(`[Zuper Unschedule] Clearing schedule for project ${projectId} (${projectName})`);
+
+    // Clear schedule in Zuper if we have a job UID
+    let zuperCleared = false;
+    if (zuperJobUid && zuper.isConfigured()) {
+      try {
+        const result = await zuper.unscheduleJob(zuperJobUid);
+        if (result.type === "success") {
+          zuperCleared = true;
+          console.log(`[Zuper Unschedule] Cleared Zuper job ${zuperJobUid}`);
+        } else {
+          console.warn(`[Zuper Unschedule] Failed to clear Zuper job: ${result.error}`);
+        }
+      } catch (err) {
+        console.error(`[Zuper Unschedule] Error clearing Zuper job:`, err);
+      }
+    }
+
+    // Clear HubSpot site_survey_schedule_date
+    try {
+      await updateDealProperty(projectId, { site_survey_schedule_date: "" });
+      console.log(`[Zuper Unschedule] Cleared HubSpot site_survey_schedule_date for ${projectId}`);
+    } catch (err) {
+      console.warn(`[Zuper Unschedule] Failed to clear HubSpot property:`, err);
+    }
+
+    // Log the unschedule activity
+    try {
+      const headersList = await headers();
+      const userAgent = headersList.get("user-agent") || undefined;
+      const forwarded = headersList.get("x-forwarded-for");
+      const ipAddress = forwarded?.split(",")[0]?.trim() || headersList.get("x-real-ip") || undefined;
+
+      await logActivity({
+        type: "SURVEY_CANCELLED",
+        description: `Unscheduled survey for ${projectName || projectId}`,
+        userId: user.id,
+        userEmail: session.user.email,
+        entityType: "project",
+        entityId: projectId,
+        entityName: projectName,
+        metadata: {
+          zuperJobUid,
+          zuperCleared,
+        },
+        ipAddress,
+        userAgent,
+      });
+    } catch (err) {
+      console.error("Failed to log unschedule activity:", err);
+    }
+
+    return NextResponse.json({
+      success: true,
+      action: "unscheduled",
+      zuperCleared,
+      message: `Survey schedule cleared${zuperCleared ? " (Zuper + HubSpot)" : " (HubSpot only)"}`,
+    });
+  } catch (error) {
+    console.error("Error unscheduling job:", error);
+    return NextResponse.json(
+      { error: "Failed to unschedule job", details: String(error) },
+      { status: 500 }
+    );
+  }
+}
+
+/**
  * Helper to log scheduling activities
  */
 async function logSchedulingActivity(

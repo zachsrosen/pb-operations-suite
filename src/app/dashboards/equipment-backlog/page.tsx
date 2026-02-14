@@ -719,19 +719,19 @@ export default function EquipmentBacklogPage() {
                       <td className="px-4 py-2.5 text-right">
                         <div className="text-blue-400">{eq?.modules?.count || 0}{wattageDisplay}</div>
                         {eq?.modules?.brand && (
-                          <div className="text-xs text-muted/70 truncate max-w-[120px]">{eq.modules.brand}</div>
+                          <div className="text-xs text-muted/70 truncate max-w-[160px]">{eq.modules.brand}{eq.modules.model ? ` ${eq.modules.model}` : ""}</div>
                         )}
                       </td>
                       <td className="px-4 py-2.5 text-right">
-                        <div className="text-purple-400">{eq?.inverter?.count || 0}</div>
+                        <div className="text-purple-400">{eq?.inverter?.count || 0}{eq?.inverter?.sizeKwac ? ` × ${eq.inverter.sizeKwac} kWac` : ""}</div>
                         {eq?.inverter?.brand && (
-                          <div className="text-xs text-muted/70 truncate max-w-[120px]">{eq.inverter.brand}</div>
+                          <div className="text-xs text-muted/70 truncate max-w-[160px]">{eq.inverter.brand}{eq.inverter.model ? ` ${eq.inverter.model}` : ""}</div>
                         )}
                       </td>
                       <td className="px-4 py-2.5 text-right">
-                        <div className="text-emerald-400">{eq?.battery?.count || 0}</div>
-                        {eq?.battery?.sizeKwh > 0 && (
-                          <div className="text-xs text-muted/70">{eq.battery.sizeKwh} kWh</div>
+                        <div className="text-emerald-400">{eq?.battery?.count || 0}{eq?.battery?.sizeKwh > 0 ? ` × ${eq.battery.sizeKwh} kWh` : ""}</div>
+                        {eq?.battery?.brand && (
+                          <div className="text-xs text-muted/70 truncate max-w-[160px]">{eq.battery.brand}{eq.battery.model ? ` ${eq.battery.model}` : ""}</div>
                         )}
                       </td>
                       <td className="px-4 py-2.5 text-right text-pink-400">

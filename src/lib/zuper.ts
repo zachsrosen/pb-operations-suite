@@ -391,6 +391,20 @@ export class ZuperClient {
   }
 
   /**
+   * Unschedule a job by clearing its scheduled times
+   */
+  async unscheduleJob(jobUid: string): Promise<ZuperApiResponse<ZuperJob>> {
+    return this.request<ZuperJob>(`/jobs/schedule`, {
+      method: "PUT",
+      body: JSON.stringify({
+        job_uid: jobUid,
+        from_date: "",
+        to_date: "",
+      }),
+    });
+  }
+
+  /**
    * Get unscheduled jobs
    */
   async getUnscheduledJobs(): Promise<ZuperApiResponse<ZuperJob[]>> {

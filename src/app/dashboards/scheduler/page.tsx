@@ -39,9 +39,9 @@ interface RawProject {
   isParticipateEnergy?: boolean;
   equipment?: {
     systemSizeKwdc?: number;
-    modules?: { count?: number };
-    inverter?: { count?: number };
-    battery?: { count?: number; expansionCount?: number; brand?: string };
+    modules?: { count?: number; brand?: string; model?: string; wattage?: number };
+    inverter?: { count?: number; brand?: string; model?: string; sizeKwac?: number };
+    battery?: { count?: number; expansionCount?: number; brand?: string; sizeKwh?: number };
     evCount?: number;
   };
 }
@@ -61,6 +61,13 @@ interface SchedulerProject {
   batteryExpansion: number;
   batteryModel: string | null;
   evCount: number;
+  moduleBrand: string;
+  moduleModel: string;
+  moduleWattage: number;
+  inverterBrand: string;
+  inverterModel: string;
+  inverterSizeKwac: number;
+  batterySizeKwh: number;
   ahj: string;
   utility: string;
   crew: string | null;
@@ -427,6 +434,13 @@ function transformProject(p: RawProject): SchedulerProject | null {
     batteryExpansion: p.equipment?.battery?.expansionCount || 0,
     batteryModel: p.equipment?.battery?.brand || null,
     evCount: p.equipment?.evCount || 0,
+    moduleBrand: p.equipment?.modules?.brand || "",
+    moduleModel: p.equipment?.modules?.model || "",
+    moduleWattage: p.equipment?.modules?.wattage || 0,
+    inverterBrand: p.equipment?.inverter?.brand || "",
+    inverterModel: p.equipment?.inverter?.model || "",
+    inverterSizeKwac: p.equipment?.inverter?.sizeKwac || 0,
+    batterySizeKwh: p.equipment?.battery?.sizeKwh || 0,
     ahj: p.ahj || "",
     utility: p.utility || "",
     crew: CREWS[loc]?.[0]?.name || null,
@@ -3258,19 +3272,27 @@ export default function SchedulerPage() {
                 {scheduleModal.project.moduleCount > 0 && (
                   <ModalRow
                     label="Modules"
-                    value={`${scheduleModal.project.moduleCount} panels`}
+                    value={
+                      scheduleModal.project.moduleBrand
+                        ? `${scheduleModal.project.moduleCount}x ${scheduleModal.project.moduleBrand} ${scheduleModal.project.moduleModel}${scheduleModal.project.moduleWattage > 0 ? ` (${scheduleModal.project.moduleWattage}W)` : ""}`
+                        : `${scheduleModal.project.moduleCount} panels`
+                    }
                   />
                 )}
                 {scheduleModal.project.inverterCount > 0 && (
                   <ModalRow
                     label="Inverters"
-                    value={`${scheduleModal.project.inverterCount}`}
+                    value={
+                      scheduleModal.project.inverterBrand
+                        ? `${scheduleModal.project.inverterCount}x ${scheduleModal.project.inverterBrand} ${scheduleModal.project.inverterModel}${scheduleModal.project.inverterSizeKwac > 0 ? ` (${scheduleModal.project.inverterSizeKwac} kWac)` : ""}`
+                        : `${scheduleModal.project.inverterCount}`
+                    }
                   />
                 )}
                 {scheduleModal.project.batteries > 0 && (
                   <ModalRow
                     label="Batteries"
-                    value={`${scheduleModal.project.batteries}x ${scheduleModal.project.batteryModel || "Tesla"}${scheduleModal.project.batteryExpansion ? ` + ${scheduleModal.project.batteryExpansion} expansion` : ""}`}
+                    value={`${scheduleModal.project.batteries}x ${scheduleModal.project.batteryModel || "Tesla"}${scheduleModal.project.batterySizeKwh > 0 ? ` ${scheduleModal.project.batterySizeKwh} kWh` : ""}${scheduleModal.project.batteryExpansion ? ` + ${scheduleModal.project.batteryExpansion} expansion` : ""}`}
                   />
                 )}
                 {scheduleModal.project.evCount > 0 && (
@@ -3586,19 +3608,27 @@ export default function SchedulerPage() {
                 {detailModal.moduleCount > 0 && (
                   <ModalRow
                     label="Modules"
-                    value={`${detailModal.moduleCount} panels`}
+                    value={
+                      detailModal.moduleBrand
+                        ? `${detailModal.moduleCount}x ${detailModal.moduleBrand} ${detailModal.moduleModel}${detailModal.moduleWattage > 0 ? ` (${detailModal.moduleWattage}W)` : ""}`
+                        : `${detailModal.moduleCount} panels`
+                    }
                   />
                 )}
                 {detailModal.inverterCount > 0 && (
                   <ModalRow
                     label="Inverters"
-                    value={`${detailModal.inverterCount}`}
+                    value={
+                      detailModal.inverterBrand
+                        ? `${detailModal.inverterCount}x ${detailModal.inverterBrand} ${detailModal.inverterModel}${detailModal.inverterSizeKwac > 0 ? ` (${detailModal.inverterSizeKwac} kWac)` : ""}`
+                        : `${detailModal.inverterCount}`
+                    }
                   />
                 )}
                 {detailModal.batteries > 0 && (
                   <ModalRow
                     label="Batteries"
-                    value={`${detailModal.batteries}x ${detailModal.batteryModel || "Tesla"}${detailModal.batteryExpansion ? ` + ${detailModal.batteryExpansion} expansion` : ""}`}
+                    value={`${detailModal.batteries}x ${detailModal.batteryModel || "Tesla"}${detailModal.batterySizeKwh > 0 ? ` ${detailModal.batterySizeKwh} kWh` : ""}${detailModal.batteryExpansion ? ` + ${detailModal.batteryExpansion} expansion` : ""}`}
                   />
                 )}
                 {detailModal.evCount > 0 && (

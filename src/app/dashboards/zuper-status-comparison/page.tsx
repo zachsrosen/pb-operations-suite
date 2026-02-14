@@ -66,6 +66,20 @@ interface CategoryStats {
   completionDateMismatches: number;
 }
 
+interface NonCoreAuditDeal {
+  dealId: string;
+  projectNumber: string;
+  dealName: string | null;
+  categories: string[];
+}
+
+interface NonCoreAudit {
+  totalMismatchDeals: number;
+  dealsWithNonCore: number;
+  dealsWithAdditionalOrService: number;
+  affectedDeals: NonCoreAuditDeal[];
+}
+
 interface ApiResponse {
   records: ComparisonRecord[];
   projectRecords: ProjectGroupedRecord[];
@@ -82,6 +96,7 @@ interface ApiResponse {
       inspection: CategoryStats;
     };
   };
+  nonCoreAudit?: NonCoreAudit;
   dateRange: { from: string; to: string };
   lastUpdated: string;
 }
@@ -1242,6 +1257,98 @@ export default function ZuperStatusComparisonPage() {
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* Non-Core Category Audit */}
+      {data?.nonCoreAudit && data.nonCoreAudit.affectedDeals.length > 0 && (
+        <div className="mt-8">
+          <h3 className="text-lg font-semibold text-foreground mb-2">
+            Non-Core Category Audit
+          </h3>
+          <p className="text-xs text-muted mb-4">
+            These mismatched deals also have Additional Visit, Service Visit, or other non-core Zuper job categories that may be interfering with status workflows.
+          </p>
+
+          {/* Summary stats */}
+          <div className="grid grid-cols-3 gap-3 mb-4">
+            <div className="rounded-xl border border-amber-200 dark:border-amber-800/50 bg-amber-50 dark:bg-amber-950/20 p-3">
+              <div className="text-xs text-amber-600 dark:text-amber-400">Mismatched Deals</div>
+              <div className="text-xl font-bold text-amber-700 dark:text-amber-300 mt-0.5">{data.nonCoreAudit.totalMismatchDeals}</div>
+            </div>
+            <div className="rounded-xl border border-rose-200 dark:border-rose-800/50 bg-rose-50 dark:bg-rose-950/20 p-3">
+              <div className="text-xs text-rose-600 dark:text-rose-400">With Service/Additional Visit</div>
+              <div className="text-xl font-bold text-rose-700 dark:text-rose-300 mt-0.5">
+                {data.nonCoreAudit.dealsWithAdditionalOrService}
+                {data.nonCoreAudit.totalMismatchDeals > 0 && (
+                  <span className="text-xs font-normal ml-1">
+                    ({Math.round((data.nonCoreAudit.dealsWithAdditionalOrService / data.nonCoreAudit.totalMismatchDeals) * 100)}%)
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="rounded-xl border border-orange-200 dark:border-orange-800/50 bg-orange-50 dark:bg-orange-950/20 p-3">
+              <div className="text-xs text-orange-600 dark:text-orange-400">With Any Non-Core Category</div>
+              <div className="text-xl font-bold text-orange-700 dark:text-orange-300 mt-0.5">
+                {data.nonCoreAudit.dealsWithNonCore}
+                {data.nonCoreAudit.totalMismatchDeals > 0 && (
+                  <span className="text-xs font-normal ml-1">
+                    ({Math.round((data.nonCoreAudit.dealsWithNonCore / data.nonCoreAudit.totalMismatchDeals) * 100)}%)
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Affected deals table */}
+          <div className="rounded-xl border border-t-border overflow-hidden">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-surface-2">
+                  <th className="text-left px-3 py-2 font-semibold text-muted">Project</th>
+                  <th className="text-left px-3 py-2 font-semibold text-muted">Deal</th>
+                  <th className="text-left px-3 py-2 font-semibold text-muted">Non-Core Categories</th>
+                  <th className="text-left px-3 py-2 font-semibold text-muted">Links</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-t-border">
+                {data.nonCoreAudit.affectedDeals.map((deal) => (
+                  <tr key={deal.dealId} className="hover:bg-surface-2/50">
+                    <td className="px-3 py-2 font-mono font-medium">{deal.projectNumber}</td>
+                    <td className="px-3 py-2 text-muted truncate max-w-[200px]">{deal.dealName || deal.dealId}</td>
+                    <td className="px-3 py-2">
+                      <div className="flex flex-wrap gap-1">
+                        {deal.categories.map((cat) => (
+                          <span
+                            key={cat}
+                            className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                              cat.toLowerCase().includes("service")
+                                ? "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300"
+                                : cat.toLowerCase().includes("additional")
+                                ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+                                : "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+                            }`}
+                          >
+                            {cat}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2">
+                      <a
+                        href={`https://app.hubspot.com/contacts/21710069/record/0-3/${deal.dealId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-500 hover:text-blue-400 underline"
+                      >
+                        HubSpot
+                      </a>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
