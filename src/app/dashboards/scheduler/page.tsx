@@ -159,6 +159,14 @@ const LOCATIONS = [
   "Camarillo",
 ];
 
+const LOCATION_COLORS: Record<string, string> = {
+  Westminster: "#3b82f6",
+  Centennial: "#8b5cf6",
+  "Colorado Springs": "#f97316",
+  "San Luis Obispo": "#06b6d4",
+  Camarillo: "#f43f5e",
+};
+
 /* ---- Zuper default assignees per location (for auto-assignment when scheduling) ---- */
 // Construction: assign to location director (same as construction scheduler)
 const ZUPER_CONSTRUCTION_DIRECTORS: Record<string, { name: string; userUid: string; teamUid: string }> = {
@@ -476,7 +484,7 @@ export default function SchedulerPage() {
   const [calendarScheduleTypes, setCalendarScheduleTypes] = useState<string[]>([]); // Multi-select for calendar
   const [showScheduled, setShowScheduled] = useState(true); // Toggle active/upcoming events on calendar
   const [showCompleted, setShowCompleted] = useState(true); // Toggle completed events on calendar
-  const [showOverdue, setShowOverdue] = useState(true); // Toggle overdue events on calendar
+  const [showIncomplete, setShowIncomplete] = useState(true); // Toggle overdue events on calendar
   const [selectedStages, setSelectedStages] = useState<string[]>([]);
   const [searchText, setSearchText] = useState("");
   const [typeFilters, setTypeFilters] = useState<string[]>([]);
@@ -762,7 +770,20 @@ export default function SchedulerPage() {
         !p.address.toLowerCase().includes(searchText.toLowerCase())
       )
         return false;
-      if (typeFilters.length > 0 && (!p.type || !typeFilters.some(f => p.type.includes(f)))) return false;
+      if (typeFilters.length > 0) {
+        const t = (p.type || "").toLowerCase();
+        const hasSolar = t.includes("solar");
+        const hasBattery = t.includes("battery");
+        const hasEV = t.includes("ev");
+        const matchesAny = typeFilters.some(f => {
+          if (f === "Solar Only") return hasSolar && !hasBattery;
+          if (f === "Battery Only") return hasBattery && !hasSolar;
+          if (f === "Solar + Battery") return hasSolar && hasBattery;
+          if (f === "EV") return hasEV;
+          return false;
+        });
+        if (!matchesAny) return false;
+      }
       return true;
     });
     if (sortBy === "amount") filtered.sort((a, b) => b.amount - a.amount);
@@ -930,11 +951,11 @@ export default function SchedulerPage() {
       if (calendarLocations.length > 0 && !calendarLocations.includes(e.location)) return false;
       if (expandedTypes.length > 0 && !expandedTypes.includes(e.eventType)) return false;
       if (!showCompleted && e.isCompleted) return false;
-      if (!showOverdue && e.isOverdue && !e.isCompleted) return false;
+      if (!showIncomplete && e.isOverdue && !e.isCompleted) return false;
       if (!showScheduled && !e.isCompleted && !e.isOverdue) return false;
       return true;
     });
-  }, [scheduledEvents, calendarLocations, calendarScheduleTypes, showScheduled, showCompleted, showOverdue]);
+  }, [scheduledEvents, calendarLocations, calendarScheduleTypes, showScheduled, showCompleted, showIncomplete]);
 
   const queueRevenue = useMemo(
     () => formatRevenueCompact(filteredProjects.reduce((s, p) => s + p.amount, 0)),
@@ -1773,7 +1794,7 @@ export default function SchedulerPage() {
               />
               {/* Job type toggle buttons */}
               <div className="flex flex-wrap gap-1">
-                {["Solar", "Battery", "EV"].map((type) => (
+                {["Solar Only", "Battery Only", "Solar + Battery", "EV"].map((type) => (
                   <button
                     key={type}
                     onClick={() => {
@@ -2228,7 +2249,7 @@ export default function SchedulerPage() {
             <div className="ml-auto flex items-center gap-1">
               {([
                 { key: "scheduled", label: "Scheduled", color: "bg-blue-500 border-blue-500", active: showScheduled, toggle: () => setShowScheduled(!showScheduled) },
-                { key: "overdue", label: "Overdue", color: "bg-red-500 border-red-500", active: showOverdue, toggle: () => setShowOverdue(!showOverdue) },
+                { key: "incomplete", label: "Incomplete", color: "bg-red-500 border-red-500", active: showIncomplete, toggle: () => setShowIncomplete(!showIncomplete) },
                 { key: "completed", label: "Completed", color: "bg-emerald-500 border-emerald-500", active: showCompleted, toggle: () => setShowCompleted(!showCompleted) },
               ] as const).map((t) => (
                 <button
@@ -2362,7 +2383,7 @@ export default function SchedulerPage() {
                               ev.eventType === "survey-complete" ? "bg-cyan-500/30 text-cyan-300/70" :
                               "bg-zinc-600/30 text-zinc-300/70";
 
-                            // Overdue events keep their base color but dimmed, with a red ring
+                            // Incomplete events keep their base color but dimmed, with a red ring
                             const overdueColorClass =
                               ev.eventType === "construction" ? "bg-blue-500/60 text-white ring-2 ring-red-500" :
                               ev.eventType === "survey" ? "bg-cyan-500/60 text-white ring-2 ring-red-500" :
@@ -2400,12 +2421,12 @@ export default function SchedulerPage() {
                                       null
                                   );
                                 }}
-                                title={`${ev.name} - ${ev.crew || "No crew"}${showRevenue ? ` - $${formatRevenueCompact(ev.amount)}` : ""}${isFailedType ? " ✗ Inspection Failed" : isCompletedType ? " ✓ Completed" : ev.isOverdue ? " ⚠ Overdue" : " (drag to reschedule)"}`}
+                                title={`${ev.name} - ${ev.crew || "No crew"}${showRevenue ? ` - $${formatRevenueCompact(ev.amount)}` : ""}${isFailedType ? " ✗ Inspection Failed" : isCompletedType ? " ✓ Completed" : ev.isOverdue ? " ⚠ Incomplete" : " (drag to reschedule)"}`}
                                 className={`text-[0.55rem] px-1 py-0.5 rounded mb-0.5 transition-transform hover:scale-[1.02] hover:shadow-lg hover:z-10 relative overflow-hidden truncate ${
                                   isDraggable ? "cursor-grab active:cursor-grabbing" : "cursor-default"
                                 } ${eventColorClass}`}
                               >
-                                {ev.isTentative && <span className="mr-0.5 text-[0.45rem] font-bold opacity-80">TENT</span>}
+                                {ev.isTentative && <span className="mr-0.5 text-[0.45rem] font-bold opacity-80">TENT {ev.days > 0 ? `${ev.days}d` : ""}</span>}
                                 {isFailedType && <span className="mr-0.5">✗</span>}
                                 {isCompletedType && <span className="mr-0.5">✓</span>}
                                 {ev.isOverdue && isActiveType && <span className="mr-0.5 text-red-200">!</span>}
@@ -2500,30 +2521,26 @@ export default function SchedulerPage() {
                     );
                   })}
 
-                  {/* Crew rows */}
+                  {/* Location rows */}
                   {(() => {
-                    // Use calendar multi-select locations for crew filtering
-                    const locationCrews =
+                    const viewLocations =
                       calendarLocations.length > 0
-                        ? calendarLocations.flatMap(loc => CREWS[loc] || [])
-                        : Object.values(CREWS).flat();
-                    return locationCrews.map((crew) => (
-                      <React.Fragment key={crew.name}>
+                        ? calendarLocations
+                        : LOCATIONS.filter(l => l !== "All");
+                    return viewLocations.map((loc) => (
+                      <React.Fragment key={loc}>
                         <div
                           className="bg-background p-2.5 text-[0.7rem] font-semibold flex flex-col gap-1"
-                          style={{ borderRight: `3px solid ${crew.color}` }}
+                          style={{ borderRight: `3px solid ${LOCATION_COLORS[loc] || "#6b7280"}` }}
                         >
-                          <span className="text-foreground/90">{crew.name}</span>
-                          <span className="text-[0.55rem] text-muted font-normal">
-                            Inst:{crew.roofers} | Elec:{crew.electricians}
-                          </span>
+                          <span className="text-foreground/90">{loc.replace("Colorado Springs", "CO Springs").replace("San Luis Obispo", "SLO")}</span>
                         </div>
                         {weekDates.map((d, di) => {
                           const dateStr = toDateStr(d);
                           // Find events that span this date using business days (skip weekends)
                           const dayEvents: { event: ScheduledEvent; dayNum: number }[] = [];
                           filteredScheduledEvents.forEach((e) => {
-                            if (e.crew !== crew.name) return;
+                            if (e.location !== loc) return;
                             const businessDays = Math.ceil(e.days || 1);
                             const eventStart = new Date(e.date + "T12:00:00");
                             let bDayCount = 0;
@@ -2551,11 +2568,11 @@ export default function SchedulerPage() {
                                   : ""
                               }`}
                               onClick={() =>
-                                handleWeekCellClick(dateStr, crew.name)
+                                handleWeekCellClick(dateStr, loc)
                               }
                               onDragOver={(e) => e.preventDefault()}
                               onDrop={(e) =>
-                                handleDrop(e, dateStr, crew.name)
+                                handleDrop(e, dateStr, loc)
                               }
                             >
                               {dayEvents.map(({ event: ev, dayNum }, ei) => {
@@ -2576,8 +2593,6 @@ export default function SchedulerPage() {
                                   ev.eventType === "construction" ? "bg-blue-500/60 text-white ring-2 ring-red-500" :
                                   ev.eventType === "survey" ? "bg-cyan-500/60 text-white ring-2 ring-red-500" :
                                   ev.eventType === "inspection" ? "bg-violet-500/60 text-white ring-2 ring-red-500" :
-                                  ev.eventType === "rtb" ? "bg-emerald-500/60 text-black ring-2 ring-red-500" :
-                                  ev.eventType === "blocked" ? "bg-yellow-500/60 text-black ring-2 ring-red-500" :
                                   "bg-zinc-600/60 text-white ring-2 ring-red-500";
 
                                 const eventColorClass =
@@ -2585,8 +2600,6 @@ export default function SchedulerPage() {
                                   isCompletedType ? completedColorClassW :
                                   ev.isOverdue ? overdueColorClassW :
                                   ev.isTentative ? "bg-amber-500/70 text-black border border-dashed border-amber-300" :
-                                  ev.eventType === "rtb" ? "bg-emerald-500 text-black" :
-                                  ev.eventType === "blocked" ? "bg-yellow-500 text-black" :
                                   ev.eventType === "construction" ? "bg-blue-500 text-white" :
                                   ev.eventType === "survey" ? "bg-cyan-500 text-white" :
                                   ev.eventType === "inspection" ? "bg-violet-500 text-white" :
@@ -2604,9 +2617,10 @@ export default function SchedulerPage() {
                                         ) || null
                                       );
                                     }}
-                                    title={`${ev.name}${isFailedType ? " ✗ Inspection Failed" : isCompletedType ? " ✓ Completed" : ev.isOverdue ? " ⚠ Overdue" : ""}`}
+                                    title={`${ev.name}${isFailedType ? " ✗ Inspection Failed" : isCompletedType ? " ✓ Completed" : ev.isOverdue ? " ⚠ Incomplete" : ""}`}
                                     className={`text-[0.6rem] px-1.5 py-1 rounded mb-1 cursor-pointer transition-transform hover:scale-[1.02] hover:shadow-lg ${eventColorClass}`}
                                   >
+                                    {ev.isTentative && <span className="mr-0.5 text-[0.5rem] font-bold opacity-80">TENT {ev.days > 0 ? `${ev.days}d` : ""}</span>}
                                     {isFailedType && <span className="mr-0.5">✗</span>}
                                     {isCompletedType && <span className="mr-0.5">✓</span>}
                                     {ev.isOverdue && isActiveType && <span className="mr-0.5 text-red-200">!</span>}
@@ -2684,16 +2698,15 @@ export default function SchedulerPage() {
                     })}
                   </div>
 
-                  {/* Crew rows */}
+                  {/* Location rows */}
                   {(() => {
-                    // Use calendar multi-select locations for crew filtering
-                    const allCrews =
+                    const viewLocations =
                       calendarLocations.length > 0
-                        ? calendarLocations.flatMap(loc => CREWS[loc] || [])
-                        : Object.values(CREWS).flat();
-                    return allCrews.map((crew) => (
+                        ? calendarLocations
+                        : LOCATIONS.filter(l => l !== "All");
+                    return viewLocations.map((loc) => (
                       <div
-                        key={crew.name}
+                        key={loc}
                         className="grid gap-px min-h-[50px]"
                         style={{
                           gridTemplateColumns: `140px repeat(${ganttDates.length}, 1fr)`,
@@ -2701,9 +2714,9 @@ export default function SchedulerPage() {
                       >
                         <div
                           className="bg-background p-2 text-[0.7rem] font-semibold"
-                          style={{ borderLeft: `3px solid ${crew.color}` }}
+                          style={{ borderLeft: `3px solid ${LOCATION_COLORS[loc] || "#6b7280"}` }}
                         >
-                          {crew.name}
+                          {loc.replace("Colorado Springs", "CO Springs").replace("San Luis Obispo", "SLO")}
                         </div>
                         {ganttDates.map((d, idx) => (
                           <div
@@ -2712,7 +2725,7 @@ export default function SchedulerPage() {
                           >
                             {filteredScheduledEvents
                               .filter((e) => {
-                                if (e.crew !== crew.name) return false;
+                                if (e.location !== loc) return false;
                                 const eventStart = new Date(e.date + "T12:00:00");
                                 return (
                                   eventStart.toDateString() ===
@@ -2771,7 +2784,7 @@ export default function SchedulerPage() {
                                         ) || null
                                       )
                                     }
-                                    title={`${e.name} - ${daysLabel} - ${amount}${isFailedType ? " ✗ Inspection Failed" : isCompletedType ? " ✓ Completed" : e.isOverdue ? " ⚠ Overdue" : ""}`}
+                                    title={`${e.name} - ${daysLabel} - ${amount}${isFailedType ? " ✗ Inspection Failed" : isCompletedType ? " ✓ Completed" : e.isOverdue ? " ⚠ Incomplete" : ""}`}
                                     className={`absolute top-2 bottom-2 rounded flex items-center px-1.5 text-[0.55rem] font-medium cursor-pointer transition-transform hover:scale-y-110 hover:shadow-lg hover:z-10 overflow-hidden truncate ${eventColorClass}`}
                                     style={{
                                       left: 0,
@@ -2779,6 +2792,7 @@ export default function SchedulerPage() {
                                       zIndex: 1,
                                     }}
                                   >
+                                    {e.isTentative && <span className="mr-0.5 text-[0.5rem] font-bold opacity-80">TENT</span>}
                                     {isFailedType && <span className="mr-0.5">✗</span>}
                                     {isCompletedType && <span className="mr-0.5">✓</span>}
                                     {e.isOverdue && isActiveType && <span className="mr-0.5 text-red-200">!</span>}
@@ -2835,10 +2849,10 @@ export default function SchedulerPage() {
             {weeklyRevenueSummary.map((week, i) => {
               const hasSched = week.scheduled.count > 0;
               const hasComp = week.completed.count > 0;
-              const hasOverdue = week.overdue.count > 0;
-              const hasAny = hasSched || hasComp || hasOverdue || week.tentative.count > 0;
+              const hasIncomplete = week.overdue.count > 0;
+              const hasAny = hasSched || hasComp || hasIncomplete || week.tentative.count > 0;
               // Only show overdue for past + current week (not future)
-              const showOverdueRow = !week.isFuture;
+              const showIncompleteRow = !week.isFuture;
               return (
                 <div
                   key={i}
@@ -2891,12 +2905,12 @@ export default function SchedulerPage() {
                     </div>
                   )}
 
-                  {/* Overdue — only for past + current week, only if data present */}
-                  {showOverdueRow && hasOverdue && (
+                  {/* Incomplete — only for past + current week, only if data present */}
+                  {showIncompleteRow && hasIncomplete && (
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1">
                         <div className="w-1.5 h-1.5 rounded-sm bg-red-500" />
-                        <span className="text-[0.55rem] text-muted">Overdue</span>
+                        <span className="text-[0.55rem] text-muted">Incomplete</span>
                       </div>
                       <span className="text-[0.6rem] font-mono font-semibold text-red-400">
                         {week.overdue.count} · ${formatRevenueCompact(week.overdue.revenue)}
@@ -2948,7 +2962,7 @@ export default function SchedulerPage() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1">
                 <div className="w-2 h-2 rounded-sm bg-red-500" />
-                <span className="text-[0.6rem] text-foreground/80">Overdue</span>
+                <span className="text-[0.6rem] text-foreground/80">Incomplete</span>
               </div>
               <span className="text-[0.65rem] font-mono font-bold text-red-400">
                 ${formatRevenueCompact(weeklyRevenueSummary.reduce((s, w) => s + w.overdue.revenue, 0))}
@@ -2966,9 +2980,9 @@ export default function SchedulerPage() {
             {monthlyRevenueSummary.map((month, i) => {
               const hasSched = month.scheduled.count > 0;
               const hasComp = month.completed.count > 0;
-              const hasOverdue = month.overdue.count > 0;
-              const hasAny = hasSched || hasComp || hasOverdue || month.tentative.count > 0;
-              const showOverdueRow = month.isPast || month.isCurrent;
+              const hasIncomplete = month.overdue.count > 0;
+              const hasAny = hasSched || hasComp || hasIncomplete || month.tentative.count > 0;
+              const showIncompleteRow = month.isPast || month.isCurrent;
               return (
                 <div
                   key={i}
@@ -3021,12 +3035,12 @@ export default function SchedulerPage() {
                     </div>
                   )}
 
-                  {/* Overdue — only for past + current month, only if data present */}
-                  {showOverdueRow && hasOverdue && (
+                  {/* Incomplete — only for past + current month, only if data present */}
+                  {showIncompleteRow && hasIncomplete && (
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1">
                         <div className="w-1.5 h-1.5 rounded-sm bg-red-500" />
-                        <span className="text-[0.55rem] text-muted">Overdue</span>
+                        <span className="text-[0.55rem] text-muted">Incomplete</span>
                       </div>
                       <span className="text-[0.6rem] font-mono font-semibold text-red-400">
                         {month.overdue.count} · ${formatRevenueCompact(month.overdue.revenue)}
@@ -3078,7 +3092,7 @@ export default function SchedulerPage() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1">
                 <div className="w-2 h-2 rounded-sm bg-red-500" />
-                <span className="text-[0.6rem] text-foreground/80">Overdue</span>
+                <span className="text-[0.6rem] text-foreground/80">Incomplete</span>
               </div>
               <span className="text-[0.65rem] font-mono font-bold text-red-400">
                 ${formatRevenueCompact(monthlyRevenueSummary.reduce((s, m) => s + m.overdue.revenue, 0))}

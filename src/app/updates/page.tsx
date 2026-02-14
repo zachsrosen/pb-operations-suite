@@ -15,6 +15,20 @@ interface UpdateEntry {
 
 const UPDATES: UpdateEntry[] = [
   {
+    version: "1.33.0",
+    date: "2026-02-13",
+    title: "Master Schedule — Location Views, Smarter Filters & Label Updates",
+    description: "Week and Gantt views now group by PB location instead of fictional crews. Type filters redesigned as Solar Only / Battery Only / Solar + Battery. 'Overdue' renamed to 'Incomplete'. Tentative events show user-entered day counts.",
+    changes: [
+      { type: "feature", text: "Week and Gantt views now group events by PB location (Westminster, Centennial, CO Springs, SLO, Camarillo)" },
+      { type: "feature", text: "Tentative calendar events now display day count from user input (e.g. 'TENT 3d')" },
+      { type: "improvement", text: "Type filters redesigned: 'Solar Only', 'Battery Only', 'Solar + Battery', and 'EV Charger'" },
+      { type: "improvement", text: "'Overdue' renamed to 'Incomplete' across all calendar views, toggles, and revenue sidebar" },
+      { type: "improvement", text: "Location rows use color-coded borders matching each office location" },
+      { type: "fix", text: "Completed-past-stage projects (e.g. Close Out) no longer appear as active pipeline items in sidebar" },
+    ],
+  },
+  {
     version: "1.32.0",
     date: "2026-02-13",
     title: "Master Schedule — Survey & Inspection Scheduling Visibility",
