@@ -77,9 +77,9 @@ export default auth((req) => {
   const isLoggedIn = !!req.auth;
   const tokenRole = req.auth?.user?.role as UserRole | undefined;
   const cookieRole = req.cookies.get("pb_effective_role")?.value as UserRole | undefined;
-  // Prefer server-issued token role over cookie; cookie is only used as
-  // a bridge for impersonation (set server-side, httpOnly).
-  const rawRole = tokenRole || cookieRole || "VIEWER";
+  // Impersonation cookie (set server-side, httpOnly) takes precedence when
+  // present so "View As" overrides the token role for route authorization.
+  const rawRole = cookieRole || tokenRole || "VIEWER";
   const userRole = normalizeRole(rawRole);
   const pathname = req.nextUrl.pathname;
 

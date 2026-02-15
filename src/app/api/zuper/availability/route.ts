@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { ZuperClient, JOB_CATEGORY_UIDS } from "@/lib/zuper";
 import { getCrewSchedulesFromDB, getAvailabilityOverrides } from "@/lib/db";
-import { LOCATION_TIMEZONES, DEFAULT_TIMEZONE } from "@/lib/constants";
+import { LOCATION_TIMEZONES } from "@/lib/constants";
 
 /**
  * GET /api/zuper/availability
