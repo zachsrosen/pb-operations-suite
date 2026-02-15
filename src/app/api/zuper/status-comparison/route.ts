@@ -795,7 +795,7 @@ export async function GET() {
   } catch (error) {
     console.error("[status-comparison] Error:", error);
     return NextResponse.json(
-      { error: "Failed to fetch status comparison", details: String(error) },
+      { error: "Failed to fetch status comparison" },
       { status: 500 }
     );
   }

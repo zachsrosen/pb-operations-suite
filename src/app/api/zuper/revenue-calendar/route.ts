@@ -421,7 +421,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("[revenue-calendar] Error:", error);
     return NextResponse.json(
-      { error: "Failed to fetch revenue calendar", details: String(error) },
+      { error: "Failed to fetch revenue calendar" },
       { status: 500 }
     );
   }

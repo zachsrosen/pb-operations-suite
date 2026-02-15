@@ -9,11 +9,12 @@ import { appCache, CACHE_KEYS } from "@/lib/cache";
 
 export async function GET(request: NextRequest) {
   try {
-    // Check authentication
+    // Optional Bearer token gate for external/machine-to-machine access.
+    // Browser requests are authenticated by middleware (NextAuth session).
     const authHeader = request.headers.get("authorization");
     const expectedToken = process.env.API_SECRET_TOKEN;
 
-    if (expectedToken && authHeader !== `Bearer ${expectedToken}`) {
+    if (expectedToken && authHeader && authHeader !== `Bearer ${expectedToken}`) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -150,7 +151,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("Error fetching projects:", error);
     return NextResponse.json(
-      { error: "Failed to fetch projects", details: String(error) },
+      { error: "Failed to fetch projects" },
       { status: 500 }
     );
   }

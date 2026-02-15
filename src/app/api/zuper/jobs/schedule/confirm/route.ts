@@ -310,7 +310,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("Error confirming tentative schedule:", error);
     return NextResponse.json(
-      { error: "Failed to confirm schedule", details: String(error) },
+      { error: "Failed to confirm schedule" },
       { status: 500 }
     );
   }

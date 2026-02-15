@@ -34,6 +34,7 @@ export function useSSE(
   const [reconnecting, setReconnecting] = useState(false);
   const eventSourceRef = useRef<EventSource | null>(null);
   const retriesRef = useRef(0);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onUpdateRef = useRef(onUpdate);
   const connectRef = useRef<() => void>(undefined);
 
@@ -95,7 +96,7 @@ export function useSSE(
         );
         retriesRef.current++;
         if (connectRef.current) {
-          setTimeout(connectRef.current, delay);
+          reconnectTimerRef.current = setTimeout(connectRef.current, delay);
         }
       } else {
         setReconnecting(false);
@@ -112,6 +113,9 @@ export function useSSE(
     connect();
 
     return () => {
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+      }
       eventSourceRef.current?.close();
     };
   }, [connect]);

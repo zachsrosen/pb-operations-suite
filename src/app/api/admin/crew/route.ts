@@ -480,7 +480,7 @@ export async function POST(request: NextRequest) {
     } catch (error) {
       console.error("Error seeding team data:", error);
       return NextResponse.json(
-        { error: "Failed to seed team data", details: String(error) },
+        { error: "Failed to seed team data" },
         { status: 500 }
       );
     }

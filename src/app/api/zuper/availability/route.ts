@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { ZuperClient, JOB_CATEGORY_UIDS } from "@/lib/zuper";
 import { getCrewSchedulesFromDB, getAvailabilityOverrides } from "@/lib/db";
+import { LOCATION_TIMEZONES } from "@/lib/constants";
 
 /**
  * GET /api/zuper/availability
@@ -75,15 +76,8 @@ interface CrewSchedule {
   timezone?: string; // IANA timezone (defaults to "America/Denver" for CO locations)
 }
 
-// Location → timezone mapping
-const LOCATION_TIMEZONE: Record<string, string> = {
-  Westminster: "America/Denver",
-  Centennial: "America/Denver",
-  DTC: "America/Denver",
-  "Colorado Springs": "America/Denver",
-  "San Luis Obispo": "America/Los_Angeles",
-  Camarillo: "America/Los_Angeles",
-};
+// Location → timezone mapping (imported from shared constants)
+const LOCATION_TIMEZONE = LOCATION_TIMEZONES;
 
 // Team and user UIDs are now resolved dynamically from Zuper API (cached in ZuperClient).
 // Location names used for team resolution:
@@ -920,7 +914,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("Error booking slot:", error);
     return NextResponse.json(
-      { error: "Failed to book slot", details: String(error) },
+      { error: "Failed to book slot" },
       { status: 500 }
     );
   }
@@ -965,7 +959,7 @@ export async function DELETE(request: NextRequest) {
   } catch (error) {
     console.error("Error removing slot:", error);
     return NextResponse.json(
-      { error: "Failed to remove slot", details: String(error) },
+      { error: "Failed to remove slot" },
       { status: 500 }
     );
   }

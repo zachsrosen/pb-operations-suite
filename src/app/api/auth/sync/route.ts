@@ -7,7 +7,7 @@ import { normalizeRole, type UserRole } from "@/lib/role-permissions";
 function withEffectiveRoleCookie(response: NextResponse, role: string): NextResponse {
   response.cookies.set("pb_effective_role", role, {
     path: "/",
-    httpOnly: false,
+    httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     maxAge: 60 * 60 * 8,

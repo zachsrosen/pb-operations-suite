@@ -55,6 +55,27 @@ export const LOCATION_COLOR_CLASSES = [
   "bg-cyan-500",
 ];
 
+/**
+ * Mapping of office/service locations to IANA timezones.
+ * Used for timezone-aware scheduling (Zuper API, crew availability, schedulers).
+ */
+export const LOCATION_TIMEZONES: Record<string, string> = {
+  Westminster: "America/Denver",
+  Centennial: "America/Denver",
+  DTC: "America/Denver",
+  "Colorado Springs": "America/Denver",
+  "San Luis Obispo": "America/Los_Angeles",
+  Camarillo: "America/Los_Angeles",
+};
+
+/** Default timezone when location is unknown or unmapped. */
+export const DEFAULT_TIMEZONE = "America/Denver";
+
+/** Look up the timezone for a location, falling back to DEFAULT_TIMEZONE. */
+export function getTimezoneForLocation(location: string): string {
+  return LOCATION_TIMEZONES[location] || DEFAULT_TIMEZONE;
+}
+
 /** Sales pipeline stages */
 export const SALES_STAGES: string[] = [
   "Qualified to buy",

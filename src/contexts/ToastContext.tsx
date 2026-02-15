@@ -84,7 +84,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
       {/* Toast container */}
       {toasts.length > 0 && (
-        <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-2 max-w-sm">
+        <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-2 max-w-sm" role="status" aria-live="polite">
           {toasts.map((toast) => {
             const colors = TOAST_COLORS[toast.type];
             return (

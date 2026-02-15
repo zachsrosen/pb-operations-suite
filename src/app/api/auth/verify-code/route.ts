@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyCodeWithToken, generateSessionToken, isAllowedEmail } from "@/lib/auth";
+import { verifyCodeWithToken, isAllowedEmail } from "@/lib/auth";
 
 export async function POST(request: NextRequest) {
   try {
@@ -58,31 +58,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Generate session token
-    const sessionToken = generateSessionToken();
-
-    // Create response with session cookie
-    const response = NextResponse.json({
+    return NextResponse.json({
       success: true,
       email: normalizedEmail,
     });
-
-    // Set auth cookie with session token
-    const cookieValue = JSON.stringify({
-      token: sessionToken,
-      email: normalizedEmail,
-      createdAt: Date.now(),
-    });
-
-    response.cookies.set("pb-auth", cookieValue, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: 60 * 60 * 24 * 7, // 7 days
-      path: "/",
-    });
-
-    return response;
   } catch (error) {
     console.error("Error verifying code:", error);
     return NextResponse.json(

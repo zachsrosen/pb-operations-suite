@@ -249,7 +249,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("Failed to compute inventory needs:", error);
     return NextResponse.json(
-      { error: "Failed to compute inventory needs", details: String(error) },
+      { error: "Failed to compute inventory needs" },
       { status: 500 }
     );
   }

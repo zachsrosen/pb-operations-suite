@@ -125,7 +125,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("Error fetching Zuper jobs by category:", error);
     return NextResponse.json(
-      { error: "Failed to fetch Zuper jobs", details: String(error) },
+      { error: "Failed to fetch Zuper jobs" },
       { status: 500 }
     );
   }

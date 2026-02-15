@@ -6,7 +6,7 @@ import { normalizeRole, type UserRole } from "@/lib/role-permissions";
 function withEffectiveRoleCookie(response: NextResponse, role: string): NextResponse {
   response.cookies.set("pb_effective_role", role, {
     path: "/",
-    httpOnly: false,
+    httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     maxAge: 60 * 60 * 8,
@@ -194,6 +194,11 @@ export async function GET() {
 
   const user = await getUserByEmail(session.user.email);
   if (!user) {
+    return NextResponse.json({ isImpersonating: false });
+  }
+
+  // Only admins should be able to query impersonation status
+  if (user.role !== "ADMIN") {
     return NextResponse.json({ isImpersonating: false });
   }
 

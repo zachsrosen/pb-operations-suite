@@ -70,7 +70,7 @@ export async function PUT(
   } catch (error) {
     console.error("Failed to update stock:", error);
     return NextResponse.json(
-      { error: "Failed to update stock", details: String(error) },
+      { error: "Failed to update stock" },
       { status: 500 }
     );
   }

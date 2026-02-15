@@ -117,7 +117,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("Error submitting bug report:", error);
     return NextResponse.json(
-      { error: "Failed to submit bug report", details: String(error) },
+      { error: "Failed to submit bug report" },
       { status: 500 }
     );
   }

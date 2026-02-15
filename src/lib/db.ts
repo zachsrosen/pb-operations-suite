@@ -1097,12 +1097,62 @@ export async function upsertAvailabilityOverride(data: {
     });
   }
 
-  // Check for existing override to prevent duplicates (NULL != NULL in SQL unique constraints)
+  // When availabilityId is non-null the composite unique constraint
+  // (crewMemberId, date, availabilityId) catches duplicates, so we can use an
+  // optimistic create-first / catch-update pattern.
+  // When availabilityId IS null, Postgres allows multiple NULLs in a unique
+  // index, so the constraint won't fire.  Fall back to findFirst → update/create
+  // for the null case to prevent duplicate rows.
+
+  if (data.availabilityId != null) {
+    try {
+      return await prisma.availabilityOverride.create({
+        data: {
+          crewMemberId: data.crewMemberId,
+          date: data.date,
+          availabilityId: data.availabilityId,
+          type: data.type,
+          reason: data.reason,
+          startTime: data.startTime,
+          endTime: data.endTime,
+          createdBy: data.createdBy,
+          updatedBy: data.updatedBy,
+        },
+      });
+    } catch {
+      // Unique-constraint conflict — find and update instead
+      const existing = await prisma.availabilityOverride.findFirst({
+        where: {
+          crewMemberId: data.crewMemberId,
+          date: data.date,
+          availabilityId: data.availabilityId,
+        },
+      });
+
+      if (existing) {
+        return prisma.availabilityOverride.update({
+          where: { id: existing.id },
+          data: {
+            type: data.type,
+            reason: data.reason,
+            startTime: data.startTime,
+            endTime: data.endTime,
+            updatedBy: data.updatedBy,
+          },
+        });
+      }
+
+      throw new Error("Failed to create or update availability override");
+    }
+  }
+
+  // availabilityId is null — unique constraint won't catch duplicates,
+  // so explicitly check first.
   const existing = await prisma.availabilityOverride.findFirst({
     where: {
       crewMemberId: data.crewMemberId,
       date: data.date,
-      availabilityId: data.availabilityId ?? null,
+      availabilityId: null,
     },
   });
 
@@ -1123,7 +1173,7 @@ export async function upsertAvailabilityOverride(data: {
     data: {
       crewMemberId: data.crewMemberId,
       date: data.date,
-      availabilityId: data.availabilityId,
+      availabilityId: null,
       type: data.type,
       reason: data.reason,
       startTime: data.startTime,

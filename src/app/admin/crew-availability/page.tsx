@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { formatTimeRange12h } from "@/lib/format";
+import { LOCATION_TIMEZONES } from "@/lib/constants";
 
 interface CrewMember {
   id: string;
@@ -62,13 +63,7 @@ const LOCATIONS = [
   "Camarillo",
 ];
 
-const LOCATION_TIMEZONES: Record<string, string> = {
-  Westminster: "America/Denver",
-  DTC: "America/Denver",
-  "Colorado Springs": "America/Denver",
-  "San Luis Obispo": "America/Los_Angeles",
-  Camarillo: "America/Los_Angeles",
-};
+// LOCATION_TIMEZONES imported from @/lib/constants (includes Centennial)
 
 const JOB_TYPES = ["survey", "construction", "inspection"];
 

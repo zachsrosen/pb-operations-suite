@@ -196,7 +196,7 @@ export async function POST() {
   } catch (error) {
     console.error("Error syncing SKUs from HubSpot:", error);
     return NextResponse.json(
-      { error: "Failed to sync SKUs", details: String(error) },
+      { error: "Failed to sync SKUs" },
       { status: 500 }
     );
   }
