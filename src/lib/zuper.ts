@@ -247,13 +247,31 @@ export class ZuperClient {
       });
 
       clearTimeout(timeoutId);
-      const data = await response.json();
+      const rawText = await response.text();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let data: any = null;
+      try {
+        data = rawText ? JSON.parse(rawText) : null;
+      } catch {
+        data = rawText;
+      }
 
       if (!response.ok) {
         return {
           type: "error",
-          error: data.message || `HTTP ${response.status}`,
+          error: data?.message || data?.error || `HTTP ${response.status}`,
         };
+      }
+
+      // Some Zuper endpoints return HTTP 200 with payload-level error semantics.
+      if (data && typeof data === "object") {
+        const payloadType = typeof data.type === "string" ? data.type.toLowerCase() : "";
+        if (payloadType === "error" || payloadType === "failure" || data.success === false) {
+          return {
+            type: "error",
+            error: data.message || data.error || `Zuper API returned ${data.type || "error"} for ${endpoint}`,
+          };
+        }
       }
 
       return { type: "success", data };
@@ -482,6 +500,18 @@ export class ZuperClient {
         const actualAssigned = this.extractAssignedUserUids(verifyJob);
         const missingUsers = userUids.filter((uid) => !actualAssigned.includes(uid));
         const staleUsers = actualAssigned.filter((uid) => !userUids.includes(uid));
+        if (staleUsers.length > 0) {
+          const fallbackTeamUid =
+            resolvedTeamUid || verifyJob?.assigned_to_team?.[0]?.team?.team_uid;
+          const staleRefs = staleUsers.map((userUid) => ({
+            userUid,
+            teamUid: fallbackTeamUid,
+          }));
+          const staleUnassign = await this.unassignJob(jobUid, staleRefs);
+          if (staleUnassign.type === "error") {
+            console.warn("[Zuper] Fallback stale-user unassign failed: %s", staleUnassign.error);
+          }
+        }
         if (missingUsers.length > 0 || staleUsers.length > 0) {
           assignmentFailed = true;
           assignmentError = `Assignment verification mismatch (missing: ${missingUsers.join(",") || "none"}, stale: ${staleUsers.join(",") || "none"}, opaque_source=${hadOpaqueAssignments})`;
@@ -525,7 +555,10 @@ export class ZuperClient {
         const assignments = this.extractAssignmentRefs(jobData, defaultTeamUid);
         if (assignments.length > 0) {
           console.log("[Zuper] Unassigning users from job %s:", jobUid, assignments.map((a) => a.userUid));
-          await this.unassignJob(jobUid, assignments);
+          const unassignResult = await this.unassignJob(jobUid, assignments);
+          if (unassignResult.type === "error") {
+            console.warn("[Zuper] Unassign during unschedule failed for %s: %s", jobUid, unassignResult.error);
+          }
         } else if (this.assignedToCount(jobData) > 0) {
           // Last-resort: some tenants don't expose user_uid in assigned_to shape.
           console.warn("[Zuper] assigned_to present but no user_uid parsed for %s; attempting clear via updateJob", jobUid);
