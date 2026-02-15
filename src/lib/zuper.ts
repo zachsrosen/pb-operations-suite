@@ -467,12 +467,17 @@ export class ZuperClient {
    * Unschedule a job by clearing its scheduled times and unassigning users
    */
   async unscheduleJob(jobUid: string): Promise<ZuperApiResponse<ZuperJob>> {
+    // Some Zuper tenants refuse schedule clearing when due_date is empty.
+    // Fetch once up front so we can seed due_date if needed.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let jobSnapshot: any = null;
     // First, unassign users from the job (do this before status change)
     try {
       const jobResult = await this.getJob(jobUid);
       if (jobResult.type === "success" && jobResult.data) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const jobData = jobResult.data as any;
+        jobSnapshot = jobData;
         const assignedUsers = jobData.assigned_to as Array<{
           user?: { user_uid?: string };
           team_uid?: string;
@@ -496,6 +501,18 @@ export class ZuperClient {
       }
     } catch (err) {
       console.warn("[Zuper] Failed to unassign users from job %s:", jobUid, err);
+    }
+
+    // Ensure due_date exists before unschedule attempts.
+    if (!jobSnapshot?.due_date) {
+      const seedSource = jobSnapshot?.scheduled_end_time || jobSnapshot?.scheduled_start_time || new Date();
+      const seededDueDate = this.formatZuperDateTime(seedSource);
+      const dueDateResult = await this.updateJob(jobUid, { due_date: seededDueDate });
+      if (dueDateResult.type === "error") {
+        console.warn("[Zuper] Failed to seed due_date for job %s: %s", jobUid, dueDateResult.error);
+      } else {
+        console.log("[Zuper] Seeded due_date for job %s: %s", jobUid, seededDueDate);
+      }
     }
 
     // Try both known unschedule mechanisms because behavior varies across tenants.
