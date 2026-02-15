@@ -35,7 +35,10 @@ export interface ZuperJob {
   job_type?: string;
   scheduled_start_time?: string;
   scheduled_end_time?: string;
+  scheduled_start_time_dt?: string | null;
+  scheduled_end_time_dt?: string | null;
   due_date?: string;
+  due_date_dt?: string;
   customer_uid?: string;
   customer_address?: ZuperAddress;
   // assigned_to format differs between POST (create) and GET (read)
