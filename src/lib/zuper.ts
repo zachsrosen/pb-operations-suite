@@ -33,12 +33,12 @@ export interface ZuperJob {
   job_category?: string | ZuperJobCategory; // Can be UID string (for create) or object (from GET)
   job_priority?: "LOW" | "MEDIUM" | "HIGH" | "URGENT";
   job_type?: string;
-  scheduled_start_time?: string | null;
-  scheduled_end_time?: string | null;
+  scheduled_start_time?: string;
+  scheduled_end_time?: string;
   scheduled_start_time_dt?: string | null;
   scheduled_end_time_dt?: string | null;
-  due_date?: string | null;
-  due_date_dt?: string | null;
+  due_date?: string;
+  due_date_dt?: string;
   customer_uid?: string;
   customer_address?: ZuperAddress;
   // assigned_to format differs between POST (create) and GET (read)
@@ -598,8 +598,10 @@ export class ZuperClient {
 
     // Third strategy: explicit field clear on /jobs update.
     const clearFieldsResult = await this.updateJob(jobUid, {
-      scheduled_start_time: null,
-      scheduled_end_time: null,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      scheduled_start_time: null as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      scheduled_end_time: null as any,
       // Some schemas reject empty strings and only accept null.
       scheduled_start_time_dt: null,
       scheduled_end_time_dt: null,
