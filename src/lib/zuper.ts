@@ -339,6 +339,23 @@ export class ZuperClient {
     });
   }
 
+  async clearJobSchedule(
+    jobUid: string,
+    dueDate?: string,
+    dueDateDt?: string
+  ): Promise<ZuperApiResponse<ZuperJob>> {
+    return this.request<ZuperJob>(`/jobs?clear_schedule=true`, {
+      method: "PUT",
+      body: JSON.stringify({
+        job: {
+          job_uid: jobUid,
+          ...(dueDate ? { due_date: dueDate } : {}),
+          ...(dueDateDt ? { due_date_dt: dueDateDt } : {}),
+        },
+      }),
+    });
+  }
+
   /**
    * Format a date for Zuper API (uses "YYYY-MM-DD HH:mm:ss" format, not ISO)
    */
@@ -632,6 +649,8 @@ export class ZuperClient {
     }
 
     // Ensure due_date exists before unschedule attempts.
+    let dueDate = jobSnapshot?.due_date ? String(jobSnapshot.due_date) : "";
+    let dueDateDt = jobSnapshot?.due_date_dt ? String(jobSnapshot.due_date_dt) : "";
     let dueDateForClear = String(jobSnapshot?.due_date || jobSnapshot?.due_date_dt || "");
     if (!dueDateForClear) {
       const seedSource = jobSnapshot?.scheduled_end_time || jobSnapshot?.scheduled_start_time || new Date();
@@ -645,13 +664,27 @@ export class ZuperClient {
         console.warn("[Zuper] Failed to seed due_date for job %s: %s", jobUid, dueDateResult.error);
       } else {
         dueDateForClear = seededDueDate;
+        dueDate = `${seededDueDate} 06:59:59`;
+        dueDateDt = seededDueDate;
         console.log("[Zuper] Seeded due_date for job %s: %s", jobUid, seededDueDate);
       }
     }
 
-    // Tenant behavior (verified live): /jobs/schedule rejects empty/null dates.
-    // "Clear schedule" is represented as a zero-length window at due_date midnight.
     let lastResult: ZuperApiResponse<ZuperJob> = { type: "error", error: "No unschedule attempt made" };
+
+    // Primary strategy: same endpoint/flag used by Zuper web app.
+    const clearViaFlag = await this.clearJobSchedule(
+      jobUid,
+      dueDate || (dueDateForClear ? `${this.formatZuperDate(dueDateForClear)} 06:59:59` : undefined),
+      dueDateDt || (dueDateForClear ? this.formatZuperDate(dueDateForClear) : undefined)
+    );
+    if (clearViaFlag.type === "success") {
+      lastResult = clearViaFlag;
+    } else {
+      console.warn("[Zuper] Failed clear_schedule=true call for %s: %s", jobUid, clearViaFlag.error);
+    }
+
+    // Fallback: /jobs/schedule with zero-length window.
     const clearDate = this.formatZuperDate(dueDateForClear || new Date());
     const clearDateTime = `${clearDate} 00:00:00`;
     const clearScheduleResult = await this.request<ZuperJob>(`/jobs/schedule`, {
