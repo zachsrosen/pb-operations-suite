@@ -330,8 +330,31 @@ export class ZuperClient {
     if (!Array.isArray(assignedTo)) return [];
     return assignedTo
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .map((a: any) => a?.user?.user_uid || a?.user_uid)
+      .map((a: any) => a?.user?.user_uid || a?.user_uid || a?.user?.id || a?.id)
       .filter((uid: unknown): uid is string => typeof uid === "string" && uid.length > 0);
+  }
+
+  private assignedToCount(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    jobData: any
+  ): number {
+    return Array.isArray(jobData?.assigned_to) ? jobData.assigned_to.length : 0;
+  }
+
+  private extractAssignmentRefs(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    jobData: any,
+    fallbackTeamUid?: string
+  ): ZuperAssignmentRef[] {
+    const assignedTo = jobData?.assigned_to;
+    if (!Array.isArray(assignedTo)) return [];
+    return assignedTo
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .map((a: any) => ({
+        userUid: a?.user?.user_uid || a?.user_uid || "",
+        teamUid: a?.team_uid || a?.team?.team_uid || fallbackTeamUid,
+      }))
+      .filter((a: ZuperAssignmentRef) => !!a.userUid);
   }
 
   private isJobUnscheduled(
@@ -382,19 +405,7 @@ export class ZuperClient {
           console.log(`[Zuper] Got team_uid from job: ${resolvedTeamUid}`);
         }
         // Collect currently-assigned users so we can unassign by user/team.
-        const assignedTo = jobData.assigned_to as Array<{
-          user?: { user_uid?: string };
-          team_uid?: string;
-          team?: { team_uid?: string };
-        }> | undefined;
-        if (assignedTo?.length) {
-          currentAssignments = assignedTo
-            .map((a) => ({
-              userUid: a.user?.user_uid || "",
-              teamUid: a.team_uid || a.team?.team_uid || resolvedTeamUid,
-            }))
-            .filter((a) => !!a.userUid);
-        }
+        currentAssignments = this.extractAssignmentRefs(jobData, resolvedTeamUid);
       }
 
       // Unassign any currently-assigned users that are NOT in the new list
@@ -478,25 +489,18 @@ export class ZuperClient {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const jobData = jobResult.data as any;
         jobSnapshot = jobData;
-        const assignedUsers = jobData.assigned_to as Array<{
-          user?: { user_uid?: string };
-          team_uid?: string;
-          team?: { team_uid?: string };
-        }> | undefined;
         const defaultTeamUid = jobData.assigned_to_team?.[0]?.team?.team_uid;
-
-        if (assignedUsers?.length) {
-          const assignments = assignedUsers
-            .map((a) => ({
-              userUid: a.user?.user_uid || "",
-              teamUid: a.team_uid || a.team?.team_uid || defaultTeamUid,
-            }))
-            .filter((a) => !!a.userUid);
-
-          if (assignments.length > 0) {
-            console.log("[Zuper] Unassigning users from job %s:", jobUid, assignments.map((a) => a.userUid));
-            await this.unassignJob(jobUid, assignments);
-          }
+        const assignments = this.extractAssignmentRefs(jobData, defaultTeamUid);
+        if (assignments.length > 0) {
+          console.log("[Zuper] Unassigning users from job %s:", jobUid, assignments.map((a) => a.userUid));
+          await this.unassignJob(jobUid, assignments);
+        } else if (this.assignedToCount(jobData) > 0) {
+          // Last-resort: some tenants don't expose user_uid in assigned_to shape.
+          console.warn("[Zuper] assigned_to present but no user_uid parsed for %s; attempting clear via updateJob", jobUid);
+          await this.updateJob(jobUid, {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            assigned_to: [] as any,
+          });
         }
       }
     } catch (err) {
@@ -552,19 +556,29 @@ export class ZuperClient {
       }
     }
 
+    // Third strategy: explicit field clear on /jobs update.
+    const clearFieldsResult = await this.updateJob(jobUid, {
+      scheduled_start_time: "",
+      scheduled_end_time: "",
+    });
+    if (clearFieldsResult.type === "success") {
+      lastResult = clearFieldsResult;
+    }
+
     // Verify both unscheduled state and no remaining assignees.
     const verifyResult = await this.getJob(jobUid);
     if (verifyResult.type === "success" && verifyResult.data) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const verifyJob = verifyResult.data as any;
       const assigned = this.extractAssignedUserUids(verifyJob);
+      const assignedCount = this.assignedToCount(verifyJob);
       const unscheduled = this.isJobUnscheduled(verifyJob);
-      if (assigned.length === 0 && unscheduled) {
+      if (assignedCount === 0 && unscheduled) {
         return lastResult.type === "success" ? lastResult : { type: "success", data: verifyResult.data };
       }
       return {
         type: "error",
-        error: `Unschedule verification failed (assigned=${assigned.length}, unscheduled=${unscheduled})`,
+        error: `Unschedule verification failed (assigned_uids=${assigned.length}, assigned_count=${assignedCount}, unscheduled=${unscheduled})`,
       };
     }
 
