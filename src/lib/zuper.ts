@@ -307,7 +307,17 @@ export class ZuperClient {
    * Get a job by ID
    */
   async getJob(jobUid: string): Promise<ZuperApiResponse<ZuperJob>> {
-    return this.request<ZuperJob>(`/jobs/${jobUid}`);
+    // /jobs/{uid} commonly returns envelope: { type, data: {...job} }
+    // Normalize to the job object so downstream assignment/unschedule logic
+    // does not misread envelope keys as missing job fields.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await this.request<any>(`/jobs/${jobUid}`);
+    if (result.type === "success" && result.data) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const raw = result.data as any;
+      return { type: "success", data: raw?.data ?? raw };
+    }
+    return { type: result.type, error: result.error };
   }
 
   /**
@@ -390,9 +400,14 @@ export class ZuperClient {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     jobData: any
   ): boolean {
-    const noStart = !jobData?.scheduled_start_time;
-    const noEnd = !jobData?.scheduled_end_time;
-    return noStart && noEnd;
+    const start = jobData?.scheduled_start_time ?? jobData?.scheduled_start_time_dt;
+    const end = jobData?.scheduled_end_time ?? jobData?.scheduled_end_time_dt;
+    const duration = Number(jobData?.scheduled_duration);
+    const noStart = !start;
+    const noEnd = !end;
+    // Tenant behavior: "clear schedule" sets a zero-length window (start == end, duration 0).
+    const zeroLengthSchedule = !!start && !!end && start === end;
+    return (noStart && noEnd) || zeroLengthSchedule || duration === 0;
   }
 
   /**
@@ -590,46 +605,27 @@ export class ZuperClient {
       }
     }
 
-    // Try both known unschedule mechanisms because behavior varies across tenants.
+    // Tenant behavior (verified live): /jobs/schedule rejects empty/null dates.
+    // "Clear schedule" is represented as a zero-length window at due_date midnight.
     let lastResult: ZuperApiResponse<ZuperJob> = { type: "error", error: "No unschedule attempt made" };
-
-    // Set job status to UNSCHEDULED.
-    const statusResult = await this.updateJobStatus(jobUid, "UNSCHEDULED");
-    lastResult = statusResult;
-    if (statusResult.type === "error") {
-      console.warn("[Zuper] Failed to set UNSCHEDULED status for job %s: %s", jobUid, statusResult.error);
-    }
-
-    // Fallback for accounts where status-only change does not clear schedule.
+    const clearDate = this.formatZuperDate(dueDateForClear || new Date());
+    const clearDateTime = `${clearDate} 00:00:00`;
     const clearScheduleResult = await this.request<ZuperJob>(`/jobs/schedule`, {
       method: "PUT",
       body: JSON.stringify({
         job_uid: jobUid,
-        from_date: "",
-        to_date: "",
-        ...(dueDateForClear ? { due_date: dueDateForClear } : {}),
+        from_date: clearDateTime,
+        to_date: clearDateTime,
+        due_date: clearDate,
       }),
     });
     if (clearScheduleResult.type === "success") {
       lastResult = clearScheduleResult;
     } else {
       console.warn("[Zuper] Failed to clear schedule via /jobs/schedule for %s: %s", jobUid, clearScheduleResult.error);
-      // Try null payload variant for stricter schemas.
-      const clearScheduleNullResult = await this.request<ZuperJob>(`/jobs/schedule`, {
-        method: "PUT",
-        body: JSON.stringify({
-          job_uid: jobUid,
-          from_date: null,
-          to_date: null,
-          ...(dueDateForClear ? { due_date: dueDateForClear } : {}),
-        }),
-      });
-      if (clearScheduleNullResult.type === "success") {
-        lastResult = clearScheduleNullResult;
-      }
     }
 
-    // Third strategy: explicit field clear on /jobs update.
+    // Fallback strategy: direct update payload for tenants where schedule endpoint no-ops.
     const clearFieldsResult = await this.updateJob(jobUid, {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       scheduled_start_time: null as any,
@@ -638,7 +634,6 @@ export class ZuperClient {
       // Some schemas reject empty strings and only accept null.
       scheduled_start_time_dt: null,
       scheduled_end_time_dt: null,
-      status: "UNSCHEDULED",
     });
     if (clearFieldsResult.type === "success") {
       lastResult = clearFieldsResult;
