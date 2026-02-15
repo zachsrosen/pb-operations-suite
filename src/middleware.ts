@@ -66,9 +66,11 @@ function getDefaultRouteForRole(role: UserRole): string {
 
 export default auth((req) => {
   const isLoggedIn = !!req.auth;
-  const cookieRole = req.cookies.get("pb_effective_role")?.value as UserRole | undefined;
   const tokenRole = req.auth?.user?.role as UserRole | undefined;
-  const rawRole = cookieRole || tokenRole || "VIEWER";
+  const cookieRole = req.cookies.get("pb_effective_role")?.value as UserRole | undefined;
+  // Prefer server-issued token role over cookie; cookie is only used as
+  // a bridge for impersonation (set server-side, httpOnly).
+  const rawRole = tokenRole || cookieRole || "VIEWER";
   const userRole = normalizeRole(rawRole);
   const pathname = req.nextUrl.pathname;
 

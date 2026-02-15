@@ -9,11 +9,12 @@ import { appCache, CACHE_KEYS } from "@/lib/cache";
 
 export async function GET(request: NextRequest) {
   try {
-    // Check authentication
+    // Optional Bearer token gate for external/machine-to-machine access.
+    // Browser requests are authenticated by middleware (NextAuth session).
     const authHeader = request.headers.get("authorization");
     const expectedToken = process.env.API_SECRET_TOKEN;
 
-    if (expectedToken && authHeader !== `Bearer ${expectedToken}`) {
+    if (expectedToken && authHeader && authHeader !== `Bearer ${expectedToken}`) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
