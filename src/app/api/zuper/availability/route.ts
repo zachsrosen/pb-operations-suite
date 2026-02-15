@@ -56,6 +56,19 @@ function getSlotKey(date: string, userName: string, startTime: string): string {
   return `${date}|${userName}|${startTime}`;
 }
 
+// Zuper "clear schedule" can be represented as start==end and duration 0
+// rather than null start/end fields.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function isEffectivelyUnscheduled(job: any): boolean {
+  const start = job?.scheduled_start_time ?? job?.scheduled_start_time_dt;
+  const end = job?.scheduled_end_time ?? job?.scheduled_end_time_dt;
+  const duration = Number(job?.scheduled_duration);
+  const noStart = !start;
+  const noEnd = !end;
+  const zeroLength = !!start && !!end && start === end;
+  return (noStart && noEnd) || zeroLength || duration === 0;
+}
+
 // Local crew availability configuration
 // Based on surveyor shift schedules
 interface CrewSchedule {
@@ -569,7 +582,7 @@ export async function GET(request: NextRequest) {
     // Add scheduled jobs and mark those time slots as booked
     if (jobsResult.type === "success" && jobsResult.data) {
       for (const job of jobsResult.data) {
-        if (job.scheduled_start_time) {
+        if (job.scheduled_start_time && !isEffectivelyUnscheduled(job)) {
           // Parse the scheduled time - Zuper returns UTC times
           const scheduledDate = new Date(job.scheduled_start_time);
 

@@ -113,6 +113,16 @@ async function handleLookup(projectIds: string[], projectNames: string[], catego
     return 10;
   };
 
+  const isEffectivelyUnscheduled = (job: ZuperJob): boolean => {
+    const start = job.scheduled_start_time || job.scheduled_start_time_dt || "";
+    const end = job.scheduled_end_time || job.scheduled_end_time_dt || "";
+    const duration = Number((job as ZuperJob & { scheduled_duration?: number | string }).scheduled_duration);
+    const noStart = !start;
+    const noEnd = !end;
+    const zeroLength = !!start && !!end && start === end;
+    return (noStart && noEnd) || zeroLength || duration === 0;
+  };
+
   // Helper to extract customer name from project name
   const extractCustomerName = (name: string): string => {
     const decoded = decodeURIComponent(name);
@@ -454,8 +464,9 @@ async function handleLookup(projectIds: string[], projectNames: string[], catego
       const assignedUser = getAssignedUserName(best.job);
 
       // Compute scheduled days from Zuper start/end times
+      const effectivelyUnscheduled = isEffectivelyUnscheduled(best.job);
       let scheduledDays: number | undefined;
-      if (best.job.scheduled_start_time && best.job.scheduled_end_time) {
+      if (!effectivelyUnscheduled && best.job.scheduled_start_time && best.job.scheduled_end_time) {
         const start = new Date(best.job.scheduled_start_time);
         const end = new Date(best.job.scheduled_end_time);
         const diffMs = end.getTime() - start.getTime();
@@ -477,8 +488,8 @@ async function handleLookup(projectIds: string[], projectNames: string[], catego
         jobUid: best.job.job_uid!,
         jobTitle: best.job.job_title || "",
         status: getJobStatus(best.job) || "UNKNOWN",
-        scheduledDate: best.job.scheduled_start_time,
-        scheduledEnd: best.job.scheduled_end_time,
+        scheduledDate: effectivelyUnscheduled ? undefined : best.job.scheduled_start_time,
+        scheduledEnd: effectivelyUnscheduled ? undefined : best.job.scheduled_end_time,
         scheduledDays,
         category: best.categoryName,
         matchedBy: best.matchMethod,
