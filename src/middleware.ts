@@ -77,9 +77,13 @@ export default auth((req) => {
   const isLoggedIn = !!req.auth;
   const tokenRole = req.auth?.user?.role as UserRole | undefined;
   const cookieRole = req.cookies.get("pb_effective_role")?.value as UserRole | undefined;
-  // Impersonation cookie (set server-side, httpOnly) takes precedence when
-  // present so "View As" overrides the token role for route authorization.
-  const rawRole = cookieRole || tokenRole || "VIEWER";
+  // Impersonation cookie (set server-side, httpOnly) takes precedence only
+  // when the authenticated user is ADMIN. This prevents privilege escalation
+  // if the cookie is tampered with on a non-admin session. Additionally,
+  // never let the cookie elevate to ADMIN or OWNER.
+  const isAdminToken = tokenRole === "ADMIN";
+  const isSafeCookieRole = cookieRole && cookieRole !== "ADMIN" && cookieRole !== "OWNER";
+  const rawRole = (isAdminToken && isSafeCookieRole ? cookieRole : tokenRole) || "VIEWER";
   const userRole = normalizeRole(rawRole);
   const pathname = req.nextUrl.pathname;
 

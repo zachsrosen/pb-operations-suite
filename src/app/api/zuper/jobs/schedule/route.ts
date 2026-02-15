@@ -731,12 +731,12 @@ export async function DELETE(request: NextRequest) {
       }
     }
 
-    // Clear HubSpot site_survey_schedule_date
+    // Clear HubSpot site_survey_schedule_date and site_surveyor
     try {
-      await updateDealProperty(projectId, { site_survey_schedule_date: "" });
-      console.log(`[Zuper Unschedule] Cleared HubSpot site_survey_schedule_date for ${projectId}`);
+      await updateDealProperty(projectId, { site_survey_schedule_date: "", site_surveyor: "" });
+      console.log(`[Zuper Unschedule] Cleared HubSpot site_survey_schedule_date and site_surveyor for ${projectId}`);
     } catch (err) {
-      console.warn(`[Zuper Unschedule] Failed to clear HubSpot property:`, err);
+      console.warn(`[Zuper Unschedule] Failed to clear HubSpot properties:`, err);
     }
 
     // Log the unschedule activity
