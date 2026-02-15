@@ -1004,7 +1004,7 @@ export default function SiteSurveySchedulerPage() {
 
     // Sync to Zuper & HubSpot in background
     try {
-      await fetch("/api/zuper/jobs/schedule", {
+      const response = await fetch("/api/zuper/jobs/schedule", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1014,12 +1014,24 @@ export default function SiteSurveySchedulerPage() {
           scheduleType: "survey",
         }),
       });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        const message = errorData?.message || errorData?.error || "Failed to clear schedule in Zuper";
+        showToast(message, "warning");
+        // Re-sync local state when backend clear fails.
+        fetchProjects();
+        return;
+      }
     } catch (err) {
       console.error("Failed to sync unschedule to Zuper:", err);
+      showToast("Failed to sync unschedule to Zuper", "warning");
+      fetchProjects();
+      return;
     }
 
     showToast("Schedule removed");
-  }, [showToast, projects, trackFeature]);
+  }, [showToast, projects, trackFeature, fetchProjects]);
 
   /* ================================================================ */
   /*  Navigation                                                       */

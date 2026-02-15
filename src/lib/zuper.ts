@@ -351,7 +351,7 @@ export class ZuperClient {
     return assignedTo
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .map((a: any) => ({
-        userUid: a?.user?.user_uid || a?.user_uid || "",
+        userUid: a?.user?.user_uid || a?.user_uid || a?.user?.id || a?.id || "",
         teamUid: a?.team_uid || a?.team?.team_uid || fallbackTeamUid,
       }))
       .filter((a: ZuperAssignmentRef) => !!a.userUid);
@@ -361,11 +361,9 @@ export class ZuperClient {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     jobData: any
   ): boolean {
-    const statusName = String(jobData?.current_job_status?.status_name || jobData?.status || "").toUpperCase();
-    const statusImpliesUnscheduled = statusName.includes("UNSCHEDULED");
     const noStart = !jobData?.scheduled_start_time;
     const noEnd = !jobData?.scheduled_end_time;
-    return statusImpliesUnscheduled || (noStart && noEnd);
+    return noStart && noEnd;
   }
 
   /**
@@ -508,10 +506,16 @@ export class ZuperClient {
     }
 
     // Ensure due_date exists before unschedule attempts.
-    if (!jobSnapshot?.due_date) {
+    const existingDueDate = jobSnapshot?.due_date || jobSnapshot?.due_date_dt;
+    if (!existingDueDate) {
       const seedSource = jobSnapshot?.scheduled_end_time || jobSnapshot?.scheduled_start_time || new Date();
       const seededDueDate = this.formatZuperDateTime(seedSource);
-      const dueDateResult = await this.updateJob(jobUid, { due_date: seededDueDate });
+      const dueDateResult = await this.updateJob(jobUid, {
+        due_date: seededDueDate,
+        // Some tenants expose only due_date_dt; set both defensively.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        due_date_dt: seededDueDate as any,
+      });
       if (dueDateResult.type === "error") {
         console.warn("[Zuper] Failed to seed due_date for job %s: %s", jobUid, dueDateResult.error);
       } else {
@@ -540,7 +544,7 @@ export class ZuperClient {
     });
     if (clearScheduleResult.type === "success") {
       lastResult = clearScheduleResult;
-    } else if (statusResult.type === "error") {
+    } else {
       console.warn("[Zuper] Failed to clear schedule via /jobs/schedule for %s: %s", jobUid, clearScheduleResult.error);
       // Try null payload variant for stricter schemas.
       const clearScheduleNullResult = await this.request<ZuperJob>(`/jobs/schedule`, {
@@ -560,6 +564,11 @@ export class ZuperClient {
     const clearFieldsResult = await this.updateJob(jobUid, {
       scheduled_start_time: "",
       scheduled_end_time: "",
+      // Some schemas reject empty strings and only accept null.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      scheduled_start_time_dt: null as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      scheduled_end_time_dt: null as any,
     });
     if (clearFieldsResult.type === "success") {
       lastResult = clearFieldsResult;
