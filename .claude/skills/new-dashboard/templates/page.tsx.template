@@ -1,0 +1,107 @@
+"use client";
+
+import { useState, useEffect, useCallback, useMemo } from "react";
+import DashboardShell from "@/components/DashboardShell";
+import { StatCard, MiniStat } from "@/components/ui/MetricCard";
+import { useActivityTracking } from "@/hooks/useActivityTracking";
+import { useSSE } from "@/hooks/useSSE";
+
+/* ------------------------------------------------------------------ */
+/*  Types                                                              */
+/* ------------------------------------------------------------------ */
+
+interface {{PageName}}Data {
+  // TODO: Define your data shape
+  items: Record<string, unknown>[];
+  lastUpdated: string | null;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Page                                                               */
+/* ------------------------------------------------------------------ */
+
+export default function {{PageName}}Page() {
+  useActivityTracking();
+
+  const [data, setData] = useState<{{PageName}}Data | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  /* ---- Data fetching ---- */
+
+  const fetchData = useCallback(async () => {
+    try {
+      const res = await fetch("/api/TODO_ENDPOINT");
+      if (!res.ok) throw new Error("Failed to fetch");
+      const json = await res.json();
+      setData(json);
+      setError(null);
+    } catch (err) {
+      console.error("{{PageName}} fetch error:", err);
+      setError("Failed to load data. Please try refreshing.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  // Real-time updates (remove if not needed)
+  const { connected } = useSSE(() => fetchData(), {
+    cacheKeyFilter: "projects",
+  });
+
+  /* ---- Computed values ---- */
+
+  const items = data?.items ?? [];
+  // TODO: Add computed metrics
+
+  /* ---- Render ---- */
+
+  return (
+    <DashboardShell
+      title="{{title}}"
+      accentColor="orange"
+      lastUpdated={data?.lastUpdated}
+      exportData={{ data: items as Record<string, unknown>[], filename: "{{slug}}.csv" }}
+    >
+      {error && (
+        <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4 text-red-400 mb-6">
+          {error}
+        </div>
+      )}
+
+      {/* ---- Metric Cards ---- */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8 stagger-grid">
+        <StatCard
+          label="Total Items"
+          value={loading ? null : items.length}
+          color="orange"
+        />
+        <StatCard
+          label="TODO Metric"
+          value={loading ? null : 0}
+          color="emerald"
+        />
+        <MiniStat label="TODO" value={loading ? "..." : "0"} />
+        <MiniStat label="TODO" value={loading ? "..." : "0"} />
+      </div>
+
+      {/* ---- Main Content ---- */}
+      <div className="bg-surface rounded-xl border border-t-border shadow-card p-6">
+        {loading ? (
+          <div className="animate-pulse space-y-3">
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="h-10 bg-skeleton rounded" />
+            ))}
+          </div>
+        ) : (
+          <div>
+            {/* TODO: Add table, chart, or content */}
+            <p className="text-muted">Dashboard content goes here</p>
+          </div>
+        )}
+      </div>
+    </DashboardShell>
+  );
+}

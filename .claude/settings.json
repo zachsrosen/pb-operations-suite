@@ -1,0 +1,55 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "case \"$CLAUDE_FILE_PATH\" in *.env|*.env.*) echo 'BLOCKED: Cannot edit .env files — manage secrets via Vercel env vars' >&2; exit 2;; esac"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "case \"$CLAUDE_FILE_PATH\" in */package-lock.json|*/pnpm-lock.yaml|*/yarn.lock) echo 'BLOCKED: Lock files should only change via package manager' >&2; exit 2;; esac"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "case \"$CLAUDE_FILE_PATH\" in *.ts|*.tsx|*.js|*.jsx|*.mjs) cd /Users/zach/Downloads/PB-Operations-Suite && npx eslint --fix \"$CLAUDE_FILE_PATH\" 2>/dev/null || true;; esac"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "permission_prompt",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "afplay /System/Library/Sounds/Funk.aiff && osascript -e 'display notification \"Permission needed — check terminal\" with title \"Claude Code\" subtitle \"Waiting for approval\"'"
+          }
+        ]
+      },
+      {
+        "matcher": "idle_prompt",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "afplay /System/Library/Sounds/Glass.aiff && osascript -e 'display notification \"Task complete — ready for next instructions\" with title \"Claude Code\" subtitle \"Waiting for input\"'"
+          }
+        ]
+      }
+    ]
+  }
+}
