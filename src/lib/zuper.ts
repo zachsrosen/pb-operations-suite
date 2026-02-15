@@ -391,16 +391,67 @@ export class ZuperClient {
   }
 
   /**
-   * Unschedule a job by clearing its scheduled times
+   * Unschedule a job by clearing its scheduled times and unassigning users
    */
   async unscheduleJob(jobUid: string): Promise<ZuperApiResponse<ZuperJob>> {
-    return this.request<ZuperJob>(`/jobs/schedule`, {
+    const scheduleResult = await this.request<ZuperJob>(`/jobs/schedule`, {
       method: "PUT",
       body: JSON.stringify({
         job_uid: jobUid,
         from_date: "",
         to_date: "",
       }),
+    });
+
+    // Also unassign users from the job
+    try {
+      const jobResult = await this.getJob(jobUid);
+      if (jobResult.type === "success" && jobResult.data) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const jobData = jobResult.data as any;
+        const assignedUsers = jobData.assigned_to as { user?: { user_uid?: string } }[] | undefined;
+        const teamUid = jobData.assigned_to_team?.[0]?.team?.team_uid;
+
+        if (assignedUsers?.length && teamUid) {
+          const userUids = assignedUsers
+            .map(a => a.user?.user_uid)
+            .filter((uid): uid is string => !!uid);
+
+          if (userUids.length > 0) {
+            console.log(`[Zuper] Unassigning users from job ${jobUid}:`, userUids);
+            await this.unassignJob(jobUid, userUids, teamUid);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn(`[Zuper] Failed to unassign users from job ${jobUid}:`, err);
+    }
+
+    return scheduleResult;
+  }
+
+  /**
+   * Unassign users from a job
+   */
+  async unassignJob(
+    jobUid: string,
+    userUids: string[],
+    teamUid: string
+  ): Promise<ZuperApiResponse<ZuperJob>> {
+    const payload = {
+      job: userUids.map(userUid => ({
+        type: "UNASSIGN",
+        user_uid: userUid,
+        team_uid: teamUid,
+      })),
+    };
+
+    const endpoint = `/jobs/${jobUid}/update?job_uid=${jobUid}&notify_users=false&update_all_jobs=false`;
+    console.log(`[Zuper] Unassigning job ${jobUid} via ${endpoint}:`, JSON.stringify(payload));
+
+    return this.request<ZuperJob>(endpoint, {
+      method: "PUT",
+      body: JSON.stringify(payload),
     });
   }
 
