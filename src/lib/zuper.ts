@@ -322,6 +322,29 @@ export class ZuperClient {
     return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
   }
 
+  private extractAssignedUserUids(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    jobData: any
+  ): string[] {
+    const assignedTo = jobData?.assigned_to;
+    if (!Array.isArray(assignedTo)) return [];
+    return assignedTo
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .map((a: any) => a?.user?.user_uid || a?.user_uid)
+      .filter((uid: unknown): uid is string => typeof uid === "string" && uid.length > 0);
+  }
+
+  private isJobUnscheduled(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    jobData: any
+  ): boolean {
+    const statusName = String(jobData?.current_job_status?.status_name || jobData?.status || "").toUpperCase();
+    const statusImpliesUnscheduled = statusName.includes("UNSCHEDULED");
+    const noStart = !jobData?.scheduled_start_time;
+    const noEnd = !jobData?.scheduled_end_time;
+    return statusImpliesUnscheduled || (noStart && noEnd);
+  }
+
   /**
    * Reschedule a job by updating its scheduled times and optionally assign users
    * Zuper uses PUT /jobs/schedule with job_uid, from_date, to_date at top level
@@ -407,6 +430,21 @@ export class ZuperClient {
       } else {
         console.log(`[Zuper] New users already assigned, no change needed`);
       }
+
+      // Verify assignment state to catch API no-op responses.
+      const verifyResult = await this.getJob(jobUid);
+      if (verifyResult.type === "success" && verifyResult.data) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const verifyJob = verifyResult.data as any;
+        const actualAssigned = this.extractAssignedUserUids(verifyJob);
+        const missingUsers = userUids.filter((uid) => !actualAssigned.includes(uid));
+        const staleUsers = actualAssigned.filter((uid) => !userUids.includes(uid));
+        if (missingUsers.length > 0 || staleUsers.length > 0) {
+          assignmentFailed = true;
+          assignmentError = `Assignment verification mismatch (missing: ${missingUsers.join(",") || "none"}, stale: ${staleUsers.join(",") || "none"})`;
+          console.warn("[Zuper] %s", assignmentError);
+        }
+      }
     }
 
     // Return success - schedule succeeded even if assignment failed
@@ -460,26 +498,60 @@ export class ZuperClient {
       console.warn("[Zuper] Failed to unassign users from job %s:", jobUid, err);
     }
 
+    // Try both known unschedule mechanisms because behavior varies across tenants.
+    let lastResult: ZuperApiResponse<ZuperJob> = { type: "error", error: "No unschedule attempt made" };
+
     // Set job status to UNSCHEDULED.
     const statusResult = await this.updateJobStatus(jobUid, "UNSCHEDULED");
+    lastResult = statusResult;
     if (statusResult.type === "error") {
       console.warn("[Zuper] Failed to set UNSCHEDULED status for job %s: %s", jobUid, statusResult.error);
-      // Fallback for accounts where status-only change does not clear schedule.
-      const fallback = await this.request<ZuperJob>(`/jobs/schedule`, {
+    }
+
+    // Fallback for accounts where status-only change does not clear schedule.
+    const clearScheduleResult = await this.request<ZuperJob>(`/jobs/schedule`, {
+      method: "PUT",
+      body: JSON.stringify({
+        job_uid: jobUid,
+        from_date: "",
+        to_date: "",
+      }),
+    });
+    if (clearScheduleResult.type === "success") {
+      lastResult = clearScheduleResult;
+    } else if (statusResult.type === "error") {
+      console.warn("[Zuper] Failed to clear schedule via /jobs/schedule for %s: %s", jobUid, clearScheduleResult.error);
+      // Try null payload variant for stricter schemas.
+      const clearScheduleNullResult = await this.request<ZuperJob>(`/jobs/schedule`, {
         method: "PUT",
         body: JSON.stringify({
           job_uid: jobUid,
-          from_date: "",
-          to_date: "",
+          from_date: null,
+          to_date: null,
         }),
       });
-      if (fallback.type === "error") {
-        return statusResult;
+      if (clearScheduleNullResult.type === "success") {
+        lastResult = clearScheduleNullResult;
       }
-      return fallback;
     }
 
-    return statusResult;
+    // Verify both unscheduled state and no remaining assignees.
+    const verifyResult = await this.getJob(jobUid);
+    if (verifyResult.type === "success" && verifyResult.data) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const verifyJob = verifyResult.data as any;
+      const assigned = this.extractAssignedUserUids(verifyJob);
+      const unscheduled = this.isJobUnscheduled(verifyJob);
+      if (assigned.length === 0 && unscheduled) {
+        return lastResult.type === "success" ? lastResult : { type: "success", data: verifyResult.data };
+      }
+      return {
+        type: "error",
+        error: `Unschedule verification failed (assigned=${assigned.length}, unscheduled=${unscheduled})`,
+      };
+    }
+
+    return lastResult;
   }
 
   /**

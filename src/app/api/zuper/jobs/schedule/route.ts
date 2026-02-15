@@ -717,6 +717,7 @@ export async function DELETE(request: NextRequest) {
 
     // Clear schedule in Zuper if we have a job UID
     let zuperCleared = false;
+    let zuperError: string | undefined;
     if (zuperJobUid && zuper.isConfigured()) {
       try {
         const result = await zuper.unscheduleJob(zuperJobUid);
@@ -725,9 +726,11 @@ export async function DELETE(request: NextRequest) {
           console.log(`[Zuper Unschedule] Cleared Zuper job ${zuperJobUid}`);
         } else {
           console.warn(`[Zuper Unschedule] Failed to clear Zuper job: ${result.error}`);
+          zuperError = result.error;
         }
       } catch (err) {
         console.error(`[Zuper Unschedule] Error clearing Zuper job:`, err);
+        zuperError = err instanceof Error ? err.message : "Unknown Zuper unschedule error";
       }
     }
 
@@ -763,6 +766,21 @@ export async function DELETE(request: NextRequest) {
       });
     } catch (err) {
       console.error("Failed to log unschedule activity:", err);
+    }
+
+    // If a Zuper job was provided but could not be cleared, surface failure
+    // so the UI doesn't treat this as a full success.
+    if (zuperJobUid && zuper.isConfigured() && !zuperCleared) {
+      return NextResponse.json(
+        {
+          success: false,
+          action: "unschedule_partial",
+          zuperCleared,
+          error: zuperError || "Failed to clear schedule in Zuper",
+          message: "HubSpot schedule fields were cleared, but Zuper unschedule failed.",
+        },
+        { status: 502 }
+      );
     }
 
     return NextResponse.json({
