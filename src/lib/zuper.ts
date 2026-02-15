@@ -396,6 +396,31 @@ export class ZuperClient {
       .filter((a: ZuperAssignmentRef) => !!a.userUid);
   }
 
+  private async unassignByTeamSweep(
+    jobUid: string,
+    teamUid: string,
+    keepUserUids: string[] = []
+  ): Promise<ZuperApiResponse<ZuperJob> | null> {
+    const teamResult = await this.getTeamDetail(teamUid);
+    if (teamResult.type !== "success" || !teamResult.data) return null;
+
+    const users = Array.isArray(teamResult.data.users) ? teamResult.data.users : [];
+    const keep = new Set(keepUserUids);
+    const sweepRefs: ZuperAssignmentRef[] = users
+      .map((u) => ({ userUid: u.user_uid, teamUid }))
+      .filter((u) => !!u.userUid && !keep.has(u.userUid));
+
+    if (sweepRefs.length === 0) return null;
+
+    console.warn(
+      "[Zuper] Falling back to team-sweep unassign for job %s (team=%s, users=%s)",
+      jobUid,
+      teamUid,
+      sweepRefs.length
+    );
+    return this.unassignJob(jobUid, sweepRefs);
+  }
+
   private isJobUnscheduled(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     jobData: any
@@ -431,10 +456,11 @@ export class ZuperClient {
       }),
     });
 
-    // If we have user UIDs to assign, try to assign (but don't fail the whole operation)
+    // If user UIDs were provided, reconcile assignments (supports [] to clear all).
     let assignmentFailed = false;
     let assignmentError = "";
-    if (scheduleResult.type === "success" && userUids && userUids.length > 0) {
+    if (scheduleResult.type === "success" && userUids) {
+      const targetUserUids = [...new Set(userUids)];
       // Get team UID and current assignments from the job
       let resolvedTeamUid = teamUid;
       let currentAssignments: ZuperAssignmentRef[] = [];
@@ -463,18 +489,27 @@ export class ZuperClient {
       }
 
       // Unassign any currently-assigned users that are NOT in the new list
-      const usersToRemove = currentAssignments.filter((a) => !userUids.includes(a.userUid));
+      const usersToRemove = currentAssignments.filter((a) => !targetUserUids.includes(a.userUid));
       if (usersToRemove.length > 0) {
         console.log(`[Zuper] Unassigning previous users from job ${jobUid}:`, usersToRemove.map((a) => a.userUid));
         const unassignResult = await this.unassignJob(jobUid, usersToRemove);
         if (unassignResult.type === "error") {
           console.warn(`[Zuper] Failed to unassign previous users:`, unassignResult.error);
+          assignmentFailed = true;
+          assignmentError = unassignResult.error || "Failed to unassign previous users";
+        }
+      } else if (hadOpaqueAssignments && resolvedTeamUid) {
+        const sweepResult = await this.unassignByTeamSweep(jobUid, resolvedTeamUid, targetUserUids);
+        if (sweepResult?.type === "error") {
+          console.warn(`[Zuper] Team-sweep unassign failed for ${jobUid}:`, sweepResult.error);
+          assignmentFailed = true;
+          assignmentError = sweepResult.error || "Failed to unassign previous users";
         }
       }
 
       // Now assign the new users (skip any that are already assigned)
       const currentUserUids = currentAssignments.map((a) => a.userUid);
-      const usersToAdd = userUids.filter(uid => !currentUserUids.includes(uid));
+      const usersToAdd = targetUserUids.filter(uid => !currentUserUids.includes(uid));
       if (usersToAdd.length > 0) {
         if (!resolvedTeamUid) {
           // Last-resort: derive team from user profile.
@@ -513,8 +548,8 @@ export class ZuperClient {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const verifyJob = verifyResult.data as any;
         const actualAssigned = this.extractAssignedUserUids(verifyJob);
-        const missingUsers = userUids.filter((uid) => !actualAssigned.includes(uid));
-        const staleUsers = actualAssigned.filter((uid) => !userUids.includes(uid));
+        const missingUsers = targetUserUids.filter((uid) => !actualAssigned.includes(uid));
+        const staleUsers = actualAssigned.filter((uid) => !targetUserUids.includes(uid));
         if (staleUsers.length > 0) {
           const fallbackTeamUid =
             resolvedTeamUid || verifyJob?.assigned_to_team?.[0]?.team?.team_uid;
@@ -532,6 +567,9 @@ export class ZuperClient {
           assignmentError = `Assignment verification mismatch (missing: ${missingUsers.join(",") || "none"}, stale: ${staleUsers.join(",") || "none"}, opaque_source=${hadOpaqueAssignments})`;
           console.warn("[Zuper] %s", assignmentError);
         }
+      } else {
+        assignmentFailed = true;
+        assignmentError = "Failed to verify assignment state after reschedule";
       }
     }
 
@@ -581,6 +619,12 @@ export class ZuperClient {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             assigned_to: [] as any,
           });
+          if (defaultTeamUid) {
+            const sweepResult = await this.unassignByTeamSweep(jobUid, defaultTeamUid, []);
+            if (sweepResult?.type === "error") {
+              console.warn("[Zuper] Team-sweep unassign failed during unschedule for %s: %s", jobUid, sweepResult.error);
+            }
+          }
         }
       }
     } catch (err) {

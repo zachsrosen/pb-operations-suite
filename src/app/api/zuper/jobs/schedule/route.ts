@@ -394,7 +394,7 @@ export async function PUT(request: NextRequest) {
         existingJob.job_uid,
         startDateTime,
         endDateTime,
-        userUids.length > 0 ? userUids : undefined,
+        userUids,
         teamUid // Pass team UID for assignment
       );
 

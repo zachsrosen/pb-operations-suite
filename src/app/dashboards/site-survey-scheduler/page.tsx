@@ -989,7 +989,7 @@ export default function SiteSurveySchedulerPage() {
 
   const cancelSchedule = useCallback(async (projectId: string) => {
     const project = projects.find(p => p.id === projectId);
-    trackFeature("survey-cancelled", "Survey schedule removed", {
+    trackFeature("survey-cancelled", "Survey removed from schedule", {
       scheduler: "site-survey",
       projectId,
       projectName: project?.name || projectId,
@@ -1017,7 +1017,7 @@ export default function SiteSurveySchedulerPage() {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => null);
-        const message = errorData?.message || errorData?.error || "Failed to clear schedule in Zuper";
+        const message = errorData?.message || errorData?.error || "Failed to remove from schedule in Zuper";
         showToast(message, "warning");
         // Re-sync local state when backend clear fails.
         fetchProjects();
@@ -1025,12 +1025,12 @@ export default function SiteSurveySchedulerPage() {
       }
     } catch (err) {
       console.error("Failed to sync unschedule to Zuper:", err);
-      showToast("Failed to sync unschedule to Zuper", "warning");
+      showToast("Failed to sync remove from schedule to Zuper", "warning");
       fetchProjects();
       return;
     }
 
-    showToast("Schedule removed");
+    showToast("Removed from schedule");
   }, [showToast, projects, trackFeature, fetchProjects]);
 
   /* ================================================================ */
@@ -1963,7 +1963,7 @@ export default function SiteSurveySchedulerPage() {
                     }}
                     className="px-4 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg font-medium"
                   >
-                    Remove Schedule
+                    Remove from Schedule
                   </button>
                   <button
                     onClick={() => setScheduleModal(null)}
