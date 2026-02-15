@@ -1941,13 +1941,25 @@ export default function SiteSurveySchedulerPage() {
 
             <div className="flex justify-end gap-2">
               {scheduleModal.currentSlot && !scheduleModal.isRescheduling && !scheduleModal.slot ? (
-                /* Viewing mode - just show Close button */
-                <button
-                  onClick={() => setScheduleModal(null)}
-                  className="px-4 py-2 text-sm bg-surface-2 hover:bg-zinc-600 rounded-lg font-medium"
-                >
-                  Close
-                </button>
+                /* Viewing mode - show Close and Remove buttons */
+                <>
+                  <button
+                    onClick={() => {
+                      const projectId = scheduleModal.project.id;
+                      setScheduleModal(null);
+                      cancelSchedule(projectId);
+                    }}
+                    className="px-4 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg font-medium"
+                  >
+                    Remove Schedule
+                  </button>
+                  <button
+                    onClick={() => setScheduleModal(null)}
+                    className="px-4 py-2 text-sm bg-surface-2 hover:bg-zinc-600 rounded-lg font-medium"
+                  >
+                    Close
+                  </button>
+                </>
               ) : (
                 /* Scheduling or rescheduling mode */
                 <>
