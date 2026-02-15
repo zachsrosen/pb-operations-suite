@@ -26,14 +26,14 @@ export function BugReportButton() {
     if (status !== "authenticated") return;
     fetch("/api/user/me")
       .then((r) => r.json())
-      .then((d) => setUserRole(d.role || null))
+      .then((d) => setUserRole(d.user?.role || null))
       .catch(() => setUserRole(null));
   }, [status]);
 
-  // Don't render for unauthenticated or VIEWER users
-  if (status !== "authenticated" || !userRole || userRole === "VIEWER") {
-    return null;
-  }
+  // Don't render for unauthenticated or confirmed-VIEWER users.
+  // If role fetch fails (no DB, network error), still show for authenticated users.
+  if (status !== "authenticated") return null;
+  if (userRole === "VIEWER") return null;
 
   // Don't render on login page
   if (pathname === "/login") return null;

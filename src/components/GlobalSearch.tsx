@@ -198,6 +198,7 @@ export function GlobalSearch() {
   return (
     <div
       className="fixed inset-0 z-50 flex items-start justify-center pt-[20vh]"
+      data-global-search-open
       onClick={() => setIsOpen(false)}
     >
       {/* Backdrop */}
