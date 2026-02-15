@@ -33,12 +33,12 @@ export interface ZuperJob {
   job_category?: string | ZuperJobCategory; // Can be UID string (for create) or object (from GET)
   job_priority?: "LOW" | "MEDIUM" | "HIGH" | "URGENT";
   job_type?: string;
-  scheduled_start_time?: string;
-  scheduled_end_time?: string;
+  scheduled_start_time?: string | null;
+  scheduled_end_time?: string | null;
   scheduled_start_time_dt?: string | null;
   scheduled_end_time_dt?: string | null;
-  due_date?: string;
-  due_date_dt?: string;
+  due_date?: string | null;
+  due_date_dt?: string | null;
   customer_uid?: string;
   customer_address?: ZuperAddress;
   // assigned_to format differs between POST (create) and GET (read)
@@ -325,6 +325,14 @@ export class ZuperClient {
     return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
   }
 
+  private formatZuperDate(date: Date | string): string {
+    const d = typeof date === "string" ? new Date(date) : date;
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+
   private extractAssignedUserUids(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     jobData: any
@@ -397,6 +405,7 @@ export class ZuperClient {
       // Get team UID and current assignments from the job
       let resolvedTeamUid = teamUid;
       let currentAssignments: ZuperAssignmentRef[] = [];
+      let hadOpaqueAssignments = false;
       const jobResult = await this.getJob(jobUid);
       if (jobResult.type === "success" && jobResult.data) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -407,6 +416,17 @@ export class ZuperClient {
         }
         // Collect currently-assigned users so we can unassign by user/team.
         currentAssignments = this.extractAssignmentRefs(jobData, resolvedTeamUid);
+        hadOpaqueAssignments = this.assignedToCount(jobData) > 0 && currentAssignments.length === 0;
+        if (hadOpaqueAssignments) {
+          console.warn("[Zuper] Job %s has opaque assigned_to shape; attempting clear via updateJob fallback", jobUid);
+          await this.updateJob(jobUid, {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            assigned_to: [] as any,
+          });
+        }
+        if (!resolvedTeamUid) {
+          resolvedTeamUid = currentAssignments.find((a) => !!a.teamUid)?.teamUid;
+        }
       }
 
       // Unassign any currently-assigned users that are NOT in the new list
@@ -423,6 +443,17 @@ export class ZuperClient {
       const currentUserUids = currentAssignments.map((a) => a.userUid);
       const usersToAdd = userUids.filter(uid => !currentUserUids.includes(uid));
       if (usersToAdd.length > 0) {
+        if (!resolvedTeamUid) {
+          // Last-resort: derive team from user profile.
+          const userResult = await this.getUser(usersToAdd[0]);
+          if (userResult.type === "success" && userResult.data) {
+            resolvedTeamUid =
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              (userResult.data as any).team_uid ||
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              (userResult.data as any).team?.team_uid;
+          }
+        }
         if (!resolvedTeamUid) {
           console.error(`[Zuper] Cannot assign user: No team_uid available`);
           assignmentFailed = true;
@@ -453,7 +484,7 @@ export class ZuperClient {
         const staleUsers = actualAssigned.filter((uid) => !userUids.includes(uid));
         if (missingUsers.length > 0 || staleUsers.length > 0) {
           assignmentFailed = true;
-          assignmentError = `Assignment verification mismatch (missing: ${missingUsers.join(",") || "none"}, stale: ${staleUsers.join(",") || "none"})`;
+          assignmentError = `Assignment verification mismatch (missing: ${missingUsers.join(",") || "none"}, stale: ${staleUsers.join(",") || "none"}, opaque_source=${hadOpaqueAssignments})`;
           console.warn("[Zuper] %s", assignmentError);
         }
       }
@@ -509,19 +540,19 @@ export class ZuperClient {
     }
 
     // Ensure due_date exists before unschedule attempts.
-    const existingDueDate = jobSnapshot?.due_date || jobSnapshot?.due_date_dt;
-    if (!existingDueDate) {
+    let dueDateForClear = String(jobSnapshot?.due_date || jobSnapshot?.due_date_dt || "");
+    if (!dueDateForClear) {
       const seedSource = jobSnapshot?.scheduled_end_time || jobSnapshot?.scheduled_start_time || new Date();
-      const seededDueDate = this.formatZuperDateTime(seedSource);
+      const seededDueDate = this.formatZuperDate(seedSource);
       const dueDateResult = await this.updateJob(jobUid, {
         due_date: seededDueDate,
         // Some tenants expose only due_date_dt; set both defensively.
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        due_date_dt: seededDueDate as any,
+        due_date_dt: seededDueDate,
       });
       if (dueDateResult.type === "error") {
         console.warn("[Zuper] Failed to seed due_date for job %s: %s", jobUid, dueDateResult.error);
       } else {
+        dueDateForClear = seededDueDate;
         console.log("[Zuper] Seeded due_date for job %s: %s", jobUid, seededDueDate);
       }
     }
@@ -543,6 +574,7 @@ export class ZuperClient {
         job_uid: jobUid,
         from_date: "",
         to_date: "",
+        ...(dueDateForClear ? { due_date: dueDateForClear } : {}),
       }),
     });
     if (clearScheduleResult.type === "success") {
@@ -556,6 +588,7 @@ export class ZuperClient {
           job_uid: jobUid,
           from_date: null,
           to_date: null,
+          ...(dueDateForClear ? { due_date: dueDateForClear } : {}),
         }),
       });
       if (clearScheduleNullResult.type === "success") {
@@ -565,13 +598,12 @@ export class ZuperClient {
 
     // Third strategy: explicit field clear on /jobs update.
     const clearFieldsResult = await this.updateJob(jobUid, {
-      scheduled_start_time: "",
-      scheduled_end_time: "",
+      scheduled_start_time: null,
+      scheduled_end_time: null,
       // Some schemas reject empty strings and only accept null.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      scheduled_start_time_dt: null as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      scheduled_end_time_dt: null as any,
+      scheduled_start_time_dt: null,
+      scheduled_end_time_dt: null,
+      status: "UNSCHEDULED",
     });
     if (clearFieldsResult.type === "success") {
       lastResult = clearFieldsResult;
