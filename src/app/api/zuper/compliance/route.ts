@@ -950,7 +950,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("[compliance] Error:", error);
     return NextResponse.json(
-      { error: "Failed to compute compliance metrics", details: String(error) },
+      { error: "Failed to compute compliance metrics" },
       { status: 500 }
     );
   }

@@ -7,6 +7,15 @@ const nextConfig: NextConfig = {
   // Optimize powered-by header removal
   poweredByHeader: false,
 
+  // Restrict remote image sources to known domains
+  images: {
+    remotePatterns: [
+      { protocol: "https", hostname: "*.hubspot.com" },
+      { protocol: "https", hostname: "*.googleusercontent.com" },
+      { protocol: "https", hostname: "lh3.googleusercontent.com" },
+    ],
+  },
+
   // Cache static assets aggressively
   headers: async () => [
     {

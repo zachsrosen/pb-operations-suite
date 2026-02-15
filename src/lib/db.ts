@@ -1097,41 +1097,49 @@ export async function upsertAvailabilityOverride(data: {
     });
   }
 
-  // Check for existing override to prevent duplicates (NULL != NULL in SQL unique constraints)
-  const existing = await prisma.availabilityOverride.findFirst({
-    where: {
-      crewMemberId: data.crewMemberId,
-      date: data.date,
-      availabilityId: data.availabilityId ?? null,
-    },
-  });
-
-  if (existing) {
-    return prisma.availabilityOverride.update({
-      where: { id: existing.id },
+  // Atomic upsert to prevent TOCTOU race (findFirst + create is not atomic)
+  // Use try/create with catch/update pattern since Prisma upsert requires a
+  // unique constraint and NULL != NULL in SQL breaks the composite unique.
+  try {
+    return await prisma.availabilityOverride.create({
       data: {
+        crewMemberId: data.crewMemberId,
+        date: data.date,
+        availabilityId: data.availabilityId,
         type: data.type,
         reason: data.reason,
         startTime: data.startTime,
         endTime: data.endTime,
+        createdBy: data.createdBy,
         updatedBy: data.updatedBy,
       },
     });
-  }
+  } catch {
+    // Likely a duplicate — find and update instead
+    const existing = await prisma.availabilityOverride.findFirst({
+      where: {
+        crewMemberId: data.crewMemberId,
+        date: data.date,
+        availabilityId: data.availabilityId ?? null,
+      },
+    });
 
-  return prisma.availabilityOverride.create({
-    data: {
-      crewMemberId: data.crewMemberId,
-      date: data.date,
-      availabilityId: data.availabilityId,
-      type: data.type,
-      reason: data.reason,
-      startTime: data.startTime,
-      endTime: data.endTime,
-      createdBy: data.createdBy,
-      updatedBy: data.updatedBy,
-    },
-  });
+    if (existing) {
+      return prisma.availabilityOverride.update({
+        where: { id: existing.id },
+        data: {
+          type: data.type,
+          reason: data.reason,
+          startTime: data.startTime,
+          endTime: data.endTime,
+          updatedBy: data.updatedBy,
+        },
+      });
+    }
+
+    // Re-throw if it wasn't a duplicate constraint error
+    throw new Error("Failed to create or update availability override");
+  }
 }
 
 /**

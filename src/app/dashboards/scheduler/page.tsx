@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import Link from "next/link";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
+import { LOCATION_TIMEZONES } from "@/lib/constants";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -234,15 +235,7 @@ const ZUPER_INSPECTION_USERS: Record<string, { name: string; userUid: string; te
   ],
 };
 
-// Location → IANA timezone (matches availability route)
-const LOCATION_TIMEZONES: Record<string, string> = {
-  Westminster: "America/Denver",
-  Centennial: "America/Denver",
-  DTC: "America/Denver",
-  "Colorado Springs": "America/Denver",
-  "San Luis Obispo": "America/Los_Angeles",
-  Camarillo: "America/Los_Angeles",
-};
+// Location → IANA timezone (imported from shared constants)
 
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",

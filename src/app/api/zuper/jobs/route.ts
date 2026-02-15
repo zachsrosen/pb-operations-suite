@@ -142,7 +142,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("Error creating Zuper job:", error);
     return NextResponse.json(
-      { error: "Failed to create Zuper job", details: String(error) },
+      { error: "Failed to create Zuper job" },
       { status: 500 }
     );
   }
@@ -204,7 +204,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("Error fetching Zuper jobs:", error);
     return NextResponse.json(
-      { error: "Failed to fetch Zuper jobs", details: String(error) },
+      { error: "Failed to fetch Zuper jobs" },
       { status: 500 }
     );
   }

@@ -103,7 +103,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("Failed to fetch transactions:", error);
     return NextResponse.json(
-      { error: "Failed to fetch transactions", details: String(error) },
+      { error: "Failed to fetch transactions" },
       { status: 500 }
     );
   }
@@ -268,7 +268,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("Failed to create transaction:", error);
     return NextResponse.json(
-      { error: "Failed to create transaction", details: String(error) },
+      { error: "Failed to create transaction" },
       { status: 500 }
     );
   }

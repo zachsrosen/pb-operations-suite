@@ -791,6 +791,7 @@ export async function fetchAllProjects(options?: {
 
   // Process batches with limited concurrency to respect rate limits
   const CONCURRENCY = 3;
+  let batchFailures = 0;
   for (let i = 0; i < batches.length; i += CONCURRENCY) {
     const batchGroup = batches.slice(i, i + CONCURRENCY);
     const results = await Promise.allSettled(
@@ -807,6 +808,7 @@ export async function fetchAllProjects(options?: {
       if (result.status === "fulfilled") {
         allDeals.push(...result.value.results.map((deal) => deal.properties));
       } else {
+        batchFailures++;
         console.error("[HubSpot] Batch read failed:", result.reason?.message || result.reason);
       }
     }
@@ -814,6 +816,9 @@ export async function fetchAllProjects(options?: {
     if (i + CONCURRENCY < batches.length) await sleep(100);
   }
 
+  if (batchFailures > 0) {
+    console.warn(`[HubSpot] Phase 2 complete with ${batchFailures} failed batch(es) — data may be incomplete`);
+  }
   console.log(`[HubSpot] Phase 2 complete: ${allDeals.length} deals with full properties`);
 
   // Resolve owner IDs to names — use BOTH property definitions and Owners API

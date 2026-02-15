@@ -200,7 +200,7 @@ export async function POST() {
   } catch (error) {
     console.error("[sync-zuper] Error:", error);
     return NextResponse.json(
-      { error: "Failed to sync Zuper users", details: String(error) },
+      { error: "Failed to sync Zuper users" },
       { status: 500 }
     );
   }
@@ -282,7 +282,7 @@ export async function GET() {
   } catch (error) {
     console.error("[sync-zuper] Preview error:", error);
     return NextResponse.json(
-      { error: "Failed to preview Zuper sync", details: String(error) },
+      { error: "Failed to preview Zuper sync" },
       { status: 500 }
     );
   }

@@ -240,7 +240,7 @@ export function GlobalSearch() {
         </div>
 
         {/* Results */}
-        <div className="max-h-[50vh] overflow-y-auto">
+        <div className="max-h-[50vh] overflow-y-auto" role="listbox" aria-label="Search results">
           {/* Dashboards section */}
           {filteredDashboards.length > 0 && (
             <div>
@@ -250,6 +250,8 @@ export function GlobalSearch() {
               {filteredDashboards.map((d, i) => (
                 <button
                   key={d.path}
+                  role="option"
+                  aria-selected={selectedIndex === i}
                   onClick={() => selectItem(i)}
                   className={`w-full text-left px-4 py-2.5 flex items-center gap-3 transition-colors ${
                     selectedIndex === i
@@ -283,6 +285,8 @@ export function GlobalSearch() {
                 return (
                   <button
                     key={r.id}
+                    role="option"
+                    aria-selected={selectedIndex === globalIndex}
                     onClick={() => selectItem(globalIndex)}
                     className={`w-full text-left px-4 py-2.5 flex items-center justify-between transition-colors ${
                       selectedIndex === globalIndex

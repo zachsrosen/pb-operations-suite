@@ -586,7 +586,7 @@ export async function PUT(request: NextRequest) {
   } catch (error) {
     console.error("Error scheduling Zuper job:", error);
     return NextResponse.json(
-      { error: "Failed to schedule Zuper job", details: String(error) },
+      { error: "Failed to schedule Zuper job" },
       { status: 500 }
     );
   }
@@ -666,7 +666,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("Error checking Zuper job:", error);
     return NextResponse.json(
-      { error: "Failed to check Zuper job", details: String(error) },
+      { error: "Failed to check Zuper job" },
       { status: 500 }
     );
   }
@@ -774,7 +774,7 @@ export async function DELETE(request: NextRequest) {
   } catch (error) {
     console.error("Error unscheduling job:", error);
     return NextResponse.json(
-      { error: "Failed to unschedule job", details: String(error) },
+      { error: "Failed to unschedule job" },
       { status: 500 }
     );
   }

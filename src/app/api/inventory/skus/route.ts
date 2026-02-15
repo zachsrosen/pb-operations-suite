@@ -73,7 +73,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("Error fetching SKUs:", error);
     return NextResponse.json(
-      { error: "Failed to fetch SKUs", details: String(error) },
+      { error: "Failed to fetch SKUs" },
       { status: 500 }
     );
   }
@@ -174,7 +174,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("Error creating/upserting SKU:", error);
     return NextResponse.json(
-      { error: "Failed to create/upsert SKU", details: String(error) },
+      { error: "Failed to create/upsert SKU" },
       { status: 500 }
     );
   }

@@ -118,7 +118,7 @@ export async function PUT(request: NextRequest) {
   } catch (error) {
     console.error("Error creating tentative schedule:", error);
     return NextResponse.json(
-      { error: "Failed to create tentative schedule", details: String(error) },
+      { error: "Failed to create tentative schedule" },
       { status: 500 }
     );
   }

@@ -6,8 +6,16 @@ import { ROLE_PERMISSIONS, canAccessRoute, normalizeRole, type UserRole } from "
 const ALWAYS_ALLOWED = ["/login", "/api/auth", "/maintenance"];
 const PUBLIC_API_ROUTES = ["/api/deployment"];
 
+// Generate a short request ID for correlation across logs
+function generateRequestId(): string {
+  return Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
+}
+
 // Security headers for all responses
-function addSecurityHeaders(response: NextResponse): NextResponse {
+function addSecurityHeaders(requestId: string, response: NextResponse): NextResponse {
+  // Request correlation ID for tracing
+  response.headers.set("X-Request-Id", requestId);
+
   // Prevent clickjacking
   response.headers.set("X-Frame-Options", "DENY");
 
@@ -65,6 +73,7 @@ function getDefaultRouteForRole(role: UserRole): string {
 }
 
 export default auth((req) => {
+  const requestId = generateRequestId();
   const isLoggedIn = !!req.auth;
   const tokenRole = req.auth?.user?.role as UserRole | undefined;
   const cookieRole = req.cookies.get("pb_effective_role")?.value as UserRole | undefined;
@@ -92,28 +101,28 @@ export default auth((req) => {
 
   // If maintenance mode is ON, redirect all non-maintenance pages to /maintenance
   if (maintenanceMode && !isMaintenancePage && !isStaticFile && !isApiRoute) {
-    return addSecurityHeaders(NextResponse.redirect(new URL("/maintenance", req.url)));
+    return addSecurityHeaders(requestId, NextResponse.redirect(new URL("/maintenance", req.url)));
   }
 
   // If maintenance mode is OFF and user is on maintenance page, redirect to home
   if (!maintenanceMode && isMaintenancePage) {
-    return addSecurityHeaders(NextResponse.redirect(new URL("/", req.url)));
+    return addSecurityHeaders(requestId, NextResponse.redirect(new URL("/", req.url)));
   }
 
   // Always allow auth routes and static files
   if (isAuthRoute || isStaticFile) {
-    return addSecurityHeaders(NextResponse.next());
+    return addSecurityHeaders(requestId, NextResponse.next());
   }
 
   // API routes - require authentication + role-based access
   if (isApiRoute) {
     if (isPublicApiRoute) {
-      return addSecurityHeaders(NextResponse.next());
+      return addSecurityHeaders(requestId, NextResponse.next());
     }
 
     // Allow auth endpoints without session check
     if (pathname.startsWith("/api/auth")) {
-      return addSecurityHeaders(NextResponse.next());
+      return addSecurityHeaders(requestId, NextResponse.next());
     }
 
     // For other API routes, require authentication
@@ -122,13 +131,13 @@ export default auth((req) => {
         { error: "Unauthorized - Please log in" },
         { status: 401 }
       );
-      return addSecurityHeaders(response);
+      return addSecurityHeaders(requestId, response);
     }
 
     // Allow authenticated users to check/exit impersonation state.
     // The route handler itself enforces admin requirements for start/stop.
     if (isImpersonationApiRoute) {
-      return addSecurityHeaders(NextResponse.next());
+      return addSecurityHeaders(requestId, NextResponse.next());
     }
 
     // Enforce role-based API access (check if the role can access this API path)
@@ -137,41 +146,41 @@ export default auth((req) => {
         { error: "Forbidden - Insufficient permissions" },
         { status: 403 }
       );
-      return addSecurityHeaders(response);
+      return addSecurityHeaders(requestId, response);
     }
 
-    return addSecurityHeaders(NextResponse.next());
+    return addSecurityHeaders(requestId, NextResponse.next());
   }
 
   // Redirect logged-in users away from login page
   if (isLoginPage && isLoggedIn) {
     const defaultRoute = getDefaultRouteForRole(userRole);
-    return addSecurityHeaders(NextResponse.redirect(new URL(defaultRoute, req.url)));
+    return addSecurityHeaders(requestId, NextResponse.redirect(new URL(defaultRoute, req.url)));
   }
 
   // Redirect non-logged-in users to login
   if (!isLoginPage && !isLoggedIn) {
     const loginUrl = new URL("/login", req.url);
     loginUrl.searchParams.set("callbackUrl", pathname);
-    return addSecurityHeaders(NextResponse.redirect(loginUrl));
+    return addSecurityHeaders(requestId, NextResponse.redirect(loginUrl));
   }
 
   // Role-based access control for ALL roles (not just SALES)
   if (isLoggedIn && !isLoginPage) {
     // Always allow these routes for everyone
     if (ALWAYS_ALLOWED.some(route => pathname.startsWith(route))) {
-      return addSecurityHeaders(NextResponse.next());
+      return addSecurityHeaders(requestId, NextResponse.next());
     }
 
     // Check role permissions
     if (!canAccessRoute(userRole, pathname)) {
       // Redirect to their default allowed page
       const defaultRoute = getDefaultRouteForRole(userRole);
-      return addSecurityHeaders(NextResponse.redirect(new URL(defaultRoute, req.url)));
+      return addSecurityHeaders(requestId, NextResponse.redirect(new URL(defaultRoute, req.url)));
     }
   }
 
-  return addSecurityHeaders(NextResponse.next());
+  return addSecurityHeaders(requestId, NextResponse.next());
 });
 
 export const config = {
