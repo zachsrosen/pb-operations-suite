@@ -418,13 +418,13 @@ export class ZuperClient {
             .filter((uid): uid is string => !!uid);
 
           if (userUids.length > 0) {
-            console.log(`[Zuper] Unassigning users from job ${jobUid}:`, userUids);
+            console.log("[Zuper] Unassigning users from job %s:", jobUid, userUids);
             await this.unassignJob(jobUid, userUids, teamUid);
           }
         }
       }
     } catch (err) {
-      console.warn(`[Zuper] Failed to unassign users from job ${jobUid}:`, err);
+      console.warn("[Zuper] Failed to unassign users from job %s:", jobUid, err);
     }
 
     return scheduleResult;
@@ -447,7 +447,7 @@ export class ZuperClient {
     };
 
     const endpoint = `/jobs/${jobUid}/update?job_uid=${jobUid}&notify_users=false&update_all_jobs=false`;
-    console.log(`[Zuper] Unassigning job ${jobUid} via ${endpoint}:`, JSON.stringify(payload));
+    console.log("[Zuper] Unassigning job %s via %s:", jobUid, endpoint, JSON.stringify(payload));
 
     return this.request<ZuperJob>(endpoint, {
       method: "PUT",
