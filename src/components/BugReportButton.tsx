@@ -26,7 +26,7 @@ export function BugReportButton() {
     if (status !== "authenticated") return;
     fetch("/api/user/me")
       .then((r) => r.json())
-      .then((d) => setUserRole(d.role || null))
+      .then((d) => setUserRole(d.user?.role || null))
       .catch(() => setUserRole(null));
   }, [status]);
 

@@ -84,9 +84,11 @@ export function KeyboardShortcutsDialog() {
   const pendingPrefix = useRef<string | null>(null);
   const prefixTimer = useRef<NodeJS.Timeout | null>(null);
 
+  const open = useCallback(() => setIsOpen(true), []);
   const close = useCallback(() => setIsOpen(false), []);
 
-  // Global keyboard handler
+  // Global keyboard handler — use document.addEventListener to match
+  // the existing pattern in the scheduler and other components.
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       const target = e.target as HTMLElement;
@@ -106,12 +108,18 @@ export function KeyboardShortcutsDialog() {
       // Don't handle shortcuts when typing in inputs
       if (inInput) return;
 
-      // "?" to toggle shortcuts dialog
-      if (e.key === "?" && !e.ctrlKey && !e.metaKey) {
+      // Don't handle shortcuts when another overlay (e.g. GlobalSearch) is open
+      if (document.querySelector("[data-global-search-open]")) return;
+
+      // "?" to toggle shortcuts dialog (Shift+/ on US keyboards)
+      if (e.key === "?" && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault();
         setIsOpen((prev) => !prev);
         return;
       }
+
+      // Skip navigation shortcuts when the dialog is open
+      if (isOpen) return;
 
       // "g" prefix for navigation
       if (e.key === "g" && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -134,91 +142,103 @@ export function KeyboardShortcutsDialog() {
         const dest = NAV_MAP[e.key];
         if (dest) {
           e.preventDefault();
-          close();
           router.push(dest);
         }
       }
     }
 
-    window.addEventListener("keydown", handleKeyDown);
+    document.addEventListener("keydown", handleKeyDown);
     return () => {
-      window.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("keydown", handleKeyDown);
       if (prefixTimer.current) clearTimeout(prefixTimer.current);
     };
   }, [isOpen, close, router]);
 
-  if (!isOpen) return null;
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]"
-      onClick={close}
-    >
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-
-      {/* Dialog */}
-      <div
-        ref={dialogRef}
-        className="relative w-full max-w-lg bg-surface border border-t-border rounded-xl shadow-card-lg overflow-hidden animate-fadeIn"
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-label="Keyboard shortcuts"
+    <>
+      {/* Always-visible keyboard shortcut hint button */}
+      <button
+        onClick={open}
+        className="fixed bottom-6 right-6 z-40 flex items-center justify-center w-7 h-7 rounded-lg bg-surface border border-t-border shadow-card hover:border-orange-500/40 hover:shadow-card-lg transition-all text-muted hover:text-foreground cursor-pointer"
+        title="Keyboard shortcuts (?)"
+        aria-label="Show keyboard shortcuts"
       >
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-t-border">
-          <h2 className="text-sm font-semibold text-foreground">
-            Keyboard Shortcuts
-          </h2>
-          <button
-            onClick={close}
-            className="text-muted hover:text-foreground transition-colors"
-            aria-label="Close"
+        <kbd className="text-xs font-mono font-medium leading-none">?</kbd>
+      </button>
+
+      {/* Dialog overlay */}
+      {isOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]"
+          onClick={close}
+        >
+          {/* Backdrop */}
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+
+          {/* Dialog */}
+          <div
+            ref={dialogRef}
+            className="relative w-full max-w-lg bg-surface border border-t-border rounded-xl shadow-card-lg overflow-hidden animate-fadeIn"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-label="Keyboard shortcuts"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-
-        {/* Shortcuts list */}
-        <div className="px-5 py-4 max-h-[60vh] overflow-y-auto space-y-5">
-          {SHORTCUT_GROUPS.map((group) => (
-            <div key={group.title}>
-              <h3 className="text-xs font-medium text-muted uppercase tracking-wider mb-2">
-                {group.title}
-              </h3>
-              <div className="space-y-1.5">
-                {group.shortcuts.map((shortcut) => (
-                  <div
-                    key={shortcut.label}
-                    className="flex items-center justify-between py-1"
-                  >
-                    <span className="text-sm text-foreground/80">
-                      {shortcut.label}
-                    </span>
-                    <div className="flex items-center gap-1">
-                      {shortcut.keys.map((key, i) => (
-                        <span key={i} className="flex items-center gap-1">
-                          {i > 0 && (
-                            <span className="text-muted/50 text-xs">then</span>
-                          )}
-                          <Kbd>{key}</Kbd>
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-t-border">
+              <h2 className="text-sm font-semibold text-foreground">
+                Keyboard Shortcuts
+              </h2>
+              <button
+                onClick={close}
+                className="text-muted hover:text-foreground transition-colors"
+                aria-label="Close"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
             </div>
-          ))}
-        </div>
 
-        {/* Footer */}
-        <div className="border-t border-t-border px-5 py-3 text-xs text-muted/70">
-          Press <Kbd>?</Kbd> to toggle this dialog
+            {/* Shortcuts list */}
+            <div className="px-5 py-4 max-h-[60vh] overflow-y-auto space-y-5">
+              {SHORTCUT_GROUPS.map((group) => (
+                <div key={group.title}>
+                  <h3 className="text-xs font-medium text-muted uppercase tracking-wider mb-2">
+                    {group.title}
+                  </h3>
+                  <div className="space-y-1.5">
+                    {group.shortcuts.map((shortcut) => (
+                      <div
+                        key={shortcut.label}
+                        className="flex items-center justify-between py-1"
+                      >
+                        <span className="text-sm text-foreground/80">
+                          {shortcut.label}
+                        </span>
+                        <div className="flex items-center gap-1">
+                          {shortcut.keys.map((key, i) => (
+                            <span key={i} className="flex items-center gap-1">
+                              {i > 0 && (
+                                <span className="text-muted/50 text-xs">then</span>
+                              )}
+                              <Kbd>{key}</Kbd>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Footer */}
+            <div className="border-t border-t-border px-5 py-3 text-xs text-muted/70">
+              Press <Kbd>?</Kbd> to toggle this dialog
+            </div>
+          </div>
         </div>
-      </div>
-    </div>
+      )}
+    </>
   );
 }
