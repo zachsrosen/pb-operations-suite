@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 interface ShortcutEntry {
@@ -79,16 +79,18 @@ function Kbd({ children }: { children: string }) {
 
 export function KeyboardShortcutsDialog() {
   const [isOpen, setIsOpen] = useState(false);
-  const dialogRef = useRef<HTMLDivElement>(null);
-  const router = useRouter();
+  const isOpenRef = useRef(false);
+  const routerRef = useRef<ReturnType<typeof useRouter>>(null);
   const pendingPrefix = useRef<string | null>(null);
   const prefixTimer = useRef<NodeJS.Timeout | null>(null);
 
-  const open = useCallback(() => setIsOpen(true), []);
-  const close = useCallback(() => setIsOpen(false), []);
+  const router = useRouter();
+  // Keep refs in sync so the single event listener always reads current values
+  isOpenRef.current = isOpen;
+  routerRef.current = router;
 
-  // Global keyboard handler — use document.addEventListener to match
-  // the existing pattern in the scheduler and other components.
+  // Register a single event listener on mount — never re-registered.
+  // Reads state via refs to avoid stale closures.
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       const target = e.target as HTMLElement;
@@ -98,10 +100,10 @@ export function KeyboardShortcutsDialog() {
         target.tagName === "TEXTAREA" ||
         target.isContentEditable;
 
-      // Always allow Escape to close
-      if (e.key === "Escape" && isOpen) {
+      // Always allow Escape to close the dialog
+      if (e.key === "Escape" && isOpenRef.current) {
         e.preventDefault();
-        close();
+        setIsOpen(false);
         return;
       }
 
@@ -119,13 +121,12 @@ export function KeyboardShortcutsDialog() {
       }
 
       // Skip navigation shortcuts when the dialog is open
-      if (isOpen) return;
+      if (isOpenRef.current) return;
 
-      // "g" prefix for navigation
+      // "g" prefix for navigation (two-key sequence: press g, then a letter)
       if (e.key === "g" && !e.ctrlKey && !e.metaKey && !e.altKey) {
         if (!pendingPrefix.current) {
           pendingPrefix.current = "g";
-          // Clear prefix after 1 second if no follow-up key
           if (prefixTimer.current) clearTimeout(prefixTimer.current);
           prefixTimer.current = setTimeout(() => {
             pendingPrefix.current = null;
@@ -142,7 +143,7 @@ export function KeyboardShortcutsDialog() {
         const dest = NAV_MAP[e.key];
         if (dest) {
           e.preventDefault();
-          router.push(dest);
+          routerRef.current?.push(dest);
         }
       }
     }
@@ -152,13 +153,13 @@ export function KeyboardShortcutsDialog() {
       document.removeEventListener("keydown", handleKeyDown);
       if (prefixTimer.current) clearTimeout(prefixTimer.current);
     };
-  }, [isOpen, close, router]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- stable via refs
 
   return (
     <>
       {/* Always-visible keyboard shortcut hint button */}
       <button
-        onClick={open}
+        onClick={() => setIsOpen(true)}
         className="fixed bottom-6 right-6 z-40 flex items-center justify-center w-7 h-7 rounded-lg bg-surface border border-t-border shadow-card hover:border-orange-500/40 hover:shadow-card-lg transition-all text-muted hover:text-foreground cursor-pointer"
         title="Keyboard shortcuts (?)"
         aria-label="Show keyboard shortcuts"
@@ -170,14 +171,13 @@ export function KeyboardShortcutsDialog() {
       {isOpen && (
         <div
           className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]"
-          onClick={close}
+          onClick={() => setIsOpen(false)}
         >
           {/* Backdrop */}
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
 
           {/* Dialog */}
           <div
-            ref={dialogRef}
             className="relative w-full max-w-lg bg-surface border border-t-border rounded-xl shadow-card-lg overflow-hidden animate-fadeIn"
             onClick={(e) => e.stopPropagation()}
             role="dialog"
@@ -189,7 +189,7 @@ export function KeyboardShortcutsDialog() {
                 Keyboard Shortcuts
               </h2>
               <button
-                onClick={close}
+                onClick={() => setIsOpen(false)}
                 className="text-muted hover:text-foreground transition-colors"
                 aria-label="Close"
               >
