@@ -18,6 +18,7 @@
     "@hubspot/api-client": "^13.4.0",
     "@prisma/adapter-neon": "^7.3.0",
     "@prisma/client": "^7.3.0",
+    "@vercel/analytics": "^1.6.1",
     "next": "^16.1.6",
     "next-auth": "^5.0.0-beta.30",
     "prisma": "^7.3.0",
