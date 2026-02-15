@@ -715,15 +715,51 @@ export async function DELETE(request: NextRequest) {
 
     console.log(`[Zuper Unschedule] Clearing schedule for project ${projectId} (${projectName})`);
 
-    // Clear schedule in Zuper if we have a job UID
+    // Resolve Zuper job UID for survey category if UI payload is missing/stale.
+    let resolvedJobUid: string | undefined = zuperJobUid || undefined;
+    if (zuper.isConfigured() && !resolvedJobUid) {
+      try {
+        const cached = await getCachedZuperJobByDealId(projectId, "Site Survey");
+        if (cached?.jobUid) {
+          resolvedJobUid = cached.jobUid;
+        }
+      } catch (err) {
+        console.warn("[Zuper Unschedule] Cache lookup failed for %s:", projectId, err);
+      }
+    }
+    if (zuper.isConfigured() && !resolvedJobUid) {
+      try {
+        const hubspotTag = `hubspot-${projectId}`;
+        const searchResult = await zuper.searchJobs({ limit: 200 });
+        if (searchResult.type === "success" && searchResult.data?.jobs) {
+          const match = searchResult.data.jobs.find((job) => {
+            const inCategory = typeof job.job_category === "string"
+              ? job.job_category === "Site Survey" || job.job_category === "002bac33-84d3-4083-a35d-50626fc49288"
+              : job.job_category?.category_name === "Site Survey" ||
+                job.job_category?.category_uid === "002bac33-84d3-4083-a35d-50626fc49288";
+            return inCategory && !!job.job_tags?.includes(hubspotTag);
+          });
+          if (match?.job_uid) {
+            resolvedJobUid = match.job_uid;
+          }
+        }
+      } catch (err) {
+        console.warn("[Zuper Unschedule] API lookup failed for %s:", projectId, err);
+      }
+    }
+
+    // Clear schedule in Zuper using resolved UID
     let zuperCleared = false;
     let zuperError: string | undefined;
-    if (zuperJobUid && zuper.isConfigured()) {
+    if (zuper.isConfigured() && !resolvedJobUid) {
+      zuperError = "No matching Zuper Site Survey job found to unschedule";
+      console.warn("[Zuper Unschedule] %s for project %s", zuperError, projectId);
+    } else if (resolvedJobUid && zuper.isConfigured()) {
       try {
-        const result = await zuper.unscheduleJob(zuperJobUid);
+        const result = await zuper.unscheduleJob(resolvedJobUid);
         if (result.type === "success") {
           zuperCleared = true;
-          console.log(`[Zuper Unschedule] Cleared Zuper job ${zuperJobUid}`);
+          console.log(`[Zuper Unschedule] Cleared Zuper job ${resolvedJobUid}`);
         } else {
           console.warn(`[Zuper Unschedule] Failed to clear Zuper job: ${result.error}`);
           zuperError = result.error;
@@ -758,7 +794,7 @@ export async function DELETE(request: NextRequest) {
         entityId: projectId,
         entityName: projectName,
         metadata: {
-          zuperJobUid,
+          zuperJobUid: resolvedJobUid || zuperJobUid,
           zuperCleared,
         },
         ipAddress,
@@ -770,12 +806,13 @@ export async function DELETE(request: NextRequest) {
 
     // If a Zuper job was provided but could not be cleared, surface failure
     // so the UI doesn't treat this as a full success.
-    if (zuperJobUid && zuper.isConfigured() && !zuperCleared) {
+    if (zuper.isConfigured() && !zuperCleared) {
       return NextResponse.json(
         {
           success: false,
           action: "unschedule_partial",
           zuperCleared,
+          zuperJobUid: resolvedJobUid || null,
           error: zuperError || "Failed to clear schedule in Zuper",
           message: "HubSpot schedule fields were cleared, but Zuper unschedule failed.",
         },
@@ -787,6 +824,7 @@ export async function DELETE(request: NextRequest) {
       success: true,
       action: "unscheduled",
       zuperCleared,
+      zuperJobUid: resolvedJobUid || null,
       message: `Survey schedule cleared${zuperCleared ? " (Zuper + HubSpot)" : " (HubSpot only)"}`,
     });
   } catch (error) {
