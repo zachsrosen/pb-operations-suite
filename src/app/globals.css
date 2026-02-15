@@ -88,10 +88,14 @@ html.dark body::after {
   background-size: 256px 256px;
 }
 
-/* Ensure main content sits above atmosphere layers */
-body > * {
-  position: relative;
-  z-index: 1;
+/* Ensure main content sits above atmosphere layers.
+   Must be in @layer base so Tailwind utilities (position: fixed, z-index)
+   can override it on direct body children like floating buttons. */
+@layer base {
+  body > * {
+    position: relative;
+    z-index: 1;
+  }
 }
 
 /* ---- Animations ---- */

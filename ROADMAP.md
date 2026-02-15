@@ -59,7 +59,7 @@
 ### UI/UX Improvements
 - [ ] Dark/light theme toggle
 - [ ] Mobile-responsive scheduler views
-- [ ] Keyboard shortcuts for common actions
+- [x] Keyboard shortcuts for common actions
 - [ ] Bulk scheduling operations
 
 ### Analytics & Reporting
@@ -93,6 +93,7 @@
 
 ## Completed
 
+- [x] Keyboard shortcuts for common actions (? for help, g+key for navigation)
 - [x] Zuper job links in scheduler tools (HubSpot + Zuper links side by side)
 - [x] Product Roadmap with feature voting and idea submission
 - [x] Maintenance mode page for deployments
