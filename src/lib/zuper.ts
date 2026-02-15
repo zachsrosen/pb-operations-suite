@@ -127,6 +127,11 @@ export interface ZuperApiResponse<T> {
   error?: string;
 }
 
+interface ZuperAssignmentRef {
+  userUid: string;
+  teamUid?: string;
+}
+
 export interface AssistedSchedulingSlot {
   date: string; // YYYY-MM-DD
   start_time: string;
@@ -344,7 +349,7 @@ export class ZuperClient {
     if (scheduleResult.type === "success" && userUids && userUids.length > 0) {
       // Get team UID and current assignments from the job
       let resolvedTeamUid = teamUid;
-      let currentUserUids: string[] = [];
+      let currentAssignments: ZuperAssignmentRef[] = [];
       const jobResult = await this.getJob(jobUid);
       if (jobResult.type === "success" && jobResult.data) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -353,33 +358,41 @@ export class ZuperClient {
           resolvedTeamUid = jobData.assigned_to_team?.[0]?.team?.team_uid;
           console.log(`[Zuper] Got team_uid from job: ${resolvedTeamUid}`);
         }
-        // Collect currently-assigned user UIDs so we can unassign them first
-        const assignedTo = jobData.assigned_to as { user?: { user_uid?: string } }[] | undefined;
+        // Collect currently-assigned users so we can unassign by user/team.
+        const assignedTo = jobData.assigned_to as Array<{
+          user?: { user_uid?: string };
+          team_uid?: string;
+          team?: { team_uid?: string };
+        }> | undefined;
         if (assignedTo?.length) {
-          currentUserUids = assignedTo
-            .map((a: { user?: { user_uid?: string } }) => a.user?.user_uid)
-            .filter((uid: string | undefined): uid is string => !!uid);
+          currentAssignments = assignedTo
+            .map((a) => ({
+              userUid: a.user?.user_uid || "",
+              teamUid: a.team_uid || a.team?.team_uid || resolvedTeamUid,
+            }))
+            .filter((a) => !!a.userUid);
         }
       }
 
-      if (!resolvedTeamUid) {
-        console.error(`[Zuper] Cannot assign user: No team_uid available`);
-        assignmentFailed = true;
-        assignmentError = "No team_uid available - assign user manually in Zuper";
-      } else {
-        // Unassign any currently-assigned users that are NOT in the new list
-        const usersToRemove = currentUserUids.filter(uid => !userUids.includes(uid));
-        if (usersToRemove.length > 0) {
-          console.log(`[Zuper] Unassigning previous users from job ${jobUid}:`, usersToRemove);
-          const unassignResult = await this.unassignJob(jobUid, usersToRemove, resolvedTeamUid);
-          if (unassignResult.type === "error") {
-            console.warn(`[Zuper] Failed to unassign previous users:`, unassignResult.error);
-          }
+      // Unassign any currently-assigned users that are NOT in the new list
+      const usersToRemove = currentAssignments.filter((a) => !userUids.includes(a.userUid));
+      if (usersToRemove.length > 0) {
+        console.log(`[Zuper] Unassigning previous users from job ${jobUid}:`, usersToRemove.map((a) => a.userUid));
+        const unassignResult = await this.unassignJob(jobUid, usersToRemove);
+        if (unassignResult.type === "error") {
+          console.warn(`[Zuper] Failed to unassign previous users:`, unassignResult.error);
         }
+      }
 
-        // Now assign the new users (skip any that are already assigned)
-        const usersToAdd = userUids.filter(uid => !currentUserUids.includes(uid));
-        if (usersToAdd.length > 0) {
+      // Now assign the new users (skip any that are already assigned)
+      const currentUserUids = currentAssignments.map((a) => a.userUid);
+      const usersToAdd = userUids.filter(uid => !currentUserUids.includes(uid));
+      if (usersToAdd.length > 0) {
+        if (!resolvedTeamUid) {
+          console.error(`[Zuper] Cannot assign user: No team_uid available`);
+          assignmentFailed = true;
+          assignmentError = "No team_uid available - assign user manually in Zuper";
+        } else {
           console.log(`[Zuper] Assigning users to job ${jobUid}:`, usersToAdd, `team: ${resolvedTeamUid}`);
           const assignResult = await this.assignJob(jobUid, usersToAdd, resolvedTeamUid);
           console.log(`[Zuper] Assignment response:`, JSON.stringify(assignResult));
@@ -390,9 +403,9 @@ export class ZuperClient {
           } else {
             console.log(`[Zuper] Assignment successful`);
           }
-        } else {
-          console.log(`[Zuper] New users already assigned, no change needed`);
         }
+      } else {
+        console.log(`[Zuper] New users already assigned, no change needed`);
       }
     }
 
@@ -422,17 +435,24 @@ export class ZuperClient {
       if (jobResult.type === "success" && jobResult.data) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const jobData = jobResult.data as any;
-        const assignedUsers = jobData.assigned_to as { user?: { user_uid?: string } }[] | undefined;
-        const teamUid = jobData.assigned_to_team?.[0]?.team?.team_uid;
+        const assignedUsers = jobData.assigned_to as Array<{
+          user?: { user_uid?: string };
+          team_uid?: string;
+          team?: { team_uid?: string };
+        }> | undefined;
+        const defaultTeamUid = jobData.assigned_to_team?.[0]?.team?.team_uid;
 
-        if (assignedUsers?.length && teamUid) {
-          const userUids = assignedUsers
-            .map((a: { user?: { user_uid?: string } }) => a.user?.user_uid)
-            .filter((uid: string | undefined): uid is string => !!uid);
+        if (assignedUsers?.length) {
+          const assignments = assignedUsers
+            .map((a) => ({
+              userUid: a.user?.user_uid || "",
+              teamUid: a.team_uid || a.team?.team_uid || defaultTeamUid,
+            }))
+            .filter((a) => !!a.userUid);
 
-          if (userUids.length > 0) {
-            console.log("[Zuper] Unassigning users from job %s:", jobUid, userUids);
-            await this.unassignJob(jobUid, userUids, teamUid);
+          if (assignments.length > 0) {
+            console.log("[Zuper] Unassigning users from job %s:", jobUid, assignments.map((a) => a.userUid));
+            await this.unassignJob(jobUid, assignments);
           }
         }
       }
@@ -440,10 +460,23 @@ export class ZuperClient {
       console.warn("[Zuper] Failed to unassign users from job %s:", jobUid, err);
     }
 
-    // Set job status to UNSCHEDULED — Zuper does not accept empty dates on /jobs/schedule
+    // Set job status to UNSCHEDULED.
     const statusResult = await this.updateJobStatus(jobUid, "UNSCHEDULED");
     if (statusResult.type === "error") {
       console.warn("[Zuper] Failed to set UNSCHEDULED status for job %s: %s", jobUid, statusResult.error);
+      // Fallback for accounts where status-only change does not clear schedule.
+      const fallback = await this.request<ZuperJob>(`/jobs/schedule`, {
+        method: "PUT",
+        body: JSON.stringify({
+          job_uid: jobUid,
+          from_date: "",
+          to_date: "",
+        }),
+      });
+      if (fallback.type === "error") {
+        return statusResult;
+      }
+      return fallback;
     }
 
     return statusResult;
@@ -454,24 +487,40 @@ export class ZuperClient {
    */
   async unassignJob(
     jobUid: string,
-    userUids: string[],
-    teamUid: string
+    assignments: ZuperAssignmentRef[]
   ): Promise<ZuperApiResponse<ZuperJob>> {
     const payload = {
-      job: userUids.map(userUid => ({
+      job: assignments.map(({ userUid, teamUid }) => ({
         type: "UNASSIGN",
         user_uid: userUid,
-        team_uid: teamUid,
+        ...(teamUid ? { team_uid: teamUid } : {}),
       })),
     };
 
     const endpoint = `/jobs/${jobUid}/update?job_uid=${jobUid}&notify_users=false&update_all_jobs=false`;
     console.log("[Zuper] Unassigning job %s via %s:", jobUid, endpoint, JSON.stringify(payload));
 
-    return this.request<ZuperJob>(endpoint, {
+    const result = await this.request<ZuperJob>(endpoint, {
       method: "PUT",
       body: JSON.stringify(payload),
     });
+
+    // Some accounts reject UNASSIGN payloads with team_uid. Retry once without team.
+    if (result.type === "error" && assignments.some((a) => !!a.teamUid)) {
+      const retryPayload = {
+        job: assignments.map(({ userUid }) => ({
+          type: "UNASSIGN",
+          user_uid: userUid,
+        })),
+      };
+      console.warn("[Zuper] Retry unassign without team_uid for job %s", jobUid);
+      return this.request<ZuperJob>(endpoint, {
+        method: "PUT",
+        body: JSON.stringify(retryPayload),
+      });
+    }
+
+    return result;
   }
 
   /**
