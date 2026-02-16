@@ -140,6 +140,8 @@ export async function PUT(request: NextRequest) {
 
     const body = await request.json();
     const { project, schedule, rescheduleOnly } = body;
+    // Default to reschedule-only to avoid accidental job creation.
+    const effectiveRescheduleOnly = rescheduleOnly !== false;
     const isTestMode = schedule?.testMode === true;
 
     // Validate schedule type early for permission check
@@ -620,7 +622,7 @@ export async function PUT(request: NextRequest) {
         assignmentError,
         hubspotWarnings: hubspotWarnings.length > 0 ? hubspotWarnings : undefined,
       });
-    } else if (rescheduleOnly) {
+    } else if (effectiveRescheduleOnly) {
       // Reschedule-only mode: don't create new jobs, just report that none was found
       console.log(`[Zuper Schedule] RESCHEDULE ONLY: No existing job found for "${project.name}" with category "${schedule.type}" — skipping creation`);
       return NextResponse.json({

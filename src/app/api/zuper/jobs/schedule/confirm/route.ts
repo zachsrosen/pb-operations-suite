@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getUserByEmail, logActivity, prisma, cacheZuperJob, canScheduleType, getCrewMemberByName, UserRole } from "@/lib/db";
-import { zuper, createJobFromProject, JOB_CATEGORY_UIDS } from "@/lib/zuper";
+import { zuper, JOB_CATEGORY_UIDS } from "@/lib/zuper";
 import { headers } from "next/headers";
 import { sendSchedulingNotification } from "@/lib/email";
 import { updateDealProperty, updateSiteSurveyorProperty, getDealProperties } from "@/lib/hubspot";
@@ -271,23 +271,7 @@ export async function POST(request: NextRequest) {
           zuperError = rescheduleResult.error;
         }
       } else {
-        // Create new job
-        const createResult = await createJobFromProject(project, {
-          type: scheduleType,
-          date: record.scheduledDate,
-          days: 1,
-          startTime: record.scheduledStart || undefined,
-          endTime: record.scheduledEnd || undefined,
-          crew: resolvedUserUids[0] || undefined,
-          teamUid: resolvedTeamUid,
-          timezone: slotTimezone,
-        });
-
-        if (createResult.type === "success" && createResult.data?.job_uid) {
-          zuperJobUid = createResult.data.job_uid;
-        } else if (createResult.type === "error") {
-          zuperError = createResult.error;
-        }
+        zuperError = `No existing ${scheduleType} job found in Zuper for "${record.projectName}".`;
       }
     } catch (zuperErr) {
       zuperError = String(zuperErr);
