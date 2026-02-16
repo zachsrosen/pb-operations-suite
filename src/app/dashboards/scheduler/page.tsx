@@ -3833,7 +3833,7 @@ export default function SchedulerPage() {
               {!manualSchedules[detailModal.id]?.isTentative && (
                 <button
                   onClick={() => handleRemoveScheduled(detailModal.id)}
-                  className="px-3.5 py-2 rounded-md bg-red-700/80 border border-red-700/80 text-white text-[0.75rem] font-semibold no-underline hover:bg-red-700 transition-colors"
+                  className="px-3.5 py-2 rounded-md bg-red-700/80 border border-red-700/80 text-white text-[0.75rem] font-semibold no-underline hover:bg-red-700 transition-colors cursor-pointer"
                 >
                   Remove from Schedule
                 </button>

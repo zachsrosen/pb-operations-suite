@@ -877,6 +877,7 @@ export default function ConstructionSchedulerPage() {
 
   const getStatusColor = (status: string): string => {
     const s = status.toLowerCase();
+    if (s.includes("tentative")) return "bg-amber-500/20 text-amber-300 border-amber-500/40";
     if (s.includes("complete")) return "bg-green-500/20 text-green-400 border-green-500/30";
     if (s.includes("scheduled")) return "bg-blue-500/20 text-blue-400 border-blue-500/30";
     if (s.includes("progress")) return "bg-yellow-500/20 text-yellow-400 border-yellow-500/30";
@@ -1271,6 +1272,7 @@ export default function ConstructionSchedulerPage() {
                         <div className="space-y-1">
                           {events.map((ev) => {
                             const overdue = isInstallOverdue(ev, manualSchedules[ev.id]);
+                            const isTentative = !!tentativeRecordIds[ev.id] || ev.installStatus.toLowerCase().includes("tentative");
                             return (
                             <div
                               key={`${ev.id}-d${ev.dayNum}`}
@@ -1286,11 +1288,14 @@ export default function ConstructionSchedulerPage() {
                               className={`text-xs p-1 rounded truncate cursor-grab active:cursor-grabbing ${
                                 overdue
                                   ? "bg-red-500/20 border border-red-500/40 text-red-300 hover:bg-red-500/30"
-                                  : "bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/30"
+                                  : isTentative
+                                    ? "bg-amber-500/20 border border-amber-500/40 text-amber-300 hover:bg-amber-500/30"
+                                    : "bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/30"
                               }`}
                               title={overdue ? "⚠ OVERDUE - Install not completed. Drag to reschedule" : `${getCustomerName(ev.name)} - Day ${ev.dayNum}/${ev.totalDays}. Drag to reschedule`}
                             >
                               {overdue && <span className="text-red-400 mr-0.5">⚠</span>}
+                              {!overdue && isTentative && <span className="text-amber-300 mr-0.5">TENT</span>}
                               {ev.totalDays > 1 && <span className="font-semibold mr-0.5">D{ev.dayNum}</span>}
                               {getCustomerName(ev.name)}
                             </div>
@@ -1559,6 +1564,18 @@ export default function ConstructionSchedulerPage() {
             )}
 
             <div className="flex justify-end gap-2">
+              {scheduleModal.project.scheduleDate && !(tentativeRecordIds[scheduleModal.project.id] || scheduleModal.project.tentativeRecordId) && (
+                <button
+                  onClick={() => {
+                    const projectId = scheduleModal.project.id;
+                    setScheduleModal(null);
+                    cancelSchedule(projectId);
+                  }}
+                  className="px-4 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg font-medium"
+                >
+                  Remove from Schedule
+                </button>
+              )}
               <button
                 onClick={() => setScheduleModal(null)}
                 className="px-4 py-2 text-sm text-muted hover:text-foreground"
