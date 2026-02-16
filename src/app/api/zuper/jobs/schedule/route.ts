@@ -791,45 +791,77 @@ export async function DELETE(request: NextRequest) {
       }
     }
 
-    // Clear HubSpot survey fields (required for successful unschedule UX).
-    // Some environments have seen both schedule_date and scheduled_date naming.
+    // Clear HubSpot survey fields + status (required for successful unschedule UX).
+    let hubspotFieldsCleared = false;
+    let hubspotStatusUpdated = false;
+    let hubspotDealIdUsed: string | null = null;
     let hubspotCleared = false;
     let hubspotError: string | undefined;
     try {
-      hubspotCleared = await updateDealProperty(projectId, {
-        site_survey_schedule_date: null,
-        site_surveyor: null,
-        site_survey_status: "Ready to Schedule",
-      });
-
-      if (!hubspotCleared) {
-        hubspotCleared = await updateDealProperty(projectId, {
-          // Fallback property name observed in other routes/integrations
-          site_survey_scheduled_date: null,
-          site_surveyor: null,
-          site_survey_status: "Ready to Schedule",
-        });
-      }
-
-      if (!hubspotCleared && resolvedJobUid) {
+      const candidateDealIds = [projectId];
+      if (resolvedJobUid) {
         const resolvedJob = await zuper.getJob(resolvedJobUid);
         if (resolvedJob.type === "success" && resolvedJob.data) {
           const resolvedDealId = extractHubspotDealIdFromJob(resolvedJob.data);
-          if (resolvedDealId && resolvedDealId !== projectId) {
-            hubspotCleared = await updateDealProperty(resolvedDealId, {
-              site_survey_schedule_date: null,
-              site_surveyor: null,
-              site_survey_status: "Ready to Schedule",
-            });
+          if (resolvedDealId && !candidateDealIds.includes(resolvedDealId)) {
+            candidateDealIds.push(resolvedDealId);
           }
         }
       }
 
+      for (const dealId of candidateDealIds) {
+        // Step 1: clear schedule/surveyor with nulls (matches HubSpot UI HAR).
+        hubspotFieldsCleared = await updateDealProperty(dealId, {
+          site_survey_schedule_date: null,
+          site_surveyor: null,
+        });
+        // Step 2 fallback: some owner/date properties clear via empty string.
+        if (!hubspotFieldsCleared) {
+          hubspotFieldsCleared = await updateDealProperty(dealId, {
+            site_survey_schedule_date: "",
+            site_surveyor: "",
+          });
+        }
+        // Step 3 fallback: alternate schedule property name.
+        if (!hubspotFieldsCleared) {
+          hubspotFieldsCleared = await updateDealProperty(dealId, {
+            site_survey_scheduled_date: null,
+            site_surveyor: null,
+          });
+        }
+
+        if (!hubspotFieldsCleared) {
+          continue;
+        }
+
+        // Status update is separate so a status value mismatch does not block clearing fields.
+        hubspotStatusUpdated = await updateDealProperty(dealId, {
+          site_survey_status: "Ready to Schedule",
+        });
+        if (!hubspotStatusUpdated) {
+          hubspotStatusUpdated = await updateDealProperty(dealId, {
+            site_survey_status: "Ready To Schedule",
+          });
+        }
+
+        hubspotDealIdUsed = dealId;
+        hubspotCleared = hubspotFieldsCleared && hubspotStatusUpdated;
+        if (hubspotCleared) {
+          break;
+        }
+      }
+
       if (hubspotCleared) {
-        console.log(`[Zuper Unschedule] Cleared HubSpot survey schedule/surveyor for ${projectId}`);
+        console.log(`[Zuper Unschedule] Cleared HubSpot survey fields for deal ${hubspotDealIdUsed}`);
       } else {
-        hubspotError = "HubSpot deal update returned false";
-        console.warn(`[Zuper Unschedule] ${hubspotError} for ${projectId}`);
+        if (!hubspotFieldsCleared) {
+          hubspotError = "HubSpot schedule/surveyor fields failed to clear";
+        } else if (!hubspotStatusUpdated) {
+          hubspotError = "HubSpot site_survey_status failed to update";
+        } else {
+          hubspotError = "HubSpot deal update returned false";
+        }
+        console.warn(`[Zuper Unschedule] ${hubspotError} for project ${projectId}`);
       }
     } catch (err) {
       hubspotError = err instanceof Error ? err.message : "Unknown HubSpot clear error";
@@ -854,6 +886,9 @@ export async function DELETE(request: NextRequest) {
         metadata: {
           zuperJobUid: resolvedJobUid || zuperJobUid,
           zuperCleared,
+          hubspotDealIdUsed,
+          hubspotFieldsCleared,
+          hubspotStatusUpdated,
           hubspotCleared,
         },
         ipAddress,
@@ -871,6 +906,9 @@ export async function DELETE(request: NextRequest) {
           success: false,
           action: "unschedule_partial",
           zuperCleared,
+          hubspotDealIdUsed,
+          hubspotFieldsCleared,
+          hubspotStatusUpdated,
           hubspotCleared,
           zuperJobUid: resolvedJobUid || null,
           error: !zuperCleared
@@ -888,6 +926,9 @@ export async function DELETE(request: NextRequest) {
       success: true,
       action: "unscheduled",
       zuperCleared,
+      hubspotDealIdUsed,
+      hubspotFieldsCleared,
+      hubspotStatusUpdated,
       zuperJobUid: resolvedJobUid || null,
       message: `Survey schedule cleared${zuperCleared ? " (Zuper + HubSpot)" : " (HubSpot only)"}`,
     });
