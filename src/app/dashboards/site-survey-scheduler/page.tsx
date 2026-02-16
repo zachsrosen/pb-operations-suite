@@ -330,6 +330,19 @@ export default function SiteSurveySchedulerPage() {
     });
   }, []);
 
+  const clearSurveyorAssignment = useCallback((projectId: string) => {
+    setSurveyorAssignments((prev) => {
+      const next = { ...prev };
+      delete next[projectId];
+      try {
+        localStorage.setItem("surveyorAssignments", JSON.stringify(next));
+      } catch {
+        // Ignore localStorage errors
+      }
+      return next;
+    });
+  }, []);
+
   /* ---- toast ---- */
   const [toast, setToast] = useState<{ message: string; type: string } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1001,6 +1014,14 @@ export default function SiteSurveySchedulerPage() {
       delete next[projectId];
       return next;
     });
+    clearSurveyorAssignment(projectId);
+    setProjects((prev) =>
+      prev.map((p) =>
+        p.id === projectId
+          ? { ...p, scheduleDate: null, assignedSurveyor: undefined, assignedSlot: undefined, zuperScheduledTime: undefined }
+          : p
+      )
+    );
 
     // Sync to Zuper & HubSpot in background
     try {
@@ -1031,7 +1052,7 @@ export default function SiteSurveySchedulerPage() {
     }
 
     showToast("Removed from schedule");
-  }, [showToast, projects, trackFeature, fetchProjects]);
+  }, [showToast, projects, trackFeature, fetchProjects, clearSurveyorAssignment]);
 
   /* ================================================================ */
   /*  Navigation                                                       */
