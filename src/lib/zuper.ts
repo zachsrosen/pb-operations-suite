@@ -58,6 +58,9 @@ export interface ZuperJob {
     status_name?: string;
     status_color?: string;
   };
+  // Timeline/status history array present in job detail responses.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  job_status?: any[];
 }
 
 export interface ZuperAddress {
@@ -353,6 +356,16 @@ export class ZuperClient {
           ...(dueDateDt ? { due_date_dt: dueDateDt } : {}),
         },
       }),
+    });
+  }
+
+  async updateJobStatusByUid(
+    jobUid: string,
+    statusUid: string
+  ): Promise<ZuperApiResponse<ZuperJob>> {
+    return this.request<ZuperJob>(`/jobs/${jobUid}/status`, {
+      method: "PUT",
+      body: JSON.stringify({ status_uid: statusUid }),
     });
   }
 
@@ -693,6 +706,18 @@ export class ZuperClient {
       const assignedCount = this.assignedToCount(verifyJob);
       const unscheduled = this.isJobUnscheduled(verifyJob);
       if (assignedCount === 0 && unscheduled) {
+        // Explicitly move status back to Ready To Schedule when available.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const readyStatusUid = (verifyJob?.job_status || []).find(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (s: any) => String(s?.status_name || "").toLowerCase() === "ready to schedule" && !!s?.status_uid
+        )?.status_uid as string | undefined;
+        if (readyStatusUid) {
+          const statusResult = await this.updateJobStatusByUid(jobUid, readyStatusUid);
+          if (statusResult.type === "error") {
+            return { type: "error", error: `Schedule cleared but failed to set Ready To Schedule status: ${statusResult.error}` };
+          }
+        }
         return lastResult.type === "success" ? lastResult : { type: "success", data: verifyAfterFlag.data };
       }
     }
@@ -720,6 +745,17 @@ export class ZuperClient {
       const assignedCount = this.assignedToCount(verifyJob);
       const unscheduled = this.isJobUnscheduled(verifyJob);
       if (assignedCount === 0 && unscheduled) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const readyStatusUid = (verifyJob?.job_status || []).find(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (s: any) => String(s?.status_name || "").toLowerCase() === "ready to schedule" && !!s?.status_uid
+        )?.status_uid as string | undefined;
+        if (readyStatusUid) {
+          const statusResult = await this.updateJobStatusByUid(jobUid, readyStatusUid);
+          if (statusResult.type === "error") {
+            return { type: "error", error: `Schedule cleared but failed to set Ready To Schedule status: ${statusResult.error}` };
+          }
+        }
         return lastResult.type === "success" ? lastResult : { type: "success", data: verifyResult.data };
       }
       return {

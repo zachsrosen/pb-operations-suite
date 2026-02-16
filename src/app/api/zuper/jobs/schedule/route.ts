@@ -6,6 +6,27 @@ import { getUserByEmail, logActivity, createScheduleRecord, cacheZuperJob, canSc
 import { sendSchedulingNotification } from "@/lib/email";
 import { updateDealProperty } from "@/lib/hubspot";
 
+function extractHubspotDealIdFromJob(job: ZuperJob): string | null {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const customFields = (job as any).custom_fields as Array<{ label?: string; name?: string; value?: string }> | undefined;
+  if (Array.isArray(customFields)) {
+    const dealIdField = customFields.find((f) => {
+      const label = (f.label || "").toLowerCase();
+      const name = (f.name || "").toLowerCase();
+      return label === "hubspot deal id" || label === "hubspot_deal_id" ||
+        name === "hubspot_deal_id" || name === "hubspot deal id";
+    });
+    if (dealIdField?.value) return String(dealIdField.value);
+  }
+
+  const tags = Array.isArray(job.job_tags) ? job.job_tags : [];
+  for (const t of tags) {
+    const tagMatch = String(t).match(/^hubspot-(\d+)$/i);
+    if (tagMatch?.[1]) return tagMatch[1];
+  }
+  return null;
+}
+
 /**
  * Smart scheduling endpoint that:
  * 1. Searches for existing Zuper job by HubSpot deal ID
@@ -778,6 +799,7 @@ export async function DELETE(request: NextRequest) {
       hubspotCleared = await updateDealProperty(projectId, {
         site_survey_schedule_date: "",
         site_surveyor: "",
+        site_survey_status: "Ready To Schedule",
       });
 
       if (!hubspotCleared) {
@@ -785,7 +807,22 @@ export async function DELETE(request: NextRequest) {
           // Fallback property name observed in other routes/integrations
           site_survey_scheduled_date: "",
           site_surveyor: "",
+          site_survey_status: "Ready To Schedule",
         });
+      }
+
+      if (!hubspotCleared && resolvedJobUid) {
+        const resolvedJob = await zuper.getJob(resolvedJobUid);
+        if (resolvedJob.type === "success" && resolvedJob.data) {
+          const resolvedDealId = extractHubspotDealIdFromJob(resolvedJob.data);
+          if (resolvedDealId && resolvedDealId !== projectId) {
+            hubspotCleared = await updateDealProperty(resolvedDealId, {
+              site_survey_schedule_date: "",
+              site_surveyor: "",
+              site_survey_status: "Ready To Schedule",
+            });
+          }
+        }
       }
 
       if (hubspotCleared) {
