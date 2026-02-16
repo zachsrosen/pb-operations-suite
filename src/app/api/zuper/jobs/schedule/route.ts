@@ -452,15 +452,18 @@ export async function PUT(request: NextRequest) {
       startDateTime = localToUtc(schedule.date, "08:00");
       endDateTime = localToUtc(schedule.date, "16:00");
       console.log(`[Zuper Schedule] Inspection: using fixed 8am-4pm ${slotTimezone} window`);
-    } else if (schedule.startTime && schedule.endTime) {
+    } else if (schedule.type === "survey" && schedule.startTime && schedule.endTime) {
       // Use specific time slot (e.g., "12:00" to "13:00" for site surveys)
       // Convert from local timezone to UTC for Zuper
       startDateTime = localToUtc(schedule.date, schedule.startTime);
       endDateTime = localToUtc(schedule.date, schedule.endTime);
       console.log(`[Zuper Schedule] Converting ${slotTimezone} time ${schedule.startTime}-${schedule.endTime} to UTC`);
     } else {
-      // Default to 8am-4pm local time for construction/survey jobs without specific time slots
-      startDateTime = localToUtc(schedule.date, "08:00");
+      // Installation spans should respect requested day count even when start/end
+      // values are present (master scheduler sends defaults 08:00-16:00).
+      const localStart = schedule.startTime || "08:00";
+      const localEnd = schedule.endTime || "16:00";
+      startDateTime = localToUtc(schedule.date, localStart);
 
       // Calculate end date — ensure at least same-day (days < 1 means partial day, still same day)
       const [year, month, day] = schedule.date.split('-').map(Number);
@@ -470,7 +473,7 @@ export async function PUT(request: NextRequest) {
       const endMonth = String(endDateObj.getMonth() + 1).padStart(2, '0');
       const endDayStr = String(endDateObj.getDate()).padStart(2, '0');
       const endDateStr = `${endYear}-${endMonth}-${endDayStr}`;
-      endDateTime = localToUtc(endDateStr, "16:00");
+      endDateTime = localToUtc(endDateStr, localEnd);
     }
 
     console.log(`[Zuper Schedule] Schedule times (UTC for Zuper): ${startDateTime} to ${endDateTime}`);

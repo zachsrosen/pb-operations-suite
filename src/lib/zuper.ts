@@ -1466,14 +1466,17 @@ export async function createJobFromProject(project: {
     // The slot selection only determines the inspector assignment, not the time window
     startDateTime = localToUtc(schedule.date, "08:00");
     endDateTime = localToUtc(schedule.date, "16:00");
-  } else if (schedule.startTime && schedule.endTime) {
+  } else if (schedule.type === "survey" && schedule.startTime && schedule.endTime) {
     // Use specific time slot (e.g., "08:00" to "09:00" for site surveys)
     // Convert from local timezone to UTC for Zuper
     startDateTime = localToUtc(schedule.date, schedule.startTime);
     endDateTime = localToUtc(schedule.date, schedule.endTime);
   } else {
-    // Default to 8am-4pm local time for multi-day jobs (construction)
-    startDateTime = localToUtc(schedule.date, "08:00");
+    // Installation spans should respect requested day count even when
+    // start/end values are provided by the scheduler as defaults.
+    const localStart = schedule.startTime || "08:00";
+    const localEnd = schedule.endTime || "16:00";
+    startDateTime = localToUtc(schedule.date, localStart);
 
     // Calculate end date — ensure at least same-day (days < 1 means partial day, still same day)
     const [year, month, day] = schedule.date.split('-').map(Number);
@@ -1483,7 +1486,7 @@ export async function createJobFromProject(project: {
     const endMonth = String(endDateObj.getMonth() + 1).padStart(2, '0');
     const endDayStr = String(endDateObj.getDate()).padStart(2, '0');
     const endDateStr = `${endYear}-${endMonth}-${endDayStr}`;
-    endDateTime = localToUtc(endDateStr, "16:00");
+    endDateTime = localToUtc(endDateStr, localEnd);
   }
 
   // Build assigned_to array if crew user UID is provided

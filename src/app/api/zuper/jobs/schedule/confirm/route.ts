@@ -253,7 +253,14 @@ export async function POST(request: NextRequest) {
       const startTime = record.scheduledStart || "08:00";
       const endTime = record.scheduledEnd || "16:00";
       const startDateTime = localToUtc(record.scheduledDate, startTime);
-      const endDateTime = localToUtc(record.scheduledDate, endTime);
+      let endDateForSchedule = record.scheduledDate;
+      if (scheduleType === "installation") {
+        const days = Math.max(Math.ceil(record.scheduledDays || 1), 1);
+        const [year, month, day] = record.scheduledDate.split("-").map(Number);
+        const endDateObj = new Date(year, month - 1, day + (days - 1));
+        endDateForSchedule = `${endDateObj.getFullYear()}-${String(endDateObj.getMonth() + 1).padStart(2, "0")}-${String(endDateObj.getDate()).padStart(2, "0")}`;
+      }
+      const endDateTime = localToUtc(endDateForSchedule, endTime);
 
       if (existingJob?.job_uid) {
         // Reschedule existing job
