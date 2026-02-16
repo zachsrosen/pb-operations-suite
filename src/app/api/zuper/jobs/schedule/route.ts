@@ -4,7 +4,7 @@ import { zuper, createJobFromProject, ZuperJob } from "@/lib/zuper";
 import { auth } from "@/auth";
 import { getUserByEmail, logActivity, createScheduleRecord, cacheZuperJob, canScheduleType, getCrewMemberByName, getCachedZuperJobByDealId, UserRole } from "@/lib/db";
 import { sendSchedulingNotification } from "@/lib/email";
-import { updateDealProperty } from "@/lib/hubspot";
+import { updateDealProperty, getDealProperties } from "@/lib/hubspot";
 
 function extractHubspotDealIdFromJob(job: ZuperJob): string | null {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -806,6 +806,8 @@ export async function DELETE(request: NextRequest) {
     let hubspotDealIdUsed: string | null = null;
     let hubspotCleared = false;
     let hubspotError: string | undefined;
+    let hubspotVerification: Record<string, string | null> | null = null;
+    const isBlank = (v: string | null | undefined) => v == null || v === "";
     try {
       const candidateDealIds = [projectId];
       if (resolvedJobUid) {
@@ -819,25 +821,32 @@ export async function DELETE(request: NextRequest) {
       }
 
       for (const dealId of candidateDealIds) {
-        // Step 1: clear schedule/surveyor with nulls (matches HubSpot UI HAR).
-        hubspotFieldsCleared = await updateDealProperty(dealId, {
+        // Clear schedule date first.
+        let scheduleCleared = await updateDealProperty(dealId, {
           site_survey_schedule_date: null,
-          site_surveyor: null,
         });
-        // Step 2 fallback: some owner/date properties clear via empty string.
-        if (!hubspotFieldsCleared) {
-          hubspotFieldsCleared = await updateDealProperty(dealId, {
+        if (!scheduleCleared) {
+          scheduleCleared = await updateDealProperty(dealId, {
             site_survey_schedule_date: "",
-            site_surveyor: "",
           });
         }
-        // Step 3 fallback: alternate schedule property name.
-        if (!hubspotFieldsCleared) {
-          hubspotFieldsCleared = await updateDealProperty(dealId, {
+        if (!scheduleCleared) {
+          scheduleCleared = await updateDealProperty(dealId, {
             site_survey_scheduled_date: null,
+          });
+        }
+
+        // Clear surveyor separately so surveyor-type validation cannot block date clearing.
+        let surveyorCleared = await updateDealProperty(dealId, {
+          site_surveyor: "",
+        });
+        if (!surveyorCleared) {
+          surveyorCleared = await updateDealProperty(dealId, {
             site_surveyor: null,
           });
         }
+
+        hubspotFieldsCleared = scheduleCleared && surveyorCleared;
 
         if (!hubspotFieldsCleared) {
           continue;
@@ -854,7 +863,21 @@ export async function DELETE(request: NextRequest) {
         }
 
         hubspotDealIdUsed = dealId;
-        hubspotCleared = hubspotFieldsCleared && hubspotStatusUpdated;
+        hubspotVerification = await getDealProperties(dealId, [
+          "site_survey_schedule_date",
+          "site_survey_scheduled_date",
+          "site_surveyor",
+          "site_survey_status",
+        ]);
+        const verifiedFieldsCleared = !!hubspotVerification &&
+          isBlank(hubspotVerification.site_survey_schedule_date) &&
+          isBlank(hubspotVerification.site_survey_scheduled_date) &&
+          isBlank(hubspotVerification.site_surveyor);
+        const verifiedStatus = !!hubspotVerification &&
+          (hubspotVerification.site_survey_status === "Ready to Schedule" ||
+            hubspotVerification.site_survey_status === "Ready To Schedule");
+
+        hubspotCleared = hubspotFieldsCleared && hubspotStatusUpdated && verifiedFieldsCleared && verifiedStatus;
         if (hubspotCleared) {
           break;
         }
@@ -898,6 +921,7 @@ export async function DELETE(request: NextRequest) {
           hubspotDealIdUsed,
           hubspotFieldsCleared,
           hubspotStatusUpdated,
+          hubspotVerification,
           hubspotCleared,
         },
         ipAddress,
@@ -918,6 +942,7 @@ export async function DELETE(request: NextRequest) {
           hubspotDealIdUsed,
           hubspotFieldsCleared,
           hubspotStatusUpdated,
+          hubspotVerification,
           hubspotCleared,
           zuperJobUid: resolvedJobUid || null,
           error: !zuperCleared
@@ -938,6 +963,7 @@ export async function DELETE(request: NextRequest) {
       hubspotDealIdUsed,
       hubspotFieldsCleared,
       hubspotStatusUpdated,
+      hubspotVerification,
       zuperJobUid: resolvedJobUid || null,
       message: `Survey schedule cleared${zuperCleared ? " (Zuper + HubSpot)" : " (HubSpot only)"}`,
     });

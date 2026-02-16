@@ -1074,10 +1074,13 @@ export default function SiteSurveySchedulerPage() {
     }
 
     showToast("Removed from schedule");
-    fetchProjects();
-    if (project?.location) {
-      fetchAvailability(project.location);
-    }
+    // Background refresh to reconcile server state without jarring immediate repaint.
+    setTimeout(() => {
+      fetchProjects();
+      if (project?.location) {
+        fetchAvailability(project.location);
+      }
+    }, 1200);
   }, [showToast, projects, trackFeature, fetchProjects, fetchAvailability, clearSurveyorAssignment]);
 
   /* ================================================================ */

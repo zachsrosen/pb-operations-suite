@@ -974,6 +974,25 @@ export async function updateDealProperty(
   }
 }
 
+export async function getDealProperties(
+  dealId: string,
+  propertyNames: string[]
+): Promise<Record<string, string | null> | null> {
+  try {
+    const response = await hubspotClient.crm.deals.basicApi.getById(dealId, propertyNames);
+    const props = response?.properties || {};
+    const out: Record<string, string | null> = {};
+    for (const name of propertyNames) {
+      const raw = props[name as keyof typeof props];
+      out[name] = raw == null ? null : String(raw);
+    }
+    return out;
+  } catch (err) {
+    console.error(`[HubSpot] Failed to read deal ${dealId} properties:`, err);
+    return null;
+  }
+}
+
 export async function fetchLineItemsForDeal(dealId: string): Promise<LineItem[]> {
   try {
     // Get associations using the associations API
