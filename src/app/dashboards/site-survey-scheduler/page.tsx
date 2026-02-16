@@ -217,9 +217,23 @@ function isTomorrow(dateStr: string): boolean {
 function isSurveyOverdue(project: SurveyProject, manualScheduleDate?: string): boolean {
   const schedDate = manualScheduleDate || project.scheduleDate;
   if (!schedDate) return false;
+  if (isReadyToScheduleStatus(project.surveyStatus)) return false;
   if (project.completionDate) return false;
   if (project.surveyStatus.toLowerCase().includes("complete")) return false;
   return isPastDate(schedDate);
+}
+
+function isReadyToScheduleStatus(status: string | null | undefined): boolean {
+  const s = String(status || "").toLowerCase();
+  return s.includes("ready to schedule") || s === "ready";
+}
+
+function hasActiveSchedule(project: SurveyProject, manualScheduleDate?: string): boolean {
+  const schedDate = manualScheduleDate || project.scheduleDate;
+  if (!schedDate) return false;
+  if (project.completionDate) return false;
+  if (isReadyToScheduleStatus(project.surveyStatus)) return false;
+  return true;
 }
 
 /* ------------------------------------------------------------------ */
@@ -588,20 +602,18 @@ export default function SiteSurveySchedulerPage() {
 
   const unscheduledProjects = useMemo(() => {
     return filteredProjects.filter(p =>
-      !p.scheduleDate &&
-      !manualSchedules[p.id] &&
-      !p.completionDate &&
-      p.surveyStatus !== "Completed"
+      !hasActiveSchedule(p, manualSchedules[p.id]) &&
+      !p.surveyStatus.toLowerCase().includes("complete")
     );
   }, [filteredProjects, manualSchedules]);
 
   const stats = useMemo(() => {
     const total = projects.length;
     const needsScheduling = projects.filter(p =>
-      !p.scheduleDate && !manualSchedules[p.id] && !p.completionDate
+      !hasActiveSchedule(p, manualSchedules[p.id]) && !p.completionDate
     ).length;
     const scheduled = projects.filter(p =>
-      (p.scheduleDate || manualSchedules[p.id]) && !p.completionDate
+      hasActiveSchedule(p, manualSchedules[p.id]) && !p.completionDate
     ).length;
     const completed = projects.filter(p => p.completionDate).length;
     const overdue = projects.filter(p => isSurveyOverdue(p, manualSchedules[p.id])).length;
@@ -647,6 +659,7 @@ export default function SiteSurveySchedulerPage() {
   const eventsForDate = useCallback((dateStr: string) => {
     return filteredProjects
       .filter(p => {
+        if (!hasActiveSchedule(p, manualSchedules[p.id])) return false;
         const schedDate = manualSchedules[p.id] || p.scheduleDate;
         return schedDate === dateStr;
       })
@@ -1695,7 +1708,8 @@ export default function SiteSurveySchedulerPage() {
                     </thead>
                     <tbody className="divide-y divide-t-border">
                       {filteredProjects.map((project) => {
-                        const schedDate = manualSchedules[project.id] || project.scheduleDate;
+                        const isScheduled = hasActiveSchedule(project, manualSchedules[project.id]);
+                        const schedDate = isScheduled ? (manualSchedules[project.id] || project.scheduleDate) : null;
                         const overdue = isSurveyOverdue(project, manualSchedules[project.id]);
                         return (
                           <tr key={project.id} className={`hover:bg-surface/50 ${overdue ? "bg-red-500/5" : ""}`}>
@@ -1724,7 +1738,7 @@ export default function SiteSurveySchedulerPage() {
                                 <span>{project.assignedSurveyor}{project.zuperScheduledTime ? <span className="text-muted ml-1">@ {project.zuperScheduledTime}</span> : null}</span>
                               ) : <span className="text-muted/70">—</span>}
                             </td>
-                            <td className={`px-4 py-3 text-sm ${overdue ? "text-red-400" : schedDate ? "text-cyan-400" : "text-muted"}`}>
+                            <td className={`px-4 py-3 text-sm ${overdue ? "text-red-400" : isScheduled ? "text-cyan-400" : "text-muted"}`}>
                               {schedDate ? formatShortDate(schedDate) : "—"}
                             </td>
                             <td className="px-4 py-3 text-right font-mono text-sm text-orange-400">
@@ -1759,7 +1773,7 @@ export default function SiteSurveySchedulerPage() {
                               </div>
                             </td>
                             <td className="px-4 py-3 text-center">
-                              {schedDate ? (
+                              {isScheduled ? (
                                 <button
                                   onClick={() => cancelSchedule(project.id)}
                                   className="text-xs text-red-400 hover:text-red-300"

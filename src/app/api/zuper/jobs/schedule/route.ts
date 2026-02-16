@@ -801,6 +801,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Clear HubSpot survey fields + status (required for successful unschedule UX).
+    const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
     let hubspotFieldsCleared = false;
     let hubspotStatusUpdated = false;
     let hubspotDealIdUsed: string | null = null;
@@ -821,38 +822,7 @@ export async function DELETE(request: NextRequest) {
       }
 
       for (const dealId of candidateDealIds) {
-        // Clear schedule date first.
-        let scheduleCleared = await updateDealProperty(dealId, {
-          site_survey_schedule_date: null,
-        });
-        if (!scheduleCleared) {
-          scheduleCleared = await updateDealProperty(dealId, {
-            site_survey_schedule_date: "",
-          });
-        }
-        if (!scheduleCleared) {
-          scheduleCleared = await updateDealProperty(dealId, {
-            site_survey_scheduled_date: null,
-          });
-        }
-
-        // Clear surveyor separately so surveyor-type validation cannot block date clearing.
-        let surveyorCleared = await updateDealProperty(dealId, {
-          site_surveyor: "",
-        });
-        if (!surveyorCleared) {
-          surveyorCleared = await updateDealProperty(dealId, {
-            site_surveyor: null,
-          });
-        }
-
-        hubspotFieldsCleared = scheduleCleared && surveyorCleared;
-
-        if (!hubspotFieldsCleared) {
-          continue;
-        }
-
-        // Status update is separate so a status value mismatch does not block clearing fields.
+        // Status update first.
         hubspotStatusUpdated = await updateDealProperty(dealId, {
           site_survey_status: "Ready to Schedule",
         });
@@ -862,13 +832,55 @@ export async function DELETE(request: NextRequest) {
           });
         }
 
-        hubspotDealIdUsed = dealId;
-        hubspotVerification = await getDealProperties(dealId, [
-          "site_survey_schedule_date",
-          "site_survey_scheduled_date",
-          "site_surveyor",
-          "site_survey_status",
-        ]);
+        // Clear date and surveyor with retry verification. This defends against
+        // immediate re-population by external automations in the same second.
+        let scheduleCleared = false;
+        let surveyorCleared = false;
+        const MAX_CLEAR_ATTEMPTS = 4;
+        for (let attempt = 1; attempt <= MAX_CLEAR_ATTEMPTS; attempt += 1) {
+          scheduleCleared = await updateDealProperty(dealId, {
+            site_survey_schedule_date: "",
+          });
+          if (!scheduleCleared) {
+            scheduleCleared = await updateDealProperty(dealId, {
+              site_survey_schedule_date: null,
+            });
+          }
+          if (!scheduleCleared) {
+            scheduleCleared = await updateDealProperty(dealId, {
+              site_survey_scheduled_date: null,
+            });
+          }
+
+          surveyorCleared = await updateDealProperty(dealId, {
+            site_surveyor: "",
+          });
+          if (!surveyorCleared) {
+            surveyorCleared = await updateDealProperty(dealId, {
+              site_surveyor: null,
+            });
+          }
+
+          hubspotDealIdUsed = dealId;
+          hubspotVerification = await getDealProperties(dealId, [
+            "site_survey_schedule_date",
+            "site_survey_scheduled_date",
+            "site_surveyor",
+            "site_survey_status",
+          ]);
+          const verifiedFieldsCleared = !!hubspotVerification &&
+            isBlank(hubspotVerification.site_survey_schedule_date) &&
+            isBlank(hubspotVerification.site_survey_scheduled_date) &&
+            isBlank(hubspotVerification.site_surveyor);
+          if (verifiedFieldsCleared) {
+            break;
+          }
+          if (attempt < MAX_CLEAR_ATTEMPTS) {
+            await sleep(450);
+          }
+        }
+
+        hubspotFieldsCleared = scheduleCleared && surveyorCleared;
         const verifiedFieldsCleared = !!hubspotVerification &&
           isBlank(hubspotVerification.site_survey_schedule_date) &&
           isBlank(hubspotVerification.site_survey_scheduled_date) &&
