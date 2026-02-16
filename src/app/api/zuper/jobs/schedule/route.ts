@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
-import { zuper, createJobFromProject, ZuperJob } from "@/lib/zuper";
+import { zuper, createJobFromProject, JOB_CATEGORY_UIDS, ZuperJob } from "@/lib/zuper";
 import { auth } from "@/auth";
 import { getUserByEmail, logActivity, createScheduleRecord, cacheZuperJob, canScheduleType, getCrewMemberByName, getCachedZuperJobByDealId, UserRole } from "@/lib/db";
 import { sendSchedulingNotification } from "@/lib/email";
@@ -105,9 +105,9 @@ export async function PUT(request: NextRequest) {
 
     // Map schedule type to Zuper category names and UIDs
     const categoryConfig: Record<string, { name: string; uid: string }> = {
-      survey: { name: "Site Survey", uid: "002bac33-84d3-4083-a35d-50626fc49288" },
-      installation: { name: "Construction", uid: "6ffbc218-6dad-4a46-b378-1fb02b3ab4bf" },
-      inspection: { name: "Inspection", uid: "b7dc03d2-25d0-40df-a2fc-b1a477b16b65" },
+      survey: { name: "Site Survey", uid: JOB_CATEGORY_UIDS.SITE_SURVEY },
+      installation: { name: "Construction", uid: JOB_CATEGORY_UIDS.CONSTRUCTION },
+      inspection: { name: "Inspection", uid: JOB_CATEGORY_UIDS.INSPECTION },
     };
     const targetCategoryName = categoryConfig[schedule.type].name;
     const targetCategoryUid = categoryConfig[schedule.type].uid;
@@ -669,9 +669,9 @@ export async function GET(request: NextRequest) {
     if (jobType) {
       // Category config with both names and UIDs for flexible matching
       const categoryConfig: Record<string, { name: string; uid: string }> = {
-        survey: { name: "Site Survey", uid: "002bac33-84d3-4083-a35d-50626fc49288" },
-        installation: { name: "Construction", uid: "6ffbc218-6dad-4a46-b378-1fb02b3ab4bf" },
-        inspection: { name: "Inspection", uid: "b7dc03d2-25d0-40df-a2fc-b1a477b16b65" },
+        survey: { name: "Site Survey", uid: JOB_CATEGORY_UIDS.SITE_SURVEY },
+        installation: { name: "Construction", uid: JOB_CATEGORY_UIDS.CONSTRUCTION },
+        inspection: { name: "Inspection", uid: JOB_CATEGORY_UIDS.INSPECTION },
       };
       const config = categoryConfig[jobType];
       if (config) {
@@ -764,9 +764,9 @@ export async function DELETE(request: NextRequest) {
         if (searchResult.type === "success" && searchResult.data?.jobs) {
           const match = searchResult.data.jobs.find((job) => {
             const inCategory = typeof job.job_category === "string"
-              ? job.job_category === "Site Survey" || job.job_category === "002bac33-84d3-4083-a35d-50626fc49288"
+              ? job.job_category === "Site Survey" || job.job_category === JOB_CATEGORY_UIDS.SITE_SURVEY
               : job.job_category?.category_name === "Site Survey" ||
-                job.job_category?.category_uid === "002bac33-84d3-4083-a35d-50626fc49288";
+                job.job_category?.category_uid === JOB_CATEGORY_UIDS.SITE_SURVEY;
             return inCategory && !!job.job_tags?.includes(hubspotTag);
           });
           if (match?.job_uid) {

@@ -462,7 +462,7 @@ export class ZuperClient {
     const noEnd = !end;
     // Tenant behavior: "clear schedule" sets a zero-length window (start == end, duration 0).
     const zeroLengthSchedule = !!start && !!end && start === end;
-    return (noStart && noEnd) || zeroLengthSchedule || duration === 0;
+    return (noStart && noEnd) || (zeroLengthSchedule && duration === 0);
   }
 
   /**
@@ -677,7 +677,7 @@ export class ZuperClient {
         console.warn("[Zuper] Failed to seed due_date for job %s: %s", jobUid, dueDateResult.error);
       } else {
         dueDateForClear = seededDueDate;
-        dueDate = `${seededDueDate} 06:59:59`;
+        dueDate = seededDueDate;
         dueDateDt = seededDueDate;
         console.log("[Zuper] Seeded due_date for job %s: %s", jobUid, seededDueDate);
       }
@@ -688,7 +688,7 @@ export class ZuperClient {
     // Primary strategy: same endpoint/flag used by Zuper web app.
     const clearViaFlag = await this.clearJobSchedule(
       jobUid,
-      dueDate || (dueDateForClear ? `${this.formatZuperDate(dueDateForClear)} 06:59:59` : undefined),
+      dueDate || (dueDateForClear ? this.formatZuperDate(dueDateForClear) : undefined),
       dueDateDt || (dueDateForClear ? this.formatZuperDate(dueDateForClear) : undefined)
     );
     if (clearViaFlag.type === "success") {
