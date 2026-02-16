@@ -1353,6 +1353,26 @@ export async function createJobFromProject(project: {
   timezone?: string; // IANA timezone for the slot (e.g. "America/Los_Angeles" for CA)
   notes?: string;
 }): Promise<ZuperApiResponse<ZuperJob>> {
+  const normalize = (value: string): string =>
+    value.toLowerCase().replace(/\s+/g, " ").trim();
+  const splitCustomerName = (rawName: string): { firstName: string; lastName: string } => {
+    const value = rawName.trim();
+    if (!value) return { firstName: "Customer", lastName: "Unknown" };
+    if (value.includes(",")) {
+      const [last, first] = value.split(",").map((s) => s.trim());
+      return {
+        firstName: first || "Customer",
+        lastName: last || "Unknown",
+      };
+    }
+    const parts = value.split(" ").filter(Boolean);
+    if (parts.length === 1) return { firstName: parts[0], lastName: "Unknown" };
+    return {
+      firstName: parts.slice(0, -1).join(" "),
+      lastName: parts[parts.length - 1] || "Unknown",
+    };
+  };
+
   // Determine job category - use UIDs for creating jobs
   const categoryUidMap = {
     survey: JOB_CATEGORY_UIDS.SITE_SURVEY,
@@ -1480,6 +1500,65 @@ export async function createJobFromProject(project: {
     console.log(`[createJobFromProject] Assigning job to user: ${schedule.crew}, team: ${schedule.teamUid || 'none'}`);
   }
 
+  // Ensure customer is attached for job creation. Some Zuper tenants reject
+  // /jobs creates unless customer_uid or organization data is present.
+  let customerUid: string | undefined;
+  try {
+    const nameParts = project.name.split(" | ");
+    const rawCustomerName = (project.customerName || (nameParts.length >= 2 ? nameParts[1] : nameParts[0]) || "").trim();
+    const { firstName, lastName } = splitCustomerName(rawCustomerName);
+    const searchQueries = [...new Set([
+      rawCustomerName,
+      `${firstName} ${lastName}`.trim(),
+      lastName,
+    ].map((q) => q.trim()).filter((q) => q.length >= 2))];
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const extractCustomers = (raw: any): ZuperCustomer[] => {
+      if (Array.isArray(raw)) return raw;
+      if (raw && typeof raw === "object" && Array.isArray(raw.data)) return raw.data;
+      return [];
+    };
+
+    for (const query of searchQueries) {
+      const searchResult = await zuper.searchCustomers(query);
+      if (searchResult.type !== "success" || !searchResult.data) continue;
+      const customers = extractCustomers(searchResult.data);
+      const exact = customers.find((c) => {
+        const candidate = `${c.customer_first_name || ""} ${c.customer_last_name || ""}`.trim();
+        return normalize(candidate) === normalize(`${firstName} ${lastName}`);
+      });
+      const match = exact || customers.find((c) => !!c.customer_uid);
+      if (match?.customer_uid) {
+        customerUid = match.customer_uid;
+        break;
+      }
+    }
+
+    if (!customerUid) {
+      const createPayload: ZuperCustomer = {
+        customer_first_name: firstName || "Customer",
+        customer_last_name: lastName || "Unknown",
+      };
+      if (project.address || project.city || project.state || project.zipCode) {
+        createPayload.customer_address = {
+          street: project.address || "",
+          city: project.city || "",
+          state: project.state || "",
+          zip_code: project.zipCode || "",
+        };
+      }
+      const createCustomerResult = await zuper.createCustomer(createPayload);
+      if (createCustomerResult.type === "success" && createCustomerResult.data?.customer_uid) {
+        customerUid = createCustomerResult.data.customer_uid;
+      } else {
+        console.warn("[createJobFromProject] Failed to create customer for project %s: %s", project.id, createCustomerResult.error);
+      }
+    }
+  } catch (err) {
+    console.warn("[createJobFromProject] Failed to resolve/create customer for project %s:", project.id, err);
+  }
+
   const job: ZuperJob = {
     job_title: `${categoryNameMap[schedule.type]} - ${project.name}`,
     job_category: categoryUidMap[schedule.type],
@@ -1488,6 +1567,7 @@ export async function createJobFromProject(project: {
     scheduled_start_time: startDateTime,
     scheduled_end_time: endDateTime,
     due_date: endDateTime,
+    ...(customerUid && { customer_uid: customerUid }),
     customer_address: {
       street: project.address,
       city: project.city,

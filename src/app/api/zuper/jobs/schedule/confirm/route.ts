@@ -73,12 +73,20 @@ export async function POST(request: NextRequest) {
     }
 
     // Build project object for Zuper
+    const projectNameParts = record.projectName.split(" | ");
+    const derivedCustomerName = projectNameParts.length >= 2
+      ? projectNameParts[1]?.trim() || ""
+      : projectNameParts[0]?.trim() || "";
+    const derivedAddress = projectNameParts.length >= 3
+      ? projectNameParts[2]?.trim() || ""
+      : "";
     const project = {
       id: record.projectId,
       name: record.projectName,
-      address: "",
+      address: derivedAddress,
       city: "",
       state: "",
+      customerName: derivedCustomerName,
     };
 
     // Resolve assignment UIDs from record data so tentative confirms can still
@@ -180,7 +188,7 @@ export async function POST(request: NextRequest) {
     const hubspotTag = `hubspot-${record.projectId}`;
 
     // Extract search terms from the project name
-    const nameParts = record.projectName.split(" | ");
+    const nameParts = projectNameParts;
     const customerLastName = nameParts.length >= 2
       ? nameParts[1]?.split(",")[0]?.trim() || ""
       : nameParts[0]?.split(",")[0]?.trim() || "";
