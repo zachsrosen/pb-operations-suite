@@ -770,11 +770,32 @@ export async function DELETE(request: NextRequest) {
       }
     }
 
-    // Clear HubSpot site_survey_schedule_date and site_surveyor
+    // Clear HubSpot survey fields (required for successful unschedule UX).
+    // Some environments have seen both schedule_date and scheduled_date naming.
+    let hubspotCleared = false;
+    let hubspotError: string | undefined;
     try {
-      await updateDealProperty(projectId, { site_survey_schedule_date: "", site_surveyor: "" });
-      console.log(`[Zuper Unschedule] Cleared HubSpot site_survey_schedule_date and site_surveyor for ${projectId}`);
+      hubspotCleared = await updateDealProperty(projectId, {
+        site_survey_schedule_date: "",
+        site_surveyor: "",
+      });
+
+      if (!hubspotCleared) {
+        hubspotCleared = await updateDealProperty(projectId, {
+          // Fallback property name observed in other routes/integrations
+          site_survey_scheduled_date: "",
+          site_surveyor: "",
+        });
+      }
+
+      if (hubspotCleared) {
+        console.log(`[Zuper Unschedule] Cleared HubSpot survey schedule/surveyor for ${projectId}`);
+      } else {
+        hubspotError = "HubSpot deal update returned false";
+        console.warn(`[Zuper Unschedule] ${hubspotError} for ${projectId}`);
+      }
     } catch (err) {
+      hubspotError = err instanceof Error ? err.message : "Unknown HubSpot clear error";
       console.warn(`[Zuper Unschedule] Failed to clear HubSpot properties:`, err);
     }
 
@@ -796,6 +817,7 @@ export async function DELETE(request: NextRequest) {
         metadata: {
           zuperJobUid: resolvedJobUid || zuperJobUid,
           zuperCleared,
+          hubspotCleared,
         },
         ipAddress,
         userAgent,
@@ -806,15 +828,20 @@ export async function DELETE(request: NextRequest) {
 
     // If a Zuper job was provided but could not be cleared, surface failure
     // so the UI doesn't treat this as a full success.
-    if (zuper.isConfigured() && !zuperCleared) {
+    if (zuper.isConfigured() && (!zuperCleared || !hubspotCleared)) {
       return NextResponse.json(
         {
           success: false,
           action: "unschedule_partial",
           zuperCleared,
+          hubspotCleared,
           zuperJobUid: resolvedJobUid || null,
-          error: zuperError || "Failed to clear schedule in Zuper",
-          message: "HubSpot schedule fields were cleared, but Zuper unschedule failed.",
+          error: !zuperCleared
+            ? (zuperError || "Failed to clear schedule in Zuper")
+            : (hubspotError || "Failed to clear HubSpot survey schedule fields"),
+          message: !zuperCleared
+            ? "HubSpot/Zuper unschedule did not fully complete."
+            : "Zuper was cleared, but HubSpot fields did not clear.",
         },
         { status: 502 }
       );
