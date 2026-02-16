@@ -289,6 +289,7 @@ export default function SiteSurveySchedulerPage() {
   const [zuperWebBaseUrl, setZuperWebBaseUrl] = useState("https://us-west-1c.zuperpro.com");
   const [syncToZuper, setSyncToZuper] = useState(true);
   const [syncingToZuper, setSyncingToZuper] = useState(false);
+  const [useTestSlot, setUseTestSlot] = useState(false);
 
   /* ---- Assisted scheduling ---- */
   const [loadingSlots, setLoadingSlots] = useState(false);
@@ -297,6 +298,7 @@ export default function SiteSurveySchedulerPage() {
 
   /* ---- user role ---- */
   const [userRole, setUserRole] = useState<string | null>(null);
+  const [currentUserName, setCurrentUserName] = useState<string | null>(null);
 
   /* ---- self-service availability ---- */
   const [isLinkedSurveyor, setIsLinkedSurveyor] = useState(false);
@@ -476,12 +478,21 @@ export default function SiteSurveySchedulerPage() {
   useEffect(() => {
     fetch("/api/auth/sync")
       .then(res => res.json())
-      .then(data => { if (data.role) setUserRole(data.role); })
+      .then(data => {
+        if (data.role) setUserRole(data.role);
+        if (data?.user?.name) setCurrentUserName(data.user.name);
+      })
       .catch(() => {});
     fetch("/api/zuper/my-availability")
       .then(res => { if (res.ok) setIsLinkedSurveyor(true); })
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!scheduleModal) {
+      setUseTestSlot(false);
+    }
+  }, [scheduleModal]);
 
   // Fetch availability when a project is selected or month changes
   const fetchAvailability = useCallback(async (location?: string) => {
@@ -763,6 +774,11 @@ export default function SiteSurveySchedulerPage() {
   const confirmSchedule = useCallback(async () => {
     if (!scheduleModal) return;
     const { project, date, slot } = scheduleModal;
+    const effectiveAssignee = useTestSlot
+      ? (currentUserName || slot?.userName || "Test Slot")
+      : (slot?.userName || "");
+    const effectiveCrewUid = useTestSlot ? undefined : slot?.userUid;
+    const effectiveTeamUid = useTestSlot ? undefined : slot?.teamUid;
 
     // Safety net: prevent SALES from confirming a tomorrow schedule
     if (userRole === "SALES" && isTomorrow(date)) {
@@ -776,9 +792,10 @@ export default function SiteSurveySchedulerPage() {
       projectId: project.id,
       projectName: project.name,
       date,
-      surveyor: slot?.userName || null,
+      surveyor: effectiveAssignee || null,
       slot: slot ? `${slot.startTime}-${slot.endTime}` : null,
       syncToZuper,
+      testMode: useTestSlot,
       isReschedule: !!project.zuperJobUid,
     });
 
@@ -788,12 +805,12 @@ export default function SiteSurveySchedulerPage() {
     }));
 
     // Store surveyor assignment locally so we can display it
-    if (slot?.userName) {
-      saveSurveyorAssignment(project.id, slot.userName);
+    if (effectiveAssignee) {
+      saveSurveyorAssignment(project.id, effectiveAssignee);
       // Also update the project in state immediately
       setProjects((prev) =>
         prev.map((p) =>
-          p.id === project.id ? { ...p, assignedSurveyor: slot.userName } : p
+          p.id === project.id ? { ...p, assignedSurveyor: effectiveAssignee } : p
         )
       );
     }
@@ -832,11 +849,14 @@ export default function SiteSurveySchedulerPage() {
               days: 0.25, // Site surveys are typically ~1 hour
               startTime: slot?.startTime, // e.g. "12:00"
               endTime: slot?.endTime, // e.g. "13:00"
-              crew: slot?.userUid, // Zuper user UID for assignment
-              teamUid: slot?.teamUid, // Zuper team UID (required for assignment API)
-              assignedUser: slot?.userName,
+              crew: effectiveCrewUid, // Zuper user UID for assignment
+              teamUid: effectiveTeamUid, // Zuper team UID (required for assignment API)
+              assignedUser: effectiveAssignee,
               timezone: slot?.timezone, // Slot's local timezone (e.g. "America/Los_Angeles" for CA)
-              notes: slot ? `Surveyor: ${slot.userName} at ${slot.startTime}` : "Scheduled via Site Survey Schedule",
+              notes: useTestSlot
+                ? `TEST SLOT - ${effectiveAssignee} at ${slot?.startTime || "N/A"}`
+                : (slot ? `Surveyor: ${slot.userName} at ${slot.startTime}` : "Scheduled via Site Survey Schedule"),
+              testMode: useTestSlot,
             },
             rescheduleOnly: true,
           }),
@@ -855,12 +875,12 @@ export default function SiteSurveySchedulerPage() {
           } else {
             // Capture the Zuper job UID from the response
             scheduledZuperJobUid = data.job?.job_uid || data.existingJobId || project.zuperJobUid;
-            const slotInfo = slot ? ` (${slot.userName} ${slot.startTime})` : "";
+            const slotInfo = slot ? ` (${effectiveAssignee} ${slot.startTime})` : "";
 
             // Check if assignment failed
             if (data.assignmentFailed) {
               showToast(
-                `${getCustomerName(project.name)} scheduled${slotInfo} - please assign ${slot?.userName || "user"} in Zuper`,
+                `${getCustomerName(project.name)} scheduled${slotInfo} - please assign ${effectiveAssignee || "user"} in Zuper`,
                 "warning"
               );
             } else {
@@ -905,18 +925,20 @@ export default function SiteSurveySchedulerPage() {
               date,
               startTime: slot?.startTime,
               endTime: slot?.endTime,
-              crew: slot?.userUid,
-              assignedUser: slot?.userName,
-              userUid: slot?.userUid,
-              teamUid: slot?.teamUid,
+              crew: effectiveCrewUid,
+              assignedUser: effectiveAssignee,
+              userUid: effectiveCrewUid,
+              teamUid: effectiveTeamUid,
               notes: slot
-                ? `Tentative surveyor: ${slot.userName} at ${slot.startTime}`
+                ? (useTestSlot
+                  ? `TEST SLOT - Tentative ${effectiveAssignee} at ${slot.startTime}`
+                  : `Tentative surveyor: ${slot.userName} at ${slot.startTime}`)
                 : "Tentatively scheduled via Site Survey Scheduler",
             },
           }),
         });
 
-        const slotInfo = slot ? ` (${slot.userName} ${slot.startTime.replace(/^0/, "")})` : "";
+        const slotInfo = slot ? ` (${effectiveAssignee} ${slot.startTime.replace(/^0/, "")})` : "";
         if (response.ok) {
           showToast(`${getCustomerName(project.name)} tentatively scheduled${slotInfo}`);
         } else {
@@ -938,8 +960,8 @@ export default function SiteSurveySchedulerPage() {
             date,
             startTime: slot.startTime,
             endTime: slot.endTime,
-            userName: slot.userName,
-            userUid: slot.userUid, // Track the Zuper user UID for assignment
+            userName: effectiveAssignee,
+            userUid: effectiveCrewUid, // Track the Zuper user UID for assignment
             location: slot.location,
             projectId: project.id,
             projectName: project.name,
@@ -949,7 +971,7 @@ export default function SiteSurveySchedulerPage() {
         if (!bookResponse.ok) {
           console.warn("Failed to book slot:", await bookResponse.text());
         } else {
-          console.log(`[Scheduler] Booked slot for ${slot.userName} (${slot.userUid}) - Zuper job: ${scheduledZuperJobUid}`);
+          console.log(`[Scheduler] Booked slot for ${effectiveAssignee} (${effectiveCrewUid}) - Zuper job: ${scheduledZuperJobUid}`);
         }
       } catch (err) {
         console.error("Error booking slot:", err);
@@ -966,7 +988,7 @@ export default function SiteSurveySchedulerPage() {
 
         // Remove from available slots
         updatedDay.availableSlots = (updatedDay.availableSlots || []).filter(
-          s => !(s.start_time === slot.startTime && s.user_name === slot.userName)
+          s => !(s.start_time === slot.startTime && s.user_name === effectiveAssignee)
         );
 
         // Add to booked slots
@@ -977,7 +999,7 @@ export default function SiteSurveySchedulerPage() {
             start_time: slot.startTime,
             end_time: slot.endTime,
             display_time: `${slot.startTime}-${slot.endTime}`,
-            user_name: slot.userName,
+            user_name: effectiveAssignee,
             location: slot.location,
             projectId: project.id,
             projectName: project.name,
@@ -998,7 +1020,7 @@ export default function SiteSurveySchedulerPage() {
     }
 
     setScheduleModal(null);
-  }, [scheduleModal, zuperConfigured, syncToZuper, showToast, fetchAvailability, saveSurveyorAssignment, userRole, trackFeature]);
+  }, [scheduleModal, useTestSlot, currentUserName, zuperConfigured, syncToZuper, showToast, fetchAvailability, saveSurveyorAssignment, userRole, trackFeature]);
 
   const cancelSchedule = useCallback(async (projectId: string) => {
     const project = projects.find(p => p.id === projectId);
@@ -1968,9 +1990,20 @@ export default function SiteSurveySchedulerPage() {
                   />
                   <span className="text-sm">Sync to Zuper FSM</span>
                 </label>
+                <label className="flex items-center gap-2 cursor-pointer mt-2">
+                  <input
+                    type="checkbox"
+                    checked={useTestSlot}
+                    onChange={(e) => setUseTestSlot(e.target.checked)}
+                    className="w-4 h-4 rounded border-t-border bg-surface-2 text-amber-500 focus:ring-amber-500"
+                  />
+                  <span className="text-sm">Test slot (assign to me)</span>
+                </label>
                 {syncToZuper && (
                   <p className="text-xs text-yellow-500 mt-2">
-                    Customer will receive SMS/Email notification
+                    {useTestSlot
+                      ? "Test mode: assigned to your user, crew notification emails are suppressed."
+                      : "Customer will receive SMS/Email notification"}
                   </p>
                 )}
               </div>

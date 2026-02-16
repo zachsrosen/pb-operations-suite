@@ -57,6 +57,7 @@ export async function PUT(request: NextRequest) {
 
     const body = await request.json();
     const { project, schedule, rescheduleOnly } = body;
+    const isTestMode = schedule?.testMode === true;
 
     // Validate schedule type early for permission check
     const scheduleType = schedule?.type as "survey" | "installation" | "inspection";
@@ -490,13 +491,17 @@ export async function PUT(request: NextRequest) {
         );
       }
 
-      // Send notification to assigned crew member
-      await sendCrewNotification(
-        schedule,
-        project,
-        session.user.name || session.user.email,
-        session.user.email
-      );
+      // Send notification to assigned crew member (skip for explicit test slots)
+      if (!isTestMode) {
+        await sendCrewNotification(
+          schedule,
+          project,
+          session.user.name || session.user.email,
+          session.user.email
+        );
+      } else {
+        console.log("[Zuper Schedule] Test slot mode enabled; skipping crew notification email");
+      }
 
       return NextResponse.json({
         success: true,
@@ -589,13 +594,17 @@ export async function PUT(request: NextRequest) {
         );
       }
 
-      // Send notification to assigned crew member
-      await sendCrewNotification(
-        schedule,
-        project,
-        session.user.name || session.user.email,
-        session.user.email
-      );
+      // Send notification to assigned crew member (skip for explicit test slots)
+      if (!isTestMode) {
+        await sendCrewNotification(
+          schedule,
+          project,
+          session.user.name || session.user.email,
+          session.user.email
+        );
+      } else {
+        console.log("[Zuper Schedule] Test slot mode enabled; skipping crew notification email");
+      }
 
       return NextResponse.json({
         success: true,
