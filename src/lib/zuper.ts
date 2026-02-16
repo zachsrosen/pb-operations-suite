@@ -710,12 +710,15 @@ export class ZuperClient {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const readyStatusUid = (verifyJob?.job_status || []).find(
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (s: any) => String(s?.status_name || "").toLowerCase() === "ready to schedule" && !!s?.status_uid
+          (s: any) => {
+            const name = String(s?.status_name || "").toLowerCase();
+            return (name === "ready to schedule" || name === "ready to build" || name === "ready for inspection") && !!s?.status_uid;
+          }
         )?.status_uid as string | undefined;
         if (readyStatusUid) {
           const statusResult = await this.updateJobStatusByUid(jobUid, readyStatusUid);
           if (statusResult.type === "error") {
-            return { type: "error", error: `Schedule cleared but failed to set Ready To Schedule status: ${statusResult.error}` };
+            return { type: "error", error: `Schedule cleared but failed to set ready status: ${statusResult.error}` };
           }
         }
         return lastResult.type === "success" ? lastResult : { type: "success", data: verifyAfterFlag.data };
@@ -748,12 +751,15 @@ export class ZuperClient {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const readyStatusUid = (verifyJob?.job_status || []).find(
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (s: any) => String(s?.status_name || "").toLowerCase() === "ready to schedule" && !!s?.status_uid
+          (s: any) => {
+            const name = String(s?.status_name || "").toLowerCase();
+            return (name === "ready to schedule" || name === "ready to build" || name === "ready for inspection") && !!s?.status_uid;
+          }
         )?.status_uid as string | undefined;
         if (readyStatusUid) {
           const statusResult = await this.updateJobStatusByUid(jobUid, readyStatusUid);
           if (statusResult.type === "error") {
-            return { type: "error", error: `Schedule cleared but failed to set Ready To Schedule status: ${statusResult.error}` };
+            return { type: "error", error: `Schedule cleared but failed to set ready status: ${statusResult.error}` };
           }
         }
         return lastResult.type === "success" ? lastResult : { type: "success", data: verifyResult.data };

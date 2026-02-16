@@ -15,6 +15,47 @@ interface UpdateEntry {
 
 const UPDATES: UpdateEntry[] = [
   {
+    version: "1.46.0",
+    date: "2026-02-16",
+    title: "HubSpot Schedule Write Verification & Site Surveyor Reliability",
+    description: "Survey scheduling now verifies HubSpot writes after scheduling/confirming and uses stronger resolution logic for site surveyor updates to reduce silent drift between UI and CRM.",
+    changes: [
+      { type: "fix", text: "Direct schedule and confirm flows now perform HubSpot read-after-write verification for schedule date fields" },
+      { type: "fix", text: "Schedule APIs now return hubspotWarnings when date/surveyor writes do not persist, instead of silently succeeding" },
+      { type: "fix", text: "site_surveyor updates now resolve selected user names to HubSpot-valid owner/property values before writing" },
+      { type: "improvement", text: "Surveyor write path now uses fallback behavior when mapping data is incomplete, with explicit warning logs" },
+    ],
+  },
+  {
+    version: "1.45.0",
+    date: "2026-02-16",
+    title: "Tentative Confirm Safety, Sync Mode Clarity, and Test Slot Access Hardening",
+    description: "Tentative confirmations now fail safely when Zuper sync fails, scheduler modals now clearly label live-vs-tentative behavior, and test-slot usage is locked down to admins only.",
+    changes: [
+      { type: "fix", text: "Tentative confirm now stays tentative when Zuper sync fails, instead of marking scheduled with a warning" },
+      { type: "fix", text: "Confirm API now returns failure on Zuper sync errors so UI does not clear tentative state incorrectly" },
+      { type: "improvement", text: "All scheduler modals now show explicit mode messaging: live sync vs tentative-only (sync on confirm)" },
+      { type: "fix", text: "Test slot UI is now visible only to ADMIN users" },
+      { type: "fix", text: "Server-side test mode enforcement added so non-admin API requests cannot use test slot mode" },
+      { type: "fix", text: "Unschedule status field mapping aligned to HubSpot internal names for construction and inspection status updates" },
+    ],
+  },
+  {
+    version: "1.44.0",
+    date: "2026-02-16",
+    title: "Cross-Scheduler Unschedule Parity & Tentative Workflow Completion",
+    description: "Scheduling flows are now consistent across Master, Construction, and Inspection dashboards, with typed unschedule support, tentative confirm/cancel parity, timezone carry-through, and corrected HubSpot schedule field updates.",
+    changes: [
+      { type: "feature", text: "Unschedule API now supports typed removals for survey, installation, and inspection schedules in one endpoint" },
+      { type: "fix", text: "Construction Scheduler 'Remove' now performs real backend unschedule sync (Zuper + HubSpot), not local-only removal" },
+      { type: "fix", text: "Inspection Scheduler 'Remove' now performs real backend unschedule sync (Zuper + HubSpot), not local-only removal" },
+      { type: "feature", text: "Construction and Inspection schedulers now rehydrate tentative records and support in-modal Confirm & Cancel actions" },
+      { type: "improvement", text: "Master Scheduler detail modal now includes Remove from Schedule action for confirmed schedules" },
+      { type: "fix", text: "Tentative schedule timezone now passes through from Site Survey and Inspection schedulers to prevent time drift on confirm" },
+      { type: "fix", text: "Tentative confirm now writes canonical HubSpot schedule date properties for survey, construction, and inspection flows" },
+    ],
+  },
+  {
     version: "1.43.0",
     date: "2026-02-16",
     title: "Site Survey Unschedule Hardening & Calendar Consistency",

@@ -4,7 +4,45 @@ import { zuper, createJobFromProject, JOB_CATEGORY_UIDS, ZuperJob } from "@/lib/
 import { auth } from "@/auth";
 import { getUserByEmail, logActivity, createScheduleRecord, cacheZuperJob, canScheduleType, getCrewMemberByName, getCachedZuperJobByDealId, UserRole } from "@/lib/db";
 import { sendSchedulingNotification } from "@/lib/email";
-import { updateDealProperty, getDealProperties } from "@/lib/hubspot";
+import { updateDealProperty, getDealProperties, updateSiteSurveyorProperty } from "@/lib/hubspot";
+
+type ScheduleType = "survey" | "installation" | "inspection";
+
+function canUseTestMode(role?: string | null): boolean {
+  if (!role) return false;
+  return role === "ADMIN";
+}
+
+function getCategoryNameForScheduleType(type: ScheduleType): string {
+  if (type === "installation") return "Construction";
+  if (type === "inspection") return "Inspection";
+  return "Site Survey";
+}
+
+function getCategoryUidForScheduleType(type: ScheduleType): string {
+  if (type === "installation") return JOB_CATEGORY_UIDS.CONSTRUCTION;
+  if (type === "inspection") return JOB_CATEGORY_UIDS.INSPECTION;
+  return JOB_CATEGORY_UIDS.SITE_SURVEY;
+}
+
+function getHubSpotScheduleDateUpdate(type: ScheduleType, date: string): Record<string, string> {
+  if (type === "installation") {
+    return {
+      install_schedule_date: date,
+      construction_scheduled_date: date,
+    };
+  }
+  if (type === "inspection") {
+    return {
+      inspections_schedule_date: date,
+      inspection_scheduled_date: date,
+    };
+  }
+  return {
+    site_survey_schedule_date: date,
+    site_survey_scheduled_date: date,
+  };
+}
 
 function extractHubspotDealIdFromJob(job: ZuperJob): string | null {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -25,6 +63,51 @@ function extractHubspotDealIdFromJob(job: ZuperJob): string | null {
     if (tagMatch?.[1]) return tagMatch[1];
   }
   return null;
+}
+
+function isBlank(value: unknown): boolean {
+  if (value == null) return true;
+  const str = String(value).trim().toLowerCase();
+  return str === "" || str === "null" || str === "undefined";
+}
+
+async function verifyHubSpotScheduleWrite(
+  dealId: string,
+  scheduleType: ScheduleType,
+  scheduleDate: string,
+  expectedSurveyor?: string
+): Promise<{ ok: boolean; warnings: string[] }> {
+  const verificationFields =
+    scheduleType === "survey"
+      ? ["site_survey_schedule_date", "site_survey_scheduled_date", "site_surveyor"]
+      : scheduleType === "installation"
+        ? ["install_schedule_date", "construction_scheduled_date"]
+        : ["inspections_schedule_date", "inspection_scheduled_date"];
+
+  const props = await getDealProperties(dealId, verificationFields);
+  if (!props) {
+    return { ok: false, warnings: ["HubSpot verification read failed"] };
+  }
+
+  const warnings: string[] = [];
+  const dateValues =
+    scheduleType === "survey"
+      ? [props.site_survey_schedule_date, props.site_survey_scheduled_date]
+      : scheduleType === "installation"
+        ? [props.install_schedule_date, props.construction_scheduled_date]
+        : [props.inspections_schedule_date, props.inspection_scheduled_date];
+  const dateMatched = dateValues.some((v) => String(v || "") === scheduleDate);
+  if (!dateMatched) {
+    warnings.push(`HubSpot schedule date verification failed (expected ${scheduleDate})`);
+  }
+
+  if (scheduleType === "survey" && expectedSurveyor?.trim()) {
+    if (isBlank(props.site_surveyor)) {
+      warnings.push("HubSpot site_surveyor verification failed (still blank)");
+    }
+  }
+
+  return { ok: warnings.length === 0, warnings };
 }
 
 /**
@@ -60,7 +143,7 @@ export async function PUT(request: NextRequest) {
     const isTestMode = schedule?.testMode === true;
 
     // Validate schedule type early for permission check
-    const scheduleType = schedule?.type as "survey" | "installation" | "inspection";
+    const scheduleType = schedule?.type as ScheduleType;
     if (!scheduleType || !["survey", "installation", "inspection"].includes(scheduleType)) {
       return NextResponse.json(
         { error: "Invalid schedule type. Must be: survey, installation, or inspection" },
@@ -73,6 +156,14 @@ export async function PUT(request: NextRequest) {
       console.log(`[Zuper Schedule] Permission denied: User ${session.user.email} (${user.role}) cannot schedule ${scheduleType}`);
       return NextResponse.json(
         { error: `You don't have permission to schedule ${scheduleType}s. Contact an admin if you need access.` },
+        { status: 403 }
+      );
+    }
+
+    if (isTestMode && !canUseTestMode(user.role)) {
+      console.log(`[Zuper Schedule] Permission denied: User ${session.user.email} (${user.role}) cannot use test mode`);
+      return NextResponse.json(
+        { error: "You don't have permission to use test slot mode." },
         { status: 403 }
       );
     }
@@ -484,11 +575,25 @@ export async function PUT(request: NextRequest) {
         });
       }
 
-      // Update site surveyor in HubSpot (fire and forget)
-      if (schedule.assignedUser && schedule.type === "survey") {
-        updateDealProperty(project.id, { site_surveyor: schedule.assignedUser }).catch(err =>
-          console.warn(`[Zuper Schedule] Failed to update HubSpot site_surveyor:`, err)
-        );
+      // Update HubSpot schedule fields and verify persistence.
+      const hubspotUpdates: Record<string, string> = getHubSpotScheduleDateUpdate(schedule.type, schedule.date);
+      const hubspotDateUpdated = await updateDealProperty(project.id, hubspotUpdates);
+      const hubspotWarnings: string[] = [];
+      if (!hubspotDateUpdated) {
+        hubspotWarnings.push("HubSpot schedule date write failed");
+      }
+      if (schedule.type === "survey" && schedule.assignedUser) {
+        const surveyorUpdated = await updateSiteSurveyorProperty(project.id, schedule.assignedUser);
+        if (!surveyorUpdated) {
+          hubspotWarnings.push(`HubSpot site_surveyor write failed (${schedule.assignedUser})`);
+        }
+      }
+      const verification = await verifyHubSpotScheduleWrite(project.id, schedule.type as ScheduleType, schedule.date, schedule.assignedUser);
+      if (!verification.ok) {
+        hubspotWarnings.push(...verification.warnings);
+      }
+      if (hubspotWarnings.length > 0) {
+        console.warn(`[Zuper Schedule] HubSpot verification warnings for deal ${project.id}: ${hubspotWarnings.join("; ")}`);
       }
 
       // Send notification to assigned crew member (skip for explicit test slots)
@@ -513,6 +618,7 @@ export async function PUT(request: NextRequest) {
         existingJobId: existingJob.job_uid,
         assignmentFailed,
         assignmentError,
+        hubspotWarnings: hubspotWarnings.length > 0 ? hubspotWarnings : undefined,
       });
     } else if (rescheduleOnly) {
       // Reschedule-only mode: don't create new jobs, just report that none was found
@@ -587,11 +693,25 @@ export async function PUT(request: NextRequest) {
         });
       }
 
-      // Update site surveyor in HubSpot (fire and forget)
-      if (schedule.assignedUser && schedule.type === "survey") {
-        updateDealProperty(project.id, { site_surveyor: schedule.assignedUser }).catch(err =>
-          console.warn(`[Zuper Schedule] Failed to update HubSpot site_surveyor:`, err)
-        );
+      // Update HubSpot schedule fields and verify persistence.
+      const hubspotUpdates: Record<string, string> = getHubSpotScheduleDateUpdate(schedule.type, schedule.date);
+      const hubspotDateUpdated = await updateDealProperty(project.id, hubspotUpdates);
+      const hubspotWarnings: string[] = [];
+      if (!hubspotDateUpdated) {
+        hubspotWarnings.push("HubSpot schedule date write failed");
+      }
+      if (schedule.type === "survey" && schedule.assignedUser) {
+        const surveyorUpdated = await updateSiteSurveyorProperty(project.id, schedule.assignedUser);
+        if (!surveyorUpdated) {
+          hubspotWarnings.push(`HubSpot site_surveyor write failed (${schedule.assignedUser})`);
+        }
+      }
+      const verification = await verifyHubSpotScheduleWrite(project.id, schedule.type as ScheduleType, schedule.date, schedule.assignedUser);
+      if (!verification.ok) {
+        hubspotWarnings.push(...verification.warnings);
+      }
+      if (hubspotWarnings.length > 0) {
+        console.warn(`[Zuper Schedule] HubSpot verification warnings for deal ${project.id}: ${hubspotWarnings.join("; ")}`);
       }
 
       // Send notification to assigned crew member (skip for explicit test slots)
@@ -611,6 +731,7 @@ export async function PUT(request: NextRequest) {
         action: "created",
         job: createResult.data,
         message: `${schedule.type} job created in Zuper (no existing job found)`,
+        hubspotWarnings: hubspotWarnings.length > 0 ? hubspotWarnings : undefined,
       });
     }
   } catch (error) {
@@ -725,15 +846,22 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    // Check if user has permission to schedule surveys
-    if (!canScheduleType(user.role as UserRole, "survey")) {
+    const body = await request.json();
+    const scheduleType = (body?.scheduleType as ScheduleType) || "survey";
+    if (!["survey", "installation", "inspection"].includes(scheduleType)) {
       return NextResponse.json(
-        { error: "You don't have permission to manage survey schedules." },
+        { error: "Invalid scheduleType. Must be: survey, installation, inspection" },
+        { status: 400 }
+      );
+    }
+
+    if (!canScheduleType(user.role as UserRole, scheduleType)) {
+      return NextResponse.json(
+        { error: `You don't have permission to manage ${scheduleType} schedules.` },
         { status: 403 }
       );
     }
 
-    const body = await request.json();
     const { projectId, projectName, zuperJobUid } = body;
 
     if (!projectId) {
@@ -743,13 +871,15 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    console.log(`[Zuper Unschedule] Clearing schedule for project ${projectId} (${projectName})`);
+    console.log(`[Zuper Unschedule] Clearing ${scheduleType} schedule for project ${projectId} (${projectName})`);
+    const targetCategoryName = getCategoryNameForScheduleType(scheduleType);
+    const targetCategoryUid = getCategoryUidForScheduleType(scheduleType);
 
     // Resolve Zuper job UID for survey category if UI payload is missing/stale.
     let resolvedJobUid: string | undefined = zuperJobUid || undefined;
     if (zuper.isConfigured() && !resolvedJobUid) {
       try {
-        const cached = await getCachedZuperJobByDealId(projectId, "Site Survey");
+        const cached = await getCachedZuperJobByDealId(projectId, targetCategoryName);
         if (cached?.jobUid) {
           resolvedJobUid = cached.jobUid;
         }
@@ -764,9 +894,9 @@ export async function DELETE(request: NextRequest) {
         if (searchResult.type === "success" && searchResult.data?.jobs) {
           const match = searchResult.data.jobs.find((job) => {
             const inCategory = typeof job.job_category === "string"
-              ? job.job_category === "Site Survey" || job.job_category === JOB_CATEGORY_UIDS.SITE_SURVEY
-              : job.job_category?.category_name === "Site Survey" ||
-                job.job_category?.category_uid === JOB_CATEGORY_UIDS.SITE_SURVEY;
+              ? job.job_category === targetCategoryName || job.job_category === targetCategoryUid
+              : job.job_category?.category_name === targetCategoryName ||
+                job.job_category?.category_uid === targetCategoryUid;
             return inCategory && !!job.job_tags?.includes(hubspotTag);
           });
           if (match?.job_uid) {
@@ -782,7 +912,7 @@ export async function DELETE(request: NextRequest) {
     let zuperCleared = false;
     let zuperError: string | undefined;
     if (zuper.isConfigured() && !resolvedJobUid) {
-      zuperError = "No matching Zuper Site Survey job found to unschedule";
+      zuperError = `No matching Zuper ${targetCategoryName} job found to unschedule`;
       console.warn("[Zuper Unschedule] %s for project %s", zuperError, projectId);
     } else if (resolvedJobUid && zuper.isConfigured()) {
       try {
@@ -800,7 +930,7 @@ export async function DELETE(request: NextRequest) {
       }
     }
 
-    // Clear HubSpot survey fields + status (required for successful unschedule UX).
+    // Clear HubSpot schedule fields.
     const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
     let hubspotFieldsCleared = false;
     let hubspotStatusUpdated = false;
@@ -822,56 +952,112 @@ export async function DELETE(request: NextRequest) {
       }
 
       for (const dealId of candidateDealIds) {
-        // Status update first.
-        hubspotStatusUpdated = await updateDealProperty(dealId, {
-          site_survey_status: "Ready to Schedule",
-        });
-        if (!hubspotStatusUpdated) {
+        // Reset the stage-specific status field.
+        if (scheduleType === "survey") {
           hubspotStatusUpdated = await updateDealProperty(dealId, {
-            site_survey_status: "Ready To Schedule",
+            site_survey_status: "Ready to Schedule",
           });
+          if (!hubspotStatusUpdated) {
+            hubspotStatusUpdated = await updateDealProperty(dealId, {
+              site_survey_status: "Ready To Schedule",
+            });
+          }
+        } else if (scheduleType === "installation") {
+          hubspotStatusUpdated = await updateDealProperty(dealId, {
+            install_status: "Ready to Build",
+          });
+          if (!hubspotStatusUpdated) {
+            hubspotStatusUpdated = await updateDealProperty(dealId, {
+              install_status: "Ready To Build",
+            });
+          }
+        } else {
+          hubspotStatusUpdated = await updateDealProperty(dealId, {
+            final_inspection_status: "Ready for Inspection",
+          });
+          if (!hubspotStatusUpdated) {
+            hubspotStatusUpdated = await updateDealProperty(dealId, {
+              final_inspection_status: "Ready For Inspection",
+            });
+          }
         }
 
-        // Clear date and surveyor with retry verification. This defends against
-        // immediate re-population by external automations in the same second.
         let scheduleCleared = false;
-        let surveyorCleared = false;
+        let surveyorCleared = scheduleType !== "survey";
         const MAX_CLEAR_ATTEMPTS = 4;
         for (let attempt = 1; attempt <= MAX_CLEAR_ATTEMPTS; attempt += 1) {
-          scheduleCleared = await updateDealProperty(dealId, {
-            site_survey_schedule_date: "",
-          });
-          if (!scheduleCleared) {
+          if (scheduleType === "survey") {
             scheduleCleared = await updateDealProperty(dealId, {
-              site_survey_schedule_date: null,
+              site_survey_schedule_date: "",
             });
-          }
-          if (!scheduleCleared) {
-            scheduleCleared = await updateDealProperty(dealId, {
-              site_survey_scheduled_date: null,
-            });
-          }
+            if (!scheduleCleared) {
+              scheduleCleared = await updateDealProperty(dealId, {
+                site_survey_schedule_date: null,
+              });
+            }
+            if (!scheduleCleared) {
+              scheduleCleared = await updateDealProperty(dealId, {
+                site_survey_scheduled_date: null,
+              });
+            }
 
-          surveyorCleared = await updateDealProperty(dealId, {
-            site_surveyor: "",
-          });
-          if (!surveyorCleared) {
             surveyorCleared = await updateDealProperty(dealId, {
-              site_surveyor: null,
+              site_surveyor: "",
             });
+            if (!surveyorCleared) {
+              surveyorCleared = await updateDealProperty(dealId, {
+                site_surveyor: null,
+              });
+            }
+          } else if (scheduleType === "installation") {
+            scheduleCleared = await updateDealProperty(dealId, {
+              install_schedule_date: "",
+            });
+            if (!scheduleCleared) {
+              scheduleCleared = await updateDealProperty(dealId, {
+                install_schedule_date: null,
+              });
+            }
+            if (!scheduleCleared) {
+              scheduleCleared = await updateDealProperty(dealId, {
+                construction_scheduled_date: null,
+              });
+            }
+          } else {
+            scheduleCleared = await updateDealProperty(dealId, {
+              inspections_schedule_date: "",
+            });
+            if (!scheduleCleared) {
+              scheduleCleared = await updateDealProperty(dealId, {
+                inspections_schedule_date: null,
+              });
+            }
+            if (!scheduleCleared) {
+              scheduleCleared = await updateDealProperty(dealId, {
+                inspection_scheduled_date: null,
+              });
+            }
           }
 
           hubspotDealIdUsed = dealId;
-          hubspotVerification = await getDealProperties(dealId, [
-            "site_survey_schedule_date",
-            "site_survey_scheduled_date",
-            "site_surveyor",
-            "site_survey_status",
-          ]);
-          const verifiedFieldsCleared = !!hubspotVerification &&
-            isBlank(hubspotVerification.site_survey_schedule_date) &&
-            isBlank(hubspotVerification.site_survey_scheduled_date) &&
-            isBlank(hubspotVerification.site_surveyor);
+          const verificationFields = scheduleType === "survey"
+            ? ["site_survey_schedule_date", "site_survey_scheduled_date", "site_surveyor", "site_survey_status"]
+            : scheduleType === "installation"
+              ? ["install_schedule_date", "construction_scheduled_date", "install_status"]
+              : ["inspections_schedule_date", "inspection_scheduled_date", "final_inspection_status"];
+          hubspotVerification = await getDealProperties(dealId, verificationFields);
+          const verifiedFieldsCleared = scheduleType === "survey"
+            ? !!hubspotVerification &&
+              isBlank(hubspotVerification.site_survey_schedule_date) &&
+              isBlank(hubspotVerification.site_survey_scheduled_date) &&
+              isBlank(hubspotVerification.site_surveyor)
+            : scheduleType === "installation"
+              ? !!hubspotVerification &&
+                isBlank(hubspotVerification.install_schedule_date) &&
+                isBlank(hubspotVerification.construction_scheduled_date)
+              : !!hubspotVerification &&
+                isBlank(hubspotVerification.inspections_schedule_date) &&
+                isBlank(hubspotVerification.inspection_scheduled_date);
           if (verifiedFieldsCleared) {
             break;
           }
@@ -881,13 +1067,29 @@ export async function DELETE(request: NextRequest) {
         }
 
         hubspotFieldsCleared = scheduleCleared && surveyorCleared;
-        const verifiedFieldsCleared = !!hubspotVerification &&
-          isBlank(hubspotVerification.site_survey_schedule_date) &&
-          isBlank(hubspotVerification.site_survey_scheduled_date) &&
-          isBlank(hubspotVerification.site_surveyor);
-        const verifiedStatus = !!hubspotVerification &&
-          (hubspotVerification.site_survey_status === "Ready to Schedule" ||
-            hubspotVerification.site_survey_status === "Ready To Schedule");
+        const verifiedFieldsCleared = scheduleType === "survey"
+          ? !!hubspotVerification &&
+            isBlank(hubspotVerification.site_survey_schedule_date) &&
+            isBlank(hubspotVerification.site_survey_scheduled_date) &&
+            isBlank(hubspotVerification.site_surveyor)
+          : scheduleType === "installation"
+            ? !!hubspotVerification &&
+              isBlank(hubspotVerification.install_schedule_date) &&
+              isBlank(hubspotVerification.construction_scheduled_date)
+            : !!hubspotVerification &&
+              isBlank(hubspotVerification.inspections_schedule_date) &&
+              isBlank(hubspotVerification.inspection_scheduled_date);
+        const verifiedStatus = scheduleType === "survey"
+          ? !!hubspotVerification &&
+            (hubspotVerification.site_survey_status === "Ready to Schedule" ||
+              hubspotVerification.site_survey_status === "Ready To Schedule")
+          : scheduleType === "installation"
+            ? !!hubspotVerification &&
+              (hubspotVerification.install_status === "Ready to Build" ||
+                hubspotVerification.install_status === "Ready To Build")
+            : !!hubspotVerification &&
+              (hubspotVerification.final_inspection_status === "Ready for Inspection" ||
+                hubspotVerification.final_inspection_status === "Ready For Inspection");
 
         hubspotCleared = hubspotFieldsCleared && hubspotStatusUpdated && verifiedFieldsCleared && verifiedStatus;
         if (hubspotCleared) {
@@ -896,12 +1098,12 @@ export async function DELETE(request: NextRequest) {
       }
 
       if (hubspotCleared) {
-        console.log(`[Zuper Unschedule] Cleared HubSpot survey fields for deal ${hubspotDealIdUsed}`);
+        console.log(`[Zuper Unschedule] Cleared HubSpot ${scheduleType} fields for deal ${hubspotDealIdUsed}`);
       } else {
         if (!hubspotFieldsCleared) {
-          hubspotError = "HubSpot schedule/surveyor fields failed to clear";
+          hubspotError = `HubSpot ${scheduleType} schedule fields failed to clear`;
         } else if (!hubspotStatusUpdated) {
-          hubspotError = "HubSpot site_survey_status failed to update";
+          hubspotError = `HubSpot ${scheduleType} status failed to update`;
         } else {
           hubspotError = "HubSpot deal update returned false";
         }
@@ -920,8 +1122,8 @@ export async function DELETE(request: NextRequest) {
       const ipAddress = forwarded?.split(",")[0]?.trim() || headersList.get("x-real-ip") || undefined;
 
       await logActivity({
-        type: "SURVEY_CANCELLED",
-        description: `Unscheduled survey for ${projectName || projectId}`,
+        type: scheduleType === "survey" ? "SURVEY_CANCELLED" : scheduleType === "installation" ? "INSTALL_CANCELLED" : "INSPECTION_CANCELLED",
+        description: `Unscheduled ${scheduleType} for ${projectName || projectId}`,
         userId: user.id,
         userEmail: session.user.email,
         entityType: "project",
@@ -959,7 +1161,7 @@ export async function DELETE(request: NextRequest) {
           zuperJobUid: resolvedJobUid || null,
           error: !zuperCleared
             ? (zuperError || "Failed to clear schedule in Zuper")
-            : (hubspotError || "Failed to clear HubSpot survey schedule fields"),
+            : (hubspotError || `Failed to clear HubSpot ${scheduleType} schedule fields`),
           message: !zuperCleared
             ? "HubSpot/Zuper unschedule did not fully complete."
             : "Zuper was cleared, but HubSpot fields did not clear.",
@@ -977,7 +1179,7 @@ export async function DELETE(request: NextRequest) {
       hubspotStatusUpdated,
       hubspotVerification,
       zuperJobUid: resolvedJobUid || null,
-      message: `Survey schedule cleared${zuperCleared ? " (Zuper + HubSpot)" : " (HubSpot only)"}`,
+      message: `${scheduleType} schedule cleared${zuperCleared ? " (Zuper + HubSpot)" : " (HubSpot only)"}`,
     });
   } catch (error) {
     console.error("Error unscheduling job:", error);

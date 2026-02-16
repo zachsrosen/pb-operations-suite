@@ -331,6 +331,7 @@ export default function SiteSurveySchedulerPage() {
   /* ---- user role ---- */
   const [userRole, setUserRole] = useState<string | null>(null);
   const [currentUserName, setCurrentUserName] = useState<string | null>(null);
+  const canUseTestSlot = userRole === "ADMIN";
 
   /* ---- self-service availability ---- */
   const [isLinkedSurveyor, setIsLinkedSurveyor] = useState(false);
@@ -1001,6 +1002,7 @@ export default function SiteSurveySchedulerPage() {
               assignedUser: effectiveAssignee,
               userUid: effectiveCrewUid,
               teamUid: effectiveTeamUid,
+              timezone: slot?.timezone,
               notes: slot
                 ? (useTestSlot
                   ? `TEST SLOT - Tentative ${effectiveAssignee} at ${slot.startTime}`
@@ -2215,15 +2217,22 @@ export default function SiteSurveySchedulerPage() {
                   />
                   <span className="text-sm">Sync to Zuper FSM</span>
                 </label>
-                <label className="flex items-center gap-2 cursor-pointer mt-2">
-                  <input
-                    type="checkbox"
-                    checked={useTestSlot}
-                    onChange={(e) => setUseTestSlot(e.target.checked)}
-                    className="w-4 h-4 rounded border-t-border bg-surface-2 text-amber-500 focus:ring-amber-500"
-                  />
-                  <span className="text-sm">Test slot (assign to me)</span>
-                </label>
+                <p className={`text-xs mt-2 ${syncToZuper ? "text-cyan-400" : "text-amber-400"}`}>
+                  {syncToZuper
+                    ? "Mode: live sync (writes to Zuper now)."
+                    : "Mode: tentative only (does not sync until confirmed)."}
+                </p>
+                {canUseTestSlot && (
+                  <label className="flex items-center gap-2 cursor-pointer mt-2">
+                    <input
+                      type="checkbox"
+                      checked={useTestSlot}
+                      onChange={(e) => setUseTestSlot(e.target.checked)}
+                      className="w-4 h-4 rounded border-t-border bg-surface-2 text-amber-500 focus:ring-amber-500"
+                    />
+                    <span className="text-sm">Test slot (assign to me)</span>
+                  </label>
+                )}
                 {syncToZuper && (
                   <p className="text-xs text-yellow-500 mt-2">
                     {useTestSlot

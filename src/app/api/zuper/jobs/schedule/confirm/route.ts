@@ -4,7 +4,7 @@ import { getUserByEmail, logActivity, prisma, cacheZuperJob, canScheduleType, ge
 import { zuper, createJobFromProject, JOB_CATEGORY_UIDS } from "@/lib/zuper";
 import { headers } from "next/headers";
 import { sendSchedulingNotification } from "@/lib/email";
-import { updateDealProperty } from "@/lib/hubspot";
+import { updateDealProperty, updateSiteSurveyorProperty, getDealProperties } from "@/lib/hubspot";
 
 /**
  * POST /api/zuper/jobs/schedule/confirm
@@ -285,14 +285,38 @@ export async function POST(request: NextRequest) {
       zuperError = String(zuperErr);
     }
 
-    // Update the schedule record
+    // If Zuper sync failed, keep this as tentative and return a failure so the
+    // UI does not treat it as confirmed.
+    if (zuperError) {
+      await prisma.scheduleRecord.update({
+        where: { id: scheduleRecordId },
+        data: {
+          status: "tentative",
+          zuperSynced: false,
+          zuperError,
+        },
+      });
+
+      return NextResponse.json(
+        {
+          success: false,
+          confirmed: false,
+          zuperSynced: false,
+          zuperError,
+          error: `Failed to sync confirmation to Zuper: ${zuperError}`,
+        },
+        { status: 502 }
+      );
+    }
+
+    // Update the schedule record only after successful Zuper sync.
     await prisma.scheduleRecord.update({
       where: { id: scheduleRecordId },
       data: {
         status: "scheduled",
-        zuperSynced: !zuperError,
+        zuperSynced: true,
         zuperJobUid: zuperJobUid || undefined,
-        zuperError: zuperError || null,
+        zuperError: null,
         notes: record.notes?.replace("[TENTATIVE]", "[CONFIRMED]") || "[CONFIRMED]",
       },
     });
@@ -309,14 +333,66 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Update HubSpot deal with schedule date (fire and forget)
+    // Update HubSpot deal with schedule date + surveyor and verify persistence.
+    const hubspotWarnings: string[] = [];
     try {
-      const hubspotField = scheduleType === "survey" ? "site_survey_scheduled_date"
-        : scheduleType === "installation" ? "construction_scheduled_date"
-        : "inspection_scheduled_date";
-      await updateDealProperty(record.projectId, { [hubspotField]: record.scheduledDate });
+      let hubspotUpdate: Record<string, string | null>;
+      if (scheduleType === "survey") {
+        hubspotUpdate = {
+          site_survey_schedule_date: record.scheduledDate,
+          site_survey_scheduled_date: record.scheduledDate,
+        };
+      } else if (scheduleType === "installation") {
+        hubspotUpdate = {
+          install_schedule_date: record.scheduledDate,
+          construction_scheduled_date: record.scheduledDate,
+        };
+      } else {
+        hubspotUpdate = {
+          inspections_schedule_date: record.scheduledDate,
+          inspection_scheduled_date: record.scheduledDate,
+        };
+      }
+      const dateUpdated = await updateDealProperty(record.projectId, hubspotUpdate);
+      if (!dateUpdated) {
+        hubspotWarnings.push("HubSpot schedule date write failed");
+      }
+      if (scheduleType === "survey" && record.assignedUser?.trim()) {
+        const surveyorUpdated = await updateSiteSurveyorProperty(record.projectId, record.assignedUser.trim());
+        if (!surveyorUpdated) {
+          hubspotWarnings.push(`HubSpot site_surveyor write failed (${record.assignedUser})`);
+        }
+      }
+      const verificationFields =
+        scheduleType === "survey"
+          ? ["site_survey_schedule_date", "site_survey_scheduled_date", "site_surveyor"]
+          : scheduleType === "installation"
+            ? ["install_schedule_date", "construction_scheduled_date"]
+            : ["inspections_schedule_date", "inspection_scheduled_date"];
+      const verifyProps = await getDealProperties(record.projectId, verificationFields);
+      if (!verifyProps) {
+        hubspotWarnings.push("HubSpot verification read failed");
+      } else {
+        const dateValues =
+          scheduleType === "survey"
+            ? [verifyProps.site_survey_schedule_date, verifyProps.site_survey_scheduled_date]
+            : scheduleType === "installation"
+              ? [verifyProps.install_schedule_date, verifyProps.construction_scheduled_date]
+              : [verifyProps.inspections_schedule_date, verifyProps.inspection_scheduled_date];
+        const dateMatched = dateValues.some((v) => String(v || "") === record.scheduledDate);
+        if (!dateMatched) {
+          hubspotWarnings.push(`HubSpot schedule date verification failed (expected ${record.scheduledDate})`);
+        }
+        if (scheduleType === "survey" && record.assignedUser?.trim()) {
+          const surveyorRaw = String(verifyProps.site_surveyor || "").trim().toLowerCase();
+          if (!surveyorRaw || surveyorRaw === "null" || surveyorRaw === "undefined") {
+            hubspotWarnings.push("HubSpot site_surveyor verification failed (still blank)");
+          }
+        }
+      }
     } catch (hubspotErr) {
       console.warn("Failed to update HubSpot deal:", hubspotErr);
+      hubspotWarnings.push("HubSpot update threw an error");
     }
 
     // Send notification to assigned crew member (fire and forget)
@@ -386,18 +462,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       confirmed: true,
-      zuperSynced: !zuperError,
+      zuperSynced: true,
       zuperJobUid,
-      zuperError,
+      zuperError: null,
+      hubspotWarnings: hubspotWarnings.length > 0 ? hubspotWarnings : undefined,
       record: {
         id: record.id,
         projectId: record.projectId,
         scheduledDate: record.scheduledDate,
         status: "scheduled",
       },
-      message: zuperError
-        ? `Schedule confirmed but Zuper sync failed: ${zuperError}`
-        : `${scheduleType} confirmed and synced to Zuper`,
+      message: `${scheduleType} confirmed and synced to Zuper`,
     });
   } catch (error) {
     console.error("Error confirming tentative schedule:", error);

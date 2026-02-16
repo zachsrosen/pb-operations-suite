@@ -1012,6 +1012,100 @@ export async function updateDealProperty(
   }
 }
 
+type SurveyorLookupCache = {
+  loadedAt: number;
+  normalizedToValue: Map<string, string>;
+  directValues: Set<string>;
+};
+
+let surveyorLookupCache: SurveyorLookupCache | null = null;
+const SURVEYOR_LOOKUP_TTL_MS = 5 * 60 * 1000;
+
+function normalizeLookupKey(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+async function loadSiteSurveyorLookup(): Promise<SurveyorLookupCache> {
+  const now = Date.now();
+  if (surveyorLookupCache && now - surveyorLookupCache.loadedAt < SURVEYOR_LOOKUP_TTL_MS) {
+    return surveyorLookupCache;
+  }
+
+  const normalizedToValue = new Map<string, string>();
+  const directValues = new Set<string>();
+
+  try {
+    const property = await hubspotClient.crm.properties.coreApi.getByName("deals", "site_surveyor");
+    for (const opt of property.options || []) {
+      const value = (opt.value || "").trim();
+      const label = (opt.label || "").trim();
+      if (!value) continue;
+      directValues.add(value);
+      normalizedToValue.set(normalizeLookupKey(value), value);
+      if (label) normalizedToValue.set(normalizeLookupKey(label), value);
+    }
+  } catch (err) {
+    console.warn("[HubSpot] Failed to load site_surveyor property options:", err instanceof Error ? err.message : err);
+  }
+
+  try {
+    let after: string | undefined;
+    do {
+      const ownersResponse = await hubspotClient.crm.owners.ownersApi.getPage(undefined, after, 500, false);
+      for (const owner of ownersResponse.results || []) {
+        const id = String(owner.id || "").trim();
+        if (!id) continue;
+        const fullName = [owner.firstName, owner.lastName].filter(Boolean).join(" ").trim();
+        const email = String(owner.email || "").trim();
+        directValues.add(id);
+        normalizedToValue.set(normalizeLookupKey(id), id);
+        if (fullName) normalizedToValue.set(normalizeLookupKey(fullName), id);
+        if (email) normalizedToValue.set(normalizeLookupKey(email), id);
+      }
+      after = ownersResponse.paging?.next?.after;
+    } while (after);
+  } catch (err) {
+    console.warn("[HubSpot] Failed to load owners for site_surveyor lookup:", err instanceof Error ? err.message : err);
+  }
+
+  surveyorLookupCache = {
+    loadedAt: now,
+    normalizedToValue,
+    directValues,
+  };
+  return surveyorLookupCache;
+}
+
+/**
+ * Update site_surveyor with defensive value resolution.
+ * Some tenants require owner/property option IDs, not display names.
+ */
+export async function updateSiteSurveyorProperty(dealId: string, assignee: string): Promise<boolean> {
+  const raw = assignee.trim();
+  if (!raw) return updateDealProperty(dealId, { site_surveyor: "" });
+
+  let resolvedValue = raw;
+  try {
+    const lookup = await loadSiteSurveyorLookup();
+    if (lookup.directValues.has(raw)) {
+      resolvedValue = raw;
+    } else {
+      const mapped = lookup.normalizedToValue.get(normalizeLookupKey(raw));
+      if (mapped) resolvedValue = mapped;
+    }
+  } catch {
+    // Fallback to raw value if lookup fails.
+  }
+
+  const firstAttempt = await updateDealProperty(dealId, { site_surveyor: resolvedValue });
+  if (firstAttempt) return true;
+
+  if (resolvedValue !== raw) {
+    return updateDealProperty(dealId, { site_surveyor: raw });
+  }
+  return false;
+}
+
 export async function getDealProperties(
   dealId: string,
   propertyNames: string[]

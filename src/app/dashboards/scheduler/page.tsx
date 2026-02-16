@@ -1520,6 +1520,60 @@ export default function SchedulerPage() {
     }
   }, [manualSchedules, showToast]);
 
+  const handleRemoveScheduled = useCallback(async (projectId: string) => {
+    const project = projects.find((p) => p.id === projectId);
+    if (!project) {
+      showToast("Project not found", "error");
+      return;
+    }
+
+    const scheduleType = project.stage === "survey"
+      ? "survey"
+      : project.stage === "inspection"
+        ? "inspection"
+        : "installation";
+
+    setManualSchedules((prev) => {
+      const next = { ...prev };
+      delete next[projectId];
+      return next;
+    });
+
+    try {
+      const res = await fetch("/api/zuper/jobs/schedule", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          projectName: project.name,
+          zuperJobUid: project.zuperJobUid || null,
+          scheduleType,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        showToast(data?.message || data?.error || "Failed to remove from schedule", "error");
+        fetchProjects();
+        return;
+      }
+
+      setProjects((prev) =>
+        prev.map((p) =>
+          p.id === projectId
+            ? { ...p, scheduleDate: null }
+            : p
+        )
+      );
+      showToast("Removed from schedule");
+      setDetailModal(null);
+      setTimeout(() => fetchProjects(), 900);
+    } catch {
+      showToast("Failed to remove from schedule", "error");
+      fetchProjects();
+    }
+  }, [fetchProjects, projects, showToast]);
+
   const handleDrop = useCallback(
     (e: React.DragEvent, dateStr: string, crewName?: string) => {
       e.preventDefault();
@@ -3464,6 +3518,11 @@ export default function SchedulerPage() {
                       Sync schedule to Zuper
                     </label>
                   </div>
+                  <div className={`text-[0.6rem] mt-1 ${syncToZuper ? "text-cyan-400" : "text-amber-400"}`}>
+                    {syncToZuper
+                      ? "Mode: live sync (writes to Zuper now)."
+                      : "Mode: tentative only (does not sync until confirmed)."}
+                  </div>
                   <div className="text-[0.6rem] text-muted mt-1">
                     Updates the existing {scheduleModal.project.stage === "survey" ? "Site Survey" : scheduleModal.project.stage === "inspection" ? "Inspection" : "Installation"} job in Zuper (or creates one if none exists)
                   </div>
@@ -3771,6 +3830,14 @@ export default function SchedulerPage() {
             )}
 
             <div className="flex gap-2 justify-end flex-wrap">
+              {!manualSchedules[detailModal.id]?.isTentative && (
+                <button
+                  onClick={() => handleRemoveScheduled(detailModal.id)}
+                  className="px-3.5 py-2 rounded-md bg-red-700/80 border border-red-700/80 text-white text-[0.75rem] font-semibold no-underline hover:bg-red-700 transition-colors"
+                >
+                  Remove from Schedule
+                </button>
+              )}
               <a
                 href={detailModal.hubspotUrl}
                 target="_blank"

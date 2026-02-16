@@ -7,6 +7,7 @@ import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 import { formatTime12h, formatTimeRange12h } from "@/lib/format";
 import MyAvailability from "../site-survey-scheduler/my-availability";
+import { LOCATION_TIMEZONES } from "@/lib/constants";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -55,6 +56,7 @@ interface InspectionProject {
   zuperJobStatus?: string;
   assignedInspector?: string;
   zuperScheduledTime?: string;
+  tentativeRecordId?: string;
 }
 
 interface PendingSchedule {
@@ -274,7 +276,10 @@ export default function InspectionSchedulerPage() {
   /* ---- selection / scheduling ---- */
   const [selectedProject, setSelectedProject] = useState<InspectionProject | null>(null);
   const [manualSchedules, setManualSchedules] = useState<Record<string, string>>({});
+  const [tentativeRecordIds, setTentativeRecordIds] = useState<Record<string, string>>({});
   const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null);
+  const [confirmingTentative, setConfirmingTentative] = useState(false);
+  const [cancellingTentative, setCancellingTentative] = useState(false);
 
   /* ---- modals ---- */
   const [scheduleModal, setScheduleModal] = useState<PendingSchedule | null>(null);
@@ -336,6 +341,8 @@ export default function InspectionSchedulerPage() {
       const transformed = data.projects
         .map((p: RawProject) => transformProject(p))
         .filter((p: InspectionProject | null): p is InspectionProject => p !== null);
+      const restoredSchedules: Record<string, string> = {};
+      const restoredTentatives: Record<string, string> = {};
 
       // Look up Zuper job UIDs for these projects
       if (transformed.length > 0) {
@@ -379,6 +386,30 @@ export default function InspectionSchedulerPage() {
         } catch (zuperErr) {
           console.warn("Failed to lookup Zuper jobs:", zuperErr);
         }
+
+        // Rehydrate tentative schedules so they survive refresh on this page.
+        try {
+          const projectIds = transformed.map((p: InspectionProject) => p.id).join(",");
+          const tentRes = await fetch(`/api/zuper/schedule-records?projectIds=${encodeURIComponent(projectIds)}&type=inspection&status=tentative`);
+          if (tentRes.ok) {
+            const tentData = await tentRes.json();
+            const records = tentData.records as Record<string, { id: string; scheduledDate: string; assignedUser?: string }>;
+            for (const [projectId, rec] of Object.entries(records || {})) {
+              restoredSchedules[projectId] = rec.scheduledDate;
+              restoredTentatives[projectId] = rec.id;
+              const project = transformed.find((p: InspectionProject) => p.id === projectId);
+              if (project) {
+                project.tentativeRecordId = rec.id;
+                project.inspectionStatus = "Tentative";
+                if (rec.assignedUser && !project.assignedInspector) {
+                  project.assignedInspector = rec.assignedUser;
+                }
+              }
+            }
+          }
+        } catch (tentErr) {
+          console.warn("Failed to rehydrate tentative inspection schedules:", tentErr);
+        }
       }
 
       // Merge locally-stored inspector assignments (only if not already set by Zuper)
@@ -395,6 +426,10 @@ export default function InspectionSchedulerPage() {
       } catch { /* ignore */ }
 
       setProjects(transformed);
+      setTentativeRecordIds(restoredTentatives);
+      if (Object.keys(restoredSchedules).length > 0) {
+        setManualSchedules((prev) => ({ ...restoredSchedules, ...prev }));
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Unknown error";
       setError(msg);
@@ -782,7 +817,7 @@ export default function InspectionSchedulerPage() {
               crew: slot?.userUid,
               teamUid: slot?.teamUid,
               assignedUser: slot?.userName,
-              timezone: slot?.timezone,
+              timezone: slot?.timezone || LOCATION_TIMEZONES[project.location] || "America/Denver",
               notes: slot
                 ? `Inspector: ${slot.userName} at ${slot.startTime}`
                 : "Scheduled via Inspection Schedule",
@@ -855,6 +890,7 @@ export default function InspectionSchedulerPage() {
               assignedUser: slot?.userName,
               userUid: slot?.userUid,
               teamUid: slot?.teamUid,
+              timezone: slot?.timezone || LOCATION_TIMEZONES[project.location] || "America/Denver",
               notes: slot
                 ? `Tentative inspector: ${slot.userName} at ${slot.startTime}`
                 : "Tentatively scheduled via Inspection Scheduler",
@@ -864,6 +900,16 @@ export default function InspectionSchedulerPage() {
 
         const slotInfo = slot ? ` (${slot.userName} ${formatTime12h(slot.startTime)})` : "";
         if (response.ok) {
+          const data = await response.json().catch(() => null);
+          const recordId = data?.record?.id as string | undefined;
+          if (recordId) {
+            setTentativeRecordIds((prev) => ({ ...prev, [project.id]: recordId }));
+            setProjects((prev) => prev.map((p) =>
+              p.id === project.id
+                ? { ...p, tentativeRecordId: recordId, inspectionStatus: "Tentative" }
+                : p
+            ));
+          }
           showToast(`${getCustomerName(project.name)} tentatively scheduled${slotInfo}`);
         } else {
           showToast(`${getCustomerName(project.name)} scheduled locally (tentative save failed)`, "warning");
@@ -955,8 +1001,106 @@ export default function InspectionSchedulerPage() {
     setScheduleModal(null);
   }, [scheduleModal, zuperConfigured, syncToZuper, showToast, fetchAvailability, saveInspectorAssignment, trackFeature]);
 
-  const cancelSchedule = useCallback((projectId: string) => {
+  const handleConfirmTentative = useCallback(async (projectId: string) => {
+    const recordId = tentativeRecordIds[projectId];
+    if (!recordId) {
+      showToast("No tentative record found to confirm", "warning");
+      return;
+    }
+    setConfirmingTentative(true);
+    try {
+      const res = await fetch("/api/zuper/jobs/schedule/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scheduleRecordId: recordId }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) {
+        showToast(data?.error || "Failed to confirm tentative schedule", "warning");
+        return;
+      }
+
+      setTentativeRecordIds((prev) => {
+        const next = { ...prev };
+        delete next[projectId];
+        return next;
+      });
+      setProjects((prev) => prev.map((p) =>
+        p.id === projectId ? { ...p, tentativeRecordId: undefined, inspectionStatus: "Scheduled" } : p
+      ));
+      showToast(data?.zuperSynced ? "Confirmed & synced to Zuper" : `Confirmed (Zuper sync issue: ${data?.zuperError || "Unknown"})`, data?.zuperSynced ? "success" : "warning");
+      setScheduleModal(null);
+      setTimeout(() => fetchProjects(), 700);
+    } catch {
+      showToast("Failed to confirm tentative schedule", "warning");
+    } finally {
+      setConfirmingTentative(false);
+    }
+  }, [fetchProjects, showToast, tentativeRecordIds]);
+
+  const handleCancelTentative = useCallback(async (projectId: string) => {
+    const recordId = tentativeRecordIds[projectId];
+    if (!recordId) {
+      setManualSchedules((prev) => {
+        const next = { ...prev };
+        delete next[projectId];
+        return next;
+      });
+      showToast("Tentative schedule removed");
+      setScheduleModal(null);
+      return;
+    }
+    setCancellingTentative(true);
+    try {
+      const res = await fetch("/api/zuper/schedule-records", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ recordId }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        showToast(data?.error || "Failed to cancel tentative schedule", "warning");
+        return;
+      }
+
+      setTentativeRecordIds((prev) => {
+        const next = { ...prev };
+        delete next[projectId];
+        return next;
+      });
+      setManualSchedules((prev) => {
+        const next = { ...prev };
+        delete next[projectId];
+        return next;
+      });
+      setProjects((prev) => prev.map((p) =>
+        p.id === projectId
+          ? {
+              ...p,
+              scheduleDate: null,
+              tentativeRecordId: undefined,
+              inspectionStatus: "Ready For Inspection",
+              assignedInspector: undefined,
+              zuperScheduledTime: undefined,
+            }
+          : p
+      ));
+      showToast("Tentative schedule cancelled");
+      setScheduleModal(null);
+    } catch {
+      showToast("Failed to cancel tentative schedule", "warning");
+    } finally {
+      setCancellingTentative(false);
+    }
+  }, [showToast, tentativeRecordIds]);
+
+  const cancelSchedule = useCallback(async (projectId: string) => {
     const project = projects.find(p => p.id === projectId);
+    if (tentativeRecordIds[projectId]) {
+      await handleCancelTentative(projectId);
+      return;
+    }
+
     trackFeature("inspection-cancelled", "Inspection schedule removed", {
       scheduler: "inspection",
       projectId,
@@ -967,8 +1111,40 @@ export default function InspectionSchedulerPage() {
       delete next[projectId];
       return next;
     });
+    setProjects((prev) =>
+      prev.map((p) =>
+        p.id === projectId
+          ? { ...p, scheduleDate: null, assignedInspector: undefined, zuperScheduledTime: undefined }
+          : p
+      )
+    );
+
+    try {
+      const response = await fetch("/api/zuper/jobs/schedule", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          projectName: project?.name || projectId,
+          zuperJobUid: project?.zuperJobUid || null,
+          scheduleType: "inspection",
+        }),
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        showToast(errorData?.message || errorData?.error || "Failed to remove from schedule", "warning");
+        fetchProjects();
+        return;
+      }
+    } catch {
+      showToast("Failed to sync remove from schedule", "warning");
+      fetchProjects();
+      return;
+    }
+
     showToast("Schedule removed");
-  }, [showToast, projects, trackFeature]);
+    setTimeout(() => fetchProjects(), 1000);
+  }, [fetchProjects, handleCancelTentative, projects, showToast, tentativeRecordIds, trackFeature]);
 
   /* ================================================================ */
   /*  Navigation                                                       */
@@ -1695,6 +1871,30 @@ export default function InspectionSchedulerPage() {
                   ? "Reschedule Inspection"
                   : "Schedule Inspection"}
             </h3>
+            {(tentativeRecordIds[scheduleModal.project.id] || scheduleModal.project.tentativeRecordId) && (
+              <div className="mb-4 p-3 rounded-lg bg-amber-500/10 border border-dashed border-amber-400/50">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-amber-400 text-[0.7rem] font-bold uppercase tracking-wide">Tentative</span>
+                  <span className="text-[0.65rem] text-muted">Not yet synced to Zuper</span>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleConfirmTentative(scheduleModal.project.id)}
+                    disabled={confirmingTentative}
+                    className="px-3 py-1.5 rounded-md bg-emerald-600 text-white text-[0.72rem] font-semibold hover:bg-emerald-700 transition-colors disabled:opacity-50"
+                  >
+                    {confirmingTentative ? "Confirming..." : "Confirm & Sync"}
+                  </button>
+                  <button
+                    onClick={() => handleCancelTentative(scheduleModal.project.id)}
+                    disabled={cancellingTentative}
+                    className="px-3 py-1.5 rounded-md bg-red-600/80 text-white text-[0.72rem] font-semibold hover:bg-red-700 transition-colors disabled:opacity-50"
+                  >
+                    {cancellingTentative ? "Cancelling..." : "Cancel Tentative"}
+                  </button>
+                </div>
+              </div>
+            )}
 
             <div className="space-y-3 mb-4">
               <div>
@@ -1871,6 +2071,11 @@ export default function InspectionSchedulerPage() {
                   />
                   <span className="text-sm">Sync to Zuper FSM</span>
                 </label>
+                <p className={`text-xs mt-2 ${syncToZuper ? "text-purple-400" : "text-amber-400"}`}>
+                  {syncToZuper
+                    ? "Mode: live sync (writes to Zuper now)."
+                    : "Mode: tentative only (does not sync until confirmed)."}
+                </p>
                 {syncToZuper && (
                   <p className="text-xs text-yellow-500 mt-2">
                     Customer will receive SMS/Email notification
