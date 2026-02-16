@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getUserByEmail, logActivity, prisma, cacheZuperJob, canScheduleType, getCrewMemberByName, UserRole } from "@/lib/db";
-import { zuper, createJobFromProject } from "@/lib/zuper";
+import { zuper, createJobFromProject, JOB_CATEGORY_UIDS } from "@/lib/zuper";
 import { headers } from "next/headers";
 import { sendSchedulingNotification } from "@/lib/email";
 import { updateDealProperty } from "@/lib/hubspot";
@@ -81,6 +81,45 @@ export async function POST(request: NextRequest) {
       state: "",
     };
 
+    // Resolve assignment UIDs from record data so tentative confirms can still
+    // assign when only a crew name was stored (e.g. test-slot workflows).
+    const isUuid = (value?: string | null) =>
+      !!value && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+    const desiredAssigneeName = record.assignedUser?.trim() || "";
+    const resolvedUserUids = record.assignedUserUid
+      ? record.assignedUserUid.split(",").map((u) => u.trim()).filter(Boolean)
+      : [];
+    let resolvedTeamUid = record.assignedTeamUid || undefined;
+
+    if (resolvedUserUids.length === 0 && desiredAssigneeName) {
+      if (isUuid(desiredAssigneeName)) {
+        resolvedUserUids.push(desiredAssigneeName);
+      } else {
+        const crewMember = await getCrewMemberByName(desiredAssigneeName);
+        if (crewMember?.zuperUserUid) {
+          resolvedUserUids.push(crewMember.zuperUserUid);
+          if (!resolvedTeamUid && crewMember.zuperTeamUid) {
+            resolvedTeamUid = crewMember.zuperTeamUid;
+          }
+        } else {
+          const resolved = await zuper.resolveUserUid(desiredAssigneeName);
+          if (resolved?.userUid) {
+            resolvedUserUids.push(resolved.userUid);
+            if (!resolvedTeamUid && resolved.teamUid) {
+              resolvedTeamUid = resolved.teamUid;
+            }
+          }
+        }
+      }
+    }
+
+    if (desiredAssigneeName && resolvedUserUids.length === 0) {
+      return NextResponse.json(
+        { error: `Could not resolve Zuper user for assignee "${desiredAssigneeName}".` },
+        { status: 422 }
+      );
+    }
+
     // Run the Zuper scheduling flow: search for existing job -> create or reschedule
     const hubspotTag = `hubspot-${record.projectId}`;
 
@@ -103,9 +142,9 @@ export async function POST(request: NextRequest) {
 
       // Category config for matching
       const categoryConfig: Record<string, { name: string; uid: string }> = {
-        survey: { name: "Site Survey", uid: "002bac33-84d3-4083-a35d-50626fc49288" },
-        installation: { name: "Construction", uid: "6ffbc218-6dad-4a46-b378-1fb02b3ab4bf" },
-        inspection: { name: "Inspection", uid: "b7dc03d2-25d0-40df-a2fc-b1a477b16b65" },
+        survey: { name: "Site Survey", uid: JOB_CATEGORY_UIDS.SITE_SURVEY },
+        installation: { name: "Construction", uid: JOB_CATEGORY_UIDS.CONSTRUCTION },
+        inspection: { name: "Inspection", uid: JOB_CATEGORY_UIDS.INSPECTION },
       };
       const targetCategoryName = categoryConfig[scheduleType].name;
       const targetCategoryUid = categoryConfig[scheduleType].uid;
@@ -154,16 +193,12 @@ export async function POST(request: NextRequest) {
 
       if (existingJob?.job_uid) {
         // Reschedule existing job
-        const userUids = record.assignedUserUid
-          ? record.assignedUserUid.split(",").map(u => u.trim()).filter(Boolean)
-          : [];
-
         const rescheduleResult = await zuper.rescheduleJob(
           existingJob.job_uid,
           startDateTime,
           endDateTime,
-          userUids.length > 0 ? userUids : undefined,
-          record.assignedTeamUid || undefined
+          resolvedUserUids.length > 0 ? resolvedUserUids : undefined,
+          resolvedTeamUid
         );
 
         if (rescheduleResult.type === "success") {
@@ -179,8 +214,8 @@ export async function POST(request: NextRequest) {
           days: 1,
           startTime: record.scheduledStart || undefined,
           endTime: record.scheduledEnd || undefined,
-          crew: record.assignedUserUid || undefined,
-          teamUid: record.assignedTeamUid || undefined,
+          crew: resolvedUserUids[0] || undefined,
+          teamUid: resolvedTeamUid,
         });
 
         if (createResult.type === "success" && createResult.data?.job_uid) {
