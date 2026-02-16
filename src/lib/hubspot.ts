@@ -933,28 +933,66 @@ export async function updateDealProperty(
   properties: Record<string, string | null>
 ): Promise<boolean> {
   try {
-    const accessToken = process.env.HUBSPOT_ACCESS_TOKEN;
-    if (!accessToken) {
-      console.error("[HubSpot] HUBSPOT_ACCESS_TOKEN is not configured");
-      return false;
+    let updated = false;
+    const hasNullValue = Object.values(properties).some((v) => v === null);
+    // Try official client first (works well with standard updates).
+    if (!hasNullValue) {
+      try {
+        await hubspotClient.crm.deals.basicApi.update(dealId, { properties: properties as Record<string, string> });
+        console.log(`[HubSpot] Updated deal ${dealId} properties via client:`, Object.keys(properties).join(", "));
+        updated = true;
+      } catch (clientErr) {
+        console.warn(`[HubSpot] Client update failed for deal ${dealId}, trying REST fallback:`, clientErr);
+      }
     }
+    if (!updated) {
+      const accessToken = process.env.HUBSPOT_ACCESS_TOKEN;
+      if (!accessToken) {
+        console.error("[HubSpot] HUBSPOT_ACCESS_TOKEN is not configured");
+        return false;
+      }
 
-    const response = await fetch(`https://api.hubapi.com/crm/v3/objects/deals/${dealId}`, {
-      method: "PATCH",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ properties }),
-    });
+      // Fallback 1: direct CRM v3 PATCH.
+      const patchResponse = await fetch(`https://api.hubapi.com/crm/v3/objects/deals/${dealId}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ properties }),
+      });
+      if (patchResponse.ok) {
+        console.log(`[HubSpot] Updated deal ${dealId} properties via PATCH:`, Object.keys(properties).join(", "));
+        updated = true;
+      } else {
+        const patchErrText = await patchResponse.text().catch(() => "");
+        console.warn(`[HubSpot] PATCH failed for deal ${dealId}: HTTP ${patchResponse.status} ${patchResponse.statusText} ${patchErrText}`);
 
-    if (!response.ok) {
-      const errText = await response.text().catch(() => "");
-      console.error(`[HubSpot] Failed to update deal ${dealId}: HTTP ${response.status} ${response.statusText} ${errText}`);
-      return false;
+        // Fallback 2: batch update (often mirrors UI behavior more closely).
+        const batchResponse = await fetch(`https://api.hubapi.com/crm/v3/objects/deals/batch/update`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            inputs: [{ id: dealId, properties }],
+          }),
+        });
+        if (!batchResponse.ok) {
+          const batchErrText = await batchResponse.text().catch(() => "");
+          console.error(
+            `[HubSpot] Failed to update deal ${dealId} via PATCH and batch/update. ` +
+            `PATCH=${patchResponse.status}, BATCH=${batchResponse.status}. ` +
+            `Batch error: ${batchErrText}`
+          );
+          return false;
+        }
+
+        console.log(`[HubSpot] Updated deal ${dealId} properties via batch/update:`, Object.keys(properties).join(", "));
+        updated = true;
+      }
     }
-
-    console.log(`[HubSpot] Updated deal ${dealId} properties:`, Object.keys(properties).join(", "));
 
     // Invalidate caches so updated data is fetched on next request
     try {
@@ -967,7 +1005,7 @@ export async function updateDealProperty(
       // Cache invalidation is best-effort, don't fail the update
     }
 
-    return true;
+    return updated;
   } catch (err) {
     console.error(`[HubSpot] Failed to update deal ${dealId}:`, err);
     return false;
