@@ -229,7 +229,10 @@ function isReadyToScheduleStatus(status: string | null | undefined): boolean {
 }
 
 function hasActiveSchedule(project: SurveyProject, manualScheduleDate?: string): boolean {
-  const schedDate = manualScheduleDate || project.scheduleDate;
+  // Manual/local schedule should always be treated as scheduled immediately.
+  if (manualScheduleDate) return !project.completionDate;
+
+  const schedDate = project.scheduleDate;
   if (!schedDate) return false;
   if (project.completionDate) return false;
   if (isReadyToScheduleStatus(project.surveyStatus)) return false;
@@ -454,6 +457,33 @@ export default function SiteSurveySchedulerPage() {
         }
       } catch {
         // Ignore localStorage errors
+      }
+
+      // Rehydrate tentative survey schedules so they persist on this page.
+      try {
+        const projectIds = transformed.map((p: SurveyProject) => p.id).join(",");
+        if (projectIds) {
+          const tentativeResponse = await fetch(`/api/zuper/schedule-records?projectIds=${projectIds}&type=survey&status=tentative`);
+          if (tentativeResponse.ok) {
+            const tentativeData = await tentativeResponse.json();
+            const records = tentativeData?.records || {};
+            for (const project of transformed) {
+              const rec = records[project.id];
+              if (!rec?.scheduledDate) continue;
+              // Tentative entries are a local planning state, so let them render
+              // even when HubSpot has not been updated yet.
+              if (!project.scheduleDate || isReadyToScheduleStatus(project.surveyStatus)) {
+                project.scheduleDate = rec.scheduledDate;
+                project.surveyStatus = "Tentative";
+              }
+              if (!project.assignedSurveyor && rec.assignedUser) {
+                project.assignedSurveyor = rec.assignedUser;
+              }
+            }
+          }
+        }
+      } catch (tentativeErr) {
+        console.warn("Failed to rehydrate tentative survey schedules:", tentativeErr);
       }
 
       setProjects(transformed);

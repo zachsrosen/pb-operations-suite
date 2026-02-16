@@ -15,6 +15,59 @@ interface UpdateEntry {
 
 const UPDATES: UpdateEntry[] = [
   {
+    version: "1.43.0",
+    date: "2026-02-16",
+    title: "Site Survey Unschedule Hardening & Calendar Consistency",
+    description: "Unschedule behavior is now hardened across Zuper + HubSpot, with stronger verification and improved scheduler behavior when external integrations write stale dates.",
+    changes: [
+      { type: "fix", text: "Unschedule endpoint now verifies Zuper clear + unassignment and returns partial failure when either Zuper or HubSpot clear does not complete" },
+      { type: "fix", text: "HubSpot unschedule flow now retries schedule-date clear operations with verification checks to reduce integration race failures" },
+      { type: "fix", text: "Site Survey Scheduler now treats 'Ready to Schedule' deals as unscheduled even when a stale schedule date exists, preventing false calendar placement" },
+      { type: "improvement", text: "Remove action label standardized to 'Remove from Schedule' in survey scheduling modal" },
+      { type: "improvement", text: "Unschedule action now provides clearer warning messaging when backend clear is partial" },
+    ],
+  },
+  {
+    version: "1.42.0",
+    date: "2026-02-15",
+    title: "Zuper Reschedule/Unschedule Reliability Sprint",
+    description: "Rescheduling and unscheduling in Site Survey scheduling received a reliability pass for assignment handling, schedule clearing, and status consistency.",
+    changes: [
+      { type: "fix", text: "Reschedule now unassigns prior users before applying new assignment to prevent stacked assignees in Zuper" },
+      { type: "fix", text: "Unschedule now uses tenant-compatible clear behavior and stricter verification for empty schedule windows" },
+      { type: "fix", text: "Due-date edge cases handled so unschedule attempts no longer silently no-op on jobs missing required date fields" },
+      { type: "fix", text: "Job UID resolution hardened via cache + API lookup fallback when payload UID is missing or stale" },
+      { type: "improvement", text: "Added test slot mode for scheduler testing: assigns to current user and suppresses crew notifications" },
+    ],
+  },
+  {
+    version: "1.41.0",
+    date: "2026-02-15",
+    title: "Security Hardening, Logging & Build Stability",
+    description: "Completed multi-phase hardening pass across middleware, auth cookies, API error handling, and deployment behavior.",
+    changes: [
+      { type: "fix", text: "Role trust hardening: middleware now prioritizes token role and blocks client-side cookie role escalation paths" },
+      { type: "fix", text: "Impersonation security tightened: admin validation added for impersonation metadata access paths" },
+      { type: "fix", text: "Removed dead pb-auth cookie/session token remnants from login/verify/logout flows" },
+      { type: "improvement", text: "Added request correlation IDs and expanded structured logging/observability coverage" },
+      { type: "fix", text: "Vercel preview build skip logic corrected to avoid unintended deploy behavior on main" },
+      { type: "internal", text: "Type safety/config updates: TS target raised, Jest thresholds added, and image remote patterns configured" },
+    ],
+  },
+  {
+    version: "1.40.0",
+    date: "2026-02-14",
+    title: "Compliance Analytics & Admin Testing Expansion",
+    description: "Compliance and admin tooling expanded with deeper comparison views, detailed drilldowns, and improved testing coverage in the Admin Suite.",
+    changes: [
+      { type: "feature", text: "Compliance dashboard now includes team/category comparison views and richer failed/stale status analysis" },
+      { type: "feature", text: "Compliance detail views expanded with methodology context and improved job link visibility" },
+      { type: "feature", text: "Admin Testing suite expanded with additional dashboards for QC, PM, D&E, and Permitting/Interconnection validation" },
+      { type: "fix", text: "Completion timing extraction in compliance flow corrected to use Zuper status history shape consistently" },
+      { type: "improvement", text: "HubSpot QC metric normalization improved for duration conversion and cross-dashboard consistency" },
+    ],
+  },
+  {
     version: "1.39.0",
     date: "2026-02-13",
     title: "Equipment Detail in Schedule Modals",
