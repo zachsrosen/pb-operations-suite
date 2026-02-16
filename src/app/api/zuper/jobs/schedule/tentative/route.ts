@@ -47,6 +47,11 @@ export async function PUT(request: NextRequest) {
       );
     }
 
+    const rawCrew = typeof schedule.crew === "string" ? schedule.crew : undefined;
+    const rawAssignedUser = typeof schedule.assignedUser === "string" ? schedule.assignedUser : undefined;
+    const rawUserUid = typeof schedule.userUid === "string" ? schedule.userUid : undefined;
+    const looksLikeUid = (value: string) => /^[0-9a-f-]{30,}$/i.test(value);
+
     // Create schedule record with tentative status (NO Zuper sync)
     const record = await createScheduleRecord({
       scheduleType,
@@ -56,8 +61,9 @@ export async function PUT(request: NextRequest) {
       scheduledDays: schedule.days ? Number(schedule.days) : undefined,
       scheduledStart: schedule.startTime,
       scheduledEnd: schedule.endTime,
-      assignedUser: schedule.crew || schedule.assignedUser,
-      assignedUserUid: schedule.userUid,
+      // Prefer display name; crew may be a UID in some clients.
+      assignedUser: rawAssignedUser || (rawCrew && !looksLikeUid(rawCrew) ? rawCrew : undefined),
+      assignedUserUid: rawUserUid || (rawCrew && looksLikeUid(rawCrew) ? rawCrew : undefined),
       assignedTeamUid: schedule.teamUid,
       scheduledBy: session.user.email,
       zuperSynced: false,

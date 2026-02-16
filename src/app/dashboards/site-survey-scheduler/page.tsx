@@ -64,6 +64,7 @@ interface SurveyProject {
     endTime: string;
     displayTime: string;
   };
+  tentativeRecordId?: string;
 }
 
 interface PendingSchedule {
@@ -184,6 +185,11 @@ function formatTimeRange12h(start?: string | null, end?: string | null): string 
   const startText = formatTime12h(start);
   if (!end) return startText;
   return `${startText}-${formatTime12h(end)}`;
+}
+
+function isLikelyUid(value: string | null | undefined): boolean {
+  if (!value) return false;
+  return /^[0-9a-f-]{30,}$/i.test(String(value));
 }
 
 function getCustomerName(fullName: string): string {
@@ -314,6 +320,8 @@ export default function SiteSurveySchedulerPage() {
   const [syncToZuper, setSyncToZuper] = useState(true);
   const [syncingToZuper, setSyncingToZuper] = useState(false);
   const [useTestSlot, setUseTestSlot] = useState(false);
+  const [confirmingTentative, setConfirmingTentative] = useState(false);
+  const [cancellingTentative, setCancellingTentative] = useState(false);
 
   /* ---- Assisted scheduling ---- */
   const [loadingSlots, setLoadingSlots] = useState(false);
@@ -477,19 +485,24 @@ export default function SiteSurveySchedulerPage() {
             for (const project of transformed) {
               const rec = records[project.id];
               if (!rec?.scheduledDate) continue;
+              const recordAssigned = typeof rec.assignedUser === "string" ? rec.assignedUser : "";
+              const resolvedAssignedName = !isLikelyUid(recordAssigned)
+                ? recordAssigned
+                : (project.assignedSurveyor || "");
               // Tentative entries are a local planning state, so let them render
               // even when HubSpot has not been updated yet.
               if (!project.scheduleDate || isReadyToScheduleStatus(project.surveyStatus)) {
                 project.scheduleDate = rec.scheduledDate;
                 project.surveyStatus = "Tentative";
               }
-              if (!project.assignedSurveyor && rec.assignedUser) {
-                project.assignedSurveyor = rec.assignedUser;
+              project.tentativeRecordId = rec.id || project.tentativeRecordId;
+              if (!project.assignedSurveyor && resolvedAssignedName) {
+                project.assignedSurveyor = resolvedAssignedName;
               }
               if (rec.scheduledStart) {
                 project.zuperScheduledTime = formatTime12h(rec.scheduledStart);
                 project.assignedSlot = {
-                  userName: rec.assignedUser || project.assignedSurveyor || "Tentative",
+                  userName: resolvedAssignedName || project.assignedSurveyor || "Tentative",
                   startTime: rec.scheduledStart,
                   endTime: rec.scheduledEnd || rec.scheduledStart,
                   displayTime: formatTimeRange12h(rec.scheduledStart, rec.scheduledEnd || null),
@@ -984,7 +997,7 @@ export default function SiteSurveySchedulerPage() {
               date,
               startTime: slot?.startTime,
               endTime: slot?.endTime,
-              crew: effectiveCrewUid,
+              crew: effectiveAssignee,
               assignedUser: effectiveAssignee,
               userUid: effectiveCrewUid,
               teamUid: effectiveTeamUid,
@@ -999,6 +1012,29 @@ export default function SiteSurveySchedulerPage() {
 
         const slotInfo = slot ? ` (${effectiveAssignee} ${slot.startTime.replace(/^0/, "")})` : "";
         if (response.ok) {
+          const data = await response.json().catch(() => null);
+          setProjects((prev) =>
+            prev.map((p) =>
+              p.id === project.id
+                ? {
+                    ...p,
+                    surveyStatus: "Tentative",
+                    scheduleDate: date,
+                    tentativeRecordId: data?.record?.id || p.tentativeRecordId,
+                    assignedSurveyor: effectiveAssignee || p.assignedSurveyor,
+                    assignedSlot: slot
+                      ? {
+                          userName: effectiveAssignee || slot.userName || "Tentative",
+                          startTime: slot.startTime,
+                          endTime: slot.endTime,
+                          displayTime: formatTimeRange12h(slot.startTime, slot.endTime),
+                        }
+                      : p.assignedSlot,
+                    zuperScheduledTime: slot?.startTime ? formatTime12h(slot.startTime) : p.zuperScheduledTime,
+                  }
+                : p
+            )
+          );
           showToast(`${getCustomerName(project.name)} tentatively scheduled${slotInfo}`);
         } else {
           showToast(`${getCustomerName(project.name)} scheduled locally (tentative save failed)`, "warning");
@@ -1141,6 +1177,90 @@ export default function SiteSurveySchedulerPage() {
       }
     }, 1200);
   }, [showToast, projects, trackFeature, fetchProjects, fetchAvailability, clearSurveyorAssignment]);
+
+  const handleConfirmTentative = useCallback(async (project: SurveyProject) => {
+    const recordId = project.tentativeRecordId;
+    if (!recordId) {
+      showToast("No tentative record found to confirm", "warning");
+      return;
+    }
+
+    setConfirmingTentative(true);
+    try {
+      const res = await fetch("/api/zuper/jobs/schedule/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scheduleRecordId: recordId }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) {
+        showToast(data?.error || "Failed to confirm tentative schedule", "warning");
+        return;
+      }
+
+      setProjects((prev) =>
+        prev.map((p) =>
+          p.id === project.id
+            ? { ...p, surveyStatus: "Scheduled", tentativeRecordId: undefined }
+            : p
+        )
+      );
+      showToast(data?.zuperSynced ? "Confirmed & synced to Zuper" : `Confirmed (Zuper sync issue: ${data?.zuperError || "Unknown"})`, data?.zuperSynced ? "success" : "warning");
+      setScheduleModal(null);
+      setTimeout(() => fetchProjects(), 700);
+    } catch {
+      showToast("Failed to confirm tentative schedule", "warning");
+    } finally {
+      setConfirmingTentative(false);
+    }
+  }, [fetchProjects, showToast]);
+
+  const handleCancelTentative = useCallback(async (project: SurveyProject) => {
+    const recordId = project.tentativeRecordId;
+    setCancellingTentative(true);
+    try {
+      if (recordId) {
+        const res = await fetch("/api/zuper/schedule-records", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ recordId }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => null);
+          showToast(data?.error || "Failed to cancel tentative schedule", "warning");
+          return;
+        }
+      }
+
+      clearSurveyorAssignment(project.id);
+      setManualSchedules((prev) => {
+        const next = { ...prev };
+        delete next[project.id];
+        return next;
+      });
+      setProjects((prev) =>
+        prev.map((p) =>
+          p.id === project.id
+            ? {
+                ...p,
+                scheduleDate: null,
+                surveyStatus: "Ready to Schedule",
+                assignedSurveyor: undefined,
+                assignedSlot: undefined,
+                zuperScheduledTime: undefined,
+                tentativeRecordId: undefined,
+              }
+            : p
+        )
+      );
+      showToast("Tentative schedule cancelled");
+      setScheduleModal(null);
+    } catch {
+      showToast("Failed to cancel tentative schedule", "warning");
+    } finally {
+      setCancellingTentative(false);
+    }
+  }, [clearSurveyorAssignment, showToast]);
 
   /* ================================================================ */
   /*  Navigation                                                       */
@@ -1607,7 +1727,7 @@ export default function SiteSurveySchedulerPage() {
                                 }}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setScheduleModal({ project: ev, date: dateStr, currentSlot: evSlot });
+                                  setScheduleModal({ project: ev, date: dateStr, currentSlot: displaySlot });
                                 }}
                                 className={`text-xs p-1 rounded cursor-grab active:cursor-grabbing ${
                                   overdue
@@ -1828,12 +1948,21 @@ export default function SiteSurveySchedulerPage() {
                             </td>
                             <td className="px-4 py-3 text-center">
                               {isScheduled ? (
-                                <button
-                                  onClick={() => cancelSchedule(project.id)}
-                                  className="text-xs text-red-400 hover:text-red-300"
-                                >
-                                  Remove
-                                </button>
+                                project.surveyStatus.toLowerCase().includes("tentative") ? (
+                                  <button
+                                    onClick={() => setScheduleModal({ project, date: schedDate || getTodayStr(), currentSlot: project.assignedSlot })}
+                                    className="text-xs text-amber-300 hover:text-amber-200"
+                                  >
+                                    Review
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() => cancelSchedule(project.id)}
+                                    className="text-xs text-red-400 hover:text-red-300"
+                                  >
+                                    Remove
+                                  </button>
+                                )
                               ) : (
                                 <button
                                   onClick={() => setSelectedProject(project)}
@@ -1876,6 +2005,31 @@ export default function SiteSurveySchedulerPage() {
                   ? "Reschedule Site Survey"
                   : "Schedule Site Survey"}
             </h3>
+
+            {scheduleModal.project.surveyStatus.toLowerCase().includes("tentative") && (
+              <div className="mb-4 p-3 rounded-lg bg-amber-500/10 border border-dashed border-amber-400/50">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-amber-400 text-[0.7rem] font-bold uppercase tracking-wide">Tentative</span>
+                  <span className="text-[0.65rem] text-muted">Not yet synced to Zuper</span>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleConfirmTentative(scheduleModal.project)}
+                    disabled={confirmingTentative}
+                    className="px-3 py-1.5 rounded-md bg-emerald-600 text-white text-[0.72rem] font-semibold hover:bg-emerald-700 transition-colors disabled:opacity-50"
+                  >
+                    {confirmingTentative ? "Confirming..." : "Confirm & Sync"}
+                  </button>
+                  <button
+                    onClick={() => handleCancelTentative(scheduleModal.project)}
+                    disabled={cancellingTentative}
+                    className="px-3 py-1.5 rounded-md bg-red-600/80 text-white text-[0.72rem] font-semibold hover:bg-red-700 transition-colors disabled:opacity-50"
+                  >
+                    {cancellingTentative ? "Cancelling..." : "Cancel Tentative"}
+                  </button>
+                </div>
+              </div>
+            )}
 
             <div className="space-y-3 mb-4">
               <div>
@@ -2084,16 +2238,18 @@ export default function SiteSurveySchedulerPage() {
               {scheduleModal.currentSlot && !scheduleModal.isRescheduling && !scheduleModal.slot ? (
                 /* Viewing mode - show Close and Remove buttons */
                 <>
-                  <button
-                    onClick={() => {
-                      const projectId = scheduleModal.project.id;
-                      setScheduleModal(null);
-                      cancelSchedule(projectId);
-                    }}
-                    className="px-4 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg font-medium"
-                  >
-                    Remove from Schedule
-                  </button>
+                  {!scheduleModal.project.surveyStatus.toLowerCase().includes("tentative") && (
+                    <button
+                      onClick={() => {
+                        const projectId = scheduleModal.project.id;
+                        setScheduleModal(null);
+                        cancelSchedule(projectId);
+                      }}
+                      className="px-4 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg font-medium"
+                    >
+                      Remove from Schedule
+                    </button>
+                  )}
                   <button
                     onClick={() => setScheduleModal(null)}
                     className="px-4 py-2 text-sm bg-surface-2 hover:bg-zinc-600 rounded-lg font-medium"
