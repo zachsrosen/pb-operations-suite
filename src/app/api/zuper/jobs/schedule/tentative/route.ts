@@ -50,6 +50,7 @@ export async function PUT(request: NextRequest) {
     const rawCrew = typeof schedule.crew === "string" ? schedule.crew : undefined;
     const rawAssignedUser = typeof schedule.assignedUser === "string" ? schedule.assignedUser : undefined;
     const rawUserUid = typeof schedule.userUid === "string" ? schedule.userUid : undefined;
+    const rawZuperJobUid = typeof project?.zuperJobUid === "string" ? project.zuperJobUid.trim() : "";
     const rawTimezone = typeof schedule.timezone === "string" ? schedule.timezone.trim() : "";
     const looksLikeUid = (value: string) => /^[0-9a-f-]{30,}$/i.test(value);
     const timezoneTag = rawTimezone ? ` [TZ:${rawTimezone}]` : "";
@@ -68,6 +69,7 @@ export async function PUT(request: NextRequest) {
       assignedUserUid: rawUserUid || (rawCrew && looksLikeUid(rawCrew) ? rawCrew : undefined),
       assignedTeamUid: schedule.teamUid,
       scheduledBy: session.user.email,
+      zuperJobUid: rawZuperJobUid || undefined,
       zuperSynced: false,
       zuperAssigned: false,
       notes: schedule.notes ? `[TENTATIVE] ${schedule.notes}${timezoneTag}` : `[TENTATIVE]${timezoneTag}`,

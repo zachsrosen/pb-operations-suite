@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { getUserByEmail, logActivity, prisma, cacheZuperJob, canScheduleType, getCrewMemberByName, UserRole } from "@/lib/db";
+import { getUserByEmail, logActivity, prisma, cacheZuperJob, canScheduleType, getCrewMemberByName, getCachedZuperJobByDealId, UserRole } from "@/lib/db";
 import { zuper, JOB_CATEGORY_UIDS } from "@/lib/zuper";
 import { headers } from "next/headers";
 import { sendSchedulingNotification } from "@/lib/email";
@@ -198,12 +198,6 @@ export async function POST(request: NextRequest) {
     let zuperError: string | undefined;
 
     try {
-      // Search for existing Zuper job
-      const searchResult = await zuper.searchJobs({
-        limit: 100,
-        search: customerLastName,
-      });
-
       // Category config for matching
       const categoryConfig: Record<string, { name: string; uid: string }> = {
         survey: { name: "Site Survey", uid: JOB_CATEGORY_UIDS.SITE_SURVEY },
@@ -226,27 +220,68 @@ export async function POST(request: NextRequest) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let existingJob: any = null;
 
-      if (searchResult.type === "success" && searchResult.data?.jobs) {
-        // Try matching by HubSpot tag first
-        existingJob = searchResult.data.jobs.find(
-          (job) => job.job_tags?.some(t => t.toLowerCase() === hubspotTag.toLowerCase()) && categoryMatches(job)
-        );
+      // Strategy 1: use UID persisted with tentative record (if present).
+      if (record.zuperJobUid) {
+        existingJob = { job_uid: record.zuperJobUid };
+      }
 
-        // Fallback: match by PROJ number or last name
-        if (!existingJob && (customerLastName || projNumber)) {
-          const normalizedLastName = customerLastName.toLowerCase().trim();
-          const normalizedProjNumber = projNumber.toLowerCase().trim();
-          existingJob = searchResult.data.jobs.find((job) => {
-            const jobTitle = job.job_title?.toLowerCase() || "";
-            if (!categoryMatches(job)) return false;
-            if (normalizedProjNumber && jobTitle.includes(normalizedProjNumber)) return true;
-            if (normalizedLastName.length > 2) {
-              return jobTitle.includes(normalizedLastName + ",") ||
-                     jobTitle.startsWith(normalizedLastName + " ");
-            }
-            return false;
+      // Strategy 2: DB cache lookup.
+      if (!existingJob) {
+        const cached = await getCachedZuperJobByDealId(record.projectId, targetCategoryName);
+        if (cached?.jobUid) {
+          existingJob = { job_uid: cached.jobUid };
+        }
+      }
+
+      // Strategy 3: targeted lastname search.
+      if (!existingJob) {
+        const searchResult = await zuper.searchJobs({
+          limit: 100,
+          search: customerLastName,
+        });
+        if (searchResult.type === "success" && searchResult.data?.jobs) {
+          // Try matching by HubSpot tag first
+          existingJob = searchResult.data.jobs.find(
+            (job) => job.job_tags?.some(t => t.toLowerCase() === hubspotTag.toLowerCase()) && categoryMatches(job)
+          );
+
+          // Fallback: match by PROJ number or last name
+          if (!existingJob && (customerLastName || projNumber)) {
+            const normalizedLastName = customerLastName.toLowerCase().trim();
+            const normalizedProjNumber = projNumber.toLowerCase().trim();
+            existingJob = searchResult.data.jobs.find((job) => {
+              const jobTitle = job.job_title?.toLowerCase() || "";
+              if (!categoryMatches(job)) return false;
+              if (normalizedProjNumber && jobTitle.includes(normalizedProjNumber)) return true;
+              if (normalizedLastName.length > 2) {
+                return jobTitle.includes(normalizedLastName + ",") ||
+                       jobTitle.startsWith(normalizedLastName + " ");
+              }
+              return false;
+            });
+          }
+        }
+      }
+
+      // Strategy 4: broad recent search as last fallback (same intent as main schedule route).
+      if (!existingJob) {
+        const broadSearch = await zuper.searchJobs({
+          limit: 500,
+          from_date: new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+        });
+        if (broadSearch.type === "success" && broadSearch.data?.jobs) {
+          existingJob = broadSearch.data.jobs.find((job) => {
+            const tagMatch = job.job_tags?.some(t => t.toLowerCase() === hubspotTag.toLowerCase());
+            const title = (job.job_title || "").toLowerCase();
+            const projMatch = !!projNumber && title.includes(projNumber.toLowerCase());
+            return categoryMatches(job) && (tagMatch || projMatch);
           });
         }
+      }
+
+      if (existingJob) {
+        // Try matching by HubSpot tag first
+        console.log(`[Zuper Confirm] Found existing ${scheduleType} job for ${record.projectId}: ${existingJob.job_uid}`);
       }
 
       // Calculate schedule times
