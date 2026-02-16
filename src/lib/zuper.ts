@@ -684,25 +684,20 @@ export class ZuperClient {
       console.warn("[Zuper] Failed clear_schedule=true call for %s: %s", jobUid, clearViaFlag.error);
     }
 
-    // Fallback: /jobs/schedule with zero-length window.
-    const clearDate = this.formatZuperDate(dueDateForClear || new Date());
-    const clearDateTime = `${clearDate} 00:00:00`;
-    const clearScheduleResult = await this.request<ZuperJob>(`/jobs/schedule`, {
-      method: "PUT",
-      body: JSON.stringify({
-        job_uid: jobUid,
-        from_date: clearDateTime,
-        to_date: clearDateTime,
-        due_date: clearDate,
-      }),
-    });
-    if (clearScheduleResult.type === "success") {
-      lastResult = clearScheduleResult;
-    } else {
-      console.warn("[Zuper] Failed to clear schedule via /jobs/schedule for %s: %s", jobUid, clearScheduleResult.error);
+    // Verify immediately after clear flag call to avoid any fallback that could
+    // inadvertently write schedule timestamps back.
+    const verifyAfterFlag = await this.getJob(jobUid);
+    if (verifyAfterFlag.type === "success" && verifyAfterFlag.data) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const verifyJob = verifyAfterFlag.data as any;
+      const assignedCount = this.assignedToCount(verifyJob);
+      const unscheduled = this.isJobUnscheduled(verifyJob);
+      if (assignedCount === 0 && unscheduled) {
+        return lastResult.type === "success" ? lastResult : { type: "success", data: verifyAfterFlag.data };
+      }
     }
 
-    // Fallback strategy: direct update payload for tenants where schedule endpoint no-ops.
+    // Fallback strategy: direct null-field update for tenants where clear flag no-ops.
     const clearFieldsResult = await this.updateJob(jobUid, {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       scheduled_start_time: null as any,

@@ -1052,7 +1052,11 @@ export default function SiteSurveySchedulerPage() {
     }
 
     showToast("Removed from schedule");
-  }, [showToast, projects, trackFeature, fetchProjects, clearSurveyorAssignment]);
+    fetchProjects();
+    if (project?.location) {
+      fetchAvailability(project.location);
+    }
+  }, [showToast, projects, trackFeature, fetchProjects, fetchAvailability, clearSurveyorAssignment]);
 
   /* ================================================================ */
   /*  Navigation                                                       */
