@@ -930,10 +930,30 @@ export async function fetchProjectById(id: string): Promise<Project | null> {
  */
 export async function updateDealProperty(
   dealId: string,
-  properties: Record<string, string>
+  properties: Record<string, string | null>
 ): Promise<boolean> {
   try {
-    await hubspotClient.crm.deals.basicApi.update(dealId, { properties });
+    const accessToken = process.env.HUBSPOT_ACCESS_TOKEN;
+    if (!accessToken) {
+      console.error("[HubSpot] HUBSPOT_ACCESS_TOKEN is not configured");
+      return false;
+    }
+
+    const response = await fetch(`https://api.hubapi.com/crm/v3/objects/deals/${dealId}`, {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ properties }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text().catch(() => "");
+      console.error(`[HubSpot] Failed to update deal ${dealId}: HTTP ${response.status} ${response.statusText} ${errText}`);
+      return false;
+    }
+
     console.log(`[HubSpot] Updated deal ${dealId} properties:`, Object.keys(properties).join(", "));
 
     // Invalidate caches so updated data is fetched on next request

@@ -797,17 +797,17 @@ export async function DELETE(request: NextRequest) {
     let hubspotError: string | undefined;
     try {
       hubspotCleared = await updateDealProperty(projectId, {
-        site_survey_schedule_date: "",
-        site_surveyor: "",
-        site_survey_status: "Ready To Schedule",
+        site_survey_schedule_date: null,
+        site_surveyor: null,
+        site_survey_status: "Ready to Schedule",
       });
 
       if (!hubspotCleared) {
         hubspotCleared = await updateDealProperty(projectId, {
           // Fallback property name observed in other routes/integrations
-          site_survey_scheduled_date: "",
-          site_surveyor: "",
-          site_survey_status: "Ready To Schedule",
+          site_survey_scheduled_date: null,
+          site_surveyor: null,
+          site_survey_status: "Ready to Schedule",
         });
       }
 
@@ -817,9 +817,9 @@ export async function DELETE(request: NextRequest) {
           const resolvedDealId = extractHubspotDealIdFromJob(resolvedJob.data);
           if (resolvedDealId && resolvedDealId !== projectId) {
             hubspotCleared = await updateDealProperty(resolvedDealId, {
-              site_survey_schedule_date: "",
-              site_surveyor: "",
-              site_survey_status: "Ready To Schedule",
+              site_survey_schedule_date: null,
+              site_surveyor: null,
+              site_survey_status: "Ready to Schedule",
             });
           }
         }
