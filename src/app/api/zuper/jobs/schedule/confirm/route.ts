@@ -120,6 +120,62 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const timezoneFromNotes = record.notes?.match(/\[TZ:([A-Za-z_\/]+)\]/)?.[1];
+    const inferredTimezone = /\b(San Luis Obispo|Camarillo)\b|,\s*CA\b/i.test(record.projectName)
+      ? "America/Los_Angeles"
+      : "America/Denver";
+    const slotTimezone = timezoneFromNotes || inferredTimezone;
+
+    const localToUtc = (dateStr: string, timeStr: string): string => {
+      const [year, month, day] = dateStr.split("-").map(Number);
+      const [hours, minutes] = (timeStr + ":00").split(":").map(Number);
+
+      const testDate = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+      const localFormatter = new Intl.DateTimeFormat("en-US", {
+        timeZone: slotTimezone,
+        timeZoneName: "longOffset",
+      });
+      const parts = localFormatter.formatToParts(testDate);
+      const tzOffsetStr = parts.find((p) => p.type === "timeZoneName")?.value || "";
+      const offsetMatch = tzOffsetStr.match(/GMT([+-])(\d{2}):(\d{2})/);
+      let offsetHours: number;
+      if (offsetMatch) {
+        const sign = offsetMatch[1] === "-" ? 1 : -1;
+        offsetHours = sign * parseInt(offsetMatch[2], 10);
+      } else {
+        const shortFormatter = new Intl.DateTimeFormat("en-US", {
+          timeZone: slotTimezone,
+          timeZoneName: "short",
+        });
+        const shortParts = shortFormatter.formatToParts(testDate);
+        const shortTzName = shortParts.find((p) => p.type === "timeZoneName")?.value || "";
+        const tzOffsets: Record<string, number> = {
+          MST: 7, MDT: 6, PST: 8, PDT: 7, CST: 6, CDT: 5, EST: 5, EDT: 4,
+        };
+        offsetHours = tzOffsets[shortTzName] || 7;
+      }
+
+      let utcHours = hours + offsetHours;
+      let utcDay = day;
+      let utcMonth = month;
+      let utcYear = year;
+      if (utcHours >= 24) {
+        utcHours -= 24;
+        utcDay += 1;
+        const daysInMonth = new Date(year, month, 0).getDate();
+        if (utcDay > daysInMonth) {
+          utcDay = 1;
+          utcMonth += 1;
+          if (utcMonth > 12) {
+            utcMonth = 1;
+            utcYear += 1;
+          }
+        }
+      }
+
+      return `${utcYear}-${String(utcMonth).padStart(2, "0")}-${String(utcDay).padStart(2, "0")} ${String(utcHours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:00`;
+    };
+
     // Run the Zuper scheduling flow: search for existing job -> create or reschedule
     const hubspotTag = `hubspot-${record.projectId}`;
 
@@ -187,9 +243,9 @@ export async function POST(request: NextRequest) {
 
       // Calculate schedule times
       const startTime = record.scheduledStart || "08:00";
-      const endTime = record.scheduledEnd || "17:00";
-      const startDateTime = `${record.scheduledDate} ${startTime}:00`;
-      const endDateTime = `${record.scheduledDate} ${endTime}:00`;
+      const endTime = record.scheduledEnd || "16:00";
+      const startDateTime = localToUtc(record.scheduledDate, startTime);
+      const endDateTime = localToUtc(record.scheduledDate, endTime);
 
       if (existingJob?.job_uid) {
         // Reschedule existing job
@@ -216,6 +272,7 @@ export async function POST(request: NextRequest) {
           endTime: record.scheduledEnd || undefined,
           crew: resolvedUserUids[0] || undefined,
           teamUid: resolvedTeamUid,
+          timezone: slotTimezone,
         });
 
         if (createResult.type === "success" && createResult.data?.job_uid) {

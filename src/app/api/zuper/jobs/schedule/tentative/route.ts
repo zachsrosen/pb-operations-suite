@@ -50,7 +50,9 @@ export async function PUT(request: NextRequest) {
     const rawCrew = typeof schedule.crew === "string" ? schedule.crew : undefined;
     const rawAssignedUser = typeof schedule.assignedUser === "string" ? schedule.assignedUser : undefined;
     const rawUserUid = typeof schedule.userUid === "string" ? schedule.userUid : undefined;
+    const rawTimezone = typeof schedule.timezone === "string" ? schedule.timezone.trim() : "";
     const looksLikeUid = (value: string) => /^[0-9a-f-]{30,}$/i.test(value);
+    const timezoneTag = rawTimezone ? ` [TZ:${rawTimezone}]` : "";
 
     // Create schedule record with tentative status (NO Zuper sync)
     const record = await createScheduleRecord({
@@ -68,7 +70,7 @@ export async function PUT(request: NextRequest) {
       scheduledBy: session.user.email,
       zuperSynced: false,
       zuperAssigned: false,
-      notes: schedule.notes ? `[TENTATIVE] ${schedule.notes}` : "[TENTATIVE]",
+      notes: schedule.notes ? `[TENTATIVE] ${schedule.notes}${timezoneTag}` : `[TENTATIVE]${timezoneTag}`,
     });
 
     // Update status to "tentative" (createScheduleRecord defaults to "scheduled")
