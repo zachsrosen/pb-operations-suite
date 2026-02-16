@@ -179,6 +179,13 @@ function formatTime12h(time: string): string {
   return minutes === 0 ? `${hour12}${suffix}` : `${hour12}:${minutes.toString().padStart(2, "0")}${suffix}`;
 }
 
+function formatTimeRange12h(start?: string | null, end?: string | null): string {
+  if (!start) return "";
+  const startText = formatTime12h(start);
+  if (!end) return startText;
+  return `${startText}-${formatTime12h(end)}`;
+}
+
 function getCustomerName(fullName: string): string {
   return fullName.split(" | ")[1] || fullName;
 }
@@ -478,6 +485,15 @@ export default function SiteSurveySchedulerPage() {
               }
               if (!project.assignedSurveyor && rec.assignedUser) {
                 project.assignedSurveyor = rec.assignedUser;
+              }
+              if (rec.scheduledStart) {
+                project.zuperScheduledTime = formatTime12h(rec.scheduledStart);
+                project.assignedSlot = {
+                  userName: rec.assignedUser || project.assignedSurveyor || "Tentative",
+                  startTime: rec.scheduledStart,
+                  endTime: rec.scheduledEnd || rec.scheduledStart,
+                  displayTime: formatTimeRange12h(rec.scheduledStart, rec.scheduledEnd || null),
+                };
               }
             }
           }
@@ -1160,6 +1176,7 @@ export default function SiteSurveySchedulerPage() {
 
   const getStatusColor = (status: string): string => {
     const s = status.toLowerCase();
+    if (s.includes("tentative")) return "bg-amber-500/20 text-amber-300 border-amber-500/40";
     if (s.includes("complete")) return "bg-green-500/20 text-green-400 border-green-500/30";
     if (s.includes("scheduled")) return "bg-blue-500/20 text-blue-400 border-blue-500/30";
     if (s.includes("progress") || s.includes("started") || s.includes("on our way")) return "bg-yellow-500/20 text-yellow-400 border-yellow-500/30";
@@ -1577,7 +1594,9 @@ export default function SiteSurveySchedulerPage() {
                           {events.map((ev) => {
                             // Find the booked slot for this event
                             const evSlot = findCurrentSlotForProject(ev.id, dateStr, ev.name, ev.zuperJobUid);
+                            const displaySlot = evSlot || ev.assignedSlot;
                             const overdue = isSurveyOverdue(ev, manualSchedules[ev.id]);
+                            const isTentative = ev.surveyStatus.toLowerCase().includes("tentative");
                             return (
                               <div
                                 key={ev.id}
@@ -1593,21 +1612,26 @@ export default function SiteSurveySchedulerPage() {
                                 className={`text-xs p-1 rounded cursor-grab active:cursor-grabbing ${
                                   overdue
                                     ? "bg-red-500/20 border border-red-500/40 text-red-300 hover:bg-red-500/30"
-                                    : "bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/30"
+                                    : isTentative
+                                      ? "bg-amber-500/20 border border-amber-500/40 text-amber-200 hover:bg-amber-500/30"
+                                      : "bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/30"
                                 }`}
                                 title={overdue
-                                  ? `⚠ OVERDUE - Survey not completed\n${evSlot ? `${evSlot.userName} @ ${evSlot.displayTime}\n` : ev.assignedSurveyor ? `${ev.assignedSurveyor}${ev.zuperScheduledTime ? ` @ ${ev.zuperScheduledTime}` : ""}\n` : ""}${ev.address || "No address"} - Click to reschedule`
-                                  : evSlot ? `${evSlot.userName} @ ${evSlot.displayTime}\n${ev.address || "No address"} - Click to view` : `${ev.assignedSurveyor ? `Surveyor: ${ev.assignedSurveyor}${ev.zuperScheduledTime ? ` @ ${ev.zuperScheduledTime}` : ""}\n` : ""}${ev.address || "No address"} - Drag to reschedule`}
+                                  ? `⚠ OVERDUE - Survey not completed\n${displaySlot ? `${displaySlot.userName} @ ${displaySlot.displayTime}\n` : ev.assignedSurveyor ? `${ev.assignedSurveyor}${ev.zuperScheduledTime ? ` @ ${ev.zuperScheduledTime}` : ""}\n` : ""}${ev.address || "No address"} - Click to reschedule`
+                                  : isTentative
+                                    ? `TENTATIVE\n${displaySlot ? `${displaySlot.userName} @ ${displaySlot.displayTime}\n` : ev.assignedSurveyor ? `${ev.assignedSurveyor}${ev.zuperScheduledTime ? ` @ ${ev.zuperScheduledTime}` : ""}\n` : ""}${ev.address || "No address"} - Click to review`
+                                    : displaySlot ? `${displaySlot.userName} @ ${displaySlot.displayTime}\n${ev.address || "No address"} - Click to view` : `${ev.assignedSurveyor ? `Surveyor: ${ev.assignedSurveyor}${ev.zuperScheduledTime ? ` @ ${ev.zuperScheduledTime}` : ""}\n` : ""}${ev.address || "No address"} - Drag to reschedule`}
                               >
                                 <div className="truncate">
                                   {overdue && <span className="text-red-400 mr-0.5">⚠</span>}
+                                  {!overdue && isTentative && <span className="text-amber-300 mr-1">TENT</span>}
                                   {getCustomerName(ev.name)}
                                 </div>
-                                {ev.address && <div className={`text-[0.6rem] truncate ${overdue ? "text-red-400/50" : "text-cyan-400/50"}`}>{ev.address}</div>}
-                                {evSlot ? (
-                                  <div className="text-[0.6rem] text-cyan-400/60 truncate">{evSlot.userName} @ {evSlot.displayTime}</div>
+                                {ev.address && <div className={`text-[0.6rem] truncate ${overdue ? "text-red-400/50" : isTentative ? "text-amber-200/70" : "text-cyan-400/50"}`}>{ev.address}</div>}
+                                {displaySlot ? (
+                                  <div className={`text-[0.6rem] truncate ${isTentative ? "text-amber-200/80" : "text-cyan-400/60"}`}>{displaySlot.userName} @ {displaySlot.displayTime}</div>
                                 ) : ev.assignedSurveyor ? (
-                                  <div className="text-[0.6rem] text-emerald-400/70 truncate">
+                                  <div className={`text-[0.6rem] truncate ${isTentative ? "text-amber-200/80" : "text-emerald-400/70"}`}>
                                     {ev.assignedSurveyor}{ev.zuperScheduledTime ? ` @ ${ev.zuperScheduledTime}` : ""}
                                   </div>
                                 ) : null}
