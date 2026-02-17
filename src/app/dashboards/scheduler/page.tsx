@@ -637,7 +637,28 @@ export default function SchedulerPage() {
                   scheduleType: rec.scheduleType,
                 };
               }
-              setManualSchedules(prev => ({ ...restored, ...prev }));
+              setManualSchedules((prev) => {
+                const next: Record<string, ManualSchedule> = {};
+
+                // Keep non-tentative local schedules, and local-only tentative
+                // entries that were never persisted (no recordId).
+                for (const [projectId, schedule] of Object.entries(prev)) {
+                  if (!schedule.isTentative) {
+                    next[projectId] = schedule;
+                    continue;
+                  }
+                  if (!schedule.recordId) {
+                    next[projectId] = schedule;
+                  }
+                }
+
+                // DB-backed tentative records are the source of truth.
+                for (const [projectId, schedule] of Object.entries(restored)) {
+                  next[projectId] = schedule;
+                }
+
+                return next;
+              });
             }
           }
         } catch (tentErr) {
@@ -1201,7 +1222,7 @@ export default function SchedulerPage() {
 
   const handleDayClick = useCallback(
     (dateStr: string) => {
-      if (!selectedProject || selectedProject.stage === "construction") return;
+      if (!selectedProject) return;
       if (isWeekend(dateStr)) {
         showToast("Cannot schedule on weekends", "error");
         return;
@@ -1431,32 +1452,49 @@ export default function SchedulerPage() {
     (e: React.DragEvent, projectId: string) => {
       setDraggedProjectId(projectId);
       e.dataTransfer.setData("text/plain", projectId);
-      (e.target as HTMLElement).style.opacity = "0.5";
     },
     []
   );
 
-  const handleDragEnd = useCallback((e: React.DragEvent) => {
+  const handleDragEnd = useCallback(() => {
     setDraggedProjectId(null);
-    (e.target as HTMLElement).style.opacity = "1";
   }, []);
 
   /* ---- Tentative: Confirm & Cancel handlers ---- */
   const [confirmingTentative, setConfirmingTentative] = useState(false);
   const [cancellingTentative, setCancellingTentative] = useState(false);
 
+  const resolveMasterTentativeRecordId = useCallback(async (projectId: string): Promise<string | null> => {
+    const localRecordId = manualSchedules[projectId]?.recordId;
+    if (localRecordId) return localRecordId;
+
+    const type = manualSchedules[projectId]?.scheduleType;
+    const params = new URLSearchParams({
+      projectIds: projectId,
+      status: "tentative",
+    });
+    if (type) params.set("type", type);
+
+    const res = await fetch(`/api/zuper/schedule-records?${params.toString()}`);
+    if (!res.ok) return null;
+    const data = await res.json().catch(() => null);
+    const record = data?.records?.[projectId];
+    return record?.id || null;
+  }, [manualSchedules]);
+
   const handleConfirmTentative = useCallback(async (projectId: string) => {
-    const schedule = manualSchedules[projectId];
-    if (!schedule?.recordId) {
-      showToast("No tentative record found to confirm", "error");
-      return;
-    }
     setConfirmingTentative(true);
     try {
+      const recordId = await resolveMasterTentativeRecordId(projectId);
+      if (!recordId) {
+        showToast("No tentative record found to confirm", "error");
+        return;
+      }
+
       const res = await fetch("/api/zuper/jobs/schedule/confirm", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scheduleRecordId: schedule.recordId }),
+        body: JSON.stringify({ scheduleRecordId: recordId }),
       });
       const data = await res.json();
       if (res.ok && data.success) {
@@ -1479,11 +1517,11 @@ export default function SchedulerPage() {
     } finally {
       setConfirmingTentative(false);
     }
-  }, [manualSchedules, showToast]);
+  }, [resolveMasterTentativeRecordId, showToast]);
 
   const handleCancelTentative = useCallback(async (projectId: string) => {
-    const schedule = manualSchedules[projectId];
-    if (!schedule?.recordId) {
+    const hasLocalOnlyTentative = !!manualSchedules[projectId]?.isTentative && !manualSchedules[projectId]?.recordId;
+    if (hasLocalOnlyTentative) {
       // No DB record — just remove from local state
       setManualSchedules((prev) => {
         const next = { ...prev };
@@ -1496,10 +1534,16 @@ export default function SchedulerPage() {
     }
     setCancellingTentative(true);
     try {
+      const recordId = await resolveMasterTentativeRecordId(projectId);
+      if (!recordId) {
+        showToast("No tentative record found to cancel", "error");
+        return;
+      }
+
       const res = await fetch("/api/zuper/schedule-records", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ recordId: schedule.recordId }),
+        body: JSON.stringify({ recordId }),
       });
       if (res.ok) {
         setManualSchedules((prev) => {
@@ -1518,7 +1562,7 @@ export default function SchedulerPage() {
     } finally {
       setCancellingTentative(false);
     }
-  }, [manualSchedules, showToast]);
+  }, [manualSchedules, resolveMasterTentativeRecordId, showToast]);
 
   const handleRemoveScheduled = useCallback(async (projectId: string) => {
     const project = projects.find((p) => p.id === projectId);
@@ -1583,17 +1627,18 @@ export default function SchedulerPage() {
       }
       const projectId = e.dataTransfer.getData("text/plain");
       const project = projects.find((p) => p.id === projectId);
-      if (project && project.stage !== "construction") {
+      if (project) {
         const proj = crewName ? { ...project, crew: crewName } : project;
         openScheduleModal(proj, dateStr);
       }
+      setDraggedProjectId(null);
     },
     [projects, showToast, openScheduleModal]
   );
 
   const handleWeekCellClick = useCallback(
     (dateStr: string, crewName: string) => {
-      if (!selectedProject || selectedProject.stage === "construction") return;
+      if (!selectedProject) return;
       if (isWeekend(dateStr)) {
         showToast("Cannot schedule on weekends", "error");
         return;
@@ -2037,6 +2082,8 @@ export default function SchedulerPage() {
                         selectedProject?.id === p.id
                           ? "border-orange-500 bg-orange-500/10 shadow-[0_0_0_1px] shadow-orange-500"
                           : "border-t-border"
+                      } ${
+                        draggedProjectId === p.id ? "opacity-60" : ""
                       }`}
                   >
                     <div className="flex justify-between items-start mb-0.5">
@@ -2350,7 +2397,7 @@ export default function SchedulerPage() {
           {/* Calendar container */}
           <div className="flex-1 p-3 overflow-y-auto">
             {/* Instruction banner */}
-            {selectedProject && selectedProject.stage !== "construction" && (
+            {selectedProject && (
               <div className="bg-orange-500/10 border border-orange-500 rounded-lg px-3 py-2 mb-2">
                 <span className="text-[0.75rem] text-orange-400">
                   <strong>{getCustomerName(selectedProject.name)}</strong>{" "}
@@ -2493,6 +2540,7 @@ export default function SchedulerPage() {
                                   e.stopPropagation();
                                   handleDragStart(e, ev.id);
                                 }}
+                                onDragEnd={handleDragEnd}
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setDetailModal(
@@ -2503,7 +2551,7 @@ export default function SchedulerPage() {
                                 title={`${ev.name} - ${ev.crew || "No crew"}${showRevenue ? ` - $${formatRevenueCompact(ev.amount)}` : ""}${isFailedType ? " ✗ Inspection Failed" : isCompletedType ? " ✓ Completed" : ev.isOverdue ? " ⚠ Incomplete" : " (drag to reschedule)"}`}
                                 className={`text-[0.55rem] px-1 py-0.5 rounded mb-0.5 transition-transform hover:scale-[1.02] hover:shadow-lg hover:z-10 relative overflow-hidden truncate ${
                                   isDraggable ? "cursor-grab active:cursor-grabbing" : "cursor-default"
-                                } ${eventColorClass}`}
+                                } ${eventColorClass} ${draggedProjectId === ev.id ? "opacity-60" : ""}`}
                               >
                                 {ev.isTentative && <span className="mr-0.5 text-[0.45rem] font-bold opacity-80">TENT {ev.days > 0 ? `${ev.days}d` : ""}</span>}
                                 {isFailedType && <span className="mr-0.5">✗</span>}

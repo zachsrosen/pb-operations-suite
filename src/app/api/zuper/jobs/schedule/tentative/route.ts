@@ -55,6 +55,21 @@ export async function PUT(request: NextRequest) {
     const looksLikeUid = (value: string) => /^[0-9a-f-]{30,}$/i.test(value);
     const timezoneTag = rawTimezone ? ` [TZ:${rawTimezone}]` : "";
 
+    // Ensure only one active tentative record per project + schedule type.
+    // Without this, old tentative rows can reappear in scheduler rehydration.
+    if (prisma) {
+      await prisma.scheduleRecord.updateMany({
+        where: {
+          projectId: String(project.id),
+          scheduleType,
+          status: "tentative",
+        },
+        data: {
+          status: "cancelled",
+        },
+      });
+    }
+
     // Create schedule record with tentative status (NO Zuper sync)
     const record = await createScheduleRecord({
       scheduleType,

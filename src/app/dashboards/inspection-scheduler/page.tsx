@@ -280,6 +280,12 @@ export default function InspectionSchedulerPage() {
   const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null);
   const [confirmingTentative, setConfirmingTentative] = useState(false);
   const [cancellingTentative, setCancellingTentative] = useState(false);
+  const getTentativeRecordId = useCallback(
+    (projectId: string) =>
+      tentativeRecordIds[projectId] ||
+      projects.find((p) => p.id === projectId)?.tentativeRecordId,
+    [tentativeRecordIds, projects]
+  );
 
   /* ---- modals ---- */
   const [scheduleModal, setScheduleModal] = useState<PendingSchedule | null>(null);
@@ -1003,7 +1009,7 @@ export default function InspectionSchedulerPage() {
   }, [scheduleModal, zuperConfigured, syncToZuper, showToast, fetchAvailability, saveInspectorAssignment, trackFeature]);
 
   const handleConfirmTentative = useCallback(async (projectId: string) => {
-    const recordId = tentativeRecordIds[projectId];
+    const recordId = getTentativeRecordId(projectId);
     if (!recordId) {
       showToast("No tentative record found to confirm", "warning");
       return;
@@ -1037,10 +1043,10 @@ export default function InspectionSchedulerPage() {
     } finally {
       setConfirmingTentative(false);
     }
-  }, [fetchProjects, showToast, tentativeRecordIds]);
+  }, [fetchProjects, getTentativeRecordId, showToast]);
 
   const handleCancelTentative = useCallback(async (projectId: string) => {
-    const recordId = tentativeRecordIds[projectId];
+    const recordId = getTentativeRecordId(projectId);
     if (!recordId) {
       setManualSchedules((prev) => {
         const next = { ...prev };
@@ -1093,11 +1099,11 @@ export default function InspectionSchedulerPage() {
     } finally {
       setCancellingTentative(false);
     }
-  }, [showToast, tentativeRecordIds]);
+  }, [getTentativeRecordId, showToast]);
 
   const cancelSchedule = useCallback(async (projectId: string) => {
     const project = projects.find(p => p.id === projectId);
-    if (tentativeRecordIds[projectId]) {
+    if (getTentativeRecordId(projectId)) {
       await handleCancelTentative(projectId);
       return;
     }
@@ -1145,7 +1151,7 @@ export default function InspectionSchedulerPage() {
 
     showToast("Schedule removed");
     setTimeout(() => fetchProjects(), 1000);
-  }, [fetchProjects, handleCancelTentative, projects, showToast, tentativeRecordIds, trackFeature]);
+  }, [fetchProjects, getTentativeRecordId, handleCancelTentative, projects, showToast, trackFeature]);
 
   /* ================================================================ */
   /*  Navigation                                                       */

@@ -355,6 +355,20 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    // Cancel any older tentative records for the same project/type so stale
+    // tentative dates cannot rehydrate after a successful confirmation.
+    await prisma.scheduleRecord.updateMany({
+      where: {
+        projectId: record.projectId,
+        scheduleType,
+        status: "tentative",
+        id: { not: scheduleRecordId },
+      },
+      data: {
+        status: "cancelled",
+      },
+    });
+
     // Cache the Zuper job if created
     if (zuperJobUid) {
       await cacheZuperJob({
