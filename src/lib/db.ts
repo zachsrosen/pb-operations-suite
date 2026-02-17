@@ -759,6 +759,16 @@ export async function getCrewMemberByName(name: string): Promise<CrewMember | nu
 }
 
 /**
+ * Get crew member by Zuper user UID
+ */
+export async function getCrewMemberByZuperUserUid(zuperUserUid: string): Promise<CrewMember | null> {
+  if (!prisma) return null;
+  return prisma.crewMember.findFirst({
+    where: { zuperUserUid, isActive: true },
+  });
+}
+
+/**
  * Get crew member by email (for linking logged-in users to their crew profile)
  */
 export async function getCrewMemberByEmail(email: string): Promise<CrewMember | null> {

@@ -15,6 +15,34 @@ interface UpdateEntry {
 
 const UPDATES: UpdateEntry[] = [
   {
+    version: "1.48.0",
+    date: "2026-02-17",
+    title: "Survey Notifications & Google Calendar Sync",
+    description: "Site survey assignments now use stronger recipient resolution for notification delivery, and optional Google Calendar sync can write survey events to either each surveyor’s primary calendar or a shared team calendar.",
+    changes: [
+      { type: "fix", text: "Survey notification recipient lookup now falls back from crew name to Zuper user UID and direct Zuper user email resolution" },
+      { type: "fix", text: "Tentative confirm notification flow now uses the same fallback email resolution logic to reduce missed surveyor emails" },
+      { type: "feature", text: "Added Google Calendar upsert for site surveys on direct schedule and tentative confirm flows" },
+      { type: "feature", text: "Calendar sync supports shared calendar routing via GOOGLE_SITE_SURVEY_CALENDAR_ID (defaults to primary calendar when unset)" },
+      { type: "improvement", text: "Calendar event writes are idempotent per project/deal to avoid duplicate events when rescheduling" },
+      { type: "internal", text: "Google Calendar sync is feature-flagged via GOOGLE_CALENDAR_SYNC_ENABLED and logs warnings without blocking scheduling on sync failure" },
+    ],
+  },
+  {
+    version: "1.47.0",
+    date: "2026-02-17",
+    title: "Master Tentative Confirm Reliability & Drag State Fixes",
+    description: "Master scheduler tentative confirmations are now resilient after refresh/state drift, stale tentative records are cleaned up more aggressively, and drag-reschedule UI state no longer gets stuck dimmed.",
+    changes: [
+      { type: "fix", text: "Master tentative confirm/cancel now fallback to DB lookup when local tentative record ID is missing" },
+      { type: "fix", text: "Master drag interactions now reset visual drag state reliably so scheduled cards do not remain greyed after drag/drop" },
+      { type: "fix", text: "Tentative record creation now cancels prior tentative records for the same project + schedule type to prevent stale rehydration" },
+      { type: "fix", text: "Tentative confirm now cancels older tentative siblings for the same project + schedule type after successful sync" },
+      { type: "fix", text: "Construction and Inspection tentative confirm/cancel now resolve record IDs from both in-memory map and rehydrated project state" },
+      { type: "improvement", text: "Master tentative rehydration now prefers DB-backed tentative state over stale in-memory tentative entries" },
+    ],
+  },
+  {
     version: "1.46.0",
     date: "2026-02-16",
     title: "HubSpot Schedule Write Verification & Site Surveyor Reliability",

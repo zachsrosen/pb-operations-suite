@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { zuper, createJobFromProject, JOB_CATEGORY_UIDS, ZuperJob } from "@/lib/zuper";
 import { auth } from "@/auth";
-import { getUserByEmail, logActivity, createScheduleRecord, cacheZuperJob, canScheduleType, getCrewMemberByName, getCachedZuperJobByDealId, UserRole } from "@/lib/db";
+import { getUserByEmail, logActivity, createScheduleRecord, cacheZuperJob, canScheduleType, getCrewMemberByName, getCrewMemberByZuperUserUid, getCachedZuperJobByDealId, UserRole } from "@/lib/db";
 import { sendSchedulingNotification } from "@/lib/email";
 import { updateDealProperty, getDealProperties, updateSiteSurveyorProperty } from "@/lib/hubspot";
+import { upsertSiteSurveyCalendarEvent } from "@/lib/google-calendar";
 
 type ScheduleType = "survey" | "installation" | "inspection";
 
@@ -1262,6 +1263,9 @@ async function sendCrewNotification(
     startTime?: string;
     endTime?: string;
     assignedUser?: string;
+    crew?: string;
+    assignedUserUid?: string;
+    timezone?: string;
     notes?: string;
   },
   project: { id: string; name?: string; address?: string },
@@ -1275,11 +1279,48 @@ async function sendCrewNotification(
       return;
     }
 
-    // Look up crew member by name to get their email
-    const crewMember = await getCrewMemberByName(schedule.assignedUser);
+    const isUuid = (value?: string) =>
+      !!value && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 
-    if (!crewMember?.email) {
-      console.log(`[Zuper Schedule] No email found for crew member: ${schedule.assignedUser}`);
+    const assignedUserUid =
+      (schedule.assignedUserUid && isUuid(schedule.assignedUserUid) ? schedule.assignedUserUid : undefined) ||
+      (schedule.crew && isUuid(schedule.crew) ? schedule.crew : undefined);
+
+    // Resolve recipient email with fallbacks:
+    // 1) exact name in crew table
+    // 2) zuperUserUid in crew table
+    // 3) direct Zuper user lookup by UID
+    let recipientEmail: string | null = null;
+    let recipientName = schedule.assignedUser;
+
+    const byName = await getCrewMemberByName(schedule.assignedUser);
+    if (byName?.email) {
+      recipientEmail = byName.email;
+      recipientName = byName.name;
+    }
+
+    if (!recipientEmail && assignedUserUid) {
+      const byUid = await getCrewMemberByZuperUserUid(assignedUserUid);
+      if (byUid?.email) {
+        recipientEmail = byUid.email;
+        recipientName = byUid.name;
+      }
+    }
+
+    if (!recipientEmail && assignedUserUid) {
+      const userResult = await zuper.getUser(assignedUserUid);
+      if (userResult.type === "success" && userResult.data?.email) {
+        recipientEmail = userResult.data.email;
+        if (!recipientName) {
+          recipientName = [userResult.data.first_name, userResult.data.last_name].filter(Boolean).join(" ").trim() || schedule.assignedUser;
+        }
+      }
+    }
+
+    if (!recipientEmail) {
+      console.log(
+        `[Zuper Schedule] No email found for assigned surveyor: name="${schedule.assignedUser}", uid="${assignedUserUid || ""}"`
+      );
       return;
     }
 
@@ -1298,8 +1339,8 @@ async function sendCrewNotification(
         : project.address || "See Zuper for address";
 
     await sendSchedulingNotification({
-      to: crewMember.email,
-      crewMemberName: schedule.assignedUser,
+      to: recipientEmail,
+      crewMemberName: recipientName || schedule.assignedUser,
       scheduledByName: schedulerName,
       scheduledByEmail: schedulerEmail,
       appointmentType: schedule.type as "survey" | "installation" | "inspection",
@@ -1312,7 +1353,26 @@ async function sendCrewNotification(
       notes: schedule.notes,
     });
 
-    console.log(`[Zuper Schedule] Notification sent to ${crewMember.email}`);
+    // Keep surveyor Google Calendar in sync for site surveys.
+    if (schedule.type === "survey") {
+      const syncResult = await upsertSiteSurveyCalendarEvent({
+        surveyorEmail: recipientEmail,
+        projectId: project.id,
+        projectName: project.name || project.id,
+        customerName,
+        customerAddress,
+        date: schedule.date,
+        startTime: schedule.startTime,
+        endTime: schedule.endTime,
+        timezone: schedule.timezone,
+        notes: schedule.notes,
+      });
+      if (!syncResult.success) {
+        console.warn(`[Zuper Schedule] Google Calendar sync warning: ${syncResult.error}`);
+      }
+    }
+
+    console.log(`[Zuper Schedule] Notification sent to ${recipientEmail}`);
   } catch (err) {
     console.error("Failed to send crew notification:", err);
     // Don't throw - notification failures shouldn't break scheduling

@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { getUserByEmail, logActivity, prisma, cacheZuperJob, canScheduleType, getCrewMemberByName, getCachedZuperJobByDealId, UserRole } from "@/lib/db";
+import { getUserByEmail, logActivity, prisma, cacheZuperJob, canScheduleType, getCrewMemberByName, getCrewMemberByZuperUserUid, getCachedZuperJobByDealId, UserRole } from "@/lib/db";
 import { zuper, JOB_CATEGORY_UIDS } from "@/lib/zuper";
 import { headers } from "next/headers";
 import { sendSchedulingNotification } from "@/lib/email";
 import { updateDealProperty, updateSiteSurveyorProperty, getDealProperties } from "@/lib/hubspot";
+import { upsertSiteSurveyCalendarEvent } from "@/lib/google-calendar";
 
 /**
  * POST /api/zuper/jobs/schedule/confirm
@@ -446,8 +447,41 @@ export async function POST(request: NextRequest) {
     // Send notification to assigned crew member (fire and forget)
     try {
       if (record.assignedUser) {
-        const crewMember = await getCrewMemberByName(record.assignedUser);
-        if (crewMember?.email) {
+        const isUuid = (value?: string | null) =>
+          !!value && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+        const firstAssignedUid = record.assignedUserUid
+          ?.split(",")
+          .map((u) => u.trim())
+          .find((u) => isUuid(u));
+
+        let recipientEmail: string | null = null;
+        let recipientName = record.assignedUser;
+
+        const byName = await getCrewMemberByName(record.assignedUser);
+        if (byName?.email) {
+          recipientEmail = byName.email;
+          recipientName = byName.name;
+        }
+
+        if (!recipientEmail && firstAssignedUid) {
+          const byUid = await getCrewMemberByZuperUserUid(firstAssignedUid);
+          if (byUid?.email) {
+            recipientEmail = byUid.email;
+            recipientName = byUid.name;
+          }
+        }
+
+        if (!recipientEmail && firstAssignedUid) {
+          const userResult = await zuper.getUser(firstAssignedUid);
+          if (userResult.type === "success" && userResult.data?.email) {
+            recipientEmail = userResult.data.email;
+            recipientName =
+              [userResult.data.first_name, userResult.data.last_name].filter(Boolean).join(" ").trim() ||
+              record.assignedUser;
+          }
+        }
+
+        if (recipientEmail) {
           const customerNameParts = record.projectName.split(" | ");
           const customerName = customerNameParts.length >= 2
             ? customerNameParts[1]?.trim()
@@ -457,8 +491,8 @@ export async function POST(request: NextRequest) {
             : "See Zuper for address";
 
           await sendSchedulingNotification({
-            to: crewMember.email,
-            crewMemberName: record.assignedUser,
+            to: recipientEmail,
+            crewMemberName: recipientName,
             scheduledByName: session.user.name || session.user.email,
             scheduledByEmail: session.user.email,
             appointmentType: scheduleType,
@@ -470,6 +504,28 @@ export async function POST(request: NextRequest) {
             projectId: record.projectId,
             notes: record.notes || undefined,
           });
+
+          if (scheduleType === "survey") {
+            const calendarSync = await upsertSiteSurveyCalendarEvent({
+              surveyorEmail: recipientEmail,
+              projectId: record.projectId,
+              projectName: record.projectName,
+              customerName,
+              customerAddress,
+              date: record.scheduledDate,
+              startTime: record.scheduledStart || undefined,
+              endTime: record.scheduledEnd || undefined,
+              timezone: slotTimezone,
+              notes: record.notes || undefined,
+            });
+            if (!calendarSync.success) {
+              console.warn(`[Zuper Confirm] Google Calendar sync warning: ${calendarSync.error}`);
+            }
+          }
+        } else {
+          console.warn(
+            `[Zuper Confirm] No email found for assigned surveyor: name="${record.assignedUser}", uid="${firstAssignedUid || ""}"`
+          );
         }
       }
     } catch (emailErr) {
