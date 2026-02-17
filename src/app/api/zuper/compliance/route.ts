@@ -108,6 +108,14 @@ const COMPLETED_STATUSES = new Set(
   ].map((s) => s.toLowerCase())
 );
 
+// Users to exclude from compliance metrics (test/demo accounts)
+// Matched case-insensitively against the start of the full name
+const EXCLUDED_USER_NAMES = [
+  "patrick",
+  "jessica",
+  "matt raichart",
+];
+
 // 1 day grace period in milliseconds
 const GRACE_MS = 24 * 60 * 60 * 1000;
 
@@ -197,7 +205,16 @@ function getOnOurWayTime(job: any): Date | null {
 }
 
 /**
+ * Check if a user name matches the exclusion list.
+ */
+function isExcludedUser(userName: string): boolean {
+  const lower = userName.toLowerCase();
+  return EXCLUDED_USER_NAMES.some((excluded) => lower.startsWith(excluded));
+}
+
+/**
  * Extract assigned users from a job. Returns array of { userUid, userName, teamName }.
+ * Filters out excluded test users and inactive Zuper users.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function extractAssignedUsers(job: any): Array<{
@@ -227,11 +244,19 @@ function extractAssignedUsers(job: any): Array<{
     if (typeof a !== "object" || a === null) continue;
     const user = a.user || a;
     if (typeof user !== "object" || user === null) continue;
-    const u = user as Record<string, string>;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const u = user as Record<string, any>;
     const userUid = u.user_uid;
     if (!userUid) continue;
     const userName = `${u.first_name || ""} ${u.last_name || ""}`.trim();
     if (!userName) continue;
+
+    // Skip inactive Zuper users
+    if (u.is_active === false) continue;
+
+    // Skip excluded test/demo users
+    if (isExcludedUser(userName)) continue;
+
     users.push({ userUid, userName, teamName });
   }
 
