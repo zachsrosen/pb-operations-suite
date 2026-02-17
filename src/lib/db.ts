@@ -374,21 +374,31 @@ export async function logDataExport(data: {
 export async function getRecentActivities(options?: {
   userId?: string;
   type?: ActivityType;
+  types?: ActivityType[];
   entityType?: string;
   limit?: number;
   offset?: number;
   since?: Date;
   userEmail?: string;
-  userRole?: string;
+  userRole?: UserRole;
+  userRoles?: UserRole[];
 }) {
   if (!prisma) return { activities: [], total: 0 };
 
   const where: Record<string, unknown> = {};
   if (options?.userId) where.userId = options.userId;
-  if (options?.type) where.type = options.type;
+  if (options?.types && options.types.length > 0) {
+    where.type = { in: options.types };
+  } else if (options?.type) {
+    where.type = options.type;
+  }
   if (options?.entityType) where.entityType = options.entityType;
   if (options?.since) where.createdAt = { gte: options.since };
-  if (options?.userRole) where.user = { role: options.userRole };
+  if (options?.userRoles && options.userRoles.length > 0) {
+    where.user = { role: { in: options.userRoles } };
+  } else if (options?.userRole) {
+    where.user = { role: options.userRole };
+  }
   if (options?.userEmail) {
     where.OR = [
       { userEmail: { contains: options.userEmail, mode: "insensitive" } },

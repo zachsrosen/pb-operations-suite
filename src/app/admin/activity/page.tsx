@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
+import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 
 interface ActivityLog {
   id: string;
@@ -68,13 +69,21 @@ export default function AdminActivityPage() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [typeFilter, setTypeFilter] = useState<string>("all");
-  const [roleFilter, setRoleFilter] = useState<string>("all");
+  const [typeFilters, setTypeFilters] = useState<string[]>([]);
+  const [roleFilters, setRoleFilters] = useState<string[]>([]);
   const [dateRange, setDateRange] = useState<"today" | "7d" | "30d" | "all">("all");
   const [searchEmail, setSearchEmail] = useState<string>("");
   const [debouncedEmail, setDebouncedEmail] = useState<string>("");
   const [autoRefresh, setAutoRefresh] = useState<boolean>(false);
   const [allTypes, setAllTypes] = useState<string[]>([]);
+  const activityTypeOptions = useMemo(
+    () => allTypes.map((type) => ({ value: type, label: type.replace(/_/g, " ") })),
+    [allTypes]
+  );
+  const roleOptions = useMemo(
+    () => USER_ROLES.map((role) => ({ value: role, label: role.replace(/_/g, " ") })),
+    []
+  );
 
   // Debounce email search
   const emailTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -132,8 +141,12 @@ export default function AdminActivityPage() {
           offset: (customOffset ?? (appendMode ? offset : 0)).toString(),
         });
 
-        if (typeFilter !== "all") params.set("type", typeFilter);
-        if (roleFilter !== "all") params.set("role", roleFilter);
+        if (typeFilters.length > 0) {
+          typeFilters.forEach((type) => params.append("type", type));
+        }
+        if (roleFilters.length > 0) {
+          roleFilters.forEach((role) => params.append("role", role));
+        }
         if (sinceDate) params.set("since", sinceDate);
         if (debouncedEmail.trim()) params.set("email", debouncedEmail.trim());
 
@@ -161,7 +174,7 @@ export default function AdminActivityPage() {
         setLoadingMore(false);
       }
     },
-    [typeFilter, roleFilter, sinceDate, debouncedEmail, offset]
+    [typeFilters, roleFilters, sinceDate, debouncedEmail, offset]
   );
 
   // Re-fetch from start when filters change
@@ -169,7 +182,7 @@ export default function AdminActivityPage() {
     setOffset(0);
     fetchActivities(false, 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [typeFilter, roleFilter, sinceDate, debouncedEmail]);
+  }, [typeFilters, roleFilters, sinceDate, debouncedEmail]);
 
   // Auto-refresh
   useEffect(() => {
@@ -372,33 +385,23 @@ export default function AdminActivityPage() {
 
           {/* Type Filter, Role Filter, and Search */}
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-            <div className="flex items-center gap-3">
-              <span className="text-sm text-muted">Type:</span>
-              <select
-                value={typeFilter}
-                onChange={(e) => setTypeFilter(e.target.value)}
-                className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
-              >
-                <option value="all">All Activities</option>
-                {allTypes.map(type => (
-                  <option key={type} value={type}>{type.replace(/_/g, " ")}</option>
-                ))}
-              </select>
-            </div>
+            <MultiSelectFilter
+              label="Type"
+              options={activityTypeOptions}
+              selected={typeFilters}
+              onChange={setTypeFilters}
+              placeholder="All Activities"
+              accentColor="blue"
+            />
 
-            <div className="flex items-center gap-3">
-              <span className="text-sm text-muted">Role:</span>
-              <select
-                value={roleFilter}
-                onChange={(e) => setRoleFilter(e.target.value)}
-                className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
-              >
-                <option value="all">All Roles</option>
-                {USER_ROLES.map(role => (
-                  <option key={role} value={role}>{role.replace(/_/g, " ")}</option>
-                ))}
-              </select>
-            </div>
+            <MultiSelectFilter
+              label="Role"
+              options={roleOptions}
+              selected={roleFilters}
+              onChange={setRoleFilters}
+              placeholder="All Roles"
+              accentColor="purple"
+            />
 
             <div className="flex items-center gap-3 flex-1">
               <span className="text-sm text-muted">Search:</span>

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { prisma, getUserByEmail, getRecentActivities, getActivityTypes, ActivityType } from "@/lib/db";
+import { prisma, getUserByEmail, getRecentActivities, getActivityTypes, ActivityType, UserRole } from "@/lib/db";
 
 /**
  * GET /api/admin/activity
@@ -9,7 +9,10 @@ import { prisma, getUserByEmail, getRecentActivities, getActivityTypes, Activity
  * Query params:
  * - limit: number of records per page (default 100, max 500)
  * - offset: number of records to skip for pagination (default 0)
- * - type: filter by activity type
+ * - type: filter by one or more activity types (repeat query param)
+ * - types: comma-separated activity types (legacy/alternate format)
+ * - role: filter by one or more user roles (repeat query param)
+ * - roles: comma-separated user roles (legacy/alternate format)
  * - userId: filter by user ID
  * - entityType: filter by entity type
  * - since: ISO date string — only return activities after this date
@@ -45,12 +48,24 @@ export async function GET(request: NextRequest) {
 
     const limit = Math.min(parseInt(searchParams.get("limit") || "100"), 500);
     const offset = Math.max(parseInt(searchParams.get("offset") || "0"), 0);
-    const type = searchParams.get("type") as ActivityType | null;
+    const validActivityTypes = new Set(Object.keys(ActivityType));
+    const repeatedTypeParams = searchParams.getAll("type");
+    const csvTypesParam = searchParams.get("types");
+    const csvTypes = csvTypesParam ? csvTypesParam.split(",").map((t) => t.trim()).filter(Boolean) : [];
+    const selectedTypes = Array.from(new Set([...repeatedTypeParams, ...csvTypes])).filter(
+      (type): type is ActivityType => validActivityTypes.has(type)
+    );
+    const validUserRoles = new Set(Object.keys(UserRole));
+    const repeatedRoleParams = searchParams.getAll("role");
+    const csvRolesParam = searchParams.get("roles");
+    const csvRoles = csvRolesParam ? csvRolesParam.split(",").map((r) => r.trim()).filter(Boolean) : [];
+    const selectedRoles = Array.from(new Set([...repeatedRoleParams, ...csvRoles])).filter(
+      (role): role is UserRole => validUserRoles.has(role)
+    );
     const userId = searchParams.get("userId");
     const entityType = searchParams.get("entityType");
     const sinceParam = searchParams.get("since");
     const emailParam = searchParams.get("email");
-    const roleParam = searchParams.get("role");
 
     let since: Date | undefined;
     if (sinceParam) {
@@ -61,12 +76,12 @@ export async function GET(request: NextRequest) {
     const { activities, total } = await getRecentActivities({
       limit,
       offset,
-      type: type || undefined,
+      types: selectedTypes.length > 0 ? selectedTypes : undefined,
       userId: userId || undefined,
       entityType: entityType || undefined,
       since,
       userEmail: emailParam || undefined,
-      userRole: roleParam || undefined,
+      userRoles: selectedRoles.length > 0 ? selectedRoles : undefined,
     });
 
     return NextResponse.json({ activities, total, limit, offset });
