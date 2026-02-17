@@ -259,6 +259,15 @@ function extractTeamNames(job: any): string[] {
 
 /**
  * Extract assigned users from a job. Returns array of { userUid, userName, teamNames }.
+ * Each user gets the team from their specific assignment entry (assigned_to[*].team),
+ * NOT the job-level assigned_to_team array, to avoid attributing users to teams they
+ * aren't assigned under for that job.
+ *
+ * Fallback order when assignment-level team is missing:
+ *   1. Resolve team_uid via the job-level assigned_to_team uid→name map
+ *   2. If the job has exactly one team, assume all users belong to it
+ *   3. Otherwise leave teamNames empty (user will appear as "Unassigned")
+ *
  * Filters out excluded test users and inactive Zuper users.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -269,9 +278,25 @@ function extractAssignedUsers(job: any): Array<{
 }> {
   const users: Array<{ userUid: string; userName: string; teamNames: string[] }> = [];
 
-  const allTeams = extractTeamNames(job);
-
   if (!Array.isArray(job.assigned_to)) return users;
+
+  // Build a team_uid → team_name lookup from the job-level assigned_to_team array.
+  // Used to resolve assignment-level team_uid when team_name is absent.
+  const teamUidToName = new Map<string, string>();
+  if (Array.isArray(job.assigned_to_team)) {
+    for (const t of job.assigned_to_team) {
+      if (typeof t === "object" && t !== null) {
+        const tm = t.team;
+        if (typeof tm === "object" && tm !== null && tm.team_uid && tm.team_name) {
+          teamUidToName.set(tm.team_uid, tm.team_name);
+        }
+      }
+    }
+  }
+
+  // If the job has exactly one team, use it as a last-resort fallback
+  const jobLevelTeams = extractTeamNames(job);
+  const singleTeamFallback = jobLevelTeams.length === 1 ? jobLevelTeams[0] : null;
 
   for (const a of job.assigned_to) {
     if (typeof a !== "object" || a === null) continue;
@@ -290,7 +315,26 @@ function extractAssignedUsers(job: any): Array<{
     // Skip excluded test/demo users
     if (isExcludedUser(userName)) continue;
 
-    users.push({ userUid, userName, teamNames: allTeams });
+    // Resolve team from the assignment entry itself (not job-level fanout)
+    const assignmentTeamName: string | undefined = a.team?.team_name;
+    const assignmentTeamUid: string | undefined = a.team_uid || a.team?.team_uid;
+
+    let teamNames: string[];
+    if (assignmentTeamName) {
+      // Best case: assignment carries team_name directly
+      teamNames = [assignmentTeamName];
+    } else if (assignmentTeamUid && teamUidToName.has(assignmentTeamUid)) {
+      // Has team_uid but no name — resolve from job-level lookup
+      teamNames = [teamUidToName.get(assignmentTeamUid)!];
+    } else if (singleTeamFallback) {
+      // No assignment-level team data, but job has exactly one team
+      teamNames = [singleTeamFallback];
+    } else {
+      // Multiple job-level teams or none — can't determine, leave empty
+      teamNames = [];
+    }
+
+    users.push({ userUid, userName, teamNames });
   }
 
   return users;
