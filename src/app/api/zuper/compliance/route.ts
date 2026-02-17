@@ -425,9 +425,14 @@ export async function GET(request: NextRequest) {
     // Flatten all jobs with category info
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const allJobs: Array<{ job: any; categoryUid: string; categoryName: string }> = [];
+    const seenJobUids = new Set<string>();
     for (const { categoryUid, jobs } of categoryResults) {
       const categoryName = CATEGORY_UID_TO_NAME[categoryUid] || categoryUid;
       for (const job of jobs) {
+        // Dedup: skip if we've already seen this job from another category query
+        const jobUid = job.job_uid;
+        if (jobUid && seenJobUids.has(jobUid)) continue;
+        if (jobUid) seenJobUids.add(jobUid);
         allJobs.push({ job, categoryUid, categoryName });
       }
     }
@@ -543,7 +548,6 @@ export async function GET(request: NextRequest) {
         acc.byCategory[categoryName] = (acc.byCategory[categoryName] || 0) + 1;
 
         // Build a reusable job entry for detail lists
-        const effectiveCompletedTime = completedTime || scheduledEnd;
         let jobDaysToComplete: number | null = null;
         let jobDaysLate: number | null = null;
         let jobOowOnTime: boolean | null = null;
@@ -552,11 +556,13 @@ export async function GET(request: NextRequest) {
         if (COMPLETED_STATUSES.has(statusLower)) {
           acc.completedJobs++;
 
-          // On-time check: completed within scheduled_end + 1 day grace
+          // On-time check: only measurable when we have BOTH a real completion
+          // timestamp AND a scheduled end.  Jobs missing either are completed
+          // but excluded from on-time/late measurement to avoid inflating rates.
           let isLate = false;
-          if (scheduledEnd && effectiveCompletedTime) {
+          if (scheduledEnd && completedTime) {
             const deadline = new Date(scheduledEnd.getTime() + GRACE_MS);
-            if (effectiveCompletedTime <= deadline) {
+            if (completedTime <= deadline) {
               acc.onTimeCompletions++;
             } else {
               acc.lateCompletions++;
@@ -564,26 +570,26 @@ export async function GET(request: NextRequest) {
             }
 
             // Days past scheduled end
-            if (effectiveCompletedTime > scheduledEnd) {
-              const diffMs = effectiveCompletedTime.getTime() - scheduledEnd.getTime();
+            if (completedTime > scheduledEnd) {
+              const diffMs = completedTime.getTime() - scheduledEnd.getTime();
               jobDaysLate = Math.round((diffMs / (1000 * 60 * 60 * 24)) * 10) / 10;
               acc.daysLatePastEnd.push(jobDaysLate);
             }
-          } else {
-            acc.onTimeCompletions++;
           }
+          // else: no scheduledEnd or no completedTime — skip on-time/late count
 
-          // Days to complete: scheduled_start to completion
-          if (scheduledStart && effectiveCompletedTime && effectiveCompletedTime > scheduledStart) {
-            const diffMs = effectiveCompletedTime.getTime() - scheduledStart.getTime();
+          // Days to complete: scheduled_start to completion (real timestamp only)
+          if (scheduledStart && completedTime && completedTime > scheduledStart) {
+            const diffMs = completedTime.getTime() - scheduledStart.getTime();
             jobDaysToComplete = Math.round((diffMs / (1000 * 60 * 60 * 24)) * 10) / 10;
             acc.completionDays.push(jobDaysToComplete);
           }
 
-          // "On Our Way" compliance
-          if (onOurWayTime && scheduledStart) {
+          // "On Our Way" compliance — require both scheduledStart AND scheduledEnd
+          // so we don't inflate OOW on-time when there's no end to compare against
+          if (onOurWayTime && scheduledStart && scheduledEnd) {
             acc.onOurWayTotal++;
-            if (scheduledEnd && onOurWayTime > scheduledEnd) {
+            if (onOurWayTime > scheduledEnd) {
               acc.onOurWayLate++;
               jobOowOnTime = false;
             } else {
@@ -604,7 +610,7 @@ export async function GET(request: NextRequest) {
             category: categoryName,
             scheduledStart: job.scheduled_start_time || null,
             scheduledEnd: job.scheduled_end_time || null,
-            completedTime: effectiveCompletedTime?.toISOString() || null,
+            completedTime: completedTime?.toISOString() || null,
             daysToComplete: jobDaysToComplete,
             daysLate: jobDaysLate,
             onOurWayTime: onOurWayTime?.toISOString() || null,
@@ -810,7 +816,6 @@ export async function GET(request: NextRequest) {
       const completedTime = getCompletedTimeFromHistory(job);
       const onOurWayTime = getOnOurWayTime(job);
       const usedStarted = hasStartedStatus(job);
-      const effectiveCompletedTime = completedTime || scheduledEnd;
 
       // Attribute this job once per team (not per user)
       for (const team of jobTeams) {
@@ -828,26 +833,24 @@ export async function GET(request: NextRequest) {
 
         if (COMPLETED_STATUSES.has(statusLower)) {
           tAcc.completedJobs++;
-          if (scheduledEnd && effectiveCompletedTime) {
+          if (scheduledEnd && completedTime) {
             const deadline = new Date(scheduledEnd.getTime() + GRACE_MS);
-            if (effectiveCompletedTime <= deadline) {
+            if (completedTime <= deadline) {
               tAcc.onTimeCompletions++;
             } else {
               tAcc.lateCompletions++;
             }
-            if (effectiveCompletedTime > scheduledEnd) {
-              const diffMs = effectiveCompletedTime.getTime() - scheduledEnd.getTime();
+            if (completedTime > scheduledEnd) {
+              const diffMs = completedTime.getTime() - scheduledEnd.getTime();
               tAcc.daysLatePastEnd.push(Math.round((diffMs / (1000 * 60 * 60 * 24)) * 10) / 10);
             }
-          } else {
-            tAcc.onTimeCompletions++;
           }
-          if (scheduledStart && effectiveCompletedTime && effectiveCompletedTime > scheduledStart) {
-            const diffMs = effectiveCompletedTime.getTime() - scheduledStart.getTime();
+          if (scheduledStart && completedTime && completedTime > scheduledStart) {
+            const diffMs = completedTime.getTime() - scheduledStart.getTime();
             tAcc.completionDays.push(Math.round((diffMs / (1000 * 60 * 60 * 24)) * 10) / 10);
           }
-          if (onOurWayTime && scheduledStart) {
-            if (scheduledEnd && onOurWayTime > scheduledEnd) {
+          if (onOurWayTime && scheduledStart && scheduledEnd) {
+            if (onOurWayTime > scheduledEnd) {
               tAcc.onOurWayLate++;
             } else {
               tAcc.onOurWayOnTime++;
@@ -978,30 +981,27 @@ export async function GET(request: NextRequest) {
       const completedTime = getCompletedTimeFromHistory(job);
       const onOurWayTime = getOnOurWayTime(job);
       const usedStarted = hasStartedStatus(job);
-      const effectiveCompletedTime = completedTime || scheduledEnd;
 
       if (COMPLETED_STATUSES.has(statusLower)) {
         catAcc.completedJobs++;
-        if (scheduledEnd && effectiveCompletedTime) {
+        if (scheduledEnd && completedTime) {
           const deadline = new Date(scheduledEnd.getTime() + GRACE_MS);
-          if (effectiveCompletedTime <= deadline) {
+          if (completedTime <= deadline) {
             catAcc.onTimeCompletions++;
           } else {
             catAcc.lateCompletions++;
           }
-          if (effectiveCompletedTime > scheduledEnd) {
-            const diffMs = effectiveCompletedTime.getTime() - scheduledEnd.getTime();
+          if (completedTime > scheduledEnd) {
+            const diffMs = completedTime.getTime() - scheduledEnd.getTime();
             catAcc.daysLatePastEnd.push(Math.round((diffMs / (1000 * 60 * 60 * 24)) * 10) / 10);
           }
-        } else {
-          catAcc.onTimeCompletions++;
         }
-        if (scheduledStart && effectiveCompletedTime && effectiveCompletedTime > scheduledStart) {
-          const diffMs = effectiveCompletedTime.getTime() - scheduledStart.getTime();
+        if (scheduledStart && completedTime && completedTime > scheduledStart) {
+          const diffMs = completedTime.getTime() - scheduledStart.getTime();
           catAcc.completionDays.push(Math.round((diffMs / (1000 * 60 * 60 * 24)) * 10) / 10);
         }
-        if (onOurWayTime && scheduledStart) {
-          if (scheduledEnd && onOurWayTime > scheduledEnd) {
+        if (onOurWayTime && scheduledStart && scheduledEnd) {
+          if (onOurWayTime > scheduledEnd) {
             catAcc.onOurWayLate++;
           } else {
             catAcc.onOurWayOnTime++;
@@ -1023,62 +1023,100 @@ export async function GET(request: NextRequest) {
     applyBayesianToGroups(categoryComparison);
     categoryComparison.sort((a, b) => b.adjustedScore - a.adjustedScore);
 
-    // Compute summary
-    const totalJobs = users.reduce((sum, u) => sum + u.totalJobs, 0);
-    const totalCompleted = users.reduce((sum, u) => sum + u.completedJobs, 0);
-    const totalOnTime = users.reduce((sum, u) => sum + u.onTimeCompletions, 0);
-    const totalStuck = users.reduce((sum, u) => sum + u.stuckJobs, 0);
-    const totalNeverStarted = users.reduce((sum, u) => sum + u.neverStartedJobs, 0);
+    // Compute summary from unique jobs (not user-inflated sums)
+    // Re-walk allJobs once to get accurate unique-job totals
+    let summaryTotalJobs = 0;
+    let summaryCompleted = 0;
+    let summaryOnTime = 0;
+    let summaryLate = 0;
+    let summaryStuck = 0;
+    let summaryNeverStarted = 0;
+    const summaryCompletionDays: number[] = [];
+    const summaryDaysLate: number[] = [];
+    let summaryOowOnTime = 0;
+    let summaryOowTotal = 0;
 
-    const allCompletionDays = users.flatMap((u) => {
-      if (u.avgDaysToComplete > 0 && u.completedJobs > 0) {
-        return Array(u.completedJobs).fill(u.avgDaysToComplete);
+    for (const { job } of allJobs) {
+      const assignedUsers = extractAssignedUsers(job);
+      if (assignedUsers.length === 0) continue;
+      if (teamFilter) {
+        const hasMatchingTeam = assignedUsers.some(
+          (u) => u.teamNames.some((t) => t.toLowerCase().includes(teamFilter))
+        );
+        if (!hasMatchingTeam) continue;
       }
-      return [];
-    });
 
-    const allDaysLate = users.flatMap((u) => {
-      if (u.avgDaysLate > 0 && u.lateCompletions > 0) {
-        return Array(u.lateCompletions).fill(u.avgDaysLate);
+      summaryTotalJobs++;
+      const statusLower = getStatusName(job).toLowerCase();
+      const scheduledStart = job.scheduled_start_time ? new Date(job.scheduled_start_time) : null;
+      const scheduledEnd = job.scheduled_end_time ? new Date(job.scheduled_end_time) : null;
+      const completedTime = getCompletedTimeFromHistory(job);
+      const onOurWayTime = getOnOurWayTime(job);
+
+      if (COMPLETED_STATUSES.has(statusLower)) {
+        summaryCompleted++;
+        if (scheduledEnd && completedTime) {
+          const deadline = new Date(scheduledEnd.getTime() + GRACE_MS);
+          if (completedTime <= deadline) {
+            summaryOnTime++;
+          } else {
+            summaryLate++;
+          }
+          if (completedTime > scheduledEnd) {
+            const diffMs = completedTime.getTime() - scheduledEnd.getTime();
+            summaryDaysLate.push(Math.round((diffMs / (1000 * 60 * 60 * 24)) * 10) / 10);
+          }
+        }
+        if (scheduledStart && completedTime && completedTime > scheduledStart) {
+          const diffMs = completedTime.getTime() - scheduledStart.getTime();
+          summaryCompletionDays.push(Math.round((diffMs / (1000 * 60 * 60 * 24)) * 10) / 10);
+        }
+        if (onOurWayTime && scheduledStart && scheduledEnd) {
+          summaryOowTotal++;
+          if (onOurWayTime <= scheduledEnd) summaryOowOnTime++;
+        }
       }
-      return [];
-    });
+      if (STUCK_STATUSES.has(statusLower) && scheduledEnd && scheduledEnd < now) {
+        summaryStuck++;
+      }
+      if (NEVER_STARTED_STATUSES.has(statusLower) && scheduledStart && scheduledStart < now) {
+        summaryNeverStarted++;
+      }
+    }
 
-    const totalOnOurWayOnTime = users.reduce((sum, u) => sum + u.onOurWayOnTime, 0);
-    const totalOnOurWayTotal = users.reduce((sum, u) => sum + u.onOurWayOnTime + u.onOurWayLate, 0);
-
+    const summaryMeasurable = summaryOnTime + summaryLate;
     const overallOnTimePercent =
-      totalCompleted > 0
-        ? Math.round((totalOnTime / totalCompleted) * 100 * 10) / 10
+      summaryMeasurable > 0
+        ? Math.round((summaryOnTime / summaryMeasurable) * 100 * 10) / 10
         : 0;
 
     const avgCompletionDays =
-      allCompletionDays.length > 0
+      summaryCompletionDays.length > 0
         ? Math.round(
-            (allCompletionDays.reduce((sum, d) => sum + d, 0) /
-              allCompletionDays.length) *
+            (summaryCompletionDays.reduce((sum, d) => sum + d, 0) /
+              summaryCompletionDays.length) *
               10
           ) / 10
         : 0;
 
     const avgDaysLate =
-      allDaysLate.length > 0
+      summaryDaysLate.length > 0
         ? Math.round(
-            (allDaysLate.reduce((sum, d) => sum + d, 0) / allDaysLate.length) * 10
+            (summaryDaysLate.reduce((sum, d) => sum + d, 0) / summaryDaysLate.length) * 10
           ) / 10
         : 0;
 
     const overallOnOurWayPercent =
-      totalOnOurWayTotal > 0
-        ? Math.round((totalOnOurWayOnTime / totalOnOurWayTotal) * 100 * 10) / 10
+      summaryOowTotal > 0
+        ? Math.round((summaryOowOnTime / summaryOowTotal) * 100 * 10) / 10
         : 0;
 
     const summary: ComplianceSummary = {
-      totalJobs,
-      totalCompleted,
+      totalJobs: summaryTotalJobs,
+      totalCompleted: summaryCompleted,
       overallOnTimePercent,
-      totalStuck,
-      totalNeverStarted,
+      totalStuck: summaryStuck,
+      totalNeverStarted: summaryNeverStarted,
       avgCompletionDays,
       avgDaysLate,
       overallOnOurWayPercent,
