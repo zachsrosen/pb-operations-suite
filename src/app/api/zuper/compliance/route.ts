@@ -116,6 +116,25 @@ const EXCLUDED_USER_NAMES = [
   "matt raichart",
 ];
 
+// Non-field teams to exclude from compliance metrics (backoffice, admin, etc.)
+// Matched case-insensitively — team name must start with one of these prefixes
+const EXCLUDED_TEAM_PREFIXES = [
+  "backoffice",
+  "back office",
+  "admin",
+  "office",
+  "sales",
+];
+
+/**
+ * Check if a team name is a non-field/backoffice team that should be excluded.
+ */
+function isExcludedTeam(teamName: string | null): boolean {
+  if (!teamName) return false;
+  const lower = teamName.toLowerCase();
+  return EXCLUDED_TEAM_PREFIXES.some((prefix) => lower.startsWith(prefix));
+}
+
 // 1 day grace period in milliseconds
 const GRACE_MS = 24 * 60 * 60 * 1000;
 
@@ -213,8 +232,26 @@ function isExcludedUser(userName: string): boolean {
 }
 
 /**
+ * Extract all team names from a job's assigned_to_team array.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractTeamNames(job: any): string[] {
+  const teams: string[] = [];
+  if (!Array.isArray(job.assigned_to_team)) return teams;
+  for (const t of job.assigned_to_team) {
+    if (typeof t === "object" && t !== null) {
+      const tm = t.team;
+      if (typeof tm === "object" && tm !== null && tm.team_name) {
+        teams.push(tm.team_name);
+      }
+    }
+  }
+  return teams;
+}
+
+/**
  * Extract assigned users from a job. Returns array of { userUid, userName, teamName }.
- * Filters out excluded test users and inactive Zuper users.
+ * Filters out excluded test users, inactive Zuper users, and backoffice teams.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function extractAssignedUsers(job: any): Array<{
@@ -224,19 +261,15 @@ function extractAssignedUsers(job: any): Array<{
 }> {
   const users: Array<{ userUid: string; userName: string; teamName: string | null }> = [];
 
-  // Extract team name
-  let teamName: string | null = null;
-  if (Array.isArray(job.assigned_to_team)) {
-    for (const t of job.assigned_to_team) {
-      if (typeof t === "object" && t !== null) {
-        const tm = t.team;
-        if (typeof tm === "object" && tm !== null) {
-          teamName = tm.team_name || null;
-          break;
-        }
-      }
-    }
-  }
+  // Extract all team names, filtering out backoffice/non-field teams
+  const allTeams = extractTeamNames(job);
+  const fieldTeams = allTeams.filter((t) => !isExcludedTeam(t));
+
+  // If the job is ONLY assigned to excluded teams, skip all its users
+  if (allTeams.length > 0 && fieldTeams.length === 0) return users;
+
+  // Use first field team as the primary (for backwards compat with team filter)
+  const primaryTeam = fieldTeams.length > 0 ? fieldTeams[0] : null;
 
   if (!Array.isArray(job.assigned_to)) return users;
 
@@ -257,7 +290,7 @@ function extractAssignedUsers(job: any): Array<{
     // Skip excluded test/demo users
     if (isExcludedUser(userName)) continue;
 
-    users.push({ userUid, userName, teamName });
+    users.push({ userUid, userName, teamName: primaryTeam });
   }
 
   return users;
@@ -406,7 +439,7 @@ export async function GET(request: NextRequest) {
     interface UserAccumulator {
       userUid: string;
       userName: string;
-      teamName: string | null;
+      teamNames: Set<string>;
       totalJobs: number;
       completedJobs: number;
       onTimeCompletions: number;
@@ -475,7 +508,7 @@ export async function GET(request: NextRequest) {
           userMap.set(userUid, {
             userUid,
             userName,
-            teamName,
+            teamNames: new Set(teamName ? [teamName] : []),
             totalJobs: 0,
             completedJobs: 0,
             onTimeCompletions: 0,
@@ -496,8 +529,8 @@ export async function GET(request: NextRequest) {
         }
         const acc = userMap.get(userUid)!;
 
-        // Update team name if we have one and the accumulator doesn't
-        if (!acc.teamName && teamName) acc.teamName = teamName;
+        // Track all teams this user appears on
+        if (teamName) acc.teamNames.add(teamName);
 
         acc.totalJobs++;
         acc.byCategory[categoryName] = (acc.byCategory[categoryName] || 0) + 1;
@@ -671,7 +704,7 @@ export async function GET(request: NextRequest) {
       users.push({
         userUid: acc.userUid,
         userName: acc.userName,
-        teamName: acc.teamName,
+        teamName: acc.teamNames.size > 0 ? Array.from(acc.teamNames).sort().join(", ") : null,
         totalJobs: acc.totalJobs,
         completedJobs: acc.completedJobs,
         onTimeCompletions: acc.onTimeCompletions,
@@ -751,12 +784,14 @@ export async function GET(request: NextRequest) {
       };
     }
 
-    // Group users by team
+    // Group users by team — users on multiple teams appear under each team
     const teamMap = new Map<string, UserMetrics[]>();
     for (const u of users) {
-      const team = u.teamName || "Unassigned";
-      if (!teamMap.has(team)) teamMap.set(team, []);
-      teamMap.get(team)!.push(u);
+      const teams = u.teamName ? u.teamName.split(", ") : ["Unassigned"];
+      for (const team of teams) {
+        if (!teamMap.has(team)) teamMap.set(team, []);
+        teamMap.get(team)!.push(u);
+      }
     }
     const teamComparison: GroupComparison[] = Array.from(teamMap.entries())
       .map(([name, teamUsers]) => ({ name, ...aggregateGroup(teamUsers) }))
