@@ -85,9 +85,15 @@ export function KeyboardShortcutsDialog() {
   const prefixTimer = useRef<NodeJS.Timeout | null>(null);
 
   const router = useRouter();
+
   // Keep refs in sync so the single event listener always reads current values
-  isOpenRef.current = isOpen;
-  routerRef.current = router;
+  useEffect(() => {
+    isOpenRef.current = isOpen;
+  }, [isOpen]);
+
+  useEffect(() => {
+    routerRef.current = router;
+  }, [router]);
 
   // Register a single event listener on mount — never re-registered.
   // Reads state via refs to avoid stale closures.
@@ -153,20 +159,10 @@ export function KeyboardShortcutsDialog() {
       document.removeEventListener("keydown", handleKeyDown);
       if (prefixTimer.current) clearTimeout(prefixTimer.current);
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- stable via refs
+  }, []);
 
   return (
     <>
-      {/* Always-visible keyboard shortcut hint button */}
-      <button
-        onClick={() => setIsOpen(true)}
-        className="fixed bottom-6 right-6 z-40 flex items-center justify-center w-7 h-7 rounded-lg bg-surface border border-t-border shadow-card hover:border-orange-500/40 hover:shadow-card-lg transition-all text-muted hover:text-foreground cursor-pointer"
-        title="Keyboard shortcuts (?)"
-        aria-label="Show keyboard shortcuts"
-      >
-        <kbd className="text-xs font-mono font-medium leading-none">?</kbd>
-      </button>
-
       {/* Dialog overlay */}
       {isOpen && (
         <div
