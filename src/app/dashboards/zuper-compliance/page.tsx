@@ -141,6 +141,14 @@ function zuperJobUrl(jobUid: string) {
   return `${ZUPER_WEB_BASE}/jobs/${jobUid}/details`;
 }
 
+function parseUserTeams(teamName: string | null | undefined): string[] {
+  if (!teamName) return [];
+  return teamName
+    .split(",")
+    .map((team) => team.trim())
+    .filter(Boolean);
+}
+
 /* ------------------------------------------------------------------ */
 /*  Job list table component (reused for stuck, late, never-started)   */
 /* ------------------------------------------------------------------ */
@@ -261,14 +269,19 @@ function ComparisonTable({
   title,
   nameLabel,
   accentColor,
+  users,
+  groupType,
 }: {
   rows: GroupComparison[];
   title: string;
   nameLabel: string;
   accentColor: string;
+  users: UserMetrics[];
+  groupType: "team" | "category";
 }) {
   const [sortField, setSortField] = useState<GroupSortField>("adjustedScore");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [expandedGroupName, setExpandedGroupName] = useState<string | null>(null);
 
   const pctColor = (pct: number) => {
     if (pct >= 80) return "text-green-400";
@@ -303,6 +316,27 @@ function ComparisonTable({
   const sortArrow = (field: GroupSortField) =>
     sortField === field ? (sortDir === "asc" ? " \u25B2" : " \u25BC") : "";
 
+  const getContributingUsers = (groupName: string) => {
+    const details = users
+      .map((user) => {
+        let jobsInGroup = 0;
+        if (groupType === "team") {
+          const userTeams = parseUserTeams(user.teamName);
+          if (!userTeams.includes(groupName)) return null;
+          jobsInGroup = user.totalJobs;
+        } else {
+          jobsInGroup = user.byCategory[groupName] || 0;
+          if (jobsInGroup <= 0) return null;
+        }
+        return { ...user, jobsInGroup };
+      })
+      .filter(Boolean) as Array<UserMetrics & { jobsInGroup: number }>;
+
+    return details.sort(
+      (a, b) => b.jobsInGroup - a.jobsInGroup || a.userName.localeCompare(b.userName)
+    );
+  };
+
   if (rows.length === 0) return null;
 
   const sorted = [...rows].sort((a, b) => {
@@ -334,7 +368,10 @@ function ComparisonTable({
     <div className="bg-surface/50 border border-t-border rounded-xl overflow-hidden">
       <div className={`px-4 py-3 border-b border-t-border bg-surface/80 flex items-center justify-between`}>
         <h3 className="text-sm font-semibold text-foreground">{title}</h3>
-        <span className="text-xs text-muted">{rows.length} groups</span>
+        <div className="text-right">
+          <div className="text-xs text-muted">{rows.length} groups</div>
+          <div className="text-[11px] text-muted/70">Click row to inspect users</div>
+        </div>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
@@ -360,74 +397,176 @@ function ComparisonTable({
             {sorted.map((r) => {
               const isBest = sorted.length > 1 && r.name === best.name;
               const isWorst = sorted.length > 1 && r.name === worst.name;
+              const isExpanded = expandedGroupName === r.name;
+              const contributingUsers = isExpanded ? getContributingUsers(r.name) : [];
+              const userAttributedJobs = contributingUsers.reduce(
+                (sum, user) => sum + user.jobsInGroup,
+                0
+              );
+
               return (
-                <tr
-                  key={r.name}
-                  className={`border-b border-t-border/50 ${
-                    isBest ? "bg-green-500/5" : isWorst ? "bg-red-500/5" : ""
-                  }`}
-                >
-                  <td className="px-4 py-2.5">
-                    <div className="flex items-center gap-2">
+                <Fragment key={r.name}>
+                  <tr
+                    className={`border-b border-t-border/50 cursor-pointer hover:bg-surface-2/30 transition-colors ${
+                      isBest ? "bg-green-500/5" : isWorst ? "bg-red-500/5" : ""
+                    } ${isExpanded ? "bg-surface-2/20" : ""}`}
+                    onClick={() => setExpandedGroupName(isExpanded ? null : r.name)}
+                  >
+                    <td className="px-4 py-2.5">
+                      <div className="flex items-center gap-2">
+                        <svg
+                          className={`w-3 h-3 text-muted/60 transition-transform shrink-0 ${isExpanded ? "rotate-90" : ""}`}
+                          fill="currentColor"
+                          viewBox="0 0 20 20"
+                        >
+                          <path
+                            fillRule="evenodd"
+                            d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                        <span
+                          className={`w-2 h-2 rounded-full shrink-0`}
+                          style={{
+                            backgroundColor: isBest
+                              ? "rgb(74, 222, 128)"
+                              : isWorst
+                              ? "rgb(248, 113, 113)"
+                              : `var(--color-${accentColor}-400, rgb(148, 163, 184))`,
+                          }}
+                        />
+                        <span className="font-medium text-foreground/90">{r.name}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-2.5 text-right text-muted">{r.userCount}</td>
+                    <td className="px-4 py-2.5 text-right text-foreground/80">{r.totalJobs}</td>
+                    <td className="px-4 py-2.5 text-right text-foreground/80">{r.completedJobs}</td>
+                    <td className={`px-4 py-2.5 text-right font-medium ${pctColor(r.onTimePercent)}`}>
+                      {r.onTimePercent}%
+                    </td>
+                    <td className="px-4 py-2.5 text-right text-foreground/80">{r.lateCompletions}</td>
+                    <td className="px-4 py-2.5 text-right">
+                      <span className={r.stuckJobs > 0 ? "text-amber-400 font-medium" : "text-foreground/80"}>
+                        {r.stuckJobs}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 text-right">
+                      <span className={r.neverStartedJobs > 0 ? "text-orange-400 font-medium" : "text-foreground/80"}>
+                        {r.neverStartedJobs}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 text-right text-blue-400">{r.avgDaysToComplete}</td>
+                    <td className="px-4 py-2.5 text-right">
+                      <span className={r.avgDaysLate > 0 ? "text-rose-400 font-medium" : "text-foreground/80"}>
+                        {r.avgDaysLate > 0 ? `${r.avgDaysLate}d` : "\u2014"}
+                      </span>
+                    </td>
+                    <td className={`px-4 py-2.5 text-right font-medium ${pctColor(r.onOurWayPercent)}`}>
+                      {r.onOurWayOnTime + r.onOurWayLate > 0 ? `${r.onOurWayPercent}%` : "\u2014"}
+                    </td>
+                    <td className={`px-4 py-2.5 text-right font-medium ${pctColor(r.statusUsagePercent)}`}
+                        title={`OOW: ${r.oowUsed}/${r.completedJobs} | Started: ${r.startedUsed}/${r.completedJobs}`}>
+                      {r.completedJobs > 0 ? `${r.statusUsagePercent}%` : "\u2014"}
+                    </td>
+                    <td className="px-4 py-2.5 text-center">
                       <span
-                        className={`w-2 h-2 rounded-full shrink-0`}
-                        style={{
-                          backgroundColor: isBest
-                            ? "rgb(74, 222, 128)"
-                            : isWorst
-                            ? "rgb(248, 113, 113)"
-                            : `var(--color-${accentColor}-400, rgb(148, 163, 184))`,
-                        }}
-                      />
-                      <span className="font-medium text-foreground/90">{r.name}</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-2.5 text-right text-muted">{r.userCount}</td>
-                  <td className="px-4 py-2.5 text-right text-foreground/80">{r.totalJobs}</td>
-                  <td className="px-4 py-2.5 text-right text-foreground/80">{r.completedJobs}</td>
-                  <td className={`px-4 py-2.5 text-right font-medium ${pctColor(r.onTimePercent)}`}>
-                    {r.onTimePercent}%
-                  </td>
-                  <td className="px-4 py-2.5 text-right text-foreground/80">{r.lateCompletions}</td>
-                  <td className="px-4 py-2.5 text-right">
-                    <span className={r.stuckJobs > 0 ? "text-amber-400 font-medium" : "text-foreground/80"}>
-                      {r.stuckJobs}
-                    </span>
-                  </td>
-                  <td className="px-4 py-2.5 text-right">
-                    <span className={r.neverStartedJobs > 0 ? "text-orange-400 font-medium" : "text-foreground/80"}>
-                      {r.neverStartedJobs}
-                    </span>
-                  </td>
-                  <td className="px-4 py-2.5 text-right text-blue-400">{r.avgDaysToComplete}</td>
-                  <td className="px-4 py-2.5 text-right">
-                    <span className={r.avgDaysLate > 0 ? "text-rose-400 font-medium" : "text-foreground/80"}>
-                      {r.avgDaysLate > 0 ? `${r.avgDaysLate}d` : "\u2014"}
-                    </span>
-                  </td>
-                  <td className={`px-4 py-2.5 text-right font-medium ${pctColor(r.onOurWayPercent)}`}>
-                    {r.onOurWayOnTime + r.onOurWayLate > 0 ? `${r.onOurWayPercent}%` : "\u2014"}
-                  </td>
-                  <td className={`px-4 py-2.5 text-right font-medium ${pctColor(r.statusUsagePercent)}`}
-                      title={`OOW: ${r.oowUsed}/${r.completedJobs} | Started: ${r.startedUsed}/${r.completedJobs}`}>
-                    {r.completedJobs > 0 ? `${r.statusUsagePercent}%` : "\u2014"}
-                  </td>
-                  <td className="px-4 py-2.5 text-center">
-                    <span
-                      className={`inline-flex items-center justify-center w-8 h-8 rounded-lg text-xs font-bold ${gradeClasses(r.grade)}`}
-                    >
-                      {r.grade}
-                    </span>
-                  </td>
-                  <td className="px-4 py-2.5 text-center">
-                    <span
-                      className={`inline-flex items-center justify-center w-8 h-8 rounded-lg text-xs font-bold ${gradeClasses(r.adjustedGrade)}`}
-                      title={`Adjusted: ${r.adjustedScore} | Raw: ${r.complianceScore}`}
-                    >
-                      {r.adjustedGrade}
-                    </span>
-                  </td>
-                </tr>
+                        className={`inline-flex items-center justify-center w-8 h-8 rounded-lg text-xs font-bold ${gradeClasses(r.grade)}`}
+                      >
+                        {r.grade}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 text-center">
+                      <span
+                        className={`inline-flex items-center justify-center w-8 h-8 rounded-lg text-xs font-bold ${gradeClasses(r.adjustedGrade)}`}
+                        title={`Adjusted: ${r.adjustedScore} | Raw: ${r.complianceScore}`}
+                      >
+                        {r.adjustedGrade}
+                      </span>
+                    </td>
+                  </tr>
+
+                  {isExpanded && (
+                    <tr className="border-b border-t-border/50">
+                      <td colSpan={14} className="px-4 py-4 bg-surface-2/20">
+                        <div className="flex flex-wrap items-center gap-4 text-xs text-muted mb-3">
+                          <span>
+                            {contributingUsers.length} users matched this {nameLabel.toLowerCase()}
+                          </span>
+                          <span>
+                            {userAttributedJobs.toLocaleString()} user-job attributions shown
+                          </span>
+                          {userAttributedJobs !== r.totalJobs && (
+                            <span className="text-amber-400/80">
+                              Attributions can exceed unique jobs when work orders have multiple assigned users.
+                            </span>
+                          )}
+                        </div>
+
+                        {contributingUsers.length > 0 ? (
+                          <div className="bg-surface/50 border border-t-border rounded-lg overflow-hidden">
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="text-muted text-left border-b border-t-border">
+                                  <th className="px-3 py-2">User</th>
+                                  <th className="px-3 py-2">Team</th>
+                                  <th className="px-3 py-2 text-right">Jobs in Group</th>
+                                  <th className="px-3 py-2 text-right">Total Jobs</th>
+                                  <th className="px-3 py-2 text-right">On-Time %</th>
+                                  <th className="px-3 py-2 text-right">Late</th>
+                                  <th className="px-3 py-2 text-right">Stuck</th>
+                                  <th className="px-3 py-2 text-right">Not Started</th>
+                                  <th className="px-3 py-2 text-center">Adj</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {contributingUsers.map((user) => (
+                                  <tr key={`${r.name}-${user.userUid}`} className="border-b border-t-border/30">
+                                    <td className="px-3 py-1.5 text-foreground/90 font-medium">
+                                      {user.userName}
+                                    </td>
+                                    <td className="px-3 py-1.5 text-muted">{user.teamName || "\u2014"}</td>
+                                    <td className="px-3 py-1.5 text-right text-blue-400 font-medium">
+                                      {user.jobsInGroup}
+                                    </td>
+                                    <td className="px-3 py-1.5 text-right text-foreground/80">
+                                      {user.totalJobs}
+                                    </td>
+                                    <td className={`px-3 py-1.5 text-right font-medium ${pctColor(user.onTimePercent)}`}>
+                                      {user.onTimePercent}%
+                                    </td>
+                                    <td className="px-3 py-1.5 text-right text-foreground/80">
+                                      {user.lateCompletions}
+                                    </td>
+                                    <td className="px-3 py-1.5 text-right">
+                                      <span className={user.stuckJobs > 0 ? "text-amber-400 font-medium" : "text-foreground/80"}>
+                                        {user.stuckJobs}
+                                      </span>
+                                    </td>
+                                    <td className="px-3 py-1.5 text-right">
+                                      <span className={user.neverStartedJobs > 0 ? "text-orange-400 font-medium" : "text-foreground/80"}>
+                                        {user.neverStartedJobs}
+                                      </span>
+                                    </td>
+                                    <td className="px-3 py-1.5 text-center">
+                                      <span
+                                        className={`inline-flex items-center justify-center w-7 h-7 rounded-md text-xs font-bold ${gradeClasses(user.adjustedGrade)}`}
+                                        title={`Adjusted: ${user.adjustedScore} | Raw: ${user.complianceScore}`}
+                                      >
+                                        {user.adjustedGrade}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : (
+                          <p className="text-sm text-muted">No matching user records for this group.</p>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               );
             })}
           </tbody>
@@ -874,6 +1013,8 @@ export default function ZuperCompliancePage() {
             title="Team Comparison"
             nameLabel="Team"
             accentColor="orange"
+            users={data.users}
+            groupType="team"
           />
         </div>
       )}
@@ -886,6 +1027,8 @@ export default function ZuperCompliancePage() {
             title="Job Category Comparison"
             nameLabel="Category"
             accentColor="blue"
+            users={data.users}
+            groupType="category"
           />
         </div>
       )}
