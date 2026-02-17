@@ -38,8 +38,14 @@ interface UserMetrics {
   onOurWayOnTime: number;
   onOurWayLate: number;
   onOurWayPercent: number;
+  oowUsed: number;
+  startedUsed: number;
+  statusUsagePercent: number;
   complianceScore: number;
   grade: string;
+  adjustedScore: number;
+  adjustedGrade: string;
+  belowThreshold: boolean;
   byCategory: CategoryBreakdown;
   stuckJobsList: JobEntry[];
   lateJobsList: JobEntry[];
@@ -73,8 +79,13 @@ interface GroupComparison {
   onOurWayOnTime: number;
   onOurWayLate: number;
   onOurWayPercent: number;
+  oowUsed: number;
+  startedUsed: number;
+  statusUsagePercent: number;
   complianceScore: number;
   grade: string;
+  adjustedScore: number;
+  adjustedGrade: string;
   userCount: number;
 }
 
@@ -115,25 +126,6 @@ const EXCLUDED_USER_NAMES = [
   "jessica",
   "matt raichart",
 ];
-
-// Non-field teams to exclude from compliance metrics (backoffice, admin, etc.)
-// Matched case-insensitively — team name must start with one of these prefixes
-const EXCLUDED_TEAM_PREFIXES = [
-  "backoffice",
-  "back office",
-  "admin",
-  "office",
-  "sales",
-];
-
-/**
- * Check if a team name is a non-field/backoffice team that should be excluded.
- */
-function isExcludedTeam(teamName: string | null): boolean {
-  if (!teamName) return false;
-  const lower = teamName.toLowerCase();
-  return EXCLUDED_TEAM_PREFIXES.some((prefix) => lower.startsWith(prefix));
-}
 
 // 1 day grace period in milliseconds
 const GRACE_MS = 24 * 60 * 60 * 1000;
@@ -224,6 +216,22 @@ function getOnOurWayTime(job: any): Date | null {
 }
 
 /**
+ * Check if "Started" status was ever used in the job_status history.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function hasStartedStatus(job: any): boolean {
+  const statusHistory = job.job_status;
+  if (!Array.isArray(statusHistory)) return false;
+
+  for (const entry of statusHistory) {
+    if (!entry) continue;
+    const name = (entry.status_name || entry.name || "").toLowerCase();
+    if (name === "started") return true;
+  }
+  return false;
+}
+
+/**
  * Check if a user name matches the exclusion list.
  */
 function isExcludedUser(userName: string): boolean {
@@ -250,26 +258,18 @@ function extractTeamNames(job: any): string[] {
 }
 
 /**
- * Extract assigned users from a job. Returns array of { userUid, userName, teamName }.
- * Filters out excluded test users, inactive Zuper users, and backoffice teams.
+ * Extract assigned users from a job. Returns array of { userUid, userName, teamNames }.
+ * Filters out excluded test users and inactive Zuper users.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function extractAssignedUsers(job: any): Array<{
   userUid: string;
   userName: string;
-  teamName: string | null;
+  teamNames: string[];
 }> {
-  const users: Array<{ userUid: string; userName: string; teamName: string | null }> = [];
+  const users: Array<{ userUid: string; userName: string; teamNames: string[] }> = [];
 
-  // Extract all team names, filtering out backoffice/non-field teams
   const allTeams = extractTeamNames(job);
-  const fieldTeams = allTeams.filter((t) => !isExcludedTeam(t));
-
-  // If the job is ONLY assigned to excluded teams, skip all its users
-  if (allTeams.length > 0 && fieldTeams.length === 0) return users;
-
-  // Use first field team as the primary (for backwards compat with team filter)
-  const primaryTeam = fieldTeams.length > 0 ? fieldTeams[0] : null;
 
   if (!Array.isArray(job.assigned_to)) return users;
 
@@ -290,7 +290,7 @@ function extractAssignedUsers(job: any): Array<{
     // Skip excluded test/demo users
     if (isExcludedUser(userName)) continue;
 
-    users.push({ userUid, userName, teamName: primaryTeam });
+    users.push({ userUid, userName, teamNames: allTeams });
   }
 
   return users;
@@ -391,6 +391,7 @@ export async function GET(request: NextRequest) {
     const days = Math.min(Math.max(parseInt(searchParams.get("days") || "30") || 30, 1), 365);
     const teamFilter = searchParams.get("team")?.toLowerCase().trim() || null;
     const categoryFilter = searchParams.get("category")?.toLowerCase().trim() || null;
+    const minJobs = Math.max(parseInt(searchParams.get("minJobs") || "5") || 5, 0);
 
     // Compute date range
     const now = new Date();
@@ -451,6 +452,8 @@ export async function GET(request: NextRequest) {
       onOurWayOnTime: number;
       onOurWayLate: number;
       onOurWayTotal: number;
+      oowUsed: number;      // completed jobs that used OOW
+      startedUsed: number;  // completed jobs that used Started
       byCategory: CategoryBreakdown;
       stuckJobsList: JobEntry[];
       lateJobsList: JobEntry[];
@@ -470,7 +473,7 @@ export async function GET(request: NextRequest) {
       // Track filter options
       categoriesSet.add(categoryName);
       for (const u of assignedUsers) {
-        if (u.teamName) teamsSet.add(u.teamName);
+        for (const t of u.teamNames) teamsSet.add(t);
       }
 
       // Skip unassigned jobs
@@ -482,7 +485,7 @@ export async function GET(request: NextRequest) {
       // Apply team filter if specified
       if (teamFilter) {
         const hasMatchingTeam = assignedUsers.some(
-          (u) => u.teamName && u.teamName.toLowerCase().includes(teamFilter)
+          (u) => u.teamNames.some((t) => t.toLowerCase().includes(teamFilter))
         );
         if (!hasMatchingTeam) {
           filteredOutByTeam++;
@@ -501,14 +504,16 @@ export async function GET(request: NextRequest) {
       const completedTime = getCompletedTimeFromHistory(job);
       // Extract when "On Our Way" was triggered
       const onOurWayTime = getOnOurWayTime(job);
+      // Check if "Started" was ever used
+      const usedStarted = hasStartedStatus(job);
 
       // Attribute job to each assigned user
-      for (const { userUid, userName, teamName } of assignedUsers) {
+      for (const { userUid, userName, teamNames: jobTeams } of assignedUsers) {
         if (!userMap.has(userUid)) {
           userMap.set(userUid, {
             userUid,
             userName,
-            teamNames: new Set(teamName ? [teamName] : []),
+            teamNames: new Set(jobTeams),
             totalJobs: 0,
             completedJobs: 0,
             onTimeCompletions: 0,
@@ -520,6 +525,8 @@ export async function GET(request: NextRequest) {
             onOurWayOnTime: 0,
             onOurWayLate: 0,
             onOurWayTotal: 0,
+            oowUsed: 0,
+            startedUsed: 0,
             byCategory: {},
             stuckJobsList: [],
             lateJobsList: [],
@@ -530,7 +537,7 @@ export async function GET(request: NextRequest) {
         const acc = userMap.get(userUid)!;
 
         // Track all teams this user appears on
-        if (teamName) acc.teamNames.add(teamName);
+        for (const t of jobTeams) acc.teamNames.add(t);
 
         acc.totalJobs++;
         acc.byCategory[categoryName] = (acc.byCategory[categoryName] || 0) + 1;
@@ -584,6 +591,10 @@ export async function GET(request: NextRequest) {
               jobOowOnTime = true;
             }
           }
+
+          // Track OOW and Started usage (did the user use these statuses at all?)
+          if (onOurWayTime) acc.oowUsed++;
+          if (usedStarted) acc.startedUsed++;
 
           // Build completed job entry
           const completedEntry: JobEntry = {
@@ -717,8 +728,16 @@ export async function GET(request: NextRequest) {
         onOurWayOnTime: acc.onOurWayOnTime,
         onOurWayLate: acc.onOurWayLate,
         onOurWayPercent,
+        oowUsed: acc.oowUsed,
+        startedUsed: acc.startedUsed,
+        statusUsagePercent: acc.completedJobs > 0
+          ? Math.round(((acc.oowUsed + acc.startedUsed) / (acc.completedJobs * 2)) * 100 * 10) / 10
+          : 0,
         complianceScore,
         grade,
+        adjustedScore: 0, // computed below after global average is known
+        adjustedGrade: "",
+        belowThreshold: acc.totalJobs < minJobs,
         byCategory: acc.byCategory,
         stuckJobsList: acc.stuckJobsList,
         lateJobsList: acc.lateJobsList,
@@ -727,75 +746,186 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Sort by complianceScore ascending (worst first)
-    users.sort((a, b) => a.complianceScore - b.complianceScore);
+    // Compute Bayesian adjusted scores
+    // adjustedScore = (userJobs * rawScore + C * globalAvg) / (userJobs + C)
+    // C = 10 (confidence weight — users need ~10 jobs to mostly reflect their own score)
+    const BAYESIAN_C = 10;
+    const globalAvgScore = users.length > 0
+      ? users.reduce((s, u) => s + u.complianceScore, 0) / users.length
+      : 50;
+    for (const u of users) {
+      u.adjustedScore = Math.round(
+        ((u.totalJobs * u.complianceScore + BAYESIAN_C * globalAvgScore) /
+          (u.totalJobs + BAYESIAN_C)) * 10
+      ) / 10;
+      u.adjustedGrade = computeGrade(u.adjustedScore);
+    }
+
+    // Sort by adjustedScore descending (best first)
+    users.sort((a, b) => b.adjustedScore - a.adjustedScore);
 
     // ========== Team Comparison ==========
-    function aggregateGroup(groupUsers: UserMetrics[]): Omit<GroupComparison, "name"> {
-      const total = groupUsers.reduce((s, u) => s + u.totalJobs, 0);
-      const completed = groupUsers.reduce((s, u) => s + u.completedJobs, 0);
-      const onTime = groupUsers.reduce((s, u) => s + u.onTimeCompletions, 0);
-      const late = groupUsers.reduce((s, u) => s + u.lateCompletions, 0);
-      const stuck = groupUsers.reduce((s, u) => s + u.stuckJobs, 0);
-      const neverStarted = groupUsers.reduce((s, u) => s + u.neverStartedJobs, 0);
-      const oowOnTime = groupUsers.reduce((s, u) => s + u.onOurWayOnTime, 0);
-      const oowLate = groupUsers.reduce((s, u) => s + u.onOurWayLate, 0);
-      const oowTotal = oowOnTime + oowLate;
+    // Aggregate per-job by team (not per-user) to avoid inflating counts for multi-team users
+    interface TeamAccumulator {
+      totalJobs: number;
+      completedJobs: number;
+      onTimeCompletions: number;
+      lateCompletions: number;
+      stuckJobs: number;
+      neverStartedJobs: number;
+      completionDays: number[];
+      daysLatePastEnd: number[];
+      onOurWayOnTime: number;
+      onOurWayLate: number;
+      oowUsed: number;
+      startedUsed: number;
+      assignedUsers: Set<string>;
+    }
+    const teamAccMap = new Map<string, TeamAccumulator>();
 
-      const measurable = onTime + late;
-      const onTimePercent = measurable > 0 ? Math.round((onTime / measurable) * 100 * 10) / 10 : 0;
+    for (const { job } of allJobs) {
+      const statusName = getStatusName(job);
+      const statusLower = statusName.toLowerCase();
+      const assignedUsers = extractAssignedUsers(job);
 
-      // Weighted avg days to complete
-      const totalCompletionDays = groupUsers.reduce(
-        (s, u) => s + u.avgDaysToComplete * u.completedJobs, 0
-      );
-      const avgDaysToComplete = completed > 0 ? Math.round((totalCompletionDays / completed) * 10) / 10 : 0;
+      if (assignedUsers.length === 0) continue;
 
-      // Weighted avg days late
-      const totalDaysLate = groupUsers.reduce(
-        (s, u) => s + u.avgDaysLate * u.lateCompletions, 0
-      );
-      const avgDaysLate = late > 0 ? Math.round((totalDaysLate / late) * 10) / 10 : 0;
+      // Apply team filter if specified
+      if (teamFilter) {
+        const hasMatchingTeam = assignedUsers.some(
+          (u) => u.teamNames.some((t) => t.toLowerCase().includes(teamFilter))
+        );
+        if (!hasMatchingTeam) continue;
+      }
 
-      const onOurWayPercent = oowTotal > 0 ? Math.round((oowOnTime / oowTotal) * 100 * 10) / 10 : 0;
+      // Determine which teams this job belongs to
+      const jobTeams = new Set<string>();
+      for (const u of assignedUsers) {
+        for (const t of u.teamNames) jobTeams.add(t);
+      }
+      if (jobTeams.size === 0) jobTeams.add("Unassigned");
 
-      const stuckRate = total > 0 ? stuck / total : 0;
-      const neverStartedRate = total > 0 ? neverStarted / total : 0;
+      const scheduledStart = job.scheduled_start_time ? new Date(job.scheduled_start_time) : null;
+      const scheduledEnd = job.scheduled_end_time ? new Date(job.scheduled_end_time) : null;
+      const completedTime = getCompletedTimeFromHistory(job);
+      const onOurWayTime = getOnOurWayTime(job);
+      const usedStarted = hasStartedStatus(job);
+      const effectiveCompletedTime = completedTime || scheduledEnd;
+
+      // Attribute this job once per team (not per user)
+      for (const team of jobTeams) {
+        if (!teamAccMap.has(team)) {
+          teamAccMap.set(team, {
+            totalJobs: 0, completedJobs: 0, onTimeCompletions: 0, lateCompletions: 0,
+            stuckJobs: 0, neverStartedJobs: 0, completionDays: [], daysLatePastEnd: [],
+            onOurWayOnTime: 0, onOurWayLate: 0, oowUsed: 0, startedUsed: 0,
+            assignedUsers: new Set(),
+          });
+        }
+        const tAcc = teamAccMap.get(team)!;
+        tAcc.totalJobs++;
+        for (const u of assignedUsers) tAcc.assignedUsers.add(u.userUid);
+
+        if (COMPLETED_STATUSES.has(statusLower)) {
+          tAcc.completedJobs++;
+          if (scheduledEnd && effectiveCompletedTime) {
+            const deadline = new Date(scheduledEnd.getTime() + GRACE_MS);
+            if (effectiveCompletedTime <= deadline) {
+              tAcc.onTimeCompletions++;
+            } else {
+              tAcc.lateCompletions++;
+            }
+            if (effectiveCompletedTime > scheduledEnd) {
+              const diffMs = effectiveCompletedTime.getTime() - scheduledEnd.getTime();
+              tAcc.daysLatePastEnd.push(Math.round((diffMs / (1000 * 60 * 60 * 24)) * 10) / 10);
+            }
+          } else {
+            tAcc.onTimeCompletions++;
+          }
+          if (scheduledStart && effectiveCompletedTime && effectiveCompletedTime > scheduledStart) {
+            const diffMs = effectiveCompletedTime.getTime() - scheduledStart.getTime();
+            tAcc.completionDays.push(Math.round((diffMs / (1000 * 60 * 60 * 24)) * 10) / 10);
+          }
+          if (onOurWayTime && scheduledStart) {
+            if (scheduledEnd && onOurWayTime > scheduledEnd) {
+              tAcc.onOurWayLate++;
+            } else {
+              tAcc.onOurWayOnTime++;
+            }
+          }
+          if (onOurWayTime) tAcc.oowUsed++;
+          if (usedStarted) tAcc.startedUsed++;
+        }
+        if (STUCK_STATUSES.has(statusLower) && scheduledEnd && scheduledEnd < now) {
+          tAcc.stuckJobs++;
+        }
+        if (NEVER_STARTED_STATUSES.has(statusLower) && scheduledStart && scheduledStart < now) {
+          tAcc.neverStartedJobs++;
+        }
+      }
+    }
+
+    // Build team comparison from accumulators (same pattern as category comparison)
+    function buildGroupFromAcc(name: string, acc: { totalJobs: number; completedJobs: number; onTimeCompletions: number; lateCompletions: number; stuckJobs: number; neverStartedJobs: number; completionDays: number[]; daysLatePastEnd: number[]; onOurWayOnTime: number; onOurWayLate: number; oowUsed: number; startedUsed: number; assignedUsers: Set<string> }): GroupComparison {
+      const measurable = acc.onTimeCompletions + acc.lateCompletions;
+      const onTimePercent = measurable > 0 ? Math.round((acc.onTimeCompletions / measurable) * 100 * 10) / 10 : 0;
+      const avgDaysToComplete = acc.completionDays.length > 0
+        ? Math.round((acc.completionDays.reduce((s, d) => s + d, 0) / acc.completionDays.length) * 10) / 10
+        : 0;
+      const avgDaysLate = acc.daysLatePastEnd.length > 0
+        ? Math.round((acc.daysLatePastEnd.reduce((s, d) => s + d, 0) / acc.daysLatePastEnd.length) * 10) / 10
+        : 0;
+      const oowTotal = acc.onOurWayOnTime + acc.onOurWayLate;
+      const onOurWayPercent = oowTotal > 0 ? Math.round((acc.onOurWayOnTime / oowTotal) * 100 * 10) / 10 : 0;
+      const stuckRate = acc.totalJobs > 0 ? acc.stuckJobs / acc.totalJobs : 0;
+      const neverStartedRate = acc.totalJobs > 0 ? acc.neverStartedJobs / acc.totalJobs : 0;
+      const statusUsagePercent = acc.completedJobs > 0
+        ? Math.round(((acc.oowUsed + acc.startedUsed) / (acc.completedJobs * 2)) * 100 * 10) / 10
+        : 0;
       const complianceScore = Math.round(
         (0.5 * onTimePercent + 0.3 * (1 - stuckRate) * 100 + 0.2 * (1 - neverStartedRate) * 100) * 10
       ) / 10;
-
       return {
-        totalJobs: total,
-        completedJobs: completed,
-        onTimeCompletions: onTime,
-        lateCompletions: late,
+        name,
+        totalJobs: acc.totalJobs,
+        completedJobs: acc.completedJobs,
+        onTimeCompletions: acc.onTimeCompletions,
+        lateCompletions: acc.lateCompletions,
         onTimePercent,
-        stuckJobs: stuck,
-        neverStartedJobs: neverStarted,
+        stuckJobs: acc.stuckJobs,
+        neverStartedJobs: acc.neverStartedJobs,
         avgDaysToComplete,
         avgDaysLate,
-        onOurWayOnTime: oowOnTime,
-        onOurWayLate: oowLate,
+        onOurWayOnTime: acc.onOurWayOnTime,
+        onOurWayLate: acc.onOurWayLate,
         onOurWayPercent,
+        oowUsed: acc.oowUsed,
+        startedUsed: acc.startedUsed,
+        statusUsagePercent,
         complianceScore,
         grade: computeGrade(complianceScore),
-        userCount: groupUsers.length,
+        adjustedScore: 0, // computed after all groups are built
+        adjustedGrade: "",
+        userCount: acc.assignedUsers.size,
       };
     }
 
-    // Group users by team — users on multiple teams appear under each team
-    const teamMap = new Map<string, UserMetrics[]>();
-    for (const u of users) {
-      const teams = u.teamName ? u.teamName.split(", ") : ["Unassigned"];
-      for (const team of teams) {
-        if (!teamMap.has(team)) teamMap.set(team, []);
-        teamMap.get(team)!.push(u);
+    function applyBayesianToGroups(groups: GroupComparison[]): void {
+      if (groups.length === 0) return;
+      const groupAvg = groups.reduce((s, g) => s + g.complianceScore, 0) / groups.length;
+      for (const g of groups) {
+        g.adjustedScore = Math.round(
+          ((g.totalJobs * g.complianceScore + BAYESIAN_C * groupAvg) /
+            (g.totalJobs + BAYESIAN_C)) * 10
+        ) / 10;
+        g.adjustedGrade = computeGrade(g.adjustedScore);
       }
     }
-    const teamComparison: GroupComparison[] = Array.from(teamMap.entries())
-      .map(([name, teamUsers]) => ({ name, ...aggregateGroup(teamUsers) }))
-      .sort((a, b) => a.complianceScore - b.complianceScore);
+
+    const teamComparison: GroupComparison[] = Array.from(teamAccMap.entries())
+      .map(([name, acc]) => buildGroupFromAcc(name, acc));
+    applyBayesianToGroups(teamComparison);
+    teamComparison.sort((a, b) => b.adjustedScore - a.adjustedScore);
 
     // ========== Category Comparison ==========
     // Re-aggregate jobs by category (not from user data, but from raw job data for accuracy)
@@ -810,6 +940,8 @@ export async function GET(request: NextRequest) {
       daysLatePastEnd: number[];
       onOurWayOnTime: number;
       onOurWayLate: number;
+      oowUsed: number;
+      startedUsed: number;
       assignedUsers: Set<string>;
     }
     const catAccMap = new Map<string, CategoryAccumulator>();
@@ -824,7 +956,7 @@ export async function GET(request: NextRequest) {
       // Apply team filter if specified
       if (teamFilter) {
         const hasMatchingTeam = assignedUsers.some(
-          (u) => u.teamName && u.teamName.toLowerCase().includes(teamFilter)
+          (u) => u.teamNames.some((t) => t.toLowerCase().includes(teamFilter))
         );
         if (!hasMatchingTeam) continue;
       }
@@ -833,7 +965,8 @@ export async function GET(request: NextRequest) {
         catAccMap.set(categoryName, {
           totalJobs: 0, completedJobs: 0, onTimeCompletions: 0, lateCompletions: 0,
           stuckJobs: 0, neverStartedJobs: 0, completionDays: [], daysLatePastEnd: [],
-          onOurWayOnTime: 0, onOurWayLate: 0, assignedUsers: new Set(),
+          onOurWayOnTime: 0, onOurWayLate: 0, oowUsed: 0, startedUsed: 0,
+          assignedUsers: new Set(),
         });
       }
       const catAcc = catAccMap.get(categoryName)!;
@@ -844,6 +977,7 @@ export async function GET(request: NextRequest) {
       const scheduledEnd = job.scheduled_end_time ? new Date(job.scheduled_end_time) : null;
       const completedTime = getCompletedTimeFromHistory(job);
       const onOurWayTime = getOnOurWayTime(job);
+      const usedStarted = hasStartedStatus(job);
       const effectiveCompletedTime = completedTime || scheduledEnd;
 
       if (COMPLETED_STATUSES.has(statusLower)) {
@@ -873,6 +1007,8 @@ export async function GET(request: NextRequest) {
             catAcc.onOurWayOnTime++;
           }
         }
+        if (onOurWayTime) catAcc.oowUsed++;
+        if (usedStarted) catAcc.startedUsed++;
       }
       if (STUCK_STATUSES.has(statusLower) && scheduledEnd && scheduledEnd < now) {
         catAcc.stuckJobs++;
@@ -883,42 +1019,9 @@ export async function GET(request: NextRequest) {
     }
 
     const categoryComparison: GroupComparison[] = Array.from(catAccMap.entries())
-      .map(([name, acc]) => {
-        const measurable = acc.onTimeCompletions + acc.lateCompletions;
-        const onTimePercent = measurable > 0 ? Math.round((acc.onTimeCompletions / measurable) * 100 * 10) / 10 : 0;
-        const avgDaysToComplete = acc.completionDays.length > 0
-          ? Math.round((acc.completionDays.reduce((s, d) => s + d, 0) / acc.completionDays.length) * 10) / 10
-          : 0;
-        const avgDaysLate = acc.daysLatePastEnd.length > 0
-          ? Math.round((acc.daysLatePastEnd.reduce((s, d) => s + d, 0) / acc.daysLatePastEnd.length) * 10) / 10
-          : 0;
-        const oowTotal = acc.onOurWayOnTime + acc.onOurWayLate;
-        const onOurWayPercent = oowTotal > 0 ? Math.round((acc.onOurWayOnTime / oowTotal) * 100 * 10) / 10 : 0;
-        const stuckRate = acc.totalJobs > 0 ? acc.stuckJobs / acc.totalJobs : 0;
-        const neverStartedRate = acc.totalJobs > 0 ? acc.neverStartedJobs / acc.totalJobs : 0;
-        const complianceScore = Math.round(
-          (0.5 * onTimePercent + 0.3 * (1 - stuckRate) * 100 + 0.2 * (1 - neverStartedRate) * 100) * 10
-        ) / 10;
-        return {
-          name,
-          totalJobs: acc.totalJobs,
-          completedJobs: acc.completedJobs,
-          onTimeCompletions: acc.onTimeCompletions,
-          lateCompletions: acc.lateCompletions,
-          onTimePercent,
-          stuckJobs: acc.stuckJobs,
-          neverStartedJobs: acc.neverStartedJobs,
-          avgDaysToComplete,
-          avgDaysLate,
-          onOurWayOnTime: acc.onOurWayOnTime,
-          onOurWayLate: acc.onOurWayLate,
-          onOurWayPercent,
-          complianceScore,
-          grade: computeGrade(complianceScore),
-          userCount: acc.assignedUsers.size,
-        };
-      })
-      .sort((a, b) => a.complianceScore - b.complianceScore);
+      .map(([name, acc]) => buildGroupFromAcc(name, acc));
+    applyBayesianToGroups(categoryComparison);
+    categoryComparison.sort((a, b) => b.adjustedScore - a.adjustedScore);
 
     // Compute summary
     const totalJobs = users.reduce((sum, u) => sum + u.totalJobs, 0);
@@ -990,6 +1093,11 @@ export async function GET(request: NextRequest) {
       filters: {
         teams: Array.from(teamsSet).sort(),
         categories: Array.from(categoriesSet).sort(),
+      },
+      scoring: {
+        minJobs,
+        bayesianC: BAYESIAN_C,
+        globalAvgScore: Math.round(globalAvgScore * 10) / 10,
       },
       dateRange: {
         from: fromDateStr,

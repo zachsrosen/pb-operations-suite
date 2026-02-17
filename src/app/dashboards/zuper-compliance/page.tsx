@@ -39,8 +39,14 @@ interface UserMetrics {
   onOurWayOnTime: number;
   onOurWayLate: number;
   onOurWayPercent: number;
+  oowUsed: number;
+  startedUsed: number;
+  statusUsagePercent: number;
   complianceScore: number;
   grade: string;
+  adjustedScore: number;
+  adjustedGrade: string;
+  belowThreshold: boolean;
   byCategory: Record<string, number>;
   stuckJobsList: JobEntry[];
   lateJobsList: JobEntry[];
@@ -74,8 +80,13 @@ interface GroupComparison {
   onOurWayOnTime: number;
   onOurWayLate: number;
   onOurWayPercent: number;
+  oowUsed: number;
+  startedUsed: number;
+  statusUsagePercent: number;
   complianceScore: number;
   grade: string;
+  adjustedScore: number;
+  adjustedGrade: string;
   userCount: number;
 }
 
@@ -93,6 +104,7 @@ interface ComplianceData {
   teamComparison: GroupComparison[];
   categoryComparison: GroupComparison[];
   filters: { teams: string[]; categories: string[] };
+  scoring?: { minJobs: number; bayesianC: number; globalAvgScore: number };
   dateRange: { from: string; to: string; days: number };
   lastUpdated: string;
   dataQuality?: DataQuality;
@@ -115,7 +127,9 @@ type SortField =
   | "avgDaysToComplete"
   | "avgDaysLate"
   | "onOurWayPercent"
-  | "complianceScore";
+  | "statusUsagePercent"
+  | "complianceScore"
+  | "adjustedScore";
 
 const DATE_PRESETS = [7, 14, 30, 60, 90];
 
@@ -226,6 +240,22 @@ function JobListTable({
 /*  Group comparison table (reused for team + category comparisons)    */
 /* ------------------------------------------------------------------ */
 
+type GroupSortField =
+  | "name"
+  | "userCount"
+  | "totalJobs"
+  | "completedJobs"
+  | "onTimePercent"
+  | "lateCompletions"
+  | "stuckJobs"
+  | "neverStartedJobs"
+  | "avgDaysToComplete"
+  | "avgDaysLate"
+  | "onOurWayPercent"
+  | "statusUsagePercent"
+  | "complianceScore"
+  | "adjustedScore";
+
 function ComparisonTable({
   rows,
   title,
@@ -237,6 +267,9 @@ function ComparisonTable({
   nameLabel: string;
   accentColor: string;
 }) {
+  const [sortField, setSortField] = useState<GroupSortField>("adjustedScore");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
   const pctColor = (pct: number) => {
     if (pct >= 80) return "text-green-400";
     if (pct >= 60) return "text-yellow-400";
@@ -258,11 +291,44 @@ function ComparisonTable({
     }
   };
 
+  const handleSort = (field: GroupSortField) => {
+    if (sortField === field) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortField(field);
+      setSortDir("desc");
+    }
+  };
+
+  const sortArrow = (field: GroupSortField) =>
+    sortField === field ? (sortDir === "asc" ? " \u25B2" : " \u25BC") : "";
+
   if (rows.length === 0) return null;
 
+  const sorted = [...rows].sort((a, b) => {
+    let cmp = 0;
+    switch (sortField) {
+      case "name": cmp = a.name.localeCompare(b.name); break;
+      case "userCount": cmp = a.userCount - b.userCount; break;
+      case "totalJobs": cmp = a.totalJobs - b.totalJobs; break;
+      case "completedJobs": cmp = a.completedJobs - b.completedJobs; break;
+      case "onTimePercent": cmp = a.onTimePercent - b.onTimePercent; break;
+      case "lateCompletions": cmp = a.lateCompletions - b.lateCompletions; break;
+      case "stuckJobs": cmp = a.stuckJobs - b.stuckJobs; break;
+      case "neverStartedJobs": cmp = a.neverStartedJobs - b.neverStartedJobs; break;
+      case "avgDaysToComplete": cmp = a.avgDaysToComplete - b.avgDaysToComplete; break;
+      case "avgDaysLate": cmp = a.avgDaysLate - b.avgDaysLate; break;
+      case "onOurWayPercent": cmp = a.onOurWayPercent - b.onOurWayPercent; break;
+      case "statusUsagePercent": cmp = a.statusUsagePercent - b.statusUsagePercent; break;
+      case "complianceScore": cmp = a.complianceScore - b.complianceScore; break;
+      case "adjustedScore": cmp = a.adjustedScore - b.adjustedScore; break;
+    }
+    return sortDir === "desc" ? -cmp : cmp;
+  });
+
   // Find best and worst for highlighting
-  const best = rows.reduce((a, b) => (a.complianceScore > b.complianceScore ? a : b));
-  const worst = rows.reduce((a, b) => (a.complianceScore < b.complianceScore ? a : b));
+  const best = sorted.reduce((a, b) => (a.adjustedScore > b.adjustedScore ? a : b));
+  const worst = sorted.reduce((a, b) => (a.adjustedScore < b.adjustedScore ? a : b));
 
   return (
     <div className="bg-surface/50 border border-t-border rounded-xl overflow-hidden">
@@ -274,24 +340,26 @@ function ComparisonTable({
         <table className="w-full text-sm">
           <thead>
             <tr className="text-muted text-left border-b border-t-border">
-              <th className="px-4 py-2.5">{nameLabel}</th>
-              <th className="px-4 py-2.5 text-right">Users</th>
-              <th className="px-4 py-2.5 text-right">Total</th>
-              <th className="px-4 py-2.5 text-right">Done</th>
-              <th className="px-4 py-2.5 text-right">On-Time %</th>
-              <th className="px-4 py-2.5 text-right">Late</th>
-              <th className="px-4 py-2.5 text-right">Stuck</th>
-              <th className="px-4 py-2.5 text-right">Not Started</th>
-              <th className="px-4 py-2.5 text-right">Avg Days</th>
-              <th className="px-4 py-2.5 text-right">Avg Late</th>
-              <th className="px-4 py-2.5 text-right">OOW %</th>
-              <th className="px-4 py-2.5 text-center">Grade</th>
+              <th className="px-4 py-2.5 cursor-pointer hover:text-foreground" onClick={() => handleSort("name")}>{nameLabel}{sortArrow("name")}</th>
+              <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("userCount")}>Users{sortArrow("userCount")}</th>
+              <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("totalJobs")}>Total{sortArrow("totalJobs")}</th>
+              <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("completedJobs")}>Done{sortArrow("completedJobs")}</th>
+              <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("onTimePercent")}>On-Time %{sortArrow("onTimePercent")}</th>
+              <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("lateCompletions")}>Late{sortArrow("lateCompletions")}</th>
+              <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("stuckJobs")}>Stuck{sortArrow("stuckJobs")}</th>
+              <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("neverStartedJobs")}>Not Started{sortArrow("neverStartedJobs")}</th>
+              <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("avgDaysToComplete")}>Avg Days{sortArrow("avgDaysToComplete")}</th>
+              <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("avgDaysLate")}>Avg Late{sortArrow("avgDaysLate")}</th>
+              <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("onOurWayPercent")}>OOW %{sortArrow("onOurWayPercent")}</th>
+              <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("statusUsagePercent")} title="% of completed jobs that used OOW + Started statuses">Usage %{sortArrow("statusUsagePercent")}</th>
+              <th className="px-4 py-2.5 text-center cursor-pointer hover:text-foreground" onClick={() => handleSort("complianceScore")}>Raw{sortArrow("complianceScore")}</th>
+              <th className="px-4 py-2.5 text-center cursor-pointer hover:text-foreground" onClick={() => handleSort("adjustedScore")} title="Volume-adjusted score (Bayesian)">Adj{sortArrow("adjustedScore")}</th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => {
-              const isBest = rows.length > 1 && r.name === best.name;
-              const isWorst = rows.length > 1 && r.name === worst.name;
+            {sorted.map((r) => {
+              const isBest = sorted.length > 1 && r.name === best.name;
+              const isWorst = sorted.length > 1 && r.name === worst.name;
               return (
                 <tr
                   key={r.name}
@@ -340,11 +408,23 @@ function ComparisonTable({
                   <td className={`px-4 py-2.5 text-right font-medium ${pctColor(r.onOurWayPercent)}`}>
                     {r.onOurWayOnTime + r.onOurWayLate > 0 ? `${r.onOurWayPercent}%` : "\u2014"}
                   </td>
+                  <td className={`px-4 py-2.5 text-right font-medium ${pctColor(r.statusUsagePercent)}`}
+                      title={`OOW: ${r.oowUsed}/${r.completedJobs} | Started: ${r.startedUsed}/${r.completedJobs}`}>
+                    {r.completedJobs > 0 ? `${r.statusUsagePercent}%` : "\u2014"}
+                  </td>
                   <td className="px-4 py-2.5 text-center">
                     <span
-                      className={`inline-flex items-center justify-center w-8 h-8 rounded-lg text-sm font-bold ${gradeClasses(r.grade)}`}
+                      className={`inline-flex items-center justify-center w-8 h-8 rounded-lg text-xs font-bold ${gradeClasses(r.grade)}`}
                     >
                       {r.grade}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2.5 text-center">
+                    <span
+                      className={`inline-flex items-center justify-center w-8 h-8 rounded-lg text-xs font-bold ${gradeClasses(r.adjustedGrade)}`}
+                      title={`Adjusted: ${r.adjustedScore} | Raw: ${r.complianceScore}`}
+                    >
+                      {r.adjustedGrade}
                     </span>
                   </td>
                 </tr>
@@ -379,7 +459,7 @@ export default function ZuperCompliancePage() {
 
   // Sort
   const [sortField, setSortField] = useState<SortField>("complianceScore");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   // Expanded rows — track which tab is active per user
   const [expandedUser, setExpandedUser] = useState<string | null>(null);
@@ -485,8 +565,14 @@ export default function ZuperCompliancePage() {
         case "onOurWayPercent":
           cmp = a.onOurWayPercent - b.onOurWayPercent;
           break;
+        case "statusUsagePercent":
+          cmp = a.statusUsagePercent - b.statusUsagePercent;
+          break;
         case "complianceScore":
           cmp = a.complianceScore - b.complianceScore;
+          break;
+        case "adjustedScore":
+          cmp = a.adjustedScore - b.adjustedScore;
           break;
       }
       return sortDir === "desc" ? -cmp : cmp;
@@ -549,8 +635,13 @@ export default function ZuperCompliancePage() {
       "Avg Days": u.avgDaysToComplete,
       "Avg Days Late": u.avgDaysLate,
       "OOW On-Time %": u.onOurWayPercent,
-      Grade: u.grade,
-      Score: u.complianceScore,
+      "OOW Used": u.oowUsed,
+      "Started Used": u.startedUsed,
+      "Status Usage %": u.statusUsagePercent,
+      "Raw Grade": u.grade,
+      "Raw Score": u.complianceScore,
+      "Adj Grade": u.adjustedGrade,
+      "Adj Score": u.adjustedScore,
     }));
   }, [sortedUsers]);
 
@@ -624,11 +715,17 @@ export default function ZuperCompliancePage() {
         {showMethodology && (
           <div className="mt-3 bg-surface/50 border border-t-border rounded-xl p-5 text-sm text-foreground/80 space-y-3">
             <div>
-              <h4 className="font-semibold text-foreground mb-1">Compliance Score (0–100)</h4>
+              <h4 className="font-semibold text-foreground mb-1">Raw Compliance Score (0–100)</h4>
               <p className="text-muted">
                 <span className="text-foreground/90 font-medium">50%</span> On-Time Completion Rate +{" "}
                 <span className="text-foreground/90 font-medium">30%</span> Non-Stuck Rate +{" "}
                 <span className="text-foreground/90 font-medium">20%</span> Started Rate
+              </p>
+              <h4 className="font-semibold text-foreground mb-1 mt-2">Adjusted Score (Volume-Weighted)</h4>
+              <p className="text-muted">
+                Uses Bayesian averaging to account for job volume. Users/groups with few jobs are pulled toward the overall average.
+                Formula: <code className="text-foreground/80">adj = (jobs × raw + 10 × avg) / (jobs + 10)</code>.
+                At 10+ jobs, the adjusted score closely matches the raw score. Below that, it trends toward the mean.
               </p>
               <p className="text-muted mt-1">
                 Grades: <span className="text-green-400">A</span> (90+) &bull;{" "}
@@ -666,6 +763,10 @@ export default function ZuperCompliancePage() {
                 <div>
                   <span className="font-medium text-foreground">OOW % (On Our Way)</span>
                   <span className="text-muted"> — % of completed jobs where &quot;On Our Way&quot; was triggered before or during the scheduled window. If it was set after the scheduled end, it counts as late — meaning they didn&apos;t use it in real-time and had to retroactively select it.</span>
+                </div>
+                <div>
+                  <span className="font-medium text-foreground">Usage %</span>
+                  <span className="text-muted"> — % of completed jobs that used both &quot;On Our Way&quot; and &quot;Started&quot; statuses. Hover the cell for a breakdown. Users who skip these statuses will show low usage despite potentially high on-time rates.</span>
                 </div>
               </div>
             </div>
@@ -825,8 +926,14 @@ export default function ZuperCompliancePage() {
                 <th className="px-4 py-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("onOurWayPercent")} title="On Our Way set on time vs late">
                   OOW % <SortIcon field="onOurWayPercent" />
                 </th>
-                <th className="px-4 py-3 cursor-pointer hover:text-foreground text-center" onClick={() => handleSort("complianceScore")}>
-                  Grade <SortIcon field="complianceScore" />
+                <th className="px-4 py-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("statusUsagePercent")} title="% of completed jobs that used OOW + Started statuses">
+                  Usage % <SortIcon field="statusUsagePercent" />
+                </th>
+                <th className="px-4 py-3 cursor-pointer hover:text-foreground text-center" onClick={() => handleSort("complianceScore")} title="Raw compliance score">
+                  Raw <SortIcon field="complianceScore" />
+                </th>
+                <th className="px-4 py-3 cursor-pointer hover:text-foreground text-center" onClick={() => handleSort("adjustedScore")} title="Volume-adjusted score (Bayesian)">
+                  Adj <SortIcon field="adjustedScore" />
                 </th>
               </tr>
             </thead>
@@ -891,11 +998,26 @@ export default function ZuperCompliancePage() {
                       >
                         {u.onOurWayOnTime + u.onOurWayLate > 0 ? `${u.onOurWayPercent}%` : "\u2014"}
                       </td>
+                      <td
+                        className={`px-4 py-2.5 text-right font-medium ${pctColor(u.statusUsagePercent)}`}
+                        title={`OOW: ${u.oowUsed}/${u.completedJobs} | Started: ${u.startedUsed}/${u.completedJobs}`}
+                      >
+                        {u.completedJobs > 0 ? `${u.statusUsagePercent}%` : "\u2014"}
+                      </td>
                       <td className="px-4 py-2.5 text-center">
                         <span
-                          className={`inline-flex items-center justify-center w-8 h-8 rounded-lg text-sm font-bold ${gradeClasses(u.grade)}`}
+                          className={`inline-flex items-center justify-center w-8 h-8 rounded-lg text-xs font-bold ${gradeClasses(u.grade)}`}
+                          title={`Raw: ${u.complianceScore}`}
                         >
                           {u.grade}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5 text-center">
+                        <span
+                          className={`inline-flex items-center justify-center w-8 h-8 rounded-lg text-xs font-bold ${gradeClasses(u.adjustedGrade)}`}
+                          title={`Adjusted: ${u.adjustedScore} | Raw: ${u.complianceScore}${u.belowThreshold ? " | Low volume" : ""}`}
+                        >
+                          {u.adjustedGrade}
                         </span>
                       </td>
                     </tr>
@@ -903,11 +1025,14 @@ export default function ZuperCompliancePage() {
                     {/* Expanded detail row */}
                     {isExpanded && (
                       <tr className="border-b border-t-border/50">
-                        <td colSpan={11} className="px-4 py-4 bg-surface-2/20">
+                        <td colSpan={13} className="px-4 py-4 bg-surface-2/20">
                           {/* Score breakdown */}
                           <div className="flex flex-wrap items-center gap-4 text-xs text-muted mb-4">
                             <span>
-                              Score: <span className="text-foreground/80 font-medium">{u.complianceScore}</span>/100
+                              Raw: <span className="text-foreground/80 font-medium">{u.complianceScore}</span>/100
+                            </span>
+                            <span>
+                              Adjusted: <span className="text-foreground/80 font-medium">{u.adjustedScore}</span>/100
                             </span>
                             <span>= 50% on-time ({u.onTimePercent}%) + 30% non-stuck + 20% started</span>
                             {u.onOurWayOnTime + u.onOurWayLate > 0 && (
@@ -915,10 +1040,16 @@ export default function ZuperCompliancePage() {
                                 OOW: {u.onOurWayOnTime} on-time / {u.onOurWayLate} late
                               </span>
                             )}
+                            <span className={u.statusUsagePercent >= 80 ? "text-green-400" : u.statusUsagePercent >= 50 ? "text-yellow-400" : "text-red-400"}>
+                              Status usage: OOW {u.oowUsed}/{u.completedJobs} | Started {u.startedUsed}/{u.completedJobs} ({u.statusUsagePercent}%)
+                            </span>
                             {u.avgDaysLate > 0 && (
                               <span className="text-rose-400">
                                 Avg {u.avgDaysLate}d past scheduled end
                               </span>
+                            )}
+                            {u.belowThreshold && (
+                              <span className="text-amber-400/80 italic">Low volume</span>
                             )}
                           </div>
 
@@ -1019,7 +1150,7 @@ export default function ZuperCompliancePage() {
 
               {sortedUsers.length === 0 && (
                 <tr>
-                  <td colSpan={11} className="text-center py-12 text-muted">
+                  <td colSpan={13} className="text-center py-12 text-muted">
                     No users match the current filters
                   </td>
                 </tr>
