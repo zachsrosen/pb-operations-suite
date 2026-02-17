@@ -930,6 +930,7 @@ export default function SiteSurveySchedulerPage() {
                 ? `TEST SLOT - ${effectiveAssignee} at ${slot?.startTime || "N/A"}`
                 : (slot ? `Surveyor: ${slot.userName} at ${slot.startTime}` : "Scheduled via Site Survey Schedule"),
               testMode: useTestSlot,
+              isReschedule: !!scheduleModal.isRescheduling,
             },
             rescheduleOnly: true,
           }),

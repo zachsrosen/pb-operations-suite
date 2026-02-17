@@ -821,6 +821,7 @@ export default function InspectionSchedulerPage() {
               notes: slot
                 ? `Inspector: ${slot.userName} at ${slot.startTime}`
                 : "Scheduled via Inspection Schedule",
+              isReschedule: !!scheduleModal.isRescheduling,
             },
             rescheduleOnly: true,
           }),

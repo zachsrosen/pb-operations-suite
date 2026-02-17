@@ -140,6 +140,7 @@ export async function PUT(request: NextRequest) {
 
     const body = await request.json();
     const { project, schedule, rescheduleOnly } = body;
+    const isUiReschedule = schedule?.isReschedule === true;
     // Default to reschedule-only to avoid accidental job creation.
     const effectiveRescheduleOnly = rescheduleOnly !== false;
     const isTestMode = schedule?.testMode === true;
@@ -536,10 +537,14 @@ export async function PUT(request: NextRequest) {
         console.log(`[Zuper Schedule] RESCHEDULE SUCCESS`);
       }
 
-      // Log the reschedule activity
+      // Log as reschedule only when UI explicitly requested reschedule mode.
+      const activityType = isUiReschedule
+        ? (schedule.type === "survey" ? "SURVEY_RESCHEDULED" : schedule.type === "inspection" ? "INSPECTION_RESCHEDULED" : "INSTALL_RESCHEDULED")
+        : (schedule.type === "survey" ? "SURVEY_SCHEDULED" : schedule.type === "inspection" ? "INSPECTION_SCHEDULED" : "INSTALL_SCHEDULED");
+      const activityVerb = isUiReschedule ? "Rescheduled" : "Scheduled";
       await logSchedulingActivity(
-        schedule.type === "survey" ? "SURVEY_RESCHEDULED" : schedule.type === "inspection" ? "INSPECTION_RESCHEDULED" : "INSTALL_RESCHEDULED",
-        `Rescheduled ${schedule.type} for ${project.name || project.id}${assignmentFailed ? " (user assignment failed)" : ""}`,
+        activityType,
+        `${activityVerb} ${schedule.type} for ${project.name || project.id}${assignmentFailed ? " (user assignment failed)" : ""}`,
         project,
         existingJob.job_uid,
         schedule
