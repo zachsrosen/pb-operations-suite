@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
+import { useProjectData } from "@/hooks/useProjectData";
+// useCallback kept for hasIncentive/getProjectPrograms helpers
 import DashboardShell from "@/components/DashboardShell";
 import { formatMoney } from "@/lib/format";
 import { RawProject } from "@/lib/types";
@@ -75,9 +77,11 @@ interface ProgramStats {
 }
 
 export default function IncentivesPage() {
-  const [projects, setProjects] = useState<ExtendedProject[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data: projects, loading, error, refetch } = useProjectData<ExtendedProject[]>({
+    params: { context: "executive" },
+    transform: (raw: unknown) => (raw as { projects: ExtendedProject[] }).projects,
+  });
+
   const [filterPrograms, setFilterPrograms] = useState<string[]>([]);
   const [filterLocations, setFilterLocations] = useState<string[]>([]);
   const [filterStages, setFilterStages] = useState<string[]>([]);
@@ -88,33 +92,15 @@ export default function IncentivesPage() {
   const { trackDashboardView, trackFilter } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
-  const fetchData = useCallback(async () => {
-    try {
-      const response = await fetch("/api/projects?context=executive");
-      if (!response.ok) throw new Error("Failed to fetch");
-      const data = await response.json();
-      setProjects(data.projects);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load data");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchData, 5 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, [fetchData]);
+  const safeProjects = projects ?? [];
 
   // Track dashboard view
   useEffect(() => {
     if (!loading && !hasTrackedView.current) {
       hasTrackedView.current = true;
-      trackDashboardView("incentives", { projectCount: projects.length });
+      trackDashboardView("incentives", { projectCount: safeProjects.length });
     }
-  }, [loading, projects.length, trackDashboardView]);
+  }, [loading, safeProjects.length, trackDashboardView]);
 
   // Track filter changes
   useEffect(() => {
@@ -142,7 +128,7 @@ export default function IncentivesPage() {
   }, []);
 
   const filteredProjects = useMemo(() => {
-    return projects.filter(p => {
+    return safeProjects.filter(p => {
       if (!hasIncentive(p)) return false;
 
       // Location filter (multi-select)
@@ -186,7 +172,7 @@ export default function IncentivesPage() {
 
       return true;
     });
-  }, [projects, filterPrograms, filterLocations, filterStages, filterStatuses, searchQuery, hasIncentive]);
+  }, [safeProjects, filterPrograms, filterLocations, filterStages, filterStatuses, searchQuery, hasIncentive]);
 
   const programStats = useMemo(() => {
     const stats: Record<string, ProgramStats> = {
@@ -230,16 +216,16 @@ export default function IncentivesPage() {
 
   // Get unique values for filters
   const locationOptions = useMemo(() =>
-    [...new Set(projects.map(p => p.pbLocation))]
+    [...new Set(safeProjects.map(p => p.pbLocation))]
       .filter(l => l && l !== 'Unknown')
       .sort()
       .map(l => ({ value: l!, label: l! })),
-    [projects]
+    [safeProjects]
   );
 
   const stageOptions = useMemo(() => {
     const STAGE_ORDER = ['Site Survey', 'Design & Engineering', 'Permitting & Interconnection', 'RTB - Blocked', 'Ready To Build', 'Construction', 'Inspection', 'Permission To Operate', 'Close Out'];
-    return [...new Set(projects.map(p => p.stage))]
+    return [...new Set(safeProjects.map(p => p.stage))]
       .filter(s => s)
       .sort((a, b) => {
         const aIdx = STAGE_ORDER.findIndex(s => s.toLowerCase() === a.toLowerCase());
@@ -250,7 +236,7 @@ export default function IncentivesPage() {
         return aIdx - bIdx;
       })
       .map(s => ({ value: s!, label: s! }));
-  }, [projects]);
+  }, [safeProjects]);
 
   const programOptions = [
     { value: '3ce_ev', label: '3CE EV' },
@@ -263,7 +249,7 @@ export default function IncentivesPage() {
   // Collect all unique statuses from all incentive programs
   const statusOptions = useMemo(() => {
     const allStatuses = new Set<string>();
-    projects.forEach(p => {
+    safeProjects.forEach(p => {
       if (p.threeceEvStatus) allStatuses.add(p.threeceEvStatus);
       if (p.threeceBatteryStatus) allStatuses.add(p.threeceBatteryStatus);
       if (p.sgipStatus) allStatuses.add(p.sgipStatus);
@@ -273,7 +259,7 @@ export default function IncentivesPage() {
     return [...allStatuses]
       .sort()
       .map(s => ({ value: s, label: getDisplayName(s) }));
-  }, [projects]);
+  }, [safeProjects]);
 
   const clearAllFilters = () => {
     setFilterPrograms([]);
@@ -306,7 +292,7 @@ export default function IncentivesPage() {
           <div className="text-center text-red-500">
             <p className="text-xl mb-2">Error loading data</p>
             <p className="text-sm text-muted">{error}</p>
-            <button onClick={fetchData} className="mt-4 px-4 py-2 bg-emerald-600 rounded-lg hover:bg-emerald-700">
+            <button onClick={() => refetch()} className="mt-4 px-4 py-2 bg-emerald-600 rounded-lg hover:bg-emerald-700">
               Retry
             </button>
           </div>
@@ -333,7 +319,7 @@ export default function IncentivesPage() {
             onSearch={setSearchQuery}
             placeholder="Search by PROJ #, name, or location..."
           />
-          <button onClick={fetchData} className="bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap">
+          <button onClick={() => refetch()} className="bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap">
             Refresh
           </button>
         </div>
@@ -466,7 +452,7 @@ export default function IncentivesPage() {
         <div className="p-4 border-b border-t-border flex items-center justify-between">
           <h2 className="text-lg font-semibold">Incentive Projects ({filteredProjects.length})</h2>
           {hasActiveFilters && (
-            <span className="text-xs text-muted">Filtered from {projects.filter(hasIncentive).length} total</span>
+            <span className="text-xs text-muted">Filtered from {safeProjects.filter(hasIncentive).length} total</span>
           )}
         </div>
         <div className="overflow-x-auto">

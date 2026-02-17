@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import * as Sentry from "@sentry/nextjs";
+import { tagSentryRequest } from "@/lib/sentry-request";
 import { requireApiAuth } from "@/lib/api-auth";
 import { Client } from "@hubspot/api-client";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
@@ -200,6 +202,7 @@ function filterDeals(deals: Deal[], activeOnly: boolean, location: string | null
 }
 
 export async function GET(request: NextRequest) {
+  tagSentryRequest(request);
   const authResult = await requireApiAuth();
   if (authResult instanceof NextResponse) return authResult;
 
@@ -357,6 +360,7 @@ export async function GET(request: NextRequest) {
           lastUpdated: new Date().toISOString(),
         });
       } catch (error) {
+        Sentry.captureException(error);
         send({ type: "error", error: String(error) });
       } finally {
         controller.close();

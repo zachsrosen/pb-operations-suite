@@ -6,6 +6,8 @@ import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { formatCurrency } from "@/lib/format";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
+import { useProjectData } from "@/hooks/useProjectData";
+import { usePEFilters, type PEFilters } from "@/stores/dashboard-filters";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -762,47 +764,37 @@ export default function PEDashboardPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
-  const [projects, setProjects] = useState<PEProject[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [view, setView] = useState<ViewType>("overview");
-  const [filterStatus, setFilterStatus] = useState<FilterStatus>("all");
-  const [filterMilestone, setFilterMilestone] = useState<string>("all");
-  const [sortBy, setSortBy] = useState<SortKey>("pto");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [revenuePeriod, setRevenuePeriod] = useState<"monthly" | "weekly">("monthly");
+  const { data: projects, loading, error, refetch } = useProjectData<PEProject[]>({
+    params: { context: "pe" },
+    transform: (raw: unknown) =>
+      (raw as APIResponse).projects.map(transformProject),
+  });
+  const safeProjects = projects ?? [];
 
-  // Fetch data
-  useEffect(() => {
-    async function fetchData() {
-      try {
-        const response = await fetch("/api/projects?context=pe");
-        if (!response.ok) throw new Error("Failed to fetch");
-        const data: APIResponse = await response.json();
-        const transformed = data.projects.map(transformProject);
-        setProjects(transformed);
-        setError(null);
-      } catch (err) {
-        console.error("Failed to fetch PE projects:", err);
-        setError("Failed to load data. Please refresh.");
-      } finally {
-        setLoading(false);
-      }
-    }
-    fetchData();
-    const interval = setInterval(fetchData, 5 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, []);
+  // Persisted filters (survive navigation)
+  const { filters: peFilters, setFilters: setPEFilters } = usePEFilters();
+  const view = peFilters.view;
+  const filterStatus = peFilters.filterStatus;
+  const filterMilestone = peFilters.filterMilestone;
+  const sortBy = peFilters.sortBy;
+  const searchQuery = peFilters.search;
+  const setView = useCallback((v: ViewType) => setPEFilters({ ...peFilters, view: v }), [peFilters, setPEFilters]);
+  const setFilterStatus = useCallback((v: FilterStatus) => setPEFilters({ ...peFilters, filterStatus: v }), [peFilters, setPEFilters]);
+  const setFilterMilestone = useCallback((v: string) => setPEFilters({ ...peFilters, filterMilestone: v }), [peFilters, setPEFilters]);
+  const setSortBy = useCallback((v: SortKey) => setPEFilters({ ...peFilters, sortBy: v }), [peFilters, setPEFilters]);
+  const setSearchQuery = useCallback((v: string) => setPEFilters({ ...peFilters, search: v }), [peFilters, setPEFilters]);
+  // revenuePeriod is ephemeral UI state — no persistence needed
+  const [revenuePeriod, setRevenuePeriod] = useState<"monthly" | "weekly">("monthly");
 
   /* ---- Track dashboard view on load ---- */
   useEffect(() => {
     if (!loading && !hasTrackedView.current) {
       hasTrackedView.current = true;
       trackDashboardView("pe", {
-        projectCount: projects.length,
+        projectCount: safeProjects.length,
       });
     }
-  }, [loading, projects.length, trackDashboardView]);
+  }, [loading, safeProjects.length, trackDashboardView]);
 
   // Compute stats
   const stats: Stats = useMemo(() => {
@@ -817,7 +809,7 @@ export default function PEDashboardPage() {
       ptoOnTrack = 0;
     let totalValue = 0;
 
-    projects.forEach((p) => {
+    safeProjects.forEach((p) => {
       totalValue += p.amount || 0;
 
       // Install stats - only if construction not complete
@@ -847,7 +839,7 @@ export default function PEDashboardPage() {
     });
 
     return {
-      total: projects.length,
+      total: safeProjects.length,
       totalValue,
       install: {
         overdue: installOverdue,
@@ -861,11 +853,11 @@ export default function PEDashboardPage() {
       },
       pto: { overdue: ptoOverdue, soon: ptoSoon, onTrack: ptoOnTrack },
     };
-  }, [projects]);
+  }, [safeProjects]);
 
   // Filter and sort projects
   const filteredProjects = useMemo(() => {
-    let filtered = [...projects];
+    let filtered = [...safeProjects];
 
     // Search filter
     if (searchQuery.trim()) {
@@ -911,7 +903,7 @@ export default function PEDashboardPage() {
     });
 
     return filtered;
-  }, [projects, filterMilestone, filterStatus, sortBy, searchQuery]);
+  }, [safeProjects, filterMilestone, filterStatus, sortBy, searchQuery]);
 
   // 6-month forecast data
   const forecastData: ForecastMonth[] = useMemo(() => {
@@ -929,7 +921,7 @@ export default function PEDashboardPage() {
       let installs = 0,
         inspections = 0,
         ptos = 0;
-      projects.forEach((p) => {
+      safeProjects.forEach((p) => {
         if (p.forecast_install) {
           const fd = new Date(p.forecast_install);
           if (
@@ -960,12 +952,12 @@ export default function PEDashboardPage() {
     }
 
     return months;
-  }, [projects]);
+  }, [safeProjects]);
 
   // Milestone view data
   const inspectionMilestones = useMemo(
     () =>
-      projects
+      safeProjects
         .filter(
           (p) =>
             p.days_to_inspection !== null && p.days_to_inspection <= 30
@@ -974,16 +966,16 @@ export default function PEDashboardPage() {
           (a, b) => (a.days_to_inspection ?? 999) - (b.days_to_inspection ?? 999)
         )
         .slice(0, 20),
-    [projects]
+    [safeProjects]
   );
 
   const ptoMilestones = useMemo(
     () =>
-      projects
+      safeProjects
         .filter((p) => p.days_to_pto !== null && p.days_to_pto <= 45)
         .sort((a, b) => (a.days_to_pto ?? 999) - (b.days_to_pto ?? 999))
         .slice(0, 20),
-    [projects]
+    [safeProjects]
   );
 
   // Export to clipboard
@@ -1031,7 +1023,7 @@ export default function PEDashboardPage() {
   if (error) {
     return (
       <DashboardShell title="Participate Energy" subtitle="Project Milestone Tracker" accentColor="green">
-        <ErrorState message={error} onRetry={() => window.location.reload()} color="green" />
+        <ErrorState message={error} onRetry={() => refetch()} color="green" />
       </DashboardShell>
     );
   }
@@ -1319,7 +1311,7 @@ export default function PEDashboardPage() {
       {/* ================================================================ */}
       {view === "revenue" && (
         <RevenueView
-          projects={projects}
+          projects={safeProjects}
           revenuePeriod={revenuePeriod}
           setRevenuePeriod={setRevenuePeriod}
         />

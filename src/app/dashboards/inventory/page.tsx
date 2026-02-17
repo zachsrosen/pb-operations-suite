@@ -104,6 +104,14 @@ function StockOverviewTab(props: {
   >("category");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [showShortfallsOnly, setShowShortfallsOnly] = useState(false);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNowMs(Date.now());
+    }, 5 * 60 * 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   /* Build demand lookup map from needsReport */
   const demandMap = useMemo(() => {
@@ -127,7 +135,7 @@ function StockOverviewTab(props: {
   /* Compute relative time string */
   const relativeTime = (dateStr: string | null): { text: string; isStale: boolean } => {
     if (!dateStr) return { text: "Never", isStale: true };
-    const diff = Date.now() - new Date(dateStr).getTime();
+    const diff = nowMs - new Date(dateStr).getTime();
     const days = Math.floor(diff / (1000 * 60 * 60 * 24));
     if (days > 30) return { text: "30+ days", isStale: true };
     if (days === 0) return { text: "Today", isStale: false };

@@ -7,6 +7,7 @@ import { RawProject } from "@/lib/types";
 import { MultiSelectFilter, ProjectSearchBar, FilterGroup } from "@/components/ui/MultiSelectFilter";
 import { MonthlyBarChart, aggregateMonthly } from "@/components/ui/MonthlyBarChart";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
+import { useProjectData } from "@/hooks/useProjectData";
 
 // Display name mappings — HubSpot internal enum values → display labels
 // Source: HubSpot property definitions for permitting_status
@@ -89,9 +90,11 @@ export default function PermittingPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
-  const [projects, setProjects] = useState<ExtendedProject[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data: projects, loading, error, refetch } = useProjectData<ExtendedProject[]>({
+    params: { context: "executive" },
+    transform: (raw: unknown) => (raw as { projects: ExtendedProject[] }).projects,
+  });
+  const safeProjects = projects ?? [];
 
   // Multi-select filters
   const [filterAhjs, setFilterAhjs] = useState<string[]>([]);
@@ -100,35 +103,15 @@ export default function PermittingPage() {
   const [filterPermitStatuses, setFilterPermitStatuses] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
 
-  const fetchData = useCallback(async () => {
-    try {
-      const response = await fetch("/api/projects?context=executive");
-      if (!response.ok) throw new Error("Failed to fetch");
-      const data = await response.json();
-      setProjects(data.projects);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load data");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchData, 5 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, [fetchData]);
-
   /* ---- Track dashboard view on load ---- */
   useEffect(() => {
     if (!loading && !hasTrackedView.current) {
       hasTrackedView.current = true;
       trackDashboardView("permitting", {
-        projectCount: projects.length,
+        projectCount: safeProjects.length,
       });
     }
-  }, [loading, projects.length, trackDashboardView]);
+  }, [loading, safeProjects.length, trackDashboardView]);
 
   // Status helper functions
   const isPermitPending = useCallback((p: ExtendedProject) => {
@@ -146,7 +129,7 @@ export default function PermittingPage() {
   }, []);
 
   const filteredProjects = useMemo(() => {
-    return projects.filter(p => {
+    return safeProjects.filter(p => {
       // AHJ filter (multi-select)
       if (filterAhjs.length > 0 && !filterAhjs.includes(p.ahj || '')) return false;
 
@@ -170,7 +153,7 @@ export default function PermittingPage() {
 
       return true;
     });
-  }, [projects, filterAhjs, filterLocations, filterStages, filterPermitStatuses, searchQuery]);
+  }, [safeProjects, filterAhjs, filterLocations, filterStages, filterPermitStatuses, searchQuery]);
 
   const stats = useMemo(() => {
     const today = new Date();
@@ -243,24 +226,24 @@ export default function PermittingPage() {
 
   // Get unique values for filters
   const ahjs = useMemo(() =>
-    [...new Set(projects.map(p => p.ahj))]
+    [...new Set(safeProjects.map(p => p.ahj))]
       .filter(a => a && a !== 'Unknown')
       .sort()
       .map(a => ({ value: a!, label: a! })),
-    [projects]
+    [safeProjects]
   );
 
   const locations = useMemo(() =>
-    [...new Set(projects.map(p => p.pbLocation))]
+    [...new Set(safeProjects.map(p => p.pbLocation))]
       .filter(l => l && l !== 'Unknown')
       .sort()
       .map(l => ({ value: l!, label: l! })),
-    [projects]
+    [safeProjects]
   );
 
   const stages = useMemo(() => {
     const STAGE_ORDER = ['Site Survey', 'Design & Engineering', 'Permitting & Interconnection', 'RTB - Blocked', 'Ready To Build', 'Construction', 'Inspection', 'Permission To Operate', 'Close Out'];
-    return [...new Set(projects.map(p => p.stage))]
+    return [...new Set(safeProjects.map(p => p.stage))]
       .filter(s => s)
       .sort((a, b) => {
         const aIdx = STAGE_ORDER.findIndex(s => s.toLowerCase() === a!.toLowerCase());
@@ -271,12 +254,12 @@ export default function PermittingPage() {
         return aIdx - bIdx;
       })
       .map(s => ({ value: s!, label: s! }));
-  }, [projects]);
+  }, [safeProjects]);
 
   // Get statuses that exist in the data
   const existingPermitStatuses = useMemo(() =>
-    new Set(projects.map(p => (p as ExtendedProject).permittingStatus).filter(Boolean)),
-    [projects]
+    new Set(safeProjects.map(p => (p as ExtendedProject).permittingStatus).filter(Boolean)),
+    [safeProjects]
   );
 
   // Filter groups to only include options that exist in the actual data
@@ -336,7 +319,7 @@ export default function PermittingPage() {
           <div className="text-center text-red-500">
             <p className="text-xl mb-2">Error loading data</p>
             <p className="text-sm text-muted">{error}</p>
-            <button onClick={fetchData} className="mt-4 px-4 py-2 bg-purple-600 rounded-lg hover:bg-purple-700">
+            <button onClick={() => refetch()} className="mt-4 px-4 py-2 bg-purple-600 rounded-lg hover:bg-purple-700">
               Retry
             </button>
           </div>
@@ -366,7 +349,7 @@ export default function PermittingPage() {
             onSearch={setSearchQuery}
             placeholder="Search by PROJ #, name, location, or AHJ..."
           />
-          <button onClick={fetchData} className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap">
+          <button onClick={() => refetch()} className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap">
             Refresh
           </button>
         </div>
@@ -540,7 +523,7 @@ export default function PermittingPage() {
         <div className="p-4 border-b border-t-border flex items-center justify-between">
           <h2 className="text-lg font-semibold">Projects ({filteredProjects.length})</h2>
           {hasActiveFilters && (
-            <span className="text-xs text-muted">Filtered from {projects.length} total</span>
+            <span className="text-xs text-muted">Filtered from {safeProjects.length} total</span>
           )}
         </div>
         <div className="overflow-x-auto">

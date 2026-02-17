@@ -2,6 +2,9 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/query-keys";
+import { useSSE } from "@/hooks/useSSE";
 import DashboardShell from "@/components/DashboardShell";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { formatCurrencyCompact } from "@/lib/format";
@@ -397,10 +400,44 @@ export default function OptimizerDashboard() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+
+  // Projects query
+  const projectsQuery = useQuery({
+    queryKey: queryKeys.optimizer.projects(),
+    queryFn: async () => {
+      const response = await fetch("/api/projects?context=scheduling");
+      if (!response.ok) throw new Error("Failed to fetch projects");
+      return response.json();
+    },
+    refetchInterval: 5 * 60 * 1000,
+  });
+  const projects: Project[] = projectsQuery.data?.projects ?? [];
+  const loading = projectsQuery.isLoading;
+  const error = projectsQuery.error
+    ? (projectsQuery.error as Error).message
+    : null;
+  const lastUpdated = projectsQuery.dataUpdatedAt
+    ? new Date(projectsQuery.dataUpdatedAt).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : null;
+
+  // Zuper status query
+  const zuperStatusQuery = useQuery({
+    queryKey: queryKeys.zuper.status(),
+    queryFn: async () => {
+      const response = await fetch("/api/zuper/status");
+      const data = await response.json();
+      return data;
+    },
+    staleTime: 10 * 60 * 1000,
+  });
+  const zuperConfigured = zuperStatusQuery.data?.configured === true;
+
+  // SSE for real-time invalidation
+  useSSE(null, { cacheKeyFilter: "projects" });
 
   // Optimization state
   const [optimizing, setOptimizing] = useState(false);
@@ -410,7 +447,6 @@ export default function OptimizerDashboard() {
   const [showOptimizeResults, setShowOptimizeResults] = useState(false);
 
   // Zuper integration state
-  const [zuperConfigured, setZuperConfigured] = useState(false);
   const [showZuperConfirmModal, setShowZuperConfirmModal] = useState(false);
   const [zuperConfirmText, setZuperConfirmText] = useState("");
   const [syncingToZuper, setSyncingToZuper] = useState(false);
@@ -438,35 +474,6 @@ export default function OptimizerDashboard() {
     []
   );
 
-  // ---- Fetch projects ----
-  const fetchProjects = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const response = await fetch("/api/projects?context=scheduling");
-      if (!response.ok) throw new Error("Failed to fetch projects");
-      const data = await response.json();
-      setProjects(data.projects || []);
-      setLastUpdated(
-        new Date().toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        })
-      );
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Unknown error";
-      console.error("Error fetching projects:", err);
-      setError(message);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchProjects();
-    const interval = setInterval(fetchProjects, 5 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, [fetchProjects]);
 
   /* ---- Track dashboard view on load ---- */
   useEffect(() => {
@@ -478,19 +485,6 @@ export default function OptimizerDashboard() {
     }
   }, [loading, projects.length, trackDashboardView]);
 
-  // Check Zuper configuration status
-  useEffect(() => {
-    async function checkZuper() {
-      try {
-        const response = await fetch("/api/zuper/status");
-        const data = await response.json();
-        setZuperConfigured(data.configured === true);
-      } catch {
-        setZuperConfigured(false);
-      }
-    }
-    checkZuper();
-  }, []);
 
   // ---- Zuper Sync Function ----
   const syncScheduleToZuper = useCallback(async () => {
@@ -561,6 +555,10 @@ export default function OptimizerDashboard() {
     setZuperConfirmText("");
     setZuperSyncProgress(null);
 
+    // Invalidate queries once after entire batch completes
+    queryClient.invalidateQueries({ queryKey: queryKeys.optimizer.projects() });
+    queryClient.invalidateQueries({ queryKey: queryKeys.zuper.root });
+
     if (failed === 0) {
       showToast(
         `Successfully synced ${completed} projects to Zuper - customers notified`
@@ -571,7 +569,7 @@ export default function OptimizerDashboard() {
         failed > completed / 2 ? "error" : "success"
       );
     }
-  }, [optimizedSchedule, showToast]);
+  }, [optimizedSchedule, showToast, queryClient]);
 
   // ---- Derived data ----
   const schedulableStages = [
@@ -764,7 +762,7 @@ export default function OptimizerDashboard() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => {
-              fetchProjects();
+              projectsQuery.refetch();
               showToast("Data refreshed");
             }}
             className="px-3 py-1.5 text-xs bg-surface-2 border border-t-border rounded-md text-foreground/80 hover:bg-surface-2 transition-colors"
@@ -785,7 +783,7 @@ export default function OptimizerDashboard() {
         <div className="bg-red-500/10 border border-red-500 rounded-lg p-4 text-red-400 mb-6">
           <strong>Error:</strong> {error}
           <button
-            onClick={fetchProjects}
+            onClick={() => projectsQuery.refetch()}
             className="ml-4 px-3 py-1 bg-orange-500 border-none rounded text-white text-sm cursor-pointer hover:bg-orange-600 transition-colors"
           >
             Retry

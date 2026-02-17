@@ -1,5 +1,6 @@
+import * as Sentry from "@sentry/nextjs";
 import { auth } from "@/auth";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { ROLE_PERMISSIONS, canAccessRoute, normalizeRole, type UserRole } from "@/lib/role-permissions";
 
 // Routes that are always accessible (login, auth callbacks)
@@ -53,6 +54,18 @@ function addSecurityHeaders(requestId: string, response: NextResponse): NextResp
 }
 
 /**
+ * Create a NextResponse.next() that forwards the request ID in request headers.
+ * Route handlers can then read x-request-id for Sentry correlation.
+ */
+function nextWithRequestId(requestId: string, request: NextRequest): NextResponse {
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-request-id", requestId);
+  const response = NextResponse.next({ request: { headers: requestHeaders } });
+  addSecurityHeaders(requestId, response);
+  return response;
+}
+
+/**
  * Get the default redirect route for a role (first dashboard route, or /)
  */
 function getDefaultRouteForRole(role: UserRole): string {
@@ -87,6 +100,15 @@ export default auth((req) => {
   const userRole = normalizeRole(rawRole);
   const pathname = req.nextUrl.pathname;
 
+  // Set Sentry context for edge-level errors
+  Sentry.getCurrentScope().setTag("request_id", requestId);
+  if (isLoggedIn && req.auth?.user) {
+    Sentry.setUser({
+      email: req.auth.user.email ?? undefined,
+      username: req.auth.user.name ?? undefined,
+    });
+  }
+
   const isLoginPage = pathname === "/login";
   const isAuthRoute = pathname.startsWith("/api/auth");
   const isApiRoute = pathname.startsWith("/api/");
@@ -115,18 +137,18 @@ export default auth((req) => {
 
   // Always allow auth routes and static files
   if (isAuthRoute || isStaticFile) {
-    return addSecurityHeaders(requestId, NextResponse.next());
+    return nextWithRequestId(requestId, req);
   }
 
   // API routes - require authentication + role-based access
   if (isApiRoute) {
     if (isPublicApiRoute) {
-      return addSecurityHeaders(requestId, NextResponse.next());
+      return nextWithRequestId(requestId, req);
     }
 
     // Allow auth endpoints without session check
     if (pathname.startsWith("/api/auth")) {
-      return addSecurityHeaders(requestId, NextResponse.next());
+      return nextWithRequestId(requestId, req);
     }
 
     // For other API routes, require authentication
@@ -141,7 +163,7 @@ export default auth((req) => {
     // Allow authenticated users to check/exit impersonation state.
     // The route handler itself enforces admin requirements for start/stop.
     if (isImpersonationApiRoute) {
-      return addSecurityHeaders(requestId, NextResponse.next());
+      return nextWithRequestId(requestId, req);
     }
 
     // Enforce role-based API access (check if the role can access this API path)
@@ -153,7 +175,7 @@ export default auth((req) => {
       return addSecurityHeaders(requestId, response);
     }
 
-    return addSecurityHeaders(requestId, NextResponse.next());
+    return nextWithRequestId(requestId, req);
   }
 
   // Redirect logged-in users away from login page
@@ -173,7 +195,7 @@ export default auth((req) => {
   if (isLoggedIn && !isLoginPage) {
     // Always allow these routes for everyone
     if (ALWAYS_ALLOWED.some(route => pathname.startsWith(route))) {
-      return addSecurityHeaders(requestId, NextResponse.next());
+      return nextWithRequestId(requestId, req);
     }
 
     // Check role permissions
@@ -184,7 +206,7 @@ export default auth((req) => {
     }
   }
 
-  return addSecurityHeaders(requestId, NextResponse.next());
+  return nextWithRequestId(requestId, req);
 });
 
 export const config = {

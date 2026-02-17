@@ -6,8 +6,10 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import * as Sentry from "@sentry/nextjs";
 import { prisma } from "@/lib/db";
 import { requireApiAuth } from "@/lib/api-auth";
+import { tagSentryRequest } from "@/lib/sentry-request";
 import { EquipmentCategory } from "@/generated/prisma/enums";
 
 // Roles allowed to create/upsert SKUs
@@ -24,6 +26,7 @@ const VALID_CATEGORIES = Object.values(EquipmentCategory);
  *   active   - "true" (default) to show only active SKUs, "false" to include inactive
  */
 export async function GET(request: NextRequest) {
+  tagSentryRequest(request);
   if (!prisma) {
     return NextResponse.json(
       { error: "Database not configured" },
@@ -72,6 +75,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ skus, count: skus.length });
   } catch (error) {
     console.error("Error fetching SKUs:", error);
+    Sentry.captureException(error);
     return NextResponse.json(
       { error: "Failed to fetch SKUs" },
       { status: 500 }
@@ -88,6 +92,7 @@ export async function GET(request: NextRequest) {
  * Requires ADMIN, OWNER, MANAGER, or PROJECT_MANAGER role.
  */
 export async function POST(request: NextRequest) {
+  tagSentryRequest(request);
   if (!prisma) {
     return NextResponse.json(
       { error: "Database not configured" },
@@ -173,6 +178,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ sku }, { status: 201 });
   } catch (error) {
     console.error("Error creating/upserting SKU:", error);
+    Sentry.captureException(error);
     return NextResponse.json(
       { error: "Failed to create/upsert SKU" },
       { status: 500 }

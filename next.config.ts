@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { withSentryConfig } from "@sentry/nextjs";
 
 const nextConfig: NextConfig = {
   // Compress responses for faster transfers
@@ -41,4 +42,18 @@ const nextConfig: NextConfig = {
   ],
 };
 
-export default nextConfig;
+export default withSentryConfig(nextConfig, {
+  // Suppress source map upload logs during build
+  silent: true,
+
+  // Hide source maps from clients
+  sourcemaps: {
+    deleteSourcemapsAfterUpload: true,
+  },
+
+  // Route client reports through /monitoring to bypass ad blockers
+  tunnelRoute: "/monitoring",
+
+  // Upload larger set of source maps for better stack traces
+  widenClientFileUpload: true,
+});

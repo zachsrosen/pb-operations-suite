@@ -85,9 +85,15 @@ export function KeyboardShortcutsDialog() {
   const prefixTimer = useRef<NodeJS.Timeout | null>(null);
 
   const router = useRouter();
+
   // Keep refs in sync so the single event listener always reads current values
-  isOpenRef.current = isOpen;
-  routerRef.current = router;
+  useEffect(() => {
+    isOpenRef.current = isOpen;
+  }, [isOpen]);
+
+  useEffect(() => {
+    routerRef.current = router;
+  }, [router]);
 
   // Register a single event listener on mount — never re-registered.
   // Reads state via refs to avoid stale closures.
@@ -153,7 +159,7 @@ export function KeyboardShortcutsDialog() {
       document.removeEventListener("keydown", handleKeyDown);
       if (prefixTimer.current) clearTimeout(prefixTimer.current);
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- stable via refs
+  }, []);
 
   return (
     <>

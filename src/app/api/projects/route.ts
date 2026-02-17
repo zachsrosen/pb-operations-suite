@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import * as Sentry from "@sentry/nextjs";
+import { tagSentryRequest } from "@/lib/sentry-request";
 import {
   fetchAllProjects,
   calculateStats,
@@ -8,6 +10,7 @@ import {
 import { appCache, CACHE_KEYS } from "@/lib/cache";
 
 export async function GET(request: NextRequest) {
+  tagSentryRequest(request);
   try {
     // Optional Bearer token gate for external/machine-to-machine access.
     // Browser requests are authenticated by middleware (NextAuth session).
@@ -150,6 +153,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("Error fetching projects:", error);
+    Sentry.captureException(error);
     return NextResponse.json(
       { error: "Failed to fetch projects" },
       { status: 500 }

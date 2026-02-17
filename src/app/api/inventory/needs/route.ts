@@ -11,7 +11,9 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import * as Sentry from "@sentry/nextjs";
 import { prisma } from "@/lib/db";
+import { tagSentryRequest } from "@/lib/sentry-request";
 import { fetchAllProjects, filterProjectsForContext } from "@/lib/hubspot";
 import { appCache, CACHE_KEYS } from "@/lib/cache";
 
@@ -50,6 +52,7 @@ interface NeedEntry extends DemandEntry {
 }
 
 export async function GET(request: NextRequest) {
+  tagSentryRequest(request);
   try {
     if (!prisma) {
       return NextResponse.json(
@@ -248,6 +251,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("Failed to compute inventory needs:", error);
+    Sentry.captureException(error);
     return NextResponse.json(
       { error: "Failed to compute inventory needs" },
       { status: 500 }

@@ -195,7 +195,7 @@ export default function DesignEngineeringDashboard() {
         const res = await fetch("/api/projects?active=true");
         const json = await res.json();
         if (!cancelled) {
-          setProjects(json.data || []);
+          setProjects(json.projects || []);
           setLastUpdated(json.lastUpdated || new Date().toISOString());
           setLoading(false);
         }

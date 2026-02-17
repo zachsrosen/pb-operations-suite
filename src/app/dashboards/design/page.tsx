@@ -7,6 +7,8 @@ import { RawProject } from "@/lib/types";
 import { MultiSelectFilter, ProjectSearchBar, FilterGroup } from "@/components/ui/MultiSelectFilter";
 import { MonthlyBarChart, aggregateMonthly } from "@/components/ui/MonthlyBarChart";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
+import { useProjectData } from "@/hooks/useProjectData";
+import { useDesignFilters } from "@/stores/dashboard-filters";
 
 // Display name mappings for status values
 const DISPLAY_NAMES: Record<string, string> = {
@@ -321,46 +323,34 @@ export default function DesignEngineeringPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
-  const [projects, setProjects] = useState<ExtendedProject[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data: projects, loading, error, refetch } = useProjectData<ExtendedProject[]>({
+    params: { context: "executive" },
+    transform: (raw: unknown) => (raw as { projects: ExtendedProject[] }).projects,
+  });
+  const safeProjects = projects ?? [];
 
-  // Multi-select filters
-  const [filterLocations, setFilterLocations] = useState<string[]>([]);
-  const [filterStages, setFilterStages] = useState<string[]>([]);
-  const [filterDesignStatuses, setFilterDesignStatuses] = useState<string[]>([]);
-  const [filterDesignApprovalStatuses, setFilterDesignApprovalStatuses] = useState<string[]>([]);
-  const [searchQuery, setSearchQuery] = useState("");
-
-  const fetchData = useCallback(async () => {
-    try {
-      const response = await fetch("/api/projects?context=executive");
-      if (!response.ok) throw new Error("Failed to fetch");
-      const data = await response.json();
-      setProjects(data.projects);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load data");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchData, 5 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, [fetchData]);
+  // Persisted multi-select filters (survive navigation)
+  const { filters, setFilters, clearFilters: clearStore } = useDesignFilters();
+  const filterLocations = filters.locations;
+  const filterStages = filters.stages;
+  const filterDesignStatuses = filters.designStatuses;
+  const filterDesignApprovalStatuses = filters.designApprovalStatuses;
+  const searchQuery = filters.search;
+  const setFilterLocations = useCallback((v: string[]) => setFilters({ ...filters, locations: v }), [filters, setFilters]);
+  const setFilterStages = useCallback((v: string[]) => setFilters({ ...filters, stages: v }), [filters, setFilters]);
+  const setFilterDesignStatuses = useCallback((v: string[]) => setFilters({ ...filters, designStatuses: v }), [filters, setFilters]);
+  const setFilterDesignApprovalStatuses = useCallback((v: string[]) => setFilters({ ...filters, designApprovalStatuses: v }), [filters, setFilters]);
+  const setSearchQuery = useCallback((v: string) => setFilters({ ...filters, search: v }), [filters, setFilters]);
 
   /* ---- Track dashboard view on load ---- */
   useEffect(() => {
     if (!loading && !hasTrackedView.current) {
       hasTrackedView.current = true;
       trackDashboardView("design", {
-        projectCount: projects.length,
+        projectCount: safeProjects.length,
       });
     }
-  }, [loading, projects.length, trackDashboardView]);
+  }, [loading, safeProjects.length, trackDashboardView]);
 
   // Check if project is in design phase or has design data
   const isInDesignPhase = useCallback((p: ExtendedProject) => {
@@ -373,7 +363,7 @@ export default function DesignEngineeringPage() {
   }, []);
 
   const filteredProjects = useMemo(() => {
-    return projects.filter(p => {
+    return safeProjects.filter(p => {
       if (!isInDesignPhase(p)) return false;
 
       // Location filter (multi-select)
@@ -399,7 +389,7 @@ export default function DesignEngineeringPage() {
 
       return true;
     });
-  }, [projects, filterLocations, filterStages, filterDesignStatuses, filterDesignApprovalStatuses, searchQuery, isInDesignPhase]);
+  }, [safeProjects, filterLocations, filterStages, filterDesignStatuses, filterDesignApprovalStatuses, searchQuery, isInDesignPhase]);
 
   const stats = useMemo(() => {
     const today = new Date();
@@ -473,16 +463,16 @@ export default function DesignEngineeringPage() {
 
   // Get unique values for filters
   const locations = useMemo(() =>
-    [...new Set(projects.map(p => p.pbLocation))]
+    [...new Set(safeProjects.map(p => p.pbLocation))]
       .filter(l => l && l !== 'Unknown')
       .sort()
       .map(l => ({ value: l!, label: l! })),
-    [projects]
+    [safeProjects]
   );
 
   const stages = useMemo(() => {
     const STAGE_ORDER = ['Site Survey', 'Design & Engineering', 'Permitting & Interconnection', 'RTB - Blocked', 'Ready To Build', 'Construction', 'Inspection', 'Permission To Operate', 'Close Out'];
-    return [...new Set(projects.map(p => p.stage))]
+    return [...new Set(safeProjects.map(p => p.stage))]
       .filter(s => s)
       .sort((a, b) => {
         const aIdx = STAGE_ORDER.findIndex(s => s.toLowerCase() === a!.toLowerCase());
@@ -493,17 +483,17 @@ export default function DesignEngineeringPage() {
         return aIdx - bIdx;
       })
       .map(s => ({ value: s!, label: s! }));
-  }, [projects]);
+  }, [safeProjects]);
 
   // Get design statuses that exist in the data (for showing in groups)
   const existingDesignStatuses = useMemo(() =>
-    new Set(projects.map(p => (p as ExtendedProject).designStatus).filter(Boolean)),
-    [projects]
+    new Set(safeProjects.map(p => (p as ExtendedProject).designStatus).filter(Boolean)),
+    [safeProjects]
   );
 
   const existingDesignApprovalStatuses = useMemo(() =>
-    new Set(projects.map(p => (p as ExtendedProject).layoutStatus).filter(Boolean)),
-    [projects]
+    new Set(safeProjects.map(p => (p as ExtendedProject).layoutStatus).filter(Boolean)),
+    [safeProjects]
   );
 
   // Filter groups to only include options that exist in the actual data
@@ -579,7 +569,7 @@ export default function DesignEngineeringPage() {
           <div className="text-center text-red-500">
             <p className="text-xl mb-2">Error loading data</p>
             <p className="text-sm text-muted">{error}</p>
-            <button onClick={fetchData} className="mt-4 px-4 py-2 bg-indigo-600 rounded-lg hover:bg-indigo-700">
+            <button onClick={() => refetch()} className="mt-4 px-4 py-2 bg-indigo-600 rounded-lg hover:bg-indigo-700">
               Retry
             </button>
           </div>
@@ -611,13 +601,7 @@ export default function DesignEngineeringPage() {
     return 'bg-zinc-500/20 text-muted';
   };
 
-  const clearAllFilters = () => {
-    setFilterLocations([]);
-    setFilterStages([]);
-    setFilterDesignStatuses([]);
-    setFilterDesignApprovalStatuses([]);
-    setSearchQuery("");
-  };
+  const clearAllFilters = clearStore;
 
   const hasActiveFilters = filterLocations.length > 0 || filterStages.length > 0 ||
     filterDesignStatuses.length > 0 || filterDesignApprovalStatuses.length > 0 || searchQuery;
@@ -632,7 +616,7 @@ export default function DesignEngineeringPage() {
             onSearch={setSearchQuery}
             placeholder="Search by PROJ #, name, or address..."
           />
-          <button onClick={fetchData} className="bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap">
+          <button onClick={() => refetch()} className="bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap">
             Refresh
           </button>
         </div>
@@ -978,7 +962,7 @@ export default function DesignEngineeringPage() {
         <div className="p-4 border-b border-t-border flex items-center justify-between">
           <h2 className="text-lg font-semibold">Projects ({filteredProjects.length})</h2>
           {hasActiveFilters && (
-            <span className="text-xs text-muted">Filtered from {projects.filter(isInDesignPhase).length} total</span>
+            <span className="text-xs text-muted">Filtered from {safeProjects.filter(isInDesignPhase).length} total</span>
           )}
         </div>
         <div className="overflow-x-auto">

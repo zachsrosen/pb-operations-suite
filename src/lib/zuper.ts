@@ -9,6 +9,8 @@
  * API Documentation: https://developers.zuper.co
  */
 
+import * as Sentry from "@sentry/nextjs";
+
 // Types for Zuper API
 export interface ZuperJobCategory {
   category_uid: string;
@@ -281,9 +283,21 @@ export class ZuperClient {
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
         console.error(`Zuper API timeout after ${timeoutMs}ms:`, endpoint);
+        Sentry.addBreadcrumb({
+          category: "zuper",
+          message: `API timeout: ${endpoint}`,
+          level: "warning",
+          data: { timeoutMs, endpoint },
+        });
         return { type: "error", error: `Request timeout after ${timeoutMs}ms` };
       }
       console.error("Zuper API error:", error);
+      Sentry.addBreadcrumb({
+        category: "zuper",
+        message: `API error: ${endpoint}`,
+        level: "error",
+        data: { endpoint, error: error instanceof Error ? error.message : "Unknown" },
+      });
       return {
         type: "error",
         error: error instanceof Error ? error.message : "Unknown error",

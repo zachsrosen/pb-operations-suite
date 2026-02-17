@@ -1,11 +1,14 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import DashboardShell from "@/components/DashboardShell";
 import { MultiSelectFilter, ProjectSearchBar } from "@/components/ui/MultiSelectFilter";
 import { formatMoney } from "@/lib/format";
 import { STAGE_COLORS, STAGE_ORDER } from "@/lib/constants";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
+import { queryKeys } from "@/lib/query-keys";
+import { useSSE } from "@/hooks/useSSE";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -39,17 +42,17 @@ interface EquipmentSummary {
   projects: number;
 }
 
+interface EquipmentBacklogResponse {
+  projects: Project[];
+  lastUpdated: string | null;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Page                                                               */
 /* ------------------------------------------------------------------ */
 
 export default function EquipmentBacklogPage() {
   useActivityTracking();
-
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
 
   // Filters
   const [filterLocations, setFilterLocations] = useState<string[]>([]);
@@ -63,29 +66,28 @@ export default function EquipmentBacklogPage() {
 
   /* ---- Data fetching ---- */
 
-  const fetchData = useCallback(async () => {
-    try {
+  const equipmentQueryParams = {
+    context: "equipment",
+    limit: "0",
+    fields: "id,name,projectNumber,pbLocation,stage,amount,equipment,address,city",
+  };
+
+  const { data, isLoading, isError, refetch } = useQuery<EquipmentBacklogResponse>({
+    queryKey: queryKeys.projects.list(equipmentQueryParams),
+    queryFn: async () => {
       const res = await fetch(
         "/api/projects?context=equipment&limit=0&fields=id,name,projectNumber,pbLocation,stage,amount,equipment,address,city"
       );
       if (!res.ok) throw new Error("Failed to fetch");
-      const data = await res.json();
-      setProjects(data.projects || []);
-      setLastUpdated(data.lastUpdated || null);
-      setError(null);
-    } catch (err) {
-      console.error("Equipment backlog fetch error:", err);
-      setError("Failed to load equipment data. Please try refreshing.");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+      return res.json();
+    },
+    staleTime: 5 * 60 * 1000,
+  });
 
-  useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchData, 5 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, [fetchData]);
+  useSSE(null, { cacheKeyFilter: "projects" });
+
+  const projects: Project[] = data?.projects ?? [];
+  const lastUpdated = data?.lastUpdated ?? null;
 
   /* ---- Derived filter options ---- */
 
@@ -354,7 +356,7 @@ export default function EquipmentBacklogPage() {
 
   /* ---- Render ---- */
 
-  if (loading) {
+  if (isLoading) {
     return (
       <DashboardShell title="Equipment Backlog" accentColor="cyan">
         <div className="flex items-center justify-center py-20">
@@ -364,13 +366,13 @@ export default function EquipmentBacklogPage() {
     );
   }
 
-  if (error) {
+  if (isError) {
     return (
       <DashboardShell title="Equipment Backlog" accentColor="cyan">
         <div className="flex flex-col items-center justify-center py-20 gap-4">
-          <p className="text-red-400">{error}</p>
+          <p className="text-red-400">Failed to load equipment data. Please try refreshing.</p>
           <button
-            onClick={() => { setLoading(true); setError(null); fetchData(); }}
+            onClick={() => refetch()}
             className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-sm transition-colors"
           >
             Retry

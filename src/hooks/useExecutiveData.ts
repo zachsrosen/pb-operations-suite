@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import { useActivityTracking } from "./useActivityTracking";
+import { queryKeys } from "@/lib/query-keys";
 import {
   type ExecProject,
   type CapacityAnalysis,
@@ -34,50 +36,52 @@ export function useExecutiveData(dashboardName: string): UseExecutiveDataReturn 
   const hasTrackedView = useRef(false);
 
   const [accessChecked, setAccessChecked] = useState(false);
-  const [projects, setProjects] = useState<ExecProject[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<string>("");
 
   // Access guard
-  useEffect(() => {
-    fetch("/api/auth/sync")
-      .then((r) => r.json())
-      .then((data) => {
-        const role = data.role || "TECH_OPS";
-        setAccessChecked(true);
-        if (role !== "ADMIN" && role !== "OWNER") {
-          router.push("/");
-        }
-      })
-      .catch(() => {
-        setAccessChecked(true);
-        router.push("/");
-      });
-  }, [router]);
+  const authQuery = useQuery({
+    queryKey: queryKeys.auth.sync(),
+    queryFn: async () => {
+      const res = await fetch("/api/auth/sync");
+      if (!res.ok) throw new Error("Auth check failed");
+      return res.json();
+    },
+    staleTime: 5 * 60 * 1000,
+  });
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
+  useEffect(() => {
+    if (authQuery.data) {
+      const role = authQuery.data.role || "TECH_OPS";
+      setAccessChecked(true);
+      if (role !== "ADMIN" && role !== "OWNER") {
+        router.push("/");
+      }
+    }
+    if (authQuery.error) {
+      setAccessChecked(true);
+      router.push("/");
+    }
+  }, [authQuery.data, authQuery.error, router]);
+
+  // Projects data
+  const projectsQuery = useQuery({
+    queryKey: queryKeys.projects.executive(),
+    queryFn: async () => {
       const response = await fetch("/api/projects?context=executive");
       if (!response.ok) throw new Error("Failed to fetch data");
       const data = await response.json();
-      const transformed = data.projects.map(transformProject);
-      setProjects(transformed);
-      setLastUpdated(new Date().toLocaleString());
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+      return data.projects.map(transformProject) as ExecProject[];
+    },
+    refetchInterval: 5 * 60 * 1000,
+  });
 
-  useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchData, 5 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, [fetchData]);
+  const projects = projectsQuery.data ?? [];
+  const loading = projectsQuery.isLoading;
+  const error = projectsQuery.error
+    ? (projectsQuery.error as Error).message
+    : null;
+  const lastUpdated = projectsQuery.dataUpdatedAt
+    ? new Date(projectsQuery.dataUpdatedAt).toLocaleString()
+    : "";
 
   // Track view
   useEffect(() => {
@@ -114,7 +118,9 @@ export function useExecutiveData(dashboardName: string): UseExecutiveDataReturn 
     capacityAnalysis,
     alerts,
     summary,
-    fetchData,
+    fetchData: async () => {
+      await projectsQuery.refetch();
+    },
     accessChecked,
   };
 }

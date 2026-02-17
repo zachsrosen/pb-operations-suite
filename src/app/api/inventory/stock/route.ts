@@ -10,9 +10,12 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import * as Sentry from "@sentry/nextjs";
+import { tagSentryRequest } from "@/lib/sentry-request";
 import { prisma } from "@/lib/db";
 
 export async function GET(request: NextRequest) {
+  tagSentryRequest(request);
   try {
     if (!prisma) {
       return NextResponse.json(
@@ -50,6 +53,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ stock, count: stock.length });
   } catch (error) {
     console.error("Failed to fetch stock levels:", error);
+    Sentry.captureException(error);
     return NextResponse.json(
       { error: "Failed to fetch stock levels" },
       { status: 500 }

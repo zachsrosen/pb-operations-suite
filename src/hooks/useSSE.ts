@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { cacheKeyToQueryKeys } from "@/lib/query-keys";
 
 interface UseSSEOptions {
   /** URL of the SSE endpoint */
@@ -18,10 +20,12 @@ interface UseSSEReturn {
 
 /**
  * SSE (Server-Sent Events) hook with exponential backoff reconnection.
- * Extracted from page.tsx and enhanced with connection state tracking.
+ * On cache_update events:
+ * 1. Invalidates matching React Query queries (no-op if no matching queries exist)
+ * 2. Calls the legacy onUpdate callback if provided (for non-migrated pages)
  */
 export function useSSE(
-  onUpdate: () => void,
+  onUpdate?: (() => void) | null,
   options: UseSSEOptions = {}
 ): UseSSEReturn {
   const {
@@ -30,6 +34,7 @@ export function useSSE(
     cacheKeyFilter = "projects",
   } = options;
 
+  const queryClient = useQueryClient();
   const [connected, setConnected] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
   const eventSourceRef = useRef<EventSource | null>(null);
@@ -66,7 +71,15 @@ export function useSSE(
           data.type === "cache_update" &&
           data.key?.startsWith(cacheKeyFilter)
         ) {
-          onUpdateRef.current();
+          // 1. React Query invalidation — always runs (no-op if no matching queries)
+          const keys = cacheKeyToQueryKeys(data.key);
+          keys.forEach((key) =>
+            queryClient.invalidateQueries({ queryKey: [...key] })
+          );
+          // 2. Legacy callback — runs if provided
+          if (onUpdateRef.current) {
+            onUpdateRef.current();
+          }
         }
 
         if (data.type === "reconnect") {
@@ -102,7 +115,7 @@ export function useSSE(
         setReconnecting(false);
       }
     };
-  }, [url, maxRetries, cacheKeyFilter]);
+  }, [url, maxRetries, cacheKeyFilter, queryClient]);
 
   // Store the connect function in a ref so it can be called from within its own callbacks
   useEffect(() => {
