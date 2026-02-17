@@ -110,6 +110,28 @@ interface ComplianceData {
   dataQuality?: DataQuality;
 }
 
+interface ScorePreviewRow {
+  userUid: string;
+  userName: string;
+  teamName: string;
+  totalJobs: number;
+  currentRaw: number;
+  currentAdjusted: number;
+  outcomeRaw: number;
+  outcomeAdjusted: number;
+  processRaw: number;
+  processAdjusted: number;
+  balancedRaw: number;
+  balancedAdjusted: number;
+  currentRank: number;
+  outcomeRank: number;
+  processRank: number;
+  balancedRank: number;
+  outcomeRankDelta: number;
+  processRankDelta: number;
+  balancedRankDelta: number;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Constants                                                          */
 /* ------------------------------------------------------------------ */
@@ -147,6 +169,10 @@ function parseUserTeams(teamName: string | null | undefined): string[] {
     .split(",")
     .map((team) => team.trim())
     .filter(Boolean);
+}
+
+function round1(value: number): number {
+  return Math.round(value * 10) / 10;
 }
 
 /* ------------------------------------------------------------------ */
@@ -271,6 +297,7 @@ function ComparisonTable({
   accentColor,
   users,
   groupType,
+  onInspectUser,
 }: {
   rows: GroupComparison[];
   title: string;
@@ -278,6 +305,10 @@ function ComparisonTable({
   accentColor: string;
   users: UserMetrics[];
   groupType: "team" | "category";
+  onInspectUser?: (
+    userUid: string,
+    tab: "stuck" | "late" | "neverStarted" | "completed" | "categories"
+  ) => void;
 }) {
   const [sortField, setSortField] = useState<GroupSortField>("adjustedScore");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
@@ -335,6 +366,14 @@ function ComparisonTable({
     return details.sort(
       (a, b) => b.jobsInGroup - a.jobsInGroup || a.userName.localeCompare(b.userName)
     );
+  };
+
+  const getTopCategories = (user: UserMetrics, limit = 2): string => {
+    const categories = Object.entries(user.byCategory || {})
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, limit)
+      .map(([name, count]) => `${name} (${count})`);
+    return categories.length > 0 ? categories.join(", ") : "\u2014";
   };
 
   if (rows.length === 0) return null;
@@ -502,61 +541,113 @@ function ComparisonTable({
                           )}
                         </div>
 
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 mb-4">
+                          <div className="rounded-md border border-t-border bg-surface/40 px-3 py-2">
+                            <div className="text-[11px] text-muted">Group Jobs</div>
+                            <div className="text-sm font-semibold text-foreground/90">{r.totalJobs.toLocaleString()}</div>
+                          </div>
+                          <div className="rounded-md border border-t-border bg-surface/40 px-3 py-2">
+                            <div className="text-[11px] text-muted">Completed / Late</div>
+                            <div className="text-sm font-semibold text-foreground/90">
+                              {r.completedJobs.toLocaleString()} / <span className="text-rose-400">{r.lateCompletions.toLocaleString()}</span>
+                            </div>
+                          </div>
+                          <div className="rounded-md border border-t-border bg-surface/40 px-3 py-2">
+                            <div className="text-[11px] text-muted">Stuck / Not Started</div>
+                            <div className="text-sm font-semibold text-foreground/90">
+                              <span className="text-amber-400">{r.stuckJobs.toLocaleString()}</span> / <span className="text-orange-400">{r.neverStartedJobs.toLocaleString()}</span>
+                            </div>
+                          </div>
+                          <div className="rounded-md border border-t-border bg-surface/40 px-3 py-2">
+                            <div className="text-[11px] text-muted">Status Usage</div>
+                            <div className={`text-sm font-semibold ${pctColor(r.statusUsagePercent)}`}>{r.statusUsagePercent}%</div>
+                          </div>
+                        </div>
+
                         {contributingUsers.length > 0 ? (
                           <div className="bg-surface/50 border border-t-border rounded-lg overflow-hidden">
                             <table className="w-full text-sm">
                               <thead>
                                 <tr className="text-muted text-left border-b border-t-border">
                                   <th className="px-3 py-2">User</th>
-                                  <th className="px-3 py-2">Team</th>
                                   <th className="px-3 py-2 text-right">Jobs in Group</th>
+                                  <th className="px-3 py-2 text-right">Share</th>
                                   <th className="px-3 py-2 text-right">Total Jobs</th>
-                                  <th className="px-3 py-2 text-right">On-Time %</th>
-                                  <th className="px-3 py-2 text-right">Late</th>
-                                  <th className="px-3 py-2 text-right">Stuck</th>
-                                  <th className="px-3 py-2 text-right">Not Started</th>
+                                  <th className="px-3 py-2 text-right">On-Time</th>
+                                  <th className="px-3 py-2 text-right">Stuck %</th>
+                                  <th className="px-3 py-2 text-right">Not Started %</th>
+                                  <th className="px-3 py-2 text-right">Usage / OOW</th>
+                                  <th className="px-3 py-2">Top Categories</th>
                                   <th className="px-3 py-2 text-center">Adj</th>
+                                  <th className="px-3 py-2 text-right">Inspect</th>
                                 </tr>
                               </thead>
                               <tbody>
-                                {contributingUsers.map((user) => (
-                                  <tr key={`${r.name}-${user.userUid}`} className="border-b border-t-border/30">
-                                    <td className="px-3 py-1.5 text-foreground/90 font-medium">
-                                      {user.userName}
-                                    </td>
-                                    <td className="px-3 py-1.5 text-muted">{user.teamName || "\u2014"}</td>
-                                    <td className="px-3 py-1.5 text-right text-blue-400 font-medium">
-                                      {user.jobsInGroup}
-                                    </td>
-                                    <td className="px-3 py-1.5 text-right text-foreground/80">
-                                      {user.totalJobs}
-                                    </td>
-                                    <td className={`px-3 py-1.5 text-right font-medium ${pctColor(user.onTimePercent)}`}>
-                                      {user.onTimePercent}%
-                                    </td>
-                                    <td className="px-3 py-1.5 text-right text-foreground/80">
-                                      {user.lateCompletions}
-                                    </td>
-                                    <td className="px-3 py-1.5 text-right">
-                                      <span className={user.stuckJobs > 0 ? "text-amber-400 font-medium" : "text-foreground/80"}>
-                                        {user.stuckJobs}
-                                      </span>
-                                    </td>
-                                    <td className="px-3 py-1.5 text-right">
-                                      <span className={user.neverStartedJobs > 0 ? "text-orange-400 font-medium" : "text-foreground/80"}>
-                                        {user.neverStartedJobs}
-                                      </span>
-                                    </td>
-                                    <td className="px-3 py-1.5 text-center">
-                                      <span
-                                        className={`inline-flex items-center justify-center w-7 h-7 rounded-md text-xs font-bold ${gradeClasses(user.adjustedGrade)}`}
-                                        title={`Adjusted: ${user.adjustedScore} | Raw: ${user.complianceScore}`}
-                                      >
-                                        {user.adjustedGrade}
-                                      </span>
-                                    </td>
-                                  </tr>
-                                ))}
+                                {contributingUsers.map((user) => {
+                                  const share = user.totalJobs > 0 ? round1((user.jobsInGroup / user.totalJobs) * 100) : 0;
+                                  const measurableCompleted = user.onTimeCompletions + user.lateCompletions;
+                                  const stuckRate = user.totalJobs > 0 ? round1((user.stuckJobs / user.totalJobs) * 100) : 0;
+                                  const neverStartedRate = user.totalJobs > 0 ? round1((user.neverStartedJobs / user.totalJobs) * 100) : 0;
+                                  const oowTotal = user.onOurWayOnTime + user.onOurWayLate;
+                                  return (
+                                    <tr key={`${r.name}-${user.userUid}`} className="border-b border-t-border/30">
+                                      <td className="px-3 py-1.5">
+                                        <div className="text-foreground/90 font-medium">{user.userName}</div>
+                                        <div className="text-[11px] text-muted">{user.teamName || "\u2014"}</div>
+                                      </td>
+                                      <td className="px-3 py-1.5 text-right text-blue-400 font-medium">
+                                        {user.jobsInGroup}
+                                      </td>
+                                      <td className="px-3 py-1.5 text-right text-muted">{share}%</td>
+                                      <td className="px-3 py-1.5 text-right text-foreground/80">{user.totalJobs}</td>
+                                      <td className="px-3 py-1.5 text-right">
+                                        <span className={`font-medium ${pctColor(user.onTimePercent)}`}>{user.onTimePercent}%</span>
+                                        <div className="text-[11px] text-muted">
+                                          {user.onTimeCompletions}/{measurableCompleted}
+                                        </div>
+                                      </td>
+                                      <td className="px-3 py-1.5 text-right">
+                                        <span className={stuckRate > 0 ? "text-amber-400 font-medium" : "text-foreground/70"}>
+                                          {stuckRate}%
+                                        </span>
+                                      </td>
+                                      <td className="px-3 py-1.5 text-right">
+                                        <span className={neverStartedRate > 0 ? "text-orange-400 font-medium" : "text-foreground/70"}>
+                                          {neverStartedRate}%
+                                        </span>
+                                      </td>
+                                      <td className="px-3 py-1.5 text-right">
+                                        <span className={pctColor(user.statusUsagePercent)}>{user.statusUsagePercent}%</span>
+                                        <div className="text-[11px] text-muted">
+                                          OOW {user.onOurWayOnTime}/{oowTotal}
+                                        </div>
+                                      </td>
+                                      <td className="px-3 py-1.5 text-muted max-w-[280px]">{getTopCategories(user)}</td>
+                                      <td className="px-3 py-1.5 text-center">
+                                        <span
+                                          className={`inline-flex items-center justify-center w-7 h-7 rounded-md text-xs font-bold ${gradeClasses(user.adjustedGrade)}`}
+                                          title={`Adjusted: ${user.adjustedScore} | Raw: ${user.complianceScore}`}
+                                        >
+                                          {user.adjustedGrade}
+                                        </span>
+                                      </td>
+                                      <td className="px-3 py-1.5 text-right">
+                                        <button
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            onInspectUser?.(
+                                              user.userUid,
+                                              groupType === "category" ? "categories" : "completed"
+                                            );
+                                          }}
+                                          className="text-xs text-red-400 hover:text-red-300 underline underline-offset-2"
+                                        >
+                                          Open
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
                               </tbody>
                             </table>
                           </div>
@@ -588,6 +679,7 @@ export default function ZuperCompliancePage() {
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [showMethodology, setShowMethodology] = useState(false);
+  const [showScorePreview, setShowScorePreview] = useState(false);
 
   // Date range
   const [days, setDays] = useState(30);
@@ -719,6 +811,123 @@ export default function ZuperCompliancePage() {
     return sorted;
   }, [filteredUsers, sortField, sortDir]);
 
+  /* ---- Score model preview (client-side only) ---- */
+
+  const scorePreviewRows = useMemo<ScorePreviewRow[]>(() => {
+    if (filteredUsers.length === 0) return [];
+
+    const bayesianC = data?.scoring?.bayesianC ?? 10;
+
+    const baseRows = filteredUsers.map((u) => {
+      const stuckRate = u.totalJobs > 0 ? u.stuckJobs / u.totalJobs : 0;
+      const neverStartedRate = u.totalJobs > 0 ? u.neverStartedJobs / u.totalJobs : 0;
+
+      const onTime = u.onTimePercent;
+      const nonStuck = (1 - stuckRate) * 100;
+      const nonNeverStarted = (1 - neverStartedRate) * 100;
+      const latenessSeverity = Math.max(0, Math.min(100, 100 - u.avgDaysLate * 10));
+      const oow = u.onOurWayPercent;
+      const usage = u.statusUsagePercent;
+
+      const outcomeRaw = round1(
+        0.45 * onTime +
+          0.25 * nonStuck +
+          0.15 * nonNeverStarted +
+          0.15 * latenessSeverity
+      );
+      const processRaw = round1(
+        0.35 * onTime +
+          0.20 * nonStuck +
+          0.15 * nonNeverStarted +
+          0.15 * oow +
+          0.15 * usage
+      );
+      const balancedRaw = round1(
+        0.40 * onTime +
+          0.20 * nonStuck +
+          0.15 * nonNeverStarted +
+          0.10 * latenessSeverity +
+          0.10 * oow +
+          0.05 * usage
+      );
+
+      return {
+        userUid: u.userUid,
+        userName: u.userName,
+        teamName: u.teamName || "",
+        totalJobs: u.totalJobs,
+        currentRaw: u.complianceScore,
+        currentAdjusted: u.adjustedScore,
+        outcomeRaw,
+        processRaw,
+        balancedRaw,
+      };
+    });
+
+    const avg = (key: "outcomeRaw" | "processRaw" | "balancedRaw") =>
+      baseRows.reduce((sum, row) => sum + row[key], 0) / baseRows.length;
+
+    const outcomeAvg = avg("outcomeRaw");
+    const processAvg = avg("processRaw");
+    const balancedAvg = avg("balancedRaw");
+
+    const rowsWithAdjusted = baseRows.map((row) => {
+      const denominator = row.totalJobs + bayesianC;
+      return {
+        ...row,
+        outcomeAdjusted: round1(
+          (row.totalJobs * row.outcomeRaw + bayesianC * outcomeAvg) / denominator
+        ),
+        processAdjusted: round1(
+          (row.totalJobs * row.processRaw + bayesianC * processAvg) / denominator
+        ),
+        balancedAdjusted: round1(
+          (row.totalJobs * row.balancedRaw + bayesianC * balancedAvg) / denominator
+        ),
+      };
+    });
+
+    const buildRankMap = (
+      key:
+        | "currentAdjusted"
+        | "outcomeAdjusted"
+        | "processAdjusted"
+        | "balancedAdjusted"
+    ) => {
+      const ordered = [...rowsWithAdjusted].sort(
+        (a, b) =>
+          b[key] - a[key] ||
+          b.totalJobs - a.totalJobs ||
+          a.userName.localeCompare(b.userName)
+      );
+      return new Map(ordered.map((row, index) => [row.userUid, index + 1]));
+    };
+
+    const currentRanks = buildRankMap("currentAdjusted");
+    const outcomeRanks = buildRankMap("outcomeAdjusted");
+    const processRanks = buildRankMap("processAdjusted");
+    const balancedRanks = buildRankMap("balancedAdjusted");
+
+    return rowsWithAdjusted
+      .map((row) => {
+        const currentRank = currentRanks.get(row.userUid) || 0;
+        const outcomeRank = outcomeRanks.get(row.userUid) || 0;
+        const processRank = processRanks.get(row.userUid) || 0;
+        const balancedRank = balancedRanks.get(row.userUid) || 0;
+        return {
+          ...row,
+          currentRank,
+          outcomeRank,
+          processRank,
+          balancedRank,
+          outcomeRankDelta: currentRank - outcomeRank,
+          processRankDelta: currentRank - processRank,
+          balancedRankDelta: currentRank - balancedRank,
+        };
+      })
+      .sort((a, b) => a.currentRank - b.currentRank);
+  }, [filteredUsers, data?.scoring?.bayesianC]);
+
   /* ---- Column sort handler ---- */
 
   const handleSort = (field: SortField) => {
@@ -758,6 +967,35 @@ export default function ZuperCompliancePage() {
     if (pct >= 60) return "text-yellow-400";
     return "text-red-400";
   };
+
+  const rankDeltaClass = (delta: number) => {
+    if (delta > 0) return "text-green-400";
+    if (delta < 0) return "text-rose-400";
+    return "text-foreground/60";
+  };
+
+  const rankDeltaLabel = (delta: number) => {
+    if (delta === 0) return "\u2014";
+    return `${delta > 0 ? "+" : ""}${delta}`;
+  };
+
+  const inspectUserFromGroup = useCallback(
+    (
+      userUid: string,
+      tab: "stuck" | "late" | "neverStarted" | "completed" | "categories"
+    ) => {
+      setExpandedUser(userUid);
+      setDetailTab(tab);
+
+      requestAnimationFrame(() => {
+        const target = document.getElementById(`user-row-${userUid}`);
+        if (target) {
+          target.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      });
+    },
+    []
+  );
 
   /* ---- Export data ---- */
 
@@ -1005,6 +1243,106 @@ export default function ZuperCompliancePage() {
         ))}
       </div>
 
+      {/* Score Model Preview */}
+      <div className="mb-8">
+        <button
+          onClick={() => setShowScorePreview((v) => !v)}
+          className="flex items-center gap-2 text-sm text-muted hover:text-foreground transition-colors"
+        >
+          <svg
+            className={`w-4 h-4 transition-transform ${showScorePreview ? "rotate-90" : ""}`}
+            fill="currentColor"
+            viewBox="0 0 20 20"
+          >
+            <path
+              fillRule="evenodd"
+              d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
+              clipRule="evenodd"
+            />
+          </svg>
+          Preview Alternative Score Models
+        </button>
+
+        {showScorePreview && (
+          <div className="mt-3 bg-surface/50 border border-t-border rounded-xl p-4">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 text-xs mb-4">
+              <div className="rounded-lg border border-t-border bg-surface/40 p-3">
+                <div className="font-semibold text-emerald-400 mb-1">Outcome-Heavy</div>
+                <div className="text-muted">45% On-Time + 25% Non-Stuck + 15% Started + 15% Lateness Severity</div>
+              </div>
+              <div className="rounded-lg border border-t-border bg-surface/40 p-3">
+                <div className="font-semibold text-cyan-400 mb-1">Process-Heavy</div>
+                <div className="text-muted">35% On-Time + 20% Non-Stuck + 15% Started + 15% OOW + 15% Usage</div>
+              </div>
+              <div className="rounded-lg border border-t-border bg-surface/40 p-3">
+                <div className="font-semibold text-blue-400 mb-1">Balanced</div>
+                <div className="text-muted">40% On-Time + 20% Non-Stuck + 15% Started + 10% Lateness + 10% OOW + 5% Usage</div>
+              </div>
+            </div>
+
+            <div className="text-xs text-muted mb-3">
+              Preview only. Current production score remains unchanged. Showing {scorePreviewRows.length} filtered users.
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-muted text-left border-b border-t-border">
+                    <th className="px-3 py-2">User</th>
+                    <th className="px-3 py-2 text-right">Jobs</th>
+                    <th className="px-3 py-2 text-right">Current (Adj/Raw)</th>
+                    <th className="px-3 py-2 text-right">Outcome (Adj/Raw)</th>
+                    <th className="px-3 py-2 text-right">Δ Rank</th>
+                    <th className="px-3 py-2 text-right">Process (Adj/Raw)</th>
+                    <th className="px-3 py-2 text-right">Δ Rank</th>
+                    <th className="px-3 py-2 text-right">Balanced (Adj/Raw)</th>
+                    <th className="px-3 py-2 text-right">Δ Rank</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {scorePreviewRows.map((row) => (
+                    <tr key={`preview-${row.userUid}`} className="border-b border-t-border/40">
+                      <td className="px-3 py-2">
+                        <div className="font-medium text-foreground/90">{row.userName}</div>
+                        <div className="text-xs text-muted">
+                          {row.teamName || "\u2014"} | Rank #{row.currentRank}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 text-right text-foreground/80">{row.totalJobs}</td>
+                      <td className="px-3 py-2 text-right">
+                        <div className="text-foreground/90 font-medium">{row.currentAdjusted}</div>
+                        <div className="text-xs text-muted">{row.currentRaw}</div>
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <div className="text-emerald-400 font-medium">{row.outcomeAdjusted}</div>
+                        <div className="text-xs text-muted">{row.outcomeRaw}</div>
+                      </td>
+                      <td className={`px-3 py-2 text-right font-medium ${rankDeltaClass(row.outcomeRankDelta)}`}>
+                        {rankDeltaLabel(row.outcomeRankDelta)}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <div className="text-cyan-400 font-medium">{row.processAdjusted}</div>
+                        <div className="text-xs text-muted">{row.processRaw}</div>
+                      </td>
+                      <td className={`px-3 py-2 text-right font-medium ${rankDeltaClass(row.processRankDelta)}`}>
+                        {rankDeltaLabel(row.processRankDelta)}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <div className="text-blue-400 font-medium">{row.balancedAdjusted}</div>
+                        <div className="text-xs text-muted">{row.balancedRaw}</div>
+                      </td>
+                      <td className={`px-3 py-2 text-right font-medium ${rankDeltaClass(row.balancedRankDelta)}`}>
+                        {rankDeltaLabel(row.balancedRankDelta)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Team Comparison */}
       {data?.teamComparison && data.teamComparison.length > 1 && (
         <div className="mb-8">
@@ -1015,6 +1353,7 @@ export default function ZuperCompliancePage() {
             accentColor="orange"
             users={data.users}
             groupType="team"
+            onInspectUser={inspectUserFromGroup}
           />
         </div>
       )}
@@ -1029,6 +1368,7 @@ export default function ZuperCompliancePage() {
             accentColor="blue"
             users={data.users}
             groupType="category"
+            onInspectUser={inspectUserFromGroup}
           />
         </div>
       )}
@@ -1087,6 +1427,7 @@ export default function ZuperCompliancePage() {
                 return (
                   <Fragment key={u.userUid}>
                     <tr
+                      id={`user-row-${u.userUid}`}
                       className={`border-b border-t-border/50 hover:bg-surface-2/30 cursor-pointer transition-colors ${
                         isExpanded ? "bg-surface-2/20" : ""
                       }`}
