@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { zuper, JOB_CATEGORY_UIDS, JOB_CATEGORIES } from "@/lib/zuper";
+import { getActiveCrewMembers } from "@/lib/db";
+import {
+  COMPLIANCE_EXCLUDED_USER_UIDS,
+  COMPLIANCE_TEAM_OVERRIDES,
+} from "@/lib/compliance-team-overrides";
 
 // ========== Types ==========
 
@@ -127,6 +132,16 @@ const EXCLUDED_USER_NAMES = [
   "matt raichart",
 ];
 
+// Non-field teams to exclude from compliance metrics (backoffice, admin, etc.)
+// Matched case-insensitively — team name must start with one of these prefixes.
+const EXCLUDED_TEAM_PREFIXES = [
+  "backoffice",
+  "back office",
+  "admin",
+  "office",
+  "sales",
+];
+
 // 1 day grace period in milliseconds
 const GRACE_MS = 24 * 60 * 60 * 1000;
 
@@ -240,6 +255,15 @@ function isExcludedUser(userName: string): boolean {
 }
 
 /**
+ * Check if a team name is a non-field/backoffice team that should be excluded.
+ */
+function isExcludedTeam(teamName: string | null): boolean {
+  if (!teamName) return false;
+  const lower = teamName.toLowerCase();
+  return EXCLUDED_TEAM_PREFIXES.some((prefix) => lower.startsWith(prefix));
+}
+
+/**
  * Extract all team names from a job's assigned_to_team array.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -270,8 +294,14 @@ function extractTeamNames(job: any): string[] {
  *
  * Filters out excluded test users and inactive Zuper users.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function extractAssignedUsers(job: any): Array<{
+function extractAssignedUsers(
+  job: Record<string, unknown>,
+  options?: {
+    crewTeamByUserUid?: Map<string, string>;
+    directTeamByUserUid?: Map<string, string>;
+    excludedUserUids?: Set<string>;
+  }
+): Array<{
   userUid: string;
   userName: string;
   teamNames: string[];
@@ -315,17 +345,26 @@ function extractAssignedUsers(job: any): Array<{
     // Skip excluded test/demo users
     if (isExcludedUser(userName)) continue;
 
+    // Explicit user-level exclusions from direct mapping file
+    if (options?.excludedUserUids?.has(userUid)) continue;
+
     // Resolve team from the assignment entry itself (not job-level fanout)
     const assignmentTeamName: string | undefined = a.team?.team_name;
     const assignmentTeamUid: string | undefined = a.team_uid || a.team?.team_uid;
 
     let teamNames: string[];
-    if (assignmentTeamName) {
+    if (options?.directTeamByUserUid?.has(userUid)) {
+      // Highest-priority explicit override from direct mapping file
+      teamNames = [options.directTeamByUserUid.get(userUid)!];
+    } else if (assignmentTeamName) {
       // Best case: assignment carries team_name directly
       teamNames = [assignmentTeamName];
     } else if (assignmentTeamUid && teamUidToName.has(assignmentTeamUid)) {
       // Has team_uid but no name — resolve from job-level lookup
       teamNames = [teamUidToName.get(assignmentTeamUid)!];
+    } else if (options?.crewTeamByUserUid?.has(userUid)) {
+      // Fallback to CrewMember DB mapping (zuperUserUid -> teamName)
+      teamNames = [options.crewTeamByUserUid.get(userUid)!];
     } else if (singleTeamFallback) {
       // No assignment-level team data, but job has exactly one team
       teamNames = [singleTeamFallback];
@@ -333,6 +372,9 @@ function extractAssignedUsers(job: any): Array<{
       // Multiple job-level teams or none — can't determine, leave empty
       teamNames = [];
     }
+
+    // Exclude non-field teams from compliance metrics.
+    if (teamNames.some((teamName) => isExcludedTeam(teamName))) continue;
 
     users.push({ userUid, userName, teamNames });
   }
@@ -476,6 +518,27 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Build crew fallback map: zuper user UID -> primary team name.
+    // Used only when assignment-level team data is missing on a job.
+    const crewTeamByUserUid = new Map<string, string>();
+    const crewMembers = await getActiveCrewMembers();
+    for (const crewMember of crewMembers) {
+      const uid = crewMember.zuperUserUid?.trim();
+      const teamName = crewMember.teamName?.trim();
+      if (!uid || !teamName) continue;
+      if (!crewTeamByUserUid.has(uid)) {
+        crewTeamByUserUid.set(uid, teamName);
+      }
+    }
+    const directTeamByUserUid = new Map<string, string>(
+      Object.entries(COMPLIANCE_TEAM_OVERRIDES)
+    );
+    const assignmentOptions = {
+      crewTeamByUserUid,
+      directTeamByUserUid,
+      excludedUserUids: COMPLIANCE_EXCLUDED_USER_UIDS,
+    };
+
     // Collect unique teams and categories for filter options
     const teamsSet = new Set<string>();
     const categoriesSet = new Set<string>();
@@ -512,7 +575,7 @@ export async function GET(request: NextRequest) {
     for (const { job, categoryName } of allJobs) {
       const statusName = getStatusName(job);
       const statusLower = statusName.toLowerCase();
-      const assignedUsers = extractAssignedUsers(job);
+      const assignedUsers = extractAssignedUsers(job, assignmentOptions);
 
       // Track filter options
       categoriesSet.add(categoryName);
@@ -830,7 +893,7 @@ export async function GET(request: NextRequest) {
     for (const { job } of allJobs) {
       const statusName = getStatusName(job);
       const statusLower = statusName.toLowerCase();
-      const assignedUsers = extractAssignedUsers(job);
+      const assignedUsers = extractAssignedUsers(job, assignmentOptions);
 
       if (assignedUsers.length === 0) continue;
 
@@ -993,7 +1056,7 @@ export async function GET(request: NextRequest) {
     for (const { job, categoryName } of allJobs) {
       const statusName = getStatusName(job);
       const statusLower = statusName.toLowerCase();
-      const assignedUsers = extractAssignedUsers(job);
+      const assignedUsers = extractAssignedUsers(job, assignmentOptions);
 
       if (assignedUsers.length === 0) continue;
 
@@ -1067,65 +1130,112 @@ export async function GET(request: NextRequest) {
     applyBayesianToGroups(categoryComparison);
     categoryComparison.sort((a, b) => b.adjustedScore - a.adjustedScore);
 
-    // Compute summary
-    const totalJobs = users.reduce((sum, u) => sum + u.totalJobs, 0);
-    const totalCompleted = users.reduce((sum, u) => sum + u.completedJobs, 0);
-    const totalOnTime = users.reduce((sum, u) => sum + u.onTimeCompletions, 0);
-    const totalStuck = users.reduce((sum, u) => sum + u.stuckJobs, 0);
-    const totalNeverStarted = users.reduce((sum, u) => sum + u.neverStartedJobs, 0);
+    // Compute summary from unique jobs (not user-attributed rows) to avoid
+    // inflation from multi-assigned jobs.
+    const summaryAcc = {
+      totalJobs: 0,
+      totalCompleted: 0,
+      totalOnTime: 0,
+      totalStuck: 0,
+      totalNeverStarted: 0,
+      completionDays: [] as number[],
+      daysLatePastEnd: [] as number[],
+      totalOnOurWayOnTime: 0,
+      totalOnOurWayLate: 0,
+    };
 
-    const allCompletionDays = users.flatMap((u) => {
-      if (u.avgDaysToComplete > 0 && u.completedJobs > 0) {
-        return Array(u.completedJobs).fill(u.avgDaysToComplete);
+    for (const { job } of allJobs) {
+      const statusLower = getStatusName(job).toLowerCase();
+      const assignedUsers = extractAssignedUsers(job, assignmentOptions);
+      if (assignedUsers.length === 0) continue;
+
+      if (teamFilter) {
+        const hasMatchingTeam = assignedUsers.some((u) =>
+          u.teamNames.some((t) => t.toLowerCase().includes(teamFilter))
+        );
+        if (!hasMatchingTeam) continue;
       }
-      return [];
-    });
 
-    const allDaysLate = users.flatMap((u) => {
-      if (u.avgDaysLate > 0 && u.lateCompletions > 0) {
-        return Array(u.lateCompletions).fill(u.avgDaysLate);
+      summaryAcc.totalJobs++;
+
+      const scheduledStart = job.scheduled_start_time ? new Date(job.scheduled_start_time) : null;
+      const scheduledEnd = job.scheduled_end_time ? new Date(job.scheduled_end_time) : null;
+      const completedTime = getCompletedTimeFromHistory(job);
+      const onOurWayTime = getOnOurWayTime(job);
+      const effectiveCompletedTime = completedTime || scheduledEnd;
+
+      if (COMPLETED_STATUSES.has(statusLower)) {
+        summaryAcc.totalCompleted++;
+        if (scheduledEnd && effectiveCompletedTime) {
+          const deadline = new Date(scheduledEnd.getTime() + GRACE_MS);
+          if (effectiveCompletedTime <= deadline) {
+            summaryAcc.totalOnTime++;
+          } else if (effectiveCompletedTime > scheduledEnd) {
+            const diffMs = effectiveCompletedTime.getTime() - scheduledEnd.getTime();
+            summaryAcc.daysLatePastEnd.push(
+              Math.round((diffMs / (1000 * 60 * 60 * 24)) * 10) / 10
+            );
+          }
+        } else {
+          summaryAcc.totalOnTime++;
+        }
+
+        if (scheduledStart && effectiveCompletedTime && effectiveCompletedTime > scheduledStart) {
+          const diffMs = effectiveCompletedTime.getTime() - scheduledStart.getTime();
+          summaryAcc.completionDays.push(
+            Math.round((diffMs / (1000 * 60 * 60 * 24)) * 10) / 10
+          );
+        }
+
+        if (onOurWayTime && scheduledStart) {
+          if (scheduledEnd && onOurWayTime > scheduledEnd) {
+            summaryAcc.totalOnOurWayLate++;
+          } else {
+            summaryAcc.totalOnOurWayOnTime++;
+          }
+        }
       }
-      return [];
-    });
 
-    const totalOnOurWayOnTime = users.reduce((sum, u) => sum + u.onOurWayOnTime, 0);
-    const totalOnOurWayTotal = users.reduce((sum, u) => sum + u.onOurWayOnTime + u.onOurWayLate, 0);
+      if (STUCK_STATUSES.has(statusLower) && scheduledEnd && scheduledEnd < now) {
+        summaryAcc.totalStuck++;
+      }
+      if (NEVER_STARTED_STATUSES.has(statusLower) && scheduledStart && scheduledStart < now) {
+        summaryAcc.totalNeverStarted++;
+      }
+    }
 
-    const overallOnTimePercent =
-      totalCompleted > 0
-        ? Math.round((totalOnTime / totalCompleted) * 100 * 10) / 10
-        : 0;
-
-    const avgCompletionDays =
-      allCompletionDays.length > 0
-        ? Math.round(
-            (allCompletionDays.reduce((sum, d) => sum + d, 0) /
-              allCompletionDays.length) *
-              10
-          ) / 10
-        : 0;
-
-    const avgDaysLate =
-      allDaysLate.length > 0
-        ? Math.round(
-            (allDaysLate.reduce((sum, d) => sum + d, 0) / allDaysLate.length) * 10
-          ) / 10
-        : 0;
-
-    const overallOnOurWayPercent =
-      totalOnOurWayTotal > 0
-        ? Math.round((totalOnOurWayOnTime / totalOnOurWayTotal) * 100 * 10) / 10
-        : 0;
+    const totalOnOurWayTotal =
+      summaryAcc.totalOnOurWayOnTime + summaryAcc.totalOnOurWayLate;
 
     const summary: ComplianceSummary = {
-      totalJobs,
-      totalCompleted,
-      overallOnTimePercent,
-      totalStuck,
-      totalNeverStarted,
-      avgCompletionDays,
-      avgDaysLate,
-      overallOnOurWayPercent,
+      totalJobs: summaryAcc.totalJobs,
+      totalCompleted: summaryAcc.totalCompleted,
+      overallOnTimePercent:
+        summaryAcc.totalCompleted > 0
+          ? Math.round((summaryAcc.totalOnTime / summaryAcc.totalCompleted) * 100 * 10) / 10
+          : 0,
+      totalStuck: summaryAcc.totalStuck,
+      totalNeverStarted: summaryAcc.totalNeverStarted,
+      avgCompletionDays:
+        summaryAcc.completionDays.length > 0
+          ? Math.round(
+              (summaryAcc.completionDays.reduce((sum, d) => sum + d, 0) /
+                summaryAcc.completionDays.length) *
+                10
+            ) / 10
+          : 0,
+      avgDaysLate:
+        summaryAcc.daysLatePastEnd.length > 0
+          ? Math.round(
+              (summaryAcc.daysLatePastEnd.reduce((sum, d) => sum + d, 0) /
+                summaryAcc.daysLatePastEnd.length) *
+                10
+            ) / 10
+          : 0,
+      overallOnOurWayPercent:
+        totalOnOurWayTotal > 0
+          ? Math.round((summaryAcc.totalOnOurWayOnTime / totalOnOurWayTotal) * 100 * 10) / 10
+          : 0,
       userCount: users.length,
     };
 
