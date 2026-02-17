@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { StatCard, MiniStat } from "@/components/ui/MetricCard";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
+import { useProjectData } from "@/hooks/useProjectData";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -139,10 +140,14 @@ export default function PermittingInterconnectionPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const { data: projects, loading, error, lastUpdated, refetch } = useProjectData<Project[]>({
+    params: { active: "true" },
+    transform: (raw: unknown) => {
+      const json = raw as Record<string, unknown>;
+      return (json.projects || json.data || []) as Project[];
+    },
+  });
+  const safeProjects = projects ?? [];
 
   // Filters
   const [filterLocations, setFilterLocations] = useState<string[]>([]);
@@ -153,58 +158,36 @@ export default function PermittingInterconnectionPage() {
   const [showPermitMatrix, setShowPermitMatrix] = useState(false);
   const [showICMatrix, setShowICMatrix] = useState(false);
 
-  // ---- Data Fetch ----
-  const fetchData = useCallback(async () => {
-    try {
-      const res = await fetch("/api/projects?active=true");
-      if (!res.ok) throw new Error("Failed to fetch");
-      const json = await res.json();
-      setProjects(json.projects || json.data || []);
-      setLastUpdated(json.lastUpdated || null);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load data");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchData, 5 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, [fetchData]);
-
   useEffect(() => {
     if (!loading && !hasTrackedView.current) {
       hasTrackedView.current = true;
       trackDashboardView("permitting-interconnection", {
-        projectCount: projects.length,
+        projectCount: safeProjects.length,
       });
     }
-  }, [loading, projects.length, trackDashboardView]);
+  }, [loading, safeProjects.length, trackDashboardView]);
 
   // ---- Filter options ----
   const filterOptions = useMemo(() => {
-    const locs = [...new Set(projects.map((p) => p.pbLocation).filter(Boolean) as string[])].sort();
-    const pms = [...new Set(projects.map((p) => p.projectManager).filter(Boolean) as string[])].sort();
-    const utils = [...new Set(projects.map((p) => p.utility).filter(Boolean) as string[])].sort();
+    const locs = [...new Set(safeProjects.map((p) => p.pbLocation).filter(Boolean) as string[])].sort();
+    const pms = [...new Set(safeProjects.map((p) => p.projectManager).filter(Boolean) as string[])].sort();
+    const utils = [...new Set(safeProjects.map((p) => p.utility).filter(Boolean) as string[])].sort();
     return {
       locations: locs.map((v) => ({ value: v, label: v })),
       pms: pms.map((v) => ({ value: v, label: v })),
       utilities: utils.map((v) => ({ value: v, label: v })),
     };
-  }, [projects]);
+  }, [safeProjects]);
 
   // ---- Filtered projects ----
   const filtered = useMemo(() => {
-    return projects.filter((p) => {
+    return safeProjects.filter((p) => {
       if (filterLocations.length > 0 && !filterLocations.includes(p.pbLocation || "")) return false;
       if (filterPMs.length > 0 && !filterPMs.includes(p.projectManager || "")) return false;
       if (filterUtilities.length > 0 && !filterUtilities.includes(p.utility || "")) return false;
       return true;
     });
-  }, [projects, filterLocations, filterPMs, filterUtilities]);
+  }, [safeProjects, filterLocations, filterPMs, filterUtilities]);
 
   // ---- Summary stats ----
   const summary = useMemo(() => {
@@ -483,7 +466,7 @@ export default function PermittingInterconnectionPage() {
         <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-6 text-center">
           <p className="text-red-400 font-medium">{error}</p>
           <button
-            onClick={() => { setLoading(true); fetchData(); }}
+            onClick={() => refetch()}
             className="mt-3 px-4 py-2 bg-red-500/20 hover:bg-red-500/30 rounded-lg text-sm text-red-300 transition-colors"
           >
             Retry

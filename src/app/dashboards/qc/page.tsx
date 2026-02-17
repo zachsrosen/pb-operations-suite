@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { useQuery } from "@tanstack/react-query";
 import DashboardShell from "@/components/DashboardShell";
+import { queryKeys } from "@/lib/query-keys";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 
 // ── Time metric display configuration ──
@@ -75,36 +77,25 @@ export default function QCDashboardPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
-  const [data, setData] = useState<QCData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [daysWindow, setDaysWindow] = useState(60);
   const [filterLocations, setFilterLocations] = useState<string[]>([]);
   const [showDetailMetrics, setShowDetailMetrics] = useState(false);
 
-  const fetchData = useCallback(async () => {
-    try {
+  const qcQuery = useQuery({
+    queryKey: queryKeys.stats.qc(daysWindow),
+    queryFn: async () => {
       const url = daysWindow > 0
         ? `/api/hubspot/qc-metrics?days=${daysWindow}`
         : "/api/hubspot/qc-metrics";
-      const response = await fetch(url);
-      if (!response.ok) throw new Error("Failed to fetch QC metrics");
-      const json = await response.json();
-      setData(json);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load data");
-    } finally {
-      setLoading(false);
-    }
-  }, [daysWindow]);
-
-  useEffect(() => {
-    setLoading(true);
-    fetchData();
-    const interval = setInterval(fetchData, 5 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, [fetchData]);
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Failed to fetch QC metrics");
+      return res.json() as Promise<QCData>;
+    },
+    refetchInterval: 5 * 60 * 1000,
+  });
+  const data: QCData | null = qcQuery.data ?? null;
+  const loading = qcQuery.isLoading;
+  const error = qcQuery.error ? (qcQuery.error as Error).message : null;
 
   useEffect(() => {
     if (!loading && data && !hasTrackedView.current) {
@@ -170,7 +161,7 @@ export default function QCDashboardPage() {
       <DashboardShell title="QC Metrics" accentColor="blue">
         <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-6 text-center">
           <p className="text-red-400 font-medium">{error}</p>
-          <button onClick={fetchData} className="mt-3 px-4 py-2 bg-red-500/20 hover:bg-red-500/30 rounded-lg text-red-300 text-sm transition-colors">
+          <button onClick={() => qcQuery.refetch()} className="mt-3 px-4 py-2 bg-red-500/20 hover:bg-red-500/30 rounded-lg text-red-300 text-sm transition-colors">
             Retry
           </button>
         </div>

@@ -18,13 +18,17 @@
     "@hubspot/api-client": "^13.4.0",
     "@prisma/adapter-neon": "^7.3.0",
     "@prisma/client": "^7.3.0",
+    "@sentry/nextjs": "^10.39.0",
+    "@tanstack/react-query": "^5.90.21",
+    "@tanstack/react-query-devtools": "^5.91.3",
     "@vercel/analytics": "^1.6.1",
     "next": "^16.1.6",
     "next-auth": "^5.0.0-beta.30",
     "prisma": "^7.3.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "resend": "^6.9.1"
+    "resend": "^6.9.1",
+    "zustand": "^5.0.11"
   },
   "devDependencies": {
     "@jest/types": "^30.2.0",

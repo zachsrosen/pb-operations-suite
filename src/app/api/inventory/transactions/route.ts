@@ -16,6 +16,8 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import * as Sentry from "@sentry/nextjs";
+import { tagSentryRequest } from "@/lib/sentry-request";
 import { prisma, logActivity } from "@/lib/db";
 import { requireApiAuth } from "@/lib/api-auth";
 import { TransactionType, ActivityType } from "@/generated/prisma/enums";
@@ -46,6 +48,7 @@ const VALID_TYPES = Object.keys(TransactionType) as TransactionType[];
  * GET /api/inventory/transactions — List transactions
  */
 export async function GET(request: NextRequest) {
+  tagSentryRequest(request);
   try {
     if (!prisma) {
       return NextResponse.json(
@@ -102,6 +105,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("Failed to fetch transactions:", error);
+    Sentry.captureException(error);
     return NextResponse.json(
       { error: "Failed to fetch transactions" },
       { status: 500 }
@@ -113,6 +117,7 @@ export async function GET(request: NextRequest) {
  * POST /api/inventory/transactions — Create transaction & atomically update stock
  */
 export async function POST(request: NextRequest) {
+  tagSentryRequest(request);
   try {
     // Auth check
     const authResult = await requireApiAuth();
@@ -267,6 +272,7 @@ export async function POST(request: NextRequest) {
     );
   } catch (error) {
     console.error("Failed to create transaction:", error);
+    Sentry.captureException(error);
     return NextResponse.json(
       { error: "Failed to create transaction" },
       { status: 500 }

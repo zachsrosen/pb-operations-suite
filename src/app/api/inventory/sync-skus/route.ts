@@ -7,9 +7,11 @@
  *   Auth required, roles: ADMIN, OWNER, MANAGER, PROJECT_MANAGER
  */
 
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import * as Sentry from "@sentry/nextjs";
 import { prisma, logActivity } from "@/lib/db";
 import { requireApiAuth } from "@/lib/api-auth";
+import { tagSentryRequest } from "@/lib/sentry-request";
 import { fetchAllProjects, filterProjectsForContext } from "@/lib/hubspot";
 import { appCache, CACHE_KEYS } from "@/lib/cache";
 import { EquipmentCategory } from "@/generated/prisma/enums";
@@ -24,7 +26,8 @@ interface SkuTuple {
   unitLabel: string | null;
 }
 
-export async function POST() {
+export async function POST(request: NextRequest) {
+  tagSentryRequest(request);
   if (!prisma) {
     return NextResponse.json(
       { error: "Database not configured" },
@@ -195,6 +198,7 @@ export async function POST() {
     });
   } catch (error) {
     console.error("Error syncing SKUs from HubSpot:", error);
+    Sentry.captureException(error);
     return NextResponse.json(
       { error: "Failed to sync SKUs" },
       { status: 500 }

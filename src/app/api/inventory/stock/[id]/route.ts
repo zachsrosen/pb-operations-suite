@@ -9,8 +9,10 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import * as Sentry from "@sentry/nextjs";
 import { prisma } from "@/lib/db";
 import { requireApiAuth } from "@/lib/api-auth";
+import { tagSentryRequest } from "@/lib/sentry-request";
 
 const ALLOWED_ROLES = [
   "ADMIN",
@@ -25,6 +27,7 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  tagSentryRequest(request);
   try {
     const authResult = await requireApiAuth();
     if (authResult instanceof NextResponse) return authResult;
@@ -69,6 +72,7 @@ export async function PUT(
     return NextResponse.json({ stock });
   } catch (error) {
     console.error("Failed to update stock:", error);
+    Sentry.captureException(error);
     return NextResponse.json(
       { error: "Failed to update stock" },
       { status: 500 }

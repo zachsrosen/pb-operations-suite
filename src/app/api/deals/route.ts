@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import * as Sentry from "@sentry/nextjs";
+import { tagSentryRequest } from "@/lib/sentry-request";
 import { Client } from "@hubspot/api-client";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
 import { appCache, CACHE_KEYS } from "@/lib/cache";
@@ -303,6 +305,7 @@ async function fetchDealsForPipeline(pipelineKey: string): Promise<Deal[]> {
 }
 
 export async function GET(request: NextRequest) {
+  tagSentryRequest(request);
   try {
     const authResult = await requireApiAuth();
     if (authResult instanceof NextResponse) return authResult;
@@ -417,6 +420,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("Error fetching deals:", error);
+    Sentry.captureException(error);
     const errorMessage = error instanceof Error ? error.message : String(error);
 
     // Check if it's a rate limit error and return appropriate status

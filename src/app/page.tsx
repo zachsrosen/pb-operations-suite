@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useState, useCallback, useMemo, memo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useSSE } from "@/hooks/useSSE";
+import { queryKeys } from "@/lib/query-keys";
 
 import { formatMoney } from "@/lib/format";
 import { STAGE_COLORS } from "@/lib/constants";
@@ -131,45 +133,38 @@ function computeStats(projects: ProjectRecord[]): Stats {
 }
 
 export default function Home() {
-  const [rawProjects, setRawProjects] = useState<ProjectRecord[]>([]);
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [isStale, setIsStale] = useState(false);
-  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
 
   const isMac = useIsMac();
   const modKey = isMac ? "\u2318" : "Ctrl";
 
-  // Fetch raw projects once — only request the fields we need for stats
-  const loadProjects = useCallback(async () => {
-    try {
-      const res = await fetch(
-        "/api/projects?context=executive&limit=0&fields=stage,amount,pbLocation,isParticipateEnergy,isRtb"
-      );
-      if (!res.ok) throw new Error("Failed to fetch");
-      const data = await res.json();
-      setRawProjects(
-        (data.projects || []).map((p: Record<string, unknown>) => ({
-          stage: p.stage || "",
-          amount: p.amount || 0,
-          pbLocation: p.pbLocation || "Unknown",
-          isParticipateEnergy: !!p.isParticipateEnergy,
-          isRtb: !!p.isRtb,
-        }))
-      );
-      setIsStale(data.stale || false);
-      setLastUpdated(data.lastUpdated || null);
-      setError(null);
-    } catch (err) {
-      console.error("Primary fetch failed, trying fallback:", err);
-      // Fallback to /api/stats if projects endpoint fails
+  // Fetch raw projects with fallback to /api/stats
+  const projectsQuery = useQuery({
+    queryKey: queryKeys.projects.list({ context: "home" }),
+    queryFn: async () => {
       try {
+        const res = await fetch(
+          "/api/projects?context=executive&limit=0&fields=stage,amount,pbLocation,isParticipateEnergy,isRtb"
+        );
+        if (!res.ok) throw new Error("Primary failed");
+        const data = await res.json();
+        return {
+          projects: (data.projects || []).map((p: Record<string, unknown>) => ({
+            stage: p.stage || "",
+            amount: p.amount || 0,
+            pbLocation: p.pbLocation || "Unknown",
+            isParticipateEnergy: !!p.isParticipateEnergy,
+            isRtb: !!p.isRtb,
+          })) as ProjectRecord[],
+          stale: data.stale || false,
+          lastUpdated: data.lastUpdated || null,
+        };
+      } catch {
+        // Fallback to /api/stats if projects endpoint fails
         const res = await fetch("/api/stats");
         if (!res.ok) throw new Error("Stats fallback failed");
         const data = await res.json();
-        // Build minimal location-aware data from stats
         const fallbackProjects: ProjectRecord[] = [];
         const stages = data.stageCounts || {};
         for (const [stage, count] of Object.entries(stages)) {
@@ -185,24 +180,21 @@ export default function Home() {
             });
           }
         }
-        setRawProjects(fallbackProjects);
-        setIsStale(data.stale || false);
-        setLastUpdated(data.lastUpdated || null);
-        setError(null);
-      } catch (fallbackErr) {
-        setError("Failed to load data");
-        console.error("Both fetches failed:", fallbackErr);
+        return {
+          projects: fallbackProjects,
+          stale: data.stale || false,
+          lastUpdated: data.lastUpdated || null,
+        };
       }
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    },
+    refetchInterval: 5 * 60 * 1000,
+  });
 
-  useEffect(() => {
-    loadProjects();
-    const interval = setInterval(loadProjects, 5 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, [loadProjects]);
+  const rawProjects = projectsQuery.data?.projects ?? [];
+  const loading = projectsQuery.isLoading;
+  const error = projectsQuery.error ? "Failed to load data" : null;
+  const isStale = projectsQuery.data?.stale ?? false;
+  const lastUpdated = projectsQuery.data?.lastUpdated ?? null;
 
   useEffect(() => {
     fetch("/api/auth/sync", { cache: "no-store" })
@@ -229,7 +221,7 @@ export default function Home() {
     }
   }, [userRole]);
 
-  const { connected, reconnecting } = useSSE(loadProjects);
+  const { connected, reconnecting } = useSSE(null, { cacheKeyFilter: "projects" });
 
   // All locations (from unfiltered data)
   const allLocations = useMemo(

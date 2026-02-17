@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import * as Sentry from "@sentry/nextjs";
 import { requireApiAuth } from "@/lib/api-auth";
+import { tagSentryRequest } from "@/lib/sentry-request";
 import { zuper, JOB_CATEGORY_UIDS, JOB_CATEGORIES } from "@/lib/zuper";
 import { getActiveCrewMembers } from "@/lib/db";
 import {
@@ -461,6 +463,7 @@ async function fetchJobsForCategory(
  * never-started jobs, On Our Way timing, and an overall compliance score.
  */
 export async function GET(request: NextRequest) {
+  tagSentryRequest(request);
   try {
     const authResult = await requireApiAuth();
     if (authResult instanceof NextResponse) return authResult;
@@ -1271,6 +1274,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(response);
   } catch (error) {
     console.error("[compliance] Error:", error);
+    Sentry.captureException(error);
     return NextResponse.json(
       { error: "Failed to compute compliance metrics" },
       { status: 500 }

@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/nextjs";
 import { Client } from "@hubspot/api-client";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
 
@@ -26,9 +27,21 @@ async function searchWithRetry(
       if ((isRateLimit || statusCode === 429) && attempt < maxRetries - 1) {
         const delay = Math.pow(2, attempt + 1) * 500; // 1s, 2s, 4s
         console.log(`[hubspot] Rate limited on attempt ${attempt + 1}, retrying in ${delay}ms...`);
+        Sentry.addBreadcrumb({
+          category: "hubspot",
+          message: `Rate limited, retry ${attempt + 1}/${maxRetries}`,
+          level: "warning",
+          data: { delay, attempt },
+        });
         await sleep(delay);
         continue;
       }
+      Sentry.addBreadcrumb({
+        category: "hubspot",
+        message: "Search failed after retries",
+        level: "error",
+        data: { attempt, statusCode },
+      });
       throw error;
     }
   }

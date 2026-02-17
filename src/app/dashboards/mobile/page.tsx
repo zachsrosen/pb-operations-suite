@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
 import { formatMoney } from "@/lib/format";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
+import { useProjectData } from "@/hooks/useProjectData";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
 /* ------------------------------------------------------------------ */
@@ -230,44 +231,23 @@ export default function MobileDashboardPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
-  const [projects, setProjects] = useState<RawProject[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
+  const { data: projects, loading, error, lastUpdated, refetch } = useProjectData<RawProject[]>({
+    params: { context: "executive" },
+    transform: (raw: unknown) => (raw as { projects: RawProject[] }).projects,
+  });
+  const safeProjects = projects ?? [];
+  const hasError = !!error;
   const [currentView, setCurrentView] = useState<ViewName>("home");
-  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
-
-  /* ---- Data fetching ---- */
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    setError(false);
-    try {
-      const response = await fetch("/api/projects?context=executive");
-      if (!response.ok) throw new Error("Failed to fetch");
-      const data = await response.json();
-      setProjects(data.projects);
-      setLastUpdated(new Date().toLocaleTimeString());
-      setLoading(false);
-    } catch {
-      setLoading(false);
-      setError(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadData();
-    const interval = setInterval(loadData, 5 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, [loadData]);
 
   /* ---- Track dashboard view on load ---- */
   useEffect(() => {
     if (!loading && !hasTrackedView.current) {
       hasTrackedView.current = true;
       trackDashboardView("mobile", {
-        projectCount: projects.length,
+        projectCount: safeProjects.length,
       });
     }
-  }, [loading, projects.length, trackDashboardView]);
+  }, [loading, safeProjects.length, trackDashboardView]);
 
   /* ---- Computed data ---- */
   const stats: PipelineStats = useMemo(() => {
@@ -275,7 +255,7 @@ export default function MobileDashboardPage() {
     const locations: Record<string, LocationStat> = {};
 
     let overdue = 0;
-    projects.forEach((p) => {
+    safeProjects.forEach((p) => {
       // locations
       const loc = p.pbLocation || "Unknown";
       if (!locations[loc]) locations[loc] = { count: 0, rtb: 0, pe: 0, value: 0 };
@@ -299,20 +279,20 @@ export default function MobileDashboardPage() {
     });
 
     return {
-      total: projects.length,
-      rtb: projects.filter((p) => p.stage === "Ready To Build").length,
-      rtbBlocked: projects.filter((p) => p.stage === "RTB - Blocked").length,
-      pe: projects.filter((p) => p.isParticipateEnergy).length,
-      inspection: projects.filter((p) => p.stage === "Inspection").length,
+      total: safeProjects.length,
+      rtb: safeProjects.filter((p) => p.stage === "Ready To Build").length,
+      rtbBlocked: safeProjects.filter((p) => p.stage === "RTB - Blocked").length,
+      pe: safeProjects.filter((p) => p.isParticipateEnergy).length,
+      inspection: safeProjects.filter((p) => p.stage === "Inspection").length,
       overdue,
-      totalValue: projects.reduce((sum, p) => sum + (p.amount || 0), 0),
+      totalValue: safeProjects.reduce((sum, p) => sum + (p.amount || 0), 0),
       locations,
     };
-  }, [projects]);
+  }, [safeProjects]);
 
   const overdueProjects: ProcessedProject[] = useMemo(() => {
     const now = new Date();
-    return projects
+    return safeProjects
       .map((p) => {
         const closeDate = p.closeDate ? new Date(p.closeDate + "T12:00:00") : null;
         const daysSinceClose = closeDate
@@ -334,7 +314,7 @@ export default function MobileDashboardPage() {
           p.stage !== "Close Out"
       )
       .sort((a, b) => b.daysOverdue - a.daysOverdue);
-  }, [projects]);
+  }, [safeProjects]);
 
   const priorityProjects = useMemo(
     () => overdueProjects.slice(0, 5),
@@ -342,7 +322,7 @@ export default function MobileDashboardPage() {
   );
 
   const rtbProjects: ProcessedProject[] = useMemo(() => {
-    return projects
+    return safeProjects
       .filter((p) => p.stage === "Ready To Build" || p.stage === "RTB - Blocked")
       .map((p) => ({
         ...p,
@@ -350,10 +330,10 @@ export default function MobileDashboardPage() {
         daysOverdue: 0,
         daysSinceClose: 0,
       }));
-  }, [projects]);
+  }, [safeProjects]);
 
   const peProjects: ProcessedProject[] = useMemo(() => {
-    return projects
+    return safeProjects
       .filter((p) => p.isParticipateEnergy)
       .map((p) => ({
         ...p,
@@ -361,10 +341,10 @@ export default function MobileDashboardPage() {
         daysOverdue: 0,
         daysSinceClose: 0,
       }));
-  }, [projects]);
+  }, [safeProjects]);
 
   const inspectionProjects: ProcessedProject[] = useMemo(() => {
-    return projects
+    return safeProjects
       .filter((p) => p.stage === "Inspection")
       .map((p) => ({
         ...p,
@@ -372,7 +352,7 @@ export default function MobileDashboardPage() {
         daysOverdue: 0,
         daysSinceClose: 0,
       }));
-  }, [projects]);
+  }, [safeProjects]);
 
   const locationEntries = useMemo(() => {
     return Object.entries(stats.locations)
@@ -628,8 +608,8 @@ export default function MobileDashboardPage() {
         {/* Content area */}
         {loading ? (
           <LoadingSpinner />
-        ) : error ? (
-          <ErrorState onRetry={loadData} />
+        ) : hasError ? (
+          <ErrorState onRetry={() => refetch()} />
         ) : (
           renderCurrentView()
         )}

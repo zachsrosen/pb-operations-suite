@@ -8,19 +8,22 @@ import { GlobalSearch } from "@/components/GlobalSearch";
 import { KeyboardShortcutsDialog } from "@/components/KeyboardShortcutsDialog";
 import { BugReportButton } from "@/components/BugReportButton";
 import { AuthSync } from "@/components/AuthSync";
+import { QueryProvider } from "@/components/QueryProvider";
 
 export function Providers({ children }: { children: ReactNode }) {
   return (
-    <SessionProvider>
-      <ThemeProvider>
-        <ToastProvider>
-          <AuthSync />
-          {children}
-          <GlobalSearch />
-          <KeyboardShortcutsDialog />
-          <BugReportButton />
-        </ToastProvider>
-      </ThemeProvider>
-    </SessionProvider>
+    <QueryProvider>
+      <SessionProvider>
+        <ThemeProvider>
+          <ToastProvider>
+            <AuthSync />
+            {children}
+            <GlobalSearch />
+            <KeyboardShortcutsDialog />
+            <BugReportButton />
+          </ToastProvider>
+        </ThemeProvider>
+      </SessionProvider>
+    </QueryProvider>
   );
 }

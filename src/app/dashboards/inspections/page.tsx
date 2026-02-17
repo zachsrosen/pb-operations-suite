@@ -6,6 +6,7 @@ import { formatMoney } from "@/lib/format";
 import { RawProject } from "@/lib/types";
 import { MultiSelectFilter, ProjectSearchBar, FilterGroup } from "@/components/ui/MultiSelectFilter";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
+import { useProjectData } from "@/hooks/useProjectData";
 
 // Display name mappings
 const DISPLAY_NAMES: Record<string, string> = {
@@ -108,9 +109,11 @@ export default function InspectionsPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
-  const [projects, setProjects] = useState<ExtendedProject[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data: projects, loading, error, refetch } = useProjectData<ExtendedProject[]>({
+    params: { context: "executive" },
+    transform: (raw: unknown) => (raw as { projects: ExtendedProject[] }).projects,
+  });
+  const safeProjects = projects ?? [];
 
   // Multi-select filters
   const [filterAhjs, setFilterAhjs] = useState<string[]>([]);
@@ -119,37 +122,17 @@ export default function InspectionsPage() {
   const [filterInspectionStatuses, setFilterInspectionStatuses] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
 
-  const fetchData = useCallback(async () => {
-    try {
-      const response = await fetch("/api/projects?context=executive");
-      if (!response.ok) throw new Error("Failed to fetch");
-      const data = await response.json();
-      setProjects(data.projects);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load data");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchData, 5 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, [fetchData]);
-
   useEffect(() => {
     if (!loading && !hasTrackedView.current) {
       hasTrackedView.current = true;
       trackDashboardView("inspections", {
-        projectCount: projects.length,
+        projectCount: safeProjects.length,
       });
     }
-  }, [loading, projects.length, trackDashboardView]);
+  }, [loading, safeProjects.length, trackDashboardView]);
 
   const filteredProjects = useMemo(() => {
-    return projects.filter(p => {
+    return safeProjects.filter(p => {
       if (filterAhjs.length > 0 && !filterAhjs.includes(p.ahj || '')) return false;
       if (filterLocations.length > 0 && !filterLocations.includes(p.pbLocation || '')) return false;
       if (filterStages.length > 0 && !filterStages.includes(p.stage || '')) return false;
@@ -165,7 +148,7 @@ export default function InspectionsPage() {
 
       return true;
     });
-  }, [projects, filterAhjs, filterLocations, filterStages, filterInspectionStatuses, searchQuery]);
+  }, [safeProjects, filterAhjs, filterLocations, filterStages, filterInspectionStatuses, searchQuery]);
 
   const stats = useMemo(() => {
     const today = new Date();
@@ -261,24 +244,24 @@ export default function InspectionsPage() {
 
   // Get unique values for filters
   const ahjs = useMemo(() =>
-    [...new Set(projects.map(p => p.ahj))]
+    [...new Set(safeProjects.map(p => p.ahj))]
       .filter(a => a && a !== 'Unknown')
       .sort()
       .map(a => ({ value: a!, label: a! })),
-    [projects]
+    [safeProjects]
   );
 
   const locations = useMemo(() =>
-    [...new Set(projects.map(p => p.pbLocation))]
+    [...new Set(safeProjects.map(p => p.pbLocation))]
       .filter(l => l && l !== 'Unknown')
       .sort()
       .map(l => ({ value: l!, label: l! })),
-    [projects]
+    [safeProjects]
   );
 
   const stages = useMemo(() => {
     const STAGE_ORDER = ['Site Survey', 'Design & Engineering', 'Permitting & Interconnection', 'RTB - Blocked', 'Ready To Build', 'Construction', 'Inspection', 'Permission To Operate', 'Close Out'];
-    return [...new Set(projects.map(p => p.stage))]
+    return [...new Set(safeProjects.map(p => p.stage))]
       .filter(s => s)
       .sort((a, b) => {
         const aIdx = STAGE_ORDER.findIndex(s => s.toLowerCase() === a!.toLowerCase());
@@ -289,11 +272,11 @@ export default function InspectionsPage() {
         return aIdx - bIdx;
       })
       .map(s => ({ value: s!, label: s! }));
-  }, [projects]);
+  }, [safeProjects]);
 
   const existingInspectionStatuses = useMemo(() =>
-    new Set(projects.map(p => (p as ExtendedProject).finalInspectionStatus).filter(Boolean)),
-    [projects]
+    new Set(safeProjects.map(p => (p as ExtendedProject).finalInspectionStatus).filter(Boolean)),
+    [safeProjects]
   );
 
   const filteredInspectionStatusGroups = useMemo(() => {
@@ -351,7 +334,7 @@ export default function InspectionsPage() {
           <div className="text-center text-red-500">
             <p className="text-xl mb-2">Error loading data</p>
             <p className="text-sm text-muted">{error}</p>
-            <button onClick={fetchData} className="mt-4 px-4 py-2 bg-orange-600 rounded-lg hover:bg-orange-700">
+            <button onClick={() => refetch()} className="mt-4 px-4 py-2 bg-orange-600 rounded-lg hover:bg-orange-700">
               Retry
             </button>
           </div>
@@ -381,7 +364,7 @@ export default function InspectionsPage() {
             onSearch={setSearchQuery}
             placeholder="Search by PROJ #, name, location, or AHJ..."
           />
-          <button onClick={fetchData} className="bg-orange-600 hover:bg-orange-700 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap">
+          <button onClick={() => refetch()} className="bg-orange-600 hover:bg-orange-700 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap">
             Refresh
           </button>
         </div>
@@ -545,7 +528,7 @@ export default function InspectionsPage() {
         <div className="p-4 border-b border-t-border flex items-center justify-between">
           <h2 className="text-lg font-semibold">Projects ({filteredProjects.length})</h2>
           {hasActiveFilters && (
-            <span className="text-xs text-muted">Filtered from {projects.length} total</span>
+            <span className="text-xs text-muted">Filtered from {safeProjects.length} total</span>
           )}
         </div>
         <div className="overflow-x-auto">

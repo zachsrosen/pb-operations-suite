@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useMemo, useEffect, useRef, useCallback } from "react";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import DashboardShell from "@/components/DashboardShell";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { formatCurrency } from "@/lib/format";
 import { useProgressiveDeals } from "@/hooks/useProgressiveDeals";
+import { useServiceFilters } from "@/stores/dashboard-filters";
 
 // --- Types ---
 
@@ -74,8 +75,12 @@ export default function ServicePipelinePage() {
     params: { pipeline: "service", active: "false" },
   });
 
-  const [filterLocation, setFilterLocation] = useState("all");
-  const [filterStage, setFilterStage] = useState("all");
+  // Persisted filters (survive navigation)
+  const { filters: serviceFilters, setFilters: setServiceFilters } = useServiceFilters();
+  const filterLocation = serviceFilters.location;
+  const filterStage = serviceFilters.stage;
+  const setFilterLocation = useCallback((v: string) => setServiceFilters({ ...serviceFilters, location: v }), [serviceFilters, setServiceFilters]);
+  const setFilterStage = useCallback((v: string) => setServiceFilters({ ...serviceFilters, stage: v }), [serviceFilters, setServiceFilters]);
 
   // Activity tracking
   const { trackDashboardView, trackFilter } = useActivityTracking();

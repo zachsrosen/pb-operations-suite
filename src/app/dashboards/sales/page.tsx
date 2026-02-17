@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { ErrorState } from "@/components/ui/ErrorState";
@@ -8,6 +8,7 @@ import { formatCurrency } from "@/lib/format";
 import { SALES_STAGES, ACTIVE_SALES_STAGES } from "@/lib/constants";
 import { useProgressiveDeals } from "@/hooks/useProgressiveDeals";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
+import { useSalesFilters } from "@/stores/dashboard-filters";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -64,8 +65,13 @@ export default function SalesPipelinePage() {
     params: { pipeline: "sales", active: "false" },
   });
 
-  const [filterLocation, setFilterLocation] = useState("all");
-  const [filterStage, setFilterStage] = useState("all");
+  // Persisted filters (survive navigation)
+  const { filters: salesFilters, setFilters: setSalesFilters } = useSalesFilters();
+  const filterLocation = salesFilters.location;
+  const filterStage = salesFilters.stage;
+  const setFilterLocation = useCallback((v: string) => setSalesFilters({ ...salesFilters, location: v }), [salesFilters, setSalesFilters]);
+  const setFilterStage = useCallback((v: string) => setSalesFilters({ ...salesFilters, stage: v }), [salesFilters, setSalesFilters]);
+  // showActiveOnly is ephemeral UI state — no persistence needed
   const [showActiveOnly, setShowActiveOnly] = useState(true);
 
   /* ---- Track dashboard view on load ---- */

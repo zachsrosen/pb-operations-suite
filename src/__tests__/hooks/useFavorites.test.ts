@@ -3,49 +3,17 @@
  */
 import { renderHook, act } from "@testing-library/react";
 import { useFavorites } from "@/hooks/useFavorites";
-
-// Mock localStorage
-const localStorageMock = (() => {
-  let store: Record<string, string> = {};
-  return {
-    getItem: jest.fn((key: string) => store[key] || null),
-    setItem: jest.fn((key: string, value: string) => {
-      store[key] = value;
-    }),
-    removeItem: jest.fn((key: string) => {
-      delete store[key];
-    }),
-    clear: jest.fn(() => {
-      store = {};
-    }),
-    get length() {
-      return Object.keys(store).length;
-    },
-    key: jest.fn((index: number) => Object.keys(store)[index] || null),
-  };
-})();
-
-Object.defineProperty(window, "localStorage", { value: localStorageMock });
+import { useUIPreferences } from "@/stores/ui-preferences";
 
 describe("useFavorites", () => {
   beforeEach(() => {
-    localStorageMock.clear();
-    jest.clearAllMocks();
+    // Reset Zustand store state between tests
+    useUIPreferences.setState({ favorites: [], installDismissed: false });
   });
 
   it("starts with an empty favorites array", () => {
     const { result } = renderHook(() => useFavorites());
     expect(result.current.favorites).toEqual([]);
-  });
-
-  it("loads favorites from localStorage on mount", () => {
-    localStorageMock.setItem("pb-ops-favorites", JSON.stringify(["/dashboards/sales"]));
-
-    renderHook(() => useFavorites());
-
-    // useEffect runs asynchronously, but the initial state will be overridden
-    // We need to wait for the effect
-    expect(localStorageMock.getItem).toHaveBeenCalledWith("pb-ops-favorites");
   });
 
   it("adds a favorite", () => {
@@ -56,10 +24,6 @@ describe("useFavorites", () => {
     });
 
     expect(result.current.favorites).toContain("/dashboards/sales");
-    expect(localStorageMock.setItem).toHaveBeenCalledWith(
-      "pb-ops-favorites",
-      JSON.stringify(["/dashboards/sales"])
-    );
   });
 
   it("does not add duplicate favorites", () => {
@@ -72,7 +36,9 @@ describe("useFavorites", () => {
       result.current.addFavorite("/dashboards/sales");
     });
 
-    expect(result.current.favorites.filter((f) => f === "/dashboards/sales")).toHaveLength(1);
+    expect(
+      result.current.favorites.filter((f) => f === "/dashboards/sales")
+    ).toHaveLength(1);
   });
 
   it("removes a favorite", () => {

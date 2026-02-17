@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import * as Sentry from "@sentry/nextjs";
+import { tagSentryRequest } from "@/lib/sentry-request";
 import { headers } from "next/headers";
 import { zuper, createJobFromProject, JOB_CATEGORY_UIDS, ZuperJob } from "@/lib/zuper";
 import { auth } from "@/auth";
@@ -120,6 +122,7 @@ async function verifyHubSpotScheduleWrite(
  * This prevents duplicate jobs when HubSpot workflows have already created the initial job.
  */
 export async function PUT(request: NextRequest) {
+  tagSentryRequest(request);
   try {
     // Check authentication
     const session = await auth();
@@ -747,6 +750,7 @@ export async function PUT(request: NextRequest) {
     }
   } catch (error) {
     console.error("Error scheduling Zuper job:", error);
+    Sentry.captureException(error);
     return NextResponse.json(
       { error: "Failed to schedule Zuper job" },
       { status: 500 }
@@ -758,6 +762,7 @@ export async function PUT(request: NextRequest) {
  * GET endpoint to check if a job exists for a HubSpot deal
  */
 export async function GET(request: NextRequest) {
+  tagSentryRequest(request);
   try {
     if (!zuper.isConfigured()) {
       return NextResponse.json(
@@ -827,6 +832,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("Error checking Zuper job:", error);
+    Sentry.captureException(error);
     return NextResponse.json(
       { error: "Failed to check Zuper job" },
       { status: 500 }
@@ -838,6 +844,7 @@ export async function GET(request: NextRequest) {
  * DELETE endpoint to unschedule a job (clear dates in Zuper + HubSpot)
  */
 export async function DELETE(request: NextRequest) {
+  tagSentryRequest(request);
   try {
     // Check authentication
     const session = await auth();
@@ -1194,6 +1201,7 @@ export async function DELETE(request: NextRequest) {
     });
   } catch (error) {
     console.error("Error unscheduling job:", error);
+    Sentry.captureException(error);
     return NextResponse.json(
       { error: "Failed to unschedule job" },
       { status: 500 }
