@@ -10,6 +10,7 @@
  */
 
 import * as Sentry from "@sentry/nextjs";
+import { getBusinessEndDateInclusive } from "@/lib/business-days";
 
 // Types for Zuper API
 export interface ZuperJobCategory {
@@ -1492,14 +1493,8 @@ export async function createJobFromProject(project: {
     const localEnd = schedule.endTime || "16:00";
     startDateTime = localToUtc(schedule.date, localStart);
 
-    // Calculate end date — ensure at least same-day (days < 1 means partial day, still same day)
-    const [year, month, day] = schedule.date.split('-').map(Number);
-    const extraDays = Math.max(Math.ceil(schedule.days) - 1, 0); // 0.25d → 0 extra, 1d → 0 extra, 2d → 1 extra
-    const endDateObj = new Date(year, month - 1, day + extraDays);
-    const endYear = endDateObj.getFullYear();
-    const endMonth = String(endDateObj.getMonth() + 1).padStart(2, '0');
-    const endDayStr = String(endDateObj.getDate()).padStart(2, '0');
-    const endDateStr = `${endYear}-${endMonth}-${endDayStr}`;
+    // Installation spans use business-day math (skip weekends).
+    const endDateStr = getBusinessEndDateInclusive(schedule.date, schedule.days);
     endDateTime = localToUtc(endDateStr, localEnd);
   }
 

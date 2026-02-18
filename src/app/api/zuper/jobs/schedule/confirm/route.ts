@@ -6,6 +6,7 @@ import { headers } from "next/headers";
 import { sendSchedulingNotification } from "@/lib/email";
 import { updateDealProperty, updateSiteSurveyorProperty, getDealProperties } from "@/lib/hubspot";
 import { upsertSiteSurveyCalendarEvent } from "@/lib/google-calendar";
+import { getBusinessEndDateInclusive, isWeekendDate } from "@/lib/business-days";
 
 function getConstructionScheduleBoundaryProperties(): { start: string | null; end: string | null } {
   const start = process.env.HUBSPOT_CONSTRUCTION_START_DATE_PROPERTY?.trim() || null;
@@ -118,6 +119,12 @@ export async function POST(request: NextRequest) {
     if (record.status !== "tentative") {
       return NextResponse.json(
         { error: `Record is not tentative (current status: ${record.status})` },
+        { status: 400 }
+      );
+    }
+    if (isWeekendDate(record.scheduledDate)) {
+      return NextResponse.json(
+        { error: "Cannot confirm a weekend schedule. Please move it to a weekday first." },
         { status: 400 }
       );
     }
@@ -359,10 +366,7 @@ export async function POST(request: NextRequest) {
       const startDateTime = localToUtc(record.scheduledDate, startTime);
       let endDateForSchedule = record.scheduledDate;
       if (scheduleType === "installation") {
-        const days = Math.max(Math.ceil(record.scheduledDays || 1), 1);
-        const [year, month, day] = record.scheduledDate.split("-").map(Number);
-        const endDateObj = new Date(year, month - 1, day + (days - 1));
-        endDateForSchedule = `${endDateObj.getFullYear()}-${String(endDateObj.getMonth() + 1).padStart(2, "0")}-${String(endDateObj.getDate()).padStart(2, "0")}`;
+        endDateForSchedule = getBusinessEndDateInclusive(record.scheduledDate, record.scheduledDays || 1);
       }
       const endDateTime = localToUtc(endDateForSchedule, endTime);
       startDateTimeForHubSpot = startDateTime;

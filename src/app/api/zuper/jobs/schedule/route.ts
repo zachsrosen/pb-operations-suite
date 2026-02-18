@@ -8,6 +8,7 @@ import { getUserByEmail, logActivity, createScheduleRecord, cacheZuperJob, canSc
 import { sendSchedulingNotification } from "@/lib/email";
 import { updateDealProperty, getDealProperties, updateSiteSurveyorProperty } from "@/lib/hubspot";
 import { upsertSiteSurveyCalendarEvent } from "@/lib/google-calendar";
+import { getBusinessEndDateInclusive, isWeekendDate } from "@/lib/business-days";
 
 type ScheduleType = "survey" | "installation" | "inspection";
 
@@ -251,6 +252,12 @@ export async function PUT(request: NextRequest) {
     if (!project?.id || !schedule?.date) {
       return NextResponse.json(
         { error: "Missing required fields: project.id, schedule.date" },
+        { status: 400 }
+      );
+    }
+    if (isWeekendDate(schedule.date)) {
+      return NextResponse.json(
+        { error: "Cannot schedule on weekends" },
         { status: 400 }
       );
     }
@@ -535,14 +542,8 @@ export async function PUT(request: NextRequest) {
       const localEnd = schedule.endTime || "16:00";
       startDateTime = localToUtc(schedule.date, localStart);
 
-      // Calculate end date — ensure at least same-day (days < 1 means partial day, still same day)
-      const [year, month, day] = schedule.date.split('-').map(Number);
-      const extraDays = Math.max(Math.ceil(days) - 1, 0); // 0.25d → 0 extra, 1d → 0 extra, 2d → 1 extra, 3d → 2 extra
-      const endDateObj = new Date(year, month - 1, day + extraDays);
-      const endYear = endDateObj.getFullYear();
-      const endMonth = String(endDateObj.getMonth() + 1).padStart(2, '0');
-      const endDayStr = String(endDateObj.getDate()).padStart(2, '0');
-      const endDateStr = `${endYear}-${endMonth}-${endDayStr}`;
+      // Installation spans use business-day math (skip weekends).
+      const endDateStr = getBusinessEndDateInclusive(schedule.date, days);
       endDateTime = localToUtc(endDateStr, localEnd);
     }
 

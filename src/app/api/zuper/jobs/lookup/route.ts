@@ -166,6 +166,18 @@ async function handleLookup(projectIds: string[], projectNames: string[], catego
     return noStart || zeroLength || duration === 0;
   };
 
+  const countBusinessDaysInclusive = (startDate: Date, endDate: Date): number => {
+    if (endDate < startDate) return 1;
+    const cursor = new Date(startDate);
+    let count = 0;
+    while (cursor <= endDate) {
+      const dow = cursor.getDay();
+      if (dow !== 0 && dow !== 6) count += 1;
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    return Math.max(count, 1);
+  };
+
   // Helper to extract customer name from project name
   const extractCustomerName = (name: string): string => {
     const decoded = decodeURIComponent(name);
@@ -520,12 +532,17 @@ async function handleLookup(projectIds: string[], projectNames: string[], catego
         // A 1-day job is typically 8am-5pm (same day) = ~0.375 days, round to 1
         // A 3-day job spans 3 calendar days
         if (diffDays > 0) {
-          // Count calendar days: if start and end are on different dates, count the span
+          // Count calendar days by default; construction spans are business days.
           const startDate = new Date(start.getFullYear(), start.getMonth(), start.getDate());
           const endDate = new Date(end.getFullYear(), end.getMonth(), end.getDate());
-          const calendarDaysDiff = Math.round((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+          const calendarDaysDiff = Math.round(
+            (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
+          );
           // +1 because the span is inclusive: Feb 19→20 = 2 days, not 1
           scheduledDays = Math.max(calendarDaysDiff + 1, 1);
+          if (targetCategory === JOB_CATEGORIES.CONSTRUCTION) {
+            scheduledDays = countBusinessDaysInclusive(startDate, endDate);
+          }
         }
       }
 
