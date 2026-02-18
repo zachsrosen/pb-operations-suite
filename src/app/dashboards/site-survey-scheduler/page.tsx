@@ -54,6 +54,7 @@ interface SurveyProject {
   hubspotUrl: string;
   zuperJobUid?: string;
   zuperJobStatus?: string;
+  zuperHasSchedule?: boolean;
   zuperScheduledTime?: string; // Local time from Zuper (e.g., "1pm") for display when booked slot not found
   dealOwner: string;
   assignedSurveyor?: string; // Surveyor name from Zuper/localStorage/HubSpot
@@ -241,6 +242,15 @@ function isReadyToScheduleStatus(status: string | null | undefined): boolean {
   return s.includes("ready to schedule") || s === "ready";
 }
 
+function isTentativeProject(project: Pick<SurveyProject, "surveyStatus" | "tentativeRecordId" | "zuperHasSchedule"> | null | undefined): boolean {
+  if (!project) return false;
+  // A confirmed Zuper schedule takes precedence over stale tentative state.
+  if ("zuperHasSchedule" in project && project.zuperHasSchedule) return false;
+  if (project.tentativeRecordId) return true;
+  const s = String(project.surveyStatus || "").toLowerCase();
+  return s.includes("tentative");
+}
+
 function hasActiveSchedule(project: SurveyProject, manualScheduleDate?: string): boolean {
   // Manual/local schedule should always be treated as scheduled immediately.
   if (manualScheduleDate) return !project.completionDate;
@@ -248,6 +258,10 @@ function hasActiveSchedule(project: SurveyProject, manualScheduleDate?: string):
   const schedDate = project.scheduleDate;
   if (!schedDate) return false;
   if (project.completionDate) return false;
+  if (project.tentativeRecordId) return true;
+  // Respect persisted schedule dates even if status lags behind.
+  if (project.zuperHasSchedule) return true;
+  // "Ready to Schedule" means no active booking yet — the date is stale or a target.
   if (isReadyToScheduleStatus(project.surveyStatus)) return false;
   return true;
 }
@@ -430,6 +444,7 @@ export default function SiteSurveySchedulerPage() {
                   // rescheduled in Zuper, the HubSpot date may be stale. Convert
                   // the UTC timestamp to local date/time in the appropriate timezone.
                   if (zuperJob.scheduledDate) {
+                    project.zuperHasSchedule = true;
                     try {
                       const utcDate = new Date(zuperJob.scheduledDate);
                       // Determine timezone from project location
@@ -486,16 +501,17 @@ export default function SiteSurveySchedulerPage() {
             for (const project of transformed) {
               const rec = records[project.id];
               if (!rec?.scheduledDate) continue;
+              // If this project already has a confirmed Zuper schedule, don't
+              // revert it to tentative — the stale DB record should be cleaned up.
+              if (project.zuperHasSchedule && !isReadyToScheduleStatus(project.surveyStatus)) continue;
               const recordAssigned = typeof rec.assignedUser === "string" ? rec.assignedUser : "";
               const resolvedAssignedName = !isLikelyUid(recordAssigned)
                 ? recordAssigned
                 : (project.assignedSurveyor || "");
-              // Tentative entries are a local planning state, so let them render
-              // even when HubSpot has not been updated yet.
-              if (!project.scheduleDate || isReadyToScheduleStatus(project.surveyStatus)) {
-                project.scheduleDate = rec.scheduledDate;
-                project.surveyStatus = "Tentative";
-              }
+              // Tentative entries are a local planning state and should always render
+              // as tentative while the record remains active.
+              project.scheduleDate = rec.scheduledDate;
+              project.surveyStatus = "Tentative";
               project.tentativeRecordId = rec.id || project.tentativeRecordId;
               if (!project.assignedSurveyor && resolvedAssignedName) {
                 project.assignedSurveyor = resolvedAssignedName;
@@ -802,6 +818,12 @@ export default function SiteSurveySchedulerPage() {
     e.preventDefault();
   }, []);
 
+  const openScheduleModal = useCallback((nextModal: PendingSchedule) => {
+    // Default each new scheduling action to live-sync mode.
+    setSyncToZuper(true);
+    setScheduleModal(nextModal);
+  }, []);
+
   const handleDrop = useCallback((date: string) => {
     if (!draggedProjectId) return;
     if (isPastDate(date)) {
@@ -818,10 +840,10 @@ export default function SiteSurveySchedulerPage() {
     if (project) {
       const currentSlot = findCurrentSlotForProject(project.id, date, project.name, project.zuperJobUid);
       trackFeature("schedule-modal-open", "Opened survey schedule modal via drag", { scheduler: "site-survey", projectId: project.id, projectName: project.name, date, method: "drag" });
-      setScheduleModal({ project, date, currentSlot });
+      openScheduleModal({ project, date, currentSlot });
     }
     setDraggedProjectId(null);
-  }, [draggedProjectId, projects, findCurrentSlotForProject, showToast, userRole, trackFeature]);
+  }, [draggedProjectId, projects, findCurrentSlotForProject, showToast, userRole, trackFeature, openScheduleModal]);
 
   const handleDateClick = useCallback((date: string, project?: SurveyProject) => {
     if (isPastDate(date)) {
@@ -835,14 +857,14 @@ export default function SiteSurveySchedulerPage() {
     if (project) {
       const currentSlot = findCurrentSlotForProject(project.id, date, project.name, project.zuperJobUid);
       trackFeature("schedule-modal-open", "Opened survey schedule modal via click", { scheduler: "site-survey", projectId: project.id, projectName: project.name, date, method: "click" });
-      setScheduleModal({ project, date, currentSlot });
+      openScheduleModal({ project, date, currentSlot });
     } else if (selectedProject) {
       const currentSlot = findCurrentSlotForProject(selectedProject.id, date, selectedProject.name, selectedProject.zuperJobUid);
       trackFeature("schedule-modal-open", "Opened survey schedule modal via click", { scheduler: "site-survey", projectId: selectedProject.id, projectName: selectedProject.name, date, method: "click" });
-      setScheduleModal({ project: selectedProject, date, currentSlot });
+      openScheduleModal({ project: selectedProject, date, currentSlot });
       setSelectedProject(null);
     }
-  }, [selectedProject, findCurrentSlotForProject, showToast, userRole, trackFeature]);
+  }, [selectedProject, findCurrentSlotForProject, showToast, userRole, trackFeature, openScheduleModal]);
 
   const confirmSchedule = useCallback(async () => {
     if (!scheduleModal) return;
@@ -1719,7 +1741,7 @@ export default function SiteSurveySchedulerPage() {
                             const evSlot = findCurrentSlotForProject(ev.id, dateStr, ev.name, ev.zuperJobUid);
                             const displaySlot = evSlot || ev.assignedSlot;
                             const overdue = isSurveyOverdue(ev, manualSchedules[ev.id]);
-                            const isTentative = ev.surveyStatus.toLowerCase().includes("tentative");
+                            const isTentative = isTentativeProject(ev);
                             return (
                               <div
                                 key={ev.id}
@@ -1730,7 +1752,7 @@ export default function SiteSurveySchedulerPage() {
                                 }}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setScheduleModal({ project: ev, date: dateStr, currentSlot: displaySlot });
+                                  openScheduleModal({ project: ev, date: dateStr, currentSlot: displaySlot });
                                 }}
                                 className={`text-xs p-1 rounded cursor-grab active:cursor-grabbing ${
                                   overdue
@@ -1794,7 +1816,7 @@ export default function SiteSurveySchedulerPage() {
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         if (selectedProject && !isPast) {
-                                          setScheduleModal({
+                                          openScheduleModal({
                                             project: selectedProject,
                                             date: dateStr,
                                             slot: {
@@ -1951,9 +1973,9 @@ export default function SiteSurveySchedulerPage() {
                             </td>
                             <td className="px-4 py-3 text-center">
                               {isScheduled ? (
-                                project.surveyStatus.toLowerCase().includes("tentative") ? (
+                                isTentativeProject(project) ? (
                                   <button
-                                    onClick={() => setScheduleModal({ project, date: schedDate || getTodayStr(), currentSlot: project.assignedSlot })}
+                                    onClick={() => openScheduleModal({ project, date: schedDate || getTodayStr(), currentSlot: project.assignedSlot })}
                                     className="text-xs text-amber-300 hover:text-amber-200"
                                   >
                                     Review
@@ -2009,7 +2031,7 @@ export default function SiteSurveySchedulerPage() {
                   : "Schedule Site Survey"}
             </h3>
 
-            {scheduleModal.project.surveyStatus.toLowerCase().includes("tentative") && (
+            {isTentativeProject(scheduleModal.project) && (
               <div className="mb-4 p-3 rounded-lg bg-amber-500/10 border border-dashed border-amber-400/50">
                 <div className="flex items-center gap-2 mb-2">
                   <span className="text-amber-400 text-[0.7rem] font-bold uppercase tracking-wide">Tentative</span>
@@ -2248,7 +2270,7 @@ export default function SiteSurveySchedulerPage() {
               {scheduleModal.currentSlot && !scheduleModal.isRescheduling && !scheduleModal.slot ? (
                 /* Viewing mode - show Close and Remove buttons */
                 <>
-                  {!scheduleModal.project.surveyStatus.toLowerCase().includes("tentative") && (
+                  {!isTentativeProject(scheduleModal.project) && (
                     <button
                       onClick={() => {
                         const projectId = scheduleModal.project.id;
@@ -2279,9 +2301,17 @@ export default function SiteSurveySchedulerPage() {
                   <button
                     onClick={confirmSchedule}
                     disabled={syncingToZuper || !scheduleModal.slot}
-                    className="px-4 py-2 text-sm bg-cyan-600 hover:bg-cyan-700 rounded-lg font-medium disabled:opacity-50"
+                    className={`px-4 py-2 text-sm rounded-lg font-medium disabled:opacity-50 ${
+                      syncToZuper
+                        ? "bg-cyan-600 hover:bg-cyan-700"
+                        : "bg-amber-600 hover:bg-amber-700"
+                    }`}
                   >
-                    {syncingToZuper ? "Syncing..." : scheduleModal.isRescheduling ? "Confirm Reschedule" : "Confirm Schedule"}
+                    {syncingToZuper
+                      ? "Syncing..."
+                      : !syncToZuper
+                        ? (scheduleModal.isRescheduling ? "Save Tentative Reschedule" : "Save Tentative")
+                        : (scheduleModal.isRescheduling ? "Confirm Reschedule" : "Confirm Schedule")}
                   </button>
                 </>
               )}

@@ -624,8 +624,11 @@ export default function SchedulerPage() {
             if (records && Object.keys(records).length > 0) {
               const restored: Record<string, ManualSchedule> = {};
               for (const [projId, rec] of Object.entries(records)) {
-                // Use stored days, or fall back to the project's expected install days
+                // If this project already has a confirmed Zuper schedule, don't
+                // revert it to tentative — the stale DB record should be cleaned up.
                 const proj = transformed.find((p: SchedulerProject) => p.id === projId);
+                if (proj?.zuperJobStatus && proj?.zuperScheduledStart) continue;
+                // Use stored days, or fall back to the project's expected install days
                 const isSI = proj?.stage === "survey" || proj?.stage === "inspection";
                 const fallbackDays = isSI ? 0.25 : (proj?.daysInstall || proj?.totalDays || 2);
                 restored[projId] = {

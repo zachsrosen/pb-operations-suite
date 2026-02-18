@@ -314,9 +314,12 @@ export default function ConstructionSchedulerPage() {
             const tentData = await tentRes.json();
             const records = tentData.records as Record<string, { id: string; scheduledDate: string }>;
             for (const [projectId, rec] of Object.entries(records || {})) {
+              const project = transformed.find((p: ConstructionProject) => p.id === projectId);
+              // If this project already has a confirmed Zuper schedule, don't
+              // revert it to tentative — the stale DB record should be cleaned up.
+              if (project?.zuperJobStatus && project.scheduleDate) continue;
               restoredSchedules[projectId] = rec.scheduledDate;
               restoredTentatives[projectId] = rec.id;
-              const project = transformed.find((p: ConstructionProject) => p.id === projectId);
               if (project) {
                 project.tentativeRecordId = rec.id;
                 project.installStatus = "Tentative";
