@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { LOCATION_TIMEZONES } from "@/lib/constants";
+import { generateOptimizedSchedule, type OptimizableProject, type ScoringPreset } from "@/lib/schedule-optimizer";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -35,6 +36,7 @@ interface RawProject {
   electriciansCount?: number;
   installDifficulty?: number;
   installNotes?: string;
+  daysToInstall?: number | null;
   ahj?: string;
   utility?: string;
   isParticipateEnergy?: boolean;
@@ -97,6 +99,7 @@ interface SchedulerProject {
   zuperScheduledStart?: string; // ISO date from Zuper
   zuperScheduledEnd?: string;   // ISO date from Zuper
   zuperJobCategory?: string;    // Which Zuper category matched: "survey" | "construction" | "inspection"
+  daysToInstall: number | null;
   isCompletedPastStage: boolean; // Project moved past its stage (e.g. Close Out with inspection data) — calendar only, not sidebar
 }
 
@@ -114,6 +117,7 @@ interface ManualSchedule {
   isTentative?: boolean;
   recordId?: string;
   scheduleType?: string;
+  fromOptimizer?: boolean;
 }
 
 interface ScheduledEvent extends SchedulerProject {
@@ -458,6 +462,7 @@ function transformProject(p: RawProject): SchedulerProject | null {
     inspectionCompleted: p.inspectionPassDate || null,
     inspectionStatus: p.finalInspectionStatus || null,
     isPE: !!p.isParticipateEnergy,
+    daysToInstall: p.daysToInstall ?? null,
     isCompletedPastStage: !!isCompletedWithSchedule,
     hubspotUrl:
       p.url ||
@@ -538,7 +543,12 @@ export default function SchedulerPage() {
   const [toast, setToast] = useState<{ message: string; type: string } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  /* (right panel removed — optimize/conflicts moved to testing) */
+  /* ---- optimizer ---- */
+  const [optimizeOpen, setOptimizeOpen] = useState(false);
+  const [optimizePreset, setOptimizePreset] = useState<ScoringPreset>("balanced");
+  const [optimizeResult, setOptimizeResult] = useState<ReturnType<typeof generateOptimizedSchedule> | null>(null);
+  const [optimizeApplying, setOptimizeApplying] = useState(false);
+  const [optimizeProgress, setOptimizeProgress] = useState({ current: 0, total: 0, failed: 0 });
 
   /* ================================================================ */
   /*  Data fetching                                                    */
@@ -620,6 +630,7 @@ export default function SchedulerPage() {
             const records = tentData.records as Record<string, {
               id: string; projectId: string; scheduledDate: string; assignedUser?: string;
               scheduleType?: string; scheduledDays?: number; scheduledStart?: string; scheduledEnd?: string;
+              notes?: string;
             }>;
             if (records && Object.keys(records).length > 0) {
               const restored: Record<string, ManualSchedule> = {};
@@ -638,6 +649,7 @@ export default function SchedulerPage() {
                   isTentative: true,
                   recordId: rec.id,
                   scheduleType: rec.scheduleType,
+                  fromOptimizer: !!rec.notes?.includes("[AUTO_OPTIMIZED]"),
                 };
               }
               setManualSchedules((prev) => {
@@ -1567,6 +1579,191 @@ export default function SchedulerPage() {
     }
   }, [manualSchedules, resolveMasterTentativeRecordId, showToast]);
 
+  /* ---- Optimizer handlers ---- */
+
+  const handleOptimizeGenerate = useCallback(() => {
+    const eligible = projects.filter((p) => {
+      if (p.stage !== "rtb") return false;
+      if (p.constructionScheduleDate) return false;
+      if (p.zuperJobCategory === "construction" && p.zuperScheduledStart) return false;
+      if (p.scheduleDate) return false;
+      const ms = manualSchedules[p.id];
+      if (ms && ms.scheduleType === "installation") return false;
+      return true;
+    });
+
+    const mapped: OptimizableProject[] = eligible.map((p) => ({
+      id: p.id,
+      name: p.name,
+      address: p.address,
+      location: p.location,
+      amount: p.amount,
+      stage: p.stage,
+      isPE: p.isPE,
+      daysInstall: p.daysInstall,
+      daysToInstall: p.daysToInstall,
+    }));
+
+    const result = generateOptimizedSchedule(
+      mapped,
+      CREWS,
+      ZUPER_CONSTRUCTION_DIRECTORS,
+      LOCATION_TIMEZONES,
+      { preset: optimizePreset }
+    );
+
+    setOptimizeResult(result);
+    if (result.entries.length === 0) showToast("No eligible RTB projects to optimize", "error");
+    if (result.skipped.length > 0)
+      showToast(`${result.skipped.length} skipped (unmapped location)`, "error");
+  }, [projects, manualSchedules, optimizePreset, showToast]);
+
+  const handleOptimizeApply = useCallback(async () => {
+    if (!optimizeResult?.entries.length) return;
+    setOptimizeApplying(true);
+    setOptimizeProgress({ current: 0, total: optimizeResult.entries.length, failed: 0 });
+
+    let success = 0;
+    let failed = 0;
+    for (let i = 0; i < optimizeResult.entries.length; i++) {
+      const entry = optimizeResult.entries[i];
+      setOptimizeProgress({ current: i + 1, total: optimizeResult.entries.length, failed });
+
+      try {
+        const res = await fetch("/api/zuper/jobs/schedule/tentative", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            project: {
+              id: entry.project.id,
+              name: entry.project.name,
+              address: entry.project.address,
+            },
+            schedule: {
+              type: "installation",
+              date: entry.startDate,
+              days: entry.days,
+              crew: entry.assigneeUserUid || "",
+              userUid: entry.assigneeUserUid,
+              teamUid: entry.assigneeTeamUid,
+              assignedUser: entry.assigneeName || entry.crew,
+              timezone: entry.timezone,
+              notes: `[AUTO_OPTIMIZED] (${optimizePreset}) — ${entry.crew}`,
+            },
+          }),
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          setManualSchedules((prev) => ({
+            ...prev,
+            [entry.project.id]: {
+              startDate: entry.startDate,
+              days: entry.days,
+              crew: entry.crew,
+              isTentative: true,
+              recordId: data.record?.id,
+              scheduleType: "installation",
+              fromOptimizer: true,
+            },
+          }));
+          success++;
+        } else {
+          failed++;
+        }
+      } catch {
+        failed++;
+      }
+    }
+
+    showToast(`${success}/${optimizeResult.entries.length} projects tentatively scheduled`);
+    setOptimizeResult(null);
+    setOptimizeOpen(false);
+    setOptimizeApplying(false);
+  }, [optimizeResult, optimizePreset, showToast]);
+
+  const handleClearOptimization = useCallback(async () => {
+    // Step 1: Identify optimizer entries present in local state
+    const localOptimizerEntries = Object.entries(manualSchedules).filter(
+      ([, v]) => v.isTentative && v.fromOptimizer
+    );
+    const localOnlyProjectIds = localOptimizerEntries
+      .filter(([, v]) => !v.recordId)
+      .map(([projectId]) => projectId);
+
+    // Step 2: Fetch ALL installation tentative records from DB to find hidden ones
+    const projectIds = projects.map((p) => p.id).join(",");
+    let dbRecords: Array<{ id: string; projectId: string; notes?: string }> = [];
+    try {
+      const res = await fetch(
+        `/api/zuper/schedule-records?projectIds=${encodeURIComponent(projectIds)}&status=tentative&type=installation`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        dbRecords = Object.values(
+          data.records as Record<string, { id: string; projectId: string; notes?: string }>
+        ).filter((r) => r.notes?.includes("[AUTO_OPTIMIZED]"));
+      }
+    } catch {
+      /* proceed with local-only */
+    }
+
+    // Build unique delete targets from both DB query and local DB-backed entries.
+    // This keeps clear-all working if DB lookup fails but local tentative records exist.
+    const deleteTargets = new Map<string, { id: string; projectId: string }>();
+    for (const rec of dbRecords) {
+      deleteTargets.set(rec.id, { id: rec.id, projectId: rec.projectId });
+    }
+    for (const [projectId, entry] of localOptimizerEntries) {
+      if (entry.recordId && !deleteTargets.has(entry.recordId)) {
+        deleteTargets.set(entry.recordId, { id: entry.recordId, projectId });
+      }
+    }
+
+    if (localOnlyProjectIds.length === 0 && deleteTargets.size === 0) {
+      showToast("No optimizer tentative entries to clear", "error");
+      return;
+    }
+
+    let cleared = localOnlyProjectIds.length; // local-only entries will always be removed
+
+    // Cancel DB records (includes hidden ones not in manualSchedules)
+    const cancelledProjectIds = new Set<string>();
+    for (const rec of deleteTargets.values()) {
+      try {
+        const res = await fetch("/api/zuper/schedule-records", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ recordId: rec.id }),
+        });
+        if (res.ok) {
+          cancelledProjectIds.add(rec.projectId);
+          cleared++;
+        }
+      } catch {
+        /* continue */
+      }
+    }
+
+    // Remove from manualSchedules
+    setManualSchedules((prev) => {
+      const next = { ...prev };
+      // Remove local-only optimizer entries
+      for (const projectId of localOnlyProjectIds) {
+        delete next[projectId];
+      }
+      // Remove entries whose DB record was successfully cancelled
+      for (const pid of cancelledProjectIds) {
+        if (next[pid]?.isTentative && next[pid]?.fromOptimizer) {
+          delete next[pid];
+        }
+      }
+      return next;
+    });
+
+    showToast(`Cleared ${cleared} tentative schedules`);
+  }, [projects, manualSchedules, showToast]);
+
   const handleRemoveScheduled = useCallback(async (projectId: string) => {
     const project = projects.find((p) => p.id === projectId);
     if (!project) {
@@ -1872,9 +2069,113 @@ export default function SchedulerPage() {
 
           {/* Queue header with filters */}
           <div className="p-3 border-b border-t-border">
-            <h2 className="text-[0.8rem] font-semibold mb-2 flex items-center gap-1.5">
-              Install Pipeline
+            <h2 className="text-[0.8rem] font-semibold mb-2 flex items-center gap-1.5 justify-between">
+              <span>Install Pipeline</span>
+              <button
+                onClick={() => setOptimizeOpen(!optimizeOpen)}
+                className="px-2 py-1 text-[0.6rem] rounded-md bg-emerald-600 text-white hover:bg-emerald-500 transition-colors"
+              >
+                {optimizeOpen ? "Close" : "Optimize"}
+              </button>
             </h2>
+            {optimizeOpen && (
+              <div className="mb-3 p-2.5 rounded-lg bg-surface-2 border border-t-border space-y-2">
+                {/* Preset selector */}
+                <div className="flex flex-wrap gap-1">
+                  {(["balanced", "revenue-first", "pe-priority", "urgency-first"] as ScoringPreset[]).map((p) => (
+                    <button
+                      key={p}
+                      onClick={() => { setOptimizePreset(p); setOptimizeResult(null); }}
+                      className={`px-2 py-0.5 text-[0.55rem] rounded-full border transition-colors ${
+                        optimizePreset === p
+                          ? "bg-emerald-600 text-white border-emerald-600"
+                          : "bg-background border-t-border text-muted hover:border-emerald-500"
+                      }`}
+                    >
+                      {p === "balanced" ? "Balanced" : p === "revenue-first" ? "Revenue" : p === "pe-priority" ? "PE Priority" : "Urgency"}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Generate button */}
+                <button
+                  onClick={handleOptimizeGenerate}
+                  disabled={optimizeApplying}
+                  className="w-full px-2 py-1.5 text-[0.6rem] rounded-md bg-emerald-600 text-white hover:bg-emerald-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Generate Schedule
+                </button>
+
+                {/* Preview results */}
+                {optimizeResult && optimizeResult.entries.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-[0.6rem] text-muted">
+                      {optimizeResult.entries.length} projects · $
+                      {(optimizeResult.entries.reduce((s, e) => s + e.project.amount, 0) / 1000).toFixed(0)}k revenue
+                      {optimizeResult.skipped.length > 0 && (
+                        <span className="text-amber-400"> · {optimizeResult.skipped.length} skipped</span>
+                      )}
+                    </div>
+                    <div className="max-h-48 overflow-y-auto space-y-1">
+                      {optimizeResult.entries.map((entry) => (
+                        <div
+                          key={entry.project.id}
+                          className="flex items-center gap-1.5 text-[0.55rem] p-1 rounded bg-background"
+                        >
+                          <span
+                            className="w-2 h-2 rounded-full shrink-0"
+                            style={{ backgroundColor: entry.crewColor }}
+                          />
+                          <span className="truncate flex-1 text-foreground">{entry.project.name}</span>
+                          <span className="text-muted shrink-0">{entry.crew.split(" ").pop()}</span>
+                          <span className="text-muted shrink-0">{entry.startDate.slice(5)}</span>
+                          <span className="text-muted shrink-0">{entry.days}d</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Apply button with progress */}
+                    {optimizeApplying ? (
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-[0.55rem] text-muted">
+                          <span>Applying...</span>
+                          <span>
+                            {optimizeProgress.current}/{optimizeProgress.total}
+                            {optimizeProgress.failed > 0 && (
+                              <span className="text-red-400"> ({optimizeProgress.failed} failed)</span>
+                            )}
+                          </span>
+                        </div>
+                        <div className="h-1 rounded-full bg-background overflow-hidden">
+                          <div
+                            className="h-full bg-emerald-500 transition-all"
+                            style={{
+                              width: `${optimizeProgress.total > 0 ? (optimizeProgress.current / optimizeProgress.total) * 100 : 0}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={handleOptimizeApply}
+                        className="w-full px-2 py-1.5 text-[0.6rem] rounded-md bg-amber-600 text-white hover:bg-amber-500 transition-colors"
+                      >
+                        Apply as Tentative
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Clear Optimization button — always available when panel is open */}
+                <button
+                  onClick={handleClearOptimization}
+                  disabled={optimizeApplying}
+                  className="w-full px-2 py-1.5 text-[0.6rem] rounded-md bg-red-600/80 text-white hover:bg-red-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Clear Optimization
+                </button>
+              </div>
+            )}
             {/* Stage tabs */}
             <div className="flex flex-wrap gap-1 mb-2">
               {stageTabs.map((st) => (
