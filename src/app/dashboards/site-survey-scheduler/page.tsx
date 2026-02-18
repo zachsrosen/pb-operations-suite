@@ -254,24 +254,34 @@ function isTentativeProject(project: Pick<SurveyProject, "surveyStatus" | "tenta
 function getEffectiveScheduleDate(
   project: SurveyProject,
   manualScheduleDate?: string,
-  tentativeScheduleDate?: string
+  tentativeScheduleDate?: string,
+  scheduledRecordDate?: string
 ): string | null {
-  return manualScheduleDate || tentativeScheduleDate || project.scheduleDate || null;
+  return manualScheduleDate || tentativeScheduleDate || project.scheduleDate || scheduledRecordDate || null;
 }
 
 function hasActiveSchedule(
   project: SurveyProject,
   manualScheduleDate?: string,
-  tentativeScheduleDate?: string
+  tentativeScheduleDate?: string,
+  scheduledRecordDate?: string
 ): boolean {
   if (project.completionDate) return false;
-  const schedDate = getEffectiveScheduleDate(project, manualScheduleDate, tentativeScheduleDate);
+  const schedDate = getEffectiveScheduleDate(project, manualScheduleDate, tentativeScheduleDate, scheduledRecordDate);
   if (project.tentativeRecordId) return !!schedDate;
   if (project.zuperHasSchedule && schedDate) return true;
   if (!schedDate) return false;
   // Respect persisted schedule dates even if status lags behind.
   // "Ready to Schedule" means no active booking yet — the date is stale or a target.
-  if (isReadyToScheduleStatus(project.surveyStatus)) return false;
+  if (isReadyToScheduleStatus(project.surveyStatus)) {
+    const zuperStatus = String(project.zuperJobStatus || "").toLowerCase();
+    const hasConfirmedSignal =
+      !!scheduledRecordDate ||
+      !!project.zuperJobUid ||
+      !!project.assignedSlot ||
+      zuperStatus.includes("scheduled");
+    return hasConfirmedSignal;
+  }
   return true;
 }
 
@@ -333,6 +343,7 @@ export default function SiteSurveySchedulerPage() {
   const [selectedProject, setSelectedProject] = useState<SurveyProject | null>(null);
   const [manualSchedules, setManualSchedules] = useState<Record<string, string>>({});
   const [tentativeScheduleDates, setTentativeScheduleDates] = useState<Record<string, string>>({});
+  const [scheduledRecordDates, setScheduledRecordDates] = useState<Record<string, string>>({});
   const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null);
 
   /* ---- modals ---- */
@@ -551,6 +562,7 @@ export default function SiteSurveySchedulerPage() {
       //   (not "Ready to Schedule")
       // - never overwrite a known Zuper job link with a different record UID
       try {
+        const nextScheduledRecordDates: Record<string, string> = {};
         const projectIds = transformed.map((p: SurveyProject) => p.id).join(",");
         if (projectIds) {
           const scheduledResponse = await fetch(`/api/zuper/schedule-records?projectIds=${projectIds}&type=survey&status=scheduled`);
@@ -560,6 +572,7 @@ export default function SiteSurveySchedulerPage() {
             for (const project of transformed) {
               const rec = records[project.id];
               if (!rec?.scheduledDate) continue;
+              nextScheduledRecordDates[project.id] = rec.scheduledDate;
 
               const zuperStatus = String(project.zuperJobStatus || "").toLowerCase();
               const hasConfirmedSignal =
@@ -601,6 +614,7 @@ export default function SiteSurveySchedulerPage() {
             }
           }
         }
+        setScheduledRecordDates(nextScheduledRecordDates);
       } catch (scheduledErr) {
         console.warn("Failed to rehydrate scheduled survey records:", scheduledErr);
       }
@@ -752,25 +766,25 @@ export default function SiteSurveySchedulerPage() {
 
   const unscheduledProjects = useMemo(() => {
     return filteredProjects.filter(p =>
-      !hasActiveSchedule(p, manualSchedules[p.id], tentativeScheduleDates[p.id]) &&
+      !hasActiveSchedule(p, manualSchedules[p.id], tentativeScheduleDates[p.id], scheduledRecordDates[p.id]) &&
       !p.surveyStatus.toLowerCase().includes("complete")
     );
-  }, [filteredProjects, manualSchedules, tentativeScheduleDates]);
+  }, [filteredProjects, manualSchedules, tentativeScheduleDates, scheduledRecordDates]);
 
   const stats = useMemo(() => {
     const total = projects.length;
     const needsScheduling = projects.filter(p =>
-      !hasActiveSchedule(p, manualSchedules[p.id], tentativeScheduleDates[p.id]) && !p.completionDate
+      !hasActiveSchedule(p, manualSchedules[p.id], tentativeScheduleDates[p.id], scheduledRecordDates[p.id]) && !p.completionDate
     ).length;
     const scheduled = projects.filter(p =>
-      hasActiveSchedule(p, manualSchedules[p.id], tentativeScheduleDates[p.id]) && !p.completionDate
+      hasActiveSchedule(p, manualSchedules[p.id], tentativeScheduleDates[p.id], scheduledRecordDates[p.id]) && !p.completionDate
     ).length;
     const completed = projects.filter(p => p.completionDate).length;
     const overdue = projects.filter(p => isSurveyOverdue(p, manualSchedules[p.id])).length;
     const totalValue = projects.reduce((sum, p) => sum + p.amount, 0);
 
     return { total, needsScheduling, scheduled, completed, overdue, totalValue };
-  }, [projects, manualSchedules, tentativeScheduleDates]);
+  }, [projects, manualSchedules, tentativeScheduleDates, scheduledRecordDates]);
 
   /* ================================================================ */
   /*  Calendar data                                                    */
@@ -809,8 +823,8 @@ export default function SiteSurveySchedulerPage() {
   const eventsForDate = useCallback((dateStr: string) => {
     return filteredProjects
       .filter(p => {
-        if (!hasActiveSchedule(p, manualSchedules[p.id], tentativeScheduleDates[p.id])) return false;
-        const schedDate = getEffectiveScheduleDate(p, manualSchedules[p.id], tentativeScheduleDates[p.id]);
+        if (!hasActiveSchedule(p, manualSchedules[p.id], tentativeScheduleDates[p.id], scheduledRecordDates[p.id])) return false;
+        const schedDate = getEffectiveScheduleDate(p, manualSchedules[p.id], tentativeScheduleDates[p.id], scheduledRecordDates[p.id]);
         return schedDate === dateStr;
       })
       .sort((a, b) => {
@@ -819,7 +833,7 @@ export default function SiteSurveySchedulerPage() {
         const timeB = b.assignedSlot?.startTime || b.zuperScheduledTime || "zzz";
         return timeA.localeCompare(timeB);
       });
-  }, [filteredProjects, manualSchedules, tentativeScheduleDates]);
+  }, [filteredProjects, manualSchedules, tentativeScheduleDates, scheduledRecordDates]);
 
   /* ================================================================ */
   /*  Scheduling actions                                               */
@@ -2045,9 +2059,9 @@ export default function SiteSurveySchedulerPage() {
                     </thead>
                     <tbody className="divide-y divide-t-border">
                       {filteredProjects.map((project) => {
-                        const isScheduled = hasActiveSchedule(project, manualSchedules[project.id], tentativeScheduleDates[project.id]);
+                        const isScheduled = hasActiveSchedule(project, manualSchedules[project.id], tentativeScheduleDates[project.id], scheduledRecordDates[project.id]);
                         const schedDate = isScheduled
-                          ? getEffectiveScheduleDate(project, manualSchedules[project.id], tentativeScheduleDates[project.id])
+                          ? getEffectiveScheduleDate(project, manualSchedules[project.id], tentativeScheduleDates[project.id], scheduledRecordDates[project.id])
                           : null;
                         const overdue = isSurveyOverdue(project, manualSchedules[project.id]);
                         return (
