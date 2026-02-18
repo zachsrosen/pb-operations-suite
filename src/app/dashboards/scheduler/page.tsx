@@ -374,6 +374,13 @@ function toDateStr(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+function normalizeLocation(location?: string | null): string {
+  const value = (location || "").trim();
+  if (!value) return "Unknown";
+  if (value === "DTC") return "Centennial";
+  return value;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Transform API data                                                 */
 /* ------------------------------------------------------------------ */
@@ -412,7 +419,7 @@ function transformProject(p: RawProject): SchedulerProject | null {
     scheduleDate = p.constructionScheduleDate || null;
   }
 
-  const loc = p.pbLocation || "Unknown";
+  const loc = normalizeLocation(p.pbLocation);
   const isBuildStage =
     effectiveStage === "rtb" || effectiveStage === "blocked" || effectiveStage === "construction";
 
@@ -1601,14 +1608,19 @@ export default function SchedulerPage() {
   /* ---- Optimizer handlers ---- */
 
   const handleOptimizeGenerate = useCallback(() => {
+    const selectedLocationSet = new Set(
+      optimizeLocations.map((loc) => normalizeLocation(loc))
+    );
+
     const eligible = projects.filter((p) => {
+      const projectLocation = normalizeLocation(p.location);
       if (p.stage !== "rtb") return false;
       if (p.constructionScheduleDate) return false;
       if (p.zuperJobCategory === "construction" && p.zuperScheduledStart) return false;
       if (p.scheduleDate) return false;
       const ms = manualSchedules[p.id];
       if (ms && ms.scheduleType === "installation") return false;
-      if (optimizeLocations.length > 0 && !optimizeLocations.includes(p.location)) return false;
+      if (selectedLocationSet.size > 0 && !selectedLocationSet.has(projectLocation)) return false;
       return true;
     });
 
@@ -1616,7 +1628,7 @@ export default function SchedulerPage() {
       id: p.id,
       name: p.name,
       address: p.address,
-      location: p.location,
+      location: normalizeLocation(p.location),
       amount: p.amount,
       stage: p.stage,
       isPE: p.isPE,
