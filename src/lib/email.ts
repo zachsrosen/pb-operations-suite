@@ -269,9 +269,15 @@ async function sendEmailMessage(params: {
 
   const resend = getResendClient();
   if (resend) {
+    // Resend requires a verified domain. If no custom domain is verified,
+    // fall back to Resend's built-in test sender so emails still go out.
+    const resendFrom = process.env.RESEND_FROM_EMAIL
+      ? `PB Operations <${process.env.RESEND_FROM_EMAIL}>`
+      : from;
+
     try {
       const { error } = await resend.emails.send({
-        from,
+        from: resendFrom,
         to: [params.to],
         subject: params.subject,
         html: params.html,
