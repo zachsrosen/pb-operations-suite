@@ -601,14 +601,6 @@ export async function PUT(request: NextRequest) {
           hubspotWarnings.push(`HubSpot site_surveyor write failed (${schedule.assignedUser})`);
         }
       }
-      if (schedule.type === "survey") {
-        const surveyStatusUpdated =
-          (await updateDealProperty(project.id, { site_survey_status: "Scheduled" })) ||
-          (await updateDealProperty(project.id, { site_survey_status: "scheduled" }));
-        if (!surveyStatusUpdated) {
-          hubspotWarnings.push("HubSpot site_survey_status write failed (Scheduled)");
-        }
-      }
       const verification = await verifyHubSpotScheduleWrite(project.id, schedule.type as ScheduleType, schedule.date, schedule.assignedUser);
       if (!verification.ok) {
         hubspotWarnings.push(...verification.warnings);
@@ -642,66 +634,12 @@ export async function PUT(request: NextRequest) {
         hubspotWarnings: hubspotWarnings.length > 0 ? hubspotWarnings : undefined,
       });
     } else if (effectiveRescheduleOnly) {
-      // Reschedule-only mode: don't create new jobs, but still persist schedule fields so
-      // scheduler UI does not drop the booking after refresh.
+      // Reschedule-only mode: don't create new jobs, just report that none was found
       console.log(`[Zuper Schedule] RESCHEDULE ONLY: No existing job found for "${project.name}" with category "${schedule.type}" — skipping creation`);
-
-      await createScheduleRecord({
-        scheduleType: schedule.type,
-        projectId: project.id,
-        projectName: project.name || `Project ${project.id}`,
-        scheduledDate: schedule.date,
-        scheduledStart: schedule.startTime,
-        scheduledEnd: schedule.endTime,
-        assignedUser: schedule.assignedUser,
-        assignedUserUid: resolvedCrew || schedule.crew,
-        assignedTeamUid: resolvedTeamUid || schedule.teamUid,
-        zuperSynced: false,
-        zuperAssigned: false,
-        notes: `${schedule.notes || ""}${schedule.notes ? " | " : ""}No matching Zuper job found`,
-      });
-
-      await logSchedulingActivity(
-        schedule.type === "survey" ? "SURVEY_SCHEDULED" : schedule.type === "inspection" ? "INSPECTION_SCHEDULED" : "INSTALL_SCHEDULED",
-        `Scheduled ${schedule.type} locally for ${project.name || project.id} (no matching Zuper job found)`,
-        project,
-        undefined,
-        schedule
-      );
-
-      const hubspotUpdates: Record<string, string> = getHubSpotScheduleDateUpdate(schedule.type, schedule.date);
-      const hubspotDateUpdated = await updateDealProperty(project.id, hubspotUpdates);
-      const hubspotWarnings: string[] = [];
-      if (!hubspotDateUpdated) {
-        hubspotWarnings.push("HubSpot schedule date write failed");
-      }
-      if (schedule.type === "survey" && schedule.assignedUser) {
-        const surveyorUpdated = await updateSiteSurveyorProperty(project.id, schedule.assignedUser);
-        if (!surveyorUpdated) {
-          hubspotWarnings.push(`HubSpot site_surveyor write failed (${schedule.assignedUser})`);
-        }
-      }
-      if (schedule.type === "survey") {
-        const surveyStatusUpdated =
-          (await updateDealProperty(project.id, { site_survey_status: "Scheduled" })) ||
-          (await updateDealProperty(project.id, { site_survey_status: "scheduled" }));
-        if (!surveyStatusUpdated) {
-          hubspotWarnings.push("HubSpot site_survey_status write failed (Scheduled)");
-        }
-      }
-      const verification = await verifyHubSpotScheduleWrite(project.id, schedule.type as ScheduleType, schedule.date, schedule.assignedUser);
-      if (!verification.ok) {
-        hubspotWarnings.push(...verification.warnings);
-      }
-      if (hubspotWarnings.length > 0) {
-        console.warn(`[Zuper Schedule] HubSpot verification warnings for deal ${project.id}: ${hubspotWarnings.join("; ")}`);
-      }
-
       return NextResponse.json({
         success: true,
         action: "no_job_found",
-        message: `No existing ${schedule.type} job found in Zuper for "${project.name}". Saved schedule locally and in HubSpot.`,
-        hubspotWarnings: hubspotWarnings.length > 0 ? hubspotWarnings : undefined,
+        message: `No existing ${schedule.type} job found in Zuper for "${project.name}". Create the job in Zuper first, then reschedule from here.`,
       });
     } else {
       // No existing job found - create new one
