@@ -256,6 +256,23 @@ const STAGE_MAP: Record<string, string> = {
   Inspection: "inspection",
 };
 
+function mapStage(stageRaw?: string | null): string {
+  const stage = (stageRaw || "").trim();
+  if (!stage) return "other";
+
+  const direct = STAGE_MAP[stage];
+  if (direct) return direct;
+
+  const normalized = stage.toLowerCase();
+  if (normalized === "site survey" || normalized === "survey") return "survey";
+  if (normalized === "ready to build" || normalized === "rtb") return "rtb";
+  if (normalized === "rtb - blocked" || normalized === "blocked") return "blocked";
+  if (normalized === "construction") return "construction";
+  if (normalized === "inspection") return "inspection";
+
+  return "other";
+}
+
 const STAGE_ICONS: Record<string, string> = {
   survey: "Survey",
   rtb: "RTB",
@@ -386,7 +403,7 @@ function normalizeLocation(location?: string | null): string {
 /* ------------------------------------------------------------------ */
 
 function transformProject(p: RawProject): SchedulerProject | null {
-  const stage = STAGE_MAP[p.stage] || "other";
+  const stage = mapStage(p.stage);
   const isSchedulable =
     stage === "survey" ||
     stage === "rtb" ||
