@@ -1086,6 +1086,42 @@ export default function SiteSurveySchedulerPage() {
       }
     }
 
+    if (syncToZuper) {
+      setManualSchedules((prev) => ({
+        ...prev,
+        [project.id]: date,
+      }));
+      setTentativeScheduleDates((prev) => {
+        const next = { ...prev };
+        delete next[project.id];
+        return next;
+      });
+      setProjects((prev) =>
+        prev.map((p) =>
+          p.id === project.id
+            ? {
+                ...p,
+                surveyStatus: "Scheduled",
+                scheduleDate: date,
+                tentativeRecordId: undefined,
+                assignedSurveyor: effectiveAssignee || p.assignedSurveyor,
+                assignedSlot: slot
+                  ? {
+                      userName: effectiveAssignee || slot.userName || "Scheduled",
+                      startTime: slot.startTime,
+                      endTime: slot.endTime,
+                      displayTime: formatTimeRange12h(slot.startTime, slot.endTime),
+                    }
+                  : p.assignedSlot,
+                zuperScheduledTime: slot?.startTime ? formatTime12h(slot.startTime) : p.zuperScheduledTime,
+                zuperJobUid: scheduledZuperJobUid || p.zuperJobUid,
+                zuperHasSchedule: !!(scheduledZuperJobUid || p.zuperJobUid),
+              }
+            : p
+        )
+      );
+    }
+
     // Book the time slot locally AFTER Zuper sync (so we have the job UID)
     // This tracks the assignment since Zuper API doesn't support updating assignments
     if (slot) {
@@ -1182,7 +1218,16 @@ export default function SiteSurveySchedulerPage() {
     setProjects((prev) =>
       prev.map((p) =>
         p.id === projectId
-          ? { ...p, scheduleDate: null, assignedSurveyor: undefined, assignedSlot: undefined, zuperScheduledTime: undefined }
+          ? {
+              ...p,
+              scheduleDate: null,
+              surveyStatus: "Ready to Schedule",
+              tentativeRecordId: undefined,
+              assignedSurveyor: undefined,
+              assignedSlot: undefined,
+              zuperScheduledTime: undefined,
+              zuperHasSchedule: false,
+            }
           : p
       )
     );
