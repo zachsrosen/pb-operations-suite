@@ -389,7 +389,6 @@ export async function POST(request: NextRequest) {
       if (scheduleType === "survey") {
         hubspotUpdate = {
           site_survey_schedule_date: record.scheduledDate,
-          site_survey_scheduled_date: record.scheduledDate,
         };
       } else if (scheduleType === "installation") {
         hubspotUpdate = {
@@ -414,7 +413,7 @@ export async function POST(request: NextRequest) {
       }
       const verificationFields =
         scheduleType === "survey"
-          ? ["site_survey_schedule_date", "site_survey_scheduled_date", "site_surveyor"]
+          ? ["site_survey_schedule_date", "site_surveyor"]
           : scheduleType === "installation"
             ? ["install_schedule_date", "construction_scheduled_date"]
             : ["inspections_schedule_date", "inspection_scheduled_date"];
@@ -424,7 +423,7 @@ export async function POST(request: NextRequest) {
       } else {
         const dateValues =
           scheduleType === "survey"
-            ? [verifyProps.site_survey_schedule_date, verifyProps.site_survey_scheduled_date]
+            ? [verifyProps.site_survey_schedule_date]
             : scheduleType === "installation"
               ? [verifyProps.install_schedule_date, verifyProps.construction_scheduled_date]
               : [verifyProps.inspections_schedule_date, verifyProps.inspection_scheduled_date];
