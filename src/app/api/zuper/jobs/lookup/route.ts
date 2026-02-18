@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ZuperClient, ZuperJob } from "@/lib/zuper";
+import { JOB_CATEGORIES, JOB_CATEGORY_UIDS, ZuperClient, ZuperJob } from "@/lib/zuper";
 import { getCachedZuperJobsByDealIds } from "@/lib/db";
 import { requireApiAuth } from "@/lib/api-auth";
 
@@ -29,22 +29,58 @@ async function handleLookup(projectIds: string[], projectNames: string[], catego
     return NextResponse.json({ configured: true, jobs: {} });
   }
 
-  // Map URL category param to Zuper job category names
-  const categoryMap: Record<string, string> = {
-    "site-survey": "Site Survey",
-    "survey": "Site Survey",
-    "construction": "Construction",
-    "installation": "Construction",
-    "inspection": "Inspection",
+  // Normalize category aliases/Uids to canonical display names so matching is stable
+  // even when Zuper returns `job_category` as a UID string.
+  const CATEGORY_ALIASES: Record<string, string> = {
+    "site-survey": JOB_CATEGORIES.SITE_SURVEY,
+    "site survey": JOB_CATEGORIES.SITE_SURVEY,
+    "survey": JOB_CATEGORIES.SITE_SURVEY,
+    [JOB_CATEGORY_UIDS.SITE_SURVEY.toLowerCase()]: JOB_CATEGORIES.SITE_SURVEY,
+    "construction": JOB_CATEGORIES.CONSTRUCTION,
+    "installation": JOB_CATEGORIES.CONSTRUCTION,
+    [JOB_CATEGORY_UIDS.CONSTRUCTION.toLowerCase()]: JOB_CATEGORIES.CONSTRUCTION,
+    "inspection": JOB_CATEGORIES.INSPECTION,
+    [JOB_CATEGORY_UIDS.INSPECTION.toLowerCase()]: JOB_CATEGORIES.INSPECTION,
   };
-  const targetCategory = category ? categoryMap[category] || category : null;
+
+  const normalizeCategory = (value: string | null | undefined): string | null => {
+    if (!value) return null;
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    return CATEGORY_ALIASES[trimmed.toLowerCase()] || trimmed;
+  };
+
+  const targetCategory = normalizeCategory(category);
+
+  const categoryMatchesTarget = (jobCategoryName: string): boolean => {
+    if (!targetCategory) return true;
+
+    const normalizedJobCategory = normalizeCategory(jobCategoryName) || jobCategoryName;
+    if (normalizedJobCategory === targetCategory) return true;
+
+    const jobLower = normalizedJobCategory.toLowerCase();
+    const targetLower = targetCategory.toLowerCase();
+
+    // Defensive matching for category variants returned by Zuper
+    // (e.g. "Site Survey - Residential", "Construction - Solar", etc.)
+    if (jobLower.includes(targetLower) || targetLower.includes(jobLower)) return true;
+    if (targetLower === JOB_CATEGORIES.SITE_SURVEY.toLowerCase() && jobLower.includes("survey")) return true;
+    if (targetLower === JOB_CATEGORIES.CONSTRUCTION.toLowerCase() && (jobLower.includes("construction") || jobLower.includes("install"))) return true;
+    if (targetLower === JOB_CATEGORIES.INSPECTION.toLowerCase() && jobLower.includes("inspection")) return true;
+
+    return false;
+  };
 
   // Helper to get category name from job (handles both string and object formats)
   const getJobCategoryName = (job: ZuperJob): string => {
     if (typeof job.job_category === "string") {
-      return job.job_category;
+      return normalizeCategory(job.job_category) || job.job_category;
     }
-    return job.job_category?.category_name || "";
+    return (
+      normalizeCategory(job.job_category?.category_name) ||
+      normalizeCategory(job.job_category?.category_uid) ||
+      ""
+    );
   };
 
   // Helper to get HubSpot Deal ID from custom fields
@@ -113,14 +149,21 @@ async function handleLookup(projectIds: string[], projectNames: string[], catego
     return 10;
   };
 
+  const getScheduledStart = (job: ZuperJob): string | undefined => {
+    return job.scheduled_start_time || job.scheduled_start_time_dt || undefined;
+  };
+
+  const getScheduledEnd = (job: ZuperJob): string | undefined => {
+    return job.scheduled_end_time || job.scheduled_end_time_dt || undefined;
+  };
+
   const isEffectivelyUnscheduled = (job: ZuperJob): boolean => {
-    const start = job.scheduled_start_time || job.scheduled_start_time_dt || "";
-    const end = job.scheduled_end_time || job.scheduled_end_time_dt || "";
+    const start = getScheduledStart(job) || "";
+    const end = getScheduledEnd(job) || "";
     const duration = Number((job as ZuperJob & { scheduled_duration?: number | string }).scheduled_duration);
     const noStart = !start;
-    const noEnd = !end;
     const zeroLength = !!start && !!end && start === end;
-    return (noStart && noEnd) || zeroLength || duration === 0;
+    return noStart || zeroLength || duration === 0;
   };
 
   // Helper to extract customer name from project name
@@ -320,7 +363,7 @@ async function handleLookup(projectIds: string[], projectNames: string[], catego
     if (allJobs.length > 0) {
       for (const job of allJobs) {
         const jobCategoryName = getJobCategoryName(job);
-        if (targetCategory && jobCategoryName !== targetCategory) continue;
+        if (!categoryMatchesTarget(jobCategoryName)) continue;
         if (!job.job_uid) continue;
 
         const hubspotDealId = getHubSpotDealId(job);
@@ -465,10 +508,12 @@ async function handleLookup(projectIds: string[], projectNames: string[], catego
 
       // Compute scheduled days from Zuper start/end times
       const effectivelyUnscheduled = isEffectivelyUnscheduled(best.job);
+      const scheduledStart = getScheduledStart(best.job);
+      const scheduledEnd = getScheduledEnd(best.job);
       let scheduledDays: number | undefined;
-      if (!effectivelyUnscheduled && best.job.scheduled_start_time && best.job.scheduled_end_time) {
-        const start = new Date(best.job.scheduled_start_time);
-        const end = new Date(best.job.scheduled_end_time);
+      if (!effectivelyUnscheduled && scheduledStart && scheduledEnd) {
+        const start = new Date(scheduledStart);
+        const end = new Date(scheduledEnd);
         const diffMs = end.getTime() - start.getTime();
         const diffDays = diffMs / (1000 * 60 * 60 * 24);
         // Round to nearest 0.25 (quarter day) — Zuper often stores full-day windows
@@ -488,8 +533,8 @@ async function handleLookup(projectIds: string[], projectNames: string[], catego
         jobUid: best.job.job_uid!,
         jobTitle: best.job.job_title || "",
         status: getJobStatus(best.job) || "UNKNOWN",
-        scheduledDate: effectivelyUnscheduled ? undefined : best.job.scheduled_start_time,
-        scheduledEnd: effectivelyUnscheduled ? undefined : best.job.scheduled_end_time,
+        scheduledDate: effectivelyUnscheduled ? undefined : scheduledStart,
+        scheduledEnd: effectivelyUnscheduled ? undefined : scheduledEnd,
         scheduledDays,
         category: best.categoryName,
         matchedBy: best.matchMethod,
