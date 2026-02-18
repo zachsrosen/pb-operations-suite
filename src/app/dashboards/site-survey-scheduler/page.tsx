@@ -251,16 +251,25 @@ function isTentativeProject(project: Pick<SurveyProject, "surveyStatus" | "tenta
   return s.includes("tentative");
 }
 
-function hasActiveSchedule(project: SurveyProject, manualScheduleDate?: string): boolean {
-  // Manual/local schedule should always be treated as scheduled immediately.
-  if (manualScheduleDate) return !project.completionDate;
+function getEffectiveScheduleDate(
+  project: SurveyProject,
+  manualScheduleDate?: string,
+  tentativeScheduleDate?: string
+): string | null {
+  return manualScheduleDate || tentativeScheduleDate || project.scheduleDate || null;
+}
 
-  const schedDate = project.scheduleDate;
-  if (!schedDate) return false;
+function hasActiveSchedule(
+  project: SurveyProject,
+  manualScheduleDate?: string,
+  tentativeScheduleDate?: string
+): boolean {
   if (project.completionDate) return false;
-  if (project.tentativeRecordId) return true;
+  const schedDate = getEffectiveScheduleDate(project, manualScheduleDate, tentativeScheduleDate);
+  if (project.tentativeRecordId) return !!schedDate;
+  if (project.zuperHasSchedule && schedDate) return true;
+  if (!schedDate) return false;
   // Respect persisted schedule dates even if status lags behind.
-  if (project.zuperHasSchedule) return true;
   // "Ready to Schedule" means no active booking yet — the date is stale or a target.
   if (isReadyToScheduleStatus(project.surveyStatus)) return false;
   return true;
@@ -323,6 +332,7 @@ export default function SiteSurveySchedulerPage() {
   /* ---- selection / scheduling ---- */
   const [selectedProject, setSelectedProject] = useState<SurveyProject | null>(null);
   const [manualSchedules, setManualSchedules] = useState<Record<string, string>>({});
+  const [tentativeScheduleDates, setTentativeScheduleDates] = useState<Record<string, string>>({});
   const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null);
 
   /* ---- modals ---- */
@@ -491,6 +501,7 @@ export default function SiteSurveySchedulerPage() {
       }
 
       // Rehydrate tentative survey schedules so they persist on this page.
+      const nextTentativeScheduleDates: Record<string, string> = {};
       try {
         const projectIds = transformed.map((p: SurveyProject) => p.id).join(",");
         if (projectIds) {
@@ -510,6 +521,7 @@ export default function SiteSurveySchedulerPage() {
                 : (project.assignedSurveyor || "");
               // Tentative entries are a local planning state and should always render
               // as tentative while the record remains active.
+              nextTentativeScheduleDates[project.id] = rec.scheduledDate;
               project.scheduleDate = rec.scheduledDate;
               project.surveyStatus = "Tentative";
               project.tentativeRecordId = rec.id || project.tentativeRecordId;
@@ -531,6 +543,7 @@ export default function SiteSurveySchedulerPage() {
       } catch (tentativeErr) {
         console.warn("Failed to rehydrate tentative survey schedules:", tentativeErr);
       }
+      setTentativeScheduleDates(nextTentativeScheduleDates);
 
       setProjects(transformed);
     } catch (err: unknown) {
@@ -678,25 +691,25 @@ export default function SiteSurveySchedulerPage() {
 
   const unscheduledProjects = useMemo(() => {
     return filteredProjects.filter(p =>
-      !hasActiveSchedule(p, manualSchedules[p.id]) &&
+      !hasActiveSchedule(p, manualSchedules[p.id], tentativeScheduleDates[p.id]) &&
       !p.surveyStatus.toLowerCase().includes("complete")
     );
-  }, [filteredProjects, manualSchedules]);
+  }, [filteredProjects, manualSchedules, tentativeScheduleDates]);
 
   const stats = useMemo(() => {
     const total = projects.length;
     const needsScheduling = projects.filter(p =>
-      !hasActiveSchedule(p, manualSchedules[p.id]) && !p.completionDate
+      !hasActiveSchedule(p, manualSchedules[p.id], tentativeScheduleDates[p.id]) && !p.completionDate
     ).length;
     const scheduled = projects.filter(p =>
-      hasActiveSchedule(p, manualSchedules[p.id]) && !p.completionDate
+      hasActiveSchedule(p, manualSchedules[p.id], tentativeScheduleDates[p.id]) && !p.completionDate
     ).length;
     const completed = projects.filter(p => p.completionDate).length;
     const overdue = projects.filter(p => isSurveyOverdue(p, manualSchedules[p.id])).length;
     const totalValue = projects.reduce((sum, p) => sum + p.amount, 0);
 
     return { total, needsScheduling, scheduled, completed, overdue, totalValue };
-  }, [projects, manualSchedules]);
+  }, [projects, manualSchedules, tentativeScheduleDates]);
 
   /* ================================================================ */
   /*  Calendar data                                                    */
@@ -735,8 +748,8 @@ export default function SiteSurveySchedulerPage() {
   const eventsForDate = useCallback((dateStr: string) => {
     return filteredProjects
       .filter(p => {
-        if (!hasActiveSchedule(p, manualSchedules[p.id])) return false;
-        const schedDate = manualSchedules[p.id] || p.scheduleDate;
+        if (!hasActiveSchedule(p, manualSchedules[p.id], tentativeScheduleDates[p.id])) return false;
+        const schedDate = getEffectiveScheduleDate(p, manualSchedules[p.id], tentativeScheduleDates[p.id]);
         return schedDate === dateStr;
       })
       .sort((a, b) => {
@@ -745,7 +758,7 @@ export default function SiteSurveySchedulerPage() {
         const timeB = b.assignedSlot?.startTime || b.zuperScheduledTime || "zzz";
         return timeA.localeCompare(timeB);
       });
-  }, [filteredProjects, manualSchedules]);
+  }, [filteredProjects, manualSchedules, tentativeScheduleDates]);
 
   /* ================================================================ */
   /*  Scheduling actions                                               */
@@ -1038,6 +1051,10 @@ export default function SiteSurveySchedulerPage() {
         const slotInfo = slot ? ` (${effectiveAssignee} ${slot.startTime.replace(/^0/, "")})` : "";
         if (response.ok) {
           const data = await response.json().catch(() => null);
+          setTentativeScheduleDates((prev) => ({
+            ...prev,
+            [project.id]: date,
+          }));
           setProjects((prev) =>
             prev.map((p) =>
               p.id === project.id
@@ -1156,6 +1173,11 @@ export default function SiteSurveySchedulerPage() {
       delete next[projectId];
       return next;
     });
+    setTentativeScheduleDates((prev) => {
+      const next = { ...prev };
+      delete next[projectId];
+      return next;
+    });
     clearSurveyorAssignment(projectId);
     setProjects((prev) =>
       prev.map((p) =>
@@ -1230,6 +1252,11 @@ export default function SiteSurveySchedulerPage() {
             : p
         )
       );
+      setTentativeScheduleDates((prev) => {
+        const next = { ...prev };
+        delete next[project.id];
+        return next;
+      });
       showToast(data?.zuperSynced ? "Confirmed & synced to Zuper" : `Confirmed (Zuper sync issue: ${data?.zuperError || "Unknown"})`, data?.zuperSynced ? "success" : "warning");
       setScheduleModal(null);
       setTimeout(() => fetchProjects(), 700);
@@ -1259,6 +1286,11 @@ export default function SiteSurveySchedulerPage() {
 
       clearSurveyorAssignment(project.id);
       setManualSchedules((prev) => {
+        const next = { ...prev };
+        delete next[project.id];
+        return next;
+      });
+      setTentativeScheduleDates((prev) => {
         const next = { ...prev };
         delete next[project.id];
         return next;
@@ -1907,8 +1939,10 @@ export default function SiteSurveySchedulerPage() {
                     </thead>
                     <tbody className="divide-y divide-t-border">
                       {filteredProjects.map((project) => {
-                        const isScheduled = hasActiveSchedule(project, manualSchedules[project.id]);
-                        const schedDate = isScheduled ? (manualSchedules[project.id] || project.scheduleDate) : null;
+                        const isScheduled = hasActiveSchedule(project, manualSchedules[project.id], tentativeScheduleDates[project.id]);
+                        const schedDate = isScheduled
+                          ? getEffectiveScheduleDate(project, manualSchedules[project.id], tentativeScheduleDates[project.id])
+                          : null;
                         const overdue = isSurveyOverdue(project, manualSchedules[project.id]);
                         return (
                           <tr key={project.id} className={`hover:bg-surface/50 ${overdue ? "bg-red-500/5" : ""}`}>
