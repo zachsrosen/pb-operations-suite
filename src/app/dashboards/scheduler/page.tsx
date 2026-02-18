@@ -546,9 +546,28 @@ export default function SchedulerPage() {
   /* ---- optimizer ---- */
   const [optimizeOpen, setOptimizeOpen] = useState(false);
   const [optimizePreset, setOptimizePreset] = useState<ScoringPreset>("balanced");
+  const [optimizeLocations, setOptimizeLocations] = useState<string[]>([]); // empty = all locations
   const [optimizeResult, setOptimizeResult] = useState<ReturnType<typeof generateOptimizedSchedule> | null>(null);
   const [optimizeApplying, setOptimizeApplying] = useState(false);
   const [optimizeProgress, setOptimizeProgress] = useState({ current: 0, total: 0, failed: 0 });
+  const PRESET_DESCRIPTIONS: Record<ScoringPreset, { label: string; desc: string }> = {
+    balanced: {
+      label: "Balanced",
+      desc: "Equal weight to revenue, PE status, and urgency",
+    },
+    "revenue-first": {
+      label: "Revenue",
+      desc: "Prioritizes highest-value projects (3x revenue weight)",
+    },
+    "pe-priority": {
+      label: "PE Priority",
+      desc: "Prioritizes Participate Energy projects (3x PE weight)",
+    },
+    "urgency-first": {
+      label: "Urgency",
+      desc: "Prioritizes overdue and near-deadline projects (3x urgency weight)",
+    },
+  };
 
   /* ================================================================ */
   /*  Data fetching                                                    */
@@ -1589,6 +1608,7 @@ export default function SchedulerPage() {
       if (p.scheduleDate) return false;
       const ms = manualSchedules[p.id];
       if (ms && ms.scheduleType === "installation") return false;
+      if (optimizeLocations.length > 0 && !optimizeLocations.includes(p.location)) return false;
       return true;
     });
 
@@ -1616,7 +1636,7 @@ export default function SchedulerPage() {
     if (result.entries.length === 0) showToast("No eligible RTB projects to optimize", "error");
     if (result.skipped.length > 0)
       showToast(`${result.skipped.length} skipped (unmapped location)`, "error");
-  }, [projects, manualSchedules, optimizePreset, showToast]);
+  }, [projects, manualSchedules, optimizePreset, optimizeLocations, showToast]);
 
   const handleOptimizeApply = useCallback(async () => {
     if (!optimizeResult?.entries.length) return;
@@ -2082,20 +2102,62 @@ export default function SchedulerPage() {
               <div className="mb-3 p-2.5 rounded-lg bg-surface-2 border border-t-border space-y-2">
                 {/* Preset selector */}
                 <div className="flex flex-wrap gap-1">
-                  {(["balanced", "revenue-first", "pe-priority", "urgency-first"] as ScoringPreset[]).map((p) => (
+                  {(Object.entries(PRESET_DESCRIPTIONS) as [ScoringPreset, { label: string; desc: string }][])
+                    .map(([key, { label }]) => (
                     <button
-                      key={p}
-                      onClick={() => { setOptimizePreset(p); setOptimizeResult(null); }}
+                      key={key}
+                      onClick={() => {
+                        setOptimizePreset(key);
+                        setOptimizeResult(null);
+                      }}
                       className={`px-2 py-0.5 text-[0.55rem] rounded-full border transition-colors ${
-                        optimizePreset === p
+                        optimizePreset === key
                           ? "bg-emerald-600 text-white border-emerald-600"
                           : "bg-background border-t-border text-muted hover:border-emerald-500"
                       }`}
                     >
-                      {p === "balanced" ? "Balanced" : p === "revenue-first" ? "Revenue" : p === "pe-priority" ? "PE Priority" : "Urgency"}
+                      {label}
                     </button>
                   ))}
                 </div>
+                <p className="text-[0.55rem] text-muted leading-tight">
+                  {PRESET_DESCRIPTIONS[optimizePreset].desc}
+                </p>
+
+                {/* Location filter */}
+                <div className="flex flex-wrap gap-1">
+                  {LOCATIONS.filter((l) => l !== "All").map((loc) => (
+                    <button
+                      key={loc}
+                      onClick={() => {
+                        setOptimizeLocations((prev) =>
+                          prev.includes(loc)
+                            ? prev.filter((l) => l !== loc)
+                            : [...prev, loc]
+                        );
+                        setOptimizeResult(null);
+                      }}
+                      className={`px-2 py-0.5 text-[0.55rem] rounded-full border transition-colors ${
+                        optimizeLocations.length === 0 || optimizeLocations.includes(loc)
+                          ? "bg-emerald-600/80 text-white border-emerald-600"
+                          : "bg-background border-t-border text-muted hover:border-emerald-500"
+                      }`}
+                    >
+                      {loc}
+                    </button>
+                  ))}
+                </div>
+                {optimizeLocations.length > 0 && (
+                  <button
+                    onClick={() => {
+                      setOptimizeLocations([]);
+                      setOptimizeResult(null);
+                    }}
+                    className="text-[0.5rem] text-muted hover:text-foreground transition-colors"
+                  >
+                    Reset to all locations
+                  </button>
+                )}
 
                 {/* Generate button */}
                 <button
