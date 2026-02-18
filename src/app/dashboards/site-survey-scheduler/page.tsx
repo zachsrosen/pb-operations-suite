@@ -767,6 +767,7 @@ export default function SiteSurveySchedulerPage() {
   const unscheduledProjects = useMemo(() => {
     return filteredProjects.filter(p =>
       !hasActiveSchedule(p, manualSchedules[p.id], tentativeScheduleDates[p.id], scheduledRecordDates[p.id]) &&
+      !p.completionDate &&
       !p.surveyStatus.toLowerCase().includes("complete")
     );
   }, [filteredProjects, manualSchedules, tentativeScheduleDates, scheduledRecordDates]);
