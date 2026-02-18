@@ -543,67 +543,6 @@ export default function SiteSurveySchedulerPage() {
       } catch (tentativeErr) {
         console.warn("Failed to rehydrate tentative survey schedules:", tentativeErr);
       }
-
-      // Rehydrate confirmed scheduled records as a fallback when upstream
-      // schedule date fields are temporarily stale/missing after sync.
-      // Guardrails:
-      // - only apply when project already has a confirmed signal
-      //   (not "Ready to Schedule")
-      // - never overwrite a known Zuper job link with a different record UID
-      try {
-        const projectIds = transformed.map((p: SurveyProject) => p.id).join(",");
-        if (projectIds) {
-          const scheduledResponse = await fetch(`/api/zuper/schedule-records?projectIds=${projectIds}&type=survey&status=scheduled`);
-          if (scheduledResponse.ok) {
-            const scheduledData = await scheduledResponse.json();
-            const records = scheduledData?.records || {};
-            for (const project of transformed) {
-              const rec = records[project.id];
-              if (!rec?.scheduledDate) continue;
-
-              const zuperStatus = String(project.zuperJobStatus || "").toLowerCase();
-              const hasConfirmedSignal =
-                !isReadyToScheduleStatus(project.surveyStatus) ||
-                zuperStatus.includes("scheduled") ||
-                !!project.zuperHasSchedule;
-              if (!hasConfirmedSignal) continue;
-
-              if (project.zuperJobUid && rec.zuperJobUid && project.zuperJobUid !== rec.zuperJobUid) {
-                continue;
-              }
-
-              if (!project.scheduleDate) {
-                project.scheduleDate = rec.scheduledDate;
-              }
-              if (!project.assignedSurveyor && typeof rec.assignedUser === "string" && !isLikelyUid(rec.assignedUser)) {
-                project.assignedSurveyor = rec.assignedUser;
-              }
-              if (!project.zuperJobUid && rec.zuperJobUid) {
-                project.zuperJobUid = rec.zuperJobUid;
-              }
-              if (project.zuperJobUid || rec.zuperJobUid) {
-                project.zuperHasSchedule = true;
-              }
-              if (rec.scheduledStart) {
-                project.zuperScheduledTime = formatTime12h(rec.scheduledStart);
-                if (!project.assignedSlot) {
-                  project.assignedSlot = {
-                    userName: project.assignedSurveyor || "Scheduled",
-                    startTime: rec.scheduledStart,
-                    endTime: rec.scheduledEnd || rec.scheduledStart,
-                    displayTime: formatTimeRange12h(rec.scheduledStart, rec.scheduledEnd || null),
-                  };
-                }
-              }
-              if (isReadyToScheduleStatus(project.surveyStatus)) {
-                project.surveyStatus = "Scheduled";
-              }
-            }
-          }
-        }
-      } catch (scheduledErr) {
-        console.warn("Failed to rehydrate scheduled survey records:", scheduledErr);
-      }
       setTentativeScheduleDates(nextTentativeScheduleDates);
 
       setProjects(transformed);
