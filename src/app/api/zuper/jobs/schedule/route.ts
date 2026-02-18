@@ -11,6 +11,72 @@ import { upsertSiteSurveyCalendarEvent } from "@/lib/google-calendar";
 
 type ScheduleType = "survey" | "installation" | "inspection";
 
+function getConstructionScheduleBoundaryProperties(): { start: string | null; end: string | null } {
+  const start = process.env.HUBSPOT_CONSTRUCTION_START_DATE_PROPERTY?.trim() || null;
+  const end = process.env.HUBSPOT_CONSTRUCTION_END_DATE_PROPERTY?.trim() || null;
+  return { start, end };
+}
+
+function hubSpotDateTimeCandidatesFromUtc(utcDateTime: string): string[] {
+  const iso = `${utcDateTime.replace(" ", "T")}Z`;
+  const candidates = [iso, utcDateTime];
+  const ms = Date.parse(iso);
+  if (Number.isFinite(ms)) {
+    candidates.unshift(String(ms));
+  }
+  return [...new Set(candidates)];
+}
+
+async function writeHubSpotDateTimeProperty(
+  dealId: string,
+  propertyName: string,
+  utcDateTime: string
+): Promise<{ ok: boolean; writtenValue: string | null }> {
+  for (const candidate of hubSpotDateTimeCandidatesFromUtc(utcDateTime)) {
+    const ok = await updateDealProperty(dealId, { [propertyName]: candidate });
+    if (ok) {
+      return { ok: true, writtenValue: candidate };
+    }
+  }
+  return { ok: false, writtenValue: null };
+}
+
+async function writeConstructionScheduleBoundaryProperties(
+  dealId: string,
+  startUtcDateTime: string,
+  endUtcDateTime: string
+): Promise<string[]> {
+  const { start, end } = getConstructionScheduleBoundaryProperties();
+  const warnings: string[] = [];
+
+  const applyAndVerify = async (propertyName: string, utcDateTime: string) => {
+    const writeResult = await writeHubSpotDateTimeProperty(dealId, propertyName, utcDateTime);
+    if (!writeResult.ok || !writeResult.writtenValue) {
+      warnings.push(`HubSpot ${propertyName} write failed`);
+      return;
+    }
+
+    const verifyProps = await getDealProperties(dealId, [propertyName]);
+    if (!verifyProps) {
+      warnings.push(`HubSpot ${propertyName} verification read failed`);
+      return;
+    }
+
+    if (String(verifyProps[propertyName] || "") !== writeResult.writtenValue) {
+      warnings.push(`HubSpot ${propertyName} verification failed`);
+    }
+  };
+
+  if (start) {
+    await applyAndVerify(start, startUtcDateTime);
+  }
+  if (end) {
+    await applyAndVerify(end, endUtcDateTime);
+  }
+
+  return warnings;
+}
+
 function canUseTestMode(role?: string | null): boolean {
   if (!role) return false;
   return role === "ADMIN";
@@ -379,7 +445,7 @@ export async function PUT(request: NextRequest) {
     // Calculate schedule times
     // Slot times are in the crew member's local timezone (e.g. Mountain Time for CO, Pacific for CA)
     // Zuper expects UTC, so we convert using the timezone provided by the frontend
-    const days = schedule.days || 1;
+    const days = Number.isFinite(Number(schedule.days)) ? Number(schedule.days) : 1;
 
     // Determine the timezone for this schedule
     // Frontend passes schedule.timezone for timezone-aware slots (e.g. "America/Los_Angeles" for CA)
@@ -601,6 +667,14 @@ export async function PUT(request: NextRequest) {
           hubspotWarnings.push(`HubSpot site_surveyor write failed (${schedule.assignedUser})`);
         }
       }
+      if (schedule.type === "installation") {
+        const boundaryWarnings = await writeConstructionScheduleBoundaryProperties(
+          project.id,
+          startDateTime,
+          endDateTime
+        );
+        hubspotWarnings.push(...boundaryWarnings);
+      }
       const verification = await verifyHubSpotScheduleWrite(project.id, schedule.type as ScheduleType, schedule.date, schedule.assignedUser);
       if (!verification.ok) {
         hubspotWarnings.push(...verification.warnings);
@@ -718,6 +792,14 @@ export async function PUT(request: NextRequest) {
         if (!surveyorUpdated) {
           hubspotWarnings.push(`HubSpot site_surveyor write failed (${schedule.assignedUser})`);
         }
+      }
+      if (schedule.type === "installation") {
+        const boundaryWarnings = await writeConstructionScheduleBoundaryProperties(
+          project.id,
+          startDateTime,
+          endDateTime
+        );
+        hubspotWarnings.push(...boundaryWarnings);
       }
       const verification = await verifyHubSpotScheduleWrite(project.id, schedule.type as ScheduleType, schedule.date, schedule.assignedUser);
       if (!verification.ok) {
@@ -1034,6 +1116,23 @@ export async function DELETE(request: NextRequest) {
               scheduleCleared = await updateDealProperty(dealId, {
                 construction_scheduled_date: null,
               });
+            }
+            const { start: startBoundaryProperty, end: endBoundaryProperty } = getConstructionScheduleBoundaryProperties();
+            for (const boundaryProperty of [startBoundaryProperty, endBoundaryProperty]) {
+              if (!boundaryProperty) continue;
+              let cleared = await updateDealProperty(dealId, {
+                [boundaryProperty]: "",
+              });
+              if (!cleared) {
+                cleared = await updateDealProperty(dealId, {
+                  [boundaryProperty]: null,
+                });
+              }
+              if (!cleared) {
+                console.warn(
+                  `[Zuper Unschedule] Failed to clear HubSpot ${boundaryProperty} for deal ${dealId}`
+                );
+              }
             }
           } else {
             scheduleCleared = await updateDealProperty(dealId, {
