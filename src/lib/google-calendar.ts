@@ -7,7 +7,7 @@ type ServiceAccountTokenResponse = {
 };
 
 function isEnabled(): boolean {
-  const raw = (process.env.GOOGLE_CALENDAR_SYNC_ENABLED || "false").toLowerCase();
+  const raw = (process.env.GOOGLE_CALENDAR_SYNC_ENABLED || "false").toLowerCase().trim();
   return raw === "1" || raw === "true" || raw === "yes";
 }
 
