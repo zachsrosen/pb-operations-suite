@@ -60,6 +60,19 @@ function getSlotKey(date: string, userName: string, startTime: string): string {
   return `${date}|${userName}|${startTime}`;
 }
 
+function timeToMinutes(time: string): number {
+  const [h, m] = time.split(":").map(Number);
+  return h * 60 + m;
+}
+
+function rangesOverlap(startA: string, endA: string, startB: string, endB: string): boolean {
+  const aStart = timeToMinutes(startA);
+  const aEnd = timeToMinutes(endA);
+  const bStart = timeToMinutes(startB);
+  const bEnd = timeToMinutes(endB);
+  return aStart < bEnd && bStart < aEnd;
+}
+
 // Zuper "clear schedule" can be represented as start==end and duration 0
 // rather than null start/end fields.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -405,7 +418,10 @@ export async function GET(request: NextRequest) {
   }
 
   // Load date-specific overrides (blocked dates, custom slots)
-  const overridesMap = new Map<string, Array<{ availabilityId: string | null; type: string }>>();
+  const overridesMap = new Map<
+    string,
+    Array<{ availabilityId: string | null; type: string; startTime: string | null; endTime: string | null }>
+  >();
   try {
     const overrides = await getAvailabilityOverrides({ dateFrom: fromDate!, dateTo: toDate! });
     for (const ov of overrides) {
@@ -414,6 +430,8 @@ export async function GET(request: NextRequest) {
       overridesMap.get(key)!.push({
         availabilityId: ov.availabilityId,
         type: ov.type,
+        startTime: ov.startTime,
+        endTime: ov.endTime,
       });
     }
     if (overrides.length > 0) {
@@ -468,8 +486,11 @@ export async function GET(request: NextRequest) {
       for (const shift of shifts) {
         if (availabilityByDate[dateStr]) {
           // Check for date-specific overrides (blocked dates)
+          const dateOverrides = crew.crewMemberId
+            ? overridesMap.get(`${crew.crewMemberId}|${dateStr}`) || []
+            : [];
+
           if (crew.crewMemberId) {
-            const dateOverrides = overridesMap.get(`${crew.crewMemberId}|${dateStr}`) || [];
             const isBlocked = dateOverrides.some(ov =>
               ov.type === "blocked" &&
               (!ov.availabilityId || ov.availabilityId === shift.availabilityId)
@@ -481,6 +502,13 @@ export async function GET(request: NextRequest) {
           const hourlySlots = generateHourlySlots(shift.startTime, shift.endTime);
 
           for (const slot of hourlySlots) {
+            const isCustomBlocked = dateOverrides.some((ov) => {
+              if (ov.type !== "custom" || !ov.startTime || !ov.endTime) return false;
+              if (ov.availabilityId && ov.availabilityId !== shift.availabilityId) return false;
+              return rangesOverlap(slot.start, slot.end, ov.startTime, ov.endTime);
+            });
+            if (isCustomBlocked) continue;
+
             const displayTime = `${formatTimeForDisplay(slot.start)}-${formatTimeForDisplay(slot.end)}${tzSuffix}`;
             availabilityByDate[dateStr].availableSlots.push({
               start_time: slot.start,

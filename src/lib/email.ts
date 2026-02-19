@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { Resend } from "resend";
+import type { UpdateEntry } from "@/lib/product-updates";
 
 type SendResult = { success: boolean; error?: string };
 type SendAttemptResult = SendResult & { attempted: boolean };
@@ -27,6 +28,21 @@ function isTruthy(value?: string): boolean {
   return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
 }
 
+function parseServiceAccountPrivateKey(serviceAccountKey: string): string | null {
+  const normalizedRaw = serviceAccountKey.replace(/\\n/g, "\n").trim();
+  if (normalizedRaw.includes("-----BEGIN")) {
+    return normalizedRaw;
+  }
+
+  const decoded = Buffer.from(serviceAccountKey, "base64").toString("utf-8");
+  const normalizedDecoded = decoded.replace(/\\n/g, "\n").trim();
+  if (normalizedDecoded.includes("-----BEGIN")) {
+    return normalizedDecoded;
+  }
+
+  return null;
+}
+
 function getGoogleWorkspaceCredentials():
   | { serviceAccountEmail: string; privateKey: string }
   | null {
@@ -34,12 +50,8 @@ function getGoogleWorkspaceCredentials():
   const serviceAccountKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY;
   if (!serviceAccountEmail || !serviceAccountKey) return null;
 
-  let privateKey: string;
-  try {
-    privateKey = Buffer.from(serviceAccountKey, "base64").toString("utf-8");
-  } catch {
-    privateKey = serviceAccountKey.replace(/\\n/g, "\n");
-  }
+  const privateKey = parseServiceAccountPrivateKey(serviceAccountKey);
+  if (!privateKey) return null;
   return { serviceAccountEmail, privateKey };
 }
 
@@ -54,11 +66,11 @@ function parseEmailAddress(input?: string): string | null {
 
 function parseEmailList(input?: string): string[] {
   if (!input) return [];
-  const parts = input.split(",").map((p) => p.trim()).filter(Boolean);
-  const normalized = parts
-    .map((p) => parseEmailAddress(p))
-    .filter((email): email is string => !!email);
-  return [...new Set(normalized)];
+  const parsed = input
+    .split(/[,\n;]+/)
+    .map((value) => parseEmailAddress(value))
+    .filter((value): value is string => !!value);
+  return [...new Set(parsed)];
 }
 
 function getSchedulingNotificationBccRecipients(): string[] {
@@ -68,6 +80,19 @@ function getSchedulingNotificationBccRecipients(): string[] {
   // Safety fallback for ops visibility when explicit BCC config is missing.
   const adminFallback = parseEmailAddress(process.env.GOOGLE_ADMIN_EMAIL || "");
   return adminFallback ? [adminFallback] : [];
+}
+
+function dedupeEmails(emails: string[], exclude?: string): string[] {
+  const seen = new Set<string>();
+  const excluded = (exclude || "").trim().toLowerCase();
+  const result: string[] = [];
+  for (const email of emails) {
+    const normalized = email.trim().toLowerCase();
+    if (!normalized || normalized === excluded || seen.has(normalized)) continue;
+    seen.add(normalized);
+    result.push(email.trim());
+  }
+  return result;
 }
 
 function getGoogleWorkspaceSenderEmail(): string | null {
@@ -193,7 +218,7 @@ async function trySendWithGoogleWorkspace(params: {
     return {
       attempted: true,
       success: false,
-      error: "Google Workspace email sender not configured (missing service account credentials)",
+      error: "Google Workspace email sender not configured (missing or invalid service account credentials)",
     };
   }
   if (!senderEmail) {
@@ -440,6 +465,7 @@ export async function sendVerificationEmail({
  */
 interface SendSchedulingNotificationParams {
   to: string; // Crew member email
+  bcc?: string | string[];
   crewMemberName: string;
   scheduledByName: string;
   scheduledByEmail: string;
@@ -452,6 +478,15 @@ interface SendSchedulingNotificationParams {
   scheduledEnd?: string; // HH:mm
   projectId: string;
   notes?: string;
+  installDetails?: {
+    forecastedInstallDays?: number;
+    installerDays?: number;
+    electricianDays?: number;
+    installersCount?: number;
+    electriciansCount?: number;
+    installNotes?: string;
+    equipmentSummary?: string;
+  };
 }
 
 export async function sendSchedulingNotification(
@@ -459,10 +494,53 @@ export async function sendSchedulingNotification(
 ): Promise<{ success: boolean; error?: string }> {
   const appointmentTypeLabel = APPOINTMENT_TYPE_LABELS[params.appointmentType] || params.appointmentType;
   const formattedDate = formatDate(params.scheduledDate);
-  const bccRecipients = getSchedulingNotificationBccRecipients();
   const timeSlot = params.scheduledStart && params.scheduledEnd
     ? `${formatTime(params.scheduledStart)} - ${formatTime(params.scheduledEnd)}`
     : "Full day";
+  const defaultBcc = getSchedulingNotificationBccRecipients();
+  const explicitBcc =
+    typeof params.bcc === "string"
+      ? parseEmailList(params.bcc)
+      : Array.isArray(params.bcc)
+        ? params.bcc.map((value) => parseEmailAddress(value)).filter((value): value is string => !!value)
+        : [];
+  const bccRecipients = dedupeEmails([...defaultBcc, ...explicitBcc], params.to);
+  const installDetails = params.appointmentType === "installation" ? params.installDetails : undefined;
+  const installDetailLines: string[] = [];
+  if (installDetails?.forecastedInstallDays != null) {
+    installDetailLines.push(`Forecasted Install Days: ${installDetails.forecastedInstallDays}`);
+  }
+  if (installDetails?.installerDays != null) {
+    installDetailLines.push(`Installer Days: ${installDetails.installerDays}`);
+  }
+  if (installDetails?.electricianDays != null) {
+    installDetailLines.push(`Electrician Days: ${installDetails.electricianDays}`);
+  }
+  if (installDetails?.installersCount != null) {
+    installDetailLines.push(`Installers: ${installDetails.installersCount}`);
+  }
+  if (installDetails?.electriciansCount != null) {
+    installDetailLines.push(`Electricians: ${installDetails.electriciansCount}`);
+  }
+  if (installDetails?.equipmentSummary) {
+    installDetailLines.push(`Equipment:\n${installDetails.equipmentSummary}`);
+  }
+  if (installDetails?.installNotes) {
+    installDetailLines.push(`Install Notes: ${installDetails.installNotes}`);
+  }
+
+  const installDetailsHtml = installDetailLines.length > 0
+    ? `
+                  <tr>
+                    <td colspan="2" style="padding-top: 16px;">
+                      <div style="background-color: #1e1e2e; border-radius: 6px; padding: 12px;">
+                        <p style="color: #71717a; font-size: 12px; margin: 0 0 6px 0;">🔧 Install Details</p>
+                        <p style="color: #ffffff; font-size: 13px; margin: 0; white-space: pre-line;">${installDetailLines.join("\n")}</p>
+                      </div>
+                    </td>
+                  </tr>
+                `
+    : "";
 
   return sendEmailMessage({
     to: params.to,
@@ -518,6 +596,7 @@ export async function sendSchedulingNotification(
                     <td style="color: #ffffff; font-size: 13px; padding: 8px 0; text-align: right;">${params.dealOwnerName}</td>
                   </tr>
                   ` : ""}
+                  ${installDetailsHtml}
                   ${params.notes ? `
                   <tr>
                     <td colspan="2" style="padding-top: 16px;">
@@ -553,7 +632,9 @@ Address: ${params.customerAddress}
 Date: ${formattedDate}
 Time: ${timeSlot}
 Scheduled by: ${params.scheduledByName}
-${params.dealOwnerName ? `Deal owner: ${params.dealOwnerName}\n` : ""}${params.notes ? `\nNotes: ${params.notes}` : ""}
+${params.dealOwnerName ? `Deal owner: ${params.dealOwnerName}\n` : ""}
+${installDetailLines.length > 0 ? `\nInstall Details:\n${installDetailLines.join("\n")}` : ""}
+${params.notes ? `\nNotes: ${params.notes}` : ""}
 
 Please check your Zuper app for complete details.
 
@@ -568,6 +649,7 @@ Please check your Zuper app for complete details.
       `Address: ${params.customerAddress}`,
       `Date: ${formattedDate}`,
       `Time: ${timeSlot}`,
+      `Install Details: ${installDetailLines.length > 0 ? installDetailLines.join(" | ") : "None"}`,
       `Notes: ${params.notes || "None"}`,
       `BCC: ${bccRecipients.join(", ") || "None"}`,
     ].join("\n"),
@@ -713,6 +795,245 @@ Please check your Zuper app for complete details.
       `Time: ${timeSlot}`,
       `Reason: ${reasonText}`,
       `BCC: ${bccRecipients.join(", ") || "None"}`,
+    ].join("\n"),
+  });
+}
+
+interface AvailabilityConflictItem {
+  projectId: string;
+  customerName: string;
+  customerAddress: string;
+  scheduledDate: string;
+  scheduledStart?: string;
+  scheduledEnd?: string;
+  dealOwnerName?: string | null;
+}
+
+interface SendAvailabilityConflictNotificationParams {
+  to: string;
+  bcc?: string | string[];
+  recipientName?: string;
+  blockedByName: string;
+  blockedByEmail?: string;
+  surveyorName: string;
+  overrideType: "blocked" | "custom";
+  overrideDate: string;
+  overrideStart?: string;
+  overrideEnd?: string;
+  overrideReason?: string;
+  conflicts: AvailabilityConflictItem[];
+}
+
+export async function sendAvailabilityConflictNotification(
+  params: SendAvailabilityConflictNotificationParams
+): Promise<{ success: boolean; error?: string }> {
+  if (!params.conflicts.length) {
+    return { success: true };
+  }
+
+  const defaultBcc = parseEmailList(process.env.SCHEDULING_NOTIFICATION_BCC);
+  const explicitBcc =
+    typeof params.bcc === "string"
+      ? parseEmailList(params.bcc)
+      : Array.isArray(params.bcc)
+        ? params.bcc.map((value) => parseEmailAddress(value)).filter((value): value is string => !!value)
+        : [];
+  const bccRecipients = dedupeEmails([...defaultBcc, ...explicitBcc], params.to);
+  const recipientName = params.recipientName || "Team Member";
+  const overrideDate = formatDate(params.overrideDate);
+  const overrideWindow = params.overrideType === "custom" && params.overrideStart && params.overrideEnd
+    ? `${formatTime(params.overrideStart)} - ${formatTime(params.overrideEnd)}`
+    : "Full day";
+  const subject = `Action Needed: ${params.conflicts.length} scheduled survey conflict${params.conflicts.length === 1 ? "" : "s"} for ${params.surveyorName}`;
+
+  const conflictRowsHtml = params.conflicts
+    .map((conflict) => {
+      const time = conflict.scheduledStart && conflict.scheduledEnd
+        ? `${formatTime(conflict.scheduledStart)} - ${formatTime(conflict.scheduledEnd)}`
+        : "Time not set";
+      return `
+        <tr>
+          <td style="color: #ffffff; font-size: 13px; padding: 8px 0; border-bottom: 1px solid #1e1e2e;">${conflict.customerName}</td>
+          <td style="color: #a1a1aa; font-size: 12px; padding: 8px 0; border-bottom: 1px solid #1e1e2e;">${conflict.customerAddress}</td>
+          <td style="color: #a1a1aa; font-size: 12px; padding: 8px 0; border-bottom: 1px solid #1e1e2e;">${formatDate(conflict.scheduledDate)}</td>
+          <td style="color: #a1a1aa; font-size: 12px; padding: 8px 0; border-bottom: 1px solid #1e1e2e;">${time}</td>
+          <td style="color: #a1a1aa; font-size: 12px; padding: 8px 0; border-bottom: 1px solid #1e1e2e;">${conflict.projectId}</td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  const conflictRowsText = params.conflicts
+    .map((conflict) => {
+      const time = conflict.scheduledStart && conflict.scheduledEnd
+        ? `${formatTime(conflict.scheduledStart)}-${formatTime(conflict.scheduledEnd)}`
+        : "Time not set";
+      return `- ${conflict.customerName} | ${conflict.customerAddress} | ${formatDate(conflict.scheduledDate)} ${time} | Project ${conflict.projectId}`;
+    })
+    .join("\n");
+
+  return sendEmailMessage({
+    to: params.to,
+    ...(bccRecipients.length > 0 ? { bcc: bccRecipients } : {}),
+    subject,
+    html: `
+      <!DOCTYPE html>
+      <html>
+        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #0a0a0f; color: #ffffff; padding: 24px; margin: 0;">
+          <div style="max-width: 760px; margin: 0 auto; background-color: #12121a; border: 1px solid #1e1e2e; border-radius: 12px; padding: 24px;">
+            <h2 style="margin: 0 0 8px 0; font-size: 22px;">Availability Conflict Alert</h2>
+            <p style="color: #a1a1aa; font-size: 13px; margin: 0 0 20px 0;">
+              ${recipientName}, ${params.surveyorName} added an availability block that overlaps existing scheduled site surveys.
+            </p>
+
+            <div style="background-color: #1e1e2e; border-radius: 8px; padding: 12px; margin-bottom: 16px;">
+              <p style="margin: 0 0 6px 0; font-size: 13px; color: #e4e4e7;"><strong>Blocked By:</strong> ${params.blockedByName}${params.blockedByEmail ? ` (${params.blockedByEmail})` : ""}</p>
+              <p style="margin: 0 0 6px 0; font-size: 13px; color: #e4e4e7;"><strong>Surveyor:</strong> ${params.surveyorName}</p>
+              <p style="margin: 0 0 6px 0; font-size: 13px; color: #e4e4e7;"><strong>Override:</strong> ${params.overrideType === "custom" ? "Time Range" : "Full Day"} on ${overrideDate} (${overrideWindow})</p>
+              ${params.overrideReason ? `<p style="margin: 0; font-size: 13px; color: #e4e4e7;"><strong>Reason:</strong> ${params.overrideReason}</p>` : ""}
+            </div>
+
+            <table style="width: 100%; border-collapse: collapse;">
+              <thead>
+                <tr>
+                  <th style="text-align: left; color: #71717a; font-size: 11px; padding-bottom: 6px;">Customer</th>
+                  <th style="text-align: left; color: #71717a; font-size: 11px; padding-bottom: 6px;">Address</th>
+                  <th style="text-align: left; color: #71717a; font-size: 11px; padding-bottom: 6px;">Date</th>
+                  <th style="text-align: left; color: #71717a; font-size: 11px; padding-bottom: 6px;">Time</th>
+                  <th style="text-align: left; color: #71717a; font-size: 11px; padding-bottom: 6px;">Project</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${conflictRowsHtml}
+              </tbody>
+            </table>
+
+            <p style="margin-top: 18px; color: #a1a1aa; font-size: 12px;">
+              Please review and reschedule/cancel impacted surveys as needed.
+            </p>
+          </div>
+        </body>
+      </html>
+    `,
+    text: `Availability Conflict Alert
+
+${recipientName},
+
+${params.surveyorName} added an availability block that overlaps scheduled site surveys.
+
+Blocked By: ${params.blockedByName}${params.blockedByEmail ? ` (${params.blockedByEmail})` : ""}
+Surveyor: ${params.surveyorName}
+Override: ${params.overrideType === "custom" ? "Time Range" : "Full Day"} on ${overrideDate} (${overrideWindow})
+${params.overrideReason ? `Reason: ${params.overrideReason}` : ""}
+
+Impacted Surveys:
+${conflictRowsText}
+
+Please review and reschedule/cancel impacted surveys as needed.`,
+    debugFallbackTitle: `AVAILABILITY CONFLICT ALERT for ${params.to}`,
+    debugFallbackBody: [
+      `Blocked By: ${params.blockedByName}${params.blockedByEmail ? ` (${params.blockedByEmail})` : ""}`,
+      `Surveyor: ${params.surveyorName}`,
+      `Override: ${params.overrideType} ${params.overrideDate} ${overrideWindow}`,
+      `Reason: ${params.overrideReason || "None"}`,
+      `Conflicts: ${params.conflicts.length}`,
+      `BCC: ${bccRecipients.length > 0 ? bccRecipients.join(", ") : "None"}`,
+      ...params.conflicts.map(
+        (item) =>
+          ` - ${item.customerName} | ${item.customerAddress} | ${item.scheduledDate} ${item.scheduledStart || ""}-${item.scheduledEnd || ""} | ${item.projectId}`
+      ),
+    ].join("\n"),
+  });
+}
+
+interface SendProductUpdateEmailParams {
+  to: string;
+  update: UpdateEntry;
+  updatesUrl?: string;
+}
+
+function resolveUpdatesUrl(): string {
+  const baseUrl =
+    (process.env.NEXT_PUBLIC_APP_URL || "").trim() ||
+    (process.env.APP_URL || "").trim() ||
+    "https://www.pbtechops.com";
+  return `${baseUrl.replace(/\/$/, "")}/updates`;
+}
+
+export async function sendProductUpdateEmail(
+  params: SendProductUpdateEmailParams
+): Promise<{ success: boolean; error?: string }> {
+  const updatesUrl = (params.updatesUrl || "").trim() || resolveUpdatesUrl();
+  const formattedDate = formatDate(params.update.date);
+  const changesHtml = params.update.changes
+    .map((change) => `<li style="margin: 0 0 8px 0;"><strong>${change.type.toUpperCase()}:</strong> ${change.text}</li>`)
+    .join("");
+  const changesText = params.update.changes
+    .map((change) => `- [${change.type.toUpperCase()}] ${change.text}`)
+    .join("\n");
+
+  return sendEmailMessage({
+    to: params.to,
+    subject: `PB Operations Update ${params.update.version} - ${params.update.title}`,
+    html: `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          </head>
+          <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #0a0a0f; color: #ffffff; padding: 40px 20px; margin: 0;">
+            <div style="max-width: 620px; margin: 0 auto; background-color: #12121a; border: 1px solid #1e1e2e; border-radius: 12px; padding: 32px;">
+              <h1 style="font-size: 24px; font-weight: bold; background: linear-gradient(to right, #f97316, #fb923c); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin: 0 0 8px 0; text-align: center;">
+                PB Operations Suite
+              </h1>
+              <p style="color: #71717a; font-size: 14px; text-align: center; margin: 0 0 24px 0;">
+                Product Update Published
+              </p>
+
+              <div style="background-color: #0a0a0f; border: 1px solid #1e1e2e; border-radius: 8px; padding: 20px; margin-bottom: 24px;">
+                <p style="margin: 0 0 8px 0; color: #fb923c; font-weight: 700;">v${params.update.version}</p>
+                <h2 style="margin: 0 0 8px 0; font-size: 20px; color: #ffffff;">${params.update.title}</h2>
+                <p style="margin: 0 0 16px 0; color: #a1a1aa; font-size: 13px;">${formattedDate}</p>
+                <p style="margin: 0 0 16px 0; color: #e4e4e7; font-size: 14px; line-height: 1.5;">${params.update.description}</p>
+                <ul style="margin: 0; padding-left: 20px; color: #e4e4e7; font-size: 13px; line-height: 1.5;">
+                  ${changesHtml}
+                </ul>
+              </div>
+
+              <p style="margin: 0; text-align: center;">
+                <a href="${updatesUrl}" style="display: inline-block; background: linear-gradient(to right, #f97316, #fb923c); color: #ffffff; text-decoration: none; font-weight: 600; padding: 10px 16px; border-radius: 8px;">
+                  View Full Changelog
+                </a>
+              </p>
+            </div>
+
+            <p style="color: #3f3f46; font-size: 11px; text-align: center; margin-top: 24px;">
+              Photon Brothers Operations Suite
+            </p>
+          </body>
+        </html>
+      `,
+    text: `PB Operations Update v${params.update.version}
+
+${params.update.title}
+Date: ${formattedDate}
+
+${params.update.description}
+
+Changes:
+${changesText}
+
+Full changelog: ${updatesUrl}`,
+    debugFallbackTitle: `PRODUCT UPDATE EMAIL for ${params.to}`,
+    debugFallbackBody: [
+      `Version: ${params.update.version}`,
+      `Date: ${formattedDate}`,
+      `Title: ${params.update.title}`,
+      `Description: ${params.update.description}`,
+      "Changes:",
+      changesText,
+      `URL: ${updatesUrl}`,
     ].join("\n"),
   });
 }
