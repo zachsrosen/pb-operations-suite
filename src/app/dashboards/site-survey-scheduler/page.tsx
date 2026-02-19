@@ -114,6 +114,7 @@ interface DayAvailability {
     end_time: string;
     display_time?: string;
     user_name?: string;
+    user_uid?: string;
     location?: string;
     projectId?: string;
     projectName?: string;
@@ -320,6 +321,7 @@ export default function SiteSurveySchedulerPage() {
   /* ---- activity tracking ---- */
   const { trackDashboardView, trackFeature } = useActivityTracking();
   const hasTrackedView = useRef(false);
+  const latestAvailabilityRequest = useRef(0);
 
   /* ---- core data ---- */
   const [projects, setProjects] = useState<SurveyProject[]>([]);
@@ -609,6 +611,7 @@ export default function SiteSurveySchedulerPage() {
   const fetchAvailability = useCallback(async (location?: string, project?: SurveyProject | null) => {
     if (!zuperConfigured) return;
 
+    const requestId = ++latestAvailabilityRequest.current;
     setLoadingSlots(true);
     try {
       // Get date range for current month view
@@ -636,13 +639,16 @@ export default function SiteSurveySchedulerPage() {
       const response = await fetch(`/api/zuper/availability?${params.toString()}`);
       const data = await response.json();
 
+      if (requestId !== latestAvailabilityRequest.current) return;
       if (data.availabilityByDate) {
         setAvailabilityByDate(data.availabilityByDate);
       }
     } catch (err) {
       console.error("Failed to fetch availability:", err);
     } finally {
-      setLoadingSlots(false);
+      if (requestId === latestAvailabilityRequest.current) {
+        setLoadingSlots(false);
+      }
     }
   }, [zuperConfigured, currentYear, currentMonth]);
 
@@ -1880,15 +1886,28 @@ export default function SiteSurveySchedulerPage() {
                           {showAvailability && hasAvailability && (() => {
                             // Filter slots by project location if a project is selected
                             const projectLocation = selectedProject?.location;
+                            const bookedForDay = dayAvailability?.bookedSlots || [];
                             const matchingSlots = dayAvailability?.availableSlots?.filter(slot => {
                               // If no project selected, show all slots
-                              if (!projectLocation) return true;
-                              // Match by location - handle DTC/Centennial equivalence
-                              if (!slot.location) return true;
-                              if (slot.location === projectLocation) return true;
-                              if ((slot.location === "DTC" || slot.location === "Centennial") &&
-                                  (projectLocation === "DTC" || projectLocation === "Centennial")) return true;
-                              return false;
+                              const locationMatches = !projectLocation
+                                || !slot.location
+                                || slot.location === projectLocation
+                                || (
+                                  (slot.location === "DTC" || slot.location === "Centennial") &&
+                                  (projectLocation === "DTC" || projectLocation === "Centennial")
+                                );
+                              if (!locationMatches) return false;
+
+                              // Defensive client-side guard: hide slots already booked for this surveyor+time.
+                              // This prevents stale/mismatched key edge cases from showing double-bookable slots.
+                              const isBooked = bookedForDay.some(booked => {
+                                if (booked.start_time !== slot.start_time || booked.end_time !== slot.end_time) return false;
+                                if (booked.user_uid && slot.user_uid) return booked.user_uid === slot.user_uid;
+                                const bookedName = (booked.user_name || "").trim().toLowerCase();
+                                const slotName = (slot.user_name || "").trim().toLowerCase();
+                                return !!bookedName && bookedName === slotName;
+                              });
+                              return !isBooked;
                             }) || [];
 
                             // Group slots by surveyor for cleaner display
@@ -2263,13 +2282,25 @@ export default function SiteSurveySchedulerPage() {
                     {(() => {
                       const dayAvail = availabilityByDate[scheduleModal.date];
                       const projectLocation = scheduleModal.project.location;
+                      const bookedForDay = dayAvail?.bookedSlots || [];
                       const availableSlots = dayAvail?.availableSlots?.filter(slot => {
-                        if (!projectLocation) return true;
-                        if (!slot.location) return true;
-                        if (slot.location === projectLocation) return true;
-                        if ((slot.location === "DTC" || slot.location === "Centennial") &&
-                            (projectLocation === "DTC" || projectLocation === "Centennial")) return true;
-                        return false;
+                        const locationMatches = !projectLocation
+                          || !slot.location
+                          || slot.location === projectLocation
+                          || (
+                            (slot.location === "DTC" || slot.location === "Centennial") &&
+                            (projectLocation === "DTC" || projectLocation === "Centennial")
+                          );
+                        if (!locationMatches) return false;
+
+                        const isBooked = bookedForDay.some(booked => {
+                          if (booked.start_time !== slot.start_time || booked.end_time !== slot.end_time) return false;
+                          if (booked.user_uid && slot.user_uid) return booked.user_uid === slot.user_uid;
+                          const bookedName = (booked.user_name || "").trim().toLowerCase();
+                          const slotName = (slot.user_name || "").trim().toLowerCase();
+                          return !!bookedName && bookedName === slotName;
+                        });
+                        return !isBooked;
                       }) || [];
 
                       if (availableSlots.length === 0) {

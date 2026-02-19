@@ -510,6 +510,11 @@ export async function GET(request: NextRequest) {
     // Get the category UID for filtering jobs
     const categoryUid = type ? categoryMap[type] : undefined;
 
+    // For survey availability, busy-time checks must be global across teams:
+    // a surveyor can appear in one location's slot list while already booked in another.
+    const surveyGlobalBusyCheck = type === "survey";
+    const jobsTeamUid = surveyGlobalBusyCheck ? undefined : resolvedTeamUid;
+
     const [timeOffResult, jobsResult] = await Promise.all([
       zuper.getTimeOffRequests({
         fromDate,
@@ -518,10 +523,14 @@ export async function GET(request: NextRequest) {
       zuper.getScheduledJobsForDateRange({
         fromDate,
         toDate,
-        teamUid: resolvedTeamUid,
+        teamUid: jobsTeamUid,
         categoryUid, // Filter by job category (survey, construction, inspection)
       }),
     ]);
+
+    if (surveyGlobalBusyCheck && resolvedTeamUid) {
+      console.log("[Zuper Availability] Survey busy-check running across all teams (location filter kept for slot generation)");
+    }
 
     // Add time-offs
     if (timeOffResult.type === "success" && timeOffResult.data) {
