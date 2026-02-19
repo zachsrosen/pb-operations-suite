@@ -107,12 +107,14 @@ export interface Equipment {
     model: string;
     count: number;
     wattage: number;
+    productName: string;
   };
   inverter: {
     brand: string;
     model: string;
     count: number;
     sizeKwac: number;
+    productName: string;
   };
   battery: {
     brand: string;
@@ -120,6 +122,8 @@ export interface Equipment {
     count: number;
     sizeKwh: number;
     expansionCount: number;
+    productName: string;
+    expansionProductName: string;
   };
   evCount: number;
   systemSizeKwdc: number;
@@ -313,6 +317,7 @@ const DEAL_PROPERTIES = [
 
   // Site Survey dates
   "site_survey_schedule_date",
+  "site_survey_scheduled_date",
   "site_survey_date", // completion date
 
   // Design dates & status
@@ -385,6 +390,10 @@ const DEAL_PROPERTIES = [
   "battery_count",
   "battery_size", // kWh
   "battery_expansion_count",
+  "modules",            // product name e.g. "Hyundai 440W Solar Panels"
+  "inverter",           // product name e.g. "Tesla 7.6kW Inverter"
+  "battery",            // product name e.g. "Tesla Powerwall 3"
+  "battery_expansion",  // product name e.g. "Tesla Powerwall 3 Expansion Pack"
   "calculated_system_size__kwdc_",
   "system_size_kwac",
 
@@ -549,12 +558,14 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
       model: String(deal?.module_model ?? ""),
       count: Number(deal?.module_count ?? 0) || 0,
       wattage: Number(deal?.module_wattage ?? 0) || 0,
+      productName: String(deal?.modules ?? ""),
     },
     inverter: {
       brand: String(deal?.inverter_brand ?? ""),
       model: String(deal?.inverter_model ?? ""),
       count: Number(deal?.inverter_qty ?? 0) || 0,
       sizeKwac: Number(deal?.inverter_size_kwac ?? 0) || 0,
+      productName: String(deal?.inverter ?? ""),
     },
     battery: {
       brand: String(deal?.battery_brand ?? ""),
@@ -562,6 +573,8 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
       count: Number(deal?.battery_count ?? 0) || 0,
       sizeKwh: Number(deal?.battery_size ?? 0) || 0,
       expansionCount: Number(deal?.battery_expansion_count ?? 0) || 0,
+      productName: String(deal?.battery ?? ""),
+      expansionProductName: String(deal?.battery_expansion ?? ""),
     },
     evCount: Number(deal?.ev_count ?? 0) || 0,
     systemSizeKwdc: Number(deal?.calculated_system_size__kwdc_ ?? 0) || 0,
@@ -605,7 +618,7 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
     closeDate: parseDate(deal.closedate),
 
     // Site Survey
-    siteSurveyScheduleDate: parseDate(deal.site_survey_schedule_date),
+    siteSurveyScheduleDate: parseDate(deal.site_survey_schedule_date || deal.site_survey_scheduled_date),
     siteSurveyCompletionDate: parseDate(deal.site_survey_date),
     siteSurveyStatus: deal.site_survey_status ? String(deal.site_survey_status) : null,
 
