@@ -14,6 +14,7 @@ beforeEach(async () => {
   delete process.env.TRAVEL_TIME_ENABLED;
   delete process.env.TRAVEL_TIME_BUFFER_MINUTES;
   delete process.env.TRAVEL_TIME_UNKNOWN_THRESHOLD;
+  delete process.env.TRAVEL_TIME_TIGHT_THRESHOLD;
   // Set default key for most tests
   process.env.GOOGLE_MAPS_API_KEY = "test-api-key";
   // Mock fetch
@@ -80,17 +81,20 @@ describe("getConfig", () => {
     expect(config.enabled).toBe(true);
     expect(config.bufferMinutes).toBe(15);
     expect(config.unknownThresholdMinutes).toBe(90);
+    expect(config.tightThresholdMinutes).toBe(10);
     expect(config.apiKey).toBe("test-api-key");
   });
 
   it("reads custom buffer and threshold", async () => {
     process.env.TRAVEL_TIME_BUFFER_MINUTES = "20";
     process.env.TRAVEL_TIME_UNKNOWN_THRESHOLD = "60";
+    process.env.TRAVEL_TIME_TIGHT_THRESHOLD = "7";
     jest.resetModules();
     const mod = await import("@/lib/travel-time");
     const config = mod.getConfig();
     expect(config.bufferMinutes).toBe(20);
     expect(config.unknownThresholdMinutes).toBe(60);
+    expect(config.tightThresholdMinutes).toBe(7);
   });
 });
 
@@ -243,6 +247,25 @@ describe("evaluateSlotTravel", () => {
     expect(warning!.direction).toBe("before");
     expect(warning!.prevJob?.travelMinutes).toBe(30);
     expect(warning!.availableMinutesBefore).toBe(30);
+  });
+
+  it("suppresses marginal tight warnings below threshold", async () => {
+    // 30min drive + 15 buffer = 45 required; 40min gap => 5min deficit (< default threshold 10)
+    mockFetch.mockResolvedValueOnce(distanceMatrixResponse(1800, 32187)); // 30min
+    const warning = await travelModule.evaluateSlotTravel({
+      candidateAddress: "123 Main St",
+      slotStartTime: "12:00",
+      slotEndTime: "13:00",
+      prevBooking: {
+        address: "456 Oak Ave",
+        endTime: "11:20", // 40min gap before slot
+        projectName: "Project A",
+      },
+      bufferMinutes: 15,
+      unknownThresholdMinutes: 90,
+      resolveLocationFn: mockResolve,
+    });
+    expect(warning).toBeNull();
   });
 
   it("returns type 'unknown' when address missing and gap < threshold", async () => {

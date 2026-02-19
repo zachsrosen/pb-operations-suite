@@ -34,6 +34,7 @@ export interface TravelTimeConfig {
   enabled: boolean;
   bufferMinutes: number;
   unknownThresholdMinutes: number;
+  tightThresholdMinutes: number;
   apiKey: string;
 }
 
@@ -63,11 +64,14 @@ export function getConfig(): TravelTimeConfig {
   const enabledStr = process.env.TRAVEL_TIME_ENABLED ?? "true";
   const bufferStr = process.env.TRAVEL_TIME_BUFFER_MINUTES ?? "15";
   const thresholdStr = process.env.TRAVEL_TIME_UNKNOWN_THRESHOLD ?? "90";
+  const tightThresholdStr = process.env.TRAVEL_TIME_TIGHT_THRESHOLD ?? "10";
 
   return {
     enabled: !!apiKey && enabledStr !== "false",
     bufferMinutes: parseInt(bufferStr, 10) || 15,
     unknownThresholdMinutes: parseInt(thresholdStr, 10) || 90,
+    // Suppress marginal warnings (e.g. 2-5 min deficit) that are too noisy in practice.
+    tightThresholdMinutes: parseInt(tightThresholdStr, 10) || 10,
     apiKey,
   };
 }
@@ -214,6 +218,7 @@ export async function evaluateSlotTravel(params: {
   };
   bufferMinutes: number;
   unknownThresholdMinutes?: number;
+  tightThresholdMinutes?: number;
   // Allow passing a memoized resolver for batch efficiency
   resolveLocationFn?: (p: {
     geoCoordinates?: { latitude: number; longitude: number };
@@ -228,6 +233,7 @@ export async function evaluateSlotTravel(params: {
     nextBooking,
     bufferMinutes,
     unknownThresholdMinutes = getConfig().unknownThresholdMinutes,
+    tightThresholdMinutes = getConfig().tightThresholdMinutes,
     resolveLocationFn = resolveLocation,
   } = params;
 
@@ -262,12 +268,16 @@ export async function evaluateSlotTravel(params: {
 
       if (candidateLoc && prevLoc) {
         const estimate = await getDriveTime(prevLoc, candidateLoc);
-        if (estimate && gapBefore < estimate.durationMinutes + bufferMinutes) {
-          beforeResult = {
-            type: "tight",
-            travelMinutes: estimate.durationMinutes,
-            gapMinutes: gapBefore,
-          };
+        if (estimate) {
+          const requiredMinutes = estimate.durationMinutes + bufferMinutes;
+          const deficit = requiredMinutes - gapBefore;
+          if (deficit >= tightThresholdMinutes) {
+            beforeResult = {
+              type: "tight",
+              travelMinutes: estimate.durationMinutes,
+              gapMinutes: gapBefore,
+            };
+          }
         }
         // If estimate exists and gap is sufficient, no warning needed
       } else {
@@ -291,12 +301,16 @@ export async function evaluateSlotTravel(params: {
 
       if (candidateLoc && nextLoc) {
         const estimate = await getDriveTime(candidateLoc, nextLoc);
-        if (estimate && gapAfter < estimate.durationMinutes + bufferMinutes) {
-          afterResult = {
-            type: "tight",
-            travelMinutes: estimate.durationMinutes,
-            gapMinutes: gapAfter,
-          };
+        if (estimate) {
+          const requiredMinutes = estimate.durationMinutes + bufferMinutes;
+          const deficit = requiredMinutes - gapAfter;
+          if (deficit >= tightThresholdMinutes) {
+            afterResult = {
+              type: "tight",
+              travelMinutes: estimate.durationMinutes,
+              gapMinutes: gapAfter,
+            };
+          }
         }
       } else {
         afterResult = { type: "unknown", gapMinutes: gapAfter };
@@ -467,6 +481,7 @@ export async function evaluateSlotsBatch(
             : undefined,
           bufferMinutes,
           unknownThresholdMinutes: config.unknownThresholdMinutes,
+          tightThresholdMinutes: config.tightThresholdMinutes,
           resolveLocationFn: memoizedResolve,
         }),
         PER_CALL_TIMEOUT_MS

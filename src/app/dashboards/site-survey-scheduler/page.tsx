@@ -2231,6 +2231,21 @@ export default function SiteSurveySchedulerPage() {
                       && s.end_time === scheduleModal.slot!.endTime
                       && s.user_name === scheduleModal.slot!.userName
                   )?.travelWarning;
+                  const tightSegments: string[] = [];
+                  if (selectedTravelWarning?.prevJob) {
+                    const beforeGap = selectedTravelWarning.availableMinutesBefore;
+                    const beforeDrive = selectedTravelWarning.prevJob.travelMinutes;
+                    tightSegments.push(
+                      `before ${selectedTravelWarning.prevJob.endTime}: ${beforeDrive ?? "?"}m drive${beforeGap != null ? `, ${beforeGap}m gap` : ""}`
+                    );
+                  }
+                  if (selectedTravelWarning?.nextJob) {
+                    const afterGap = selectedTravelWarning.availableMinutesAfter;
+                    const afterDrive = selectedTravelWarning.nextJob.travelMinutes;
+                    tightSegments.push(
+                      `after ${selectedTravelWarning.nextJob.startTime}: ${afterDrive ?? "?"}m drive${afterGap != null ? `, ${afterGap}m gap` : ""}`
+                    );
+                  }
                   return (
                 <div className={`p-2 rounded-lg border ${
                   selectedTravelWarning?.type === "tight"
@@ -2251,7 +2266,7 @@ export default function SiteSurveySchedulerPage() {
                       selectedTravelWarning.type === "tight" ? "text-amber-400" : "text-muted"
                     }`}>
                       {selectedTravelWarning.type === "tight"
-                        ? `⚠️ Tight travel: ${selectedTravelWarning.prevJob?.travelMinutes || selectedTravelWarning.nextJob?.travelMinutes || "?"}min drive needed between adjacent jobs`
+                        ? `⚠️ Tight travel: ${tightSegments.join(" • ") || `${selectedTravelWarning.prevJob?.travelMinutes || selectedTravelWarning.nextJob?.travelMinutes || "?"}m drive needed between adjacent jobs`}`
                         : "❓ Travel time could not be verified — missing address data on adjacent job"}
                     </p>
                   )}
