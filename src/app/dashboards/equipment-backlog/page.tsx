@@ -58,7 +58,7 @@ export default function EquipmentBacklogPage() {
   const [filterLocations, setFilterLocations] = useState<string[]>([]);
   const [filterStages, setFilterStages] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [sortField, setSortField] = useState<"systemSize" | "modules" | "stage" | "location" | "name" | "value">("systemSize");
+  const [sortField, setSortField] = useState<"modules" | "stage" | "location" | "name" | "value">("modules");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   // View mode
@@ -140,9 +140,6 @@ export default function EquipmentBacklogPage() {
     const sorted = [...filteredProjects].sort((a, b) => {
       let cmp = 0;
       switch (sortField) {
-        case "systemSize":
-          cmp = (a.equipment?.systemSizeKwdc || 0) - (b.equipment?.systemSizeKwdc || 0);
-          break;
         case "modules":
           cmp = (a.equipment?.modules?.count || 0) - (b.equipment?.modules?.count || 0);
           break;
@@ -173,9 +170,6 @@ export default function EquipmentBacklogPage() {
     let totalBatteries = 0;
     let totalBatteryExpansions = 0;
     let totalEv = 0;
-    let totalKwdc = 0;
-    let totalKwac = 0;
-    let totalKwh = 0;
     let totalValue = 0;
 
     for (const p of filteredProjects) {
@@ -186,9 +180,6 @@ export default function EquipmentBacklogPage() {
       totalBatteries += eq.battery?.count || 0;
       totalBatteryExpansions += eq.battery?.expansionCount || 0;
       totalEv += eq.evCount || 0;
-      totalKwdc += eq.systemSizeKwdc || 0;
-      totalKwac += eq.systemSizeKwac || 0;
-      totalKwh += (eq.battery?.sizeKwh || 0) * (eq.battery?.count || 0);
       totalValue += p.amount || 0;
     }
 
@@ -199,9 +190,6 @@ export default function EquipmentBacklogPage() {
       totalBatteries,
       totalBatteryExpansions,
       totalEv,
-      totalKwdc: Math.round(totalKwdc),
-      totalKwac: Math.round(totalKwac),
-      totalKwh: Math.round(totalKwh),
       totalValue,
     };
   }, [filteredProjects]);
@@ -243,7 +231,7 @@ export default function EquipmentBacklogPage() {
   }, [filteredProjects]);
 
   const batterySummary = useMemo(() => {
-    const map = new Map<string, EquipmentSummary & { totalKwh: number }>();
+    const map = new Map<string, EquipmentSummary>();
     for (const p of filteredProjects) {
       const bat = p.equipment?.battery;
       if (!bat || !bat.count) continue;
@@ -251,14 +239,12 @@ export default function EquipmentBacklogPage() {
       const existing = map.get(key);
       if (existing) {
         existing.totalCount += bat.count;
-        existing.totalKwh += bat.sizeKwh * bat.count;
         existing.projects += 1;
       } else {
         map.set(key, {
           brand: bat.brand || "Unknown",
           model: bat.model || "Unknown",
           totalCount: bat.count,
-          totalKwh: bat.sizeKwh * bat.count,
           projects: 1,
         });
       }
@@ -269,29 +255,25 @@ export default function EquipmentBacklogPage() {
   /* ---- Stage breakdown ---- */
 
   const stageBreakdown = useMemo(() => {
-    const map = new Map<string, { count: number; kwdc: number; kwac: number; modules: number; inverters: number; batteries: number; kwh: number; value: number }>();
+    const map = new Map<string, { count: number; modules: number; inverters: number; batteries: number; batteryExpansions: number; value: number }>();
     for (const p of filteredProjects) {
       const stage = p.stage || "Unknown";
       const existing = map.get(stage);
       const eq = p.equipment;
       if (existing) {
         existing.count += 1;
-        existing.kwdc += eq?.systemSizeKwdc || 0;
-        existing.kwac += eq?.systemSizeKwac || 0;
         existing.modules += eq?.modules?.count || 0;
         existing.inverters += eq?.inverter?.count || 0;
         existing.batteries += eq?.battery?.count || 0;
-        existing.kwh += (eq?.battery?.sizeKwh || 0) * (eq?.battery?.count || 0);
+        existing.batteryExpansions += eq?.battery?.expansionCount || 0;
         existing.value += p.amount || 0;
       } else {
         map.set(stage, {
           count: 1,
-          kwdc: eq?.systemSizeKwdc || 0,
-          kwac: eq?.systemSizeKwac || 0,
           modules: eq?.modules?.count || 0,
           inverters: eq?.inverter?.count || 0,
           batteries: eq?.battery?.count || 0,
-          kwh: (eq?.battery?.sizeKwh || 0) * (eq?.battery?.count || 0),
+          batteryExpansions: eq?.battery?.expansionCount || 0,
           value: p.amount || 0,
         });
       }
@@ -307,34 +289,30 @@ export default function EquipmentBacklogPage() {
   /* ---- Location breakdown ---- */
 
   const locationBreakdown = useMemo(() => {
-    const map = new Map<string, { count: number; kwdc: number; kwac: number; modules: number; inverters: number; batteries: number; kwh: number; value: number }>();
+    const map = new Map<string, { count: number; modules: number; inverters: number; batteries: number; batteryExpansions: number; value: number }>();
     for (const p of filteredProjects) {
       const loc = p.pbLocation || "Unknown";
       const eq = p.equipment;
       const existing = map.get(loc);
       if (existing) {
         existing.count += 1;
-        existing.kwdc += eq?.systemSizeKwdc || 0;
-        existing.kwac += eq?.systemSizeKwac || 0;
         existing.modules += eq?.modules?.count || 0;
         existing.inverters += eq?.inverter?.count || 0;
         existing.batteries += eq?.battery?.count || 0;
-        existing.kwh += (eq?.battery?.sizeKwh || 0) * (eq?.battery?.count || 0);
+        existing.batteryExpansions += eq?.battery?.expansionCount || 0;
         existing.value += p.amount || 0;
       } else {
         map.set(loc, {
           count: 1,
-          kwdc: eq?.systemSizeKwdc || 0,
-          kwac: eq?.systemSizeKwac || 0,
           modules: eq?.modules?.count || 0,
           inverters: eq?.inverter?.count || 0,
           batteries: eq?.battery?.count || 0,
-          kwh: (eq?.battery?.sizeKwh || 0) * (eq?.battery?.count || 0),
+          batteryExpansions: eq?.battery?.expansionCount || 0,
           value: p.amount || 0,
         });
       }
     }
-    return [...map.entries()].sort((a, b) => b[1].kwdc - a[1].kwdc);
+    return [...map.entries()].sort((a, b) => b[1].modules - a[1].modules);
   }, [filteredProjects]);
 
   /* ---- Column sort handler ---- */
@@ -385,7 +363,7 @@ export default function EquipmentBacklogPage() {
   return (
     <DashboardShell
       title="Equipment Backlog"
-      subtitle={`${totals.projects} projects \u2022 ${totals.totalKwdc.toLocaleString()} kW DC`}
+      subtitle={`${totals.projects} projects \u2022 ${totals.totalModules.toLocaleString()} modules`}
       accentColor="cyan"
       lastUpdated={lastUpdated}
       exportData={{
@@ -394,20 +372,15 @@ export default function EquipmentBacklogPage() {
           "Project #": p.projectNumber,
           Location: p.pbLocation,
           Stage: p.stage,
-          "System kW DC": p.equipment?.systemSizeKwdc || 0,
-          "System kW AC": p.equipment?.systemSizeKwac || 0,
           "Module Brand": p.equipment?.modules?.brand || "",
           "Module Model": p.equipment?.modules?.model || "",
-          "Module Count": p.equipment?.modules?.count || 0,
-          "Module Wattage": p.equipment?.modules?.wattage || 0,
+          Modules: p.equipment?.modules?.count || 0,
           "Inverter Brand": p.equipment?.inverter?.brand || "",
           "Inverter Model": p.equipment?.inverter?.model || "",
-          "Inverter Count": p.equipment?.inverter?.count || 0,
-          "Inverter kW AC": p.equipment?.inverter?.sizeKwac || 0,
+          Inverters: p.equipment?.inverter?.count || 0,
           "Battery Brand": p.equipment?.battery?.brand || "",
           "Battery Model": p.equipment?.battery?.model || "",
-          "Battery Count": p.equipment?.battery?.count || 0,
-          "Battery kWh": p.equipment?.battery?.sizeKwh || 0,
+          Batteries: p.equipment?.battery?.count || 0,
           "Battery Expansions": p.equipment?.battery?.expansionCount || 0,
           "EV Chargers": p.equipment?.evCount || 0,
           Value: p.amount || 0,
@@ -455,15 +428,13 @@ export default function EquipmentBacklogPage() {
       </div>
 
       {/* Stat Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-9 gap-3 mb-8">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 mb-8">
         {[
           { label: "Projects", value: totals.projects.toLocaleString(), color: "text-cyan-400" },
-          { label: "Total kW DC", value: totals.totalKwdc.toLocaleString(), color: "text-orange-400" },
-          { label: "Total kW AC", value: totals.totalKwac.toLocaleString(), color: "text-amber-400" },
           { label: "Modules", value: totals.totalModules.toLocaleString(), color: "text-blue-400" },
           { label: "Inverters", value: totals.totalInverters.toLocaleString(), color: "text-purple-400" },
           { label: "Batteries", value: totals.totalBatteries.toLocaleString(), color: "text-emerald-400" },
-          { label: "Battery kWh", value: totals.totalKwh.toLocaleString(), color: "text-green-400" },
+          { label: "Battery Exp.", value: totals.totalBatteryExpansions.toLocaleString(), color: "text-green-400" },
           { label: "EV Chargers", value: totals.totalEv.toLocaleString(), color: "text-pink-400" },
           { label: "Pipeline Value", value: formatMoney(totals.totalValue), color: "text-orange-400" },
         ].map((stat) => (
@@ -485,12 +456,10 @@ export default function EquipmentBacklogPage() {
                   <tr className="text-muted text-left border-b border-t-border">
                     <th className="pb-2 pr-4">Stage</th>
                     <th className="pb-2 pr-4 text-right">Projects</th>
-                    <th className="pb-2 pr-4 text-right">kW DC</th>
-                    <th className="pb-2 pr-4 text-right">kW AC</th>
                     <th className="pb-2 pr-4 text-right">Modules</th>
                     <th className="pb-2 pr-4 text-right">Inverters</th>
                     <th className="pb-2 pr-4 text-right">Batteries</th>
-                    <th className="pb-2 pr-4 text-right">kWh</th>
+                    <th className="pb-2 pr-4 text-right">Bat. Exp.</th>
                     <th className="pb-2 text-right">Value</th>
                   </tr>
                 </thead>
@@ -507,12 +476,10 @@ export default function EquipmentBacklogPage() {
                         </div>
                       </td>
                       <td className="py-2 pr-4 text-right text-foreground/80">{data.count}</td>
-                      <td className="py-2 pr-4 text-right text-orange-400">{Math.round(data.kwdc).toLocaleString()}</td>
-                      <td className="py-2 pr-4 text-right text-amber-400">{Math.round(data.kwac).toLocaleString()}</td>
                       <td className="py-2 pr-4 text-right text-blue-400">{data.modules.toLocaleString()}</td>
                       <td className="py-2 pr-4 text-right text-purple-400">{data.inverters.toLocaleString()}</td>
                       <td className="py-2 pr-4 text-right text-emerald-400">{data.batteries.toLocaleString()}</td>
-                      <td className="py-2 pr-4 text-right text-green-400">{Math.round(data.kwh).toLocaleString()}</td>
+                      <td className="py-2 pr-4 text-right text-green-400">{data.batteryExpansions.toLocaleString()}</td>
                       <td className="py-2 text-right text-muted">{formatMoney(data.value)}</td>
                     </tr>
                   ))}
@@ -530,12 +497,10 @@ export default function EquipmentBacklogPage() {
                   <tr className="text-muted text-left border-b border-t-border">
                     <th className="pb-2 pr-4">Location</th>
                     <th className="pb-2 pr-4 text-right">Projects</th>
-                    <th className="pb-2 pr-4 text-right">kW DC</th>
-                    <th className="pb-2 pr-4 text-right">kW AC</th>
                     <th className="pb-2 pr-4 text-right">Modules</th>
                     <th className="pb-2 pr-4 text-right">Inverters</th>
                     <th className="pb-2 pr-4 text-right">Batteries</th>
-                    <th className="pb-2 pr-4 text-right">kWh</th>
+                    <th className="pb-2 pr-4 text-right">Bat. Exp.</th>
                     <th className="pb-2 text-right">Value</th>
                   </tr>
                 </thead>
@@ -544,12 +509,10 @@ export default function EquipmentBacklogPage() {
                     <tr key={location} className="border-b border-t-border/50 hover:bg-surface-2/30">
                       <td className="py-2 pr-4 text-foreground/80">{location}</td>
                       <td className="py-2 pr-4 text-right text-foreground/80">{data.count}</td>
-                      <td className="py-2 pr-4 text-right text-orange-400">{Math.round(data.kwdc).toLocaleString()}</td>
-                      <td className="py-2 pr-4 text-right text-amber-400">{Math.round(data.kwac).toLocaleString()}</td>
                       <td className="py-2 pr-4 text-right text-blue-400">{data.modules.toLocaleString()}</td>
                       <td className="py-2 pr-4 text-right text-purple-400">{data.inverters.toLocaleString()}</td>
                       <td className="py-2 pr-4 text-right text-emerald-400">{data.batteries.toLocaleString()}</td>
-                      <td className="py-2 pr-4 text-right text-green-400">{Math.round(data.kwh).toLocaleString()}</td>
+                      <td className="py-2 pr-4 text-right text-green-400">{data.batteryExpansions.toLocaleString()}</td>
                       <td className="py-2 text-right text-muted">{formatMoney(data.value)}</td>
                     </tr>
                   ))}
@@ -567,32 +530,20 @@ export default function EquipmentBacklogPage() {
                 <p className="text-muted text-sm">No module data</p>
               ) : (
                 <div className="space-y-2">
-                  {moduleSummary.map((m, i) => {
-                    const wattageDisplay = m.totalCount > 0
-                      ? (() => {
-                          const matchingProjects = filteredProjects.filter(p =>
-                            p.equipment?.modules?.brand === m.brand &&
-                            p.equipment?.modules?.model === m.model
-                          );
-                          const wattage = matchingProjects.length > 0 ? matchingProjects[0].equipment?.modules?.wattage : 0;
-                          return wattage ? ` (${wattage}W)` : "";
-                        })()
-                      : "";
-                    return (
-                      <div key={i} className="flex items-center justify-between text-sm">
-                        <div className="truncate mr-2">
-                          <span className="text-foreground/80">{m.brand}</span>
-                          {m.model !== "Unknown" && (
-                            <span className="text-muted ml-1">{m.model}{wattageDisplay}</span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-3 shrink-0">
-                          <span className="text-blue-400 font-medium">{m.totalCount.toLocaleString()}</span>
-                          <span className="text-muted/70 text-xs">{m.projects} jobs</span>
-                        </div>
+                  {moduleSummary.map((m, i) => (
+                    <div key={i} className="flex items-center justify-between text-sm">
+                      <div className="truncate mr-2">
+                        <span className="text-foreground/80">{m.brand}</span>
+                        {m.model !== "Unknown" && (
+                          <span className="text-muted ml-1">{m.model}</span>
+                        )}
                       </div>
-                    );
-                  })}
+                      <div className="flex items-center gap-3 shrink-0">
+                        <span className="text-blue-400 font-medium">{m.totalCount.toLocaleString()}</span>
+                        <span className="text-muted/70 text-xs">{m.projects} jobs</span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
@@ -604,30 +555,20 @@ export default function EquipmentBacklogPage() {
                 <p className="text-muted text-sm">No inverter data</p>
               ) : (
                 <div className="space-y-2">
-                  {inverterSummary.map((inv, i) => {
-                    const kwacDisplay = (() => {
-                      const matchingProjects = filteredProjects.filter(p =>
-                        p.equipment?.inverter?.brand === inv.brand &&
-                        p.equipment?.inverter?.model === inv.model
-                      );
-                      const kwac = matchingProjects.length > 0 ? matchingProjects[0].equipment?.inverter?.sizeKwac : 0;
-                      return kwac ? ` (${kwac} kW each)` : "";
-                    })();
-                    return (
-                      <div key={i} className="flex items-center justify-between text-sm">
-                        <div className="truncate mr-2">
-                          <span className="text-foreground/80">{inv.brand}</span>
-                          {inv.model !== "Unknown" && (
-                            <span className="text-muted ml-1">{inv.model}{kwacDisplay}</span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-3 shrink-0">
-                          <span className="text-purple-400 font-medium">{inv.totalCount.toLocaleString()}</span>
-                          <span className="text-muted/70 text-xs">{inv.projects} jobs</span>
-                        </div>
+                  {inverterSummary.map((inv, i) => (
+                    <div key={i} className="flex items-center justify-between text-sm">
+                      <div className="truncate mr-2">
+                        <span className="text-foreground/80">{inv.brand}</span>
+                        {inv.model !== "Unknown" && (
+                          <span className="text-muted ml-1">{inv.model}</span>
+                        )}
                       </div>
-                    );
-                  })}
+                      <div className="flex items-center gap-3 shrink-0">
+                        <span className="text-purple-400 font-medium">{inv.totalCount.toLocaleString()}</span>
+                        <span className="text-muted/70 text-xs">{inv.projects} jobs</span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
@@ -649,7 +590,6 @@ export default function EquipmentBacklogPage() {
                       </div>
                       <div className="flex items-center gap-3 shrink-0">
                         <span className="text-emerald-400 font-medium">{bat.totalCount.toLocaleString()}</span>
-                        <span className="text-muted text-xs">{Math.round(bat.totalKwh).toLocaleString()} kWh</span>
                         <span className="text-muted/70 text-xs">{bat.projects} jobs</span>
                       </div>
                     </div>
@@ -675,15 +615,12 @@ export default function EquipmentBacklogPage() {
                   <th className="px-4 py-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("stage")}>
                     Stage <SortIcon field="stage" />
                   </th>
-                  <th className="px-4 py-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("systemSize")}>
-                    kW DC <SortIcon field="systemSize" />
-                  </th>
-                  <th className="px-4 py-3 text-right">kW AC</th>
                   <th className="px-4 py-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("modules")}>
                     Modules <SortIcon field="modules" />
                   </th>
                   <th className="px-4 py-3 text-right">Inverters</th>
                   <th className="px-4 py-3 text-right">Batteries</th>
+                  <th className="px-4 py-3 text-right">Bat. Exp.</th>
                   <th className="px-4 py-3 text-right">EV</th>
                   <th className="px-4 py-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("value")}>
                     Value <SortIcon field="value" />
@@ -693,7 +630,6 @@ export default function EquipmentBacklogPage() {
               <tbody>
                 {sortedProjects.map((p) => {
                   const eq = p.equipment;
-                  const wattageDisplay = eq?.modules?.wattage ? ` × ${eq.modules.wattage}W` : "";
                   return (
                     <tr key={p.id} className="border-b border-t-border/50 hover:bg-surface-2/30">
                       <td className="px-4 py-2.5">
@@ -702,9 +638,7 @@ export default function EquipmentBacklogPage() {
                       </td>
                       <td className="px-4 py-2.5 text-muted">{p.pbLocation}</td>
                       <td className="px-4 py-2.5">
-                        <span
-                          className="inline-flex items-center gap-1.5 text-xs"
-                        >
+                        <span className="inline-flex items-center gap-1.5 text-xs">
                           <span
                             className="w-2 h-2 rounded-full"
                             style={{ backgroundColor: STAGE_COLORS[p.stage]?.hex || "#71717A" }}
@@ -713,28 +647,25 @@ export default function EquipmentBacklogPage() {
                         </span>
                       </td>
                       <td className="px-4 py-2.5 text-right">
-                        <span className="text-orange-400 font-medium">{Math.round(eq?.systemSizeKwdc || 0).toLocaleString()}</span>
-                      </td>
-                      <td className="px-4 py-2.5 text-right">
-                        <span className="text-amber-400">{Math.round(eq?.systemSizeKwac || 0).toLocaleString()}</span>
-                      </td>
-                      <td className="px-4 py-2.5 text-right">
-                        <div className="text-blue-400">{eq?.modules?.count || 0}{wattageDisplay}</div>
+                        <div className="text-blue-400">{eq?.modules?.count || 0}</div>
                         {eq?.modules?.brand && (
                           <div className="text-xs text-muted/70 truncate max-w-[160px]">{eq.modules.brand}{eq.modules.model ? ` ${eq.modules.model}` : ""}</div>
                         )}
                       </td>
                       <td className="px-4 py-2.5 text-right">
-                        <div className="text-purple-400">{eq?.inverter?.count || 0}{eq?.inverter?.sizeKwac ? ` × ${eq.inverter.sizeKwac} kWac` : ""}</div>
+                        <div className="text-purple-400">{eq?.inverter?.count || 0}</div>
                         {eq?.inverter?.brand && (
                           <div className="text-xs text-muted/70 truncate max-w-[160px]">{eq.inverter.brand}{eq.inverter.model ? ` ${eq.inverter.model}` : ""}</div>
                         )}
                       </td>
                       <td className="px-4 py-2.5 text-right">
-                        <div className="text-emerald-400">{eq?.battery?.count || 0}{eq?.battery?.sizeKwh > 0 ? ` × ${eq.battery.sizeKwh} kWh` : ""}</div>
+                        <div className="text-emerald-400">{eq?.battery?.count || 0}</div>
                         {eq?.battery?.brand && (
                           <div className="text-xs text-muted/70 truncate max-w-[160px]">{eq.battery.brand}{eq.battery.model ? ` ${eq.battery.model}` : ""}</div>
                         )}
+                      </td>
+                      <td className="px-4 py-2.5 text-right text-green-400">
+                        {eq?.battery?.expansionCount || 0}
                       </td>
                       <td className="px-4 py-2.5 text-right text-pink-400">
                         {eq?.evCount || 0}
@@ -747,7 +678,7 @@ export default function EquipmentBacklogPage() {
                 })}
                 {sortedProjects.length === 0 && (
                   <tr>
-                    <td colSpan={10} className="text-center py-12 text-muted">
+                    <td colSpan={9} className="text-center py-12 text-muted">
                       No projects match the current filters
                     </td>
                   </tr>
