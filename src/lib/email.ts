@@ -52,6 +52,24 @@ function parseEmailAddress(input?: string): string | null {
   return basicEmailRegex.test(candidate) ? candidate : null;
 }
 
+function parseEmailList(input?: string): string[] {
+  if (!input) return [];
+  const parts = input.split(",").map((p) => p.trim()).filter(Boolean);
+  const normalized = parts
+    .map((p) => parseEmailAddress(p))
+    .filter((email): email is string => !!email);
+  return [...new Set(normalized)];
+}
+
+function getSchedulingNotificationBccRecipients(): string[] {
+  const configured = parseEmailList(process.env.SCHEDULING_NOTIFICATION_BCC);
+  if (configured.length > 0) return configured;
+
+  // Safety fallback for ops visibility when explicit BCC config is missing.
+  const adminFallback = parseEmailAddress(process.env.GOOGLE_ADMIN_EMAIL || "");
+  return adminFallback ? [adminFallback] : [];
+}
+
 function getGoogleWorkspaceSenderEmail(): string | null {
   return (
     parseEmailAddress(process.env.GOOGLE_EMAIL_SENDER) ||
@@ -117,18 +135,23 @@ async function getServiceAccountToken(
 function buildRawMimeMessage(params: {
   from: string;
   to: string;
+  bcc?: string[];
   subject: string;
   text: string;
   html: string;
 }): string {
   const safeFrom = params.from.replace(/[\r\n]+/g, " ").trim();
   const safeTo = params.to.replace(/[\r\n]+/g, " ").trim();
+  const safeBcc = (params.bcc || [])
+    .map((email) => email.replace(/[\r\n]+/g, " ").trim())
+    .filter(Boolean);
   const safeSubject = params.subject.replace(/[\r\n]+/g, " ").trim();
   const boundary = `pb_ops_${crypto.randomUUID().replace(/-/g, "")}`;
 
   const mime = [
     `From: ${safeFrom}`,
     `To: ${safeTo}`,
+    ...(safeBcc.length > 0 ? [`Bcc: ${safeBcc.join(", ")}`] : []),
     `Subject: ${safeSubject}`,
     "MIME-Version: 1.0",
     `Content-Type: multipart/alternative; boundary="${boundary}"`,
@@ -154,6 +177,7 @@ function buildRawMimeMessage(params: {
 
 async function trySendWithGoogleWorkspace(params: {
   to: string;
+  bcc?: string[];
   subject: string;
   html: string;
   text: string;
@@ -239,13 +263,32 @@ function logLocalFallback(title: string, content: string) {
 }
 
 async function sendEmailMessage(params: {
-  to: string;
+  to?: string;
+  bcc?: string[];
   subject: string;
   html: string;
   text: string;
   debugFallbackTitle: string;
   debugFallbackBody: string;
 }): Promise<SendResult> {
+  const normalizedTo = parseEmailAddress(params.to);
+  const normalizedBcc = (params.bcc || [])
+    .map((email) => parseEmailAddress(email))
+    .filter((email): email is string => !!email);
+
+  let primaryTo = normalizedTo || "";
+  let finalBcc = normalizedBcc;
+  if (!primaryTo && finalBcc.length > 0) {
+    primaryTo = finalBcc[0];
+    finalBcc = finalBcc.slice(1);
+  }
+  if (!primaryTo) {
+    return { success: false, error: "No valid recipient (to/bcc) for email send" };
+  }
+
+  // Remove any duplicate bcc entries that match primary recipient.
+  finalBcc = finalBcc.filter((email) => email.toLowerCase() !== primaryTo.toLowerCase());
+
   const senderEmail = getGoogleWorkspaceSenderEmail();
   const defaultFrom = senderEmail
     ? `PB Operations <${senderEmail}>`
@@ -253,7 +296,8 @@ async function sendEmailMessage(params: {
   const from = process.env.EMAIL_FROM || defaultFrom;
 
   const googleResult = await trySendWithGoogleWorkspace({
-    to: params.to,
+    to: primaryTo,
+    bcc: finalBcc,
     subject: params.subject,
     html: params.html,
     text: params.text,
@@ -278,7 +322,8 @@ async function sendEmailMessage(params: {
     try {
       const { error } = await resend.emails.send({
         from: resendFrom,
-        to: [params.to],
+        to: [primaryTo],
+        ...(finalBcc.length > 0 ? { bcc: finalBcc } : {}),
         subject: params.subject,
         html: params.html,
         text: params.text,
@@ -288,7 +333,7 @@ async function sendEmailMessage(params: {
         return { success: false, error: error.message };
       }
 
-      console.log(`[email] Sent via Resend to ${params.to}`);
+      console.log(`[email] Sent via Resend to ${primaryTo}${finalBcc.length > 0 ? ` (bcc: ${finalBcc.join(",")})` : ""}`);
       return { success: true };
     } catch (err) {
       return {
@@ -414,12 +459,14 @@ export async function sendSchedulingNotification(
 ): Promise<{ success: boolean; error?: string }> {
   const appointmentTypeLabel = APPOINTMENT_TYPE_LABELS[params.appointmentType] || params.appointmentType;
   const formattedDate = formatDate(params.scheduledDate);
+  const bccRecipients = getSchedulingNotificationBccRecipients();
   const timeSlot = params.scheduledStart && params.scheduledEnd
     ? `${formatTime(params.scheduledStart)} - ${formatTime(params.scheduledEnd)}`
     : "Full day";
 
   return sendEmailMessage({
     to: params.to,
+    bcc: bccRecipients,
     subject: `New ${appointmentTypeLabel} Scheduled - ${params.customerName}`,
     html: `
         <!DOCTYPE html>
@@ -522,6 +569,7 @@ Please check your Zuper app for complete details.
       `Date: ${formattedDate}`,
       `Time: ${timeSlot}`,
       `Notes: ${params.notes || "None"}`,
+      `BCC: ${bccRecipients.join(", ") || "None"}`,
     ].join("\n"),
   });
 }
@@ -547,6 +595,7 @@ export async function sendCancellationNotification(
   params: SendCancellationNotificationParams
 ): Promise<{ success: boolean; error?: string }> {
   const appointmentTypeLabel = APPOINTMENT_TYPE_LABELS[params.appointmentType] || params.appointmentType;
+  const bccRecipients = getSchedulingNotificationBccRecipients();
   const formattedDate = params.scheduledDate ? formatDate(params.scheduledDate) : "Not provided";
   const timeSlot = params.scheduledStart && params.scheduledEnd
     ? `${formatTime(params.scheduledStart)} - ${formatTime(params.scheduledEnd)}`
@@ -555,6 +604,7 @@ export async function sendCancellationNotification(
 
   return sendEmailMessage({
     to: params.to,
+    bcc: bccRecipients,
     subject: `${appointmentTypeLabel} Cancelled - ${params.customerName}`,
     html: `
         <!DOCTYPE html>
@@ -662,6 +712,7 @@ Please check your Zuper app for complete details.
       `Date: ${formattedDate}`,
       `Time: ${timeSlot}`,
       `Reason: ${reasonText}`,
+      `BCC: ${bccRecipients.join(", ") || "None"}`,
     ].join("\n"),
   });
 }

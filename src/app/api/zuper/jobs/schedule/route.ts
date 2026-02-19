@@ -1616,17 +1616,25 @@ async function sendCrewNotification(
       return;
     }
 
-    const { recipientEmail, recipientName } = await resolveCrewNotificationRecipient({
+    const resolvedRecipient = await resolveCrewNotificationRecipient({
       assignedUser: schedule.assignedUser,
       assignedUserUid: schedule.assignedUserUid,
       crew: schedule.crew,
     });
+    let recipientEmail = resolvedRecipient.recipientEmail;
+    const recipientName = resolvedRecipient.recipientName || schedule.assignedUser;
 
     if (!recipientEmail) {
+      if (!schedulerEmail) {
+        console.log(
+          `[Zuper Schedule] No email found for assigned surveyor and no fallback recipient: name="${schedule.assignedUser}", uid="${schedule.assignedUserUid || schedule.crew || ""}"`
+        );
+        return;
+      }
       console.log(
-        `[Zuper Schedule] No email found for assigned surveyor: name="${schedule.assignedUser}", uid="${schedule.assignedUserUid || schedule.crew || ""}"`
+        `[Zuper Schedule] No email found for assigned surveyor; falling back to scheduler email: ${schedulerEmail}`
       );
-      return;
+      recipientEmail = schedulerEmail;
     }
 
     const { customerName, customerAddress } = deriveCustomerDetails(project);
@@ -1693,16 +1701,24 @@ async function sendCrewCancellationEmail(params: {
     return;
   }
 
-  const { recipientEmail, recipientName } = await resolveCrewNotificationRecipient({
+  const resolvedRecipient = await resolveCrewNotificationRecipient({
     assignedUser: params.assignedUser,
     assignedUserUid: params.assignedUserUid || undefined,
   });
+  let recipientEmail = resolvedRecipient.recipientEmail;
+  const recipientName = resolvedRecipient.recipientName || params.assignedUser;
 
   if (!recipientEmail) {
+    if (!params.cancelledByEmail) {
+      console.log(
+        `[Zuper Unschedule] No email found for assigned surveyor and no fallback recipient: name="${params.assignedUser}", uid="${params.assignedUserUid || ""}"`
+      );
+      return;
+    }
     console.log(
-      `[Zuper Unschedule] No email found for assigned surveyor: name="${params.assignedUser}", uid="${params.assignedUserUid || ""}"`
+      `[Zuper Unschedule] No email found for assigned surveyor; falling back to canceller email: ${params.cancelledByEmail}`
     );
-    return;
+    recipientEmail = params.cancelledByEmail;
   }
 
   const { customerName, customerAddress } = deriveCustomerDetails({
