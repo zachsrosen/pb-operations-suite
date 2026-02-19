@@ -201,27 +201,29 @@ export async function POST(request: NextRequest) {
     });
 
     // Notify surveyor + deal owner(s) when an override conflicts with existing scheduled surveys
-    const candidateRecords = await prisma.scheduleRecord.findMany({
-      where: {
-        scheduleType: "survey",
-        scheduledDate: date,
-        status: { in: ["scheduled", "tentative"] },
-        OR: [
-          { assignedUserUid: { contains: crewMember.zuperUserUid } },
-          { assignedUser: { equals: crewMember.name, mode: "insensitive" } },
-        ],
-      },
-      orderBy: { createdAt: "desc" },
-      select: {
-        projectId: true,
-        projectName: true,
-        scheduledDate: true,
-        scheduledStart: true,
-        scheduledEnd: true,
-        assignedUser: true,
-        createdAt: true,
-      },
-    });
+    const candidateRecords = prisma
+      ? await prisma.scheduleRecord.findMany({
+          where: {
+            scheduleType: "survey",
+            scheduledDate: date,
+            status: { in: ["scheduled", "tentative"] },
+            OR: [
+              { assignedUserUid: { contains: crewMember.zuperUserUid } },
+              { assignedUser: { equals: crewMember.name, mode: "insensitive" } },
+            ],
+          },
+          orderBy: { createdAt: "desc" },
+          select: {
+            projectId: true,
+            projectName: true,
+            scheduledDate: true,
+            scheduledStart: true,
+            scheduledEnd: true,
+            assignedUser: true,
+            createdAt: true,
+          },
+        })
+      : [];
 
     const mergedCandidates: Array<{
       projectId: string;
@@ -290,6 +292,7 @@ export async function POST(request: NextRequest) {
             if (!projectId) {
               projectId = (job.job_uid || "").trim();
             }
+            const jobUpdatedAt = (job as { updated_at?: string }).updated_at;
 
             mergedCandidates.push({
               projectId,
@@ -297,7 +300,7 @@ export async function POST(request: NextRequest) {
               scheduledDate: date,
               scheduledStart: localStart,
               scheduledEnd: localEnd,
-              createdAt: new Date(job.updated_at || job.scheduled_start_time),
+              createdAt: new Date(jobUpdatedAt || job.scheduled_start_time),
             });
           }
         }

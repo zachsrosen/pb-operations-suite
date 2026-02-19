@@ -69,7 +69,7 @@ function parseHubSpotValueToDateOnly(raw: string): string | null {
   if (!value) return null;
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
   const ms = parseHubSpotValueToMs(value);
-  if (!Number.isFinite(ms)) return null;
+  if (typeof ms !== "number" || !Number.isFinite(ms)) return null;
   return new Date(ms).toISOString().slice(0, 10);
 }
 
