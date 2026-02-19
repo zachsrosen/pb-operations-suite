@@ -17,10 +17,19 @@ import { useSSE } from "@/hooks/useSSE";
 interface Equipment {
   modules: { brand: string; model: string; count: number; wattage: number; productName?: string };
   inverter: { brand: string; model: string; count: number; sizeKwac: number; productName?: string };
-  battery: { brand: string; model: string; count: number; sizeKwh: number; expansionCount: number; productName?: string; expansionProductName?: string };
+  battery: { brand: string; model: string; count: number; sizeKwh: number; expansionCount: number; productName?: string; expansionProductName?: string; expansionModel?: string };
   evCount: number;
   systemSizeKwdc: number;
   systemSizeKwac: number;
+}
+
+/** Format product as "Name (model)" or just "Name" if no model */
+function formatProduct(name: string | undefined, model: string | undefined): string {
+  const n = (name || "").trim();
+  const m = (model || "").trim();
+  if (!n) return m || "Unknown";
+  if (!m) return n;
+  return `${n} (${m})`;
 }
 
 interface Project {
@@ -237,26 +246,30 @@ export default function EquipmentBacklogPage() {
   /* ---- Product name breakdowns (backlog only) ---- */
 
   const moduleProducts = useMemo(
-    () => buildProductSummary(backlogProjects, (eq) => eq.modules?.productName || `${eq.modules?.brand || ""} ${eq.modules?.model || ""}`.trim(), (eq) => eq.modules?.count || 0),
+    () => buildProductSummary(backlogProjects, (eq) => formatProduct(eq.modules?.productName, eq.modules?.model), (eq) => eq.modules?.count || 0),
     [backlogProjects]
   );
   const inverterProducts = useMemo(
-    () => buildProductSummary(backlogProjects, (eq) => eq.inverter?.productName || `${eq.inverter?.brand || ""} ${eq.inverter?.model || ""}`.trim(), (eq) => eq.inverter?.count || 0),
+    () => buildProductSummary(backlogProjects, (eq) => formatProduct(eq.inverter?.productName, eq.inverter?.model), (eq) => eq.inverter?.count || 0),
     [backlogProjects]
   );
   const batteryProducts = useMemo(
-    () => buildProductSummary(backlogProjects, (eq) => eq.battery?.productName || `${eq.battery?.brand || ""} ${eq.battery?.model || ""}`.trim(), (eq) => eq.battery?.count || 0),
+    () => buildProductSummary(backlogProjects, (eq) => formatProduct(eq.battery?.productName, eq.battery?.model), (eq) => eq.battery?.count || 0),
     [backlogProjects]
   );
   const batteryExpProducts = useMemo(
-    () => buildProductSummary(backlogProjects, (eq) => eq.battery?.expansionProductName || "Battery Expansion", (eq) => eq.battery?.expansionCount || 0),
+    () => buildProductSummary(backlogProjects, (eq) => formatProduct(eq.battery?.expansionProductName, eq.battery?.expansionModel), (eq) => eq.battery?.expansionCount || 0),
+    [backlogProjects]
+  );
+  const evProducts = useMemo(
+    () => buildProductSummary(backlogProjects, () => "EV Charger", (eq) => eq.evCount || 0),
     [backlogProjects]
   );
 
   /* ---- Stage breakdown ---- */
 
   const stageBreakdown = useMemo(() => {
-    const map = new Map<string, { count: number; modules: number; inverters: number; batteries: number; batteryExpansions: number; value: number }>();
+    const map = new Map<string, { count: number; modules: number; inverters: number; batteries: number; batteryExpansions: number; ev: number; value: number }>();
     for (const p of filteredProjects) {
       const stage = p.stage || "Unknown";
       const existing = map.get(stage);
@@ -267,6 +280,7 @@ export default function EquipmentBacklogPage() {
         existing.inverters += eq?.inverter?.count || 0;
         existing.batteries += eq?.battery?.count || 0;
         existing.batteryExpansions += eq?.battery?.expansionCount || 0;
+        existing.ev += eq?.evCount || 0;
         existing.value += p.amount || 0;
       } else {
         map.set(stage, {
@@ -275,6 +289,7 @@ export default function EquipmentBacklogPage() {
           inverters: eq?.inverter?.count || 0,
           batteries: eq?.battery?.count || 0,
           batteryExpansions: eq?.battery?.expansionCount || 0,
+          ev: eq?.evCount || 0,
           value: p.amount || 0,
         });
       }
@@ -394,13 +409,13 @@ export default function EquipmentBacklogPage() {
           Stage: p.stage,
           Status: classifyStage(p.stage) === "built" ? "Built" : classifyStage(p.stage) === "in_progress" ? "In Progress" : "Backlog",
           Modules: p.equipment?.modules?.count || 0,
-          "Module Product": p.equipment?.modules?.productName || "",
+          "Module Product": formatProduct(p.equipment?.modules?.productName, p.equipment?.modules?.model),
           Inverters: p.equipment?.inverter?.count || 0,
-          "Inverter Product": p.equipment?.inverter?.productName || "",
+          "Inverter Product": formatProduct(p.equipment?.inverter?.productName, p.equipment?.inverter?.model),
           Batteries: p.equipment?.battery?.count || 0,
-          "Battery Product": p.equipment?.battery?.productName || "",
+          "Battery Product": formatProduct(p.equipment?.battery?.productName, p.equipment?.battery?.model),
           "Battery Expansions": p.equipment?.battery?.expansionCount || 0,
-          "Battery Exp. Product": p.equipment?.battery?.expansionProductName || "",
+          "Battery Exp. Product": formatProduct(p.equipment?.battery?.expansionProductName, p.equipment?.battery?.expansionModel),
           "EV Chargers": p.equipment?.evCount || 0,
           Value: p.amount || 0,
         })),
@@ -466,6 +481,7 @@ export default function EquipmentBacklogPage() {
                     <th className="pb-2 pr-4 text-right">Inverters</th>
                     <th className="pb-2 pr-4 text-right">Batteries</th>
                     <th className="pb-2 pr-4 text-right">Bat. Exp.</th>
+                    <th className="pb-2 pr-4 text-right">EV</th>
                     <th className="pb-2 text-right">Value</th>
                   </tr>
                 </thead>
@@ -491,6 +507,7 @@ export default function EquipmentBacklogPage() {
                         <td className="py-2 pr-4 text-right text-purple-400">{d.inverters.toLocaleString()}</td>
                         <td className="py-2 pr-4 text-right text-emerald-400">{d.batteries.toLocaleString()}</td>
                         <td className="py-2 pr-4 text-right text-green-400">{d.batteryExpansions.toLocaleString()}</td>
+                        <td className="py-2 pr-4 text-right text-pink-400">{d.ev.toLocaleString()}</td>
                         <td className="py-2 text-right text-muted">{formatMoney(d.value)}</td>
                       </tr>
                     );
@@ -502,11 +519,12 @@ export default function EquipmentBacklogPage() {
 
           {/* Product Breakdowns (backlog only) */}
           <h2 className="text-lg font-semibold mb-3">Backlog Equipment by Product</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
             <ProductBreakdown title="Modules" items={moduleProducts} color="text-blue-400" />
             <ProductBreakdown title="Inverters" items={inverterProducts} color="text-purple-400" />
             <ProductBreakdown title="Batteries" items={batteryProducts} color="text-emerald-400" />
             <ProductBreakdown title="Battery Expansion" items={batteryExpProducts} color="text-green-400" />
+            <ProductBreakdown title="EV Chargers" items={evProducts} color="text-pink-400" />
           </div>
         </>
       ) : (
@@ -560,26 +578,26 @@ export default function EquipmentBacklogPage() {
                       </td>
                       <td className="px-4 py-2.5 text-right">
                         <div className="text-blue-400">{eq?.modules?.count || 0}</div>
-                        {eq?.modules?.productName && (
-                          <div className="text-xs text-muted/70 truncate max-w-[160px]">{eq.modules.productName}</div>
+                        {(eq?.modules?.productName || eq?.modules?.model) && (
+                          <div className="text-xs text-muted/70 truncate max-w-[180px]">{formatProduct(eq?.modules?.productName, eq?.modules?.model)}</div>
                         )}
                       </td>
                       <td className="px-4 py-2.5 text-right">
                         <div className="text-purple-400">{eq?.inverter?.count || 0}</div>
-                        {eq?.inverter?.productName && (
-                          <div className="text-xs text-muted/70 truncate max-w-[160px]">{eq.inverter.productName}</div>
+                        {(eq?.inverter?.productName || eq?.inverter?.model) && (
+                          <div className="text-xs text-muted/70 truncate max-w-[180px]">{formatProduct(eq?.inverter?.productName, eq?.inverter?.model)}</div>
                         )}
                       </td>
                       <td className="px-4 py-2.5 text-right">
                         <div className="text-emerald-400">{eq?.battery?.count || 0}</div>
-                        {eq?.battery?.productName && (
-                          <div className="text-xs text-muted/70 truncate max-w-[160px]">{eq.battery.productName}</div>
+                        {(eq?.battery?.productName || eq?.battery?.model) && (
+                          <div className="text-xs text-muted/70 truncate max-w-[180px]">{formatProduct(eq?.battery?.productName, eq?.battery?.model)}</div>
                         )}
                       </td>
                       <td className="px-4 py-2.5 text-right">
                         <div className="text-green-400">{eq?.battery?.expansionCount || 0}</div>
-                        {eq?.battery?.expansionProductName && (
-                          <div className="text-xs text-muted/70 truncate max-w-[160px]">{eq.battery.expansionProductName}</div>
+                        {(eq?.battery?.expansionProductName || eq?.battery?.expansionModel) && (
+                          <div className="text-xs text-muted/70 truncate max-w-[180px]">{formatProduct(eq?.battery?.expansionProductName, eq?.battery?.expansionModel)}</div>
                         )}
                       </td>
                       <td className="px-4 py-2.5 text-right text-pink-400">
