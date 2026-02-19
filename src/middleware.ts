@@ -94,9 +94,12 @@ export default auth((req) => {
   // when the authenticated user is ADMIN. This prevents privilege escalation
   // if the cookie is tampered with on a non-admin session. Additionally,
   // never let the cookie elevate to ADMIN or OWNER.
+  // Ignore VIEWER cookie for admins so transient sync errors cannot lock out
+  // privileged users from dashboards.
   const isAdminToken = tokenRole === "ADMIN";
   const isSafeCookieRole = cookieRole && cookieRole !== "ADMIN" && cookieRole !== "OWNER";
-  const rawRole = (isAdminToken && isSafeCookieRole ? cookieRole : tokenRole) || "VIEWER";
+  const shouldUseCookieRole = isAdminToken && isSafeCookieRole && cookieRole !== "VIEWER";
+  const rawRole = (shouldUseCookieRole ? cookieRole : tokenRole) || "VIEWER";
   const userRole = normalizeRole(rawRole);
   const pathname = req.nextUrl.pathname;
 

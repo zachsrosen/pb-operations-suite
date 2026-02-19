@@ -122,6 +122,7 @@ export async function DELETE() {
   if (!user) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
+  const normalizedRole = normalizeRole(user.role as UserRole);
 
   // Allow any user with impersonatingUserId set to clear it
   const isCurrentlyImpersonating = !!user.impersonatingUserId;
@@ -131,7 +132,10 @@ export async function DELETE() {
   }
 
   if (!isCurrentlyImpersonating) {
-    return NextResponse.json({ success: true, message: "Not currently impersonating" });
+    return withEffectiveRoleCookie(
+      NextResponse.json({ success: true, message: "Not currently impersonating" }),
+      normalizedRole
+    );
   }
 
   try {
@@ -165,7 +169,6 @@ export async function DELETE() {
       });
     }
 
-    const normalizedRole = normalizeRole(user.role as UserRole);
     return withEffectiveRoleCookie(NextResponse.json({
       success: true,
       message: "Impersonation ended",
@@ -201,9 +204,13 @@ export async function GET() {
   if (user.role !== "ADMIN") {
     return NextResponse.json({ isImpersonating: false });
   }
+  const normalizedAdminRole = normalizeRole(user.role as UserRole);
 
   if (!user.impersonatingUserId) {
-    return NextResponse.json({ isImpersonating: false });
+    return withEffectiveRoleCookie(
+      NextResponse.json({ isImpersonating: false }),
+      normalizedAdminRole
+    );
   }
 
   // Get the impersonated user
@@ -217,7 +224,10 @@ export async function GET() {
       where: { id: user.id },
       data: { impersonatingUserId: null },
     });
-    return NextResponse.json({ isImpersonating: false });
+    return withEffectiveRoleCookie(
+      NextResponse.json({ isImpersonating: false }),
+      normalizedAdminRole
+    );
   }
 
   const normalizedTargetRole = normalizeRole(targetUser.role as UserRole);
