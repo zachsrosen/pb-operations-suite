@@ -11,6 +11,52 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+const OWNERS_API_FORBIDDEN_TTL_MS = 6 * 60 * 60 * 1000;
+let ownersApiForbiddenUntil = 0;
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error ?? "");
+}
+
+function getHubSpotErrorStatus(error: unknown): number | null {
+  const candidate = error as {
+    code?: number | string;
+    statusCode?: number | string;
+    status?: number | string;
+    response?: { status?: number | string; statusCode?: number | string };
+  };
+  const rawStatus =
+    candidate?.statusCode ??
+    candidate?.code ??
+    candidate?.status ??
+    candidate?.response?.statusCode ??
+    candidate?.response?.status;
+  const numeric = Number(rawStatus);
+  if (Number.isFinite(numeric) && numeric > 0) return numeric;
+
+  const msg = getErrorMessage(error);
+  const match = msg.match(/\b([45]\d{2})\b/);
+  if (match) {
+    const parsed = Number(match[1]);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function ownersApiAllowed(): boolean {
+  return Date.now() >= ownersApiForbiddenUntil;
+}
+
+function markOwnersApiForbidden(error: unknown): void {
+  ownersApiForbiddenUntil = Date.now() + OWNERS_API_FORBIDDEN_TTL_MS;
+  const minutes = Math.round(OWNERS_API_FORBIDDEN_TTL_MS / 60000);
+  console.warn(
+    `[HubSpot] Owners API returned 403. Skipping owners lookups for ${minutes} minutes. ` +
+      `Error: ${getErrorMessage(error)}`
+  );
+}
+
 async function searchWithRetry(
   searchRequest: Parameters<typeof hubspotClient.crm.deals.searchApi.doSearch>[0],
   maxRetries = 3
@@ -874,13 +920,17 @@ export async function fetchAllProjects(options?: {
     }
   };
 
+  const ownersApiPromise = ownersApiAllowed()
+    ? hubspotClient.crm.owners.ownersApi.getPage(undefined, undefined, 500, false)
+    : Promise.resolve({ results: [], paging: undefined });
+
   const [ownerPropResult, surveyorPropResult, ownersApiResult] = await Promise.allSettled([
     // Source 1: Property definition options for hubspot_owner_id
     hubspotClient.crm.properties.coreApi.getByName("deals", "hubspot_owner_id"),
     // Source 2: Property definition options for site_surveyor
     hubspotClient.crm.properties.coreApi.getByName("deals", "site_surveyor"),
     // Source 3: Owners API (first page — covers most cases)
-    hubspotClient.crm.owners.ownersApi.getPage(undefined, undefined, 500, false),
+    ownersApiPromise,
   ]);
 
   // Process Source 1: hubspot_owner_id property options
@@ -920,7 +970,12 @@ export async function fetchAllProjects(options?: {
         for (const owner of ownersResponse.results || []) addOwnerToMap(owner);
         ownerAfter = ownersResponse.paging?.next?.after;
       } catch (err) {
-        console.warn("[HubSpot] Failed to paginate owners:", err instanceof Error ? err.message : err);
+        const status = getHubSpotErrorStatus(err);
+        if (status === 403) {
+          markOwnersApiForbidden(err);
+        } else {
+          console.warn("[HubSpot] Failed to paginate owners:", getErrorMessage(err));
+        }
         break;
       }
     }
@@ -938,12 +993,22 @@ export async function fetchAllProjects(options?: {
         archivedAfter = archivedPage.paging?.next?.after;
       }
     } catch (archivedErr) {
-      console.warn("[HubSpot] Failed to fetch archived owners:", archivedErr instanceof Error ? archivedErr.message : archivedErr);
+      const status = getHubSpotErrorStatus(archivedErr);
+      if (status === 403) {
+        markOwnersApiForbidden(archivedErr);
+      } else {
+        console.warn("[HubSpot] Failed to fetch archived owners:", getErrorMessage(archivedErr));
+      }
     }
 
     console.log(`[HubSpot] After owners API: ${Object.keys(ownerMap).length} total mappings`);
   } else {
-    console.warn("[HubSpot] Failed to fetch owners API:", ownersApiResult.reason?.message || ownersApiResult.reason);
+    const status = getHubSpotErrorStatus(ownersApiResult.reason);
+    if (status === 403) {
+      markOwnersApiForbidden(ownersApiResult.reason);
+    } else {
+      console.warn("[HubSpot] Failed to fetch owners API:", getErrorMessage(ownersApiResult.reason));
+    }
   }
 
   console.log(`[HubSpot] Final owner map: ${Object.keys(ownerMap).length} ID→name mappings`);
@@ -997,6 +1062,14 @@ export async function updateDealProperty(
         console.log(`[HubSpot] Updated deal ${dealId} properties via client:`, Object.keys(properties).join(", "));
         updated = true;
       } catch (clientErr) {
+        const clientStatus = getHubSpotErrorStatus(clientErr);
+        if (clientStatus && clientStatus >= 400 && clientStatus < 500 && clientStatus !== 429) {
+          console.warn(
+            `[HubSpot] Client update rejected for deal ${dealId} (HTTP ${clientStatus}); ` +
+              `skipping REST retries. Error: ${getErrorMessage(clientErr)}`
+          );
+          return false;
+        }
         console.warn(`[HubSpot] Client update failed for deal ${dealId}, trying REST fallback:`, clientErr);
       }
     }
@@ -1022,6 +1095,14 @@ export async function updateDealProperty(
       } else {
         const patchErrText = await patchResponse.text().catch(() => "");
         console.warn(`[HubSpot] PATCH failed for deal ${dealId}: HTTP ${patchResponse.status} ${patchResponse.statusText} ${patchErrText}`);
+
+        if (patchResponse.status >= 400 && patchResponse.status < 500 && patchResponse.status !== 429) {
+          console.error(
+            `[HubSpot] Aborting batch fallback for deal ${dealId} after PATCH validation/auth error ` +
+              `(HTTP ${patchResponse.status}).`
+          );
+          return false;
+        }
 
         // Fallback 2: batch update (often mirrors UI behavior more closely).
         const batchResponse = await fetch(`https://api.hubapi.com/crm/v3/objects/deals/batch/update`, {
@@ -1103,24 +1184,31 @@ async function loadSiteSurveyorLookup(): Promise<SurveyorLookupCache> {
     console.warn("[HubSpot] Failed to load site_surveyor property options:", err instanceof Error ? err.message : err);
   }
 
-  try {
-    let after: string | undefined;
-    do {
-      const ownersResponse = await hubspotClient.crm.owners.ownersApi.getPage(undefined, after, 500, false);
-      for (const owner of ownersResponse.results || []) {
-        const id = String(owner.id || "").trim();
-        if (!id) continue;
-        const fullName = [owner.firstName, owner.lastName].filter(Boolean).join(" ").trim();
-        const email = String(owner.email || "").trim();
-        directValues.add(id);
-        normalizedToValue.set(normalizeLookupKey(id), id);
-        if (fullName) normalizedToValue.set(normalizeLookupKey(fullName), id);
-        if (email) normalizedToValue.set(normalizeLookupKey(email), id);
+  if (ownersApiAllowed()) {
+    try {
+      let after: string | undefined;
+      do {
+        const ownersResponse = await hubspotClient.crm.owners.ownersApi.getPage(undefined, after, 500, false);
+        for (const owner of ownersResponse.results || []) {
+          const id = String(owner.id || "").trim();
+          if (!id) continue;
+          const fullName = [owner.firstName, owner.lastName].filter(Boolean).join(" ").trim();
+          const email = String(owner.email || "").trim();
+          directValues.add(id);
+          normalizedToValue.set(normalizeLookupKey(id), id);
+          if (fullName) normalizedToValue.set(normalizeLookupKey(fullName), id);
+          if (email) normalizedToValue.set(normalizeLookupKey(email), id);
+        }
+        after = ownersResponse.paging?.next?.after;
+      } while (after);
+    } catch (err) {
+      const status = getHubSpotErrorStatus(err);
+      if (status === 403) {
+        markOwnersApiForbidden(err);
+      } else {
+        console.warn("[HubSpot] Failed to load owners for site_surveyor lookup:", getErrorMessage(err));
       }
-      after = ownersResponse.paging?.next?.after;
-    } while (after);
-  } catch (err) {
-    console.warn("[HubSpot] Failed to load owners for site_surveyor lookup:", err instanceof Error ? err.message : err);
+    }
   }
 
   surveyorLookupCache = {
@@ -1140,13 +1228,24 @@ export async function updateSiteSurveyorProperty(dealId: string, assignee: strin
   if (!raw) return updateDealProperty(dealId, { site_surveyor: "" });
 
   let resolvedValue = raw;
+  let hasKnownAllowedValues = false;
+  let isDirectValue = false;
   try {
     const lookup = await loadSiteSurveyorLookup();
+    hasKnownAllowedValues = lookup.directValues.size > 0;
     if (lookup.directValues.has(raw)) {
       resolvedValue = raw;
+      isDirectValue = true;
     } else {
       const mapped = lookup.normalizedToValue.get(normalizeLookupKey(raw));
       if (mapped) resolvedValue = mapped;
+    }
+    if (hasKnownAllowedValues && resolvedValue === raw && !isDirectValue) {
+      console.warn(
+        `[HubSpot] Skipping site_surveyor update for deal ${dealId}: ` +
+          `assignee "${raw}" is not a valid HubSpot owner/property option`
+      );
+      return false;
     }
   } catch {
     // Fallback to raw value if lookup fails.
@@ -1155,7 +1254,7 @@ export async function updateSiteSurveyorProperty(dealId: string, assignee: strin
   const firstAttempt = await updateDealProperty(dealId, { site_surveyor: resolvedValue });
   if (firstAttempt) return true;
 
-  if (resolvedValue !== raw) {
+  if (resolvedValue !== raw && !hasKnownAllowedValues) {
     return updateDealProperty(dealId, { site_surveyor: raw });
   }
   return false;
