@@ -838,6 +838,25 @@ export async function fetchAllProjects(options?: {
   // to maximize coverage (property defs may be incomplete, Owners API may fail)
   // Parallelized for performance (was 3 sequential API calls)
   const ownerMap: Record<string, string> = {};
+  const addOwnerToMap = (owner: {
+    id?: string | number | null;
+    userId?: string | number | null;
+    // Some HubSpot payloads expose this alternate field for inactive users.
+    userIdIncludingInactive?: string | number | null;
+    firstName?: string | null;
+    lastName?: string | null;
+  }) => {
+    const name = [owner.firstName, owner.lastName].filter(Boolean).join(" ").trim();
+    if (!name) return;
+    const keys = [
+      owner.id != null ? String(owner.id) : "",
+      owner.userId != null ? String(owner.userId) : "",
+      owner.userIdIncludingInactive != null ? String(owner.userIdIncludingInactive) : "",
+    ].filter(Boolean);
+    for (const key of keys) {
+      if (!ownerMap[key]) ownerMap[key] = name;
+    }
+  };
 
   const [ownerPropResult, surveyorPropResult, ownersApiResult] = await Promise.allSettled([
     // Source 1: Property definition options for hubspot_owner_id
@@ -874,12 +893,7 @@ export async function fetchAllProjects(options?: {
 
   // Process Source 3: Owners API (paginated — fills gaps)
   if (ownersApiResult.status === "fulfilled") {
-    for (const owner of ownersApiResult.value.results || []) {
-      const name = [owner.firstName, owner.lastName].filter(Boolean).join(" ").trim();
-      if (name && owner.id && !ownerMap[owner.id]) {
-        ownerMap[owner.id] = name;
-      }
-    }
+    for (const owner of ownersApiResult.value.results || []) addOwnerToMap(owner);
     // Paginate remaining owners if needed
     let ownerAfter = ownersApiResult.value.paging?.next?.after;
     while (ownerAfter) {
@@ -887,18 +901,30 @@ export async function fetchAllProjects(options?: {
         const ownersResponse = await hubspotClient.crm.owners.ownersApi.getPage(
           undefined, ownerAfter, 500, false
         );
-        for (const owner of ownersResponse.results || []) {
-          const name = [owner.firstName, owner.lastName].filter(Boolean).join(" ").trim();
-          if (name && owner.id && !ownerMap[owner.id]) {
-            ownerMap[owner.id] = name;
-          }
-        }
+        for (const owner of ownersResponse.results || []) addOwnerToMap(owner);
         ownerAfter = ownersResponse.paging?.next?.after;
       } catch (err) {
         console.warn("[HubSpot] Failed to paginate owners:", err instanceof Error ? err.message : err);
         break;
       }
     }
+
+    // Include archived/deactivated owners too; many historical deals reference these IDs.
+    try {
+      const archivedFirstPage = await hubspotClient.crm.owners.ownersApi.getPage(undefined, undefined, 500, true);
+      for (const owner of archivedFirstPage.results || []) addOwnerToMap(owner);
+      let archivedAfter = archivedFirstPage.paging?.next?.after;
+      while (archivedAfter) {
+        const archivedPage = await hubspotClient.crm.owners.ownersApi.getPage(
+          undefined, archivedAfter, 500, true
+        );
+        for (const owner of archivedPage.results || []) addOwnerToMap(owner);
+        archivedAfter = archivedPage.paging?.next?.after;
+      }
+    } catch (archivedErr) {
+      console.warn("[HubSpot] Failed to fetch archived owners:", archivedErr instanceof Error ? archivedErr.message : archivedErr);
+    }
+
     console.log(`[HubSpot] After owners API: ${Object.keys(ownerMap).length} total mappings`);
   } else {
     console.warn("[HubSpot] Failed to fetch owners API:", ownersApiResult.reason?.message || ownersApiResult.reason);
