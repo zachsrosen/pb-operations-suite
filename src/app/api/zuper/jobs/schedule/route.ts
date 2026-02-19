@@ -4,13 +4,64 @@ import { tagSentryRequest } from "@/lib/sentry-request";
 import { headers } from "next/headers";
 import { zuper, createJobFromProject, JOB_CATEGORY_UIDS, ZuperJob } from "@/lib/zuper";
 import { auth } from "@/auth";
-import { getUserByEmail, logActivity, createScheduleRecord, cacheZuperJob, canScheduleType, getCrewMemberByName, getCrewMemberByZuperUserUid, getCachedZuperJobByDealId, UserRole } from "@/lib/db";
+import { getUserByEmail, logActivity, createScheduleRecord, cacheZuperJob, canScheduleType, getCrewMemberByName, getCrewMemberByZuperUserUid, getCachedZuperJobByDealId, prisma, UserRole } from "@/lib/db";
 import { sendSchedulingNotification } from "@/lib/email";
 import { updateDealProperty, getDealProperties, updateSiteSurveyorProperty } from "@/lib/hubspot";
 import { upsertSiteSurveyCalendarEvent } from "@/lib/google-calendar";
 import { getBusinessEndDateInclusive, isWeekendDate } from "@/lib/business-days";
 
 type ScheduleType = "survey" | "installation" | "inspection";
+const MANAGER_ROLES = ["ADMIN", "OWNER", "MANAGER", "OPERATIONS_MANAGER"];
+
+async function checkScheduleOwnership(
+  user: { email: string; role: string },
+  projectId: string,
+  scheduleType: ScheduleType
+): Promise<{
+  allowed: boolean;
+  reason?: string;
+  record?: {
+    id: string;
+    scheduledBy: string | null;
+    scheduledByEmail: string | null;
+  };
+}> {
+  if (MANAGER_ROLES.includes(user.role)) {
+    return { allowed: true };
+  }
+
+  if (!prisma) {
+    return { allowed: true };
+  }
+
+  const record = await prisma.scheduleRecord.findFirst({
+    where: {
+      projectId,
+      scheduleType,
+      status: { in: ["scheduled", "tentative"] },
+    },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      scheduledBy: true,
+      scheduledByEmail: true,
+    },
+  });
+
+  if (!record?.scheduledByEmail) {
+    return { allowed: true, record: record || undefined };
+  }
+
+  if (record.scheduledByEmail.toLowerCase() === user.email.toLowerCase()) {
+    return { allowed: true, record };
+  }
+
+  return {
+    allowed: false,
+    reason: `This ${scheduleType} was scheduled by ${record.scheduledBy || "another user"}. Only they or a manager can modify it.`,
+    record,
+  };
+}
 
 function getConstructionScheduleBoundaryProperties(): { start: string | null; end: string | null } {
   const start = process.env.HUBSPOT_CONSTRUCTION_START_DATE_PROPERTY?.trim() || null;
@@ -253,6 +304,17 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json(
         { error: "Missing required fields: project.id, schedule.date" },
         { status: 400 }
+      );
+    }
+    const ownership = await checkScheduleOwnership(
+      { email: session.user.email, role: user.role || "" },
+      String(project.id),
+      scheduleType
+    );
+    if (!ownership.allowed) {
+      return NextResponse.json(
+        { error: ownership.reason || "You are not allowed to modify this schedule" },
+        { status: 403 }
       );
     }
     if (isWeekendDate(schedule.date)) {
@@ -631,6 +693,8 @@ export async function PUT(request: NextRequest) {
         assignedUser: schedule.assignedUser,
         assignedUserUid: resolvedCrew || schedule.crew,
         assignedTeamUid: resolvedTeamUid || schedule.teamUid,
+        scheduledBy: session.user.name || session.user.email || "",
+        scheduledByEmail: session.user.email,
         zuperJobUid: existingJob.job_uid,
         zuperSynced: true,
         zuperAssigned: !assignmentFailed,
@@ -759,6 +823,8 @@ export async function PUT(request: NextRequest) {
         assignedUser: schedule.assignedUser,
         assignedUserUid: resolvedCrew || schedule.crew,
         assignedTeamUid: resolvedTeamUid || schedule.teamUid,
+        scheduledBy: session.user.name || session.user.email || "",
+        scheduledByEmail: session.user.email,
         zuperJobUid: newJobUid,
         zuperSynced: true,
         zuperAssigned: !!(resolvedCrew || schedule.crew), // Assume assigned if crew was provided at creation
@@ -962,12 +1028,24 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const { projectId, projectName, zuperJobUid } = body;
+    const { projectId, projectName, zuperJobUid, cancelReason } = body;
 
     if (!projectId) {
       return NextResponse.json(
         { error: "Missing required field: projectId" },
         { status: 400 }
+      );
+    }
+
+    const ownership = await checkScheduleOwnership(
+      { email: session.user.email, role: user.role || "" },
+      String(projectId),
+      scheduleType
+    );
+    if (!ownership.allowed) {
+      return NextResponse.json(
+        { error: ownership.reason || "You are not allowed to modify this schedule" },
+        { status: 403 }
       );
     }
 
@@ -1247,6 +1325,7 @@ export async function DELETE(request: NextRequest) {
           hubspotStatusUpdated,
           hubspotVerification,
           hubspotCleared,
+          cancelReason: typeof cancelReason === "string" ? cancelReason : undefined,
         },
         ipAddress,
         userAgent,
@@ -1278,6 +1357,45 @@ export async function DELETE(request: NextRequest) {
         },
         { status: 502 }
       );
+    }
+
+    // Mark latest active schedule record as cancelled and persist cancellation reason.
+    if (prisma) {
+      try {
+        const latestRecord = ownership.record?.id
+          ? await prisma.scheduleRecord.findUnique({
+              where: { id: ownership.record.id },
+              select: { id: true, status: true, notes: true },
+            })
+          : await prisma.scheduleRecord.findFirst({
+              where: {
+                projectId: String(projectId),
+                scheduleType,
+                status: { in: ["scheduled", "tentative"] },
+              },
+              orderBy: { createdAt: "desc" },
+              select: { id: true, status: true, notes: true },
+            });
+
+        if (latestRecord) {
+          const reasonText = typeof cancelReason === "string" ? cancelReason.trim() : "";
+          const reasonNote = reasonText ? `[CANCEL_REASON] ${reasonText}` : "";
+          const existingNotes = latestRecord.notes?.trim() || "";
+          const mergedNotes = reasonNote
+            ? (existingNotes ? `${existingNotes}\n${reasonNote}` : reasonNote)
+            : existingNotes || null;
+
+          await prisma.scheduleRecord.update({
+            where: { id: latestRecord.id },
+            data: {
+              status: "cancelled",
+              notes: mergedNotes,
+            },
+          });
+        }
+      } catch (recordErr) {
+        console.warn("[Zuper Unschedule] Failed to update schedule record cancellation metadata:", recordErr);
+      }
     }
 
     return NextResponse.json({

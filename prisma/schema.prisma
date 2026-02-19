@@ -510,6 +510,7 @@ model ScheduleRecord {
   assignedUserUid String?  // Zuper user UID
   assignedTeamUid String?  // Zuper team UID
   scheduledBy     String?  // User who made the schedule
+  scheduledByEmail String? // Email of user who made the schedule (ownership checks)
 
   // Zuper sync status
   zuperJobUid     String?

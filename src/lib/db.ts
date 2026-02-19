@@ -620,6 +620,7 @@ export async function createScheduleRecord(data: {
   assignedUserUid?: string;
   assignedTeamUid?: string;
   scheduledBy?: string;
+  scheduledByEmail?: string;
   zuperJobUid?: string;
   zuperSynced?: boolean;
   zuperAssigned?: boolean;
@@ -642,6 +643,7 @@ export async function createScheduleRecord(data: {
         assignedUserUid: data.assignedUserUid,
         assignedTeamUid: data.assignedTeamUid,
         scheduledBy: data.scheduledBy,
+        scheduledByEmail: data.scheduledByEmail,
         zuperJobUid: data.zuperJobUid,
         zuperSynced: data.zuperSynced ?? false,
         zuperAssigned: data.zuperAssigned ?? false,

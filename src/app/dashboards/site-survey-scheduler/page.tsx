@@ -66,6 +66,8 @@ interface SurveyProject {
     displayTime: string;
   };
   tentativeRecordId?: string;
+  scheduledBy?: string;
+  scheduledByEmail?: string;
 }
 
 interface PendingSchedule {
@@ -154,6 +156,7 @@ const MONTH_NAMES = [
 ];
 
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const MANAGER_ROLES = ["ADMIN", "OWNER", "MANAGER", "OPERATIONS_MANAGER"];
 
 // Status values discovered dynamically from actual project data
 
@@ -347,6 +350,8 @@ export default function SiteSurveySchedulerPage() {
 
   /* ---- modals ---- */
   const [scheduleModal, setScheduleModal] = useState<PendingSchedule | null>(null);
+  const [cancelModal, setCancelModal] = useState<{ projectId: string; projectName: string } | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
 
   /* ---- Zuper integration ---- */
   const [zuperConfigured, setZuperConfigured] = useState(false);
@@ -365,6 +370,7 @@ export default function SiteSurveySchedulerPage() {
   /* ---- user role ---- */
   const [userRole, setUserRole] = useState<string | null>(null);
   const [currentUserName, setCurrentUserName] = useState<string | null>(null);
+  const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
   const canUseTestSlot = userRole === "ADMIN";
 
   /* ---- self-service availability ---- */
@@ -510,11 +516,23 @@ export default function SiteSurveySchedulerPage() {
         // Ignore localStorage errors
       }
 
-      // Rehydrate tentative survey schedules so they persist on this page.
+      // Hydrate ownership metadata and tentative survey schedules from schedule records.
       const nextTentativeScheduleDates: Record<string, string> = {};
       try {
         const projectIds = transformed.map((p: SurveyProject) => p.id).join(",");
         if (projectIds) {
+          const scheduledResponse = await fetch(`/api/zuper/schedule-records?projectIds=${projectIds}&type=survey&status=scheduled`);
+          if (scheduledResponse.ok) {
+            const scheduledData = await scheduledResponse.json();
+            const scheduledRecords = scheduledData?.records || {};
+            for (const project of transformed) {
+              const rec = scheduledRecords[project.id];
+              if (!rec) continue;
+              project.scheduledBy = rec.scheduledBy || undefined;
+              project.scheduledByEmail = rec.scheduledByEmail || undefined;
+            }
+          }
+
           const tentativeResponse = await fetch(`/api/zuper/schedule-records?projectIds=${projectIds}&type=survey&status=tentative`);
           if (tentativeResponse.ok) {
             const tentativeData = await tentativeResponse.json();
@@ -535,6 +553,8 @@ export default function SiteSurveySchedulerPage() {
               project.scheduleDate = rec.scheduledDate;
               project.surveyStatus = "Tentative";
               project.tentativeRecordId = rec.id || project.tentativeRecordId;
+              project.scheduledBy = rec.scheduledBy || project.scheduledBy;
+              project.scheduledByEmail = rec.scheduledByEmail || project.scheduledByEmail;
               if (!project.assignedSurveyor && resolvedAssignedName) {
                 project.assignedSurveyor = resolvedAssignedName;
               }
@@ -594,6 +614,7 @@ export default function SiteSurveySchedulerPage() {
       .then(data => {
         if (data.role) setUserRole(data.role);
         if (data?.user?.name) setCurrentUserName(data.user.name);
+        if (data?.user?.email) setCurrentUserEmail(data.user.email);
       })
       .catch(() => {});
     fetch("/api/zuper/my-availability")
@@ -671,6 +692,33 @@ export default function SiteSurveySchedulerPage() {
     setToast({ message, type });
     toastTimer.current = setTimeout(() => setToast(null), 3000);
   }, []);
+
+  const canManageAllSchedules = useMemo(
+    () => !!userRole && MANAGER_ROLES.includes(userRole),
+    [userRole]
+  );
+
+  const canModifyProjectSchedule = useCallback((project?: SurveyProject | null) => {
+    if (!project) return false;
+    if (canManageAllSchedules) return true;
+    const ownerEmail = project.scheduledByEmail?.trim().toLowerCase();
+    if (!ownerEmail) return true; // legacy records
+    return !!currentUserEmail && ownerEmail === currentUserEmail.trim().toLowerCase();
+  }, [canManageAllSchedules, currentUserEmail]);
+
+  const getSchedulePermissionMessage = useCallback((project?: SurveyProject | null) => {
+    if (!project) return "Only the scheduler or a manager can modify this survey";
+    return `Scheduled by ${project.scheduledBy || "another user"} — contact a manager to modify`;
+  }, []);
+
+  const openCancelModal = useCallback((project: SurveyProject) => {
+    if (!canModifyProjectSchedule(project)) {
+      showToast(getSchedulePermissionMessage(project), "error");
+      return;
+    }
+    setCancelReason("");
+    setCancelModal({ projectId: project.id, projectName: getCustomerName(project.name) });
+  }, [canModifyProjectSchedule, getSchedulePermissionMessage, showToast]);
 
   /* ================================================================ */
   /*  Derived data                                                     */
@@ -874,7 +922,16 @@ export default function SiteSurveySchedulerPage() {
     const project = projects.find(p => p.id === draggedProjectId);
     if (project) {
       const currentSlot = findCurrentSlotForProject(project.id, date, project.name, project.zuperJobUid);
-      trackFeature("schedule-modal-open", "Opened survey schedule modal via drag", { scheduler: "site-survey", projectId: project.id, projectName: project.name, date, method: "drag" });
+      trackFeature("schedule-modal-open", "Opened survey schedule modal via drag", {
+        scheduler: "site-survey",
+        projectId: project.id,
+        projectName: project.name,
+        dealOwner: project.dealOwner || null,
+        location: project.location,
+        address: project.address,
+        date,
+        method: "drag",
+      });
       openScheduleModal({ project, date, currentSlot });
     }
     setDraggedProjectId(null);
@@ -891,11 +948,29 @@ export default function SiteSurveySchedulerPage() {
     }
     if (project) {
       const currentSlot = findCurrentSlotForProject(project.id, date, project.name, project.zuperJobUid);
-      trackFeature("schedule-modal-open", "Opened survey schedule modal via click", { scheduler: "site-survey", projectId: project.id, projectName: project.name, date, method: "click" });
+      trackFeature("schedule-modal-open", "Opened survey schedule modal via click", {
+        scheduler: "site-survey",
+        projectId: project.id,
+        projectName: project.name,
+        dealOwner: project.dealOwner || null,
+        location: project.location,
+        address: project.address,
+        date,
+        method: "click",
+      });
       openScheduleModal({ project, date, currentSlot });
     } else if (selectedProject) {
       const currentSlot = findCurrentSlotForProject(selectedProject.id, date, selectedProject.name, selectedProject.zuperJobUid);
-      trackFeature("schedule-modal-open", "Opened survey schedule modal via click", { scheduler: "site-survey", projectId: selectedProject.id, projectName: selectedProject.name, date, method: "click" });
+      trackFeature("schedule-modal-open", "Opened survey schedule modal via click", {
+        scheduler: "site-survey",
+        projectId: selectedProject.id,
+        projectName: selectedProject.name,
+        dealOwner: selectedProject.dealOwner || null,
+        location: selectedProject.location,
+        address: selectedProject.address,
+        date,
+        method: "click",
+      });
       openScheduleModal({ project: selectedProject, date, currentSlot });
       setSelectedProject(null);
     }
@@ -904,11 +979,17 @@ export default function SiteSurveySchedulerPage() {
   const confirmSchedule = useCallback(async () => {
     if (!scheduleModal) return;
     const { project, date, slot } = scheduleModal;
+    const isReschedule = !!scheduleModal.isRescheduling;
     const effectiveAssignee = useTestSlot
       ? (currentUserName || slot?.userName || "Test Slot")
       : (slot?.userName || "");
     const effectiveCrewUid = useTestSlot ? undefined : slot?.userUid;
     const effectiveTeamUid = useTestSlot ? undefined : slot?.teamUid;
+
+    if (isReschedule && !canModifyProjectSchedule(project)) {
+      showToast(getSchedulePermissionMessage(project), "error");
+      return;
+    }
 
     // Safety net: prevent SALES from confirming a tomorrow schedule
     if (userRole === "SALES" && isTomorrow(date)) {
@@ -926,7 +1007,18 @@ export default function SiteSurveySchedulerPage() {
       slot: slot ? `${slot.startTime}-${slot.endTime}` : null,
       syncToZuper,
       testMode: useTestSlot,
-      isReschedule: !!project.zuperJobUid,
+      isReschedule,
+      scheduledBy: currentUserName,
+      scheduledByEmail: currentUserEmail,
+      dealOwner: project.dealOwner || null,
+      location: project.location,
+      address: project.address,
+      amount: project.amount,
+      systemSize: project.systemSize,
+      previousSurveyor: isReschedule ? (project.assignedSurveyor || null) : null,
+      previousSlot: isReschedule && project.assignedSlot
+        ? `${project.assignedSlot.startTime}-${project.assignedSlot.endTime}`
+        : null,
     });
 
     setManualSchedules((prev) => ({
@@ -1085,6 +1177,8 @@ export default function SiteSurveySchedulerPage() {
                     surveyStatus: "Tentative",
                     scheduleDate: date,
                     tentativeRecordId: data?.record?.id || p.tentativeRecordId,
+                    scheduledBy: currentUserName || p.scheduledBy,
+                    scheduledByEmail: currentUserEmail || p.scheduledByEmail,
                     assignedSurveyor: effectiveAssignee || p.assignedSurveyor,
                     assignedSlot: slot
                       ? {
@@ -1126,6 +1220,8 @@ export default function SiteSurveySchedulerPage() {
                 surveyStatus: "Scheduled",
                 scheduleDate: date,
                 tentativeRecordId: undefined,
+                scheduledBy: currentUserName || p.scheduledBy,
+                scheduledByEmail: currentUserEmail || p.scheduledByEmail,
                 assignedSurveyor: effectiveAssignee || p.assignedSurveyor,
                 assignedSlot: slot
                   ? {
@@ -1215,14 +1311,44 @@ export default function SiteSurveySchedulerPage() {
     }
 
     setScheduleModal(null);
-  }, [scheduleModal, useTestSlot, currentUserName, zuperConfigured, syncToZuper, showToast, fetchAvailability, saveSurveyorAssignment, userRole, trackFeature, selectedProject]);
+  }, [
+    scheduleModal,
+    useTestSlot,
+    currentUserName,
+    currentUserEmail,
+    zuperConfigured,
+    syncToZuper,
+    showToast,
+    fetchAvailability,
+    saveSurveyorAssignment,
+    userRole,
+    trackFeature,
+    selectedProject,
+    canModifyProjectSchedule,
+    getSchedulePermissionMessage,
+  ]);
 
-  const cancelSchedule = useCallback(async (projectId: string) => {
+  const cancelSchedule = useCallback(async (projectId: string, reason: string) => {
     const project = projects.find(p => p.id === projectId);
+    if (project && !canModifyProjectSchedule(project)) {
+      showToast(getSchedulePermissionMessage(project), "error");
+      return;
+    }
+
     trackFeature("survey-cancelled", "Survey removed from schedule", {
       scheduler: "site-survey",
       projectId,
       projectName: project?.name || projectId,
+      cancelledBy: currentUserName,
+      cancelledByEmail: currentUserEmail,
+      cancelReason: reason,
+      dealOwner: project?.dealOwner || null,
+      location: project?.location || null,
+      surveyor: project?.assignedSurveyor || null,
+      scheduledDate: manualSchedules[projectId] || project?.scheduleDate || null,
+      slot: project?.assignedSlot
+        ? `${project.assignedSlot.startTime}-${project.assignedSlot.endTime}`
+        : null,
     });
 
     // Remove from local state immediately for responsive UI
@@ -1245,6 +1371,8 @@ export default function SiteSurveySchedulerPage() {
               scheduleDate: null,
               surveyStatus: "Ready to Schedule",
               tentativeRecordId: undefined,
+              scheduledBy: undefined,
+              scheduledByEmail: undefined,
               assignedSurveyor: undefined,
               assignedSlot: undefined,
               zuperScheduledTime: undefined,
@@ -1264,6 +1392,7 @@ export default function SiteSurveySchedulerPage() {
           projectName: project?.name || projectId,
           zuperJobUid: project?.zuperJobUid || null,
           scheduleType: "survey",
+          cancelReason: reason,
         }),
       });
 
@@ -1290,7 +1419,20 @@ export default function SiteSurveySchedulerPage() {
         fetchAvailability(project.location, selectedProject);
       }
     }, 1200);
-  }, [showToast, projects, trackFeature, fetchProjects, fetchAvailability, clearSurveyorAssignment, selectedProject]);
+  }, [
+    showToast,
+    projects,
+    trackFeature,
+    fetchProjects,
+    fetchAvailability,
+    clearSurveyorAssignment,
+    selectedProject,
+    canModifyProjectSchedule,
+    getSchedulePermissionMessage,
+    currentUserName,
+    currentUserEmail,
+    manualSchedules,
+  ]);
 
   const handleConfirmTentative = useCallback(async (project: SurveyProject) => {
     const recordId = project.tentativeRecordId;
@@ -1690,6 +1832,11 @@ export default function SiteSurveySchedulerPage() {
                           <p className="text-xs text-muted truncate mt-0.5">
                             {project.location}
                           </p>
+                          {project.dealOwner && (
+                            <p className="text-xs text-cyan-400/70 truncate mt-0.5">
+                              {project.dealOwner}
+                            </p>
+                          )}
                         </div>
                         <span className="text-xs font-mono text-orange-400 ml-2">
                           {formatCurrency(project.amount)}
@@ -2034,6 +2181,8 @@ export default function SiteSurveySchedulerPage() {
                           ? getEffectiveScheduleDate(project, manualSchedules[project.id], tentativeScheduleDates[project.id])
                           : null;
                         const overdue = isSurveyOverdue(project, manualSchedules[project.id]);
+                        const canModifySchedule = canModifyProjectSchedule(project);
+                        const modifyTooltip = !canModifySchedule ? getSchedulePermissionMessage(project) : undefined;
                         return (
                           <tr key={project.id} className={`hover:bg-surface/50 ${overdue ? "bg-red-500/5" : ""}`}>
                             <td className="px-4 py-3">
@@ -2106,8 +2255,10 @@ export default function SiteSurveySchedulerPage() {
                                   </button>
                                 ) : (
                                   <button
-                                    onClick={() => cancelSchedule(project.id)}
-                                    className="text-xs text-red-400 hover:text-red-300"
+                                    onClick={() => openCancelModal(project)}
+                                    disabled={!canModifySchedule}
+                                    title={modifyTooltip}
+                                    className={`text-xs ${canModifySchedule ? "text-red-400 hover:text-red-300" : "text-muted cursor-not-allowed"}`}
                                   >
                                     Remove
                                   </button>
@@ -2136,6 +2287,63 @@ export default function SiteSurveySchedulerPage() {
       {/* My Availability Modal */}
       {showMyAvailability && (
         <MyAvailability onClose={() => { setShowMyAvailability(false); fetchAvailability(); }} />
+      )}
+
+      {/* Cancel Reason Modal */}
+      {cancelModal && (
+        <div
+          className="fixed inset-0 bg-black/80 flex items-center justify-center z-[1000]"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setCancelModal(null);
+              setCancelReason("");
+            }
+          }}
+        >
+          <div className="bg-surface border border-t-border rounded-xl p-5 max-w-md w-[90%]">
+            <h3 className="text-lg font-semibold mb-2">Cancel Site Survey</h3>
+            <p className="text-sm text-muted mb-3">
+              {cancelModal.projectName}
+            </p>
+            <label className="block text-xs text-muted mb-1">
+              Cancellation reason
+            </label>
+            <textarea
+              value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value)}
+              placeholder="Why is this survey being cancelled?"
+              rows={4}
+              className="w-full px-3 py-2 bg-surface-2 border border-t-border rounded-lg text-sm focus:outline-none focus:border-cyan-500"
+            />
+            <div className="flex justify-end gap-2 mt-4">
+              <button
+                onClick={() => {
+                  setCancelModal(null);
+                  setCancelReason("");
+                }}
+                className="px-4 py-2 text-sm text-muted hover:text-foreground"
+              >
+                Dismiss
+              </button>
+              <button
+                onClick={() => {
+                  const reasonText = cancelReason.trim();
+                  if (!reasonText) {
+                    showToast("Please enter a cancellation reason", "error");
+                    return;
+                  }
+                  const projectId = cancelModal.projectId;
+                  setCancelModal(null);
+                  setCancelReason("");
+                  void cancelSchedule(projectId, reasonText);
+                }}
+                className="px-4 py-2 text-sm rounded-lg font-medium bg-red-600 hover:bg-red-700"
+              >
+                Confirm Cancel
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Schedule Modal */}
@@ -2216,7 +2424,13 @@ export default function SiteSurveySchedulerPage() {
                   </p>
                   <button
                     onClick={() => setScheduleModal({ ...scheduleModal, isRescheduling: true })}
-                    className="text-xs text-orange-400 hover:text-orange-300 mt-2"
+                    disabled={!canModifyProjectSchedule(scheduleModal.project)}
+                    title={!canModifyProjectSchedule(scheduleModal.project) ? getSchedulePermissionMessage(scheduleModal.project) : undefined}
+                    className={`text-xs mt-2 ${
+                      canModifyProjectSchedule(scheduleModal.project)
+                        ? "text-orange-400 hover:text-orange-300"
+                        : "text-muted cursor-not-allowed"
+                    }`}
                   >
                     Reschedule to different time/surveyor
                   </button>
@@ -2460,11 +2674,17 @@ export default function SiteSurveySchedulerPage() {
                   {!isTentativeProject(scheduleModal.project) && (
                     <button
                       onClick={() => {
-                        const projectId = scheduleModal.project.id;
+                        const project = scheduleModal.project;
                         setScheduleModal(null);
-                        cancelSchedule(projectId);
+                        openCancelModal(project);
                       }}
-                      className="px-4 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg font-medium"
+                      disabled={!canModifyProjectSchedule(scheduleModal.project)}
+                      title={!canModifyProjectSchedule(scheduleModal.project) ? getSchedulePermissionMessage(scheduleModal.project) : undefined}
+                      className={`px-4 py-2 text-sm rounded-lg font-medium ${
+                        canModifyProjectSchedule(scheduleModal.project)
+                          ? "text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                          : "text-muted cursor-not-allowed"
+                      }`}
                     >
                       Remove from Schedule
                     </button>
@@ -2487,7 +2707,16 @@ export default function SiteSurveySchedulerPage() {
                   </button>
                   <button
                     onClick={confirmSchedule}
-                    disabled={syncingToZuper || !scheduleModal.slot}
+                    disabled={
+                      syncingToZuper ||
+                      !scheduleModal.slot ||
+                      (scheduleModal.isRescheduling && !canModifyProjectSchedule(scheduleModal.project))
+                    }
+                    title={
+                      scheduleModal.isRescheduling && !canModifyProjectSchedule(scheduleModal.project)
+                        ? getSchedulePermissionMessage(scheduleModal.project)
+                        : undefined
+                    }
                     className={`px-4 py-2 text-sm rounded-lg font-medium disabled:opacity-50 ${
                       syncToZuper
                         ? "bg-cyan-600 hover:bg-cyan-700"

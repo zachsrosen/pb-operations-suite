@@ -52,6 +52,8 @@ export async function GET(request: NextRequest) {
         projectId: true,
         assignedUser: true,
         assignedUserUid: true,
+        scheduledBy: true,
+        scheduledByEmail: true,
         scheduledDate: true,
         scheduledDays: true,
         scheduledStart: true,
