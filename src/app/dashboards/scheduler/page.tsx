@@ -517,12 +517,19 @@ export default function SchedulerPage() {
     userUid?: string;
     teamUid?: string;
     timezone?: string;
+    travelWarning?: {
+      type: "tight" | "unknown";
+      direction: "before" | "after" | "both";
+      prevJob?: { projectName: string; travelMinutes?: number };
+      nextJob?: { projectName: string; travelMinutes?: number };
+    };
   }
   const [availableSlots, setAvailableSlots] = useState<AvailSlot[]>([]);
   const [selectedSlotIdx, setSelectedSlotIdx] = useState(0);
   const [loadingSlots, setLoadingSlots] = useState(false);
   // Cache the full availability response so changing surveyor doesn't re-fetch
-  const [availCache, setAvailCache] = useState<{ date: string; location: string; type: string; slots: Record<string, AvailSlot[]> } | null>(null);
+  // Includes projectId so travel warnings are project-specific and don't go stale
+  const [availCache, setAvailCache] = useState<{ date: string; location: string; type: string; projectId: string; slots: Record<string, AvailSlot[]> } | null>(null);
 
   /* ---- Zuper integration ---- */
   const [zuperConfigured, setZuperConfigured] = useState(false);
@@ -718,8 +725,8 @@ export default function SchedulerPage() {
 
     const schedType = project.stage === "survey" ? "survey" : "inspection";
 
-    // If we already have a cache for this date+location+type, just re-filter by selected user
-    if (availCache && availCache.date === date && availCache.location === project.location && availCache.type === schedType) {
+    // If we already have a cache for this date+location+type+project, just re-filter by selected user
+    if (availCache && availCache.date === date && availCache.location === project.location && availCache.type === schedType && availCache.projectId === project.id) {
       const userSlots = availCache.slots[crewSelectInput] || [];
       setAvailableSlots(userSlots);
       setSelectedSlotIdx(0);
@@ -736,11 +743,15 @@ export default function SchedulerPage() {
           to_date: date,
           type: schedType,
           location: project.location,
+          candidate_project_id: project.id,
+          candidate_address: project.address || "",
         });
         const resp = await fetch(`/api/zuper/availability?${params}`);
         if (cancelled) return;
         if (!resp.ok) { setAvailableSlots([]); setLoadingSlots(false); return; }
         const data = await resp.json();
+        // Guard: if response includes candidateProjectId and it doesn't match, discard (stale async race)
+        if (data.candidateProjectId && data.candidateProjectId !== project.id) return;
         const dayData = data.availabilityByDate?.[date];
         if (!dayData?.availableSlots) { setAvailableSlots([]); setLoadingSlots(false); return; }
 
@@ -757,11 +768,12 @@ export default function SchedulerPage() {
             userUid: s.user_uid,
             teamUid: s.team_uid,
             timezone: s.timezone,
+            travelWarning: s.travelWarning,
           });
         }
 
         if (cancelled) return;
-        setAvailCache({ date, location: project.location, type: schedType, slots: grouped });
+        setAvailCache({ date, location: project.location, type: schedType, projectId: project.id, slots: grouped });
         const userSlots = grouped[crewSelectInput] || [];
         setAvailableSlots(userSlots);
         setSelectedSlotIdx(0);
@@ -3511,7 +3523,7 @@ export default function SchedulerPage() {
                         )}
                         {!loadingSlots && availableSlots.map((slot, idx) => (
                           <option key={`${slot.startTime}-${slot.endTime}`} value={idx}>
-                            {slot.displayTime}
+                            {slot.displayTime}{slot.travelWarning?.type === "tight" ? " ⚠️ tight travel" : ""}{slot.travelWarning?.type === "unknown" ? " ❓ travel unverified" : ""}
                           </option>
                         ))}
                       </select>
@@ -3520,6 +3532,17 @@ export default function SchedulerPage() {
                       <div className="text-[0.6rem] text-amber-400/80 mt-1">
                         No open slots for {crewSelectInput} on this date
                       </div>
+                    )}
+                    {!loadingSlots && availableSlots[selectedSlotIdx]?.travelWarning && (
+                      <p className={`text-[0.6rem] mt-1 leading-tight ${
+                        availableSlots[selectedSlotIdx].travelWarning?.type === "tight"
+                          ? "text-amber-400"
+                          : "text-muted"
+                      }`}>
+                        {availableSlots[selectedSlotIdx].travelWarning?.type === "tight"
+                          ? `⚠️ Tight travel: ${availableSlots[selectedSlotIdx].travelWarning?.prevJob?.travelMinutes || availableSlots[selectedSlotIdx].travelWarning?.nextJob?.travelMinutes || "?"}min drive needed between adjacent jobs`
+                          : "❓ Travel time could not be verified — missing address data on adjacent job"}
+                      </p>
                     )}
                   </>
                 ) : (
