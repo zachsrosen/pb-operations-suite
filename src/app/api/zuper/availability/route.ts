@@ -3,6 +3,7 @@ import { requireApiAuth } from "@/lib/api-auth";
 import { ZuperClient, JOB_CATEGORY_UIDS } from "@/lib/zuper";
 import { getCrewSchedulesFromDB, getAvailabilityOverrides } from "@/lib/db";
 import { LOCATION_TIMEZONES } from "@/lib/constants";
+import { evaluateSlotsBatch, getConfig as getTravelConfig } from "@/lib/travel-time";
 
 /**
  * GET /api/zuper/availability
@@ -46,6 +47,8 @@ interface BookedSlot {
   bookedAt: string;
   // Track the Zuper job UID if we created/scheduled this
   zuperJobUid?: string;
+  address?: string;
+  geoCoordinates?: { latitude: number; longitude: number };
 }
 
 // This will persist across requests within the same server instance
@@ -263,6 +266,9 @@ export async function GET(request: NextRequest) {
   const type = searchParams.get("type");
   const teamUid = searchParams.get("team_uid");
   const location = searchParams.get("location");
+  // Travel-time context (optional — for survey slot annotation)
+  const candidateProjectId = searchParams.get("candidate_project_id") || "";
+  const candidateAddress = searchParams.get("candidate_address") || "";
 
   if (!fromDate || !toDate) {
     return NextResponse.json(
@@ -613,6 +619,13 @@ export async function GET(request: NextRequest) {
             const hubspotDealId = getHubSpotDealId(job);
             // Use HubSpot deal ID as projectId when available, fall back to job_uid
             const slotProjectId = hubspotDealId || job.job_uid || "";
+            const customerAddr = (job as { customer_address?: { street?: string; city?: string; state?: string; zip_code?: string; geo_coordinates?: { latitude?: number; longitude?: number } } }).customer_address;
+            const jobAddress = customerAddr
+              ? [customerAddr.street, customerAddr.city, customerAddr.state, customerAddr.zip_code].filter(Boolean).join(", ")
+              : undefined;
+            const jobGeo = customerAddr?.geo_coordinates?.latitude && customerAddr?.geo_coordinates?.longitude
+              ? { latitude: customerAddr.geo_coordinates.latitude as number, longitude: customerAddr.geo_coordinates.longitude as number }
+              : undefined;
 
             // Log for debugging
             console.log(`[Zuper Availability] Job: ${job.job_title}`);
@@ -668,11 +681,14 @@ export async function GET(request: NextRequest) {
                 startTime: slotLocalStart,
                 endTime: `${(slotLocalHour + 1).toString().padStart(2, "0")}:00`,
                 userName: matchingSlot.user_name || "",
+                userUid: matchingSlot.user_uid || assignedUserUid || undefined,
                 location: matchingSlot.location || "",
                 projectId: slotProjectId,
                 projectName: job.job_title,
                 bookedAt: new Date().toISOString(),
                 zuperJobUid: job.job_uid,
+                address: jobAddress,
+                geoCoordinates: jobGeo,
               });
               console.log(`[Zuper Availability] Zuper-sourced booking: ${key}`);
             } else if (assignedUserUid || assignedUserName) {
@@ -695,11 +711,14 @@ export async function GET(request: NextRequest) {
                 startTime: localStartTime,
                 endTime,
                 userName: displayName,
+                userUid: assignedUserUid || undefined,
                 location: crewEntry?.location || "",
                 projectId: slotProjectId,
                 projectName: job.job_title,
                 bookedAt: new Date().toISOString(),
                 zuperJobUid: job.job_uid,
+                address: jobAddress,
+                geoCoordinates: jobGeo,
               });
               console.log(`[Zuper Availability] Injected Zuper booking for ${displayName} @ ${localStartTime} ${userTz} (no configured schedule slot): ${key}`);
             } else {
@@ -714,11 +733,14 @@ export async function GET(request: NextRequest) {
                 startTime: mtStartTime,
                 endTime,
                 userName: "Unassigned",
+                userUid: undefined,
                 location: "",
                 projectId: slotProjectId,
                 projectName: job.job_title,
                 bookedAt: new Date().toISOString(),
                 zuperJobUid: job.job_uid,
+                address: jobAddress,
+                geoCoordinates: jobGeo,
               });
               console.log(`[Zuper Availability] Unassigned Zuper job booking: ${key} (${job.job_title})`);
             }
@@ -764,10 +786,13 @@ export async function GET(request: NextRequest) {
       end_time: string;
       display_time?: string;
       user_name?: string;
+      user_uid?: string;
       location?: string;
       projectId?: string;
       projectName?: string;
       zuperJobUid?: string;
+      address?: string;
+      geoCoordinates?: { latitude: number; longitude: number };
     }> = [];
 
     // Track which slot keys have been accounted for
@@ -785,10 +810,13 @@ export async function GET(request: NextRequest) {
           end_time: slot.end_time,
           display_time: slot.display_time,
           user_name: slot.user_name,
+          user_uid: slot.user_uid,
           location: slot.location,
           projectId: zuperBooking.projectId,
           projectName: zuperBooking.projectName,
           zuperJobUid: zuperBooking.zuperJobUid,
+          address: zuperBooking.address,
+          geoCoordinates: zuperBooking.geoCoordinates,
         });
         return false; // Remove from available
       }
@@ -801,10 +829,13 @@ export async function GET(request: NextRequest) {
           end_time: slot.end_time,
           display_time: slot.display_time,
           user_name: slot.user_name,
+          user_uid: slot.user_uid,
           location: slot.location,
           projectId: appBooking.projectId,
           projectName: appBooking.projectName,
           zuperJobUid: appBooking.zuperJobUid,
+          address: appBooking.address,
+          geoCoordinates: appBooking.geoCoordinates,
         });
         return false; // Remove from available
       }
@@ -820,10 +851,13 @@ export async function GET(request: NextRequest) {
           end_time: booking.endTime,
           display_time: `${formatTimeForDisplay(booking.startTime)}-${formatTimeForDisplay(booking.endTime)}`,
           user_name: booking.userName,
+          user_uid: booking.userUid,
           location: booking.location,
           projectId: booking.projectId,
           projectName: booking.projectName,
           zuperJobUid: booking.zuperJobUid,
+          address: booking.address,
+          geoCoordinates: booking.geoCoordinates,
         });
       }
     }
@@ -836,10 +870,13 @@ export async function GET(request: NextRequest) {
           end_time: booking.endTime,
           display_time: `${formatTimeForDisplay(booking.startTime)}-${formatTimeForDisplay(booking.endTime)}`,
           user_name: booking.userName,
+          user_uid: booking.userUid,
           location: booking.location,
           projectId: booking.projectId,
           projectName: booking.projectName,
           zuperJobUid: booking.zuperJobUid,
+          address: booking.address,
+          geoCoordinates: booking.geoCoordinates,
         });
       }
     }
@@ -850,6 +887,43 @@ export async function GET(request: NextRequest) {
 
     // Recheck availability after filtering
     day.hasAvailability = day.availableSlots.length > 0;
+  }
+
+  // Travel-time annotation (survey only, when candidate address is provided)
+  const travelConfig = getTravelConfig();
+  if (travelConfig.enabled && type === "survey" && candidateAddress) {
+    for (const dateStr in availabilityByDate) {
+      const day = availabilityByDate[dateStr];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const dayBooked: any[] = (day as any).bookedSlots || [];
+
+      const bookedByUser: Record<string, Array<{
+        start_time: string;
+        end_time: string;
+        address?: string;
+        geoCoordinates?: { latitude: number; longitude: number };
+        projectName?: string;
+      }>> = {};
+
+      for (const b of dayBooked) {
+        const userKey = b.user_uid || (b.user_name || "").trim().toLowerCase();
+        if (!userKey) continue;
+        if (!bookedByUser[userKey]) bookedByUser[userKey] = [];
+        bookedByUser[userKey].push(b);
+      }
+
+      for (const key in bookedByUser) {
+        bookedByUser[key].sort((a, b) => a.start_time.localeCompare(b.start_time));
+      }
+
+      await evaluateSlotsBatch(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        day.availableSlots as any[],
+        bookedByUser,
+        candidateAddress,
+        travelConfig.bufferMinutes
+      );
+    }
   }
 
   // Determine if dates are fully booked
@@ -867,6 +941,7 @@ export async function GET(request: NextRequest) {
     toDate,
     type,
     location,
+    candidateProjectId: candidateProjectId || undefined,
     availabilityByDate,
   });
 }

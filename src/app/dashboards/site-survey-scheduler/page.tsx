@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
@@ -100,12 +101,21 @@ interface DayAvailability {
     user_name?: string;
     location?: string;
     timezone?: string; // IANA timezone for non-Mountain Time slots (e.g. "America/Los_Angeles")
+    travelWarning?: {
+      type: "tight" | "unknown";
+      direction: "before" | "after" | "both";
+      prevJob?: { projectName: string; endTime?: string; travelMinutes?: number };
+      nextJob?: { projectName: string; startTime?: string; travelMinutes?: number };
+      availableMinutesBefore?: number;
+      availableMinutesAfter?: number;
+    };
   }>;
   bookedSlots?: Array<{
     start_time: string;
     end_time: string;
     display_time?: string;
     user_name?: string;
+    user_uid?: string;
     location?: string;
     projectId?: string;
     projectName?: string;
@@ -351,6 +361,7 @@ export default function SiteSurveySchedulerPage() {
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [availabilityByDate, setAvailabilityByDate] = useState<Record<string, DayAvailability>>({});
   const [showAvailability, setShowAvailability] = useState(true);
+  const latestAvailabilityRequest = useRef(0);
 
   /* ---- user role ---- */
   const [userRole, setUserRole] = useState<string | null>(null);
@@ -420,145 +431,138 @@ export default function SiteSurveySchedulerPage() {
   /*  Data fetching                                                    */
   /* ================================================================ */
 
-  const fetchProjects = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const response = await fetch("/api/projects?context=scheduling&fields=id,name,address,city,state,pbLocation,amount,projectType,stage,url,siteSurveyScheduleDate,siteSurveyStatus,siteSurveyCompletionDate,closeDate,equipment,projectNumber,dealOwner,siteSurveyor");
-      if (!response.ok) throw new Error("Failed to fetch projects");
-      const data = await response.json();
-      const transformed = data.projects
-        .map((p: RawProject) => transformProject(p))
-        .filter((p: SurveyProject | null): p is SurveyProject => p !== null);
+  const queryClient = useQueryClient();
 
-      // Look up Zuper job UIDs for these projects
-      if (transformed.length > 0) {
-        try {
-          const projectIds = transformed.map((p: SurveyProject) => p.id).join(",");
-          const projectNames = transformed.map((p: SurveyProject) => encodeURIComponent(p.name)).join("|||");
-          const zuperResponse = await fetch(`/api/zuper/jobs/lookup?projectIds=${projectIds}&projectNames=${projectNames}&category=site-survey`);
-          if (zuperResponse.ok) {
-            const zuperData = await zuperResponse.json();
-            if (zuperData.jobs) {
-              // Merge Zuper job UIDs and assigned users into projects
-              for (const project of transformed) {
-                const zuperJob = zuperData.jobs[project.id];
-                if (zuperJob) {
-                  project.zuperJobUid = zuperJob.jobUid;
-                  project.zuperJobStatus = zuperJob.status;
-                  // Use Zuper's assigned user as the primary source of truth
-                  if (zuperJob.assignedTo) {
-                    project.assignedSurveyor = zuperJob.assignedTo;
-                  }
-                  // Use Zuper's scheduled date and time as source of truth — when a job is
-                  // rescheduled in Zuper, the HubSpot date may be stale. Convert
-                  // the UTC timestamp to local date/time in the appropriate timezone.
-                  if (zuperJob.scheduledDate) {
-                    project.zuperHasSchedule = true;
-                    try {
-                      const utcDate = new Date(zuperJob.scheduledDate);
-                      // Determine timezone from project location
-                      const loc = (project.location || "").toLowerCase();
-                      const tz = (loc.includes("san luis") || loc.includes("slo") || loc.includes("camarillo"))
-                        ? "America/Los_Angeles" : "America/Denver";
-                      const localDate = utcDate.toLocaleDateString("en-CA", { timeZone: tz });
-                      // Extract local time for display (e.g., "1pm", "12pm")
-                      const localTimeStr = utcDate.toLocaleTimeString("en-US", {
-                        timeZone: tz, hour: "numeric", minute: "2-digit", hour12: true,
-                      }).replace(":00 ", "").replace(" ", "").toLowerCase();
-                      project.zuperScheduledTime = localTimeStr;
+  const fetchProjectsQueryFn = useCallback(async () => {
+    const response = await fetch("/api/projects?context=scheduling&fields=id,name,address,city,state,pbLocation,amount,projectType,stage,url,siteSurveyScheduleDate,siteSurveyStatus,siteSurveyCompletionDate,closeDate,equipment,projectNumber,dealOwner,siteSurveyor");
+    if (!response.ok) throw new Error("Failed to fetch projects");
+    const data = await response.json();
+    const transformed = data.projects
+      .map((p: RawProject) => transformProject(p))
+      .filter((p: SurveyProject | null): p is SurveyProject => p !== null);
 
-                      if (localDate && localDate !== project.scheduleDate) {
-                        project.scheduleDate = localDate;
-                      }
-                    } catch {
-                      // Ignore date parsing errors
+    if (transformed.length > 0) {
+      try {
+        const projectIds = transformed.map((p: SurveyProject) => p.id).join(",");
+        const projectNames = transformed.map((p: SurveyProject) => encodeURIComponent(p.name)).join("|||");
+        const zuperResponse = await fetch(`/api/zuper/jobs/lookup?projectIds=${projectIds}&projectNames=${projectNames}&category=site-survey`);
+        if (zuperResponse.ok) {
+          const zuperData = await zuperResponse.json();
+          if (zuperData.jobs) {
+            for (const project of transformed) {
+              const zuperJob = zuperData.jobs[project.id];
+              if (zuperJob) {
+                project.zuperJobUid = zuperJob.jobUid;
+                project.zuperJobStatus = zuperJob.status;
+                if (zuperJob.assignedTo) {
+                  project.assignedSurveyor = zuperJob.assignedTo;
+                }
+                if (zuperJob.scheduledDate) {
+                  project.zuperHasSchedule = true;
+                  try {
+                    const utcDate = new Date(zuperJob.scheduledDate);
+                    const loc = (project.location || "").toLowerCase();
+                    const tz = (loc.includes("san luis") || loc.includes("slo") || loc.includes("camarillo"))
+                      ? "America/Los_Angeles" : "America/Denver";
+                    const localDate = utcDate.toLocaleDateString("en-CA", { timeZone: tz });
+                    const localTimeStr = utcDate.toLocaleTimeString("en-US", {
+                      timeZone: tz, hour: "numeric", minute: "2-digit", hour12: true,
+                    }).replace(":00 ", "").replace(" ", "").toLowerCase();
+                    project.zuperScheduledTime = localTimeStr;
+                    if (localDate && localDate !== project.scheduleDate) {
+                      project.scheduleDate = localDate;
                     }
-                  }
+                  } catch { /* ignore */ }
                 }
               }
             }
           }
-        } catch (zuperErr) {
-          console.warn("Failed to lookup Zuper jobs:", zuperErr);
-          // Don't fail the whole load if Zuper lookup fails
         }
+      } catch (zuperErr) {
+        console.warn("Failed to lookup Zuper jobs:", zuperErr);
       }
-
-      // Merge locally-stored surveyor assignments into projects (only if not already set by Zuper)
-      try {
-        const stored = localStorage.getItem("surveyorAssignments");
-        if (stored) {
-          const assignments = JSON.parse(stored) as Record<string, string>;
-          for (const project of transformed) {
-            if (!project.assignedSurveyor && assignments[project.id]) {
-              project.assignedSurveyor = assignments[project.id];
-            }
-          }
-        }
-      } catch {
-        // Ignore localStorage errors
-      }
-
-      // Rehydrate tentative survey schedules so they persist on this page.
-      const nextTentativeScheduleDates: Record<string, string> = {};
-      try {
-        const projectIds = transformed.map((p: SurveyProject) => p.id).join(",");
-        if (projectIds) {
-          const tentativeResponse = await fetch(`/api/zuper/schedule-records?projectIds=${projectIds}&type=survey&status=tentative`);
-          if (tentativeResponse.ok) {
-            const tentativeData = await tentativeResponse.json();
-            const records = tentativeData?.records || {};
-            for (const project of transformed) {
-              const rec = records[project.id];
-              if (!rec?.scheduledDate) continue;
-              // If this project already has a confirmed Zuper schedule, don't
-              // revert it to tentative — the stale DB record should be cleaned up.
-              if (project.zuperHasSchedule && !isReadyToScheduleStatus(project.surveyStatus)) continue;
-              const recordAssigned = typeof rec.assignedUser === "string" ? rec.assignedUser : "";
-              const resolvedAssignedName = !isLikelyUid(recordAssigned)
-                ? recordAssigned
-                : (project.assignedSurveyor || "");
-              // Tentative entries are a local planning state and should always render
-              // as tentative while the record remains active.
-              nextTentativeScheduleDates[project.id] = rec.scheduledDate;
-              project.scheduleDate = rec.scheduledDate;
-              project.surveyStatus = "Tentative";
-              project.tentativeRecordId = rec.id || project.tentativeRecordId;
-              if (!project.assignedSurveyor && resolvedAssignedName) {
-                project.assignedSurveyor = resolvedAssignedName;
-              }
-              if (rec.scheduledStart) {
-                project.zuperScheduledTime = formatTime12h(rec.scheduledStart);
-                project.assignedSlot = {
-                  userName: resolvedAssignedName || project.assignedSurveyor || "Tentative",
-                  startTime: rec.scheduledStart,
-                  endTime: rec.scheduledEnd || rec.scheduledStart,
-                  displayTime: formatTimeRange12h(rec.scheduledStart, rec.scheduledEnd || null),
-                };
-              }
-            }
-          }
-        }
-      } catch (tentativeErr) {
-        console.warn("Failed to rehydrate tentative survey schedules:", tentativeErr);
-      }
-      setTentativeScheduleDates(nextTentativeScheduleDates);
-
-      setProjects(transformed);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Unknown error";
-      setError(msg);
-    } finally {
-      setLoading(false);
     }
+
+    // Merge locally-stored surveyor assignments (only if not already set by Zuper)
+    try {
+      const stored = localStorage.getItem("surveyorAssignments");
+      if (stored) {
+        const assignments = JSON.parse(stored) as Record<string, string>;
+        for (const project of transformed) {
+          if (!project.assignedSurveyor && assignments[project.id]) {
+            project.assignedSurveyor = assignments[project.id];
+          }
+        }
+      }
+    } catch { /* ignore */ }
+
+    // Rehydrate tentative survey schedules
+    const nextTentativeScheduleDates: Record<string, string> = {};
+    try {
+      const projectIds = transformed.map((p: SurveyProject) => p.id).join(",");
+      if (projectIds) {
+        const tentativeResponse = await fetch(`/api/zuper/schedule-records?projectIds=${projectIds}&type=survey&status=tentative`);
+        if (tentativeResponse.ok) {
+          const tentativeData = await tentativeResponse.json();
+          const records = tentativeData?.records || {};
+          for (const project of transformed) {
+            const rec = records[project.id];
+            if (!rec?.scheduledDate) continue;
+            if (project.zuperHasSchedule && !isReadyToScheduleStatus(project.surveyStatus)) continue;
+            const recordAssigned = typeof rec.assignedUser === "string" ? rec.assignedUser : "";
+            const resolvedAssignedName = !isLikelyUid(recordAssigned)
+              ? recordAssigned
+              : (project.assignedSurveyor || "");
+            nextTentativeScheduleDates[project.id] = rec.scheduledDate;
+            project.scheduleDate = rec.scheduledDate;
+            project.surveyStatus = "Tentative";
+            project.tentativeRecordId = rec.id || project.tentativeRecordId;
+            if (!project.assignedSurveyor && resolvedAssignedName) {
+              project.assignedSurveyor = resolvedAssignedName;
+            }
+            if (rec.scheduledStart) {
+              project.zuperScheduledTime = formatTime12h(rec.scheduledStart);
+              project.assignedSlot = {
+                userName: resolvedAssignedName || project.assignedSurveyor || "Tentative",
+                startTime: rec.scheduledStart,
+                endTime: rec.scheduledEnd || rec.scheduledStart,
+                displayTime: formatTimeRange12h(rec.scheduledStart, rec.scheduledEnd || null),
+              };
+            }
+          }
+        }
+      }
+    } catch (tentativeErr) {
+      console.warn("Failed to rehydrate tentative survey schedules:", tentativeErr);
+    }
+
+    return { transformed, nextTentativeScheduleDates };
   }, []);
 
+  const projectsQuery = useQuery({
+    queryKey: ["scheduler", "survey-projects"],
+    queryFn: fetchProjectsQueryFn,
+    refetchInterval: 5 * 60 * 1000,
+  });
+
   useEffect(() => {
-    fetchProjects();
-    const interval = setInterval(fetchProjects, 5 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, [fetchProjects]);
+    if (projectsQuery.data) {
+      const { transformed, nextTentativeScheduleDates } = projectsQuery.data;
+      setTentativeScheduleDates(nextTentativeScheduleDates);
+      setProjects(transformed);
+      setLoading(false);
+      setError(null);
+    }
+    if (projectsQuery.error) {
+      const msg = projectsQuery.error instanceof Error ? projectsQuery.error.message : "Unknown error";
+      setError(msg);
+      setLoading(false);
+    }
+  }, [projectsQuery.data, projectsQuery.error]);
+
+  const fetchProjects = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["scheduler", "survey-projects"] });
+  }, [queryClient]);
 
   // Check Zuper configuration status
   useEffect(() => {
@@ -598,9 +602,10 @@ export default function SiteSurveySchedulerPage() {
   }, [scheduleModal]);
 
   // Fetch availability when a project is selected or month changes
-  const fetchAvailability = useCallback(async (location?: string) => {
+  const fetchAvailability = useCallback(async (location?: string, project?: SurveyProject | null) => {
     if (!zuperConfigured) return;
 
+    const requestId = ++latestAvailabilityRequest.current;
     setLoadingSlots(true);
     try {
       // Get date range for current month view
@@ -617,24 +622,33 @@ export default function SiteSurveySchedulerPage() {
       if (location) {
         params.append("location", location);
       }
+      if (project?.id) {
+        params.append("candidate_project_id", String(project.id));
+      }
+      if (project?.address) {
+        params.append("candidate_address", project.address);
+      }
 
       const response = await fetch(`/api/zuper/availability?${params.toString()}`);
       const data = await response.json();
 
+      if (requestId !== latestAvailabilityRequest.current) return;
       if (data.availabilityByDate) {
         setAvailabilityByDate(data.availabilityByDate);
       }
     } catch (err) {
       console.error("Failed to fetch availability:", err);
     } finally {
-      setLoadingSlots(false);
+      if (requestId === latestAvailabilityRequest.current) {
+        setLoadingSlots(false);
+      }
     }
   }, [zuperConfigured, currentYear, currentMonth]);
 
   // Fetch availability when project is selected or month changes
   useEffect(() => {
     if (selectedProject && zuperConfigured) {
-      fetchAvailability(selectedProject.location);
+      fetchAvailability(selectedProject.location, selectedProject);
     } else if (zuperConfigured && showAvailability) {
       // Fetch general availability when no project selected but overlay is on
       fetchAvailability();
@@ -836,7 +850,8 @@ export default function SiteSurveySchedulerPage() {
     // Default each new scheduling action to live-sync mode.
     setSyncToZuper(true);
     setScheduleModal(nextModal);
-  }, []);
+    void fetchAvailability(nextModal.project.location, nextModal.project);
+  }, [fetchAvailability]);
 
   const handleDrop = useCallback((date: string) => {
     if (!draggedProjectId) return;
@@ -1174,6 +1189,7 @@ export default function SiteSurveySchedulerPage() {
             end_time: slot.endTime,
             display_time: `${slot.startTime}-${slot.endTime}`,
             user_name: effectiveAssignee,
+            user_uid: effectiveCrewUid,
             location: slot.location,
             projectId: project.id,
             projectName: project.name,
@@ -1190,7 +1206,7 @@ export default function SiteSurveySchedulerPage() {
     // (may take a moment for Zuper to reflect the new job)
     if (slot) {
       // Delay refresh slightly to let Zuper sync complete
-      setTimeout(() => fetchAvailability(project.location), 2000);
+      setTimeout(() => fetchAvailability(project.location, project), 2000);
     }
 
     setScheduleModal(null);
@@ -1266,7 +1282,7 @@ export default function SiteSurveySchedulerPage() {
     setTimeout(() => {
       fetchProjects();
       if (project?.location) {
-        fetchAvailability(project.location);
+        fetchAvailability(project.location, project);
       }
     }, 1200);
   }, [showToast, projects, trackFeature, fetchProjects, fetchAvailability, clearSurveyorAssignment]);
@@ -1669,6 +1685,11 @@ export default function SiteSurveySchedulerPage() {
                           <p className="text-xs text-muted truncate mt-0.5">
                             {project.location}
                           </p>
+                          {project.dealOwner && (
+                            <p className="text-xs text-cyan-400/70 truncate mt-0.5">
+                              {project.dealOwner}
+                            </p>
+                          )}
                         </div>
                         <span className="text-xs font-mono text-orange-400 ml-2">
                           {formatCurrency(project.amount)}
@@ -1865,15 +1886,26 @@ export default function SiteSurveySchedulerPage() {
                           {showAvailability && hasAvailability && (() => {
                             // Filter slots by project location if a project is selected
                             const projectLocation = selectedProject?.location;
+                            const bookedForDay = dayAvailability?.bookedSlots || [];
                             const matchingSlots = dayAvailability?.availableSlots?.filter(slot => {
                               // If no project selected, show all slots
-                              if (!projectLocation) return true;
-                              // Match by location - handle DTC/Centennial equivalence
-                              if (!slot.location) return true;
-                              if (slot.location === projectLocation) return true;
-                              if ((slot.location === "DTC" || slot.location === "Centennial") &&
-                                  (projectLocation === "DTC" || projectLocation === "Centennial")) return true;
-                              return false;
+                              const locationMatches = !projectLocation
+                                || !slot.location
+                                || slot.location === projectLocation
+                                || (
+                                  (slot.location === "DTC" || slot.location === "Centennial") &&
+                                  (projectLocation === "DTC" || projectLocation === "Centennial")
+                                );
+                              if (!locationMatches) return false;
+
+                              const isBooked = bookedForDay.some(booked => {
+                                if (booked.start_time !== slot.start_time || booked.end_time !== slot.end_time) return false;
+                                if (booked.user_uid && slot.user_uid) return booked.user_uid === slot.user_uid;
+                                const bookedName = (booked.user_name || "").trim().toLowerCase();
+                                const slotName = (slot.user_name || "").trim().toLowerCase();
+                                return !!bookedName && bookedName === slotName;
+                              });
+                              return !isBooked;
                             }) || [];
 
                             // Group slots by surveyor for cleaner display
@@ -1910,13 +1942,25 @@ export default function SiteSurveySchedulerPage() {
                                         }
                                       }}
                                       disabled={!selectedProject || isPast}
-                                      className={`text-[0.55rem] px-1 py-0.5 rounded ${
+                                      className={`text-[0.55rem] px-1 py-0.5 rounded border ${
                                         selectedProject && !isPast
-                                          ? "bg-emerald-500/10 hover:bg-emerald-500/30 text-emerald-400 cursor-pointer border border-emerald-500/20 hover:border-emerald-500/40"
-                                          : "text-emerald-500/50"
+                                          ? slot.travelWarning?.type === "tight"
+                                            ? "bg-amber-900/20 hover:bg-amber-900/30 text-amber-300 border-amber-500/30 hover:border-amber-500/50"
+                                            : slot.travelWarning?.type === "unknown"
+                                              ? "bg-surface-2 hover:bg-emerald-900/30 text-emerald-300 border-dashed border-amber-500/20 hover:border-amber-500/40"
+                                              : "bg-emerald-500/10 hover:bg-emerald-500/30 text-emerald-400 cursor-pointer border-emerald-500/20 hover:border-emerald-500/40"
+                                          : "text-emerald-500/50 border-transparent"
                                       }`}
-                                      title={selectedProject ? `Book ${surveyorName} at ${slot.display_time || `${slot.start_time}-${slot.end_time}`}` : "Select a project first"}
+                                      title={selectedProject
+                                        ? slot.travelWarning?.type === "tight"
+                                          ? `⚠️ Tight travel — ${slot.travelWarning.prevJob?.travelMinutes || slot.travelWarning.nextJob?.travelMinutes || "?"}min drive between adjacent jobs`
+                                          : slot.travelWarning?.type === "unknown"
+                                            ? "❓ Travel time could not be verified for adjacent jobs"
+                                            : `Book ${surveyorName} at ${slot.display_time || `${slot.start_time}-${slot.end_time}`}`
+                                        : "Select a project first"}
                                     >
+                                      {slot.travelWarning?.type === "tight" && "⚠️"}
+                                      {slot.travelWarning?.type === "unknown" && "❓"}
                                       {slot.display_time || formatTime12h(slot.start_time)}
                                     </button>
                                   ))}
@@ -2091,7 +2135,12 @@ export default function SiteSurveySchedulerPage() {
 
       {/* My Availability Modal */}
       {showMyAvailability && (
-        <MyAvailability onClose={() => { setShowMyAvailability(false); fetchAvailability(); }} />
+        <MyAvailability
+          onClose={() => {
+            setShowMyAvailability(false);
+            fetchAvailability(selectedProject?.location, selectedProject);
+          }}
+        />
       )}
 
       {/* Schedule Modal */}
@@ -2179,31 +2228,69 @@ export default function SiteSurveySchedulerPage() {
                 </div>
               ) : scheduleModal.slot ? (
                 /* User has selected a new time slot */
-                <div className="p-2 bg-emerald-900/30 border border-emerald-500/30 rounded-lg">
-                  <span className="text-xs text-emerald-400 font-medium">
-                    {scheduleModal.currentSlot ? "New Time Slot" : "Selected Time Slot"}
-                  </span>
-                  <p className="text-sm text-white mt-1">
-                    {scheduleModal.slot.userName} &bull; {formatTime12h(scheduleModal.slot.startTime)} - {formatTime12h(scheduleModal.slot.endTime)}
-                  </p>
-                  <p className="text-xs text-muted mt-0.5">
-                    This 1-hour slot will be reserved
-                  </p>
-                  <button
-                    onClick={() => setScheduleModal({ ...scheduleModal, slot: undefined })}
-                    className="text-xs text-muted hover:text-foreground mt-1"
-                  >
-                    Change time slot
-                  </button>
-                  {scheduleModal.currentSlot && (
-                    <button
-                      onClick={() => setScheduleModal({ ...scheduleModal, isRescheduling: false, slot: undefined })}
-                      className="text-xs text-muted hover:text-foreground mt-1 ml-3"
-                    >
-                      Cancel reschedule
-                    </button>
-                  )}
-                </div>
+                (() => {
+                  const dayAvail = availabilityByDate[scheduleModal.date];
+                  const selectedTravelWarning = dayAvail?.availableSlots?.find(
+                    s => s.start_time === scheduleModal.slot!.startTime
+                      && s.end_time === scheduleModal.slot!.endTime
+                      && s.user_name === scheduleModal.slot!.userName
+                  )?.travelWarning;
+                  const tightSegments: string[] = [];
+                  if (selectedTravelWarning?.prevJob) {
+                    const beforeGap = selectedTravelWarning.availableMinutesBefore;
+                    const beforeDrive = selectedTravelWarning.prevJob.travelMinutes;
+                    tightSegments.push(
+                      `before ${selectedTravelWarning.prevJob.endTime}: ${beforeDrive ?? "?"}m drive${beforeGap != null ? `, ${beforeGap}m gap` : ""}`
+                    );
+                  }
+                  if (selectedTravelWarning?.nextJob) {
+                    const afterGap = selectedTravelWarning.availableMinutesAfter;
+                    const afterDrive = selectedTravelWarning.nextJob.travelMinutes;
+                    tightSegments.push(
+                      `after ${selectedTravelWarning.nextJob.startTime}: ${afterDrive ?? "?"}m drive${afterGap != null ? `, ${afterGap}m gap` : ""}`
+                    );
+                  }
+                  return (
+                    <div className={`p-2 rounded-lg border ${
+                      selectedTravelWarning?.type === "tight"
+                        ? "bg-amber-900/30 border-amber-500/30"
+                        : "bg-emerald-900/30 border-emerald-500/30"
+                    }`}>
+                      <span className="text-xs text-emerald-400 font-medium">
+                        {scheduleModal.currentSlot ? "New Time Slot" : "Selected Time Slot"}
+                      </span>
+                      <p className="text-sm text-white mt-1">
+                        {scheduleModal.slot.userName} &bull; {formatTime12h(scheduleModal.slot.startTime)} - {formatTime12h(scheduleModal.slot.endTime)}
+                      </p>
+                      <p className="text-xs text-muted mt-0.5">
+                        This 1-hour slot will be reserved
+                      </p>
+                      {selectedTravelWarning && (
+                        <p className={`text-[0.65rem] mt-1.5 leading-tight ${
+                          selectedTravelWarning.type === "tight" ? "text-amber-400" : "text-muted"
+                        }`}>
+                          {selectedTravelWarning.type === "tight"
+                            ? `⚠️ Tight travel: ${tightSegments.join(" • ") || `${selectedTravelWarning.prevJob?.travelMinutes || selectedTravelWarning.nextJob?.travelMinutes || "?"}m drive needed between adjacent jobs`}`
+                            : "❓ Travel time could not be verified — missing address data on adjacent job"}
+                        </p>
+                      )}
+                      <button
+                        onClick={() => setScheduleModal({ ...scheduleModal, slot: undefined })}
+                        className="text-xs text-muted hover:text-foreground mt-1"
+                      >
+                        Change time slot
+                      </button>
+                      {scheduleModal.currentSlot && (
+                        <button
+                          onClick={() => setScheduleModal({ ...scheduleModal, isRescheduling: false, slot: undefined })}
+                          className="text-xs text-muted hover:text-foreground mt-1 ml-3"
+                        >
+                          Cancel reschedule
+                        </button>
+                      )}
+                    </div>
+                  );
+                })()
               ) : (
                 /* Time slot picker for new scheduling or rescheduling */
                 <div>
@@ -2214,13 +2301,25 @@ export default function SiteSurveySchedulerPage() {
                     {(() => {
                       const dayAvail = availabilityByDate[scheduleModal.date];
                       const projectLocation = scheduleModal.project.location;
+                      const bookedForDay = dayAvail?.bookedSlots || [];
                       const availableSlots = dayAvail?.availableSlots?.filter(slot => {
-                        if (!projectLocation) return true;
-                        if (!slot.location) return true;
-                        if (slot.location === projectLocation) return true;
-                        if ((slot.location === "DTC" || slot.location === "Centennial") &&
-                            (projectLocation === "DTC" || projectLocation === "Centennial")) return true;
-                        return false;
+                        const locationMatches = !projectLocation
+                          || !slot.location
+                          || slot.location === projectLocation
+                          || (
+                            (slot.location === "DTC" || slot.location === "Centennial") &&
+                            (projectLocation === "DTC" || projectLocation === "Centennial")
+                          );
+                        if (!locationMatches) return false;
+
+                        const isBooked = bookedForDay.some(booked => {
+                          if (booked.start_time !== slot.start_time || booked.end_time !== slot.end_time) return false;
+                          if (booked.user_uid && slot.user_uid) return booked.user_uid === slot.user_uid;
+                          const bookedName = (booked.user_name || "").trim().toLowerCase();
+                          const slotName = (slot.user_name || "").trim().toLowerCase();
+                          return !!bookedName && bookedName === slotName;
+                        });
+                        return !isBooked;
                       }) || [];
 
                       if (availableSlots.length === 0) {
@@ -2244,10 +2343,22 @@ export default function SiteSurveySchedulerPage() {
                               timezone: slot.timezone, // IANA timezone for CA slots
                             }
                           })}
-                          className="w-full text-left px-2 py-1.5 text-sm rounded bg-surface-2 hover:bg-emerald-900/30 hover:border-emerald-500/30 border border-transparent transition-colors"
+                          className={`w-full text-left px-2 py-1.5 text-sm rounded border transition-colors ${
+                            slot.travelWarning?.type === "tight"
+                              ? "bg-amber-900/20 hover:bg-amber-900/30 border-amber-500/30 hover:border-amber-500/50"
+                              : slot.travelWarning?.type === "unknown"
+                                ? "bg-surface-2 hover:bg-emerald-900/30 border-dashed border-amber-500/20 hover:border-amber-500/40"
+                                : "bg-surface-2 hover:bg-emerald-900/30 hover:border-emerald-500/30 border-transparent"
+                          }`}
                         >
                           <span className="text-emerald-400">{slot.user_name}</span>
                           <span className="text-muted ml-2">{slot.display_time}</span>
+                          {slot.travelWarning?.type === "tight" && (
+                            <span className="text-amber-400 ml-2 text-xs">⚠️ tight travel</span>
+                          )}
+                          {slot.travelWarning?.type === "unknown" && (
+                            <span className="text-muted ml-2 text-xs">❓ travel unverified</span>
+                          )}
                         </button>
                       ));
                     })()}
