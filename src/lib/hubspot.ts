@@ -1102,8 +1102,23 @@ type SurveyorLookupCache = {
   directValues: Set<string>;
 };
 
+type HubSpotOwnerContact = {
+  id: string;
+  name: string;
+  email: string | null;
+};
+
+type OwnerDirectoryCache = {
+  loadedAt: number;
+  byId: Map<string, HubSpotOwnerContact>;
+  byNormalizedName: Map<string, HubSpotOwnerContact>;
+  byNormalizedEmail: Map<string, HubSpotOwnerContact>;
+};
+
 let surveyorLookupCache: SurveyorLookupCache | null = null;
 const SURVEYOR_LOOKUP_TTL_MS = 5 * 60 * 1000;
+let ownerDirectoryCache: OwnerDirectoryCache | null = null;
+const OWNER_DIRECTORY_TTL_MS = 5 * 60 * 1000;
 
 function normalizeLookupKey(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
@@ -1158,6 +1173,81 @@ async function loadSiteSurveyorLookup(): Promise<SurveyorLookupCache> {
     directValues,
   };
   return surveyorLookupCache;
+}
+
+async function loadOwnerDirectory(): Promise<OwnerDirectoryCache> {
+  const now = Date.now();
+  if (ownerDirectoryCache && now - ownerDirectoryCache.loadedAt < OWNER_DIRECTORY_TTL_MS) {
+    return ownerDirectoryCache;
+  }
+
+  const byId = new Map<string, HubSpotOwnerContact>();
+  const byNormalizedName = new Map<string, HubSpotOwnerContact>();
+  const byNormalizedEmail = new Map<string, HubSpotOwnerContact>();
+
+  let after: string | undefined;
+  try {
+    do {
+      const ownersResponse = await hubspotClient.crm.owners.ownersApi.getPage(undefined, after, 500, false);
+      for (const owner of ownersResponse.results || []) {
+        const id = String(owner.id || "").trim();
+        if (!id) continue;
+
+        const name = [owner.firstName, owner.lastName].filter(Boolean).join(" ").trim() || id;
+        const email = String(owner.email || "").trim() || null;
+        const contact: HubSpotOwnerContact = { id, name, email };
+
+        byId.set(id, contact);
+        byNormalizedName.set(normalizeLookupKey(name), contact);
+        if (email) {
+          byNormalizedEmail.set(normalizeLookupKey(email), contact);
+        }
+      }
+      after = ownersResponse.paging?.next?.after;
+    } while (after);
+  } catch (err) {
+    console.warn("[HubSpot] Failed to load owners directory:", err instanceof Error ? err.message : err);
+  }
+
+  ownerDirectoryCache = {
+    loadedAt: now,
+    byId,
+    byNormalizedName,
+    byNormalizedEmail,
+  };
+  return ownerDirectoryCache;
+}
+
+export async function resolveHubSpotOwnerContact(ownerValue?: string | null): Promise<HubSpotOwnerContact | null> {
+  const raw = String(ownerValue || "").trim();
+  if (!raw) return null;
+
+  const directory = await loadOwnerDirectory();
+  return (
+    directory.byId.get(raw) ||
+    directory.byNormalizedEmail.get(normalizeLookupKey(raw)) ||
+    directory.byNormalizedName.get(normalizeLookupKey(raw)) ||
+    null
+  );
+}
+
+export async function getDealOwnerContact(dealId: string): Promise<{
+  ownerId: string | null;
+  ownerName: string | null;
+  ownerEmail: string | null;
+}> {
+  const props = await getDealProperties(dealId, ["hubspot_owner_id"]);
+  const ownerId = String(props?.hubspot_owner_id || "").trim() || null;
+  if (!ownerId) {
+    return { ownerId: null, ownerName: null, ownerEmail: null };
+  }
+
+  const owner = await resolveHubSpotOwnerContact(ownerId);
+  return {
+    ownerId,
+    ownerName: owner?.name || ownerId,
+    ownerEmail: owner?.email || null,
+  };
 }
 
 /**

@@ -30,6 +30,8 @@ interface OverrideRecord {
   date: string;
   type: string;
   reason: string | null;
+  startTime: string | null;
+  endTime: string | null;
   createdAt: string;
 }
 
@@ -72,6 +74,12 @@ interface MyAvailabilityProps {
   onClose: () => void;
 }
 
+type QuickBlockAction = {
+  key: string;
+  label: string;
+  dates: string[];
+};
+
 export default function MyAvailability({ onClose }: MyAvailabilityProps) {
   const [crewMember, setCrewMember] = useState<CrewMemberInfo | null>(null);
   const [records, setRecords] = useState<AvailabilityRecord[]>([]);
@@ -90,11 +98,37 @@ export default function MyAvailability({ onClose }: MyAvailabilityProps) {
   const [showBlockForm, setShowBlockForm] = useState(false);
   const [blockDate, setBlockDate] = useState("");
   const [blockReason, setBlockReason] = useState("");
+  const [blockIsFullDay, setBlockIsFullDay] = useState(true);
+  const [blockStartTime, setBlockStartTime] = useState("09:00");
+  const [blockEndTime, setBlockEndTime] = useState("10:00");
+  const [blockCalendarMonth, setBlockCalendarMonth] = useState(() => new Date().getMonth());
+  const [blockCalendarYear, setBlockCalendarYear] = useState(() => new Date().getFullYear());
   const [savingBlock, setSavingBlock] = useState(false);
+  const [quickBlockingKey, setQuickBlockingKey] = useState<string | null>(null);
 
   const showToast = (message: string) => {
     setToast(message);
     setTimeout(() => setToast(null), 3000);
+  };
+
+  const toDateStr = (date: Date) => {
+    const local = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    return `${local.getFullYear()}-${String(local.getMonth() + 1).padStart(2, "0")}-${String(local.getDate()).padStart(2, "0")}`;
+  };
+
+  const toLocalDate = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+  const getDateRange = (startOffsetDays: number, dayCount: number) => {
+    const dates: string[] = [];
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    start.setDate(start.getDate() + startOffsetDays);
+    for (let i = 0; i < dayCount; i++) {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      dates.push(toDateStr(d));
+    }
+    return dates;
   };
 
   const fetchData = useCallback(async () => {
@@ -231,8 +265,13 @@ export default function MyAvailability({ onClose }: MyAvailabilityProps) {
     // Default to tomorrow
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
-    setBlockDate(tomorrow.toISOString().split("T")[0]);
+    setBlockDate(toDateStr(tomorrow));
     setBlockReason("");
+    setBlockIsFullDay(true);
+    setBlockStartTime("09:00");
+    setBlockEndTime("10:00");
+    setBlockCalendarMonth(tomorrow.getMonth());
+    setBlockCalendarYear(tomorrow.getFullYear());
     setShowBlockForm(true);
   };
 
@@ -241,21 +280,53 @@ export default function MyAvailability({ onClose }: MyAvailabilityProps) {
       showToast("Please select a date");
       return;
     }
+    if (!blockIsFullDay && (!blockStartTime || !blockEndTime)) {
+      showToast("Please select start and end times");
+      return;
+    }
+    if (!blockIsFullDay && blockStartTime >= blockEndTime) {
+      showToast("End time must be after start time");
+      return;
+    }
 
     setSavingBlock(true);
     try {
       const response = await fetch("/api/zuper/my-availability/overrides", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date: blockDate, reason: blockReason || undefined }),
+        body: JSON.stringify({
+          date: blockDate,
+          reason: blockReason || undefined,
+          type: blockIsFullDay ? "blocked" : "custom",
+          startTime: blockIsFullDay ? undefined : blockStartTime,
+          endTime: blockIsFullDay ? undefined : blockEndTime,
+        }),
       });
 
       if (!response.ok) {
         const data = await response.json();
         throw new Error(data.error || "Failed to block date");
       }
+      const data = await response.json();
 
-      showToast(`Blocked ${formatDateShort(blockDate)}`);
+      let message = "";
+      if (blockIsFullDay) {
+        message = `Blocked ${formatDateShort(blockDate)}`;
+      } else {
+        message = `Blocked ${formatDateShort(blockDate)} ${formatTimeRange12h(blockStartTime, blockEndTime)}`;
+      }
+
+      const detectedConflicts = Number(data?.conflictNotifications?.detected || 0);
+      const sentNotifications = Number(data?.conflictNotifications?.sent || 0);
+      if (detectedConflicts > 0) {
+        if (sentNotifications > 0) {
+          message += ` · ${sentNotifications} conflict alert${sentNotifications === 1 ? "" : "s"} sent`;
+        } else {
+          message += " · conflict alerts could not be delivered";
+        }
+      }
+
+      showToast(message);
       setShowBlockForm(false);
       fetchData();
     } catch (err) {
@@ -287,10 +358,80 @@ export default function MyAvailability({ onClose }: MyAvailabilityProps) {
     }
   };
 
+  const handleQuickBlock = async (action: QuickBlockAction) => {
+    const uniqueDates = [...new Set(action.dates)];
+    if (uniqueDates.length === 0) {
+      showToast("No dates to block");
+      return;
+    }
+
+    setQuickBlockingKey(action.key);
+    try {
+      const results = await Promise.allSettled(
+        uniqueDates.map((date) =>
+          fetch("/api/zuper/my-availability/overrides", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ date, reason: `Quick block: ${action.label}` }),
+          })
+        )
+      );
+
+      let success = 0;
+      let failed = 0;
+
+      for (const result of results) {
+        if (result.status === "fulfilled" && result.value.ok) {
+          success++;
+        } else {
+          failed++;
+        }
+      }
+
+      if (success > 0) {
+        await fetchData();
+      }
+
+      if (failed > 0) {
+        showToast(`Blocked ${success}/${uniqueDates.length} date(s)`);
+      } else {
+        showToast(`Blocked ${success} date(s)`);
+      }
+    } catch (err) {
+      showToast(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
+    } finally {
+      setQuickBlockingKey(null);
+    }
+  };
+
   const formatDateShort = (dateStr: string) => {
     const [y, m, d] = dateStr.split("-").map(Number);
     const dt = new Date(y, m - 1, d);
     return dt.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+  };
+
+  const getMonthLabel = (month: number, year: number) =>
+    new Date(year, month, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" });
+
+  const buildCalendarCells = (month: number, year: number) => {
+    const firstDay = new Date(year, month, 1);
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const leadingBlanks = firstDay.getDay();
+    const cells: Array<{ dateStr: string | null; isPast: boolean }> = [];
+    const today = toLocalDate(new Date());
+
+    for (let i = 0; i < leadingBlanks; i++) {
+      cells.push({ dateStr: null, isPast: false });
+    }
+
+    for (let day = 1; day <= daysInMonth; day++) {
+      const current = new Date(year, month, day);
+      const dateStr = toDateStr(current);
+      const isPast = current < today;
+      cells.push({ dateStr, isPast });
+    }
+
+    return cells;
   };
 
   // Sort records by day of week, then start time
@@ -298,6 +439,13 @@ export default function MyAvailability({ onClose }: MyAvailabilityProps) {
     if (a.dayOfWeek !== b.dayOfWeek) return a.dayOfWeek - b.dayOfWeek;
     return a.startTime.localeCompare(b.startTime);
   });
+
+  const quickBlockActions: QuickBlockAction[] = [
+    { key: "today", label: "Block Today", dates: getDateRange(0, 1) },
+    { key: "tomorrow", label: "Block Tomorrow", dates: getDateRange(1, 1) },
+    { key: "next-3", label: "Block Next 3 Days", dates: getDateRange(1, 3) },
+    { key: "next-7", label: "Block Next 7 Days", dates: getDateRange(1, 7) },
+  ];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
@@ -332,6 +480,29 @@ export default function MyAvailability({ onClose }: MyAvailabilityProps) {
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto px-5 py-4">
+          {!loading && !error && (
+            <div className="mb-4 rounded-lg border border-amber-900/40 bg-amber-950/20 p-3">
+              <p className="text-xs font-semibold text-amber-300 uppercase tracking-wider mb-2">
+                Quick Block (All Day)
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                {quickBlockActions.map((action) => (
+                  <button
+                    key={action.key}
+                    onClick={() => handleQuickBlock(action)}
+                    disabled={quickBlockingKey !== null || savingBlock}
+                    className="px-2.5 py-2 bg-amber-700/70 hover:bg-amber-600 rounded-md text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {quickBlockingKey === action.key ? "Blocking..." : action.label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[11px] text-zinc-400 mt-2">
+                One click adds day blocks to your calendar without editing weekly slots.
+              </p>
+            </div>
+          )}
+
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-cyan-500" />
@@ -404,11 +575,11 @@ export default function MyAvailability({ onClose }: MyAvailabilityProps) {
                 </div>
               )}
 
-              {/* Blocked Dates */}
+              {/* Date Overrides */}
               {overrides.length > 0 && (
                 <div className="space-y-2">
                   <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
-                    Blocked Dates
+                    Date Overrides
                   </h3>
                   {overrides.map(ov => (
                     <div
@@ -416,13 +587,24 @@ export default function MyAvailability({ onClose }: MyAvailabilityProps) {
                       className="flex items-center justify-between p-3 rounded-lg border border-amber-900/30 bg-amber-950/20"
                     >
                       <div className="flex items-center gap-3 min-w-0">
-                        <span className="px-2 py-0.5 bg-amber-900/50 text-amber-300 rounded text-xs font-medium shrink-0">
-                          Blocked
-                        </span>
+                        {ov.type === "custom" ? (
+                          <span className="px-2 py-0.5 bg-amber-800/60 text-amber-200 rounded text-xs font-medium shrink-0">
+                            Time Block
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 bg-amber-900/50 text-amber-300 rounded text-xs font-medium shrink-0">
+                            Full Day
+                          </span>
+                        )}
                         <div className="min-w-0">
                           <p className="text-sm text-white">
                             {formatDateShort(ov.date)}
                           </p>
+                          {ov.type === "custom" && ov.startTime && ov.endTime && (
+                            <p className="text-xs text-amber-300/80">
+                              {formatTimeRange12h(ov.startTime, ov.endTime)}
+                            </p>
+                          )}
                           {ov.reason && (
                             <p className="text-xs text-zinc-500">{ov.reason}</p>
                           )}
@@ -596,23 +778,120 @@ export default function MyAvailability({ onClose }: MyAvailabilityProps) {
       {/* Block Date Modal */}
       {showBlockForm && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
-          <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-full max-w-sm">
-            <h3 className="text-base font-bold mb-4">Block a Date</h3>
+          <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-full max-w-md">
+            <h3 className="text-base font-bold mb-1">Add Date Override</h3>
             <p className="text-xs text-zinc-400 mb-4">
-              Block all your availability for a specific date. Your recurring weekly schedule won&apos;t be affected.
+              Select a date, then choose full day or a time range. Your weekly schedule remains unchanged.
             </p>
 
             <div className="space-y-3">
-              <div>
-                <label className="block text-xs text-zinc-400 mb-1">Date</label>
-                <input
-                  type="date"
-                  value={blockDate}
-                  onChange={e => setBlockDate(e.target.value)}
-                  min={new Date().toISOString().split("T")[0]}
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
-                />
+              <div className="rounded-lg border border-zinc-700 bg-zinc-800/40 p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const prev = new Date(blockCalendarYear, blockCalendarMonth - 1, 1);
+                      setBlockCalendarMonth(prev.getMonth());
+                      setBlockCalendarYear(prev.getFullYear());
+                    }}
+                    className="px-2 py-1 text-xs rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300"
+                  >
+                    Prev
+                  </button>
+                  <p className="text-xs font-semibold text-zinc-200">
+                    {getMonthLabel(blockCalendarMonth, blockCalendarYear)}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = new Date(blockCalendarYear, blockCalendarMonth + 1, 1);
+                      setBlockCalendarMonth(next.getMonth());
+                      setBlockCalendarYear(next.getFullYear());
+                    }}
+                    className="px-2 py-1 text-xs rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300"
+                  >
+                    Next
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-7 gap-1 mb-1">
+                  {DAY_ABBREV.map((day) => (
+                    <div key={day} className="text-[10px] text-zinc-500 text-center py-1">
+                      {day}
+                    </div>
+                  ))}
+                </div>
+                <div className="grid grid-cols-7 gap-1">
+                  {buildCalendarCells(blockCalendarMonth, blockCalendarYear).map((cell, idx) => (
+                    <button
+                      key={`${cell.dateStr || "blank"}-${idx}`}
+                      type="button"
+                      disabled={!cell.dateStr || cell.isPast}
+                      onClick={() => {
+                        if (cell.dateStr) setBlockDate(cell.dateStr);
+                      }}
+                      className={`h-8 rounded text-xs transition-colors ${
+                        !cell.dateStr
+                          ? "opacity-0 cursor-default"
+                          : cell.isPast
+                            ? "text-zinc-600 cursor-not-allowed bg-zinc-900/40"
+                            : blockDate === cell.dateStr
+                              ? "bg-amber-600 text-white"
+                              : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+                      }`}
+                    >
+                      {cell.dateStr ? Number(cell.dateStr.slice(8, 10)) : ""}
+                    </button>
+                  ))}
+                </div>
               </div>
+
+              <div>
+                <label className="block text-xs text-zinc-400 mb-1">Override Type</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setBlockIsFullDay(true)}
+                    className={`px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+                      blockIsFullDay ? "bg-amber-700 text-white" : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
+                    }`}
+                  >
+                    Full Day
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBlockIsFullDay(false)}
+                    className={`px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+                      !blockIsFullDay ? "bg-amber-700 text-white" : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
+                    }`}
+                  >
+                    Time Range
+                  </button>
+                </div>
+              </div>
+
+              {!blockIsFullDay && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-zinc-400 mb-1">Start</label>
+                    <input
+                      type="time"
+                      value={blockStartTime}
+                      onChange={e => setBlockStartTime(e.target.value)}
+                      className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-zinc-400 mb-1">End</label>
+                    <input
+                      type="time"
+                      value={blockEndTime}
+                      onChange={e => setBlockEndTime(e.target.value)}
+                      className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+                    />
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs text-zinc-400 mb-1">Reason (optional)</label>
@@ -638,7 +917,7 @@ export default function MyAvailability({ onClose }: MyAvailabilityProps) {
                 disabled={savingBlock}
                 className="px-4 py-2 bg-amber-700 hover:bg-amber-600 rounded-lg text-xs font-medium disabled:opacity-50"
               >
-                {savingBlock ? "Blocking..." : "Block Date"}
+                {savingBlock ? "Saving..." : "Save Override"}
               </button>
             </div>
           </div>
