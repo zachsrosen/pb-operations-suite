@@ -64,14 +64,15 @@ export function getConfig(): TravelTimeConfig {
   const enabledStr = process.env.TRAVEL_TIME_ENABLED ?? "true";
   const bufferStr = process.env.TRAVEL_TIME_BUFFER_MINUTES ?? "15";
   const thresholdStr = process.env.TRAVEL_TIME_UNKNOWN_THRESHOLD ?? "90";
-  const tightThresholdStr = process.env.TRAVEL_TIME_TIGHT_THRESHOLD ?? "10";
+  const tightThresholdStr = process.env.TRAVEL_TIME_TIGHT_THRESHOLD ?? "0";
 
   return {
     enabled: !!apiKey && enabledStr !== "false",
     bufferMinutes: parseInt(bufferStr, 10) || 15,
     unknownThresholdMinutes: parseInt(thresholdStr, 10) || 90,
-    // Suppress marginal warnings (e.g. 2-5 min deficit) that are too noisy in practice.
-    tightThresholdMinutes: parseInt(tightThresholdStr, 10) || 10,
+    // Deficit tolerance before raising a tight warning.
+    // Default 0 = warn on any travel deficit (can be tuned via env).
+    tightThresholdMinutes: parseInt(tightThresholdStr, 10) || 0,
     apiKey,
   };
 }

@@ -81,7 +81,7 @@ describe("getConfig", () => {
     expect(config.enabled).toBe(true);
     expect(config.bufferMinutes).toBe(15);
     expect(config.unknownThresholdMinutes).toBe(90);
-    expect(config.tightThresholdMinutes).toBe(10);
+    expect(config.tightThresholdMinutes).toBe(0);
     expect(config.apiKey).toBe("test-api-key");
   });
 
@@ -250,7 +250,7 @@ describe("evaluateSlotTravel", () => {
   });
 
   it("suppresses marginal tight warnings below threshold", async () => {
-    // 30min drive + 15 buffer = 45 required; 40min gap => 5min deficit (< default threshold 10)
+    // 30min drive + 15 buffer = 45 required; 40min gap => 5min deficit (< explicit threshold 10)
     mockFetch.mockResolvedValueOnce(distanceMatrixResponse(1800, 32187)); // 30min
     const warning = await travelModule.evaluateSlotTravel({
       candidateAddress: "123 Main St",
@@ -263,6 +263,7 @@ describe("evaluateSlotTravel", () => {
       },
       bufferMinutes: 15,
       unknownThresholdMinutes: 90,
+      tightThresholdMinutes: 10,
       resolveLocationFn: mockResolve,
     });
     expect(warning).toBeNull();
