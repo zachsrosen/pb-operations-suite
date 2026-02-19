@@ -69,22 +69,78 @@ function getConstructionScheduleBoundaryProperties(): { start: string | null; en
   return { start, end };
 }
 
-function hubSpotDateTimeCandidatesFromUtc(utcDateTime: string): string[] {
+function hubSpotDateTimeCandidatesFromUtc(utcDateTime: string, localDate?: string): string[] {
   const iso = `${utcDateTime.replace(" ", "T")}Z`;
   const candidates = [iso, utcDateTime];
   const ms = Date.parse(iso);
   if (Number.isFinite(ms)) {
     candidates.unshift(String(ms));
   }
+  const utcDateOnly = iso.slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(utcDateOnly)) {
+    candidates.push(utcDateOnly);
+    const utcMidnightMs = Date.parse(`${utcDateOnly}T00:00:00.000Z`);
+    if (Number.isFinite(utcMidnightMs)) candidates.push(String(utcMidnightMs));
+  }
+  if (localDate && /^\d{4}-\d{2}-\d{2}$/.test(localDate)) {
+    candidates.push(localDate);
+    const localMidnightMs = Date.parse(`${localDate}T00:00:00.000Z`);
+    if (Number.isFinite(localMidnightMs)) candidates.push(String(localMidnightMs));
+  }
   return [...new Set(candidates)];
+}
+
+function parseHubSpotValueToMs(raw: string): number | null {
+  const value = raw.trim();
+  if (!value) return null;
+  if (/^\d{10,13}$/.test(value)) {
+    const numeric = value.length === 10 ? Number(value) * 1000 : Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const ms = Date.parse(`${value}T00:00:00.000Z`);
+    return Number.isFinite(ms) ? ms : null;
+  }
+  const normalized =
+    /^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}(:\d{2})?$/.test(value)
+      ? `${value.replace(" ", "T")}Z`
+      : value;
+  const ms = Date.parse(normalized);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function parseHubSpotValueToDateOnly(raw: string): string | null {
+  const value = raw.trim();
+  if (!value) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const ms = parseHubSpotValueToMs(value);
+  if (!Number.isFinite(ms)) return null;
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+function matchesHubSpotDateValue(actualRaw: string | null | undefined, expectedCandidates: string[]): boolean {
+  const actual = String(actualRaw || "").trim();
+  if (!actual) return false;
+  if (expectedCandidates.includes(actual)) return true;
+  const actualMs = parseHubSpotValueToMs(actual);
+  const actualDate = parseHubSpotValueToDateOnly(actual);
+  for (const candidate of expectedCandidates) {
+    if (candidate === actual) return true;
+    const candidateMs = parseHubSpotValueToMs(candidate);
+    if (actualMs != null && candidateMs != null && actualMs === candidateMs) return true;
+    const candidateDate = parseHubSpotValueToDateOnly(candidate);
+    if (actualDate && candidateDate && actualDate === candidateDate) return true;
+  }
+  return false;
 }
 
 async function writeHubSpotDateTimeProperty(
   dealId: string,
   propertyName: string,
-  utcDateTime: string
+  utcDateTime: string,
+  localDate?: string
 ): Promise<{ ok: boolean; writtenValue: string | null }> {
-  for (const candidate of hubSpotDateTimeCandidatesFromUtc(utcDateTime)) {
+  for (const candidate of hubSpotDateTimeCandidatesFromUtc(utcDateTime, localDate)) {
     const ok = await updateDealProperty(dealId, { [propertyName]: candidate });
     if (ok) {
       return { ok: true, writtenValue: candidate };
@@ -96,13 +152,16 @@ async function writeHubSpotDateTimeProperty(
 async function writeConstructionScheduleBoundaryProperties(
   dealId: string,
   startUtcDateTime: string,
-  endUtcDateTime: string
+  endUtcDateTime: string,
+  startLocalDate?: string,
+  endLocalDate?: string
 ): Promise<string[]> {
   const { start, end } = getConstructionScheduleBoundaryProperties();
   const warnings: string[] = [];
 
-  const applyAndVerify = async (propertyName: string, utcDateTime: string) => {
-    const writeResult = await writeHubSpotDateTimeProperty(dealId, propertyName, utcDateTime);
+  const applyAndVerify = async (propertyName: string, utcDateTime: string, localDate?: string) => {
+    const expectedCandidates = hubSpotDateTimeCandidatesFromUtc(utcDateTime, localDate);
+    const writeResult = await writeHubSpotDateTimeProperty(dealId, propertyName, utcDateTime, localDate);
     if (!writeResult.ok || !writeResult.writtenValue) {
       warnings.push(`HubSpot ${propertyName} write failed`);
       return;
@@ -114,16 +173,16 @@ async function writeConstructionScheduleBoundaryProperties(
       return;
     }
 
-    if (String(verifyProps[propertyName] || "") !== writeResult.writtenValue) {
+    if (!matchesHubSpotDateValue(verifyProps[propertyName], expectedCandidates)) {
       warnings.push(`HubSpot ${propertyName} verification failed`);
     }
   };
 
   if (start) {
-    await applyAndVerify(start, startUtcDateTime);
+    await applyAndVerify(start, startUtcDateTime, startLocalDate);
   }
   if (end) {
-    await applyAndVerify(end, endUtcDateTime);
+    await applyAndVerify(end, endUtcDateTime, endLocalDate);
   }
 
   return warnings;
@@ -584,6 +643,8 @@ export async function PUT(request: NextRequest) {
 
     let startDateTime: string;
     let endDateTime: string;
+    const boundaryStartDate = schedule.date;
+    let boundaryEndDate = schedule.date;
 
     if (schedule.type === "inspection") {
       // Inspections always use a fixed 8am-4pm same-day window
@@ -606,6 +667,7 @@ export async function PUT(request: NextRequest) {
 
       // Installation spans use business-day math (skip weekends).
       const endDateStr = getBusinessEndDateInclusive(schedule.date, days);
+      boundaryEndDate = endDateStr;
       endDateTime = localToUtc(endDateStr, localEnd);
     }
 
@@ -736,7 +798,9 @@ export async function PUT(request: NextRequest) {
         const boundaryWarnings = await writeConstructionScheduleBoundaryProperties(
           project.id,
           startDateTime,
-          endDateTime
+          endDateTime,
+          boundaryStartDate,
+          boundaryEndDate
         );
         hubspotWarnings.push(...boundaryWarnings);
       }
@@ -864,7 +928,9 @@ export async function PUT(request: NextRequest) {
         const boundaryWarnings = await writeConstructionScheduleBoundaryProperties(
           project.id,
           startDateTime,
-          endDateTime
+          endDateTime,
+          boundaryStartDate,
+          boundaryEndDate
         );
         hubspotWarnings.push(...boundaryWarnings);
       }
