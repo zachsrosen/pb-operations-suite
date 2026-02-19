@@ -42,13 +42,14 @@ interface Project {
   equipment: Equipment;
   address: string;
   city: string;
+  url: string;
 }
 
 interface ProductSummary {
   productName: string;
   totalCount: number;
   projects: number;
-  projectList: { id: string | number; name: string; projectNumber: string; count: number; stage: string; pbLocation: string }[];
+  projectList: { id: string | number; name: string; projectNumber: string; count: number; stage: string; pbLocation: string; url: string }[];
 }
 
 interface EquipmentBacklogResponse {
@@ -103,7 +104,7 @@ function buildProductSummary(
     if (!count) continue;
     const name = getProductName(eq) || "Unknown";
     const existing = map.get(name);
-    const proj = { id: p.id, name: p.name, projectNumber: p.projectNumber, count, stage: p.stage, pbLocation: p.pbLocation };
+    const proj = { id: p.id, name: p.name, projectNumber: p.projectNumber, count, stage: p.stage, pbLocation: p.pbLocation, url: p.url };
     if (existing) {
       existing.totalCount += count;
       existing.projects += 1;
@@ -165,14 +166,14 @@ export default function EquipmentBacklogPage() {
   const equipmentQueryParams = {
     context: "equipment",
     limit: "0",
-    fields: "id,name,projectNumber,pbLocation,stage,amount,equipment,address,city",
+    fields: "id,name,projectNumber,pbLocation,stage,amount,equipment,address,city,url",
   };
 
   const { data, isLoading, isError, refetch } = useQuery<EquipmentBacklogResponse>({
     queryKey: queryKeys.projects.list(equipmentQueryParams),
     queryFn: async () => {
       const res = await fetch(
-        "/api/projects?context=equipment&limit=0&fields=id,name,projectNumber,pbLocation,stage,amount,equipment,address,city"
+        "/api/projects?context=equipment&limit=0&fields=id,name,projectNumber,pbLocation,stage,amount,equipment,address,city,url"
       );
       if (!res.ok) throw new Error("Failed to fetch");
       return res.json();
@@ -485,7 +486,15 @@ export default function EquipmentBacklogPage() {
                     {item.projectList.map((proj) => (
                       <div key={proj.id} className="flex items-center justify-between text-xs">
                         <div className="truncate mr-2">
-                          <span className="text-foreground/70">{proj.name}</span>
+                          <a
+                            href={proj.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-foreground/70 hover:text-cyan-400 transition-colors"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {proj.name}
+                          </a>
                           <span className="text-muted/50 ml-1">{proj.projectNumber}</span>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
@@ -732,7 +741,14 @@ export default function EquipmentBacklogPage() {
                     return (
                       <tr key={p.id} className={`border-b border-t-border/50 hover:bg-surface-2/30 ${rowBg}`}>
                         <td className="px-4 py-2.5">
-                          <div className="font-medium text-foreground/90 truncate max-w-[220px]">{p.name}</div>
+                          <a
+                            href={p.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="block font-medium text-foreground/90 hover:text-cyan-400 truncate max-w-[220px] transition-colors"
+                          >
+                            {p.name}
+                          </a>
                           <div className="text-xs text-muted">{p.projectNumber}</div>
                         </td>
                         <td className="px-4 py-2.5 text-muted">{p.pbLocation}</td>
