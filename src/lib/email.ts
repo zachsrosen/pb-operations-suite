@@ -398,6 +398,7 @@ interface SendSchedulingNotificationParams {
   crewMemberName: string;
   scheduledByName: string;
   scheduledByEmail: string;
+  dealOwnerName?: string;
   appointmentType: "survey" | "installation" | "inspection";
   customerName: string;
   customerAddress: string;
@@ -464,6 +465,12 @@ export async function sendSchedulingNotification(
                     <td style="color: #71717a; font-size: 13px; padding: 8px 0;">👤 Scheduled by</td>
                     <td style="color: #ffffff; font-size: 13px; padding: 8px 0; text-align: right;">${params.scheduledByName}</td>
                   </tr>
+                  ${params.dealOwnerName ? `
+                  <tr>
+                    <td style="color: #71717a; font-size: 13px; padding: 8px 0;">🧑‍💼 Deal owner</td>
+                    <td style="color: #ffffff; font-size: 13px; padding: 8px 0; text-align: right;">${params.dealOwnerName}</td>
+                  </tr>
+                  ` : ""}
                   ${params.notes ? `
                   <tr>
                     <td colspan="2" style="padding-top: 16px;">
@@ -499,7 +506,7 @@ Address: ${params.customerAddress}
 Date: ${formattedDate}
 Time: ${timeSlot}
 Scheduled by: ${params.scheduledByName}
-${params.notes ? `\nNotes: ${params.notes}` : ""}
+${params.dealOwnerName ? `Deal owner: ${params.dealOwnerName}\n` : ""}${params.notes ? `\nNotes: ${params.notes}` : ""}
 
 Please check your Zuper app for complete details.
 
@@ -508,12 +515,153 @@ Please check your Zuper app for complete details.
     debugFallbackBody: [
       `Crew Member: ${params.crewMemberName}`,
       `Scheduled By: ${params.scheduledByName} (${params.scheduledByEmail})`,
+      `Deal Owner: ${params.dealOwnerName || "N/A"}`,
       `Type: ${appointmentTypeLabel}`,
       `Customer: ${params.customerName}`,
       `Address: ${params.customerAddress}`,
       `Date: ${formattedDate}`,
       `Time: ${timeSlot}`,
       `Notes: ${params.notes || "None"}`,
+    ].join("\n"),
+  });
+}
+
+interface SendCancellationNotificationParams {
+  to: string;
+  crewMemberName: string;
+  cancelledByName: string;
+  cancelledByEmail: string;
+  scheduledByName?: string;
+  dealOwnerName?: string;
+  appointmentType: "survey" | "installation" | "inspection";
+  customerName: string;
+  customerAddress: string;
+  scheduledDate?: string;
+  scheduledStart?: string;
+  scheduledEnd?: string;
+  projectId: string;
+  cancelReason?: string;
+}
+
+export async function sendCancellationNotification(
+  params: SendCancellationNotificationParams
+): Promise<{ success: boolean; error?: string }> {
+  const appointmentTypeLabel = APPOINTMENT_TYPE_LABELS[params.appointmentType] || params.appointmentType;
+  const formattedDate = params.scheduledDate ? formatDate(params.scheduledDate) : "Not provided";
+  const timeSlot = params.scheduledStart && params.scheduledEnd
+    ? `${formatTime(params.scheduledStart)} - ${formatTime(params.scheduledEnd)}`
+    : "Not provided";
+  const reasonText = params.cancelReason?.trim() || "No reason provided";
+
+  return sendEmailMessage({
+    to: params.to,
+    subject: `${appointmentTypeLabel} Cancelled - ${params.customerName}`,
+    html: `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          </head>
+          <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #0a0a0f; color: #ffffff; padding: 40px 20px; margin: 0;">
+            <div style="max-width: 500px; margin: 0 auto; background-color: #12121a; border: 1px solid #1e1e2e; border-radius: 12px; padding: 32px;">
+              <h1 style="font-size: 24px; font-weight: bold; background: linear-gradient(to right, #f97316, #fb923c); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin: 0 0 8px 0; text-align: center;">
+                PB Operations Suite
+              </h1>
+              <p style="color: #71717a; font-size: 14px; text-align: center; margin: 0 0 32px 0;">
+                Appointment Cancelled
+              </p>
+
+              <div style="background-color: #0a0a0f; border: 1px solid #1e1e2e; border-radius: 8px; padding: 20px; margin-bottom: 24px;">
+                <div style="display: flex; align-items: center; margin-bottom: 16px;">
+                  <span style="background: #dc2626; color: white; padding: 4px 12px; border-radius: 4px; font-size: 12px; font-weight: 600; text-transform: uppercase;">
+                    ${appointmentTypeLabel} Cancelled
+                  </span>
+                </div>
+
+                <h2 style="font-size: 20px; color: #ffffff; margin: 0 0 16px 0;">
+                  ${params.customerName}
+                </h2>
+
+                <table style="width: 100%; border-collapse: collapse;">
+                  <tr>
+                    <td style="color: #71717a; font-size: 13px; padding: 8px 0; border-bottom: 1px solid #1e1e2e;">📍 Address</td>
+                    <td style="color: #ffffff; font-size: 13px; padding: 8px 0; border-bottom: 1px solid #1e1e2e; text-align: right;">${params.customerAddress}</td>
+                  </tr>
+                  <tr>
+                    <td style="color: #71717a; font-size: 13px; padding: 8px 0; border-bottom: 1px solid #1e1e2e;">📅 Date</td>
+                    <td style="color: #ffffff; font-size: 13px; padding: 8px 0; border-bottom: 1px solid #1e1e2e; text-align: right;">${formattedDate}</td>
+                  </tr>
+                  <tr>
+                    <td style="color: #71717a; font-size: 13px; padding: 8px 0; border-bottom: 1px solid #1e1e2e;">⏰ Time</td>
+                    <td style="color: #ffffff; font-size: 13px; padding: 8px 0; border-bottom: 1px solid #1e1e2e; text-align: right;">${timeSlot}</td>
+                  </tr>
+                  ${params.scheduledByName ? `
+                  <tr>
+                    <td style="color: #71717a; font-size: 13px; padding: 8px 0; border-bottom: 1px solid #1e1e2e;">👤 Originally scheduled by</td>
+                    <td style="color: #ffffff; font-size: 13px; padding: 8px 0; border-bottom: 1px solid #1e1e2e; text-align: right;">${params.scheduledByName}</td>
+                  </tr>
+                  ` : ""}
+                  ${params.dealOwnerName ? `
+                  <tr>
+                    <td style="color: #71717a; font-size: 13px; padding: 8px 0; border-bottom: 1px solid #1e1e2e;">🧑‍💼 Deal owner</td>
+                    <td style="color: #ffffff; font-size: 13px; padding: 8px 0; border-bottom: 1px solid #1e1e2e; text-align: right;">${params.dealOwnerName}</td>
+                  </tr>
+                  ` : ""}
+                  <tr>
+                    <td style="color: #71717a; font-size: 13px; padding: 8px 0; border-bottom: 1px solid #1e1e2e;">🛑 Cancelled by</td>
+                    <td style="color: #ffffff; font-size: 13px; padding: 8px 0; border-bottom: 1px solid #1e1e2e; text-align: right;">${params.cancelledByName}</td>
+                  </tr>
+                  <tr>
+                    <td colspan="2" style="padding-top: 16px;">
+                      <div style="background-color: #1e1e2e; border-radius: 6px; padding: 12px;">
+                        <p style="color: #71717a; font-size: 12px; margin: 0 0 4px 0;">📝 Cancellation reason</p>
+                        <p style="color: #ffffff; font-size: 13px; margin: 0;">${reasonText}</p>
+                      </div>
+                    </td>
+                  </tr>
+                </table>
+              </div>
+
+              <p style="color: #71717a; font-size: 12px; text-align: center; margin: 0;">
+                Please check your Zuper app for complete details.
+              </p>
+            </div>
+
+            <p style="color: #3f3f46; font-size: 11px; text-align: center; margin-top: 24px;">
+              Photon Brothers Operations Suite
+            </p>
+          </body>
+        </html>
+      `,
+    text: `${appointmentTypeLabel} Cancelled
+
+Hi ${params.crewMemberName},
+
+Your assigned ${appointmentTypeLabel.toLowerCase()} appointment has been cancelled.
+
+Customer: ${params.customerName}
+Address: ${params.customerAddress}
+Date: ${formattedDate}
+Time: ${timeSlot}
+${params.scheduledByName ? `Originally scheduled by: ${params.scheduledByName}\n` : ""}${params.dealOwnerName ? `Deal owner: ${params.dealOwnerName}\n` : ""}Cancelled by: ${params.cancelledByName}
+Reason: ${reasonText}
+
+Please check your Zuper app for complete details.
+
+- PB Operations`,
+    debugFallbackTitle: `CANCELLATION NOTIFICATION for ${params.to}`,
+    debugFallbackBody: [
+      `Crew Member: ${params.crewMemberName}`,
+      `Cancelled By: ${params.cancelledByName} (${params.cancelledByEmail})`,
+      `Originally Scheduled By: ${params.scheduledByName || "N/A"}`,
+      `Deal Owner: ${params.dealOwnerName || "N/A"}`,
+      `Type: ${appointmentTypeLabel}`,
+      `Customer: ${params.customerName}`,
+      `Address: ${params.customerAddress}`,
+      `Date: ${formattedDate}`,
+      `Time: ${timeSlot}`,
+      `Reason: ${reasonText}`,
     ].join("\n"),
   });
 }

@@ -5,7 +5,7 @@ import { headers } from "next/headers";
 import { zuper, createJobFromProject, JOB_CATEGORY_UIDS, ZuperJob } from "@/lib/zuper";
 import { auth } from "@/auth";
 import { getUserByEmail, logActivity, createScheduleRecord, cacheZuperJob, canScheduleType, getCrewMemberByName, getCrewMemberByZuperUserUid, getCachedZuperJobByDealId, prisma, UserRole } from "@/lib/db";
-import { sendSchedulingNotification } from "@/lib/email";
+import { sendSchedulingNotification, sendCancellationNotification } from "@/lib/email";
 import { updateDealProperty, getDealProperties, updateSiteSurveyorProperty } from "@/lib/hubspot";
 import { upsertSiteSurveyCalendarEvent } from "@/lib/google-calendar";
 import { getBusinessEndDateInclusive, isWeekendDate } from "@/lib/business-days";
@@ -1028,7 +1028,18 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const { projectId, projectName, zuperJobUid, cancelReason } = body;
+    const {
+      projectId,
+      projectName,
+      projectAddress,
+      dealOwner,
+      assignedUser,
+      scheduledDate,
+      scheduledStart,
+      scheduledEnd,
+      zuperJobUid,
+      cancelReason,
+    } = body;
 
     if (!projectId) {
       return NextResponse.json(
@@ -1048,6 +1059,27 @@ export async function DELETE(request: NextRequest) {
         { status: 403 }
       );
     }
+
+    const latestActiveRecord = prisma
+      ? await prisma.scheduleRecord.findFirst({
+          where: {
+            projectId: String(projectId),
+            scheduleType,
+            status: { in: ["scheduled", "tentative"] },
+          },
+          orderBy: { createdAt: "desc" },
+          select: {
+            id: true,
+            assignedUser: true,
+            assignedUserUid: true,
+            scheduledDate: true,
+            scheduledStart: true,
+            scheduledEnd: true,
+            scheduledBy: true,
+            notes: true,
+          },
+        })
+      : null;
 
     console.log(`[Zuper Unschedule] Clearing ${scheduleType} schedule for project ${projectId} (${projectName})`);
     const targetCategoryName = getCategoryNameForScheduleType(scheduleType);
@@ -1326,6 +1358,8 @@ export async function DELETE(request: NextRequest) {
           hubspotVerification,
           hubspotCleared,
           cancelReason: typeof cancelReason === "string" ? cancelReason : undefined,
+          dealOwner: typeof dealOwner === "string" ? dealOwner : undefined,
+          assignedUser: latestActiveRecord?.assignedUser || assignedUser || undefined,
         },
         ipAddress,
         userAgent,
@@ -1396,6 +1430,29 @@ export async function DELETE(request: NextRequest) {
       } catch (recordErr) {
         console.warn("[Zuper Unschedule] Failed to update schedule record cancellation metadata:", recordErr);
       }
+    }
+
+    // Survey cancellations should notify the assigned surveyor.
+    try {
+      const dealOwnerName = typeof dealOwner === "string" && dealOwner.trim() ? dealOwner.trim() : undefined;
+      await sendCrewCancellationEmail({
+        scheduleType,
+        projectId: String(projectId),
+        projectName: typeof projectName === "string" ? projectName : String(projectId),
+        projectAddress: typeof projectAddress === "string" ? projectAddress : undefined,
+        assignedUser: latestActiveRecord?.assignedUser || (typeof assignedUser === "string" ? assignedUser : undefined),
+        assignedUserUid: latestActiveRecord?.assignedUserUid || null,
+        scheduledDate: latestActiveRecord?.scheduledDate || (typeof scheduledDate === "string" ? scheduledDate : undefined),
+        scheduledStart: latestActiveRecord?.scheduledStart || (typeof scheduledStart === "string" ? scheduledStart : undefined),
+        scheduledEnd: latestActiveRecord?.scheduledEnd || (typeof scheduledEnd === "string" ? scheduledEnd : undefined),
+        scheduledByName: dealOwnerName || latestActiveRecord?.scheduledBy || ownership.record?.scheduledBy || undefined,
+        dealOwnerName,
+        cancelledByName: session.user.name || session.user.email,
+        cancelledByEmail: session.user.email,
+        cancelReason: typeof cancelReason === "string" ? cancelReason : undefined,
+      });
+    } catch (emailErr) {
+      console.warn("[Zuper Unschedule] Failed to send cancellation notification email:", emailErr);
     }
 
     return NextResponse.json({
@@ -1474,6 +1531,68 @@ async function logSchedulingActivity(
 /**
  * Helper to send notification to assigned crew member
  */
+function isUuidLike(value?: string): boolean {
+  return !!value && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
+
+async function resolveCrewNotificationRecipient(params: {
+  assignedUser?: string;
+  assignedUserUid?: string;
+  crew?: string;
+}): Promise<{ recipientEmail: string | null; recipientName: string }> {
+  const assignedUserUid =
+    (params.assignedUserUid && isUuidLike(params.assignedUserUid) ? params.assignedUserUid : undefined) ||
+    (params.crew && isUuidLike(params.crew) ? params.crew : undefined);
+
+  let recipientEmail: string | null = null;
+  let recipientName = params.assignedUser || "";
+
+  if (params.assignedUser) {
+    const byName = await getCrewMemberByName(params.assignedUser);
+    if (byName?.email) {
+      recipientEmail = byName.email;
+      recipientName = byName.name;
+    }
+  }
+
+  if (!recipientEmail && assignedUserUid) {
+    const byUid = await getCrewMemberByZuperUserUid(assignedUserUid);
+    if (byUid?.email) {
+      recipientEmail = byUid.email;
+      recipientName = byUid.name;
+    }
+  }
+
+  if (!recipientEmail && assignedUserUid) {
+    const userResult = await zuper.getUser(assignedUserUid);
+    if (userResult.type === "success" && userResult.data?.email) {
+      recipientEmail = userResult.data.email;
+      if (!recipientName) {
+        recipientName = [userResult.data.first_name, userResult.data.last_name]
+          .filter(Boolean)
+          .join(" ")
+          .trim() || (params.assignedUser || "");
+      }
+    }
+  }
+
+  return { recipientEmail, recipientName };
+}
+
+function deriveCustomerDetails(project: { name?: string; address?: string }): { customerName: string; customerAddress: string } {
+  const nameParts = project.name?.split(" | ") || [];
+  const customerName = nameParts.length >= 2
+    ? nameParts[1]?.trim()
+    : nameParts[0]?.trim() || "Customer";
+  const customerAddress = nameParts.length >= 3
+    ? nameParts[2]?.trim()
+    : nameParts.length >= 2 && !nameParts[0].includes("PROJ-")
+      ? nameParts[1]?.trim()
+      : project.address || "See Zuper for address";
+
+  return { customerName, customerAddress };
+}
+
 async function sendCrewNotification(
   schedule: {
     type: string;
@@ -1486,7 +1605,7 @@ async function sendCrewNotification(
     timezone?: string;
     notes?: string;
   },
-  project: { id: string; name?: string; address?: string },
+  project: { id: string; name?: string; address?: string; dealOwner?: string },
   schedulerName: string,
   schedulerEmail: string
 ) {
@@ -1497,70 +1616,27 @@ async function sendCrewNotification(
       return;
     }
 
-    const isUuid = (value?: string) =>
-      !!value && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
-
-    const assignedUserUid =
-      (schedule.assignedUserUid && isUuid(schedule.assignedUserUid) ? schedule.assignedUserUid : undefined) ||
-      (schedule.crew && isUuid(schedule.crew) ? schedule.crew : undefined);
-
-    // Resolve recipient email with fallbacks:
-    // 1) exact name in crew table
-    // 2) zuperUserUid in crew table
-    // 3) direct Zuper user lookup by UID
-    let recipientEmail: string | null = null;
-    let recipientName = schedule.assignedUser;
-
-    const byName = await getCrewMemberByName(schedule.assignedUser);
-    if (byName?.email) {
-      recipientEmail = byName.email;
-      recipientName = byName.name;
-    }
-
-    if (!recipientEmail && assignedUserUid) {
-      const byUid = await getCrewMemberByZuperUserUid(assignedUserUid);
-      if (byUid?.email) {
-        recipientEmail = byUid.email;
-        recipientName = byUid.name;
-      }
-    }
-
-    if (!recipientEmail && assignedUserUid) {
-      const userResult = await zuper.getUser(assignedUserUid);
-      if (userResult.type === "success" && userResult.data?.email) {
-        recipientEmail = userResult.data.email;
-        if (!recipientName) {
-          recipientName = [userResult.data.first_name, userResult.data.last_name].filter(Boolean).join(" ").trim() || schedule.assignedUser;
-        }
-      }
-    }
+    const { recipientEmail, recipientName } = await resolveCrewNotificationRecipient({
+      assignedUser: schedule.assignedUser,
+      assignedUserUid: schedule.assignedUserUid,
+      crew: schedule.crew,
+    });
 
     if (!recipientEmail) {
       console.log(
-        `[Zuper Schedule] No email found for assigned surveyor: name="${schedule.assignedUser}", uid="${assignedUserUid || ""}"`
+        `[Zuper Schedule] No email found for assigned surveyor: name="${schedule.assignedUser}", uid="${schedule.assignedUserUid || schedule.crew || ""}"`
       );
       return;
     }
 
-    // Extract customer name from project name
-    // Format: "PROJ-9031 | LastName, FirstName | Address" or "LastName, FirstName | Address"
-    const nameParts = project.name?.split(" | ") || [];
-    const customerName = nameParts.length >= 2
-      ? nameParts[1]?.trim()
-      : nameParts[0]?.trim() || "Customer";
-
-    // Extract address from project
-    const customerAddress = nameParts.length >= 3
-      ? nameParts[2]?.trim()
-      : nameParts.length >= 2 && !nameParts[0].includes("PROJ-")
-        ? nameParts[1]?.trim()
-        : project.address || "See Zuper for address";
+    const { customerName, customerAddress } = deriveCustomerDetails(project);
 
     await sendSchedulingNotification({
       to: recipientEmail,
       crewMemberName: recipientName || schedule.assignedUser,
       scheduledByName: schedulerName,
       scheduledByEmail: schedulerEmail,
+      dealOwnerName: project.dealOwner,
       appointmentType: schedule.type as "survey" | "installation" | "inspection",
       customerName,
       customerAddress,
@@ -1595,4 +1671,61 @@ async function sendCrewNotification(
     console.error("Failed to send crew notification:", err);
     // Don't throw - notification failures shouldn't break scheduling
   }
+}
+
+async function sendCrewCancellationEmail(params: {
+  scheduleType: ScheduleType;
+  projectId: string;
+  projectName?: string;
+  projectAddress?: string;
+  assignedUser?: string;
+  assignedUserUid?: string | null;
+  scheduledDate?: string;
+  scheduledStart?: string | null;
+  scheduledEnd?: string | null;
+  scheduledByName?: string;
+  dealOwnerName?: string;
+  cancelledByName: string;
+  cancelledByEmail: string;
+  cancelReason?: string;
+}) {
+  if (params.scheduleType !== "survey" || !params.assignedUser) {
+    return;
+  }
+
+  const { recipientEmail, recipientName } = await resolveCrewNotificationRecipient({
+    assignedUser: params.assignedUser,
+    assignedUserUid: params.assignedUserUid || undefined,
+  });
+
+  if (!recipientEmail) {
+    console.log(
+      `[Zuper Unschedule] No email found for assigned surveyor: name="${params.assignedUser}", uid="${params.assignedUserUid || ""}"`
+    );
+    return;
+  }
+
+  const { customerName, customerAddress } = deriveCustomerDetails({
+    name: params.projectName,
+    address: params.projectAddress,
+  });
+
+  await sendCancellationNotification({
+    to: recipientEmail,
+    crewMemberName: recipientName || params.assignedUser,
+    cancelledByName: params.cancelledByName,
+    cancelledByEmail: params.cancelledByEmail,
+    scheduledByName: params.scheduledByName,
+    dealOwnerName: params.dealOwnerName,
+    appointmentType: params.scheduleType,
+    customerName,
+    customerAddress,
+    scheduledDate: params.scheduledDate,
+    scheduledStart: params.scheduledStart || undefined,
+    scheduledEnd: params.scheduledEnd || undefined,
+    projectId: params.projectId,
+    cancelReason: params.cancelReason,
+  });
+
+  console.log(`[Zuper Unschedule] Cancellation notification sent to ${recipientEmail}`);
 }
