@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import DashboardShell from "@/components/DashboardShell";
 import { MultiSelectFilter, ProjectSearchBar } from "@/components/ui/MultiSelectFilter";
@@ -48,6 +48,7 @@ interface ProductSummary {
   productName: string;
   totalCount: number;
   projects: number;
+  projectList: { id: string | number; name: string; projectNumber: string; count: number; stage: string; pbLocation: string }[];
 }
 
 interface EquipmentBacklogResponse {
@@ -62,7 +63,9 @@ interface EquipmentBacklogResponse {
 const BUILT_STAGES = new Set(["Inspection", "Permission To Operate", "Close Out"]);
 const IN_PROGRESS_STAGES = new Set(["Construction"]);
 
-function classifyStage(stage: string): "backlog" | "in_progress" | "built" {
+type StageClass = "backlog" | "in_progress" | "built";
+
+function classifyStage(stage: string): StageClass {
   if (BUILT_STAGES.has(stage)) return "built";
   if (IN_PROGRESS_STAGES.has(stage)) return "in_progress";
   return "backlog";
@@ -100,14 +103,42 @@ function buildProductSummary(
     if (!count) continue;
     const name = getProductName(eq) || "Unknown";
     const existing = map.get(name);
+    const proj = { id: p.id, name: p.name, projectNumber: p.projectNumber, count, stage: p.stage, pbLocation: p.pbLocation };
     if (existing) {
       existing.totalCount += count;
       existing.projects += 1;
+      existing.projectList.push(proj);
     } else {
-      map.set(name, { productName: name, totalCount: count, projects: 1 });
+      map.set(name, { productName: name, totalCount: count, projects: 1, projectList: [proj] });
     }
   }
   return [...map.values()].sort((a, b) => b.totalCount - a.totalCount);
+}
+
+/** Get product names for projects in a given stage */
+function getStageProducts(projects: Project[], stage: string) {
+  const stageProjects = projects.filter((p) => p.stage === stage);
+  const products: { type: string; name: string; count: number; color: string }[] = [];
+  const aggregate = (type: string, getName: (eq: Equipment) => string, getCount: (eq: Equipment) => number, color: string) => {
+    const map = new Map<string, number>();
+    for (const p of stageProjects) {
+      const eq = p.equipment;
+      if (!eq) continue;
+      const c = getCount(eq);
+      if (!c) continue;
+      const n = getName(eq) || "Unknown";
+      map.set(n, (map.get(n) || 0) + c);
+    }
+    for (const [name, count] of [...map.entries()].sort((a, b) => b[1] - a[1])) {
+      products.push({ type, name, count, color });
+    }
+  };
+  aggregate("Modules", (eq) => formatProduct(eq.modules?.productName, eq.modules?.model), (eq) => eq.modules?.count || 0, "text-blue-400");
+  aggregate("Inverters", (eq) => formatProduct(eq.inverter?.productName, eq.inverter?.model), (eq) => eq.inverter?.count || 0, "text-purple-400");
+  aggregate("Batteries", (eq) => formatProduct(eq.battery?.productName, eq.battery?.model), (eq) => eq.battery?.count || 0, "text-emerald-400");
+  aggregate("Bat. Exp.", (eq) => formatProduct(eq.battery?.expansionProductName, eq.battery?.expansionModel), (eq) => eq.battery?.expansionCount || 0, "text-green-400");
+  aggregate("EV", () => "EV Charger", (eq) => eq.evCount || 0, "text-pink-400");
+  return products;
 }
 
 /* ------------------------------------------------------------------ */
@@ -123,6 +154,11 @@ export default function EquipmentBacklogPage() {
   const [sortField, setSortField] = useState<"modules" | "stage" | "location" | "name" | "value">("modules");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [view, setView] = useState<"summary" | "projects">("summary");
+
+  /* ---- Drill-down state ---- */
+  const [activeStatFilter, setActiveStatFilter] = useState<StageClass | null>(null);
+  const [expandedStages, setExpandedStages] = useState<Set<string>>(new Set());
+  const [expandedProduct, setExpandedProduct] = useState<string | null>(null); // "type:productName"
 
   /* ---- Data fetching ---- */
 
@@ -209,10 +245,17 @@ export default function EquipmentBacklogPage() {
     return { backlogProjects: backlog, inProgressProjects: inProgress, builtProjects: built };
   }, [filteredProjects]);
 
-  /* ---- Sorted projects ---- */
+  /* ---- Sorted projects (respects stat row filter) ---- */
+
+  const displayProjects = useMemo(() => {
+    if (!activeStatFilter) return filteredProjects;
+    if (activeStatFilter === "backlog") return backlogProjects;
+    if (activeStatFilter === "in_progress") return inProgressProjects;
+    return builtProjects;
+  }, [filteredProjects, backlogProjects, inProgressProjects, builtProjects, activeStatFilter]);
 
   const sortedProjects = useMemo(() => {
-    return [...filteredProjects].sort((a, b) => {
+    return [...displayProjects].sort((a, b) => {
       let cmp = 0;
       switch (sortField) {
         case "modules":
@@ -234,7 +277,7 @@ export default function EquipmentBacklogPage() {
       }
       return sortDir === "desc" ? -cmp : cmp;
     });
-  }, [filteredProjects, sortField, sortDir]);
+  }, [displayProjects, sortField, sortDir]);
 
   /* ---- Aggregated stats ---- */
 
@@ -302,6 +345,30 @@ export default function EquipmentBacklogPage() {
       });
   }, [filteredProjects]);
 
+  /* ---- Drill-down handlers ---- */
+
+  const handleStatRowClick = useCallback((cls: StageClass) => {
+    if (activeStatFilter === cls) {
+      setActiveStatFilter(null);
+    } else {
+      setActiveStatFilter(cls);
+      setView("projects");
+    }
+  }, [activeStatFilter]);
+
+  const toggleStageExpand = useCallback((stage: string) => {
+    setExpandedStages((prev) => {
+      const next = new Set(prev);
+      if (next.has(stage)) next.delete(stage);
+      else next.add(stage);
+      return next;
+    });
+  }, []);
+
+  const toggleProductExpand = useCallback((key: string) => {
+    setExpandedProduct((prev) => (prev === key ? null : key));
+  }, []);
+
   /* ---- Column sort handler ---- */
 
   const handleSort = (field: typeof sortField) => {
@@ -347,49 +414,94 @@ export default function EquipmentBacklogPage() {
     );
   }
 
-  /* ---- Stat card row helper ---- */
-  const StatRow = ({ label, totals: t, accent }: { label: string; totals: ReturnType<typeof aggregateEquipment>; accent: string }) => (
-    <div className="bg-surface/50 border border-t-border rounded-xl p-4 mb-4">
-      <div className="flex items-center gap-2 mb-3">
-        <span className={`w-2.5 h-2.5 rounded-full ${accent}`} />
-        <h3 className="text-sm font-semibold text-foreground/90">{label}</h3>
-        <span className="text-xs text-muted ml-auto">{t.projects} projects</span>
-      </div>
-      <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
-        {[
-          { label: "Modules", value: t.modules, color: "text-blue-400" },
-          { label: "Inverters", value: t.inverters, color: "text-purple-400" },
-          { label: "Batteries", value: t.batteries, color: "text-emerald-400" },
-          { label: "Bat. Exp.", value: t.batteryExpansions, color: "text-green-400" },
-          { label: "EV Chargers", value: t.ev, color: "text-pink-400" },
-          { label: "Value", value: formatMoney(t.value), color: "text-orange-400", raw: true },
-        ].map((s) => (
-          <div key={s.label} className="text-center">
-            <div className={`text-lg font-bold ${s.color}`}>{s.raw ? s.value : (s.value as number).toLocaleString()}</div>
-            <div className="text-xs text-muted">{s.label}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+  /* ---- Stat card row helper (clickable) ---- */
+  const StatRow = ({ label, totals: t, accent, cls }: { label: string; totals: ReturnType<typeof aggregateEquipment>; accent: string; cls: StageClass }) => {
+    const isActive = activeStatFilter === cls;
+    return (
+      <button
+        onClick={() => handleStatRowClick(cls)}
+        className={`w-full text-left bg-surface/50 border rounded-xl p-4 mb-4 transition-all cursor-pointer hover:bg-surface-2/50 ${
+          isActive ? "border-cyan-400 ring-1 ring-cyan-400/30" : "border-t-border"
+        }`}
+      >
+        <div className="flex items-center gap-2 mb-3">
+          <span className={`w-2.5 h-2.5 rounded-full ${accent}`} />
+          <h3 className="text-sm font-semibold text-foreground/90">{label}</h3>
+          {isActive && (
+            <span className="text-[10px] text-cyan-400 font-medium bg-cyan-400/10 px-1.5 py-0.5 rounded">FILTERED</span>
+          )}
+          <span className="text-xs text-muted ml-auto">{t.projects} projects</span>
+          <svg className={`w-3.5 h-3.5 text-muted/50 transition-transform ${isActive ? "rotate-90" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+          </svg>
+        </div>
+        <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+          {[
+            { label: "Modules", value: t.modules, color: "text-blue-400" },
+            { label: "Inverters", value: t.inverters, color: "text-purple-400" },
+            { label: "Batteries", value: t.batteries, color: "text-emerald-400" },
+            { label: "Bat. Exp.", value: t.batteryExpansions, color: "text-green-400" },
+            { label: "EV Chargers", value: t.ev, color: "text-pink-400" },
+            { label: "Value", value: formatMoney(t.value), color: "text-orange-400", raw: true },
+          ].map((s) => (
+            <div key={s.label} className="text-center">
+              <div className={`text-lg font-bold ${s.color}`}>{s.raw ? s.value : (s.value as number).toLocaleString()}</div>
+              <div className="text-xs text-muted">{s.label}</div>
+            </div>
+          ))}
+        </div>
+      </button>
+    );
+  };
 
-  /* ---- Product breakdown card ---- */
-  const ProductBreakdown = ({ title, items, color }: { title: string; items: ProductSummary[]; color: string }) => (
+  /* ---- Product breakdown card (with drill-down) ---- */
+  const ProductBreakdown = ({ title, items, color, typeKey }: { title: string; items: ProductSummary[]; color: string; typeKey: string }) => (
     <div className="bg-surface/50 border border-t-border rounded-xl p-5">
       <h3 className={`text-sm font-semibold ${color} mb-3`}>{title}</h3>
       {items.length === 0 ? (
         <p className="text-muted text-sm">None</p>
       ) : (
-        <div className="space-y-2">
-          {items.map((item, i) => (
-            <div key={i} className="flex items-center justify-between text-sm">
-              <span className="text-foreground/80 truncate mr-2">{item.productName}</span>
-              <div className="flex items-center gap-3 shrink-0">
-                <span className={`${color} font-medium`}>{item.totalCount.toLocaleString()}</span>
-                <span className="text-muted/70 text-xs">{item.projects} jobs</span>
+        <div className="space-y-1">
+          {items.map((item, i) => {
+            const key = `${typeKey}:${item.productName}`;
+            const isExpanded = expandedProduct === key;
+            return (
+              <div key={i}>
+                <button
+                  onClick={() => toggleProductExpand(key)}
+                  className="w-full flex items-center justify-between text-sm py-1 hover:bg-surface-2/40 rounded px-1 -mx-1 transition-colors cursor-pointer"
+                >
+                  <span className="text-foreground/80 truncate mr-2 text-left">{item.productName}</span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className={`${color} font-medium`}>{item.totalCount.toLocaleString()}</span>
+                    <span className="text-muted/70 text-xs">{item.projects} jobs</span>
+                    <svg className={`w-3 h-3 text-muted/50 transition-transform ${isExpanded ? "rotate-90" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                    </svg>
+                  </div>
+                </button>
+                {isExpanded && (
+                  <div className="ml-2 mt-1 mb-2 space-y-1 border-l-2 border-t-border/50 pl-3">
+                    {item.projectList.map((proj) => (
+                      <div key={proj.id} className="flex items-center justify-between text-xs">
+                        <div className="truncate mr-2">
+                          <span className="text-foreground/70">{proj.name}</span>
+                          <span className="text-muted/50 ml-1">{proj.projectNumber}</span>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span
+                            className="w-1.5 h-1.5 rounded-full"
+                            style={{ backgroundColor: STAGE_COLORS[proj.stage]?.hex || "#71717A" }}
+                          />
+                          <span className={`${color} font-medium`}>{proj.count}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -441,6 +553,20 @@ export default function EquipmentBacklogPage() {
           accentColor="blue"
         />
         <ProjectSearchBar onSearch={setSearchQuery} />
+
+        {/* Active stat filter badge */}
+        {activeStatFilter && (
+          <button
+            onClick={() => setActiveStatFilter(null)}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 bg-cyan-500/10 text-cyan-400 text-xs font-medium rounded-lg border border-cyan-500/20 hover:bg-cyan-500/20 transition-colors"
+          >
+            {activeStatFilter === "backlog" ? "Backlog" : activeStatFilter === "in_progress" ? "In Progress" : "Built"}
+            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        )}
+
         <div className="ml-auto flex bg-surface-2 rounded-lg p-0.5">
           <button
             onClick={() => setView("summary")}
@@ -463,12 +589,12 @@ export default function EquipmentBacklogPage() {
 
       {view === "summary" ? (
         <>
-          {/* Backlog / In Progress / Built stat rows */}
-          <StatRow label="Backlog" totals={backlogTotals} accent="bg-cyan-400" />
-          <StatRow label="In Progress (Construction)" totals={inProgressTotals} accent="bg-orange-400" />
-          <StatRow label="Built (Inspection / PTO / Close Out)" totals={builtTotals} accent="bg-green-400" />
+          {/* Backlog / In Progress / Built stat rows (clickable) */}
+          <StatRow label="Backlog" totals={backlogTotals} accent="bg-cyan-400" cls="backlog" />
+          <StatRow label="In Progress (Construction)" totals={inProgressTotals} accent="bg-orange-400" cls="in_progress" />
+          <StatRow label="Built (Inspection / PTO / Close Out)" totals={builtTotals} accent="bg-green-400" cls="built" />
 
-          {/* Stage Breakdown Table */}
+          {/* Stage Breakdown Table (expandable rows) */}
           <div className="bg-surface/50 border border-t-border rounded-xl p-6 mb-6">
             <h2 className="text-lg font-semibold mb-4">Equipment by Stage</h2>
             <div className="overflow-x-auto">
@@ -489,27 +615,61 @@ export default function EquipmentBacklogPage() {
                   {stageBreakdown.map(([stage, d]) => {
                     const cls = classifyStage(stage);
                     const rowBg = cls === "built" ? "bg-green-500/5" : cls === "in_progress" ? "bg-orange-500/5" : "";
+                    const isExpanded = expandedStages.has(stage);
+                    const stageProducts = isExpanded ? getStageProducts(filteredProjects, stage) : [];
                     return (
-                      <tr key={stage} className={`border-b border-t-border/50 hover:bg-surface-2/30 ${rowBg}`}>
-                        <td className="py-2 pr-4">
-                          <div className="flex items-center gap-2">
-                            <span
-                              className="w-2 h-2 rounded-full"
-                              style={{ backgroundColor: STAGE_COLORS[stage]?.hex || "#71717A" }}
-                            />
-                            <span>{stage}</span>
-                            {cls === "built" && <span className="text-[10px] text-green-400 font-medium ml-1">BUILT</span>}
-                            {cls === "in_progress" && <span className="text-[10px] text-orange-400 font-medium ml-1">IN PROGRESS</span>}
-                          </div>
-                        </td>
-                        <td className="py-2 pr-4 text-right text-foreground/80">{d.count}</td>
-                        <td className="py-2 pr-4 text-right text-blue-400">{d.modules.toLocaleString()}</td>
-                        <td className="py-2 pr-4 text-right text-purple-400">{d.inverters.toLocaleString()}</td>
-                        <td className="py-2 pr-4 text-right text-emerald-400">{d.batteries.toLocaleString()}</td>
-                        <td className="py-2 pr-4 text-right text-green-400">{d.batteryExpansions.toLocaleString()}</td>
-                        <td className="py-2 pr-4 text-right text-pink-400">{d.ev.toLocaleString()}</td>
-                        <td className="py-2 text-right text-muted">{formatMoney(d.value)}</td>
-                      </tr>
+                      <>
+                        <tr
+                          key={stage}
+                          className={`border-b border-t-border/50 hover:bg-surface-2/30 cursor-pointer ${rowBg}`}
+                          onClick={() => toggleStageExpand(stage)}
+                        >
+                          <td className="py-2 pr-4">
+                            <div className="flex items-center gap-2">
+                              <svg className={`w-3 h-3 text-muted/50 transition-transform shrink-0 ${isExpanded ? "rotate-90" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                              </svg>
+                              <span
+                                className="w-2 h-2 rounded-full shrink-0"
+                                style={{ backgroundColor: STAGE_COLORS[stage]?.hex || "#71717A" }}
+                              />
+                              <span>{stage}</span>
+                              {cls === "built" && <span className="text-[10px] text-green-400 font-medium ml-1">BUILT</span>}
+                              {cls === "in_progress" && <span className="text-[10px] text-orange-400 font-medium ml-1">IN PROGRESS</span>}
+                            </div>
+                          </td>
+                          <td className="py-2 pr-4 text-right text-foreground/80">{d.count}</td>
+                          <td className="py-2 pr-4 text-right text-blue-400">{d.modules.toLocaleString()}</td>
+                          <td className="py-2 pr-4 text-right text-purple-400">{d.inverters.toLocaleString()}</td>
+                          <td className="py-2 pr-4 text-right text-emerald-400">{d.batteries.toLocaleString()}</td>
+                          <td className="py-2 pr-4 text-right text-green-400">{d.batteryExpansions.toLocaleString()}</td>
+                          <td className="py-2 pr-4 text-right text-pink-400">{d.ev.toLocaleString()}</td>
+                          <td className="py-2 text-right text-muted">{formatMoney(d.value)}</td>
+                        </tr>
+                        {isExpanded && (
+                          <tr key={`${stage}-detail`}>
+                            <td colSpan={8} className="px-0 py-0">
+                              <div className="bg-surface-2/20 border-l-2 border-t-border/50 ml-6 px-4 py-3 mb-1">
+                                {stageProducts.length === 0 ? (
+                                  <p className="text-muted text-xs">No equipment in this stage</p>
+                                ) : (
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-1">
+                                    {stageProducts.map((prod, i) => (
+                                      <div key={i} className="flex items-center justify-between text-xs py-0.5">
+                                        <div className="flex items-center gap-1.5 truncate mr-2">
+                                          <span className="text-muted/60 w-14 shrink-0">{prod.type}</span>
+                                          <span className="text-foreground/70 truncate">{prod.name}</span>
+                                        </div>
+                                        <span className={`${prod.color} font-medium shrink-0`}>{prod.count.toLocaleString()}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </>
                     );
                   })}
                 </tbody>
@@ -520,106 +680,116 @@ export default function EquipmentBacklogPage() {
           {/* Product Breakdowns (backlog only) */}
           <h2 className="text-lg font-semibold mb-3">Backlog Equipment by Product</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
-            <ProductBreakdown title="Modules" items={moduleProducts} color="text-blue-400" />
-            <ProductBreakdown title="Inverters" items={inverterProducts} color="text-purple-400" />
-            <ProductBreakdown title="Batteries" items={batteryProducts} color="text-emerald-400" />
-            <ProductBreakdown title="Battery Expansion" items={batteryExpProducts} color="text-green-400" />
-            <ProductBreakdown title="EV Chargers" items={evProducts} color="text-pink-400" />
+            <ProductBreakdown title="Modules" items={moduleProducts} color="text-blue-400" typeKey="modules" />
+            <ProductBreakdown title="Inverters" items={inverterProducts} color="text-purple-400" typeKey="inverters" />
+            <ProductBreakdown title="Batteries" items={batteryProducts} color="text-emerald-400" typeKey="batteries" />
+            <ProductBreakdown title="Battery Expansion" items={batteryExpProducts} color="text-green-400" typeKey="batexp" />
+            <ProductBreakdown title="EV Chargers" items={evProducts} color="text-pink-400" typeKey="ev" />
           </div>
         </>
       ) : (
         /* ---- Projects Table View ---- */
-        <div className="bg-surface/50 border border-t-border rounded-xl overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-muted text-left border-b border-t-border bg-surface/80">
-                  <th className="px-4 py-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("name")}>
-                    Project <SortIcon field="name" />
-                  </th>
-                  <th className="px-4 py-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("location")}>
-                    Location <SortIcon field="location" />
-                  </th>
-                  <th className="px-4 py-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("stage")}>
-                    Stage <SortIcon field="stage" />
-                  </th>
-                  <th className="px-4 py-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("modules")}>
-                    Modules <SortIcon field="modules" />
-                  </th>
-                  <th className="px-4 py-3 text-right">Inverters</th>
-                  <th className="px-4 py-3 text-right">Batteries</th>
-                  <th className="px-4 py-3 text-right">Bat. Exp.</th>
-                  <th className="px-4 py-3 text-right">EV</th>
-                  <th className="px-4 py-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("value")}>
-                    Value <SortIcon field="value" />
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedProjects.map((p) => {
-                  const eq = p.equipment;
-                  const cls = classifyStage(p.stage);
-                  const rowBg = cls === "built" ? "bg-green-500/5" : cls === "in_progress" ? "bg-orange-500/5" : "";
-                  return (
-                    <tr key={p.id} className={`border-b border-t-border/50 hover:bg-surface-2/30 ${rowBg}`}>
-                      <td className="px-4 py-2.5">
-                        <div className="font-medium text-foreground/90 truncate max-w-[220px]">{p.name}</div>
-                        <div className="text-xs text-muted">{p.projectNumber}</div>
-                      </td>
-                      <td className="px-4 py-2.5 text-muted">{p.pbLocation}</td>
-                      <td className="px-4 py-2.5">
-                        <span className="inline-flex items-center gap-1.5 text-xs">
-                          <span
-                            className="w-2 h-2 rounded-full"
-                            style={{ backgroundColor: STAGE_COLORS[p.stage]?.hex || "#71717A" }}
-                          />
-                          <span className="text-foreground/80">{p.stage}</span>
-                        </span>
-                      </td>
-                      <td className="px-4 py-2.5 text-right">
-                        <div className="text-blue-400">{eq?.modules?.count || 0}</div>
-                        {(eq?.modules?.productName || eq?.modules?.model) && (
-                          <div className="text-xs text-muted/70 truncate max-w-[180px]">{formatProduct(eq?.modules?.productName, eq?.modules?.model)}</div>
-                        )}
-                      </td>
-                      <td className="px-4 py-2.5 text-right">
-                        <div className="text-purple-400">{eq?.inverter?.count || 0}</div>
-                        {(eq?.inverter?.productName || eq?.inverter?.model) && (
-                          <div className="text-xs text-muted/70 truncate max-w-[180px]">{formatProduct(eq?.inverter?.productName, eq?.inverter?.model)}</div>
-                        )}
-                      </td>
-                      <td className="px-4 py-2.5 text-right">
-                        <div className="text-emerald-400">{eq?.battery?.count || 0}</div>
-                        {(eq?.battery?.productName || eq?.battery?.model) && (
-                          <div className="text-xs text-muted/70 truncate max-w-[180px]">{formatProduct(eq?.battery?.productName, eq?.battery?.model)}</div>
-                        )}
-                      </td>
-                      <td className="px-4 py-2.5 text-right">
-                        <div className="text-green-400">{eq?.battery?.expansionCount || 0}</div>
-                        {(eq?.battery?.expansionProductName || eq?.battery?.expansionModel) && (
-                          <div className="text-xs text-muted/70 truncate max-w-[180px]">{formatProduct(eq?.battery?.expansionProductName, eq?.battery?.expansionModel)}</div>
-                        )}
-                      </td>
-                      <td className="px-4 py-2.5 text-right text-pink-400">
-                        {eq?.evCount || 0}
-                      </td>
-                      <td className="px-4 py-2.5 text-right text-muted">
-                        {formatMoney(p.amount)}
+        <>
+          {/* Active filter indicator */}
+          {activeStatFilter && (
+            <div className="mb-3 text-xs text-muted">
+              Showing <span className="text-cyan-400 font-medium">
+                {activeStatFilter === "backlog" ? "Backlog" : activeStatFilter === "in_progress" ? "In Progress" : "Built"}
+              </span> projects ({sortedProjects.length})
+            </div>
+          )}
+          <div className="bg-surface/50 border border-t-border rounded-xl overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-muted text-left border-b border-t-border bg-surface/80">
+                    <th className="px-4 py-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("name")}>
+                      Project <SortIcon field="name" />
+                    </th>
+                    <th className="px-4 py-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("location")}>
+                      Location <SortIcon field="location" />
+                    </th>
+                    <th className="px-4 py-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("stage")}>
+                      Stage <SortIcon field="stage" />
+                    </th>
+                    <th className="px-4 py-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("modules")}>
+                      Modules <SortIcon field="modules" />
+                    </th>
+                    <th className="px-4 py-3 text-right">Inverters</th>
+                    <th className="px-4 py-3 text-right">Batteries</th>
+                    <th className="px-4 py-3 text-right">Bat. Exp.</th>
+                    <th className="px-4 py-3 text-right">EV</th>
+                    <th className="px-4 py-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("value")}>
+                      Value <SortIcon field="value" />
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedProjects.map((p) => {
+                    const eq = p.equipment;
+                    const cls = classifyStage(p.stage);
+                    const rowBg = cls === "built" ? "bg-green-500/5" : cls === "in_progress" ? "bg-orange-500/5" : "";
+                    return (
+                      <tr key={p.id} className={`border-b border-t-border/50 hover:bg-surface-2/30 ${rowBg}`}>
+                        <td className="px-4 py-2.5">
+                          <div className="font-medium text-foreground/90 truncate max-w-[220px]">{p.name}</div>
+                          <div className="text-xs text-muted">{p.projectNumber}</div>
+                        </td>
+                        <td className="px-4 py-2.5 text-muted">{p.pbLocation}</td>
+                        <td className="px-4 py-2.5">
+                          <span className="inline-flex items-center gap-1.5 text-xs">
+                            <span
+                              className="w-2 h-2 rounded-full"
+                              style={{ backgroundColor: STAGE_COLORS[p.stage]?.hex || "#71717A" }}
+                            />
+                            <span className="text-foreground/80">{p.stage}</span>
+                          </span>
+                        </td>
+                        <td className="px-4 py-2.5 text-right">
+                          <div className="text-blue-400">{eq?.modules?.count || 0}</div>
+                          {(eq?.modules?.productName || eq?.modules?.model) && (
+                            <div className="text-xs text-muted/70 truncate max-w-[180px]">{formatProduct(eq?.modules?.productName, eq?.modules?.model)}</div>
+                          )}
+                        </td>
+                        <td className="px-4 py-2.5 text-right">
+                          <div className="text-purple-400">{eq?.inverter?.count || 0}</div>
+                          {(eq?.inverter?.productName || eq?.inverter?.model) && (
+                            <div className="text-xs text-muted/70 truncate max-w-[180px]">{formatProduct(eq?.inverter?.productName, eq?.inverter?.model)}</div>
+                          )}
+                        </td>
+                        <td className="px-4 py-2.5 text-right">
+                          <div className="text-emerald-400">{eq?.battery?.count || 0}</div>
+                          {(eq?.battery?.productName || eq?.battery?.model) && (
+                            <div className="text-xs text-muted/70 truncate max-w-[180px]">{formatProduct(eq?.battery?.productName, eq?.battery?.model)}</div>
+                          )}
+                        </td>
+                        <td className="px-4 py-2.5 text-right">
+                          <div className="text-green-400">{eq?.battery?.expansionCount || 0}</div>
+                          {(eq?.battery?.expansionProductName || eq?.battery?.expansionModel) && (
+                            <div className="text-xs text-muted/70 truncate max-w-[180px]">{formatProduct(eq?.battery?.expansionProductName, eq?.battery?.expansionModel)}</div>
+                          )}
+                        </td>
+                        <td className="px-4 py-2.5 text-right text-pink-400">
+                          {eq?.evCount || 0}
+                        </td>
+                        <td className="px-4 py-2.5 text-right text-muted">
+                          {formatMoney(p.amount)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {sortedProjects.length === 0 && (
+                    <tr>
+                      <td colSpan={9} className="text-center py-12 text-muted">
+                        No projects match the current filters
                       </td>
                     </tr>
-                  );
-                })}
-                {sortedProjects.length === 0 && (
-                  <tr>
-                    <td colSpan={9} className="text-center py-12 text-muted">
-                      No projects match the current filters
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
+        </>
       )}
 
       {/* Footer */}
