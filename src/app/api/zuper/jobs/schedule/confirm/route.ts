@@ -14,25 +14,35 @@ function getConstructionScheduleBoundaryProperties(): { start: string | null; en
   return { start, end };
 }
 
-function hubSpotDateTimeCandidatesFromUtc(utcDateTime: string, localDate?: string): string[] {
+function hubSpotDateTimeCandidatesFromUtc(
+  utcDateTime: string,
+  localDate?: string,
+  allowDateFallback = false
+): string[] {
   const iso = `${utcDateTime.replace(" ", "T")}Z`;
   const candidates = [iso, utcDateTime];
   const ms = Date.parse(iso);
   if (Number.isFinite(ms)) {
     candidates.unshift(String(ms));
   }
-  const utcDateOnly = iso.slice(0, 10);
-  if (/^\d{4}-\d{2}-\d{2}$/.test(utcDateOnly)) {
-    candidates.push(utcDateOnly);
-    const utcMidnightMs = Date.parse(`${utcDateOnly}T00:00:00.000Z`);
-    if (Number.isFinite(utcMidnightMs)) candidates.push(String(utcMidnightMs));
-  }
-  if (localDate && /^\d{4}-\d{2}-\d{2}$/.test(localDate)) {
-    candidates.push(localDate);
-    const localMidnightMs = Date.parse(`${localDate}T00:00:00.000Z`);
-    if (Number.isFinite(localMidnightMs)) candidates.push(String(localMidnightMs));
+  if (allowDateFallback) {
+    const utcDateOnly = iso.slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(utcDateOnly)) {
+      candidates.push(utcDateOnly);
+      const utcMidnightMs = Date.parse(`${utcDateOnly}T00:00:00.000Z`);
+      if (Number.isFinite(utcMidnightMs)) candidates.push(String(utcMidnightMs));
+    }
+    if (localDate && /^\d{4}-\d{2}-\d{2}$/.test(localDate)) {
+      candidates.push(localDate);
+      const localMidnightMs = Date.parse(`${localDate}T00:00:00.000Z`);
+      if (Number.isFinite(localMidnightMs)) candidates.push(String(localMidnightMs));
+    }
   }
   return [...new Set(candidates)];
+}
+
+function allowDateFallbackForConstructionBoundary(): boolean {
+  return String(process.env.HUBSPOT_CONSTRUCTION_BOUNDARY_ALLOW_DATE_FALLBACK || "").toLowerCase() === "true";
 }
 
 function parseHubSpotValueToMs(raw: string): number | null {
@@ -83,9 +93,10 @@ async function writeHubSpotDateTimeProperty(
   dealId: string,
   propertyName: string,
   utcDateTime: string,
-  localDate?: string
+  localDate?: string,
+  allowDateFallback = false
 ): Promise<{ ok: boolean; writtenValue: string | null }> {
-  for (const candidate of hubSpotDateTimeCandidatesFromUtc(utcDateTime, localDate)) {
+  for (const candidate of hubSpotDateTimeCandidatesFromUtc(utcDateTime, localDate, allowDateFallback)) {
     const ok = await updateDealProperty(dealId, { [propertyName]: candidate });
     if (ok) {
       return { ok: true, writtenValue: candidate };
@@ -103,10 +114,17 @@ async function writeConstructionScheduleBoundaryProperties(
 ): Promise<string[]> {
   const { start, end } = getConstructionScheduleBoundaryProperties();
   const warnings: string[] = [];
+  const allowDateFallback = allowDateFallbackForConstructionBoundary();
 
   const applyAndVerify = async (propertyName: string, utcDateTime: string, localDate?: string) => {
-    const expectedCandidates = hubSpotDateTimeCandidatesFromUtc(utcDateTime, localDate);
-    const writeResult = await writeHubSpotDateTimeProperty(dealId, propertyName, utcDateTime, localDate);
+    const expectedCandidates = hubSpotDateTimeCandidatesFromUtc(utcDateTime, localDate, allowDateFallback);
+    const writeResult = await writeHubSpotDateTimeProperty(
+      dealId,
+      propertyName,
+      utcDateTime,
+      localDate,
+      allowDateFallback
+    );
     if (!writeResult.ok || !writeResult.writtenValue) {
       warnings.push(`HubSpot ${propertyName} write failed`);
       return;
