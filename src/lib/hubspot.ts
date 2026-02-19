@@ -11,7 +11,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-const OWNERS_API_FORBIDDEN_TTL_MS = 6 * 60 * 60 * 1000;
+const OWNERS_API_FORBIDDEN_TTL_MS = 20 * 60 * 1000;
 let ownersApiForbiddenUntil = 0;
 
 function getErrorMessage(error: unknown): string {
@@ -919,43 +919,69 @@ export async function fetchAllProjects(options?: {
       if (!ownerMap[key]) ownerMap[key] = name;
     }
   };
+  const addPropertyOptionsToOwnerMap = (
+    options: Array<{ value?: string | null; label?: string | null }>
+  ) => {
+    for (const opt of options) {
+      const value = String(opt.value || "").trim();
+      const label = String(opt.label || "").trim();
+      if (!value || !label) continue;
+      if (!ownerMap[value]) ownerMap[value] = label;
+    }
+  };
 
   const ownersApiPromise = ownersApiAllowed()
     ? hubspotClient.crm.owners.ownersApi.getPage(undefined, undefined, 500, false)
     : Promise.resolve({ results: [], paging: undefined });
 
-  const [ownerPropResult, surveyorPropResult, ownersApiResult] = await Promise.allSettled([
-    // Source 1: Property definition options for hubspot_owner_id
+  const [
+    ownerPropResult,
+    ownerPropArchivedResult,
+    surveyorPropResult,
+    surveyorPropArchivedResult,
+    ownersApiResult,
+  ] = await Promise.allSettled([
+    // Source 1: Property definition options for hubspot_owner_id (active + archived)
     hubspotClient.crm.properties.coreApi.getByName("deals", "hubspot_owner_id"),
-    // Source 2: Property definition options for site_surveyor
+    hubspotClient.crm.properties.coreApi.getByName("deals", "hubspot_owner_id", true),
+    // Source 2: Property definition options for site_surveyor (active + archived)
     hubspotClient.crm.properties.coreApi.getByName("deals", "site_surveyor"),
-    // Source 3: Owners API (first page — covers most cases)
+    hubspotClient.crm.properties.coreApi.getByName("deals", "site_surveyor", true),
+    // Source 3: Owners API (first page — covers most cases when scoped)
     ownersApiPromise,
   ]);
 
-  // Process Source 1: hubspot_owner_id property options
+  // Process Source 1: hubspot_owner_id property options (active + archived)
   if (ownerPropResult.status === "fulfilled") {
-    for (const opt of ownerPropResult.value.options || []) {
-      if (opt.value && opt.label && opt.label.trim()) {
-        ownerMap[opt.value] = opt.label;
-      }
-    }
-    console.log(`[HubSpot] Owner prop options: ${Object.keys(ownerMap).length} mappings`);
+    addPropertyOptionsToOwnerMap(ownerPropResult.value.options || []);
   } else {
     console.warn("[HubSpot] Failed to fetch hubspot_owner_id property:", ownerPropResult.reason?.message || ownerPropResult.reason);
   }
+  if (ownerPropArchivedResult.status === "fulfilled") {
+    addPropertyOptionsToOwnerMap(ownerPropArchivedResult.value.options || []);
+  } else {
+    console.warn(
+      "[HubSpot] Failed to fetch archived hubspot_owner_id property:",
+      ownerPropArchivedResult.reason?.message || ownerPropArchivedResult.reason
+    );
+  }
+  console.log(`[HubSpot] Owner prop options: ${Object.keys(ownerMap).length} mappings`);
 
-  // Process Source 2: site_surveyor property options
+  // Process Source 2: site_surveyor property options (active + archived)
   if (surveyorPropResult.status === "fulfilled") {
-    for (const opt of surveyorPropResult.value.options || []) {
-      if (opt.value && opt.label && opt.label.trim() && !ownerMap[opt.value]) {
-        ownerMap[opt.value] = opt.label;
-      }
-    }
-    console.log(`[HubSpot] After surveyor prop: ${Object.keys(ownerMap).length} total mappings`);
+    addPropertyOptionsToOwnerMap(surveyorPropResult.value.options || []);
   } else {
     console.warn("[HubSpot] Failed to fetch site_surveyor property:", surveyorPropResult.reason?.message || surveyorPropResult.reason);
   }
+  if (surveyorPropArchivedResult.status === "fulfilled") {
+    addPropertyOptionsToOwnerMap(surveyorPropArchivedResult.value.options || []);
+  } else {
+    console.warn(
+      "[HubSpot] Failed to fetch archived site_surveyor property:",
+      surveyorPropArchivedResult.reason?.message || surveyorPropArchivedResult.reason
+    );
+  }
+  console.log(`[HubSpot] After surveyor prop: ${Object.keys(ownerMap).length} total mappings`);
 
   // Process Source 3: Owners API (paginated — fills gaps)
   if (ownersApiResult.status === "fulfilled") {
@@ -1169,10 +1195,8 @@ async function loadSiteSurveyorLookup(): Promise<SurveyorLookupCache> {
 
   const normalizedToValue = new Map<string, string>();
   const directValues = new Set<string>();
-
-  try {
-    const property = await hubspotClient.crm.properties.coreApi.getByName("deals", "site_surveyor");
-    for (const opt of property.options || []) {
+  const addSurveyorOptions = (options: Array<{ value?: string | null; label?: string | null }>) => {
+    for (const opt of options) {
       const value = (opt.value || "").trim();
       const label = (opt.label || "").trim();
       if (!value) continue;
@@ -1180,8 +1204,23 @@ async function loadSiteSurveyorLookup(): Promise<SurveyorLookupCache> {
       normalizedToValue.set(normalizeLookupKey(value), value);
       if (label) normalizedToValue.set(normalizeLookupKey(label), value);
     }
+  };
+
+  try {
+    const property = await hubspotClient.crm.properties.coreApi.getByName("deals", "site_surveyor");
+    addSurveyorOptions(property.options || []);
   } catch (err) {
     console.warn("[HubSpot] Failed to load site_surveyor property options:", err instanceof Error ? err.message : err);
+  }
+
+  try {
+    const archivedProperty = await hubspotClient.crm.properties.coreApi.getByName("deals", "site_surveyor", true);
+    addSurveyorOptions(archivedProperty.options || []);
+  } catch (err) {
+    console.warn(
+      "[HubSpot] Failed to load archived site_surveyor property options:",
+      err instanceof Error ? err.message : err
+    );
   }
 
   if (ownersApiAllowed()) {
