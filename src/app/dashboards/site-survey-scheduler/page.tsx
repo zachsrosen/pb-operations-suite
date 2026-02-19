@@ -100,6 +100,14 @@ interface DayAvailability {
     user_name?: string;
     location?: string;
     timezone?: string; // IANA timezone for non-Mountain Time slots (e.g. "America/Los_Angeles")
+    travelWarning?: {
+      type: "tight" | "unknown";
+      direction: "before" | "after" | "both";
+      prevJob?: { projectName: string; endTime: string; travelMinutes?: number };
+      nextJob?: { projectName: string; startTime: string; travelMinutes?: number };
+      availableMinutesBefore?: number;
+      availableMinutesAfter?: number;
+    };
   }>;
   bookedSlots?: Array<{
     start_time: string;
@@ -598,7 +606,7 @@ export default function SiteSurveySchedulerPage() {
   }, [scheduleModal]);
 
   // Fetch availability when a project is selected or month changes
-  const fetchAvailability = useCallback(async (location?: string) => {
+  const fetchAvailability = useCallback(async (location?: string, project?: SurveyProject | null) => {
     if (!zuperConfigured) return;
 
     setLoadingSlots(true);
@@ -617,6 +625,13 @@ export default function SiteSurveySchedulerPage() {
       if (location) {
         params.append("location", location);
       }
+      // Pass project context for travel-time warnings
+      if (project?.id) {
+        params.append("candidate_project_id", String(project.id));
+      }
+      if (project?.address) {
+        params.append("candidate_address", project.address);
+      }
 
       const response = await fetch(`/api/zuper/availability?${params.toString()}`);
       const data = await response.json();
@@ -634,7 +649,7 @@ export default function SiteSurveySchedulerPage() {
   // Fetch availability when project is selected or month changes
   useEffect(() => {
     if (selectedProject && zuperConfigured) {
-      fetchAvailability(selectedProject.location);
+      fetchAvailability(selectedProject.location, selectedProject);
     } else if (zuperConfigured && showAvailability) {
       // Fetch general availability when no project selected but overlay is on
       fetchAvailability();
@@ -1190,11 +1205,11 @@ export default function SiteSurveySchedulerPage() {
     // (may take a moment for Zuper to reflect the new job)
     if (slot) {
       // Delay refresh slightly to let Zuper sync complete
-      setTimeout(() => fetchAvailability(project.location), 2000);
+      setTimeout(() => fetchAvailability(project.location, selectedProject), 2000);
     }
 
     setScheduleModal(null);
-  }, [scheduleModal, useTestSlot, currentUserName, zuperConfigured, syncToZuper, showToast, fetchAvailability, saveSurveyorAssignment, userRole, trackFeature]);
+  }, [scheduleModal, useTestSlot, currentUserName, zuperConfigured, syncToZuper, showToast, fetchAvailability, saveSurveyorAssignment, userRole, trackFeature, selectedProject]);
 
   const cancelSchedule = useCallback(async (projectId: string) => {
     const project = projects.find(p => p.id === projectId);
@@ -1266,10 +1281,10 @@ export default function SiteSurveySchedulerPage() {
     setTimeout(() => {
       fetchProjects();
       if (project?.location) {
-        fetchAvailability(project.location);
+        fetchAvailability(project.location, selectedProject);
       }
     }, 1200);
-  }, [showToast, projects, trackFeature, fetchProjects, fetchAvailability, clearSurveyorAssignment]);
+  }, [showToast, projects, trackFeature, fetchProjects, fetchAvailability, clearSurveyorAssignment, selectedProject]);
 
   const handleConfirmTentative = useCallback(async (project: SurveyProject) => {
     const recordId = project.tentativeRecordId;
@@ -1912,12 +1927,22 @@ export default function SiteSurveySchedulerPage() {
                                       disabled={!selectedProject || isPast}
                                       className={`text-[0.55rem] px-1 py-0.5 rounded ${
                                         selectedProject && !isPast
-                                          ? "bg-emerald-500/10 hover:bg-emerald-500/30 text-emerald-400 cursor-pointer border border-emerald-500/20 hover:border-emerald-500/40"
+                                          ? slot.travelWarning?.type === "tight"
+                                            ? "bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 cursor-pointer border border-amber-500/30 hover:border-amber-500/50"
+                                            : slot.travelWarning?.type === "unknown"
+                                              ? "bg-emerald-500/10 hover:bg-emerald-500/30 text-emerald-400 cursor-pointer border border-dashed border-amber-500/30 hover:border-amber-500/50"
+                                              : "bg-emerald-500/10 hover:bg-emerald-500/30 text-emerald-400 cursor-pointer border border-emerald-500/20 hover:border-emerald-500/40"
                                           : "text-emerald-500/50"
                                       }`}
-                                      title={selectedProject ? `Book ${surveyorName} at ${slot.display_time || `${slot.start_time}-${slot.end_time}`}` : "Select a project first"}
+                                      title={selectedProject
+                                        ? slot.travelWarning?.type === "tight"
+                                          ? `⚠️ Tight travel — ${slot.travelWarning.prevJob?.travelMinutes || slot.travelWarning.nextJob?.travelMinutes || "?"}min drive between adjacent jobs`
+                                          : slot.travelWarning?.type === "unknown"
+                                            ? `❓ Travel time unverified — missing address on adjacent job`
+                                            : `Book ${surveyorName} at ${slot.display_time || `${slot.start_time}-${slot.end_time}`}`
+                                        : "Select a project first"}
                                     >
-                                      {slot.display_time || formatTime12h(slot.start_time)}
+                                      {slot.travelWarning?.type === "tight" && "⚠️"}{slot.travelWarning?.type === "unknown" && "❓"}{slot.display_time || formatTime12h(slot.start_time)}
                                     </button>
                                   ))}
                                 </div>
@@ -2179,7 +2204,20 @@ export default function SiteSurveySchedulerPage() {
                 </div>
               ) : scheduleModal.slot ? (
                 /* User has selected a new time slot */
-                <div className="p-2 bg-emerald-900/30 border border-emerald-500/30 rounded-lg">
+                (() => {
+                  // Look up travel warning from raw availability data
+                  const dayAvail = availabilityByDate[scheduleModal.date];
+                  const selectedTravelWarning = dayAvail?.availableSlots?.find(
+                    s => s.start_time === scheduleModal.slot!.startTime
+                      && s.end_time === scheduleModal.slot!.endTime
+                      && s.user_name === scheduleModal.slot!.userName
+                  )?.travelWarning;
+                  return (
+                <div className={`p-2 rounded-lg border ${
+                  selectedTravelWarning?.type === "tight"
+                    ? "bg-amber-900/30 border-amber-500/30"
+                    : "bg-emerald-900/30 border-emerald-500/30"
+                }`}>
                   <span className="text-xs text-emerald-400 font-medium">
                     {scheduleModal.currentSlot ? "New Time Slot" : "Selected Time Slot"}
                   </span>
@@ -2189,6 +2227,15 @@ export default function SiteSurveySchedulerPage() {
                   <p className="text-xs text-muted mt-0.5">
                     This 1-hour slot will be reserved
                   </p>
+                  {selectedTravelWarning && (
+                    <p className={`text-[0.65rem] mt-1.5 leading-tight ${
+                      selectedTravelWarning.type === "tight" ? "text-amber-400" : "text-muted"
+                    }`}>
+                      {selectedTravelWarning.type === "tight"
+                        ? `⚠️ Tight travel: ${selectedTravelWarning.prevJob?.travelMinutes || selectedTravelWarning.nextJob?.travelMinutes || "?"}min drive needed between adjacent jobs`
+                        : "❓ Travel time could not be verified — missing address data on adjacent job"}
+                    </p>
+                  )}
                   <button
                     onClick={() => setScheduleModal({ ...scheduleModal, slot: undefined })}
                     className="text-xs text-muted hover:text-foreground mt-1"
@@ -2204,6 +2251,8 @@ export default function SiteSurveySchedulerPage() {
                     </button>
                   )}
                 </div>
+                  );
+                })()
               ) : (
                 /* Time slot picker for new scheduling or rescheduling */
                 <div>
@@ -2244,10 +2293,22 @@ export default function SiteSurveySchedulerPage() {
                               timezone: slot.timezone, // IANA timezone for CA slots
                             }
                           })}
-                          className="w-full text-left px-2 py-1.5 text-sm rounded bg-surface-2 hover:bg-emerald-900/30 hover:border-emerald-500/30 border border-transparent transition-colors"
+                          className={`w-full text-left px-2 py-1.5 text-sm rounded border transition-colors ${
+                            slot.travelWarning?.type === "tight"
+                              ? "bg-amber-900/20 hover:bg-amber-900/30 border-amber-500/30 hover:border-amber-500/50"
+                              : slot.travelWarning?.type === "unknown"
+                                ? "bg-surface-2 hover:bg-emerald-900/30 border-dashed border-amber-500/20 hover:border-amber-500/40"
+                                : "bg-surface-2 hover:bg-emerald-900/30 hover:border-emerald-500/30 border-transparent"
+                          }`}
                         >
                           <span className="text-emerald-400">{slot.user_name}</span>
                           <span className="text-muted ml-2">{slot.display_time}</span>
+                          {slot.travelWarning?.type === "tight" && (
+                            <span className="text-amber-400 ml-2 text-xs">⚠️ tight travel</span>
+                          )}
+                          {slot.travelWarning?.type === "unknown" && (
+                            <span className="text-muted ml-2 text-xs">❓ travel unverified</span>
+                          )}
                         </button>
                       ));
                     })()}
