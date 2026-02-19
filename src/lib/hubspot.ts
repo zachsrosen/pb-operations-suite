@@ -6,9 +6,64 @@ const hubspotClient = new Client({
   accessToken: process.env.HUBSPOT_ACCESS_TOKEN,
 });
 
+type HubSpotPropertyOption = {
+  value?: string;
+  label?: string;
+};
+
+type HubSpotDealPropertyDefinition = {
+  name?: string;
+  label?: string;
+  type?: string;
+  fieldType?: string;
+  options?: HubSpotPropertyOption[];
+};
+
+const missingDealProperties = new Set<string>();
+
 // Rate limiting helpers
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function getDealPropertyDefinition(propertyName: string): Promise<HubSpotDealPropertyDefinition | null> {
+  if (missingDealProperties.has(propertyName)) return null;
+
+  const accessToken = process.env.HUBSPOT_ACCESS_TOKEN;
+  if (!accessToken) return null;
+
+  const url = `https://api.hubapi.com/crm/v3/properties/deals/${encodeURIComponent(propertyName)}`;
+
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      cache: "no-store",
+    });
+
+    if (response.status === 404) {
+      missingDealProperties.add(propertyName);
+      return null;
+    }
+
+    if (!response.ok) {
+      const body = await response.text();
+      console.warn(`[HubSpot] Failed to fetch property '${propertyName}' (${response.status}): ${body}`);
+      return null;
+    }
+
+    const data = (await response.json()) as HubSpotDealPropertyDefinition;
+    return data;
+  } catch (error) {
+    console.warn(
+      `[HubSpot] Failed to fetch property '${propertyName}':`,
+      error instanceof Error ? error.message : error
+    );
+    return null;
+  }
 }
 
 async function searchWithRetry(
@@ -857,34 +912,34 @@ export async function fetchAllProjects(options?: {
 
   const [ownerPropResult, surveyorPropResult, ownersApiResult] = await Promise.allSettled([
     // Source 1: Property definition options for hubspot_owner_id
-    hubspotClient.crm.properties.coreApi.getByName("deals", "hubspot_owner_id"),
+    getDealPropertyDefinition("hubspot_owner_id"),
     // Source 2: Property definition options for site_surveyor
-    hubspotClient.crm.properties.coreApi.getByName("deals", "site_surveyor"),
+    getDealPropertyDefinition("site_surveyor"),
     // Source 3: Owners API (first page — covers most cases)
     hubspotClient.crm.owners.ownersApi.getPage(undefined, undefined, 500, false),
   ]);
 
   // Process Source 1: hubspot_owner_id property options
-  if (ownerPropResult.status === "fulfilled") {
+  if (ownerPropResult.status === "fulfilled" && ownerPropResult.value) {
     for (const opt of ownerPropResult.value.options || []) {
       if (opt.value && opt.label && opt.label.trim()) {
         ownerMap[opt.value] = opt.label;
       }
     }
     console.log(`[HubSpot] Owner prop options: ${Object.keys(ownerMap).length} mappings`);
-  } else {
+  } else if (ownerPropResult.status === "rejected") {
     console.warn("[HubSpot] Failed to fetch hubspot_owner_id property:", ownerPropResult.reason?.message || ownerPropResult.reason);
   }
 
   // Process Source 2: site_surveyor property options
-  if (surveyorPropResult.status === "fulfilled") {
+  if (surveyorPropResult.status === "fulfilled" && surveyorPropResult.value) {
     for (const opt of surveyorPropResult.value.options || []) {
       if (opt.value && opt.label && opt.label.trim() && !ownerMap[opt.value]) {
         ownerMap[opt.value] = opt.label;
       }
     }
     console.log(`[HubSpot] After surveyor prop: ${Object.keys(ownerMap).length} total mappings`);
-  } else {
+  } else if (surveyorPropResult.status === "rejected") {
     console.warn("[HubSpot] Failed to fetch site_surveyor property:", surveyorPropResult.reason?.message || surveyorPropResult.reason);
   }
 
@@ -1064,8 +1119,8 @@ async function loadSiteSurveyorLookup(): Promise<SurveyorLookupCache> {
   const directValues = new Set<string>();
 
   try {
-    const property = await hubspotClient.crm.properties.coreApi.getByName("deals", "site_surveyor");
-    for (const opt of property.options || []) {
+    const property = await getDealPropertyDefinition("site_surveyor");
+    for (const opt of property?.options || []) {
       const value = (opt.value || "").trim();
       const label = (opt.label || "").trim();
       if (!value) continue;
