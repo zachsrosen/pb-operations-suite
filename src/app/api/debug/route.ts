@@ -42,7 +42,26 @@ export async function GET() {
 
   // 2. Check site_surveyor property
   try {
-    const prop = await hubspotClient.crm.properties.coreApi.getByName("deals", "site_surveyor");
+    const accessToken = process.env.HUBSPOT_ACCESS_TOKEN;
+    if (!accessToken) throw new Error("HUBSPOT_ACCESS_TOKEN missing");
+    const resp = await fetch("https://api.hubapi.com/crm/v3/properties/deals/site_surveyor", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      cache: "no-store",
+    });
+    if (resp.status === 404) {
+      throw Object.assign(new Error("Property 'site_surveyor' does not exist"), { statusCode: 404 });
+    }
+    if (!resp.ok) {
+      const body = await resp.text();
+      throw new Error(`Failed to fetch property (${resp.status}): ${body}`);
+    }
+    const prop = await resp.json() as {
+      name?: string;
+      label?: string;
+      type?: string;
+      fieldType?: string;
+      options?: Array<{ value?: string; label?: string }>;
+    };
     results.siteSurveyorProperty = {
       name: prop.name,
       label: prop.label,

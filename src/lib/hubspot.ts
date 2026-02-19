@@ -6,6 +6,21 @@ const hubspotClient = new Client({
   accessToken: process.env.HUBSPOT_ACCESS_TOKEN,
 });
 
+type HubSpotPropertyOption = {
+  value?: string;
+  label?: string;
+};
+
+type HubSpotDealPropertyDefinition = {
+  name?: string;
+  label?: string;
+  type?: string;
+  fieldType?: string;
+  options?: HubSpotPropertyOption[];
+};
+
+const missingDealProperties = new Set<string>();
+
 // Rate limiting helpers
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -55,6 +70,54 @@ function markOwnersApiForbidden(error: unknown): void {
     `[HubSpot] Owners API returned 403. Skipping owners lookups for ${minutes} minutes. ` +
       `Error: ${getErrorMessage(error)}`
   );
+}
+
+async function getDealPropertyDefinition(
+  propertyName: string,
+  archived = false
+): Promise<HubSpotDealPropertyDefinition | null> {
+  const cacheKey = `${propertyName}:${archived ? "archived" : "active"}`;
+  if (missingDealProperties.has(cacheKey)) return null;
+
+  const accessToken = process.env.HUBSPOT_ACCESS_TOKEN;
+  if (!accessToken) return null;
+
+  const params = archived ? "?archived=true" : "";
+  const url = `https://api.hubapi.com/crm/v3/properties/deals/${encodeURIComponent(propertyName)}${params}`;
+
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      cache: "no-store",
+    });
+
+    if (response.status === 404) {
+      missingDealProperties.add(cacheKey);
+      return null;
+    }
+
+    if (!response.ok) {
+      const body = await response.text();
+      console.warn(
+        `[HubSpot] Failed to fetch property '${propertyName}'${archived ? " (archived)" : ""} ` +
+          `(${response.status}): ${body}`
+      );
+      return null;
+    }
+
+    const data = (await response.json()) as HubSpotDealPropertyDefinition;
+    return data;
+  } catch (error) {
+    console.warn(
+      `[HubSpot] Failed to fetch property '${propertyName}'${archived ? " (archived)" : ""}:`,
+      error instanceof Error ? error.message : error
+    );
+    return null;
+  }
 }
 
 async function searchWithRetry(
@@ -942,23 +1005,23 @@ export async function fetchAllProjects(options?: {
     ownersApiResult,
   ] = await Promise.allSettled([
     // Source 1: Property definition options for hubspot_owner_id (active + archived)
-    hubspotClient.crm.properties.coreApi.getByName("deals", "hubspot_owner_id"),
-    hubspotClient.crm.properties.coreApi.getByName("deals", "hubspot_owner_id", true),
+    getDealPropertyDefinition("hubspot_owner_id"),
+    getDealPropertyDefinition("hubspot_owner_id", true),
     // Source 2: Property definition options for site_surveyor (active + archived)
-    hubspotClient.crm.properties.coreApi.getByName("deals", "site_surveyor"),
-    hubspotClient.crm.properties.coreApi.getByName("deals", "site_surveyor", true),
+    getDealPropertyDefinition("site_surveyor"),
+    getDealPropertyDefinition("site_surveyor", true),
     // Source 3: Owners API (first page — covers most cases when scoped)
     ownersApiPromise,
   ]);
 
   // Process Source 1: hubspot_owner_id property options (active + archived)
   if (ownerPropResult.status === "fulfilled") {
-    addPropertyOptionsToOwnerMap(ownerPropResult.value.options || []);
+    addPropertyOptionsToOwnerMap(ownerPropResult.value?.options || []);
   } else {
     console.warn("[HubSpot] Failed to fetch hubspot_owner_id property:", ownerPropResult.reason?.message || ownerPropResult.reason);
   }
   if (ownerPropArchivedResult.status === "fulfilled") {
-    addPropertyOptionsToOwnerMap(ownerPropArchivedResult.value.options || []);
+    addPropertyOptionsToOwnerMap(ownerPropArchivedResult.value?.options || []);
   } else {
     console.warn(
       "[HubSpot] Failed to fetch archived hubspot_owner_id property:",
@@ -969,12 +1032,12 @@ export async function fetchAllProjects(options?: {
 
   // Process Source 2: site_surveyor property options (active + archived)
   if (surveyorPropResult.status === "fulfilled") {
-    addPropertyOptionsToOwnerMap(surveyorPropResult.value.options || []);
+    addPropertyOptionsToOwnerMap(surveyorPropResult.value?.options || []);
   } else {
     console.warn("[HubSpot] Failed to fetch site_surveyor property:", surveyorPropResult.reason?.message || surveyorPropResult.reason);
   }
   if (surveyorPropArchivedResult.status === "fulfilled") {
-    addPropertyOptionsToOwnerMap(surveyorPropArchivedResult.value.options || []);
+    addPropertyOptionsToOwnerMap(surveyorPropArchivedResult.value?.options || []);
   } else {
     console.warn(
       "[HubSpot] Failed to fetch archived site_surveyor property:",
@@ -1207,15 +1270,15 @@ async function loadSiteSurveyorLookup(): Promise<SurveyorLookupCache> {
   };
 
   try {
-    const property = await hubspotClient.crm.properties.coreApi.getByName("deals", "site_surveyor");
-    addSurveyorOptions(property.options || []);
+    const property = await getDealPropertyDefinition("site_surveyor");
+    addSurveyorOptions(property?.options || []);
   } catch (err) {
     console.warn("[HubSpot] Failed to load site_surveyor property options:", err instanceof Error ? err.message : err);
   }
 
   try {
-    const archivedProperty = await hubspotClient.crm.properties.coreApi.getByName("deals", "site_surveyor", true);
-    addSurveyorOptions(archivedProperty.options || []);
+    const archivedProperty = await getDealPropertyDefinition("site_surveyor", true);
+    addSurveyorOptions(archivedProperty?.options || []);
   } catch (err) {
     console.warn(
       "[HubSpot] Failed to load archived site_surveyor property options:",
