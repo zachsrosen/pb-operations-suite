@@ -124,6 +124,7 @@ export interface Equipment {
     expansionCount: number;
     productName: string;
     expansionProductName: string;
+    expansionModel: string;
   };
   evCount: number;
   systemSizeKwdc: number;
@@ -394,6 +395,7 @@ const DEAL_PROPERTIES = [
   "inverter",           // product name e.g. "Tesla 7.6kW Inverter"
   "battery",            // product name e.g. "Tesla Powerwall 3"
   "battery_expansion",  // product name e.g. "Tesla Powerwall 3 Expansion Pack"
+  "expansion_model",    // model number for battery expansion
   "calculated_system_size__kwdc_",
   "system_size_kwac",
 
@@ -575,6 +577,7 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
       expansionCount: Number(deal?.battery_expansion_count ?? 0) || 0,
       productName: String(deal?.battery ?? ""),
       expansionProductName: String(deal?.battery_expansion ?? ""),
+      expansionModel: String(deal?.expansion_model ?? ""),
     },
     evCount: Number(deal?.ev_count ?? 0) || 0,
     systemSizeKwdc: Number(deal?.calculated_system_size__kwdc_ ?? 0) || 0,
