@@ -1133,6 +1133,95 @@ export async function GET(request: NextRequest) {
     applyBayesianToGroups(categoryComparison);
     categoryComparison.sort((a, b) => b.adjustedScore - a.adjustedScore);
 
+    // ========== Crew Composition Comparison ==========
+    // Group jobs by their full set of assigned users (2+ person crews only).
+    // Solo jobs are already covered by the per-user table.
+    const crewCompAccMap = new Map<string, TeamAccumulator>();
+
+    for (const { job } of allJobs) {
+      const statusName = getStatusName(job);
+      const statusLower = statusName.toLowerCase();
+      const assignedUsers = extractAssignedUsers(job, assignmentOptions);
+
+      // Only multi-person crews
+      if (assignedUsers.length < 2) continue;
+
+      // Apply team filter if specified
+      if (teamFilter) {
+        const hasMatchingTeam = assignedUsers.some(
+          (u) => u.teamNames.some((t) => t.toLowerCase().includes(teamFilter))
+        );
+        if (!hasMatchingTeam) continue;
+      }
+
+      // Create crew composition key from sorted user names
+      const crewKey = assignedUsers
+        .map((u) => u.userName)
+        .sort()
+        .join(" + ");
+
+      if (!crewCompAccMap.has(crewKey)) {
+        crewCompAccMap.set(crewKey, {
+          totalJobs: 0, completedJobs: 0, onTimeCompletions: 0, lateCompletions: 0,
+          stuckJobs: 0, neverStartedJobs: 0, completionDays: [], daysLatePastEnd: [],
+          onOurWayOnTime: 0, onOurWayLate: 0, oowUsed: 0, startedUsed: 0,
+          assignedUsers: new Set(),
+        });
+      }
+      const crewAcc = crewCompAccMap.get(crewKey)!;
+      crewAcc.totalJobs++;
+      for (const u of assignedUsers) crewAcc.assignedUsers.add(u.userUid);
+
+      const scheduledStart = job.scheduled_start_time ? new Date(job.scheduled_start_time) : null;
+      const scheduledEnd = job.scheduled_end_time ? new Date(job.scheduled_end_time) : null;
+      const completedTime = getCompletedTimeFromHistory(job);
+      const onOurWayTime = getOnOurWayTime(job);
+      const usedStarted = hasStartedStatus(job);
+      const effectiveCompletedTime = completedTime || scheduledEnd;
+
+      if (COMPLETED_STATUSES.has(statusLower)) {
+        crewAcc.completedJobs++;
+        if (scheduledEnd && effectiveCompletedTime) {
+          const deadline = new Date(scheduledEnd.getTime() + GRACE_MS);
+          if (effectiveCompletedTime <= deadline) {
+            crewAcc.onTimeCompletions++;
+          } else {
+            crewAcc.lateCompletions++;
+          }
+          if (effectiveCompletedTime > scheduledEnd) {
+            const diffMs = effectiveCompletedTime.getTime() - scheduledEnd.getTime();
+            crewAcc.daysLatePastEnd.push(Math.round((diffMs / (1000 * 60 * 60 * 24)) * 10) / 10);
+          }
+        } else {
+          crewAcc.onTimeCompletions++;
+        }
+        if (scheduledStart && effectiveCompletedTime && effectiveCompletedTime > scheduledStart) {
+          const diffMs = effectiveCompletedTime.getTime() - scheduledStart.getTime();
+          crewAcc.completionDays.push(Math.round((diffMs / (1000 * 60 * 60 * 24)) * 10) / 10);
+        }
+        if (onOurWayTime && scheduledStart) {
+          if (scheduledEnd && onOurWayTime > scheduledEnd) {
+            crewAcc.onOurWayLate++;
+          } else {
+            crewAcc.onOurWayOnTime++;
+          }
+        }
+        if (onOurWayTime) crewAcc.oowUsed++;
+        if (usedStarted) crewAcc.startedUsed++;
+      }
+      if (STUCK_STATUSES.has(statusLower) && scheduledEnd && scheduledEnd < now) {
+        crewAcc.stuckJobs++;
+      }
+      if (NEVER_STARTED_STATUSES.has(statusLower) && scheduledStart && scheduledStart < now) {
+        crewAcc.neverStartedJobs++;
+      }
+    }
+
+    const crewComposition: GroupComparison[] = Array.from(crewCompAccMap.entries())
+      .map(([name, acc]) => buildGroupFromAcc(name, acc));
+    applyBayesianToGroups(crewComposition);
+    crewComposition.sort((a, b) => b.adjustedScore - a.adjustedScore);
+
     // Compute summary from unique jobs (not user-attributed rows) to avoid
     // inflation from multi-assigned jobs.
     const summaryAcc = {
@@ -1247,6 +1336,7 @@ export async function GET(request: NextRequest) {
       summary,
       teamComparison,
       categoryComparison,
+      crewComposition,
       filters: {
         teams: Array.from(teamsSet).sort(),
         categories: Array.from(categoriesSet).sort(),

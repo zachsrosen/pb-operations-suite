@@ -103,6 +103,7 @@ interface ComplianceData {
   summary: ComplianceSummary;
   teamComparison: GroupComparison[];
   categoryComparison: GroupComparison[];
+  crewComposition: GroupComparison[];
   filters: { teams: string[]; categories: string[] };
   scoring?: { minJobs: number; bayesianC: number; globalAvgScore: number };
   dateRange: { from: string; to: string; days: number };
@@ -304,7 +305,7 @@ function ComparisonTable({
   nameLabel: string;
   accentColor: string;
   users: UserMetrics[];
-  groupType: "team" | "category";
+  groupType: "team" | "category" | "crew";
   onInspectUser?: (
     userUid: string,
     tab: "stuck" | "late" | "neverStarted" | "completed" | "categories"
@@ -354,6 +355,11 @@ function ComparisonTable({
         if (groupType === "team") {
           const userTeams = parseUserTeams(user.teamName);
           if (!userTeams.includes(groupName)) return null;
+          jobsInGroup = user.totalJobs;
+        } else if (groupType === "crew") {
+          // Crew composition key is "Name A + Name B" — match users by name
+          const crewMembers = groupName.split(" + ").map((n) => n.trim());
+          if (!crewMembers.includes(user.userName)) return null;
           jobsInGroup = user.totalJobs;
         } else {
           jobsInGroup = user.byCategory[groupName] || 0;
@@ -1368,6 +1374,21 @@ export default function ZuperCompliancePage() {
             accentColor="blue"
             users={data.users}
             groupType="category"
+            onInspectUser={inspectUserFromGroup}
+          />
+        </div>
+      )}
+
+      {/* Crew Composition Comparison */}
+      {data?.crewComposition && data.crewComposition.length > 0 && (
+        <div className="mb-8">
+          <ComparisonTable
+            rows={data.crewComposition}
+            title="Crew Composition Comparison"
+            nameLabel="Crew"
+            accentColor="emerald"
+            users={data.users}
+            groupType="crew"
             onInspectUser={inspectUserFromGroup}
           />
         </div>
