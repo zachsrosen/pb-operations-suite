@@ -29,6 +29,10 @@ Open `http://localhost:3000`.
 - `DEBUG_API_ENABLED` should remain `false` in production
 - `ENABLE_ADMIN_ROLE_RECOVERY` should remain `false` in production
 
+## Optional Integrations
+
+- `ZOHO_INVENTORY_ORG_ID` + Zoho credentials to enable `POST /api/inventory/sync-zoho` (Zoho Inventory -> PB stock sync)
+
 ## Documentation
 
 - Full setup and deployment details: `/Users/zach/Downloads/PB-Operations-Suite/SETUP.md`

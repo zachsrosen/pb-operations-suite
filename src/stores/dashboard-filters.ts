@@ -157,3 +157,32 @@ export function useServiceFilters() {
       useDashboardFilters.getState().clearFilters("service"),
   };
 }
+
+// ===== Site Survey filters =====
+
+export interface SiteSurveyFilters {
+  locations: string[];
+  stages: string[];
+  siteSurveyStatuses: string[];
+  search: string;
+}
+
+const defaultSiteSurveyFilters: SiteSurveyFilters = {
+  locations: [],
+  stages: [],
+  siteSurveyStatuses: [],
+  search: "",
+};
+
+export function useSiteSurveyFilters() {
+  const raw = useDashboardFilters(
+    (s) => s.filters["site-survey"]
+  ) as SiteSurveyFilters | undefined;
+  const setFilters = useDashboardFilters((s) => s.setFilters);
+  return {
+    filters: raw ?? defaultSiteSurveyFilters,
+    setFilters: (f: SiteSurveyFilters) => setFilters("site-survey", f),
+    clearFilters: () =>
+      useDashboardFilters.getState().clearFilters("site-survey"),
+  };
+}

@@ -4,7 +4,7 @@
  * POST /api/inventory/sync-skus
  *   Scans all equipment-context HubSpot projects and upserts unique SKUs
  *   into the EquipmentSku table. Returns counts of created/existing/total.
- *   Auth required, roles: ADMIN, OWNER, MANAGER, PROJECT_MANAGER
+ *   Auth required, roles: ADMIN, OWNER, PROJECT_MANAGER
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -16,7 +16,7 @@ import { fetchAllProjects, filterProjectsForContext } from "@/lib/hubspot";
 import { appCache, CACHE_KEYS } from "@/lib/cache";
 import { EquipmentCategory } from "@/generated/prisma/enums";
 
-const ALLOWED_ROLES = ["ADMIN", "OWNER", "MANAGER", "PROJECT_MANAGER"];
+const ALLOWED_ROLES = ["ADMIN", "OWNER", "PROJECT_MANAGER"];
 
 interface SkuTuple {
   category: EquipmentCategory;
@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error:
-          "Insufficient permissions. Requires ADMIN, OWNER, MANAGER, or PROJECT_MANAGER role.",
+          "Insufficient permissions. Requires ADMIN, EXECUTIVE, or PROJECT_MANAGER role.",
       },
       { status: 403 }
     );

@@ -17,7 +17,6 @@ import { tagSentryRequest } from "@/lib/sentry-request";
 const ALLOWED_ROLES = [
   "ADMIN",
   "OWNER",
-  "MANAGER",
   "PROJECT_MANAGER",
   "OPERATIONS",
   "OPERATIONS_MANAGER",

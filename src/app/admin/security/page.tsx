@@ -73,6 +73,27 @@ interface SecurityAuditData {
   generatedAt: string;
 }
 
+const ROLE_LABELS: Record<string, string> = {
+  OWNER: "EXECUTIVE",
+  VIEWER: "UNASSIGNED",
+};
+
+function formatRoleLabel(role: string): string {
+  return (ROLE_LABELS[role] || role).replace(/_/g, " ");
+}
+
+function getRoleBadgeClasses(role: string): string {
+  if (role === "ADMIN") return "bg-amber-500/10 text-amber-400";
+  if (role === "OWNER") return "bg-yellow-500/10 text-yellow-400";
+  if (role === "PROJECT_MANAGER") return "bg-blue-500/10 text-blue-400";
+  if (role === "OPERATIONS_MANAGER") return "bg-orange-500/10 text-orange-400";
+  if (role === "OPERATIONS") return "bg-orange-500/10 text-orange-400";
+  if (role === "TECH_OPS") return "bg-green-500/10 text-green-400";
+  if (role === "SALES") return "bg-cyan-500/10 text-cyan-400";
+  if (role === "VIEWER") return "bg-zinc-700 text-zinc-300";
+  return "bg-gray-700 text-gray-400";
+}
+
 // ----- Collapsible Section Component -----
 
 function CollapsibleSection({
@@ -303,7 +324,7 @@ export default function SecurityAuditPage() {
                       <span className="w-1.5 h-1.5 bg-red-400 rounded-full" />
                       {u.email}{" "}
                       <span className="text-red-400/60">
-                        (role: {u.role})
+                        (role: {formatRoleLabel(u.role)})
                       </span>
                     </li>
                   ))}
@@ -436,15 +457,9 @@ export default function SecurityAuditPage() {
                     </td>
                     <td className="py-2 pr-4">
                       <span
-                        className={`text-xs px-2 py-0.5 rounded-full ${
-                          u.role === "ADMIN"
-                            ? "bg-amber-500/10 text-amber-400"
-                            : u.role === "MANAGER"
-                            ? "bg-blue-500/10 text-blue-400"
-                            : "bg-gray-700 text-gray-400"
-                        }`}
+                        className={`text-xs px-2 py-0.5 rounded-full ${getRoleBadgeClasses(u.role)}`}
                       >
-                        {u.role}
+                        {formatRoleLabel(u.role)}
                       </span>
                     </td>
                     <td className="py-2 text-gray-400 text-xs">

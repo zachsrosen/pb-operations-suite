@@ -1,6 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { prisma, getUserByEmail, getRecentActivities, getActivityTypes, ActivityType, UserRole } from "@/lib/db";
+import { prisma, getUserByEmail, getRecentActivities, getActivityTypes, ActivityType, UserRole, normalizeRole } from "@/lib/db";
+
+const ROLE_INPUT_ALIASES: Record<string, UserRole> = {
+  EXECUTIVE: "OWNER",
+  UNASSIGNED: "VIEWER",
+};
+
+function expandRolesForFilter(roles: UserRole[]): UserRole[] {
+  const expanded = new Set<UserRole>();
+  for (const role of roles) {
+    const normalized = normalizeRole(role);
+    expanded.add(normalized);
+    if (normalized === "PROJECT_MANAGER") expanded.add("MANAGER");
+    if (normalized === "TECH_OPS") {
+      expanded.add("DESIGNER");
+      expanded.add("PERMITTING");
+    }
+  }
+  return Array.from(expanded);
+}
 
 /**
  * GET /api/admin/activity
@@ -59,9 +78,12 @@ export async function GET(request: NextRequest) {
     const repeatedRoleParams = searchParams.getAll("role");
     const csvRolesParam = searchParams.get("roles");
     const csvRoles = csvRolesParam ? csvRolesParam.split(",").map((r) => r.trim()).filter(Boolean) : [];
-    const selectedRoles = Array.from(new Set([...repeatedRoleParams, ...csvRoles])).filter(
-      (role): role is UserRole => validUserRoles.has(role)
-    );
+    const selectedRoles = Array.from(new Set([...repeatedRoleParams, ...csvRoles]))
+      .map((role) => ROLE_INPUT_ALIASES[role] || role)
+      .filter(
+        (role): role is UserRole => validUserRoles.has(role)
+      );
+    const expandedSelectedRoles = expandRolesForFilter(selectedRoles);
     const userId = searchParams.get("userId");
     const entityType = searchParams.get("entityType");
     const sinceParam = searchParams.get("since");
@@ -81,10 +103,20 @@ export async function GET(request: NextRequest) {
       entityType: entityType || undefined,
       since,
       userEmail: emailParam || undefined,
-      userRoles: selectedRoles.length > 0 ? selectedRoles : undefined,
+      userRoles: expandedSelectedRoles.length > 0 ? expandedSelectedRoles : undefined,
     });
 
-    return NextResponse.json({ activities, total, limit, offset });
+    const normalizedActivities = activities.map((activity) => ({
+      ...activity,
+      user: activity.user
+        ? {
+            ...activity.user,
+            role: normalizeRole(activity.user.role as UserRole),
+          }
+        : null,
+    }));
+
+    return NextResponse.json({ activities: normalizedActivities, total, limit, offset });
   } catch (error) {
     console.error("Error fetching activities:", error);
     return NextResponse.json({ error: "Failed to fetch activities" }, { status: 500 });

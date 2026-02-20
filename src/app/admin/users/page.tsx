@@ -43,6 +43,9 @@ const ROLES = ["ADMIN", "OWNER", "OPERATIONS_MANAGER", "PROJECT_MANAGER", "OPERA
 const ROLE_LABELS: Record<string, string> = {
   OWNER: "EXECUTIVE",
   VIEWER: "UNASSIGNED",
+  MANAGER: "PROJECT_MANAGER",
+  DESIGNER: "TECH_OPS",
+  PERMITTING: "TECH_OPS",
 };
 
 const getRoleLabel = (role: string): string => ROLE_LABELS[role] || role;
@@ -170,7 +173,7 @@ export default function AdminUsersPage() {
       setUsers(users.map(u =>
         u.id === userId ? { ...u, role: newRole } : u
       ));
-      showToast(`Role updated to ${newRole}`);
+      showToast(`Role updated to ${getRoleLabel(newRole)}`);
     } catch (err) {
       showToast(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
     } finally {
@@ -383,7 +386,7 @@ export default function AdminUsersPage() {
       setUsers(users.map(u =>
         selectedUsers.has(u.id) ? { ...u, role: bulkUpdateRole } : u
       ));
-      showToast(`Updated ${selectedUsers.size} users to ${bulkUpdateRole}`);
+      showToast(`Updated ${selectedUsers.size} users to ${getRoleLabel(bulkUpdateRole)}`);
       setSelectedUsers(new Set());
       setBulkUpdateRole(null);
     } catch (err) {

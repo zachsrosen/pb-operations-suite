@@ -11,6 +11,12 @@
       "maxDuration": 60
     }
   },
+  "crons": [
+    {
+      "path": "/api/updates/notify",
+      "schedule": "5 * * * *"
+    }
+  ],
   "rewrites": [
     {
       "source": "/dashboards/:path*",

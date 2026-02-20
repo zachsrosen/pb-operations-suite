@@ -9,7 +9,7 @@
  *   Returns { transactions, count }
  *
  * POST /api/inventory/transactions
- *   Auth required (ADMIN, OWNER, MANAGER, PROJECT_MANAGER, OPERATIONS, OPERATIONS_MANAGER)
+ *   Auth required (ADMIN, OWNER, PROJECT_MANAGER, OPERATIONS, OPERATIONS_MANAGER)
  *   Body: { skuId, location, type, quantity, reason?, projectId?, projectName? }
  *   Atomically upserts stock + creates transaction record + logs activity
  *   Returns { stock, transaction } with status 201
@@ -26,7 +26,6 @@ import { TransactionType, ActivityType } from "@/generated/prisma/enums";
 const ALLOWED_ROLES = [
   "ADMIN",
   "OWNER",
-  "MANAGER",
   "PROJECT_MANAGER",
   "OPERATIONS",
   "OPERATIONS_MANAGER",
@@ -126,7 +125,7 @@ export async function POST(request: NextRequest) {
     // Role check
     if (!ALLOWED_ROLES.includes(authResult.role)) {
       return NextResponse.json(
-        { error: "Insufficient permissions. Required: ADMIN, OWNER, MANAGER, PROJECT_MANAGER, OPERATIONS, or OPERATIONS_MANAGER" },
+        { error: "Insufficient permissions. Required: ADMIN, EXECUTIVE, PROJECT_MANAGER, OPERATIONS, or OPERATIONS_MANAGER" },
         { status: 403 }
       );
     }

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { prisma, getUserByEmail } from "@/lib/db";
+import { prisma, getUserByEmail, normalizeRole, UserRole } from "@/lib/db";
 
 /**
  * GET /api/admin/security
@@ -126,8 +126,13 @@ export async function GET() {
       prisma.activityLog.count(),
     ]);
 
+    const normalizedUsers = allUsers.map((u) => ({
+      ...u,
+      role: normalizeRole(u.role as UserRole),
+    }));
+
     // Suspicious emails (not @photonbrothers.com)
-    const suspiciousEmails = allUsers.filter(
+    const suspiciousEmails = normalizedUsers.filter(
       (u) => !u.email.endsWith("@photonbrothers.com")
     );
 
@@ -148,10 +153,10 @@ export async function GET() {
       .sort((a, b) => b.userCount - a.userCount);
 
     // Admin users
-    const adminUsers = allUsers.filter((u) => u.role === "ADMIN");
+    const adminUsers = normalizedUsers.filter((u) => u.role === "ADMIN");
 
     return NextResponse.json({
-      users: allUsers,
+      users: normalizedUsers,
       adminUsers,
       suspiciousEmails,
       recentLogins,

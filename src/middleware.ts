@@ -5,7 +5,7 @@ import { ROLE_PERMISSIONS, canAccessRoute, normalizeRole, type UserRole } from "
 
 // Routes that are always accessible (login, auth callbacks)
 const ALWAYS_ALLOWED = ["/login", "/api/auth", "/maintenance"];
-const PUBLIC_API_ROUTES = ["/api/deployment"];
+const PUBLIC_API_ROUTES = ["/api/deployment", "/api/updates/notify", "/api/sentry-canary"];
 
 // Generate a short request ID for correlation across logs
 function generateRequestId(): string {

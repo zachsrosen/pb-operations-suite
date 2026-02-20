@@ -1,10 +1,12 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, Fragment } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import DashboardShell from "@/components/DashboardShell";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { useToast } from "@/contexts/ToastContext";
+import { queryKeys } from "@/lib/query-keys";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -1236,62 +1238,77 @@ function NeedsReportTab(props: {
 export default function InventoryHubPage() {
   useActivityTracking();
   const { addToast } = useToast();
+  const queryClient = useQueryClient();
 
   /* ---- State ---- */
 
-  const [skus, setSkus] = useState<EquipmentSku[]>([]);
-  const [stock, setStock] = useState<StockRecord[]>([]);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [needsReport, setNeedsReport] = useState<NeedsReport | null>(null);
-
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [zohoSyncing, setZohoSyncing] = useState(false);
 
   const [tab, setTab] = useState<"overview" | "receive" | "needs">("overview");
   const [filterLocations, setFilterLocations] = useState<string[]>([]);
   const [filterCategories, setFilterCategories] = useState<string[]>([]);
 
-  /* ---- Data fetching ---- */
+  /* ---- Data fetching (React Query) ---- */
 
-  const fetchAll = useCallback(async () => {
-    try {
-      const [skuRes, stockRes, txRes, needsRes] = await Promise.all([
-        fetch("/api/inventory/skus"),
-        fetch("/api/inventory/stock"),
-        fetch("/api/inventory/transactions?limit=100"),
-        fetch("/api/inventory/needs"),
-      ]);
+  const POLL = 5 * 60 * 1000;
 
-      if (!skuRes.ok || !stockRes.ok || !txRes.ok || !needsRes.ok) {
-        throw new Error("One or more inventory endpoints failed");
-      }
+  const skuQuery = useQuery({
+    queryKey: queryKeys.inventory.skus(),
+    queryFn: async () => {
+      const res = await fetch("/api/inventory/skus");
+      if (!res.ok) throw new Error("Failed to fetch SKUs");
+      const data = await res.json();
+      return (data.skus || []) as EquipmentSku[];
+    },
+    refetchInterval: POLL,
+  });
 
-      const [skuData, stockData, txData, needsData] = await Promise.all([
-        skuRes.json(),
-        stockRes.json(),
-        txRes.json(),
-        needsRes.json(),
-      ]);
+  const stockQuery = useQuery({
+    queryKey: queryKeys.inventory.stock(),
+    queryFn: async () => {
+      const res = await fetch("/api/inventory/stock");
+      if (!res.ok) throw new Error("Failed to fetch stock");
+      const data = await res.json();
+      return (data.stock || []) as StockRecord[];
+    },
+    refetchInterval: POLL,
+  });
 
-      setSkus(skuData.skus || []);
-      setStock(stockData.stock || []);
-      setTransactions(txData.transactions || []);
-      setNeedsReport(needsData);
-      setError(null);
-    } catch (err) {
-      console.error("Inventory fetch error:", err);
-      setError("Failed to load inventory data. Please try refreshing.");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const txQuery = useQuery({
+    queryKey: queryKeys.inventory.transactions(),
+    queryFn: async () => {
+      const res = await fetch("/api/inventory/transactions?limit=100");
+      if (!res.ok) throw new Error("Failed to fetch transactions");
+      const data = await res.json();
+      return (data.transactions || []) as Transaction[];
+    },
+    refetchInterval: POLL,
+  });
 
-  useEffect(() => {
-    fetchAll();
-    const interval = setInterval(fetchAll, 5 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, [fetchAll]);
+  const needsQuery = useQuery({
+    queryKey: queryKeys.inventory.needs(),
+    queryFn: async () => {
+      const res = await fetch("/api/inventory/needs");
+      if (!res.ok) throw new Error("Failed to fetch needs");
+      return (await res.json()) as NeedsReport;
+    },
+    refetchInterval: POLL,
+  });
+
+  const skus = skuQuery.data ?? [];
+  const stock = stockQuery.data ?? [];
+  const transactions = txQuery.data ?? [];
+  const needsReport = needsQuery.data ?? null;
+
+  const loading = skuQuery.isLoading || stockQuery.isLoading || txQuery.isLoading || needsQuery.isLoading;
+  const error = skuQuery.error || stockQuery.error || txQuery.error || needsQuery.error
+    ? "Failed to load inventory data. Please try refreshing."
+    : null;
+
+  const invalidateAll = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: queryKeys.inventory.root });
+  }, [queryClient]);
 
   /* ---- SKU sync ---- */
 
@@ -1309,8 +1326,7 @@ export default function InventoryHubPage() {
         title: "SKU Sync Complete",
         message: `${data.created} new, ${data.existing} existing (${data.total} total from ${data.projectsScanned} projects)`,
       });
-      // Refresh all data after sync
-      await fetchAll();
+      invalidateAll();
     } catch (err) {
       console.error("SKU sync error:", err);
       addToast({
@@ -1321,7 +1337,37 @@ export default function InventoryHubPage() {
     } finally {
       setSyncing(false);
     }
-  }, [addToast, fetchAll]);
+  }, [addToast, invalidateAll]);
+
+  /* ---- Zoho stock sync ---- */
+
+  const handleSyncZoho = useCallback(async () => {
+    setZohoSyncing(true);
+    try {
+      const res = await fetch("/api/inventory/sync-zoho", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data.error || "Zoho sync failed");
+      }
+
+      addToast({
+        type: "success",
+        title: "Zoho Sync Complete",
+        message: `${data.stockUpdated + data.stockCreated} rows changed, ${data.transactionsCreated} adjustments (${data.unmappedItemCount ?? data.unmappedItems?.length ?? 0} unmapped items)`,
+      });
+      invalidateAll();
+    } catch (err) {
+      console.error("Zoho sync error:", err);
+      addToast({
+        type: "error",
+        title: "Zoho Sync Failed",
+        message: err instanceof Error ? err.message : "Failed to sync from Zoho Inventory",
+      });
+    } finally {
+      setZohoSyncing(false);
+    }
+  }, [addToast, invalidateAll]);
 
   /* ---- Derived data ---- */
 
@@ -1393,11 +1439,7 @@ export default function InventoryHubPage() {
         <div className="flex flex-col items-center justify-center py-20 gap-4">
           <p className="text-red-400">{error}</p>
           <button
-            onClick={() => {
-              setLoading(true);
-              setError(null);
-              fetchAll();
-            }}
+            onClick={() => invalidateAll()}
             className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-sm transition-colors"
           >
             Retry
@@ -1418,24 +1460,40 @@ export default function InventoryHubPage() {
               No inventory tracked yet
             </h2>
             <p className="text-muted text-sm max-w-md">
-              Sync SKUs from your HubSpot project equipment to start tracking
-              inventory levels, stock, and procurement needs.
+              Sync SKUs from HubSpot or import stock from Zoho Inventory to start
+              tracking inventory levels, stock, and procurement needs.
             </p>
           </div>
-          <button
-            onClick={handleSyncSkus}
-            disabled={syncing}
-            className="px-6 py-3 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
-          >
-            {syncing ? (
-              <>
-                <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
-                Syncing...
-              </>
-            ) : (
-              "Sync SKUs from HubSpot"
-            )}
-          </button>
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <button
+              onClick={handleSyncSkus}
+              disabled={syncing}
+              className="px-6 py-3 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+            >
+              {syncing ? (
+                <>
+                  <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+                  Syncing...
+                </>
+              ) : (
+                "Sync SKUs from HubSpot"
+              )}
+            </button>
+            <button
+              onClick={handleSyncZoho}
+              disabled={zohoSyncing}
+              className="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+            >
+              {zohoSyncing ? (
+                <>
+                  <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+                  Syncing...
+                </>
+              ) : (
+                "Sync Stock from Zoho"
+              )}
+            </button>
+          </div>
         </div>
       </DashboardShell>
     );
@@ -1448,22 +1506,38 @@ export default function InventoryHubPage() {
       title="Inventory Hub"
       subtitle={`${stats.totalSkus} SKUs \u2022 ${stats.totalOnHand.toLocaleString()} units on hand`}
       accentColor="cyan"
-      lastUpdated={needsReport?.lastUpdated || null}
+      lastUpdated={needsReport?.lastUpdated || (needsQuery.dataUpdatedAt ? new Date(needsQuery.dataUpdatedAt).toLocaleTimeString() : null)}
       headerRight={
-        <button
-          onClick={handleSyncSkus}
-          disabled={syncing}
-          className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white rounded-md text-xs font-medium transition-colors flex items-center gap-1.5"
-        >
-          {syncing ? (
-            <>
-              <span className="animate-spin rounded-full h-3 w-3 border-b-2 border-white" />
-              Syncing...
-            </>
-          ) : (
-            "Sync SKUs"
-          )}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleSyncSkus}
+            disabled={syncing}
+            className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white rounded-md text-xs font-medium transition-colors flex items-center gap-1.5"
+          >
+            {syncing ? (
+              <>
+                <span className="animate-spin rounded-full h-3 w-3 border-b-2 border-white" />
+                Syncing...
+              </>
+            ) : (
+              "Sync SKUs"
+            )}
+          </button>
+          <button
+            onClick={handleSyncZoho}
+            disabled={zohoSyncing}
+            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-md text-xs font-medium transition-colors flex items-center gap-1.5"
+          >
+            {zohoSyncing ? (
+              <>
+                <span className="animate-spin rounded-full h-3 w-3 border-b-2 border-white" />
+                Syncing...
+              </>
+            ) : (
+              "Sync Zoho"
+            )}
+          </button>
+        </div>
       }
     >
       {/* Filter bar + Tab toggle */}
@@ -1558,7 +1632,7 @@ export default function InventoryHubPage() {
         <ReceiveAdjustTab
           skus={skus}
           transactions={transactions}
-          onTransactionCreated={fetchAll}
+          onTransactionCreated={async () => invalidateAll()}
         />
       )}
       {tab === "needs" && (

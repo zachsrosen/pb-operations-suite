@@ -7,6 +7,10 @@ import { SchedulingNotification } from "@/emails/SchedulingNotification";
 import { AvailabilityConflict } from "@/emails/AvailabilityConflict";
 import { ProductUpdate } from "@/emails/ProductUpdate";
 import { BugReport } from "@/emails/BugReport";
+import { ExecutiveLevelNotification } from "@/emails/ExecutiveLevelNotification";
+import { WeeklyChangelogSimple } from "@/emails/WeeklyChangelogSimple";
+import { OperationsOnlyUpdate } from "@/emails/OperationsOnlyUpdate";
+import { BacklogForecastingUpdate } from "@/emails/BacklogForecastingUpdate";
 import * as React from "react";
 
 type SendResult = { success: boolean; error?: string };
@@ -918,6 +922,258 @@ Full changelog: ${updatesUrl}`,
       "Changes:",
       changesText,
       `URL: ${updatesUrl}`,
+    ].join("\n"),
+  });
+}
+
+interface SendExecutiveLevelNotificationEmailParams {
+  to: string;
+  title: string;
+  reportWindow: string;
+  summary: string;
+  highlights: string[];
+  risks?: string[];
+  decisionsNeeded?: string[];
+}
+
+export async function sendExecutiveLevelNotificationEmail(
+  params: SendExecutiveLevelNotificationEmailParams
+): Promise<{ success: boolean; error?: string }> {
+  const risks = params.risks || [];
+  const decisions = params.decisionsNeeded || [];
+
+  const html = await render(
+    React.createElement(ExecutiveLevelNotification, {
+      title: params.title,
+      reportWindow: params.reportWindow,
+      summary: params.summary,
+      highlights: params.highlights,
+      risks,
+      decisionsNeeded: decisions,
+    })
+  );
+
+  const bulletLines = (items: string[]) => items.map((item) => `- ${item}`).join("\n");
+
+  return sendEmailMessage({
+    to: params.to,
+    subject: `Executive Alert - ${params.title}`,
+    html,
+    text: `Executive-Level Notification
+
+${params.title}
+Window: ${params.reportWindow}
+
+Summary:
+${params.summary}
+
+Top Highlights:
+${bulletLines(params.highlights)}
+${risks.length > 0 ? `\n\nRisks To Watch:\n${bulletLines(risks)}` : ""}
+${decisions.length > 0 ? `\n\nDecisions Needed:\n${bulletLines(decisions)}` : ""}
+`,
+    debugFallbackTitle: `EXECUTIVE NOTIFICATION for ${params.to}`,
+    debugFallbackBody: [
+      `Title: ${params.title}`,
+      `Window: ${params.reportWindow}`,
+      `Summary: ${params.summary}`,
+      "Highlights:",
+      bulletLines(params.highlights),
+      ...(risks.length > 0 ? ["Risks:", bulletLines(risks)] : []),
+      ...(decisions.length > 0 ? ["Decisions Needed:", bulletLines(decisions)] : []),
+    ].join("\n"),
+  });
+}
+
+interface SendWeeklyChangelogSimpleEmailParams {
+  to: string;
+  weekLabel: string;
+  plainLanguageSummary: string;
+  whatChanged: string[];
+  whyItMatters: string[];
+  actionItems?: string[];
+  updatesUrl?: string;
+}
+
+export async function sendWeeklyChangelogSimpleEmail(
+  params: SendWeeklyChangelogSimpleEmailParams
+): Promise<{ success: boolean; error?: string }> {
+  const updatesUrl = (params.updatesUrl || "").trim() || resolveUpdatesUrl();
+  const actionItems = params.actionItems || [];
+  const bulletLines = (items: string[]) => items.map((item) => `- ${item}`).join("\n");
+
+  const html = await render(
+    React.createElement(WeeklyChangelogSimple, {
+      weekLabel: params.weekLabel,
+      plainLanguageSummary: params.plainLanguageSummary,
+      whatChanged: params.whatChanged,
+      whyItMatters: params.whyItMatters,
+      actionItems,
+      updatesUrl,
+    })
+  );
+
+  return sendEmailMessage({
+    to: params.to,
+    subject: `PB Ops Weekly Update (Simple) - ${params.weekLabel}`,
+    html,
+    text: `Weekly Changelog (Plain Language)
+
+${params.weekLabel}
+
+Summary:
+${params.plainLanguageSummary}
+
+What Changed:
+${bulletLines(params.whatChanged)}
+
+Why It Matters:
+${bulletLines(params.whyItMatters)}
+${actionItems.length > 0 ? `\n\nWhat You Need To Do:\n${bulletLines(actionItems)}` : ""}
+
+Full changelog: ${updatesUrl}
+`,
+    debugFallbackTitle: `WEEKLY CHANGELOG SIMPLE for ${params.to}`,
+    debugFallbackBody: [
+      `Week: ${params.weekLabel}`,
+      `Summary: ${params.plainLanguageSummary}`,
+      "What Changed:",
+      bulletLines(params.whatChanged),
+      "Why It Matters:",
+      bulletLines(params.whyItMatters),
+      ...(actionItems.length > 0 ? ["What You Need To Do:", bulletLines(actionItems)] : []),
+      `URL: ${updatesUrl}`,
+    ].join("\n"),
+  });
+}
+
+interface SendOperationsOnlyUpdateEmailParams {
+  to: string;
+  title: string;
+  dateLabel: string;
+  focus: string;
+  completed: string[];
+  nextUp: string[];
+  blockers?: string[];
+  owner?: string;
+}
+
+export async function sendOperationsOnlyUpdateEmail(
+  params: SendOperationsOnlyUpdateEmailParams
+): Promise<{ success: boolean; error?: string }> {
+  const blockers = params.blockers || [];
+  const bulletLines = (items: string[]) => items.map((item) => `- ${item}`).join("\n");
+
+  const html = await render(
+    React.createElement(OperationsOnlyUpdate, {
+      title: params.title,
+      dateLabel: params.dateLabel,
+      focus: params.focus,
+      completed: params.completed,
+      nextUp: params.nextUp,
+      blockers,
+      owner: params.owner,
+    })
+  );
+
+  return sendEmailMessage({
+    to: params.to,
+    subject: `[Operations Only] ${params.title}`,
+    html,
+    text: `Operations-Only Update
+
+${params.title}
+Date: ${params.dateLabel}
+${params.owner ? `Owner: ${params.owner}\n` : ""}Focus: ${params.focus}
+
+Completed:
+${bulletLines(params.completed)}
+
+Next Up:
+${bulletLines(params.nextUp)}
+${blockers.length > 0 ? `\n\nBlockers / Risks:\n${bulletLines(blockers)}` : ""}
+`,
+    debugFallbackTitle: `OPERATIONS ONLY UPDATE for ${params.to}`,
+    debugFallbackBody: [
+      `Title: ${params.title}`,
+      `Date: ${params.dateLabel}`,
+      `Owner: ${params.owner || "N/A"}`,
+      `Focus: ${params.focus}`,
+      "Completed:",
+      bulletLines(params.completed),
+      "Next Up:",
+      bulletLines(params.nextUp),
+      ...(blockers.length > 0 ? ["Blockers:", bulletLines(blockers)] : []),
+    ].join("\n"),
+  });
+}
+
+interface SendBacklogForecastingUpdateEmailParams {
+  to: string;
+  title: string;
+  dateLabel: string;
+  backlogSummary: string;
+  backlogMetrics: string[];
+  forecastWindow: string;
+  forecastSummary: string;
+  forecastPoints: string[];
+  risks?: string[];
+  actions?: string[];
+}
+
+export async function sendBacklogForecastingUpdateEmail(
+  params: SendBacklogForecastingUpdateEmailParams
+): Promise<{ success: boolean; error?: string }> {
+  const risks = params.risks || [];
+  const actions = params.actions || [];
+  const bulletLines = (items: string[]) => items.map((item) => `- ${item}`).join("\n");
+
+  const html = await render(
+    React.createElement(BacklogForecastingUpdate, {
+      title: params.title,
+      dateLabel: params.dateLabel,
+      backlogSummary: params.backlogSummary,
+      backlogMetrics: params.backlogMetrics,
+      forecastWindow: params.forecastWindow,
+      forecastSummary: params.forecastSummary,
+      forecastPoints: params.forecastPoints,
+      risks,
+      actions,
+    })
+  );
+
+  return sendEmailMessage({
+    to: params.to,
+    subject: `Backlog + Forecasting - ${params.title}`,
+    html,
+    text: `Backlog & Forecasting Update
+
+${params.title}
+Date: ${params.dateLabel}
+
+Backlog Snapshot:
+${params.backlogSummary}
+${bulletLines(params.backlogMetrics)}
+
+Forecast Outlook (${params.forecastWindow}):
+${params.forecastSummary}
+${bulletLines(params.forecastPoints)}
+${risks.length > 0 ? `\n\nRisks / Watchouts:\n${bulletLines(risks)}` : ""}
+${actions.length > 0 ? `\n\nRecommended Actions:\n${bulletLines(actions)}` : ""}
+`,
+    debugFallbackTitle: `BACKLOG FORECASTING UPDATE for ${params.to}`,
+    debugFallbackBody: [
+      `Title: ${params.title}`,
+      `Date: ${params.dateLabel}`,
+      `Backlog Summary: ${params.backlogSummary}`,
+      "Backlog Metrics:",
+      bulletLines(params.backlogMetrics),
+      `Forecast Window: ${params.forecastWindow}`,
+      `Forecast Summary: ${params.forecastSummary}`,
+      "Forecast Points:",
+      bulletLines(params.forecastPoints),
+      ...(risks.length > 0 ? ["Risks:", bulletLines(risks)] : []),
+      ...(actions.length > 0 ? ["Actions:", bulletLines(actions)] : []),
     ].join("\n"),
   });
 }

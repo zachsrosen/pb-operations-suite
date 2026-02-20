@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useEffect, useMemo, useCallback, useRef } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { formatMoney } from "@/lib/format";
 import { RawProject } from "@/lib/types";
 import { MultiSelectFilter, ProjectSearchBar, FilterGroup } from "@/components/ui/MultiSelectFilter";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
+import { useProjectData } from "@/hooks/useProjectData";
+import { useSiteSurveyFilters } from "@/stores/dashboard-filters";
 
 interface ExtendedProject extends RawProject {
   siteSurveyStatus?: string;
@@ -57,35 +59,22 @@ export default function SiteSurveyDashboardPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
-  const [projects, setProjects] = useState<ExtendedProject[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data: rawProjects, loading, error, refetch } = useProjectData<ExtendedProject[]>({
+    params: { context: "executive" },
+    transform: (raw: unknown) => (raw as { projects: ExtendedProject[] }).projects,
+  });
+  const projects = rawProjects ?? [];
 
-  // Multi-select filters
-  const [filterLocations, setFilterLocations] = useState<string[]>([]);
-  const [filterStages, setFilterStages] = useState<string[]>([]);
-  const [filterSiteSurveyStatuses, setFilterSiteSurveyStatuses] = useState<string[]>([]);
-  const [searchQuery, setSearchQuery] = useState("");
-
-  const fetchData = useCallback(async () => {
-    try {
-      const response = await fetch("/api/projects?context=executive");
-      if (!response.ok) throw new Error("Failed to fetch");
-      const data = await response.json();
-      setProjects(data.projects);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load data");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchData, 5 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, [fetchData]);
+  // Persisted multi-select filters (survive navigation)
+  const { filters, setFilters, clearFilters: clearStore } = useSiteSurveyFilters();
+  const filterLocations = filters.locations;
+  const filterStages = filters.stages;
+  const filterSiteSurveyStatuses = filters.siteSurveyStatuses;
+  const searchQuery = filters.search;
+  const setFilterLocations = useCallback((v: string[]) => setFilters({ ...filters, locations: v }), [filters, setFilters]);
+  const setFilterStages = useCallback((v: string[]) => setFilters({ ...filters, stages: v }), [filters, setFilters]);
+  const setFilterSiteSurveyStatuses = useCallback((v: string[]) => setFilters({ ...filters, siteSurveyStatuses: v }), [filters, setFilters]);
+  const setSearchQuery = useCallback((v: string) => setFilters({ ...filters, search: v }), [filters, setFilters]);
 
   /* ---- Track dashboard view on load ---- */
   useEffect(() => {
@@ -249,7 +238,7 @@ export default function SiteSurveyDashboardPage() {
           <div className="text-center text-red-500">
             <p className="text-xl mb-2">Error loading data</p>
             <p className="text-sm text-muted">{error}</p>
-            <button onClick={fetchData} className="mt-4 px-4 py-2 bg-teal-600 rounded-lg hover:bg-teal-700">
+            <button onClick={() => refetch()} className="mt-4 px-4 py-2 bg-teal-600 rounded-lg hover:bg-teal-700">
               Retry
             </button>
           </div>
@@ -272,10 +261,7 @@ export default function SiteSurveyDashboardPage() {
   };
 
   const clearAllFilters = () => {
-    setFilterLocations([]);
-    setFilterStages([]);
-    setFilterSiteSurveyStatuses([]);
-    setSearchQuery("");
+    clearStore();
   };
 
   const hasActiveFilters = filterLocations.length > 0 || filterStages.length > 0 ||
@@ -291,7 +277,7 @@ export default function SiteSurveyDashboardPage() {
             onSearch={setSearchQuery}
             placeholder="Search by PROJ #, name, or address..."
           />
-          <button onClick={fetchData} className="bg-teal-600 hover:bg-teal-700 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap">
+          <button onClick={() => refetch()} className="bg-teal-600 hover:bg-teal-700 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap">
             Refresh
           </button>
         </div>

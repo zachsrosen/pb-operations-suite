@@ -13,7 +13,7 @@ import { tagSentryRequest } from "@/lib/sentry-request";
 import { EquipmentCategory } from "@/generated/prisma/enums";
 
 // Roles allowed to create/upsert SKUs
-const WRITE_ROLES = ["ADMIN", "OWNER", "MANAGER", "PROJECT_MANAGER"];
+const WRITE_ROLES = ["ADMIN", "OWNER", "PROJECT_MANAGER"];
 
 // Valid EquipmentCategory values for validation
 const VALID_CATEGORIES = Object.values(EquipmentCategory);
@@ -89,7 +89,7 @@ export async function GET(request: NextRequest) {
  * Body: { category, brand, model, unitSpec?, unitLabel? }
  *
  * Upserts on the compound unique (category + brand + model).
- * Requires ADMIN, OWNER, MANAGER, or PROJECT_MANAGER role.
+ * Requires ADMIN, OWNER, or PROJECT_MANAGER role.
  */
 export async function POST(request: NextRequest) {
   tagSentryRequest(request);
@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
   // Role check
   if (!WRITE_ROLES.includes(authResult.role)) {
     return NextResponse.json(
-      { error: "Insufficient permissions. Requires ADMIN, OWNER, MANAGER, or PROJECT_MANAGER role." },
+      { error: "Insufficient permissions. Requires ADMIN, EXECUTIVE, or PROJECT_MANAGER role." },
       { status: 403 }
     );
   }

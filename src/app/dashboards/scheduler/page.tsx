@@ -2,10 +2,11 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { LOCATION_TIMEZONES } from "@/lib/constants";
-import { generateOptimizedSchedule, type OptimizableProject, type ScoringPreset, type ExistingBooking } from "@/lib/schedule-optimizer";
+import { generateOptimizedSchedule, type OptimizableProject, type ScoringPreset } from "@/lib/schedule-optimizer";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -99,7 +100,6 @@ interface SchedulerProject {
   zuperScheduledStart?: string; // ISO date from Zuper
   zuperScheduledEnd?: string;   // ISO date from Zuper
   zuperJobCategory?: string;    // Which Zuper category matched: "survey" | "construction" | "inspection"
-  zuperAssignedTo?: string[];    // Zuper assigned user names (directors/technicians)
   daysToInstall: number | null;
   isCompletedPastStage: boolean; // Project moved past its stage (e.g. Close Out with inspection data) — calendar only, not sidebar
 }
@@ -162,11 +162,6 @@ const CREWS: Record<string, CrewConfig[]> = {
     { name: "CAM Crew", roofers: 2, electricians: 1, color: "#f43f5e" },
   ],
 };
-
-// Pre-computed set of all valid crew names for crew resolution
-const ALL_CREW_NAMES = new Set(
-  Object.values(CREWS).flat().map((c) => c.name)
-);
 
 const LOCATIONS = [
   "All",
@@ -364,7 +359,6 @@ function addDays(dateStr: string, days: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function addBusinessDays(dateStr: string, days: number): string {
   const [year, month, day] = dateStr.split("-").map(Number);
   const d = new Date(year, month - 1, day);
@@ -392,23 +386,6 @@ function getNextWorkday(dateStr: string): string {
     d.setDate(d.getDate() + 1);
   }
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-function getBusinessDatesInSpan(startDate: string, totalDays: number): string[] {
-  const days = Math.max(1, Math.ceil(totalDays));
-  const dates: string[] = [];
-  let cursor = startDate;
-  while (dates.length < days) {
-    if (!isWeekend(cursor)) dates.push(cursor);
-    cursor = addDays(cursor, 1);
-  }
-  return dates;
-}
-
-function hasBlockedDateConflict(blockedDates: Set<string> | undefined, startDate: string, totalDays: number): boolean {
-  if (!blockedDates || blockedDates.size === 0) return false;
-  const spanDates = getBusinessDatesInSpan(startDate, totalDays);
-  return spanDates.some((date) => blockedDates.has(date));
 }
 
 function toDateStr(d: Date): string {
@@ -488,7 +465,7 @@ function transformProject(p: RawProject): SchedulerProject | null {
     batterySizeKwh: p.equipment?.battery?.sizeKwh || 0,
     ahj: p.ahj || "",
     utility: p.utility || "",
-    crew: null, // No default — user must pick crew when scheduling
+    crew: CREWS[loc]?.[0]?.name || null,
     daysInstall: isBuildStage
       ? p.daysForInstallers || p.expectedDaysForInstall || 2
       : stage === "survey" || stage === "inspection"
@@ -570,19 +547,12 @@ export default function SchedulerPage() {
     userUid?: string;
     teamUid?: string;
     timezone?: string;
-    travelWarning?: {
-      type: "tight" | "unknown";
-      direction: "before" | "after" | "both";
-      prevJob?: { projectName: string; travelMinutes?: number };
-      nextJob?: { projectName: string; travelMinutes?: number };
-    };
   }
   const [availableSlots, setAvailableSlots] = useState<AvailSlot[]>([]);
   const [selectedSlotIdx, setSelectedSlotIdx] = useState(0);
   const [loadingSlots, setLoadingSlots] = useState(false);
   // Cache the full availability response so changing surveyor doesn't re-fetch
-  // Includes projectId so travel warnings are project-specific and don't go stale
-  const [availCache, setAvailCache] = useState<{ date: string; location: string; type: string; projectId: string; slots: Record<string, AvailSlot[]> } | null>(null);
+  const [availCache, setAvailCache] = useState<{ date: string; location: string; type: string; slots: Record<string, AvailSlot[]> } | null>(null);
 
   /* ---- Zuper integration ---- */
   const [zuperConfigured, setZuperConfigured] = useState(false);
@@ -628,158 +598,144 @@ export default function SchedulerPage() {
   /*  Data fetching                                                    */
   /* ================================================================ */
 
-  const fetchProjects = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const response = await fetch("/api/projects?context=scheduling");
-      if (!response.ok) throw new Error("Failed to fetch projects");
-      const data = await response.json();
-      const transformed = data.projects
-        .map((p: RawProject) => transformProject(p))
-        .filter((p: SchedulerProject | null): p is SchedulerProject => p !== null);
+  const queryClient = useQueryClient();
 
-      // Look up Zuper job UIDs for these projects (all job categories)
-      // Uses POST to avoid URL length limits with hundreds of projects
-      if (transformed.length > 0) {
-        try {
-          const projectIds = transformed.map((p: SchedulerProject) => p.id);
-          const projectNames = transformed.map((p: SchedulerProject) => p.name);
+  const fetchProjectsQueryFn = useCallback(async () => {
+    const response = await fetch("/api/projects?context=scheduling");
+    if (!response.ok) throw new Error("Failed to fetch projects");
+    const data = await response.json();
+    const transformed = data.projects
+      .map((p: RawProject) => transformProject(p))
+      .filter((p: SchedulerProject | null): p is SchedulerProject => p !== null);
 
-          // Look up jobs for each category (survey, construction, inspection)
-          const categories = ["survey", "construction", "inspection"];
-          const lookupPromises = categories.map(category =>
-            fetch("/api/zuper/jobs/lookup", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ projectIds, projectNames, category }),
-            })
-              .then(res => res.ok ? res.json() : null)
-              .catch(() => null)
-          );
+    // Look up Zuper job UIDs for these projects (all job categories)
+    if (transformed.length > 0) {
+      try {
+        const projectIds = transformed.map((p: SchedulerProject) => p.id);
+        const projectNames = transformed.map((p: SchedulerProject) => p.name);
 
-          const results = await Promise.all(lookupPromises);
+        const categories = ["survey", "construction", "inspection"];
+        const lookupPromises = categories.map(category =>
+          fetch("/api/zuper/jobs/lookup", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ projectIds, projectNames, category }),
+          })
+            .then(res => res.ok ? res.json() : null)
+            .catch(() => null)
+        );
 
-          // Merge Zuper job UIDs into projects (only match the stage-appropriate category)
-          for (const project of transformed) {
-            // Map project stage to the Zuper job category it should link to
-            const stageToCategory: Record<string, string> = {
-              survey: "survey",
-              rtb: "construction",
-              blocked: "construction",
-              construction: "construction",
-              inspection: "inspection",
-            };
-            const matchCategory = stageToCategory[project.stage] || "construction";
-            const matchIndex = categories.indexOf(matchCategory);
+        const results = await Promise.all(lookupPromises);
 
-            // Only link the Zuper job that matches the project's current stage
-            // Don't fall back to other categories (e.g. don't link survey job for a construction project)
-            const zuperData = results[matchIndex];
-            if (zuperData?.jobs?.[project.id]) {
-              const zJob = zuperData.jobs[project.id];
-              project.zuperJobUid = zJob.jobUid;
-              project.zuperJobStatus = zJob.status;
-              project.zuperJobCategory = categories[matchIndex];
-              if (zJob.scheduledDays) project.zuperScheduledDays = zJob.scheduledDays;
-              if (zJob.scheduledDate) project.zuperScheduledStart = zJob.scheduledDate;
-              if (zJob.scheduledEnd) project.zuperScheduledEnd = zJob.scheduledEnd;
-              if (zJob.assignedTo) project.zuperAssignedTo = zJob.assignedTo;
-            }
+        for (const project of transformed) {
+          const stageToCategory: Record<string, string> = {
+            survey: "survey",
+            rtb: "construction",
+            blocked: "construction",
+            construction: "construction",
+            inspection: "inspection",
+          };
+          const matchCategory = stageToCategory[project.stage] || "construction";
+          const matchIndex = categories.indexOf(matchCategory);
+
+          const zuperData = results[matchIndex];
+          if (zuperData?.jobs?.[project.id]) {
+            const zJob = zuperData.jobs[project.id];
+            project.zuperJobUid = zJob.jobUid;
+            project.zuperJobStatus = zJob.status;
+            project.zuperJobCategory = categories[matchIndex];
+            if (zJob.scheduledDays) project.zuperScheduledDays = zJob.scheduledDays;
+            if (zJob.scheduledDate) project.zuperScheduledStart = zJob.scheduledDate;
+            if (zJob.scheduledEnd) project.zuperScheduledEnd = zJob.scheduledEnd;
           }
-        } catch (zuperErr) {
-          console.warn("Failed to lookup Zuper jobs:", zuperErr);
-          // Don't fail the whole load if Zuper lookup fails
         }
+      } catch (zuperErr) {
+        console.warn("Failed to lookup Zuper jobs:", zuperErr);
       }
-
-      setProjects(transformed);
-
-      // Rehydrate tentative schedules from DB so they survive page refresh
-      if (transformed.length > 0) {
-        try {
-          const ids = transformed.map((p: SchedulerProject) => p.id).join(",");
-          const tentRes = await fetch(`/api/zuper/schedule-records?projectIds=${encodeURIComponent(ids)}&status=tentative`);
-          if (tentRes.ok) {
-            const tentData = await tentRes.json();
-            const records = tentData.records as Record<string, {
-              id: string; projectId: string; scheduledDate: string; assignedUser?: string;
-              scheduleType?: string; scheduledDays?: number; scheduledStart?: string; scheduledEnd?: string;
-              notes?: string;
-            }>;
-            if (records && Object.keys(records).length > 0) {
-              const restored: Record<string, ManualSchedule> = {};
-              for (const [projId, rec] of Object.entries(records)) {
-                // If this project already has a confirmed Zuper schedule, don't
-                // revert it to tentative — the stale DB record should be cleaned up.
-                const proj = transformed.find((p: SchedulerProject) => p.id === projId);
-                if (proj?.zuperJobStatus && proj?.zuperScheduledStart) continue;
-                // Use stored days, or fall back to the project's expected install days
-                const isSI = proj?.stage === "survey" || proj?.stage === "inspection";
-                const fallbackDays = isSI ? 0.25 : (proj?.daysInstall || proj?.totalDays || 2);
-                // Resolve crew name: rec.assignedUser may be a director name
-                // (e.g. "David Contreras") rather than a crew label ("WESTY Alpha").
-                // Extract crew from notes "— CREW_NAME" pattern (used by optimizer
-                // and rebalancer), falling back to assignedUser.
-                let rehydratedCrew = rec.assignedUser || "";
-                if (rec.notes) {
-                  const crewMatch = rec.notes.match(/—\s*(.+)$/);
-                  if (crewMatch) {
-                    const parsed = crewMatch[1].trim();
-                    if (ALL_CREW_NAMES.has(parsed)) rehydratedCrew = parsed;
-                  }
-                }
-                restored[projId] = {
-                  startDate: rec.scheduledDate,
-                  days: rec.scheduledDays || fallbackDays,
-                  crew: rehydratedCrew,
-                  isTentative: true,
-                  recordId: rec.id,
-                  scheduleType: rec.scheduleType,
-                  fromOptimizer: !!rec.notes?.includes("[AUTO_OPTIMIZED]"),
-                };
-              }
-              setManualSchedules((prev) => {
-                const next: Record<string, ManualSchedule> = {};
-
-                // Keep non-tentative local schedules, and local-only tentative
-                // entries that were never persisted (no recordId).
-                for (const [projectId, schedule] of Object.entries(prev)) {
-                  if (!schedule.isTentative) {
-                    next[projectId] = schedule;
-                    continue;
-                  }
-                  if (!schedule.recordId) {
-                    next[projectId] = schedule;
-                  }
-                }
-
-                // DB-backed tentative records are the source of truth.
-                for (const [projectId, schedule] of Object.entries(restored)) {
-                  next[projectId] = schedule;
-                }
-
-                return next;
-              });
-            }
-          }
-        } catch (tentErr) {
-          console.warn("Failed to rehydrate tentative schedules:", tentErr);
-        }
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Unknown error";
-      setError(msg);
-    } finally {
-      setLoading(false);
     }
+
+    // Rehydrate tentative schedules from DB
+    let restoredManualSchedules: Record<string, ManualSchedule> | null = null;
+    if (transformed.length > 0) {
+      try {
+        const ids = transformed.map((p: SchedulerProject) => p.id).join(",");
+        const tentRes = await fetch(`/api/zuper/schedule-records?projectIds=${encodeURIComponent(ids)}&status=tentative`);
+        if (tentRes.ok) {
+          const tentData = await tentRes.json();
+          const records = tentData.records as Record<string, {
+            id: string; projectId: string; scheduledDate: string; assignedUser?: string;
+            scheduleType?: string; scheduledDays?: number; scheduledStart?: string; scheduledEnd?: string;
+            notes?: string;
+          }>;
+          if (records && Object.keys(records).length > 0) {
+            restoredManualSchedules = {};
+            for (const [projId, rec] of Object.entries(records)) {
+              const proj = transformed.find((p: SchedulerProject) => p.id === projId);
+              if (proj?.zuperJobStatus && proj?.zuperScheduledStart) continue;
+              const isSI = proj?.stage === "survey" || proj?.stage === "inspection";
+              const fallbackDays = isSI ? 0.25 : (proj?.daysInstall || proj?.totalDays || 2);
+              restoredManualSchedules[projId] = {
+                startDate: rec.scheduledDate,
+                days: rec.scheduledDays || fallbackDays,
+                crew: rec.assignedUser || "",
+                isTentative: true,
+                recordId: rec.id,
+                scheduleType: rec.scheduleType,
+                fromOptimizer: !!rec.notes?.includes("[AUTO_OPTIMIZED]"),
+              };
+            }
+          }
+        }
+      } catch (tentErr) {
+        console.warn("Failed to rehydrate tentative schedules:", tentErr);
+      }
+    }
+
+    return { transformed, restoredManualSchedules };
   }, []);
 
+  const projectsQuery = useQuery({
+    queryKey: ["scheduler", "main-projects"],
+    queryFn: fetchProjectsQueryFn,
+    refetchInterval: 5 * 60 * 1000,
+  });
+
+  // Sync query results to component state
   useEffect(() => {
-    fetchProjects();
-    const interval = setInterval(fetchProjects, 5 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, [fetchProjects]);
+    if (projectsQuery.data) {
+      const { transformed, restoredManualSchedules } = projectsQuery.data;
+      setProjects(transformed);
+      if (restoredManualSchedules) {
+        setManualSchedules((prev) => {
+          const next: Record<string, ManualSchedule> = {};
+          for (const [projectId, schedule] of Object.entries(prev)) {
+            if (!schedule.isTentative) {
+              next[projectId] = schedule;
+              continue;
+            }
+            if (!schedule.recordId) {
+              next[projectId] = schedule;
+            }
+          }
+          for (const [projectId, schedule] of Object.entries(restoredManualSchedules)) {
+            next[projectId] = schedule;
+          }
+          return next;
+        });
+      }
+      setLoading(false);
+      setError(null);
+    }
+    if (projectsQuery.error) {
+      const msg = projectsQuery.error instanceof Error ? projectsQuery.error.message : "Unknown error";
+      setError(msg);
+      setLoading(false);
+    }
+  }, [projectsQuery.data, projectsQuery.error]);
+
+  const fetchProjects = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["scheduler", "main-projects"] });
+  }, [queryClient]);
 
   // Check Zuper configuration status
   useEffect(() => {
@@ -817,8 +773,8 @@ export default function SchedulerPage() {
 
     const schedType = project.stage === "survey" ? "survey" : "inspection";
 
-    // If we already have a cache for this date+location+type+project, just re-filter by selected user
-    if (availCache && availCache.date === date && availCache.location === project.location && availCache.type === schedType && availCache.projectId === project.id) {
+    // If we already have a cache for this date+location+type, just re-filter by selected user
+    if (availCache && availCache.date === date && availCache.location === project.location && availCache.type === schedType) {
       const userSlots = availCache.slots[crewSelectInput] || [];
       setAvailableSlots(userSlots);
       setSelectedSlotIdx(0);
@@ -835,15 +791,11 @@ export default function SchedulerPage() {
           to_date: date,
           type: schedType,
           location: project.location,
-          candidate_project_id: project.id,
-          candidate_address: project.address || "",
         });
         const resp = await fetch(`/api/zuper/availability?${params}`);
         if (cancelled) return;
         if (!resp.ok) { setAvailableSlots([]); setLoadingSlots(false); return; }
         const data = await resp.json();
-        // Guard: if response includes candidateProjectId and it doesn't match, discard (stale async race)
-        if (data.candidateProjectId && data.candidateProjectId !== project.id) return;
         const dayData = data.availabilityByDate?.[date];
         if (!dayData?.availableSlots) { setAvailableSlots([]); setLoadingSlots(false); return; }
 
@@ -860,12 +812,11 @@ export default function SchedulerPage() {
             userUid: s.user_uid,
             teamUid: s.team_uid,
             timezone: s.timezone,
-            travelWarning: s.travelWarning,
           });
         }
 
         if (cancelled) return;
-        setAvailCache({ date, location: project.location, type: schedType, projectId: project.id, slots: grouped });
+        setAvailCache({ date, location: project.location, type: schedType, slots: grouped });
         const userSlots = grouped[crewSelectInput] || [];
         setAvailableSlots(userSlots);
         setSelectedSlotIdx(0);
@@ -888,94 +839,6 @@ export default function SchedulerPage() {
     setToast({ message, type });
     toastTimer.current = setTimeout(() => setToast(null), type === "error" ? 8000 : 3000);
   }, []);
-
-  const resolveCrewName = useCallback((crewValue: string): string | null => {
-    if (ALL_CREW_NAMES.has(crewValue)) return crewValue;
-    const dashMatch = crewValue.match(/—\s*(.+)$/);
-    if (dashMatch && ALL_CREW_NAMES.has(dashMatch[1].trim())) {
-      return dashMatch[1].trim();
-    }
-    return null;
-  }, []);
-
-  const buildExistingBookings = useCallback((excludeProjectId?: string): ExistingBooking[] => {
-    const existingBookings: ExistingBooking[] = [];
-
-    const addLocationWideBooking = (location: string, startDate: string, days: number) => {
-      const loc = normalizeLocation(location);
-      const locationCrews = CREWS[loc];
-      if (!locationCrews) return;
-      for (const crew of locationCrews) {
-        existingBookings.push({ crew: crew.name, startDate, days });
-      }
-    };
-
-    for (const p of projects) {
-      if (excludeProjectId && p.id === excludeProjectId) continue;
-
-      // Zuper-scheduled construction jobs — crew assignment is unknown, so block
-      // all crews in the location conservatively.
-      if (p.zuperJobCategory === "construction" && p.zuperScheduledStart) {
-        const startStr = p.zuperScheduledStart.split("T")[0];
-        const days = p.zuperScheduledDays || p.daysInstall || 1;
-        addLocationWideBooking(p.location, startStr, days);
-      }
-
-      // Manual/tentative installation schedules — use resolved crew if valid,
-      // otherwise block all crews in location.
-      const ms = manualSchedules[p.id];
-      if (ms && ms.scheduleType === "installation" && ms.crew) {
-        const crewName = resolveCrewName(ms.crew);
-        if (crewName) {
-          existingBookings.push({ crew: crewName, startDate: ms.startDate, days: ms.days });
-        } else {
-          addLocationWideBooking(p.location, ms.startDate, ms.days);
-        }
-      }
-
-      // HubSpot construction schedule (not yet in Zuper) — crew is unknown.
-      if (p.constructionScheduleDate && !p.zuperScheduledStart) {
-        const days = p.daysInstall || 1;
-        addLocationWideBooking(p.location, p.constructionScheduleDate, days);
-      }
-    }
-
-    return existingBookings;
-  }, [projects, manualSchedules, resolveCrewName]);
-
-  const availableConstructionCrews = useMemo(() => {
-    if (!scheduleModal) return [] as CrewConfig[];
-    const isConstruction = scheduleModal.project.stage !== "survey" && scheduleModal.project.stage !== "inspection";
-    if (!isConstruction) return [] as CrewConfig[];
-
-    const locationCrews = CREWS[scheduleModal.project.location] || [];
-    if (locationCrews.length === 0) return [] as CrewConfig[];
-
-    const existingBookings = buildExistingBookings(scheduleModal.project.id);
-    const blockedDatesByCrew: Record<string, Set<string>> = {};
-    for (const booking of existingBookings) {
-      if (!blockedDatesByCrew[booking.crew]) blockedDatesByCrew[booking.crew] = new Set();
-      const blockedDates = getBusinessDatesInSpan(booking.startDate, booking.days);
-      for (const date of blockedDates) {
-        blockedDatesByCrew[booking.crew].add(date);
-      }
-    }
-
-    const days = Math.max(1, Math.ceil(installDaysInput || scheduleModal.project.daysInstall || 1));
-    return locationCrews.filter((crew) =>
-      !hasBlockedDateConflict(blockedDatesByCrew[crew.name], scheduleModal.date, days)
-    );
-  }, [scheduleModal, installDaysInput, buildExistingBookings]);
-
-  useEffect(() => {
-    if (!scheduleModal) return;
-    const isConstruction = scheduleModal.project.stage !== "survey" && scheduleModal.project.stage !== "inspection";
-    if (!isConstruction) return;
-
-    if (crewSelectInput && !availableConstructionCrews.some((crew) => crew.name === crewSelectInput)) {
-      setCrewSelectInput("");
-    }
-  }, [scheduleModal, crewSelectInput, availableConstructionCrews]);
 
   /* ================================================================ */
   /*  Derived data                                                     */
@@ -1443,7 +1306,8 @@ export default function SchedulerPage() {
         const inspUsers = ZUPER_INSPECTION_USERS[project.location] || [];
         setCrewSelectInput(inspUsers[0]?.name || "");
       } else {
-        setCrewSelectInput(project.crew || "");  // No default — user must explicitly choose a crew
+        const locationCrews = CREWS[project.location] || [];
+        setCrewSelectInput(project.crew || locationCrews[0]?.name || "");
       }
       trackFeature("schedule-modal-open", "Opened master schedule modal", {
         scheduler: "master",
@@ -1464,12 +1328,6 @@ export default function SchedulerPage() {
     const selectedSlot = isSurveyOrInsp ? availableSlots[selectedSlotIdx] : null;
     const days = isSurveyOrInsp ? 0.25 : (installDaysInput || 2);
     const crew = crewSelectInput || project.crew || "";
-
-    // Require crew selection for construction installs
-    if (!isSurveyOrInsp && !crew) {
-      showToast("Please select a crew before scheduling", "warning");
-      return;
-    }
     // For survey/inspection, derive times from selected slot; for construction, use defaults
     const slotStartTime = selectedSlot?.startTime || "08:00";
     const slotEndTime = selectedSlot?.endTime || (isSurveyOrInsp ? "09:00" : "16:00");
@@ -1795,21 +1653,19 @@ export default function SchedulerPage() {
       daysToInstall: p.daysToInstall,
     }));
 
-    const existingBookings = buildExistingBookings();
-
     const result = generateOptimizedSchedule(
       mapped,
       CREWS,
       ZUPER_CONSTRUCTION_DIRECTORS,
       LOCATION_TIMEZONES,
-      { preset: optimizePreset, existingBookings }
+      { preset: optimizePreset }
     );
 
     setOptimizeResult(result);
     if (result.entries.length === 0) showToast("No eligible RTB projects to optimize", "error");
     if (result.skipped.length > 0)
       showToast(`${result.skipped.length} skipped (unmapped location)`, "error");
-  }, [projects, manualSchedules, optimizePreset, optimizeLocations, showToast, buildExistingBookings]);
+  }, [projects, manualSchedules, optimizePreset, optimizeLocations, showToast]);
 
   const handleOptimizeApply = useCallback(async () => {
     if (!optimizeResult?.entries.length) return;
@@ -4047,7 +3903,7 @@ export default function SchedulerPage() {
                         )}
                         {!loadingSlots && availableSlots.map((slot, idx) => (
                           <option key={`${slot.startTime}-${slot.endTime}`} value={idx}>
-                            {slot.displayTime}{slot.travelWarning?.type === "tight" ? " ⚠️ tight travel" : ""}{slot.travelWarning?.type === "unknown" ? " ❓ travel unverified" : ""}
+                            {slot.displayTime}
                           </option>
                         ))}
                       </select>
@@ -4056,17 +3912,6 @@ export default function SchedulerPage() {
                       <div className="text-[0.6rem] text-amber-400/80 mt-1">
                         No open slots for {crewSelectInput} on this date
                       </div>
-                    )}
-                    {!loadingSlots && availableSlots[selectedSlotIdx]?.travelWarning && (
-                      <p className={`text-[0.6rem] mt-1 leading-tight ${
-                        availableSlots[selectedSlotIdx].travelWarning?.type === "tight"
-                          ? "text-amber-400"
-                          : "text-muted"
-                      }`}>
-                        {availableSlots[selectedSlotIdx].travelWarning?.type === "tight"
-                          ? `⚠️ Tight travel: ${availableSlots[selectedSlotIdx].travelWarning?.prevJob?.travelMinutes || availableSlots[selectedSlotIdx].travelWarning?.nextJob?.travelMinutes || "?"}min drive needed between adjacent jobs`
-                          : "❓ Travel time could not be verified — missing address data on adjacent job"}
-                      </p>
                     )}
                   </>
                 ) : (
@@ -4090,22 +3935,13 @@ export default function SchedulerPage() {
                       onChange={(e) => setCrewSelectInput(e.target.value)}
                       className="bg-background border border-t-border text-foreground/90 px-2 py-1.5 rounded font-mono text-[0.75rem] focus:outline-none focus:border-orange-500"
                     >
-                      {availableConstructionCrews.length > 0 ? (
-                        <>
-                          <option value="">Select crew</option>
-                          {availableConstructionCrews.map((c) => (
-                            <option key={c.name} value={c.name}>{c.name}</option>
-                          ))}
-                        </>
-                      ) : (
-                        <option value="">No crews available</option>
+                      {(CREWS[scheduleModal.project.location] || []).map((c) => (
+                        <option key={c.name} value={c.name}>{c.name}</option>
+                      ))}
+                      {!(CREWS[scheduleModal.project.location]?.length) && (
+                        <option>No crews</option>
                       )}
                     </select>
-                    {(CREWS[scheduleModal.project.location]?.length ?? 0) > 0 && availableConstructionCrews.length === 0 && (
-                      <div className="text-[0.6rem] text-amber-400/80 mt-1">
-                        No crews are available for this date and duration.
-                      </div>
-                    )}
                   </div>
                 )}
               </ModalSection>
@@ -4396,13 +4232,6 @@ export default function SchedulerPage() {
                           "Unassigned"
                         }
                       />
-                      {detailModal.zuperAssignedTo && detailModal.zuperAssignedTo.length > 0 && (
-                        <ModalRow
-                          label={detailModal.zuperAssignedTo.length > 1 ? "Assigned To" : "Assigned To"}
-                          value={detailModal.zuperAssignedTo.join(", ")}
-                          valueClass="text-cyan-400"
-                        />
-                      )}
                       {detailModal.zuperScheduledStart && (
                         <div className="text-[0.6rem] text-cyan-400/70 mt-1">
                           Zuper: {formatShortDate(detailModal.zuperScheduledStart.split("T")[0])}

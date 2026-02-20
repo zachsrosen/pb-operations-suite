@@ -7,6 +7,13 @@
         "x-api-key": "${ZUPER_API_KEY}"
       }
     },
+    "hubspot": {
+      "type": "sse",
+      "url": "${HUBSPOT_MCP_URL}",
+      "headers": {
+        "authorization": "Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}"
+      }
+    },
     "context7": {
       "command": "npx",
       "args": ["-y", "@upstash/context7-mcp@latest"]
