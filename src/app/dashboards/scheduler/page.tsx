@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { LOCATION_TIMEZONES } from "@/lib/constants";
-import { generateOptimizedSchedule, type OptimizableProject, type ScoringPreset } from "@/lib/schedule-optimizer";
+import { generateOptimizedSchedule, type OptimizableProject, type ScoringPreset, type ExistingBooking } from "@/lib/schedule-optimizer";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -692,10 +692,18 @@ export default function SchedulerPage() {
                 // Use stored days, or fall back to the project's expected install days
                 const isSI = proj?.stage === "survey" || proj?.stage === "inspection";
                 const fallbackDays = isSI ? 0.25 : (proj?.daysInstall || proj?.totalDays || 2);
+                // Resolve crew name: rec.assignedUser may be a director name
+                // (e.g. "David Contreras") rather than a crew label ("WESTY Alpha").
+                // For optimizer-created records, extract crew from notes field.
+                let rehydratedCrew = rec.assignedUser || "";
+                if (rec.notes?.includes("[AUTO_OPTIMIZED]")) {
+                  const crewMatch = rec.notes.match(/—\s*(.+)$/);
+                  if (crewMatch) rehydratedCrew = crewMatch[1].trim();
+                }
                 restored[projId] = {
                   startDate: rec.scheduledDate,
                   days: rec.scheduledDays || fallbackDays,
-                  crew: rec.assignedUser || "",
+                  crew: rehydratedCrew,
                   isTentative: true,
                   recordId: rec.id,
                   scheduleType: rec.scheduleType,
@@ -1665,12 +1673,78 @@ export default function SchedulerPage() {
       daysToInstall: p.daysToInstall,
     }));
 
+    // Build existing crew bookings from scheduled construction projects
+    const existingBookings: ExistingBooking[] = [];
+
+    // Helper: resolve a crew value to a valid CREWS label.
+    // ManualSchedule.crew may store a director name (from rehydration) instead
+    // of the crew label. Fall back to extracting from notes if available.
+    const allCrewNames = new Set(
+      Object.values(CREWS).flat().map(c => c.name)
+    );
+    const resolveCrewName = (crewValue: string, notes?: string): string | null => {
+      if (allCrewNames.has(crewValue)) return crewValue;
+      // Try extracting from notes: "[AUTO_OPTIMIZED] (balanced) — WESTY Alpha"
+      if (notes) {
+        const dashMatch = notes.match(/—\s*(.+)$/);
+        if (dashMatch && allCrewNames.has(dashMatch[1].trim())) {
+          return dashMatch[1].trim();
+        }
+      }
+      return null;
+    };
+
+    for (const p of projects) {
+      // Zuper-scheduled construction jobs — we don't know the actual crew from
+      // Zuper, so block ALL crews at that location to prevent any overlap.
+      if (p.zuperJobCategory === "construction" && p.zuperScheduledStart) {
+        const startStr = p.zuperScheduledStart.split("T")[0];
+        const days = p.zuperScheduledDays || p.daysInstall || 1;
+        const loc = normalizeLocation(p.location);
+        const locationCrews = CREWS[loc];
+        if (locationCrews) {
+          for (const crew of locationCrews) {
+            existingBookings.push({ crew: crew.name, startDate: startStr, days });
+          }
+        }
+      }
+      // Manual/tentative schedules — resolve crew name from notes if needed
+      const ms = manualSchedules[p.id];
+      if (ms && ms.scheduleType === "installation" && ms.crew) {
+        const crewName = resolveCrewName(ms.crew, ms.fromOptimizer ? `— ${ms.crew}` : undefined);
+        if (crewName) {
+          existingBookings.push({ crew: crewName, startDate: ms.startDate, days: ms.days });
+        } else {
+          // Crew name can't be resolved — block all location crews conservatively
+          const loc = normalizeLocation(p.location);
+          const locationCrews = CREWS[loc];
+          if (locationCrews) {
+            for (const crew of locationCrews) {
+              existingBookings.push({ crew: crew.name, startDate: ms.startDate, days: ms.days });
+            }
+          }
+        }
+      }
+      // HubSpot construction schedule date (not yet in Zuper) — same issue,
+      // p.crew is a default placeholder, so block all location crews.
+      if (p.constructionScheduleDate && p.crew && !p.zuperScheduledStart) {
+        const days = p.daysInstall || 1;
+        const loc = normalizeLocation(p.location);
+        const locationCrews = CREWS[loc];
+        if (locationCrews) {
+          for (const crew of locationCrews) {
+            existingBookings.push({ crew: crew.name, startDate: p.constructionScheduleDate, days });
+          }
+        }
+      }
+    }
+
     const result = generateOptimizedSchedule(
       mapped,
       CREWS,
       ZUPER_CONSTRUCTION_DIRECTORS,
       LOCATION_TIMEZONES,
-      { preset: optimizePreset }
+      { preset: optimizePreset, existingBookings }
     );
 
     setOptimizeResult(result);

@@ -48,9 +48,16 @@ interface DirectorConfig {
   teamUid: string;
 }
 
+export interface ExistingBooking {
+  crew: string;       // Crew name, e.g. "WESTY Alpha"
+  startDate: string;  // YYYY-MM-DD
+  days: number;       // Business days
+}
+
 interface GenerateOptions {
   preset?: ScoringPreset;
   startDate?: string; // YYYY-MM-DD, defaults to next business day after today
+  existingBookings?: ExistingBooking[];
 }
 
 /* ------------------------------------------------------------------ */
@@ -169,6 +176,65 @@ export function generateOptimizedSchedule(
     }
   }
 
+  // Build blocked dates per crew from existing bookings
+  const crewBlockedDates: Record<string, Set<string>> = {};
+  if (options.existingBookings) {
+    for (const booking of options.existingBookings) {
+      if (!crewBlockedDates[booking.crew]) crewBlockedDates[booking.crew] = new Set();
+      const endDate = getBusinessEndDateInclusive(booking.startDate, booking.days);
+      const cursor = parseYmdToUtcDate(booking.startDate);
+      const end = parseYmdToUtcDate(endDate);
+      while (cursor <= end) {
+        const day = cursor.getUTCDay();
+        if (day !== 0 && day !== 6) {
+          crewBlockedDates[booking.crew].add(formatUtcDateToYmd(cursor));
+        }
+        cursor.setUTCDate(cursor.getUTCDate() + 1);
+      }
+    }
+  }
+
+  /** Check if assigning `days` business days starting at `dateStr` conflicts with blocked dates */
+  function hasConflict(crewName: string, dateStr: string, days: number): boolean {
+    const blocked = crewBlockedDates[crewName];
+    if (!blocked || blocked.size === 0) return false;
+    const endDate = getBusinessEndDateInclusive(dateStr, days);
+    const cursor = parseYmdToUtcDate(dateStr);
+    const end = parseYmdToUtcDate(endDate);
+    while (cursor <= end) {
+      const day = cursor.getUTCDay();
+      if (day !== 0 && day !== 6 && blocked.has(formatUtcDateToYmd(cursor))) {
+        return true;
+      }
+      cursor.setUTCDate(cursor.getUTCDate() + 1);
+    }
+    return false;
+  }
+
+  /** Advance from `fromDate` until a non-conflicting window of `days` business days is found */
+  function findNextAvailableDate(crewName: string, fromDate: string, days: number): string {
+    let candidate = fromDate;
+    for (let i = 0; i < 365; i++) {
+      if (!hasConflict(crewName, candidate, days)) return candidate;
+      candidate = nextBusinessDayAfter(candidate);
+    }
+    return candidate; // fallback — far out but won't loop forever
+  }
+
+  /** Mark business days in a range as blocked for a crew */
+  function addBlockedDates(crewName: string, jobStart: string, days: number): void {
+    if (!crewBlockedDates[crewName]) crewBlockedDates[crewName] = new Set();
+    const endInc = getBusinessEndDateInclusive(jobStart, days);
+    const c = parseYmdToUtcDate(jobStart);
+    const e = parseYmdToUtcDate(endInc);
+    while (c <= e) {
+      if (c.getUTCDay() !== 0 && c.getUTCDay() !== 6) {
+        crewBlockedDates[crewName].add(formatUtcDateToYmd(c));
+      }
+      c.setUTCDate(c.getUTCDate() + 1);
+    }
+  }
+
   const entries: OptimizedEntry[] = [];
   const skipped: OptimizableProject[] = [];
 
@@ -182,13 +248,15 @@ export function generateOptimizedSchedule(
       continue;
     }
 
-    // Find the crew with the earliest next-available date
+    const days = Math.max(1, Math.ceil(project.daysInstall));
+
+    // Find the crew with the earliest non-conflicting start date
     let bestCrew = locationCrews[0];
-    let bestDate = crewNextDate[bestCrew.name] || startDate;
+    let bestDate = findNextAvailableDate(bestCrew.name, crewNextDate[bestCrew.name] || startDate, days);
 
     for (let i = 1; i < locationCrews.length; i++) {
       const crew = locationCrews[i];
-      const nextDate = crewNextDate[crew.name] || startDate;
+      const nextDate = findNextAvailableDate(crew.name, crewNextDate[crew.name] || startDate, days);
       if (nextDate < bestDate) {
         bestCrew = crew;
         bestDate = nextDate;
@@ -196,11 +264,13 @@ export function generateOptimizedSchedule(
     }
 
     const jobStartDate = bestDate;
-    const days = Math.max(1, Math.ceil(project.daysInstall));
     const endDateInclusive = getBusinessEndDateInclusive(jobStartDate, days);
 
     // Next available = next business day AFTER the inclusive end date
     crewNextDate[bestCrew.name] = nextBusinessDayAfter(endDateInclusive);
+
+    // Mark these dates as blocked for future assignments in this run
+    addBlockedDates(bestCrew.name, jobStartDate, days);
 
     entries.push({
       project,
