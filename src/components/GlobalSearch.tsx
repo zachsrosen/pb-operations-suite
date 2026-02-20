@@ -54,6 +54,7 @@ const DASHBOARD_LINKS = [
   // Admin
   { name: "Zuper Compliance", path: "/dashboards/zuper-compliance", description: "Per-user compliance scorecards" },
   { name: "Zuper Status Comparison", path: "/dashboards/zuper-status-comparison", description: "Compare Zuper job statuses with HubSpot" },
+  { name: "Page Directory", path: "/admin/directory", description: "Complete URL directory with role access mapping" },
   // Help & Info
   { name: "Dashboard Guide", path: "/guide", description: "How to use each dashboard" },
   { name: "Product Updates", path: "/updates", description: "Changelog and release notes" },
@@ -80,14 +81,15 @@ export function GlobalSearch() {
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
   const isMac = useIsMac();
   const modKey = isMac ? "\u2318" : "Ctrl";
-  const { data: session } = useSession();
+  const { data: session, status: sessionStatus } = useSession();
   const userRole = (session?.user as { role?: string } | undefined)?.role as UserRole | undefined;
 
   // Filter links to only those the user's role can access
   const accessibleLinks = useMemo(() => {
-    if (!userRole) return DASHBOARD_LINKS; // Show all while session loads (render is gated by isOpen anyway)
+    // Fail closed while session/role is loading to avoid briefly showing restricted pages
+    if (sessionStatus !== "authenticated" || !userRole) return [];
     return DASHBOARD_LINKS.filter((d) => canAccessRoute(userRole, d.path));
-  }, [userRole]);
+  }, [sessionStatus, userRole]);
 
   // Filter dashboards by query
   const filteredDashboards = query.length > 0

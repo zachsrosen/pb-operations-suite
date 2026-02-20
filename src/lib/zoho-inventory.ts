@@ -7,6 +7,8 @@ export interface ZohoInventoryLocationStock {
   warehouse_name?: string;
   location_stock_on_hand?: number | string;
   warehouse_stock_on_hand?: number | string;
+  warehouse_available_stock?: number | string;
+  location_in_store?: number | string;
   location_available_stock?: number | string;
   available_stock?: number | string;
   stock_on_hand?: number | string;
@@ -20,6 +22,7 @@ export interface ZohoInventoryItem {
   stock_on_hand?: number | string;
   available_stock?: number | string;
   locations?: ZohoInventoryLocationStock[];
+  warehouses?: ZohoInventoryLocationStock[];
 }
 
 interface ZohoInventoryListItemsResponse {

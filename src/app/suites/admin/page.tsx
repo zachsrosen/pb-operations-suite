@@ -32,6 +32,20 @@ const ADMIN_TOOLS = [
     tag: "TICKETS",
     tagColor: "bg-orange-500/20 text-orange-400 border-orange-500/30",
   },
+  {
+    href: "/admin/directory",
+    title: "Page Directory",
+    description: "Complete page URL directory with per-role route access visibility.",
+    tag: "ROUTES",
+    tagColor: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+  },
+  {
+    href: "/dashboards/zuper-compliance",
+    title: "Zuper Compliance",
+    description: "Per-user compliance scorecards and crew-composition comparisons.",
+    tag: "COMPLIANCE",
+    tagColor: "bg-red-500/20 text-red-400 border-red-500/30",
+  },
 ];
 
 const DOCUMENTATION = [

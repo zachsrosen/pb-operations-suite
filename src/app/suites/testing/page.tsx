@@ -128,7 +128,15 @@ const PROTOTYPES = [
   },
 ];
 
-function SectionGrid({ items }: { items: typeof TESTING_DASHBOARDS }) {
+type SectionItem = {
+  href: string;
+  title: string;
+  description: string;
+  tag: string;
+  tagColor: string;
+};
+
+function SectionGrid({ items }: { items: ReadonlyArray<SectionItem> }) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
       {items.map((item) => (

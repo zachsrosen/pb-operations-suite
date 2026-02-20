@@ -149,6 +149,10 @@ export async function POST(request: NextRequest) {
   if (resolved instanceof NextResponse) return resolved;
   const { crewMember, userId, currentUserEmail, currentUserName } = resolved;
 
+  if (!prisma) {
+    return NextResponse.json({ error: "Database not configured" }, { status: 500 });
+  }
+
   try {
     const body = await request.json();
     const { date, reason, type, startTime, endTime } = body;

@@ -196,6 +196,19 @@ function resolveItemLocations(item: ZohoInventoryItem): ZohoInventoryLocationSto
   const explicit = Array.isArray(item.locations) ? item.locations : [];
   if (explicit.length > 0) return explicit;
 
+  const warehouses = Array.isArray(item.warehouses) ? item.warehouses : [];
+  if (warehouses.length > 0) {
+    return warehouses.map((w) => ({
+      warehouse_id: w.warehouse_id,
+      warehouse_name: w.warehouse_name,
+      warehouse_stock_on_hand: w.warehouse_stock_on_hand,
+      warehouse_available_stock: w.warehouse_available_stock,
+      location_in_store: w.location_in_store,
+      available_stock: w.available_stock,
+      stock_on_hand: w.stock_on_hand,
+    }));
+  }
+
   const defaultLocation = (process.env.ZOHO_INVENTORY_DEFAULT_LOCATION || "").trim();
   if (!defaultLocation) return [];
 
@@ -394,6 +407,8 @@ export async function POST(request: NextRequest) {
         const targetQty = parseQuantity(
           loc.location_stock_on_hand,
           loc.warehouse_stock_on_hand,
+          loc.warehouse_available_stock,
+          loc.location_in_store,
           loc.stock_on_hand,
           loc.location_available_stock,
           loc.available_stock
