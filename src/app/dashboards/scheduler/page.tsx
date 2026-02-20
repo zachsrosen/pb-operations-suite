@@ -99,6 +99,7 @@ interface SchedulerProject {
   zuperScheduledStart?: string; // ISO date from Zuper
   zuperScheduledEnd?: string;   // ISO date from Zuper
   zuperJobCategory?: string;    // Which Zuper category matched: "survey" | "construction" | "inspection"
+  zuperAssignedTo?: string;     // Zuper assigned user name (director/technician)
   daysToInstall: number | null;
   isCompletedPastStage: boolean; // Project moved past its stage (e.g. Close Out with inspection data) — calendar only, not sidebar
 }
@@ -660,6 +661,7 @@ export default function SchedulerPage() {
               if (zJob.scheduledDays) project.zuperScheduledDays = zJob.scheduledDays;
               if (zJob.scheduledDate) project.zuperScheduledStart = zJob.scheduledDate;
               if (zJob.scheduledEnd) project.zuperScheduledEnd = zJob.scheduledEnd;
+              if (zJob.assignedTo) project.zuperAssignedTo = zJob.assignedTo;
             }
           }
         } catch (zuperErr) {
@@ -4329,6 +4331,13 @@ export default function SchedulerPage() {
                           "Unassigned"
                         }
                       />
+                      {detailModal.zuperAssignedTo && (
+                        <ModalRow
+                          label="Assigned To"
+                          value={detailModal.zuperAssignedTo}
+                          valueClass="text-cyan-400"
+                        />
+                      )}
                       {detailModal.zuperScheduledStart && (
                         <div className="text-[0.6rem] text-cyan-400/70 mt-1">
                           Zuper: {formatShortDate(detailModal.zuperScheduledStart.split("T")[0])}
