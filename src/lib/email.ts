@@ -378,6 +378,17 @@ function formatDate(dateStr: string): string {
   });
 }
 
+function sanitizeScheduleEmailNotes(notes?: string | null): string | undefined {
+  if (!notes) return undefined;
+  const cleaned = notes
+    .replace(/\[(?:TENTATIVE|CONFIRMED)\]\s*/gi, "")
+    .replace(/\s*\[TZ:[^\]]+\]/gi, "")
+    .replace(/\bTentatively scheduled\b/gi, "Scheduled")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  return cleaned || undefined;
+}
+
 interface SendVerificationEmailParams {
   to: string;
   code: string;
@@ -441,6 +452,7 @@ interface SendSchedulingNotificationParams {
   crewMemberName: string;
   scheduledByName: string;
   scheduledByEmail: string;
+  dealOwnerName?: string | null;
   appointmentType: "survey" | "installation" | "inspection";
   customerName: string;
   customerAddress: string;
@@ -477,6 +489,7 @@ export async function sendSchedulingNotification(
         : [];
   const bccRecipients = dedupeEmails([...defaultBcc, ...explicitBcc], params.to);
   const installDetails = params.appointmentType === "installation" ? params.installDetails : undefined;
+  const cleanedNotes = sanitizeScheduleEmailNotes(params.notes);
   const installDetailLines: string[] = [];
   if (installDetails?.forecastedInstallDays != null) {
     installDetailLines.push(`Forecasted Install Days: ${installDetails.forecastedInstallDays}`);
@@ -561,13 +574,19 @@ export async function sendSchedulingNotification(
                     <td style="color: #71717a; font-size: 13px; padding: 8px 0;">👤 Scheduled by</td>
                     <td style="color: #ffffff; font-size: 13px; padding: 8px 0; text-align: right;">${params.scheduledByName}</td>
                   </tr>
+                  ${params.dealOwnerName ? `
+                  <tr>
+                    <td style="color: #71717a; font-size: 13px; padding: 8px 0;">🧑‍💼 Deal owner</td>
+                    <td style="color: #ffffff; font-size: 13px; padding: 8px 0; text-align: right;">${params.dealOwnerName}</td>
+                  </tr>
+                  ` : ""}
                   ${installDetailsHtml}
-                  ${params.notes ? `
+                  ${cleanedNotes ? `
                   <tr>
                     <td colspan="2" style="padding-top: 16px;">
                       <div style="background-color: #1e1e2e; border-radius: 6px; padding: 12px;">
                         <p style="color: #71717a; font-size: 12px; margin: 0 0 4px 0;">📝 Notes</p>
-                        <p style="color: #ffffff; font-size: 13px; margin: 0;">${params.notes}</p>
+                        <p style="color: #ffffff; font-size: 13px; margin: 0;">${cleanedNotes}</p>
                       </div>
                     </td>
                   </tr>
@@ -597,8 +616,9 @@ Address: ${params.customerAddress}
 Date: ${formattedDate}
 Time: ${timeSlot}
 Scheduled by: ${params.scheduledByName}
+${params.dealOwnerName ? `Deal owner: ${params.dealOwnerName}\n` : ""}
 ${installDetailLines.length > 0 ? `\nInstall Details:\n${installDetailLines.join("\n")}` : ""}
-${params.notes ? `\nNotes: ${params.notes}` : ""}
+${cleanedNotes ? `\nNotes: ${cleanedNotes}` : ""}
 
 Please check your Zuper app for complete details.
 
@@ -607,6 +627,7 @@ Please check your Zuper app for complete details.
     debugFallbackBody: [
       `Crew Member: ${params.crewMemberName}`,
       `Scheduled By: ${params.scheduledByName} (${params.scheduledByEmail})`,
+      `Deal Owner: ${params.dealOwnerName || "N/A"}`,
       `BCC: ${bccRecipients.length > 0 ? bccRecipients.join(", ") : "None"}`,
       `Type: ${appointmentTypeLabel}`,
       `Customer: ${params.customerName}`,
@@ -614,7 +635,7 @@ Please check your Zuper app for complete details.
       `Date: ${formattedDate}`,
       `Time: ${timeSlot}`,
       `Install Details: ${installDetailLines.length > 0 ? installDetailLines.join(" | ") : "None"}`,
-      `Notes: ${params.notes || "None"}`,
+      `Notes: ${cleanedNotes || "None"}`,
     ].join("\n"),
   });
 }

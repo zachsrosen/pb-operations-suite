@@ -4,11 +4,21 @@ import { tagSentryRequest } from "@/lib/sentry-request";
 import { headers } from "next/headers";
 import { zuper, createJobFromProject, JOB_CATEGORY_UIDS, ZuperJob } from "@/lib/zuper";
 import { auth } from "@/auth";
-import { getUserByEmail, logActivity, createScheduleRecord, cacheZuperJob, canScheduleType, getCrewMemberByName, getCrewMemberByZuperUserUid, getCachedZuperJobByDealId, UserRole } from "@/lib/db";
+import { getUserByEmail, logActivity, createScheduleRecord, cacheZuperJob, canScheduleType, getCrewMemberByName, getCrewMemberByZuperUserUid, getCachedZuperJobByDealId, prisma, UserRole } from "@/lib/db";
 import { sendSchedulingNotification } from "@/lib/email";
-import { updateDealProperty, getDealProperties, updateSiteSurveyorProperty } from "@/lib/hubspot";
-import { upsertSiteSurveyCalendarEvent } from "@/lib/google-calendar";
+import { updateDealProperty, getDealProperties, updateSiteSurveyorProperty, getDealOwnerContact } from "@/lib/hubspot";
+import {
+  upsertSiteSurveyCalendarEvent,
+  deleteSiteSurveyCalendarEvent,
+  upsertInstallationCalendarEvent,
+  deleteInstallationCalendarEvent,
+  getInstallCalendarIdForLocation,
+  getDenverSiteSurveyCalendarId,
+  getSharedCalendarImpersonationEmail,
+  normalizeLocationForInstallCalendars,
+} from "@/lib/google-calendar";
 import { getBusinessEndDateInclusive, isWeekendDate } from "@/lib/business-days";
+import { getInstallNotificationDetails } from "@/lib/scheduling-email-details";
 
 type ScheduleType = "survey" | "installation" | "inspection";
 
@@ -685,13 +695,23 @@ export async function PUT(request: NextRequest) {
       }
 
       // Send notification to assigned crew member (skip for explicit test slots)
+      const notificationWarnings: string[] = [];
       if (!isTestMode) {
-        await sendCrewNotification(
-          schedule,
+        const notificationSchedule = {
+          ...schedule,
+          crew: resolvedCrew || schedule.crew,
+          assignedUserUid: resolvedCrew || schedule.crew,
+        };
+        const notificationResult = await sendCrewNotification(
+          notificationSchedule,
           project,
           session.user.name || session.user.email,
           session.user.email
         );
+        notificationWarnings.push(...notificationResult.warnings);
+        if (notificationWarnings.length > 0) {
+          console.warn(`[Zuper Schedule] Notification warnings for deal ${project.id}: ${notificationWarnings.join("; ")}`);
+        }
       } else {
         console.log("[Zuper Schedule] Test slot mode enabled; skipping crew notification email");
       }
@@ -707,6 +727,7 @@ export async function PUT(request: NextRequest) {
         assignmentFailed,
         assignmentError,
         hubspotWarnings: hubspotWarnings.length > 0 ? hubspotWarnings : undefined,
+        notificationWarnings: notificationWarnings.length > 0 ? notificationWarnings : undefined,
       });
     } else if (effectiveRescheduleOnly) {
       // Reschedule-only mode: don't create new jobs, just report that none was found
@@ -811,13 +832,23 @@ export async function PUT(request: NextRequest) {
       }
 
       // Send notification to assigned crew member (skip for explicit test slots)
+      const notificationWarnings: string[] = [];
       if (!isTestMode) {
-        await sendCrewNotification(
-          schedule,
+        const notificationSchedule = {
+          ...schedule,
+          crew: resolvedCrew || schedule.crew,
+          assignedUserUid: resolvedCrew || schedule.crew,
+        };
+        const notificationResult = await sendCrewNotification(
+          notificationSchedule,
           project,
           session.user.name || session.user.email,
           session.user.email
         );
+        notificationWarnings.push(...notificationResult.warnings);
+        if (notificationWarnings.length > 0) {
+          console.warn(`[Zuper Schedule] Notification warnings for deal ${project.id}: ${notificationWarnings.join("; ")}`);
+        }
       } else {
         console.log("[Zuper Schedule] Test slot mode enabled; skipping crew notification email");
       }
@@ -828,6 +859,7 @@ export async function PUT(request: NextRequest) {
         job: createResult.data,
         message: `${schedule.type} job created in Zuper (no existing job found)`,
         hubspotWarnings: hubspotWarnings.length > 0 ? hubspotWarnings : undefined,
+        notificationWarnings: notificationWarnings.length > 0 ? notificationWarnings : undefined,
       });
     }
   } catch (error) {
@@ -969,6 +1001,45 @@ export async function DELETE(request: NextRequest) {
         { error: "Missing required field: projectId" },
         { status: 400 }
       );
+    }
+
+    let surveyRecipientEmail: string | null = null;
+    if (scheduleType === "survey") {
+      const bodyAssignedUser = typeof body?.assignedUser === "string" ? body.assignedUser.trim() : "";
+      const bodyAssignedUserUid = typeof body?.assignedUserUid === "string" ? body.assignedUserUid.trim() : "";
+
+      let assignedUser = bodyAssignedUser;
+      let assignedUserUid = bodyAssignedUserUid;
+
+      if (prisma && (!assignedUser || !assignedUserUid)) {
+        const latestSurveyRecord = await prisma.scheduleRecord.findFirst({
+          where: {
+            projectId,
+            scheduleType: "survey",
+            status: { not: "cancelled" },
+          },
+          orderBy: { updatedAt: "desc" },
+          select: {
+            assignedUser: true,
+            assignedUserUid: true,
+          },
+        });
+
+        if (!assignedUser && latestSurveyRecord?.assignedUser) {
+          assignedUser = latestSurveyRecord.assignedUser;
+        }
+        if (!assignedUserUid && latestSurveyRecord?.assignedUserUid) {
+          assignedUserUid = latestSurveyRecord.assignedUserUid;
+        }
+      }
+
+      if (assignedUser || assignedUserUid) {
+        const resolvedRecipient = await resolveCrewNotificationRecipient({
+          assignedUser,
+          assignedUserUid,
+        });
+        surveyRecipientEmail = resolvedRecipient.email;
+      }
     }
 
     console.log(`[Zuper Unschedule] Clearing ${scheduleType} schedule for project ${projectId} (${projectName})`);
@@ -1153,10 +1224,10 @@ export async function DELETE(request: NextRequest) {
 
           hubspotDealIdUsed = dealId;
           const verificationFields = scheduleType === "survey"
-            ? ["site_survey_schedule_date", "site_surveyor", "site_survey_status"]
+            ? ["site_survey_schedule_date", "site_surveyor", "site_survey_status", "pb_location"]
             : scheduleType === "installation"
-              ? ["install_schedule_date", "construction_scheduled_date", "install_status"]
-              : ["inspections_schedule_date", "inspection_scheduled_date", "final_inspection_status"];
+              ? ["install_schedule_date", "construction_scheduled_date", "install_status", "pb_location"]
+              : ["inspections_schedule_date", "inspection_scheduled_date", "final_inspection_status", "pb_location"];
           hubspotVerification = await getDealProperties(dealId, verificationFields);
           const verifiedFieldsCleared = scheduleType === "survey"
             ? !!hubspotVerification &&
@@ -1280,6 +1351,57 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
+    let calendarEventDeleted: boolean | undefined;
+    let calendarDeleteError: string | undefined;
+    const calendarDeleteWarnings: string[] = [];
+    const projectLocation = String((hubspotVerification?.pb_location || body?.location || "")).trim() || undefined;
+    const locationBucket = normalizeLocationForInstallCalendars(projectLocation);
+    const sharedCalendarImpersonation = getSharedCalendarImpersonationEmail() || undefined;
+
+    if (scheduleType === "survey") {
+      const personalDelete = await deleteSiteSurveyCalendarEvent({
+        projectId,
+        surveyorEmail: surveyRecipientEmail || undefined,
+      });
+      if (!personalDelete.success) {
+        calendarDeleteWarnings.push(personalDelete.error || "Unknown personal survey calendar delete error");
+      }
+
+      const denverSurveyCalendarId = getDenverSiteSurveyCalendarId();
+      if (locationBucket && denverSurveyCalendarId) {
+        const sharedDelete = await deleteSiteSurveyCalendarEvent({
+          projectId,
+          calendarId: denverSurveyCalendarId,
+          impersonateEmail: sharedCalendarImpersonation,
+        });
+        if (!sharedDelete.success) {
+          calendarDeleteWarnings.push(sharedDelete.error || "Unknown Denver survey calendar delete error");
+        }
+      }
+    }
+
+    if (scheduleType === "installation") {
+      const installCalendarId = getInstallCalendarIdForLocation(projectLocation);
+      if (installCalendarId) {
+        const installDelete = await deleteInstallationCalendarEvent({
+          projectId,
+          calendarId: installCalendarId,
+          impersonateEmail: sharedCalendarImpersonation,
+        });
+        if (!installDelete.success) {
+          calendarDeleteWarnings.push(installDelete.error || "Unknown installation calendar delete error");
+        }
+      }
+    }
+
+    if (scheduleType === "survey" || scheduleType === "installation") {
+      calendarEventDeleted = calendarDeleteWarnings.length === 0;
+      if (calendarDeleteWarnings.length > 0) {
+        calendarDeleteError = calendarDeleteWarnings.join("; ");
+        console.warn(`[Zuper Unschedule] Google Calendar delete warning: ${calendarDeleteError}`);
+      }
+    }
+
     return NextResponse.json({
       success: true,
       action: "unscheduled",
@@ -1289,6 +1411,8 @@ export async function DELETE(request: NextRequest) {
       hubspotStatusUpdated,
       hubspotVerification,
       zuperJobUid: resolvedJobUid || null,
+      calendarEventDeleted,
+      calendarDeleteError,
       message: `${scheduleType} schedule cleared${zuperCleared ? " (Zuper + HubSpot)" : " (HubSpot only)"}`,
     });
   } catch (error) {
@@ -1354,12 +1478,145 @@ async function logSchedulingActivity(
 }
 
 /**
+ * Shared assignee resolution for notification + calendar sync.
+ */
+function isZuperUserUid(value?: string | null): boolean {
+  return !!value && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
+
+interface InstallDirectorConfig {
+  name: string;
+  userUid: string;
+}
+
+const INSTALL_DIRECTORS_BY_LOCATION: Record<string, InstallDirectorConfig> = {
+  westminster: { name: "Joe Lynch", userUid: "f203f99b-4aaf-488e-8e6a-8ee5e94ec217" },
+  westy: { name: "Joe Lynch", userUid: "f203f99b-4aaf-488e-8e6a-8ee5e94ec217" },
+  centennial: { name: "Drew Perry", userUid: "0ddc7e1d-62e1-49df-b89d-905a39c1e353" },
+  dtc: { name: "Drew Perry", userUid: "0ddc7e1d-62e1-49df-b89d-905a39c1e353" },
+  "denver tech center": { name: "Drew Perry", userUid: "0ddc7e1d-62e1-49df-b89d-905a39c1e353" },
+  "colorado springs": { name: "Rolando", userUid: "a89ed2f5-222b-4b09-8bb0-14dc45c2a51b" },
+  cosp: { name: "Rolando", userUid: "a89ed2f5-222b-4b09-8bb0-14dc45c2a51b" },
+  pueblo: { name: "Rolando", userUid: "a89ed2f5-222b-4b09-8bb0-14dc45c2a51b" },
+  "san luis obispo": { name: "Nick Scarpellino", userUid: "8e67159c-48fe-4fb0-acc3-b1c905ff6e95" },
+  slo: { name: "Nick Scarpellino", userUid: "8e67159c-48fe-4fb0-acc3-b1c905ff6e95" },
+  camarillo: { name: "Nick Scarpellino", userUid: "8e67159c-48fe-4fb0-acc3-b1c905ff6e95" },
+};
+
+function normalizeLocationKey(location?: string | null): string {
+  return (location || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+function getInstallDirectorForLocation(location?: string | null): InstallDirectorConfig | null {
+  const normalized = normalizeLocationKey(location);
+  if (!normalized) return null;
+  return INSTALL_DIRECTORS_BY_LOCATION[normalized] || null;
+}
+
+function sanitizeExternalScheduleNotes(notes?: string | null): string | undefined {
+  if (!notes) return undefined;
+  const cleaned = notes
+    .replace(/\[(?:TENTATIVE|CONFIRMED)\]\s*/gi, "")
+    .replace(/\s*\[TZ:[^\]]+\]/gi, "")
+    .replace(/\bTentatively scheduled\b/gi, "Scheduled")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  return cleaned || undefined;
+}
+
+async function resolveCrewNotificationRecipient(params: {
+  assignedUser?: string;
+  assignedUserUid?: string;
+}): Promise<{ email: string | null; name: string }> {
+  const assignedUser = (params.assignedUser || "").trim();
+  const candidateUids = new Set<string>();
+
+  if (isZuperUserUid(assignedUser)) {
+    candidateUids.add(assignedUser);
+  }
+  if (params.assignedUserUid) {
+    for (const value of params.assignedUserUid.split(",")) {
+      const uid = value.trim();
+      if (isZuperUserUid(uid)) {
+        candidateUids.add(uid);
+      }
+    }
+  }
+
+  let recipientEmail: string | null = null;
+  let recipientName = assignedUser || "Crew Member";
+
+  if (assignedUser && !isZuperUserUid(assignedUser)) {
+    const byName = await getCrewMemberByName(assignedUser);
+    if (byName?.email) {
+      recipientEmail = byName.email;
+      recipientName = byName.name;
+    }
+  }
+
+  if (!recipientEmail) {
+    for (const uid of candidateUids) {
+      const byUid = await getCrewMemberByZuperUserUid(uid);
+      if (byUid?.email) {
+        recipientEmail = byUid.email;
+        recipientName = byUid.name;
+        break;
+      }
+    }
+  }
+
+  if (!recipientEmail && zuper.isConfigured()) {
+    if (candidateUids.size === 0 && assignedUser && !isZuperUserUid(assignedUser)) {
+      const resolved = await zuper.resolveUserUid(assignedUser);
+      if (resolved?.userUid && isZuperUserUid(resolved.userUid)) {
+        candidateUids.add(resolved.userUid);
+      }
+    }
+
+    for (const uid of candidateUids) {
+      const userResult = await zuper.getUser(uid);
+      if (userResult.type === "success" && userResult.data?.email) {
+        recipientEmail = userResult.data.email;
+        recipientName =
+          [userResult.data.first_name, userResult.data.last_name].filter(Boolean).join(" ").trim() ||
+          assignedUser ||
+          recipientName;
+        break;
+      }
+    }
+  }
+
+  return { email: recipientEmail, name: recipientName };
+}
+
+async function resolveProjectLocationForCalendarSync(project: {
+  id: string;
+  location?: string;
+}): Promise<string | null> {
+  const fromProject = (project.location || "").trim();
+  if (fromProject) return fromProject;
+
+  try {
+    const dealProps = await getDealProperties(project.id, ["pb_location"]);
+    const fromHubSpot = String(dealProps?.pb_location || "").trim();
+    return fromHubSpot || null;
+  } catch (err) {
+    console.warn(`[Zuper Schedule] Failed to resolve pb_location for ${project.id}:`, err);
+    return null;
+  }
+}
+
+/**
  * Helper to send notification to assigned crew member
  */
 async function sendCrewNotification(
   schedule: {
     type: string;
     date: string;
+    days?: number;
     startTime?: string;
     endTime?: string;
     assignedUser?: string;
@@ -1368,62 +1625,12 @@ async function sendCrewNotification(
     timezone?: string;
     notes?: string;
   },
-  project: { id: string; name?: string; address?: string },
+  project: { id: string; name?: string; address?: string; location?: string },
   schedulerName: string,
   schedulerEmail: string
-) {
+): Promise<{ warnings: string[] }> {
+  const warnings: string[] = [];
   try {
-    // If no assigned user, skip notification
-    if (!schedule.assignedUser) {
-      console.log("[Zuper Schedule] No assigned user, skipping notification");
-      return;
-    }
-
-    const isUuid = (value?: string) =>
-      !!value && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
-
-    const assignedUserUid =
-      (schedule.assignedUserUid && isUuid(schedule.assignedUserUid) ? schedule.assignedUserUid : undefined) ||
-      (schedule.crew && isUuid(schedule.crew) ? schedule.crew : undefined);
-
-    // Resolve recipient email with fallbacks:
-    // 1) exact name in crew table
-    // 2) zuperUserUid in crew table
-    // 3) direct Zuper user lookup by UID
-    let recipientEmail: string | null = null;
-    let recipientName = schedule.assignedUser;
-
-    const byName = await getCrewMemberByName(schedule.assignedUser);
-    if (byName?.email) {
-      recipientEmail = byName.email;
-      recipientName = byName.name;
-    }
-
-    if (!recipientEmail && assignedUserUid) {
-      const byUid = await getCrewMemberByZuperUserUid(assignedUserUid);
-      if (byUid?.email) {
-        recipientEmail = byUid.email;
-        recipientName = byUid.name;
-      }
-    }
-
-    if (!recipientEmail && assignedUserUid) {
-      const userResult = await zuper.getUser(assignedUserUid);
-      if (userResult.type === "success" && userResult.data?.email) {
-        recipientEmail = userResult.data.email;
-        if (!recipientName) {
-          recipientName = [userResult.data.first_name, userResult.data.last_name].filter(Boolean).join(" ").trim() || schedule.assignedUser;
-        }
-      }
-    }
-
-    if (!recipientEmail) {
-      console.log(
-        `[Zuper Schedule] No email found for assigned surveyor: name="${schedule.assignedUser}", uid="${assignedUserUid || ""}"`
-      );
-      return;
-    }
-
     // Extract customer name from project name
     // Format: "PROJ-9031 | LastName, FirstName | Address" or "LastName, FirstName | Address"
     const nameParts = project.name?.split(" | ") || [];
@@ -1438,43 +1645,209 @@ async function sendCrewNotification(
         ? nameParts[1]?.trim()
         : project.address || "See Zuper for address";
 
-    await sendSchedulingNotification({
-      to: recipientEmail,
-      crewMemberName: recipientName || schedule.assignedUser,
-      scheduledByName: schedulerName,
-      scheduledByEmail: schedulerEmail,
-      appointmentType: schedule.type as "survey" | "installation" | "inspection",
-      customerName,
-      customerAddress,
-      scheduledDate: schedule.date,
-      scheduledStart: schedule.startTime,
-      scheduledEnd: schedule.endTime,
-      projectId: project.id,
-      notes: schedule.notes,
-    });
-
-    // Keep surveyor Google Calendar in sync for site surveys.
-    if (schedule.type === "survey") {
-      const syncResult = await upsertSiteSurveyCalendarEvent({
-        surveyorEmail: recipientEmail,
-        projectId: project.id,
-        projectName: project.name || project.id,
-        customerName,
-        customerAddress,
-        date: schedule.date,
-        startTime: schedule.startTime,
-        endTime: schedule.endTime,
-        timezone: schedule.timezone,
-        notes: schedule.notes,
-      });
-      if (!syncResult.success) {
-        console.warn(`[Zuper Schedule] Google Calendar sync warning: ${syncResult.error}`);
+    const projectLocation = await resolveProjectLocationForCalendarSync(project);
+    const locationBucket = normalizeLocationForInstallCalendars(projectLocation);
+    const sharedCalendarImpersonation = getSharedCalendarImpersonationEmail() || undefined;
+    let dealOwnerName: string | null = null;
+    try {
+      const owner = await getDealOwnerContact(project.id);
+      dealOwnerName = owner.ownerName;
+    } catch (ownerErr) {
+      const warning = `Unable to resolve deal owner for ${project.id}: ${ownerErr instanceof Error ? ownerErr.message : String(ownerErr)}`;
+      warnings.push(warning);
+      console.warn(`[Zuper Schedule] ${warning}`);
+    }
+    const externalNotes = sanitizeExternalScheduleNotes(schedule.notes);
+    let installDetails: Awaited<ReturnType<typeof getInstallNotificationDetails>>["details"];
+    if (schedule.type === "installation") {
+      const detailResult = await getInstallNotificationDetails(project.id);
+      installDetails = detailResult.details;
+      if (detailResult.warning) {
+        warnings.push(detailResult.warning);
+        console.warn(`[Zuper Schedule] ${detailResult.warning}`);
       }
     }
 
-    console.log(`[Zuper Schedule] Notification sent to ${recipientEmail}`);
+    let assigneeEmail: string | null = null;
+    let assigneeName = schedule.assignedUser || "Crew Member";
+    if (schedule.assignedUser || schedule.assignedUserUid || schedule.crew) {
+      const resolvedRecipient = await resolveCrewNotificationRecipient({
+        assignedUser: schedule.assignedUser,
+        assignedUserUid: schedule.assignedUserUid || schedule.crew,
+      });
+      assigneeEmail = resolvedRecipient.email;
+      assigneeName = resolvedRecipient.name || assigneeName;
+    }
+
+    if (assigneeEmail) {
+      const emailResult = await sendSchedulingNotification({
+        to: assigneeEmail,
+        crewMemberName: assigneeName,
+        scheduledByName: schedulerName,
+        scheduledByEmail: schedulerEmail,
+        dealOwnerName,
+        appointmentType: schedule.type as "survey" | "installation" | "inspection",
+        customerName,
+        customerAddress,
+        scheduledDate: schedule.date,
+        scheduledStart: schedule.startTime,
+        scheduledEnd: schedule.endTime,
+        projectId: project.id,
+        notes: externalNotes,
+        installDetails,
+      });
+      if (!emailResult.success) {
+        const warning = `Notification email failed for ${assigneeEmail}: ${emailResult.error || "Unknown error"}`;
+        warnings.push(warning);
+        console.warn(`[Zuper Schedule] ${warning}`);
+      } else {
+        console.log(`[Zuper Schedule] Notification email sent to ${assigneeEmail}`);
+      }
+    } else if (schedule.assignedUser || schedule.assignedUserUid || schedule.crew) {
+      const warning = `No email found for assigned crew member: name="${schedule.assignedUser || ""}", uid="${schedule.assignedUserUid || schedule.crew || ""}"`;
+      warnings.push(warning);
+      console.warn(`[Zuper Schedule] ${warning}`);
+    } else {
+      console.log("[Zuper Schedule] No assigned user available for notification email");
+    }
+
+    if (schedule.type === "installation") {
+      const director = getInstallDirectorForLocation(projectLocation);
+      if (director) {
+        const directorRecipient = await resolveCrewNotificationRecipient({
+          assignedUser: director.name,
+          assignedUserUid: director.userUid,
+        });
+        const directorEmail = directorRecipient.email?.trim().toLowerCase() || null;
+        const assigneeEmailNormalized = assigneeEmail?.trim().toLowerCase() || null;
+
+        if (directorEmail && directorEmail !== assigneeEmailNormalized) {
+          const directorEmailResult = await sendSchedulingNotification({
+            to: directorEmail,
+            crewMemberName: directorRecipient.name || director.name,
+            scheduledByName: schedulerName,
+            scheduledByEmail: schedulerEmail,
+            dealOwnerName,
+            appointmentType: "installation",
+            customerName,
+            customerAddress,
+            scheduledDate: schedule.date,
+            scheduledStart: schedule.startTime,
+            scheduledEnd: schedule.endTime,
+            projectId: project.id,
+            notes: externalNotes,
+            installDetails,
+          });
+          if (!directorEmailResult.success) {
+            const warning = `Install director email failed for ${directorEmail}: ${directorEmailResult.error || "Unknown error"}`;
+            warnings.push(warning);
+            console.warn(`[Zuper Schedule] ${warning}`);
+          } else {
+            console.log(`[Zuper Schedule] Install director email sent to ${directorEmail}`);
+          }
+        } else if (!directorEmail) {
+          const warning = `No email found for install director: ${director.name} (${director.userUid})`;
+          warnings.push(warning);
+          console.warn(`[Zuper Schedule] ${warning}`);
+        } else {
+          console.log(`[Zuper Schedule] Install director email skipped (duplicate recipient): ${directorEmail}`);
+        }
+      } else if (projectLocation) {
+        const warning = `No install director mapping configured for location "${projectLocation}"`;
+        warnings.push(warning);
+        console.warn(`[Zuper Schedule] ${warning}`);
+      }
+    }
+
+    // Keep surveyor calendar in sync and also mirror CO surveys to Denver shared calendar.
+    if (schedule.type === "survey") {
+      if (assigneeEmail) {
+        const personalSync = await upsertSiteSurveyCalendarEvent({
+          surveyorEmail: assigneeEmail,
+          projectId: project.id,
+          projectName: project.name || project.id,
+          customerName,
+          customerAddress,
+          date: schedule.date,
+          startTime: schedule.startTime,
+          endTime: schedule.endTime,
+          timezone: schedule.timezone,
+          notes: externalNotes,
+        });
+        if (!personalSync.success) {
+          const warning = `Google Calendar sync failed for ${assigneeEmail}: ${personalSync.error || "Unknown error"}`;
+          warnings.push(warning);
+          console.warn(`[Zuper Schedule] ${warning}`);
+        }
+      } else {
+        const warning = "Google Calendar sync skipped: no surveyor email available";
+        warnings.push(warning);
+        console.warn(`[Zuper Schedule] ${warning}`);
+      }
+
+      const denverSurveyCalendarId = getDenverSiteSurveyCalendarId();
+      if (locationBucket && denverSurveyCalendarId) {
+        const sharedSync = await upsertSiteSurveyCalendarEvent({
+          surveyorEmail: assigneeEmail || (sharedCalendarImpersonation || ""),
+          projectId: project.id,
+          projectName: project.name || project.id,
+          customerName,
+          customerAddress,
+          date: schedule.date,
+          startTime: schedule.startTime,
+          endTime: schedule.endTime,
+          timezone: schedule.timezone,
+          notes: externalNotes,
+          calendarId: denverSurveyCalendarId,
+          impersonateEmail: sharedCalendarImpersonation,
+        });
+        if (!sharedSync.success) {
+          const warning = `Denver survey calendar sync failed: ${sharedSync.error || "Unknown error"}`;
+          warnings.push(warning);
+          console.warn(`[Zuper Schedule] ${warning}`);
+        }
+      } else if (locationBucket && !denverSurveyCalendarId) {
+        const warning = "Denver survey calendar sync skipped: GOOGLE_DENVER_SITE_SURVEY_CALENDAR_ID is not set";
+        warnings.push(warning);
+        console.warn(`[Zuper Schedule] ${warning}`);
+      }
+    }
+
+    if (schedule.type === "installation") {
+      const installCalendarId = getInstallCalendarIdForLocation(projectLocation);
+      if (installCalendarId) {
+        const installDays = Number.isFinite(Number(schedule.days)) ? Math.max(1, Number(schedule.days)) : 1;
+        const endDate = getBusinessEndDateInclusive(schedule.date, installDays);
+        const installSync = await upsertInstallationCalendarEvent({
+          projectId: project.id,
+          projectName: project.name || project.id,
+          customerName,
+          customerAddress,
+          startDate: schedule.date,
+          startTime: schedule.startTime || "08:00",
+          endDate,
+          endTime: schedule.endTime || "16:00",
+          timezone: schedule.timezone || "America/Denver",
+          notes: externalNotes,
+          calendarId: installCalendarId,
+          impersonateEmail: sharedCalendarImpersonation,
+        });
+        if (!installSync.success) {
+          const warning = `Installation calendar sync failed: ${installSync.error || "Unknown error"}`;
+          warnings.push(warning);
+          console.warn(`[Zuper Schedule] ${warning}`);
+        }
+      } else if (locationBucket) {
+        const warning = `Installation calendar sync skipped: no calendar configured for location ${projectLocation || "unknown"}`;
+        warnings.push(warning);
+        console.warn(`[Zuper Schedule] ${warning}`);
+      }
+    }
   } catch (err) {
+    const warning = `Notification flow exception: ${err instanceof Error ? err.message : String(err)}`;
+    warnings.push(warning);
     console.error("Failed to send crew notification:", err);
-    // Don't throw - notification failures shouldn't break scheduling
+    // Don't throw - notification failures shouldn't break scheduling.
   }
+  return { warnings };
 }

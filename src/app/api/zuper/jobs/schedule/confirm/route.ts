@@ -4,9 +4,17 @@ import { getUserByEmail, logActivity, prisma, cacheZuperJob, canScheduleType, ge
 import { zuper, JOB_CATEGORY_UIDS } from "@/lib/zuper";
 import { headers } from "next/headers";
 import { sendSchedulingNotification } from "@/lib/email";
-import { updateDealProperty, updateSiteSurveyorProperty, getDealProperties } from "@/lib/hubspot";
-import { upsertSiteSurveyCalendarEvent } from "@/lib/google-calendar";
+import { updateDealProperty, updateSiteSurveyorProperty, getDealProperties, getDealOwnerContact } from "@/lib/hubspot";
+import {
+  upsertSiteSurveyCalendarEvent,
+  upsertInstallationCalendarEvent,
+  getInstallCalendarIdForLocation,
+  getDenverSiteSurveyCalendarId,
+  getSharedCalendarImpersonationEmail,
+  normalizeLocationForInstallCalendars,
+} from "@/lib/google-calendar";
 import { getBusinessEndDateInclusive, isWeekendDate } from "@/lib/business-days";
+import { getInstallNotificationDetails } from "@/lib/scheduling-email-details";
 
 function getConstructionScheduleBoundaryProperties(): { start: string | null; end: string | null } {
   const start = process.env.HUBSPOT_CONSTRUCTION_START_DATE_PROPERTY?.trim() || null;
@@ -72,6 +80,118 @@ async function writeConstructionScheduleBoundaryProperties(
   }
 
   return warnings;
+}
+
+function isZuperUserUid(value?: string | null): boolean {
+  return !!value && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
+
+interface InstallDirectorConfig {
+  name: string;
+  userUid: string;
+}
+
+const INSTALL_DIRECTORS_BY_LOCATION: Record<string, InstallDirectorConfig> = {
+  westminster: { name: "Joe Lynch", userUid: "f203f99b-4aaf-488e-8e6a-8ee5e94ec217" },
+  westy: { name: "Joe Lynch", userUid: "f203f99b-4aaf-488e-8e6a-8ee5e94ec217" },
+  centennial: { name: "Drew Perry", userUid: "0ddc7e1d-62e1-49df-b89d-905a39c1e353" },
+  dtc: { name: "Drew Perry", userUid: "0ddc7e1d-62e1-49df-b89d-905a39c1e353" },
+  "denver tech center": { name: "Drew Perry", userUid: "0ddc7e1d-62e1-49df-b89d-905a39c1e353" },
+  "colorado springs": { name: "Rolando", userUid: "a89ed2f5-222b-4b09-8bb0-14dc45c2a51b" },
+  cosp: { name: "Rolando", userUid: "a89ed2f5-222b-4b09-8bb0-14dc45c2a51b" },
+  pueblo: { name: "Rolando", userUid: "a89ed2f5-222b-4b09-8bb0-14dc45c2a51b" },
+  "san luis obispo": { name: "Nick Scarpellino", userUid: "8e67159c-48fe-4fb0-acc3-b1c905ff6e95" },
+  slo: { name: "Nick Scarpellino", userUid: "8e67159c-48fe-4fb0-acc3-b1c905ff6e95" },
+  camarillo: { name: "Nick Scarpellino", userUid: "8e67159c-48fe-4fb0-acc3-b1c905ff6e95" },
+};
+
+function normalizeLocationKey(location?: string | null): string {
+  return (location || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+function getInstallDirectorForLocation(location?: string | null): InstallDirectorConfig | null {
+  const normalized = normalizeLocationKey(location);
+  if (!normalized) return null;
+  return INSTALL_DIRECTORS_BY_LOCATION[normalized] || null;
+}
+
+function sanitizeExternalScheduleNotes(notes?: string | null): string | undefined {
+  if (!notes) return undefined;
+  const cleaned = notes
+    .replace(/\[(?:TENTATIVE|CONFIRMED)\]\s*/gi, "")
+    .replace(/\s*\[TZ:[^\]]+\]/gi, "")
+    .replace(/\bTentatively scheduled\b/gi, "Scheduled")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  return cleaned || undefined;
+}
+
+async function resolveCrewNotificationRecipient(params: {
+  assignedUser?: string;
+  assignedUserUid?: string;
+}): Promise<{ email: string | null; name: string }> {
+  const assignedUser = (params.assignedUser || "").trim();
+  const candidateUids = new Set<string>();
+
+  if (isZuperUserUid(assignedUser)) {
+    candidateUids.add(assignedUser);
+  }
+  if (params.assignedUserUid) {
+    for (const value of params.assignedUserUid.split(",")) {
+      const uid = value.trim();
+      if (isZuperUserUid(uid)) {
+        candidateUids.add(uid);
+      }
+    }
+  }
+
+  let recipientEmail: string | null = null;
+  let recipientName = assignedUser || "Crew Member";
+
+  if (assignedUser && !isZuperUserUid(assignedUser)) {
+    const byName = await getCrewMemberByName(assignedUser);
+    if (byName?.email) {
+      recipientEmail = byName.email;
+      recipientName = byName.name;
+    }
+  }
+
+  if (!recipientEmail) {
+    for (const uid of candidateUids) {
+      const byUid = await getCrewMemberByZuperUserUid(uid);
+      if (byUid?.email) {
+        recipientEmail = byUid.email;
+        recipientName = byUid.name;
+        break;
+      }
+    }
+  }
+
+  if (!recipientEmail) {
+    if (candidateUids.size === 0 && assignedUser && !isZuperUserUid(assignedUser)) {
+      const resolved = await zuper.resolveUserUid(assignedUser);
+      if (resolved?.userUid && isZuperUserUid(resolved.userUid)) {
+        candidateUids.add(resolved.userUid);
+      }
+    }
+
+    for (const uid of candidateUids) {
+      const userResult = await zuper.getUser(uid);
+      if (userResult.type === "success" && userResult.data?.email) {
+        recipientEmail = userResult.data.email;
+        recipientName =
+          [userResult.data.first_name, userResult.data.last_name].filter(Boolean).join(" ").trim() ||
+          assignedUser ||
+          recipientName;
+        break;
+      }
+    }
+  }
+
+  return { email: recipientEmail, name: recipientName };
 }
 
 /**
@@ -148,21 +268,6 @@ export async function POST(request: NextRequest) {
 
     // Build project object for Zuper
     const projectNameParts = record.projectName.split(" | ");
-    const derivedCustomerName = projectNameParts.length >= 2
-      ? projectNameParts[1]?.trim() || ""
-      : projectNameParts[0]?.trim() || "";
-    const derivedAddress = projectNameParts.length >= 3
-      ? projectNameParts[2]?.trim() || ""
-      : "";
-    const project = {
-      id: record.projectId,
-      name: record.projectName,
-      address: derivedAddress,
-      city: "",
-      state: "",
-      customerName: derivedCustomerName,
-    };
-
     // Resolve assignment UIDs from record data so tentative confirms can still
     // assign when only a crew name was stored (e.g. test-slot workflows).
     const isUuid = (value?: string | null) =>
@@ -418,6 +523,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const confirmedNotes = record.notes?.replace("[TENTATIVE]", "[CONFIRMED]") || "[CONFIRMED]";
+    const externalNotes = sanitizeExternalScheduleNotes(confirmedNotes);
+
     // Update the schedule record only after successful Zuper sync.
     await prisma.scheduleRecord.update({
       where: { id: scheduleRecordId },
@@ -426,7 +534,7 @@ export async function POST(request: NextRequest) {
         zuperSynced: true,
         zuperJobUid: zuperJobUid || undefined,
         zuperError: null,
-        notes: record.notes?.replace("[TENTATIVE]", "[CONFIRMED]") || "[CONFIRMED]",
+        notes: confirmedNotes,
       },
     });
 
@@ -525,91 +633,218 @@ export async function POST(request: NextRequest) {
       hubspotWarnings.push("HubSpot update threw an error");
     }
 
-    // Send notification to assigned crew member (fire and forget)
+    // Send notification to assigned crew member and install director (fire and forget)
+    const notificationWarnings: string[] = [];
     try {
-      if (record.assignedUser) {
-        const isUuid = (value?: string | null) =>
-          !!value && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
-        const firstAssignedUid = record.assignedUserUid
-          ?.split(",")
-          .map((u) => u.trim())
-          .find((u) => isUuid(u));
+      const customerNameParts = record.projectName.split(" | ");
+      const customerName = customerNameParts.length >= 2
+        ? customerNameParts[1]?.trim()
+        : customerNameParts[0]?.trim() || "Customer";
+      const customerAddress = customerNameParts.length >= 3
+        ? customerNameParts[2]?.trim()
+        : "See Zuper for address";
 
-        let recipientEmail: string | null = null;
-        let recipientName = record.assignedUser;
-
-        const byName = await getCrewMemberByName(record.assignedUser);
-        if (byName?.email) {
-          recipientEmail = byName.email;
-          recipientName = byName.name;
+      let projectLocation: string | undefined;
+      try {
+        const locationProps = await getDealProperties(record.projectId, ["pb_location"]);
+        const locationValue = String(locationProps?.pb_location || "").trim();
+        projectLocation = locationValue || undefined;
+      } catch (locationErr) {
+        const warning = `Unable to resolve pb_location for ${record.projectId}: ${locationErr instanceof Error ? locationErr.message : String(locationErr)}`;
+        notificationWarnings.push(warning);
+        console.warn(`[Zuper Confirm] ${warning}`);
+      }
+      const locationBucket = normalizeLocationForInstallCalendars(projectLocation);
+      const sharedCalendarImpersonation = getSharedCalendarImpersonationEmail() || undefined;
+      let installDetails: Awaited<ReturnType<typeof getInstallNotificationDetails>>["details"];
+      let dealOwnerName: string | null = null;
+      if (scheduleType === "installation") {
+        const detailResult = await getInstallNotificationDetails(record.projectId);
+        installDetails = detailResult.details;
+        if (detailResult.warning) {
+          notificationWarnings.push(detailResult.warning);
+          console.warn(`[Zuper Confirm] ${detailResult.warning}`);
         }
+      }
+      try {
+        const owner = await getDealOwnerContact(record.projectId);
+        dealOwnerName = owner.ownerName;
+      } catch (ownerErr) {
+        const warning = `Unable to resolve deal owner for ${record.projectId}: ${ownerErr instanceof Error ? ownerErr.message : String(ownerErr)}`;
+        notificationWarnings.push(warning);
+        console.warn(`[Zuper Confirm] ${warning}`);
+      }
 
-        if (!recipientEmail && firstAssignedUid) {
-          const byUid = await getCrewMemberByZuperUserUid(firstAssignedUid);
-          if (byUid?.email) {
-            recipientEmail = byUid.email;
-            recipientName = byUid.name;
-          }
+      let assigneeEmail: string | null = null;
+      let assigneeName = record.assignedUser || "Crew Member";
+      if (record.assignedUser || record.assignedUserUid) {
+        const resolvedRecipient = await resolveCrewNotificationRecipient({
+          assignedUser: record.assignedUser || undefined,
+          assignedUserUid: record.assignedUserUid || undefined,
+        });
+        assigneeEmail = resolvedRecipient.email;
+        assigneeName = resolvedRecipient.name || assigneeName;
+      }
+
+      if (assigneeEmail) {
+        const emailResult = await sendSchedulingNotification({
+          to: assigneeEmail,
+          crewMemberName: assigneeName,
+          scheduledByName: session.user.name || session.user.email,
+          scheduledByEmail: session.user.email,
+          dealOwnerName,
+          appointmentType: scheduleType,
+          customerName,
+          customerAddress,
+          scheduledDate: record.scheduledDate,
+          scheduledStart: record.scheduledStart || undefined,
+          scheduledEnd: record.scheduledEnd || undefined,
+          projectId: record.projectId,
+          notes: externalNotes,
+          installDetails,
+        });
+        if (!emailResult.success) {
+          const warning = `Notification email failed for ${assigneeEmail}: ${emailResult.error || "Unknown error"}`;
+          notificationWarnings.push(warning);
+          console.warn(`[Zuper Confirm] ${warning}`);
         }
+      } else if (record.assignedUser || record.assignedUserUid) {
+        const warning =
+          `No email found for assigned crew member: name="${record.assignedUser || ""}", uid="${record.assignedUserUid || ""}"`;
+        notificationWarnings.push(warning);
+        console.warn(`[Zuper Confirm] ${warning}`);
+      }
 
-        if (!recipientEmail && firstAssignedUid) {
-          const userResult = await zuper.getUser(firstAssignedUid);
-          if (userResult.type === "success" && userResult.data?.email) {
-            recipientEmail = userResult.data.email;
-            recipientName =
-              [userResult.data.first_name, userResult.data.last_name].filter(Boolean).join(" ").trim() ||
-              record.assignedUser;
-          }
-        }
-
-        if (recipientEmail) {
-          const customerNameParts = record.projectName.split(" | ");
-          const customerName = customerNameParts.length >= 2
-            ? customerNameParts[1]?.trim()
-            : customerNameParts[0]?.trim() || "Customer";
-          const customerAddress = customerNameParts.length >= 3
-            ? customerNameParts[2]?.trim()
-            : "See Zuper for address";
-
-          await sendSchedulingNotification({
-            to: recipientEmail,
-            crewMemberName: recipientName,
-            scheduledByName: session.user.name || session.user.email,
-            scheduledByEmail: session.user.email,
-            appointmentType: scheduleType,
-            customerName,
-            customerAddress,
-            scheduledDate: record.scheduledDate,
-            scheduledStart: record.scheduledStart || undefined,
-            scheduledEnd: record.scheduledEnd || undefined,
-            projectId: record.projectId,
-            notes: record.notes || undefined,
+      if (scheduleType === "installation") {
+        const director = getInstallDirectorForLocation(projectLocation);
+        if (director) {
+          const directorRecipient = await resolveCrewNotificationRecipient({
+            assignedUser: director.name,
+            assignedUserUid: director.userUid,
           });
+          const directorEmail = directorRecipient.email?.trim().toLowerCase() || null;
+          const assigneeEmailNormalized = assigneeEmail?.trim().toLowerCase() || null;
 
-          if (scheduleType === "survey") {
-            const calendarSync = await upsertSiteSurveyCalendarEvent({
-              surveyorEmail: recipientEmail,
-              projectId: record.projectId,
-              projectName: record.projectName,
+          if (directorEmail && directorEmail !== assigneeEmailNormalized) {
+            const directorEmailResult = await sendSchedulingNotification({
+              to: directorEmail,
+              crewMemberName: directorRecipient.name || director.name,
+              scheduledByName: session.user.name || session.user.email,
+              scheduledByEmail: session.user.email,
+              dealOwnerName,
+              appointmentType: "installation",
               customerName,
               customerAddress,
-              date: record.scheduledDate,
-              startTime: record.scheduledStart || undefined,
-              endTime: record.scheduledEnd || undefined,
-              timezone: slotTimezone,
-              notes: record.notes || undefined,
+              scheduledDate: record.scheduledDate,
+              scheduledStart: record.scheduledStart || undefined,
+              scheduledEnd: record.scheduledEnd || undefined,
+              projectId: record.projectId,
+              notes: externalNotes,
+              installDetails,
             });
-            if (!calendarSync.success) {
-              console.warn(`[Zuper Confirm] Google Calendar sync warning: ${calendarSync.error}`);
+            if (!directorEmailResult.success) {
+              const warning = `Install director email failed for ${directorEmail}: ${directorEmailResult.error || "Unknown error"}`;
+              notificationWarnings.push(warning);
+              console.warn(`[Zuper Confirm] ${warning}`);
             }
+          } else if (!directorEmail) {
+            const warning = `No email found for install director: ${director.name} (${director.userUid})`;
+            notificationWarnings.push(warning);
+            console.warn(`[Zuper Confirm] ${warning}`);
+          } else {
+            console.log(`[Zuper Confirm] Install director email skipped (duplicate recipient): ${directorEmail}`);
+          }
+        } else if (projectLocation) {
+          const warning = `No install director mapping configured for location "${projectLocation}"`;
+          notificationWarnings.push(warning);
+          console.warn(`[Zuper Confirm] ${warning}`);
+        }
+      }
+
+      if (scheduleType === "survey") {
+        if (assigneeEmail) {
+          const personalCalendarSync = await upsertSiteSurveyCalendarEvent({
+            surveyorEmail: assigneeEmail,
+            projectId: record.projectId,
+            projectName: record.projectName,
+            customerName,
+            customerAddress,
+            date: record.scheduledDate,
+            startTime: record.scheduledStart || undefined,
+            endTime: record.scheduledEnd || undefined,
+            timezone: slotTimezone,
+            notes: externalNotes,
+          });
+          if (!personalCalendarSync.success) {
+            const warning = `Google Calendar sync failed for ${assigneeEmail}: ${personalCalendarSync.error || "Unknown error"}`;
+            notificationWarnings.push(warning);
+            console.warn(`[Zuper Confirm] ${warning}`);
           }
         } else {
-          console.warn(
-            `[Zuper Confirm] No email found for assigned surveyor: name="${record.assignedUser}", uid="${firstAssignedUid || ""}"`
-          );
+          const warning = "Google Calendar sync skipped: no surveyor email available";
+          notificationWarnings.push(warning);
+          console.warn(`[Zuper Confirm] ${warning}`);
+        }
+
+        const denverSurveyCalendarId = getDenverSiteSurveyCalendarId();
+        if (locationBucket && denverSurveyCalendarId) {
+          const sharedSurveySync = await upsertSiteSurveyCalendarEvent({
+            surveyorEmail: assigneeEmail || (sharedCalendarImpersonation || ""),
+            projectId: record.projectId,
+            projectName: record.projectName,
+            customerName,
+            customerAddress,
+            date: record.scheduledDate,
+            startTime: record.scheduledStart || undefined,
+            endTime: record.scheduledEnd || undefined,
+            timezone: slotTimezone,
+            notes: externalNotes,
+            calendarId: denverSurveyCalendarId,
+            impersonateEmail: sharedCalendarImpersonation,
+          });
+          if (!sharedSurveySync.success) {
+            const warning = `Denver survey calendar sync failed: ${sharedSurveySync.error || "Unknown error"}`;
+            notificationWarnings.push(warning);
+            console.warn(`[Zuper Confirm] ${warning}`);
+          }
+        }
+      }
+
+      if (scheduleType === "installation") {
+        const installCalendarId = getInstallCalendarIdForLocation(projectLocation);
+        if (installCalendarId) {
+          const installDays = Number.isFinite(Number(record.scheduledDays))
+            ? Math.max(1, Number(record.scheduledDays))
+            : 1;
+          const installEndDate = getBusinessEndDateInclusive(record.scheduledDate, installDays);
+          const installCalendarSync = await upsertInstallationCalendarEvent({
+            projectId: record.projectId,
+            projectName: record.projectName,
+            customerName,
+            customerAddress,
+            startDate: record.scheduledDate,
+            startTime: record.scheduledStart || "08:00",
+            endDate: installEndDate,
+            endTime: record.scheduledEnd || "16:00",
+            timezone: slotTimezone,
+            notes: externalNotes,
+            calendarId: installCalendarId,
+            impersonateEmail: sharedCalendarImpersonation,
+          });
+          if (!installCalendarSync.success) {
+            const warning = `Installation calendar sync failed: ${installCalendarSync.error || "Unknown error"}`;
+            notificationWarnings.push(warning);
+            console.warn(`[Zuper Confirm] ${warning}`);
+          }
+        } else if (locationBucket) {
+          const warning = `Installation calendar sync skipped: no calendar configured for location ${projectLocation || "unknown"}`;
+          notificationWarnings.push(warning);
+          console.warn(`[Zuper Confirm] ${warning}`);
         }
       }
     } catch (emailErr) {
+      const warning = `Notification flow exception: ${emailErr instanceof Error ? emailErr.message : String(emailErr)}`;
+      notificationWarnings.push(warning);
       console.warn("Failed to send scheduling notification:", emailErr);
     }
 
@@ -651,6 +886,7 @@ export async function POST(request: NextRequest) {
       zuperJobUid,
       zuperError: null,
       hubspotWarnings: hubspotWarnings.length > 0 ? hubspotWarnings : undefined,
+      notificationWarnings: notificationWarnings.length > 0 ? notificationWarnings : undefined,
       record: {
         id: record.id,
         projectId: record.projectId,
