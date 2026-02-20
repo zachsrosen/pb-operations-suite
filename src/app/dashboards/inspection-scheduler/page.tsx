@@ -364,9 +364,11 @@ export default function InspectionSchedulerPage() {
                 if (zuperJob) {
                   project.zuperJobUid = zuperJob.jobUid;
                   project.zuperJobStatus = zuperJob.status;
-                  // Use Zuper's assigned user as primary source of truth
+                  // Use Zuper's assigned user(s) as primary source of truth
                   if (zuperJob.assignedTo) {
-                    project.assignedInspector = zuperJob.assignedTo;
+                    project.assignedInspector = Array.isArray(zuperJob.assignedTo)
+                      ? zuperJob.assignedTo.join(", ")
+                      : zuperJob.assignedTo;
                   }
                   // Use Zuper's scheduled date/time as source of truth
                   if (zuperJob.scheduledDate) {

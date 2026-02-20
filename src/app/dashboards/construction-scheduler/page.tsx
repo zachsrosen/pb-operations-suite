@@ -68,6 +68,7 @@ interface ConstructionProject {
   hubspotUrl: string;
   zuperJobUid?: string;
   zuperJobStatus?: string;
+  zuperAssignedTo?: string[];  // Zuper assigned user names
   tentativeRecordId?: string;
 }
 
@@ -298,6 +299,7 @@ export default function ConstructionSchedulerPage() {
                 if (zuperJob) {
                   project.zuperJobUid = zuperJob.jobUid;
                   project.zuperJobStatus = zuperJob.status;
+                  if (zuperJob.assignedTo) project.zuperAssignedTo = zuperJob.assignedTo;
                 }
               }
             }
@@ -1514,6 +1516,14 @@ export default function ConstructionSchedulerPage() {
                 <span className="text-xs text-muted">Amount</span>
                 <p className="text-sm font-mono text-orange-400">{formatCurrency(scheduleModal.project.amount)}</p>
               </div>
+
+              {/* Zuper Assigned Users */}
+              {scheduleModal.project.zuperAssignedTo && scheduleModal.project.zuperAssignedTo.length > 0 && (
+                <div>
+                  <span className="text-xs text-muted">Assigned To (Zuper)</span>
+                  <p className="text-sm text-cyan-400">{scheduleModal.project.zuperAssignedTo.join(", ")}</p>
+                </div>
+              )}
 
               {/* External Links */}
               <div>

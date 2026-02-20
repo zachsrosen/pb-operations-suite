@@ -99,7 +99,7 @@ interface SchedulerProject {
   zuperScheduledStart?: string; // ISO date from Zuper
   zuperScheduledEnd?: string;   // ISO date from Zuper
   zuperJobCategory?: string;    // Which Zuper category matched: "survey" | "construction" | "inspection"
-  zuperAssignedTo?: string;     // Zuper assigned user name (director/technician)
+  zuperAssignedTo?: string[];    // Zuper assigned user names (directors/technicians)
   daysToInstall: number | null;
   isCompletedPastStage: boolean; // Project moved past its stage (e.g. Close Out with inspection data) — calendar only, not sidebar
 }
@@ -162,6 +162,11 @@ const CREWS: Record<string, CrewConfig[]> = {
     { name: "CAM Crew", roofers: 2, electricians: 1, color: "#f43f5e" },
   ],
 };
+
+// Pre-computed set of all valid crew names for crew resolution
+const ALL_CREW_NAMES = new Set(
+  Object.values(CREWS).flat().map((c) => c.name)
+);
 
 const LOCATIONS = [
   "All",
@@ -359,6 +364,7 @@ function addDays(dateStr: string, days: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function addBusinessDays(dateStr: string, days: number): string {
   const [year, month, day] = dateStr.split("-").map(Number);
   const d = new Date(year, month - 1, day);
@@ -465,7 +471,7 @@ function transformProject(p: RawProject): SchedulerProject | null {
     batterySizeKwh: p.equipment?.battery?.sizeKwh || 0,
     ahj: p.ahj || "",
     utility: p.utility || "",
-    crew: CREWS[loc]?.[0]?.name || null,
+    crew: null, // No default — user must pick crew when scheduling
     daysInstall: isBuildStage
       ? p.daysForInstallers || p.expectedDaysForInstall || 2
       : stage === "survey" || stage === "inspection"
@@ -696,11 +702,15 @@ export default function SchedulerPage() {
                 const fallbackDays = isSI ? 0.25 : (proj?.daysInstall || proj?.totalDays || 2);
                 // Resolve crew name: rec.assignedUser may be a director name
                 // (e.g. "David Contreras") rather than a crew label ("WESTY Alpha").
-                // For optimizer-created records, extract crew from notes field.
+                // Extract crew from notes "— CREW_NAME" pattern (used by optimizer
+                // and rebalancer), falling back to assignedUser.
                 let rehydratedCrew = rec.assignedUser || "";
-                if (rec.notes?.includes("[AUTO_OPTIMIZED]")) {
+                if (rec.notes) {
                   const crewMatch = rec.notes.match(/—\s*(.+)$/);
-                  if (crewMatch) rehydratedCrew = crewMatch[1].trim();
+                  if (crewMatch) {
+                    const parsed = crewMatch[1].trim();
+                    if (ALL_CREW_NAMES.has(parsed)) rehydratedCrew = parsed;
+                  }
                 }
                 restored[projId] = {
                   startDate: rec.scheduledDate,
@@ -1328,8 +1338,7 @@ export default function SchedulerPage() {
         const inspUsers = ZUPER_INSPECTION_USERS[project.location] || [];
         setCrewSelectInput(inspUsers[0]?.name || "");
       } else {
-        const locationCrews = CREWS[project.location] || [];
-        setCrewSelectInput(project.crew || locationCrews[0]?.name || "");
+        setCrewSelectInput(project.crew || "");  // No default — user must explicitly choose a crew
       }
       trackFeature("schedule-modal-open", "Opened master schedule modal", {
         scheduler: "master",
@@ -1350,6 +1359,12 @@ export default function SchedulerPage() {
     const selectedSlot = isSurveyOrInsp ? availableSlots[selectedSlotIdx] : null;
     const days = isSurveyOrInsp ? 0.25 : (installDaysInput || 2);
     const crew = crewSelectInput || project.crew || "";
+
+    // Require crew selection for construction installs
+    if (!isSurveyOrInsp && !crew) {
+      showToast("Please select a crew before scheduling", "warning");
+      return;
+    }
     // For survey/inspection, derive times from selected slot; for construction, use defaults
     const slotStartTime = selectedSlot?.startTime || "08:00";
     const slotEndTime = selectedSlot?.endTime || (isSurveyOrInsp ? "09:00" : "16:00");
@@ -1681,15 +1696,12 @@ export default function SchedulerPage() {
     // Helper: resolve a crew value to a valid CREWS label.
     // ManualSchedule.crew may store a director name (from rehydration) instead
     // of the crew label. Fall back to extracting from notes if available.
-    const allCrewNames = new Set(
-      Object.values(CREWS).flat().map(c => c.name)
-    );
     const resolveCrewName = (crewValue: string, notes?: string): string | null => {
-      if (allCrewNames.has(crewValue)) return crewValue;
+      if (ALL_CREW_NAMES.has(crewValue)) return crewValue;
       // Try extracting from notes: "[AUTO_OPTIMIZED] (balanced) — WESTY Alpha"
       if (notes) {
         const dashMatch = notes.match(/—\s*(.+)$/);
-        if (dashMatch && allCrewNames.has(dashMatch[1].trim())) {
+        if (dashMatch && ALL_CREW_NAMES.has(dashMatch[1].trim())) {
           return dashMatch[1].trim();
         }
       }
@@ -4331,10 +4343,10 @@ export default function SchedulerPage() {
                           "Unassigned"
                         }
                       />
-                      {detailModal.zuperAssignedTo && (
+                      {detailModal.zuperAssignedTo && detailModal.zuperAssignedTo.length > 0 && (
                         <ModalRow
-                          label="Assigned To"
-                          value={detailModal.zuperAssignedTo}
+                          label={detailModal.zuperAssignedTo.length > 1 ? "Assigned To" : "Assigned To"}
+                          value={detailModal.zuperAssignedTo.join(", ")}
                           valueClass="text-cyan-400"
                         />
                       )}

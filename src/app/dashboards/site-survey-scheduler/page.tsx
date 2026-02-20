@@ -462,9 +462,11 @@ export default function SiteSurveySchedulerPage() {
                 if (zuperJob) {
                   project.zuperJobUid = zuperJob.jobUid;
                   project.zuperJobStatus = zuperJob.status;
-                  // Use Zuper's assigned user as the primary source of truth
+                  // Use Zuper's assigned user(s) as the primary source of truth
                   if (zuperJob.assignedTo) {
-                    project.assignedSurveyor = zuperJob.assignedTo;
+                    project.assignedSurveyor = Array.isArray(zuperJob.assignedTo)
+                      ? zuperJob.assignedTo.join(", ")
+                      : zuperJob.assignedTo;
                   }
                   // Use Zuper's scheduled date and time as source of truth — when a job is
                   // rescheduled in Zuper, the HubSpot date may be stale. Convert

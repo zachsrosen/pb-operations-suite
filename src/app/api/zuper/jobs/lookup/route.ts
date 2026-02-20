@@ -113,18 +113,19 @@ async function handleLookup(projectIds: string[], projectNames: string[], catego
     return null;
   };
 
-  // Helper to extract assigned user name from a Zuper job
+  // Helper to extract assigned user names from a Zuper job
   // Zuper GET response format: assigned_to: [{ user: { first_name, last_name, user_uid } }]
-  const getAssignedUserName = (job: ZuperJob): string | undefined => {
-    if (!job.assigned_to || !Array.isArray(job.assigned_to) || job.assigned_to.length === 0) return undefined;
-    const firstAssignment = job.assigned_to[0];
-    // Handle GET response format: { user: { first_name, last_name } }
-    if (typeof firstAssignment === 'object' && 'user' in firstAssignment) {
-      const user = (firstAssignment as { user: { first_name?: string; last_name?: string } }).user;
-      const name = [user.first_name, user.last_name].filter(Boolean).join(' ');
-      return name || undefined;
+  const getAssignedUserNames = (job: ZuperJob): string[] => {
+    if (!job.assigned_to || !Array.isArray(job.assigned_to) || job.assigned_to.length === 0) return [];
+    const names: string[] = [];
+    for (const assignment of job.assigned_to) {
+      if (typeof assignment === 'object' && 'user' in assignment) {
+        const user = (assignment as { user: { first_name?: string; last_name?: string } }).user;
+        const name = [user.first_name, user.last_name].filter(Boolean).join(' ');
+        if (name) names.push(name);
+      }
     }
-    return undefined;
+    return names;
   };
 
   // Completed/closed statuses that should be deprioritized
@@ -479,7 +480,7 @@ async function handleLookup(projectIds: string[], projectNames: string[], catego
       scheduledDays?: number;
       category?: string;
       matchedBy?: string;
-      assignedTo?: string;
+      assignedTo?: string[];  // All assigned user names
     }> = {};
 
     for (const [projectId, candidates] of Object.entries(allCandidates)) {
@@ -516,7 +517,7 @@ async function handleLookup(projectIds: string[], projectNames: string[], catego
         ` (status: ${getJobStatus(best.job)}, statusScore: ${best.statusScore}, candidates: ${totalCandidates}, category: ${best.categoryName})`
       );
 
-      const assignedUser = getAssignedUserName(best.job);
+      const assignedUsers = getAssignedUserNames(best.job);
 
       // Compute scheduled days from Zuper start/end times
       const effectivelyUnscheduled = isEffectivelyUnscheduled(best.job);
@@ -555,7 +556,7 @@ async function handleLookup(projectIds: string[], projectNames: string[], catego
         scheduledDays,
         category: best.categoryName,
         matchedBy: best.matchMethod,
-        ...(assignedUser && { assignedTo: assignedUser }),
+        ...(assignedUsers.length > 0 && { assignedTo: assignedUsers }),
       };
     }
 
