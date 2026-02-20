@@ -4,9 +4,10 @@ import { getUserByEmail, logActivity, prisma, cacheZuperJob, canScheduleType, ge
 import { zuper, JOB_CATEGORY_UIDS } from "@/lib/zuper";
 import { headers } from "next/headers";
 import { sendSchedulingNotification } from "@/lib/email";
-import { updateDealProperty, updateSiteSurveyorProperty, getDealProperties } from "@/lib/hubspot";
+import { updateDealProperty, updateSiteSurveyorProperty, getDealProperties, getDealOwnerContact } from "@/lib/hubspot";
 import { upsertSiteSurveyCalendarEvent } from "@/lib/google-calendar";
 import { getBusinessEndDateInclusive, isWeekendDate } from "@/lib/business-days";
+import { getInstallNotificationDetails } from "@/lib/scheduling-email-details";
 
 function getConstructionScheduleBoundaryProperties(): { start: string | null; end: string | null } {
   const start = process.env.HUBSPOT_CONSTRUCTION_START_DATE_PROPERTY?.trim() || null;
@@ -653,12 +654,31 @@ export async function POST(request: NextRequest) {
           const customerAddress = customerNameParts.length >= 3
             ? customerNameParts[2]?.trim()
             : "See Zuper for address";
+          let dealOwnerName: string | null = null;
+          try {
+            const owner = await getDealOwnerContact(record.projectId);
+            dealOwnerName = owner.ownerName;
+          } catch (ownerErr) {
+            console.warn(
+              `[Zuper Confirm] Unable to resolve deal owner for ${record.projectId}:`,
+              ownerErr instanceof Error ? ownerErr.message : ownerErr
+            );
+          }
+          let installDetails: Awaited<ReturnType<typeof getInstallNotificationDetails>>["details"];
+          if (scheduleType === "installation") {
+            const detailResult = await getInstallNotificationDetails(record.projectId);
+            installDetails = detailResult.details;
+            if (detailResult.warning) {
+              console.warn(`[Zuper Confirm] ${detailResult.warning}`);
+            }
+          }
 
           await sendSchedulingNotification({
             to: recipientEmail,
             crewMemberName: recipientName,
             scheduledByName: session.user.name || session.user.email,
             scheduledByEmail: session.user.email,
+            dealOwnerName: dealOwnerName || undefined,
             appointmentType: scheduleType,
             customerName,
             customerAddress,
@@ -667,6 +687,7 @@ export async function POST(request: NextRequest) {
             scheduledEnd: record.scheduledEnd || undefined,
             projectId: record.projectId,
             notes: record.notes || undefined,
+            installDetails,
           });
 
           if (scheduleType === "survey") {
