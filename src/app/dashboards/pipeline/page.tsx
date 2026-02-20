@@ -163,7 +163,7 @@ function sortBySpec(projects: ExecProject[], spec: ProjectFilterSpec | null): Ex
     if (aVal === null && bVal === null) return 0;
     if (aVal === null) return 1;
     if (bVal === null) return -1;
-    return (aVal - bVal) * dir * -1; // default desc
+    return (aVal - bVal) * dir;
   });
 }
 
