@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Space_Grotesk } from "next/font/google";
+import { EXTRA_LAYOUT_PROTOTYPES } from "./catalog";
 
 const spaceGrotesk = Space_Grotesk({
   subsets: ["latin"],
@@ -30,6 +31,17 @@ const PROTOTYPES = [
     description:
       "Narrative leadership view with KPI rails, risk strip, and high-clarity route cards.",
     accent: "from-amber-400/35 via-orange-400/15 to-transparent",
+  },
+];
+
+const EXTRA_PROTO_GROUPS = [
+  {
+    title: "Operations Variants",
+    family: "operations",
+  },
+  {
+    title: "Executive Variants",
+    family: "executive",
   },
 ];
 
@@ -85,6 +97,36 @@ export default function LayoutRefreshPrototypeHubPage() {
                 Open prototype
               </p>
             </Link>
+          ))}
+        </section>
+
+        <section className="mt-10 space-y-8">
+          {EXTRA_PROTO_GROUPS.map((group) => (
+            <div key={group.title}>
+              <h2 className="text-xl font-semibold text-white">{group.title}</h2>
+              <p className="mt-2 text-sm text-slate-300">
+                5 additional concepts focused on {group.family} navigation and hierarchy.
+              </p>
+              <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {EXTRA_LAYOUT_PROTOTYPES.filter((prototype) => prototype.family === group.family).map((prototype) => (
+                  <Link
+                    key={prototype.slug}
+                    href={`/prototypes/layout-refresh/${prototype.slug}`}
+                    className="group rounded-3xl border border-white/10 bg-slate-950/25 p-5 transition duration-300 hover:-translate-y-1 hover:border-white/30 hover:bg-slate-900/45"
+                  >
+                    <div className={`h-20 rounded-2xl bg-gradient-to-br ${prototype.accent} to-transparent`} />
+                    <h3 className="mt-4 text-base font-semibold text-white">{prototype.title}</h3>
+                    <p className="mt-2 text-sm text-slate-300">{prototype.description}</p>
+                    <p className="mt-3 text-xs uppercase tracking-[0.2em] text-slate-400">
+                      Replaces <span className="text-slate-200">{prototype.replaces}</span>
+                    </p>
+                    <p className="mt-3 text-sm font-medium text-cyan-200 group-hover:text-white">
+                      Open prototype
+                    </p>
+                  </Link>
+                ))}
+              </div>
+            </div>
           ))}
         </section>
 
