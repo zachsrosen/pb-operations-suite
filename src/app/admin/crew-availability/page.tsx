@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { formatTimeRange12h } from "@/lib/format";
 import { LOCATION_TIMEZONES } from "@/lib/constants";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 
 interface CrewMember {
   id: string;
@@ -103,6 +104,19 @@ export default function CrewAvailabilityPage() {
   const [overrides, setOverrides] = useState<OverrideRecord[]>([]);
   const [showOverrideModal, setShowOverrideModal] = useState(false);
   const [overrideForm, setOverrideForm] = useState({ crewMemberId: "", date: "", reason: "" });
+
+  // Confirm dialog
+  const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; title: string; message: string; variant?: "danger" | "default"; confirmLabel?: string } | null>(null);
+  const pendingConfirm = useRef<(() => void) | null>(null);
+
+  const openConfirm = (title: string, message: string, onConfirm: () => void, opts?: { variant?: "danger" | "default"; confirmLabel?: string }) => {
+    pendingConfirm.current = onConfirm;
+    setConfirmDialog({ open: true, title, message, ...opts });
+  };
+  const closeConfirm = () => {
+    pendingConfirm.current = null;
+    setConfirmDialog(null);
+  };
 
   const showToast = (message: string, durationMs = 5000) => {
     setToast(message);
@@ -233,7 +247,10 @@ export default function CrewAvailabilityPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Delete this availability slot?")) return;
+    openConfirm("Delete slot", "Delete this availability slot?", () => _handleDelete(id), { variant: "danger", confirmLabel: "Delete" });
+  };
+
+  const _handleDelete = async (id: string) => {
 
     try {
       const response = await fetch("/api/admin/crew-availability", {
@@ -255,7 +272,10 @@ export default function CrewAvailabilityPage() {
   };
 
   const handleSeed = async () => {
-    if (!confirm("Seed crew members and availability from hardcoded schedules? This won't overwrite existing records.")) return;
+    openConfirm("Seed schedules", "Seed crew members and availability from hardcoded schedules? This won't overwrite existing records.", () => _handleSeed());
+  };
+
+  const _handleSeed = async () => {
 
     setSeeding(true);
     try {
@@ -293,7 +313,10 @@ export default function CrewAvailabilityPage() {
   };
 
   const handleSeedTeams = async () => {
-    if (!confirm("Seed DTC & Westminster crew teams from Zuper? This will resolve Zuper UIDs and create user accounts.")) return;
+    openConfirm("Seed teams", "Seed DTC & Westminster crew teams from Zuper? This will resolve Zuper UIDs and create user accounts.", () => _handleSeedTeams());
+  };
+
+  const _handleSeedTeams = async () => {
 
     setSeedingTeams(true);
     try {
@@ -352,7 +375,10 @@ export default function CrewAvailabilityPage() {
   };
 
   const handleDeleteOverride = async (id: string) => {
-    if (!confirm("Remove this date block?")) return;
+    openConfirm("Remove block", "Remove this date block?", () => _handleDeleteOverride(id), { variant: "danger", confirmLabel: "Remove" });
+  };
+
+  const _handleDeleteOverride = async (id: string) => {
     try {
       const response = await fetch("/api/admin/crew-availability/overrides", {
         method: "DELETE",
@@ -414,6 +440,18 @@ export default function CrewAvailabilityPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      {confirmDialog && (
+        <ConfirmDialog
+          open={confirmDialog.open}
+          title={confirmDialog.title}
+          message={confirmDialog.message}
+          variant={confirmDialog.variant}
+          confirmLabel={confirmDialog.confirmLabel}
+          onConfirm={() => { pendingConfirm.current?.(); closeConfirm(); }}
+          onCancel={closeConfirm}
+        />
+      )}
+
       {/* Toast */}
       {toast && (
         <div className="fixed top-4 right-4 z-50 bg-surface-2 border border-t-border rounded-lg px-4 py-3 shadow-lg">

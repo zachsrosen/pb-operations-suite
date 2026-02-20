@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
+import { useToast } from "@/contexts/ToastContext";
 
 interface ActivityLog {
   id: string;
@@ -28,16 +29,26 @@ interface ActivityLog {
 const USER_ROLES = [
   "ADMIN",
   "OWNER",
-  "MANAGER",
   "OPERATIONS",
   "OPERATIONS_MANAGER",
   "PROJECT_MANAGER",
   "TECH_OPS",
-  "DESIGNER",
-  "PERMITTING",
   "VIEWER",
   "SALES",
 ] as const;
+
+const ROLE_DISPLAY_ALIASES: Record<string, string> = {
+  OWNER: "EXECUTIVE",
+  VIEWER: "UNASSIGNED",
+  MANAGER: "PROJECT_MANAGER",
+  DESIGNER: "TECH_OPS",
+  PERMITTING: "TECH_OPS",
+};
+
+function formatRoleLabel(role: string): string {
+  const canonical = ROLE_DISPLAY_ALIASES[role] || role;
+  return canonical.replace(/_/g, " ");
+}
 
 const ACTIVITY_TYPES: Record<string, { color: string; icon: string }> = {
   LOGIN: { color: "text-green-400", icon: "M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" },
@@ -63,6 +74,7 @@ const DEFAULT_ACTIVITY = { color: "text-muted", icon: "M13 16h-1v-4h-1m1-4h.01M2
 const PAGE_SIZE = 100;
 
 export default function AdminActivityPage() {
+  const { addToast } = useToast();
   const [activities, setActivities] = useState<ActivityLog[]>([]);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
@@ -81,7 +93,7 @@ export default function AdminActivityPage() {
     [allTypes]
   );
   const roleOptions = useMemo(
-    () => USER_ROLES.map((role) => ({ value: role, label: role.replace(/_/g, " ") })),
+    () => USER_ROLES.map((role) => ({ value: role, label: formatRoleLabel(role) })),
     []
   );
 
@@ -253,7 +265,7 @@ export default function AdminActivityPage() {
 
   const exportToCSV = () => {
     if (activities.length === 0) {
-      alert("No activities to export");
+      addToast({ type: "warning", title: "Nothing to export", message: "No activities match the current filters." });
       return;
     }
 
@@ -498,7 +510,7 @@ export default function AdminActivityPage() {
                           )}
                           {activity.user?.role && (
                             <span className="px-1.5 py-0.5 rounded bg-surface-2 text-[10px] uppercase tracking-wider text-muted">
-                              {activity.user.role.replace(/_/g, " ")}
+                              {formatRoleLabel(activity.user.role)}
                             </span>
                           )}
                           <span>•</span>
