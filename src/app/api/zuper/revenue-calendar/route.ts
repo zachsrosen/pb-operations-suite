@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { zuper, JOB_CATEGORY_UIDS } from "@/lib/zuper";
+import { prisma } from "@/lib/db";
 import { Client } from "@hubspot/api-client";
 
 const hubspotClient = new Client({
@@ -34,6 +35,7 @@ interface CalendarJob {
   dealName: string | null;
   dealValue: number; // Per-day allocated value (split across spanDays)
   totalDealValue: number; // Original full deal value
+  isTentative: boolean;
   projectNumber: string | null;
 }
 
@@ -273,6 +275,11 @@ async function fetchJobsForCategory(
   return allJobs;
 }
 
+function normalizeTentativeSpanDays(days?: number | null): number {
+  if (!days || !Number.isFinite(days) || days <= 0) return 1;
+  return Math.max(1, Math.ceil(days));
+}
+
 export async function GET(request: NextRequest) {
   try {
     const authResult = await requireApiAuth();
@@ -336,11 +343,43 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Collect unique deal IDs from all jobs
+    // Pull tentative installation schedules from DB (only when filters can represent them)
+    const shouldIncludeTentatives = !teamFilter && (!categoryFilter || categoryFilter === "construction");
+    const tentativeRawRecords = shouldIncludeTentatives && prisma
+      ? await prisma.scheduleRecord.findMany({
+          where: {
+            status: "tentative",
+            scheduleType: "installation",
+            scheduledDate: { gte: fromDate, lte: toDate },
+          },
+          orderBy: { createdAt: "desc" },
+          select: {
+            id: true,
+            projectId: true,
+            projectName: true,
+            scheduledDate: true,
+            scheduledDays: true,
+            assignedUser: true,
+          },
+        })
+      : [];
+
+    // Keep latest tentative record per project/date to avoid stale duplicates
+    const tentativeByProjectDate = new Map<string, (typeof tentativeRawRecords)[number]>();
+    for (const rec of tentativeRawRecords) {
+      const key = `${rec.projectId}:${rec.scheduledDate}`;
+      if (!tentativeByProjectDate.has(key)) tentativeByProjectDate.set(key, rec);
+    }
+    const tentativeRecords = Array.from(tentativeByProjectDate.values());
+
+    // Collect unique deal IDs from confirmed and tentative jobs
     const dealIdSet = new Set<string>();
     for (const { raw } of taggedJobs) {
       const dealId = extractHubspotDealId(raw);
       if (dealId) dealIdSet.add(dealId);
+    }
+    for (const rec of tentativeRecords) {
+      if (rec.projectId) dealIdSet.add(rec.projectId);
     }
 
     // Batch-fetch HubSpot deals for dealname and amount
@@ -349,9 +388,8 @@ export async function GET(request: NextRequest) {
     // Collect all unique team names for filter options
     const teamSet = new Set<string>();
 
-    // Build CalendarJob entries
-    const calendarJobs: CalendarJob[] = [];
-
+    // Build confirmed CalendarJob entries (exclude $0 deals)
+    const confirmedJobs: CalendarJob[] = [];
     for (const { raw, category } of taggedJobs) {
       const date = extractDateFromZuper(raw.scheduled_start_time);
       if (!date) continue; // Skip unscheduled jobs
@@ -367,8 +405,10 @@ export async function GET(request: NextRequest) {
 
       const dealId = extractHubspotDealId(raw);
       const deal = dealId ? dealMap.get(dealId) : undefined;
+      const dealAmount = deal?.amount || 0;
+      if (dealAmount <= 0) continue;
 
-      calendarJobs.push({
+      confirmedJobs.push({
         jobUid: raw.job_uid || "",
         title: raw.job_title || "",
         category: category.name,
@@ -383,20 +423,64 @@ export async function GET(request: NextRequest) {
         teamName,
         dealId: dealId || null,
         dealName: deal?.dealName || null,
-        dealValue: deal?.amount || 0,
-        totalDealValue: deal?.amount || 0,
+        dealValue: dealAmount,
+        totalDealValue: dealAmount,
+        isTentative: false,
         projectNumber: extractProjectNumber(raw.job_title || ""),
       });
     }
 
+    // Build tentative CalendarJob entries (exclude $0 deals)
+    const tentativeJobs: CalendarJob[] = [];
+    for (const rec of tentativeRecords) {
+      const deal = rec.projectId ? dealMap.get(rec.projectId) : undefined;
+      const dealAmount = deal?.amount || 0;
+      if (dealAmount <= 0) continue;
+
+      const spanDays = normalizeTentativeSpanDays(rec.scheduledDays);
+      const spanEnd = addDays(rec.scheduledDate, spanDays - 1);
+      tentativeJobs.push({
+        jobUid: `tentative-${rec.id}`,
+        title: rec.projectName || rec.projectId,
+        category: "Construction",
+        categoryKey: "construction",
+        date: rec.scheduledDate,
+        endDate: spanEnd !== rec.scheduledDate ? spanEnd : null,
+        spanStartDate: rec.scheduledDate,
+        spanEndDate: spanEnd !== rec.scheduledDate ? spanEnd : null,
+        spanDays,
+        statusName: "Tentative",
+        assignedUser: rec.assignedUser || "",
+        teamName: "",
+        dealId: rec.projectId || null,
+        dealName: deal?.dealName || rec.projectName || null,
+        dealValue: dealAmount,
+        totalDealValue: dealAmount,
+        isTentative: true,
+        projectNumber: extractProjectNumber(rec.projectName || ""),
+      });
+    }
+
     // Keep jobs that overlap the target month (including jobs that start before month start)
-    const overlappingJobs = calendarJobs.filter((job) => {
+    const overlapsMonth = (job: CalendarJob) => {
       const spanEnd = job.endDate || job.date;
       return !(spanEnd < monthStartStr || job.date > monthEndStr);
+    };
+    const overlappingConfirmed = confirmedJobs.filter(overlapsMonth);
+
+    // If a confirmed job exists with same deal + start day + category, drop tentative duplicate
+    const confirmedKeys = new Set(
+      overlappingConfirmed.map((job) => `${job.dealId || job.jobUid}:${job.spanStartDate}:${job.categoryKey}`)
+    );
+    const overlappingTentative = tentativeJobs.filter((job) => {
+      const key = `${job.dealId || job.jobUid}:${job.spanStartDate}:${job.categoryKey}`;
+      return overlapsMonth(job) && !confirmedKeys.has(key);
     });
 
+    const overlappingJobs = [...overlappingConfirmed, ...overlappingTentative];
+
     // Expand multi-day jobs into per-day rows with value split across total span days
-    const monthJobs: CalendarJob[] = [];
+    const expandedMonthJobs: CalendarJob[] = [];
     for (const job of overlappingJobs) {
       const spanStart = job.date;
       const spanEnd = job.endDate || job.date;
@@ -407,7 +491,7 @@ export async function GET(request: NextRequest) {
 
       let d = overlapStart;
       while (d <= overlapEnd) {
-        monthJobs.push({
+        expandedMonthJobs.push({
           ...job,
           date: d,
           dealValue: perDayValue,
@@ -418,6 +502,22 @@ export async function GET(request: NextRequest) {
         d = addDays(d, 1);
       }
     }
+
+    // Day-level dedupe with confirmed rows taking priority over tentative
+    const dayJobMap = new Map<string, CalendarJob>();
+    for (const job of expandedMonthJobs) {
+      const key = `${job.dealId || job.jobUid}:${job.date}:${job.categoryKey}`;
+      const existing = dayJobMap.get(key);
+      if (!existing) {
+        dayJobMap.set(key, job);
+      } else if (existing.isTentative && !job.isTentative) {
+        dayJobMap.set(key, job);
+      }
+    }
+    const monthJobs = Array.from(dayJobMap.values()).sort((a, b) => {
+      if (a.date !== b.date) return a.date.localeCompare(b.date);
+      return b.dealValue - a.dealValue;
+    });
 
     // Build daily totals by category
     const dailyTotals: Record<string, DayTotals> = {};

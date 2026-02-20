@@ -35,6 +35,7 @@ interface Job {
   dealName: string | null;
   dealValue: number;
   totalDealValue: number;
+  isTentative: boolean;
   projectNumber: string | null;
 }
 
@@ -42,6 +43,28 @@ interface DayDrilldownSummary {
   totalValue: number;
   totalJobs: number;
   byCategory: Record<CategoryKey, { count: number; value: number }>;
+}
+
+interface WeeklySummaryRow {
+  weekStart: string;
+  weekEnd: string;
+  scheduledValue: number;
+  scheduledJobs: number;
+  completedValue: number;
+  completedJobs: number;
+}
+
+interface ExecutiveSnapshot {
+  completedValue: number;
+  committedScheduledValue: number;
+  tentativeScheduledValue: number;
+  totalPotentialValue: number;
+  remainingCommittedValue: number;
+  remainingWithTentativeValue: number;
+  completionPct: number;
+  completedJobs: number;
+  committedJobs: number;
+  tentativeJobs: number;
 }
 
 interface MonthTotals {
@@ -145,6 +168,49 @@ function formatFullDate(dateStr: string): string {
 function formatDateRange(startDate: string, endDate: string | null): string {
   if (!endDate || endDate === startDate) return startDate;
   return `${startDate} \u2192 ${endDate}`;
+}
+
+function parseYmdAsUtc(dateStr: string): Date {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d));
+}
+
+function formatUtcYmd(date: Date): string {
+  return date.toISOString().split("T")[0];
+}
+
+function getWeekStartSunday(dateStr: string): string {
+  const dt = parseYmdAsUtc(dateStr);
+  const day = dt.getUTCDay(); // 0 = Sunday
+  dt.setUTCDate(dt.getUTCDate() - day);
+  return formatUtcYmd(dt);
+}
+
+function getWeekEndSaturday(weekStartStr: string): string {
+  const dt = parseYmdAsUtc(weekStartStr);
+  dt.setUTCDate(dt.getUTCDate() + 6);
+  return formatUtcYmd(dt);
+}
+
+function isCompletedStatus(statusName: string): boolean {
+  const s = (statusName || "").toLowerCase();
+  return (
+    s.includes("complete") ||
+    s.includes("completed") ||
+    s.includes("passed") ||
+    s.includes("closed") ||
+    s.includes("finished") ||
+    s.includes("done")
+  );
+}
+
+function formatPct(value: number): string {
+  if (!Number.isFinite(value)) return "0%";
+  return `${value.toFixed(1)}%`;
+}
+
+function formatMonthLabel(year: number, month: number): string {
+  return `${MONTH_NAMES[month - 1]} ${year}`;
 }
 
 /* ------------------------------------------------------------------ */
@@ -271,6 +337,139 @@ export default function ExecutiveCalendarPage() {
         (enabledCategories.has("reset") ? cats.reset.value : 0),
     };
   }, [data, enabledCategories]);
+
+  const weeklySummary = useMemo<WeeklySummaryRow[]>(() => {
+    if (!data) return [];
+
+    const monthPrefix = `${year}-${String(month).padStart(2, "0")}-`;
+    const rows = new Map<
+      string,
+      WeeklySummaryRow & { scheduledJobKeys: Set<string>; completedJobKeys: Set<string> }
+    >();
+
+    for (const job of data.jobs) {
+      if (!enabledCategories.has(job.categoryKey as CategoryKey)) continue;
+      if (!job.date.startsWith(monthPrefix)) continue; // summary scoped to selected month only
+
+      const weekStart = getWeekStartSunday(job.date);
+      const weekEnd = getWeekEndSaturday(weekStart);
+      const uniqueJobKey = `${job.dealId || job.jobUid}:${job.spanStartDate}:${job.categoryKey}:${job.isTentative ? "t" : "c"}`;
+
+      if (!rows.has(weekStart)) {
+        rows.set(weekStart, {
+          weekStart,
+          weekEnd,
+          scheduledValue: 0,
+          scheduledJobs: 0,
+          completedValue: 0,
+          completedJobs: 0,
+          scheduledJobKeys: new Set<string>(),
+          completedJobKeys: new Set<string>(),
+        });
+      }
+
+      const row = rows.get(weekStart)!;
+      row.scheduledValue += job.dealValue;
+      row.scheduledJobKeys.add(uniqueJobKey);
+
+      if (isCompletedStatus(job.statusName)) {
+        row.completedValue += job.dealValue;
+        row.completedJobKeys.add(uniqueJobKey);
+      }
+    }
+
+    return Array.from(rows.values())
+      .map((row) => ({
+        weekStart: row.weekStart,
+        weekEnd: row.weekEnd,
+        scheduledValue: row.scheduledValue,
+        scheduledJobs: row.scheduledJobKeys.size,
+        completedValue: row.completedValue,
+        completedJobs: row.completedJobKeys.size,
+      }))
+      .sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+  }, [data, enabledCategories, year, month]);
+
+  const executiveSnapshot = useMemo<ExecutiveSnapshot>(() => {
+    const empty: ExecutiveSnapshot = {
+      completedValue: 0,
+      committedScheduledValue: 0,
+      tentativeScheduledValue: 0,
+      totalPotentialValue: 0,
+      remainingCommittedValue: 0,
+      remainingWithTentativeValue: 0,
+      completionPct: 0,
+      completedJobs: 0,
+      committedJobs: 0,
+      tentativeJobs: 0,
+    };
+    if (!data) return empty;
+
+    const monthPrefix = `${year}-${String(month).padStart(2, "0")}-`;
+    const committedKeys = new Set<string>();
+    const tentativeKeys = new Set<string>();
+    const completedKeys = new Set<string>();
+
+    let completedValue = 0;
+    let committedScheduledValue = 0;
+    let tentativeScheduledValue = 0;
+
+    for (const job of data.jobs) {
+      if (!enabledCategories.has(job.categoryKey as CategoryKey)) continue;
+      if (!job.date.startsWith(monthPrefix)) continue;
+
+      const uniqueJobKey = `${job.dealId || job.jobUid}:${job.spanStartDate}:${job.categoryKey}:${job.isTentative ? "t" : "c"}`;
+
+      if (job.isTentative) {
+        tentativeScheduledValue += job.dealValue;
+        tentativeKeys.add(uniqueJobKey);
+        continue;
+      }
+
+      committedScheduledValue += job.dealValue;
+      committedKeys.add(uniqueJobKey);
+
+      if (isCompletedStatus(job.statusName)) {
+        completedValue += job.dealValue;
+        completedKeys.add(uniqueJobKey);
+      }
+    }
+
+    const remainingCommittedValue = Math.max(0, committedScheduledValue - completedValue);
+    const totalPotentialValue = committedScheduledValue + tentativeScheduledValue;
+    const remainingWithTentativeValue = Math.max(0, totalPotentialValue - completedValue);
+    const completionPct = committedScheduledValue > 0
+      ? (completedValue / committedScheduledValue) * 100
+      : 0;
+
+    return {
+      completedValue,
+      committedScheduledValue,
+      tentativeScheduledValue,
+      totalPotentialValue,
+      remainingCommittedValue,
+      remainingWithTentativeValue,
+      completionPct,
+      completedJobs: completedKeys.size,
+      committedJobs: committedKeys.size,
+      tentativeJobs: tentativeKeys.size,
+    };
+  }, [data, enabledCategories, year, month]);
+
+  const ownerSummarySentence = useMemo(() => {
+    const monthLabel = formatMonthLabel(year, month);
+    const completed = formatMoney(executiveSnapshot.completedValue);
+    const committed = formatMoney(executiveSnapshot.committedScheduledValue);
+    const remaining = formatMoney(executiveSnapshot.remainingCommittedValue);
+    const tentative = formatMoney(executiveSnapshot.tentativeScheduledValue);
+    const potential = formatMoney(executiveSnapshot.totalPotentialValue);
+
+    if (executiveSnapshot.committedScheduledValue <= 0) {
+      return `${monthLabel}: no committed revenue is scheduled yet.`;
+    }
+
+    return `${monthLabel}: ${completed} completed out of ${committed} committed, with ${remaining} still open and ${tentative} tentative upside (${potential} total potential).`;
+  }, [executiveSnapshot, month, year]);
 
   /* ---- Calendar grid computation ---- */
 
@@ -406,6 +605,7 @@ export default function ExecutiveCalendarPage() {
         "Span Days": j.spanDays,
         "Day Value": j.dealValue,
         "Total Deal Value": j.totalDealValue,
+        Tentative: j.isTentative ? "Yes" : "No",
         Crew: j.assignedUser,
         Team: j.teamName,
         Status: j.statusName,
@@ -491,6 +691,72 @@ export default function ExecutiveCalendarPage() {
         </div>
       </div>
 
+      {/* Owner Summary */}
+      <div className="bg-gradient-to-r from-emerald-600/20 via-green-600/10 to-blue-600/10 border border-emerald-500/30 rounded-xl p-4 mb-4">
+        <div className="text-xs uppercase tracking-wide text-emerald-300/90 font-semibold">
+          Owner Revenue Readout
+        </div>
+        <div className="text-sm sm:text-base text-foreground mt-1 font-medium">
+          {ownerSummarySentence}
+        </div>
+        <div className="w-full h-2 rounded-full bg-surface-2 mt-3 overflow-hidden">
+          <div
+            className="h-full bg-emerald-500"
+            style={{ width: `${Math.min(100, Math.max(0, executiveSnapshot.completionPct))}%` }}
+          />
+        </div>
+        <div className="text-xs text-muted mt-1">
+          Committed completion progress: {formatPct(executiveSnapshot.completionPct)}
+        </div>
+      </div>
+
+      {/* Executive Money Snapshot */}
+      <div className="grid grid-cols-1 lg:grid-cols-6 gap-3 mb-4">
+        <div className="lg:col-span-2 bg-surface/50 border border-emerald-500/30 rounded-xl p-4">
+          <div className="text-xs text-emerald-300 font-medium">Money Completed</div>
+          <div className="text-3xl font-bold text-emerald-300 mt-1">
+            {formatMoney(executiveSnapshot.completedValue)}
+          </div>
+          <div className="text-xs text-muted mt-1">
+            {executiveSnapshot.completedJobs} completed jobs
+          </div>
+        </div>
+
+        <div className="bg-surface/50 border border-t-border rounded-xl p-4">
+          <div className="text-xs text-muted">Committed Target</div>
+          <div className="text-xl font-semibold text-blue-300 mt-1">
+            {formatMoney(executiveSnapshot.committedScheduledValue)}
+          </div>
+          <div className="text-xs text-muted mt-1">{executiveSnapshot.committedJobs} jobs</div>
+        </div>
+
+        <div className="bg-surface/50 border border-t-border rounded-xl p-4">
+          <div className="text-xs text-muted">Tentative Scheduled</div>
+          <div className="text-xl font-semibold text-amber-300 mt-1">
+            {formatMoney(executiveSnapshot.tentativeScheduledValue)}
+          </div>
+          <div className="text-xs text-muted mt-1">{executiveSnapshot.tentativeJobs} jobs</div>
+        </div>
+
+        <div className="bg-surface/50 border border-t-border rounded-xl p-4">
+          <div className="text-xs text-muted">Open To Hit Target</div>
+          <div className="text-xl font-semibold text-orange-300 mt-1">
+            {formatMoney(executiveSnapshot.remainingCommittedValue)}
+          </div>
+          <div className="text-xs text-muted mt-1">Committed minus completed</div>
+        </div>
+
+        <div className="bg-surface/50 border border-t-border rounded-xl p-4">
+          <div className="text-xs text-muted">Total Potential</div>
+          <div className="text-xl font-semibold text-cyan-300 mt-1">
+            {formatMoney(executiveSnapshot.totalPotentialValue)}
+          </div>
+          <div className="text-xs text-muted mt-1">
+            {formatMoney(executiveSnapshot.remainingWithTentativeValue)} open incl. tentative
+          </div>
+        </div>
+      </div>
+
       {/* Category Toggles + Team Filter */}
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <div className="flex items-center gap-2">
@@ -563,6 +829,53 @@ export default function ExecutiveCalendarPage() {
           <div className="text-xs text-muted mt-0.5">Total Jobs</div>
         </div>
       </div>
+
+      {/* Weekly Scheduled vs Completed */}
+      {weeklySummary.length > 0 && (
+        <div className="bg-surface/50 border border-t-border rounded-xl p-3 sm:p-4 mb-6">
+          <h3 className="text-sm font-semibold text-foreground mb-3">
+            Weekly Revenue: Scheduled vs Completed
+          </h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-muted border-b border-t-border">
+                  <th className="pb-2 pr-4">Week</th>
+                  <th className="pb-2 pr-4 text-right">Scheduled $</th>
+                  <th className="pb-2 pr-4 text-right">Scheduled Jobs</th>
+                  <th className="pb-2 pr-4 text-right">Completed $</th>
+                  <th className="pb-2 pr-4 text-right">Completed Jobs</th>
+                  <th className="pb-2 text-right">Completed %</th>
+                </tr>
+              </thead>
+              <tbody>
+                {weeklySummary.map((row) => (
+                  <tr key={row.weekStart} className="border-b border-t-border/50">
+                    <td className="py-2 pr-4 text-foreground/90 text-xs">
+                      {formatDateRange(row.weekStart, row.weekEnd)}
+                    </td>
+                    <td className="py-2 pr-4 text-right font-medium text-blue-300">
+                      {formatMoney(row.scheduledValue)}
+                    </td>
+                    <td className="py-2 pr-4 text-right text-muted">
+                      {row.scheduledJobs}
+                    </td>
+                    <td className="py-2 pr-4 text-right font-medium text-emerald-300">
+                      {formatMoney(row.completedValue)}
+                    </td>
+                    <td className="py-2 pr-4 text-right text-muted">
+                      {row.completedJobs}
+                    </td>
+                    <td className="py-2 text-right text-foreground/80">
+                      {formatPct(row.scheduledValue > 0 ? (row.completedValue / row.scheduledValue) * 100 : 0)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Calendar Grid */}
       <div className="bg-surface/50 border border-t-border rounded-xl p-3 sm:p-4">
@@ -736,7 +1049,15 @@ export default function ExecutiveCalendarPage() {
                           </td>
                           <td className="py-2 pr-4 text-muted">{job.teamName || "\u2014"}</td>
                           <td className="py-2 pr-4 text-muted">{job.assignedUser || "\u2014"}</td>
-                          <td className="py-2 pr-4 text-muted">{job.statusName}</td>
+                          <td className="py-2 pr-4 text-muted">
+                            {job.isTentative ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-500/20 text-amber-300">
+                                Tentative
+                              </span>
+                            ) : (
+                              job.statusName
+                            )}
+                          </td>
                           <td className="py-2 pr-4 text-right font-medium text-foreground/80">
                             {formatMoney(job.dealValue)}
                           </td>
@@ -747,27 +1068,31 @@ export default function ExecutiveCalendarPage() {
                             {job.dealId || "\u2014"}
                           </td>
                           <td className="py-2 text-right">
-                            <a
-                              href={`https://us-west-1c.zuperpro.com/app/job/${job.jobUid}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-green-400 hover:text-green-300 transition-colors inline-flex items-center"
-                              title="Open in Zuper"
-                            >
-                              <svg
-                                className="w-4 h-4"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
+                            {job.isTentative ? (
+                              <span className="text-xs text-muted">-</span>
+                            ) : (
+                              <a
+                                href={`https://us-west-1c.zuperpro.com/app/job/${job.jobUid}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-green-400 hover:text-green-300 transition-colors inline-flex items-center"
+                                title="Open in Zuper"
                               >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
-                                />
-                              </svg>
-                            </a>
+                                <svg
+                                  className="w-4 h-4"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                                  />
+                                </svg>
+                              </a>
+                            )}
                           </td>
                         </tr>
                       );
