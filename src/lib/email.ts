@@ -297,22 +297,23 @@ async function sendEmailMessage(params: {
   debugFallbackBody: string;
 }): Promise<SendResult> {
   const normalizedTo = parseEmailAddress(params.to);
-  const normalizedBcc = (params.bcc || [])
+  const requestedBcc = (params.bcc || [])
     .map((email) => parseEmailAddress(email))
     .filter((email): email is string => !!email);
+  const configuredBcc = parseEmailList(process.env.SCHEDULING_NOTIFICATION_BCC);
+  let mergedBcc = dedupeEmails([...configuredBcc, ...requestedBcc]);
 
   let primaryTo = normalizedTo || "";
-  let finalBcc = normalizedBcc;
-  if (!primaryTo && finalBcc.length > 0) {
-    primaryTo = finalBcc[0];
-    finalBcc = finalBcc.slice(1);
+  if (!primaryTo && mergedBcc.length > 0) {
+    primaryTo = mergedBcc[0];
+    mergedBcc = mergedBcc.slice(1);
   }
   if (!primaryTo) {
     return { success: false, error: "No valid recipient (to/bcc) for email send" };
   }
 
-  // Remove any duplicate bcc entries that match primary recipient.
-  finalBcc = finalBcc.filter((email) => email.toLowerCase() !== primaryTo.toLowerCase());
+  // Remove duplicates and never BCC the primary recipient.
+  const finalBcc = dedupeEmails(mergedBcc, primaryTo);
 
   const senderEmail = getGoogleWorkspaceSenderEmail();
   const defaultFrom = senderEmail
