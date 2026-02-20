@@ -72,13 +72,15 @@ function classifyStage(stage: string): StageClass {
   return "backlog";
 }
 
-/** Check if a project has missing equipment data */
+/** Check if a project has NO equipment data at all (every field empty) */
 function hasMissingEquipment(eq: Equipment | undefined): boolean {
   if (!eq) return true;
-  const noModules = !eq.modules?.count && !eq.modules?.productName;
-  const noInverter = !eq.inverter?.count && !eq.inverter?.productName;
-  // Missing if both modules and inverter are empty (every project should have these)
-  return noModules && noInverter;
+  const hasModules = !!(eq.modules?.count || eq.modules?.productName);
+  const hasInverter = !!(eq.inverter?.count || eq.inverter?.productName);
+  const hasBattery = !!(eq.battery?.count || eq.battery?.productName);
+  const hasBatteryExp = !!(eq.battery?.expansionCount || eq.battery?.expansionProductName);
+  const hasEv = !!eq.evCount;
+  return !hasModules && !hasInverter && !hasBattery && !hasBatteryExp && !hasEv;
 }
 
 /* ------------------------------------------------------------------ */
