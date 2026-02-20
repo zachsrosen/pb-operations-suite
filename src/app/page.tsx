@@ -72,6 +72,14 @@ const SUITE_LINKS: SuiteLinkData[] = [
     visibility: "owner_admin",
   },
   {
+    href: "/prototypes/layout-refresh",
+    title: "Layout Refresh Prototypes",
+    description: "Review three replacement suite layouts for operations, department, and executive views.",
+    tag: "PROTOTYPE",
+    tagColor: "purple",
+    visibility: "owner_admin",
+  },
+  {
     href: "/suites/admin",
     title: "Admin Suite",
     description: "In-progress and admin-only dashboards, tools, and security pages.",
