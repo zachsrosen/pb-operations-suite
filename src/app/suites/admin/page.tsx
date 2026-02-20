@@ -46,6 +46,13 @@ const ADMIN_TOOLS = [
     tag: "COMPLIANCE",
     tagColor: "bg-red-500/20 text-red-400 border-red-500/30",
   },
+  {
+    href: "/dashboards/zuper-status-comparison",
+    title: "Zuper Status Comparison",
+    description: "Compare Zuper job statuses and schedule/completion dates with HubSpot data.",
+    tag: "ZUPER",
+    tagColor: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
+  },
 ];
 
 const DOCUMENTATION = [

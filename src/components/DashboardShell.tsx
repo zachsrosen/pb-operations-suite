@@ -38,7 +38,6 @@ const SUITE_MAP: Record<string, { href: string; label: string }> = {
   // Testing Suite
   "/dashboards/at-risk": { href: "/suites/testing", label: "Testing" },
   "/dashboards/optimizer": { href: "/suites/testing", label: "Testing" },
-  "/dashboards/zuper-status-comparison": { href: "/suites/testing", label: "Testing" },
   "/dashboards/zuper-compliance": { href: "/suites/testing", label: "Testing" },
   "/dashboards/mobile": { href: "/suites/testing", label: "Testing" },
   "/dashboards/qc": { href: "/suites/testing", label: "Testing" },
@@ -46,6 +45,8 @@ const SUITE_MAP: Record<string, { href: string; label: string }> = {
   "/dashboards/design-engineering": { href: "/suites/testing", label: "Testing" },
   "/dashboards/permitting-interconnection": { href: "/suites/testing", label: "Testing" },
   "/dashboards/product-comparison": { href: "/suites/testing", label: "Testing" },
+  // Admin Suite
+  "/dashboards/zuper-status-comparison": { href: "/suites/admin", label: "Admin" },
   // Additional Pipeline Suite
   "/dashboards/sales": { href: "/suites/additional-pipeline", label: "Pipelines" },
   "/dashboards/service": { href: "/suites/service", label: "Service" },

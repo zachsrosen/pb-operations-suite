@@ -337,6 +337,7 @@ export const ADMIN_ONLY_ROUTES: string[] = [
   "/admin",
   "/api/admin",
   "/suites/admin",
+  "/dashboards/zuper-status-comparison",
 ];
 
 /**

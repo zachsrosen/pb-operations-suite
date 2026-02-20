@@ -75,13 +75,6 @@ const TESTING_DASHBOARDS = [
     tagColor: "bg-purple-500/20 text-purple-400 border-purple-500/30",
   },
   {
-    href: "/dashboards/zuper-status-comparison",
-    title: "Zuper Status Comparison",
-    description: "Compare Zuper job statuses and dates with HubSpot deal data.",
-    tag: "ZUPER",
-    tagColor: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
-  },
-  {
     href: "/dashboards/zuper-compliance",
     title: "Zuper Compliance",
     description: "Per-user compliance scorecards for Zuper field service status updates.",
