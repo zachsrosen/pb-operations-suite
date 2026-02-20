@@ -24,12 +24,16 @@ interface CalendarJob {
   categoryKey: CategoryKey;
   date: string; // YYYY-MM-DD from scheduled_start
   endDate: string | null; // YYYY-MM-DD from scheduled_end (null if same day)
+  spanStartDate: string; // Original start date
+  spanEndDate: string | null; // Original end date (null if single-day)
+  spanDays: number; // Total inclusive span days
   statusName: string;
   assignedUser: string;
   teamName: string;
   dealId: string | null;
   dealName: string | null;
-  dealValue: number;
+  dealValue: number; // Per-day allocated value (split across spanDays)
+  totalDealValue: number; // Original full deal value
   projectNumber: string | null;
 }
 
@@ -110,6 +114,27 @@ function extractDateFromZuper(dateTimeStr: string | undefined | null): string | 
     return spaceSplit[0];
   }
   return null;
+}
+
+function parseYmdAsUtc(dateStr: string): Date {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d));
+}
+
+function formatUtcAsYmd(date: Date): string {
+  return date.toISOString().split("T")[0];
+}
+
+function addDays(dateStr: string, days: number): string {
+  const dt = parseYmdAsUtc(dateStr);
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return formatUtcAsYmd(dt);
+}
+
+function diffDaysInclusive(startDate: string, endDate: string): number {
+  const start = parseYmdAsUtc(startDate).getTime();
+  const end = parseYmdAsUtc(endDate).getTime();
+  return Math.max(1, Math.floor((end - start) / 86400000) + 1);
 }
 
 // Get current status name from job
@@ -350,20 +375,49 @@ export async function GET(request: NextRequest) {
         categoryKey: category.key,
         date,
         endDate: endDate && endDate !== date ? endDate : null,
+        spanStartDate: date,
+        spanEndDate: endDate && endDate !== date ? endDate : null,
+        spanDays: diffDaysInclusive(date, endDate && endDate !== date ? endDate : date),
         statusName: getStatusName(raw),
         assignedUser: getAssignedUser(raw),
         teamName,
         dealId: dealId || null,
         dealName: deal?.dealName || null,
         dealValue: deal?.amount || 0,
+        totalDealValue: deal?.amount || 0,
         projectNumber: extractProjectNumber(raw.job_title || ""),
       });
     }
 
-    // Filter to only jobs that fall within the target month
-    const monthJobs = calendarJobs.filter((job) => {
-      return job.date >= monthStartStr && job.date <= monthEndStr;
+    // Keep jobs that overlap the target month (including jobs that start before month start)
+    const overlappingJobs = calendarJobs.filter((job) => {
+      const spanEnd = job.endDate || job.date;
+      return !(spanEnd < monthStartStr || job.date > monthEndStr);
     });
+
+    // Expand multi-day jobs into per-day rows with value split across total span days
+    const monthJobs: CalendarJob[] = [];
+    for (const job of overlappingJobs) {
+      const spanStart = job.date;
+      const spanEnd = job.endDate || job.date;
+      const spanDays = diffDaysInclusive(spanStart, spanEnd);
+      const perDayValue = spanDays > 0 ? (job.totalDealValue || 0) / spanDays : (job.totalDealValue || 0);
+      const overlapStart = spanStart < monthStartStr ? monthStartStr : spanStart;
+      const overlapEnd = spanEnd > monthEndStr ? monthEndStr : spanEnd;
+
+      let d = overlapStart;
+      while (d <= overlapEnd) {
+        monthJobs.push({
+          ...job,
+          date: d,
+          dealValue: perDayValue,
+          spanStartDate: spanStart,
+          spanEndDate: job.endDate,
+          spanDays,
+        });
+        d = addDays(d, 1);
+      }
+    }
 
     // Build daily totals by category
     const dailyTotals: Record<string, DayTotals> = {};
@@ -388,7 +442,7 @@ export async function GET(request: NextRequest) {
     // Build month totals
     const monthTotals = {
       totalValue: 0,
-      totalJobs: monthJobs.length,
+      totalJobs: overlappingJobs.length,
       byCategory: {
         construction: { count: 0, value: 0 },
         detach: { count: 0, value: 0 },
@@ -397,9 +451,12 @@ export async function GET(request: NextRequest) {
       } as Record<CategoryKey, { count: number; value: number }>,
     };
 
+    for (const job of overlappingJobs) {
+      monthTotals.byCategory[job.categoryKey].count += 1;
+    }
+
     for (const job of monthJobs) {
       monthTotals.totalValue += job.dealValue;
-      monthTotals.byCategory[job.categoryKey].count += 1;
       monthTotals.byCategory[job.categoryKey].value += job.dealValue;
     }
 

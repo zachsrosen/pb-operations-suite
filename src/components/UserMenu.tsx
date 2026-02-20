@@ -54,8 +54,6 @@ export function UserMenu() {
     .slice(0, 2) || "?";
 
   const isAdmin = userRole === "ADMIN";
-  const isOwner = userRole === "OWNER";
-  const isAdminOrOwner = isAdmin || isOwner;
   const roleLabel =
     userRole === "OWNER" ? "EXECUTIVE" :
     userRole === "VIEWER" ? "UNASSIGNED" :
@@ -99,7 +97,7 @@ export function UserMenu() {
           </div>
 
           <div className="py-1">
-            {isAdminOrOwner && (
+            {isAdmin && (
               <Link
                 href="/suites/admin"
                 onClick={() => setIsOpen(false)}

@@ -8,14 +8,14 @@ export default async function SolarCheckoutPrototypePage() {
   if (!session?.user?.email) redirect("/login?callbackUrl=/prototypes/solar-checkout");
 
   const user = await getUserByEmail(session.user.email);
-  if (!user || user.role !== "ADMIN") redirect("/");
+  if (!user || (user.role !== "ADMIN" && user.role !== "OWNER")) redirect("/");
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
       <header className="border-b border-t-border px-6 py-3 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
-          <Link href="/suites/admin" className="text-xs text-muted hover:text-foreground transition-colors">
-            &larr; Admin Suite
+          <Link href="/suites/testing" className="text-xs text-muted hover:text-foreground transition-colors">
+            &larr; Testing Suite
           </Link>
           <span className="text-t-border">|</span>
           <h1 className="text-sm font-semibold text-foreground">Solar Checkout Experience</h1>

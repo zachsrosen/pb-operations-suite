@@ -330,12 +330,13 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
 
 /**
  * Routes restricted to ADMIN role only.
- * New dashboards/features go here until confirmed ready for wider access.
+ * Policy: new pages/features should be added here first (admin-only) until
+ * explicitly approved for broader roles.
  */
 export const ADMIN_ONLY_ROUTES: string[] = [
-  // Note: Don't add dashboard/API routes here — JWT role in middleware defaults
-  // to TECH_OPS (not synced from DB), so admin-only gating must happen client-side
-  // (for pages) or server-side in the route handler (for APIs).
+  "/admin",
+  "/api/admin",
+  "/suites/admin",
 ];
 
 /**
@@ -347,7 +348,7 @@ export function canAccessRoute(role: UserRole, route: string): boolean {
   if (!permissions) return false;
 
   // Check admin-only routes first — only ADMIN can access these
-  if (ADMIN_ONLY_ROUTES.some(restricted => route.startsWith(restricted))) {
+  if (ADMIN_ONLY_ROUTES.some((restricted) => route === restricted || route.startsWith(`${restricted}/`))) {
     return effectiveRole === "ADMIN";
   }
 

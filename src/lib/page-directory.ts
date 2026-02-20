@@ -31,6 +31,7 @@ export const APP_PAGE_ROUTES = [
   "/dashboards/permitting",
   "/dashboards/permitting-interconnection",
   "/dashboards/pipeline",
+  "/dashboards/product-comparison",
   "/dashboards/project-management",
   "/dashboards/qc",
   "/dashboards/revenue",

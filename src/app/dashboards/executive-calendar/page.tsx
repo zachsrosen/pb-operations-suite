@@ -25,13 +25,23 @@ interface Job {
   categoryKey: string;
   date: string;
   endDate: string | null;
+  spanStartDate: string;
+  spanEndDate: string | null;
+  spanDays: number;
   statusName: string;
   assignedUser: string;
   teamName: string;
   dealId: string | null;
   dealName: string | null;
   dealValue: number;
+  totalDealValue: number;
   projectNumber: string | null;
+}
+
+interface DayDrilldownSummary {
+  totalValue: number;
+  totalJobs: number;
+  byCategory: Record<CategoryKey, { count: number; value: number }>;
 }
 
 interface MonthTotals {
@@ -130,6 +140,11 @@ function formatFullDate(dateStr: string): string {
     month: "long",
     day: "numeric",
   });
+}
+
+function formatDateRange(startDate: string, endDate: string | null): string {
+  if (!endDate || endDate === startDate) return startDate;
+  return `${startDate} \u2192 ${endDate}`;
 }
 
 /* ------------------------------------------------------------------ */
@@ -337,6 +352,34 @@ export default function ExecutiveCalendarPage() {
     );
   }, [data, selectedDate, enabledCategories]);
 
+  const selectedDaySummary = useMemo<DayDrilldownSummary>(() => {
+    const summary: DayDrilldownSummary = {
+      totalValue: 0,
+      totalJobs: selectedDayJobs.length,
+      byCategory: {
+        construction: { count: 0, value: 0 },
+        detach: { count: 0, value: 0 },
+        reset: { count: 0, value: 0 },
+        service: { count: 0, value: 0 },
+      },
+    };
+
+    for (const job of selectedDayJobs) {
+      summary.totalValue += job.dealValue;
+      summary.byCategory[job.categoryKey].count += 1;
+      summary.byCategory[job.categoryKey].value += job.dealValue;
+    }
+
+    return summary;
+  }, [selectedDayJobs]);
+
+  const selectedDayJobsSorted = useMemo(() => {
+    return [...selectedDayJobs].sort((a, b) => {
+      if (b.dealValue !== a.dealValue) return b.dealValue - a.dealValue;
+      return (a.dealName || a.title).localeCompare(b.dealName || b.title);
+    });
+  }, [selectedDayJobs]);
+
   /* ---- Team filter options ---- */
 
   const teamOptions = useMemo(() => {
@@ -358,7 +401,11 @@ export default function ExecutiveCalendarPage() {
         Title: j.title,
         Category: j.category,
         Date: j.date,
-        "Deal Value": j.dealValue,
+        "Span Start": j.spanStartDate,
+        "Span End": j.spanEndDate || j.spanStartDate,
+        "Span Days": j.spanDays,
+        "Day Value": j.dealValue,
+        "Total Deal Value": j.totalDealValue,
         Crew: j.assignedUser,
         Team: j.teamName,
         Status: j.statusName,
@@ -619,76 +666,115 @@ export default function ExecutiveCalendarPage() {
               No scheduled jobs for this day
             </p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-muted text-left border-b border-t-border">
-                    <th className="pb-2 pr-4">Project</th>
-                    <th className="pb-2 pr-4">Category</th>
-                    <th className="pb-2 pr-4 text-right">Deal Value</th>
-                    <th className="pb-2 pr-4">Crew</th>
-                    <th className="pb-2 pr-4">Status</th>
-                    <th className="pb-2 text-right">Link</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {selectedDayJobs.map((job) => {
-                    const catCfg = CATEGORY_CONFIG[job.categoryKey as CategoryKey];
-                    return (
-                      <tr
-                        key={job.jobUid}
-                        className="border-b border-t-border/50 hover:bg-surface-2/30"
-                      >
-                        <td className="py-2 pr-4">
-                          <div className="font-medium text-foreground/90">
-                            {job.dealName || job.title}
-                          </div>
-                          {job.projectNumber && (
-                            <div className="text-xs text-muted">{job.projectNumber}</div>
-                          )}
-                        </td>
-                        <td className="py-2 pr-4">
-                          <span
-                            className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                              catCfg?.badgeBg || "bg-surface-2"
-                            } ${catCfg?.badgeText || "text-muted"}`}
-                          >
-                            {job.category}
-                          </span>
-                        </td>
-                        <td className="py-2 pr-4 text-right font-medium text-foreground/80">
-                          {formatMoney(job.dealValue)}
-                        </td>
-                        <td className="py-2 pr-4 text-muted">{job.assignedUser || "\u2014"}</td>
-                        <td className="py-2 pr-4 text-muted">{job.statusName}</td>
-                        <td className="py-2 text-right">
-                          <a
-                            href={`https://us-west-1c.zuperpro.com/app/job/${job.jobUid}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-green-400 hover:text-green-300 transition-colors inline-flex items-center"
-                            title="Open in Zuper"
-                          >
-                            <svg
-                              className="w-4 h-4"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
+                <div className="bg-surface-2/50 border border-t-border rounded-lg p-2">
+                  <div className="text-xs text-muted">Day Revenue</div>
+                  <div className="text-sm font-semibold text-foreground">{formatMoney(selectedDaySummary.totalValue)}</div>
+                </div>
+                <div className="bg-surface-2/50 border border-t-border rounded-lg p-2">
+                  <div className="text-xs text-muted">Jobs</div>
+                  <div className="text-sm font-semibold text-foreground">{selectedDaySummary.totalJobs}</div>
+                </div>
+                {CATEGORY_KEYS.map((key) => {
+                  const cfg = CATEGORY_CONFIG[key];
+                  const cat = selectedDaySummary.byCategory[key];
+                  return (
+                    <div key={key} className="bg-surface-2/50 border border-t-border rounded-lg p-2">
+                      <div className={`text-xs ${cfg.statColor}`}>{cfg.label}</div>
+                      <div className="text-sm font-semibold text-foreground">
+                        {cat.count} / {formatCompact(cat.value)}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-muted text-left border-b border-t-border">
+                      <th className="pb-2 pr-4">Project</th>
+                      <th className="pb-2 pr-4">Category</th>
+                      <th className="pb-2 pr-4">Date</th>
+                      <th className="pb-2 pr-4">Team</th>
+                      <th className="pb-2 pr-4">Crew</th>
+                      <th className="pb-2 pr-4">Status</th>
+                      <th className="pb-2 pr-4 text-right">Day Value</th>
+                      <th className="pb-2 pr-4 text-right">Total Deal</th>
+                      <th className="pb-2 pr-4">Deal ID</th>
+                      <th className="pb-2 text-right">Zuper</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedDayJobsSorted.map((job) => {
+                      const catCfg = CATEGORY_CONFIG[job.categoryKey as CategoryKey];
+                      return (
+                        <tr
+                          key={job.jobUid}
+                          className="border-b border-t-border/50 hover:bg-surface-2/30"
+                        >
+                          <td className="py-2 pr-4">
+                            <div className="font-medium text-foreground/90">
+                              {job.dealName || job.title}
+                            </div>
+                            {job.projectNumber && (
+                              <div className="text-xs text-muted">{job.projectNumber}</div>
+                            )}
+                          </td>
+                          <td className="py-2 pr-4">
+                            <span
+                              className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                                catCfg?.badgeBg || "bg-surface-2"
+                              } ${catCfg?.badgeText || "text-muted"}`}
                             >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
-                              />
-                            </svg>
-                          </a>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                              {job.category}
+                            </span>
+                          </td>
+                          <td className="py-2 pr-4 text-muted text-xs">
+                            {formatDateRange(job.spanStartDate, job.spanEndDate)}
+                          </td>
+                          <td className="py-2 pr-4 text-muted">{job.teamName || "\u2014"}</td>
+                          <td className="py-2 pr-4 text-muted">{job.assignedUser || "\u2014"}</td>
+                          <td className="py-2 pr-4 text-muted">{job.statusName}</td>
+                          <td className="py-2 pr-4 text-right font-medium text-foreground/80">
+                            {formatMoney(job.dealValue)}
+                          </td>
+                          <td className="py-2 pr-4 text-right text-muted">
+                            {formatMoney(job.totalDealValue)}
+                          </td>
+                          <td className="py-2 pr-4 text-xs text-muted font-mono">
+                            {job.dealId || "\u2014"}
+                          </td>
+                          <td className="py-2 text-right">
+                            <a
+                              href={`https://us-west-1c.zuperpro.com/app/job/${job.jobUid}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-green-400 hover:text-green-300 transition-colors inline-flex items-center"
+                              title="Open in Zuper"
+                            >
+                              <svg
+                                className="w-4 h-4"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                                />
+                              </svg>
+                            </a>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>

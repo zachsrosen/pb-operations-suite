@@ -102,6 +102,13 @@ const TESTING_DASHBOARDS = [
     tag: "INVENTORY",
     tagColor: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
   },
+  {
+    href: "/dashboards/product-comparison",
+    title: "Product Catalog Comparison",
+    description: "Compare HubSpot, Zuper, and Zoho product records to catch mismatches.",
+    tag: "CATALOG",
+    tagColor: "bg-amber-500/20 text-amber-300 border-amber-500/30",
+  },
 ];
 
 const PROTOTYPES = [

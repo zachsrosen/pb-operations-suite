@@ -134,27 +134,6 @@ export default async function AdminSuitePage() {
         <h2 className="text-lg font-semibold text-foreground/80 mb-4">Admin Tools</h2>
         <SectionGrid items={ADMIN_TOOLS} />
 
-        {/* Testing Suite Link */}
-        <h2 className="text-lg font-semibold text-foreground/80 mt-10 mb-4">Testing</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Link
-            href="/suites/testing"
-            className="group block bg-surface/50 border border-t-border rounded-xl p-5 hover:border-orange-500/50 hover:bg-surface transition-all"
-          >
-            <div className="flex items-center justify-between mb-1">
-              <h3 className="font-semibold text-foreground group-hover:text-orange-400 transition-colors">
-                Testing Suite
-              </h3>
-              <span className="text-xs font-medium px-2 py-0.5 rounded border bg-purple-500/20 text-purple-400 border-purple-500/30">
-                TESTING
-              </span>
-            </div>
-            <p className="text-sm text-muted">
-              Experimental dashboards, prototypes, and validation tools for owners and admins.
-            </p>
-          </Link>
-        </div>
-
         {/* Documentation */}
         <h2 className="text-lg font-semibold text-foreground/80 mt-10 mb-4">Documentation</h2>
         <SectionGrid items={DOCUMENTATION} />
