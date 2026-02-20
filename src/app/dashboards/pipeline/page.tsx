@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react";
 import Link from "next/link";
 import DashboardShell from "@/components/DashboardShell";
+import { NLSearchBar } from "@/components/ui/NLSearchBar";
 import { useExecutiveData } from "@/hooks/useExecutiveData";
 import { prefetchDashboard } from "@/lib/prefetch";
 import {
@@ -11,6 +12,7 @@ import {
   formatCurrencyExec,
   getDaysClass,
 } from "@/lib/executive-shared";
+import type { ProjectFilterSpec } from "@/lib/ai";
 
 // ---- Sub-components ----
 
@@ -82,6 +84,89 @@ interface Filters {
   search: string;
 }
 
+// ---- Apply AI filter spec to project list ----
+
+function applyFilterSpec(
+  projects: ExecProject[],
+  spec: ProjectFilterSpec | null,
+  textFallback: string
+): ExecProject[] {
+  let result = [...projects];
+
+  if (!spec) {
+    // No spec — plain text search fallback
+    if (textFallback) {
+      const s = textFallback.toLowerCase();
+      result = result.filter(
+        (p) =>
+          p.name.toLowerCase().includes(s) ||
+          (p.ahj || "").toLowerCase().includes(s)
+      );
+    }
+    return result;
+  }
+
+  if (spec.locations?.length) {
+    const locSet = new Set(spec.locations.map((l) => l.toLowerCase()));
+    result = result.filter((p) => locSet.has(p.pb_location.toLowerCase()));
+  }
+  if (spec.stages?.length) {
+    const stageSet = new Set(spec.stages.map((s) => s.toLowerCase()));
+    result = result.filter((p) => stageSet.has(p.stage.toLowerCase()));
+  }
+  if (spec.is_pe !== undefined) {
+    result = result.filter((p) => p.is_participate_energy === spec.is_pe);
+  }
+  if (spec.is_rtb !== undefined) {
+    result = result.filter((p) => p.is_rtb === spec.is_rtb);
+  }
+  if (spec.is_overdue) {
+    result = result.filter(
+      (p) =>
+        (p.days_to_install !== null && p.days_to_install < 0 && !p.construction_complete) ||
+        (p.days_to_inspection !== null && p.days_to_inspection < 0 && !p.inspection_pass) ||
+        (p.days_to_pto !== null && p.days_to_pto < 0 && !p.pto_granted)
+    );
+  }
+  if (spec.max_days_to_install !== undefined) {
+    result = result.filter(
+      (p) => p.days_to_install !== null && p.days_to_install <= spec.max_days_to_install!
+    );
+  }
+  if (spec.min_days_to_install !== undefined) {
+    result = result.filter(
+      (p) => p.days_to_install !== null && p.days_to_install >= spec.min_days_to_install!
+    );
+  }
+  if (spec.min_amount !== undefined) {
+    result = result.filter((p) => p.amount >= spec.min_amount!);
+  }
+  if (spec.max_amount !== undefined) {
+    result = result.filter((p) => p.amount <= spec.max_amount!);
+  }
+  if (spec.min_priority_score !== undefined) {
+    result = result.filter((p) => p.priority_score >= spec.min_priority_score!);
+  }
+
+  return result;
+}
+
+// ---- Sort by spec ----
+
+function sortBySpec(projects: ExecProject[], spec: ProjectFilterSpec | null): ExecProject[] {
+  const sortBy = spec?.sort_by ?? "priority_score";
+  const dir = spec?.sort_dir === "asc" ? 1 : -1;
+
+  return [...projects].sort((a, b) => {
+    const aVal = a[sortBy as keyof ExecProject] as number | null;
+    const bVal = b[sortBy as keyof ExecProject] as number | null;
+    if (aVal === null && bVal === null) return 0;
+    if (aVal === null) return 1;
+    if (bVal === null) return -1;
+    return (aVal - bVal) * dir * -1; // default desc
+  });
+}
+
 // ---- Main component ----
 
 export default function PipelinePage() {
@@ -94,6 +179,11 @@ export default function PipelinePage() {
     status: "all",
     search: "",
   });
+
+  // AI NL search state
+  const [nlQuery, setNlQuery] = useState("");
+  const [aiSpec, setAiSpec] = useState<ProjectFilterSpec | null>(null);
+  const [textFallback, setTextFallback] = useState("");
 
   const overdueInstall = projects.filter(
     (p) => p.days_to_install !== null && p.days_to_install < 0 && !p.construction_complete
@@ -118,6 +208,8 @@ export default function PipelinePage() {
 
   const filtered = useMemo(() => {
     let result = [...projects];
+
+    // Panel filters (location / PE / status)
     if (filters.location !== "all")
       result = result.filter((p) => p.pb_location === filters.location);
     if (filters.pe === "pe")
@@ -131,21 +223,34 @@ export default function PipelinePage() {
           (p.days_to_pto !== null && p.days_to_pto < 0 && !p.pto_granted)
       );
     else if (filters.status === "rtb") result = result.filter((p) => p.is_rtb);
-    if (filters.search) {
+
+    // AI NL filter (takes over from plain search when active)
+    if (nlQuery) {
+      result = applyFilterSpec(result, aiSpec, textFallback);
+      result = sortBySpec(result, aiSpec);
+    } else if (filters.search) {
       const s = filters.search.toLowerCase();
       result = result.filter(
         (p) =>
           p.name.toLowerCase().includes(s) ||
           (p.ahj || "").toLowerCase().includes(s)
       );
+      result.sort((a, b) => b.priority_score - a.priority_score);
+    } else {
+      result.sort((a, b) => b.priority_score - a.priority_score);
     }
-    result.sort((a, b) => b.priority_score - a.priority_score);
+
     return result.slice(0, 100);
-  }, [projects, filters]);
+  }, [projects, filters, nlQuery, aiSpec, textFallback]);
 
   const updateFilter = (key: keyof Filters, value: string) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
   };
+
+  function handleNLFilterSpec(spec: ProjectFilterSpec | null, rawQuery: string) {
+    setAiSpec(spec);
+    setTextFallback(rawQuery);
+  }
 
   if (!accessChecked) {
     return (
@@ -218,8 +323,8 @@ export default function PipelinePage() {
           </div>
 
           {/* Filters */}
-          <div className="flex flex-wrap gap-4 items-center bg-surface border border-t-border rounded-xl p-4 mb-6">
-            <div className="flex items-center gap-2">
+          <div className="flex flex-wrap gap-4 items-start bg-surface border border-t-border rounded-xl p-4 mb-6">
+            <div className="flex items-center gap-2 shrink-0">
               <span className="text-[0.7rem] text-muted">Location:</span>
               <select
                 className="bg-background border border-t-border text-foreground/80 px-3 py-2 rounded-md text-xs focus:outline-none focus:border-orange-500"
@@ -232,27 +337,25 @@ export default function PipelinePage() {
                 ))}
               </select>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 shrink-0">
               <span className="text-[0.7rem] text-muted">Type:</span>
               <FilterBtn active={filters.pe === "all"} onClick={() => updateFilter("pe", "all")}>All</FilterBtn>
               <FilterBtn active={filters.pe === "pe"} onClick={() => updateFilter("pe", "pe")} peStyle>PE Only</FilterBtn>
               <FilterBtn active={filters.pe === "non-pe"} onClick={() => updateFilter("pe", "non-pe")}>Non-PE</FilterBtn>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 shrink-0">
               <span className="text-[0.7rem] text-muted">Status:</span>
               <FilterBtn active={filters.status === "all"} onClick={() => updateFilter("status", "all")}>All</FilterBtn>
               <FilterBtn active={filters.status === "overdue"} onClick={() => updateFilter("status", "overdue")}>Overdue</FilterBtn>
               <FilterBtn active={filters.status === "rtb"} onClick={() => updateFilter("status", "rtb")}>RTB</FilterBtn>
             </div>
-            <div className="flex-1">
-              <input
-                type="text"
-                placeholder="Search projects..."
-                className="bg-background border border-t-border text-foreground/80 px-3 py-2 rounded-md text-xs w-52 focus:outline-none focus:border-orange-500"
-                value={filters.search}
-                onChange={(e) => updateFilter("search", e.target.value)}
-              />
-            </div>
+
+            {/* NL Search — replaces the old plain text input */}
+            <NLSearchBar
+              value={nlQuery}
+              onChange={setNlQuery}
+              onFilterSpec={handleNLFilterSpec}
+            />
           </div>
 
           {/* Table */}
