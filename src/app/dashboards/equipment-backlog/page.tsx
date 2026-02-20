@@ -72,14 +72,24 @@ function classifyStage(stage: string): StageClass {
   return "backlog";
 }
 
+/** Check if a project has missing equipment data */
+function hasMissingEquipment(eq: Equipment | undefined): boolean {
+  if (!eq) return true;
+  const noModules = !eq.modules?.count && !eq.modules?.productName;
+  const noInverter = !eq.inverter?.count && !eq.inverter?.productName;
+  // Missing if both modules and inverter are empty (every project should have these)
+  return noModules && noInverter;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
 
 function aggregateEquipment(projects: Project[]) {
-  let modules = 0, inverters = 0, batteries = 0, batteryExpansions = 0, ev = 0, value = 0;
+  let modules = 0, inverters = 0, batteries = 0, batteryExpansions = 0, ev = 0, value = 0, missing = 0;
   for (const p of projects) {
     const eq = p.equipment;
+    if (hasMissingEquipment(eq)) missing++;
     if (!eq) continue;
     modules += eq.modules?.count || 0;
     inverters += eq.inverter?.count || 0;
@@ -88,7 +98,7 @@ function aggregateEquipment(projects: Project[]) {
     ev += eq.evCount || 0;
     value += p.amount || 0;
   }
-  return { projects: projects.length, modules, inverters, batteries, batteryExpansions, ev, value };
+  return { projects: projects.length, modules, inverters, batteries, batteryExpansions, ev, value, missing };
 }
 
 function buildProductSummary(
@@ -113,10 +123,24 @@ function buildProductSummary(
       map.set(name, { productName: name, totalCount: count, projects: 1, projectList: [proj] });
     }
   }
-  return [...map.values()].sort((a, b) => b.totalCount - a.totalCount);
+  // Sort by stage urgency (closest to construction first), then by count
+  const stageUrgency = (proj: ProductSummary) => {
+    let minIdx = 999;
+    for (const p of proj.projectList) {
+      const idx = STAGE_ORDER.indexOf(p.stage as (typeof STAGE_ORDER)[number]);
+      if (idx !== -1 && idx < minIdx) minIdx = idx;
+    }
+    return minIdx;
+  };
+  return [...map.values()].sort((a, b) => {
+    const urgA = stageUrgency(a);
+    const urgB = stageUrgency(b);
+    if (urgA !== urgB) return urgA - urgB; // Closer to construction first
+    return b.totalCount - a.totalCount;
+  });
 }
 
-/** Get product names for projects in a given stage */
+/** Get product names + project list for projects in a given stage */
 function getStageProducts(projects: Project[], stage: string) {
   const stageProjects = projects.filter((p) => p.stage === stage);
   const products: { type: string; name: string; count: number; color: string }[] = [];
@@ -139,7 +163,7 @@ function getStageProducts(projects: Project[], stage: string) {
   aggregate("Batteries", (eq) => formatProduct(eq.battery?.productName, eq.battery?.model), (eq) => eq.battery?.count || 0, "text-emerald-400");
   aggregate("Bat. Exp.", (eq) => formatProduct(eq.battery?.expansionProductName, eq.battery?.expansionModel), (eq) => eq.battery?.expansionCount || 0, "text-green-400");
   aggregate("EV", () => "EV Charger", (eq) => eq.evCount || 0, "text-pink-400");
-  return products;
+  return { products, projects: stageProjects };
 }
 
 /* ------------------------------------------------------------------ */
@@ -310,14 +334,16 @@ export default function EquipmentBacklogPage() {
     [backlogProjects]
   );
 
-  /* ---- Stage breakdown ---- */
+  /* ---- Stage breakdown (exclude built stages) ---- */
 
   const stageBreakdown = useMemo(() => {
-    const map = new Map<string, { count: number; modules: number; inverters: number; batteries: number; batteryExpansions: number; ev: number; value: number }>();
+    const map = new Map<string, { count: number; modules: number; inverters: number; batteries: number; batteryExpansions: number; ev: number; value: number; missing: number }>();
     for (const p of filteredProjects) {
+      if (classifyStage(p.stage) === "built") continue; // Exclude built
       const stage = p.stage || "Unknown";
       const existing = map.get(stage);
       const eq = p.equipment;
+      const isMissing = hasMissingEquipment(eq) ? 1 : 0;
       if (existing) {
         existing.count += 1;
         existing.modules += eq?.modules?.count || 0;
@@ -326,6 +352,7 @@ export default function EquipmentBacklogPage() {
         existing.batteryExpansions += eq?.battery?.expansionCount || 0;
         existing.ev += eq?.evCount || 0;
         existing.value += p.amount || 0;
+        existing.missing += isMissing;
       } else {
         map.set(stage, {
           count: 1,
@@ -335,6 +362,7 @@ export default function EquipmentBacklogPage() {
           batteryExpansions: eq?.battery?.expansionCount || 0,
           ev: eq?.evCount || 0,
           value: p.amount || 0,
+          missing: isMissing,
         });
       }
     }
@@ -345,6 +373,45 @@ export default function EquipmentBacklogPage() {
         return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
       });
   }, [filteredProjects]);
+
+  /* ---- Stage totals row ---- */
+  const stageTotals = useMemo(() => {
+    const t = { count: 0, modules: 0, inverters: 0, batteries: 0, batteryExpansions: 0, ev: 0, value: 0, missing: 0 };
+    for (const [, d] of stageBreakdown) {
+      t.count += d.count;
+      t.modules += d.modules;
+      t.inverters += d.inverters;
+      t.batteries += d.batteries;
+      t.batteryExpansions += d.batteryExpansions;
+      t.ev += d.ev;
+      t.value += d.value;
+      t.missing += d.missing;
+    }
+    return t;
+  }, [stageBreakdown]);
+
+  /* ---- Export data builder ---- */
+
+  const buildExportData = useCallback((projs: Project[]) => {
+    return projs.map((p) => ({
+      Project: p.name,
+      "Project #": p.projectNumber,
+      Location: p.pbLocation,
+      Stage: p.stage,
+      Status: classifyStage(p.stage) === "built" ? "Built" : classifyStage(p.stage) === "in_progress" ? "In Progress" : "Backlog",
+      Modules: p.equipment?.modules?.count || 0,
+      "Module Product": formatProduct(p.equipment?.modules?.productName, p.equipment?.modules?.model),
+      Inverters: p.equipment?.inverter?.count || 0,
+      "Inverter Product": formatProduct(p.equipment?.inverter?.productName, p.equipment?.inverter?.model),
+      Batteries: p.equipment?.battery?.count || 0,
+      "Battery Product": formatProduct(p.equipment?.battery?.productName, p.equipment?.battery?.model),
+      "Battery Expansions": p.equipment?.battery?.expansionCount || 0,
+      "Battery Exp. Product": formatProduct(p.equipment?.battery?.expansionProductName, p.equipment?.battery?.expansionModel),
+      "EV Chargers": p.equipment?.evCount || 0,
+      Value: p.amount || 0,
+      "HubSpot URL": p.url || "",
+    }));
+  }, []);
 
   /* ---- Drill-down handlers ---- */
 
@@ -431,6 +498,11 @@ export default function EquipmentBacklogPage() {
           {isActive && (
             <span className="text-[10px] text-cyan-400 font-medium bg-cyan-400/10 px-1.5 py-0.5 rounded">FILTERED</span>
           )}
+          {t.missing > 0 && (
+            <span className="text-[10px] text-amber-400 font-medium bg-amber-400/10 px-1.5 py-0.5 rounded" title={`${t.missing} projects missing equipment data`}>
+              {t.missing} missing data
+            </span>
+          )}
           <span className="text-xs text-muted ml-auto">{t.projects} projects</span>
           <svg className={`w-3.5 h-3.5 text-muted/50 transition-transform ${isActive ? "rotate-90" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
@@ -455,7 +527,7 @@ export default function EquipmentBacklogPage() {
     );
   };
 
-  /* ---- Product breakdown card (with drill-down) ---- */
+  /* ---- Product breakdown card (with drill-down showing location) ---- */
   const ProductBreakdown = ({ title, items, color, typeKey }: { title: string; items: ProductSummary[]; color: string; typeKey: string }) => (
     <div className="bg-surface/50 border border-t-border rounded-xl p-5">
       <h3 className={`text-sm font-semibold ${color} mb-3`}>{title}</h3>
@@ -498,6 +570,7 @@ export default function EquipmentBacklogPage() {
                           <span className="text-muted/50 ml-1">{proj.projectNumber}</span>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-muted/50 text-[10px]">{proj.pbLocation}</span>
                           <span
                             className="w-1.5 h-1.5 rounded-full"
                             style={{ backgroundColor: STAGE_COLORS[proj.stage]?.hex || "#71717A" }}
@@ -516,6 +589,14 @@ export default function EquipmentBacklogPage() {
     </div>
   );
 
+  /* ---- Determine export data based on active filter ---- */
+  const exportFilename = activeStatFilter
+    ? `equipment-${activeStatFilter === "in_progress" ? "in-progress" : activeStatFilter}`
+    : "equipment-backlog";
+  const exportProjects = activeStatFilter
+    ? (activeStatFilter === "backlog" ? backlogProjects : activeStatFilter === "in_progress" ? inProgressProjects : builtProjects)
+    : sortedProjects;
+
   return (
     <DashboardShell
       title="Equipment Backlog"
@@ -523,24 +604,8 @@ export default function EquipmentBacklogPage() {
       accentColor="cyan"
       lastUpdated={lastUpdated}
       exportData={{
-        data: sortedProjects.map((p) => ({
-          Project: p.name,
-          "Project #": p.projectNumber,
-          Location: p.pbLocation,
-          Stage: p.stage,
-          Status: classifyStage(p.stage) === "built" ? "Built" : classifyStage(p.stage) === "in_progress" ? "In Progress" : "Backlog",
-          Modules: p.equipment?.modules?.count || 0,
-          "Module Product": formatProduct(p.equipment?.modules?.productName, p.equipment?.modules?.model),
-          Inverters: p.equipment?.inverter?.count || 0,
-          "Inverter Product": formatProduct(p.equipment?.inverter?.productName, p.equipment?.inverter?.model),
-          Batteries: p.equipment?.battery?.count || 0,
-          "Battery Product": formatProduct(p.equipment?.battery?.productName, p.equipment?.battery?.model),
-          "Battery Expansions": p.equipment?.battery?.expansionCount || 0,
-          "Battery Exp. Product": formatProduct(p.equipment?.battery?.expansionProductName, p.equipment?.battery?.expansionModel),
-          "EV Chargers": p.equipment?.evCount || 0,
-          Value: p.amount || 0,
-        })),
-        filename: "equipment-backlog",
+        data: buildExportData(exportProjects),
+        filename: exportFilename,
       }}
     >
       {/* Filters */}
@@ -598,17 +663,23 @@ export default function EquipmentBacklogPage() {
 
       {view === "summary" ? (
         <>
-          {/* Backlog / In Progress / Built stat rows (clickable) */}
+          {/* Backlog + In Progress stat rows (no Built) */}
           <StatRow label="Backlog" totals={backlogTotals} accent="bg-cyan-400" cls="backlog" />
           <StatRow label="In Progress (Construction)" totals={inProgressTotals} accent="bg-orange-400" cls="in_progress" />
-          <StatRow label="Built (Inspection / PTO / Close Out)" totals={builtTotals} accent="bg-green-400" cls="built" />
 
-          {/* Stage Breakdown Table (expandable rows) */}
+          {/* Built summary — compact, not a full stat row */}
+          {builtTotals.projects > 0 && (
+            <div className="text-xs text-muted mb-6 text-center">
+              <span className="text-green-400">{builtTotals.projects}</span> built projects not shown ({builtTotals.modules.toLocaleString()} modules, {builtTotals.inverters.toLocaleString()} inverters, {builtTotals.batteries.toLocaleString()} batteries)
+            </div>
+          )}
+
+          {/* Stage Breakdown Table (excludes built, expandable rows with projects) */}
           <div className="bg-surface/50 border border-t-border rounded-xl p-6 mb-6">
             <h2 className="text-lg font-semibold mb-4">Equipment by Stage</h2>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead>
+                <thead className="sticky top-0 bg-surface/95 backdrop-blur-sm z-10">
                   <tr className="text-muted text-left border-b border-t-border">
                     <th className="pb-2 pr-4">Stage</th>
                     <th className="pb-2 pr-4 text-right">Projects</th>
@@ -623,9 +694,9 @@ export default function EquipmentBacklogPage() {
                 <tbody>
                   {stageBreakdown.map(([stage, d]) => {
                     const cls = classifyStage(stage);
-                    const rowBg = cls === "built" ? "bg-green-500/5" : cls === "in_progress" ? "bg-orange-500/5" : "";
+                    const rowBg = cls === "in_progress" ? "bg-orange-500/5" : "";
                     const isExpanded = expandedStages.has(stage);
-                    const stageProducts = isExpanded ? getStageProducts(filteredProjects, stage) : [];
+                    const stageData = isExpanded ? getStageProducts(filteredProjects, stage) : null;
                     return (
                       <>
                         <tr
@@ -643,8 +714,12 @@ export default function EquipmentBacklogPage() {
                                 style={{ backgroundColor: STAGE_COLORS[stage]?.hex || "#71717A" }}
                               />
                               <span>{stage}</span>
-                              {cls === "built" && <span className="text-[10px] text-green-400 font-medium ml-1">BUILT</span>}
                               {cls === "in_progress" && <span className="text-[10px] text-orange-400 font-medium ml-1">IN PROGRESS</span>}
+                              {d.missing > 0 && (
+                                <span className="text-[10px] text-amber-400/80 ml-1" title={`${d.missing} projects missing equipment data`}>
+                                  ⚠ {d.missing}
+                                </span>
+                              )}
                             </div>
                           </td>
                           <td className="py-2 pr-4 text-right text-foreground/80">{d.count}</td>
@@ -655,15 +730,14 @@ export default function EquipmentBacklogPage() {
                           <td className="py-2 pr-4 text-right text-pink-400">{d.ev.toLocaleString()}</td>
                           <td className="py-2 text-right text-muted">{formatMoney(d.value)}</td>
                         </tr>
-                        {isExpanded && (
+                        {isExpanded && stageData && (
                           <tr key={`${stage}-detail`}>
                             <td colSpan={8} className="px-0 py-0">
                               <div className="bg-surface-2/20 border-l-2 border-t-border/50 ml-6 px-4 py-3 mb-1">
-                                {stageProducts.length === 0 ? (
-                                  <p className="text-muted text-xs">No equipment in this stage</p>
-                                ) : (
-                                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-1">
-                                    {stageProducts.map((prod, i) => (
+                                {/* Equipment product names */}
+                                {stageData.products.length > 0 && (
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-1 mb-3">
+                                    {stageData.products.map((prod, i) => (
                                       <div key={i} className="flex items-center justify-between text-xs py-0.5">
                                         <div className="flex items-center gap-1.5 truncate mr-2">
                                           <span className="text-muted/60 w-14 shrink-0">{prod.type}</span>
@@ -674,6 +748,32 @@ export default function EquipmentBacklogPage() {
                                     ))}
                                   </div>
                                 )}
+
+                                {/* Project list */}
+                                <div className="border-t border-t-border/30 pt-2">
+                                  <div className="text-[10px] text-muted/60 uppercase tracking-wide mb-1">Projects</div>
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-0.5">
+                                    {stageData.projects.map((proj) => (
+                                      <div key={proj.id} className="flex items-center justify-between text-xs py-0.5">
+                                        <div className="truncate mr-2">
+                                          <a
+                                            href={proj.url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-foreground/70 hover:text-cyan-400 transition-colors"
+                                            onClick={(e) => e.stopPropagation()}
+                                          >
+                                            {proj.name}
+                                          </a>
+                                          {hasMissingEquipment(proj.equipment) && (
+                                            <span className="text-amber-400/80 ml-1" title="Missing equipment data">⚠</span>
+                                          )}
+                                        </div>
+                                        <span className="text-muted/50 text-[10px] shrink-0">{proj.pbLocation}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
                               </div>
                             </td>
                           </tr>
@@ -681,12 +781,24 @@ export default function EquipmentBacklogPage() {
                       </>
                     );
                   })}
+
+                  {/* Totals row */}
+                  <tr className="border-t-2 border-t-border font-semibold bg-surface/30">
+                    <td className="py-2.5 pr-4 text-foreground/70">Total</td>
+                    <td className="py-2.5 pr-4 text-right text-foreground/80">{stageTotals.count}</td>
+                    <td className="py-2.5 pr-4 text-right text-blue-400">{stageTotals.modules.toLocaleString()}</td>
+                    <td className="py-2.5 pr-4 text-right text-purple-400">{stageTotals.inverters.toLocaleString()}</td>
+                    <td className="py-2.5 pr-4 text-right text-emerald-400">{stageTotals.batteries.toLocaleString()}</td>
+                    <td className="py-2.5 pr-4 text-right text-green-400">{stageTotals.batteryExpansions.toLocaleString()}</td>
+                    <td className="py-2.5 pr-4 text-right text-pink-400">{stageTotals.ev.toLocaleString()}</td>
+                    <td className="py-2.5 text-right text-muted">{formatMoney(stageTotals.value)}</td>
+                  </tr>
                 </tbody>
               </table>
             </div>
           </div>
 
-          {/* Product Breakdowns (backlog only) */}
+          {/* Product Breakdowns (backlog only — below stage table) */}
           <h2 className="text-lg font-semibold mb-3">Backlog Equipment by Product</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
             <ProductBreakdown title="Modules" items={moduleProducts} color="text-blue-400" typeKey="modules" />
@@ -708,10 +820,10 @@ export default function EquipmentBacklogPage() {
             </div>
           )}
           <div className="bg-surface/50 border border-t-border rounded-xl overflow-hidden">
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto max-h-[70vh]">
               <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-muted text-left border-b border-t-border bg-surface/80">
+                <thead className="sticky top-0 bg-surface/95 backdrop-blur-sm z-10">
+                  <tr className="text-muted text-left border-b border-t-border">
                     <th className="px-4 py-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("name")}>
                       Project <SortIcon field="name" />
                     </th>
@@ -738,17 +850,23 @@ export default function EquipmentBacklogPage() {
                     const eq = p.equipment;
                     const cls = classifyStage(p.stage);
                     const rowBg = cls === "built" ? "bg-green-500/5" : cls === "in_progress" ? "bg-orange-500/5" : "";
+                    const isMissing = hasMissingEquipment(eq);
                     return (
                       <tr key={p.id} className={`border-b border-t-border/50 hover:bg-surface-2/30 ${rowBg}`}>
                         <td className="px-4 py-2.5">
-                          <a
-                            href={p.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="block font-medium text-foreground/90 hover:text-cyan-400 truncate max-w-[220px] transition-colors"
-                          >
-                            {p.name}
-                          </a>
+                          <div className="flex items-center gap-1">
+                            <a
+                              href={p.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="block font-medium text-foreground/90 hover:text-cyan-400 truncate max-w-[220px] transition-colors"
+                            >
+                              {p.name}
+                            </a>
+                            {isMissing && (
+                              <span className="text-amber-400/80 shrink-0" title="Missing equipment data">⚠</span>
+                            )}
+                          </div>
                           <div className="text-xs text-muted">{p.projectNumber}</div>
                         </td>
                         <td className="px-4 py-2.5 text-muted">{p.pbLocation}</td>
