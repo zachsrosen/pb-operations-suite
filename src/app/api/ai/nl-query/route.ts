@@ -29,6 +29,7 @@ import {
   AI_INPUT_LIMITS,
   EMPTY_FILTER_SPEC,
 } from "@/lib/ai";
+import { buildHeuristicFilterSpec, hasMeaningfulFilterSpec } from "@/lib/ai-nl-fallback";
 
 export async function POST(request: NextRequest) {
   // --- Auth ---
@@ -75,16 +76,42 @@ export async function POST(request: NextRequest) {
       temperature: 0,
     });
 
+    // If the model returns a valid but no-op spec, apply deterministic parsing
+    // so obvious queries still work when the model is uncertain.
+    if (!hasMeaningfulFilterSpec(object)) {
+      const heuristic = buildHeuristicFilterSpec(query);
+      if (hasMeaningfulFilterSpec(heuristic)) {
+        return NextResponse.json({
+          spec: heuristic,
+          fallback: "heuristic",
+        });
+      }
+    }
+
     return NextResponse.json({ spec: object });
   } catch (err) {
     console.error("[ai/nl-query] Error:", err);
-    // Safe fallback — return empty spec so the UI shows all projects
+    const heuristic = buildHeuristicFilterSpec(query);
+    const message = err instanceof Error ? err.message : "Unknown error";
+
+    // Safe fallback — deterministic parser first, then empty spec.
+    if (hasMeaningfulFilterSpec(heuristic)) {
+      return NextResponse.json({
+        spec: heuristic,
+        error: true,
+        fallback: "heuristic",
+        ...(process.env.NODE_ENV !== "production" ? { debug: message } : {}),
+      });
+    }
+
     return NextResponse.json({
       spec: {
         ...EMPTY_FILTER_SPEC,
         interpreted_as: "Could not parse query. Showing all projects.",
       },
       error: true,
+      fallback: "empty",
+      ...(process.env.NODE_ENV !== "production" ? { debug: message } : {}),
     });
   }
 }
