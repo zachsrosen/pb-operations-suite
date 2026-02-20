@@ -88,6 +88,14 @@ const SUITE_LINKS: SuiteLinkData[] = [
     visibility: "admin",
   },
   {
+    href: "/suites/service",
+    title: "Service Suite",
+    description: "Service pipeline scheduling, equipment tracking, and deal management.",
+    tag: "SERVICE",
+    tagColor: "purple",
+    visibility: "all",
+  },
+  {
     href: "/suites/additional-pipeline",
     title: "Additional Pipeline Suite",
     description: "Supplemental pipeline dashboards grouped outside the core flow.",
@@ -269,7 +277,7 @@ export default function Home() {
     if (userRole === "TECH_OPS") return [];
     if (userRole === "PROJECT_MANAGER") {
       return SUITE_LINKS.filter((suite) =>
-        suite.href === "/suites/operations" || suite.href === "/suites/department"
+        suite.href === "/suites/operations" || suite.href === "/suites/department" || suite.href === "/suites/service"
       );
     }
     const isAdmin = userRole === "ADMIN";

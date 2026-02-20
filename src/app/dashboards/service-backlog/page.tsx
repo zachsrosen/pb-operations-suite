@@ -616,7 +616,6 @@ export default function ServiceBacklogPage() {
         data: buildExportData(exportProjects),
         filename: exportFilename,
       }}
-      breadcrumbs={[{ label: "Dashboards", href: "/" }, { label: "Service Equipment Backlog" }]}
     >
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3 mb-6">
