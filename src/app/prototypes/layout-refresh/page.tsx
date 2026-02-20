@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Space_Grotesk } from "next/font/google";
 import { EXTRA_LAYOUT_PROTOTYPES } from "./catalog";
+import { INTERNAL_PAGE_PROTOTYPES } from "./internal/catalog";
 
 const spaceGrotesk = Space_Grotesk({
   subsets: ["latin"],
@@ -98,6 +99,23 @@ export default function LayoutRefreshPrototypeHubPage() {
               </p>
             </Link>
           ))}
+        </section>
+
+        <section className="mt-8">
+          <Link
+            href="/prototypes/layout-refresh/internal"
+            className="group block rounded-3xl border border-cyan-200/20 bg-cyan-950/25 p-6 transition duration-300 hover:-translate-y-1 hover:border-cyan-200/40 hover:bg-cyan-950/40"
+          >
+            <p className="text-xs uppercase tracking-[0.2em] text-cyan-100/80">Full Internal Coverage</p>
+            <h2 className="mt-2 text-2xl font-semibold text-white">Prototype Every Suite-Linked Page</h2>
+            <p className="mt-2 max-w-3xl text-sm text-slate-300">
+              Open a complete catalog of page-level prototypes for all dashboards and admin pages linked
+              inside your suites.
+            </p>
+            <p className="mt-3 text-sm font-medium text-cyan-100">
+              Browse {INTERNAL_PAGE_PROTOTYPES.length} internal page prototypes
+            </p>
+          </Link>
         </section>
 
         <section className="mt-10 space-y-8">
