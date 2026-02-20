@@ -351,4 +351,86 @@ describe("generateOptimizedSchedule", () => {
 
     expect(balanced.entries[0].score).not.toBe(revFirst.entries[0].score);
   });
+
+  it("does not assign crew on dates with existing bookings", () => {
+    const projects = [makeProject({ id: "new-1", daysInstall: 2 })];
+    const existingBookings = [
+      { crew: "WESTY Alpha", startDate: "2026-03-02", days: 3 }, // Mon-Wed
+    ];
+    const result = generateOptimizedSchedule(projects, CREWS, DIRECTORS, TIMEZONES, {
+      startDate: "2026-03-02",
+      existingBookings,
+    });
+    expect(result.entries).toHaveLength(1);
+    const entry = result.entries[0];
+    // Should be assigned to WESTY Bravo (starts Mon) since Alpha is blocked Mon-Wed
+    // OR to WESTY Alpha starting Thu (after existing booking ends)
+    if (entry.crew === "WESTY Alpha") {
+      expect(entry.startDate).toBe("2026-03-05"); // Thu
+    } else {
+      expect(entry.crew).toBe("WESTY Bravo");
+      expect(entry.startDate).toBe("2026-03-02"); // Mon
+    }
+  });
+
+  it("prefers crew with earlier availability when one is blocked", () => {
+    const projects = [makeProject({ id: "new-1", daysInstall: 1 })];
+    const existingBookings = [
+      { crew: "WESTY Alpha", startDate: "2026-03-02", days: 5 }, // Full week
+    ];
+    const result = generateOptimizedSchedule(projects, CREWS, DIRECTORS, TIMEZONES, {
+      startDate: "2026-03-02",
+      existingBookings,
+    });
+    expect(result.entries).toHaveLength(1);
+    expect(result.entries[0].crew).toBe("WESTY Bravo");
+    expect(result.entries[0].startDate).toBe("2026-03-02");
+  });
+
+  it("no existing bookings behaves same as before", () => {
+    const projects = [makeProject({ id: "p1" }), makeProject({ id: "p2" })];
+    const r1 = generateOptimizedSchedule(projects, CREWS, DIRECTORS, TIMEZONES, {
+      startDate: "2026-03-02",
+    });
+    const r2 = generateOptimizedSchedule(projects, CREWS, DIRECTORS, TIMEZONES, {
+      startDate: "2026-03-02",
+      existingBookings: [],
+    });
+    expect(r1.entries.map(e => e.crew)).toEqual(r2.entries.map(e => e.crew));
+    expect(r1.entries.map(e => e.startDate)).toEqual(r2.entries.map(e => e.startDate));
+  });
+
+  it("multi-day job avoids partial overlap with existing booking", () => {
+    // Existing booking blocks Wed-Fri. New 3-day job should not start Mon
+    // because it would span Mon-Wed and overlap on Wed.
+    const projects = [makeProject({ id: "p1", location: "Colorado Springs", daysInstall: 3 })];
+    const existingBookings = [
+      { crew: "COSP Alpha", startDate: "2026-03-04", days: 3 }, // Wed-Fri
+    ];
+    const result = generateOptimizedSchedule(projects, CREWS, DIRECTORS, TIMEZONES, {
+      startDate: "2026-03-02", // Mon
+      existingBookings,
+    });
+    expect(result.entries).toHaveLength(1);
+    // COSP has only one crew — must start after Fri, so next Mon
+    expect(result.entries[0].startDate).toBe("2026-03-09"); // Next Monday
+  });
+
+  it("blocks all location crews when all are booked (fallback behavior)", () => {
+    // Simulates what happens when existingBookings are built from an
+    // unresolvable crew name — the scheduler page blocks ALL crews at the
+    // location. The optimizer should see both WESTY crews as blocked.
+    const projects = [makeProject({ id: "new-1", daysInstall: 1 })];
+    const existingBookings = [
+      { crew: "WESTY Alpha", startDate: "2026-03-02", days: 3 },
+      { crew: "WESTY Bravo", startDate: "2026-03-02", days: 3 },
+    ];
+    const result = generateOptimizedSchedule(projects, CREWS, DIRECTORS, TIMEZONES, {
+      startDate: "2026-03-02",
+      existingBookings,
+    });
+    expect(result.entries).toHaveLength(1);
+    // Both Westminster crews blocked Mon-Wed, so earliest available is Thu
+    expect(result.entries[0].startDate).toBe("2026-03-05");
+  });
 });
