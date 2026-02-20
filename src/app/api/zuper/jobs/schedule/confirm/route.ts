@@ -4,7 +4,7 @@ import { getUserByEmail, logActivity, prisma, cacheZuperJob, canScheduleType, ge
 import { zuper, JOB_CATEGORY_UIDS } from "@/lib/zuper";
 import { headers } from "next/headers";
 import { sendSchedulingNotification } from "@/lib/email";
-import { updateDealProperty, updateSiteSurveyorProperty, getDealProperties, getDealOwnerContact } from "@/lib/hubspot";
+import { updateDealProperty, updateSiteSurveyorProperty, getDealProperties, getDealOwnerContact, getDealProjectManagerContact } from "@/lib/hubspot";
 import { upsertSiteSurveyCalendarEvent } from "@/lib/google-calendar";
 import { getBusinessEndDateInclusive, isWeekendDate } from "@/lib/business-days";
 import { getInstallNotificationDetails } from "@/lib/scheduling-email-details";
@@ -655,14 +655,27 @@ export async function POST(request: NextRequest) {
             ? customerNameParts[2]?.trim()
             : "See Zuper for address";
           let dealOwnerName: string | null = null;
-          try {
-            const owner = await getDealOwnerContact(record.projectId);
-            dealOwnerName = owner.ownerName;
-          } catch (ownerErr) {
-            console.warn(
-              `[Zuper Confirm] Unable to resolve deal owner for ${record.projectId}:`,
-              ownerErr instanceof Error ? ownerErr.message : ownerErr
-            );
+          let projectManagerName: string | null = null;
+          if (scheduleType === "survey") {
+            try {
+              const owner = await getDealOwnerContact(record.projectId);
+              dealOwnerName = owner.ownerName;
+            } catch (ownerErr) {
+              console.warn(
+                `[Zuper Confirm] Unable to resolve deal owner for ${record.projectId}:`,
+                ownerErr instanceof Error ? ownerErr.message : ownerErr
+              );
+            }
+          } else if (scheduleType === "installation") {
+            try {
+              const manager = await getDealProjectManagerContact(record.projectId);
+              projectManagerName = manager.projectManagerName;
+            } catch (managerErr) {
+              console.warn(
+                `[Zuper Confirm] Unable to resolve project manager for ${record.projectId}:`,
+                managerErr instanceof Error ? managerErr.message : managerErr
+              );
+            }
           }
           let installDetails: Awaited<ReturnType<typeof getInstallNotificationDetails>>["details"];
           if (scheduleType === "installation") {
@@ -679,6 +692,7 @@ export async function POST(request: NextRequest) {
             scheduledByName: session.user.name || session.user.email,
             scheduledByEmail: session.user.email,
             dealOwnerName: dealOwnerName || undefined,
+            projectManagerName: projectManagerName || undefined,
             appointmentType: scheduleType,
             customerName,
             customerAddress,

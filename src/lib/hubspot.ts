@@ -1411,6 +1411,25 @@ export async function getDealOwnerContact(dealId: string): Promise<{
   };
 }
 
+export async function getDealProjectManagerContact(dealId: string): Promise<{
+  projectManagerId: string | null;
+  projectManagerName: string | null;
+  projectManagerEmail: string | null;
+}> {
+  const props = await getDealProperties(dealId, ["project_manager"]);
+  const rawValue = String(props?.project_manager || "").trim() || null;
+  if (!rawValue) {
+    return { projectManagerId: null, projectManagerName: null, projectManagerEmail: null };
+  }
+
+  const contact = await resolveHubSpotOwnerContact(rawValue);
+  return {
+    projectManagerId: contact?.id || rawValue,
+    projectManagerName: contact?.name || rawValue,
+    projectManagerEmail: contact?.email || null,
+  };
+}
+
 /**
  * Update site_surveyor with defensive value resolution.
  * Some tenants require owner/property option IDs, not display names.

@@ -6,7 +6,7 @@ import { zuper, createJobFromProject, JOB_CATEGORY_UIDS, ZuperJob } from "@/lib/
 import { auth } from "@/auth";
 import { getUserByEmail, logActivity, createScheduleRecord, cacheZuperJob, canScheduleType, getCrewMemberByName, getCrewMemberByZuperUserUid, getCachedZuperJobByDealId, prisma, UserRole } from "@/lib/db";
 import { sendSchedulingNotification, sendCancellationNotification } from "@/lib/email";
-import { updateDealProperty, getDealProperties, updateSiteSurveyorProperty } from "@/lib/hubspot";
+import { updateDealProperty, getDealProperties, updateSiteSurveyorProperty, getDealProjectManagerContact } from "@/lib/hubspot";
 import { upsertSiteSurveyCalendarEvent } from "@/lib/google-calendar";
 import { getBusinessEndDateInclusive, isWeekendDate } from "@/lib/business-days";
 
@@ -1689,7 +1689,7 @@ async function sendCrewNotification(
     timezone?: string;
     notes?: string;
   },
-  project: { id: string; name?: string; address?: string; dealOwner?: string },
+  project: { id: string; name?: string; address?: string; dealOwner?: string; projectManager?: string },
   schedulerName: string,
   schedulerEmail: string
 ) {
@@ -1723,12 +1723,30 @@ async function sendCrewNotification(
 
     const { customerName, customerAddress } = deriveCustomerDetails(project);
 
+    const dealOwnerName = schedule.type === "survey"
+      ? (project.dealOwner?.trim() || undefined)
+      : undefined;
+    let projectManagerName = schedule.type === "installation"
+      ? (project.projectManager?.trim() || undefined)
+      : undefined;
+    if (schedule.type === "installation" && !projectManagerName) {
+      try {
+        const manager = await getDealProjectManagerContact(project.id);
+        projectManagerName = manager.projectManagerName || undefined;
+      } catch (managerErr) {
+        console.warn(
+          `[Zuper Schedule] Unable to resolve project manager for ${project.id}: ${managerErr instanceof Error ? managerErr.message : String(managerErr)}`
+        );
+      }
+    }
+
     await sendSchedulingNotification({
       to: recipientEmail,
       crewMemberName: recipientName || schedule.assignedUser,
       scheduledByName: schedulerName,
       scheduledByEmail: schedulerEmail,
-      dealOwnerName: project.dealOwner,
+      dealOwnerName,
+      projectManagerName,
       appointmentType: schedule.type as "survey" | "installation" | "inspection",
       customerName,
       customerAddress,

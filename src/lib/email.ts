@@ -482,6 +482,7 @@ interface SendSchedulingNotificationParams {
   scheduledByName: string;
   scheduledByEmail: string;
   dealOwnerName?: string;
+  projectManagerName?: string;
   appointmentType: "survey" | "installation" | "inspection";
   customerName: string;
   customerAddress: string;
@@ -519,6 +520,26 @@ export async function sendSchedulingNotification(
   const bccRecipients = dedupeEmails([...defaultBcc, ...explicitBcc], params.to);
   const installDetails = params.appointmentType === "installation" ? params.installDetails : undefined;
   const cleanedNotes = sanitizeScheduleEmailNotes(params.notes);
+  const stakeholderHtml = params.appointmentType === "survey" && params.dealOwnerName
+    ? `
+                  <tr>
+                    <td style="color: #71717a; font-size: 13px; padding: 8px 0;">🧑‍💼 Deal owner</td>
+                    <td style="color: #ffffff; font-size: 13px; padding: 8px 0; text-align: right;">${params.dealOwnerName}</td>
+                  </tr>
+                  `
+    : params.appointmentType === "installation" && params.projectManagerName
+      ? `
+                  <tr>
+                    <td style="color: #71717a; font-size: 13px; padding: 8px 0;">🧑‍🔧 Project manager</td>
+                    <td style="color: #ffffff; font-size: 13px; padding: 8px 0; text-align: right;">${params.projectManagerName}</td>
+                  </tr>
+                  `
+      : "";
+  const stakeholderTextLine = params.appointmentType === "survey" && params.dealOwnerName
+    ? `Deal owner: ${params.dealOwnerName}\n`
+    : params.appointmentType === "installation" && params.projectManagerName
+      ? `Project manager: ${params.projectManagerName}\n`
+      : "";
   const installDetailLines: string[] = [];
   if (installDetails?.forecastedInstallDays != null) {
     installDetailLines.push(`Forecasted Install Days: ${installDetails.forecastedInstallDays}`);
@@ -603,12 +624,7 @@ export async function sendSchedulingNotification(
                     <td style="color: #71717a; font-size: 13px; padding: 8px 0;">👤 Scheduled by</td>
                     <td style="color: #ffffff; font-size: 13px; padding: 8px 0; text-align: right;">${params.scheduledByName}</td>
                   </tr>
-                  ${params.dealOwnerName ? `
-                  <tr>
-                    <td style="color: #71717a; font-size: 13px; padding: 8px 0;">🧑‍💼 Deal owner</td>
-                    <td style="color: #ffffff; font-size: 13px; padding: 8px 0; text-align: right;">${params.dealOwnerName}</td>
-                  </tr>
-                  ` : ""}
+                  ${stakeholderHtml}
                   ${installDetailsHtml}
                   ${cleanedNotes ? `
                   <tr>
@@ -645,7 +661,7 @@ Address: ${params.customerAddress}
 Date: ${formattedDate}
 Time: ${timeSlot}
 Scheduled by: ${params.scheduledByName}
-${params.dealOwnerName ? `Deal owner: ${params.dealOwnerName}\n` : ""}
+${stakeholderTextLine}
 ${installDetailLines.length > 0 ? `\nInstall Details:\n${installDetailLines.join("\n")}` : ""}
 ${cleanedNotes ? `\nNotes: ${cleanedNotes}` : ""}
 
@@ -657,6 +673,7 @@ Please check your Zuper app for complete details.
       `Crew Member: ${params.crewMemberName}`,
       `Scheduled By: ${params.scheduledByName} (${params.scheduledByEmail})`,
       `Deal Owner: ${params.dealOwnerName || "N/A"}`,
+      `Project Manager: ${params.projectManagerName || "N/A"}`,
       `Type: ${appointmentTypeLabel}`,
       `Customer: ${params.customerName}`,
       `Address: ${params.customerAddress}`,
