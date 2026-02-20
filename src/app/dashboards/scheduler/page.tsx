@@ -394,6 +394,23 @@ function getNextWorkday(dateStr: string): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+function getBusinessDatesInSpan(startDate: string, totalDays: number): string[] {
+  const days = Math.max(1, Math.ceil(totalDays));
+  const dates: string[] = [];
+  let cursor = startDate;
+  while (dates.length < days) {
+    if (!isWeekend(cursor)) dates.push(cursor);
+    cursor = addDays(cursor, 1);
+  }
+  return dates;
+}
+
+function hasBlockedDateConflict(blockedDates: Set<string> | undefined, startDate: string, totalDays: number): boolean {
+  if (!blockedDates || blockedDates.size === 0) return false;
+  const spanDates = getBusinessDatesInSpan(startDate, totalDays);
+  return spanDates.some((date) => blockedDates.has(date));
+}
+
 function toDateStr(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
@@ -871,6 +888,94 @@ export default function SchedulerPage() {
     setToast({ message, type });
     toastTimer.current = setTimeout(() => setToast(null), type === "error" ? 8000 : 3000);
   }, []);
+
+  const resolveCrewName = useCallback((crewValue: string): string | null => {
+    if (ALL_CREW_NAMES.has(crewValue)) return crewValue;
+    const dashMatch = crewValue.match(/—\s*(.+)$/);
+    if (dashMatch && ALL_CREW_NAMES.has(dashMatch[1].trim())) {
+      return dashMatch[1].trim();
+    }
+    return null;
+  }, []);
+
+  const buildExistingBookings = useCallback((excludeProjectId?: string): ExistingBooking[] => {
+    const existingBookings: ExistingBooking[] = [];
+
+    const addLocationWideBooking = (location: string, startDate: string, days: number) => {
+      const loc = normalizeLocation(location);
+      const locationCrews = CREWS[loc];
+      if (!locationCrews) return;
+      for (const crew of locationCrews) {
+        existingBookings.push({ crew: crew.name, startDate, days });
+      }
+    };
+
+    for (const p of projects) {
+      if (excludeProjectId && p.id === excludeProjectId) continue;
+
+      // Zuper-scheduled construction jobs — crew assignment is unknown, so block
+      // all crews in the location conservatively.
+      if (p.zuperJobCategory === "construction" && p.zuperScheduledStart) {
+        const startStr = p.zuperScheduledStart.split("T")[0];
+        const days = p.zuperScheduledDays || p.daysInstall || 1;
+        addLocationWideBooking(p.location, startStr, days);
+      }
+
+      // Manual/tentative installation schedules — use resolved crew if valid,
+      // otherwise block all crews in location.
+      const ms = manualSchedules[p.id];
+      if (ms && ms.scheduleType === "installation" && ms.crew) {
+        const crewName = resolveCrewName(ms.crew);
+        if (crewName) {
+          existingBookings.push({ crew: crewName, startDate: ms.startDate, days: ms.days });
+        } else {
+          addLocationWideBooking(p.location, ms.startDate, ms.days);
+        }
+      }
+
+      // HubSpot construction schedule (not yet in Zuper) — crew is unknown.
+      if (p.constructionScheduleDate && !p.zuperScheduledStart) {
+        const days = p.daysInstall || 1;
+        addLocationWideBooking(p.location, p.constructionScheduleDate, days);
+      }
+    }
+
+    return existingBookings;
+  }, [projects, manualSchedules, resolveCrewName]);
+
+  const availableConstructionCrews = useMemo(() => {
+    if (!scheduleModal) return [] as CrewConfig[];
+    const isConstruction = scheduleModal.project.stage !== "survey" && scheduleModal.project.stage !== "inspection";
+    if (!isConstruction) return [] as CrewConfig[];
+
+    const locationCrews = CREWS[scheduleModal.project.location] || [];
+    if (locationCrews.length === 0) return [] as CrewConfig[];
+
+    const existingBookings = buildExistingBookings(scheduleModal.project.id);
+    const blockedDatesByCrew: Record<string, Set<string>> = {};
+    for (const booking of existingBookings) {
+      if (!blockedDatesByCrew[booking.crew]) blockedDatesByCrew[booking.crew] = new Set();
+      const blockedDates = getBusinessDatesInSpan(booking.startDate, booking.days);
+      for (const date of blockedDates) {
+        blockedDatesByCrew[booking.crew].add(date);
+      }
+    }
+
+    const days = Math.max(1, Math.ceil(installDaysInput || scheduleModal.project.daysInstall || 1));
+    return locationCrews.filter((crew) =>
+      !hasBlockedDateConflict(blockedDatesByCrew[crew.name], scheduleModal.date, days)
+    );
+  }, [scheduleModal, installDaysInput, buildExistingBookings]);
+
+  useEffect(() => {
+    if (!scheduleModal) return;
+    const isConstruction = scheduleModal.project.stage !== "survey" && scheduleModal.project.stage !== "inspection";
+    if (!isConstruction) return;
+
+    if (crewSelectInput && !availableConstructionCrews.some((crew) => crew.name === crewSelectInput)) {
+      setCrewSelectInput("");
+    }
+  }, [scheduleModal, crewSelectInput, availableConstructionCrews]);
 
   /* ================================================================ */
   /*  Derived data                                                     */
@@ -1690,68 +1795,7 @@ export default function SchedulerPage() {
       daysToInstall: p.daysToInstall,
     }));
 
-    // Build existing crew bookings from scheduled construction projects
-    const existingBookings: ExistingBooking[] = [];
-
-    // Helper: resolve a crew value to a valid CREWS label.
-    // ManualSchedule.crew may store a director name (from rehydration) instead
-    // of the crew label. Fall back to extracting from notes if available.
-    const resolveCrewName = (crewValue: string, notes?: string): string | null => {
-      if (ALL_CREW_NAMES.has(crewValue)) return crewValue;
-      // Try extracting from notes: "[AUTO_OPTIMIZED] (balanced) — WESTY Alpha"
-      if (notes) {
-        const dashMatch = notes.match(/—\s*(.+)$/);
-        if (dashMatch && ALL_CREW_NAMES.has(dashMatch[1].trim())) {
-          return dashMatch[1].trim();
-        }
-      }
-      return null;
-    };
-
-    for (const p of projects) {
-      // Zuper-scheduled construction jobs — we don't know the actual crew from
-      // Zuper, so block ALL crews at that location to prevent any overlap.
-      if (p.zuperJobCategory === "construction" && p.zuperScheduledStart) {
-        const startStr = p.zuperScheduledStart.split("T")[0];
-        const days = p.zuperScheduledDays || p.daysInstall || 1;
-        const loc = normalizeLocation(p.location);
-        const locationCrews = CREWS[loc];
-        if (locationCrews) {
-          for (const crew of locationCrews) {
-            existingBookings.push({ crew: crew.name, startDate: startStr, days });
-          }
-        }
-      }
-      // Manual/tentative schedules — resolve crew name from notes if needed
-      const ms = manualSchedules[p.id];
-      if (ms && ms.scheduleType === "installation" && ms.crew) {
-        const crewName = resolveCrewName(ms.crew, ms.fromOptimizer ? `— ${ms.crew}` : undefined);
-        if (crewName) {
-          existingBookings.push({ crew: crewName, startDate: ms.startDate, days: ms.days });
-        } else {
-          // Crew name can't be resolved — block all location crews conservatively
-          const loc = normalizeLocation(p.location);
-          const locationCrews = CREWS[loc];
-          if (locationCrews) {
-            for (const crew of locationCrews) {
-              existingBookings.push({ crew: crew.name, startDate: ms.startDate, days: ms.days });
-            }
-          }
-        }
-      }
-      // HubSpot construction schedule date (not yet in Zuper) — same issue,
-      // p.crew is a default placeholder, so block all location crews.
-      if (p.constructionScheduleDate && p.crew && !p.zuperScheduledStart) {
-        const days = p.daysInstall || 1;
-        const loc = normalizeLocation(p.location);
-        const locationCrews = CREWS[loc];
-        if (locationCrews) {
-          for (const crew of locationCrews) {
-            existingBookings.push({ crew: crew.name, startDate: p.constructionScheduleDate, days });
-          }
-        }
-      }
-    }
+    const existingBookings = buildExistingBookings();
 
     const result = generateOptimizedSchedule(
       mapped,
@@ -1765,7 +1809,7 @@ export default function SchedulerPage() {
     if (result.entries.length === 0) showToast("No eligible RTB projects to optimize", "error");
     if (result.skipped.length > 0)
       showToast(`${result.skipped.length} skipped (unmapped location)`, "error");
-  }, [projects, manualSchedules, optimizePreset, optimizeLocations, showToast]);
+  }, [projects, manualSchedules, optimizePreset, optimizeLocations, showToast, buildExistingBookings]);
 
   const handleOptimizeApply = useCallback(async () => {
     if (!optimizeResult?.entries.length) return;
@@ -4046,13 +4090,22 @@ export default function SchedulerPage() {
                       onChange={(e) => setCrewSelectInput(e.target.value)}
                       className="bg-background border border-t-border text-foreground/90 px-2 py-1.5 rounded font-mono text-[0.75rem] focus:outline-none focus:border-orange-500"
                     >
-                      {(CREWS[scheduleModal.project.location] || []).map((c) => (
-                        <option key={c.name} value={c.name}>{c.name}</option>
-                      ))}
-                      {!(CREWS[scheduleModal.project.location]?.length) && (
-                        <option>No crews</option>
+                      {availableConstructionCrews.length > 0 ? (
+                        <>
+                          <option value="">Select crew</option>
+                          {availableConstructionCrews.map((c) => (
+                            <option key={c.name} value={c.name}>{c.name}</option>
+                          ))}
+                        </>
+                      ) : (
+                        <option value="">No crews available</option>
                       )}
                     </select>
+                    {(CREWS[scheduleModal.project.location]?.length ?? 0) > 0 && availableConstructionCrews.length === 0 && (
+                      <div className="text-[0.6rem] text-amber-400/80 mt-1">
+                        No crews are available for this date and duration.
+                      </div>
+                    )}
                   </div>
                 )}
               </ModalSection>
