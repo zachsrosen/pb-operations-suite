@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useToast } from "@/contexts/ToastContext";
 
 interface ImpersonationState {
   isImpersonating: boolean;
@@ -17,7 +18,15 @@ interface ImpersonationState {
   };
 }
 
+function formatRoleLabel(role?: string): string {
+  if (!role) return "Unknown";
+  if (role === "OWNER") return "EXECUTIVE";
+  if (role === "VIEWER") return "UNASSIGNED";
+  return role.replace(/_/g, " ");
+}
+
 export default function ImpersonationBanner() {
+  const { addToast } = useToast();
   const [state, setState] = useState<ImpersonationState>({ isImpersonating: false });
   const [ending, setEnding] = useState(false);
 
@@ -49,11 +58,11 @@ export default function ImpersonationBanner() {
         // Navigate to home to reset all state (don't reload — may be on a locked route)
         window.location.href = "/";
       } else {
-        alert("Failed to exit impersonation: " + (data.error || "Unknown error"));
+        addToast({ type: "error", title: "Failed to exit impersonation", message: data.error || "Unknown error" });
       }
     } catch (error) {
       console.error("Failed to end impersonation:", error);
-      alert("Failed to exit impersonation. Please try again.");
+      addToast({ type: "error", title: "Failed to exit impersonation", message: "Please try again." });
     } finally {
       setEnding(false);
     }
@@ -79,7 +88,7 @@ export default function ImpersonationBanner() {
               {state.impersonating?.name || state.impersonating?.email}
             </span>
             <span className="text-amber-200 text-sm">
-              ({state.impersonating?.role})
+              ({formatRoleLabel(state.impersonating?.role)})
             </span>
           </div>
           <span className="text-amber-200/80 text-sm hidden sm:inline">

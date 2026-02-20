@@ -61,7 +61,7 @@ export default function ConstructionDashboardPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
-  const { data: projects, loading, error, refetch } = useProjectData<ExtendedProject[]>({
+  const { data: projects, loading, error, refetch, lastUpdated } = useProjectData<ExtendedProject[]>({
     params: { context: "executive" },
     transform: (raw: unknown) => (raw as { projects: ExtendedProject[] }).projects,
   });
@@ -265,7 +265,7 @@ export default function ConstructionDashboardPage() {
     filterConstructionStatuses.length > 0 || searchQuery;
 
   return (
-    <DashboardShell title="Construction" accentColor="orange">
+    <DashboardShell title="Construction" accentColor="orange" lastUpdated={lastUpdated}>
       {/* Search and Filters */}
       <div className="flex flex-col gap-4 mb-6">
         {/* Search Bar */}

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
@@ -271,84 +272,94 @@ export default function ConstructionSchedulerPage() {
   /*  Data fetching                                                    */
   /* ================================================================ */
 
-  const fetchProjects = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const response = await fetch("/api/projects?context=scheduling&fields=id,name,address,city,state,pbLocation,amount,projectType,stage,url,constructionScheduleDate,constructionStatus,constructionCompleteDate,closeDate,equipment,installCrew,projectNumber,daysForInstallers,expectedDaysForInstall");
-      if (!response.ok) throw new Error("Failed to fetch projects");
-      const data = await response.json();
-      const transformed = data.projects
-        .map((p: RawProject) => transformProject(p))
-        .filter((p: ConstructionProject | null): p is ConstructionProject => p !== null);
-      const restoredSchedules: Record<string, string> = {};
-      const restoredTentatives: Record<string, string> = {};
+  const queryClient = useQueryClient();
 
-      // Look up Zuper job UIDs for these projects
-      if (transformed.length > 0) {
-        try {
-          const projectIds = transformed.map((p: ConstructionProject) => p.id).join(",");
-          const projectNames = transformed.map((p: ConstructionProject) => encodeURIComponent(p.name)).join("|||");
-          const zuperResponse = await fetch(`/api/zuper/jobs/lookup?projectIds=${projectIds}&projectNames=${projectNames}&category=construction`);
-          if (zuperResponse.ok) {
-            const zuperData = await zuperResponse.json();
-            if (zuperData.jobs) {
-              for (const project of transformed) {
-                const zuperJob = zuperData.jobs[project.id];
-                if (zuperJob) {
-                  project.zuperJobUid = zuperJob.jobUid;
-                  project.zuperJobStatus = zuperJob.status;
-                }
+  const fetchProjectsQueryFn = useCallback(async () => {
+    const response = await fetch("/api/projects?context=scheduling&fields=id,name,address,city,state,pbLocation,amount,projectType,stage,url,constructionScheduleDate,constructionStatus,constructionCompleteDate,closeDate,equipment,installCrew,projectNumber,daysForInstallers,expectedDaysForInstall");
+    if (!response.ok) throw new Error("Failed to fetch projects");
+    const data = await response.json();
+    const transformed = data.projects
+      .map((p: RawProject) => transformProject(p))
+      .filter((p: ConstructionProject | null): p is ConstructionProject => p !== null);
+    const restoredSchedules: Record<string, string> = {};
+    const restoredTentatives: Record<string, string> = {};
+
+    // Look up Zuper job UIDs for these projects
+    if (transformed.length > 0) {
+      try {
+        const projectIds = transformed.map((p: ConstructionProject) => p.id).join(",");
+        const projectNames = transformed.map((p: ConstructionProject) => encodeURIComponent(p.name)).join("|||");
+        const zuperResponse = await fetch(`/api/zuper/jobs/lookup?projectIds=${projectIds}&projectNames=${projectNames}&category=construction`);
+        if (zuperResponse.ok) {
+          const zuperData = await zuperResponse.json();
+          if (zuperData.jobs) {
+            for (const project of transformed) {
+              const zuperJob = zuperData.jobs[project.id];
+              if (zuperJob) {
+                project.zuperJobUid = zuperJob.jobUid;
+                project.zuperJobStatus = zuperJob.status;
               }
             }
           }
-        } catch (zuperErr) {
-          console.warn("Failed to lookup Zuper jobs:", zuperErr);
         }
-
-        // Rehydrate tentative schedules so they survive refresh on this page.
-        try {
-          const projectIds = transformed.map((p: ConstructionProject) => p.id).join(",");
-          const tentRes = await fetch(`/api/zuper/schedule-records?projectIds=${encodeURIComponent(projectIds)}&type=installation&status=tentative`);
-          if (tentRes.ok) {
-            const tentData = await tentRes.json();
-            const records = tentData.records as Record<string, { id: string; scheduledDate: string }>;
-            for (const [projectId, rec] of Object.entries(records || {})) {
-              const project = transformed.find((p: ConstructionProject) => p.id === projectId);
-              // If this project already has a confirmed Zuper schedule, don't
-              // revert it to tentative — the stale DB record should be cleaned up.
-              if (project?.zuperJobStatus && project.scheduleDate) continue;
-              restoredSchedules[projectId] = rec.scheduledDate;
-              restoredTentatives[projectId] = rec.id;
-              if (project) {
-                project.tentativeRecordId = rec.id;
-                project.installStatus = "Tentative";
-              }
-            }
-          }
-        } catch (tentErr) {
-          console.warn("Failed to rehydrate tentative construction schedules:", tentErr);
-        }
+      } catch (zuperErr) {
+        console.warn("Failed to lookup Zuper jobs:", zuperErr);
       }
 
+      // Rehydrate tentative schedules so they survive refresh on this page.
+      try {
+        const projectIds = transformed.map((p: ConstructionProject) => p.id).join(",");
+        const tentRes = await fetch(`/api/zuper/schedule-records?projectIds=${encodeURIComponent(projectIds)}&type=installation&status=tentative`);
+        if (tentRes.ok) {
+          const tentData = await tentRes.json();
+          const records = tentData.records as Record<string, { id: string; scheduledDate: string }>;
+          for (const [projectId, rec] of Object.entries(records || {})) {
+            const project = transformed.find((p: ConstructionProject) => p.id === projectId);
+            if (project?.zuperJobStatus && project.scheduleDate) continue;
+            restoredSchedules[projectId] = rec.scheduledDate;
+            restoredTentatives[projectId] = rec.id;
+            if (project) {
+              project.tentativeRecordId = rec.id;
+              project.installStatus = "Tentative";
+            }
+          }
+        }
+      } catch (tentErr) {
+        console.warn("Failed to rehydrate tentative construction schedules:", tentErr);
+      }
+    }
+
+    return { transformed, restoredSchedules, restoredTentatives };
+  }, []);
+
+  const projectsQuery = useQuery({
+    queryKey: ["scheduler", "construction-projects"],
+    queryFn: fetchProjectsQueryFn,
+    refetchInterval: 5 * 60 * 1000,
+  });
+
+  // Sync query results to component state (projects + tentative side-effects)
+  useEffect(() => {
+    if (projectsQuery.data) {
+      const { transformed, restoredSchedules, restoredTentatives } = projectsQuery.data;
       setProjects(transformed);
       setTentativeRecordIds(restoredTentatives);
       if (Object.keys(restoredSchedules).length > 0) {
         setManualSchedules((prev) => ({ ...restoredSchedules, ...prev }));
       }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Unknown error";
+      setLoading(false);
+      setError(null);
+    }
+    if (projectsQuery.error) {
+      const msg = projectsQuery.error instanceof Error ? projectsQuery.error.message : "Unknown error";
       setError(msg);
-    } finally {
       setLoading(false);
     }
-  }, []);
+  }, [projectsQuery.data, projectsQuery.error]);
 
-  useEffect(() => {
-    fetchProjects();
-    const interval = setInterval(fetchProjects, 5 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, [fetchProjects]);
+  const fetchProjects = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["scheduler", "construction-projects"] });
+  }, [queryClient]);
 
   // Check Zuper configuration status
   useEffect(() => {
@@ -976,7 +987,7 @@ export default function ConstructionSchedulerPage() {
 
               <ThemeToggle />
 
-              <button onClick={fetchProjects} className="p-2 hover:bg-surface-2 rounded-lg">
+              <button aria-label="Refresh" onClick={fetchProjects} className="p-2 hover:bg-surface-2 rounded-lg">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>

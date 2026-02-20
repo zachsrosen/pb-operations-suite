@@ -90,7 +90,7 @@ export default function PermittingPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
-  const { data: projects, loading, error, refetch } = useProjectData<ExtendedProject[]>({
+  const { data: projects, loading, error, refetch, lastUpdated } = useProjectData<ExtendedProject[]>({
     params: { context: "executive" },
     transform: (raw: unknown) => (raw as { projects: ExtendedProject[] }).projects,
   });
@@ -340,7 +340,7 @@ export default function PermittingPage() {
   };
 
   return (
-    <DashboardShell title="Permitting" accentColor="purple">
+    <DashboardShell title="Permitting" accentColor="purple" lastUpdated={lastUpdated}>
       {/* Search and Filters */}
       <div className="flex flex-col gap-4 mb-6">
         {/* Search Bar */}
