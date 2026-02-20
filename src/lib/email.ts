@@ -1,6 +1,13 @@
 import crypto from "crypto";
+import { render } from "@react-email/render";
 import { Resend } from "resend";
 import type { UpdateEntry } from "@/lib/product-updates";
+import { VerificationCode } from "@/emails/VerificationCode";
+import { SchedulingNotification } from "@/emails/SchedulingNotification";
+import { AvailabilityConflict } from "@/emails/AvailabilityConflict";
+import { ProductUpdate } from "@/emails/ProductUpdate";
+import { BugReport } from "@/emails/BugReport";
+import * as React from "react";
 
 type SendResult = { success: boolean; error?: string };
 type SendAttemptResult = SendResult & { attempted: boolean };
@@ -398,45 +405,11 @@ export async function sendVerificationEmail({
   to,
   code,
 }: SendVerificationEmailParams): Promise<{ success: boolean; error?: string }> {
+  const html = await render(React.createElement(VerificationCode, { code }));
   return sendEmailMessage({
     to,
     subject: "Your PB Operations Login Code",
-    html: `
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <meta charset="utf-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          </head>
-          <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #0a0a0f; color: #ffffff; padding: 40px 20px; margin: 0;">
-            <div style="max-width: 400px; margin: 0 auto; background-color: #12121a; border: 1px solid #1e1e2e; border-radius: 12px; padding: 32px;">
-              <h1 style="font-size: 24px; font-weight: bold; background: linear-gradient(to right, #f97316, #fb923c); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin: 0 0 8px 0; text-align: center;">
-                PB Operations Suite
-              </h1>
-              <p style="color: #71717a; font-size: 14px; text-align: center; margin: 0 0 32px 0;">
-                Your login verification code
-              </p>
-
-              <div style="background-color: #0a0a0f; border: 1px solid #1e1e2e; border-radius: 8px; padding: 24px; text-align: center; margin-bottom: 24px;">
-                <span style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #ffffff; font-family: monospace;">
-                  ${code}
-                </span>
-              </div>
-
-              <p style="color: #71717a; font-size: 13px; text-align: center; margin: 0 0 8px 0;">
-                This code expires in 10 minutes.
-              </p>
-              <p style="color: #52525b; font-size: 12px; text-align: center; margin: 0;">
-                If you didn't request this code, you can safely ignore this email.
-              </p>
-            </div>
-
-            <p style="color: #3f3f46; font-size: 11px; text-align: center; margin-top: 24px;">
-              Photon Brothers Operations Suite
-            </p>
-          </body>
-        </html>
-      `,
+    html,
     text: `Your PB Operations verification code is: ${code}\n\nThis code expires in 10 minutes.\n\nIf you didn't request this code, you can safely ignore this email.`,
     debugFallbackTitle: `VERIFICATION CODE for ${to}`,
     debugFallbackBody: `Code: ${code}`,
@@ -526,85 +499,27 @@ export async function sendSchedulingNotification(
                 `
     : "";
 
+  const html = await render(
+    React.createElement(SchedulingNotification, {
+      crewMemberName: params.crewMemberName,
+      scheduledByName: params.scheduledByName,
+      scheduledByEmail: params.scheduledByEmail,
+      dealOwnerName: params.dealOwnerName,
+      appointmentTypeLabel,
+      customerName: params.customerName,
+      customerAddress: params.customerAddress,
+      formattedDate,
+      timeSlot,
+      notes: cleanedNotes,
+      installDetailLines: installDetailLines.length > 0 ? installDetailLines : undefined,
+    })
+  );
+
   return sendEmailMessage({
     to: params.to,
     ...(bccRecipients.length > 0 ? { bcc: bccRecipients } : {}),
     subject: `New ${appointmentTypeLabel} Scheduled - ${params.customerName}`,
-    html: `
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <meta charset="utf-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          </head>
-          <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #0a0a0f; color: #ffffff; padding: 40px 20px; margin: 0;">
-            <div style="max-width: 500px; margin: 0 auto; background-color: #12121a; border: 1px solid #1e1e2e; border-radius: 12px; padding: 32px;">
-              <h1 style="font-size: 24px; font-weight: bold; background: linear-gradient(to right, #f97316, #fb923c); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin: 0 0 8px 0; text-align: center;">
-                PB Operations Suite
-              </h1>
-              <p style="color: #71717a; font-size: 14px; text-align: center; margin: 0 0 32px 0;">
-                New Appointment Scheduled
-              </p>
-
-              <div style="background-color: #0a0a0f; border: 1px solid #1e1e2e; border-radius: 8px; padding: 20px; margin-bottom: 24px;">
-                <div style="display: flex; align-items: center; margin-bottom: 16px;">
-                  <span style="background: linear-gradient(to right, #f97316, #fb923c); color: white; padding: 4px 12px; border-radius: 4px; font-size: 12px; font-weight: 600; text-transform: uppercase;">
-                    ${appointmentTypeLabel}
-                  </span>
-                </div>
-
-                <h2 style="font-size: 20px; color: #ffffff; margin: 0 0 16px 0;">
-                  ${params.customerName}
-                </h2>
-
-                <table style="width: 100%; border-collapse: collapse;">
-                  <tr>
-                    <td style="color: #71717a; font-size: 13px; padding: 8px 0; border-bottom: 1px solid #1e1e2e;">📍 Address</td>
-                    <td style="color: #ffffff; font-size: 13px; padding: 8px 0; border-bottom: 1px solid #1e1e2e; text-align: right;">${params.customerAddress}</td>
-                  </tr>
-                  <tr>
-                    <td style="color: #71717a; font-size: 13px; padding: 8px 0; border-bottom: 1px solid #1e1e2e;">📅 Date</td>
-                    <td style="color: #ffffff; font-size: 13px; padding: 8px 0; border-bottom: 1px solid #1e1e2e; text-align: right;">${formattedDate}</td>
-                  </tr>
-                  <tr>
-                    <td style="color: #71717a; font-size: 13px; padding: 8px 0; border-bottom: 1px solid #1e1e2e;">⏰ Time</td>
-                    <td style="color: #ffffff; font-size: 13px; padding: 8px 0; border-bottom: 1px solid #1e1e2e; text-align: right;">${timeSlot}</td>
-                  </tr>
-                  <tr>
-                    <td style="color: #71717a; font-size: 13px; padding: 8px 0;">👤 Scheduled by</td>
-                    <td style="color: #ffffff; font-size: 13px; padding: 8px 0; text-align: right;">${params.scheduledByName}</td>
-                  </tr>
-                  ${params.dealOwnerName ? `
-                  <tr>
-                    <td style="color: #71717a; font-size: 13px; padding: 8px 0;">🧑‍💼 Deal owner</td>
-                    <td style="color: #ffffff; font-size: 13px; padding: 8px 0; text-align: right;">${params.dealOwnerName}</td>
-                  </tr>
-                  ` : ""}
-                  ${installDetailsHtml}
-                  ${cleanedNotes ? `
-                  <tr>
-                    <td colspan="2" style="padding-top: 16px;">
-                      <div style="background-color: #1e1e2e; border-radius: 6px; padding: 12px;">
-                        <p style="color: #71717a; font-size: 12px; margin: 0 0 4px 0;">📝 Notes</p>
-                        <p style="color: #ffffff; font-size: 13px; margin: 0;">${cleanedNotes}</p>
-                      </div>
-                    </td>
-                  </tr>
-                  ` : ""}
-                </table>
-              </div>
-
-              <p style="color: #71717a; font-size: 12px; text-align: center; margin: 0;">
-                Please check your Zuper app for complete details.
-              </p>
-            </div>
-
-            <p style="color: #3f3f46; font-size: 11px; text-align: center; margin-top: 24px;">
-              Photon Brothers Operations Suite
-            </p>
-          </body>
-        </html>
-      `,
+    html,
     text: `New ${appointmentTypeLabel} Scheduled
 
 Hi ${params.crewMemberName},
@@ -713,49 +628,36 @@ export async function sendAvailabilityConflictNotification(
     })
     .join("\n");
 
+  const conflictItems = params.conflicts.map((conflict) => ({
+    projectId: conflict.projectId,
+    customerName: conflict.customerName,
+    customerAddress: conflict.customerAddress,
+    formattedDate: formatDate(conflict.scheduledDate),
+    timeSlot:
+      conflict.scheduledStart && conflict.scheduledEnd
+        ? `${formatTime(conflict.scheduledStart)} - ${formatTime(conflict.scheduledEnd)}`
+        : "Time not set",
+  }));
+
+  const html = await render(
+    React.createElement(AvailabilityConflict, {
+      recipientName,
+      surveyorName: params.surveyorName,
+      blockedByName: params.blockedByName,
+      blockedByEmail: params.blockedByEmail,
+      overrideTypeLabel: params.overrideType === "custom" ? "Time Range" : "Full Day",
+      overrideDate,
+      overrideWindow,
+      overrideReason: params.overrideReason,
+      conflicts: conflictItems,
+    })
+  );
+
   return sendEmailMessage({
     to: params.to,
     ...(bccRecipients.length > 0 ? { bcc: bccRecipients } : {}),
     subject,
-    html: `
-      <!DOCTYPE html>
-      <html>
-        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #0a0a0f; color: #ffffff; padding: 24px; margin: 0;">
-          <div style="max-width: 760px; margin: 0 auto; background-color: #12121a; border: 1px solid #1e1e2e; border-radius: 12px; padding: 24px;">
-            <h2 style="margin: 0 0 8px 0; font-size: 22px;">Availability Conflict Alert</h2>
-            <p style="color: #a1a1aa; font-size: 13px; margin: 0 0 20px 0;">
-              ${recipientName}, ${params.surveyorName} added an availability block that overlaps existing scheduled site surveys.
-            </p>
-
-            <div style="background-color: #1e1e2e; border-radius: 8px; padding: 12px; margin-bottom: 16px;">
-              <p style="margin: 0 0 6px 0; font-size: 13px; color: #e4e4e7;"><strong>Blocked By:</strong> ${params.blockedByName}${params.blockedByEmail ? ` (${params.blockedByEmail})` : ""}</p>
-              <p style="margin: 0 0 6px 0; font-size: 13px; color: #e4e4e7;"><strong>Surveyor:</strong> ${params.surveyorName}</p>
-              <p style="margin: 0 0 6px 0; font-size: 13px; color: #e4e4e7;"><strong>Override:</strong> ${params.overrideType === "custom" ? "Time Range" : "Full Day"} on ${overrideDate} (${overrideWindow})</p>
-              ${params.overrideReason ? `<p style="margin: 0; font-size: 13px; color: #e4e4e7;"><strong>Reason:</strong> ${params.overrideReason}</p>` : ""}
-            </div>
-
-            <table style="width: 100%; border-collapse: collapse;">
-              <thead>
-                <tr>
-                  <th style="text-align: left; color: #71717a; font-size: 11px; padding-bottom: 6px;">Customer</th>
-                  <th style="text-align: left; color: #71717a; font-size: 11px; padding-bottom: 6px;">Address</th>
-                  <th style="text-align: left; color: #71717a; font-size: 11px; padding-bottom: 6px;">Date</th>
-                  <th style="text-align: left; color: #71717a; font-size: 11px; padding-bottom: 6px;">Time</th>
-                  <th style="text-align: left; color: #71717a; font-size: 11px; padding-bottom: 6px;">Project</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${conflictRowsHtml}
-              </tbody>
-            </table>
-
-            <p style="margin-top: 18px; color: #a1a1aa; font-size: 12px;">
-              Please review and reschedule/cancel impacted surveys as needed.
-            </p>
-          </div>
-        </body>
-      </html>
-    `,
+    html,
     text: `Availability Conflict Alert
 
 ${recipientName},
@@ -813,48 +715,21 @@ export async function sendProductUpdateEmail(
     .map((change) => `- [${change.type.toUpperCase()}] ${change.text}`)
     .join("\n");
 
+  const html = await render(
+    React.createElement(ProductUpdate, {
+      version: params.update.version,
+      title: params.update.title,
+      formattedDate,
+      description: params.update.description,
+      changes: params.update.changes,
+      updatesUrl,
+    })
+  );
+
   return sendEmailMessage({
     to: params.to,
     subject: `PB Operations Update ${params.update.version} - ${params.update.title}`,
-    html: `
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <meta charset="utf-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          </head>
-          <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #0a0a0f; color: #ffffff; padding: 40px 20px; margin: 0;">
-            <div style="max-width: 620px; margin: 0 auto; background-color: #12121a; border: 1px solid #1e1e2e; border-radius: 12px; padding: 32px;">
-              <h1 style="font-size: 24px; font-weight: bold; background: linear-gradient(to right, #f97316, #fb923c); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin: 0 0 8px 0; text-align: center;">
-                PB Operations Suite
-              </h1>
-              <p style="color: #71717a; font-size: 14px; text-align: center; margin: 0 0 24px 0;">
-                Product Update Published
-              </p>
-
-              <div style="background-color: #0a0a0f; border: 1px solid #1e1e2e; border-radius: 8px; padding: 20px; margin-bottom: 24px;">
-                <p style="margin: 0 0 8px 0; color: #fb923c; font-weight: 700;">v${params.update.version}</p>
-                <h2 style="margin: 0 0 8px 0; font-size: 20px; color: #ffffff;">${params.update.title}</h2>
-                <p style="margin: 0 0 16px 0; color: #a1a1aa; font-size: 13px;">${formattedDate}</p>
-                <p style="margin: 0 0 16px 0; color: #e4e4e7; font-size: 14px; line-height: 1.5;">${params.update.description}</p>
-                <ul style="margin: 0; padding-left: 20px; color: #e4e4e7; font-size: 13px; line-height: 1.5;">
-                  ${changesHtml}
-                </ul>
-              </div>
-
-              <p style="margin: 0; text-align: center;">
-                <a href="${updatesUrl}" style="display: inline-block; background: linear-gradient(to right, #f97316, #fb923c); color: #ffffff; text-decoration: none; font-weight: 600; padding: 10px 16px; border-radius: 8px;">
-                  View Full Changelog
-                </a>
-              </p>
-            </div>
-
-            <p style="color: #3f3f46; font-size: 11px; text-align: center; margin-top: 24px;">
-              Photon Brothers Operations Suite
-            </p>
-          </body>
-        </html>
-      `,
+    html,
     text: `PB Operations Update v${params.update.version}
 
 ${params.update.title}
@@ -906,73 +781,22 @@ export async function sendBugReportEmail(
     timeZoneName: "short",
   });
 
+  const html = await render(
+    React.createElement(BugReport, {
+      reportId: params.reportId,
+      title: params.title,
+      description: params.description,
+      pageUrl: params.pageUrl,
+      reporterName: params.reporterName,
+      reporterEmail: params.reporterEmail,
+      timestamp,
+    })
+  );
+
   return sendEmailMessage({
     to: recipient,
     subject: `Bug Report: ${params.title}`,
-    html: `
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <meta charset="utf-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          </head>
-          <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #0a0a0f; color: #ffffff; padding: 40px 20px; margin: 0;">
-            <div style="max-width: 500px; margin: 0 auto; background-color: #12121a; border: 1px solid #1e1e2e; border-radius: 12px; padding: 32px;">
-              <h1 style="font-size: 24px; font-weight: bold; background: linear-gradient(to right, #f97316, #fb923c); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin: 0 0 8px 0; text-align: center;">
-                PB Operations Suite
-              </h1>
-              <p style="color: #71717a; font-size: 14px; text-align: center; margin: 0 0 32px 0;">
-                New Bug Report Submitted
-              </p>
-
-              <div style="background-color: #0a0a0f; border: 1px solid #1e1e2e; border-radius: 8px; padding: 20px; margin-bottom: 24px;">
-                <div style="margin-bottom: 16px;">
-                  <span style="background: #dc2626; color: white; padding: 4px 12px; border-radius: 4px; font-size: 12px; font-weight: 600; text-transform: uppercase;">
-                    Bug Report
-                  </span>
-                </div>
-
-                <h2 style="font-size: 18px; color: #ffffff; margin: 0 0 16px 0;">
-                  ${params.title}
-                </h2>
-
-                <div style="background-color: #1e1e2e; border-radius: 6px; padding: 12px; margin-bottom: 16px;">
-                  <p style="color: #ffffff; font-size: 13px; margin: 0; white-space: pre-wrap;">${params.description}</p>
-                </div>
-
-                <table style="width: 100%; border-collapse: collapse;">
-                  ${params.pageUrl ? `
-                  <tr>
-                    <td style="color: #71717a; font-size: 13px; padding: 8px 0; border-bottom: 1px solid #1e1e2e;">Page</td>
-                    <td style="color: #60a5fa; font-size: 13px; padding: 8px 0; border-bottom: 1px solid #1e1e2e; text-align: right; word-break: break-all;">${params.pageUrl}</td>
-                  </tr>
-                  ` : ""}
-                  <tr>
-                    <td style="color: #71717a; font-size: 13px; padding: 8px 0; border-bottom: 1px solid #1e1e2e;">Reported by</td>
-                    <td style="color: #ffffff; font-size: 13px; padding: 8px 0; border-bottom: 1px solid #1e1e2e; text-align: right;">${params.reporterName || params.reporterEmail}</td>
-                  </tr>
-                  <tr>
-                    <td style="color: #71717a; font-size: 13px; padding: 8px 0; border-bottom: 1px solid #1e1e2e;">Email</td>
-                    <td style="color: #ffffff; font-size: 13px; padding: 8px 0; border-bottom: 1px solid #1e1e2e; text-align: right;">${params.reporterEmail}</td>
-                  </tr>
-                  <tr>
-                    <td style="color: #71717a; font-size: 13px; padding: 8px 0;">Time</td>
-                    <td style="color: #ffffff; font-size: 13px; padding: 8px 0; text-align: right;">${timestamp}</td>
-                  </tr>
-                </table>
-              </div>
-
-              <p style="color: #71717a; font-size: 12px; text-align: center; margin: 0;">
-                Ticket ID: ${params.reportId}
-              </p>
-            </div>
-
-            <p style="color: #3f3f46; font-size: 11px; text-align: center; margin-top: 24px;">
-              Photon Brothers Operations Suite
-            </p>
-          </body>
-        </html>
-      `,
+    html,
     text: `Bug Report: ${params.title}
 
 ${params.description}
