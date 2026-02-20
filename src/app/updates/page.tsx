@@ -15,6 +15,32 @@ interface UpdateEntry {
 
 const UPDATES: UpdateEntry[] = [
   {
+    version: "1.50.0",
+    date: "2026-02-19",
+    title: "Install Director Notifications & Automated Changelog Emailing",
+    description: "Install scheduling notifications now include the location director in addition to the assigned crew member, and changelog updates now support automated outbound release emails.",
+    changes: [
+      { type: "feature", text: "Install schedule notifications now email both the assigned installer and the mapped location director" },
+      { type: "fix", text: "Director install notifications dedupe against assigned-recipient email to avoid duplicate sends" },
+      { type: "feature", text: "New API route: /api/updates/notify sends release-note emails for newly added changelog versions" },
+      { type: "improvement", text: "Changelog email notifications are idempotent via AppSetting last-version tracking" },
+      { type: "internal", text: "Product updates page now reads from shared source file src/lib/product-updates.ts" },
+      { type: "internal", text: "Vercel cron support added to trigger changelog notification checks automatically" },
+    ],
+  },
+  {
+    version: "1.49.0",
+    date: "2026-02-18",
+    title: "Shared Install Calendar Coverage for DTC, Westy, and COSP",
+    description: "Google Calendar syncing now includes shared install calendars for DTC, Westminster, and Colorado Springs/Pueblo, while Colorado site surveys also mirror to the Denver site survey schedule.",
+    changes: [
+      { type: "feature", text: "Install scheduling now writes to location-based shared calendars using GOOGLE_INSTALL_CALENDAR_DTC_ID, GOOGLE_INSTALL_CALENDAR_WESTY_ID, and GOOGLE_INSTALL_CALENDAR_COSP_ID" },
+      { type: "feature", text: "Colorado site surveys now mirror into the Denver shared survey calendar when GOOGLE_DENVER_SITE_SURVEY_CALENDAR_ID is configured" },
+      { type: "fix", text: "Install unschedule flow now removes events from the configured shared install calendar for the project location" },
+      { type: "improvement", text: "Calendar sync errors are surfaced as warnings so scheduling can continue without silent failures" },
+    ],
+  },
+  {
     version: "1.48.0",
     date: "2026-02-17",
     title: "Survey Notifications & Google Calendar Sync",
