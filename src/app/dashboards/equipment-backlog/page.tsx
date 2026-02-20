@@ -593,9 +593,7 @@ export default function EquipmentBacklogPage() {
   const exportFilename = activeStatFilter
     ? `equipment-${activeStatFilter === "in_progress" ? "in-progress" : activeStatFilter}`
     : "equipment-backlog";
-  const exportProjects = activeStatFilter
-    ? (activeStatFilter === "backlog" ? backlogProjects : activeStatFilter === "in_progress" ? inProgressProjects : builtProjects)
-    : sortedProjects;
+  const exportProjects = sortedProjects;
 
   return (
     <DashboardShell

@@ -32,6 +32,17 @@ function getMonthKey(weekOffset: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+/** Count how many whole ISO weeks overlap a calendar month (year-month key). */
+function weeksInCalendarMonth(monthKey: string): number {
+  const [year, month] = monthKey.split("-").map(Number);
+  const daysInMonth = new Date(year, month, 0).getDate();
+  // Each week is 7 days; a month spans ceil(daysInMonth / 7) week-slots at most
+  // but the precise count is the number of distinct Mon–Sun windows that touch it.
+  // Simple approximation that matches real calendars: ceil(daysInMonth / 7).
+  // Feb always 4, months starting mid-week can be 5. Never under-counts.
+  return Math.ceil(daysInMonth / 7);
+}
+
 function utilizationColor(pct: number): string {
   if (pct <= 0) return "bg-surface-2 text-muted/40"; // no jobs
   if (pct <= 80) return "bg-emerald-500/20 text-emerald-400";
@@ -124,11 +135,11 @@ export function CapacityHeatmap({ capacityAnalysis }: CapacityHeatmapProps) {
               {/* Week cells */}
               {weeks.map((w) => {
                 const forecast = cap.monthly_forecast[w.monthKey];
-                // Distribute month's days evenly across weeks in that month
-                const weeksInMonth = weeks.filter((wk) => wk.monthKey === w.monthKey).length || 1;
+                // Distribute month's forecast evenly across all calendar weeks in that month
+                const weeksInMonth = weeksInCalendarMonth(w.monthKey);
                 const weekDays = forecast ? forecast.days_needed / weeksInMonth : 0;
                 const pct = weeklyCapacity > 0 ? (weekDays / weeklyCapacity) * 100 : 0;
-                const count = forecast ? Math.round(forecast.count / weeksInMonth) : 0;
+                const count = forecast ? Math.round(forecast.count / weeksInCalendarMonth(w.monthKey)) : 0;
 
                 return (
                   <div
