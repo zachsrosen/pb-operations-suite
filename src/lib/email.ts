@@ -527,7 +527,7 @@ export async function sendSchedulingNotification(
                     <td style="color: #ffffff; font-size: 13px; padding: 8px 0; text-align: right;">${params.dealOwnerName}</td>
                   </tr>
                   `
-    : params.appointmentType === "installation" && params.projectManagerName
+    : (params.appointmentType === "installation" || params.appointmentType === "inspection") && params.projectManagerName
       ? `
                   <tr>
                     <td style="color: #71717a; font-size: 13px; padding: 8px 0;">🧑‍🔧 Project manager</td>
@@ -537,7 +537,7 @@ export async function sendSchedulingNotification(
       : "";
   const stakeholderTextLine = params.appointmentType === "survey" && params.dealOwnerName
     ? `Deal owner: ${params.dealOwnerName}\n`
-    : params.appointmentType === "installation" && params.projectManagerName
+    : (params.appointmentType === "installation" || params.appointmentType === "inspection") && params.projectManagerName
       ? `Project manager: ${params.projectManagerName}\n`
       : "";
   const installDetailLines: string[] = [];

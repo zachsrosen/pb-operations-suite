@@ -1726,10 +1726,10 @@ async function sendCrewNotification(
     const dealOwnerName = schedule.type === "survey"
       ? (project.dealOwner?.trim() || undefined)
       : undefined;
-    let projectManagerName = schedule.type === "installation"
+    let projectManagerName = (schedule.type === "installation" || schedule.type === "inspection")
       ? (project.projectManager?.trim() || undefined)
       : undefined;
-    if (schedule.type === "installation" && !projectManagerName) {
+    if ((schedule.type === "installation" || schedule.type === "inspection") && !projectManagerName) {
       try {
         const manager = await getDealProjectManagerContact(project.id);
         projectManagerName = manager.projectManagerName || undefined;

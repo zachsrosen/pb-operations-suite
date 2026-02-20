@@ -666,7 +666,7 @@ export async function POST(request: NextRequest) {
                 ownerErr instanceof Error ? ownerErr.message : ownerErr
               );
             }
-          } else if (scheduleType === "installation") {
+          } else if (scheduleType === "installation" || scheduleType === "inspection") {
             try {
               const manager = await getDealProjectManagerContact(record.projectId);
               projectManagerName = manager.projectManagerName;
