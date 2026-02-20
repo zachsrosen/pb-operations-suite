@@ -2,6 +2,8 @@
 
 import DashboardShell from "@/components/DashboardShell";
 import { useExecutiveData } from "@/hooks/useExecutiveData";
+import { AnomalyInsights } from "@/components/ui/AnomalyInsights";
+import { CapacityHeatmap } from "@/components/ui/CapacityHeatmap";
 
 function StatCard({
   value,
@@ -32,8 +34,16 @@ function StatCard({
 }
 
 export default function AlertsPage() {
-  const { projects, loading, error, lastUpdated, fetchData, alerts, accessChecked } =
-    useExecutiveData("alerts");
+  const {
+    projects,
+    loading,
+    error,
+    lastUpdated,
+    fetchData,
+    alerts,
+    capacityAnalysis,
+    accessChecked,
+  } = useExecutiveData("alerts");
 
   const dangerCount = alerts.filter((a) => a.type === "danger").length;
   const warningCount = alerts.filter((a) => a.type === "warning").length;
@@ -62,10 +72,16 @@ export default function AlertsPage() {
         <div className="bg-surface border border-red-500 rounded-xl p-8 text-center">
           <div className="text-lg">Error loading data</div>
           <div className="text-sm text-muted mt-2">{error}</div>
-          <button onClick={fetchData} className="mt-4 px-4 py-2 bg-orange-500 border-none rounded-md cursor-pointer text-black font-semibold">Retry</button>
+          <button
+            onClick={fetchData}
+            className="mt-4 px-4 py-2 bg-orange-500 border-none rounded-md cursor-pointer text-black font-semibold"
+          >
+            Retry
+          </button>
         </div>
       ) : (
         <>
+          {/* Rule-based alert stats */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             <StatCard value={dangerCount} label="Critical Alerts" variant="danger" />
             <StatCard value={warningCount} label="Warnings" borderColor="#eab308" />
@@ -73,7 +89,8 @@ export default function AlertsPage() {
             <StatCard value={peRelated} label="PE Related" variant="pe" />
           </div>
 
-          <div className="grid gap-4 mt-4">
+          {/* Rule-based alerts */}
+          <div className="grid gap-4">
             {alerts.slice(0, 20).map((a, i) => (
               <div
                 key={i}
@@ -81,7 +98,7 @@ export default function AlertsPage() {
               >
                 <div className="flex items-center gap-2 mb-2">
                   <span className={`text-xl ${a.type === "danger" ? "text-red-500" : "text-yellow-500"}`}>
-                    {a.type === "danger" ? "X" : "!"}
+                    {a.type === "danger" ? "✕" : "!"}
                   </span>
                   <span className="font-semibold">{a.title}</span>
                 </div>
@@ -99,8 +116,20 @@ export default function AlertsPage() {
               </div>
             ))}
             {alerts.length === 0 && (
-              <div className="text-center text-muted text-sm py-8">No alerts at this time.</div>
+              <div className="text-center text-muted text-sm py-8">
+                No rule-based alerts at this time.
+              </div>
             )}
+          </div>
+
+          {/* Capacity Heatmap — predictive 8-week crew utilization */}
+          <div className="mt-6">
+            <CapacityHeatmap capacityAnalysis={capacityAnalysis} />
+          </div>
+
+          {/* AI Insights — on-demand anomaly detection */}
+          <div className="mt-6">
+            <AnomalyInsights />
           </div>
         </>
       )}
