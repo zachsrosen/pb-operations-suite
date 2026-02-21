@@ -61,6 +61,27 @@ export const HOME_METRICS = [
 
 export const HOME_PROTOTYPES: HomePrototype[] = [
   {
+    slug: "teal-steel-briefing",
+    title: "Teal Steel Briefing",
+    description: "Story-first briefing with command-priority strip and balanced card density.",
+    direction: "Focused hybrid",
+    mood: "Teal / premium serious",
+  },
+  {
+    slug: "teal-steel-command-grid",
+    title: "Teal Steel Command Grid",
+    description: "Command Deck hierarchy softened with editorial spacing and cleaner scan rails.",
+    direction: "Focused hybrid",
+    mood: "Teal / premium serious",
+  },
+  {
+    slug: "teal-steel-narrative-ops",
+    title: "Teal Steel Narrative Ops",
+    description: "Narrative sections plus high-priority command panel in an in-between density.",
+    direction: "Focused hybrid",
+    mood: "Teal / premium serious",
+  },
+  {
     slug: "command-deck",
     title: "Command Deck",
     description: "Cinematic control-room shell with KPI strip and priority modules.",

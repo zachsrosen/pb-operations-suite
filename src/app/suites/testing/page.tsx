@@ -121,7 +121,7 @@ const PROTOTYPES: SuitePageCard[] = [
   {
     href: "/prototypes/home-refresh",
     title: "Home Refresh Prototypes",
-    description: "10 homepage replacement concepts with distinct layout and visual directions.",
+    description: "13 homepage replacement concepts, including focused teal/steel refinements.",
     tag: "PROTOTYPE",
     tagColor: "bg-pink-500/20 text-pink-400 border-pink-500/30",
     section: "Prototypes",

@@ -20,10 +20,10 @@ export default function HomeRefreshPrototypeHubPage() {
       <main className="mx-auto max-w-7xl px-5 py-10 sm:px-8">
         <header className="rounded-3xl border border-white/15 bg-black/30 p-7 shadow-2xl shadow-black/35 backdrop-blur sm:p-8">
           <p className="text-xs uppercase tracking-[0.32em] text-cyan-100/90">Homepage Replacement Concepts</p>
-          <h1 className="mt-4 text-3xl font-semibold leading-tight sm:text-4xl">10 New Home Page Prototypes</h1>
+          <h1 className="mt-4 text-3xl font-semibold leading-tight sm:text-4xl">13 Home Page Prototypes</h1>
           <p className="mt-4 max-w-3xl text-sm text-slate-200 sm:text-base">
-            These are 10 intentionally different directions for your landing experience. Every prototype is wired to
-            your existing suite routes so you can evaluate structure and visual language quickly.
+            Includes 3 focused teal/steel refinement options plus 10 broad concepts. Every prototype is wired to your
+            existing suite routes so you can evaluate structure and visual language quickly.
           </p>
           <div className="mt-6 flex flex-wrap gap-2 text-xs uppercase tracking-[0.14em] text-slate-300">
             <span className="rounded-full border border-white/20 bg-white/5 px-3 py-1.5">Distinct typography</span>
