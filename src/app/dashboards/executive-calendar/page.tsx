@@ -22,7 +22,7 @@ interface Job {
   jobUid: string;
   title: string;
   category: string;
-  categoryKey: string;
+  categoryKey: CategoryKey;
   date: string;
   endDate: string | null;
   spanStartDate: string;
