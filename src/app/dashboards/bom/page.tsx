@@ -4,7 +4,7 @@ import React, { useState, useCallback, useRef, useEffect } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { exportToCSV } from "@/lib/export";
 import { useToast } from "@/contexts/ToastContext";
-import { upload } from "@vercel/blob/client";
+// PDF upload uses chunked /api/bom/chunk — stays on our domain, no CORS issues
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                               */
@@ -315,44 +315,75 @@ export default function BomDashboard() {
   }, []);
 
   /* ---- Extract from PDF upload ---- */
-  // Uses @vercel/blob/client upload() with multipart:true so large files
-  // go browser → Vercel Blob directly (no serverless body-size limit).
-  // The token endpoint sanitizes the pathname; we use that same safe name
-  // so the token's allowed pathname matches what the SDK sends in the PUT.
+  // Chunks the PDF into 1MB slices (→ ~1.4MB base64 JSON each, safely under
+  // Vercel's 4.5MB serverless body limit) and POSTs each to /api/bom/chunk.
+  // All requests stay on our domain — no cross-origin CORS issues.
+  // The server reassembles chunks in Vercel Blob and returns the final URL
+  // for Claude to fetch server-side.
   const handleExtractUpload = useCallback(async () => {
     if (!uploadFile) return;
     setExtracting(true);
     setImportError(null);
-    setUploadProgress("Uploading PDF to storage…");
+    setUploadProgress("");
     try {
-      // Sanitize filename: strip special chars so the pathname in the PUT
-      // request matches exactly what the upload-token route authorizes.
-      // Append a timestamp for uniqueness (token uses addRandomSuffix:false).
-      const safeName = uploadFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const base = safeName.replace(/\.pdf$/i, "");
-      const pathname = `bom-uploads/${base}_${Date.now()}.pdf`;
+      const CHUNK_SIZE = 1 * 1024 * 1024; // 1MB raw → ~1.4MB base64 JSON
+      const uploadId = crypto.randomUUID();
+      const totalChunks = Math.ceil(uploadFile.size / CHUNK_SIZE);
 
-      const blob = await upload(pathname, uploadFile, {
-        access: "public",
-        handleUploadUrl: "/api/bom/upload-token",
-        multipart: true,
-        onUploadProgress: ({ percentage }) => {
-          setUploadProgress(`Uploading… ${Math.round(percentage)}%`);
-        },
-      });
+      let blobUrl = "";
+      for (let i = 0; i < totalChunks; i++) {
+        setUploadProgress(
+          totalChunks === 1
+            ? "Uploading PDF…"
+            : `Uploading part ${i + 1} of ${totalChunks}…`
+        );
 
-      // Run Claude extraction on the blob URL
+        const start = i * CHUNK_SIZE;
+        const slice = uploadFile.slice(start, start + CHUNK_SIZE);
+        const arrayBuf = await slice.arrayBuffer();
+
+        // Safe base64 — explicit loop avoids call-stack overflow on large chunks
+        const bytes = new Uint8Array(arrayBuf);
+        let binary = "";
+        for (let j = 0; j < bytes.length; j++) binary += String.fromCharCode(bytes[j]);
+        const base64 = btoa(binary);
+
+        const chunkRes = await fetch("/api/bom/chunk", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            uploadId,
+            chunkIndex: i,
+            totalChunks,
+            data: base64,
+            filename: uploadFile.name,
+          }),
+        });
+
+        if (!chunkRes.ok) {
+          const err = await chunkRes.json().catch(() => ({ error: `Part ${i + 1} upload failed (${chunkRes.status})` }));
+          throw new Error((err as { error?: string }).error ?? `Part ${i + 1} failed (${chunkRes.status})`);
+        }
+
+        const result = await chunkRes.json() as { status: string; blobUrl?: string };
+        if (result.status === "complete" && result.blobUrl) {
+          blobUrl = result.blobUrl;
+        }
+      }
+
+      if (!blobUrl) throw new Error("Upload completed but no blob URL returned — try again");
+
       setUploadProgress("Extracting BOM with Claude — this takes 30–60 seconds…");
       const res = await fetch("/api/bom/extract", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ blobUrl: blob.url }),
+        body: JSON.stringify({ blobUrl }),
       });
       const data = await safeFetchBom(res);
       loadBomData(data);
       addToast({ type: "success", title: `BOM extracted from ${uploadFile.name}` });
     } catch (e) {
-      setImportError(e instanceof Error ? e.message : "Upload or extraction failed");
+      setImportError(e instanceof Error ? e.message : "Upload failed");
     } finally {
       setExtracting(false);
       setUploadProgress("");

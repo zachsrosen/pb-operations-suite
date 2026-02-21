@@ -4,7 +4,7 @@
  * POST /api/bom/chunk
  *   Accepts a single chunk of a PDF being uploaded in pieces.
  *   Stores chunks in Vercel Blob, returns a completion signal when all chunks received.
- *   Each chunk must be under ~3MB base64 (2MB raw binary ≈ 2.7MB base64 JSON, well under Vercel's 4.5MB body limit).
+ *   Each chunk is 1MB raw → ~1.4MB base64 JSON — well under Vercel's 4.5MB serverless body limit.
  *
  * Body: JSON
  *   uploadId  - client-generated UUID identifying this upload session
@@ -29,7 +29,7 @@ const ALLOWED_ROLES = new Set([
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 120; // reassembly of large plansets needs time
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const authResult = await requireApiAuth();
