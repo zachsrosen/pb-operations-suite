@@ -14,6 +14,9 @@ import { LiveIndicator } from "@/components/ui/LiveIndicator";
 import { UserMenu } from "@/components/UserMenu";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { prefetchDashboard } from "@/lib/prefetch";
+import { NLSearchBar } from "@/components/ui/NLSearchBar";
+import { AnomalyInsights } from "@/components/ui/AnomalyInsights";
+import type { ProjectFilterSpec } from "@/lib/ai";
 
 function useIsMac() {
   const [isMac] = useState(() => {
@@ -116,6 +119,8 @@ interface ProjectRecord {
   isRtb: boolean;
 }
 
+type PipelineFilter = "all" | "pe" | "rtb";
+
 function computeStats(projects: ProjectRecord[]): Stats {
   const totalValue = projects.reduce((s, p) => s + p.amount, 0);
   const pe = projects.filter((p) => p.isParticipateEnergy);
@@ -150,6 +155,9 @@ function computeStats(projects: ProjectRecord[]): Stats {
 
 export default function Home() {
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
+  const [pipelineFilter, setPipelineFilter] = useState<PipelineFilter>("all");
+  const [aiQuery, setAiQuery] = useState("");
+  const [aiSpec, setAiSpec] = useState<ProjectFilterSpec | null>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
 
   const isMac = useIsMac();
@@ -253,12 +261,24 @@ export default function Home() {
   const unfilteredStats = useMemo(() => computeStats(rawProjects), [rawProjects]);
 
   // Filtered projects & stats — instant, no API call
-  const stats = useMemo(() => {
-    if (selectedLocations.length === 0) return unfilteredStats;
-    const locSet = new Set(selectedLocations);
-    const filtered = rawProjects.filter((p) => locSet.has(p.pbLocation));
-    return computeStats(filtered);
-  }, [rawProjects, selectedLocations, unfilteredStats]);
+  const filteredProjects = useMemo(() => {
+    let filtered = rawProjects;
+
+    if (selectedLocations.length > 0) {
+      const locSet = new Set(selectedLocations);
+      filtered = filtered.filter((p) => locSet.has(p.pbLocation));
+    }
+
+    if (pipelineFilter === "pe") {
+      filtered = filtered.filter((p) => p.isParticipateEnergy);
+    } else if (pipelineFilter === "rtb") {
+      filtered = filtered.filter((p) => p.isRtb);
+    }
+
+    return filtered;
+  }, [rawProjects, selectedLocations, pipelineFilter]);
+
+  const stats = useMemo(() => computeStats(filteredProjects), [filteredProjects]);
 
   const toggleLocation = useCallback((loc: string) => {
     setSelectedLocations((prev) =>
@@ -269,6 +289,68 @@ export default function Home() {
   const clearLocations = useCallback(() => {
     setSelectedLocations([]);
   }, []);
+
+  const clearAllFilters = useCallback(() => {
+    setSelectedLocations([]);
+    setPipelineFilter("all");
+    setAiSpec(null);
+  }, []);
+
+  const locationLookup = useMemo(() => {
+    const map = new Map<string, string>();
+    allLocations.forEach((location) => {
+      map.set(location.toLowerCase(), location);
+    });
+    return map;
+  }, [allLocations]);
+
+  const handleAIFilterSpec = useCallback(
+    (spec: ProjectFilterSpec | null, rawQuery: string) => {
+      setAiSpec(spec);
+
+      if (!rawQuery.trim()) {
+        return;
+      }
+
+      if (!spec) {
+        return;
+      }
+
+      if (spec.locations?.length) {
+        const matchedLocations = Array.from(
+          new Set(
+            spec.locations
+              .map((location) => locationLookup.get(location.toLowerCase()))
+              .filter((location): location is string => Boolean(location))
+          )
+        );
+        if (matchedLocations.length > 0) {
+          setSelectedLocations(matchedLocations);
+        }
+      }
+
+      if (spec.is_pe === true && spec.is_rtb !== true) {
+        setPipelineFilter("pe");
+      } else if (spec.is_rtb === true && spec.is_pe !== true) {
+        setPipelineFilter("rtb");
+      } else if (spec.is_pe === false || spec.is_rtb === false) {
+        setPipelineFilter("all");
+      }
+    },
+    [locationLookup]
+  );
+
+  const aiSummaryChips = useMemo(() => {
+    if (!aiSpec) return [];
+
+    const chips: string[] = [];
+    if (aiSpec.is_pe) chips.push("PE only");
+    if (aiSpec.is_rtb) chips.push("RTB only");
+    if (aiSpec.locations?.length) chips.push(`Locations: ${aiSpec.locations.join(", ")}`);
+    if (aiSpec.stages?.length) chips.push(`Stages: ${aiSpec.stages.join(", ")}`);
+    if (aiSpec.is_overdue) chips.push("Overdue projects");
+    return chips;
+  }, [aiSpec]);
 
   const visibleSuites = useMemo(() => {
     if (!userRole) return []; // Still loading
@@ -290,6 +372,8 @@ export default function Home() {
     });
   }, [userRole]);
 
+  const canUseAI = userRole === "ADMIN" || userRole === "OWNER";
+
   if (!userRole || redirectTarget) {
     return (
       <div className="min-h-screen bg-background text-foreground flex items-center justify-center px-6">
@@ -299,9 +383,15 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div
+      className="min-h-screen text-foreground"
+      style={{
+        background:
+          "radial-gradient(circle at 12% -6%, rgba(6, 182, 212, 0.14), transparent 32%), radial-gradient(circle at 88% 2%, rgba(59, 130, 246, 0.1), transparent 36%), var(--background)",
+      }}
+    >
       {/* Header */}
-      <header className="border-b border-t-border px-6 py-4">
+      <header className="border-b border-t-border/80 bg-surface-elevated/75 backdrop-blur-sm px-6 py-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <h1 className="text-xl font-bold bg-gradient-to-r from-orange-500 to-orange-400 bg-clip-text text-transparent">
             PB Operations Suite
@@ -364,17 +454,25 @@ export default function Home() {
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-8">
-        {/* Active Location Filter Banner */}
-        {selectedLocations.length > 0 && (
+        {/* Active Filter Banner */}
+        {(selectedLocations.length > 0 || pipelineFilter !== "all") && (
           <div className="mb-4 flex items-center gap-2 px-3 py-2 bg-orange-500/10 border border-orange-500/30 rounded-lg animate-fadeIn">
             <svg className="w-4 h-4 text-orange-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
             </svg>
-            <span className="text-sm text-orange-400">
-              Filtered: <span className="font-medium">{selectedLocations.join(", ")}</span>
+            <span className="text-sm text-orange-400 flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span>Filtered:</span>
+              {pipelineFilter !== "all" && (
+                <span className="font-medium">
+                  {pipelineFilter === "pe" ? "PE only" : "RTB only"}
+                </span>
+              )}
+              {selectedLocations.length > 0 && (
+                <span className="font-medium">{selectedLocations.join(", ")}</span>
+              )}
             </span>
             <button
-              onClick={clearLocations}
+              onClick={clearAllFilters}
               className="ml-auto text-xs text-orange-400/70 hover:text-orange-300 underline"
             >
               Clear
@@ -423,12 +521,85 @@ export default function Home() {
           />
         </div>
 
+        {/* Zach's Bot (AI) */}
+        <div className="bg-gradient-to-br from-surface-elevated/85 via-surface/70 to-surface-2/55 border border-t-border/80 rounded-xl p-6 mb-8 animate-fadeIn shadow-card backdrop-blur-sm">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold">Zach&apos;s Bot</h2>
+              <p className="text-xs text-muted">
+                AI-assisted filters and anomaly analysis on top of your current homepage.
+              </p>
+            </div>
+            <button
+              onClick={clearAllFilters}
+              className="text-xs text-muted hover:text-foreground underline transition-colors self-start md:self-auto"
+            >
+              Clear all filters
+            </button>
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted">Pipeline:</span>
+            {[
+              { value: "all", label: "All" },
+              { value: "pe", label: "PE Only" },
+              { value: "rtb", label: "RTB Only" },
+            ].map((option) => (
+              <button
+                key={option.value}
+                onClick={() => setPipelineFilter(option.value as PipelineFilter)}
+                className={`px-3 py-1.5 rounded-md text-xs border transition-colors ${
+                  pipelineFilter === option.value
+                    ? "bg-orange-500/20 text-orange-400 border-orange-500/40"
+                    : "bg-background text-muted border-t-border hover:text-foreground hover:border-orange-500/40"
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-4">
+            {canUseAI ? (
+              <>
+                <NLSearchBar
+                  value={aiQuery}
+                  onChange={setAiQuery}
+                  onFilterSpec={handleAIFilterSpec}
+                  disabled={loading}
+                />
+                {aiSpec?.interpreted_as && (
+                  <p className="mt-3 text-xs text-muted">
+                    Zach&apos;s Bot: {aiSpec.interpreted_as}
+                  </p>
+                )}
+                {aiSummaryChips.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {aiSummaryChips.map((chip) => (
+                      <span key={chip} className="text-xs px-2 py-1 rounded border border-orange-500/30 bg-orange-500/10 text-orange-400">
+                        {chip}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <div className="mt-4">
+                  <AnomalyInsights />
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-muted">
+                AI tools are available for Owner/Admin roles.
+              </p>
+            )}
+          </div>
+        </div>
+
         {/* Location Filter - click to filter all data */}
         {loading ? (
           <SkeletonSection rows={2} />
         ) : (
           allLocations.length > 0 && (
-            <div className="bg-surface/50 border border-t-border rounded-xl p-6 mb-8 animate-fadeIn">
+            <div className="bg-gradient-to-br from-surface-elevated/85 via-surface/70 to-surface-2/55 border border-t-border/80 rounded-xl p-6 mb-8 animate-fadeIn shadow-card backdrop-blur-sm">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-semibold">
                   Projects by Location
@@ -487,7 +658,7 @@ export default function Home() {
           <SkeletonSection />
         ) : (
           stats?.stageCounts && (
-            <div className="bg-surface/50 border border-t-border rounded-xl p-6 mb-8 animate-fadeIn">
+            <div className="bg-gradient-to-br from-surface-elevated/85 via-surface/70 to-surface-2/55 border border-t-border/80 rounded-xl p-6 mb-8 animate-fadeIn shadow-card backdrop-blur-sm">
               <h2 className="text-lg font-semibold mb-4">Pipeline by Stage</h2>
               <div className="space-y-3">
                 {(() => {
@@ -617,7 +788,7 @@ const DashboardLink = memo(function DashboardLink({
     <Link
       href={href}
       onMouseEnter={handleMouseEnter}
-      className="group block bg-surface/50 border border-t-border rounded-xl p-5 hover:border-orange-500/50 hover:bg-surface transition-all"
+      className="group block rounded-xl border border-t-border/80 bg-gradient-to-br from-surface-elevated/80 via-surface/70 to-surface-2/50 p-5 shadow-card backdrop-blur-sm transition-all hover:border-orange-500/50 hover:bg-surface"
     >
       <div className="flex items-center justify-between mb-1">
         <h3 className="font-semibold text-foreground group-hover:text-orange-400 transition-colors">
