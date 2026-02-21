@@ -135,7 +135,7 @@ const MONTH_NAMES = [
   "July", "August", "September", "October", "November", "December",
 ];
 
-const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const BUSINESS_DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -483,12 +483,25 @@ export default function ExecutiveCalendarPage() {
   /* ---- Calendar grid computation ---- */
 
   const calendarDays = useMemo(() => {
-    // First day of the month (0=Sun, 1=Mon, ...)
-    const firstDay = new Date(year, month - 1, 1).getDay();
-    // Total days in this month
-    const daysInMonth = new Date(year, month, 0).getDate();
-    // Total days in previous month (for leading padding)
-    const daysInPrevMonth = new Date(year, month - 1, 0).getDate();
+    const monthFirst = new Date(year, month - 1, 1);
+    const monthLast = new Date(year, month, 0);
+
+    // Start on Monday of the first displayed week.
+    const start = new Date(monthFirst);
+    const startDow = start.getDay(); // 0=Sun..6=Sat
+    const backToMonday = (startDow + 6) % 7;
+    start.setDate(start.getDate() - backToMonday);
+
+    // End on Friday of the last displayed week.
+    const end = new Date(monthLast);
+    const endDow = end.getDay();
+    if (endDow === 6) {
+      end.setDate(end.getDate() - 1); // Sat -> Fri
+    } else if (endDow === 0) {
+      end.setDate(end.getDate() - 2); // Sun -> Fri
+    } else {
+      end.setDate(end.getDate() + (5 - endDow)); // Weekday -> upcoming Fri
+    }
 
     const days: {
       date: string;
@@ -496,33 +509,24 @@ export default function ExecutiveCalendarPage() {
       isCurrentMonth: boolean;
       isToday: boolean;
     }[] = [];
-
     const todayStr = getToday();
+    const cursor = new Date(start);
 
-    // Leading days from previous month
-    for (let i = firstDay - 1; i >= 0; i--) {
-      const d = daysInPrevMonth - i;
-      const prevMonth = month === 1 ? 12 : month - 1;
-      const prevYear = month === 1 ? year - 1 : year;
-      const dateStr = `${prevYear}-${String(prevMonth).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-      days.push({ date: dateStr, day: d, isCurrentMonth: false, isToday: dateStr === todayStr });
-    }
-
-    // Current month days
-    for (let d = 1; d <= daysInMonth; d++) {
-      const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-      days.push({ date: dateStr, day: d, isCurrentMonth: true, isToday: dateStr === todayStr });
-    }
-
-    // Trailing days to fill the last row
-    const remaining = 7 - (days.length % 7);
-    if (remaining < 7) {
-      for (let d = 1; d <= remaining; d++) {
-        const nextMonth = month === 12 ? 1 : month + 1;
-        const nextYear = month === 12 ? year + 1 : year;
-        const dateStr = `${nextYear}-${String(nextMonth).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-        days.push({ date: dateStr, day: d, isCurrentMonth: false, isToday: dateStr === todayStr });
+    while (cursor <= end) {
+      const dow = cursor.getDay();
+      if (dow !== 0 && dow !== 6) {
+        const y = cursor.getFullYear();
+        const m = cursor.getMonth() + 1;
+        const d = cursor.getDate();
+        const dateStr = `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+        days.push({
+          date: dateStr,
+          day: d,
+          isCurrentMonth: cursor.getMonth() === month - 1,
+          isToday: dateStr === todayStr,
+        });
       }
+      cursor.setDate(cursor.getDate() + 1);
     }
 
     return days;
@@ -891,8 +895,8 @@ export default function ExecutiveCalendarPage() {
       {/* Calendar Grid */}
       <div className="bg-surface/50 border border-t-border rounded-xl p-3 sm:p-4">
         {/* Day-of-week header */}
-        <div className="grid grid-cols-7 gap-1 mb-1">
-          {DAY_NAMES.map((d) => (
+        <div className="grid grid-cols-5 gap-2 mb-2">
+          {BUSINESS_DAY_NAMES.map((d) => (
             <div key={d} className="text-xs text-muted font-medium text-center py-1">
               {d}
             </div>
@@ -900,7 +904,7 @@ export default function ExecutiveCalendarPage() {
         </div>
 
         {/* Calendar cells */}
-        <div className="grid grid-cols-7 gap-1">
+        <div className="grid grid-cols-5 gap-2">
           {calendarDays.map((cell) => {
             const dayData = getFilteredDayTotal(cell.date);
             const isSelected = selectedDate === cell.date;
@@ -911,7 +915,7 @@ export default function ExecutiveCalendarPage() {
                 onClick={() =>
                   setSelectedDate(selectedDate === cell.date ? null : cell.date)
                 }
-                className={`relative min-h-[100px] p-2 rounded-lg text-left transition-colors flex flex-col ${
+                className={`relative min-h-[128px] p-3 rounded-lg text-left transition-colors flex flex-col ${
                   cell.isCurrentMonth ? "" : "opacity-30"
                 } ${
                   cell.isToday
@@ -935,7 +939,7 @@ export default function ExecutiveCalendarPage() {
                 {/* Revenue amount */}
                 {dayData.value > 0 && (
                   <div className="flex-1 flex flex-col items-center justify-center">
-                    <span className="text-sm sm:text-base font-bold text-foreground">
+                    <span className="text-base sm:text-lg font-bold text-foreground">
                       {formatCompact(dayData.value)}
                     </span>
 

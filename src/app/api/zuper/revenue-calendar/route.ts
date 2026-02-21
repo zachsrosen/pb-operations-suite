@@ -290,9 +290,11 @@ function normalizeTentativeSpanDays(days?: number | null): number {
 }
 
 function getZuperJobDetailsUrl(jobUid: string): string {
-  const webBaseUrl = process.env.ZUPER_WEB_URL ||
+  const rawBaseUrl = process.env.ZUPER_WEB_URL ||
     (process.env.ZUPER_API_URL?.replace("/api", "") || "https://us-west-1c.zuperpro.com");
-  return `${webBaseUrl}/jobs/${jobUid}/details`;
+  const trimmedBase = rawBaseUrl.replace(/\/+$/, "");
+  const normalizedBase = trimmedBase.endsWith("/app") ? trimmedBase.slice(0, -4) : trimmedBase;
+  return `${normalizedBase}/jobs/${encodeURIComponent(jobUid)}/details`;
 }
 
 function listBusinessDatesInclusive(startDate: string, endDate: string): string[] {
