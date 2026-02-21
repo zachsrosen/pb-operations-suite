@@ -16,6 +16,23 @@ export interface UpdateEntry {
 
 export const UPDATES: UpdateEntry[] = [
   {
+    version: "1.51.0",
+    date: "2026-02-21",
+    title: "Planset BOM Extraction & Product Catalog Comparison",
+    description: "New AI-powered Planset BOM tool extracts a full bill of materials from any stamped PB planset PDF using Claude, with inline editing and cross-reference against HubSpot, Zuper, and Zoho catalogs. Also fixes role-based access so testing suite dashboards are reachable by all manager-level roles.",
+    changes: [
+      { type: "feature", text: "Planset BOM dashboard: drop a planset PDF and Claude extracts the full BOM automatically (modules, inverters, racking, BOS, storage, EV chargers, monitoring)" },
+      { type: "feature", text: "BOM table is fully editable inline — add, remove, and correct rows before exporting" },
+      { type: "feature", text: "Catalog coverage dots show which BOM items are present in HubSpot, Zuper, and Zoho product catalogs" },
+      { type: "feature", text: "Export BOM as CSV or copy as Markdown table with catalog status columns" },
+      { type: "feature", text: "Google Drive link import — paste a share URL to extract from a Drive-hosted planset" },
+      { type: "feature", text: "Paste JSON fallback for manual BOM import" },
+      { type: "improvement", text: "PDF upload streams server-side to Vercel Blob, bypassing the 4.5MB serverless body limit — supports plansets up to 35 MB" },
+      { type: "fix", text: "Testing suite dashboards (BOM, Product Comparison, QC, Pipeline, etc.) now accessible to OPERATIONS_MANAGER and PROJECT_MANAGER roles — previously blocked by missing route permissions" },
+      { type: "internal", text: "Added /api/bom/upload (streaming PUT to Vercel Blob) and /api/bom/extract (Claude claude-opus-4-5 with native PDF document block)" },
+    ],
+  },
+  {
     version: "1.50.0",
     date: "2026-02-19",
     title: "Install Director Notifications & Automated Changelog Emailing",
