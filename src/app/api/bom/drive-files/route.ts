@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
       `'${folderId}' in parents and mimeType='application/pdf' and trashed=false`
     );
     const fields = encodeURIComponent("files(id,name,modifiedTime,size)");
-    const url = `https://www.googleapis.com/drive/v3/files?q=${query}&fields=${fields}&orderBy=modifiedTime+desc`;
+    const url = `https://www.googleapis.com/drive/v3/files?q=${query}&fields=${fields}&orderBy=modifiedTime%20desc`;
 
     const driveRes = await fetch(url, {
       headers: { Authorization: `Bearer ${token}` },
