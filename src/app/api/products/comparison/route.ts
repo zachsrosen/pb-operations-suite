@@ -801,6 +801,7 @@ async function fetchZuperProducts(): Promise<{ products: NormalizedProduct[]; er
             price: parsed.price,
             status: parsed.status,
             description: parsed.description,
+            url: parsed.url,
             key,
             normalizedName: normalizeText(parsed.name),
           };
