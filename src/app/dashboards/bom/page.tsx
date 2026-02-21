@@ -840,6 +840,32 @@ function BomDashboardInner() {
     }
   }, [items, bom, addToast]);
 
+  /* ---- Export PDF ---- */
+  const handleExportPdf = useCallback(async () => {
+    if (!bom) return;
+    try {
+      const res = await fetch("/api/bom/export-pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bomData: { ...bom, items: items.map(({ id: _id, ...rest }) => rest) },
+          dealName: linkedProject?.dealname,
+          version: savedVersion ?? undefined,
+        }),
+      });
+      if (!res.ok) throw new Error(`PDF export failed (${res.status})`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `BOM-${(bom.project?.customer ?? linkedProject?.dealname ?? "export").replace(/\s+/g, "_")}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      addToast({ type: "error", title: e instanceof Error ? e.message : "PDF export failed" });
+    }
+  }, [bom, items, linkedProject, savedVersion, addToast]);
+
   /* ---- Grouped items for render ---- */
   const grouped = CATEGORY_ORDER.reduce<Partial<Record<BomCategory, BomItem[]>>>(
     (acc, cat) => {
@@ -860,7 +886,20 @@ function BomDashboardInner() {
   }).length;
 
   return (
-    <DashboardShell title="Planset BOM" accentColor="cyan">
+    <>
+      <style>{`
+        @media print {
+          nav, header, [data-dashboard-shell-header], [data-dashboard-shell-nav],
+          .action-bar, .history-panel, .diff-panel, .import-panel {
+            display: none !important;
+          }
+          body { background: white !important; }
+          .bom-table-section { page-break-inside: avoid; }
+          table { border-collapse: collapse; width: 100%; }
+          th, td { border: 1px solid #e5e7eb; padding: 4px 8px; font-size: 11px; }
+        }
+      `}</style>
+      <DashboardShell title="Planset BOM" accentColor="cyan">
       <div className="space-y-6 px-4 pb-10">
 
         {/* ---- Import Panel ---- */}
@@ -1284,6 +1323,19 @@ function BomDashboardInner() {
               >
                 ↑ Save to Inventory
               </button>
+              <button
+                onClick={handleExportPdf}
+                disabled={!bom}
+                className="px-4 py-2 rounded-lg bg-surface border border-t-border text-sm text-foreground hover:bg-surface-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                ↓ Export PDF
+              </button>
+              <button
+                onClick={() => window.print()}
+                className="px-4 py-2 rounded-lg bg-surface border border-t-border text-sm text-foreground hover:bg-surface-2 transition-colors"
+              >
+                🖨 Print
+              </button>
             </div>
 
             {/* ---- History Panel ---- */}
@@ -1646,7 +1698,8 @@ function BomDashboardInner() {
           </>
         )}
       </div>
-    </DashboardShell>
+      </DashboardShell>
+    </>
   );
 }
 
