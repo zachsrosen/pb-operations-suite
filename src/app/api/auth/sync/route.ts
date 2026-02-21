@@ -15,6 +15,25 @@ function withEffectiveRoleCookie(response: NextResponse, role: string): NextResp
   return response;
 }
 
+function withImpersonationStateCookie(response: NextResponse, isImpersonating: boolean): NextResponse {
+  response.cookies.set("pb_is_impersonating", isImpersonating ? "1" : "0", {
+    path: "/",
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    maxAge: 60 * 60 * 8,
+  });
+  return response;
+}
+
+function withRoleAndImpersonationCookies(
+  response: NextResponse,
+  role: string,
+  isImpersonating: boolean
+): NextResponse {
+  return withImpersonationStateCookie(withEffectiveRoleCookie(response, role), isImpersonating);
+}
+
 /**
  * POST /api/auth/sync
  * Sync the current user to the database and return their role
@@ -37,9 +56,10 @@ export async function POST() {
 
     if (!user) {
       // Database not configured, return default role
-      return withEffectiveRoleCookie(
+      return withRoleAndImpersonationCookies(
         NextResponse.json({ role: "VIEWER", synced: false }),
-        "VIEWER"
+        "VIEWER",
+        false
       );
     }
 
@@ -60,7 +80,7 @@ export async function POST() {
       userAgent,
     });
 
-    return withEffectiveRoleCookie(NextResponse.json({
+    return withRoleAndImpersonationCookies(NextResponse.json({
       role: normalizedRole,
       synced: true,
       user: {
@@ -69,12 +89,13 @@ export async function POST() {
         name: user.name,
         role: normalizedRole,
       }
-    }), normalizedRole);
+    }), normalizedRole, false);
   } catch (error) {
     console.error("Error syncing user:", error);
-    return withEffectiveRoleCookie(
+    return withRoleAndImpersonationCookies(
       NextResponse.json({ role: "VIEWER", synced: false, error: "Sync failed" }),
-      "VIEWER"
+      "VIEWER",
+      false
     );
   }
 }
@@ -95,9 +116,10 @@ export async function GET() {
     const user = await getUserByEmail(session.user.email);
 
     if (!user) {
-      return withEffectiveRoleCookie(
+      return withRoleAndImpersonationCookies(
         NextResponse.json({ role: "VIEWER", found: false }),
-        "VIEWER"
+        "VIEWER",
+        false
       );
     }
 
@@ -109,7 +131,7 @@ export async function GET() {
 
       if (impersonatedUser) {
         const normalizedRole = normalizeRole(impersonatedUser.role as UserRole);
-        return withEffectiveRoleCookie(NextResponse.json({
+        return withRoleAndImpersonationCookies(NextResponse.json({
           role: normalizedRole,
           found: true,
           isImpersonating: true,
@@ -130,12 +152,12 @@ export async function GET() {
             email: user.email,
             name: user.name,
           },
-        }), normalizedRole);
+        }), normalizedRole, true);
       }
     }
 
     const normalizedRole = normalizeRole(user.role as UserRole);
-    return withEffectiveRoleCookie(NextResponse.json({
+    return withRoleAndImpersonationCookies(NextResponse.json({
       role: normalizedRole,
       found: true,
       isImpersonating: false,
@@ -145,12 +167,13 @@ export async function GET() {
         name: user.name,
         role: normalizedRole,
       }
-    }), normalizedRole);
+    }), normalizedRole, false);
   } catch (error) {
     console.error("Error fetching user role:", error);
-    return withEffectiveRoleCookie(
+    return withRoleAndImpersonationCookies(
       NextResponse.json({ role: "VIEWER", found: false, error: "Fetch failed" }),
-      "VIEWER"
+      "VIEWER",
+      false
     );
   }
 }

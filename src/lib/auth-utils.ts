@@ -5,7 +5,7 @@
  */
 
 import { auth } from "@/auth";
-import { getUserByEmail } from "./db";
+import { getUserByEmail, prisma } from "./db";
 import { canAccessRoute, normalizeRole, UserRole, ROLE_PERMISSIONS } from "./role-permissions";
 
 export interface SessionUser {
@@ -30,6 +30,23 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
   const dbUser = await getUserByEmail(session.user.email);
 
   if (dbUser) {
+    if (dbUser.role === "ADMIN" && dbUser.impersonatingUserId && prisma) {
+      const impersonatedUser = await prisma.user.findUnique({
+        where: { id: dbUser.impersonatingUserId },
+      });
+
+      if (impersonatedUser) {
+        const normalizedImpersonatedRole = normalizeRole(impersonatedUser.role as UserRole);
+        return {
+          id: impersonatedUser.id,
+          email: impersonatedUser.email,
+          name: impersonatedUser.name ?? undefined,
+          image: impersonatedUser.image ?? undefined,
+          role: normalizedImpersonatedRole,
+        };
+      }
+    }
+
     const normalizedRole = normalizeRole(dbUser.role as UserRole);
     return {
       id: dbUser.id,

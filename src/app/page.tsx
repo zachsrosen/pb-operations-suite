@@ -206,7 +206,10 @@ export default function Home() {
     refetchInterval: 5 * 60 * 1000,
   });
 
-  const rawProjects = projectsQuery.data?.projects ?? [];
+  const rawProjects = useMemo(
+    () => projectsQuery.data?.projects ?? [],
+    [projectsQuery.data?.projects]
+  );
   const loading = projectsQuery.isLoading;
   const error = projectsQuery.error ? "Failed to load data" : null;
   const isStale = projectsQuery.data?.stale ?? false;
@@ -221,21 +224,19 @@ export default function Home() {
       .catch(() => {});
   }, []);
 
-  useEffect(() => {
-    if (!userRole) return; // Wait for role to load before redirecting
-    if (userRole === "VIEWER") {
-      window.location.replace("/unassigned");
-    }
-    if (userRole === "SALES") {
-      window.location.replace("/dashboards/site-survey-scheduler");
-    }
-    if (userRole === "OPERATIONS" || userRole === "OPERATIONS_MANAGER") {
-      window.location.replace("/suites/operations");
-    }
-    if (userRole === "TECH_OPS") {
-      window.location.replace("/suites/department");
-    }
+  const redirectTarget = useMemo(() => {
+    if (!userRole) return null;
+    if (userRole === "VIEWER") return "/unassigned";
+    if (userRole === "SALES") return "/dashboards/site-survey-scheduler";
+    if (userRole === "OPERATIONS" || userRole === "OPERATIONS_MANAGER") return "/suites/operations";
+    if (userRole === "TECH_OPS") return "/suites/department";
+    return null;
   }, [userRole]);
+
+  useEffect(() => {
+    if (!redirectTarget) return;
+    window.location.replace(redirectTarget);
+  }, [redirectTarget]);
 
   const { connected, reconnecting } = useSSE(null, { cacheKeyFilter: "projects" });
 
@@ -288,6 +289,14 @@ export default function Home() {
       return isAdmin;
     });
   }, [userRole]);
+
+  if (!userRole || redirectTarget) {
+    return (
+      <div className="min-h-screen bg-background text-foreground flex items-center justify-center px-6">
+        <div className="text-sm text-muted">Loading workspace...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background text-foreground">

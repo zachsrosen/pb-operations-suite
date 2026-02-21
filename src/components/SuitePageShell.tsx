@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { SUITE_NAV_ENTRIES } from "@/lib/suite-nav";
-import { canAccessRoute, type UserRole } from "@/lib/role-permissions";
+import { getSuiteSwitcherEntriesForRole, SUITE_NAV_ENTRIES } from "@/lib/suite-nav";
+import { canAccessRoute, getDefaultRouteForRole, type UserRole } from "@/lib/role-permissions";
 
 export interface SuitePageCard {
   href: string;
@@ -54,7 +54,7 @@ export default function SuitePageShell({
   };
 
   const visibleSuites = role
-    ? SUITE_NAV_ENTRIES.filter((suite) => canAccessRoute(role, suite.href))
+    ? getSuiteSwitcherEntriesForRole(role)
     : SUITE_NAV_ENTRIES;
 
   const visibleCards = role
@@ -66,12 +66,15 @@ export default function SuitePageShell({
     : cards;
 
   const sections = groupCards(visibleCards);
+  const backHref = role
+    ? (canAccessRoute(role, "/") ? "/" : getDefaultRouteForRole(role))
+    : "/";
 
   return (
     <div className="min-h-screen bg-background text-foreground">
       <main className="max-w-7xl mx-auto px-6 py-8">
         <div className="mb-6">
-          <Link href="/" className="text-xs text-muted hover:text-foreground transition-colors">
+          <Link href={backHref} className="text-xs text-muted hover:text-foreground transition-colors">
             &larr; Back to Dashboard
           </Link>
           <h1 className="text-2xl font-bold mt-3">{title}</h1>

@@ -14,6 +14,25 @@ function withEffectiveRoleCookie(response: NextResponse, role: string): NextResp
   return response;
 }
 
+function withImpersonationStateCookie(response: NextResponse, isImpersonating: boolean): NextResponse {
+  response.cookies.set("pb_is_impersonating", isImpersonating ? "1" : "0", {
+    path: "/",
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    maxAge: 60 * 60 * 8,
+  });
+  return response;
+}
+
+function withRoleAndImpersonationCookies(
+  response: NextResponse,
+  role: string,
+  isImpersonating: boolean
+): NextResponse {
+  return withImpersonationStateCookie(withEffectiveRoleCookie(response, role), isImpersonating);
+}
+
 /**
  * POST /api/admin/impersonate
  * Start impersonating another user (admin only)
@@ -82,7 +101,7 @@ export async function POST(request: NextRequest) {
     });
 
     const normalizedTargetRole = normalizeRole(targetUser.role as UserRole);
-    return withEffectiveRoleCookie(NextResponse.json({
+    return withRoleAndImpersonationCookies(NextResponse.json({
       success: true,
       impersonating: {
         id: targetUser.id,
@@ -95,7 +114,7 @@ export async function POST(request: NextRequest) {
         email: adminUser.email,
       },
       startedAt: new Date().toISOString(),
-    }), normalizedTargetRole);
+    }), normalizedTargetRole, true);
   } catch (error) {
     console.error("Error starting impersonation:", error);
     return NextResponse.json({ error: "Failed to start impersonation" }, { status: 500 });
@@ -132,9 +151,10 @@ export async function DELETE() {
   }
 
   if (!isCurrentlyImpersonating) {
-    return withEffectiveRoleCookie(
+    return withRoleAndImpersonationCookies(
       NextResponse.json({ success: true, message: "Not currently impersonating" }),
-      normalizedRole
+      normalizedRole,
+      false
     );
   }
 
@@ -169,11 +189,11 @@ export async function DELETE() {
       });
     }
 
-    return withEffectiveRoleCookie(NextResponse.json({
+    return withRoleAndImpersonationCookies(NextResponse.json({
       success: true,
       message: "Impersonation ended",
       endedAt: new Date().toISOString(),
-    }), normalizedRole);
+    }), normalizedRole, false);
   } catch (error) {
     console.error("Error ending impersonation:", error);
     return NextResponse.json({ error: "Failed to end impersonation" }, { status: 500 });
@@ -207,9 +227,10 @@ export async function GET() {
   const normalizedAdminRole = normalizeRole(user.role as UserRole);
 
   if (!user.impersonatingUserId) {
-    return withEffectiveRoleCookie(
+    return withRoleAndImpersonationCookies(
       NextResponse.json({ isImpersonating: false }),
-      normalizedAdminRole
+      normalizedAdminRole,
+      false
     );
   }
 
@@ -224,14 +245,15 @@ export async function GET() {
       where: { id: user.id },
       data: { impersonatingUserId: null },
     });
-    return withEffectiveRoleCookie(
+    return withRoleAndImpersonationCookies(
       NextResponse.json({ isImpersonating: false }),
-      normalizedAdminRole
+      normalizedAdminRole,
+      false
     );
   }
 
   const normalizedTargetRole = normalizeRole(targetUser.role as UserRole);
-  return withEffectiveRoleCookie(NextResponse.json({
+  return withRoleAndImpersonationCookies(NextResponse.json({
     isImpersonating: true,
     impersonating: {
       id: targetUser.id,
@@ -244,5 +266,5 @@ export async function GET() {
       email: user.email,
       name: user.name,
     },
-  }), normalizedTargetRole);
+  }), normalizedTargetRole, true);
 }

@@ -1,7 +1,12 @@
 import * as Sentry from "@sentry/nextjs";
 import { auth } from "@/auth";
 import { NextRequest, NextResponse } from "next/server";
-import { ROLE_PERMISSIONS, canAccessRoute, normalizeRole, type UserRole } from "@/lib/role-permissions";
+import {
+  canAccessRoute,
+  getDefaultRouteForRole,
+  normalizeRole,
+  type UserRole,
+} from "@/lib/role-permissions";
 
 // Routes that are always accessible (login, auth callbacks)
 const ALWAYS_ALLOWED = ["/login", "/api/auth", "/maintenance"];
@@ -65,40 +70,21 @@ function nextWithRequestId(requestId: string, request: NextRequest): NextRespons
   return response;
 }
 
-/**
- * Get the default redirect route for a role (first dashboard route, or /)
- */
-function getDefaultRouteForRole(role: UserRole): string {
-  const effectiveRole = normalizeRole(role);
-  const permissions = ROLE_PERMISSIONS[effectiveRole];
-  if (!permissions || permissions.allowedRoutes.includes("*")) return "/";
-
-  // Prefer suite landing pages when available
-  const suiteRoute = permissions.allowedRoutes.find(r => r.startsWith("/suites/"));
-  if (suiteRoute) return suiteRoute;
-
-  // Find first dashboard route as default landing page
-  const dashboardRoute = permissions.allowedRoutes.find(r => r.startsWith("/dashboards/"));
-  if (dashboardRoute) return dashboardRoute;
-
-  // Fallback to the first explicitly allowed route
-  return permissions.allowedRoutes[0] || "/";
-}
-
 export default auth((req) => {
   const requestId = generateRequestId();
   const isLoggedIn = !!req.auth;
   const tokenRole = req.auth?.user?.role as UserRole | undefined;
   const cookieRole = req.cookies.get("pb_effective_role")?.value as UserRole | undefined;
+  const isImpersonatingCookie = req.cookies.get("pb_is_impersonating")?.value === "1";
   // Impersonation cookie (set server-side, httpOnly) takes precedence only
   // when the authenticated user is ADMIN. This prevents privilege escalation
-  // if the cookie is tampered with on a non-admin session. Additionally,
-  // never let the cookie elevate to ADMIN or OWNER.
-  // Ignore VIEWER cookie for admins so transient sync errors cannot lock out
-  // privileged users from dashboards.
+  // if the cookie is tampered with on a non-admin session.
+  // Never let the cookie elevate to ADMIN/OWNER. VIEWER is accepted only
+  // while the dedicated impersonation-state cookie is active.
   const isAdminToken = tokenRole === "ADMIN";
   const isSafeCookieRole = cookieRole && cookieRole !== "ADMIN" && cookieRole !== "OWNER";
-  const shouldUseCookieRole = isAdminToken && isSafeCookieRole && cookieRole !== "VIEWER";
+  const shouldUseCookieRole =
+    isAdminToken && !!isSafeCookieRole && (cookieRole !== "VIEWER" || isImpersonatingCookie);
   const rawRole = (shouldUseCookieRole ? cookieRole : tokenRole) || "VIEWER";
   const userRole = normalizeRole(rawRole);
   const pathname = req.nextUrl.pathname;

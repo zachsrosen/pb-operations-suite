@@ -119,6 +119,14 @@ const TESTING_DASHBOARDS: SuitePageCard[] = [
 
 const PROTOTYPES: SuitePageCard[] = [
   {
+    href: "/prototypes/home-refresh",
+    title: "Home Refresh Prototypes",
+    description: "10 homepage replacement concepts with distinct layout and visual directions.",
+    tag: "PROTOTYPE",
+    tagColor: "bg-pink-500/20 text-pink-400 border-pink-500/30",
+    section: "Prototypes",
+  },
+  {
     href: "/prototypes/layout-refresh",
     title: "Layout Refresh Prototypes",
     description: "Replacement suite layouts for operations, department, and executive views.",

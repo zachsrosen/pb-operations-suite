@@ -329,6 +329,24 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
 };
 
 /**
+ * Get the default landing route for a role.
+ * Prefers suite pages, then dashboard pages, then first explicit route.
+ */
+export function getDefaultRouteForRole(role: UserRole): string {
+  const effectiveRole = normalizeRole(role);
+  const permissions = ROLE_PERMISSIONS[effectiveRole];
+  if (!permissions || permissions.allowedRoutes.includes("*")) return "/";
+
+  const suiteRoute = permissions.allowedRoutes.find((r) => r.startsWith("/suites/"));
+  if (suiteRoute) return suiteRoute;
+
+  const dashboardRoute = permissions.allowedRoutes.find((r) => r.startsWith("/dashboards/"));
+  if (dashboardRoute) return dashboardRoute;
+
+  return permissions.allowedRoutes[0] || "/";
+}
+
+/**
  * Routes restricted to ADMIN role only.
  * Policy: new pages/features should be added here first (admin-only) until
  * explicitly approved for broader roles.
