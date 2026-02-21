@@ -9,6 +9,7 @@ const hubspotClient = new Client({
   accessToken: process.env.HUBSPOT_ACCESS_TOKEN,
 });
 const HUBSPOT_PORTAL_ID = process.env.HUBSPOT_PORTAL_ID || "21710069";
+const HUBSPOT_PIPELINE_SERVICE = process.env.HUBSPOT_PIPELINE_SERVICE || "23928924";
 
 // Revenue-generating job categories
 const REVENUE_CATEGORIES = [
@@ -181,8 +182,8 @@ function getTeamName(job: any): string {
 // Batch fetch HubSpot deals for dealname and amount
 async function fetchDealValues(
   dealIds: string[]
-): Promise<Map<string, { dealName: string; amount: number; dealUrl: string }>> {
-  const dealMap = new Map<string, { dealName: string; amount: number; dealUrl: string }>();
+): Promise<Map<string, { dealName: string; amount: number; dealUrl: string; pipelineId: string | null }>> {
+  const dealMap = new Map<string, { dealName: string; amount: number; dealUrl: string; pipelineId: string | null }>();
   if (dealIds.length === 0) return dealMap;
 
   const batchSize = 100;
@@ -192,7 +193,7 @@ async function fetchDealValues(
     try {
       const response = await hubspotClient.crm.deals.batchApi.read({
         inputs: batch.map((id) => ({ id })),
-        properties: ["dealname", "amount", "project_number"],
+        properties: ["dealname", "amount", "project_number", "pipeline"],
         propertiesWithHistory: [],
       });
 
@@ -202,6 +203,7 @@ async function fetchDealValues(
           dealName: deal.properties.dealname || "",
           amount,
           dealUrl: `https://app.hubspot.com/contacts/${HUBSPOT_PORTAL_ID}/record/0-3/${deal.id}`,
+          pipelineId: deal.properties.pipeline || null,
         });
       }
     } catch (err) {
@@ -431,6 +433,11 @@ export async function GET(request: NextRequest) {
       const deal = dealId ? dealMap.get(dealId) : undefined;
       const dealAmount = deal?.amount || 0;
       if (dealAmount <= 0) continue;
+      const isServiceVisit = category.key === "service";
+      const isServiceDeal = deal?.pipelineId === HUBSPOT_PIPELINE_SERVICE;
+      // Strict guardrail: a Service Visit only counts when the linked deal
+      // is actually in the HubSpot Service pipeline.
+      if (isServiceVisit && !isServiceDeal) continue;
 
       confirmedJobs.push({
         jobUid: raw.job_uid || "",
