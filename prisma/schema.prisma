@@ -679,3 +679,24 @@ model BugReport {
   @@index([reporterEmail])
   @@index([createdAt])
 }
+
+// ===========================================
+// BOM HISTORY
+// ===========================================
+
+model ProjectBomSnapshot {
+  id          String   @id @default(cuid())
+  dealId      String                        // HubSpot deal ID
+  dealName    String
+  version     Int                           // 1, 2, 3… increments per dealId
+  bomData     Json                          // full BomData object (project + items + validation)
+  sourceFile  String?                       // original PDF filename
+  blobUrl     String?                       // Vercel Blob URL of the source PDF
+  savedBy     String                        // user email
+
+  createdAt   DateTime @default(now())
+
+  @@index([dealId])
+  @@index([dealId, version])
+  @@index([createdAt])
+}

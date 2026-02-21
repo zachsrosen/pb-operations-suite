@@ -92,6 +92,33 @@ interface CatalogStatus {
   zoho: boolean;
 }
 
+/* Saved snapshot row from /api/bom/history */
+interface BomSnapshot {
+  id: string;
+  dealId: string;
+  dealName: string;
+  version: number;
+  bomData: BomData;
+  sourceFile: string | null;
+  blobUrl: string | null;
+  savedBy: string | null;
+  createdAt: string;
+}
+
+/* One row in the diff view */
+type DiffStatus = "added" | "removed" | "changed" | "unchanged";
+interface DiffRow {
+  status: DiffStatus;
+  category: string;
+  brand: string | null;
+  model: string | null;
+  description: string;
+  qtyA?: number | string;
+  qtyB?: number | string;
+  specA?: string | number | null;
+  specB?: string | number | null;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Constants                                                           */
 /* ------------------------------------------------------------------ */
@@ -217,6 +244,56 @@ function assignIds(items: Omit<BomItem, "id">[]): BomItem[] {
 }
 
 /* ------------------------------------------------------------------ */
+/*  BOM diff helper                                                     */
+/* ------------------------------------------------------------------ */
+
+/** Compare two BomData item arrays, matching by (category, brand, model). */
+function diffBoms(itemsA: Omit<BomItem, "id">[], itemsB: Omit<BomItem, "id">[]): DiffRow[] {
+  const key = (i: Omit<BomItem, "id">) =>
+    `${i.category}||${(i.brand || "").trim().toLowerCase()}||${(i.model || "").trim().toLowerCase()}`;
+
+  const mapA = new Map<string, Omit<BomItem, "id">>();
+  const mapB = new Map<string, Omit<BomItem, "id">>();
+  for (const i of itemsA) mapA.set(key(i), i);
+  for (const i of itemsB) mapB.set(key(i), i);
+
+  const rows: DiffRow[] = [];
+  const allKeys = new Set([...mapA.keys(), ...mapB.keys()]);
+
+  for (const k of allKeys) {
+    const a = mapA.get(k);
+    const b = mapB.get(k);
+    if (a && !b) {
+      rows.push({ status: "removed", category: a.category, brand: a.brand, model: a.model, description: a.description, qtyA: a.qty, specA: a.unitSpec });
+    } else if (!a && b) {
+      rows.push({ status: "added", category: b.category, brand: b.brand, model: b.model, description: b.description, qtyB: b.qty, specB: b.unitSpec });
+    } else if (a && b) {
+      const qtyChanged = String(a.qty) !== String(b.qty);
+      const specChanged = String(a.unitSpec ?? "") !== String(b.unitSpec ?? "");
+      rows.push({
+        status: qtyChanged || specChanged ? "changed" : "unchanged",
+        category: b.category,
+        brand: b.brand,
+        model: b.model,
+        description: b.description,
+        qtyA: a.qty, qtyB: b.qty,
+        specA: a.unitSpec, specB: b.unitSpec,
+      });
+    }
+  }
+
+  // Sort: changed first, then added, removed, unchanged; within each group by category order
+  const statusOrder: Record<DiffStatus, number> = { changed: 0, added: 1, removed: 2, unchanged: 3 };
+  const catOrder = (c: string) => CATEGORY_ORDER.indexOf(c as BomCategory) ?? 99;
+  rows.sort((a, b) =>
+    statusOrder[a.status] - statusOrder[b.status] ||
+    catOrder(a.category) - catOrder(b.category) ||
+    (a.model || "").localeCompare(b.model || "")
+  );
+  return rows;
+}
+
+/* ------------------------------------------------------------------ */
 /*  Component                                                           */
 /* ------------------------------------------------------------------ */
 
@@ -249,6 +326,17 @@ export default function BomDashboard() {
   const [linkedProject, setLinkedProject] = useState<ProjectResult | null>(null);
   const [searchLoading, setSearchLoading] = useState(false);
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // History / snapshots
+  const [snapshots, setSnapshots] = useState<BomSnapshot[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [savedVersion, setSavedVersion] = useState<number | null>(null);
+  // Diff / compare
+  const [compareA, setCompareA] = useState<BomSnapshot | null>(null);
+  const [compareB, setCompareB] = useState<BomSnapshot | null>(null);
+  const [showDiff, setShowDiff] = useState(false);
+  const diffRows = compareA && compareB ? diffBoms(compareA.bomData.items, compareB.bomData.items) : [];
 
   // Product catalog comparison data
   const [comparisonRows, setComparisonRows] = useState<ComparisonRow[]>([]);
@@ -288,6 +376,50 @@ export default function BomDashboard() {
     }
     setCatalogStatus(buildCatalogStatus(items, comparisonRows));
   }, [items, comparisonRows]);
+
+  /* ---- Load history when a project is linked ---- */
+  useEffect(() => {
+    if (!linkedProject) { setSnapshots([]); setSavedVersion(null); return; }
+    setHistoryLoading(true);
+    fetch(`/api/bom/history?dealId=${encodeURIComponent(linkedProject.hs_object_id)}`)
+      .then((r) => r.ok ? r.json() : Promise.reject(r.status))
+      .then((data: { snapshots: BomSnapshot[] }) => setSnapshots(data.snapshots))
+      .catch(() => {/* silent */})
+      .finally(() => setHistoryLoading(false));
+  }, [linkedProject]);
+
+  /* ---- Save snapshot helper ---- */
+  const saveSnapshot = useCallback(async (bomData: BomData, sourceFile?: string, blobUrl?: string) => {
+    if (!linkedProject) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/bom/history", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dealId: linkedProject.hs_object_id,
+          dealName: linkedProject.dealname,
+          bomData,
+          sourceFile,
+          blobUrl,
+        }),
+      });
+      if (!res.ok) throw new Error(`Save failed (${res.status})`);
+      const saved = await res.json() as { id: string; version: number; createdAt: string };
+      setSavedVersion(saved.version);
+      // Reload history list
+      const histRes = await fetch(`/api/bom/history?dealId=${encodeURIComponent(linkedProject.hs_object_id)}`);
+      if (histRes.ok) {
+        const histData = await histRes.json() as { snapshots: BomSnapshot[] };
+        setSnapshots(histData.snapshots);
+      }
+      addToast({ type: "success", title: `BOM v${saved.version} saved to ${linkedProject.dealname}` });
+    } catch (e) {
+      addToast({ type: "error", title: e instanceof Error ? e.message : "Save failed" });
+    } finally {
+      setSaving(false);
+    }
+  }, [linkedProject, addToast]);
 
   /* ---- Load BOM helper ---- */
   const loadBomData = useCallback((data: BomData) => {
@@ -382,13 +514,17 @@ export default function BomDashboard() {
       const data = await safeFetchBom(res);
       loadBomData(data);
       addToast({ type: "success", title: `BOM extracted from ${uploadFile.name}` });
+      // Auto-save snapshot if a project is linked
+      if (linkedProject) {
+        await saveSnapshot(data, uploadFile.name, blobUrl);
+      }
     } catch (e) {
       setImportError(e instanceof Error ? e.message : "Upload failed");
     } finally {
       setExtracting(false);
       setUploadProgress("");
     }
-  }, [uploadFile, loadBomData, safeFetchBom, addToast]);
+  }, [uploadFile, loadBomData, safeFetchBom, addToast, linkedProject, saveSnapshot]);
 
   /* ---- Extract from Google Drive URL ---- */
   const handleExtractDrive = useCallback(async () => {
@@ -417,12 +553,16 @@ export default function BomDashboard() {
       const data = await safeFetchBom(proxyRes);
       loadBomData(data);
       addToast({ type: "success", title: "BOM extracted from Google Drive" });
+      // Auto-save snapshot if a project is linked
+      if (linkedProject) {
+        await saveSnapshot(data, driveUrl);
+      }
     } catch (e) {
       setImportError(e instanceof Error ? e.message : "Drive extraction failed");
     } finally {
       setExtracting(false);
     }
-  }, [driveUrl, loadBomData, safeFetchBom, addToast]);
+  }, [driveUrl, loadBomData, safeFetchBom, addToast, linkedProject, saveSnapshot]);
 
   /* ---- Paste JSON import ---- */
   const handleImport = useCallback(() => {
@@ -564,6 +704,23 @@ export default function BomDashboard() {
     await navigator.clipboard.writeText(lines.join("\n"));
     addToast({ type: "success", title: "Markdown copied to clipboard" });
   }, [items, bom, catalogStatus, addToast]);
+
+  /* ---- Save to Inventory ---- */
+  const handleSaveInventory = useCallback(async () => {
+    if (!items.length || !bom) return;
+    try {
+      const res = await fetch("/api/bom/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bom: { ...bom, items: items.map(({ id: _id, ...rest }) => rest) } }),
+      });
+      if (!res.ok) throw new Error(`Save failed (${res.status})`);
+      const data = await res.json() as { created: number; updated: number; skipped: number };
+      addToast({ type: "success", title: `Inventory updated — ${data.created} created, ${data.updated} updated, ${data.skipped} skipped` });
+    } catch (e) {
+      addToast({ type: "error", title: e instanceof Error ? e.message : "Save to inventory failed" });
+    }
+  }, [items, bom, addToast]);
 
   /* ---- Grouped items for render ---- */
   const grouped = CATEGORY_ORDER.reduce<Partial<Record<BomCategory, BomItem[]>>>(
@@ -776,6 +933,11 @@ export default function BomDashboard() {
                       setLinkedProject(null);
                       setComparisonRows([]);
                       setCatalogStatus(new Map());
+                      setSnapshots([]);
+                      setSavedVersion(null);
+                      setCompareA(null);
+                      setCompareB(null);
+                      setShowDiff(false);
                     }}
                     className="text-xs text-muted hover:text-foreground px-2 py-1 rounded hover:bg-surface-2 transition-colors"
                   >
@@ -861,12 +1023,26 @@ export default function BomDashboard() {
             <div className="rounded-xl bg-surface border border-t-border p-5 shadow-card">
               <h3 className="text-sm font-semibold text-foreground mb-3">Link to HubSpot Project</h3>
               {linkedProject ? (
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 flex-wrap">
                   <span className="text-sm text-foreground">
                     ✅ <span className="font-medium">{linkedProject.dealname}</span>
                   </span>
+                  {saving && (
+                    <span className="text-xs text-muted animate-pulse">Saving…</span>
+                  )}
+                  {savedVersion && !saving && (
+                    <span className="text-xs text-green-600 dark:text-green-400">v{savedVersion} saved</span>
+                  )}
+                  {!saving && bom && (
+                    <button
+                      onClick={() => saveSnapshot({ ...bom, items: items.map(({ id: _id, ...rest }) => rest) })}
+                      className="text-xs text-cyan-600 dark:text-cyan-400 hover:underline"
+                    >
+                      Save current BOM
+                    </button>
+                  )}
                   <button
-                    onClick={() => setLinkedProject(null)}
+                    onClick={() => { setLinkedProject(null); setSnapshots([]); setSavedVersion(null); }}
                     className="text-xs text-muted hover:text-foreground"
                   >
                     Unlink
@@ -893,6 +1069,7 @@ export default function BomDashboard() {
                             setLinkedProject(p);
                             setProjectSearch("");
                             setProjectResults([]);
+                            setSavedVersion(null);
                           }}
                           className="w-full text-left px-4 py-2.5 text-sm text-foreground hover:bg-surface-2 transition-colors"
                         >
@@ -922,7 +1099,253 @@ export default function BomDashboard() {
               >
                 ⎘ Copy Markdown
               </button>
+              <button
+                onClick={handleSaveInventory}
+                className="px-4 py-2 rounded-lg bg-cyan-600 text-white text-sm font-medium hover:bg-cyan-700 transition-colors"
+              >
+                ↑ Save to Inventory
+              </button>
             </div>
+
+            {/* ---- History Panel ---- */}
+            {linkedProject && (snapshots.length > 0 || historyLoading) && (
+              <div className="rounded-xl bg-surface border border-t-border shadow-card overflow-hidden">
+                <div className="flex items-center justify-between px-5 py-3 border-b border-t-border bg-surface-2">
+                  <h3 className="text-sm font-semibold text-foreground">
+                    Extraction History
+                    <span className="ml-2 text-xs text-muted font-normal">
+                      {snapshots.length} version{snapshots.length !== 1 ? "s" : ""}
+                    </span>
+                  </h3>
+                  {snapshots.length >= 2 && (
+                    <button
+                      onClick={() => {
+                        if (showDiff) {
+                          setShowDiff(false); setCompareA(null); setCompareB(null);
+                        } else {
+                          setCompareA(snapshots[0]);
+                          setCompareB(snapshots[1]);
+                          setShowDiff(true);
+                        }
+                      }}
+                      className={`text-xs px-3 py-1 rounded-lg transition-colors ${showDiff ? "bg-cyan-600 text-white" : "bg-surface border border-t-border text-foreground hover:bg-surface-2"}`}
+                    >
+                      {showDiff ? "Hide Compare" : "Compare Versions"}
+                    </button>
+                  )}
+                </div>
+
+                {historyLoading ? (
+                  <p className="text-xs text-muted px-5 py-4 animate-pulse">Loading history…</p>
+                ) : (
+                  <div className="divide-y divide-[color:var(--border)]">
+                    {snapshots.map((snap) => (
+                      <div key={snap.id} className="flex items-center gap-3 px-5 py-3 hover:bg-surface-2 transition-colors group">
+                        <div className="w-8 h-8 rounded-lg bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 flex items-center justify-center text-xs font-bold flex-shrink-0">
+                          v{snap.version}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm text-foreground font-medium truncate">
+                            {snap.sourceFile || "Manual save"}
+                          </div>
+                          <div className="text-xs text-muted">
+                            {new Date(snap.createdAt).toLocaleString()} · {snap.bomData.items.length} items
+                            {snap.savedBy && ` · ${snap.savedBy}`}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={() => {
+                              loadBomData(snap.bomData);
+                              setSavedVersion(snap.version);
+                              addToast({ type: "success", title: `Loaded v${snap.version}` });
+                            }}
+                            className="text-xs text-cyan-600 dark:text-cyan-400 hover:underline"
+                          >
+                            Load
+                          </button>
+                          {showDiff && (
+                            <>
+                              <button
+                                onClick={() => setCompareA(snap)}
+                                className={`text-xs px-2 py-0.5 rounded transition-colors ${compareA?.id === snap.id ? "bg-blue-500 text-white" : "bg-surface border border-t-border text-muted hover:text-foreground"}`}
+                              >
+                                A
+                              </button>
+                              <button
+                                onClick={() => setCompareB(snap)}
+                                className={`text-xs px-2 py-0.5 rounded transition-colors ${compareB?.id === snap.id ? "bg-orange-500 text-white" : "bg-surface border border-t-border text-muted hover:text-foreground"}`}
+                              >
+                                B
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ---- Diff View ---- */}
+            {showDiff && compareA && compareB && (
+              <div className="rounded-xl bg-surface border border-t-border shadow-card overflow-hidden">
+                <div className="flex items-center justify-between px-5 py-3 border-b border-t-border bg-surface-2">
+                  <div className="flex items-center gap-3">
+                    <h3 className="text-sm font-semibold text-foreground">BOM Comparison</h3>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                      A · v{compareA.version} — {new Date(compareA.createdAt).toLocaleDateString()}
+                    </span>
+                    <span className="text-xs text-muted">vs</span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-600 dark:text-orange-400">
+                      B · v{compareB.version} — {new Date(compareB.createdAt).toLocaleDateString()}
+                    </span>
+                  </div>
+                  <div className="flex gap-3 text-xs text-muted">
+                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" /> Added</span>
+                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-400 inline-block" /> Removed</span>
+                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-yellow-500 inline-block" /> Changed</span>
+                  </div>
+                </div>
+
+                {/* Project-level diff */}
+                {(() => {
+                  const pa = compareA.bomData.project;
+                  const pb = compareB.bomData.project;
+                  const fields: Array<{ label: string; key: keyof typeof pa }> = [
+                    { label: "Customer", key: "customer" },
+                    { label: "Address", key: "address" },
+                    { label: "kWdc", key: "systemSizeKwdc" },
+                    { label: "kWac", key: "systemSizeKwac" },
+                    { label: "Modules", key: "moduleCount" },
+                    { label: "Rev", key: "plansetRev" },
+                    { label: "Stamp", key: "stampDate" },
+                  ];
+                  const changed = fields.filter((f) => String(pa[f.key] ?? "") !== String(pb[f.key] ?? ""));
+                  if (!changed.length) return null;
+                  return (
+                    <div className="px-5 py-3 border-b border-t-border bg-yellow-50/20 dark:bg-yellow-900/10">
+                      <p className="text-xs font-semibold text-muted mb-2">Project fields changed</p>
+                      <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs">
+                        {changed.map(({ label, key }) => (
+                          <span key={key}>
+                            <span className="text-muted">{label}: </span>
+                            <span className="line-through text-red-500">{String(pa[key] ?? "—")}</span>
+                            {" → "}
+                            <span className="text-green-600 dark:text-green-400">{String(pb[key] ?? "—")}</span>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Summary counts */}
+                {(() => {
+                  const counts = { added: 0, removed: 0, changed: 0, unchanged: 0 };
+                  for (const r of diffRows) counts[r.status]++;
+                  return (
+                    <div className="flex gap-6 px-5 py-2 border-b border-t-border bg-surface-2 text-xs text-muted">
+                      {counts.changed > 0 && <span className="text-yellow-600 dark:text-yellow-400 font-medium">{counts.changed} changed</span>}
+                      {counts.added > 0 && <span className="text-green-600 dark:text-green-400 font-medium">{counts.added} added</span>}
+                      {counts.removed > 0 && <span className="text-red-500 font-medium">{counts.removed} removed</span>}
+                      <span>{counts.unchanged} unchanged</span>
+                    </div>
+                  );
+                })()}
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-xs text-muted border-b border-t-border bg-surface-2/50">
+                        <th className="text-left px-4 py-2 font-medium w-4"></th>
+                        <th className="text-left px-4 py-2 font-medium w-28">Category</th>
+                        <th className="text-left px-4 py-2 font-medium w-28">Brand</th>
+                        <th className="text-left px-4 py-2 font-medium w-36">Model</th>
+                        <th className="text-left px-4 py-2 font-medium">Description</th>
+                        <th className="text-left px-4 py-2 font-medium w-20">Qty A→B</th>
+                        <th className="text-left px-4 py-2 font-medium w-24">Spec A→B</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[color:var(--border)]">
+                      {diffRows.filter((r) => r.status !== "unchanged").map((row, i) => {
+                        const bg =
+                          row.status === "added" ? "bg-green-50/40 dark:bg-green-900/10" :
+                          row.status === "removed" ? "bg-red-50/40 dark:bg-red-900/10" :
+                          "bg-yellow-50/30 dark:bg-yellow-900/10";
+                        const dot =
+                          row.status === "added" ? "bg-green-500" :
+                          row.status === "removed" ? "bg-red-400" :
+                          "bg-yellow-500";
+                        return (
+                          <tr key={i} className={bg}>
+                            <td className="px-3 py-2">
+                              <span className={`inline-block w-2 h-2 rounded-full ${dot}`} />
+                            </td>
+                            <td className="px-4 py-2 text-xs text-muted">{CATEGORY_LABELS[row.category as BomCategory] ?? row.category}</td>
+                            <td className="px-4 py-2">{row.brand || "—"}</td>
+                            <td className="px-4 py-2 font-medium">{row.model || "—"}</td>
+                            <td className="px-4 py-2 text-muted text-xs">{row.description}</td>
+                            <td className="px-4 py-2 text-xs">
+                              {row.status === "unchanged" ? String(row.qtyB ?? "—") :
+                               row.status === "added" ? <span className="text-green-600 dark:text-green-400">{String(row.qtyB ?? "—")}</span> :
+                               row.status === "removed" ? <span className="text-red-500">{String(row.qtyA ?? "—")}</span> : (
+                                <span>
+                                  <span className={String(row.qtyA) !== String(row.qtyB) ? "line-through text-red-500" : ""}>{String(row.qtyA ?? "—")}</span>
+                                  {String(row.qtyA) !== String(row.qtyB) && <>{" "}<span className="text-green-600 dark:text-green-400">{String(row.qtyB ?? "—")}</span></>}
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-2 text-xs">
+                              {row.status === "unchanged" ? String(row.specB ?? "—") :
+                               row.status === "added" ? <span className="text-green-600 dark:text-green-400">{String(row.specB ?? "—")}</span> :
+                               row.status === "removed" ? <span className="text-red-500">{String(row.specA ?? "—")}</span> : (
+                                <span>
+                                  <span className={String(row.specA ?? "") !== String(row.specB ?? "") ? "line-through text-red-500" : ""}>{String(row.specA ?? "—")}</span>
+                                  {String(row.specA ?? "") !== String(row.specB ?? "") && <>{" "}<span className="text-green-600 dark:text-green-400">{String(row.specB ?? "—")}</span></>}
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {diffRows.every((r) => r.status === "unchanged") && (
+                        <tr>
+                          <td colSpan={7} className="px-5 py-6 text-center text-sm text-muted">
+                            No differences — these two BOMs are identical.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Unchanged items (collapsed) */}
+                {diffRows.some((r) => r.status === "unchanged") && (
+                  <details className="border-t border-t-border">
+                    <summary className="px-5 py-2 text-xs text-muted cursor-pointer hover:text-foreground select-none">
+                      {diffRows.filter((r) => r.status === "unchanged").length} unchanged items (click to expand)
+                    </summary>
+                    <table className="w-full text-sm opacity-50">
+                      <tbody className="divide-y divide-[color:var(--border)]">
+                        {diffRows.filter((r) => r.status === "unchanged").map((row, i) => (
+                          <tr key={i} className="hover:bg-surface-2">
+                            <td className="px-3 py-1.5 w-4"><span className="inline-block w-2 h-2 rounded-full bg-surface-2" /></td>
+                            <td className="px-4 py-1.5 text-xs text-muted w-28">{CATEGORY_LABELS[row.category as BomCategory] ?? row.category}</td>
+                            <td className="px-4 py-1.5 w-28">{row.brand || "—"}</td>
+                            <td className="px-4 py-1.5 w-36 font-medium">{row.model || "—"}</td>
+                            <td className="px-4 py-1.5 text-muted text-xs">{row.description}</td>
+                            <td className="px-4 py-1.5 text-xs">{String(row.qtyB ?? "—")}</td>
+                            <td className="px-4 py-1.5 text-xs">{String(row.specB ?? "—")}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </details>
+                )}
+              </div>
+            )}
 
             {/* BOM Table — grouped by category */}
             {CATEGORY_ORDER.filter((cat) => grouped[cat]?.length).map((cat) => (
