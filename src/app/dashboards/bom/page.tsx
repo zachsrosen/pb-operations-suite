@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { exportToCSV } from "@/lib/export";
 import { useToast } from "@/contexts/ToastContext";
@@ -219,6 +219,8 @@ function assignIds(items: Omit<BomItem, "id">[]): BomItem[] {
 /*  Component                                                           */
 /* ------------------------------------------------------------------ */
 
+type ImportTab = "upload" | "drive" | "paste";
+
 export default function BomDashboard() {
   const { addToast } = useToast();
 
@@ -226,9 +228,18 @@ export default function BomDashboard() {
   const [bom, setBom] = useState<BomData | null>(null);
   const [items, setItems] = useState<BomItem[]>([]);
 
-  // Import
+  // Import panel
+  const [importTab, setImportTab] = useState<ImportTab>("upload");
   const [jsonInput, setJsonInput] = useState("");
   const [importError, setImportError] = useState<string | null>(null);
+
+  // PDF upload
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [extracting, setExtracting] = useState(false);
+
+  // Drive link
+  const [driveUrl, setDriveUrl] = useState("");
 
   // Project link
   const [projectSearch, setProjectSearch] = useState("");
@@ -276,20 +287,84 @@ export default function BomDashboard() {
     setCatalogStatus(buildCatalogStatus(items, comparisonRows));
   }, [items, comparisonRows]);
 
-  /* ---- Import ---- */
+  /* ---- Load BOM helper ---- */
+  const loadBomData = useCallback((data: BomData) => {
+    if (!data.items || !Array.isArray(data.items)) {
+      throw new Error('Response must have an "items" array');
+    }
+    setBom(data);
+    setItems(assignIds(data.items));
+  }, []);
+
+  /* ---- Extract from PDF upload ---- */
+  const handleExtractUpload = useCallback(async () => {
+    if (!uploadFile) return;
+    setExtracting(true);
+    setImportError(null);
+    try {
+      const form = new FormData();
+      form.append("file", uploadFile);
+      const res = await fetch("/api/bom/extract", { method: "POST", body: form });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || `Server error ${res.status}`);
+      }
+      loadBomData(data as BomData);
+      addToast({ type: "success", title: `BOM extracted from ${uploadFile.name}` });
+    } catch (e) {
+      setImportError(e instanceof Error ? e.message : "Extraction failed");
+    } finally {
+      setExtracting(false);
+    }
+  }, [uploadFile, loadBomData, addToast]);
+
+  /* ---- Extract from Google Drive URL ---- */
+  const handleExtractDrive = useCallback(async () => {
+    const url = driveUrl.trim();
+    if (!url) return;
+
+    // Convert Drive share URL → direct download URL
+    // https://drive.google.com/file/d/FILE_ID/view → /uc?export=download&id=FILE_ID
+    const fileIdMatch = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+    if (!fileIdMatch) {
+      setImportError("Couldn't parse a Google Drive file ID from that URL. Make sure it's a /file/d/... share link.");
+      return;
+    }
+    const fileId = fileIdMatch[1];
+    const downloadUrl = `https://drive.google.com/uc?export=download&id=${fileId}`;
+
+    setExtracting(true);
+    setImportError(null);
+    try {
+      // Fetch the PDF via a server-side proxy to avoid CORS issues
+      const proxyRes = await fetch("/api/bom/extract", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ driveUrl: downloadUrl, fileId }),
+      });
+      const data = await proxyRes.json();
+      if (!proxyRes.ok) {
+        throw new Error(data.error || `Server error ${proxyRes.status}`);
+      }
+      loadBomData(data as BomData);
+      addToast({ type: "success", title: "BOM extracted from Google Drive" });
+    } catch (e) {
+      setImportError(e instanceof Error ? e.message : "Drive extraction failed");
+    } finally {
+      setExtracting(false);
+    }
+  }, [driveUrl, loadBomData, addToast]);
+
+  /* ---- Paste JSON import ---- */
   const handleImport = useCallback(() => {
     setImportError(null);
     try {
       const parsed = JSON.parse(jsonInput.trim()) as BomData;
-      if (!parsed.items || !Array.isArray(parsed.items)) {
-        throw new Error('JSON must have an "items" array');
-      }
-      setBom(parsed);
-      setItems(assignIds(parsed.items));
+      loadBomData(parsed);
     } catch (e) {
       setImportError(e instanceof Error ? e.message : "Invalid JSON");
     }
-  }, [jsonInput]);
+  }, [jsonInput, loadBomData]);
 
   /* ---- Editable table ---- */
   const updateItem = useCallback(
@@ -446,30 +521,168 @@ export default function BomDashboard() {
 
         {/* ---- Import Panel ---- */}
         {!bom && (
-          <div className="rounded-xl bg-surface border border-t-border p-6 shadow-card">
-            <h2 className="text-lg font-semibold text-foreground mb-1">Import BOM</h2>
-            <p className="text-sm text-muted mb-4">
-              Run the{" "}
-              <code className="bg-surface-2 px-1.5 py-0.5 rounded text-xs">planset-bom</code>{" "}
-              skill on a PDF in Claude, then paste the JSON output below. Each line item will be
-              checked against HubSpot, Zuper, and Zoho product catalogs.
-            </p>
-            <textarea
-              className="w-full h-48 rounded-lg bg-surface-2 border border-t-border text-foreground text-sm font-mono p-3 resize-y focus:outline-none focus:ring-2 focus:ring-cyan-500"
-              placeholder='{ "project": { ... }, "items": [ ... ], "validation": { ... } }'
-              value={jsonInput}
-              onChange={(e) => setJsonInput(e.target.value)}
-            />
-            {importError && (
-              <p className="mt-2 text-sm text-red-500">{importError}</p>
-            )}
-            <button
-              onClick={handleImport}
-              disabled={!jsonInput.trim()}
-              className="mt-3 px-5 py-2 rounded-lg bg-cyan-600 text-white text-sm font-medium hover:bg-cyan-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              Load BOM
-            </button>
+          <div className="rounded-xl bg-surface border border-t-border shadow-card overflow-hidden">
+            {/* Tab bar */}
+            <div className="flex border-b border-t-border">
+              {(["upload", "drive", "paste"] as ImportTab[]).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => { setImportTab(tab); setImportError(null); }}
+                  className={`px-5 py-3 text-sm font-medium transition-colors ${
+                    importTab === tab
+                      ? "text-cyan-500 border-b-2 border-cyan-500 bg-surface"
+                      : "text-muted hover:text-foreground"
+                  }`}
+                >
+                  {tab === "upload" && "📄 Upload PDF"}
+                  {tab === "drive" && "☁️ Google Drive"}
+                  {tab === "paste" && "{ } Paste JSON"}
+                </button>
+              ))}
+            </div>
+
+            <div className="p-6">
+              {/* ---- Upload PDF tab ---- */}
+              {importTab === "upload" && (
+                <div className="space-y-4">
+                  <p className="text-sm text-muted">
+                    Upload a PB stamped planset PDF. Claude will read all sheets and extract the full BOM automatically.
+                  </p>
+
+                  {/* Drop zone */}
+                  <div
+                    onClick={() => fileInputRef.current?.click()}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const dropped = e.dataTransfer.files[0];
+                      if (dropped?.name.toLowerCase().endsWith(".pdf")) {
+                        setUploadFile(dropped);
+                        setImportError(null);
+                      }
+                    }}
+                    className="flex flex-col items-center justify-center gap-2 h-36 rounded-xl border-2 border-dashed border-t-border hover:border-cyan-500 cursor-pointer transition-colors bg-surface-2 hover:bg-surface-elevated"
+                  >
+                    {uploadFile ? (
+                      <>
+                        <span className="text-2xl">📄</span>
+                        <span className="text-sm font-medium text-foreground">{uploadFile.name}</span>
+                        <span className="text-xs text-muted">
+                          {(uploadFile.size / 1024 / 1024).toFixed(1)} MB
+                        </span>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setUploadFile(null); }}
+                          className="text-xs text-muted hover:text-red-500 transition-colors"
+                        >
+                          ✕ Remove
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-3xl opacity-40">☁️</span>
+                        <span className="text-sm text-muted">Drop planset PDF here or click to browse</span>
+                        <span className="text-xs text-muted opacity-60">Max 32 MB · PDF only</span>
+                      </>
+                    )}
+                  </div>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".pdf,application/pdf"
+                    className="hidden"
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                      const f = e.target.files?.[0];
+                      if (f) { setUploadFile(f); setImportError(null); }
+                    }}
+                  />
+
+                  {importError && <p className="text-sm text-red-500">{importError}</p>}
+
+                  <button
+                    onClick={handleExtractUpload}
+                    disabled={!uploadFile || extracting}
+                    className="px-5 py-2 rounded-lg bg-cyan-600 text-white text-sm font-medium hover:bg-cyan-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                  >
+                    {extracting ? (
+                      <>
+                        <span className="inline-block w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        Extracting…
+                      </>
+                    ) : (
+                      "Extract BOM"
+                    )}
+                  </button>
+                  {extracting && (
+                    <p className="text-xs text-muted animate-pulse">
+                      Claude is reading the planset — this takes 20–40 seconds for a full planset.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* ---- Google Drive tab ---- */}
+              {importTab === "drive" && (
+                <div className="space-y-4">
+                  <p className="text-sm text-muted">
+                    Paste a Google Drive share link to a planset PDF. The file must be shared with &quot;Anyone with the link&quot;.
+                  </p>
+                  <input
+                    type="url"
+                    placeholder="https://drive.google.com/file/d/ABC123/view?usp=sharing"
+                    value={driveUrl}
+                    onChange={(e) => { setDriveUrl(e.target.value); setImportError(null); }}
+                    className="w-full rounded-lg bg-surface-2 border border-t-border text-foreground text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  />
+
+                  {importError && <p className="text-sm text-red-500">{importError}</p>}
+
+                  <button
+                    onClick={handleExtractDrive}
+                    disabled={!driveUrl.trim() || extracting}
+                    className="px-5 py-2 rounded-lg bg-cyan-600 text-white text-sm font-medium hover:bg-cyan-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                  >
+                    {extracting ? (
+                      <>
+                        <span className="inline-block w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        Fetching & Extracting…
+                      </>
+                    ) : (
+                      "Extract from Drive"
+                    )}
+                  </button>
+                  {extracting && (
+                    <p className="text-xs text-muted animate-pulse">
+                      Downloading from Drive then extracting with Claude — allow 30–60 seconds.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* ---- Paste JSON tab ---- */}
+              {importTab === "paste" && (
+                <div className="space-y-3">
+                  <p className="text-sm text-muted">
+                    Run the{" "}
+                    <code className="bg-surface-2 px-1.5 py-0.5 rounded text-xs">planset-bom</code>{" "}
+                    skill in Claude Code, then paste the JSON output below.
+                  </p>
+                  <textarea
+                    className="w-full h-48 rounded-lg bg-surface-2 border border-t-border text-foreground text-sm font-mono p-3 resize-y focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                    placeholder='{ "project": { ... }, "items": [ ... ], "validation": { ... } }'
+                    value={jsonInput}
+                    onChange={(e) => setJsonInput(e.target.value)}
+                  />
+                  {importError && <p className="text-sm text-red-500">{importError}</p>}
+                  <button
+                    onClick={handleImport}
+                    disabled={!jsonInput.trim()}
+                    className="px-5 py-2 rounded-lg bg-cyan-600 text-white text-sm font-medium hover:bg-cyan-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Load BOM
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
