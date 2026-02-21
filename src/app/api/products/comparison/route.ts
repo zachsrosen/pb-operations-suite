@@ -521,7 +521,7 @@ async function findHubSpotBundleTypePropertyName(token: string): Promise<string 
     const property = (Array.isArray(json.results) ? json.results : []).find((candidate) => {
       const label = normalizeText(candidate.label);
       const name = normalizeText(candidate.name);
-      return label === "bundle type" || name === "bundle type" || name === "bundle type";
+      return label === "bundle type" || name === "bundle type";
     });
 
     return String(property?.name || "").trim() || null;
@@ -947,13 +947,11 @@ export async function GET() {
   };
 
   const warnings = [hubspotResult.error, zuperResult.error, zohoResult.error].filter(Boolean) as string[];
+  if (!hubspotResult.error && !hubspotResult.bundleTypePropertyName) {
+    warnings.push("HubSpot 'Bundle Type' property was not found; no bundle exclusions were applied.");
+  }
   if (hubspotResult.excludedBundles > 0) {
     warnings.push(`Excluded ${hubspotResult.excludedBundles} HubSpot product bundle${hubspotResult.excludedBundles === 1 ? "" : "s"}.`);
-  }
-  if (hubspotResult.suspectedBundleByName > 0) {
-    warnings.push(
-      `Detected ${hubspotResult.suspectedBundleByName} HubSpot product${hubspotResult.suspectedBundleByName === 1 ? "" : "s"} with 'bundle' in the name but no bundle identifier. Left in comparison.`
-    );
   }
 
   const payload: ProductComparisonResponse = {
