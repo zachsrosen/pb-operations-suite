@@ -1355,7 +1355,8 @@ function BomDashboardInner() {
               </button>
               <button
                 onClick={() => window.print()}
-                className="px-4 py-2 rounded-lg bg-surface border border-t-border text-sm text-foreground hover:bg-surface-2 transition-colors"
+                disabled={!bom}
+                className="px-4 py-2 rounded-lg bg-surface border border-t-border text-sm text-foreground hover:bg-surface-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 🖨 Print
               </button>
