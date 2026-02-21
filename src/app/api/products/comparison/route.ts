@@ -966,12 +966,6 @@ export async function GET() {
   };
 
   const warnings = [hubspotResult.error, zuperResult.error, zohoResult.error].filter(Boolean) as string[];
-  if (!hubspotResult.error && !hubspotResult.bundleTypePropertyName) {
-    warnings.push("HubSpot 'Bundle Type' property was not found; no bundle exclusions were applied.");
-  }
-  if (hubspotResult.excludedBundles > 0) {
-    warnings.push(`Excluded ${hubspotResult.excludedBundles} HubSpot product bundle${hubspotResult.excludedBundles === 1 ? "" : "s"}.`);
-  }
 
   const payload: ProductComparisonResponse = {
     rows: enrichedRows,

@@ -6,6 +6,7 @@ import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { MultiSelectFilter, type FilterOption } from "@/components/ui/MultiSelectFilter";
 
 type SourceName = "hubspot" | "zuper" | "zoho";
+type RowViewMode = "mismatches" | "matches" | "two-of-three" | "all";
 
 interface ComparableProduct {
   id: string;
@@ -143,6 +144,24 @@ const MISSING_SOURCE_OPTIONS: FilterOption[] = [
   { value: "zoho", label: "Missing in Zoho" },
 ];
 
+const VIEW_MODE_OPTIONS: FilterOption[] = [
+  { value: "mismatches", label: "Mismatches" },
+  { value: "matches", label: "Matches only" },
+  { value: "two-of-three", label: "2 of 3 only" },
+  { value: "all", label: "All rows" },
+];
+
+const MISSING_REASON_PREFIX = "Missing in ";
+
+function isBundleInfoWarning(warning: string): boolean {
+  const normalized = warning.trim().toLowerCase();
+  return (
+    normalized.includes("excluded") &&
+    normalized.includes("hubspot") &&
+    normalized.includes("product bundle")
+  );
+}
+
 export default function ProductComparisonPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
@@ -153,7 +172,7 @@ export default function ProductComparisonPage() {
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<ProductComparisonResponse | null>(null);
   const [search, setSearch] = useState("");
-  const [showMatchedRows, setShowMatchedRows] = useState(false);
+  const [rowViewModes, setRowViewModes] = useState<RowViewMode[]>(["mismatches"]);
   const [missingFilters, setMissingFilters] = useState<SourceName[]>([]);
   const [reasonFilters, setReasonFilters] = useState<string[]>([]);
 
@@ -218,12 +237,33 @@ export default function ProductComparisonPage() {
       .map((reason) => ({ value: reason, label: reason }));
   }, [data]);
 
+  const visibleWarnings = useMemo(() => {
+    if (!data) return [];
+    return data.warnings.filter((warning) => !isBundleInfoWarning(warning));
+  }, [data]);
+
   const rows = useMemo(() => {
     if (!data) return [];
     const searchTerm = search.trim().toLowerCase();
 
     return data.rows.filter((row) => {
-      if (!showMatchedRows && !row.isMismatch) return false;
+      const presentCount =
+        Number(Boolean(row.hubspot)) + Number(Boolean(row.zuper)) + Number(Boolean(row.zoho));
+      const missingReasons = row.reasons.filter((reason) => reason.startsWith(MISSING_REASON_PREFIX));
+      const nonMissingReasons = row.reasons.filter((reason) => !reason.startsWith(MISSING_REASON_PREFIX));
+      const isFullyMatched = presentCount === 3 && row.reasons.length === 0;
+      const isTwoOfThreeAligned =
+        presentCount === 2 && missingReasons.length === 1 && nonMissingReasons.length === 0;
+
+      const effectiveModes: RowViewMode[] = rowViewModes.length > 0 ? rowViewModes : ["all"];
+      const matchesAnySelectedMode = effectiveModes.some((mode) => {
+        if (mode === "all") return true;
+        if (mode === "mismatches") return row.isMismatch;
+        if (mode === "matches") return isFullyMatched;
+        return isTwoOfThreeAligned;
+      });
+      if (!matchesAnySelectedMode) return false;
+
       if (missingFilters.length > 0) {
         const matchesMissingSource = missingFilters.some((source) => {
           if (source === "hubspot") return row.hubspot === null;
@@ -256,7 +296,7 @@ export default function ProductComparisonPage() {
 
       return haystack.includes(searchTerm);
     });
-  }, [data, missingFilters, reasonFilters, search, showMatchedRows]);
+  }, [data, missingFilters, reasonFilters, rowViewModes, search]);
 
   const exportRows = useMemo(() => {
     return rows.map((row) => ({
@@ -352,11 +392,11 @@ export default function ProductComparisonPage() {
             ))}
           </div>
 
-          {data.warnings.length > 0 && (
+          {visibleWarnings.length > 0 && (
             <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4">
               <div className="text-xs font-semibold text-amber-300 uppercase tracking-wide">Warnings</div>
               <ul className="mt-2 space-y-1 text-sm text-amber-100">
-                {data.warnings.map((warning) => (
+                {visibleWarnings.map((warning) => (
                   <li key={warning}>{warning}</li>
                 ))}
               </ul>
@@ -372,14 +412,14 @@ export default function ProductComparisonPage() {
                 className="w-full lg:max-w-xl px-3 py-2 rounded-lg border border-t-border bg-background text-sm outline-none focus:border-cyan-500/50"
               />
               <div className="flex flex-wrap items-center gap-2">
-                <label className="text-xs text-muted flex items-center gap-1.5">
-                  <input
-                    type="checkbox"
-                    checked={showMatchedRows}
-                    onChange={(event) => setShowMatchedRows(event.target.checked)}
-                  />
-                  Show matched rows
-                </label>
+                <MultiSelectFilter
+                  label="View"
+                  options={VIEW_MODE_OPTIONS}
+                  selected={rowViewModes}
+                  onChange={(selected) => setRowViewModes(selected as RowViewMode[])}
+                  placeholder="All views"
+                  accentColor="blue"
+                />
                 <MultiSelectFilter
                   label="Missing"
                   options={MISSING_SOURCE_OPTIONS}
