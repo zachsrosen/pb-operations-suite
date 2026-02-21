@@ -375,6 +375,13 @@ export interface Project {
   timeRtbToCc: number | null;
   daToCc: number | null;
   daToPermit: number | null;
+
+  // External links & folder IDs
+  designFolderUrl: string | null;   // design_document_folder_id (Drive folder ID)
+  driveUrl: string | null;          // g_drive (general Drive folder link)
+  openSolarUrl: string | null;      // os_project_link or link_to_opensolar
+  openSolarId: string | null;       // os_project_id
+  zuperUid: string | null;          // zuper_site_survey_uid
 }
 
 export interface LineItem {
@@ -535,6 +542,14 @@ const DEAL_PROPERTIES = [
   "time_from_rtb_to_cc",
   "da_to_cc",
   "da_to_permit",
+
+  // External system links & folder IDs
+  "design_document_folder_id",
+  "g_drive",
+  "link_to_opensolar",
+  "os_project_link",
+  "os_project_id",
+  "zuper_site_survey_uid",
 ];
 
 const MS_PER_DAY = 86_400_000;
@@ -834,6 +849,13 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
     timeRtbToCc: msToDays(deal.time_from_rtb_to_cc),
     daToCc: msToDays(deal.da_to_cc),
     daToPermit: msToDays(deal.da_to_permit),
+
+    // External links
+    designFolderUrl: String(deal.design_document_folder_id || "").trim() || null,
+    driveUrl: String(deal.g_drive || "").trim() || null,
+    openSolarUrl: String(deal.os_project_link || deal.link_to_opensolar || "").trim() || null,
+    openSolarId: String(deal.os_project_id || "").trim() || null,
+    zuperUid: String(deal.zuper_site_survey_uid || "").trim() || null,
   };
 }
 
