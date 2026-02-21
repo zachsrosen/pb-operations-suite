@@ -4,7 +4,7 @@ import React, { useState, useCallback, useRef, useEffect } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { exportToCSV } from "@/lib/export";
 import { useToast } from "@/contexts/ToastContext";
-import { upload } from "@vercel/blob/client";
+// PDF upload uses chunked /api/bom/chunk route (no blob client SDK needed)
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                               */
@@ -313,38 +313,67 @@ export default function BomDashboard() {
     return data as unknown as BomData;
   }, []);
 
-  /* ---- Extract from PDF upload ---- */
+  /* ---- Extract from PDF upload (chunked to stay under 4.5MB per request) ---- */
   const handleExtractUpload = useCallback(async () => {
     if (!uploadFile) return;
     setExtracting(true);
     setImportError(null);
     try {
-      // Step 1: Upload PDF directly to Vercel Blob from the browser.
-      // This bypasses Vercel's 4.5MB serverless body limit — the file goes
-      // browser → blob.vercel-storage.com directly, then we pass the URL to extract.
-      const blob = await upload(uploadFile.name, uploadFile, {
-        access: "public",
-        handleUploadUrl: "/api/bom/upload-token",
-        clientPayload: uploadFile.name,
-      });
+      // Split PDF into 3MB chunks and send each to /api/bom/chunk.
+      // Each chunk is well under Vercel's 4.5MB serverless body limit.
+      // The server reassembles and stores the full file in Vercel Blob,
+      // then returns the blob URL for Claude to fetch.
+      const CHUNK_SIZE = 3 * 1024 * 1024; // 3MB
+      const uploadId = crypto.randomUUID();
+      const totalChunks = Math.ceil(uploadFile.size / CHUNK_SIZE);
 
-      // Step 2: Run Claude extraction on the blob URL
+      let blobUrl = "";
+      for (let i = 0; i < totalChunks; i++) {
+        const start = i * CHUNK_SIZE;
+        const slice = uploadFile.slice(start, start + CHUNK_SIZE);
+        const arrayBuf = await slice.arrayBuffer();
+        // Safe base64 encoding for large chunks (avoids call stack limit)
+        const bytes = new Uint8Array(arrayBuf);
+        let binary = "";
+        for (let j = 0; j < bytes.length; j++) binary += String.fromCharCode(bytes[j]);
+        const base64 = btoa(binary);
+
+        const chunkRes = await fetch("/api/bom/chunk", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            uploadId,
+            chunkIndex: i,
+            totalChunks,
+            data: base64,
+            filename: uploadFile.name,
+          }),
+        });
+
+        if (!chunkRes.ok) {
+          const err = await chunkRes.json().catch(() => ({ error: "Chunk upload failed" }));
+          throw new Error((err as { error?: string }).error ?? `Chunk ${i + 1} failed (${chunkRes.status})`);
+        }
+
+        const result = await chunkRes.json() as { status: string; blobUrl?: string };
+        if (result.status === "complete" && result.blobUrl) {
+          blobUrl = result.blobUrl;
+        }
+      }
+
+      if (!blobUrl) throw new Error("Upload completed but no blob URL returned");
+
+      // Run Claude extraction on the assembled blob URL
       const res = await fetch("/api/bom/extract", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ blobUrl: blob.url }),
+        body: JSON.stringify({ blobUrl }),
       });
       const data = await safeFetchBom(res);
       loadBomData(data);
       addToast({ type: "success", title: `BOM extracted from ${uploadFile.name}` });
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Extraction failed";
-      // Give a friendlier message for the common token/CORS case
-      if (msg.includes("client token") || msg.includes("Failed to fetch")) {
-        setImportError("Upload failed — please try again. If this persists, check that Vercel Blob is connected in project settings.");
-      } else {
-        setImportError(msg);
-      }
+      setImportError(e instanceof Error ? e.message : "Extraction failed");
     } finally {
       setExtracting(false);
     }
