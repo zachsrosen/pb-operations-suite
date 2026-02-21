@@ -2,11 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { zuper, JOB_CATEGORY_UIDS } from "@/lib/zuper";
 import { prisma } from "@/lib/db";
+import { getBusinessEndDateInclusive, isWeekendDate } from "@/lib/business-days";
 import { Client } from "@hubspot/api-client";
 
 const hubspotClient = new Client({
   accessToken: process.env.HUBSPOT_ACCESS_TOKEN,
 });
+const HUBSPOT_PORTAL_ID = process.env.HUBSPOT_PORTAL_ID || "21710069";
 
 // Revenue-generating job categories
 const REVENUE_CATEGORIES = [
@@ -27,15 +29,17 @@ interface CalendarJob {
   endDate: string | null; // YYYY-MM-DD from scheduled_end (null if same day)
   spanStartDate: string; // Original start date
   spanEndDate: string | null; // Original end date (null if single-day)
-  spanDays: number; // Total inclusive span days
+  spanDays: number; // Total inclusive business days used for value allocation
   statusName: string;
   assignedUser: string;
   teamName: string;
   dealId: string | null;
   dealName: string | null;
+  dealUrl: string | null;
   dealValue: number; // Per-day allocated value (split across spanDays)
   totalDealValue: number; // Original full deal value
   isTentative: boolean;
+  zuperJobUrl: string | null;
   projectNumber: string | null;
 }
 
@@ -150,17 +154,18 @@ function getStatusName(job: any): string {
   );
 }
 
-// Get first assigned user name
+// Get all assigned user names (comma-separated)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function getAssignedUser(job: any): string {
   if (!Array.isArray(job.assigned_to)) return "";
-  for (const a of job.assigned_to) {
-    if (a?.user) {
-      const name = `${a.user.first_name || ""} ${a.user.last_name || ""}`.trim();
-      if (name) return name;
-    }
-  }
-  return "";
+  const names = job.assigned_to
+    .map((a: { user?: { first_name?: string; last_name?: string } }) => {
+      const first = a?.user?.first_name || "";
+      const last = a?.user?.last_name || "";
+      return `${first} ${last}`.trim();
+    })
+    .filter(Boolean);
+  return [...new Set(names)].join(", ");
 }
 
 // Get first team name
@@ -176,8 +181,8 @@ function getTeamName(job: any): string {
 // Batch fetch HubSpot deals for dealname and amount
 async function fetchDealValues(
   dealIds: string[]
-): Promise<Map<string, { dealName: string; amount: number }>> {
-  const dealMap = new Map<string, { dealName: string; amount: number }>();
+): Promise<Map<string, { dealName: string; amount: number; dealUrl: string }>> {
+  const dealMap = new Map<string, { dealName: string; amount: number; dealUrl: string }>();
   if (dealIds.length === 0) return dealMap;
 
   const batchSize = 100;
@@ -196,6 +201,7 @@ async function fetchDealValues(
         dealMap.set(deal.id, {
           dealName: deal.properties.dealname || "",
           amount,
+          dealUrl: `https://app.hubspot.com/contacts/${HUBSPOT_PORTAL_ID}/record/0-3/${deal.id}`,
         });
       }
     } catch (err) {
@@ -278,6 +284,24 @@ async function fetchJobsForCategory(
 function normalizeTentativeSpanDays(days?: number | null): number {
   if (!days || !Number.isFinite(days) || days <= 0) return 1;
   return Math.max(1, Math.ceil(days));
+}
+
+function getZuperJobDetailsUrl(jobUid: string): string {
+  const webBaseUrl = process.env.ZUPER_WEB_URL ||
+    (process.env.ZUPER_API_URL?.replace("/api", "") || "https://us-west-1c.zuperpro.com");
+  return `${webBaseUrl}/jobs/${jobUid}/details`;
+}
+
+function listBusinessDatesInclusive(startDate: string, endDate: string): string[] {
+  const dates: string[] = [];
+  let cursor = startDate;
+  while (cursor <= endDate) {
+    if (!isWeekendDate(cursor)) {
+      dates.push(cursor);
+    }
+    cursor = addDays(cursor, 1);
+  }
+  return dates;
 }
 
 export async function GET(request: NextRequest) {
@@ -423,9 +447,11 @@ export async function GET(request: NextRequest) {
         teamName,
         dealId: dealId || null,
         dealName: deal?.dealName || null,
+        dealUrl: deal?.dealUrl || (dealId ? `https://app.hubspot.com/contacts/${HUBSPOT_PORTAL_ID}/record/0-3/${dealId}` : null),
         dealValue: dealAmount,
         totalDealValue: dealAmount,
         isTentative: false,
+        zuperJobUrl: raw.job_uid ? getZuperJobDetailsUrl(raw.job_uid) : null,
         projectNumber: extractProjectNumber(raw.job_title || ""),
       });
     }
@@ -438,7 +464,7 @@ export async function GET(request: NextRequest) {
       if (dealAmount <= 0) continue;
 
       const spanDays = normalizeTentativeSpanDays(rec.scheduledDays);
-      const spanEnd = addDays(rec.scheduledDate, spanDays - 1);
+      const spanEnd = getBusinessEndDateInclusive(rec.scheduledDate, spanDays);
       tentativeJobs.push({
         jobUid: `tentative-${rec.id}`,
         title: rec.projectName || rec.projectId,
@@ -454,9 +480,11 @@ export async function GET(request: NextRequest) {
         teamName: "",
         dealId: rec.projectId || null,
         dealName: deal?.dealName || rec.projectName || null,
+        dealUrl: deal?.dealUrl || (rec.projectId ? `https://app.hubspot.com/contacts/${HUBSPOT_PORTAL_ID}/record/0-3/${rec.projectId}` : null),
         dealValue: dealAmount,
         totalDealValue: dealAmount,
         isTentative: true,
+        zuperJobUrl: null,
         projectNumber: extractProjectNumber(rec.projectName || ""),
       });
     }
@@ -479,27 +507,25 @@ export async function GET(request: NextRequest) {
 
     const overlappingJobs = [...overlappingConfirmed, ...overlappingTentative];
 
-    // Expand multi-day jobs into per-day rows with value split across total span days
+    // Expand multi-day jobs into business-day rows with value split across business days only
     const expandedMonthJobs: CalendarJob[] = [];
     for (const job of overlappingJobs) {
       const spanStart = job.date;
       const spanEnd = job.endDate || job.date;
-      const spanDays = diffDaysInclusive(spanStart, spanEnd);
-      const perDayValue = spanDays > 0 ? (job.totalDealValue || 0) / spanDays : (job.totalDealValue || 0);
-      const overlapStart = spanStart < monthStartStr ? monthStartStr : spanStart;
-      const overlapEnd = spanEnd > monthEndStr ? monthEndStr : spanEnd;
+      const fullSpanBusinessDates = listBusinessDatesInclusive(spanStart, spanEnd);
+      if (fullSpanBusinessDates.length === 0) continue;
+      const perDayValue = (job.totalDealValue || 0) / fullSpanBusinessDates.length;
+      const overlapBusinessDates = fullSpanBusinessDates.filter((d) => d >= monthStartStr && d <= monthEndStr);
 
-      let d = overlapStart;
-      while (d <= overlapEnd) {
+      for (const d of overlapBusinessDates) {
         expandedMonthJobs.push({
           ...job,
           date: d,
           dealValue: perDayValue,
           spanStartDate: spanStart,
           spanEndDate: job.endDate,
-          spanDays,
+          spanDays: fullSpanBusinessDates.length,
         });
-        d = addDays(d, 1);
       }
     }
 

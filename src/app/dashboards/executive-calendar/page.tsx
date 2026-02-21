@@ -33,9 +33,11 @@ interface Job {
   teamName: string;
   dealId: string | null;
   dealName: string | null;
+  dealUrl: string | null;
   dealValue: number;
   totalDealValue: number;
   isTentative: boolean;
+  zuperJobUrl: string | null;
   projectNumber: string | null;
 }
 
@@ -213,6 +215,13 @@ function formatMonthLabel(year: number, month: number): string {
   return `${MONTH_NAMES[month - 1]} ${year}`;
 }
 
+function parseCrewNames(assignedUser: string): string[] {
+  return assignedUser
+    .split(",")
+    .map((name) => name.trim())
+    .filter(Boolean);
+}
+
 /* ------------------------------------------------------------------ */
 /*  Page                                                               */
 /* ------------------------------------------------------------------ */
@@ -348,7 +357,7 @@ export default function ExecutiveCalendarPage() {
     >();
 
     for (const job of data.jobs) {
-      if (!enabledCategories.has(job.categoryKey as CategoryKey)) continue;
+      if (!enabledCategories.has(job.categoryKey)) continue;
       if (!job.date.startsWith(monthPrefix)) continue; // summary scoped to selected month only
 
       const weekStart = getWeekStartSunday(job.date);
@@ -415,7 +424,7 @@ export default function ExecutiveCalendarPage() {
     let tentativeScheduledValue = 0;
 
     for (const job of data.jobs) {
-      if (!enabledCategories.has(job.categoryKey as CategoryKey)) continue;
+      if (!enabledCategories.has(job.categoryKey)) continue;
       if (!job.date.startsWith(monthPrefix)) continue;
 
       const uniqueJobKey = `${job.dealId || job.jobUid}:${job.spanStartDate}:${job.categoryKey}:${job.isTentative ? "t" : "c"}`;
@@ -547,7 +556,7 @@ export default function ExecutiveCalendarPage() {
   const selectedDayJobs = useMemo(() => {
     if (!data || !selectedDate) return [];
     return data.jobs.filter(
-      (j) => j.date === selectedDate && enabledCategories.has(j.categoryKey as CategoryKey)
+      (j) => j.date === selectedDate && enabledCategories.has(j.categoryKey)
     );
   }, [data, selectedDate, enabledCategories]);
 
@@ -594,7 +603,7 @@ export default function ExecutiveCalendarPage() {
   const exportRows = useMemo(() => {
     if (!data) return [];
     return data.jobs
-      .filter((j) => enabledCategories.has(j.categoryKey as CategoryKey))
+      .filter((j) => enabledCategories.has(j.categoryKey))
       .map((j) => ({
         "Project Number": j.projectNumber || "",
         Title: j.title,
@@ -609,6 +618,8 @@ export default function ExecutiveCalendarPage() {
         Crew: j.assignedUser,
         Team: j.teamName,
         Status: j.statusName,
+        "HubSpot URL": j.dealUrl || "",
+        "Zuper URL": j.zuperJobUrl || "",
       }));
   }, [data, enabledCategories]);
 
@@ -1016,21 +1027,34 @@ export default function ExecutiveCalendarPage() {
                       <th className="pb-2 pr-4 text-right">Day Value</th>
                       <th className="pb-2 pr-4 text-right">Total Deal</th>
                       <th className="pb-2 pr-4">Deal ID</th>
+                      <th className="pb-2 pr-4 text-right">HubSpot</th>
                       <th className="pb-2 text-right">Zuper</th>
                     </tr>
                   </thead>
                   <tbody>
                     {selectedDayJobsSorted.map((job) => {
-                      const catCfg = CATEGORY_CONFIG[job.categoryKey as CategoryKey];
+                      const catCfg = CATEGORY_CONFIG[job.categoryKey];
+                      const crewNames = parseCrewNames(job.assignedUser);
                       return (
                         <tr
                           key={job.jobUid}
                           className="border-b border-t-border/50 hover:bg-surface-2/30"
                         >
                           <td className="py-2 pr-4">
-                            <div className="font-medium text-foreground/90">
-                              {job.dealName || job.title}
-                            </div>
+                            {job.dealUrl ? (
+                              <a
+                                href={job.dealUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="font-medium text-foreground/90 hover:text-orange-300 transition-colors"
+                              >
+                                {job.dealName || job.title}
+                              </a>
+                            ) : (
+                              <div className="font-medium text-foreground/90">
+                                {job.dealName || job.title}
+                              </div>
+                            )}
                             {job.projectNumber && (
                               <div className="text-xs text-muted">{job.projectNumber}</div>
                             )}
@@ -1048,7 +1072,19 @@ export default function ExecutiveCalendarPage() {
                             {formatDateRange(job.spanStartDate, job.spanEndDate)}
                           </td>
                           <td className="py-2 pr-4 text-muted">{job.teamName || "\u2014"}</td>
-                          <td className="py-2 pr-4 text-muted">{job.assignedUser || "\u2014"}</td>
+                          <td className="py-2 pr-4 text-muted">
+                            {crewNames.length === 0 ? (
+                              "\u2014"
+                            ) : (
+                              <div className="space-y-0.5">
+                                {crewNames.map((crewName, idx) => (
+                                  <div key={`${job.jobUid}-crew-${idx}`} className="text-xs text-muted">
+                                    {crewName}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </td>
                           <td className="py-2 pr-4 text-muted">
                             {job.isTentative ? (
                               <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-500/20 text-amber-300">
@@ -1067,12 +1103,39 @@ export default function ExecutiveCalendarPage() {
                           <td className="py-2 pr-4 text-xs text-muted font-mono">
                             {job.dealId || "\u2014"}
                           </td>
+                          <td className="py-2 pr-4 text-right">
+                            {job.dealUrl ? (
+                              <a
+                                href={job.dealUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-orange-300 hover:text-orange-200 transition-colors inline-flex items-center"
+                                title="Open in HubSpot"
+                              >
+                                <svg
+                                  className="w-4 h-4"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                                  />
+                                </svg>
+                              </a>
+                            ) : (
+                              <span className="text-xs text-muted">-</span>
+                            )}
+                          </td>
                           <td className="py-2 text-right">
-                            {job.isTentative ? (
+                            {job.isTentative || !job.zuperJobUrl ? (
                               <span className="text-xs text-muted">-</span>
                             ) : (
                               <a
-                                href={`https://us-west-1c.zuperpro.com/app/job/${job.jobUid}`}
+                                href={job.zuperJobUrl}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="text-green-400 hover:text-green-300 transition-colors inline-flex items-center"
