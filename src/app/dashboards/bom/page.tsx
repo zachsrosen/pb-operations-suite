@@ -1155,6 +1155,15 @@ function BomDashboardInner() {
               )}
             </div>
 
+
+            {/* Quick Links */}
+            {linkedProject && (
+              <div className="rounded-xl bg-surface border border-t-border p-4 shadow-card">
+                <h3 className="text-xs font-semibold text-muted mb-2 uppercase tracking-wide">Quick Links</h3>
+                <QuickLinks project={linkedProject} />
+              </div>
+            )}
+
             {/* Action Bar */}
             <div className="flex flex-wrap gap-2">
               <button
@@ -1588,6 +1597,42 @@ function ValidationBadge({ value, label }: { value: boolean | null; label: strin
     <div className="flex items-center gap-1.5 text-muted">
       <span>⚪</span>
       <span>{label}</span>
+    </div>
+  );
+}
+
+function QuickLinks({ project }: { project: ProjectResult }) {
+  const links: Array<{ label: string; href: string; color: string }> = [
+    {
+      label: "HubSpot",
+      href: `https://app.hubspot.com/contacts/21710069/deal/${project.hs_object_id}`,
+      color: "text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-800",
+    },
+  ];
+
+  if (project.driveUrl) {
+    links.push({ label: "G-Drive", href: project.driveUrl, color: "text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-800" });
+  }
+  if (project.openSolarUrl) {
+    links.push({ label: "OpenSolar", href: project.openSolarUrl, color: "text-yellow-600 dark:text-yellow-400 border-yellow-200 dark:border-yellow-800" });
+  }
+  if (project.zuperUid) {
+    links.push({ label: "Zuper", href: `https://app.zuper.co/jobs/${project.zuperUid}`, color: "text-cyan-600 dark:text-cyan-400 border-cyan-200 dark:border-cyan-800" });
+  }
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {links.map(({ label, href, color }) => (
+        <a
+          key={label}
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={`inline-flex items-center gap-1 px-3 py-1 rounded-lg border text-xs font-medium bg-surface hover:bg-surface-2 transition-colors ${color}`}
+        >
+          {label} ↗
+        </a>
+      ))}
     </div>
   );
 }
