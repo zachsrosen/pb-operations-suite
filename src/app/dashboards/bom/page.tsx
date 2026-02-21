@@ -327,11 +327,7 @@ export default function BomDashboard() {
           method: "POST",
           headers: { "Content-Type": "application/pdf" },
           body: uploadFile,
-          // duplex required for streaming body in some environments
-          ...(typeof Request !== "undefined" && "duplex" in new Request("", { method: "POST", body: "" })
-            ? { duplex: "half" }
-            : {}),
-        } as RequestInit
+        }
       );
 
       if (!uploadRes.ok) {
