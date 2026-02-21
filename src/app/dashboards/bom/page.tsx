@@ -4,7 +4,7 @@ import React, { useState, useCallback, useRef, useEffect } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { exportToCSV } from "@/lib/export";
 import { useToast } from "@/contexts/ToastContext";
-import { upload } from "@vercel/blob/client";
+// (no blob client import — uploads go through /api/bom/upload server route)
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                               */
@@ -319,17 +319,32 @@ export default function BomDashboard() {
     setExtracting(true);
     setImportError(null);
     try {
-      // Step 1: Upload PDF directly to Vercel Blob (bypasses 4.5MB function limit)
-      const blob = await upload(uploadFile.name, uploadFile, {
-        access: "public",
-        handleUploadUrl: "/api/bom/upload-token",
-      });
+      // Step 1: Stream PDF to server-side /api/bom/upload → Vercel Blob
+      // (avoids @vercel/blob/client SDK CORS issues; server streams directly to blob)
+      const uploadRes = await fetch(
+        `/api/bom/upload?filename=${encodeURIComponent(uploadFile.name)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/pdf" },
+          body: uploadFile,
+          // duplex required for streaming body in some environments
+          ...(typeof Request !== "undefined" && "duplex" in new Request("", { method: "POST", body: "" })
+            ? { duplex: "half" }
+            : {}),
+        } as RequestInit
+      );
 
-      // Step 2: Ask the server to fetch from blob + run Claude extraction
+      if (!uploadRes.ok) {
+        const err = await uploadRes.json().catch(() => ({ error: "Upload failed" }));
+        throw new Error((err as { error?: string }).error ?? `Upload failed (${uploadRes.status})`);
+      }
+      const { url: blobUrl } = (await uploadRes.json()) as { url: string };
+
+      // Step 2: Run Claude extraction on the blob URL
       const res = await fetch("/api/bom/extract", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ blobUrl: blob.url }),
+        body: JSON.stringify({ blobUrl }),
       });
       const data = await safeFetchBom(res);
       loadBomData(data);
