@@ -1,5 +1,7 @@
 // src/app/api/projects/[id]/route.ts
 import { NextRequest, NextResponse } from "next/server";
+import * as Sentry from "@sentry/nextjs";
+import { tagSentryRequest } from "@/lib/sentry-request";
 import { requireApiAuth } from "@/lib/api-auth";
 import { fetchAllProjects, type Project } from "@/lib/hubspot";
 import { appCache, CACHE_KEYS } from "@/lib/cache";
@@ -7,9 +9,11 @@ import { appCache, CACHE_KEYS } from "@/lib/cache";
 export const runtime = "nodejs";
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  tagSentryRequest(request);
+
   const authResult = await requireApiAuth();
   if (authResult instanceof NextResponse) return authResult;
 
@@ -27,9 +31,11 @@ export async function GET(
     if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
 
     return NextResponse.json({ project });
-  } catch (e) {
+  } catch (error) {
+    console.error("Error fetching project:", error);
+    Sentry.captureException(error);
     return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Failed to fetch project" },
+      { error: "Failed to fetch project" },
       { status: 500 }
     );
   }
