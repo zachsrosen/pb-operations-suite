@@ -68,7 +68,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const chunkPath = `bom-chunks/${uploadId}/${String(chunkIndex).padStart(4, "0")}.chunk`;
 
   await put(chunkPath, chunkBytes, {
-    access: "public",
+    access: "private",
     contentType: "application/octet-stream",
     token: process.env.BLOB_READ_WRITE_TOKEN,
   });
@@ -84,12 +84,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ status: "pending", received: listed.blobs.length, total: totalChunks });
   }
 
-  // All chunks received — fetch and reassemble in order
+  // All chunks received — fetch and reassemble in order.
+  // Private blobs require the token as a Bearer header.
   const sorted = listed.blobs.sort((a, b) => a.pathname.localeCompare(b.pathname));
   const parts: Buffer[] = [];
+  const blobAuthHeader = { authorization: `Bearer ${process.env.BLOB_READ_WRITE_TOKEN}` };
 
   for (const blob of sorted) {
-    const res = await fetch(blob.url);
+    const res = await fetch(blob.url, { headers: blobAuthHeader });
     const buf = Buffer.from(await res.arrayBuffer());
     parts.push(buf);
   }
@@ -99,7 +101,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // Upload the assembled PDF as a single blob
   const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
   const finalBlob = await put(`bom-uploads/${safeName}`, assembled, {
-    access: "public",
+    access: "private",
     contentType: "application/pdf",
     addRandomSuffix: true,
     token: process.env.BLOB_READ_WRITE_TOKEN,

@@ -173,10 +173,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "blobUrl or driveUrl is required" }, { status: 400 });
   }
 
-  // Fetch the PDF from the URL (blob or Drive)
+  // Fetch the PDF from the URL (blob or Drive).
+  // Blob URLs require the token header — the store is private-access only.
+  const fetchHeaders: Record<string, string> = {};
+  if (body.blobUrl && process.env.BLOB_READ_WRITE_TOKEN) {
+    fetchHeaders["authorization"] = `Bearer ${process.env.BLOB_READ_WRITE_TOKEN}`;
+  }
+
   let fetchRes: Response;
   try {
-    fetchRes = await fetch(sourceUrl, { redirect: "follow" });
+    fetchRes = await fetch(sourceUrl, { redirect: "follow", headers: fetchHeaders });
     if (!fetchRes.ok) {
       return NextResponse.json(
         {
