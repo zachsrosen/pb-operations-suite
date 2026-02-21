@@ -5,6 +5,7 @@ import DashboardShell from "@/components/DashboardShell";
 import { exportToCSV } from "@/lib/export";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useToast } from "@/contexts/ToastContext";
+import { useSession } from "next-auth/react";
 // PDF upload uses chunked /api/bom/chunk — stays on our domain, no CORS issues
 
 /* ------------------------------------------------------------------ */
@@ -340,6 +341,7 @@ type ImportTab = "upload" | "drive" | "paste";
 
 function BomDashboardInner() {
   const { addToast } = useToast();
+  const { data: session } = useSession();
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -500,12 +502,33 @@ function BomDashboardInner() {
         setSnapshots(histData.snapshots);
       }
       addToast({ type: "success", title: `BOM v${saved.version} saved to ${linkedProject.dealname}` });
+      // Fire-and-forget email notification
+      if (session?.user?.email) {
+        fetch("/api/bom/notify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userEmail: session.user.email,
+            dealName: linkedProject.dealname,
+            dealId: linkedProject.hs_object_id,
+            version: saved.version,
+            sourceFile,
+            itemCount: bomData.items.length,
+            projectInfo: {
+              customer: bomData.project?.customer,
+              address: bomData.project?.address,
+              systemSizeKwdc: bomData.project?.systemSizeKwdc,
+              moduleCount: bomData.project?.moduleCount,
+            },
+          }),
+        }).catch(() => {/* silent */});
+      }
     } catch (e) {
       addToast({ type: "error", title: e instanceof Error ? e.message : "Save failed" });
     } finally {
       setSaving(false);
     }
-  }, [linkedProject, addToast]);
+  }, [linkedProject, addToast, session]);
 
   /* ---- Load BOM helper ---- */
   const loadBomData = useCallback((data: BomData) => {
