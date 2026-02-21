@@ -12,7 +12,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
-import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
+import { generateClientTokenFromReadWriteToken } from "@vercel/blob/client";
 
 const ALLOWED_ROLES = new Set([
   "ADMIN",
@@ -34,33 +34,41 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
   }
 
-  const body = (await req.json()) as HandleUploadBody;
+  // The @vercel/blob/client upload() sends:
+  //   { type: "blob.generate-client-token", payload: { pathname, clientPayload, multipart } }
+  let pathname: string;
+  try {
+    const body = (await req.json()) as {
+      type?: string;
+      payload?: { pathname?: string };
+      pathname?: string;
+    };
+    // Support both the structured event format and a plain { pathname } body
+    pathname = body.payload?.pathname ?? body.pathname ?? "planset.pdf";
+  } catch {
+    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+  }
+
+  // Validate PDF only
+  if (!pathname.toLowerCase().endsWith(".pdf")) {
+    return NextResponse.json({ error: "Only PDF files are allowed" }, { status: 400 });
+  }
 
   try {
-    const jsonResponse = await handleUpload({
-      body,
-      request: req,
-      onBeforeGenerateToken: async (pathname) => {
-        // Validate file is a PDF
-        if (!pathname.toLowerCase().endsWith(".pdf")) {
-          throw new Error("Only PDF files are allowed");
-        }
-        return {
-          allowedContentTypes: ["application/pdf"],
-          maximumSizeInBytes: 35 * 1024 * 1024, // 35MB
-          tokenPayload: JSON.stringify({ role }),
-        };
-      },
-      onUploadCompleted: async () => {
-        // No server-side action needed after upload
-      },
+    const clientToken = await generateClientTokenFromReadWriteToken({
+      token: process.env.BLOB_READ_WRITE_TOKEN!,
+      pathname,
+      maximumSizeInBytes: 35 * 1024 * 1024, // 35 MB
+      allowedContentTypes: ["application/pdf"],
+      addRandomSuffix: true,
     });
 
-    return NextResponse.json(jsonResponse);
+    return NextResponse.json({ clientToken });
   } catch (error) {
+    console.error("[bom/upload-token] generateClientToken error:", error);
     return NextResponse.json(
-      { error: (error as Error).message },
-      { status: 400 }
+      { error: (error as Error).message ?? "Failed to generate upload token" },
+      { status: 500 }
     );
   }
 }
