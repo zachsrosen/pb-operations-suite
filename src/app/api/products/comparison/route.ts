@@ -105,6 +105,10 @@ function parsePrice(value: unknown): number | null {
   return parsed;
 }
 
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values)];
+}
+
 function buildHubSpotProductUrl(productId: string): string {
   const portalId = (process.env.HUBSPOT_PORTAL_ID || "21710069").trim();
   return `https://app.hubspot.com/contacts/${portalId}/record/0-7/${encodeURIComponent(productId)}`;
@@ -407,7 +411,7 @@ function evaluateRowReasons(row: Pick<ComparisonRow, "hubspot" | "zuper" | "zoho
     if (uniquePrices.size > 1) reasons.push("Price mismatch");
   }
 
-  return reasons;
+  return uniqueStrings(reasons);
 }
 
 function autoMergeRows(rows: ComparisonRow[]): ComparisonRow[] {
@@ -433,10 +437,23 @@ function autoMergeRows(rows: ComparisonRow[]): ComparisonRow[] {
     indexRowProducts(i);
   }
 
-  const isHighConfidenceMatch = (match: PossibleMatch): boolean => {
+  const isHighConfidenceMatch = (
+    match: PossibleMatch,
+    rankedMatches: PossibleMatch[]
+  ): boolean => {
     const hasStrongSignal =
       match.signals.includes("SKU exact") || match.signals.includes("Identifier match");
-    return hasStrongSignal && match.score >= 0.78;
+    if (hasStrongSignal && match.score >= 0.78) return true;
+
+    const secondBestScore = rankedMatches[1]?.score ?? 0;
+    const hasClearLead = match.score - secondBestScore >= 0.08;
+    if (!hasClearLead) return false;
+
+    // Allow merge on very strong name similarity when SKU/identifier is missing.
+    if (match.signals.includes("Name very close") && match.score >= 0.54) return true;
+    if (match.signals.includes("Name similar") && match.score >= 0.66) return true;
+
+    return false;
   };
 
   const hasSourceConflict = (a: ComparisonRow, b: ComparisonRow): boolean => {
@@ -462,7 +479,7 @@ function autoMergeRows(rows: ComparisonRow[]): ComparisonRow[] {
           .filter((match) => match.source === source)
           .sort((a, b) => b.score - a.score);
         const topMatch = candidateMatches[0];
-        if (!topMatch || !isHighConfidenceMatch(topMatch)) continue;
+        if (!topMatch || !isHighConfidenceMatch(topMatch, candidateMatches)) continue;
 
         const targetRowIndex = productToRow.get(`${source}:${topMatch.product.id}`);
         if (targetRowIndex === undefined || targetRowIndex === i || removed.has(targetRowIndex)) continue;
@@ -880,14 +897,15 @@ function buildComparisonRows(products: NormalizedProduct[]): ComparisonRow[] {
       zoho: pickPrimary(group.zoho),
     };
     reasons.push(...evaluateRowReasons(primaryRow));
+    const dedupedReasons = uniqueStrings(reasons);
 
     rows.push({
       key,
       hubspot: primaryRow.hubspot,
       zuper: primaryRow.zuper,
       zoho: primaryRow.zoho,
-      reasons,
-      isMismatch: reasons.length > 0,
+      reasons: dedupedReasons,
+      isMismatch: dedupedReasons.length > 0,
       possibleMatches: [],
     });
   }
