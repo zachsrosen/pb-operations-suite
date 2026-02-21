@@ -32,6 +32,11 @@ function base64url(str: string): string {
     .replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
 }
 
+function escHtml(s: string | null | undefined): string {
+  if (!s) return "";
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
 export async function POST(request: NextRequest) {
   const authResult = await requireApiAuth();
   if (authResult instanceof NextResponse) return authResult;
@@ -63,23 +68,34 @@ export async function POST(request: NextRequest) {
   }
 
   const { userEmail, dealName, dealId, version, sourceFile, itemCount, projectInfo } = body;
+
+  // Validate required fields
+  if (!userEmail || !dealName || !dealId || typeof version !== "number" || typeof itemCount !== "number") {
+    return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+  }
+
+  // Prevent sending to arbitrary addresses — only send to the authenticated user's email
+  if (userEmail !== authResult.email) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const bomUrl = `https://pbtechops.com/dashboards/bom?deal=${encodeURIComponent(dealId)}`;
 
   const html = `
 <div style="font-family:sans-serif;max-width:600px;margin:0 auto;color:#1a1a1a">
   <div style="background:#0891b2;padding:20px 24px;border-radius:8px 8px 0 0">
     <h1 style="color:white;margin:0;font-size:20px">BOM v${version} Extracted</h1>
-    <p style="color:#cffafe;margin:4px 0 0">${dealName}</p>
+    <p style="color:#cffafe;margin:4px 0 0">${escHtml(dealName)}</p>
   </div>
   <div style="background:#f9fafb;padding:24px;border:1px solid #e5e7eb;border-top:none">
-    ${projectInfo?.customer ? `<p style="margin:0 0 4px"><strong>${projectInfo.customer}</strong></p>` : ""}
-    ${projectInfo?.address ? `<p style="margin:0 0 12px;color:#555">${projectInfo.address}</p>` : ""}
+    ${projectInfo?.customer ? `<p style="margin:0 0 4px"><strong>${escHtml(projectInfo.customer)}</strong></p>` : ""}
+    ${projectInfo?.address ? `<p style="margin:0 0 12px;color:#555">${escHtml(projectInfo.address)}</p>` : ""}
     <table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:16px">
       <tr><td style="padding:4px 0;color:#555">Version</td><td style="padding:4px 0"><strong>v${version}</strong></td></tr>
       <tr><td style="padding:4px 0;color:#555">Items</td><td style="padding:4px 0"><strong>${itemCount}</strong></td></tr>
       ${projectInfo?.systemSizeKwdc ? `<tr><td style="padding:4px 0;color:#555">System size</td><td style="padding:4px 0"><strong>${projectInfo.systemSizeKwdc} kWdc</strong></td></tr>` : ""}
       ${projectInfo?.moduleCount ? `<tr><td style="padding:4px 0;color:#555">Modules</td><td style="padding:4px 0"><strong>${projectInfo.moduleCount}</strong></td></tr>` : ""}
-      ${sourceFile ? `<tr><td style="padding:4px 0;color:#555">Source</td><td style="padding:4px 0">${sourceFile}</td></tr>` : ""}
+      ${sourceFile ? `<tr><td style="padding:4px 0;color:#555">Source</td><td style="padding:4px 0">${escHtml(sourceFile)}</td></tr>` : ""}
     </table>
     <a href="${bomUrl}" style="display:inline-block;background:#0891b2;color:white;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:600">View BOM →</a>
   </div>

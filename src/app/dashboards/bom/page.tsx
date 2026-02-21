@@ -913,7 +913,8 @@ function BomDashboardInner() {
       <style>{`
         @media print {
           nav, header, [data-dashboard-shell-header], [data-dashboard-shell-nav],
-          .action-bar, .history-panel, .diff-panel, .import-panel {
+          .action-bar, .history-panel, .diff-panel, .import-panel,
+          .quick-links-panel, .design-files-panel {
             display: none !important;
           }
           body { background: white !important; }
@@ -1269,7 +1270,7 @@ function BomDashboardInner() {
 
             {/* Quick Links */}
             {linkedProject && (
-              <div className="rounded-xl bg-surface border border-t-border p-4 shadow-card">
+              <div className="quick-links-panel rounded-xl bg-surface border border-t-border p-4 shadow-card">
                 <h3 className="text-xs font-semibold text-muted mb-2 uppercase tracking-wide">Quick Links</h3>
                 <QuickLinks project={linkedProject} />
               </div>
@@ -1277,7 +1278,7 @@ function BomDashboardInner() {
 
             {/* Design Files — from HubSpot design_document_folder_id */}
             {linkedProject?.designFolderUrl && (
-              <div className="rounded-xl bg-surface border border-t-border shadow-card overflow-hidden">
+              <div className="design-files-panel rounded-xl bg-surface border border-t-border shadow-card overflow-hidden">
                 <div className="flex items-center justify-between px-5 py-3 border-b border-t-border bg-surface-2">
                   <h3 className="text-sm font-semibold text-foreground">
                     Design Files

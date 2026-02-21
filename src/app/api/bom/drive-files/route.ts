@@ -20,6 +20,11 @@ export async function GET(request: NextRequest) {
   const folderId = request.nextUrl.searchParams.get("folderId");
   if (!folderId) return NextResponse.json({ error: "folderId required" }, { status: 400 });
 
+  // Validate folderId format to prevent Drive query injection
+  if (!/^[a-zA-Z0-9_-]{10,}$/.test(folderId)) {
+    return NextResponse.json({ error: "Invalid folderId format" }, { status: 400 });
+  }
+
   try {
     const token = await getServiceAccountToken([
       "https://www.googleapis.com/auth/drive.readonly",
