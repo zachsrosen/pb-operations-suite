@@ -73,24 +73,24 @@ interface ComparableProduct {
 
 interface ComparisonRow {
   key: string;
-  hubspot: ComparableProduct | null;
-  zuper: ComparableProduct | null;
-  zoho: ComparableProduct | null;
   reasons: string[];
   isMismatch: boolean;
+  [source: string]: ComparableProduct | string | string[] | boolean | null;
+}
+
+interface SourceHealth {
+  configured: boolean;
+  count: number;
+  error: string | null;
 }
 
 interface ProductComparisonResponse {
   rows: ComparisonRow[];
-  health: Record<"hubspot" | "zuper" | "zoho", { configured: boolean; count: number; error: string | null }>;
+  health: Record<string, SourceHealth>;
 }
 
-// Per-BOM-item catalog presence
-interface CatalogStatus {
-  hubspot: boolean;
-  zuper: boolean;
-  zoho: boolean;
-}
+// Per-BOM-item catalog presence — keyed by source name
+type CatalogStatus = Record<string, boolean>;
 
 /* Saved snapshot row from /api/bom/history */
 interface BomSnapshot {
@@ -122,6 +122,24 @@ interface DiffRow {
 /* ------------------------------------------------------------------ */
 /*  Constants                                                           */
 /* ------------------------------------------------------------------ */
+
+// Display labels for catalog sources — extend as new sources are added to the comparison API
+const SOURCE_DISPLAY_LABELS: Record<string, string> = {
+  hubspot: "HubSpot",
+  zuper: "Zuper",
+  zoho: "Zoho",
+  opensolar: "OpenSolar",
+  quickbooks: "QuickBooks",
+};
+
+// Short column headers for the BOM table
+const SOURCE_SHORT_LABELS: Record<string, string> = {
+  hubspot: "HS",
+  zuper: "ZU",
+  zoho: "ZO",
+  opensolar: "OS",
+  quickbooks: "QB",
+};
 
 const CATEGORY_ORDER: BomCategory[] = [
   "MODULE",
@@ -206,29 +224,38 @@ function productMatchesBomItem(product: ComparableProduct, item: BomItem): boole
   return tokenSimilarity(bomTokens, catalogTokens) >= 0.5;
 }
 
+// Non-product keys in a ComparisonRow that should be ignored when iterating sources
+const ROW_META_KEYS = new Set(["key", "reasons", "isMismatch", "possibleMatches"]);
+
+/** Derive source names from comparison rows (any key that isn't metadata). */
+function sourcesFromRows(rows: ComparisonRow[]): string[] {
+  if (!rows.length) return [];
+  return Object.keys(rows[0]).filter((k) => !ROW_META_KEYS.has(k));
+}
+
 /** Build a map of BOM item id → CatalogStatus from the comparison rows */
 function buildCatalogStatus(
   items: BomItem[],
   rows: ComparisonRow[]
 ): Map<string, CatalogStatus> {
   const result = new Map<string, CatalogStatus>();
+  const sources = sourcesFromRows(rows);
 
   for (const item of items) {
-    let inHubSpot = false;
-    let inZuper = false;
-    let inZoho = false;
+    const status: CatalogStatus = {};
+    for (const src of sources) status[src] = false;
 
     for (const row of rows) {
-      const hsMatch = row.hubspot && productMatchesBomItem(row.hubspot, item);
-      const zuMatch = row.zuper && productMatchesBomItem(row.zuper, item);
-      const zoMatch = row.zoho && productMatchesBomItem(row.zoho, item);
-      if (hsMatch) inHubSpot = true;
-      if (zuMatch) inZuper = true;
-      if (zoMatch) inZoho = true;
-      if (inHubSpot && inZuper && inZoho) break;
+      for (const src of sources) {
+        if (!status[src]) {
+          const product = row[src] as ComparableProduct | null;
+          if (product && productMatchesBomItem(product, item)) status[src] = true;
+        }
+      }
+      if (sources.every((s) => status[s])) break;
     }
 
-    result.set(item.id, { hubspot: inHubSpot, zuper: inZuper, zoho: inZoho });
+    result.set(item.id, status);
   }
 
   return result;
@@ -343,6 +370,9 @@ export default function BomDashboard() {
   const [catalogHealth, setCatalogHealth] = useState<ProductComparisonResponse["health"] | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogError, setCatalogError] = useState<string | null>(null);
+
+  // Derived source list — updates automatically when comparison data arrives
+  const catalogSources = sourcesFromRows(comparisonRows);
 
   // Derived catalog status per BOM item
   const [catalogStatus, setCatalogStatus] = useState<Map<string, CatalogStatus>>(new Map());
@@ -642,6 +672,10 @@ export default function BomDashboard() {
     if (!items.length) return;
     const rows = items.map((item) => {
       const status = catalogStatus.get(item.id);
+      const catalogCols: Record<string, string> = {};
+      for (const src of catalogSources) {
+        catalogCols[`in_${src}`] = status?.[src] ? "yes" : "no";
+      }
       return {
         category: item.category,
         brand: item.brand || "",
@@ -652,9 +686,7 @@ export default function BomDashboard() {
         unitLabel: item.unitLabel || "",
         source: item.source,
         flags: item.flags?.join(", ") || "",
-        in_hubspot: status?.hubspot ? "yes" : "no",
-        in_zuper: status?.zuper ? "yes" : "no",
-        in_zoho: status?.zoho ? "yes" : "no",
+        ...catalogCols,
       };
     });
     const customer = bom?.project?.customer || "bom";
@@ -686,16 +718,16 @@ export default function BomDashboard() {
       if (!catItems?.length) continue;
       lines.push(`## ${CATEGORY_LABELS[cat]}`);
       lines.push("");
-      lines.push("| Brand | Model | Description | Qty | Spec | HubSpot | Zuper | Zoho |");
-      lines.push("|-------|-------|-------------|-----|------|---------|-------|------|");
+      const srcHeaders = catalogSources.map((s) => SOURCE_DISPLAY_LABELS[s] ?? s).join(" | ");
+      const srcSeps = catalogSources.map(() => "------").join("|");
+      lines.push(`| Brand | Model | Description | Qty | Spec |${srcHeaders ? ` ${srcHeaders} |` : ""}`);
+      lines.push(`|-------|-------|-------------|-----|------|${srcSeps ? `${srcSeps}|` : ""}`);
       for (const item of catItems) {
         const flags = item.flags?.length ? ` ⚠️ ${item.flags.join(", ")}` : "";
         const status = catalogStatus.get(item.id);
-        const hs = status?.hubspot ? "✅" : "—";
-        const zu = status?.zuper ? "✅" : "—";
-        const zo = status?.zoho ? "✅" : "—";
+        const srcCols = catalogSources.map((s) => status?.[s] ? "✅" : "—").join(" | ");
         lines.push(
-          `| ${item.brand || "—"} | ${item.model || "—"} | ${item.description}${flags} | ${item.qty} | ${item.unitSpec || ""} ${item.unitLabel || ""} | ${hs} | ${zu} | ${zo} |`
+          `| ${item.brand || "—"} | ${item.model || "—"} | ${item.description}${flags} | ${item.qty} | ${item.unitSpec || ""} ${item.unitLabel || ""} |${srcCols ? ` ${srcCols} |` : ""}`
         );
       }
       lines.push("");
@@ -738,7 +770,7 @@ export default function BomDashboard() {
   const totalItems = items.length;
   const missingAny = items.filter((i) => {
     const s = catalogStatus.get(i.id);
-    return s && (!s.hubspot || !s.zuper || !s.zoho);
+    return s && catalogSources.some((src) => !s[src]);
   }).length;
 
   return (
@@ -991,12 +1023,12 @@ export default function BomDashboard() {
                   <p className="text-xs text-red-500">{catalogError}</p>
                 ) : catalogHealth ? (
                   <div className="space-y-2">
-                    {(["hubspot", "zuper", "zoho"] as const).map((src) => {
+                    {Object.keys(catalogHealth).map((src) => {
                       const health = catalogHealth[src];
                       const found = items.filter((i) => catalogStatus.get(i.id)?.[src]).length;
                       return (
                         <div key={src} className="flex items-center justify-between gap-2 text-sm">
-                          <span className="text-muted capitalize">{src === "hubspot" ? "HubSpot" : src === "zoho" ? "Zoho" : "Zuper"}</span>
+                          <span className="text-muted">{SOURCE_DISPLAY_LABELS[src] ?? src}</span>
                           {health.configured ? (
                             <span className="font-medium text-foreground">
                               {found}/{totalItems}
@@ -1371,23 +1403,29 @@ export default function BomDashboard() {
                         <th className="text-left px-4 py-2 font-medium w-16">Qty</th>
                         <th className="text-left px-4 py-2 font-medium w-24">Spec</th>
                         <th className="text-left px-4 py-2 font-medium w-20">Source</th>
-                        <th className="text-left px-4 py-2 font-medium w-32" colSpan={3}>
-                          Catalogs
-                        </th>
+                        {catalogSources.length > 0 && (
+                          <th className="text-left px-4 py-2 font-medium" colSpan={catalogSources.length}>
+                            Catalogs
+                          </th>
+                        )}
                         <th className="px-3 py-2 w-10"></th>
                       </tr>
-                      <tr className="text-xs text-muted border-b border-t-border bg-surface-2/50">
-                        <th colSpan={6} />
-                        <th className="px-2 py-1 font-normal text-center w-10">HS</th>
-                        <th className="px-2 py-1 font-normal text-center w-10">ZU</th>
-                        <th className="px-2 py-1 font-normal text-center w-10">ZO</th>
-                        <th />
-                      </tr>
+                      {catalogSources.length > 0 && (
+                        <tr className="text-xs text-muted border-b border-t-border bg-surface-2/50">
+                          <th colSpan={6} />
+                          {catalogSources.map((src) => (
+                            <th key={src} className="px-2 py-1 font-normal text-center w-10" title={SOURCE_DISPLAY_LABELS[src] ?? src}>
+                              {SOURCE_SHORT_LABELS[src] ?? src.slice(0, 2).toUpperCase()}
+                            </th>
+                          ))}
+                          <th />
+                        </tr>
+                      )}
                     </thead>
                     <tbody className="divide-y divide-[color:var(--border)]">
                       {grouped[cat]!.map((item) => {
                         const status = catalogStatus.get(item.id);
-                        const missing = status && (!status.hubspot || !status.zuper || !status.zoho);
+                        const missing = status && catalogSources.some((s) => !status[s]);
                         return (
                           <tr
                             key={item.id}
@@ -1430,15 +1468,11 @@ export default function BomDashboard() {
                               />
                             </td>
                             <td className="px-4 py-1.5 text-muted text-xs">{item.source}</td>
-                            <td className="px-2 py-1.5 text-center">
-                              <CatalogDot present={status?.hubspot} loading={catalogLoading} />
-                            </td>
-                            <td className="px-2 py-1.5 text-center">
-                              <CatalogDot present={status?.zuper} loading={catalogLoading} />
-                            </td>
-                            <td className="px-2 py-1.5 text-center">
-                              <CatalogDot present={status?.zoho} loading={catalogLoading} />
-                            </td>
+                            {catalogSources.map((src) => (
+                              <td key={src} className="px-2 py-1.5 text-center">
+                                <CatalogDot present={status?.[src]} loading={catalogLoading} />
+                              </td>
+                            ))}
                             <td className="px-3 py-1.5">
                               <button
                                 onClick={() => deleteItem(item.id)}
