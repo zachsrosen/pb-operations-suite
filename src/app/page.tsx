@@ -17,6 +17,7 @@ import { prefetchDashboard } from "@/lib/prefetch";
 import { NLSearchBar } from "@/components/ui/NLSearchBar";
 import { AnomalyInsights } from "@/components/ui/AnomalyInsights";
 import type { ProjectFilterSpec } from "@/lib/ai";
+import PhotonBrothersBadge from "@/components/PhotonBrothersBadge";
 
 function useIsMac() {
   const [isMac] = useState(() => {
@@ -145,11 +146,13 @@ function applyAISpecToProjects(projects: ProjectRecord[], spec: ProjectFilterSpe
   }
 
   if (typeof spec.min_amount === "number") {
-    result = result.filter((project) => project.amount >= spec.min_amount);
+    const minAmount = spec.min_amount;
+    result = result.filter((project) => project.amount >= minAmount);
   }
 
   if (typeof spec.max_amount === "number") {
-    result = result.filter((project) => project.amount <= spec.max_amount);
+    const maxAmount = spec.max_amount;
+    result = result.filter((project) => project.amount <= maxAmount);
   }
 
   return result;
@@ -430,9 +433,17 @@ export default function Home() {
       {/* Header */}
       <header className="border-b border-t-border/80 bg-surface-elevated/75 backdrop-blur-sm px-6 py-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <h1 className="text-xl font-bold bg-gradient-to-r from-orange-500 to-orange-400 bg-clip-text text-transparent">
-            PB Operations Suite
-          </h1>
+          <div className="flex min-w-0 items-center gap-3">
+            <PhotonBrothersBadge compact />
+            <h1
+              className="truncate text-xl font-bold bg-clip-text text-transparent"
+              style={{
+                backgroundImage: "linear-gradient(90deg, #f49b04 0%, #ad6605 100%)",
+              }}
+            >
+              PB Operations Suite
+            </h1>
+          </div>
           <div className="flex items-center gap-3">
             {/* Search hint */}
             <button

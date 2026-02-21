@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ReactNode, useCallback } from "react";
 import { usePathname } from "next/navigation";
 import { ThemeToggle } from "./ThemeToggle";
+import PhotonBrothersBadge from "./PhotonBrothersBadge";
 
 // Maps dashboard paths to their parent suite
 const SUITE_MAP: Record<string, { href: string; label: string }> = {
@@ -170,6 +171,7 @@ export default function DashboardShell({
                   />
                 </svg>
               </Link>
+              <PhotonBrothersBadge compact className="hidden sm:inline-flex" />
               <div className="min-w-0">
                 <h1
                   className={`text-lg sm:text-xl font-bold truncate ${colorMap[accentColor] || "text-orange-400"}`}

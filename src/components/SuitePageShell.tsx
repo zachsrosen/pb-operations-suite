@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getSuiteSwitcherEntriesForRole, SUITE_NAV_ENTRIES } from "@/lib/suite-nav";
 import { canAccessRoute, getDefaultRouteForRole, type UserRole } from "@/lib/role-permissions";
+import PhotonBrothersBadge from "./PhotonBrothersBadge";
 
 export interface SuitePageCard {
   href: string;
@@ -83,7 +84,10 @@ export default function SuitePageShell({
           <Link href={backHref} className="text-xs text-muted hover:text-foreground transition-colors">
             &larr; Back to Dashboard
           </Link>
-          <h1 className="text-2xl font-bold mt-3">{title}</h1>
+          <div className="mt-3">
+            <PhotonBrothersBadge compact />
+          </div>
+          <h1 className="text-2xl font-bold mt-3 text-[#f49b04]">{title}</h1>
           <p className="text-sm text-muted mt-1">{subtitle}</p>
         </div>
 
