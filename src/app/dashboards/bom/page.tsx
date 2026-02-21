@@ -1608,7 +1608,7 @@ function CatalogDot({ present, loading }: { present?: boolean; loading?: boolean
 
 export default function BomDashboard() {
   return (
-    <Suspense>
+    <Suspense fallback={<div className="flex items-center justify-center h-64 text-muted text-sm">Loading…</div>}>
       <BomDashboardInner />
     </Suspense>
   );
