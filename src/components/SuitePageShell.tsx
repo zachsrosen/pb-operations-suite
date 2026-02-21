@@ -126,6 +126,7 @@ export default function SuitePageShell({
                 <Link
                   key={item.href}
                   href={item.href}
+                  prefetch={false}
                   className={`group block rounded-xl border border-t-border/80 bg-gradient-to-br from-surface-elevated/80 via-surface/70 to-surface-2/50 p-5 shadow-card backdrop-blur-sm ${hoverBorderClass} hover:bg-surface transition-all`}
                 >
                   <div className="flex items-center justify-between mb-1">

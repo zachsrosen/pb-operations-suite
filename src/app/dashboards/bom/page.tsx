@@ -4,7 +4,7 @@ import React, { useState, useCallback, useRef, useEffect } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { exportToCSV } from "@/lib/export";
 import { useToast } from "@/contexts/ToastContext";
-// (no blob client import — uploads go through /api/bom/upload server route)
+import { upload } from "@vercel/blob/client";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                               */
@@ -319,34 +319,32 @@ export default function BomDashboard() {
     setExtracting(true);
     setImportError(null);
     try {
-      // Step 1: Stream PDF to server-side /api/bom/upload → Vercel Blob
-      // (avoids @vercel/blob/client SDK CORS issues; server streams directly to blob)
-      const uploadRes = await fetch(
-        `/api/bom/upload?filename=${encodeURIComponent(uploadFile.name)}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/pdf" },
-          body: uploadFile,
-        }
-      );
-
-      if (!uploadRes.ok) {
-        const err = await uploadRes.json().catch(() => ({ error: "Upload failed" }));
-        throw new Error((err as { error?: string }).error ?? `Upload failed (${uploadRes.status})`);
-      }
-      const { url: blobUrl } = (await uploadRes.json()) as { url: string };
+      // Step 1: Upload PDF directly to Vercel Blob from the browser.
+      // This bypasses Vercel's 4.5MB serverless body limit — the file goes
+      // browser → blob.vercel-storage.com directly, then we pass the URL to extract.
+      const blob = await upload(uploadFile.name, uploadFile, {
+        access: "public",
+        handleUploadUrl: "/api/bom/upload-token",
+        clientPayload: uploadFile.name,
+      });
 
       // Step 2: Run Claude extraction on the blob URL
       const res = await fetch("/api/bom/extract", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ blobUrl }),
+        body: JSON.stringify({ blobUrl: blob.url }),
       });
       const data = await safeFetchBom(res);
       loadBomData(data);
       addToast({ type: "success", title: `BOM extracted from ${uploadFile.name}` });
     } catch (e) {
-      setImportError(e instanceof Error ? e.message : "Extraction failed");
+      const msg = e instanceof Error ? e.message : "Extraction failed";
+      // Give a friendlier message for the common token/CORS case
+      if (msg.includes("client token") || msg.includes("Failed to fetch")) {
+        setImportError("Upload failed — please try again. If this persists, check that Vercel Blob is connected in project settings.");
+      } else {
+        setImportError(msg);
+      }
     } finally {
       setExtracting(false);
     }
