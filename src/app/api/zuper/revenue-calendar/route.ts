@@ -463,6 +463,37 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    // D&R allocation: if a deal has both Detach and Reset jobs, split the
+    // deal value 50/50 across those categories to avoid double counting.
+    const dnrByDeal = new Map<string, CalendarJob[]>();
+    for (const job of confirmedJobs) {
+      if (!job.dealId) continue;
+      if (job.categoryKey !== "detach" && job.categoryKey !== "reset") continue;
+      if (!dnrByDeal.has(job.dealId)) dnrByDeal.set(job.dealId, []);
+      dnrByDeal.get(job.dealId)!.push(job);
+    }
+    for (const [dealId, jobs] of dnrByDeal.entries()) {
+      const categories = new Set(jobs.map((j) => j.categoryKey));
+      if (!categories.has("detach") || !categories.has("reset")) continue;
+
+      const dealAmount = dealMap.get(dealId)?.amount || jobs[0]?.totalDealValue || 0;
+      if (dealAmount <= 0) continue;
+
+      const detachJobs = jobs.filter((j) => j.categoryKey === "detach");
+      const resetJobs = jobs.filter((j) => j.categoryKey === "reset");
+      const perDetachJob = detachJobs.length > 0 ? (dealAmount / 2) / detachJobs.length : 0;
+      const perResetJob = resetJobs.length > 0 ? (dealAmount / 2) / resetJobs.length : 0;
+
+      for (const job of detachJobs) {
+        job.totalDealValue = perDetachJob;
+        job.dealValue = perDetachJob;
+      }
+      for (const job of resetJobs) {
+        job.totalDealValue = perResetJob;
+        job.dealValue = perResetJob;
+      }
+    }
+
     // Build tentative CalendarJob entries (exclude $0 deals)
     const tentativeJobs: CalendarJob[] = [];
     for (const rec of tentativeRecords) {
