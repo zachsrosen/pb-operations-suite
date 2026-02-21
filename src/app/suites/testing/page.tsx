@@ -115,6 +115,14 @@ const TESTING_DASHBOARDS: SuitePageCard[] = [
     tagColor: "bg-amber-500/20 text-amber-300 border-amber-500/30",
     section: "Testing Dashboards",
   },
+  {
+    href: "/dashboards/bom",
+    title: "Planset BOM",
+    description: "Import a planset bill of materials, edit inline, and cross-reference against HubSpot, Zuper, and Zoho catalogs.",
+    tag: "BOM",
+    tagColor: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
+    section: "Testing Dashboards",
+  },
 ];
 
 const PROTOTYPES: SuitePageCard[] = [
