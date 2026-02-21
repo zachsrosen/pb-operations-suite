@@ -4,6 +4,7 @@ import React, { useState, useCallback, useRef, useEffect } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { exportToCSV } from "@/lib/export";
 import { useToast } from "@/contexts/ToastContext";
+import { upload } from "@vercel/blob/client";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                               */
@@ -296,27 +297,49 @@ export default function BomDashboard() {
     setItems(assignIds(data.items));
   }, []);
 
+  /* ---- Safe fetch helper — handles non-JSON error responses ---- */
+  const safeFetchBom = useCallback(async (res: Response): Promise<BomData> => {
+    const text = await res.text();
+    let data: Record<string, unknown>;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      // Server returned HTML (e.g. "Request Entity Too Large", Vercel timeout)
+      if (res.status === 413) throw new Error("PDF is too large — try a smaller file.");
+      if (res.status === 504) throw new Error("Extraction timed out. Try again.");
+      throw new Error(`Server error ${res.status}: ${text.slice(0, 120)}`);
+    }
+    if (!res.ok) throw new Error((data.error as string) || `Server error ${res.status}`);
+    return data as unknown as BomData;
+  }, []);
+
   /* ---- Extract from PDF upload ---- */
   const handleExtractUpload = useCallback(async () => {
     if (!uploadFile) return;
     setExtracting(true);
     setImportError(null);
     try {
-      const form = new FormData();
-      form.append("file", uploadFile);
-      const res = await fetch("/api/bom/extract", { method: "POST", body: form });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || `Server error ${res.status}`);
-      }
-      loadBomData(data as BomData);
+      // Step 1: Upload PDF directly to Vercel Blob (bypasses 4.5MB function limit)
+      const blob = await upload(uploadFile.name, uploadFile, {
+        access: "public",
+        handleUploadUrl: "/api/bom/upload-token",
+      });
+
+      // Step 2: Ask the server to fetch from blob + run Claude extraction
+      const res = await fetch("/api/bom/extract", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ blobUrl: blob.url }),
+      });
+      const data = await safeFetchBom(res);
+      loadBomData(data);
       addToast({ type: "success", title: `BOM extracted from ${uploadFile.name}` });
     } catch (e) {
       setImportError(e instanceof Error ? e.message : "Extraction failed");
     } finally {
       setExtracting(false);
     }
-  }, [uploadFile, loadBomData, addToast]);
+  }, [uploadFile, loadBomData, safeFetchBom, addToast]);
 
   /* ---- Extract from Google Drive URL ---- */
   const handleExtractDrive = useCallback(async () => {
@@ -342,18 +365,15 @@ export default function BomDashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ driveUrl: downloadUrl, fileId }),
       });
-      const data = await proxyRes.json();
-      if (!proxyRes.ok) {
-        throw new Error(data.error || `Server error ${proxyRes.status}`);
-      }
-      loadBomData(data as BomData);
+      const data = await safeFetchBom(proxyRes);
+      loadBomData(data);
       addToast({ type: "success", title: "BOM extracted from Google Drive" });
     } catch (e) {
       setImportError(e instanceof Error ? e.message : "Drive extraction failed");
     } finally {
       setExtracting(false);
     }
-  }, [driveUrl, loadBomData, addToast]);
+  }, [driveUrl, loadBomData, safeFetchBom, addToast]);
 
   /* ---- Paste JSON import ---- */
   const handleImport = useCallback(() => {
@@ -614,7 +634,7 @@ export default function BomDashboard() {
                   </button>
                   {extracting && (
                     <p className="text-xs text-muted animate-pulse">
-                      Claude is reading the planset — this takes 20–40 seconds for a full planset.
+                      Uploading then extracting with Claude — allow 30–60 seconds for a full planset.
                     </p>
                   )}
                 </div>

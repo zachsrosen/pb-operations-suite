@@ -126,9 +126,17 @@ Return EXACTLY this structure:
 
 Return ONLY the JSON object. No markdown fences, no preamble.`;
 
-// ── Route handler ─────────────────────────────────────────────────────────────
+// ── Route config ─────────────────────────────────────────────────────────────
 
 export const maxDuration = 120;
+
+// Disable Next.js body size limit — planset PDFs are typically 5–15MB and
+// would be rejected by the default 4MB cap before our code runs.
+export const dynamic = "force-dynamic";
+
+// App Router: increase request body size limit to 50MB via route segment config
+export const fetchCache = "force-no-store";
+export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
   // Auth check
@@ -145,90 +153,66 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "ANTHROPIC_API_KEY is not configured" }, { status: 503 });
   }
 
-  const contentType = req.headers.get("content-type") ?? "";
   const MAX_SIZE = 32 * 1024 * 1024; // 32MB
 
   let pdfBase64: string;
   let filename = "planset.pdf";
 
-  if (contentType.includes("application/json")) {
-    // ── Google Drive URL path ────────────────────────────────────────────────
-    let body: { driveUrl?: string; fileId?: string };
-    try {
-      body = await req.json();
-    } catch {
-      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
-    }
+  // All paths go through JSON body now:
+  //   { blobUrl: "https://..." }          ← Vercel Blob upload
+  //   { driveUrl: "...", fileId: "..." }  ← Google Drive link
+  let body: { blobUrl?: string; driveUrl?: string; fileId?: string };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
 
-    const driveUrl = body.driveUrl;
-    if (!driveUrl) {
-      return NextResponse.json({ error: "driveUrl is required" }, { status: 400 });
-    }
+  const sourceUrl = body.blobUrl ?? body.driveUrl;
+  if (!sourceUrl) {
+    return NextResponse.json({ error: "blobUrl or driveUrl is required" }, { status: 400 });
+  }
 
-    // Fetch the PDF from Drive
-    let driveRes: Response;
-    try {
-      driveRes = await fetch(driveUrl, { redirect: "follow" });
-      if (!driveRes.ok) {
-        return NextResponse.json(
-          { error: `Failed to download from Drive (HTTP ${driveRes.status}). Make sure the file is shared publicly.` },
-          { status: 400 }
-        );
-      }
-    } catch (e) {
+  // Fetch the PDF from the URL (blob or Drive)
+  let fetchRes: Response;
+  try {
+    fetchRes = await fetch(sourceUrl, { redirect: "follow" });
+    if (!fetchRes.ok) {
       return NextResponse.json(
-        { error: `Drive fetch failed: ${e instanceof Error ? e.message : String(e)}` },
+        {
+          error: body.blobUrl
+            ? `Failed to read uploaded file (HTTP ${fetchRes.status})`
+            : `Failed to download from Drive (HTTP ${fetchRes.status}). Make sure the file is shared publicly.`,
+        },
         { status: 400 }
       );
     }
+  } catch (e) {
+    return NextResponse.json(
+      { error: `Fetch failed: ${e instanceof Error ? e.message : String(e)}` },
+      { status: 400 }
+    );
+  }
 
-    const driveContentType = driveRes.headers.get("content-type") ?? "";
-    if (!driveContentType.includes("pdf") && !driveContentType.includes("octet-stream")) {
+  const fetchContentType = fetchRes.headers.get("content-type") ?? "";
+  if (!fetchContentType.includes("pdf") && !fetchContentType.includes("octet-stream")) {
+    // Google Drive may redirect to a confirmation page for large files
+    if (!body.blobUrl) {
       return NextResponse.json(
-        { error: "Drive URL did not return a PDF. The file may not be publicly accessible or may not be a PDF." },
+        { error: "Drive URL did not return a PDF. The file may require confirmation — try downloading it and using Upload PDF instead." },
         { status: 400 }
       );
-    }
-
-    const arrayBuffer = await driveRes.arrayBuffer();
-    if (arrayBuffer.byteLength > MAX_SIZE) {
-      return NextResponse.json({ error: "PDF exceeds 32MB limit" }, { status: 400 });
-    }
-    pdfBase64 = Buffer.from(arrayBuffer).toString("base64");
-    filename = `drive-${body.fileId ?? "planset"}.pdf`;
-  } else {
-    // ── Multipart file upload path ───────────────────────────────────────────
-    let formData: FormData;
-    try {
-      formData = await req.formData();
-    } catch {
-      return NextResponse.json({ error: "Invalid multipart form data" }, { status: 400 });
-    }
-
-    const file = formData.get("file");
-    if (!file || typeof file === "string") {
-      return NextResponse.json({ error: "No file provided" }, { status: 400 });
-    }
-
-    const fileObj = file as File;
-    filename = fileObj.name ?? "planset.pdf";
-    const mimeType = fileObj.type ?? "";
-
-    if (!filename.toLowerCase().endsWith(".pdf") && mimeType !== "application/pdf") {
-      return NextResponse.json({ error: "File must be a PDF" }, { status: 400 });
-    }
-
-    if (fileObj.size > MAX_SIZE) {
-      return NextResponse.json({ error: "PDF exceeds 32MB limit" }, { status: 400 });
-    }
-
-    try {
-      const buffer = Buffer.from(await fileObj.arrayBuffer());
-      pdfBase64 = buffer.toString("base64");
-    } catch {
-      return NextResponse.json({ error: "Failed to read PDF" }, { status: 400 });
     }
   }
+
+  const arrayBuffer = await fetchRes.arrayBuffer();
+  if (arrayBuffer.byteLength > MAX_SIZE) {
+    return NextResponse.json({ error: "PDF exceeds 32MB limit" }, { status: 400 });
+  }
+  pdfBase64 = Buffer.from(arrayBuffer).toString("base64");
+  filename = body.blobUrl
+    ? (body.blobUrl.split("/").pop() ?? "planset.pdf")
+    : `drive-${body.fileId ?? "planset"}.pdf`;
 
   // Call Claude with native PDF document support
   const client = new Anthropic({ apiKey });
