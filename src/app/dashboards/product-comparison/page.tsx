@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
+import { MultiSelectFilter, type FilterOption } from "@/components/ui/MultiSelectFilter";
 
 type SourceName = "hubspot" | "zuper" | "zoho";
 
@@ -12,6 +13,14 @@ interface ComparableProduct {
   sku: string | null;
   price: number | null;
   status: string | null;
+  description: string | null;
+}
+
+interface PossibleMatch {
+  source: SourceName;
+  product: ComparableProduct;
+  score: number;
+  signals: string[];
 }
 
 interface ComparisonRow {
@@ -21,6 +30,7 @@ interface ComparisonRow {
   zoho: ComparableProduct | null;
   reasons: string[];
   isMismatch: boolean;
+  possibleMatches: PossibleMatch[];
 }
 
 interface SourceHealth {
@@ -85,6 +95,43 @@ function ProductCell({ product }: { product: ComparableProduct | null }) {
   );
 }
 
+function reasonBadgeClass(reason: string): string {
+  if (reason === "Missing in HubSpot") {
+    return "border-orange-500/40 bg-orange-500/10 text-orange-300";
+  }
+  if (reason === "Missing in Zuper") {
+    return "border-blue-500/40 bg-blue-500/10 text-blue-300";
+  }
+  if (reason === "Missing in Zoho") {
+    return "border-emerald-500/40 bg-emerald-500/10 text-emerald-300";
+  }
+  if (reason.includes("Duplicate")) {
+    return "border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-300";
+  }
+  if (reason.includes("Price mismatch")) {
+    return "border-yellow-500/40 bg-yellow-500/10 text-yellow-300";
+  }
+  if (reason.includes("SKU mismatch")) {
+    return "border-cyan-500/40 bg-cyan-500/10 text-cyan-300";
+  }
+  if (reason.includes("name mismatch")) {
+    return "border-violet-500/40 bg-violet-500/10 text-violet-300";
+  }
+  return "border-red-500/30 bg-red-500/10 text-red-300";
+}
+
+function sourceBadgeClass(source: SourceName): string {
+  if (source === "hubspot") return "bg-orange-500/15 border-orange-500/40 text-orange-300";
+  if (source === "zuper") return "bg-blue-500/15 border-blue-500/40 text-blue-300";
+  return "bg-emerald-500/15 border-emerald-500/40 text-emerald-300";
+}
+
+const MISSING_SOURCE_OPTIONS: FilterOption[] = [
+  { value: "hubspot", label: "Missing in HubSpot" },
+  { value: "zuper", label: "Missing in Zuper" },
+  { value: "zoho", label: "Missing in Zoho" },
+];
+
 export default function ProductComparisonPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
@@ -96,7 +143,8 @@ export default function ProductComparisonPage() {
   const [data, setData] = useState<ProductComparisonResponse | null>(null);
   const [search, setSearch] = useState("");
   const [showMatchedRows, setShowMatchedRows] = useState(false);
-  const [missingFilter, setMissingFilter] = useState<"all" | SourceName>("all");
+  const [missingFilters, setMissingFilters] = useState<SourceName[]>([]);
+  const [reasonFilters, setReasonFilters] = useState<string[]>([]);
 
   const fetchData = useCallback(async () => {
     try {
@@ -148,15 +196,34 @@ export default function ProductComparisonPage() {
     hasTrackedView.current = true;
   }, [isAllowed, trackDashboardView]);
 
+  const reasonFilterOptions = useMemo<FilterOption[]>(() => {
+    if (!data) return [];
+    const reasons = new Set<string>();
+    for (const row of data.rows) {
+      for (const reason of row.reasons) reasons.add(reason);
+    }
+    return [...reasons]
+      .sort((a, b) => a.localeCompare(b))
+      .map((reason) => ({ value: reason, label: reason }));
+  }, [data]);
+
   const rows = useMemo(() => {
     if (!data) return [];
     const searchTerm = search.trim().toLowerCase();
 
     return data.rows.filter((row) => {
       if (!showMatchedRows && !row.isMismatch) return false;
-      if (missingFilter === "hubspot" && row.hubspot) return false;
-      if (missingFilter === "zuper" && row.zuper) return false;
-      if (missingFilter === "zoho" && row.zoho) return false;
+      if (missingFilters.length > 0) {
+        const matchesMissingSource = missingFilters.some((source) => {
+          if (source === "hubspot") return row.hubspot === null;
+          if (source === "zuper") return row.zuper === null;
+          return row.zoho === null;
+        });
+        if (!matchesMissingSource) return false;
+      }
+      if (reasonFilters.length > 0 && !reasonFilters.some((reason) => row.reasons.includes(reason))) {
+        return false;
+      }
 
       if (!searchTerm) return true;
 
@@ -169,6 +236,8 @@ export default function ProductComparisonPage() {
         row.zoho?.name,
         row.zoho?.sku,
         ...row.reasons,
+        ...row.possibleMatches.map((match) => match.product.name || ""),
+        ...row.possibleMatches.map((match) => match.product.sku || ""),
       ]
         .filter(Boolean)
         .join(" ")
@@ -176,12 +245,18 @@ export default function ProductComparisonPage() {
 
       return haystack.includes(searchTerm);
     });
-  }, [data, missingFilter, search, showMatchedRows]);
+  }, [data, missingFilters, reasonFilters, search, showMatchedRows]);
 
   const exportRows = useMemo(() => {
     return rows.map((row) => ({
       key: row.key,
       reasons: row.reasons.join(" | "),
+      possible_matches: row.possibleMatches
+        .map(
+          (match) =>
+            `${formatSourceName(match.source)}:${match.product.name || "-"} (${Math.round(match.score * 100)}%)`
+        )
+        .join(" | "),
       hubspot_name: row.hubspot?.name || "",
       hubspot_sku: row.hubspot?.sku || "",
       hubspot_price: row.hubspot?.price ?? "",
@@ -291,16 +366,22 @@ export default function ProductComparisonPage() {
                   />
                   Show matched rows
                 </label>
-                <select
-                  className="px-2 py-1.5 rounded border border-t-border bg-background text-xs"
-                  value={missingFilter}
-                  onChange={(event) => setMissingFilter(event.target.value as "all" | SourceName)}
-                >
-                  <option value="all">All gaps</option>
-                  <option value="hubspot">Missing in HubSpot</option>
-                  <option value="zuper">Missing in Zuper</option>
-                  <option value="zoho">Missing in Zoho</option>
-                </select>
+                <MultiSelectFilter
+                  label="Missing"
+                  options={MISSING_SOURCE_OPTIONS}
+                  selected={missingFilters}
+                  onChange={(selected) => setMissingFilters(selected as SourceName[])}
+                  placeholder="All sources"
+                  accentColor="orange"
+                />
+                <MultiSelectFilter
+                  label="Reasons"
+                  options={reasonFilterOptions}
+                  selected={reasonFilters}
+                  onChange={setReasonFilters}
+                  placeholder="All reasons"
+                  accentColor="purple"
+                />
                 <button
                   onClick={fetchData}
                   className="px-3 py-1.5 rounded border border-cyan-500/40 bg-cyan-500/10 text-cyan-300 text-xs hover:bg-cyan-500/20 transition-colors"
@@ -338,15 +419,35 @@ export default function ProductComparisonPage() {
                         {row.reasons.length === 0 ? (
                           <span className="text-green-400">Matched</span>
                         ) : (
-                          <div className="flex flex-wrap gap-1">
-                            {row.reasons.map((reason) => (
-                              <span
-                                key={`${row.key}-${reason}`}
-                                className="px-2 py-0.5 rounded border border-red-500/30 bg-red-500/10 text-red-300"
-                              >
-                                {reason}
-                              </span>
-                            ))}
+                          <div className="space-y-2">
+                            <div className="flex flex-wrap gap-1">
+                              {row.reasons.map((reason) => (
+                                <span
+                                  key={`${row.key}-${reason}`}
+                                  className={`px-2 py-0.5 rounded border ${reasonBadgeClass(reason)}`}
+                                >
+                                  {reason}
+                                </span>
+                              ))}
+                            </div>
+                            {row.possibleMatches.length > 0 && (
+                              <div className="space-y-1">
+                                <div className="text-[10px] uppercase tracking-wide text-muted">Possible matches</div>
+                                {row.possibleMatches.map((match) => (
+                                  <div
+                                    key={`${row.key}-${match.source}-${match.product.id}`}
+                                    className="flex flex-wrap items-center gap-1 text-[11px] text-foreground/85"
+                                  >
+                                    <span className={`px-1.5 py-0.5 rounded border ${sourceBadgeClass(match.source)}`}>
+                                      {formatSourceName(match.source)}
+                                    </span>
+                                    <span>{match.product.name || "-"}</span>
+                                    <span className="text-muted">({Math.round(match.score * 100)}%)</span>
+                                    {match.product.sku && <span className="text-muted">SKU: {match.product.sku}</span>}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         )}
                       </td>

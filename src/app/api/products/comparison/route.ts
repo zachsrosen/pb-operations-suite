@@ -12,6 +12,7 @@ interface ComparableProduct {
   sku: string | null;
   price: number | null;
   status: string | null;
+  description: string | null;
 }
 
 interface NormalizedProduct extends ComparableProduct {
@@ -33,6 +34,14 @@ interface ComparisonRow {
   zoho: ComparableProduct | null;
   reasons: string[];
   isMismatch: boolean;
+  possibleMatches: PossibleMatch[];
+}
+
+interface PossibleMatch {
+  source: SourceName;
+  product: ComparableProduct;
+  score: number;
+  signals: string[];
 }
 
 interface ProductComparisonResponse {
@@ -106,6 +115,7 @@ function pickPrimary(products: NormalizedProduct[]): ComparableProduct | null {
     sku: first.sku,
     price: first.price,
     status: first.status,
+    description: first.description,
   };
 }
 
@@ -144,14 +154,202 @@ function getNestedArrayCandidate(payload: unknown): unknown[] | null {
   return null;
 }
 
-async function fetchHubSpotProducts(): Promise<{ products: NormalizedProduct[]; error: string | null; configured: boolean }> {
+function tokenize(value: string | null | undefined): Set<string> {
+  const normalized = normalizeText(value);
+  if (!normalized) return new Set();
+  return new Set(normalized.split(" ").filter((token) => token.length >= 3));
+}
+
+function tokenSimilarity(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  let overlap = 0;
+  for (const token of a) {
+    if (b.has(token)) overlap += 1;
+  }
+  const union = new Set([...a, ...b]).size;
+  return union > 0 ? overlap / union : 0;
+}
+
+function compareProducts(anchor: ComparableProduct, candidate: ComparableProduct): { score: number; signals: string[] } {
+  const signals: string[] = [];
+  let score = 0;
+
+  const anchorSku = normalizeSku(anchor.sku);
+  const candidateSku = normalizeSku(candidate.sku);
+  if (anchorSku && candidateSku) {
+    if (anchorSku === candidateSku) {
+      score += 0.72;
+      signals.push("SKU exact");
+    } else if (
+      anchorSku.length >= 5 &&
+      candidateSku.length >= 5 &&
+      (anchorSku.includes(candidateSku) || candidateSku.includes(anchorSku))
+    ) {
+      score += 0.42;
+      signals.push("SKU partial");
+    }
+  }
+
+  const nameSimilarity = tokenSimilarity(tokenize(anchor.name), tokenize(candidate.name));
+  if (nameSimilarity >= 0.9) {
+    score += 0.56;
+    signals.push("Name very close");
+  } else if (nameSimilarity >= 0.6) {
+    score += 0.42;
+    signals.push("Name similar");
+  } else if (nameSimilarity >= 0.4) {
+    score += 0.25;
+    signals.push("Name overlap");
+  }
+
+  const descriptionSimilarity = tokenSimilarity(tokenize(anchor.description), tokenize(candidate.description));
+  if (descriptionSimilarity >= 0.6) {
+    score += 0.14;
+    signals.push("Description similar");
+  } else if (descriptionSimilarity >= 0.35) {
+    score += 0.08;
+    signals.push("Description overlap");
+  }
+
+  if (typeof anchor.price === "number" && typeof candidate.price === "number" && anchor.price > 0 && candidate.price > 0) {
+    const diffRatio = Math.abs(anchor.price - candidate.price) / Math.max(anchor.price, candidate.price);
+    if (diffRatio <= 0.03) {
+      score += 0.2;
+      signals.push("Price close");
+    } else if (diffRatio <= 0.1) {
+      score += 0.12;
+      signals.push("Price similar");
+    } else if (diffRatio <= 0.2) {
+      score += 0.05;
+      signals.push("Price somewhat close");
+    }
+  }
+
+  return { score: Math.min(1, Number(score.toFixed(3))), signals };
+}
+
+function quickProductFilter(anchorProducts: ComparableProduct[], candidate: ComparableProduct): boolean {
+  const candidateSku = normalizeSku(candidate.sku);
+  const candidateTokens = tokenize(candidate.name);
+
+  for (const anchor of anchorProducts) {
+    const anchorSku = normalizeSku(anchor.sku);
+    if (anchorSku && candidateSku) {
+      if (anchorSku === candidateSku) return true;
+      if (
+        anchorSku.length >= 5 &&
+        candidateSku.length >= 5 &&
+        (anchorSku.includes(candidateSku) || candidateSku.includes(anchorSku))
+      ) {
+        return true;
+      }
+    }
+
+    const overlap = tokenSimilarity(tokenize(anchor.name), candidateTokens);
+    if (overlap >= 0.2) return true;
+
+    if (typeof anchor.price === "number" && typeof candidate.price === "number" && anchor.price > 0 && candidate.price > 0) {
+      const diffRatio = Math.abs(anchor.price - candidate.price) / Math.max(anchor.price, candidate.price);
+      if (diffRatio <= 0.25) return true;
+    }
+  }
+
+  return false;
+}
+
+function buildPossibleMatches(
+  row: ComparisonRow,
+  productsBySource: Record<SourceName, ComparableProduct[]>
+): PossibleMatch[] {
+  if (!row.isMismatch) return [];
+
+  const anchors = [row.hubspot, row.zuper, row.zoho].filter(Boolean) as ComparableProduct[];
+  if (anchors.length === 0) return [];
+
+  const missingSources = (["hubspot", "zuper", "zoho"] as SourceName[]).filter((source) => row[source] === null);
+  if (missingSources.length === 0) return [];
+
+  const threshold = 0.45;
+  const maxPerSource = 3;
+  const possibleMatches: PossibleMatch[] = [];
+
+  for (const source of missingSources) {
+    const candidates: Array<{ product: ComparableProduct; score: number; signals: string[] }> = [];
+    for (const candidate of productsBySource[source]) {
+      if (!quickProductFilter(anchors, candidate)) continue;
+
+      let bestScore = 0;
+      let bestSignals: string[] = [];
+
+      for (const anchor of anchors) {
+        const result = compareProducts(anchor, candidate);
+        if (result.score > bestScore) {
+          bestScore = result.score;
+          bestSignals = result.signals;
+        }
+      }
+
+      if (bestScore >= threshold) {
+        candidates.push({ product: candidate, score: bestScore, signals: bestSignals });
+      }
+    }
+
+    candidates
+      .sort((a, b) => {
+        if (a.score !== b.score) return b.score - a.score;
+        return (a.product.name || "").localeCompare(b.product.name || "");
+      })
+      .slice(0, maxPerSource)
+      .forEach((match) => {
+        possibleMatches.push({
+          source,
+          product: match.product,
+          score: match.score,
+          signals: match.signals,
+        });
+      });
+  }
+
+  return possibleMatches;
+}
+
+function isHubSpotBundle(properties: Record<string, string | null | undefined> | undefined): boolean {
+  if (!properties) return false;
+
+  const productType = normalizeText(properties.hs_product_type);
+  if (productType.includes("bundle")) return true;
+
+  const sku = normalizeSku(properties.hs_sku);
+  if (sku.startsWith("BUNDLE-") || sku.endsWith("-BUNDLE") || sku.includes("-BUNDLE-")) return true;
+
+  // Fallback for accounts that don't expose a dedicated bundle type.
+  if (!productType) {
+    const name = normalizeText(properties.name);
+    if (name.includes(" bundle ") || name.startsWith("bundle ") || name.endsWith(" bundle")) return true;
+  }
+
+  return false;
+}
+
+async function fetchHubSpotProducts(): Promise<{
+  products: NormalizedProduct[];
+  error: string | null;
+  configured: boolean;
+  excludedBundles: number;
+}> {
   const token = process.env.HUBSPOT_ACCESS_TOKEN;
   if (!token) {
-    return { products: [], error: "HUBSPOT_ACCESS_TOKEN is not configured", configured: false };
+    return {
+      products: [],
+      error: "HUBSPOT_ACCESS_TOKEN is not configured",
+      configured: false,
+      excludedBundles: 0,
+    };
   }
 
   const products: NormalizedProduct[] = [];
   const seenIds = new Set<string>();
+  let excludedBundles = 0;
   let after: string | undefined;
   const maxPages = 200;
   const properties = [
@@ -195,11 +393,16 @@ async function fetchHubSpotProducts(): Promise<{ products: NormalizedProduct[]; 
         const id = String(item.id || "").trim();
         if (!id || seenIds.has(id)) continue;
         seenIds.add(id);
+        if (isHubSpotBundle(item.properties)) {
+          excludedBundles += 1;
+          continue;
+        }
 
         const name = String(item.properties?.name || "").trim() || null;
         const sku = String(item.properties?.hs_sku || "").trim() || null;
         const price = parsePrice(item.properties?.price);
         const status = String(item.properties?.hs_product_type || "").trim() || null;
+        const description = String(item.properties?.description || "").trim() || null;
 
         products.push({
           source: "hubspot",
@@ -208,6 +411,7 @@ async function fetchHubSpotProducts(): Promise<{ products: NormalizedProduct[]; 
           sku,
           price,
           status,
+          description,
           key: keyForProduct(sku, name, "hubspot", id),
           normalizedName: normalizeText(name),
         });
@@ -222,10 +426,11 @@ async function fetchHubSpotProducts(): Promise<{ products: NormalizedProduct[]; 
       products: [],
       error: error instanceof Error ? error.message : "Failed to fetch HubSpot products",
       configured: true,
+      excludedBundles: 0,
     };
   }
 
-  return { products, error: null, configured: true };
+  return { products, error: null, configured: true, excludedBundles };
 }
 
 async function fetchZohoProducts(): Promise<{ products: NormalizedProduct[]; error: string | null; configured: boolean }> {
@@ -245,6 +450,7 @@ async function fetchZohoProducts(): Promise<{ products: NormalizedProduct[]; err
       const name = String(item.name || "").trim() || null;
       const sku = String(item.sku || "").trim() || null;
       const status = String(item.status || "").trim() || null;
+      const description = String((item as ZohoInventoryItem & { description?: string }).description || "").trim() || null;
       const price = null;
 
       return {
@@ -254,6 +460,7 @@ async function fetchZohoProducts(): Promise<{ products: NormalizedProduct[]; err
         sku,
         price,
         status,
+        description,
         key: keyForProduct(sku, name, "zoho", id),
         normalizedName: normalizeText(name),
       };
@@ -276,6 +483,7 @@ function parseZuperProduct(candidate: unknown): Omit<NormalizedProduct, "source"
   const id = getStringField(record, ["product_uid", "product_id", "item_uid", "item_id", "id", "uid"]);
   const name = getStringField(record, ["name", "product_name", "item_name", "title", "display_name"]);
   const sku = getStringField(record, ["sku", "product_sku", "item_code", "code"]);
+  const description = getStringField(record, ["description", "product_description", "item_description", "details"]);
   const status =
     getStringField(record, ["status", "state"]) ??
     (typeof record.is_active === "boolean" ? (record.is_active ? "active" : "inactive") : null);
@@ -298,6 +506,7 @@ function parseZuperProduct(candidate: unknown): Omit<NormalizedProduct, "source"
     sku: sku || null,
     price,
     status,
+    description: description || null,
   };
 }
 
@@ -368,6 +577,7 @@ async function fetchZuperProducts(): Promise<{ products: NormalizedProduct[]; er
             sku: parsed.sku,
             price: parsed.price,
             status: parsed.status,
+            description: parsed.description,
             key,
             normalizedName: normalizeText(parsed.name),
           };
@@ -463,6 +673,7 @@ function buildComparisonRows(products: NormalizedProduct[]): ComparisonRow[] {
       zoho: pickPrimary(group.zoho),
       reasons,
       isMismatch: reasons.length > 0,
+      possibleMatches: [],
     });
   }
 
@@ -499,22 +710,34 @@ export async function GET() {
     ...zohoResult.products,
   ];
   const rows = buildComparisonRows(allProducts);
+  const productsBySource: Record<SourceName, ComparableProduct[]> = {
+    hubspot: hubspotResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
+    zuper: zuperResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
+    zoho: zohoResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
+  };
+  const enrichedRows = rows.map((row) => ({
+    ...row,
+    possibleMatches: buildPossibleMatches(row, productsBySource),
+  }));
 
-  const mismatchRows = rows.filter((row) => row.isMismatch).length;
+  const mismatchRows = enrichedRows.filter((row) => row.isMismatch).length;
   const missingBySource = {
-    hubspot: rows.filter((row) => row.hubspot === null).length,
-    zuper: rows.filter((row) => row.zuper === null).length,
-    zoho: rows.filter((row) => row.zoho === null).length,
+    hubspot: enrichedRows.filter((row) => row.hubspot === null).length,
+    zuper: enrichedRows.filter((row) => row.zuper === null).length,
+    zoho: enrichedRows.filter((row) => row.zoho === null).length,
   };
 
   const warnings = [hubspotResult.error, zuperResult.error, zohoResult.error].filter(Boolean) as string[];
+  if (hubspotResult.excludedBundles > 0) {
+    warnings.push(`Excluded ${hubspotResult.excludedBundles} HubSpot product bundle${hubspotResult.excludedBundles === 1 ? "" : "s"}.`);
+  }
 
   const payload: ProductComparisonResponse = {
-    rows,
+    rows: enrichedRows,
     summary: {
-      totalRows: rows.length,
+      totalRows: enrichedRows.length,
       mismatchRows,
-      fullyMatchedRows: rows.length - mismatchRows,
+      fullyMatchedRows: enrichedRows.length - mismatchRows,
       missingBySource,
       sourceCounts: {
         hubspot: hubspotResult.products.length,

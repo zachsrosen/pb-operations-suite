@@ -1,84 +1,72 @@
-import Link from "next/link";
+import SuitePageShell, { type SuitePageCard } from "@/components/SuitePageShell";
+import { redirect } from "next/navigation";
+import { getCurrentUser } from "@/lib/auth-utils";
 
-const LINKS = [
+const LINKS: SuitePageCard[] = [
   {
     href: "/dashboards/site-survey",
     title: "Site Survey",
     description: "Site survey scheduling, status tracking, and completion monitoring.",
     tag: "SURVEY",
+    section: "Execution",
   },
   {
     href: "/dashboards/design",
     title: "Design & Engineering",
     description: "Track design progress, engineering approvals, and plan sets.",
     tag: "DESIGN",
+    section: "Execution",
   },
   {
     href: "/dashboards/permitting",
     title: "Permitting",
     description: "Permit status tracking, submission dates, and approval monitoring.",
     tag: "PERMITTING",
+    section: "Execution",
   },
   {
     href: "/dashboards/inspections",
     title: "Inspections",
     description: "Inspection scheduling, status tracking, pass rates, and AHJ analysis.",
     tag: "INSPECTIONS",
+    section: "Execution",
   },
   {
     href: "/dashboards/interconnection",
     title: "Interconnection",
     description: "Utility interconnection applications, approvals, and meter installations.",
     tag: "UTILITY",
+    section: "Execution",
   },
   {
     href: "/dashboards/construction",
     title: "Construction",
     description: "Construction status, scheduling, and progress tracking.",
     tag: "CONSTRUCTION",
+    section: "Execution",
   },
   {
     href: "/dashboards/incentives",
     title: "Incentives",
     description: "Rebate and incentive program tracking and application status.",
     tag: "INCENTIVES",
+    section: "Execution",
   },
 ];
 
-export default function DepartmentSuitePage() {
-  return (
-    <div className="min-h-screen bg-background text-foreground">
-      <main className="max-w-7xl mx-auto px-6 py-8">
-        <div className="mb-6">
-          <Link href="/" className="text-xs text-muted hover:text-foreground transition-colors">
-            &larr; Back to Dashboard
-          </Link>
-          <h1 className="text-2xl font-bold mt-3">Department Suite</h1>
-          <p className="text-sm text-muted mt-1">
-            Department-level dashboards grouped in one place.
-          </p>
-        </div>
+export default async function DepartmentSuitePage() {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login?callbackUrl=/suites/department");
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {LINKS.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="group block bg-surface/50 border border-t-border rounded-xl p-5 hover:border-orange-500/50 hover:bg-surface transition-all"
-            >
-              <div className="flex items-center justify-between mb-1">
-                <h3 className="font-semibold text-foreground group-hover:text-orange-400 transition-colors">
-                  {item.title}
-                </h3>
-                <span className="text-xs font-medium px-2 py-0.5 rounded border bg-green-500/20 text-green-400 border-green-500/30">
-                  {item.tag}
-                </span>
-              </div>
-              <p className="text-sm text-muted">{item.description}</p>
-            </Link>
-          ))}
-        </div>
-      </main>
-    </div>
+  return (
+    <SuitePageShell
+      currentSuiteHref="/suites/department"
+      title="Department Suite"
+      subtitle="Department-level dashboards grouped in one place."
+      cards={LINKS}
+      role={user.role}
+      hoverBorderClass="hover:border-orange-500/50"
+      tagColorClass="bg-green-500/20 text-green-400 border-green-500/30"
+    />
   );
 }
