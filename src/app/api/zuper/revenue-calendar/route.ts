@@ -183,10 +183,11 @@ function getTeamName(job: any): string {
 // Batch fetch HubSpot deals for dealname and amount
 async function fetchDealValues(
   dealIds: string[]
-): Promise<Map<string, { dealName: string; amount: number; dealUrl: string; pipelineId: string | null }>> {
+): Promise<{ dealMap: Map<string, { dealName: string; amount: number; dealUrl: string; pipelineId: string | null }>; failedBatches: number }> {
   const dealMap = new Map<string, { dealName: string; amount: number; dealUrl: string; pipelineId: string | null }>();
-  if (dealIds.length === 0) return dealMap;
+  if (dealIds.length === 0) return { dealMap, failedBatches: 0 };
 
+  let failedBatches = 0;
   const batchSize = 100;
   for (let i = 0; i < dealIds.length; i += batchSize) {
     const batch = dealIds.slice(i, i + batchSize);
@@ -208,6 +209,7 @@ async function fetchDealValues(
         });
       }
     } catch (err) {
+      failedBatches++;
       console.error(`[revenue-calendar] Error fetching HubSpot deals batch ${i}:`, err);
     }
 
@@ -217,7 +219,7 @@ async function fetchDealValues(
     }
   }
 
-  return dealMap;
+  return { dealMap, failedBatches };
 }
 
 // Pagination: fetch all Zuper jobs for a given category within a date range
@@ -412,7 +414,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Batch-fetch HubSpot deals for dealname and amount
-    const dealMap = await fetchDealValues([...dealIdSet]);
+    const { dealMap, failedBatches } = await fetchDealValues([...dealIdSet]);
 
     // Collect all unique team names for filter options
     const teamSet = new Set<string>();
@@ -641,6 +643,7 @@ export async function GET(request: NextRequest) {
         startDate: monthStartStr,
         endDate: monthEndStr,
       },
+      partialData: failedBatches > 0,
       lastUpdated: new Date().toISOString(),
     });
   } catch (error) {

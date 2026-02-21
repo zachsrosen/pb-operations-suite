@@ -4,6 +4,8 @@ import DashboardShell from "@/components/DashboardShell";
 import { useExecutiveData } from "@/hooks/useExecutiveData";
 import { AnomalyInsights } from "@/components/ui/AnomalyInsights";
 import { CapacityHeatmap } from "@/components/ui/CapacityHeatmap";
+import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
+import { ErrorState } from "@/components/ui/ErrorState";
 
 function StatCard({
   value,
@@ -65,20 +67,9 @@ export default function AlertsPage() {
       lastUpdated={lastUpdated}
     >
       {loading && projects.length === 0 ? (
-        <div className="bg-surface border border-t-border rounded-xl p-8 text-center">
-          <div className="text-lg text-muted">Loading alerts...</div>
-        </div>
+        <LoadingSpinner color="red" message="Loading alerts..." />
       ) : error && projects.length === 0 ? (
-        <div className="bg-surface border border-red-500 rounded-xl p-8 text-center">
-          <div className="text-lg">Error loading data</div>
-          <div className="text-sm text-muted mt-2">{error}</div>
-          <button
-            onClick={fetchData}
-            className="mt-4 px-4 py-2 bg-orange-500 border-none rounded-md cursor-pointer text-black font-semibold"
-          >
-            Retry
-          </button>
-        </div>
+        <ErrorState message={error} onRetry={fetchData} color="red" />
       ) : (
         <>
           {/* Rule-based alert stats */}

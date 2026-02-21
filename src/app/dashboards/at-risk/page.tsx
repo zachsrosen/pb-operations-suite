@@ -148,8 +148,8 @@ export default function AtRiskPage() {
       filtered.sort((a, b) => (b.amount || 0) - (a.amount || 0));
     } else if (sortBy === "days") {
       filtered.sort((a, b) => {
-        const aDays = Math.max(...a.risks.map((r) => r.days));
-        const bDays = Math.max(...b.risks.map((r) => r.days));
+        const aDays = a.risks.length > 0 ? Math.max(...a.risks.map((r) => r.days)) : 0;
+        const bDays = b.risks.length > 0 ? Math.max(...b.risks.map((r) => r.days)) : 0;
         return bDays - aDays;
       });
     }

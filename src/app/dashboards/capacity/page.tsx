@@ -4,6 +4,8 @@ import { useState } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { useExecutiveData } from "@/hooks/useExecutiveData";
 import { formatCurrencyExec } from "@/lib/executive-shared";
+import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
+import { ErrorState } from "@/components/ui/ErrorState";
 
 export default function CapacityPage() {
   const { projects, loading, error, lastUpdated, fetchData, capacityAnalysis, accessChecked } =
@@ -55,15 +57,9 @@ export default function CapacityPage() {
       lastUpdated={lastUpdated}
     >
       {loading && projects.length === 0 ? (
-        <div className="bg-surface border border-t-border rounded-xl p-8 text-center">
-          <div className="text-lg text-muted">Loading capacity data...</div>
-        </div>
+        <LoadingSpinner color="blue" message="Loading capacity data..." />
       ) : error && projects.length === 0 ? (
-        <div className="bg-surface border border-red-500 rounded-xl p-8 text-center">
-          <div className="text-lg">Error loading data</div>
-          <div className="text-sm text-muted mt-2">{error}</div>
-          <button onClick={fetchData} className="mt-4 px-4 py-2 bg-orange-500 border-none rounded-md cursor-pointer text-black font-semibold">Retry</button>
-        </div>
+        <ErrorState message={error} onRetry={fetchData} color="blue" />
       ) : (
         <>
           {/* Optimizer Panel */}

@@ -23,8 +23,6 @@ interface Deal {
   isActive: boolean;
   daysSinceCreate: number;
   url: string;
-  detachStatus?: string;
-  resetStatus?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -384,12 +382,6 @@ export default function DNRPipelinePage() {
                 <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">
                   Stage
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">
-                  Detach Status
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">
-                  Reset Status
-                </th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-muted uppercase">
                   Amount
                 </th>
@@ -405,7 +397,7 @@ export default function DNRPipelinePage() {
               {filteredDeals.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={6}
                     className="px-4 py-8 text-center text-muted"
                   >
                     No projects found
@@ -436,24 +428,6 @@ export default function DNRPipelinePage() {
                       >
                         {truncateStage(deal.stage)}
                       </span>
-                    </td>
-                    <td className="px-4 py-3 text-sm">
-                      {deal.detachStatus ? (
-                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-500/20 text-orange-400">
-                          {deal.detachStatus}
-                        </span>
-                      ) : (
-                        <span className="text-muted/70">-</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-sm">
-                      {deal.resetStatus ? (
-                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-emerald-500/20 text-emerald-400">
-                          {deal.resetStatus}
-                        </span>
-                      ) : (
-                        <span className="text-muted/70">-</span>
-                      )}
                     </td>
                     <td
                       className={`px-4 py-3 text-right font-mono text-sm ${
