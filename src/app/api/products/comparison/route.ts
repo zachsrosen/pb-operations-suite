@@ -87,8 +87,7 @@ function normalizeSku(value: string | null | undefined): string {
   return String(value || "")
     .trim()
     .toUpperCase()
-    .replace(/\s+/g, "")
-    .replace(/_/g, "-");
+    .replace(/[^A-Z0-9]+/g, "");
 }
 
 function parsePrice(value: unknown): number | null {
@@ -160,6 +159,25 @@ function tokenize(value: string | null | undefined): Set<string> {
   return new Set(normalized.split(" ").filter((token) => token.length >= 3));
 }
 
+function extractIdentifiers(value: string | null | undefined): Set<string> {
+  if (!value) return new Set();
+  const raw = String(value).toUpperCase();
+  const matches = raw.match(/[A-Z]{1,8}\d[A-Z0-9-]{1,}/g) || [];
+  const cleaned = matches
+    .map((token) => token.replace(/[^A-Z0-9]+/g, ""))
+    .filter((token) => token.length >= 4);
+  return new Set(cleaned);
+}
+
+function identifierOverlap(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  let overlap = 0;
+  for (const token of a) {
+    if (b.has(token)) overlap += 1;
+  }
+  return overlap;
+}
+
 function tokenSimilarity(a: Set<string>, b: Set<string>): number {
   if (a.size === 0 || b.size === 0) return 0;
   let overlap = 0;
@@ -173,6 +191,21 @@ function tokenSimilarity(a: Set<string>, b: Set<string>): number {
 function compareProducts(anchor: ComparableProduct, candidate: ComparableProduct): { score: number; signals: string[] } {
   const signals: string[] = [];
   let score = 0;
+
+  const anchorIdentifiers = new Set([
+    ...extractIdentifiers(anchor.sku),
+    ...extractIdentifiers(anchor.name),
+  ]);
+  const candidateIdentifiers = new Set([
+    ...extractIdentifiers(candidate.sku),
+    ...extractIdentifiers(candidate.name),
+  ]);
+
+  const sharedIdentifiers = identifierOverlap(anchorIdentifiers, candidateIdentifiers);
+  if (sharedIdentifiers > 0) {
+    score += 0.58;
+    signals.push("Identifier match");
+  }
 
   const anchorSku = normalizeSku(anchor.sku);
   const candidateSku = normalizeSku(candidate.sku);
@@ -231,6 +264,10 @@ function compareProducts(anchor: ComparableProduct, candidate: ComparableProduct
 function quickProductFilter(anchorProducts: ComparableProduct[], candidate: ComparableProduct): boolean {
   const candidateSku = normalizeSku(candidate.sku);
   const candidateTokens = tokenize(candidate.name);
+  const candidateIdentifiers = new Set([
+    ...extractIdentifiers(candidate.sku),
+    ...extractIdentifiers(candidate.name),
+  ]);
 
   for (const anchor of anchorProducts) {
     const anchorSku = normalizeSku(anchor.sku);
@@ -247,6 +284,12 @@ function quickProductFilter(anchorProducts: ComparableProduct[], candidate: Comp
 
     const overlap = tokenSimilarity(tokenize(anchor.name), candidateTokens);
     if (overlap >= 0.2) return true;
+
+    const anchorIdentifiers = new Set([
+      ...extractIdentifiers(anchor.sku),
+      ...extractIdentifiers(anchor.name),
+    ]);
+    if (identifierOverlap(anchorIdentifiers, candidateIdentifiers) > 0) return true;
 
     if (typeof anchor.price === "number" && typeof candidate.price === "number" && anchor.price > 0 && candidate.price > 0) {
       const diffRatio = Math.abs(anchor.price - candidate.price) / Math.max(anchor.price, candidate.price);
@@ -313,22 +356,157 @@ function buildPossibleMatches(
   return possibleMatches;
 }
 
+function evaluateRowReasons(row: Pick<ComparisonRow, "hubspot" | "zuper" | "zoho">): string[] {
+  const reasons: string[] = [];
+
+  if (!row.hubspot) reasons.push("Missing in HubSpot");
+  if (!row.zuper) reasons.push("Missing in Zuper");
+  if (!row.zoho) reasons.push("Missing in Zoho");
+
+  const present = [row.hubspot, row.zuper, row.zoho].filter(Boolean) as ComparableProduct[];
+  const names = new Set(present.map((p) => normalizeText(p.name)).filter(Boolean));
+  const skus = new Set(present.map((p) => normalizeSku(p.sku)).filter(Boolean));
+  const hasSharedSku = skus.size === 1 && skus.size > 0;
+
+  if (names.size > 1 && !hasSharedSku) reasons.push("Product name mismatch");
+  if (skus.size > 1) reasons.push("SKU mismatch");
+
+  const numericPrices = present
+    .map((p) => p.price)
+    .filter((p): p is number => typeof p === "number" && Number.isFinite(p))
+    .map((p) => Number(p.toFixed(2)));
+  if (numericPrices.length >= 2) {
+    const uniquePrices = new Set(numericPrices);
+    if (uniquePrices.size > 1) reasons.push("Price mismatch");
+  }
+
+  return reasons;
+}
+
+function autoMergeRows(rows: ComparisonRow[]): ComparisonRow[] {
+  const sources: SourceName[] = ["hubspot", "zuper", "zoho"];
+  const working = rows.map((row) => ({
+    ...row,
+    reasons: [...row.reasons],
+    possibleMatches: [...row.possibleMatches],
+  }));
+  const removed = new Set<number>();
+  const productToRow = new Map<string, number>();
+
+  const indexRowProducts = (rowIndex: number) => {
+    const row = working[rowIndex];
+    for (const source of sources) {
+      const product = row[source];
+      if (!product) continue;
+      productToRow.set(`${source}:${product.id}`, rowIndex);
+    }
+  };
+
+  for (let i = 0; i < working.length; i += 1) {
+    indexRowProducts(i);
+  }
+
+  const isHighConfidenceMatch = (match: PossibleMatch): boolean => {
+    const hasStrongSignal =
+      match.signals.includes("SKU exact") || match.signals.includes("Identifier match");
+    return hasStrongSignal && match.score >= 0.78;
+  };
+
+  const hasSourceConflict = (a: ComparisonRow, b: ComparisonRow): boolean => {
+    for (const source of sources) {
+      if (a[source] && b[source] && a[source]!.id !== b[source]!.id) return true;
+    }
+    return false;
+  };
+
+  for (let i = 0; i < working.length; i += 1) {
+    if (removed.has(i)) continue;
+
+    let mergedSomething = true;
+    while (mergedSomething) {
+      mergedSomething = false;
+      const base = working[i];
+      if (!base.isMismatch) break;
+
+      for (const source of sources) {
+        if (base[source]) continue;
+
+        const candidateMatches = base.possibleMatches
+          .filter((match) => match.source === source)
+          .sort((a, b) => b.score - a.score);
+        const topMatch = candidateMatches[0];
+        if (!topMatch || !isHighConfidenceMatch(topMatch)) continue;
+
+        const targetRowIndex = productToRow.get(`${source}:${topMatch.product.id}`);
+        if (targetRowIndex === undefined || targetRowIndex === i || removed.has(targetRowIndex)) continue;
+
+        const target = working[targetRowIndex];
+        if (hasSourceConflict(base, target)) continue;
+
+        const mergedKey =
+          base.key.startsWith("fallback:") && !target.key.startsWith("fallback:")
+            ? target.key
+            : base.key;
+
+        const mergedRowBase: ComparisonRow = {
+          key: mergedKey,
+          hubspot: base.hubspot || target.hubspot,
+          zuper: base.zuper || target.zuper,
+          zoho: base.zoho || target.zoho,
+          reasons: [],
+          isMismatch: false,
+          possibleMatches: [...base.possibleMatches, ...target.possibleMatches],
+        };
+
+        const reasons = evaluateRowReasons(mergedRowBase);
+        const mergedRow: ComparisonRow = {
+          ...mergedRowBase,
+          reasons,
+          isMismatch: reasons.length > 0,
+        };
+
+        working[i] = mergedRow;
+        removed.add(targetRowIndex);
+        indexRowProducts(i);
+        mergedSomething = true;
+        break;
+      }
+    }
+  }
+
+  return working.filter((_, index) => !removed.has(index));
+}
+
+function hasBundleIdentifier(value: string | null | undefined): boolean {
+  const normalized = normalizeText(value);
+  if (!normalized) return false;
+  return normalized.includes("bundle");
+}
+
+function hasBundleSkuPattern(value: string | null | undefined): boolean {
+  const normalizedSku = normalizeSku(value);
+  if (!normalizedSku) return false;
+  return normalizedSku.includes("BUNDLE") || normalizedSku.includes("BNDL");
+}
+
+function looksLikeBundleByName(value: string | null | undefined): boolean {
+  const name = normalizeText(value);
+  if (!name) return false;
+  return name.includes(" bundle ") || name.startsWith("bundle ") || name.endsWith(" bundle");
+}
+
 function isHubSpotBundle(properties: Record<string, string | null | undefined> | undefined): boolean {
   if (!properties) return false;
 
-  const productType = normalizeText(properties.hs_product_type);
-  if (productType.includes("bundle")) return true;
-
-  const sku = normalizeSku(properties.hs_sku);
-  if (sku.startsWith("BUNDLE-") || sku.endsWith("-BUNDLE") || sku.includes("-BUNDLE-")) return true;
-
-  // Fallback for accounts that don't expose a dedicated bundle type.
-  if (!productType) {
-    const name = normalizeText(properties.name);
-    if (name.includes(" bundle ") || name.startsWith("bundle ") || name.endsWith(" bundle")) return true;
-  }
-
-  return false;
+  // Filter only when we have explicit bundle identifiers from dedicated fields or SKU patterns.
+  return (
+    hasBundleIdentifier(properties.hs_product_type) ||
+    hasBundleIdentifier(properties.hs_product_category) ||
+    hasBundleIdentifier(properties.product_type) ||
+    hasBundleIdentifier(properties.product_category) ||
+    hasBundleIdentifier(properties.item_type) ||
+    hasBundleSkuPattern(properties.hs_sku)
+  );
 }
 
 async function fetchHubSpotProducts(): Promise<{
@@ -336,6 +514,7 @@ async function fetchHubSpotProducts(): Promise<{
   error: string | null;
   configured: boolean;
   excludedBundles: number;
+  suspectedBundleByName: number;
 }> {
   const token = process.env.HUBSPOT_ACCESS_TOKEN;
   if (!token) {
@@ -344,12 +523,14 @@ async function fetchHubSpotProducts(): Promise<{
       error: "HUBSPOT_ACCESS_TOKEN is not configured",
       configured: false,
       excludedBundles: 0,
+      suspectedBundleByName: 0,
     };
   }
 
   const products: NormalizedProduct[] = [];
   const seenIds = new Set<string>();
   let excludedBundles = 0;
+  let suspectedBundleByName = 0;
   let after: string | undefined;
   const maxPages = 200;
   const properties = [
@@ -360,6 +541,10 @@ async function fetchHubSpotProducts(): Promise<{
     "hs_lastmodifieddate",
     "createdate",
     "hs_product_type",
+    "hs_product_category",
+    "product_type",
+    "product_category",
+    "item_type",
   ];
 
   try {
@@ -397,6 +582,9 @@ async function fetchHubSpotProducts(): Promise<{
           excludedBundles += 1;
           continue;
         }
+        if (looksLikeBundleByName(item.properties?.name)) {
+          suspectedBundleByName += 1;
+        }
 
         const name = String(item.properties?.name || "").trim() || null;
         const sku = String(item.properties?.hs_sku || "").trim() || null;
@@ -427,10 +615,11 @@ async function fetchHubSpotProducts(): Promise<{
       error: error instanceof Error ? error.message : "Failed to fetch HubSpot products",
       configured: true,
       excludedBundles: 0,
+      suspectedBundleByName: 0,
     };
   }
 
-  return { products, error: null, configured: true, excludedBundles };
+  return { products, error: null, configured: true, excludedBundles, suspectedBundleByName };
 }
 
 async function fetchZohoProducts(): Promise<{ products: NormalizedProduct[]; error: string | null; configured: boolean }> {
@@ -650,27 +839,18 @@ function buildComparisonRows(products: NormalizedProduct[]): ComparisonRow[] {
     if (group.zuper.length > 1) reasons.push(`Duplicate Zuper entries (${group.zuper.length})`);
     if (group.zoho.length > 1) reasons.push(`Duplicate Zoho entries (${group.zoho.length})`);
 
-    const present = [group.hubspot[0], group.zuper[0], group.zoho[0]].filter(Boolean) as NormalizedProduct[];
-    const names = new Set(present.map((p) => p.normalizedName).filter(Boolean));
-    if (names.size > 1) reasons.push("Product name mismatch");
-
-    const skus = new Set(present.map((p) => normalizeSku(p.sku)).filter(Boolean));
-    if (skus.size > 1) reasons.push("SKU mismatch");
-
-    const numericPrices = present
-      .map((p) => p.price)
-      .filter((p): p is number => typeof p === "number" && Number.isFinite(p))
-      .map((p) => Number(p.toFixed(2)));
-    if (numericPrices.length >= 2) {
-      const uniquePrices = new Set(numericPrices);
-      if (uniquePrices.size > 1) reasons.push("Price mismatch");
-    }
-
-    rows.push({
-      key,
+    const primaryRow = {
       hubspot: pickPrimary(group.hubspot),
       zuper: pickPrimary(group.zuper),
       zoho: pickPrimary(group.zoho),
+    };
+    reasons.push(...evaluateRowReasons(primaryRow));
+
+    rows.push({
+      key,
+      hubspot: primaryRow.hubspot,
+      zuper: primaryRow.zuper,
+      zoho: primaryRow.zoho,
       reasons,
       isMismatch: reasons.length > 0,
       possibleMatches: [],
@@ -715,7 +895,12 @@ export async function GET() {
     zuper: zuperResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
     zoho: zohoResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
   };
-  const enrichedRows = rows.map((row) => ({
+  const initialRows = rows.map((row) => ({
+    ...row,
+    possibleMatches: buildPossibleMatches(row, productsBySource),
+  }));
+  const mergedRows = autoMergeRows(initialRows);
+  const enrichedRows = mergedRows.map((row) => ({
     ...row,
     possibleMatches: buildPossibleMatches(row, productsBySource),
   }));
@@ -730,6 +915,11 @@ export async function GET() {
   const warnings = [hubspotResult.error, zuperResult.error, zohoResult.error].filter(Boolean) as string[];
   if (hubspotResult.excludedBundles > 0) {
     warnings.push(`Excluded ${hubspotResult.excludedBundles} HubSpot product bundle${hubspotResult.excludedBundles === 1 ? "" : "s"}.`);
+  }
+  if (hubspotResult.suspectedBundleByName > 0) {
+    warnings.push(
+      `Detected ${hubspotResult.suspectedBundleByName} HubSpot product${hubspotResult.suspectedBundleByName === 1 ? "" : "s"} with 'bundle' in the name but no bundle identifier. Left in comparison.`
+    );
   }
 
   const payload: ProductComparisonResponse = {
