@@ -5,12 +5,16 @@
  *   Returns a Vercel Blob client upload token for a planset PDF.
  *   Called automatically by @vercel/blob/client upload() before uploading.
  *
- *   The @vercel/blob/client upload() sends:
+ *   The SDK sends:
  *     { type: "blob.generate-client-token", payload: { pathname, clientPayload, multipart } }
  *   and expects back:
  *     { clientToken: "vercel_blob_client_<storeId>_<base64>" }
  *
- * Auth required: admin/owner roles (testing suite)
+ *   IMPORTANT: addRandomSuffix must be false here. The SDK's PUT request uses
+ *   the exact pathname from the token — if the token embeds a random suffix the
+ *   actual PUT pathname won't match and Vercel returns 400.
+ *
+ * Auth required: design/ops roles
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -37,6 +41,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
   }
 
+  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+    return NextResponse.json({ error: "Blob storage not configured (missing BLOB_READ_WRITE_TOKEN)" }, { status: 503 });
+  }
+
   // Parse the body sent by @vercel/blob/client upload()
   // Format: { type: "blob.generate-client-token", payload: { pathname, clientPayload, multipart } }
   let pathname: string;
@@ -46,7 +54,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       payload?: { pathname?: string; clientPayload?: string };
       pathname?: string;
     };
-    pathname = body.payload?.pathname ?? body.pathname ?? "planset.pdf";
+    pathname = body.payload?.pathname ?? body.pathname ?? "bom-uploads/planset.pdf";
   } catch {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
@@ -56,20 +64,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "Only PDF files are allowed" }, { status: 400 });
   }
 
-  if (!process.env.BLOB_READ_WRITE_TOKEN) {
-    return NextResponse.json({ error: "Blob storage not configured (missing BLOB_READ_WRITE_TOKEN)" }, { status: 503 });
-  }
-
   try {
-    // Issue a token valid for 10 minutes — enough for a large planset upload
-    const validUntil = Date.now() + 10 * 60 * 1000;
+    // Token valid for 30 minutes — enough for a very large planset on a slow connection
+    const validUntil = Date.now() + 30 * 60 * 1000;
 
     const clientToken = await generateClientTokenFromReadWriteToken({
       token: process.env.BLOB_READ_WRITE_TOKEN,
       pathname,
-      maximumSizeInBytes: 35 * 1024 * 1024, // 35 MB
-      allowedContentTypes: ["application/pdf"],
-      addRandomSuffix: true,
+      maximumSizeInBytes: 50 * 1024 * 1024, // 50 MB — covers the largest plansets
+      allowedContentTypes: ["application/pdf", "application/octet-stream"],
+      // addRandomSuffix: false — the client already includes a timestamp in the
+      // pathname, and the token must match the exact pathname the SDK sends in PUT
+      addRandomSuffix: false,
       validUntil,
     });
 

@@ -153,7 +153,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "ANTHROPIC_API_KEY is not configured" }, { status: 503 });
   }
 
-  const MAX_SIZE = 32 * 1024 * 1024; // 32MB
+  const MAX_SIZE = 50 * 1024 * 1024; // 50MB — Claude's PDF limit
 
   let pdfBase64: string;
   let filename = "planset.pdf";
