@@ -71,6 +71,13 @@ interface HubSpotObjectResponse {
   };
 }
 
+interface HubSpotPropertyDefinitionResponse {
+  results?: Array<{
+    name?: string;
+    label?: string;
+  }>;
+}
+
 function isAllowedRole(role: UserRole): boolean {
   return role === "ADMIN" || role === "OWNER";
 }
@@ -497,25 +504,38 @@ function autoMergeRows(rows: ComparisonRow[]): ComparisonRow[] {
   return working.filter((_, index) => !removed.has(index));
 }
 
-function looksLikeBundleByName(value: string | null | undefined): boolean {
-  const name = normalizeText(value);
-  if (!name) return false;
-  return name.includes(" bundle ") || name.startsWith("bundle ") || name.endsWith(" bundle");
+async function findHubSpotBundleTypePropertyName(token: string): Promise<string | null> {
+  try {
+    const response = await fetch("https://api.hubapi.com/crm/v3/properties/products?archived=false", {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      cache: "no-store",
+    });
+    const rawText = await response.text();
+    if (!response.ok) return null;
+
+    const json = (rawText ? JSON.parse(rawText) : {}) as HubSpotPropertyDefinitionResponse;
+    const property = (Array.isArray(json.results) ? json.results : []).find((candidate) => {
+      const label = normalizeText(candidate.label);
+      const name = normalizeText(candidate.name);
+      return label === "bundle type" || name === "bundle type" || name === "bundle type";
+    });
+
+    return String(property?.name || "").trim() || null;
+  } catch {
+    return null;
+  }
 }
 
-function isBundleType(value: string | null | undefined): boolean {
-  return normalizeText(value) === "bundle";
-}
-
-function isHubSpotBundle(properties: Record<string, string | null | undefined> | undefined): boolean {
-  if (!properties) return false;
-
-  // Explicitly exclude only records marked as "bundle" by HubSpot product type fields.
-  return (
-    isBundleType(properties.hs_product_type) ||
-    isBundleType(properties.product_type) ||
-    isBundleType(properties.item_type)
-  );
+function isHubSpotBundleOpen(
+  properties: Record<string, string | null | undefined> | undefined,
+  bundleTypePropertyName: string | null
+): boolean {
+  if (!properties || !bundleTypePropertyName) return false;
+  return normalizeText(properties[bundleTypePropertyName]) === "open";
 }
 
 async function fetchHubSpotProducts(): Promise<{
@@ -523,7 +543,7 @@ async function fetchHubSpotProducts(): Promise<{
   error: string | null;
   configured: boolean;
   excludedBundles: number;
-  suspectedBundleByName: number;
+  bundleTypePropertyName: string | null;
 }> {
   const token = process.env.HUBSPOT_ACCESS_TOKEN;
   if (!token) {
@@ -532,14 +552,14 @@ async function fetchHubSpotProducts(): Promise<{
       error: "HUBSPOT_ACCESS_TOKEN is not configured",
       configured: false,
       excludedBundles: 0,
-      suspectedBundleByName: 0,
+      bundleTypePropertyName: null,
     };
   }
 
   const products: NormalizedProduct[] = [];
   const seenIds = new Set<string>();
   let excludedBundles = 0;
-  let suspectedBundleByName = 0;
+  const bundleTypePropertyName = await findHubSpotBundleTypePropertyName(token);
   let after: string | undefined;
   const maxPages = 200;
   const properties = [
@@ -555,6 +575,9 @@ async function fetchHubSpotProducts(): Promise<{
     "product_category",
     "item_type",
   ];
+  if (bundleTypePropertyName) {
+    properties.push(bundleTypePropertyName);
+  }
 
   try {
     for (let page = 0; page < maxPages; page += 1) {
@@ -587,12 +610,9 @@ async function fetchHubSpotProducts(): Promise<{
         const id = String(item.id || "").trim();
         if (!id || seenIds.has(id)) continue;
         seenIds.add(id);
-        if (isHubSpotBundle(item.properties)) {
+        if (isHubSpotBundleOpen(item.properties, bundleTypePropertyName)) {
           excludedBundles += 1;
           continue;
-        }
-        if (looksLikeBundleByName(item.properties?.name)) {
-          suspectedBundleByName += 1;
         }
 
         const name = String(item.properties?.name || "").trim() || null;
@@ -625,11 +645,11 @@ async function fetchHubSpotProducts(): Promise<{
       error: error instanceof Error ? error.message : "Failed to fetch HubSpot products",
       configured: true,
       excludedBundles: 0,
-      suspectedBundleByName: 0,
+      bundleTypePropertyName,
     };
   }
 
-  return { products, error: null, configured: true, excludedBundles, suspectedBundleByName };
+  return { products, error: null, configured: true, excludedBundles, bundleTypePropertyName };
 }
 
 async function fetchZohoProducts(): Promise<{ products: NormalizedProduct[]; error: string | null; configured: boolean }> {
