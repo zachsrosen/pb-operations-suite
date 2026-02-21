@@ -189,6 +189,153 @@ function getStageProducts(projects: Project[], stage: string) {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Extracted sub-components (must live outside render to avoid hook violations)  */
+/* ------------------------------------------------------------------ */
+
+function SortIconSvc({ field, sortField, sortDir }: { field: string; sortField: string; sortDir: "asc" | "desc" }) {
+  return (
+    <span className="ml-1 text-muted/70">
+      {sortField === field ? (sortDir === "asc" ? "▲" : "▼") : "▼"}
+    </span>
+  );
+}
+
+function StatRowSvc({
+  label,
+  totals: t,
+  accent,
+  cls,
+  activeStatFilter,
+  onStatRowClick,
+}: {
+  label: string;
+  totals: ReturnType<typeof aggregateEquipment>;
+  accent: string;
+  cls: StageClass;
+  activeStatFilter: StageClass | null;
+  onStatRowClick: (cls: StageClass) => void;
+}) {
+  const isActive = activeStatFilter === cls;
+  return (
+    <button
+      onClick={() => onStatRowClick(cls)}
+      className={`w-full text-left bg-surface/50 border rounded-xl p-4 mb-4 transition-all cursor-pointer hover:bg-surface-2/50 ${
+        isActive ? "border-cyan-400 ring-1 ring-cyan-400/30" : "border-t-border"
+      }`}
+    >
+      <div className="flex items-center gap-2 mb-3">
+        <span className={`w-2.5 h-2.5 rounded-full ${accent}`} />
+        <h3 className="text-sm font-semibold text-foreground/90">{label}</h3>
+        {isActive && (
+          <span className="text-[10px] text-cyan-400 font-medium bg-cyan-400/10 px-1.5 py-0.5 rounded">FILTERED</span>
+        )}
+        {t.missing > 0 && (
+          <span className="text-[10px] text-amber-400 font-medium bg-amber-400/10 px-1.5 py-0.5 rounded" title={`${t.missing} projects missing equipment data`}>
+            {t.missing} missing data
+          </span>
+        )}
+        <span className="text-xs text-muted ml-auto">{t.projects} projects</span>
+        <svg className={`w-3.5 h-3.5 text-muted/50 transition-transform ${isActive ? "rotate-90" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+        </svg>
+      </div>
+      <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+        {[
+          { label: "Modules", value: t.modules, color: "text-blue-400" },
+          { label: "Inverters", value: t.inverters, color: "text-purple-400" },
+          { label: "Batteries", value: t.batteries, color: "text-emerald-400" },
+          { label: "Bat. Exp.", value: t.batteryExpansions, color: "text-green-400" },
+          { label: "EV Chargers", value: t.ev, color: "text-pink-400" },
+          { label: "Value", value: formatMoney(t.value), color: "text-orange-400", raw: true },
+        ].map((s) => (
+          <div key={s.label} className="text-center">
+            <div className={`text-lg font-bold ${s.color}`}>{s.raw ? s.value : (s.value as number).toLocaleString()}</div>
+            <div className="text-xs text-muted">{s.label}</div>
+          </div>
+        ))}
+      </div>
+    </button>
+  );
+}
+
+function ProductBreakdownSvc({
+  title,
+  items,
+  color,
+  typeKey,
+  expandedProduct,
+  onToggleExpand,
+}: {
+  title: string;
+  items: ProductSummary[];
+  color: string;
+  typeKey: string;
+  expandedProduct: string | null;
+  onToggleExpand: (key: string) => void;
+}) {
+  return (
+    <div className="bg-surface/50 border border-t-border rounded-xl p-5">
+      <h3 className={`text-sm font-semibold ${color} mb-3`}>{title}</h3>
+      {items.length === 0 ? (
+        <p className="text-muted text-sm">None</p>
+      ) : (
+        <div className="space-y-1">
+          {items.map((item, i) => {
+            const key = `${typeKey}:${item.productName}`;
+            const isExpanded = expandedProduct === key;
+            return (
+              <div key={i}>
+                <button
+                  onClick={() => onToggleExpand(key)}
+                  className="w-full flex items-center justify-between text-sm py-1 hover:bg-surface-2/40 rounded px-1 -mx-1 transition-colors cursor-pointer"
+                >
+                  <span className="text-foreground/80 truncate mr-2 text-left">{item.productName}</span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className={`${color} font-medium`}>{item.totalCount.toLocaleString()}</span>
+                    <span className="text-muted/70 text-xs">{item.projects} jobs</span>
+                    <svg className={`w-3 h-3 text-muted/50 transition-transform ${isExpanded ? "rotate-90" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                    </svg>
+                  </div>
+                </button>
+                {isExpanded && (
+                  <div className="ml-2 mt-1 mb-2 space-y-1 border-l-2 border-t-border/50 pl-3">
+                    {item.projectList.map((proj) => (
+                      <div key={proj.id} className="flex items-center justify-between text-xs">
+                        <div className="truncate mr-2">
+                          <a
+                            href={proj.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-foreground/70 hover:text-cyan-400 transition-colors"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {proj.name}
+                          </a>
+                          <span className="text-muted/50 ml-1">{proj.projectNumber}</span>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-muted/50 text-[10px]">{proj.pbLocation}</span>
+                          <span
+                            className="w-1.5 h-1.5 rounded-full"
+                            style={{ backgroundColor: SERVICE_STAGE_COLORS[proj.stage]?.hex || "#71717A" }}
+                          />
+                          <span className={`${color} font-medium`}>{proj.count}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  Page                                                               */
 /* ------------------------------------------------------------------ */
 
@@ -459,11 +606,6 @@ export default function ServiceBacklogPage() {
     }
   };
 
-  const SortIcon = ({ field }: { field: typeof sortField }) => (
-    <span className="ml-1 text-muted/70">
-      {sortField === field ? (sortDir === "asc" ? "\u25B2" : "\u25BC") : "\u25BC"}
-    </span>
-  );
 
   /* ---- Render ---- */
 
@@ -492,113 +634,6 @@ export default function ServiceBacklogPage() {
       </DashboardShell>
     );
   }
-
-  /* ---- Stat card row helper (clickable) ---- */
-  const StatRow = ({ label, totals: t, accent, cls }: { label: string; totals: ReturnType<typeof aggregateEquipment>; accent: string; cls: StageClass }) => {
-    const isActive = activeStatFilter === cls;
-    return (
-      <button
-        onClick={() => handleStatRowClick(cls)}
-        className={`w-full text-left bg-surface/50 border rounded-xl p-4 mb-4 transition-all cursor-pointer hover:bg-surface-2/50 ${
-          isActive ? "border-purple-400 ring-1 ring-purple-400/30" : "border-t-border"
-        }`}
-      >
-        <div className="flex items-center gap-2 mb-3">
-          <span className={`w-2.5 h-2.5 rounded-full ${accent}`} />
-          <h3 className="text-sm font-semibold text-foreground/90">{label}</h3>
-          {isActive && (
-            <span className="text-[10px] text-purple-400 font-medium bg-purple-400/10 px-1.5 py-0.5 rounded">FILTERED</span>
-          )}
-          {t.missing > 0 && (
-            <span className="text-[10px] text-amber-400 font-medium bg-amber-400/10 px-1.5 py-0.5 rounded" title={`${t.missing} projects missing equipment data`}>
-              {t.missing} missing data
-            </span>
-          )}
-          <span className="text-xs text-muted ml-auto">{t.projects} jobs</span>
-          <svg className={`w-3.5 h-3.5 text-muted/50 transition-transform ${isActive ? "rotate-90" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-          </svg>
-        </div>
-        <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
-          {[
-            { label: "Modules", value: t.modules, color: "text-blue-400" },
-            { label: "Inverters", value: t.inverters, color: "text-purple-400" },
-            { label: "Batteries", value: t.batteries, color: "text-emerald-400" },
-            { label: "Bat. Exp.", value: t.batteryExpansions, color: "text-green-400" },
-            { label: "EV Chargers", value: t.ev, color: "text-pink-400" },
-            { label: "Value", value: formatMoney(t.value), color: "text-orange-400", raw: true },
-          ].map((s) => (
-            <div key={s.label} className="text-center">
-              <div className={`text-lg font-bold ${s.color}`}>{s.raw ? s.value : (s.value as number).toLocaleString()}</div>
-              <div className="text-xs text-muted">{s.label}</div>
-            </div>
-          ))}
-        </div>
-      </button>
-    );
-  };
-
-  /* ---- Product breakdown card (with drill-down showing location) ---- */
-  const ProductBreakdown = ({ title, items, color, typeKey }: { title: string; items: ProductSummary[]; color: string; typeKey: string }) => (
-    <div className="bg-surface/50 border border-t-border rounded-xl p-5">
-      <h3 className={`text-sm font-semibold ${color} mb-3`}>{title}</h3>
-      {items.length === 0 ? (
-        <p className="text-muted text-sm">None</p>
-      ) : (
-        <div className="space-y-1">
-          {items.map((item, i) => {
-            const key = `${typeKey}:${item.productName}`;
-            const isExpanded = expandedProduct === key;
-            return (
-              <div key={i}>
-                <button
-                  onClick={() => toggleProductExpand(key)}
-                  className="w-full flex items-center justify-between text-sm py-1 hover:bg-surface-2/40 rounded px-1 -mx-1 transition-colors cursor-pointer"
-                >
-                  <span className="text-foreground/80 truncate mr-2 text-left">{item.productName}</span>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className={`${color} font-medium`}>{item.totalCount.toLocaleString()}</span>
-                    <span className="text-muted/70 text-xs">{item.projects} jobs</span>
-                    <svg className={`w-3 h-3 text-muted/50 transition-transform ${isExpanded ? "rotate-90" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                    </svg>
-                  </div>
-                </button>
-                {isExpanded && (
-                  <div className="ml-2 mt-1 mb-2 space-y-1 border-l-2 border-t-border/50 pl-3">
-                    {item.projectList.map((proj) => (
-                      <div key={proj.id} className="flex items-center justify-between text-xs">
-                        <div className="truncate mr-2">
-                          <a
-                            href={proj.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-foreground/70 hover:text-purple-400 transition-colors"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            {proj.name}
-                          </a>
-                          <span className="text-muted/50 ml-1">{proj.projectNumber}</span>
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className="text-muted/50 text-[10px]">{proj.pbLocation}</span>
-                          <span
-                            className="w-1.5 h-1.5 rounded-full"
-                            style={{ backgroundColor: SERVICE_STAGE_COLORS[proj.stage]?.hex || "#71717A" }}
-                          />
-                          <span className={`${color} font-medium`}>{proj.count}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
 
   /* ---- Determine export data based on active filter ---- */
   const exportFilename = activeStatFilter
@@ -673,8 +708,8 @@ export default function ServiceBacklogPage() {
       {view === "summary" ? (
         <>
           {/* Backlog + In Progress stat rows */}
-          <StatRow label="Backlog" totals={backlogTotals} accent="bg-purple-400" cls="backlog" />
-          <StatRow label="In Progress (Work In Progress)" totals={inProgressTotals} accent="bg-orange-400" cls="in_progress" />
+          <StatRowSvc label="Backlog" totals={backlogTotals} accent="bg-purple-400" cls="backlog" activeStatFilter={activeStatFilter} onStatRowClick={handleStatRowClick} />
+          <StatRowSvc label="In Progress (Work In Progress)" totals={inProgressTotals} accent="bg-orange-400" cls="in_progress" activeStatFilter={activeStatFilter} onStatRowClick={handleStatRowClick} />
 
           {/* Stage Breakdown Table (excludes completed, expandable rows with projects) */}
           <div className="bg-surface/50 border border-t-border rounded-xl p-6 mb-6">
@@ -803,11 +838,11 @@ export default function ServiceBacklogPage() {
           {/* Product Breakdowns (backlog only — below stage table) */}
           <h2 className="text-lg font-semibold mb-3">Backlog Equipment by Product</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
-            <ProductBreakdown title="Modules" items={moduleProducts} color="text-blue-400" typeKey="modules" />
-            <ProductBreakdown title="Inverters" items={inverterProducts} color="text-purple-400" typeKey="inverters" />
-            <ProductBreakdown title="Batteries" items={batteryProducts} color="text-emerald-400" typeKey="batteries" />
-            <ProductBreakdown title="Battery Expansion" items={batteryExpProducts} color="text-green-400" typeKey="batexp" />
-            <ProductBreakdown title="EV Chargers" items={evProducts} color="text-pink-400" typeKey="ev" />
+            <ProductBreakdownSvc title="Modules" items={moduleProducts} color="text-blue-400" typeKey="modules" expandedProduct={expandedProduct} onToggleExpand={toggleProductExpand} />
+            <ProductBreakdownSvc title="Inverters" items={inverterProducts} color="text-purple-400" typeKey="inverters" expandedProduct={expandedProduct} onToggleExpand={toggleProductExpand} />
+            <ProductBreakdownSvc title="Batteries" items={batteryProducts} color="text-emerald-400" typeKey="batteries" expandedProduct={expandedProduct} onToggleExpand={toggleProductExpand} />
+            <ProductBreakdownSvc title="Battery Expansion" items={batteryExpProducts} color="text-green-400" typeKey="batexp" expandedProduct={expandedProduct} onToggleExpand={toggleProductExpand} />
+            <ProductBreakdownSvc title="EV Chargers" items={evProducts} color="text-pink-400" typeKey="ev" expandedProduct={expandedProduct} onToggleExpand={toggleProductExpand} />
           </div>
         </>
       ) : (
@@ -827,23 +862,23 @@ export default function ServiceBacklogPage() {
                 <thead className="sticky top-0 bg-surface/95 backdrop-blur-sm z-10">
                   <tr className="text-muted text-left border-b border-t-border">
                     <th className="px-4 py-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("name")}>
-                      Job <SortIcon field="name" />
+                      Job <SortIconSvc field="name" sortField={sortField} sortDir={sortDir} />
                     </th>
                     <th className="px-4 py-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("location")}>
-                      Location <SortIcon field="location" />
+                      Location <SortIconSvc field="location" sortField={sortField} sortDir={sortDir} />
                     </th>
                     <th className="px-4 py-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("stage")}>
-                      Stage <SortIcon field="stage" />
+                      Stage <SortIconSvc field="stage" sortField={sortField} sortDir={sortDir} />
                     </th>
                     <th className="px-4 py-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("modules")}>
-                      Modules <SortIcon field="modules" />
+                      Modules <SortIconSvc field="modules" sortField={sortField} sortDir={sortDir} />
                     </th>
                     <th className="px-4 py-3 text-right">Inverters</th>
                     <th className="px-4 py-3 text-right">Batteries</th>
                     <th className="px-4 py-3 text-right">Bat. Exp.</th>
                     <th className="px-4 py-3 text-right">EV</th>
                     <th className="px-4 py-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("value")}>
-                      Value <SortIcon field="value" />
+                      Value <SortIconSvc field="value" sortField={sortField} sortDir={sortDir} />
                     </th>
                   </tr>
                 </thead>
