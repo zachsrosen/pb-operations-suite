@@ -238,6 +238,7 @@ export default function BomDashboard() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [extracting, setExtracting] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<string>("");
 
   // Drive link
   const [driveUrl, setDriveUrl] = useState("");
@@ -318,17 +319,23 @@ export default function BomDashboard() {
     if (!uploadFile) return;
     setExtracting(true);
     setImportError(null);
+    setUploadProgress("");
     try {
       // Split PDF into 3MB chunks and send each to /api/bom/chunk.
       // Each chunk is well under Vercel's 4.5MB serverless body limit.
       // The server reassembles and stores the full file in Vercel Blob,
       // then returns the blob URL for Claude to fetch.
-      const CHUNK_SIZE = 3 * 1024 * 1024; // 3MB
+      const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB raw → ~2.7MB base64 JSON, well under Vercel's 4.5MB body limit
       const uploadId = crypto.randomUUID();
       const totalChunks = Math.ceil(uploadFile.size / CHUNK_SIZE);
 
       let blobUrl = "";
       for (let i = 0; i < totalChunks; i++) {
+        setUploadProgress(
+          totalChunks === 1
+            ? "Uploading PDF…"
+            : `Uploading chunk ${i + 1} of ${totalChunks}…`
+        );
         const start = i * CHUNK_SIZE;
         const slice = uploadFile.slice(start, start + CHUNK_SIZE);
         const arrayBuf = await slice.arrayBuffer();
@@ -364,6 +371,7 @@ export default function BomDashboard() {
       if (!blobUrl) throw new Error("Upload completed but no blob URL returned");
 
       // Run Claude extraction on the assembled blob URL
+      setUploadProgress("Extracting BOM with Claude — this takes 30–60 seconds…");
       const res = await fetch("/api/bom/extract", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -376,6 +384,7 @@ export default function BomDashboard() {
       setImportError(e instanceof Error ? e.message : "Extraction failed");
     } finally {
       setExtracting(false);
+      setUploadProgress("");
     }
   }, [uploadFile, loadBomData, safeFetchBom, addToast]);
 
@@ -664,15 +673,15 @@ export default function BomDashboard() {
                     {extracting ? (
                       <>
                         <span className="inline-block w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                        Extracting…
+                        {uploadProgress ? uploadProgress.split("—")[0].trim() : "Extracting…"}
                       </>
                     ) : (
                       "Extract BOM"
                     )}
                   </button>
-                  {extracting && (
+                  {extracting && uploadProgress && (
                     <p className="text-xs text-muted animate-pulse">
-                      Uploading then extracting with Claude — allow 30–60 seconds for a full planset.
+                      {uploadProgress}
                     </p>
                   )}
                 </div>

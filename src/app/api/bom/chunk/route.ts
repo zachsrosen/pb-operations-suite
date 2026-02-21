@@ -4,7 +4,7 @@
  * POST /api/bom/chunk
  *   Accepts a single chunk of a PDF being uploaded in pieces.
  *   Stores chunks in Vercel Blob, returns a completion signal when all chunks received.
- *   Each chunk must be under 4MB (well within Vercel's 4.5MB body limit).
+ *   Each chunk must be under ~3MB base64 (2MB raw binary ≈ 2.7MB base64 JSON, well under Vercel's 4.5MB body limit).
  *
  * Body: JSON
  *   uploadId  - client-generated UUID identifying this upload session
