@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState, useCallback, useRef, useEffect } from "react";
+import React, { useState, useCallback, useRef, useEffect, Suspense } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { exportToCSV } from "@/lib/export";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useToast } from "@/contexts/ToastContext";
 // PDF upload uses chunked /api/bom/chunk — stays on our domain, no CORS issues
 
@@ -59,6 +60,10 @@ interface ProjectResult {
   hs_object_id: string;
   dealname: string;
   address?: string;
+  designFolderUrl?: string | null;
+  driveUrl?: string | null;
+  openSolarUrl?: string | null;
+  zuperUid?: string | null;
 }
 
 // From /api/products/comparison
@@ -326,8 +331,10 @@ function diffBoms(itemsA: Omit<BomItem, "id">[], itemsB: Omit<BomItem, "id">[]):
 
 type ImportTab = "upload" | "drive" | "paste";
 
-export default function BomDashboard() {
+function BomDashboardInner() {
   const { addToast } = useToast();
+  const router = useRouter();
+  const searchParams = useSearchParams();
 
   // BOM state
   const [bom, setBom] = useState<BomData | null>(null);
@@ -406,6 +413,28 @@ export default function BomDashboard() {
     }
     setCatalogStatus(buildCatalogStatus(items, comparisonRows));
   }, [items, comparisonRows]);
+
+  /* ---- Load deal from ?deal= URL param on mount ---- */
+  useEffect(() => {
+    const dealId = searchParams.get("deal");
+    if (!dealId || linkedProject) return;
+    fetch(`/api/projects/${encodeURIComponent(dealId)}`)
+      .then((r) => r.ok ? r.json() : Promise.reject(r.status))
+      .then((data: { project: { id: number; name: string; address: string; designFolderUrl: string | null; driveUrl: string | null; openSolarUrl: string | null; zuperUid: string | null } }) => {
+        const p = data.project;
+        setLinkedProject({
+          hs_object_id: String(p.id),
+          dealname: p.name,
+          address: p.address,
+          designFolderUrl: p.designFolderUrl,
+          driveUrl: p.driveUrl,
+          openSolarUrl: p.openSolarUrl,
+          zuperUid: p.zuperUid,
+        });
+      })
+      .catch(() => {/* silent — bad param, just ignore */});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   /* ---- Load history when a project is linked ---- */
   useEffect(() => {
@@ -656,8 +685,16 @@ export default function BomDashboard() {
       try {
         const res = await fetch(`/api/projects?search=${encodeURIComponent(query)}&limit=8`);
         if (res.ok) {
-          const data = await res.json();
-          setProjectResults(data.projects || []);
+          const data = await res.json() as { projects: Array<{ id: number; name: string; address: string; designFolderUrl: string | null; driveUrl: string | null; openSolarUrl: string | null; zuperUid: string | null }> };
+          setProjectResults((data.projects || []).map((p) => ({
+            hs_object_id: String(p.id),
+            dealname: p.name,
+            address: p.address,
+            designFolderUrl: p.designFolderUrl,
+            driveUrl: p.driveUrl,
+            openSolarUrl: p.openSolarUrl,
+            zuperUid: p.zuperUid,
+          })));
         }
       } catch {
         // silently ignore
@@ -1074,7 +1111,7 @@ export default function BomDashboard() {
                     </button>
                   )}
                   <button
-                    onClick={() => { setLinkedProject(null); setSnapshots([]); setSavedVersion(null); }}
+                    onClick={() => { setLinkedProject(null); setSnapshots([]); setSavedVersion(null); router.replace("/dashboards/bom"); }}
                     className="text-xs text-muted hover:text-foreground"
                   >
                     Unlink
@@ -1084,7 +1121,7 @@ export default function BomDashboard() {
                 <div className="relative">
                   <input
                     type="text"
-                    placeholder="Search by project name or address…"
+                    placeholder="Search by name, address, or project number…"
                     value={projectSearch}
                     onChange={(e) => handleProjectSearch(e.target.value)}
                     className="w-full max-w-md rounded-lg bg-surface-2 border border-t-border text-sm text-foreground px-3 py-2 focus:outline-none focus:ring-2 focus:ring-cyan-500"
@@ -1099,6 +1136,7 @@ export default function BomDashboard() {
                           key={p.hs_object_id}
                           onClick={() => {
                             setLinkedProject(p);
+                            router.replace(`/dashboards/bom?deal=${encodeURIComponent(p.hs_object_id)}`);
                             setProjectSearch("");
                             setProjectResults([]);
                             setSavedVersion(null);
@@ -1565,5 +1603,13 @@ function CatalogDot({ present, loading }: { present?: boolean; loading?: boolean
     <span className="inline-block w-2 h-2 rounded-full bg-green-500" title="In catalog" />
   ) : (
     <span className="inline-block w-2 h-2 rounded-full bg-red-400" title="Not in catalog" />
+  );
+}
+
+export default function BomDashboard() {
+  return (
+    <Suspense>
+      <BomDashboardInner />
+    </Suspense>
   );
 }
