@@ -116,8 +116,14 @@ export default function DashboardShell({
     : "max-w-7xl mx-auto px-4 sm:px-6";
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <header className="bg-surface border-b border-t-border sticky top-0 z-40">
+    <div
+      className="min-h-screen text-foreground"
+      style={{
+        background:
+          "radial-gradient(circle at 12% -6%, rgba(6, 182, 212, 0.12), transparent 32%), radial-gradient(circle at 88% 2%, rgba(59, 130, 246, 0.08), transparent 36%), var(--background)",
+      }}
+    >
+      <header className="bg-surface-elevated/80 backdrop-blur-sm border-b border-t-border/80 sticky top-0 z-40">
         <div className={`${containerClass} py-3 sm:py-4`}>
           {/* Breadcrumbs */}
           {effectiveBreadcrumbs && effectiveBreadcrumbs.length > 0 && (

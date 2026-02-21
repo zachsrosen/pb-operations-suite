@@ -71,7 +71,13 @@ export default function SuitePageShell({
     : "/";
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div
+      className="min-h-screen text-foreground"
+      style={{
+        background:
+          "radial-gradient(circle at 12% -6%, rgba(6, 182, 212, 0.12), transparent 32%), radial-gradient(circle at 88% 2%, rgba(59, 130, 246, 0.08), transparent 36%), var(--background)",
+      }}
+    >
       <main className="max-w-7xl mx-auto px-6 py-8">
         <div className="mb-6">
           <Link href={backHref} className="text-xs text-muted hover:text-foreground transition-colors">
@@ -82,7 +88,7 @@ export default function SuitePageShell({
         </div>
 
         {visibleSuites.length > 0 && (
-          <div className="bg-surface/40 border border-t-border rounded-xl p-4 mb-6">
+          <div className="bg-gradient-to-br from-surface-elevated/85 via-surface/70 to-surface-2/55 border border-t-border/80 rounded-xl p-4 mb-6 shadow-card backdrop-blur-sm">
             <h2 className="text-xs uppercase tracking-wide text-muted mb-3">
               Suite Switcher
             </h2>
@@ -96,7 +102,7 @@ export default function SuitePageShell({
                     className={`text-xs px-3 py-1.5 rounded-md border transition-colors ${
                       isCurrent
                         ? "border-orange-500/50 bg-orange-500/15 text-orange-300"
-                        : "border-t-border bg-surface/60 text-muted hover:text-foreground hover:border-orange-500/40"
+                        : "border-t-border/80 bg-surface-elevated/70 text-muted hover:text-foreground hover:border-orange-500/40"
                     }`}
                     title={suite.description}
                   >
@@ -116,7 +122,7 @@ export default function SuitePageShell({
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`group block bg-surface/50 border border-t-border rounded-xl p-5 ${hoverBorderClass} hover:bg-surface transition-all`}
+                  className={`group block rounded-xl border border-t-border/80 bg-gradient-to-br from-surface-elevated/80 via-surface/70 to-surface-2/50 p-5 shadow-card backdrop-blur-sm ${hoverBorderClass} hover:bg-surface transition-all`}
                 >
                   <div className="flex items-center justify-between mb-1">
                     <h3 className="font-semibold text-foreground group-hover:text-orange-400 transition-colors">
@@ -134,7 +140,7 @@ export default function SuitePageShell({
         ))}
 
         {sections.length === 0 && (
-          <div className="bg-surface/40 border border-t-border rounded-xl p-6 text-sm text-muted">
+          <div className="bg-gradient-to-br from-surface-elevated/85 via-surface/70 to-surface-2/55 border border-t-border/80 rounded-xl p-6 text-sm text-muted shadow-card backdrop-blur-sm">
             No pages are available for your current role in this suite.
           </div>
         )}

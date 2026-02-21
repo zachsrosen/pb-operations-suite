@@ -121,6 +121,40 @@ interface ProjectRecord {
 
 type PipelineFilter = "all" | "pe" | "rtb";
 
+function applyAISpecToProjects(projects: ProjectRecord[], spec: ProjectFilterSpec | null): ProjectRecord[] {
+  if (!spec) return projects;
+
+  let result = [...projects];
+
+  if (spec.locations?.length) {
+    const locationSet = new Set(spec.locations.map((location) => location.toLowerCase()));
+    result = result.filter((project) => locationSet.has(project.pbLocation.toLowerCase()));
+  }
+
+  if (spec.stages?.length) {
+    const stageSet = new Set(spec.stages.map((stage) => stage.toLowerCase()));
+    result = result.filter((project) => stageSet.has(project.stage.toLowerCase()));
+  }
+
+  if (spec.is_pe !== undefined) {
+    result = result.filter((project) => project.isParticipateEnergy === spec.is_pe);
+  }
+
+  if (spec.is_rtb !== undefined) {
+    result = result.filter((project) => project.isRtb === spec.is_rtb);
+  }
+
+  if (typeof spec.min_amount === "number") {
+    result = result.filter((project) => project.amount >= spec.min_amount);
+  }
+
+  if (typeof spec.max_amount === "number") {
+    result = result.filter((project) => project.amount <= spec.max_amount);
+  }
+
+  return result;
+}
+
 function computeStats(projects: ProjectRecord[]): Stats {
   const totalValue = projects.reduce((s, p) => s + p.amount, 0);
   const pe = projects.filter((p) => p.isParticipateEnergy);
@@ -275,8 +309,10 @@ export default function Home() {
       filtered = filtered.filter((p) => p.isRtb);
     }
 
+    filtered = applyAISpecToProjects(filtered, aiSpec);
+
     return filtered;
-  }, [rawProjects, selectedLocations, pipelineFilter]);
+  }, [rawProjects, selectedLocations, pipelineFilter, aiSpec]);
 
   const stats = useMemo(() => computeStats(filteredProjects), [filteredProjects]);
 
@@ -293,6 +329,7 @@ export default function Home() {
   const clearAllFilters = useCallback(() => {
     setSelectedLocations([]);
     setPipelineFilter("all");
+    setAiQuery("");
     setAiSpec(null);
   }, []);
 
