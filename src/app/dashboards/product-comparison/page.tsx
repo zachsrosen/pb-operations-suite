@@ -14,6 +14,7 @@ interface ComparableProduct {
   price: number | null;
   status: string | null;
   description: string | null;
+  url: string | null;
 }
 
 interface PossibleMatch {
@@ -80,7 +81,7 @@ function formatDateTime(dateString: string | null): string | null {
   });
 }
 
-function ProductCell({ product }: { product: ComparableProduct | null }) {
+function ProductCell({ source, product }: { source: SourceName; product: ComparableProduct | null }) {
   if (!product) {
     return <span className="text-xs text-red-500 dark:text-red-400">Missing</span>;
   }
@@ -91,6 +92,16 @@ function ProductCell({ product }: { product: ComparableProduct | null }) {
       <div className="text-xs text-muted">SKU: {product.sku || "-"}</div>
       <div className="text-xs text-muted">Price: {formatCurrency(product.price)}</div>
       <div className="text-xs text-muted">Status: {product.status || "-"}</div>
+      {product.url && (
+        <a
+          href={product.url}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex text-xs text-cyan-300 hover:text-cyan-200 underline underline-offset-2"
+        >
+          Open in {formatSourceName(source)}
+        </a>
+      )}
     </div>
   );
 }
@@ -260,12 +271,15 @@ export default function ProductComparisonPage() {
       hubspot_name: row.hubspot?.name || "",
       hubspot_sku: row.hubspot?.sku || "",
       hubspot_price: row.hubspot?.price ?? "",
+      hubspot_url: row.hubspot?.url || "",
       zuper_name: row.zuper?.name || "",
       zuper_sku: row.zuper?.sku || "",
       zuper_price: row.zuper?.price ?? "",
+      zuper_url: row.zuper?.url || "",
       zoho_name: row.zoho?.name || "",
       zoho_sku: row.zoho?.sku || "",
       zoho_price: row.zoho?.price ?? "",
+      zoho_url: row.zoho?.url || "",
     }));
   }, [rows]);
 
@@ -407,13 +421,13 @@ export default function ProductComparisonPage() {
                     <tr key={row.key} className="border-t border-t-border align-top">
                       <td className="px-3 py-2 font-mono text-[11px] text-muted">{row.key}</td>
                       <td className="px-3 py-2">
-                        <ProductCell product={row.hubspot} />
+                        <ProductCell source="hubspot" product={row.hubspot} />
                       </td>
                       <td className="px-3 py-2">
-                        <ProductCell product={row.zuper} />
+                        <ProductCell source="zuper" product={row.zuper} />
                       </td>
                       <td className="px-3 py-2">
-                        <ProductCell product={row.zoho} />
+                        <ProductCell source="zoho" product={row.zoho} />
                       </td>
                       <td className="px-3 py-2">
                         {row.reasons.length === 0 ? (
@@ -444,6 +458,16 @@ export default function ProductComparisonPage() {
                                     <span>{match.product.name || "-"}</span>
                                     <span className="text-muted">({Math.round(match.score * 100)}%)</span>
                                     {match.product.sku && <span className="text-muted">SKU: {match.product.sku}</span>}
+                                    {match.product.url && (
+                                      <a
+                                        href={match.product.url}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="text-cyan-300 hover:text-cyan-200 underline underline-offset-2"
+                                      >
+                                        Open
+                                      </a>
+                                    )}
                                   </div>
                                 ))}
                               </div>

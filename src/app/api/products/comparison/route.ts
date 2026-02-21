@@ -13,6 +13,7 @@ interface ComparableProduct {
   price: number | null;
   status: string | null;
   description: string | null;
+  url: string | null;
 }
 
 interface NormalizedProduct extends ComparableProduct {
@@ -97,6 +98,24 @@ function parsePrice(value: unknown): number | null {
   return parsed;
 }
 
+function buildHubSpotProductUrl(productId: string): string {
+  const portalId = (process.env.HUBSPOT_PORTAL_ID || "21710069").trim();
+  return `https://app.hubspot.com/contacts/${portalId}/record/0-7/${encodeURIComponent(productId)}`;
+}
+
+function buildZuperProductUrl(productId: string): string {
+  const baseUrl =
+    process.env.ZUPER_WEB_URL ||
+    process.env.ZUPER_API_URL?.replace(/\/api\/?$/, "") ||
+    "https://us-west-1c.zuperpro.com";
+  return `${baseUrl.replace(/\/$/, "")}/app/product/${encodeURIComponent(productId)}`;
+}
+
+function buildZohoProductUrl(itemId: string): string {
+  const baseUrl = process.env.ZOHO_INVENTORY_WEB_URL || "https://inventory.zoho.com/app#/items";
+  return `${baseUrl.replace(/\/$/, "")}/${encodeURIComponent(itemId)}`;
+}
+
 function keyForProduct(sku: string | null, name: string | null, source: SourceName, id: string): string {
   const normalizedSku = normalizeSku(sku);
   if (normalizedSku) return `sku:${normalizedSku}`;
@@ -115,6 +134,7 @@ function pickPrimary(products: NormalizedProduct[]): ComparableProduct | null {
     price: first.price,
     status: first.status,
     description: first.description,
+    url: first.url,
   };
 }
 
@@ -477,35 +497,24 @@ function autoMergeRows(rows: ComparisonRow[]): ComparisonRow[] {
   return working.filter((_, index) => !removed.has(index));
 }
 
-function hasBundleIdentifier(value: string | null | undefined): boolean {
-  const normalized = normalizeText(value);
-  if (!normalized) return false;
-  return normalized.includes("bundle");
-}
-
-function hasBundleSkuPattern(value: string | null | undefined): boolean {
-  const normalizedSku = normalizeSku(value);
-  if (!normalizedSku) return false;
-  return normalizedSku.includes("BUNDLE") || normalizedSku.includes("BNDL");
-}
-
 function looksLikeBundleByName(value: string | null | undefined): boolean {
   const name = normalizeText(value);
   if (!name) return false;
   return name.includes(" bundle ") || name.startsWith("bundle ") || name.endsWith(" bundle");
 }
 
+function isBundleType(value: string | null | undefined): boolean {
+  return normalizeText(value) === "bundle";
+}
+
 function isHubSpotBundle(properties: Record<string, string | null | undefined> | undefined): boolean {
   if (!properties) return false;
 
-  // Filter only when we have explicit bundle identifiers from dedicated fields or SKU patterns.
+  // Explicitly exclude only records marked as "bundle" by HubSpot product type fields.
   return (
-    hasBundleIdentifier(properties.hs_product_type) ||
-    hasBundleIdentifier(properties.hs_product_category) ||
-    hasBundleIdentifier(properties.product_type) ||
-    hasBundleIdentifier(properties.product_category) ||
-    hasBundleIdentifier(properties.item_type) ||
-    hasBundleSkuPattern(properties.hs_sku)
+    isBundleType(properties.hs_product_type) ||
+    isBundleType(properties.product_type) ||
+    isBundleType(properties.item_type)
   );
 }
 
@@ -600,6 +609,7 @@ async function fetchHubSpotProducts(): Promise<{
           price,
           status,
           description,
+          url: buildHubSpotProductUrl(id),
           key: keyForProduct(sku, name, "hubspot", id),
           normalizedName: normalizeText(name),
         });
@@ -650,6 +660,7 @@ async function fetchZohoProducts(): Promise<{ products: NormalizedProduct[]; err
         price,
         status,
         description,
+        url: buildZohoProductUrl(id),
         key: keyForProduct(sku, name, "zoho", id),
         normalizedName: normalizeText(name),
       };
@@ -673,6 +684,7 @@ function parseZuperProduct(candidate: unknown): Omit<NormalizedProduct, "source"
   const name = getStringField(record, ["name", "product_name", "item_name", "title", "display_name"]);
   const sku = getStringField(record, ["sku", "product_sku", "item_code", "code"]);
   const description = getStringField(record, ["description", "product_description", "item_description", "details"]);
+  const directUrl = getStringField(record, ["web_url", "url", "product_url", "product_link", "link"]);
   const status =
     getStringField(record, ["status", "state"]) ??
     (typeof record.is_active === "boolean" ? (record.is_active ? "active" : "inactive") : null);
@@ -688,14 +700,16 @@ function parseZuperProduct(candidate: unknown): Omit<NormalizedProduct, "source"
   if (!id && !name && !sku) return null;
 
   const fallbackIdBase = normalizeText(`${name || ""} ${sku || ""} ${status || ""}`) || "unknown";
+  const resolvedId = id || `zuper-fallback-${fallbackIdBase}`;
 
   return {
-    id: id || `zuper-fallback-${fallbackIdBase}`,
+    id: resolvedId,
     name: name || null,
     sku: sku || null,
     price,
     status,
     description: description || null,
+    url: directUrl || buildZuperProductUrl(resolvedId),
   };
 }
 
