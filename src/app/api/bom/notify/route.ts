@@ -7,12 +7,13 @@ export const runtime = "nodejs";
 export const maxDuration = 15;
 
 function makeRfc2822(opts: {
-  from: string; to: string; subject: string; html: string;
+  from: string; to: string; bcc?: string; subject: string; html: string;
 }): string {
   const boundary = `boundary_${Date.now()}`;
   const lines = [
     `From: ${opts.from}`,
     `To: ${opts.to}`,
+    ...(opts.bcc ? [`Bcc: ${opts.bcc}`] : []),
     `Subject: ${opts.subject}`,
     `MIME-Version: 1.0`,
     `Content-Type: multipart/alternative; boundary="${boundary}"`,
@@ -46,6 +47,8 @@ export async function POST(request: NextRequest) {
     // Silently skip if not configured — don't fail the BOM save
     return NextResponse.json({ skipped: true, reason: "GMAIL_SENDER_EMAIL not configured" });
   }
+
+  const bccEmail = process.env.BOM_NOTIFY_BCC ?? "zach@photonbrothers.com";
 
   let body: {
     userEmail: string;
@@ -111,6 +114,7 @@ export async function POST(request: NextRequest) {
     const raw = base64url(makeRfc2822({
       from: `PB Ops <${senderEmail}>`,
       to: userEmail,
+      bcc: bccEmail !== userEmail ? bccEmail : undefined,
       subject: `BOM v${version} extracted — ${dealName}`,
       html,
     }));
