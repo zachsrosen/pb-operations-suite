@@ -17,6 +17,15 @@ const ALLOWED_ROLES = new Set([
   "DESIGNER",
 ]);
 
+// Only these BOM categories map to EquipmentSku rows — others (RACKING,
+// RAPID_SHUTDOWN, etc.) are not in the DB and must not be cast to the enum.
+const INVENTORY_CATEGORIES = new Set<EquipmentCategory>([
+  "MODULE",
+  "INVERTER",
+  "BATTERY",
+  "EV_CHARGER",
+]);
+
 export async function POST(request: NextRequest) {
   if (!prisma) {
     return NextResponse.json({ error: "Database not configured" }, { status: 503 });
@@ -84,9 +93,18 @@ export async function POST(request: NextRequest) {
 
   const bomItems = Array.isArray(bomData?.items) ? bomData.items : [];
 
-  // Batch-lookup SKUs by (category, brand, model) to get zohoItemId
+  // Batch-lookup SKUs by (category, brand, model) to get zohoItemId.
+  // Only include items whose category maps to the EquipmentSku table —
+  // non-inventory categories (RACKING, RAPID_SHUTDOWN, etc.) are not stored
+  // there and casting them to the Prisma enum would throw a validation error.
   const skuLookups = bomItems
-    .filter((item) => item.category && item.brand && item.model)
+    .filter(
+      (item) =>
+        item.category &&
+        item.brand &&
+        item.model &&
+        INVENTORY_CATEGORIES.has(item.category as EquipmentCategory)
+    )
     .map((item) => ({
       category: item.category as EquipmentCategory,
       brand: item.brand!,

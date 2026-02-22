@@ -1658,6 +1658,8 @@ function BomDashboardInner() {
                             onClick={() => {
                               loadBomData(snap.bomData);
                               setSavedVersion(snap.version);
+                              setZohoPoId(snap.zohoPoId ?? null);
+                              setZohoVendors(null); // re-fetch vendors for this version
                               addToast({ type: "success", title: `Loaded v${snap.version}` });
                             }}
                             className="text-xs text-cyan-600 dark:text-cyan-400 hover:underline"
