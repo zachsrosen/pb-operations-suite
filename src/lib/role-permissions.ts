@@ -74,6 +74,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/suites/operations",
       "/suites/department",
       "/suites/service",
+      "/suites/intelligence",
       "/dashboards/scheduler",
       "/dashboards/site-survey-scheduler",
       "/dashboards/construction-scheduler",
@@ -85,6 +86,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/service",
       "/dashboards/inventory",
       "/dashboards/timeline",
+      "/dashboards/bom",
+      "/dashboards/bom/history",
+      "/dashboards/dnr",
       "/dashboards/site-survey",
       "/dashboards/design",
       "/dashboards/permitting",
@@ -92,6 +96,18 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/interconnection",
       "/dashboards/construction",
       "/dashboards/incentives",
+      // Intelligence dashboards
+      "/dashboards/at-risk",
+      "/dashboards/qc",
+      "/dashboards/alerts",
+      "/dashboards/pipeline",
+      "/dashboards/optimizer",
+      "/dashboards/capacity",
+      "/dashboards/pe",
+      "/dashboards/sales",
+      "/dashboards/project-management",
+      "/dashboards/design-engineering",
+      "/dashboards/permitting-interconnection",
       "/api/projects",
       "/api/service",
       "/api/zuper",
@@ -111,6 +127,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
   },
   OPERATIONS: {
     allowedRoutes: [
+      "/",
       "/suites/operations",
       "/suites/service",
       "/dashboards/scheduler",
@@ -124,6 +141,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/service",
       "/dashboards/inventory",
       "/dashboards/timeline",
+      "/dashboards/bom",
+      "/dashboards/bom/history",
+      "/dashboards/dnr",
       "/api/projects",
       "/api/service",
       "/api/zuper",
@@ -143,8 +163,10 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
   },
   OPERATIONS_MANAGER: {
     allowedRoutes: [
+      "/",
       "/suites/operations",
       "/suites/service",
+      "/suites/intelligence",
       "/dashboards/scheduler",
       "/dashboards/site-survey-scheduler",
       "/dashboards/construction-scheduler",
@@ -156,6 +178,21 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/service",
       "/dashboards/inventory",
       "/dashboards/timeline",
+      "/dashboards/bom",
+      "/dashboards/bom/history",
+      "/dashboards/dnr",
+      // Intelligence dashboards
+      "/dashboards/at-risk",
+      "/dashboards/qc",
+      "/dashboards/alerts",
+      "/dashboards/pipeline",
+      "/dashboards/optimizer",
+      "/dashboards/capacity",
+      "/dashboards/pe",
+      "/dashboards/sales",
+      "/dashboards/project-management",
+      "/dashboards/design-engineering",
+      "/dashboards/permitting-interconnection",
       "/api/projects",
       "/api/service",
       "/api/zuper",
@@ -179,6 +216,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/suites/operations",
       "/suites/department",
       "/suites/service",
+      "/suites/intelligence",
       "/dashboards/scheduler",
       "/dashboards/site-survey-scheduler",
       "/dashboards/construction-scheduler",
@@ -190,6 +228,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/service",
       "/dashboards/inventory",
       "/dashboards/timeline",
+      "/dashboards/bom",
+      "/dashboards/bom/history",
+      "/dashboards/dnr",
       "/dashboards/site-survey",
       "/dashboards/design",
       "/dashboards/permitting",
@@ -197,6 +238,18 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/interconnection",
       "/dashboards/construction",
       "/dashboards/incentives",
+      // Intelligence dashboards
+      "/dashboards/at-risk",
+      "/dashboards/qc",
+      "/dashboards/alerts",
+      "/dashboards/pipeline",
+      "/dashboards/optimizer",
+      "/dashboards/capacity",
+      "/dashboards/pe",
+      "/dashboards/sales",
+      "/dashboards/project-management",
+      "/dashboards/design-engineering",
+      "/dashboards/permitting-interconnection",
       "/api/projects",
       "/api/service",
       "/api/zuper",
@@ -216,6 +269,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
   },
   TECH_OPS: {
     allowedRoutes: [
+      "/",
       "/suites/department",
       "/dashboards/site-survey",
       "/dashboards/design",
@@ -241,6 +295,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
   DESIGNER: {
     // Legacy role: normalized to TECH_OPS at runtime
     allowedRoutes: [
+      "/",
       "/suites/department",
       "/dashboards/site-survey",
       "/dashboards/design",
@@ -266,6 +321,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
   PERMITTING: {
     // Legacy role: normalized to TECH_OPS at runtime
     allowedRoutes: [
+      "/",
       "/suites/department",
       "/dashboards/site-survey",
       "/dashboards/design",
@@ -307,7 +363,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
   },
   SALES: {
     allowedRoutes: [
+      "/",
       "/dashboards/site-survey-scheduler",
+      "/dashboards/sales",
       "/api/projects",
       "/api/zuper/availability",
       "/api/zuper/status",
@@ -356,6 +414,9 @@ export const ADMIN_ONLY_ROUTES: string[] = [
   "/api/admin",
   "/suites/admin",
   "/dashboards/zuper-status-comparison",
+  "/dashboards/zuper-compliance",
+  "/dashboards/product-comparison",
+  "/dashboards/mobile",
 ];
 
 
