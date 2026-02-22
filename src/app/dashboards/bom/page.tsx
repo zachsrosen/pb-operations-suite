@@ -506,19 +506,25 @@ function BomDashboardInner() {
       .then((data: { projects?: ProjectResult[] }) => {
         if (cancelled) return;
         const results: ProjectResult[] = data.projects ?? [];
-        // Normalize BOM address to "1617 rancho way" (street number + street name, no city/state)
+        // Normalize BOM address to street-only, e.g. "1617 rancho way"
         const bomStreet = rawAddress.split(",")[0].trim().toLowerCase();
+        // Last name from BOM customer, e.g. "SILFVEN, ERIK" → "silfven"
+        const bomLastName = (bom.project.customer ?? "").split(/[,\s]+/)[0].trim().toLowerCase();
         let best: ProjectResult | null = null;
+        let bestScore = 0;
         for (const p of results) {
           if (!p.address) continue;
-          // Normalize HubSpot address the same way
           const hsStreet = p.address.split(",")[0].trim().toLowerCase();
-          // Require the street portions to match — both directions, to handle
-          // differences in abbreviation ("WAY" vs "Way") or trailing tokens
-          if (bomStreet === hsStreet || bomStreet.startsWith(hsStreet) || hsStreet.startsWith(bomStreet)) {
-            best = p;
-            break; // results are ranked by relevance; first address match wins
-          }
+          const addressMatch =
+            bomStreet === hsStreet ||
+            bomStreet.startsWith(hsStreet) ||
+            hsStreet.startsWith(bomStreet);
+          // Address match is required — never suggest on name alone
+          if (!addressMatch) continue;
+          let score = 2; // address match baseline
+          // Bonus point if customer last name appears in the deal name
+          if (bomLastName && p.dealname.toLowerCase().includes(bomLastName)) score += 1;
+          if (score > bestScore) { bestScore = score; best = p; }
         }
         if (best) setAutoLinkSuggestion(best);
       })
