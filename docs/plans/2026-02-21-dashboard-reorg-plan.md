@@ -1,12 +1,14 @@
-# Dashboard Reorganization Implementation Plan
+# Dashboard Reorganization Implementation Plan (v2)
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Reorganize 43 dashboards from 7 suites into 6 purpose-driven suites, add role-based landing pages, extend AI bot access, clean up unused roles, and update the app icon.
+**Goal:** Reorganize 43 dashboards from 7 suites into 6 purpose-driven suites, add role-based landing pages, extend AI bot access, and update the app icon.
 
 **Architecture:** Config-driven approach — a single role-to-landing config object drives the home page, while suite pages and permissions are updated to match the new structure. No new components needed; existing `SuitePageShell`, `DashboardShell`, and home page are modified in place.
 
 **Tech Stack:** Next.js, React, Prisma, TypeScript, Tailwind CSS
+
+**Design doc:** `docs/plans/2026-02-21-dashboard-reorg-design.md`
 
 ---
 
@@ -93,7 +95,7 @@ const SUITE_SWITCHER_ALLOWLIST: Record<UserRole, string[]> = {
 };
 ```
 
-Note: MANAGER, DESIGNER, PERMITTING kept temporarily for backwards compatibility — they'll be removed in Task 8 after migration.
+Note: MANAGER, DESIGNER, PERMITTING kept for backwards compatibility — legacy role removal is deferred to a follow-up PR.
 
 **Step 3: Commit**
 
@@ -111,7 +113,7 @@ git commit -m "refactor: update suite-nav config for new 6-suite structure"
 
 **Step 1: Replace the entire SUITE_MAP object**
 
-Replace lines 10-56 with the new suite assignments:
+Replace lines 10-56 with:
 
 ```typescript
 const SUITE_MAP: Record<string, { href: string; label: string }> = {
@@ -124,6 +126,7 @@ const SUITE_MAP: Record<string, { href: string; label: string }> = {
   "/dashboards/equipment-backlog": { href: "/suites/operations", label: "Operations" },
   "/dashboards/inventory": { href: "/suites/operations", label: "Operations" },
   "/dashboards/bom": { href: "/suites/operations", label: "Operations" },
+  "/dashboards/bom/history": { href: "/suites/operations", label: "Operations" },
   // Department Suite
   "/dashboards/site-survey": { href: "/suites/department", label: "Departments" },
   "/dashboards/design": { href: "/suites/department", label: "Departments" },
@@ -176,11 +179,54 @@ git commit -m "refactor: update DashboardShell SUITE_MAP for new suite structure
 ### Task 3: Update Role Permissions
 
 **Files:**
-- Modify: `src/lib/role-permissions.ts` (lines 45-329 for ROLE_PERMISSIONS, lines 354-359 for ADMIN_ONLY_ROUTES)
+- Modify: `src/lib/role-permissions.ts` (lines 45-329, 354-359)
 
-**Step 1: Add new Intelligence and Service + D&R routes to OPERATIONS_MANAGER**
+**Step 1: Update OPERATIONS allowedRoutes (lines 112-143)**
 
-Update the `OPERATIONS_MANAGER` allowedRoutes (lines 145-164) to add Intelligence dashboards:
+Add `"/"`, `"/dashboards/bom"`, `"/dashboards/bom/history"`, `"/dashboards/dnr"`:
+
+```typescript
+OPERATIONS: {
+  allowedRoutes: [
+    "/",
+    "/suites/operations",
+    "/suites/service",
+    "/dashboards/scheduler",
+    "/dashboards/site-survey-scheduler",
+    "/dashboards/construction-scheduler",
+    "/dashboards/inspection-scheduler",
+    "/dashboards/service-scheduler",
+    "/dashboards/dnr-scheduler",
+    "/dashboards/equipment-backlog",
+    "/dashboards/service-backlog",
+    "/dashboards/service",
+    "/dashboards/inventory",
+    "/dashboards/timeline",
+    "/dashboards/bom",
+    "/dashboards/bom/history",
+    "/dashboards/dnr",
+    "/api/projects",
+    "/api/service",
+    "/api/zuper",
+    "/api/activity/log",
+    "/api/inventory",
+    "/api/bugs",
+  ],
+  canScheduleSurveys: false,
+  canScheduleInstalls: true,
+  canScheduleInspections: true,
+  canSyncZuper: true,
+  canManageUsers: false,
+  canManageAvailability: true,
+  canEditDesign: false,
+  canEditPermitting: false,
+  canViewAllLocations: true,
+},
+```
+
+**Step 2: Update OPERATIONS_MANAGER allowedRoutes (lines 144-175)**
+
+Add `"/"`, `/suites/intelligence`, all Intelligence dashboard routes, `"/dashboards/bom"`, `"/dashboards/bom/history"`, `"/dashboards/dnr"`:
 
 ```typescript
 OPERATIONS_MANAGER: {
@@ -201,6 +247,7 @@ OPERATIONS_MANAGER: {
     "/dashboards/inventory",
     "/dashboards/timeline",
     "/dashboards/bom",
+    "/dashboards/bom/history",
     "/dashboards/dnr",
     // Intelligence dashboards
     "/dashboards/at-risk",
@@ -233,9 +280,9 @@ OPERATIONS_MANAGER: {
 },
 ```
 
-**Step 2: Update PROJECT_MANAGER with Intelligence routes + home access**
+**Step 3: Update PROJECT_MANAGER allowedRoutes (lines 176-216)**
 
-Update `PROJECT_MANAGER` allowedRoutes (lines 176-216):
+Add `/suites/intelligence`, all Intelligence routes, `"/dashboards/bom"`, `"/dashboards/bom/history"`, `"/dashboards/dnr"`:
 
 ```typescript
 PROJECT_MANAGER: {
@@ -257,6 +304,7 @@ PROJECT_MANAGER: {
     "/dashboards/inventory",
     "/dashboards/timeline",
     "/dashboards/bom",
+    "/dashboards/bom/history",
     "/dashboards/dnr",
     "/dashboards/site-survey",
     "/dashboards/design",
@@ -296,43 +344,57 @@ PROJECT_MANAGER: {
 },
 ```
 
-**Step 3: Add "/" and BOM to OPERATIONS allowedRoutes**
-
-Update `OPERATIONS` (lines 112-143) — add `"/"`, `"/dashboards/bom"`, and `"/dashboards/dnr"`:
+**Step 4: Update TECH_OPS — add "/" for home access (lines 217-240)**
 
 ```typescript
-OPERATIONS: {
+TECH_OPS: {
   allowedRoutes: [
     "/",
-    "/suites/operations",
-    "/suites/service",
-    "/dashboards/scheduler",
-    "/dashboards/site-survey-scheduler",
-    "/dashboards/construction-scheduler",
-    "/dashboards/inspection-scheduler",
-    "/dashboards/service-scheduler",
-    "/dashboards/dnr-scheduler",
-    "/dashboards/equipment-backlog",
-    "/dashboards/service-backlog",
-    "/dashboards/service",
-    "/dashboards/inventory",
-    "/dashboards/timeline",
-    "/dashboards/bom",
-    "/dashboards/dnr",
+    "/suites/department",
+    "/dashboards/site-survey",
+    "/dashboards/design",
+    "/dashboards/permitting",
+    "/dashboards/inspections",
+    "/dashboards/interconnection",
+    "/dashboards/construction",
+    "/dashboards/incentives",
     "/api/projects",
-    "/api/service",
-    "/api/zuper",
     "/api/activity/log",
-    "/api/inventory",
     "/api/bugs",
   ],
   // ... rest unchanged
 },
 ```
 
-**Step 4: Add Zuper Compliance, Product Comparison, Mobile to ADMIN_ONLY_ROUTES**
+**Step 5: Update SALES — add "/" and "/dashboards/sales" (lines 308-328)**
 
-Update `ADMIN_ONLY_ROUTES` (lines 354-359):
+```typescript
+SALES: {
+  allowedRoutes: [
+    "/",
+    "/dashboards/site-survey-scheduler",
+    "/dashboards/sales",
+    "/api/projects",
+    "/api/zuper/availability",
+    "/api/zuper/status",
+    "/api/zuper/jobs/lookup",
+    "/api/zuper/jobs/schedule",
+    "/api/zuper/my-availability",
+    "/api/bugs",
+  ],
+  canScheduleSurveys: true,
+  canScheduleInstalls: false,
+  canScheduleInspections: false,
+  canSyncZuper: true,
+  canManageUsers: false,
+  canManageAvailability: false,
+  canEditDesign: false,
+  canEditPermitting: false,
+  canViewAllLocations: false,
+},
+```
+
+**Step 6: Update ADMIN_ONLY_ROUTES (lines 354-359)**
 
 ```typescript
 export const ADMIN_ONLY_ROUTES: string[] = [
@@ -346,11 +408,15 @@ export const ADMIN_ONLY_ROUTES: string[] = [
 ];
 ```
 
-**Step 5: Commit**
+**Step 7: Verify middleware allows "/" for all authenticated roles**
+
+Check `src/middleware.ts` — the home route `/` should be allowed through for all authenticated roles. The middleware should defer to `canAccessRoute()` which now returns true for all roles with `"/"` in their allowedRoutes.
+
+**Step 8: Commit**
 
 ```bash
-git add src/lib/role-permissions.ts
-git commit -m "feat: update role permissions for new suite structure and Intelligence access"
+git add src/lib/role-permissions.ts src/middleware.ts
+git commit -m "feat: update role permissions for new suite structure, Intelligence access, and home access for all roles"
 ```
 
 ---
@@ -488,7 +554,7 @@ git commit -m "feat: create Intelligence Suite page with 11 graduated dashboards
 
 ---
 
-### Task 5: Update Existing Suite Pages
+### Task 5: Update Existing Suite Pages + Fix Stale Links
 
 **Files:**
 - Modify: `src/app/suites/operations/page.tsx`
@@ -496,6 +562,11 @@ git commit -m "feat: create Intelligence Suite page with 11 graduated dashboards
 - Modify: `src/app/suites/admin/page.tsx`
 - Delete: `src/app/suites/testing/page.tsx`
 - Delete: `src/app/suites/additional-pipeline/page.tsx`
+- Modify: `src/lib/page-directory.ts` (stale suite links)
+- Modify: `src/app/prototypes/solar-checkout/page.tsx` (stale back-link)
+- Modify: `src/app/prototypes/solar-surveyor/page.tsx` (stale back-link)
+- Modify: `src/app/prototypes/home-refresh/catalog.ts` (stale reference)
+- Modify: `src/app/dashboards/product-comparison/page.tsx` (stale back-link)
 
 **Step 1: Update Operations Suite — remove D&R Sched, add BOM**
 
@@ -571,9 +642,9 @@ const LINKS: SuitePageCard[] = [
 ];
 ```
 
-**Step 2: Update Service Suite — rename, add D&R Schedule + D&R Pipeline**
+**Step 2: Update Service Suite — rename to Service + D&R, add D&R dashboards**
 
-Replace the entire `src/app/suites/service/page.tsx` content:
+Replace the entire `src/app/suites/service/page.tsx`:
 
 ```typescript
 import SuitePageShell, { type SuitePageCard } from "@/components/SuitePageShell";
@@ -638,9 +709,7 @@ export default async function ServiceDRSuitePage() {
 
 **Step 3: Update Admin Suite — add graduated dashboards + prototypes**
 
-Replace the `ADMIN_TOOLS` array in `src/app/suites/admin/page.tsx` (lines 5-69). Add Zuper Compliance, Product Comparison, Mobile Dashboard. Move the prototypes from Testing. Keep existing Documentation and API sections.
-
-Add to ADMIN_TOOLS (before the closing `];`):
+In `src/app/suites/admin/page.tsx`, add to the end of the `ADMIN_TOOLS` array (before `];`):
 
 ```typescript
   {
@@ -669,7 +738,7 @@ Add to ADMIN_TOOLS (before the closing `];`):
   },
 ```
 
-Add a PROTOTYPES array (copy from the old testing page):
+Add a PROTOTYPES array and include it in the render:
 
 ```typescript
 const PROTOTYPES: SuitePageCard[] = [
@@ -708,11 +777,7 @@ const PROTOTYPES: SuitePageCard[] = [
 ];
 ```
 
-Update the render to include PROTOTYPES:
-
-```typescript
-cards={[...ADMIN_TOOLS, ...DOCUMENTATION, ...API_SHORTCUTS, ...PROTOTYPES]}
-```
+Update render: `cards={[...ADMIN_TOOLS, ...DOCUMENTATION, ...API_SHORTCUTS, ...PROTOTYPES]}`
 
 **Step 4: Delete Testing and Additional Pipeline suite pages**
 
@@ -723,11 +788,25 @@ rmdir src/app/suites/testing 2>/dev/null || true
 rmdir src/app/suites/additional-pipeline 2>/dev/null || true
 ```
 
-**Step 5: Commit**
+**Step 5: Fix stale links to deleted suites**
+
+Run grep to find all references:
+```bash
+grep -rn "/suites/testing\|/suites/additional-pipeline" src/ --include="*.ts" --include="*.tsx" | grep -v node_modules
+```
+
+Update each match:
+1. `src/lib/page-directory.ts` — change `/suites/additional-pipeline` to `/suites/service`, change `/suites/testing` to `/suites/admin`
+2. `src/app/prototypes/solar-checkout/page.tsx` — update any back-link from `/suites/testing` to `/suites/admin`
+3. `src/app/prototypes/solar-surveyor/page.tsx` — update any back-link from `/suites/testing` to `/suites/admin`
+4. `src/app/prototypes/home-refresh/catalog.ts` — update reference from `/suites/testing` to `/suites/admin`
+5. `src/app/dashboards/product-comparison/page.tsx` — update back-link from `/suites/testing` to `/suites/admin`
+
+**Step 6: Commit**
 
 ```bash
-git add -A src/app/suites/
-git commit -m "feat: update suite pages — add Intelligence, rename Service+D&R, dissolve Testing/Additional Pipeline"
+git add -A src/app/suites/ src/lib/page-directory.ts src/app/prototypes/ src/app/dashboards/product-comparison/
+git commit -m "feat: update suite pages — add Intelligence, rename Service+D&R, dissolve Testing/Additional Pipeline, fix stale links"
 ```
 
 ---
@@ -742,8 +821,17 @@ This is the largest change. The home page needs:
 2. Role-based curated dashboard cards
 3. Extended AI bot access
 4. Remove redirects for roles that now get landing pages
+5. Browse All filtered by `canAccessRoute()`
 
-**Step 1: Replace SUITE_LINKS (lines 53-110)**
+**Step 1: Add import for canAccessRoute**
+
+Add to existing imports at top of file:
+
+```typescript
+import { canAccessRoute, type UserRole } from "@/lib/role-permissions";
+```
+
+**Step 2: Replace SUITE_LINKS (lines 53-110)**
 
 ```typescript
 const SUITE_LINKS: SuiteLinkData[] = [
@@ -798,9 +886,9 @@ const SUITE_LINKS: SuiteLinkData[] = [
 ];
 ```
 
-**Step 2: Add role-based curated dashboard config**
+**Step 3: Add role-based curated dashboard config**
 
-Add this config after the SUITE_LINKS definition:
+Add after SUITE_LINKS:
 
 ```typescript
 interface RoleLandingCard {
@@ -849,15 +937,13 @@ const ROLE_LANDING_CARDS: Record<string, RoleLandingCard[]> = {
 };
 ```
 
-**Step 3: Update canUseAI (line 415)**
+**Step 4: Update canUseAI (line 415)**
 
 ```typescript
 const canUseAI = userRole === "ADMIN" || userRole === "OWNER" || userRole === "OPERATIONS_MANAGER" || userRole === "PROJECT_MANAGER";
 ```
 
-**Step 4: Update redirectTarget and visibleSuites logic**
-
-Replace the `redirectTarget` useMemo (lines 272-279) — only VIEWER redirects now:
+**Step 5: Update redirectTarget — only VIEWER redirects (lines 272-279)**
 
 ```typescript
 const redirectTarget = useMemo(() => {
@@ -867,13 +953,12 @@ const redirectTarget = useMemo(() => {
 }, [userRole]);
 ```
 
-Replace the `visibleSuites` useMemo (lines 395-413):
+**Step 6: Update visibleSuites — roles with landing cards don't show suites (lines 395-413)**
 
 ```typescript
 const visibleSuites = useMemo(() => {
   if (!userRole) return [];
   if (userRole === "VIEWER") return [];
-  // Roles with curated landing cards don't show suites directly (they use Browse All)
   if (ROLE_LANDING_CARDS[userRole]) return [];
   const isAdmin = userRole === "ADMIN";
   const isOwnerOrAdmin = isAdmin || userRole === "OWNER";
@@ -885,9 +970,9 @@ const visibleSuites = useMemo(() => {
 }, [userRole]);
 ```
 
-**Step 5: Add role-based landing card rendering**
+**Step 7: Add roleLandingCards computed value**
 
-Add a `roleLandingCards` computed value after `visibleSuites`:
+After visibleSuites:
 
 ```typescript
 const roleLandingCards = useMemo(() => {
@@ -896,7 +981,19 @@ const roleLandingCards = useMemo(() => {
 }, [userRole]);
 ```
 
-In the JSX, before the Suites section (around line 751), add the curated cards rendering:
+**Step 8: Update JSX — add role-based cards and Browse All with canAccessRoute**
+
+Wrap the stats grid so it only shows for canUseAI roles:
+
+```tsx
+{canUseAI && (
+  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8 stagger-grid">
+    {/* ... existing StatCards ... */}
+  </div>
+)}
+```
+
+Before the existing Suites section, add role-based curated cards:
 
 ```tsx
 {/* Role-Based Curated Cards */}
@@ -918,7 +1015,6 @@ In the JSX, before the Suites section (around line 751), add the curated cards r
     <div className="text-center mb-8">
       <button
         onClick={() => {
-          // Show the full suites section
           const el = document.getElementById("all-suites");
           if (el) el.classList.toggle("hidden");
         }}
@@ -930,7 +1026,7 @@ In the JSX, before the Suites section (around line 751), add the curated cards r
   </div>
 )}
 
-{/* All Suites (hidden for role-based landing, visible for admin/owner) */}
+{/* Suites (for ADMIN/OWNER) */}
 {visibleSuites.length > 0 && (
   <div>
     <h2 className="text-lg font-semibold text-foreground/80 mb-4 mt-8">Suites</h2>
@@ -942,303 +1038,7 @@ In the JSX, before the Suites section (around line 751), add the curated cards r
   </div>
 )}
 
-{/* Browse All (hidden by default for role-landing users) */}
-{roleLandingCards && (
-  <div id="all-suites" className="hidden">
-    <h2 className="text-lg font-semibold text-foreground/80 mb-4 mt-8">All Suites</h2>
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 stagger-grid">
-      {SUITE_LINKS
-        .filter((suite) => {
-          if (suite.visibility === "admin") return userRole === "ADMIN";
-          if (suite.visibility === "owner_admin") return userRole === "ADMIN" || userRole === "OWNER" || userRole === "OPERATIONS_MANAGER" || userRole === "PROJECT_MANAGER";
-          return true;
-        })
-        .map((suite) => (
-          <DashboardLink key={suite.href} {...suite} />
-        ))}
-    </div>
-  </div>
-)}
-```
-
-**Step 6: Hide stats/AI sections for roles that don't get them**
-
-The stats grid, location filter, and stage bars should only show for roles with `canUseAI` or ADMIN/OWNER. Wrap those sections:
-
-For the stats grid (around line 532):
-```tsx
-{(canUseAI) && (
-  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8 stagger-grid">
-    {/* ... existing StatCards */}
-  </div>
-)}
-```
-
-The Zach's Bot section already checks `canUseAI` — it will now correctly show for OPS_MANAGER and PM too.
-
-**Step 7: Commit**
-
-```bash
-git add src/app/page.tsx
-git commit -m "feat: role-based landing pages with curated dashboard cards and extended AI bot access"
-```
-
----
-
-### Task 7: Update Executive Suite Page
-
-**Files:**
-- Modify: `src/app/suites/executive/page.tsx`
-
-**Step 1: Add Revenue Calendar to the executive suite cards**
-
-The current file (lines 5-38) has Revenue, Executive Summary, Location Comparison but is missing Revenue Calendar. Verify it's present (it may have been added already based on the read — line 31-37 shows it). If already there, no changes needed.
-
-**Step 2: Commit (if changes needed)**
-
-```bash
-git add src/app/suites/executive/page.tsx
-git commit -m "fix: ensure Revenue Calendar in Executive Suite"
-```
-
----
-
-### Task 8: Schema Cleanup — Remove Unused Roles
-
-**Files:**
-- Modify: `prisma/schema.prisma` (lines 17-29)
-- Modify: `src/lib/role-permissions.ts` (remove MANAGER, DESIGNER, PERMITTING entries)
-- Modify: `src/lib/suite-nav.ts` (remove MANAGER, DESIGNER, PERMITTING entries)
-
-**Step 1: Check for users with these roles**
-
-```bash
-npx prisma db execute --stdin <<< "SELECT role, COUNT(*) FROM \"User\" WHERE role IN ('MANAGER', 'DESIGNER', 'PERMITTING') GROUP BY role;"
-```
-
-If any users have these roles, they must be migrated first:
-```sql
-UPDATE "User" SET role = 'PROJECT_MANAGER' WHERE role = 'MANAGER';
-UPDATE "User" SET role = 'TECH_OPS' WHERE role = 'DESIGNER';
-UPDATE "User" SET role = 'TECH_OPS' WHERE role = 'PERMITTING';
-```
-
-**Step 2: Remove roles from Prisma schema**
-
-Update `prisma/schema.prisma` lines 17-29:
-
-```prisma
-enum UserRole {
-  ADMIN               // Full access, user management, all dashboards
-  OWNER               // Like ADMIN but without user management (for Matt & David)
-  OPERATIONS          // Can schedule installs/inspections, manage construction flow
-  OPERATIONS_MANAGER  // Operations managers — crew oversight, scheduling, availability
-  PROJECT_MANAGER     // Project managers — project tracking, scheduling, reporting
-  TECH_OPS            // Field technicians — view schedules, self-service availability
-  VIEWER              // Read-only access to all dashboards
-  SALES               // Only survey scheduler access (for sales team)
-}
-```
-
-**Step 3: Remove from role-permissions.ts**
-
-Delete the `MANAGER` block (lines 70-111), `DESIGNER` block (lines 241-265), and `PERMITTING` block (lines 266-290) from `ROLE_PERMISSIONS`.
-
-Update `normalizeRole()` (lines 36-40) — remove the normalization since these roles no longer exist:
-
-```typescript
-export function normalizeRole(role: UserRole): UserRole {
-  return role;
-}
-```
-
-**Step 4: Remove from suite-nav.ts**
-
-Remove `MANAGER`, `DESIGNER`, `PERMITTING` from `SUITE_SWITCHER_ALLOWLIST`.
-
-**Step 5: Generate and run migration**
-
-```bash
-npx prisma migrate dev --name remove-legacy-roles
-```
-
-**Step 6: Commit**
-
-```bash
-git add prisma/ src/lib/role-permissions.ts src/lib/suite-nav.ts
-git commit -m "chore: remove unused MANAGER, DESIGNER, PERMITTING roles from schema and permissions"
-```
-
----
-
-### Task 9: App Icon Update
-
-**Files:**
-- Replace: `src/app/favicon.ico`
-- Replace: `public/icons/icon-192.png`
-- Replace: `public/icons/icon-512.png`
-- Create: `public/icons/apple-touch-icon.png`
-- Modify: `public/manifest.json` (if needed)
-
-**Step 1: Extract the orange "O" mark from the Photon Brothers logo**
-
-The "O" mark is defined in the SVG at `public/branding/photon-brothers-logo-mixed-white.svg`. The relevant path data is on line 17 — the orange fill (`#F49B04`) path that draws the stylized "O" with the vertical bar.
-
-Create a standalone SVG icon from this path element, centered on a `#0a0a0f` dark background with rounded corners. The SVG source icon should be 512x512.
-
-**Step 2: Generate PNG icons from the SVG**
-
-Use a tool like `sharp` or `svgexport` to generate:
-- `icon-512.png` (512x512)
-- `icon-192.png` (192x192)
-- `apple-touch-icon.png` (180x180)
-
-For favicon.ico, use a multi-size .ico generator (16x16 + 32x32).
-
-**Step 3: Update manifest.json if needed**
-
-Add apple-touch-icon entry if not present. The current manifest already has 192 and 512 entries which will use the new PNGs automatically.
-
-**Step 4: Commit**
-
-```bash
-git add src/app/favicon.ico public/icons/ public/manifest.json
-git commit -m "chore: update app icon to Photon Brothers O mark"
-```
-
----
-
-### Task 10: Build Verification
-
-**Step 1: Run lint**
-
-```bash
-npm run lint
-```
-
-Expected: No errors. Fix any that appear.
-
-**Step 2: Run build**
-
-```bash
-npm run build
-```
-
-Expected: Successful build. The dissolved suite pages (testing, additional-pipeline) should not cause issues since they're deleted.
-
-**Step 3: Run tests**
-
-```bash
-npm run test
-```
-
-Expected: All existing tests pass. No new tests needed for this refactor since it's config/data changes.
-
-**Step 4: Manual smoke test**
-
-Verify in browser:
-- Home page renders correctly for each role
-- Suite switcher shows correct suites
-- Breadcrumbs navigate to correct parent suites
-- Intelligence suite page loads with all 11 dashboards
-- Service + D&R suite shows both sections
-- Old URLs (/suites/testing, /suites/additional-pipeline) return 404
-
-**Step 5: Final commit**
-
-```bash
-git add -A
-git commit -m "chore: fix lint/build issues from dashboard reorg"
-```
-
----
-
-## Task Dependency Order
-
-```
-Task 1 (suite-nav) ─┐
-Task 2 (SUITE_MAP) ──┼── Task 5 (suite pages) ─── Task 6 (home page) ─── Task 10 (verify)
-Task 3 (permissions) ┘         │
-                     Task 4 (intelligence) ┘
-
-Task 7 (executive) ── standalone, any time
-Task 8 (schema cleanup) ── after Task 3, before final deploy
-Task 9 (app icon) ── standalone, any time
-```
-
-Tasks 1-3 can be done in parallel. Task 4 depends on Task 1. Tasks 5-6 depend on 1-3. Task 8 should be done last before deploy. Tasks 7 and 9 are independent.
-
----
-
-## REVISION: Code Review Fixes (P1-P3)
-
-The following amendments address issues found during code review.
-
-### Task 3 Amendment: Add "/" and missing routes to SALES, TECH_OPS, OPERATIONS permissions
-
-**P1 Fix: SALES/TECH_OPS need home access for role-based landing pages**
-
-Add `"/"` to SALES allowedRoutes and `/dashboards/sales` for the Sales Pipeline card:
-
-```typescript
-SALES: {
-  allowedRoutes: [
-    "/",
-    "/dashboards/site-survey-scheduler",
-    "/dashboards/sales",
-    "/api/projects",
-    "/api/zuper/availability",
-    "/api/zuper/status",
-    "/api/zuper/jobs/lookup",
-    "/api/zuper/jobs/schedule",
-    "/api/zuper/my-availability",
-    "/api/bugs",
-  ],
-  // ... rest unchanged
-},
-```
-
-Add `"/"` to TECH_OPS allowedRoutes:
-
-```typescript
-TECH_OPS: {
-  allowedRoutes: [
-    "/",
-    "/suites/department",
-    // ... rest unchanged
-  ],
-},
-```
-
-Add `"/"` to OPERATIONS allowedRoutes (if not already added in Task 3 Step 3).
-
-**Also update middleware** at `src/middleware.ts` — verify that the home route `/` is allowed through for all authenticated roles (not just ADMIN/OWNER). The middleware should defer to `canAccessRoute()` which will now return true for all roles with `"/"` in their allowedRoutes.
-
-### Task 2 Amendment: Add BOM History to SUITE_MAP
-
-**P2 Fix: BOM History missing from SUITE_MAP**
-
-Add to the SUITE_MAP in DashboardShell.tsx:
-
-```typescript
-"/dashboards/bom/history": { href: "/suites/operations", label: "Operations" },
-```
-
-### Task 3 Amendment: Add BOM History to role permissions
-
-Add `/dashboards/bom/history` to every role that has `/dashboards/bom`:
-- OPERATIONS_MANAGER
-- PROJECT_MANAGER
-- OPERATIONS
-
-### Task 6 Amendment: Fix Browse All Suites filtering
-
-**P1 Fix: Browse All shows dead-end links**
-
-Replace the naive visibility filter in the "Browse All" section with `canAccessRoute()`:
-
-```tsx
-{/* Browse All (hidden by default for role-landing users) */}
+{/* Browse All — uses canAccessRoute to prevent dead-end links */}
 {roleLandingCards && (
   <div id="all-suites" className="hidden">
     <h2 className="text-lg font-semibold text-foreground/80 mb-4 mt-8">All Suites</h2>
@@ -1253,57 +1053,76 @@ Replace the naive visibility filter in the "Browse All" section with `canAccessR
 )}
 ```
 
-This requires importing `canAccessRoute` and `UserRole` from `@/lib/role-permissions` into `page.tsx`.
+**Step 9: Commit**
 
-### Task 5 Amendment: Update hardcoded references to deleted suites
+```bash
+git add src/app/page.tsx
+git commit -m "feat: role-based landing pages with curated cards, extended AI bot, canAccessRoute Browse All"
+```
 
-**P2 Fix: Stale links to /suites/testing and /suites/additional-pipeline**
+---
 
-Update these files to point to new locations:
+### Task 7: Verify Executive Suite Page
 
-1. `src/lib/page-directory.ts` line 63 — change `/suites/additional-pipeline` to `/suites/service` (or remove)
-2. `src/lib/page-directory.ts` line 69 — change `/suites/testing` to `/suites/admin` (testing content moved to admin)
-3. `src/app/prototypes/solar-checkout/page.tsx` line 17 — update any back-link to `/suites/admin`
-4. `src/app/prototypes/solar-surveyor/page.tsx` line 17 — update any back-link to `/suites/admin`
-5. `src/app/prototypes/home-refresh/catalog.ts` line 42 — update reference
-6. `src/app/dashboards/product-comparison/page.tsx` line 365 — update back-link to `/suites/admin`
+**Files:**
+- Check: `src/app/suites/executive/page.tsx`
 
-Run a full grep for `/suites/testing` and `/suites/additional-pipeline` to catch any others.
+**Step 1: Verify Revenue Calendar is present**
 
-### Task 8 Amendment: Defer role removal, keep normalizeRole
+The executive suite should have 4 dashboards: Revenue, Executive Summary, Location Comparison, Revenue Calendar. Check the file and add Revenue Calendar if missing.
 
-**P1 Fix: Don't remove normalizeRole — keep it for rollout safety**
+**Step 2: Commit (if changes needed)**
 
-Task 8 should NOT remove the legacy roles from the Prisma schema in this PR. Instead:
+```bash
+git add src/app/suites/executive/page.tsx
+git commit -m "fix: ensure Revenue Calendar in Executive Suite"
+```
 
-1. **Keep** `normalizeRole()` function as-is (MANAGER→PROJECT_MANAGER, DESIGNER/PERMITTING→TECH_OPS)
-2. **Keep** legacy role entries in `ROLE_PERMISSIONS` and `SUITE_SWITCHER_ALLOWLIST` (they serve as fallbacks)
-3. **Keep** legacy role references in API allowlists (BOM routes, schedule routes, admin routes)
-4. **Only** migrate users in the database and mark the schema enum values with deprecation comments
-5. **Defer** actual enum removal to a follow-up PR after confirming:
-   - Zero users with legacy roles in prod
-   - All JWT tokens have cycled (force sign-out or wait TTL)
-   - No API consumers sending legacy role strings
+---
 
-Full list of files with legacy role references that would break on removal:
-- `src/app/api/bom/upload/route.ts` (lines 25-30)
-- `src/app/api/bom/extract/route.ts` (lines 33-38)
-- `src/app/api/bom/history/route.ts` (lines 20-22)
-- `src/app/api/bom/chunk/route.ts` (lines 26-27)
-- `src/app/api/bom/upload-token/route.ts` (lines 27-32)
-- `src/app/api/zuper/jobs/schedule/route.ts` (line 14)
-- `src/app/api/admin/activity/route.ts` (lines 15-18)
-- `src/app/api/admin/migrate/route.ts` (lines 34-38)
-- `src/app/admin/users/page.tsx` (lines 41-48)
-- `src/app/admin/directory/page.tsx` (lines 28-44)
-- `src/app/admin/activity/page.tsx` (lines 43-45)
-- `src/app/dashboards/site-survey-scheduler/page.tsx` (line 159)
+### Task 8: App Icon Update
 
-### Task 10 Amendment: Add tests for routing changes
+**Files:**
+- Replace: `src/app/favicon.ico`
+- Replace: `public/icons/icon-192.png`
+- Replace: `public/icons/icon-512.png`
+- Create: `public/icons/apple-touch-icon.png`
+- Modify: `public/manifest.json` (if needed)
 
-**P3 Fix: Add tests for auth/routing changes**
+**Step 1: Extract the orange "O" mark from the Photon Brothers logo**
 
-Create `src/__tests__/lib/role-permissions.test.ts`:
+The "O" mark is in `public/branding/photon-brothers-logo-mixed-white.svg` line 17. The relevant path has fill `#F49B04` and draws the stylized "O" with vertical bar.
+
+Create a standalone SVG icon from this path, centered on `#0a0a0f` dark background with rounded corners, 512x512.
+
+**Step 2: Generate PNG icons from the SVG**
+
+Use `sharp` or equivalent to generate:
+- `icon-512.png` (512x512)
+- `icon-192.png` (192x192)
+- `apple-touch-icon.png` (180x180)
+
+For favicon.ico, use a multi-size .ico generator (16x16 + 32x32).
+
+**Step 3: Update manifest.json if needed**
+
+Add apple-touch-icon entry if not present.
+
+**Step 4: Commit**
+
+```bash
+git add src/app/favicon.ico public/icons/ public/manifest.json
+git commit -m "chore: update app icon to Photon Brothers O mark"
+```
+
+---
+
+### Task 9: Add Routing Tests
+
+**Files:**
+- Create: `src/__tests__/lib/role-permissions.test.ts`
+
+**Step 1: Write tests for new routing rules**
 
 ```typescript
 import { canAccessRoute } from "@/lib/role-permissions";
@@ -1336,6 +1155,8 @@ describe("canAccessRoute - new suite structure", () => {
     expect(canAccessRoute("OPERATIONS", "/")).toBe(true);
     expect(canAccessRoute("TECH_OPS", "/")).toBe(true);
     expect(canAccessRoute("SALES", "/")).toBe(true);
+    expect(canAccessRoute("OPERATIONS_MANAGER", "/")).toBe(true);
+    expect(canAccessRoute("PROJECT_MANAGER", "/")).toBe(true);
   });
 
   it("blocks VIEWER from home", () => {
@@ -1343,7 +1164,8 @@ describe("canAccessRoute - new suite structure", () => {
   });
 
   // BOM History access
-  it("allows OPERATIONS to access BOM History", () => {
+  it("allows OPERATIONS to access BOM and BOM History", () => {
+    expect(canAccessRoute("OPERATIONS", "/dashboards/bom")).toBe(true);
     expect(canAccessRoute("OPERATIONS", "/dashboards/bom/history")).toBe(true);
   });
 
@@ -1352,20 +1174,131 @@ describe("canAccessRoute - new suite structure", () => {
     expect(canAccessRoute("OPERATIONS_MANAGER", "/dashboards/zuper-compliance")).toBe(false);
     expect(canAccessRoute("PROJECT_MANAGER", "/dashboards/mobile")).toBe(false);
   });
+
+  it("allows ADMIN to access admin-only dashboards", () => {
+    expect(canAccessRoute("ADMIN", "/dashboards/zuper-compliance")).toBe(true);
+    expect(canAccessRoute("ADMIN", "/dashboards/mobile")).toBe(true);
+  });
+
+  // Legacy role normalization still works
+  it("normalizes MANAGER to PROJECT_MANAGER access", () => {
+    expect(canAccessRoute("MANAGER", "/")).toBe(true);
+    expect(canAccessRoute("MANAGER", "/suites/intelligence")).toBe(true);
+  });
+
+  it("normalizes DESIGNER to TECH_OPS access", () => {
+    expect(canAccessRoute("DESIGNER", "/")).toBe(true);
+    expect(canAccessRoute("DESIGNER", "/suites/department")).toBe(true);
+  });
 });
 ```
 
-Run: `npm run test -- --testPathPattern=role-permissions`
+**Step 2: Run tests**
 
-### Updated Dependency Order
+```bash
+npm run test -- --testPathPattern=role-permissions
+```
+
+Expected: All pass.
+
+**Step 3: Commit**
+
+```bash
+git add src/__tests__/lib/role-permissions.test.ts
+git commit -m "test: add routing tests for new suite structure and role-based access"
+```
+
+---
+
+### Task 10: Build Verification
+
+**Step 1: Run lint**
+
+```bash
+npm run lint
+```
+
+Expected: No errors. Fix any that appear.
+
+**Step 2: Run build**
+
+```bash
+npm run build
+```
+
+Expected: Successful build.
+
+**Step 3: Run all tests**
+
+```bash
+npm run test
+```
+
+Expected: All tests pass, including new role-permissions tests from Task 9.
+
+**Step 4: Manual smoke test**
+
+Verify in browser:
+- Home page renders correctly for each role (curated cards for OPS_MANAGER, PM, OPERATIONS, TECH_OPS, SALES)
+- ADMIN/OWNER see full stats + AI bot + suite cards
+- OPS_MANAGER and PM see compact stats + AI bot + curated cards
+- Browse All only shows suites the user can access (no dead-end links)
+- Suite switcher shows correct suites
+- Breadcrumbs navigate to correct parent suites
+- Intelligence suite page loads with all 11 dashboards
+- Service + D&R suite shows both sections
+- Old URLs (/suites/testing, /suites/additional-pipeline) return 404
+- No stale links to deleted suites anywhere
+
+**Step 5: Final commit (if any fixes needed)**
+
+```bash
+git add -A
+git commit -m "chore: fix lint/build issues from dashboard reorg"
+```
+
+---
+
+## Deferred Work (follow-up PR)
+
+### Legacy Role Schema Removal
+
+Do NOT remove MANAGER, DESIGNER, PERMITTING from Prisma schema in this PR. These roles are referenced in 12+ files and `normalizeRole()` provides runtime safety.
+
+**Prerequisites before removal:**
+1. Zero users with legacy roles in prod database
+2. All JWT tokens have cycled (force sign-out or wait TTL)
+3. No API consumers sending legacy role strings
+
+**Files that will need updating when removing:**
+- `prisma/schema.prisma` (enum)
+- `src/lib/role-permissions.ts` (normalizeRole, ROLE_PERMISSIONS entries)
+- `src/lib/suite-nav.ts` (SUITE_SWITCHER_ALLOWLIST entries)
+- `src/app/api/bom/upload/route.ts`
+- `src/app/api/bom/extract/route.ts`
+- `src/app/api/bom/history/route.ts`
+- `src/app/api/bom/chunk/route.ts`
+- `src/app/api/bom/upload-token/route.ts`
+- `src/app/api/zuper/jobs/schedule/route.ts`
+- `src/app/api/admin/activity/route.ts`
+- `src/app/api/admin/migrate/route.ts`
+- `src/app/admin/users/page.tsx`
+- `src/app/admin/directory/page.tsx`
+- `src/app/admin/activity/page.tsx`
+- `src/app/dashboards/site-survey-scheduler/page.tsx`
+
+---
+
+## Task Dependency Order
 
 ```
 Task 1 (suite-nav) ──────┐
-Task 2 (SUITE_MAP+bom) ──┼── Task 5 (suite pages + stale links) ─── Task 6 (home+browse fix) ─── Task 10 (verify+tests)
+Task 2 (SUITE_MAP+bom) ──┼── Task 5 (suite pages + stale links) ─── Task 6 (home page) ─── Task 9 (tests) ─── Task 10 (verify)
 Task 3 (permissions+home)┘         │
                          Task 4 (intelligence) ┘
 
-Task 7 (executive) ── standalone
-Task 8 (schema) ── DEFERRED to follow-up PR
-Task 9 (app icon) ── standalone
+Task 7 (executive) ── standalone, any time
+Task 8 (app icon) ── standalone, any time
 ```
+
+Tasks 1-3 can run in parallel. Task 4 depends on Task 1. Tasks 5-6 depend on 1-3. Task 9 depends on 3. Task 10 runs last. Tasks 7 and 8 are independent.

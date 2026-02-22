@@ -39,10 +39,10 @@ export const HOME_SUITES: HomeSuiteLink[] = [
     tag: "Service",
   },
   {
-    href: "/suites/additional-pipeline",
-    title: "Additional Pipeline",
-    description: "Supplemental pipeline dashboards outside the core flow.",
-    tag: "Pipelines",
+    href: "/suites/intelligence",
+    title: "Intelligence Suite",
+    description: "Risk analysis, QC, capacity planning, and pipeline analytics.",
+    tag: "Intelligence",
   },
   {
     href: "/suites/admin",

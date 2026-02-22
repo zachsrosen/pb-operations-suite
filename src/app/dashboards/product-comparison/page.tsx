@@ -362,7 +362,7 @@ export default function ProductComparisonPage() {
       subtitle="Cross-check HubSpot, Zuper, Zoho, OpenSolar, and QuickBooks product data"
       accentColor="cyan"
       lastUpdated={lastUpdated}
-      breadcrumbs={[{ label: "Testing", href: "/suites/testing" }]}
+      breadcrumbs={[{ label: "Admin", href: "/suites/admin" }]}
       exportData={{ data: exportRows, filename: "product-catalog-comparison" }}
     >
       {loading && (
