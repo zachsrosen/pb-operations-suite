@@ -123,6 +123,14 @@ const TESTING_DASHBOARDS: SuitePageCard[] = [
     tagColor: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
     section: "Testing Dashboards",
   },
+  {
+    href: "/dashboards/bom/history",
+    title: "BOM History",
+    description: "All saved BOM snapshots across every project — search by customer, address, or deal name.",
+    tag: "BOM",
+    tagColor: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
+    section: "Testing Dashboards",
+  },
 ];
 
 const PROTOTYPES: SuitePageCard[] = [
