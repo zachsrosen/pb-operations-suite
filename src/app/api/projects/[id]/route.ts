@@ -1,10 +1,8 @@
-// src/app/api/projects/[id]/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import * as Sentry from "@sentry/nextjs";
 import { tagSentryRequest } from "@/lib/sentry-request";
 import { requireApiAuth } from "@/lib/api-auth";
-import { fetchAllProjects, type Project } from "@/lib/hubspot";
-import { appCache, CACHE_KEYS } from "@/lib/cache";
+import { fetchProjectById } from "@/lib/hubspot";
 
 export const runtime = "nodejs";
 
@@ -21,15 +19,8 @@ export async function GET(
   if (!id) return NextResponse.json({ error: "Missing deal id" }, { status: 400 });
 
   try {
-    // Use cached project list — same as the main projects route (active-only default)
-    const { data: projects } = await appCache.getOrFetch<Project[]>(
-      CACHE_KEYS.PROJECTS_ACTIVE,
-      () => fetchAllProjects({ activeOnly: true })
-    );
-
-    const project = (projects ?? []).find((p) => String(p.id) === id);
+    const project = await fetchProjectById(id);
     if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
-
     return NextResponse.json({ project });
   } catch (error) {
     console.error("Error fetching project:", error);

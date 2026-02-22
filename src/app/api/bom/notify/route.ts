@@ -59,6 +59,16 @@ export async function POST(request: NextRequest) {
 
   const bccEmail = process.env.BOM_NOTIFY_BCC ?? "zach@photonbrothers.com";
 
+  interface BomItemEmail {
+    lineItem: string;
+    category: string;
+    brand?: string | null;
+    model?: string | null;
+    description: string;
+    qty: number;
+    unitSpec?: string | null;
+  }
+
   let body: {
     userEmail: string;
     dealName: string;
@@ -72,6 +82,9 @@ export async function POST(request: NextRequest) {
       systemSizeKwdc?: number | string;
       moduleCount?: number | string;
     };
+    items?: BomItemEmail[];
+    hubspotUrl?: string | null;
+    zuperUrl?: string | null;
   };
   try {
     body = await request.json();
@@ -79,7 +92,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { userEmail, dealName, dealId, version, sourceFile, itemCount, projectInfo } = body;
+  const { userEmail, dealName, dealId, version, sourceFile, itemCount, projectInfo, items, hubspotUrl, zuperUrl } = body;
 
   // Validate required fields
   if (!userEmail || !dealName || !dealId || typeof version !== "number" || typeof itemCount !== "number") {
@@ -112,17 +125,83 @@ export async function POST(request: NextRequest) {
     projectInfo?.systemSizeKwdc ? `${projectInfo.systemSizeKwdc} kWdc` : null,
   ].filter(Boolean).join(" · ");
 
+  // Group items by category for the BOM table
+  const CATEGORY_ORDER = ["MODULE", "BATTERY", "INVERTER", "EV_CHARGER", "RAPID_SHUTDOWN", "RACKING", "ELECTRICAL_BOS", "MONITORING"];
+  const CATEGORY_LABELS: Record<string, string> = {
+    MODULE: "Solar Modules",
+    BATTERY: "Battery / Inverter",
+    INVERTER: "Inverter",
+    EV_CHARGER: "EV Charger",
+    RAPID_SHUTDOWN: "Rapid Shutdown",
+    RACKING: "Racking",
+    ELECTRICAL_BOS: "Electrical BOS",
+    MONITORING: "Monitoring",
+  };
+
+  function buildBomTable(bomItems: BomItemEmail[]): string {
+    if (!bomItems || bomItems.length === 0) return "";
+
+    // Group by category
+    const grouped: Record<string, BomItemEmail[]> = {};
+    for (const item of bomItems) {
+      const cat = item.category || "OTHER";
+      if (!grouped[cat]) grouped[cat] = [];
+      grouped[cat].push(item);
+    }
+
+    const orderedCats = [
+      ...CATEGORY_ORDER.filter(c => grouped[c]),
+      ...Object.keys(grouped).filter(c => !CATEGORY_ORDER.includes(c)),
+    ];
+
+    let html = `
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:12px;width:100%">
+      <thead>
+        <tr style="background:#f8fafc">
+          <th style="text-align:left;padding:6px 8px;border-bottom:2px solid #e2e8f0;color:#475569;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;width:40px">QTY</th>
+          <th style="text-align:left;padding:6px 8px;border-bottom:2px solid #e2e8f0;color:#475569;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em">Description</th>
+          <th style="text-align:left;padding:6px 8px;border-bottom:2px solid #e2e8f0;color:#475569;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;width:80px">Spec</th>
+        </tr>
+      </thead>
+      <tbody>`;
+
+    for (const cat of orderedCats) {
+      const catItems = grouped[cat];
+      const label = CATEGORY_LABELS[cat] || cat;
+      html += `
+        <tr>
+          <td colspan="3" style="padding:8px 8px 4px;background:#f1f5f9;font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.08em;border-top:1px solid #e2e8f0">${escHtml(label)}</td>
+        </tr>`;
+      for (const item of catItems) {
+        const desc = item.model
+          ? `${item.brand ? escHtml(item.brand) + " " : ""}${escHtml(item.model)}`
+          : escHtml(item.description);
+        html += `
+        <tr style="border-bottom:1px solid #f1f5f9">
+          <td style="padding:5px 8px;color:#0f172a;font-weight:700;font-size:13px;vertical-align:top">${item.qty}</td>
+          <td style="padding:5px 8px;color:#1e293b;vertical-align:top">${desc}${item.description && item.model && item.description !== item.model ? `<br><span style="color:#94a3b8;font-size:11px">${escHtml(item.description)}</span>` : ""}</td>
+          <td style="padding:5px 8px;color:#64748b;font-size:11px;vertical-align:top">${item.unitSpec ? escHtml(item.unitSpec) : ""}</td>
+        </tr>`;
+      }
+    }
+
+    html += `</tbody></table>`;
+    return html;
+  }
+
+  const bomTableHtml = buildBomTable(items || []);
+
   const html = `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
 <body style="margin:0;padding:0;background:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
-  <div style="max-width:560px;margin:32px auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.08),0 1px 2px rgba(0,0,0,0.04)">
+  <div style="max-width:620px;margin:32px auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.08),0 1px 2px rgba(0,0,0,0.04)">
 
     <!-- Header -->
     <div style="background:linear-gradient(135deg,#0e7490 0%,#0891b2 100%);padding:28px 32px 24px">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
         <div style="background:rgba(255,255,255,0.15);border-radius:8px;width:36px;height:36px;display:flex;align-items:center;justify-content:center">
-          <span style="color:white;font-size:18px">☀</span>
+          <span style="color:white;font-size:18px">&#9728;</span>
         </div>
         <span style="color:rgba(255,255,255,0.85);font-size:13px;font-weight:600;letter-spacing:0.05em;text-transform:uppercase">Photon Brothers · PB Ops</span>
       </div>
@@ -161,10 +240,19 @@ export async function POST(request: NextRequest) {
       <span style="font-size:12px;color:#374151;font-weight:500">${escHtml(sourceFile)}</span>
     </div>` : ""}
 
-    <!-- CTA -->
-    <div style="padding:24px 32px">
+    <!-- CTA + external links -->
+    <div style="padding:24px 32px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       <a href="${bomUrl}" style="display:inline-block;background:#0891b2;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;letter-spacing:0.01em">View BOM &rarr;</a>
+      ${hubspotUrl ? `<a href="${hubspotUrl}" style="display:inline-block;background:#ff7a59;color:white;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px">HubSpot</a>` : ""}
+      ${zuperUrl ? `<a href="${zuperUrl}" style="display:inline-block;background:#06b6d4;color:white;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px">Zuper</a>` : ""}
     </div>
+
+    ${bomTableHtml ? `
+    <!-- BOM Table -->
+    <div style="padding:0 0 0 0;border-bottom:1px solid #f0f0f0">
+      <div style="padding:16px 32px 8px;font-size:13px;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:0.05em">Bill of Materials</div>
+      <div style="padding:0 24px 16px">${bomTableHtml}</div>
+    </div>` : ""}
 
     <!-- Footer -->
     <div style="padding:16px 32px;background:#fafafa;border-top:1px solid #f0f0f0">

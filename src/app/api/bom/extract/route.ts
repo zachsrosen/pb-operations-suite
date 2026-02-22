@@ -248,8 +248,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `PDF upload failed: ${msg}` }, { status: 502 });
   }
 
-  // ── Call Claude referencing the uploaded file ──────────────────────────────
-  let rawText: string;
+  // ── Call Claude with the uploaded file (Files API) ─────────────────────────
+  let rawText = "";
+  const INLINE_LIMIT = 20 * 1024 * 1024; // 20MB — Anthropic inline base64 limit
+
   try {
     const message = await client.beta.messages.create({
       model: "claude-opus-4-5",
@@ -280,8 +282,65 @@ export async function POST(req: NextRequest) {
     rawText = textBlock && textBlock.type === "text" ? textBlock.text : "";
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Extraction failed";
-    console.error("[bom/extract] Anthropic error:", msg);
-    return NextResponse.json({ error: `Extraction failed: ${msg}` }, { status: 502 });
+    console.error("[bom/extract] Anthropic Files API error:", msg);
+
+    // "Could not process PDF" means Claude received the file but can't read it.
+    // Common causes: password-protected, encrypted, or non-standard PDF encoding.
+    // Fallback: try base64 inline for PDFs under the inline size limit.
+    const isProcessingError =
+      msg.includes("Could not process PDF") || msg.includes("invalid_request_error");
+
+    if (isProcessingError && pdfBuffer.byteLength < INLINE_LIMIT) {
+      console.log("[bom/extract] Falling back to base64 inline (file is", pdfBuffer.byteLength, "bytes)");
+      try {
+        const base64Data = pdfBuffer.toString("base64");
+        const fallbackMessage = await client.messages.create({
+          model: "claude-opus-4-5",
+          max_tokens: 8000,
+          system: SYSTEM_PROMPT,
+          messages: [
+            {
+              role: "user",
+              content: [
+                {
+                  type: "document",
+                  source: {
+                    type: "base64",
+                    media_type: "application/pdf",
+                    data: base64Data,
+                  },
+                } as { type: "document"; source: { type: "base64"; media_type: "application/pdf"; data: string } },
+                {
+                  type: "text",
+                  text: "Extract the complete Bill of Materials from this Photon Brothers planset PDF. Return only the JSON object.",
+                },
+              ],
+            },
+          ],
+        });
+        const textBlock = fallbackMessage.content.find((b) => b.type === "text");
+        rawText = textBlock && textBlock.type === "text" ? textBlock.text : "";
+      } catch (fallbackErr) {
+        const fallbackMsg = fallbackErr instanceof Error ? fallbackErr.message : "Unknown error";
+        console.error("[bom/extract] Base64 fallback also failed:", fallbackMsg);
+        return NextResponse.json(
+          {
+            error:
+              "PDF could not be processed. The file may be password-protected, encrypted, or corrupt. Try re-saving or flattening the PDF and uploading again.",
+          },
+          { status: 422 }
+        );
+      }
+    } else if (isProcessingError) {
+      return NextResponse.json(
+        {
+          error: `PDF could not be processed — the file may be password-protected, encrypted, or corrupt (${Math.round(pdfBuffer.byteLength / 1024 / 1024)}MB). Try re-saving or flattening the PDF and uploading again.`,
+        },
+        { status: 422 }
+      );
+    } else {
+      return NextResponse.json({ error: `Extraction failed: ${msg}` }, { status: 502 });
+    }
   } finally {
     // Always delete the uploaded file — we don't need persistent storage
     await client.beta.files.delete(fileId).catch((e) => {

@@ -374,6 +374,7 @@ function BomDashboardInner() {
   // History / snapshots
   const [snapshots, setSnapshots] = useState<BomSnapshot[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [dealLoading, setDealLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savedVersion, setSavedVersion] = useState<number | null>(null);
   // Diff / compare
@@ -432,6 +433,7 @@ function BomDashboardInner() {
   useEffect(() => {
     const dealId = searchParams.get("deal");
     if (!dealId || linkedProject) return;
+    setDealLoading(true);
     fetch(`/api/projects/${encodeURIComponent(dealId)}`)
       .then((r) => r.ok ? r.json() : Promise.reject(r.status))
       .then((data: { project: { id: number; name: string; address: string; designFolderUrl: string | null; driveUrl: string | null; openSolarUrl: string | null; zuperUid: string | null } }) => {
@@ -446,7 +448,8 @@ function BomDashboardInner() {
           zuperUid: p.zuperUid,
         });
       })
-      .catch(() => {/* silent — bad param, just ignore */});
+      .catch(() => {/* silent — bad param, just ignore */})
+      .finally(() => setDealLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
@@ -582,6 +585,17 @@ function BomDashboardInner() {
               systemSizeKwdc: bomData.project?.systemSizeKwdc,
               moduleCount: bomData.project?.moduleCount,
             },
+            items: bomData.items.map(item => ({
+              lineItem: item.description,
+              category: item.category,
+              brand: item.brand,
+              model: item.model,
+              description: item.description,
+              qty: Number(item.qty),
+              unitSpec: item.unitSpec != null ? String(item.unitSpec) : null,
+            })),
+            hubspotUrl: `https://app.hubspot.com/contacts/21710069/deal/${linkedProject.hs_object_id}`,
+            zuperUrl: linkedProject.zuperUid ? `https://app.zuper.co/jobs/${linkedProject.zuperUid}` : null,
           }),
         }).catch(() => {/* silent */});
       }
@@ -1005,7 +1019,14 @@ function BomDashboardInner() {
       <div className="space-y-6 px-4 pb-10">
 
         {/* ---- Import Panel ---- */}
-        {!bom && (
+        {!bom && (dealLoading || historyLoading) && (
+          <div className="rounded-xl bg-surface border border-t-border shadow-card p-12 flex flex-col items-center gap-3 text-muted">
+            <div className="w-8 h-8 border-2 border-t-foreground border-surface rounded-full animate-spin" />
+            <p className="text-sm">{dealLoading ? "Loading project…" : "Loading BOM…"}</p>
+          </div>
+        )}
+
+        {!bom && !dealLoading && !historyLoading && (
           <div className="rounded-xl bg-surface border border-t-border shadow-card overflow-hidden">
             {/* Tab bar */}
             <div className="flex border-b border-t-border">
