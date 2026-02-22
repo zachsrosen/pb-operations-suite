@@ -2,15 +2,23 @@
  * BOM Extract API
  *
  * POST /api/bom/extract
- *   Accepts a multipart/form-data request with a planset PDF file.
- *   Sends it to Claude (claude-opus-4-5) with native PDF document support and
- *   the full planset-bom extraction prompt.
+ *   Accepts a JSON body with either a Vercel Blob URL or a Google Drive URL.
+ *   Downloads the planset PDF, uploads it to the Anthropic Files API (bypassing
+ *   the inline base64 request-size limit), then calls Claude (claude-opus-4-5)
+ *   with a file_id reference and the full planset-bom extraction prompt.
  *   Returns structured BOM JSON ready to load into the BOM dashboard.
  *
- * Body (multipart/form-data):
- *   file: PDF file  (max ~32MB; PB plansets are typically 3–12MB)
+ * Body (application/json):
+ *   { blobUrl: "https://..." }          ← Vercel Blob upload
+ *   { driveUrl: "...", fileId: "..." }  ← Google Drive link
  *
  * Auth required: design/ops roles
+ *
+ * Large-PDF note:
+ *   Inline base64 document blocks are limited to ~20MB by Anthropic's API.
+ *   The Files API pre-uploads the PDF as a separate request so the messages
+ *   call only sends a lightweight { type: "file", file_id } reference.
+ *   This handles plansets up to 500MB (Anthropic's Files API limit).
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -130,7 +138,7 @@ Return ONLY the JSON object. No markdown fences, no preamble.`;
 
 export const maxDuration = 120;
 
-// Disable Next.js body size limit — planset PDFs are typically 5–15MB and
+// Disable Next.js body size limit — planset PDFs are typically 5–35MB and
 // would be rejected by the default 4MB cap before our code runs.
 export const dynamic = "force-dynamic";
 
@@ -153,7 +161,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "ANTHROPIC_API_KEY is not configured" }, { status: 503 });
   }
 
-  const MAX_SIZE = 50 * 1024 * 1024; // 50MB — Claude's PDF limit
+  // 500MB — Anthropic Files API limit (much larger than the old inline limit)
+  const MAX_SIZE = 500 * 1024 * 1024;
 
   let filename = "planset.pdf";
 
@@ -212,19 +221,37 @@ export async function POST(req: NextRequest) {
 
   const arrayBuffer = await fetchRes.arrayBuffer();
   if (arrayBuffer.byteLength > MAX_SIZE) {
-    return NextResponse.json({ error: "PDF exceeds 32MB limit" }, { status: 400 });
+    return NextResponse.json({ error: "PDF exceeds 500MB limit" }, { status: 400 });
   }
-  const pdfBase64 = Buffer.from(arrayBuffer).toString("base64");
+
   filename = body.blobUrl
     ? (body.blobUrl.split("/").pop() ?? "planset.pdf")
     : `drive-${body.fileId ?? "planset"}.pdf`;
 
-  // Call Claude with native PDF document support
+  const pdfBuffer = Buffer.from(arrayBuffer);
+
+  // ── Upload PDF to Anthropic Files API ──────────────────────────────────────
+  // Using the Files API avoids base64-encoding the entire PDF inline in the
+  // messages request body, which would exceed Anthropic's ~20MB request limit
+  // for the 28–34MB plansets we commonly see.
   const client = new Anthropic({ apiKey });
 
+  let fileId: string;
+  try {
+    const uploadedFile = await client.beta.files.upload({
+      file: new File([pdfBuffer], filename, { type: "application/pdf" }),
+    });
+    fileId = uploadedFile.id;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "File upload failed";
+    console.error("[bom/extract] Files API upload error:", msg);
+    return NextResponse.json({ error: `PDF upload failed: ${msg}` }, { status: 502 });
+  }
+
+  // ── Call Claude referencing the uploaded file ──────────────────────────────
   let rawText: string;
   try {
-    const message = await client.messages.create({
+    const message = await client.beta.messages.create({
       model: "claude-opus-4-5",
       max_tokens: 8000,
       system: SYSTEM_PROMPT,
@@ -235,9 +262,8 @@ export async function POST(req: NextRequest) {
             {
               type: "document",
               source: {
-                type: "base64",
-                media_type: "application/pdf",
-                data: pdfBase64,
+                type: "file",
+                file_id: fileId,
               },
             },
             {
@@ -247,6 +273,7 @@ export async function POST(req: NextRequest) {
           ],
         },
       ],
+      betas: ["files-api-2025-04-14"],
     });
 
     const textBlock = message.content.find((b) => b.type === "text");
@@ -255,6 +282,11 @@ export async function POST(req: NextRequest) {
     const msg = e instanceof Error ? e.message : "Extraction failed";
     console.error("[bom/extract] Anthropic error:", msg);
     return NextResponse.json({ error: `Extraction failed: ${msg}` }, { status: 502 });
+  } finally {
+    // Always delete the uploaded file — we don't need persistent storage
+    await client.beta.files.delete(fileId).catch((e) => {
+      console.warn("[bom/extract] Failed to delete uploaded file:", fileId, e);
+    });
   }
 
   // Parse JSON from response (strip any accidental markdown fences)
