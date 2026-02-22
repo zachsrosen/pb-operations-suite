@@ -262,7 +262,48 @@ git commit -m "feat: add listVendors and createPurchaseOrder to ZohoInventoryCli
 
 ---
 
-## Task 3: `GET /api/bom/zoho-vendors` Route
+## Task 3: Update History Route `select` to Include `zohoPoId`
+
+**Files:**
+- Modify: `src/app/api/bom/history/route.ts`
+
+**Step 1: Add `zohoPoId` to the `GET` select**
+
+In `src/app/api/bom/history/route.ts`, find the `GET` handler's `prisma.projectBomSnapshot.findMany` call (around line 79). Add `zohoPoId` to the `select` block:
+
+```typescript
+select: {
+  id: true,
+  dealId: true,
+  dealName: true,
+  version: true,
+  bomData: true,
+  sourceFile: true,
+  blobUrl: true,
+  savedBy: true,
+  createdAt: true,
+  zohoPoId: true,   // ← add this line
+},
+```
+
+**Step 2: Verify TypeScript compiles**
+
+```bash
+npx tsc --noEmit
+```
+
+Expected: No errors.
+
+**Step 3: Commit**
+
+```bash
+git add src/app/api/bom/history/route.ts
+git commit -m "feat: include zohoPoId in bom/history GET select"
+```
+
+---
+
+## Task 4: `GET /api/bom/zoho-vendors` Route
 
 **Files:**
 - Create: `src/app/api/bom/zoho-vendors/route.ts`
@@ -276,7 +317,11 @@ import { requireApiAuth } from "@/lib/api-auth";
 import { zohoInventory } from "@/lib/zoho-inventory";
 
 export const runtime = "nodejs";
-export const revalidate = 300; // Cache 5 minutes — vendors rarely change
+
+// In-memory TTL cache — `revalidate` is unreliable for authenticated routes
+// because Next.js would need to key on auth token, which it doesn't do.
+let vendorsCache: { vendors: { contact_id: string; contact_name: string }[]; expiresAt: number } | null = null;
+const VENDORS_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 export async function GET() {
   const authResult = await requireApiAuth();
@@ -289,8 +334,13 @@ export async function GET() {
     );
   }
 
+  if (vendorsCache && Date.now() < vendorsCache.expiresAt) {
+    return NextResponse.json({ vendors: vendorsCache.vendors });
+  }
+
   try {
     const vendors = await zohoInventory.listVendors();
+    vendorsCache = { vendors, expiresAt: Date.now() + VENDORS_TTL_MS };
     return NextResponse.json({ vendors });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Failed to fetch vendors";
@@ -317,7 +367,7 @@ git commit -m "feat: add GET /api/bom/zoho-vendors route"
 
 ---
 
-## Task 4: `POST /api/bom/create-po` Route
+## Task 5: `POST /api/bom/create-po` Route
 
 **Files:**
 - Create: `src/app/api/bom/create-po/route.ts`
@@ -380,7 +430,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "BOM snapshot not found" }, { status: 404 });
   }
 
-  // 2. If PO already created, return existing ID
+  // 2. If PO already created, return existing ID (idempotency guard)
+  // This handles the primary duplicate risk: UI retry after Zoho success + DB failure.
+  // Concurrent-click protection is handled by `creatingPo` UI state (button disables on click).
   if (snapshot.zohoPoId) {
     return NextResponse.json({
       purchaseorder_id: snapshot.zohoPoId,
@@ -441,10 +493,15 @@ export async function POST(request: NextRequest) {
 
     if (!zohoItemId) unmatchedCount++;
 
+    // Quantity: parse carefully — `|| 1` would silently over-order on invalid values.
+    // Use 1 as minimum only when the parsed value is truly 0/NaN after rounding.
+    const parsedQty = Math.round(Number(item.qty));
+    const quantity = Number.isFinite(parsedQty) && parsedQty > 0 ? parsedQty : 1;
+
     return {
       ...(zohoItemId ? { item_id: zohoItemId } : {}),
       name,
-      quantity: Number(item.qty) || 1,
+      quantity,
       description: item.description,
     };
   });
@@ -511,14 +568,31 @@ git commit -m "feat: add POST /api/bom/create-po route"
 
 ---
 
-## Task 5: BOM Page UI — Vendor Dropdown + Create PO Button
+## Task 6: BOM Page UI — Vendor Dropdown + Create PO Button
 
 **Files:**
 - Modify: `src/app/dashboards/bom/page.tsx`
 
-**Step 1: Add state variables**
+**Step 1: Add `zohoPoId` to `BomSnapshot` interface and add state variables**
 
-Find the state declarations block (around line 374–385 where `saving`, `savedVersion` are). Add after `savedVersion`:
+First, open `src/app/dashboards/bom/page.tsx` and find the `BomSnapshot` interface (around line 109). Add `zohoPoId`:
+
+```typescript
+interface BomSnapshot {
+  id: string;
+  dealId: string;
+  dealName: string;
+  version: number;
+  bomData: BomData;
+  sourceFile: string | null;
+  blobUrl: string | null;
+  savedBy: string | null;
+  createdAt: string;
+  zohoPoId: string | null;   // ← add this field
+}
+```
+
+Then find the state declarations block (around line 374–385 where `saving`, `savedVersion` are). Add after `savedVersion`:
 
 ```typescript
 // Zoho PO state
@@ -564,14 +638,15 @@ useEffect(() => {
 
 **Step 3: Load `zohoPoId` from snapshot when history loads**
 
-Find the snapshot-loading `useEffect` (around line 458–476 where `linkedProject` history is fetched). After `setSavedVersion(...)`, also check the latest snapshot for a stored `zohoPoId`. Look for where `savedVersion` is set from the history response — add:
+Find the snapshot-loading `useEffect` (around line 458–476 where `linkedProject` history is fetched). After `setSavedVersion(latest.version)`, add:
 
 ```typescript
 // After setSavedVersion(latest.version):
-setZohoPoId((latest as { zohoPoId?: string | null }).zohoPoId ?? null);
+setZohoPoId(latest.zohoPoId ?? null);
+// Note: zohoPoId is now typed on BomSnapshot (Step 1 above), so no cast needed.
 ```
 
-Also reset when unlinked — find the `setSnapshots([]); setSavedVersion(null)` line and add `setZohoPoId(null);`.
+Also find every `setSavedVersion(null)` site (lines 458, 621, 1218, 1358, 1386) and pair them with `setZohoPoId(null)` so the PO state clears when the project is unlinked or a new project is searched.
 
 **Step 4: Add `createPo` handler function**
 
@@ -694,7 +769,7 @@ git commit -m "feat: add Zoho PO vendor dropdown and Create PO button to BOM pag
 
 ---
 
-## Task 6: Build Check + PR
+## Task 7: Build Check + PR
 
 **Step 1: Full build**
 
@@ -716,8 +791,9 @@ gh pr create --title "feat: BOM → Zoho Purchase Order" --body "$(cat <<'EOF'
 ## Summary
 - Add \`zohoItemId\` to \`EquipmentSku\` and \`zohoPoId\` to \`ProjectBomSnapshot\` (Prisma migration)
 - Extend \`ZohoInventoryClient\` with \`listVendors()\` and \`createPurchaseOrder()\`
-- Add \`GET /api/bom/zoho-vendors\` (vendor selector, 5-min cache)
-- Add \`POST /api/bom/create-po\` (lookup SKU→zohoItemId, build PO, store ID)
+- Update \`GET /api/bom/history\` select to include \`zohoPoId\`
+- Add \`GET /api/bom/zoho-vendors\` (vendor selector, in-memory 5-min TTL cache)
+- Add \`POST /api/bom/create-po\` (idempotent; lookup SKU→zohoItemId, build PO, store ID)
 - Add vendor dropdown + "Create PO in Zoho" button on BOM page action bar
 - Unmatched items fall back to description-only lines; count shown in toast
 
