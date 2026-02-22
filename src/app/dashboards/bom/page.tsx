@@ -367,6 +367,7 @@ function BomDashboardInner() {
   const [projectSearch, setProjectSearch] = useState("");
   const [projectResults, setProjectResults] = useState<ProjectResult[]>([]);
   const [linkedProject, setLinkedProject] = useState<ProjectResult | null>(null);
+  const [autoLinkSuggestion, setAutoLinkSuggestion] = useState<ProjectResult | null>(null);
   const [searchLoading, setSearchLoading] = useState(false);
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -475,6 +476,47 @@ function BomDashboardInner() {
       .catch(() => setDriveFilesError("Failed to load design files"))
       .finally(() => setDriveFilesLoading(false));
   }, [linkedProject?.designFolderUrl]);
+
+  /* ---- Auto-link: search HubSpot when BOM loads and no project is linked ---- */
+  useEffect(() => {
+    if (linkedProject || !bom?.project?.address) {
+      setAutoLinkSuggestion(null);
+      return;
+    }
+    // Build a short search query: street number + first word of street name
+    const rawAddress = bom.project.address.trim();
+    const parts = rawAddress.split(/[,\s]+/);
+    const queryParts = parts.slice(0, 2).filter(Boolean);
+    const query = queryParts.join(" ");
+    if (!query) return;
+
+    let cancelled = false;
+    fetch(`/api/projects?search=${encodeURIComponent(query)}&limit=5`)
+      .then((r) => r.json())
+      .then((data: { projects?: ProjectResult[] }) => {
+        if (cancelled) return;
+        const results: ProjectResult[] = data.projects ?? [];
+        const addrLower = rawAddress.toLowerCase();
+        const custLower = (bom.project.customer ?? "").toLowerCase();
+        let best: ProjectResult | null = null;
+        let bestScore = 0;
+        for (const p of results) {
+          let score = 0;
+          if (p.address && addrLower.includes(p.address.toLowerCase().split(",")[0])) score += 2;
+          if (custLower && p.dealname.toLowerCase().includes(custLower.split(" ")[0].toLowerCase())) score += 1;
+          if (score > bestScore) { bestScore = score; best = p; }
+        }
+        if (bestScore >= 1 && best) setAutoLinkSuggestion(best);
+      })
+      .catch(() => { /* silently ignore auto-link errors */ });
+    return () => { cancelled = true; };
+  }, [bom, linkedProject]);
+
+  /* ---- Clear auto-link suggestion when a project is manually linked ---- */
+  useEffect(() => {
+    if (linkedProject) setAutoLinkSuggestion(null);
+  }, [linkedProject]);
+
 
   /* ---- Save snapshot helper ---- */
   const saveSnapshot = useCallback(async (bomData: BomData, sourceFile?: string, blobUrl?: string) => {
@@ -1112,6 +1154,7 @@ function BomDashboardInner() {
                       setItems([]);
                       setJsonInput("");
                       setLinkedProject(null);
+                      setAutoLinkSuggestion(null);
                       setComparisonRows([]);
                       setCatalogStatus(new Map());
                       setSnapshots([]);
@@ -1199,6 +1242,38 @@ function BomDashboardInner() {
                 )}
               </div>
             </div>
+
+            {/* Auto-link suggestion banner */}
+            {autoLinkSuggestion !== null && linkedProject === null && (
+              <div className="rounded-xl bg-cyan-500/10 border border-cyan-500/30 px-5 py-3 flex items-center gap-3 text-sm">
+                <span className="text-cyan-700 dark:text-cyan-300 font-medium">Auto-matched:</span>
+                <span className="text-foreground font-medium">{autoLinkSuggestion.dealname}</span>
+                {autoLinkSuggestion.address && (
+                  <span className="text-muted hidden sm:inline">{autoLinkSuggestion.address}</span>
+                )}
+                <div className="ml-auto flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={() => {
+                      setLinkedProject(autoLinkSuggestion);
+                      setAutoLinkSuggestion(null);
+                      const url = new URL(window.location.href);
+                      url.searchParams.set("dealId", autoLinkSuggestion.hs_object_id);
+                      window.history.replaceState({}, "", url.toString());
+                    }}
+                    className="text-xs bg-cyan-600 text-white px-3 py-1 rounded-lg hover:bg-cyan-700 transition-colors"
+                  >
+                    Link ✓
+                  </button>
+                  <button
+                    onClick={() => setAutoLinkSuggestion(null)}
+                    className="text-xs text-muted hover:text-foreground transition-colors"
+                  >
+                    Dismiss ✗
+                  </button>
+                </div>
+              </div>
+            )}
+
 
             {/* Project Link */}
             <div className="rounded-xl bg-surface border border-t-border p-5 shadow-card">
