@@ -1436,6 +1436,12 @@ function BomDashboardInner() {
               >
                 🖨 Print
               </button>
+              <button
+                onClick={() => router.push("/dashboards/bom/history")}
+                className="px-4 py-2 rounded-lg bg-surface border border-t-border text-sm text-foreground hover:bg-surface-2 transition-colors"
+              >
+                ⏱ BOM History
+              </button>
             </div>
 
             {/* ---- History Panel ---- */}
