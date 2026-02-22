@@ -18,6 +18,7 @@ import { NLSearchBar } from "@/components/ui/NLSearchBar";
 import { AnomalyInsights } from "@/components/ui/AnomalyInsights";
 import type { ProjectFilterSpec } from "@/lib/ai";
 import PhotonBrothersBadge from "@/components/PhotonBrothersBadge";
+import { canAccessRoute, type UserRole } from "@/lib/role-permissions";
 
 function useIsMac() {
   const [isMac] = useState(() => {
@@ -54,7 +55,7 @@ const SUITE_LINKS: SuiteLinkData[] = [
   {
     href: "/suites/operations",
     title: "Operations Suite",
-    description: "Core operations dashboards and scheduling workspaces.",
+    description: "Scheduling, timeline, inventory, and equipment operations.",
     tag: "OPERATIONS",
     tagColor: "blue",
     visibility: "all",
@@ -68,6 +69,14 @@ const SUITE_LINKS: SuiteLinkData[] = [
     visibility: "all",
   },
   {
+    href: "/suites/intelligence",
+    title: "Intelligence Suite",
+    description: "Risk analysis, QC, capacity planning, and pipeline analytics.",
+    tag: "INTELLIGENCE",
+    tagColor: "cyan",
+    visibility: "owner_admin",
+  },
+  {
     href: "/suites/executive",
     title: "Executive Suite",
     description: "Leadership and executive views grouped in one place.",
@@ -76,38 +85,67 @@ const SUITE_LINKS: SuiteLinkData[] = [
     visibility: "owner_admin",
   },
   {
-    href: "/suites/testing",
-    title: "Testing Suite",
-    description: "Experimental dashboards and prototype workflows for admins and executives.",
-    tag: "TESTING",
+    href: "/suites/service",
+    title: "Service + D&R Suite",
+    description: "Service and D&R scheduling, equipment tracking, and deal management.",
+    tag: "SERVICE + D&R",
     tagColor: "purple",
-    visibility: "owner_admin",
+    visibility: "all",
   },
   {
     href: "/suites/admin",
     title: "Admin Suite",
-    description: "In-progress and admin-only dashboards, tools, and security pages.",
+    description: "Admin tools, compliance, documentation, and prototypes.",
     tag: "ADMIN",
     tagColor: "red",
     visibility: "admin",
   },
-  {
-    href: "/suites/service",
-    title: "Service Suite",
-    description: "Service pipeline scheduling, equipment tracking, and deal management.",
-    tag: "SERVICE",
-    tagColor: "purple",
-    visibility: "all",
-  },
-  {
-    href: "/suites/additional-pipeline",
-    title: "Additional Pipeline Suite",
-    description: "Supplemental pipeline dashboards grouped outside the core flow.",
-    tag: "PIPELINES",
-    tagColor: "cyan",
-    visibility: "all",
-  },
 ];
+
+interface RoleLandingCard {
+  href: string;
+  title: string;
+  description: string;
+  tag: string;
+  tagColor: string;
+}
+
+const ROLE_LANDING_CARDS: Record<string, RoleLandingCard[]> = {
+  OPERATIONS_MANAGER: [
+    { href: "/dashboards/scheduler", title: "Master Schedule", description: "Drag-and-drop scheduling calendar with crew management.", tag: "SCHEDULING", tagColor: "blue" },
+    { href: "/dashboards/construction-scheduler", title: "Construction Schedule", description: "Construction installs with Zuper integration.", tag: "SCHEDULING", tagColor: "blue" },
+    { href: "/dashboards/equipment-backlog", title: "Equipment Backlog", description: "Equipment forecasting by brand, model, and stage.", tag: "EQUIPMENT", tagColor: "blue" },
+    { href: "/dashboards/timeline", title: "Timeline View", description: "Gantt-style project progression and milestones.", tag: "PLANNING", tagColor: "blue" },
+    { href: "/dashboards/at-risk", title: "At-Risk Projects", description: "Overdue milestones, stalled stages, severity scoring.", tag: "AT-RISK", tagColor: "orange" },
+    { href: "/dashboards/capacity", title: "Capacity Planning", description: "Crew capacity vs. forecasted installs.", tag: "CAPACITY", tagColor: "cyan" },
+    { href: "/dashboards/qc", title: "QC Metrics", description: "Time-between-stages analytics.", tag: "QC", tagColor: "cyan" },
+  ],
+  PROJECT_MANAGER: [
+    { href: "/dashboards/pipeline", title: "Pipeline Overview", description: "Full pipeline with filters and milestone tracking.", tag: "PIPELINE", tagColor: "green" },
+    { href: "/dashboards/at-risk", title: "At-Risk Projects", description: "Overdue milestones, stalled stages, severity scoring.", tag: "AT-RISK", tagColor: "orange" },
+    { href: "/dashboards/project-management", title: "Project Management", description: "PM workload, DA backlog, stuck deals.", tag: "PM", tagColor: "green" },
+    { href: "/dashboards/timeline", title: "Timeline View", description: "Gantt-style project progression and milestones.", tag: "PLANNING", tagColor: "blue" },
+    { href: "/dashboards/equipment-backlog", title: "Equipment Backlog", description: "Equipment forecasting by brand, model, and stage.", tag: "EQUIPMENT", tagColor: "blue" },
+  ],
+  OPERATIONS: [
+    { href: "/dashboards/scheduler", title: "Master Schedule", description: "Drag-and-drop scheduling calendar with crew management.", tag: "SCHEDULING", tagColor: "blue" },
+    { href: "/dashboards/site-survey-scheduler", title: "Site Survey Schedule", description: "Site survey scheduling with Zuper integration.", tag: "SCHEDULING", tagColor: "blue" },
+    { href: "/dashboards/construction-scheduler", title: "Construction Schedule", description: "Construction installs with Zuper integration.", tag: "SCHEDULING", tagColor: "blue" },
+    { href: "/dashboards/inspection-scheduler", title: "Inspection Schedule", description: "Inspections with Zuper integration.", tag: "SCHEDULING", tagColor: "blue" },
+    { href: "/dashboards/equipment-backlog", title: "Equipment Backlog", description: "Equipment forecasting by brand, model, and stage.", tag: "EQUIPMENT", tagColor: "blue" },
+    { href: "/dashboards/timeline", title: "Timeline View", description: "Gantt-style project progression and milestones.", tag: "PLANNING", tagColor: "blue" },
+  ],
+  TECH_OPS: [
+    { href: "/dashboards/site-survey", title: "Site Survey", description: "Site survey scheduling and status tracking.", tag: "SURVEY", tagColor: "green" },
+    { href: "/dashboards/design", title: "Design & Engineering", description: "Design progress, engineering approvals, and plan sets.", tag: "DESIGN", tagColor: "green" },
+    { href: "/dashboards/construction", title: "Construction", description: "Construction status, scheduling, and progress.", tag: "CONSTRUCTION", tagColor: "green" },
+    { href: "/dashboards/inspections", title: "Inspections", description: "Inspection scheduling, pass rates, and AHJ analysis.", tag: "INSPECTIONS", tagColor: "green" },
+  ],
+  SALES: [
+    { href: "/dashboards/sales", title: "Sales Pipeline", description: "Active deals, funnel visualization, and proposal tracking.", tag: "SALES", tagColor: "cyan" },
+    { href: "/dashboards/site-survey-scheduler", title: "Site Survey Schedule", description: "Schedule site surveys with Zuper integration.", tag: "SCHEDULING", tagColor: "blue" },
+  ],
+};
 
 // ---- Main page ----
 
@@ -272,9 +310,6 @@ export default function Home() {
   const redirectTarget = useMemo(() => {
     if (!userRole) return null;
     if (userRole === "VIEWER") return "/unassigned";
-    if (userRole === "SALES") return "/dashboards/site-survey-scheduler";
-    if (userRole === "OPERATIONS" || userRole === "OPERATIONS_MANAGER") return "/suites/operations";
-    if (userRole === "TECH_OPS") return "/suites/department";
     return null;
   }, [userRole]);
 
@@ -393,16 +428,10 @@ export default function Home() {
   }, [aiSpec]);
 
   const visibleSuites = useMemo(() => {
-    if (!userRole) return []; // Still loading
+    if (!userRole) return [];
     if (userRole === "VIEWER") return [];
-    if (userRole === "SALES") return [];
-    if (userRole === "OPERATIONS" || userRole === "OPERATIONS_MANAGER") return [];
-    if (userRole === "TECH_OPS") return [];
-    if (userRole === "PROJECT_MANAGER") {
-      return SUITE_LINKS.filter((suite) =>
-        suite.href === "/suites/operations" || suite.href === "/suites/department" || suite.href === "/suites/service"
-      );
-    }
+    // Roles with landing cards don't show suite grid (they get Browse All instead)
+    if (ROLE_LANDING_CARDS[userRole]) return [];
     const isAdmin = userRole === "ADMIN";
     const isOwnerOrAdmin = isAdmin || userRole === "OWNER";
     return SUITE_LINKS.filter((suite) => {
@@ -412,7 +441,12 @@ export default function Home() {
     });
   }, [userRole]);
 
-  const canUseAI = userRole === "ADMIN" || userRole === "OWNER";
+  const roleLandingCards = useMemo(() => {
+    if (!userRole) return null;
+    return ROLE_LANDING_CARDS[userRole] || null;
+  }, [userRole]);
+
+  const canUseAI = userRole === "ADMIN" || userRole === "OWNER" || userRole === "OPERATIONS_MANAGER" || userRole === "PROJECT_MANAGER";
 
   if (!userRole || redirectTarget) {
     return (
@@ -503,7 +537,7 @@ export default function Home() {
 
       <main className="max-w-7xl mx-auto px-6 py-8">
         {/* Active Filter Banner */}
-        {(selectedLocations.length > 0 || pipelineFilter !== "all") && (
+        {canUseAI && (selectedLocations.length > 0 || pipelineFilter !== "all") && (
           <div className="mb-4 flex items-center gap-2 px-3 py-2 bg-orange-500/10 border border-orange-500/30 rounded-lg animate-fadeIn">
             <svg className="w-4 h-4 text-orange-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
@@ -529,7 +563,7 @@ export default function Home() {
         )}
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8 stagger-grid">
+        {canUseAI && <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8 stagger-grid">
           <StatCard
             label="Active Projects"
             value={loading ? null : stats?.totalProjects ?? null}
@@ -567,10 +601,10 @@ export default function Home() {
             }
             color="blue"
           />
-        </div>
+        </div>}
 
         {/* Zach's Bot (AI) */}
-        <div className="bg-gradient-to-br from-surface-elevated/85 via-surface/70 to-surface-2/55 border border-t-border/80 rounded-xl p-6 mb-8 animate-fadeIn shadow-card backdrop-blur-sm">
+        {canUseAI && <div className="bg-gradient-to-br from-surface-elevated/85 via-surface/70 to-surface-2/55 border border-t-border/80 rounded-xl p-6 mb-8 animate-fadeIn shadow-card backdrop-blur-sm">
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
               <h2 className="text-lg font-semibold">Zach&apos;s Bot</h2>
@@ -608,41 +642,35 @@ export default function Home() {
           </div>
 
           <div className="mt-4">
-            {canUseAI ? (
-              <>
-                <NLSearchBar
-                  value={aiQuery}
-                  onChange={setAiQuery}
-                  onFilterSpec={handleAIFilterSpec}
-                  disabled={loading}
-                />
-                {aiSpec?.interpreted_as && (
-                  <p className="mt-3 text-xs text-muted">
-                    Zach&apos;s Bot: {aiSpec.interpreted_as}
-                  </p>
-                )}
-                {aiSummaryChips.length > 0 && (
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {aiSummaryChips.map((chip) => (
-                      <span key={chip} className="text-xs px-2 py-1 rounded border border-orange-500/30 bg-orange-500/10 text-orange-400">
-                        {chip}
-                      </span>
-                    ))}
-                  </div>
-                )}
-                <div className="mt-4">
-                  <AnomalyInsights />
-                </div>
-              </>
-            ) : (
-              <p className="text-sm text-muted">
-                AI tools are available for Owner/Admin roles.
+            <NLSearchBar
+              value={aiQuery}
+              onChange={setAiQuery}
+              onFilterSpec={handleAIFilterSpec}
+              disabled={loading}
+            />
+            {aiSpec?.interpreted_as && (
+              <p className="mt-3 text-xs text-muted">
+                Zach&apos;s Bot: {aiSpec.interpreted_as}
               </p>
             )}
+            {aiSummaryChips.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {aiSummaryChips.map((chip) => (
+                  <span key={chip} className="text-xs px-2 py-1 rounded border border-orange-500/30 bg-orange-500/10 text-orange-400">
+                    {chip}
+                  </span>
+                ))}
+              </div>
+            )}
+            <div className="mt-4">
+              <AnomalyInsights />
+            </div>
           </div>
-        </div>
+        </div>}
 
-        {/* Location Filter - click to filter all data */}
+        {/* Location Filter - click to filter all data (ADMIN/OWNER only) */}
+        {canUseAI && (<>
+        {/* Location Filter */}
         {loading ? (
           <SkeletonSection rows={2} />
         ) : (
@@ -746,8 +774,39 @@ export default function Home() {
             </div>
           )
         )}
+        </>)}
 
-        {/* Suites */}
+        {/* Role-Based Curated Cards */}
+        {roleLandingCards && (
+          <div>
+            <h2 className="text-lg font-semibold text-foreground/80 mb-4">Your Dashboards</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 stagger-grid">
+              {roleLandingCards.map((card) => (
+                <DashboardLink
+                  key={card.href}
+                  href={card.href}
+                  title={card.title}
+                  description={card.description}
+                  tag={card.tag}
+                  tagColor={card.tagColor}
+                />
+              ))}
+            </div>
+            <div className="text-center mb-8">
+              <button
+                onClick={() => {
+                  const el = document.getElementById("all-suites");
+                  if (el) el.classList.toggle("hidden");
+                }}
+                className="text-sm text-muted hover:text-foreground underline transition-colors"
+              >
+                Browse All Suites
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Suites (for ADMIN/OWNER) */}
         {visibleSuites.length > 0 && (
           <div>
             <h2 className="text-lg font-semibold text-foreground/80 mb-4 mt-8">Suites</h2>
@@ -755,6 +814,20 @@ export default function Home() {
               {visibleSuites.map((suite) => (
                 <DashboardLink key={suite.href} {...suite} />
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* Browse All — uses canAccessRoute to prevent dead-end links */}
+        {roleLandingCards && (
+          <div id="all-suites" className="hidden">
+            <h2 className="text-lg font-semibold text-foreground/80 mb-4 mt-8">All Suites</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 stagger-grid">
+              {SUITE_LINKS
+                .filter((suite) => canAccessRoute(userRole as UserRole, suite.href))
+                .map((suite) => (
+                  <DashboardLink key={suite.href} {...suite} />
+                ))}
             </div>
           </div>
         )}
