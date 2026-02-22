@@ -60,11 +60,19 @@ const ADMIN_TOOLS: SuitePageCard[] = [
     section: "Admin Tools",
   },
   {
-    href: "/suites/testing",
-    title: "Testing Suite",
-    description: "Experimental dashboards, prototypes, and validation tools.",
-    tag: "TESTING",
-    tagColor: "bg-purple-500/20 text-purple-400 border-purple-500/30",
+    href: "/dashboards/product-comparison",
+    title: "Product Catalog Comparison",
+    description: "Compare HubSpot, Zuper, and Zoho product records to catch mismatches.",
+    tag: "CATALOG",
+    tagColor: "bg-amber-500/20 text-amber-300 border-amber-500/30",
+    section: "Admin Tools",
+  },
+  {
+    href: "/dashboards/mobile",
+    title: "Mobile Dashboard",
+    description: "Touch-optimized view for field teams and fast project lookup.",
+    tag: "MOBILE",
+    tagColor: "bg-blue-500/20 text-blue-400 border-blue-500/30",
     section: "Admin Tools",
   },
 ];
@@ -112,6 +120,41 @@ const DOCUMENTATION: SuitePageCard[] = [
   },
 ];
 
+const PROTOTYPES: SuitePageCard[] = [
+  {
+    href: "/prototypes/home-refresh",
+    title: "Home Refresh Prototypes",
+    description: "13 homepage replacement concepts, including focused teal/steel refinements.",
+    tag: "PROTOTYPE",
+    tagColor: "bg-pink-500/20 text-pink-400 border-pink-500/30",
+    section: "Prototypes",
+  },
+  {
+    href: "/prototypes/layout-refresh",
+    title: "Layout Refresh Prototypes",
+    description: "Replacement suite layouts for operations, department, and executive views.",
+    tag: "PROTOTYPE",
+    tagColor: "bg-pink-500/20 text-pink-400 border-pink-500/30",
+    section: "Prototypes",
+  },
+  {
+    href: "/prototypes/solar-checkout",
+    title: "Solar Checkout Experience",
+    description: "Customer-facing solar checkout flow prototype.",
+    tag: "PROTOTYPE",
+    tagColor: "bg-pink-500/20 text-pink-400 border-pink-500/30",
+    section: "Prototypes",
+  },
+  {
+    href: "/prototypes/solar-surveyor",
+    title: "Solar Surveyor v11",
+    description: "Next-generation solar site surveyor tool prototype.",
+    tag: "PROTOTYPE",
+    tagColor: "bg-pink-500/20 text-pink-400 border-pink-500/30",
+    section: "Prototypes",
+  },
+];
+
 const API_SHORTCUTS: SuitePageCard[] = [
   {
     href: "/api/projects?stats=true",
@@ -149,7 +192,7 @@ export default async function AdminSuitePage() {
       currentSuiteHref="/suites/admin"
       title="Admin Suite"
       subtitle="Admin tools, governance dashboards, and system docs."
-      cards={[...ADMIN_TOOLS, ...DOCUMENTATION, ...API_SHORTCUTS]}
+      cards={[...ADMIN_TOOLS, ...DOCUMENTATION, ...API_SHORTCUTS, ...PROTOTYPES]}
       role={user.role}
       hoverBorderClass="hover:border-orange-500/50"
       columnsClassName="grid grid-cols-1 md:grid-cols-3 gap-4"

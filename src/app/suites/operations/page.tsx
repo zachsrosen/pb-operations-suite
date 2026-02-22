@@ -32,13 +32,6 @@ const LINKS: SuitePageCard[] = [
     section: "Scheduling",
   },
   {
-    href: "/dashboards/dnr-scheduler",
-    title: "D&R Schedule",
-    description: "Calendar view of Zuper detach, reset, and D&R inspection jobs.",
-    tag: "SCHEDULING",
-    section: "Scheduling",
-  },
-  {
     href: "/dashboards/timeline",
     title: "Timeline View",
     description: "Gantt-style timeline showing project progression and milestones.",
@@ -57,6 +50,22 @@ const LINKS: SuitePageCard[] = [
     title: "Inventory Hub",
     description: "Warehouse stock levels, receiving, and demand vs. supply gap analysis.",
     tag: "INVENTORY",
+    section: "Inventory & Equipment",
+  },
+  {
+    href: "/dashboards/bom",
+    title: "Planset BOM",
+    description: "Import a planset bill of materials, edit inline, and cross-reference against catalogs.",
+    tag: "BOM",
+    tagColor: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
+    section: "Inventory & Equipment",
+  },
+  {
+    href: "/dashboards/bom/history",
+    title: "BOM History",
+    description: "All saved BOM snapshots across every project — search by customer, address, or deal.",
+    tag: "BOM",
+    tagColor: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
     section: "Inventory & Equipment",
   },
 ];
