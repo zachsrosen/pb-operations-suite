@@ -5,8 +5,10 @@ import DashboardShell from "@/components/DashboardShell";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { MultiSelectFilter, type FilterOption } from "@/components/ui/MultiSelectFilter";
 
-type SourceName = "hubspot" | "zuper" | "zoho";
 type RowViewMode = "mismatches" | "matches" | "two-of-three" | "all";
+const ALL_SOURCES = ["hubspot", "zuper", "zoho", "opensolar", "quickbooks"] as const;
+type SourceName = (typeof ALL_SOURCES)[number];
+type RowProducts = Record<SourceName, ComparableProduct | null>;
 
 interface ComparableProduct {
   id: string;
@@ -25,11 +27,8 @@ interface PossibleMatch {
   signals: string[];
 }
 
-interface ComparisonRow {
+interface ComparisonRow extends RowProducts {
   key: string;
-  hubspot: ComparableProduct | null;
-  zuper: ComparableProduct | null;
-  zoho: ComparableProduct | null;
   reasons: string[];
   isMismatch: boolean;
   possibleMatches: PossibleMatch[];
@@ -58,7 +57,9 @@ interface ProductComparisonResponse {
 function formatSourceName(source: SourceName): string {
   if (source === "hubspot") return "HubSpot";
   if (source === "zuper") return "Zuper";
-  return "Zoho";
+  if (source === "zoho") return "Zoho";
+  if (source === "opensolar") return "OpenSolar";
+  return "QuickBooks";
 }
 
 function formatCurrency(value: number | null): string {
@@ -117,6 +118,12 @@ function reasonBadgeClass(reason: string): string {
   if (reason === "Missing in Zoho") {
     return "border-emerald-500/40 bg-emerald-500/10 text-emerald-300";
   }
+  if (reason === "Missing in OpenSolar") {
+    return "border-teal-500/40 bg-teal-500/10 text-teal-300";
+  }
+  if (reason === "Missing in QuickBooks") {
+    return "border-sky-500/40 bg-sky-500/10 text-sky-300";
+  }
   if (reason.includes("Duplicate")) {
     return "border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-300";
   }
@@ -135,14 +142,23 @@ function reasonBadgeClass(reason: string): string {
 function sourceBadgeClass(source: SourceName): string {
   if (source === "hubspot") return "bg-orange-500/15 border-orange-500/40 text-orange-300";
   if (source === "zuper") return "bg-blue-500/15 border-blue-500/40 text-blue-300";
-  return "bg-emerald-500/15 border-emerald-500/40 text-emerald-300";
+  if (source === "zoho") return "bg-emerald-500/15 border-emerald-500/40 text-emerald-300";
+  if (source === "opensolar") return "bg-teal-500/15 border-teal-500/40 text-teal-300";
+  return "bg-sky-500/15 border-sky-500/40 text-sky-300";
 }
 
 const MISSING_SOURCE_OPTIONS: FilterOption[] = [
   { value: "hubspot", label: "Missing in HubSpot" },
   { value: "zuper", label: "Missing in Zuper" },
   { value: "zoho", label: "Missing in Zoho" },
+  { value: "opensolar", label: "Missing in OpenSolar" },
+  { value: "quickbooks", label: "Missing in QuickBooks" },
 ];
+
+const WEBSITE_VIEW_OPTIONS: FilterOption[] = ALL_SOURCES.map((source) => ({
+  value: source,
+  label: formatSourceName(source),
+}));
 
 const VIEW_MODE_OPTIONS: FilterOption[] = [
   { value: "mismatches", label: "Mismatches" },
@@ -173,6 +189,7 @@ export default function ProductComparisonPage() {
   const [data, setData] = useState<ProductComparisonResponse | null>(null);
   const [search, setSearch] = useState("");
   const [rowViewModes, setRowViewModes] = useState<RowViewMode[]>(["mismatches"]);
+  const [visibleSources, setVisibleSources] = useState<SourceName[]>([...ALL_SOURCES]);
   const [missingFilters, setMissingFilters] = useState<SourceName[]>([]);
   const [reasonFilters, setReasonFilters] = useState<string[]>([]);
 
@@ -242,18 +259,29 @@ export default function ProductComparisonPage() {
     return data.warnings.filter((warning) => !isBundleInfoWarning(warning));
   }, [data]);
 
+  const configuredSources = useMemo<SourceName[]>(() => {
+    if (!data) return [...ALL_SOURCES];
+    return ALL_SOURCES.filter((source) => data.health[source]?.configured);
+  }, [data]);
+
+  const displayedSources = useMemo<SourceName[]>(() => {
+    const selected = visibleSources.length > 0 ? visibleSources : [...ALL_SOURCES];
+    return ALL_SOURCES.filter((source) => selected.includes(source));
+  }, [visibleSources]);
+
   const rows = useMemo(() => {
     if (!data) return [];
     const searchTerm = search.trim().toLowerCase();
 
     return data.rows.filter((row) => {
-      const presentCount =
-        Number(Boolean(row.hubspot)) + Number(Boolean(row.zuper)) + Number(Boolean(row.zoho));
+      const presentCount = configuredSources.filter((source) => Boolean(row[source])).length;
       const missingReasons = row.reasons.filter((reason) => reason.startsWith(MISSING_REASON_PREFIX));
       const nonMissingReasons = row.reasons.filter((reason) => !reason.startsWith(MISSING_REASON_PREFIX));
-      const isFullyMatched = presentCount === 3 && row.reasons.length === 0;
+      const isFullyMatched = configuredSources.length > 0 && presentCount === configuredSources.length && row.reasons.length === 0;
       const isTwoOfThreeAligned =
-        presentCount === 2 && missingReasons.length === 1 && nonMissingReasons.length === 0;
+        presentCount === 2 &&
+        nonMissingReasons.length === 0 &&
+        missingReasons.length === Math.max(configuredSources.length - 2, 1);
 
       const effectiveModes: RowViewMode[] = rowViewModes.length > 0 ? rowViewModes : ["all"];
       const matchesAnySelectedMode = effectiveModes.some((mode) => {
@@ -266,9 +294,8 @@ export default function ProductComparisonPage() {
 
       if (missingFilters.length > 0) {
         const matchesMissingSource = missingFilters.some((source) => {
-          if (source === "hubspot") return row.hubspot === null;
-          if (source === "zuper") return row.zuper === null;
-          return row.zoho === null;
+          if (!configuredSources.includes(source)) return false;
+          return row[source] === null;
         });
         if (!matchesMissingSource) return false;
       }
@@ -280,12 +307,8 @@ export default function ProductComparisonPage() {
 
       const haystack = [
         row.key,
-        row.hubspot?.name,
-        row.hubspot?.sku,
-        row.zuper?.name,
-        row.zuper?.sku,
-        row.zoho?.name,
-        row.zoho?.sku,
+        ...ALL_SOURCES.map((source) => row[source]?.name || ""),
+        ...ALL_SOURCES.map((source) => row[source]?.sku || ""),
         ...row.reasons,
         ...row.possibleMatches.map((match) => match.product.name || ""),
         ...row.possibleMatches.map((match) => match.product.sku || ""),
@@ -296,7 +319,7 @@ export default function ProductComparisonPage() {
 
       return haystack.includes(searchTerm);
     });
-  }, [data, missingFilters, reasonFilters, rowViewModes, search]);
+  }, [configuredSources, data, missingFilters, reasonFilters, rowViewModes, search]);
 
   const exportRows = useMemo(() => {
     return rows.map((row) => ({
@@ -320,6 +343,14 @@ export default function ProductComparisonPage() {
       zoho_sku: row.zoho?.sku || "",
       zoho_price: row.zoho?.price ?? "",
       zoho_url: row.zoho?.url || "",
+      opensolar_name: row.opensolar?.name || "",
+      opensolar_sku: row.opensolar?.sku || "",
+      opensolar_price: row.opensolar?.price ?? "",
+      opensolar_url: row.opensolar?.url || "",
+      quickbooks_name: row.quickbooks?.name || "",
+      quickbooks_sku: row.quickbooks?.sku || "",
+      quickbooks_price: row.quickbooks?.price ?? "",
+      quickbooks_url: row.quickbooks?.url || "",
     }));
   }, [rows]);
 
@@ -328,7 +359,7 @@ export default function ProductComparisonPage() {
   return (
     <DashboardShell
       title="Product Catalog Comparison"
-      subtitle="Cross-check HubSpot, Zuper, and Zoho product data"
+      subtitle="Cross-check HubSpot, Zuper, Zoho, OpenSolar, and QuickBooks product data"
       accentColor="cyan"
       lastUpdated={lastUpdated}
       breadcrumbs={[{ label: "Testing", href: "/suites/testing" }]}
@@ -367,8 +398,8 @@ export default function ProductComparisonPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            {(["hubspot", "zuper", "zoho"] as SourceName[]).map((source) => (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
+            {ALL_SOURCES.map((source) => (
               <div key={source} className="bg-surface border border-t-border rounded-xl p-4">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold">{formatSourceName(source)}</h3>
@@ -413,6 +444,14 @@ export default function ProductComparisonPage() {
               />
               <div className="flex flex-wrap items-center gap-2">
                 <MultiSelectFilter
+                  label="Websites"
+                  options={WEBSITE_VIEW_OPTIONS}
+                  selected={visibleSources}
+                  onChange={(selected) => setVisibleSources(selected as SourceName[])}
+                  placeholder="All websites"
+                  accentColor="green"
+                />
+                <MultiSelectFilter
                   label="View"
                   options={VIEW_MODE_OPTIONS}
                   selected={rowViewModes}
@@ -450,9 +489,11 @@ export default function ProductComparisonPage() {
                 <thead className="bg-background/80 text-muted">
                   <tr>
                     <th className="px-3 py-2">Key</th>
-                    <th className="px-3 py-2">HubSpot</th>
-                    <th className="px-3 py-2">Zuper</th>
-                    <th className="px-3 py-2">Zoho</th>
+                    {displayedSources.map((source) => (
+                      <th key={`header-${source}`} className="px-3 py-2">
+                        {formatSourceName(source)}
+                      </th>
+                    ))}
                     <th className="px-3 py-2">Mismatch Reasons</th>
                   </tr>
                 </thead>
@@ -460,15 +501,11 @@ export default function ProductComparisonPage() {
                   {rows.map((row) => (
                     <tr key={row.key} className="border-t border-t-border align-top">
                       <td className="px-3 py-2 font-mono text-[11px] text-muted">{row.key}</td>
-                      <td className="px-3 py-2">
-                        <ProductCell source="hubspot" product={row.hubspot} />
-                      </td>
-                      <td className="px-3 py-2">
-                        <ProductCell source="zuper" product={row.zuper} />
-                      </td>
-                      <td className="px-3 py-2">
-                        <ProductCell source="zoho" product={row.zoho} />
-                      </td>
+                      {displayedSources.map((source) => (
+                        <td key={`${row.key}-${source}`} className="px-3 py-2">
+                          <ProductCell source={source} product={row[source]} />
+                        </td>
+                      ))}
                       <td className="px-3 py-2">
                         {row.reasons.length === 0 ? (
                           <span className="text-green-400">Matched</span>
@@ -519,7 +556,7 @@ export default function ProductComparisonPage() {
                   ))}
                   {rows.length === 0 && (
                     <tr>
-                      <td colSpan={5} className="px-3 py-6 text-center text-muted">
+                      <td colSpan={displayedSources.length + 2} className="px-3 py-6 text-center text-muted">
                         No rows match the current filters.
                       </td>
                     </tr>

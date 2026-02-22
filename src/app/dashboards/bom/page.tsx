@@ -1,9 +1,11 @@
 "use client";
 
-import React, { useState, useCallback, useRef, useEffect } from "react";
+import React, { useState, useCallback, useRef, useEffect, Suspense } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { exportToCSV } from "@/lib/export";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useToast } from "@/contexts/ToastContext";
+import { useSession } from "next-auth/react";
 // PDF upload uses chunked /api/bom/chunk — stays on our domain, no CORS issues
 
 /* ------------------------------------------------------------------ */
@@ -59,6 +61,17 @@ interface ProjectResult {
   hs_object_id: string;
   dealname: string;
   address?: string;
+  designFolderUrl?: string | null;
+  driveUrl?: string | null;
+  openSolarUrl?: string | null;
+  zuperUid?: string | null;
+}
+
+interface DriveFile {
+  id: string;
+  name: string;
+  modifiedTime: string;
+  size: string;
 }
 
 // From /api/products/comparison
@@ -73,28 +86,73 @@ interface ComparableProduct {
 
 interface ComparisonRow {
   key: string;
-  hubspot: ComparableProduct | null;
-  zuper: ComparableProduct | null;
-  zoho: ComparableProduct | null;
   reasons: string[];
   isMismatch: boolean;
+  [source: string]: ComparableProduct | string | string[] | boolean | null;
+}
+
+interface SourceHealth {
+  configured: boolean;
+  count: number;
+  error: string | null;
 }
 
 interface ProductComparisonResponse {
   rows: ComparisonRow[];
-  health: Record<"hubspot" | "zuper" | "zoho", { configured: boolean; count: number; error: string | null }>;
+  health: Record<string, SourceHealth>;
 }
 
-// Per-BOM-item catalog presence
-interface CatalogStatus {
-  hubspot: boolean;
-  zuper: boolean;
-  zoho: boolean;
+// Per-BOM-item catalog presence — keyed by source name
+type CatalogStatus = Record<string, boolean>;
+
+/* Saved snapshot row from /api/bom/history */
+interface BomSnapshot {
+  id: string;
+  dealId: string;
+  dealName: string;
+  version: number;
+  bomData: BomData;
+  sourceFile: string | null;
+  blobUrl: string | null;
+  savedBy: string | null;
+  createdAt: string;
+}
+
+/* One row in the diff view */
+type DiffStatus = "added" | "removed" | "changed" | "unchanged";
+interface DiffRow {
+  status: DiffStatus;
+  category: string;
+  brand: string | null;
+  model: string | null;
+  description: string;
+  qtyA?: number | string;
+  qtyB?: number | string;
+  specA?: string | number | null;
+  specB?: string | number | null;
 }
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                           */
 /* ------------------------------------------------------------------ */
+
+// Display labels for catalog sources — extend as new sources are added to the comparison API
+const SOURCE_DISPLAY_LABELS: Record<string, string> = {
+  hubspot: "HubSpot",
+  zuper: "Zuper",
+  zoho: "Zoho",
+  opensolar: "OpenSolar",
+  quickbooks: "QuickBooks",
+};
+
+// Short column headers for the BOM table
+const SOURCE_SHORT_LABELS: Record<string, string> = {
+  hubspot: "HS",
+  zuper: "ZU",
+  zoho: "ZO",
+  opensolar: "OS",
+  quickbooks: "QB",
+};
 
 const CATEGORY_ORDER: BomCategory[] = [
   "MODULE",
@@ -179,29 +237,38 @@ function productMatchesBomItem(product: ComparableProduct, item: BomItem): boole
   return tokenSimilarity(bomTokens, catalogTokens) >= 0.5;
 }
 
+// Non-product keys in a ComparisonRow that should be ignored when iterating sources
+const ROW_META_KEYS = new Set(["key", "reasons", "isMismatch", "possibleMatches"]);
+
+/** Derive source names from comparison rows (any key that isn't metadata). */
+function sourcesFromRows(rows: ComparisonRow[]): string[] {
+  if (!rows.length) return [];
+  return Object.keys(rows[0]).filter((k) => !ROW_META_KEYS.has(k));
+}
+
 /** Build a map of BOM item id → CatalogStatus from the comparison rows */
 function buildCatalogStatus(
   items: BomItem[],
   rows: ComparisonRow[]
 ): Map<string, CatalogStatus> {
   const result = new Map<string, CatalogStatus>();
+  const sources = sourcesFromRows(rows);
 
   for (const item of items) {
-    let inHubSpot = false;
-    let inZuper = false;
-    let inZoho = false;
+    const status: CatalogStatus = {};
+    for (const src of sources) status[src] = false;
 
     for (const row of rows) {
-      const hsMatch = row.hubspot && productMatchesBomItem(row.hubspot, item);
-      const zuMatch = row.zuper && productMatchesBomItem(row.zuper, item);
-      const zoMatch = row.zoho && productMatchesBomItem(row.zoho, item);
-      if (hsMatch) inHubSpot = true;
-      if (zuMatch) inZuper = true;
-      if (zoMatch) inZoho = true;
-      if (inHubSpot && inZuper && inZoho) break;
+      for (const src of sources) {
+        if (!status[src]) {
+          const product = row[src] as ComparableProduct | null;
+          if (product && productMatchesBomItem(product, item)) status[src] = true;
+        }
+      }
+      if (sources.every((s) => status[s])) break;
     }
 
-    result.set(item.id, { hubspot: inHubSpot, zuper: inZuper, zoho: inZoho });
+    result.set(item.id, status);
   }
 
   return result;
@@ -217,13 +284,66 @@ function assignIds(items: Omit<BomItem, "id">[]): BomItem[] {
 }
 
 /* ------------------------------------------------------------------ */
+/*  BOM diff helper                                                     */
+/* ------------------------------------------------------------------ */
+
+/** Compare two BomData item arrays, matching by (category, brand, model). */
+function diffBoms(itemsA: Omit<BomItem, "id">[], itemsB: Omit<BomItem, "id">[]): DiffRow[] {
+  const key = (i: Omit<BomItem, "id">) =>
+    `${i.category}||${(i.brand || "").trim().toLowerCase()}||${(i.model || "").trim().toLowerCase()}`;
+
+  const mapA = new Map<string, Omit<BomItem, "id">>();
+  const mapB = new Map<string, Omit<BomItem, "id">>();
+  for (const i of itemsA) mapA.set(key(i), i);
+  for (const i of itemsB) mapB.set(key(i), i);
+
+  const rows: DiffRow[] = [];
+  const allKeys = new Set([...mapA.keys(), ...mapB.keys()]);
+
+  for (const k of allKeys) {
+    const a = mapA.get(k);
+    const b = mapB.get(k);
+    if (a && !b) {
+      rows.push({ status: "removed", category: a.category, brand: a.brand, model: a.model, description: a.description, qtyA: a.qty, specA: a.unitSpec });
+    } else if (!a && b) {
+      rows.push({ status: "added", category: b.category, brand: b.brand, model: b.model, description: b.description, qtyB: b.qty, specB: b.unitSpec });
+    } else if (a && b) {
+      const qtyChanged = String(a.qty) !== String(b.qty);
+      const specChanged = String(a.unitSpec ?? "") !== String(b.unitSpec ?? "");
+      rows.push({
+        status: qtyChanged || specChanged ? "changed" : "unchanged",
+        category: b.category,
+        brand: b.brand,
+        model: b.model,
+        description: b.description,
+        qtyA: a.qty, qtyB: b.qty,
+        specA: a.unitSpec, specB: b.unitSpec,
+      });
+    }
+  }
+
+  // Sort: changed first, then added, removed, unchanged; within each group by category order
+  const statusOrder: Record<DiffStatus, number> = { changed: 0, added: 1, removed: 2, unchanged: 3 };
+  const catOrder = (c: string) => CATEGORY_ORDER.indexOf(c as BomCategory) ?? 99;
+  rows.sort((a, b) =>
+    statusOrder[a.status] - statusOrder[b.status] ||
+    catOrder(a.category) - catOrder(b.category) ||
+    (a.model || "").localeCompare(b.model || "")
+  );
+  return rows;
+}
+
+/* ------------------------------------------------------------------ */
 /*  Component                                                           */
 /* ------------------------------------------------------------------ */
 
 type ImportTab = "upload" | "drive" | "paste";
 
-export default function BomDashboard() {
+function BomDashboardInner() {
   const { addToast } = useToast();
+  const { data: session } = useSession();
+  const router = useRouter();
+  const searchParams = useSearchParams();
 
   // BOM state
   const [bom, setBom] = useState<BomData | null>(null);
@@ -250,14 +370,32 @@ export default function BomDashboard() {
   const [searchLoading, setSearchLoading] = useState(false);
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // History / snapshots
+  const [snapshots, setSnapshots] = useState<BomSnapshot[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [savedVersion, setSavedVersion] = useState<number | null>(null);
+  // Diff / compare
+  const [compareA, setCompareA] = useState<BomSnapshot | null>(null);
+  const [compareB, setCompareB] = useState<BomSnapshot | null>(null);
+  const [showDiff, setShowDiff] = useState(false);
+  const diffRows = compareA && compareB ? diffBoms(compareA.bomData.items, compareB.bomData.items) : [];
+
   // Product catalog comparison data
   const [comparisonRows, setComparisonRows] = useState<ComparisonRow[]>([]);
   const [catalogHealth, setCatalogHealth] = useState<ProductComparisonResponse["health"] | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogError, setCatalogError] = useState<string | null>(null);
 
+  // Derived source list — updates automatically when comparison data arrives
+  const catalogSources = sourcesFromRows(comparisonRows);
+
   // Derived catalog status per BOM item
   const [catalogStatus, setCatalogStatus] = useState<Map<string, CatalogStatus>>(new Map());
+  const [driveFiles, setDriveFiles] = useState<DriveFile[]>([]);
+  const [driveFilesLoading, setDriveFilesLoading] = useState(false);
+  const [driveFilesError, setDriveFilesError] = useState<string | null>(null);
+  const [extractingDriveFileId, setExtractingDriveFileId] = useState<string | null>(null);
 
   /* ---- Fetch catalog when BOM is loaded ---- */
   useEffect(() => {
@@ -288,6 +426,109 @@ export default function BomDashboard() {
     }
     setCatalogStatus(buildCatalogStatus(items, comparisonRows));
   }, [items, comparisonRows]);
+
+  /* ---- Load deal from ?deal= URL param on mount ---- */
+  useEffect(() => {
+    const dealId = searchParams.get("deal");
+    if (!dealId || linkedProject) return;
+    fetch(`/api/projects/${encodeURIComponent(dealId)}`)
+      .then((r) => r.ok ? r.json() : Promise.reject(r.status))
+      .then((data: { project: { id: number; name: string; address: string; designFolderUrl: string | null; driveUrl: string | null; openSolarUrl: string | null; zuperUid: string | null } }) => {
+        const p = data.project;
+        setLinkedProject({
+          hs_object_id: String(p.id),
+          dealname: p.name,
+          address: p.address,
+          designFolderUrl: p.designFolderUrl,
+          driveUrl: p.driveUrl,
+          openSolarUrl: p.openSolarUrl,
+          zuperUid: p.zuperUid,
+        });
+      })
+      .catch(() => {/* silent — bad param, just ignore */});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  /* ---- Load history when a project is linked ---- */
+  useEffect(() => {
+    if (!linkedProject) { setSnapshots([]); setSavedVersion(null); return; }
+    setHistoryLoading(true);
+    fetch(`/api/bom/history?dealId=${encodeURIComponent(linkedProject.hs_object_id)}`)
+      .then((r) => r.ok ? r.json() : Promise.reject(r.status))
+      .then((data: { snapshots: BomSnapshot[] }) => setSnapshots(data.snapshots))
+      .catch(() => {/* silent */})
+      .finally(() => setHistoryLoading(false));
+  }, [linkedProject]);
+
+  /* ---- Load Drive design files when project has a design folder ---- */
+  useEffect(() => {
+    const folderId = linkedProject?.designFolderUrl;
+    if (!folderId) { setDriveFiles([]); return; }
+    setDriveFilesLoading(true);
+    setDriveFilesError(null);
+    fetch(`/api/bom/drive-files?folderId=${encodeURIComponent(folderId)}`)
+      .then((r) => r.json())
+      .then((data: { files: DriveFile[]; error?: string }) => {
+        setDriveFiles(data.files ?? []);
+        if (data.error) setDriveFilesError(data.error);
+      })
+      .catch(() => setDriveFilesError("Failed to load design files"))
+      .finally(() => setDriveFilesLoading(false));
+  }, [linkedProject?.designFolderUrl]);
+
+  /* ---- Save snapshot helper ---- */
+  const saveSnapshot = useCallback(async (bomData: BomData, sourceFile?: string, blobUrl?: string) => {
+    if (!linkedProject) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/bom/history", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dealId: linkedProject.hs_object_id,
+          dealName: linkedProject.dealname,
+          bomData,
+          sourceFile,
+          blobUrl,
+        }),
+      });
+      if (!res.ok) throw new Error(`Save failed (${res.status})`);
+      const saved = await res.json() as { id: string; version: number; createdAt: string };
+      setSavedVersion(saved.version);
+      // Reload history list
+      const histRes = await fetch(`/api/bom/history?dealId=${encodeURIComponent(linkedProject.hs_object_id)}`);
+      if (histRes.ok) {
+        const histData = await histRes.json() as { snapshots: BomSnapshot[] };
+        setSnapshots(histData.snapshots);
+      }
+      addToast({ type: "success", title: `BOM v${saved.version} saved to ${linkedProject.dealname}` });
+      // Fire-and-forget email notification
+      if (session?.user?.email) {
+        fetch("/api/bom/notify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userEmail: session.user.email,
+            dealName: linkedProject.dealname,
+            dealId: linkedProject.hs_object_id,
+            version: saved.version,
+            sourceFile,
+            itemCount: bomData.items.length,
+            projectInfo: {
+              customer: bomData.project?.customer,
+              address: bomData.project?.address,
+              systemSizeKwdc: bomData.project?.systemSizeKwdc,
+              moduleCount: bomData.project?.moduleCount,
+            },
+          }),
+        }).catch(() => {/* silent */});
+      }
+    } catch (e) {
+      addToast({ type: "error", title: e instanceof Error ? e.message : "Save failed" });
+    } finally {
+      setSaving(false);
+    }
+  }, [linkedProject, addToast, session]);
 
   /* ---- Load BOM helper ---- */
   const loadBomData = useCallback((data: BomData) => {
@@ -382,13 +623,17 @@ export default function BomDashboard() {
       const data = await safeFetchBom(res);
       loadBomData(data);
       addToast({ type: "success", title: `BOM extracted from ${uploadFile.name}` });
+      // Auto-save snapshot if a project is linked
+      if (linkedProject) {
+        await saveSnapshot(data, uploadFile.name, blobUrl);
+      }
     } catch (e) {
       setImportError(e instanceof Error ? e.message : "Upload failed");
     } finally {
       setExtracting(false);
       setUploadProgress("");
     }
-  }, [uploadFile, loadBomData, safeFetchBom, addToast]);
+  }, [uploadFile, loadBomData, safeFetchBom, addToast, linkedProject, saveSnapshot]);
 
   /* ---- Extract from Google Drive URL ---- */
   const handleExtractDrive = useCallback(async () => {
@@ -417,12 +662,38 @@ export default function BomDashboard() {
       const data = await safeFetchBom(proxyRes);
       loadBomData(data);
       addToast({ type: "success", title: "BOM extracted from Google Drive" });
+      // Auto-save snapshot if a project is linked
+      if (linkedProject) {
+        await saveSnapshot(data, driveUrl);
+      }
     } catch (e) {
       setImportError(e instanceof Error ? e.message : "Drive extraction failed");
     } finally {
       setExtracting(false);
     }
-  }, [driveUrl, loadBomData, safeFetchBom, addToast]);
+  }, [driveUrl, loadBomData, safeFetchBom, addToast, linkedProject, saveSnapshot]);
+
+  /* ---- Extract from a Drive file ID directly (from design files picker) ---- */
+  const handleExtractDriveFile = useCallback(async (file: DriveFile) => {
+    setExtractingDriveFileId(file.id);
+    setImportError(null);
+    const downloadUrl = `https://drive.google.com/uc?export=download&id=${file.id}`;
+    try {
+      const proxyRes = await fetch("/api/bom/extract", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ driveUrl: downloadUrl, fileId: file.id }),
+      });
+      const data = await safeFetchBom(proxyRes);
+      loadBomData(data);
+      addToast({ type: "success", title: `BOM extracted from ${file.name}` });
+      if (linkedProject) await saveSnapshot(data, file.name, downloadUrl);
+    } catch (e) {
+      addToast({ type: "error", title: e instanceof Error ? e.message : "Extraction failed" });
+    } finally {
+      setExtractingDriveFileId(null);
+    }
+  }, [safeFetchBom, loadBomData, addToast, linkedProject, saveSnapshot]);
 
   /* ---- Paste JSON import ---- */
   const handleImport = useCallback(() => {
@@ -486,8 +757,16 @@ export default function BomDashboard() {
       try {
         const res = await fetch(`/api/projects?search=${encodeURIComponent(query)}&limit=8`);
         if (res.ok) {
-          const data = await res.json();
-          setProjectResults(data.projects || []);
+          const data = await res.json() as { projects: Array<{ id: number; name: string; address: string; designFolderUrl: string | null; driveUrl: string | null; openSolarUrl: string | null; zuperUid: string | null }> };
+          setProjectResults((data.projects || []).map((p) => ({
+            hs_object_id: String(p.id),
+            dealname: p.name,
+            address: p.address,
+            designFolderUrl: p.designFolderUrl,
+            driveUrl: p.driveUrl,
+            openSolarUrl: p.openSolarUrl,
+            zuperUid: p.zuperUid,
+          })));
         }
       } catch {
         // silently ignore
@@ -502,6 +781,10 @@ export default function BomDashboard() {
     if (!items.length) return;
     const rows = items.map((item) => {
       const status = catalogStatus.get(item.id);
+      const catalogCols: Record<string, string> = {};
+      for (const src of catalogSources) {
+        catalogCols[`in_${src}`] = status?.[src] ? "yes" : "no";
+      }
       return {
         category: item.category,
         brand: item.brand || "",
@@ -512,9 +795,7 @@ export default function BomDashboard() {
         unitLabel: item.unitLabel || "",
         source: item.source,
         flags: item.flags?.join(", ") || "",
-        in_hubspot: status?.hubspot ? "yes" : "no",
-        in_zuper: status?.zuper ? "yes" : "no",
-        in_zoho: status?.zoho ? "yes" : "no",
+        ...catalogCols,
       };
     });
     const customer = bom?.project?.customer || "bom";
@@ -546,16 +827,16 @@ export default function BomDashboard() {
       if (!catItems?.length) continue;
       lines.push(`## ${CATEGORY_LABELS[cat]}`);
       lines.push("");
-      lines.push("| Brand | Model | Description | Qty | Spec | HubSpot | Zuper | Zoho |");
-      lines.push("|-------|-------|-------------|-----|------|---------|-------|------|");
+      const srcHeaders = catalogSources.map((s) => SOURCE_DISPLAY_LABELS[s] ?? s).join(" | ");
+      const srcSeps = catalogSources.map(() => "------").join("|");
+      lines.push(`| Brand | Model | Description | Qty | Spec |${srcHeaders ? ` ${srcHeaders} |` : ""}`);
+      lines.push(`|-------|-------|-------------|-----|------|${srcSeps ? `${srcSeps}|` : ""}`);
       for (const item of catItems) {
         const flags = item.flags?.length ? ` ⚠️ ${item.flags.join(", ")}` : "";
         const status = catalogStatus.get(item.id);
-        const hs = status?.hubspot ? "✅" : "—";
-        const zu = status?.zuper ? "✅" : "—";
-        const zo = status?.zoho ? "✅" : "—";
+        const srcCols = catalogSources.map((s) => status?.[s] ? "✅" : "—").join(" | ");
         lines.push(
-          `| ${item.brand || "—"} | ${item.model || "—"} | ${item.description}${flags} | ${item.qty} | ${item.unitSpec || ""} ${item.unitLabel || ""} | ${hs} | ${zu} | ${zo} |`
+          `| ${item.brand || "—"} | ${item.model || "—"} | ${item.description}${flags} | ${item.qty} | ${item.unitSpec || ""} ${item.unitLabel || ""} |${srcCols ? ` ${srcCols} |` : ""}`
         );
       }
       lines.push("");
@@ -564,6 +845,49 @@ export default function BomDashboard() {
     await navigator.clipboard.writeText(lines.join("\n"));
     addToast({ type: "success", title: "Markdown copied to clipboard" });
   }, [items, bom, catalogStatus, addToast]);
+
+  /* ---- Save to Inventory ---- */
+  const handleSaveInventory = useCallback(async () => {
+    if (!items.length || !bom) return;
+    try {
+      const res = await fetch("/api/bom/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bom: { ...bom, items: items.map(({ id: _id, ...rest }) => rest) } }),
+      });
+      if (!res.ok) throw new Error(`Save failed (${res.status})`);
+      const data = await res.json() as { created: number; updated: number; skipped: number };
+      addToast({ type: "success", title: `Inventory updated — ${data.created} created, ${data.updated} updated, ${data.skipped} skipped` });
+    } catch (e) {
+      addToast({ type: "error", title: e instanceof Error ? e.message : "Save to inventory failed" });
+    }
+  }, [items, bom, addToast]);
+
+  /* ---- Export PDF ---- */
+  const handleExportPdf = useCallback(async () => {
+    if (!bom) return;
+    try {
+      const res = await fetch("/api/bom/export-pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bomData: { ...bom, items: items.map(({ id: _id, ...rest }) => rest) },
+          dealName: linkedProject?.dealname,
+          version: savedVersion ?? undefined,
+        }),
+      });
+      if (!res.ok) throw new Error(`PDF export failed (${res.status})`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `BOM-${(bom.project?.customer ?? linkedProject?.dealname ?? "export").replace(/\s+/g, "_")}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      addToast({ type: "error", title: e instanceof Error ? e.message : "PDF export failed" });
+    }
+  }, [bom, items, linkedProject, savedVersion, addToast]);
 
   /* ---- Grouped items for render ---- */
   const grouped = CATEGORY_ORDER.reduce<Partial<Record<BomCategory, BomItem[]>>>(
@@ -581,11 +905,25 @@ export default function BomDashboard() {
   const totalItems = items.length;
   const missingAny = items.filter((i) => {
     const s = catalogStatus.get(i.id);
-    return s && (!s.hubspot || !s.zuper || !s.zoho);
+    return s && catalogSources.some((src) => !s[src]);
   }).length;
 
   return (
-    <DashboardShell title="Planset BOM" accentColor="cyan">
+    <>
+      <style>{`
+        @media print {
+          nav, header, [data-dashboard-shell-header], [data-dashboard-shell-nav],
+          .action-bar, .history-panel, .diff-panel, .import-panel,
+          .quick-links-panel, .design-files-panel {
+            display: none !important;
+          }
+          body { background: white !important; }
+          .bom-table-section { page-break-inside: avoid; }
+          table { border-collapse: collapse; width: 100%; }
+          th, td { border: 1px solid #e5e7eb; padding: 4px 8px; font-size: 11px; }
+        }
+      `}</style>
+      <DashboardShell title="Planset BOM" accentColor="cyan">
       <div className="space-y-6 px-4 pb-10">
 
         {/* ---- Import Panel ---- */}
@@ -776,6 +1114,11 @@ export default function BomDashboard() {
                       setLinkedProject(null);
                       setComparisonRows([]);
                       setCatalogStatus(new Map());
+                      setSnapshots([]);
+                      setSavedVersion(null);
+                      setCompareA(null);
+                      setCompareB(null);
+                      setShowDiff(false);
                     }}
                     className="text-xs text-muted hover:text-foreground px-2 py-1 rounded hover:bg-surface-2 transition-colors"
                   >
@@ -829,12 +1172,12 @@ export default function BomDashboard() {
                   <p className="text-xs text-red-500">{catalogError}</p>
                 ) : catalogHealth ? (
                   <div className="space-y-2">
-                    {(["hubspot", "zuper", "zoho"] as const).map((src) => {
+                    {Object.keys(catalogHealth).map((src) => {
                       const health = catalogHealth[src];
                       const found = items.filter((i) => catalogStatus.get(i.id)?.[src]).length;
                       return (
                         <div key={src} className="flex items-center justify-between gap-2 text-sm">
-                          <span className="text-muted capitalize">{src === "hubspot" ? "HubSpot" : src === "zoho" ? "Zoho" : "Zuper"}</span>
+                          <span className="text-muted">{SOURCE_DISPLAY_LABELS[src] ?? src}</span>
                           {health.configured ? (
                             <span className="font-medium text-foreground">
                               {found}/{totalItems}
@@ -861,12 +1204,26 @@ export default function BomDashboard() {
             <div className="rounded-xl bg-surface border border-t-border p-5 shadow-card">
               <h3 className="text-sm font-semibold text-foreground mb-3">Link to HubSpot Project</h3>
               {linkedProject ? (
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 flex-wrap">
                   <span className="text-sm text-foreground">
                     ✅ <span className="font-medium">{linkedProject.dealname}</span>
                   </span>
+                  {saving && (
+                    <span className="text-xs text-muted animate-pulse">Saving…</span>
+                  )}
+                  {savedVersion && !saving && (
+                    <span className="text-xs text-green-600 dark:text-green-400">v{savedVersion} saved</span>
+                  )}
+                  {!saving && bom && (
+                    <button
+                      onClick={() => saveSnapshot({ ...bom, items: items.map(({ id: _id, ...rest }) => rest) })}
+                      className="text-xs text-cyan-600 dark:text-cyan-400 hover:underline"
+                    >
+                      Save current BOM
+                    </button>
+                  )}
                   <button
-                    onClick={() => setLinkedProject(null)}
+                    onClick={() => { setLinkedProject(null); setSnapshots([]); setSavedVersion(null); router.replace("/dashboards/bom"); }}
                     className="text-xs text-muted hover:text-foreground"
                   >
                     Unlink
@@ -876,7 +1233,7 @@ export default function BomDashboard() {
                 <div className="relative">
                   <input
                     type="text"
-                    placeholder="Search by project name or address…"
+                    placeholder="Search by name, address, or project number…"
                     value={projectSearch}
                     onChange={(e) => handleProjectSearch(e.target.value)}
                     className="w-full max-w-md rounded-lg bg-surface-2 border border-t-border text-sm text-foreground px-3 py-2 focus:outline-none focus:ring-2 focus:ring-cyan-500"
@@ -891,8 +1248,10 @@ export default function BomDashboard() {
                           key={p.hs_object_id}
                           onClick={() => {
                             setLinkedProject(p);
+                            router.replace(`/dashboards/bom?deal=${encodeURIComponent(p.hs_object_id)}`);
                             setProjectSearch("");
                             setProjectResults([]);
+                            setSavedVersion(null);
                           }}
                           className="w-full text-left px-4 py-2.5 text-sm text-foreground hover:bg-surface-2 transition-colors"
                         >
@@ -908,6 +1267,66 @@ export default function BomDashboard() {
               )}
             </div>
 
+
+            {/* Quick Links */}
+            {linkedProject && (
+              <div className="quick-links-panel rounded-xl bg-surface border border-t-border p-4 shadow-card">
+                <h3 className="text-xs font-semibold text-muted mb-2 uppercase tracking-wide">Quick Links</h3>
+                <QuickLinks project={linkedProject} />
+              </div>
+            )}
+
+            {/* Design Files — from HubSpot design_document_folder_id */}
+            {linkedProject?.designFolderUrl && (
+              <div className="design-files-panel rounded-xl bg-surface border border-t-border shadow-card overflow-hidden">
+                <div className="flex items-center justify-between px-5 py-3 border-b border-t-border bg-surface-2">
+                  <h3 className="text-sm font-semibold text-foreground">
+                    Design Files
+                    {!driveFilesLoading && driveFiles.length > 0 && (
+                      <span className="ml-2 text-xs text-muted font-normal">{driveFiles.length} PDF{driveFiles.length !== 1 ? "s" : ""}</span>
+                    )}
+                  </h3>
+                </div>
+                {driveFilesLoading ? (
+                  <p className="px-5 py-4 text-xs text-muted animate-pulse">Loading files…</p>
+                ) : driveFilesError ? (
+                  <p className="px-5 py-4 text-xs text-red-500">{driveFilesError}</p>
+                ) : driveFiles.length === 0 ? (
+                  <p className="px-5 py-4 text-xs text-muted">No PDFs found in design folder.</p>
+                ) : (
+                  <div className="divide-y divide-[color:var(--border)]">
+                    {driveFiles.map((file) => {
+                      const isExtracting = extractingDriveFileId === file.id;
+                      const anyExtracting = extractingDriveFileId !== null;
+                      const sizeKb = file.size ? Math.round(Number(file.size) / 1024) : null;
+                      return (
+                        <button
+                          key={file.id}
+                          onClick={() => handleExtractDriveFile(file)}
+                          disabled={anyExtracting}
+                          className="w-full flex items-center gap-3 px-5 py-3 text-left hover:bg-surface-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed group"
+                        >
+                          <span className="text-lg flex-shrink-0">{isExtracting ? "⏳" : "📄"}</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm text-foreground font-medium truncate">{file.name}</p>
+                            <p className="text-xs text-muted">
+                              {new Date(file.modifiedTime).toLocaleDateString()}
+                              {sizeKb && ` · ${sizeKb > 1024 ? `${(sizeKb / 1024).toFixed(1)} MB` : `${sizeKb} KB`}`}
+                            </p>
+                          </div>
+                          {isExtracting ? (
+                            <span className="text-xs text-cyan-500 animate-pulse">Extracting…</span>
+                          ) : (
+                            <span className="text-xs text-muted opacity-0 group-hover:opacity-100 transition-opacity">Extract →</span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Action Bar */}
             <div className="flex flex-wrap gap-2">
               <button
@@ -922,7 +1341,267 @@ export default function BomDashboard() {
               >
                 ⎘ Copy Markdown
               </button>
+              <button
+                onClick={handleSaveInventory}
+                className="px-4 py-2 rounded-lg bg-cyan-600 text-white text-sm font-medium hover:bg-cyan-700 transition-colors"
+              >
+                ↑ Save to Inventory
+              </button>
+              <button
+                onClick={handleExportPdf}
+                disabled={!bom}
+                className="px-4 py-2 rounded-lg bg-surface border border-t-border text-sm text-foreground hover:bg-surface-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                ↓ Export PDF
+              </button>
+              <button
+                onClick={() => window.print()}
+                disabled={!bom}
+                className="px-4 py-2 rounded-lg bg-surface border border-t-border text-sm text-foreground hover:bg-surface-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                🖨 Print
+              </button>
             </div>
+
+            {/* ---- History Panel ---- */}
+            {linkedProject && (snapshots.length > 0 || historyLoading) && (
+              <div className="rounded-xl bg-surface border border-t-border shadow-card overflow-hidden">
+                <div className="flex items-center justify-between px-5 py-3 border-b border-t-border bg-surface-2">
+                  <h3 className="text-sm font-semibold text-foreground">
+                    Extraction History
+                    <span className="ml-2 text-xs text-muted font-normal">
+                      {snapshots.length} version{snapshots.length !== 1 ? "s" : ""}
+                    </span>
+                  </h3>
+                  {snapshots.length >= 2 && (
+                    <button
+                      onClick={() => {
+                        if (showDiff) {
+                          setShowDiff(false); setCompareA(null); setCompareB(null);
+                        } else {
+                          setCompareA(snapshots[0]);
+                          setCompareB(snapshots[1]);
+                          setShowDiff(true);
+                        }
+                      }}
+                      className={`text-xs px-3 py-1 rounded-lg transition-colors ${showDiff ? "bg-cyan-600 text-white" : "bg-surface border border-t-border text-foreground hover:bg-surface-2"}`}
+                    >
+                      {showDiff ? "Hide Compare" : "Compare Versions"}
+                    </button>
+                  )}
+                </div>
+
+                {historyLoading ? (
+                  <p className="text-xs text-muted px-5 py-4 animate-pulse">Loading history…</p>
+                ) : (
+                  <div className="divide-y divide-[color:var(--border)]">
+                    {snapshots.map((snap) => (
+                      <div key={snap.id} className="flex items-center gap-3 px-5 py-3 hover:bg-surface-2 transition-colors group">
+                        <div className="w-8 h-8 rounded-lg bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 flex items-center justify-center text-xs font-bold flex-shrink-0">
+                          v{snap.version}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm text-foreground font-medium truncate">
+                            {snap.sourceFile || "Manual save"}
+                          </div>
+                          <div className="text-xs text-muted">
+                            {new Date(snap.createdAt).toLocaleString()} · {snap.bomData.items.length} items
+                            {snap.savedBy && ` · ${snap.savedBy}`}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={() => {
+                              loadBomData(snap.bomData);
+                              setSavedVersion(snap.version);
+                              addToast({ type: "success", title: `Loaded v${snap.version}` });
+                            }}
+                            className="text-xs text-cyan-600 dark:text-cyan-400 hover:underline"
+                          >
+                            Load
+                          </button>
+                          {showDiff && (
+                            <>
+                              <button
+                                onClick={() => setCompareA(snap)}
+                                className={`text-xs px-2 py-0.5 rounded transition-colors ${compareA?.id === snap.id ? "bg-blue-500 text-white" : "bg-surface border border-t-border text-muted hover:text-foreground"}`}
+                              >
+                                A
+                              </button>
+                              <button
+                                onClick={() => setCompareB(snap)}
+                                className={`text-xs px-2 py-0.5 rounded transition-colors ${compareB?.id === snap.id ? "bg-orange-500 text-white" : "bg-surface border border-t-border text-muted hover:text-foreground"}`}
+                              >
+                                B
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ---- Diff View ---- */}
+            {showDiff && compareA && compareB && (
+              <div className="rounded-xl bg-surface border border-t-border shadow-card overflow-hidden">
+                <div className="flex items-center justify-between px-5 py-3 border-b border-t-border bg-surface-2">
+                  <div className="flex items-center gap-3">
+                    <h3 className="text-sm font-semibold text-foreground">BOM Comparison</h3>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                      A · v{compareA.version} — {new Date(compareA.createdAt).toLocaleDateString()}
+                    </span>
+                    <span className="text-xs text-muted">vs</span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-600 dark:text-orange-400">
+                      B · v{compareB.version} — {new Date(compareB.createdAt).toLocaleDateString()}
+                    </span>
+                  </div>
+                  <div className="flex gap-3 text-xs text-muted">
+                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" /> Added</span>
+                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-400 inline-block" /> Removed</span>
+                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-yellow-500 inline-block" /> Changed</span>
+                  </div>
+                </div>
+
+                {/* Project-level diff */}
+                {(() => {
+                  const pa = compareA.bomData.project;
+                  const pb = compareB.bomData.project;
+                  const fields: Array<{ label: string; key: keyof typeof pa }> = [
+                    { label: "Customer", key: "customer" },
+                    { label: "Address", key: "address" },
+                    { label: "kWdc", key: "systemSizeKwdc" },
+                    { label: "kWac", key: "systemSizeKwac" },
+                    { label: "Modules", key: "moduleCount" },
+                    { label: "Rev", key: "plansetRev" },
+                    { label: "Stamp", key: "stampDate" },
+                  ];
+                  const changed = fields.filter((f) => String(pa[f.key] ?? "") !== String(pb[f.key] ?? ""));
+                  if (!changed.length) return null;
+                  return (
+                    <div className="px-5 py-3 border-b border-t-border bg-yellow-50/20 dark:bg-yellow-900/10">
+                      <p className="text-xs font-semibold text-muted mb-2">Project fields changed</p>
+                      <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs">
+                        {changed.map(({ label, key }) => (
+                          <span key={key}>
+                            <span className="text-muted">{label}: </span>
+                            <span className="line-through text-red-500">{String(pa[key] ?? "—")}</span>
+                            {" → "}
+                            <span className="text-green-600 dark:text-green-400">{String(pb[key] ?? "—")}</span>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Summary counts */}
+                {(() => {
+                  const counts = { added: 0, removed: 0, changed: 0, unchanged: 0 };
+                  for (const r of diffRows) counts[r.status]++;
+                  return (
+                    <div className="flex gap-6 px-5 py-2 border-b border-t-border bg-surface-2 text-xs text-muted">
+                      {counts.changed > 0 && <span className="text-yellow-600 dark:text-yellow-400 font-medium">{counts.changed} changed</span>}
+                      {counts.added > 0 && <span className="text-green-600 dark:text-green-400 font-medium">{counts.added} added</span>}
+                      {counts.removed > 0 && <span className="text-red-500 font-medium">{counts.removed} removed</span>}
+                      <span>{counts.unchanged} unchanged</span>
+                    </div>
+                  );
+                })()}
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-xs text-muted border-b border-t-border bg-surface-2/50">
+                        <th className="text-left px-4 py-2 font-medium w-4"></th>
+                        <th className="text-left px-4 py-2 font-medium w-28">Category</th>
+                        <th className="text-left px-4 py-2 font-medium w-28">Brand</th>
+                        <th className="text-left px-4 py-2 font-medium w-36">Model</th>
+                        <th className="text-left px-4 py-2 font-medium">Description</th>
+                        <th className="text-left px-4 py-2 font-medium w-20">Qty A→B</th>
+                        <th className="text-left px-4 py-2 font-medium w-24">Spec A→B</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[color:var(--border)]">
+                      {diffRows.filter((r) => r.status !== "unchanged").map((row, i) => {
+                        const bg =
+                          row.status === "added" ? "bg-green-50/40 dark:bg-green-900/10" :
+                          row.status === "removed" ? "bg-red-50/40 dark:bg-red-900/10" :
+                          "bg-yellow-50/30 dark:bg-yellow-900/10";
+                        const dot =
+                          row.status === "added" ? "bg-green-500" :
+                          row.status === "removed" ? "bg-red-400" :
+                          "bg-yellow-500";
+                        return (
+                          <tr key={i} className={bg}>
+                            <td className="px-3 py-2">
+                              <span className={`inline-block w-2 h-2 rounded-full ${dot}`} />
+                            </td>
+                            <td className="px-4 py-2 text-xs text-muted">{CATEGORY_LABELS[row.category as BomCategory] ?? row.category}</td>
+                            <td className="px-4 py-2">{row.brand || "—"}</td>
+                            <td className="px-4 py-2 font-medium">{row.model || "—"}</td>
+                            <td className="px-4 py-2 text-muted text-xs">{row.description}</td>
+                            <td className="px-4 py-2 text-xs">
+                              {row.status === "unchanged" ? String(row.qtyB ?? "—") :
+                               row.status === "added" ? <span className="text-green-600 dark:text-green-400">{String(row.qtyB ?? "—")}</span> :
+                               row.status === "removed" ? <span className="text-red-500">{String(row.qtyA ?? "—")}</span> : (
+                                <span>
+                                  <span className={String(row.qtyA) !== String(row.qtyB) ? "line-through text-red-500" : ""}>{String(row.qtyA ?? "—")}</span>
+                                  {String(row.qtyA) !== String(row.qtyB) && <>{" "}<span className="text-green-600 dark:text-green-400">{String(row.qtyB ?? "—")}</span></>}
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-2 text-xs">
+                              {row.status === "unchanged" ? String(row.specB ?? "—") :
+                               row.status === "added" ? <span className="text-green-600 dark:text-green-400">{String(row.specB ?? "—")}</span> :
+                               row.status === "removed" ? <span className="text-red-500">{String(row.specA ?? "—")}</span> : (
+                                <span>
+                                  <span className={String(row.specA ?? "") !== String(row.specB ?? "") ? "line-through text-red-500" : ""}>{String(row.specA ?? "—")}</span>
+                                  {String(row.specA ?? "") !== String(row.specB ?? "") && <>{" "}<span className="text-green-600 dark:text-green-400">{String(row.specB ?? "—")}</span></>}
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {diffRows.every((r) => r.status === "unchanged") && (
+                        <tr>
+                          <td colSpan={7} className="px-5 py-6 text-center text-sm text-muted">
+                            No differences — these two BOMs are identical.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Unchanged items (collapsed) */}
+                {diffRows.some((r) => r.status === "unchanged") && (
+                  <details className="border-t border-t-border">
+                    <summary className="px-5 py-2 text-xs text-muted cursor-pointer hover:text-foreground select-none">
+                      {diffRows.filter((r) => r.status === "unchanged").length} unchanged items (click to expand)
+                    </summary>
+                    <table className="w-full text-sm opacity-50">
+                      <tbody className="divide-y divide-[color:var(--border)]">
+                        {diffRows.filter((r) => r.status === "unchanged").map((row, i) => (
+                          <tr key={i} className="hover:bg-surface-2">
+                            <td className="px-3 py-1.5 w-4"><span className="inline-block w-2 h-2 rounded-full bg-surface-2" /></td>
+                            <td className="px-4 py-1.5 text-xs text-muted w-28">{CATEGORY_LABELS[row.category as BomCategory] ?? row.category}</td>
+                            <td className="px-4 py-1.5 w-28">{row.brand || "—"}</td>
+                            <td className="px-4 py-1.5 w-36 font-medium">{row.model || "—"}</td>
+                            <td className="px-4 py-1.5 text-muted text-xs">{row.description}</td>
+                            <td className="px-4 py-1.5 text-xs">{String(row.qtyB ?? "—")}</td>
+                            <td className="px-4 py-1.5 text-xs">{String(row.specB ?? "—")}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </details>
+                )}
+              </div>
+            )}
 
             {/* BOM Table — grouped by category */}
             {CATEGORY_ORDER.filter((cat) => grouped[cat]?.length).map((cat) => (
@@ -948,23 +1627,29 @@ export default function BomDashboard() {
                         <th className="text-left px-4 py-2 font-medium w-16">Qty</th>
                         <th className="text-left px-4 py-2 font-medium w-24">Spec</th>
                         <th className="text-left px-4 py-2 font-medium w-20">Source</th>
-                        <th className="text-left px-4 py-2 font-medium w-32" colSpan={3}>
-                          Catalogs
-                        </th>
+                        {catalogSources.length > 0 && (
+                          <th className="text-left px-4 py-2 font-medium" colSpan={catalogSources.length}>
+                            Catalogs
+                          </th>
+                        )}
                         <th className="px-3 py-2 w-10"></th>
                       </tr>
-                      <tr className="text-xs text-muted border-b border-t-border bg-surface-2/50">
-                        <th colSpan={6} />
-                        <th className="px-2 py-1 font-normal text-center w-10">HS</th>
-                        <th className="px-2 py-1 font-normal text-center w-10">ZU</th>
-                        <th className="px-2 py-1 font-normal text-center w-10">ZO</th>
-                        <th />
-                      </tr>
+                      {catalogSources.length > 0 && (
+                        <tr className="text-xs text-muted border-b border-t-border bg-surface-2/50">
+                          <th colSpan={6} />
+                          {catalogSources.map((src) => (
+                            <th key={src} className="px-2 py-1 font-normal text-center w-10" title={SOURCE_DISPLAY_LABELS[src] ?? src}>
+                              {SOURCE_SHORT_LABELS[src] ?? src.slice(0, 2).toUpperCase()}
+                            </th>
+                          ))}
+                          <th />
+                        </tr>
+                      )}
                     </thead>
                     <tbody className="divide-y divide-[color:var(--border)]">
                       {grouped[cat]!.map((item) => {
                         const status = catalogStatus.get(item.id);
-                        const missing = status && (!status.hubspot || !status.zuper || !status.zoho);
+                        const missing = status && catalogSources.some((s) => !status[s]);
                         return (
                           <tr
                             key={item.id}
@@ -1007,15 +1692,11 @@ export default function BomDashboard() {
                               />
                             </td>
                             <td className="px-4 py-1.5 text-muted text-xs">{item.source}</td>
-                            <td className="px-2 py-1.5 text-center">
-                              <CatalogDot present={status?.hubspot} loading={catalogLoading} />
-                            </td>
-                            <td className="px-2 py-1.5 text-center">
-                              <CatalogDot present={status?.zuper} loading={catalogLoading} />
-                            </td>
-                            <td className="px-2 py-1.5 text-center">
-                              <CatalogDot present={status?.zoho} loading={catalogLoading} />
-                            </td>
+                            {catalogSources.map((src) => (
+                              <td key={src} className="px-2 py-1.5 text-center">
+                                <CatalogDot present={status?.[src]} loading={catalogLoading} />
+                              </td>
+                            ))}
                             <td className="px-3 py-1.5">
                               <button
                                 onClick={() => deleteItem(item.id)}
@@ -1042,7 +1723,8 @@ export default function BomDashboard() {
           </>
         )}
       </div>
-    </DashboardShell>
+      </DashboardShell>
+    </>
   );
 }
 
@@ -1097,6 +1779,42 @@ function ValidationBadge({ value, label }: { value: boolean | null; label: strin
   );
 }
 
+function QuickLinks({ project }: { project: ProjectResult }) {
+  const links: Array<{ label: string; href: string; color: string }> = [
+    {
+      label: "HubSpot",
+      href: `https://app.hubspot.com/contacts/21710069/deal/${project.hs_object_id}`,
+      color: "text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-800",
+    },
+  ];
+
+  if (project.driveUrl) {
+    links.push({ label: "G-Drive", href: project.driveUrl, color: "text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-800" });
+  }
+  if (project.openSolarUrl) {
+    links.push({ label: "OpenSolar", href: project.openSolarUrl, color: "text-yellow-600 dark:text-yellow-400 border-yellow-200 dark:border-yellow-800" });
+  }
+  if (project.zuperUid) {
+    links.push({ label: "Zuper", href: `https://app.zuper.co/jobs/${project.zuperUid}`, color: "text-cyan-600 dark:text-cyan-400 border-cyan-200 dark:border-cyan-800" });
+  }
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {links.map(({ label, href, color }) => (
+        <a
+          key={label}
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={`inline-flex items-center gap-1 px-3 py-1 rounded-lg border text-xs font-medium bg-surface hover:bg-surface-2 transition-colors ${color}`}
+        >
+          {label} ↗
+        </a>
+      ))}
+    </div>
+  );
+}
+
 function CatalogDot({ present, loading }: { present?: boolean; loading?: boolean }) {
   if (loading) {
     return <span className="inline-block w-2 h-2 rounded-full bg-surface-2 animate-pulse" />;
@@ -1108,5 +1826,13 @@ function CatalogDot({ present, loading }: { present?: boolean; loading?: boolean
     <span className="inline-block w-2 h-2 rounded-full bg-green-500" title="In catalog" />
   ) : (
     <span className="inline-block w-2 h-2 rounded-full bg-red-400" title="Not in catalog" />
+  );
+}
+
+export default function BomDashboard() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-64 text-muted text-sm">Loading…</div>}>
+      <BomDashboardInner />
+    </Suspense>
   );
 }

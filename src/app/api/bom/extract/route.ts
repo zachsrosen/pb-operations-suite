@@ -155,7 +155,6 @@ export async function POST(req: NextRequest) {
 
   const MAX_SIZE = 50 * 1024 * 1024; // 50MB — Claude's PDF limit
 
-  let pdfBase64: string;
   let filename = "planset.pdf";
 
   // All paths go through JSON body now:
@@ -215,7 +214,7 @@ export async function POST(req: NextRequest) {
   if (arrayBuffer.byteLength > MAX_SIZE) {
     return NextResponse.json({ error: "PDF exceeds 32MB limit" }, { status: 400 });
   }
-  pdfBase64 = Buffer.from(arrayBuffer).toString("base64");
+  const pdfBase64 = Buffer.from(arrayBuffer).toString("base64");
   filename = body.blobUrl
     ? (body.blobUrl.split("/").pop() ?? "planset.pdf")
     : `drive-${body.fileId ?? "planset"}.pdf`;
