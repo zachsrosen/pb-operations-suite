@@ -506,17 +506,21 @@ function BomDashboardInner() {
       .then((data: { projects?: ProjectResult[] }) => {
         if (cancelled) return;
         const results: ProjectResult[] = data.projects ?? [];
-        const addrLower = rawAddress.toLowerCase();
-        const custLower = (bom.project.customer ?? "").toLowerCase();
+        // Normalize BOM address to "1617 rancho way" (street number + street name, no city/state)
+        const bomStreet = rawAddress.split(",")[0].trim().toLowerCase();
         let best: ProjectResult | null = null;
-        let bestScore = 0;
         for (const p of results) {
-          let score = 0;
-          if (p.address && addrLower.includes(p.address.toLowerCase().split(",")[0])) score += 2;
-          if (custLower && p.dealname.toLowerCase().includes(custLower.split(" ")[0].toLowerCase())) score += 1;
-          if (score > bestScore) { bestScore = score; best = p; }
+          if (!p.address) continue;
+          // Normalize HubSpot address the same way
+          const hsStreet = p.address.split(",")[0].trim().toLowerCase();
+          // Require the street portions to match — both directions, to handle
+          // differences in abbreviation ("WAY" vs "Way") or trailing tokens
+          if (bomStreet === hsStreet || bomStreet.startsWith(hsStreet) || hsStreet.startsWith(bomStreet)) {
+            best = p;
+            break; // results are ranked by relevance; first address match wins
+          }
         }
-        if (bestScore >= 1 && best) setAutoLinkSuggestion(best);
+        if (best) setAutoLinkSuggestion(best);
       })
       .catch(() => { /* silently ignore auto-link errors */ });
     return () => { cancelled = true; };
