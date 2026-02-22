@@ -1167,3 +1167,205 @@ Task 9 (app icon) ── standalone, any time
 ```
 
 Tasks 1-3 can be done in parallel. Task 4 depends on Task 1. Tasks 5-6 depend on 1-3. Task 8 should be done last before deploy. Tasks 7 and 9 are independent.
+
+---
+
+## REVISION: Code Review Fixes (P1-P3)
+
+The following amendments address issues found during code review.
+
+### Task 3 Amendment: Add "/" and missing routes to SALES, TECH_OPS, OPERATIONS permissions
+
+**P1 Fix: SALES/TECH_OPS need home access for role-based landing pages**
+
+Add `"/"` to SALES allowedRoutes and `/dashboards/sales` for the Sales Pipeline card:
+
+```typescript
+SALES: {
+  allowedRoutes: [
+    "/",
+    "/dashboards/site-survey-scheduler",
+    "/dashboards/sales",
+    "/api/projects",
+    "/api/zuper/availability",
+    "/api/zuper/status",
+    "/api/zuper/jobs/lookup",
+    "/api/zuper/jobs/schedule",
+    "/api/zuper/my-availability",
+    "/api/bugs",
+  ],
+  // ... rest unchanged
+},
+```
+
+Add `"/"` to TECH_OPS allowedRoutes:
+
+```typescript
+TECH_OPS: {
+  allowedRoutes: [
+    "/",
+    "/suites/department",
+    // ... rest unchanged
+  ],
+},
+```
+
+Add `"/"` to OPERATIONS allowedRoutes (if not already added in Task 3 Step 3).
+
+**Also update middleware** at `src/middleware.ts` — verify that the home route `/` is allowed through for all authenticated roles (not just ADMIN/OWNER). The middleware should defer to `canAccessRoute()` which will now return true for all roles with `"/"` in their allowedRoutes.
+
+### Task 2 Amendment: Add BOM History to SUITE_MAP
+
+**P2 Fix: BOM History missing from SUITE_MAP**
+
+Add to the SUITE_MAP in DashboardShell.tsx:
+
+```typescript
+"/dashboards/bom/history": { href: "/suites/operations", label: "Operations" },
+```
+
+### Task 3 Amendment: Add BOM History to role permissions
+
+Add `/dashboards/bom/history` to every role that has `/dashboards/bom`:
+- OPERATIONS_MANAGER
+- PROJECT_MANAGER
+- OPERATIONS
+
+### Task 6 Amendment: Fix Browse All Suites filtering
+
+**P1 Fix: Browse All shows dead-end links**
+
+Replace the naive visibility filter in the "Browse All" section with `canAccessRoute()`:
+
+```tsx
+{/* Browse All (hidden by default for role-landing users) */}
+{roleLandingCards && (
+  <div id="all-suites" className="hidden">
+    <h2 className="text-lg font-semibold text-foreground/80 mb-4 mt-8">All Suites</h2>
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 stagger-grid">
+      {SUITE_LINKS
+        .filter((suite) => canAccessRoute(userRole as UserRole, suite.href))
+        .map((suite) => (
+          <DashboardLink key={suite.href} {...suite} />
+        ))}
+    </div>
+  </div>
+)}
+```
+
+This requires importing `canAccessRoute` and `UserRole` from `@/lib/role-permissions` into `page.tsx`.
+
+### Task 5 Amendment: Update hardcoded references to deleted suites
+
+**P2 Fix: Stale links to /suites/testing and /suites/additional-pipeline**
+
+Update these files to point to new locations:
+
+1. `src/lib/page-directory.ts` line 63 — change `/suites/additional-pipeline` to `/suites/service` (or remove)
+2. `src/lib/page-directory.ts` line 69 — change `/suites/testing` to `/suites/admin` (testing content moved to admin)
+3. `src/app/prototypes/solar-checkout/page.tsx` line 17 — update any back-link to `/suites/admin`
+4. `src/app/prototypes/solar-surveyor/page.tsx` line 17 — update any back-link to `/suites/admin`
+5. `src/app/prototypes/home-refresh/catalog.ts` line 42 — update reference
+6. `src/app/dashboards/product-comparison/page.tsx` line 365 — update back-link to `/suites/admin`
+
+Run a full grep for `/suites/testing` and `/suites/additional-pipeline` to catch any others.
+
+### Task 8 Amendment: Defer role removal, keep normalizeRole
+
+**P1 Fix: Don't remove normalizeRole — keep it for rollout safety**
+
+Task 8 should NOT remove the legacy roles from the Prisma schema in this PR. Instead:
+
+1. **Keep** `normalizeRole()` function as-is (MANAGER→PROJECT_MANAGER, DESIGNER/PERMITTING→TECH_OPS)
+2. **Keep** legacy role entries in `ROLE_PERMISSIONS` and `SUITE_SWITCHER_ALLOWLIST` (they serve as fallbacks)
+3. **Keep** legacy role references in API allowlists (BOM routes, schedule routes, admin routes)
+4. **Only** migrate users in the database and mark the schema enum values with deprecation comments
+5. **Defer** actual enum removal to a follow-up PR after confirming:
+   - Zero users with legacy roles in prod
+   - All JWT tokens have cycled (force sign-out or wait TTL)
+   - No API consumers sending legacy role strings
+
+Full list of files with legacy role references that would break on removal:
+- `src/app/api/bom/upload/route.ts` (lines 25-30)
+- `src/app/api/bom/extract/route.ts` (lines 33-38)
+- `src/app/api/bom/history/route.ts` (lines 20-22)
+- `src/app/api/bom/chunk/route.ts` (lines 26-27)
+- `src/app/api/bom/upload-token/route.ts` (lines 27-32)
+- `src/app/api/zuper/jobs/schedule/route.ts` (line 14)
+- `src/app/api/admin/activity/route.ts` (lines 15-18)
+- `src/app/api/admin/migrate/route.ts` (lines 34-38)
+- `src/app/admin/users/page.tsx` (lines 41-48)
+- `src/app/admin/directory/page.tsx` (lines 28-44)
+- `src/app/admin/activity/page.tsx` (lines 43-45)
+- `src/app/dashboards/site-survey-scheduler/page.tsx` (line 159)
+
+### Task 10 Amendment: Add tests for routing changes
+
+**P3 Fix: Add tests for auth/routing changes**
+
+Create `src/__tests__/lib/role-permissions.test.ts`:
+
+```typescript
+import { canAccessRoute } from "@/lib/role-permissions";
+
+describe("canAccessRoute - new suite structure", () => {
+  // Intelligence suite access
+  it("allows OPERATIONS_MANAGER to access Intelligence dashboards", () => {
+    expect(canAccessRoute("OPERATIONS_MANAGER", "/dashboards/at-risk")).toBe(true);
+    expect(canAccessRoute("OPERATIONS_MANAGER", "/dashboards/capacity")).toBe(true);
+    expect(canAccessRoute("OPERATIONS_MANAGER", "/suites/intelligence")).toBe(true);
+  });
+
+  it("allows PROJECT_MANAGER to access Intelligence dashboards", () => {
+    expect(canAccessRoute("PROJECT_MANAGER", "/dashboards/pipeline")).toBe(true);
+    expect(canAccessRoute("PROJECT_MANAGER", "/dashboards/project-management")).toBe(true);
+  });
+
+  it("blocks OPERATIONS from Intelligence dashboards", () => {
+    expect(canAccessRoute("OPERATIONS", "/dashboards/at-risk")).toBe(false);
+    expect(canAccessRoute("OPERATIONS", "/suites/intelligence")).toBe(false);
+  });
+
+  it("blocks SALES from suite browsing", () => {
+    expect(canAccessRoute("SALES", "/suites/operations")).toBe(false);
+    expect(canAccessRoute("SALES", "/suites/intelligence")).toBe(false);
+  });
+
+  // Home access for role-based landing
+  it("allows all non-VIEWER roles to access home", () => {
+    expect(canAccessRoute("OPERATIONS", "/")).toBe(true);
+    expect(canAccessRoute("TECH_OPS", "/")).toBe(true);
+    expect(canAccessRoute("SALES", "/")).toBe(true);
+  });
+
+  it("blocks VIEWER from home", () => {
+    expect(canAccessRoute("VIEWER", "/")).toBe(false);
+  });
+
+  // BOM History access
+  it("allows OPERATIONS to access BOM History", () => {
+    expect(canAccessRoute("OPERATIONS", "/dashboards/bom/history")).toBe(true);
+  });
+
+  // Admin-only dashboards
+  it("blocks non-admin from Zuper Compliance", () => {
+    expect(canAccessRoute("OPERATIONS_MANAGER", "/dashboards/zuper-compliance")).toBe(false);
+    expect(canAccessRoute("PROJECT_MANAGER", "/dashboards/mobile")).toBe(false);
+  });
+});
+```
+
+Run: `npm run test -- --testPathPattern=role-permissions`
+
+### Updated Dependency Order
+
+```
+Task 1 (suite-nav) ──────┐
+Task 2 (SUITE_MAP+bom) ──┼── Task 5 (suite pages + stale links) ─── Task 6 (home+browse fix) ─── Task 10 (verify+tests)
+Task 3 (permissions+home)┘         │
+                         Task 4 (intelligence) ┘
+
+Task 7 (executive) ── standalone
+Task 8 (schema) ── DEFERRED to follow-up PR
+Task 9 (app icon) ── standalone
+```
