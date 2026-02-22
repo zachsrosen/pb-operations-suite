@@ -34,7 +34,7 @@ const SUITE_MAP: Record<string, { href: string; label: string }> = {
   "/dashboards/optimizer": { href: "/suites/intelligence", label: "Intelligence" },
   "/dashboards/capacity": { href: "/suites/intelligence", label: "Intelligence" },
   "/dashboards/pe": { href: "/suites/intelligence", label: "Intelligence" },
-  "/dashboards/sales": { href: "/suites/intelligence", label: "Intelligence" },
+  "/dashboards/sales": { href: "/", label: "Home" },
   "/dashboards/project-management": { href: "/suites/intelligence", label: "Intelligence" },
   "/dashboards/design-engineering": { href: "/suites/intelligence", label: "Intelligence" },
   "/dashboards/permitting-interconnection": { href: "/suites/intelligence", label: "Intelligence" },

@@ -36,7 +36,7 @@ export const AI_MODEL = "gpt-4o-mini";
 // Role guard
 // ============================================================
 
-const AI_ALLOWED_ROLES = new Set(["ADMIN", "OWNER"]);
+const AI_ALLOWED_ROLES = new Set(["ADMIN", "OWNER", "OPERATIONS_MANAGER", "PROJECT_MANAGER"]);
 
 export function isAIAuthorized(role: string): boolean {
   return AI_ALLOWED_ROLES.has(role);

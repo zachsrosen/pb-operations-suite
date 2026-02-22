@@ -73,7 +73,7 @@ const SEED_DATA = [
   },
   {
     name: "Nick Scarpellino",
-    email: "nick@photonbrothers.com",
+    email: "nick.scarpellino@photonbrothers.com",
     zuperUserUid: "8e67159c-48fe-4fb0-acc3-b1c905ff6e95",
     zuperTeamUid: ZUPER_TEAM_UIDS["San Luis Obispo"],
     role: "surveyor",
