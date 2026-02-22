@@ -28,9 +28,9 @@ function makeRfc2822(opts: {
     ``,
     `--${boundary}`,
     `Content-Type: text/html; charset=utf-8`,
-    `Content-Transfer-Encoding: quoted-printable`,
+    `Content-Transfer-Encoding: base64`,
     ``,
-    opts.html,
+    Buffer.from(opts.html, "utf-8").toString("base64"),
     ``,
     `--${boundary}--`,
   ];
