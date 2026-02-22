@@ -175,7 +175,7 @@ export default function BomHistoryPage() {
                 {grouped[group].map((s) => (
                   <div
                     key={s.id}
-                    onClick={() => router.push(`/dashboards/bom?deal=${s.dealId}`)}
+                    onClick={() => router.push(`/dashboards/bom?deal=${s.dealId}&load=latest`)}
                     className="cursor-pointer border-b border-t-border last:border-b-0 hover:bg-surface-2 transition-colors"
                   >
                     {/* Desktop row */}

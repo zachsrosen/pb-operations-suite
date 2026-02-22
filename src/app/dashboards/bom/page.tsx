@@ -454,11 +454,21 @@ function BomDashboardInner() {
   useEffect(() => {
     if (!linkedProject) { setSnapshots([]); setSavedVersion(null); return; }
     setHistoryLoading(true);
+    const autoLoad = searchParams.get("load") === "latest";
     fetch(`/api/bom/history?dealId=${encodeURIComponent(linkedProject.hs_object_id)}`)
       .then((r) => r.ok ? r.json() : Promise.reject(r.status))
-      .then((data: { snapshots: BomSnapshot[] }) => setSnapshots(data.snapshots))
+      .then((data: { snapshots: BomSnapshot[] }) => {
+        setSnapshots(data.snapshots);
+        // If arriving from BOM History page, auto-load the most recent snapshot
+        if (autoLoad && data.snapshots.length > 0) {
+          const latest = data.snapshots[0]; // newest-first from API
+          loadBomData(latest.bomData);
+          setSavedVersion(latest.version);
+        }
+      })
       .catch(() => {/* silent */})
       .finally(() => setHistoryLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [linkedProject]);
 
   /* ---- Load Drive design files when project has a design folder ---- */
