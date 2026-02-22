@@ -506,17 +506,27 @@ function BomDashboardInner() {
       .then((data: { projects?: ProjectResult[] }) => {
         if (cancelled) return;
         const results: ProjectResult[] = data.projects ?? [];
-        const addrLower = rawAddress.toLowerCase();
-        const custLower = (bom.project.customer ?? "").toLowerCase();
+        // Normalize BOM address to street-only, e.g. "1617 rancho way"
+        const bomStreet = rawAddress.split(",")[0].trim().toLowerCase();
+        // Last name from BOM customer, e.g. "SILFVEN, ERIK" → "silfven"
+        const bomLastName = (bom.project.customer ?? "").split(/[,\s]+/)[0].trim().toLowerCase();
         let best: ProjectResult | null = null;
         let bestScore = 0;
         for (const p of results) {
-          let score = 0;
-          if (p.address && addrLower.includes(p.address.toLowerCase().split(",")[0])) score += 2;
-          if (custLower && p.dealname.toLowerCase().includes(custLower.split(" ")[0].toLowerCase())) score += 1;
+          if (!p.address) continue;
+          const hsStreet = p.address.split(",")[0].trim().toLowerCase();
+          const addressMatch =
+            bomStreet === hsStreet ||
+            bomStreet.startsWith(hsStreet) ||
+            hsStreet.startsWith(bomStreet);
+          // Address match is required — never suggest on name alone
+          if (!addressMatch) continue;
+          let score = 2; // address match baseline
+          // Bonus point if customer last name appears in the deal name
+          if (bomLastName && p.dealname.toLowerCase().includes(bomLastName)) score += 1;
           if (score > bestScore) { bestScore = score; best = p; }
         }
-        if (bestScore >= 1 && best) setAutoLinkSuggestion(best);
+        if (best) setAutoLinkSuggestion(best);
       })
       .catch(() => { /* silently ignore auto-link errors */ });
     return () => { cancelled = true; };
@@ -583,12 +593,26 @@ function BomDashboardInner() {
   }, [linkedProject, addToast, session]);
 
   /* ---- Load BOM helper ---- */
-  const loadBomData = useCallback((data: BomData) => {
+  // freshExtract=true when loading a newly extracted PDF (not a saved snapshot).
+  // In that case we clear the linked project and stale ?deal= URL param so a
+  // previously linked project doesn't carry over to a completely different job.
+  const loadBomData = useCallback((data: BomData, freshExtract = false) => {
     if (!data.items || !Array.isArray(data.items)) {
       throw new Error('Response must have an "items" array');
     }
     setBom(data);
     setItems(assignIds(data.items));
+    if (freshExtract) {
+      setLinkedProject(null);
+      setSnapshots([]);
+      setSavedVersion(null);
+      setAutoLinkSuggestion(null);
+      // Remove stale ?deal= param from URL without a navigation
+      const url = new URL(window.location.href);
+      url.searchParams.delete("deal");
+      url.searchParams.delete("load");
+      window.history.replaceState({}, "", url.toString());
+    }
   }, []);
 
   /* ---- Safe fetch helper — handles non-JSON error responses ---- */
@@ -673,10 +697,11 @@ function BomDashboardInner() {
         body: JSON.stringify({ blobUrl }),
       });
       const data = await safeFetchBom(res);
-      loadBomData(data);
+      const projectAtExtract = linkedProject; // capture before loadBomData clears it
+      loadBomData(data, true);
       addToast({ type: "success", title: `BOM extracted from ${uploadFile.name}` });
-      // Auto-save snapshot if a project is linked
-      if (linkedProject) {
+      // Auto-save snapshot if a project was linked at extract time
+      if (projectAtExtract) {
         await saveSnapshot(data, uploadFile.name, blobUrl);
       }
     } catch (e) {
@@ -712,10 +737,10 @@ function BomDashboardInner() {
         body: JSON.stringify({ driveUrl: downloadUrl, fileId }),
       });
       const data = await safeFetchBom(proxyRes);
-      loadBomData(data);
+      const projectAtExtract = linkedProject;
+      loadBomData(data, true);
       addToast({ type: "success", title: "BOM extracted from Google Drive" });
-      // Auto-save snapshot if a project is linked
-      if (linkedProject) {
+      if (projectAtExtract) {
         await saveSnapshot(data, driveUrl);
       }
     } catch (e) {
@@ -737,9 +762,10 @@ function BomDashboardInner() {
         body: JSON.stringify({ driveUrl: downloadUrl, fileId: file.id }),
       });
       const data = await safeFetchBom(proxyRes);
-      loadBomData(data);
+      const projectAtExtract = linkedProject;
+      loadBomData(data, true);
       addToast({ type: "success", title: `BOM extracted from ${file.name}` });
-      if (linkedProject) await saveSnapshot(data, file.name, downloadUrl);
+      if (projectAtExtract) await saveSnapshot(data, file.name, downloadUrl);
     } catch (e) {
       addToast({ type: "error", title: e instanceof Error ? e.message : "Extraction failed" });
     } finally {
