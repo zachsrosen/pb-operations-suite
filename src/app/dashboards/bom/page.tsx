@@ -587,12 +587,26 @@ function BomDashboardInner() {
   }, [linkedProject, addToast, session]);
 
   /* ---- Load BOM helper ---- */
-  const loadBomData = useCallback((data: BomData) => {
+  // freshExtract=true when loading a newly extracted PDF (not a saved snapshot).
+  // In that case we clear the linked project and stale ?deal= URL param so a
+  // previously linked project doesn't carry over to a completely different job.
+  const loadBomData = useCallback((data: BomData, freshExtract = false) => {
     if (!data.items || !Array.isArray(data.items)) {
       throw new Error('Response must have an "items" array');
     }
     setBom(data);
     setItems(assignIds(data.items));
+    if (freshExtract) {
+      setLinkedProject(null);
+      setSnapshots([]);
+      setSavedVersion(null);
+      setAutoLinkSuggestion(null);
+      // Remove stale ?deal= param from URL without a navigation
+      const url = new URL(window.location.href);
+      url.searchParams.delete("deal");
+      url.searchParams.delete("load");
+      window.history.replaceState({}, "", url.toString());
+    }
   }, []);
 
   /* ---- Safe fetch helper — handles non-JSON error responses ---- */
@@ -677,10 +691,11 @@ function BomDashboardInner() {
         body: JSON.stringify({ blobUrl }),
       });
       const data = await safeFetchBom(res);
-      loadBomData(data);
+      const projectAtExtract = linkedProject; // capture before loadBomData clears it
+      loadBomData(data, true);
       addToast({ type: "success", title: `BOM extracted from ${uploadFile.name}` });
-      // Auto-save snapshot if a project is linked
-      if (linkedProject) {
+      // Auto-save snapshot if a project was linked at extract time
+      if (projectAtExtract) {
         await saveSnapshot(data, uploadFile.name, blobUrl);
       }
     } catch (e) {
@@ -716,10 +731,10 @@ function BomDashboardInner() {
         body: JSON.stringify({ driveUrl: downloadUrl, fileId }),
       });
       const data = await safeFetchBom(proxyRes);
-      loadBomData(data);
+      const projectAtExtract = linkedProject;
+      loadBomData(data, true);
       addToast({ type: "success", title: "BOM extracted from Google Drive" });
-      // Auto-save snapshot if a project is linked
-      if (linkedProject) {
+      if (projectAtExtract) {
         await saveSnapshot(data, driveUrl);
       }
     } catch (e) {
@@ -741,9 +756,10 @@ function BomDashboardInner() {
         body: JSON.stringify({ driveUrl: downloadUrl, fileId: file.id }),
       });
       const data = await safeFetchBom(proxyRes);
-      loadBomData(data);
+      const projectAtExtract = linkedProject;
+      loadBomData(data, true);
       addToast({ type: "success", title: `BOM extracted from ${file.name}` });
-      if (linkedProject) await saveSnapshot(data, file.name, downloadUrl);
+      if (projectAtExtract) await saveSnapshot(data, file.name, downloadUrl);
     } catch (e) {
       addToast({ type: "error", title: e instanceof Error ? e.message : "Extraction failed" });
     } finally {
