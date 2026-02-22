@@ -36,6 +36,41 @@ interface ZohoInventoryListItemsResponse {
   };
 }
 
+export interface ZohoVendor {
+  contact_id: string;
+  contact_name: string;
+}
+
+interface ZohoVendorListResponse {
+  code?: number;
+  message?: string;
+  contacts?: ZohoVendor[];
+}
+
+export interface ZohoPurchaseOrderLineItem {
+  item_id?: string;       // Omit when no Zoho SKU match
+  name: string;
+  quantity: number;
+  description?: string;
+}
+
+export interface ZohoPurchaseOrderPayload {
+  vendor_id: string;
+  reference_number: string;
+  notes?: string;
+  status: "draft";
+  line_items: ZohoPurchaseOrderLineItem[];
+}
+
+interface ZohoPurchaseOrderCreateResponse {
+  code?: number;
+  message?: string;
+  purchaseorder?: {
+    purchaseorder_id: string;
+    purchaseorder_number: string;
+  };
+}
+
 interface ZohoTokenRefreshResponse {
   access_token?: string;
   expires_in?: number;
@@ -157,6 +192,31 @@ export class ZohoInventoryClient {
     return items;
   }
 
+  async listVendors(): Promise<ZohoVendor[]> {
+    const response = await this.request<ZohoVendorListResponse>("/contacts", {
+      contact_type: "vendor",
+      per_page: 200,
+    });
+    return Array.isArray(response.contacts) ? response.contacts : [];
+  }
+
+  async createPurchaseOrder(
+    payload: ZohoPurchaseOrderPayload
+  ): Promise<{ purchaseorder_id: string; purchaseorder_number: string }> {
+    const result = await this.requestPost<ZohoPurchaseOrderCreateResponse>(
+      "/purchaseorders",
+      payload
+    );
+    const po = result.purchaseorder;
+    if (!po?.purchaseorder_id) {
+      throw new Error(result.message ?? "Zoho did not return a purchase order ID");
+    }
+    return {
+      purchaseorder_id: po.purchaseorder_id,
+      purchaseorder_number: po.purchaseorder_number,
+    };
+  }
+
   private async request<T>(path: string, query: Record<string, string | number | undefined> = {}): Promise<T> {
     if (!this.organizationId) {
       throw new Error("ZOHO_INVENTORY_ORG_ID is not configured");
@@ -217,6 +277,69 @@ export class ZohoInventoryClient {
       const message = typeof json.message === "string"
         ? json.message
         : `Zoho Inventory API error (code ${code})`;
+      throw new Error(message);
+    }
+
+    return json as unknown as T;
+  }
+
+  private async requestPost<T>(path: string, body: unknown): Promise<T> {
+    if (!this.organizationId) {
+      throw new Error("ZOHO_INVENTORY_ORG_ID is not configured");
+    }
+
+    const params = new URLSearchParams();
+    params.set("organization_id", this.organizationId);
+
+    const url = `${buildUrl(this.configuredBaseUrl, path)}?${params.toString()}`;
+
+    const doFetch = async (token: string) => {
+      return withTimeout(
+        fetch(url, {
+          method: "POST",
+          headers: {
+            Authorization: `Zoho-oauthtoken ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(body),
+          cache: "no-store",
+        }),
+        this.timeoutMs
+      );
+    };
+
+    let token = await this.getAccessToken();
+    let response = await doFetch(token);
+
+    if (response.status === 401 && this.canRefreshToken()) {
+      this.dynamicAccessToken = undefined;
+      this.dynamicTokenExpiresAtMs = 0;
+      token = await this.getAccessToken(true);
+      response = await doFetch(token);
+    }
+
+    const raw = await response.text();
+    let json: Record<string, unknown> = {};
+    try {
+      json = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+    } catch {
+      json = { message: raw };
+    }
+
+    if (!response.ok) {
+      const message =
+        typeof json.message === "string"
+          ? json.message
+          : `Zoho Inventory request failed (${response.status})`;
+      throw new Error(message);
+    }
+
+    const code = typeof json.code === "number" ? json.code : undefined;
+    if (code !== undefined && code !== 0) {
+      const message =
+        typeof json.message === "string"
+          ? json.message
+          : `Zoho Inventory API error (code ${code})`;
       throw new Error(message);
     }
 
