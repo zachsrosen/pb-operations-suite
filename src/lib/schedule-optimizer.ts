@@ -168,13 +168,10 @@ export function generateOptimizedSchedule(
   }));
   scored.sort((a, b) => b.score - a.score);
 
-  // Initialize crew next-available dates
-  const crewNextDate: Record<string, string> = {};
-  for (const [, locationCrews] of Object.entries(crews)) {
-    for (const crew of locationCrews) {
-      crewNextDate[crew.name] = startDate;
-    }
-  }
+  // Note: we intentionally search from `startDate` for every crew on every
+  // project (no forward-only crewNextDate pointer). This allows smaller jobs
+  // to backfill gaps that larger jobs had to skip over. The `addBlockedDates`
+  // call after each assignment prevents double-booking.
 
   // Build blocked dates per crew from existing bookings
   const crewBlockedDates: Record<string, Set<string>> = {};
@@ -250,13 +247,15 @@ export function generateOptimizedSchedule(
 
     const days = Math.max(1, Math.ceil(project.daysInstall));
 
-    // Find the crew with the earliest non-conflicting start date
+    // Find the crew with the earliest non-conflicting start date.
+    // Always search from `startDate` so smaller jobs can backfill gaps
+    // that larger jobs had to skip over.
     let bestCrew = locationCrews[0];
-    let bestDate = findNextAvailableDate(bestCrew.name, crewNextDate[bestCrew.name] || startDate, days);
+    let bestDate = findNextAvailableDate(bestCrew.name, startDate, days);
 
     for (let i = 1; i < locationCrews.length; i++) {
       const crew = locationCrews[i];
-      const nextDate = findNextAvailableDate(crew.name, crewNextDate[crew.name] || startDate, days);
+      const nextDate = findNextAvailableDate(crew.name, startDate, days);
       if (nextDate < bestDate) {
         bestCrew = crew;
         bestDate = nextDate;
@@ -264,10 +263,6 @@ export function generateOptimizedSchedule(
     }
 
     const jobStartDate = bestDate;
-    const endDateInclusive = getBusinessEndDateInclusive(jobStartDate, days);
-
-    // Next available = next business day AFTER the inclusive end date
-    crewNextDate[bestCrew.name] = nextBusinessDayAfter(endDateInclusive);
 
     // Mark these dates as blocked for future assignments in this run
     addBlockedDates(bestCrew.name, jobStartDate, days);

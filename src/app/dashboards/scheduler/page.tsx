@@ -469,7 +469,7 @@ function transformProject(p: RawProject): SchedulerProject | null {
     daysInstall: isBuildStage
       ? p.daysForInstallers || p.expectedDaysForInstall || 2
       : stage === "survey" || stage === "inspection"
-        ? 0.25
+        ? 1
         : 0,
     daysElec: isBuildStage ? p.daysForElectricians || 0 : 0,
     totalDays: isBuildStage ? p.expectedDaysForInstall || 0 : 0,
@@ -572,6 +572,7 @@ export default function SchedulerPage() {
   const [optimizeOpen, setOptimizeOpen] = useState(false);
   const [optimizePreset, setOptimizePreset] = useState<ScoringPreset>("balanced");
   const [optimizeLocations, setOptimizeLocations] = useState<string[]>([]); // empty = all locations
+  const [optimizeStartDate, setOptimizeStartDate] = useState<string>(""); // empty = default (next business day)
   const [optimizeResult, setOptimizeResult] = useState<ReturnType<typeof generateOptimizedSchedule> | null>(null);
   const [optimizeApplying, setOptimizeApplying] = useState(false);
   const [optimizeProgress, setOptimizeProgress] = useState({ current: 0, total: 0, failed: 0 });
@@ -673,7 +674,7 @@ export default function SchedulerPage() {
               const proj = transformed.find((p: SchedulerProject) => p.id === projId);
               if (proj?.zuperJobStatus && proj?.zuperScheduledStart) continue;
               const isSI = proj?.stage === "survey" || proj?.stage === "inspection";
-              const fallbackDays = isSI ? 0.25 : (proj?.daysInstall || proj?.totalDays || 2);
+              const fallbackDays = isSI ? 1 : (proj?.daysInstall || proj?.totalDays || 2);
               restoredManualSchedules[projId] = {
                 startDate: rec.scheduledDate,
                 days: rec.scheduledDays || fallbackDays,
@@ -954,9 +955,9 @@ export default function SchedulerPage() {
             ...p,
             date: p.inspectionScheduleDate,
             eventType: done ? (failed ? "inspection-fail" : "inspection-pass") : "inspection",
-            days: 0.25,
+            days: 1,
             isCompleted: done,
-            isOverdue: isOverdueCheck(schedDate, 0.25, done, false),
+            isOverdue: isOverdueCheck(schedDate, 1, done, false),
             isInspectionFailed: failed,
           });
         }
@@ -973,9 +974,9 @@ export default function SchedulerPage() {
             ...p,
             date: p.surveyScheduleDate,
             eventType: done ? "survey-complete" : "survey",
-            days: 0.25,
+            days: 1,
             isCompleted: done,
-            isOverdue: isOverdueCheck(schedDate, 0.25, done, false),
+            isOverdue: isOverdueCheck(schedDate, 1, done, false),
           });
         }
       }
@@ -1297,7 +1298,7 @@ export default function SchedulerPage() {
       const adjustedDate = getNextWorkday(dateStr);
       const isSurveyOrInspection =
         project.stage === "survey" || project.stage === "inspection";
-      setInstallDaysInput(isSurveyOrInspection ? 0.25 : project.zuperScheduledDays || project.daysInstall || 2);
+      setInstallDaysInput(isSurveyOrInspection ? 1 : project.zuperScheduledDays || project.daysInstall || 2);
       // Pre-select the default user/crew based on schedule type
       if (project.stage === "survey") {
         const surveyUsers = ZUPER_SURVEY_USERS[project.location] || [];
@@ -1326,7 +1327,7 @@ export default function SchedulerPage() {
     const { project, date } = scheduleModal;
     const isSurveyOrInsp = project.stage === "survey" || project.stage === "inspection";
     const selectedSlot = isSurveyOrInsp ? availableSlots[selectedSlotIdx] : null;
-    const days = isSurveyOrInsp ? 0.25 : (installDaysInput || 2);
+    const days = isSurveyOrInsp ? 1 : (installDaysInput || 2);
     const crew = crewSelectInput || project.crew || "";
     // For survey/inspection, derive times from selected slot; for construction, use defaults
     const slotStartTime = selectedSlot?.startTime || "08:00";
@@ -1725,14 +1726,18 @@ export default function SchedulerPage() {
       CREWS,
       ZUPER_CONSTRUCTION_DIRECTORS,
       LOCATION_TIMEZONES,
-      { preset: optimizePreset, existingBookings }
+      {
+        preset: optimizePreset,
+        existingBookings,
+        ...(optimizeStartDate ? { startDate: optimizeStartDate } : {}),
+      }
     );
 
     setOptimizeResult(result);
     if (result.entries.length === 0) showToast("No eligible RTB projects to optimize", "error");
     if (result.skipped.length > 0)
       showToast(`${result.skipped.length} skipped (unmapped location)`, "error");
-  }, [projects, manualSchedules, optimizePreset, optimizeLocations, buildExistingBookings, showToast]);
+  }, [projects, manualSchedules, optimizePreset, optimizeLocations, optimizeStartDate, buildExistingBookings, showToast]);
 
   const handleOptimizeApply = useCallback(async () => {
     if (!optimizeResult?.entries.length) return;
@@ -2254,6 +2259,31 @@ export default function SchedulerPage() {
                     Reset to all locations
                   </button>
                 )}
+
+                {/* Start date filter */}
+                <div className="flex items-center gap-2">
+                  <label className="text-[0.55rem] text-muted whitespace-nowrap">Schedule after:</label>
+                  <input
+                    type="date"
+                    value={optimizeStartDate}
+                    onChange={(e) => {
+                      setOptimizeStartDate(e.target.value);
+                      setOptimizeResult(null);
+                    }}
+                    className="flex-1 px-2 py-0.5 text-[0.55rem] rounded-md bg-background border border-t-border text-foreground"
+                  />
+                  {optimizeStartDate && (
+                    <button
+                      onClick={() => {
+                        setOptimizeStartDate("");
+                        setOptimizeResult(null);
+                      }}
+                      className="text-[0.5rem] text-muted hover:text-foreground transition-colors"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
 
                 {/* Generate button */}
                 <button
@@ -3989,11 +4019,11 @@ export default function SchedulerPage() {
                       type="number"
                       value={installDaysInput}
                       onChange={(e) =>
-                        setInstallDaysInput(parseFloat(e.target.value) || 0.25)
+                        setInstallDaysInput(parseInt(e.target.value, 10) || 1)
                       }
-                      min={0.25}
+                      min={1}
                       max={10}
-                      step={0.25}
+                      step={1}
                       className="bg-background border border-t-border text-foreground/90 px-2 py-1.5 rounded font-mono text-[0.75rem] w-[60px] text-center focus:outline-none focus:border-orange-500"
                     />
                     <label className="text-[0.7rem] text-muted">Crew:</label>
@@ -4271,7 +4301,7 @@ export default function SchedulerPage() {
                     detailModal.zuperScheduledDays ||
                     scheduleInfo?.days ||
                     detailModal.daysInstall ||
-                    (isSurveyOrInspection ? 0.25 : 2);
+                    (isSurveyOrInspection ? 1 : 2);
                   // Prefer Zuper start date if available
                   const displayDate = detailModal.zuperScheduledStart
                     ? detailModal.zuperScheduledStart.split("T")[0]

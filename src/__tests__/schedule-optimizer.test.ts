@@ -416,6 +416,38 @@ describe("generateOptimizedSchedule", () => {
     expect(result.entries[0].startDate).toBe("2026-03-09"); // Next Monday
   });
 
+  it("backfills earlier gaps when a smaller job fits in a slot a larger job skipped", () => {
+    // Scenario: single-crew location, existing booking blocks Thu.
+    // Project A (3 days, high priority) can't fit Mon-Wed because the 3-day span
+    // Mon-Wed is fine, but let's say we have a booking Thu-Fri that pushes
+    // a 3-day job past Mon. Actually:
+    // - Existing booking: COSP Alpha blocked on Wed Mar 4 (1 day)
+    // - Project A needs 3 days → Mon(2)-Wed(4) overlaps Wed → conflict.
+    //   Tries Tue(3)-Thu(5): Wed blocked → conflict. Wed(4): blocked → conflict.
+    //   Thu(5): Thu-Mon(9) → no conflict → schedules Thu Mar 5.
+    //   crewNextDate advances to Tue Mar 10.
+    // - Project B needs 1 day → should fill Mon Mar 2 or Tue Mar 3 (the gap),
+    //   NOT start from Mar 10.
+    const projects = [
+      makeProject({ id: "big", location: "Colorado Springs", amount: 100000, daysInstall: 3 }),
+      makeProject({ id: "small", location: "Colorado Springs", amount: 10000, daysInstall: 1 }),
+    ];
+    const existingBookings = [
+      { crew: "COSP Alpha", startDate: "2026-03-04", days: 1 }, // Wed blocked
+    ];
+    const result = generateOptimizedSchedule(projects, CREWS, DIRECTORS, TIMEZONES, {
+      startDate: "2026-03-02", // Mon
+      existingBookings,
+    });
+    expect(result.entries).toHaveLength(2);
+    const big = result.entries.find(e => e.project.id === "big")!;
+    const small = result.entries.find(e => e.project.id === "small")!;
+    // Big job can't start Mon (Mon-Wed overlaps blocked Wed), starts Thu Mar 5
+    expect(big.startDate).toBe("2026-03-05");
+    // Small job (1 day) SHOULD backfill to Mon Mar 2 — the gap before the blocked Wed
+    expect(small.startDate).toBe("2026-03-02");
+  });
+
   it("blocks all location crews when all are booked (fallback behavior)", () => {
     // Simulates what happens when existingBookings are built from an
     // unresolvable crew name — the scheduler page blocks ALL crews at the
