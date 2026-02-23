@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { getServiceAccountToken } from "@/lib/google-auth";
+import { getToken } from "next-auth/jwt";
 
 export const runtime = "nodejs";
 export const maxDuration = 15;
@@ -11,6 +12,29 @@ interface DriveFile {
   name: string;
   modifiedTime: string;
   size: string;
+}
+
+/**
+ * Returns the best available Google OAuth token for Drive access.
+ * Reads the user's OAuth access_token directly from the JWT (server-side only —
+ * never exposed to the client). Falls back to the service account token if the
+ * user token is missing or expired.
+ */
+async function getDriveToken(request: NextRequest): Promise<string> {
+  // Prefer user's OAuth token — has natural Workspace Drive access
+  try {
+    const token = await getToken({ req: request });
+    const accessToken = (token as Record<string, unknown> | null)?.accessToken as string | undefined;
+    const expires = (token as Record<string, unknown> | null)?.accessTokenExpires as number | undefined;
+    if (accessToken && (expires == null || Date.now() < expires)) {
+      return accessToken;
+    }
+  } catch {
+    // fall through to service account
+  }
+
+  // Fallback: service account (requires manual folder sharing)
+  return getServiceAccountToken(["https://www.googleapis.com/auth/drive.readonly"]);
 }
 
 export async function GET(request: NextRequest) {
@@ -26,9 +50,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const token = await getServiceAccountToken([
-      "https://www.googleapis.com/auth/drive.readonly",
-    ]);
+    const token = await getDriveToken(request);
 
     const query = encodeURIComponent(
       `'${folderId}' in parents and mimeType='application/pdf' and trashed=false`
@@ -44,7 +66,7 @@ export async function GET(request: NextRequest) {
       const err = await driveRes.json().catch(() => ({})) as { error?: { message?: string } };
       return NextResponse.json(
         { files: [], error: err.error?.message ?? `Drive error ${driveRes.status}` },
-        { status: 200 } // Return 200 with empty list so UI can show graceful message
+        { status: 200 } // Return 200 with empty list so UI shows graceful message
       );
     }
 

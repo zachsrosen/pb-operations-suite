@@ -6,6 +6,9 @@ import { exportToCSV } from "@/lib/export";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useToast } from "@/contexts/ToastContext";
 import { useSession } from "next-auth/react";
+import BomHistoryDrawer from "@/components/BomHistoryDrawer";
+import type { BomSnapshot as BomSnapshotGlobal } from "@/lib/bom-history";
+import PushToSystemsModal, { type PushItem } from "@/components/PushToSystemsModal";
 // PDF upload uses chunked /api/bom/chunk — stays on our domain, no CORS issues
 
 /* ------------------------------------------------------------------ */
@@ -338,7 +341,7 @@ function diffBoms(itemsA: Omit<BomItem, "id">[], itemsB: Omit<BomItem, "id">[]):
 /*  Component                                                           */
 /* ------------------------------------------------------------------ */
 
-type ImportTab = "upload" | "drive" | "paste";
+type ImportTab = "upload" | "drive" | "paste" | "project-files";
 
 function BomDashboardInner() {
   const { addToast } = useToast();
@@ -388,6 +391,8 @@ function BomDashboardInner() {
   const [compareA, setCompareA] = useState<BomSnapshot | null>(null);
   const [compareB, setCompareB] = useState<BomSnapshot | null>(null);
   const [showDiff, setShowDiff] = useState(false);
+  const [historyDrawerOpen, setHistoryDrawerOpen] = useState(false);
+  const [pushItem, setPushItem] = useState<PushItem | null>(null);
   const diffRows = compareA && compareB ? diffBoms(compareA.bomData.items, compareB.bomData.items) : [];
 
   // Product catalog comparison data
@@ -508,8 +513,12 @@ function BomDashboardInner() {
     fetch(`/api/bom/drive-files?folderId=${encodeURIComponent(folderId)}`)
       .then((r) => r.json())
       .then((data: { files: DriveFile[]; error?: string }) => {
-        setDriveFiles(data.files ?? []);
+        const files = data.files ?? [];
+        setDriveFiles(files);
         if (data.error) setDriveFilesError(data.error);
+        if (files.length > 0) {
+          setImportTab("project-files");
+        }
       })
       .catch(() => setDriveFilesError("Failed to load design files"))
       .finally(() => setDriveFilesLoading(false));
@@ -683,6 +692,8 @@ function BomDashboardInner() {
     setItems(assignIds(data.items));
     if (freshExtract) {
       setLinkedProject(null);
+      setImportTab("upload");
+      setDriveFiles([]);
       setSnapshots([]);
       setSavedVersion(null);
       setZohoPoId(null);
@@ -958,7 +969,7 @@ function BomDashboardInner() {
     });
     const customer = bom?.project?.customer || "bom";
     exportToCSV(rows, `${customer.replace(/\s+/g, "_")}_BOM`);
-  }, [items, bom, catalogStatus]);
+  }, [items, bom, catalogStatus, catalogSources]);
 
   /* ---- Copy Markdown ---- */
   const handleCopyMarkdown = useCallback(async () => {
@@ -1002,7 +1013,7 @@ function BomDashboardInner() {
 
     await navigator.clipboard.writeText(lines.join("\n"));
     addToast({ type: "success", title: "Markdown copied to clipboard" });
-  }, [items, bom, catalogStatus, addToast]);
+  }, [items, bom, catalogStatus, addToast, catalogSources]);
 
   /* ---- Save to Inventory ---- */
   const handleSaveInventory = useCallback(async () => {
@@ -1011,7 +1022,8 @@ function BomDashboardInner() {
       const res = await fetch("/api/bom/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bom: { ...bom, items: items.map(({ id: _id, ...rest }) => rest) } }),
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        body: JSON.stringify({ bom: { ...bom, items: items.map(({ id: _bomId, ...rest }) => rest) } }),
       });
       if (!res.ok) throw new Error(`Save failed (${res.status})`);
       const data = await res.json() as { created: number; updated: number; skipped: number };
@@ -1029,7 +1041,8 @@ function BomDashboardInner() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          bomData: { ...bom, items: items.map(({ id: _id, ...rest }) => rest) },
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          bomData: { ...bom, items: items.map(({ id: _bomId, ...rest }) => rest) },
           dealName: linkedProject?.dealname,
           version: savedVersion ?? undefined,
         }),
@@ -1111,6 +1124,23 @@ function BomDashboardInner() {
                   {tab === "paste" && "{ } Paste JSON"}
                 </button>
               ))}
+              {linkedProject?.designFolderUrl && (
+                <button
+                  onClick={() => { setImportTab("project-files"); setImportError(null); }}
+                  className={`px-5 py-3 text-sm font-medium transition-colors whitespace-nowrap ${
+                    importTab === "project-files"
+                      ? "text-cyan-500 border-b-2 border-cyan-500 bg-surface"
+                      : "text-muted hover:text-foreground"
+                  }`}
+                >
+                  📁 Design Folder
+                  {driveFiles.length > 0 && (
+                    <span className="ml-1.5 inline-flex items-center justify-center rounded-full bg-cyan-500/20 text-cyan-400 text-xs px-1.5 py-0.5">
+                      {driveFiles.length}
+                    </span>
+                  )}
+                </button>
+              )}
             </div>
 
             <div className="p-6">
@@ -1252,6 +1282,55 @@ function BomDashboardInner() {
                   >
                     Load BOM
                   </button>
+                </div>
+              )}
+
+              {importTab === "project-files" && (
+                <div className="space-y-3">
+                  <p className="text-sm text-muted">
+                    Planset PDFs in{" "}
+                    <span className="text-foreground font-medium">{linkedProject?.dealname}</span>
+                    &apos;s design folder. Click a file to extract the BOM.
+                  </p>
+
+                  {driveFilesLoading && (
+                    <p className="text-sm text-muted animate-pulse py-4 text-center">Loading design files…</p>
+                  )}
+                  {driveFilesError && (
+                    <p className="text-sm text-red-500">{driveFilesError}</p>
+                  )}
+                  {!driveFilesLoading && !driveFilesError && driveFiles.length === 0 && (
+                    <p className="text-sm text-muted py-4 text-center">No PDFs found in this project&apos;s design folder.</p>
+                  )}
+
+                  {driveFiles.map((file) => (
+                    <div
+                      key={file.id}
+                      className="flex items-center justify-between gap-3 rounded-lg border border-t-border bg-surface-2 px-4 py-3 hover:bg-surface-elevated transition-colors"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium text-foreground truncate">{file.name}</div>
+                        <div className="text-xs text-muted mt-0.5">
+                          {file.size ? `${(parseInt(file.size) / 1024 / 1024).toFixed(1)} MB · ` : ""}
+                          Modified {new Date(file.modifiedTime).toLocaleDateString()}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleExtractDriveFile(file)}
+                        disabled={extracting}
+                        className="flex-shrink-0 px-4 py-1.5 rounded-lg bg-cyan-600 text-white text-sm font-medium hover:bg-cyan-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                      >
+                        {extractingDriveFileId === file.id ? (
+                          <>
+                            <span className="inline-block w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            Extracting…
+                          </>
+                        ) : (
+                          "Extract BOM"
+                        )}
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
@@ -1415,7 +1494,11 @@ function BomDashboardInner() {
                   )}
                   {!saving && bom && (
                     <button
-                      onClick={() => saveSnapshot({ ...bom, items: items.map(({ id: _id, ...rest }) => rest) })}
+                      onClick={() => {
+                        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+                        const stripped = items.map(({ id: _bomId, ...rest }) => rest);
+                        saveSnapshot({ ...bom, items: stripped });
+                      }}
                       className="text-xs text-cyan-600 dark:text-cyan-400 hover:underline"
                     >
                       Save current BOM
@@ -1461,7 +1544,7 @@ function BomDashboardInner() {
                     <span className="text-xs text-muted animate-pulse">Loading vendors…</span>
                   )}
                   <button
-                    onClick={() => { setLinkedProject(null); setSnapshots([]); setSavedVersion(null); setZohoPoId(null); setZohoVendors(null); router.replace("/dashboards/bom"); }}
+                    onClick={() => { setLinkedProject(null); setImportTab("upload"); setDriveFiles([]); setSnapshots([]); setSavedVersion(null); setZohoPoId(null); setZohoVendors(null); router.replace("/dashboards/bom"); }}
                     className="text-xs text-muted hover:text-foreground"
                   >
                     Unlink
@@ -1602,7 +1685,7 @@ function BomDashboardInner() {
                 🖨 Print
               </button>
               <button
-                onClick={() => router.push("/dashboards/bom/history")}
+                onClick={() => setHistoryDrawerOpen(true)}
                 className="px-4 py-2 rounded-lg bg-surface border border-t-border text-sm text-foreground hover:bg-surface-2 transition-colors"
               >
                 ⏱ BOM History
@@ -1942,7 +2025,25 @@ function BomDashboardInner() {
                             <td className="px-4 py-1.5 text-muted text-xs">{item.source}</td>
                             {catalogSources.map((src) => (
                               <td key={src} className="px-2 py-1.5 text-center">
-                                <CatalogDot present={status?.[src]} loading={catalogLoading} />
+                                <span className="inline-flex items-center gap-1">
+                                  <CatalogDot present={status?.[src]} loading={catalogLoading} />
+                                  {!status?.[src] && !catalogLoading && (
+                                    <button
+                                      onClick={() => setPushItem({
+                                        brand: item.brand ?? "",
+                                        model: item.model ?? "",
+                                        description: item.description,
+                                        category: item.category,
+                                        unitSpec: item.unitSpec,
+                                        unitLabel: item.unitLabel,
+                                        dealId: linkedProject?.hs_object_id,
+                                      })}
+                                      className="opacity-0 group-hover:opacity-100 transition-opacity text-xs text-cyan-600 dark:text-cyan-400 hover:underline px-1.5"
+                                    >
+                                      + Add
+                                    </button>
+                                  )}
+                                </span>
                               </td>
                             ))}
                             <td className="px-3 py-1.5">
@@ -1971,6 +2072,36 @@ function BomDashboardInner() {
           </>
         )}
       </div>
+      <PushToSystemsModal
+        item={pushItem}
+        onClose={() => setPushItem(null)}
+      />
+      <BomHistoryDrawer
+        open={historyDrawerOpen}
+        onClose={() => setHistoryDrawerOpen(false)}
+        onSelect={(snap: BomSnapshotGlobal) => {
+          if (linkedProject?.hs_object_id === snap.dealId) {
+            // Already on this deal — directly reload history and load the latest snapshot
+            setHistoryLoading(true);
+            fetch(`/api/bom/history?dealId=${encodeURIComponent(snap.dealId)}`)
+              .then((r) => r.ok ? r.json() : Promise.reject(r.status))
+              .then((data: { snapshots: BomSnapshot[] }) => {
+                setSnapshots(data.snapshots);
+                if (data.snapshots.length > 0) {
+                  const latest = data.snapshots[0];
+                  loadBomData(latest.bomData);
+                  setSavedVersion(latest.version);
+                  setZohoPoId(latest.zohoPoId ?? null);
+                }
+              })
+              .catch(() => {/* silent */})
+              .finally(() => setHistoryLoading(false));
+          } else {
+            // Different deal — navigate and let the history useEffect auto-load
+            router.push(`/dashboards/bom?deal=${snap.dealId}&load=latest`);
+          }
+        }}
+      />
       </DashboardShell>
     </>
   );

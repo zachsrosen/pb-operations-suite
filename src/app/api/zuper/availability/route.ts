@@ -122,16 +122,17 @@ const TEAM_LOCATION_NAMES: Record<string, string> = {
 
 const CREW_SCHEDULES: CrewSchedule[] = [
   // Site Surveyors — userUid and teamUid are resolved dynamically from Zuper API
-  {
-    name: "Drew Perry",
-    location: "DTC",
-    reportLocation: "DTC",
-    schedule: [
-      { day: 2, startTime: "12:00", endTime: "15:00" }, // Tue
-      { day: 4, startTime: "12:00", endTime: "15:00" }, // Thu
-    ],
-    jobTypes: ["survey"],
-  },
+  // TEMPORARILY REMOVED — Drew sprained his ankle (2026-02-23)
+  // {
+  //   name: "Drew Perry",
+  //   location: "DTC",
+  //   reportLocation: "DTC",
+  //   schedule: [
+  //     { day: 2, startTime: "12:00", endTime: "15:00" }, // Tue
+  //     { day: 4, startTime: "12:00", endTime: "15:00" }, // Thu
+  //   ],
+  //   jobTypes: ["survey"],
+  // },
   {
     name: "Joe Lynch",
     location: "Westminster",

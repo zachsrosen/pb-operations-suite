@@ -27,6 +27,9 @@ declare module "next-auth/jwt" {
   interface JWT {
     role?: string;
     roleSyncedAt?: number;
+    accessToken?: string;
+    refreshToken?: string;
+    accessTokenExpires?: number;
   }
 }
 
@@ -103,11 +106,22 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       if (token.role) {
         session.user.role = token.role as string;
       }
+      // Note: accessToken intentionally NOT forwarded to session.user — it stays
+      // server-side in the JWT only. API routes read it via getToken({ req }).
       return session;
     },
-    async jwt({ token, user }) {
+    async jwt({ token, user, account }) {
       if (user) {
         token.id = user.id;
+      }
+
+      // Capture OAuth tokens on initial sign-in (account is only present on sign-in)
+      if (account?.access_token) {
+        token.accessToken = account.access_token;
+        token.refreshToken = account.refresh_token ?? token.refreshToken;
+        token.accessTokenExpires = account.expires_at
+          ? account.expires_at * 1000  // convert seconds → ms
+          : Date.now() + 3600 * 1000;
       }
 
       const needsRoleSync =

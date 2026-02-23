@@ -702,3 +702,37 @@ model ProjectBomSnapshot {
   @@index([dealId, version])
   @@index([createdAt])
 }
+
+enum PushStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model PendingCatalogPush {
+  id          String     @id @default(cuid())
+  status      PushStatus @default(PENDING)
+  // Item data snapshot (what was in the BOM row at time of request)
+  brand       String
+  model       String
+  description String
+  category    String     // BOM category string (may not be EquipmentCategory enum)
+  unitSpec    String?
+  unitLabel   String?
+  // Which systems to push to
+  systems     String[]   // ["INTERNAL", "ZOHO", "HUBSPOT", "ZUPER"]
+  // Context
+  requestedBy String     // user email
+  dealId      String?
+  note        String?    // rejection note from admin
+  // Results after approval (nullable until approved)
+  internalSkuId    String?
+  zohoItemId       String?
+  hubspotProductId String?
+  zuperItemId      String?
+  createdAt   DateTime   @default(now())
+  resolvedAt  DateTime?
+
+  @@index([status])
+  @@index([requestedBy])
+}
