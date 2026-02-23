@@ -6,7 +6,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { LOCATION_TIMEZONES } from "@/lib/constants";
-import { generateOptimizedSchedule, type OptimizableProject, type ScoringPreset } from "@/lib/schedule-optimizer";
+import { generateOptimizedSchedule, type OptimizableProject, type ScoringPreset, type ExistingBooking } from "@/lib/schedule-optimizer";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -1622,6 +1622,71 @@ export default function SchedulerPage() {
     }
   }, [manualSchedules, resolveMasterTentativeRecordId, showToast]);
 
+  /* ---- Optimizer helpers ---- */
+
+  const allCrewNames = useMemo(
+    () => new Set(Object.values(CREWS).flat().map((c) => c.name)),
+    []
+  );
+
+  const resolveCrewName = useCallback(
+    (crewValue: string): string | null => {
+      if (allCrewNames.has(crewValue)) return crewValue;
+      return null;
+    },
+    [allCrewNames]
+  );
+
+  /** Build a list of existing crew bookings from Zuper jobs, manual schedules,
+   *  and HubSpot construction dates so the optimizer avoids double-booking. */
+  const buildExistingBookings = useCallback(
+    (excludeProjectId?: string): ExistingBooking[] => {
+      const bookings: ExistingBooking[] = [];
+
+      const addLocationWideBooking = (location: string, startDate: string, days: number) => {
+        const loc = normalizeLocation(location);
+        const locationCrews = CREWS[loc];
+        if (!locationCrews) return;
+        for (const crew of locationCrews) {
+          bookings.push({ crew: crew.name, startDate, days });
+        }
+      };
+
+      for (const p of projects) {
+        if (excludeProjectId && p.id === excludeProjectId) continue;
+
+        // Zuper-scheduled construction jobs — we don't know the actual crew from
+        // Zuper, so block ALL crews at that location to prevent any overlap.
+        if (p.zuperJobCategory === "construction" && p.zuperScheduledStart) {
+          const startStr = p.zuperScheduledStart.split("T")[0];
+          const days = p.zuperScheduledDays || p.daysInstall || 1;
+          addLocationWideBooking(p.location, startStr, days);
+        }
+
+        // Manual/tentative schedules — resolve crew name if possible
+        const ms = manualSchedules[p.id];
+        if (ms && ms.scheduleType === "installation" && ms.crew) {
+          const crewName = resolveCrewName(ms.crew);
+          if (crewName) {
+            bookings.push({ crew: crewName, startDate: ms.startDate, days: ms.days });
+          } else {
+            // Can't resolve crew — block all location crews conservatively
+            addLocationWideBooking(p.location, ms.startDate, ms.days);
+          }
+        }
+
+        // HubSpot construction schedule date (not yet in Zuper) — block all location crews
+        if (p.constructionScheduleDate && !p.zuperScheduledStart) {
+          const days = p.daysInstall || 1;
+          addLocationWideBooking(p.location, p.constructionScheduleDate, days);
+        }
+      }
+
+      return bookings;
+    },
+    [projects, manualSchedules, resolveCrewName]
+  );
+
   /* ---- Optimizer handlers ---- */
 
   const handleOptimizeGenerate = useCallback(() => {
@@ -1653,19 +1718,21 @@ export default function SchedulerPage() {
       daysToInstall: p.daysToInstall,
     }));
 
+    const existingBookings = buildExistingBookings();
+
     const result = generateOptimizedSchedule(
       mapped,
       CREWS,
       ZUPER_CONSTRUCTION_DIRECTORS,
       LOCATION_TIMEZONES,
-      { preset: optimizePreset }
+      { preset: optimizePreset, existingBookings }
     );
 
     setOptimizeResult(result);
     if (result.entries.length === 0) showToast("No eligible RTB projects to optimize", "error");
     if (result.skipped.length > 0)
       showToast(`${result.skipped.length} skipped (unmapped location)`, "error");
-  }, [projects, manualSchedules, optimizePreset, optimizeLocations, showToast]);
+  }, [projects, manualSchedules, optimizePreset, optimizeLocations, buildExistingBookings, showToast]);
 
   const handleOptimizeApply = useCallback(async () => {
     if (!optimizeResult?.entries.length) return;
