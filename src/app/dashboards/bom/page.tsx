@@ -341,7 +341,7 @@ function diffBoms(itemsA: Omit<BomItem, "id">[], itemsB: Omit<BomItem, "id">[]):
 /*  Component                                                           */
 /* ------------------------------------------------------------------ */
 
-type ImportTab = "upload" | "drive" | "paste";
+type ImportTab = "upload" | "drive" | "paste" | "project-files";
 
 function BomDashboardInner() {
   const { addToast } = useToast();
@@ -513,8 +513,12 @@ function BomDashboardInner() {
     fetch(`/api/bom/drive-files?folderId=${encodeURIComponent(folderId)}`)
       .then((r) => r.json())
       .then((data: { files: DriveFile[]; error?: string }) => {
-        setDriveFiles(data.files ?? []);
+        const files = data.files ?? [];
+        setDriveFiles(files);
         if (data.error) setDriveFilesError(data.error);
+        if (files.length > 0) {
+          setImportTab("project-files");
+        }
       })
       .catch(() => setDriveFilesError("Failed to load design files"))
       .finally(() => setDriveFilesLoading(false));
@@ -688,6 +692,8 @@ function BomDashboardInner() {
     setItems(assignIds(data.items));
     if (freshExtract) {
       setLinkedProject(null);
+      setImportTab("upload");
+      setDriveFiles([]);
       setSnapshots([]);
       setSavedVersion(null);
       setZohoPoId(null);
@@ -1118,6 +1124,23 @@ function BomDashboardInner() {
                   {tab === "paste" && "{ } Paste JSON"}
                 </button>
               ))}
+              {linkedProject?.designFolderUrl && (
+                <button
+                  onClick={() => { setImportTab("project-files"); setImportError(null); }}
+                  className={`px-5 py-3 text-sm font-medium transition-colors whitespace-nowrap ${
+                    importTab === "project-files"
+                      ? "text-cyan-500 border-b-2 border-cyan-500 bg-surface"
+                      : "text-muted hover:text-foreground"
+                  }`}
+                >
+                  📁 Design Folder
+                  {driveFiles.length > 0 && (
+                    <span className="ml-1.5 inline-flex items-center justify-center rounded-full bg-cyan-500/20 text-cyan-400 text-xs px-1.5 py-0.5">
+                      {driveFiles.length}
+                    </span>
+                  )}
+                </button>
+              )}
             </div>
 
             <div className="p-6">
@@ -1259,6 +1282,55 @@ function BomDashboardInner() {
                   >
                     Load BOM
                   </button>
+                </div>
+              )}
+
+              {importTab === "project-files" && (
+                <div className="space-y-3">
+                  <p className="text-sm text-muted">
+                    Planset PDFs in{" "}
+                    <span className="text-foreground font-medium">{linkedProject?.dealname}</span>
+                    &apos;s design folder. Click a file to extract the BOM.
+                  </p>
+
+                  {driveFilesLoading && (
+                    <p className="text-sm text-muted animate-pulse py-4 text-center">Loading design files…</p>
+                  )}
+                  {driveFilesError && (
+                    <p className="text-sm text-red-500">{driveFilesError}</p>
+                  )}
+                  {!driveFilesLoading && !driveFilesError && driveFiles.length === 0 && (
+                    <p className="text-sm text-muted py-4 text-center">No PDFs found in this project&apos;s design folder.</p>
+                  )}
+
+                  {driveFiles.map((file) => (
+                    <div
+                      key={file.id}
+                      className="flex items-center justify-between gap-3 rounded-lg border border-t-border bg-surface-2 px-4 py-3 hover:bg-surface-elevated transition-colors"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium text-foreground truncate">{file.name}</div>
+                        <div className="text-xs text-muted mt-0.5">
+                          {file.size ? `${(parseInt(file.size) / 1024 / 1024).toFixed(1)} MB · ` : ""}
+                          Modified {new Date(file.modifiedTime).toLocaleDateString()}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleExtractDriveFile(file)}
+                        disabled={extracting}
+                        className="flex-shrink-0 px-4 py-1.5 rounded-lg bg-cyan-600 text-white text-sm font-medium hover:bg-cyan-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                      >
+                        {extractingDriveFileId === file.id ? (
+                          <>
+                            <span className="inline-block w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            Extracting…
+                          </>
+                        ) : (
+                          "Extract BOM"
+                        )}
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
@@ -1472,7 +1544,7 @@ function BomDashboardInner() {
                     <span className="text-xs text-muted animate-pulse">Loading vendors…</span>
                   )}
                   <button
-                    onClick={() => { setLinkedProject(null); setSnapshots([]); setSavedVersion(null); setZohoPoId(null); setZohoVendors(null); router.replace("/dashboards/bom"); }}
+                    onClick={() => { setLinkedProject(null); setImportTab("upload"); setDriveFiles([]); setSnapshots([]); setSavedVersion(null); setZohoPoId(null); setZohoVendors(null); router.replace("/dashboards/bom"); }}
                     className="text-xs text-muted hover:text-foreground"
                   >
                     Unlink
