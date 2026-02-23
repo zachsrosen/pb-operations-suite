@@ -1107,6 +1107,73 @@ function BomDashboardInner() {
 
         {!bom && !dealLoading && !historyLoading && (
           <div className="rounded-xl bg-surface border border-t-border shadow-card overflow-hidden">
+
+            {/* ---- Project link strip (pre-extraction) ---- */}
+            <div className="px-5 pt-4 pb-3 border-b border-t-border bg-surface-2 flex items-center gap-3">
+              {linkedProject ? (
+                <>
+                  <span className="text-sm text-foreground">
+                    🔗 <span className="font-medium">{linkedProject.dealname}</span>
+                  </span>
+                  {linkedProject.address && (
+                    <span className="text-xs text-muted truncate hidden sm:inline">{linkedProject.address}</span>
+                  )}
+                  {linkedProject.designFolderUrl && (
+                    <span className="text-xs text-cyan-500">📁 Design Folder available</span>
+                  )}
+                  <button
+                    onClick={() => { setLinkedProject(null); setImportTab("upload"); setDriveFiles([]); setSnapshots([]); }}
+                    className="ml-auto text-xs text-muted hover:text-foreground transition-colors"
+                  >
+                    Unlink
+                  </button>
+                </>
+              ) : (
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    placeholder="🔍 Link to HubSpot project (optional — enables Design Folder)…"
+                    value={projectSearch}
+                    onChange={(e) => handleProjectSearch(e.target.value)}
+                    className="w-full rounded-lg bg-surface border border-t-border text-sm text-foreground px-3 py-2 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 placeholder:text-muted"
+                  />
+                  {searchLoading && (
+                    <span className="absolute right-3 top-2.5 text-xs text-muted">searching…</span>
+                  )}
+                  {projectResults.length > 0 && (
+                    <div className="absolute z-20 mt-1 w-full rounded-lg bg-surface-elevated border border-t-border shadow-card-lg overflow-hidden">
+                      {projectResults.map((p) => (
+                        <button
+                          key={p.hs_object_id}
+                          onClick={() => {
+                            setLinkedProject(p);
+                            router.replace(`/dashboards/bom?deal=${encodeURIComponent(p.hs_object_id)}`);
+                            setProjectSearch("");
+                            setProjectResults([]);
+                          }}
+                          className="w-full text-left px-4 py-2.5 text-sm text-foreground hover:bg-surface-2 transition-colors border-b border-t-border last:border-b-0"
+                        >
+                          <span className="font-medium">{p.dealname}</span>
+                          {p.address && (
+                            <span className="text-muted ml-2 text-xs">{p.address}</span>
+                          )}
+                          {p.designFolderUrl && (
+                            <span className="ml-1.5 text-xs text-cyan-500" title="Has design folder">📁</span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              <button
+                onClick={() => setHistoryDrawerOpen(true)}
+                className="shrink-0 text-xs text-muted hover:text-foreground transition-colors flex items-center gap-1 px-2 py-1.5 rounded border border-t-border bg-surface hover:bg-surface-2"
+              >
+                ⏱ History
+              </button>
+            </div>
+
             {/* Tab bar */}
             <div className="flex border-b border-t-border">
               {(["upload", "drive", "paste"] as ImportTab[]).map((tab) => (

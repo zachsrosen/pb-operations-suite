@@ -68,6 +68,14 @@ const LINKS: SuitePageCard[] = [
     tagColor: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
     section: "Inventory & Equipment",
   },
+  {
+    href: "/dashboards/catalog",
+    title: "Equipment Catalog",
+    description: "Manage equipment SKUs and review approval-gated requests to push new items to all systems.",
+    tag: "CATALOG",
+    tagColor: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
+    section: "Inventory & Equipment",
+  },
 ];
 
 export default async function OperationsSuitePage() {
