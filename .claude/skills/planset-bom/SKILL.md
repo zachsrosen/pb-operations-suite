@@ -74,9 +74,11 @@ Add each row to the BOM as an `ELECTRICAL_BOS` item. Standard tags for Powerwall
 - **Tag C** — THWN-2, 6 AWG, 3/4" EMT (AC after Powerwall)
 - **Tag D** — THWN-2, 3/0 AWG, 2" EMT (utility/main panel feed)
 
-Also extract from PV-4:
-- Powerwall model number (e.g., `1707000-XX-Y`) from POWERWALL 3 SPECIFICATIONS table
-- Gateway model number (e.g., `1841000-X1-Y`) from SLD callout
+Also extract from PV-4 and use as the `model` field (part number, not product name):
+- Powerwall part number (e.g., `1707000-XX-Y`) from POWERWALL 3 SPECIFICATIONS table → `model: "1707000-XX-Y"`, `description: "TESLA POWERWALL 3, 13.5kWh BATTERY & INVERTER"`
+- Gateway part number (e.g., `1841000-X1-Y`) from SLD callout → `model: "1841000-X1-Y"`, `description: "TESLA BACKUP GATEWAY 3, 200A, NEMA 3R"`
+
+**Model field rule:** Always use the manufacturer part number (alphanumeric code from the planset specs) as `model`, never the marketing product name. Put the product name in `description`.
 
 ### 5. Run Validation Checks
 
@@ -145,7 +147,7 @@ Patterns seen across multiple reviewed jobs — expect to see these on most jobs
 - SEG Solar SEG-440-BTD-BG (440W) — N-Type bifacial
 - Hyundai Solar HiN-T440NF(BK) (440W) — N-Type TOPCon black frame
 
-**Battery/Inverter:** Tesla Powerwall-3 (13.5 kWh, 11.5 kW AC discharge, model 1707000-XX-Y)
+**Battery/Inverter:** Tesla Powerwall 3 → `brand: "Tesla"`, `model: "1707000-XX-Y"`, `description: "TESLA POWERWALL 3, 13.5kWh BATTERY & INVERTER"` (part number from PV-4 SPECIFICATIONS table)
 
 **Rapid Shutdown:** Tesla MCI-2 (standard) or MCI-2 High Current — count = number of modules / 2 rounded up, or 1 per string
 

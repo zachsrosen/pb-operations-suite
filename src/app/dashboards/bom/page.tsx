@@ -439,7 +439,9 @@ function BomDashboardInner() {
   /* ---- Load deal from ?deal= URL param on mount ---- */
   useEffect(() => {
     const dealId = searchParams.get("deal");
-    if (!dealId || linkedProject) return;
+    if (!dealId) return;
+    // Already loaded the correct deal — skip re-fetch (but allow switching deals)
+    if (linkedProject && linkedProject.hs_object_id === dealId) return;
     setDealLoading(true);
     fetch(`/api/projects/${encodeURIComponent(dealId)}`)
       .then((r) => r.ok ? r.json() : Promise.reject(r.status))
