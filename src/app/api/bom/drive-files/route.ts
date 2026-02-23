@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { getServiceAccountToken } from "@/lib/google-auth";
+import { auth } from "@/auth";
 
 export const runtime = "nodejs";
 export const maxDuration = 15;
@@ -11,6 +12,20 @@ interface DriveFile {
   name: string;
   modifiedTime: string;
   size: string;
+}
+
+async function getDriveToken(): Promise<string> {
+  // Prefer user's OAuth token — has natural Workspace Drive access
+  try {
+    const session = await auth();
+    const userToken = (session?.user as { accessToken?: string } | undefined)?.accessToken;
+    if (userToken) return userToken;
+  } catch {
+    // fall through to service account
+  }
+
+  // Fallback: service account (requires manual folder sharing)
+  return getServiceAccountToken(["https://www.googleapis.com/auth/drive.readonly"]);
 }
 
 export async function GET(request: NextRequest) {
@@ -26,9 +41,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const token = await getServiceAccountToken([
-      "https://www.googleapis.com/auth/drive.readonly",
-    ]);
+    const token = await getDriveToken();
 
     const query = encodeURIComponent(
       `'${folderId}' in parents and mimeType='application/pdf' and trashed=false`
@@ -44,7 +57,7 @@ export async function GET(request: NextRequest) {
       const err = await driveRes.json().catch(() => ({})) as { error?: { message?: string } };
       return NextResponse.json(
         { files: [], error: err.error?.message ?? `Drive error ${driveRes.status}` },
-        { status: 200 } // Return 200 with empty list so UI can show graceful message
+        { status: 200 } // Return 200 with empty list so UI shows graceful message
       );
     }
 
