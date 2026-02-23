@@ -48,7 +48,11 @@ export async function POST(
         category: push.category as EquipmentCategory,
         brand: push.brand,
         model: push.model,
-        unitSpec: push.unitSpec ? parseFloat(push.unitSpec) : null,
+        unitSpec: (() => {
+          if (!push.unitSpec) return null;
+          const parsed = parseFloat(push.unitSpec);
+          return isNaN(parsed) ? null : parsed;
+        })(),
         unitLabel: push.unitLabel,
       },
     });

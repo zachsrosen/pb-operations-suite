@@ -19,7 +19,6 @@ declare module "next-auth" {
       name?: string | null;
       image?: string | null;
       role?: string;
-      accessToken?: string;
     };
   }
 }
@@ -107,9 +106,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       if (token.role) {
         session.user.role = token.role as string;
       }
-      if (token.accessToken) {
-        session.user.accessToken = token.accessToken as string;
-      }
+      // Note: accessToken intentionally NOT forwarded to session.user — it stays
+      // server-side in the JWT only. API routes read it via getToken({ req }).
       return session;
     },
     async jwt({ token, user, account }) {

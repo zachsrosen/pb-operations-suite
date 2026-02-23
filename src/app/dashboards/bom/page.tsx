@@ -2080,7 +2080,26 @@ function BomDashboardInner() {
         open={historyDrawerOpen}
         onClose={() => setHistoryDrawerOpen(false)}
         onSelect={(snap: BomSnapshotGlobal) => {
-          router.push(`/dashboards/bom?deal=${snap.dealId}&load=latest`);
+          if (linkedProject?.hs_object_id === snap.dealId) {
+            // Already on this deal — directly reload history and load the latest snapshot
+            setHistoryLoading(true);
+            fetch(`/api/bom/history?dealId=${encodeURIComponent(snap.dealId)}`)
+              .then((r) => r.ok ? r.json() : Promise.reject(r.status))
+              .then((data: { snapshots: BomSnapshot[] }) => {
+                setSnapshots(data.snapshots);
+                if (data.snapshots.length > 0) {
+                  const latest = data.snapshots[0];
+                  loadBomData(latest.bomData);
+                  setSavedVersion(latest.version);
+                  setZohoPoId(latest.zohoPoId ?? null);
+                }
+              })
+              .catch(() => {/* silent */})
+              .finally(() => setHistoryLoading(false));
+          } else {
+            // Different deal — navigate and let the history useEffect auto-load
+            router.push(`/dashboards/bom?deal=${snap.dealId}&load=latest`);
+          }
         }}
       />
       </DashboardShell>

@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { getServiceAccountToken } from "@/lib/google-auth";
-import { auth } from "@/auth";
+import { getToken } from "next-auth/jwt";
 
 export const runtime = "nodejs";
 export const maxDuration = 15;
@@ -14,12 +14,21 @@ interface DriveFile {
   size: string;
 }
 
-async function getDriveToken(): Promise<string> {
+/**
+ * Returns the best available Google OAuth token for Drive access.
+ * Reads the user's OAuth access_token directly from the JWT (server-side only —
+ * never exposed to the client). Falls back to the service account token if the
+ * user token is missing or expired.
+ */
+async function getDriveToken(request: NextRequest): Promise<string> {
   // Prefer user's OAuth token — has natural Workspace Drive access
   try {
-    const session = await auth();
-    const userToken = (session?.user as { accessToken?: string } | undefined)?.accessToken;
-    if (userToken) return userToken;
+    const token = await getToken({ req: request });
+    const accessToken = (token as Record<string, unknown> | null)?.accessToken as string | undefined;
+    const expires = (token as Record<string, unknown> | null)?.accessTokenExpires as number | undefined;
+    if (accessToken && (expires == null || Date.now() < expires)) {
+      return accessToken;
+    }
   } catch {
     // fall through to service account
   }
@@ -41,7 +50,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const token = await getDriveToken();
+    const token = await getDriveToken(request);
 
     const query = encodeURIComponent(
       `'${folderId}' in parents and mimeType='application/pdf' and trashed=false`

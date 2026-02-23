@@ -1,7 +1,7 @@
 // src/components/BomHistoryDrawer.tsx
 "use client";
 
-import { useEffect, useState, useMemo, useRef } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { BomSnapshot, relativeTime, getDateGroup, GROUP_ORDER } from "@/lib/bom-history";
 
 interface Props {
@@ -15,12 +15,10 @@ export default function BomHistoryDrawer({ open, onClose, onSelect }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const hasFetched = useRef(false);
 
-  // Fetch once when drawer first opens
+  // Fetch fresh history each time the drawer opens
   useEffect(() => {
-    if (!open || hasFetched.current) return;
-    hasFetched.current = true;
+    if (!open) return;
     async function load() {
       setLoading(true);
       setError(null);
