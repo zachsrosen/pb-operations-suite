@@ -41,10 +41,16 @@ export async function GET(request: NextRequest) {
   const authResult = await requireApiAuth();
   if (authResult instanceof NextResponse) return authResult;
 
-  const folderId = request.nextUrl.searchParams.get("folderId");
-  if (!folderId) return NextResponse.json({ error: "folderId required" }, { status: 400 });
+  const folderParam = request.nextUrl.searchParams.get("folderId");
+  if (!folderParam) return NextResponse.json({ error: "folderId required" }, { status: 400 });
 
-  // Validate folderId format to prevent Drive query injection
+  // Accept either a bare folder ID or a full Drive URL — extract ID from URL if needed.
+  // Handles: https://drive.google.com/drive/folders/FOLDER_ID
+  //          https://drive.google.com/drive/folders/FOLDER_ID?usp=sharing
+  const driveUrlMatch = folderParam.match(/\/folders\/([a-zA-Z0-9_-]{10,})/);
+  const folderId = driveUrlMatch ? driveUrlMatch[1] : folderParam;
+
+  // Validate bare folder ID format to prevent Drive query injection
   if (!/^[a-zA-Z0-9_-]{10,}$/.test(folderId)) {
     return NextResponse.json({ error: "Invalid folderId format" }, { status: 400 });
   }
