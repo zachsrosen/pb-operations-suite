@@ -28,6 +28,14 @@ const LINKS: SuitePageCard[] = [
     section: "Risk & Quality",
   },
   {
+    href: "/dashboards/timeline",
+    title: "Timeline View",
+    description: "Gantt-style timeline showing project progression and milestones.",
+    tag: "TIMELINE",
+    tagColor: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+    section: "Pipeline & Capacity",
+  },
+  {
     href: "/dashboards/pipeline",
     title: "Pipeline Overview",
     description: "Full project pipeline with filters, priority scoring, and milestone tracking.",

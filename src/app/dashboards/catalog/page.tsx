@@ -5,6 +5,7 @@ import { useEffect, useState, useMemo, useCallback } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { useToast } from "@/contexts/ToastContext";
 import { useSession } from "next-auth/react";
+import PushToSystemsModal, { type PushItem } from "@/components/PushToSystemsModal";
 
 type Tab = "skus" | "pending";
 
@@ -52,6 +53,7 @@ export default function CatalogPage() {
 
   const userRole = (session?.user as { role?: string } | undefined)?.role ?? "";
   const isAdmin = ADMIN_ROLES.includes(userRole);
+  const [newProductItem, setNewProductItem] = useState<PushItem | null>(null);
 
   // Fetch SKUs
   const fetchSkus = useCallback(() => {
@@ -131,8 +133,8 @@ export default function CatalogPage() {
 
   return (
     <DashboardShell title="Equipment Catalog" accentColor="cyan">
-      {/* Tabs */}
-      <div className="flex gap-1 mb-6 border-b border-t-border">
+      {/* Tabs + Submit button */}
+      <div className="flex items-center gap-1 mb-6 border-b border-t-border">
         {(["skus", "pending"] as Tab[]).map((t) => (
           <button
             key={t}
@@ -155,6 +157,14 @@ export default function CatalogPage() {
             )}
           </button>
         ))}
+        <div className="ml-auto pb-px">
+          <button
+            onClick={() => setNewProductItem({ brand: "", model: "", description: "", category: "" })}
+            className="px-4 py-1.5 rounded-lg bg-cyan-600 text-white text-sm font-medium hover:bg-cyan-700 transition-colors flex items-center gap-1.5"
+          >
+            + Submit New Product
+          </button>
+        </div>
       </div>
 
       {/* SKUs Tab */}
@@ -292,6 +302,10 @@ export default function CatalogPage() {
           )}
         </div>
       )}
+      <PushToSystemsModal
+        item={newProductItem}
+        onClose={() => setNewProductItem(null)}
+      />
     </DashboardShell>
   );
 }

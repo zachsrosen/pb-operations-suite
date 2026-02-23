@@ -32,13 +32,6 @@ const LINKS: SuitePageCard[] = [
     section: "Scheduling",
   },
   {
-    href: "/dashboards/timeline",
-    title: "Timeline View",
-    description: "Gantt-style timeline showing project progression and milestones.",
-    tag: "PLANNING",
-    section: "Planning",
-  },
-  {
     href: "/dashboards/equipment-backlog",
     title: "Equipment Backlog",
     description: "Equipment forecasting by brand, model, and stage with location filtering.",
