@@ -10,15 +10,19 @@ export interface BomSnapshot {
   createdAt: string;
   customer: string | null;
   address: string | null;
+  /** Raw value from API; may be a numeric string. Coerce before arithmetic. */
   systemSizeKwdc: number | string | null;
+  /** Raw value from API; may be a numeric string. Coerce before arithmetic. */
   moduleCount: number | string | null;
   itemCount: number;
 }
 
 export function relativeTime(dateStr: string): string {
+  const then = new Date(dateStr);
+  if (isNaN(then.getTime())) return "Unknown";
   const now = Date.now();
-  const then = new Date(dateStr).getTime();
-  const diffMs = now - then;
+  const diffMs = now - then.getTime();
+  if (diffMs < 0) return then.toLocaleDateString(); // future date
   const diffSec = Math.floor(diffMs / 1000);
   const diffMin = Math.floor(diffSec / 60);
   const diffHr = Math.floor(diffMin / 60);
@@ -28,7 +32,7 @@ export function relativeTime(dateStr: string): string {
   if (diffHr < 24) return `${diffHr} hour${diffHr !== 1 ? "s" : ""} ago`;
   if (diffDay === 1) return "yesterday";
   if (diffDay < 7) return `${diffDay} days ago`;
-  return new Date(dateStr).toLocaleDateString();
+  return then.toLocaleDateString();
 }
 
 export function getDateGroup(dateStr: string): string {
