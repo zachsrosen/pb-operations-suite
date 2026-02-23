@@ -100,6 +100,7 @@ interface SchedulerProject {
   zuperScheduledStart?: string; // ISO date from Zuper
   zuperScheduledEnd?: string;   // ISO date from Zuper
   zuperJobCategory?: string;    // Which Zuper category matched: "survey" | "construction" | "inspection"
+  zuperAssignedTo?: string[];    // Zuper assigned user names (directors/technicians)
   daysToInstall: number | null;
   isCompletedPastStage: boolean; // Project moved past its stage (e.g. Close Out with inspection data) — calendar only, not sidebar
 }
@@ -162,6 +163,11 @@ const CREWS: Record<string, CrewConfig[]> = {
     { name: "CAM Crew", roofers: 2, electricians: 1, color: "#f43f5e" },
   ],
 };
+
+// Pre-computed set of all valid crew names for crew resolution
+const ALL_CREW_NAMES = new Set(
+  Object.values(CREWS).flat().map((c) => c.name)
+);
 
 const LOCATIONS = [
   "All",
@@ -392,6 +398,23 @@ function toDateStr(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+function getBusinessDatesInSpan(startDate: string, totalDays: number): string[] {
+  const days = Math.max(1, Math.ceil(totalDays));
+  const dates: string[] = [];
+  let cursor = startDate;
+  while (dates.length < days) {
+    if (!isWeekend(cursor)) dates.push(cursor);
+    cursor = addDays(cursor, 1);
+  }
+  return dates;
+}
+
+function hasBlockedDateConflict(blockedDates: Set<string> | undefined, startDate: string, totalDays: number): boolean {
+  if (!blockedDates || blockedDates.size === 0) return false;
+  const spanDates = getBusinessDatesInSpan(startDate, totalDays);
+  return spanDates.some((date) => blockedDates.has(date));
+}
+
 function normalizeLocation(location?: string | null): string {
   const value = (location || "").trim();
   if (!value) return "Unknown";
@@ -465,7 +488,7 @@ function transformProject(p: RawProject): SchedulerProject | null {
     batterySizeKwh: p.equipment?.battery?.sizeKwh || 0,
     ahj: p.ahj || "",
     utility: p.utility || "",
-    crew: CREWS[loc]?.[0]?.name || null,
+    crew: null, // No default — user must pick crew when scheduling
     daysInstall: isBuildStage
       ? p.daysForInstallers || p.expectedDaysForInstall || 2
       : stage === "survey" || stage === "inspection"
@@ -648,6 +671,7 @@ export default function SchedulerPage() {
             if (zJob.scheduledDays) project.zuperScheduledDays = zJob.scheduledDays;
             if (zJob.scheduledDate) project.zuperScheduledStart = zJob.scheduledDate;
             if (zJob.scheduledEnd) project.zuperScheduledEnd = zJob.scheduledEnd;
+            if (zJob.assignedTo) project.zuperAssignedTo = Array.isArray(zJob.assignedTo) ? zJob.assignedTo : [zJob.assignedTo];
           }
         }
       } catch (zuperErr) {
@@ -675,10 +699,21 @@ export default function SchedulerPage() {
               if (proj?.zuperJobStatus && proj?.zuperScheduledStart) continue;
               const isSI = proj?.stage === "survey" || proj?.stage === "inspection";
               const fallbackDays = isSI ? 1 : (proj?.daysInstall || proj?.totalDays || 2);
+              // Resolve crew name: rec.assignedUser may be a director name
+              // Extract crew from notes "— CREW_NAME" pattern (used by optimizer
+              // and rebalancer), falling back to assignedUser.
+              let rehydratedCrew = rec.assignedUser || "";
+              if (rec.notes) {
+                const crewMatch = rec.notes.match(/—\s*(.+)$/);
+                if (crewMatch) {
+                  const parsed = crewMatch[1].trim();
+                  if (ALL_CREW_NAMES.has(parsed)) rehydratedCrew = parsed;
+                }
+              }
               restoredManualSchedules[projId] = {
                 startDate: rec.scheduledDate,
                 days: rec.scheduledDays || fallbackDays,
-                crew: rec.assignedUser || "",
+                crew: rehydratedCrew,
                 isTentative: true,
                 recordId: rec.id,
                 scheduleType: rec.scheduleType,
@@ -840,6 +875,102 @@ export default function SchedulerPage() {
     setToast({ message, type });
     toastTimer.current = setTimeout(() => setToast(null), type === "error" ? 8000 : 3000);
   }, []);
+
+  /* ---- Crew booking helpers ---- */
+
+  const resolveCrewName = useCallback(
+    (crewValue: string): string | null => {
+      if (ALL_CREW_NAMES.has(crewValue)) return crewValue;
+      return null;
+    },
+    []
+  );
+
+  /** Build a list of existing crew bookings from Zuper jobs, manual schedules,
+   *  and HubSpot construction dates so the optimizer avoids double-booking. */
+  const buildExistingBookings = useCallback(
+    (excludeProjectId?: string): ExistingBooking[] => {
+      const bookings: ExistingBooking[] = [];
+
+      const addLocationWideBooking = (location: string, startDate: string, days: number) => {
+        const loc = normalizeLocation(location);
+        const locationCrews = CREWS[loc];
+        if (!locationCrews) return;
+        for (const crew of locationCrews) {
+          bookings.push({ crew: crew.name, startDate, days });
+        }
+      };
+
+      for (const p of projects) {
+        if (excludeProjectId && p.id === excludeProjectId) continue;
+
+        // Zuper-scheduled construction jobs — we don't know the actual crew from
+        // Zuper, so block ALL crews at that location to prevent any overlap.
+        if (p.zuperJobCategory === "construction" && p.zuperScheduledStart) {
+          const startStr = p.zuperScheduledStart.split("T")[0];
+          const days = p.zuperScheduledDays || p.daysInstall || 1;
+          addLocationWideBooking(p.location, startStr, days);
+        }
+
+        // Manual/tentative schedules — resolve crew name if possible
+        const ms = manualSchedules[p.id];
+        if (ms && ms.scheduleType === "installation" && ms.crew) {
+          const crewName = resolveCrewName(ms.crew);
+          if (crewName) {
+            bookings.push({ crew: crewName, startDate: ms.startDate, days: ms.days });
+          } else {
+            // Can't resolve crew — block all location crews conservatively
+            addLocationWideBooking(p.location, ms.startDate, ms.days);
+          }
+        }
+
+        // HubSpot construction schedule date (not yet in Zuper) — block all location crews
+        if (p.constructionScheduleDate && !p.zuperScheduledStart) {
+          const days = p.daysInstall || 1;
+          addLocationWideBooking(p.location, p.constructionScheduleDate, days);
+        }
+      }
+
+      return bookings;
+    },
+    [projects, manualSchedules, resolveCrewName]
+  );
+
+  /** Filter construction crew choices by booking conflicts for the schedule modal. */
+  const availableConstructionCrews = useMemo(() => {
+    if (!scheduleModal) return [] as CrewConfig[];
+    const isConstruction = scheduleModal.project.stage !== "survey" && scheduleModal.project.stage !== "inspection";
+    if (!isConstruction) return [] as CrewConfig[];
+
+    const locationCrews = CREWS[scheduleModal.project.location] || [];
+    if (locationCrews.length === 0) return [] as CrewConfig[];
+
+    const eb = buildExistingBookings(scheduleModal.project.id);
+    const blockedDatesByCrew: Record<string, Set<string>> = {};
+    for (const booking of eb) {
+      if (!blockedDatesByCrew[booking.crew]) blockedDatesByCrew[booking.crew] = new Set();
+      const blockedDates = getBusinessDatesInSpan(booking.startDate, booking.days);
+      for (const date of blockedDates) {
+        blockedDatesByCrew[booking.crew].add(date);
+      }
+    }
+
+    const days = Math.max(1, Math.ceil(installDaysInput || scheduleModal.project.daysInstall || 1));
+    return locationCrews.filter((crew) =>
+      !hasBlockedDateConflict(blockedDatesByCrew[crew.name], scheduleModal.date, days)
+    );
+  }, [scheduleModal, installDaysInput, buildExistingBookings]);
+
+  // Clear crew selection when it becomes unavailable due to booking conflicts
+  useEffect(() => {
+    if (!scheduleModal) return;
+    const isConstruction = scheduleModal.project.stage !== "survey" && scheduleModal.project.stage !== "inspection";
+    if (!isConstruction) return;
+
+    if (crewSelectInput && !availableConstructionCrews.some((crew) => crew.name === crewSelectInput)) {
+      setCrewSelectInput("");
+    }
+  }, [scheduleModal, crewSelectInput, availableConstructionCrews]);
 
   /* ================================================================ */
   /*  Derived data                                                     */
@@ -1307,8 +1438,7 @@ export default function SchedulerPage() {
         const inspUsers = ZUPER_INSPECTION_USERS[project.location] || [];
         setCrewSelectInput(inspUsers[0]?.name || "");
       } else {
-        const locationCrews = CREWS[project.location] || [];
-        setCrewSelectInput(project.crew || locationCrews[0]?.name || "");
+        setCrewSelectInput(project.crew || "");  // No default — user must explicitly choose a crew
       }
       trackFeature("schedule-modal-open", "Opened master schedule modal", {
         scheduler: "master",
@@ -1329,6 +1459,12 @@ export default function SchedulerPage() {
     const selectedSlot = isSurveyOrInsp ? availableSlots[selectedSlotIdx] : null;
     const days = isSurveyOrInsp ? 1 : (installDaysInput || 2);
     const crew = crewSelectInput || project.crew || "";
+
+    // Require crew selection for construction installs
+    if (!isSurveyOrInsp && !crew) {
+      showToast("Please select a crew before scheduling", "warning");
+      return;
+    }
     // For survey/inspection, derive times from selected slot; for construction, use defaults
     const slotStartTime = selectedSlot?.startTime || "08:00";
     const slotEndTime = selectedSlot?.endTime || (isSurveyOrInsp ? "09:00" : "16:00");
@@ -1622,71 +1758,6 @@ export default function SchedulerPage() {
       setCancellingTentative(false);
     }
   }, [manualSchedules, resolveMasterTentativeRecordId, showToast]);
-
-  /* ---- Optimizer helpers ---- */
-
-  const allCrewNames = useMemo(
-    () => new Set(Object.values(CREWS).flat().map((c) => c.name)),
-    []
-  );
-
-  const resolveCrewName = useCallback(
-    (crewValue: string): string | null => {
-      if (allCrewNames.has(crewValue)) return crewValue;
-      return null;
-    },
-    [allCrewNames]
-  );
-
-  /** Build a list of existing crew bookings from Zuper jobs, manual schedules,
-   *  and HubSpot construction dates so the optimizer avoids double-booking. */
-  const buildExistingBookings = useCallback(
-    (excludeProjectId?: string): ExistingBooking[] => {
-      const bookings: ExistingBooking[] = [];
-
-      const addLocationWideBooking = (location: string, startDate: string, days: number) => {
-        const loc = normalizeLocation(location);
-        const locationCrews = CREWS[loc];
-        if (!locationCrews) return;
-        for (const crew of locationCrews) {
-          bookings.push({ crew: crew.name, startDate, days });
-        }
-      };
-
-      for (const p of projects) {
-        if (excludeProjectId && p.id === excludeProjectId) continue;
-
-        // Zuper-scheduled construction jobs — we don't know the actual crew from
-        // Zuper, so block ALL crews at that location to prevent any overlap.
-        if (p.zuperJobCategory === "construction" && p.zuperScheduledStart) {
-          const startStr = p.zuperScheduledStart.split("T")[0];
-          const days = p.zuperScheduledDays || p.daysInstall || 1;
-          addLocationWideBooking(p.location, startStr, days);
-        }
-
-        // Manual/tentative schedules — resolve crew name if possible
-        const ms = manualSchedules[p.id];
-        if (ms && ms.scheduleType === "installation" && ms.crew) {
-          const crewName = resolveCrewName(ms.crew);
-          if (crewName) {
-            bookings.push({ crew: crewName, startDate: ms.startDate, days: ms.days });
-          } else {
-            // Can't resolve crew — block all location crews conservatively
-            addLocationWideBooking(p.location, ms.startDate, ms.days);
-          }
-        }
-
-        // HubSpot construction schedule date (not yet in Zuper) — block all location crews
-        if (p.constructionScheduleDate && !p.zuperScheduledStart) {
-          const days = p.daysInstall || 1;
-          addLocationWideBooking(p.location, p.constructionScheduleDate, days);
-        }
-      }
-
-      return bookings;
-    },
-    [projects, manualSchedules, resolveCrewName]
-  );
 
   /* ---- Optimizer handlers ---- */
 
@@ -4032,11 +4103,12 @@ export default function SchedulerPage() {
                       onChange={(e) => setCrewSelectInput(e.target.value)}
                       className="bg-background border border-t-border text-foreground/90 px-2 py-1.5 rounded font-mono text-[0.75rem] focus:outline-none focus:border-orange-500"
                     >
-                      {(CREWS[scheduleModal.project.location] || []).map((c) => (
+                      <option value="">Select crew…</option>
+                      {availableConstructionCrews.map((c) => (
                         <option key={c.name} value={c.name}>{c.name}</option>
                       ))}
-                      {!(CREWS[scheduleModal.project.location]?.length) && (
-                        <option>No crews</option>
+                      {availableConstructionCrews.length === 0 && (
+                        <option disabled>No crews available on this date</option>
                       )}
                     </select>
                   </div>
@@ -4329,6 +4401,13 @@ export default function SchedulerPage() {
                           "Unassigned"
                         }
                       />
+                      {detailModal.zuperAssignedTo && detailModal.zuperAssignedTo.length > 0 && (
+                        <ModalRow
+                          label="Assigned To"
+                          value={detailModal.zuperAssignedTo.join(", ")}
+                          valueClass="text-cyan-400"
+                        />
+                      )}
                       {detailModal.zuperScheduledStart && (
                         <div className="text-[0.6rem] text-cyan-400/70 mt-1">
                           Zuper: {formatShortDate(detailModal.zuperScheduledStart.split("T")[0])}
