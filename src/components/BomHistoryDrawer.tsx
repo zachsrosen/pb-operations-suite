@@ -1,7 +1,7 @@
 // src/components/BomHistoryDrawer.tsx
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { BomSnapshot, relativeTime, getDateGroup, GROUP_ORDER } from "@/lib/bom-history";
 
 interface Props {
@@ -15,16 +15,18 @@ export default function BomHistoryDrawer({ open, onClose, onSelect }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const hasFetched = useRef(false);
 
   // Fetch once when drawer first opens
   useEffect(() => {
-    if (!open || snapshots.length > 0) return;
-
+    if (!open || hasFetched.current) return;
+    hasFetched.current = true;
     async function load() {
       setLoading(true);
       setError(null);
       try {
         const r = await fetch("/api/bom/history/all");
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const data = await r.json();
         if (data.error) throw new Error(data.error);
         setSnapshots(data.snapshots ?? []);
@@ -34,9 +36,8 @@ export default function BomHistoryDrawer({ open, onClose, onSelect }: Props) {
         setLoading(false);
       }
     }
-
     void load();
-  }, [open, snapshots.length]);
+  }, [open]);
 
   const filtered = useMemo(() => {
     if (!search.trim()) return snapshots;
