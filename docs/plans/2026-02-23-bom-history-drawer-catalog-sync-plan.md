@@ -1315,6 +1315,208 @@ git commit -m "fix: lint and type cleanup from catalog sync feature"
 
 ---
 
+---
+
+## Phase 6 — Google Drive OAuth Token (Auto-Pull Plansets)
+
+### Background
+
+The BOM page already auto-fetches Drive files when a project has a `designFolderUrl` (via `useEffect` → `GET /api/bom/drive-files`). That route currently uses a **service account** (`getServiceAccountToken`). The user has now added `drive.readonly` scope to the Google OAuth flow, so each signed-in user's session token already has Drive access. We'll store the OAuth `access_token` in the JWT and use it in the Drive route, falling back to the service account if unavailable.
+
+**Why user token is better:** The service account needs explicit sharing on each Drive folder. The user's own Google account already has natural access to the company Workspace Drive.
+
+---
+
+### Task 12: Store Google OAuth access_token in JWT
+
+**Files:**
+- Modify: `src/auth.ts`
+
+**Step 1: Extend the JWT type to include accessToken and refreshToken**
+
+In the `declare module "next-auth/jwt"` block, add:
+```ts
+interface JWT {
+  role?: string;
+  roleSyncedAt?: number;
+  accessToken?: string;
+  refreshToken?: string;
+  accessTokenExpires?: number;
+}
+```
+
+**Step 2: Capture tokens in the jwt callback**
+
+In the `jwt` callback, the `account` parameter contains the OAuth tokens on first sign-in. Add token capture before the role sync logic:
+
+Find:
+```ts
+async jwt({ token, user }) {
+  if (user) {
+    token.id = user.id;
+  }
+```
+
+Replace with:
+```ts
+async jwt({ token, user, account }) {
+  if (user) {
+    token.id = user.id;
+  }
+  // Capture OAuth tokens on initial sign-in
+  if (account?.access_token) {
+    token.accessToken = account.access_token;
+    token.refreshToken = account.refresh_token ?? token.refreshToken;
+    token.accessTokenExpires = account.expires_at
+      ? account.expires_at * 1000  // convert to ms
+      : Date.now() + 3600 * 1000;
+  }
+```
+
+**Step 3: Extend Session type to expose accessToken to server**
+
+In the `declare module "next-auth"` block, add `accessToken` to the Session user:
+```ts
+interface Session {
+  user: {
+    id?: string;
+    email?: string | null;
+    name?: string | null;
+    image?: string | null;
+    role?: string;
+    accessToken?: string;
+  };
+}
+```
+
+**Step 4: Pass accessToken through in the session callback**
+
+In the `session` callback, add:
+```ts
+if (token.accessToken) {
+  session.user.accessToken = token.accessToken as string;
+}
+```
+
+**Step 5: Lint**
+
+```bash
+npm run lint -- --max-warnings=0 src/auth.ts
+```
+Expected: no errors.
+
+**Step 6: Commit**
+
+```bash
+git add src/auth.ts
+git commit -m "feat(auth): store Google OAuth access_token in JWT for Drive API calls"
+```
+
+---
+
+### Task 13: Update drive-files route to use user OAuth token with service account fallback
+
+**Files:**
+- Modify: `src/app/api/bom/drive-files/route.ts`
+
+**Step 1: Update the route to try user token first, then fall back to service account**
+
+Replace the entire file content with:
+
+```ts
+// src/app/api/bom/drive-files/route.ts
+import { NextRequest, NextResponse } from "next/server";
+import { requireApiAuth } from "@/lib/api-auth";
+import { getServiceAccountToken } from "@/lib/google-auth";
+import { auth } from "@/auth";
+
+export const runtime = "nodejs";
+export const maxDuration = 15;
+
+interface DriveFile {
+  id: string;
+  name: string;
+  modifiedTime: string;
+  size: string;
+}
+
+async function getDriveToken(): Promise<string> {
+  // Prefer user's OAuth token — already has natural Drive access via Workspace
+  try {
+    const session = await auth();
+    const userToken = (session?.user as { accessToken?: string })?.accessToken;
+    if (userToken) return userToken;
+  } catch {
+    // fall through to service account
+  }
+
+  // Fallback: service account (requires manual folder sharing)
+  return getServiceAccountToken(["https://www.googleapis.com/auth/drive.readonly"]);
+}
+
+export async function GET(request: NextRequest) {
+  const authResult = await requireApiAuth();
+  if (authResult instanceof NextResponse) return authResult;
+
+  const folderId = request.nextUrl.searchParams.get("folderId");
+  if (!folderId) return NextResponse.json({ error: "folderId required" }, { status: 400 });
+
+  // Validate folderId format to prevent Drive query injection
+  if (!/^[a-zA-Z0-9_-]{10,}$/.test(folderId)) {
+    return NextResponse.json({ error: "Invalid folderId format" }, { status: 400 });
+  }
+
+  try {
+    const token = await getDriveToken();
+
+    const query = encodeURIComponent(
+      `'${folderId}' in parents and mimeType='application/pdf' and trashed=false`
+    );
+    const fields = encodeURIComponent("files(id,name,modifiedTime,size)");
+    const url = `https://www.googleapis.com/drive/v3/files?q=${query}&fields=${fields}&orderBy=modifiedTime%20desc`;
+
+    const driveRes = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (!driveRes.ok) {
+      const err = await driveRes.json().catch(() => ({})) as { error?: { message?: string } };
+      return NextResponse.json(
+        { files: [], error: err.error?.message ?? `Drive error ${driveRes.status}` },
+        { status: 200 }
+      );
+    }
+
+    const data = await driveRes.json() as { files: DriveFile[] };
+    return NextResponse.json({ files: data.files ?? [] });
+  } catch (e) {
+    return NextResponse.json(
+      { files: [], error: e instanceof Error ? e.message : "Drive fetch failed" },
+      { status: 200 }
+    );
+  }
+}
+```
+
+**Step 2: Lint**
+
+```bash
+npm run lint -- --max-warnings=0 src/app/api/bom/drive-files/route.ts
+```
+
+**Step 3: Test manually**
+
+Start dev server, link a BOM deal that has a `designFolderUrl`, confirm Drive PDFs load in the import panel.
+
+**Step 4: Commit**
+
+```bash
+git add src/app/api/bom/drive-files/route.ts
+git commit -m "feat(api): use user OAuth token for Drive file listing, fall back to service account"
+```
+
+---
+
 ## Summary of New Files
 
 | File | Purpose |
@@ -1334,3 +1536,5 @@ git commit -m "fix: lint and type cleanup from catalog sync feature"
 |------|--------|
 | `prisma/schema.prisma` | Add `PendingCatalogPush` model + `PushStatus` enum |
 | `src/app/dashboards/bom/page.tsx` | Drawer button + drawer render + push modal |
+| `src/auth.ts` | Store OAuth access_token + refresh_token in JWT |
+| `src/app/api/bom/drive-files/route.ts` | Use user OAuth token; fall back to service account |
