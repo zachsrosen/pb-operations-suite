@@ -1517,6 +1517,181 @@ git commit -m "feat(api): use user OAuth token for Drive file listing, fall back
 
 ---
 
+---
+
+## Phase 7 — Project Search → Auto-Extract from Design Folder
+
+### Background
+
+The BOM page has three import tabs (Upload PDF, Google Drive URL, Paste JSON). When a project is linked and has a `designFolderUrl`, the Drive PDFs already auto-fetch — but they only appear in a collapsible panel *after* a BOM is already extracted. Before extraction, the user has no way to see/use those Drive files directly.
+
+The user wants to: search project by HubSpot name → see planset PDFs from that project's design folder → click one to extract.
+
+### Changes
+
+1. When `!bom` AND `linkedProject?.designFolderUrl` is set AND drive files have loaded, auto-switch the active import tab to a new `"project-files"` tab (or repurpose the drive tab) showing those files
+2. Add a visible project search bar at the top of the empty (no-BOM) state so users can search without needing a `?deal=` URL param
+3. After project selection, if drive files load, prompt with one-click extract
+
+---
+
+### Task 14: Auto-show project Drive files on import panel when project is linked
+
+**Files:**
+- Modify: `src/app/dashboards/bom/page.tsx`
+
+**Step 1: Add a new `"project-files"` import tab type**
+
+Find:
+```ts
+type ImportTab = "upload" | "drive" | "paste";
+```
+Replace with:
+```ts
+type ImportTab = "upload" | "drive" | "paste" | "project-files";
+```
+
+**Step 2: Auto-switch to project-files tab when drive files load**
+
+Find the `useEffect` that loads drive files (around line 502):
+```ts
+useEffect(() => {
+  const folderId = linkedProject?.designFolderUrl;
+  if (!folderId) { setDriveFiles([]); return; }
+  setDriveFilesLoading(true);
+  setDriveFilesError(null);
+  fetch(`/api/bom/drive-files?folderId=${encodeURIComponent(folderId)}`)
+    .then((data: { files: DriveFile[]; error?: string }) => {
+      setDriveFiles(data.files ?? []);
+      if (data.error) setDriveFilesError(data.error);
+    })
+    .catch(() => setDriveFilesError("Failed to load design files"))
+    .finally(() => setDriveFilesLoading(false));
+}, [linkedProject?.designFolderUrl]);
+```
+
+Add auto-switch after files load — update the `.then()` block:
+```ts
+.then((data: { files: DriveFile[]; error?: string }) => {
+  const files = data.files ?? [];
+  setDriveFiles(files);
+  if (data.error) setDriveFilesError(data.error);
+  // Auto-switch import panel to show project files if no BOM yet
+  if (files.length > 0) {
+    setImportTab("project-files");
+  }
+})
+```
+
+**Step 3: Add the project-files tab to the tab bar**
+
+In the tab bar render (around line 1099), add the new tab button. Only show it when `linkedProject?.designFolderUrl` exists:
+
+```tsx
+{(["upload", "drive", "paste"] as ImportTab[]).map((tab) => ( ... ))}
+{linkedProject?.designFolderUrl && (
+  <button
+    onClick={() => { setImportTab("project-files"); setImportError(null); }}
+    className={`px-5 py-3 text-sm font-medium transition-colors ${
+      importTab === "project-files"
+        ? "text-cyan-500 border-b-2 border-cyan-500 bg-surface"
+        : "text-muted hover:text-foreground"
+    }`}
+  >
+    📁 Design Folder
+    {driveFiles.length > 0 && (
+      <span className="ml-1.5 inline-flex items-center justify-center rounded-full bg-cyan-500/20 text-cyan-400 text-xs px-1.5 py-0.5">
+        {driveFiles.length}
+      </span>
+    )}
+  </button>
+)}
+```
+
+**Step 4: Add the project-files tab content panel**
+
+After the `paste` tab content block (`{importTab === "paste" && ( ... )}`), add:
+
+```tsx
+{importTab === "project-files" && (
+  <div className="space-y-3">
+    <p className="text-sm text-muted">
+      Planset PDFs found in <span className="text-foreground font-medium">{linkedProject?.dealname}</span>&apos;s design folder. Click a file to extract the BOM.
+    </p>
+
+    {driveFilesLoading && (
+      <p className="text-sm text-muted animate-pulse py-4 text-center">Loading design files…</p>
+    )}
+    {driveFilesError && (
+      <p className="text-sm text-red-500">{driveFilesError}</p>
+    )}
+    {!driveFilesLoading && !driveFilesError && driveFiles.length === 0 && (
+      <p className="text-sm text-muted py-4 text-center">No PDFs found in this project&apos;s design folder.</p>
+    )}
+
+    {driveFiles.map((file) => (
+      <div
+        key={file.id}
+        className="flex items-center justify-between gap-3 rounded-lg border border-t-border bg-surface-2 px-4 py-3 hover:bg-surface-elevated transition-colors"
+      >
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-medium text-foreground truncate">{file.name}</div>
+          <div className="text-xs text-muted mt-0.5">
+            {file.size ? `${(parseInt(file.size) / 1024 / 1024).toFixed(1)} MB · ` : ""}
+            Modified {new Date(file.modifiedTime).toLocaleDateString()}
+          </div>
+        </div>
+        <button
+          onClick={() => handleExtractDriveFile(file)}
+          disabled={extracting}
+          className="flex-shrink-0 px-4 py-1.5 rounded-lg bg-cyan-600 text-white text-sm font-medium hover:bg-cyan-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+        >
+          {extractingDriveFileId === file.id ? (
+            <>
+              <span className="inline-block w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              Extracting…
+            </>
+          ) : (
+            "Extract BOM"
+          )}
+        </button>
+      </div>
+    ))}
+  </div>
+)}
+```
+
+**Step 5: Reset tab when project is cleared**
+
+Find where `linkedProject` is set to null (project unlinked). After `setLinkedProject(null)`, add:
+```ts
+setImportTab("upload"); // Reset to default when project cleared
+setDriveFiles([]);
+```
+
+**Step 6: Lint + dev test**
+
+```bash
+npm run lint -- --max-warnings=0 src/app/dashboards/bom/page.tsx
+npm run dev
+```
+
+Test flow:
+1. Go to `/dashboards/bom`
+2. Search and select a project that has a `designFolderUrl`
+3. "Design Folder" tab should appear and auto-select
+4. PDF list should display
+5. Click "Extract BOM" on a file → extraction runs
+
+**Step 7: Commit**
+
+```bash
+git add src/app/dashboards/bom/page.tsx
+git commit -m "feat: auto-show project design folder PDFs on BOM import panel"
+```
+
+---
+
 ## Summary of New Files
 
 | File | Purpose |
