@@ -6,6 +6,8 @@ import { exportToCSV } from "@/lib/export";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useToast } from "@/contexts/ToastContext";
 import { useSession } from "next-auth/react";
+import BomHistoryDrawer from "@/components/BomHistoryDrawer";
+import type { BomSnapshot as BomSnapshotGlobal } from "@/lib/bom-history";
 // PDF upload uses chunked /api/bom/chunk — stays on our domain, no CORS issues
 
 /* ------------------------------------------------------------------ */
@@ -388,6 +390,7 @@ function BomDashboardInner() {
   const [compareA, setCompareA] = useState<BomSnapshot | null>(null);
   const [compareB, setCompareB] = useState<BomSnapshot | null>(null);
   const [showDiff, setShowDiff] = useState(false);
+  const [historyDrawerOpen, setHistoryDrawerOpen] = useState(false);
   const diffRows = compareA && compareB ? diffBoms(compareA.bomData.items, compareB.bomData.items) : [];
 
   // Product catalog comparison data
@@ -958,7 +961,7 @@ function BomDashboardInner() {
     });
     const customer = bom?.project?.customer || "bom";
     exportToCSV(rows, `${customer.replace(/\s+/g, "_")}_BOM`);
-  }, [items, bom, catalogStatus]);
+  }, [items, bom, catalogStatus, catalogSources]);
 
   /* ---- Copy Markdown ---- */
   const handleCopyMarkdown = useCallback(async () => {
@@ -1002,7 +1005,7 @@ function BomDashboardInner() {
 
     await navigator.clipboard.writeText(lines.join("\n"));
     addToast({ type: "success", title: "Markdown copied to clipboard" });
-  }, [items, bom, catalogStatus, addToast]);
+  }, [items, bom, catalogStatus, addToast, catalogSources]);
 
   /* ---- Save to Inventory ---- */
   const handleSaveInventory = useCallback(async () => {
@@ -1011,7 +1014,8 @@ function BomDashboardInner() {
       const res = await fetch("/api/bom/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bom: { ...bom, items: items.map(({ id: _id, ...rest }) => rest) } }),
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        body: JSON.stringify({ bom: { ...bom, items: items.map(({ id: _bomId, ...rest }) => rest) } }),
       });
       if (!res.ok) throw new Error(`Save failed (${res.status})`);
       const data = await res.json() as { created: number; updated: number; skipped: number };
@@ -1029,7 +1033,8 @@ function BomDashboardInner() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          bomData: { ...bom, items: items.map(({ id: _id, ...rest }) => rest) },
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          bomData: { ...bom, items: items.map(({ id: _bomId, ...rest }) => rest) },
           dealName: linkedProject?.dealname,
           version: savedVersion ?? undefined,
         }),
@@ -1415,7 +1420,11 @@ function BomDashboardInner() {
                   )}
                   {!saving && bom && (
                     <button
-                      onClick={() => saveSnapshot({ ...bom, items: items.map(({ id: _id, ...rest }) => rest) })}
+                      onClick={() => {
+                        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+                        const stripped = items.map(({ id: _bomId, ...rest }) => rest);
+                        saveSnapshot({ ...bom, items: stripped });
+                      }}
                       className="text-xs text-cyan-600 dark:text-cyan-400 hover:underline"
                     >
                       Save current BOM
@@ -1602,7 +1611,7 @@ function BomDashboardInner() {
                 🖨 Print
               </button>
               <button
-                onClick={() => router.push("/dashboards/bom/history")}
+                onClick={() => setHistoryDrawerOpen(true)}
                 className="px-4 py-2 rounded-lg bg-surface border border-t-border text-sm text-foreground hover:bg-surface-2 transition-colors"
               >
                 ⏱ BOM History
@@ -1971,6 +1980,13 @@ function BomDashboardInner() {
           </>
         )}
       </div>
+      <BomHistoryDrawer
+        open={historyDrawerOpen}
+        onClose={() => setHistoryDrawerOpen(false)}
+        onSelect={(snap: BomSnapshotGlobal) => {
+          router.push(`/dashboards/bom?deal=${snap.dealId}&load=latest`);
+        }}
+      />
       </DashboardShell>
     </>
   );
