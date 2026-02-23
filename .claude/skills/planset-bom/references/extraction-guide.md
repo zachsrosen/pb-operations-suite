@@ -96,7 +96,7 @@ The DESCRIPTION column in the PV-2 BOM table shows the *product name* (e.g., "TE
 | PV-2 DESCRIPTION (raw) | `model` to output | `description` to output |
 |------------------------|-------------------|------------------------|
 | `TESLA POWERWALL-3` | `1707000-XX-Y` ← from PV-4 spec table | `TESLA POWERWALL 3, 13.5kWh BATTERY & INVERTER` |
-| `TESLA POWERWALL-3 EXPANSION UNIT` | `1707100-XX-Y` ← from PV-4 spec table | `TESLA POWERWALL 3 EXPANSION UNIT, 13.5kWh` |
+| `TESLA POWERWALL-3 EXPANSION UNIT` | `1807000-XX-Y` ← from PV-4 spec table | `TESLA POWERWALL 3 EXPANSION UNIT, 13.5kWh` |
 | `200A TESLA BACKUP GATEWAY 3` | `1841000-X1-Y` ← from PV-4 callout | `TESLA BACKUP GATEWAY 3, 200A, NEMA 3R, UL LISTED` |
 | `SEG SOLAR SEG-440-BTD-BG (440W) MODULES` | `SEG-440-BTD-BG` ← model # portion | `SEG SOLAR SEG-440-BTD-BG (440W) MODULES` |
 
@@ -307,15 +307,15 @@ BATTERY            | 01 | TESLA POWERWALL-3 EXPANSION UNIT
 
 The expansion unit adds ~13.5 kWh. PV-6 ESS size label will reflect both combined (e.g., "ESS SIZE: 27.0kWh").
 
-**Part number extraction:** PV-4 will have a separate spec block for the expansion unit, typically labeled "POWERWALL 3 EXPANSION UNIT SPECIFICATIONS". Look for the `MANUFACTURER / MODEL #` row — it will show the part number, e.g., `TESLA POWERWALL 3 EXPANSION UNIT (1707100-XX-Y)`.
+**Part number extraction:** Look for the expansion unit callout on the SLD (PV-4), labeled e.g. `(N) TESLA POWERWALL-3 EXPANSION PACK (1807000-XX-Y)`. The part number appears in parentheses.
 
 **Output two separate BOM line items:**
 ```json
 { "category": "BATTERY", "brand": "Tesla", "model": "1707000-XX-Y", "description": "TESLA POWERWALL 3, 13.5kWh BATTERY & INVERTER", "qty": 1, "unitSpec": "13.5kWh" }
-{ "category": "BATTERY", "brand": "Tesla", "model": "1707100-XX-Y", "description": "TESLA POWERWALL 3 EXPANSION UNIT, 13.5kWh", "qty": 1, "unitSpec": "13.5kWh" }
+{ "category": "BATTERY", "brand": "Tesla", "model": "1807000-XX-Y", "description": "TESLA POWERWALL 3 EXPANSION UNIT, 13.5kWh", "qty": 1, "unitSpec": "13.5kWh" }
 ```
 
-**Rule:** `model` = part number from PV-4 spec table (e.g., `1707100-XX-Y`), never `"Powerwall-3 expansion unit"` or any product name string.
+**Rule:** `model` = part number from PV-4 SLD callout (e.g., `1807000-XX-Y`), never `"Powerwall-3 expansion unit"` or any product name string.
 
 ---
 
@@ -330,7 +330,7 @@ Two different monitoring/control units appear across jobs — look at the legend
 
 Both are `MONITORING` category. Model numbers differ:
 - Gateway-3: `1841000-X1-Y`
-- Backup Switch: `200A TESLA BACKUP SWITCH` (no part number typically listed)
+- Backup Switch: `1624171-XX-Y`
 
 ---
 
