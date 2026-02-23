@@ -144,9 +144,6 @@ export function BomPdfDocument({
             <Text style={[styles.validBadge, { backgroundColor: validation.ocpdMatch ? "#dcfce7" : validation.ocpdMatch === false ? "#fee2e2" : "#f3f4f6" }]}>
               {validLabel(validation.ocpdMatch)} OCPD
             </Text>
-            {validation.warnings?.map((w, i) => (
-              <Text key={i} style={[styles.validBadge, { backgroundColor: "#fef9c3" }]}>Warning: {w}</Text>
-            ))}
           </View>
         )}
 

@@ -591,6 +591,7 @@ model EquipmentSku {
   unitSpec    Float?            // Wattage for modules, kW for inverters, kWh for batteries
   unitLabel   String?           // "W", "kW AC", "kWh"
   isActive    Boolean           @default(true)
+  zohoItemId  String?           // Zoho Inventory item_id for PO line item matching
 
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
@@ -693,6 +694,7 @@ model ProjectBomSnapshot {
   sourceFile  String?                       // original PDF filename
   blobUrl     String?                       // Vercel Blob URL of the source PDF
   savedBy     String                        // user email
+  zohoPoId    String?                       // Zoho PO ID once created
 
   createdAt   DateTime @default(now())
 
