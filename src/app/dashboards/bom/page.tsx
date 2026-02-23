@@ -8,6 +8,7 @@ import { useToast } from "@/contexts/ToastContext";
 import { useSession } from "next-auth/react";
 import BomHistoryDrawer from "@/components/BomHistoryDrawer";
 import type { BomSnapshot as BomSnapshotGlobal } from "@/lib/bom-history";
+import PushToSystemsModal, { type PushItem } from "@/components/PushToSystemsModal";
 // PDF upload uses chunked /api/bom/chunk — stays on our domain, no CORS issues
 
 /* ------------------------------------------------------------------ */
@@ -391,6 +392,7 @@ function BomDashboardInner() {
   const [compareB, setCompareB] = useState<BomSnapshot | null>(null);
   const [showDiff, setShowDiff] = useState(false);
   const [historyDrawerOpen, setHistoryDrawerOpen] = useState(false);
+  const [pushItem, setPushItem] = useState<PushItem | null>(null);
   const diffRows = compareA && compareB ? diffBoms(compareA.bomData.items, compareB.bomData.items) : [];
 
   // Product catalog comparison data
@@ -1951,7 +1953,25 @@ function BomDashboardInner() {
                             <td className="px-4 py-1.5 text-muted text-xs">{item.source}</td>
                             {catalogSources.map((src) => (
                               <td key={src} className="px-2 py-1.5 text-center">
-                                <CatalogDot present={status?.[src]} loading={catalogLoading} />
+                                <span className="inline-flex items-center gap-1">
+                                  <CatalogDot present={status?.[src]} loading={catalogLoading} />
+                                  {!status?.[src] && !catalogLoading && (
+                                    <button
+                                      onClick={() => setPushItem({
+                                        brand: item.brand ?? "",
+                                        model: item.model ?? "",
+                                        description: item.description,
+                                        category: item.category,
+                                        unitSpec: item.unitSpec,
+                                        unitLabel: item.unitLabel,
+                                        dealId: linkedProject?.hs_object_id,
+                                      })}
+                                      className="opacity-0 group-hover:opacity-100 transition-opacity text-xs text-cyan-600 dark:text-cyan-400 hover:underline px-1.5"
+                                    >
+                                      + Add
+                                    </button>
+                                  )}
+                                </span>
                               </td>
                             ))}
                             <td className="px-3 py-1.5">
@@ -1980,6 +2000,10 @@ function BomDashboardInner() {
           </>
         )}
       </div>
+      <PushToSystemsModal
+        item={pushItem}
+        onClose={() => setPushItem(null)}
+      />
       <BomHistoryDrawer
         open={historyDrawerOpen}
         onClose={() => setHistoryDrawerOpen(false)}
