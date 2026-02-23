@@ -55,6 +55,7 @@ export default function PushToSystemsModal({ item, onClose }: Props) {
   }
 
   async function handleSubmit() {
+    if (!item) return;
     if (!brand.trim() || !model.trim() || !description.trim() || !category.trim()) {
       addToast({ type: "error", title: "Brand, model, description, and category are required" });
       return;
