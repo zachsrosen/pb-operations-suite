@@ -49,15 +49,25 @@ interface DirectorConfig {
 }
 
 export interface ExistingBooking {
-  crew: string;       // Crew name, e.g. "WESTY Alpha"
+  location: string;   // Location name, e.g. "Westminster"
   startDate: string;  // YYYY-MM-DD
   days: number;       // Business days
 }
+
+/** Max jobs per day per location. Locations not listed default to 1. */
+export const DEFAULT_LOCATION_CAPACITY: Record<string, number> = {
+  Westminster: 2,
+  Centennial: 2,
+  "Colorado Springs": 1,
+  "San Luis Obispo": 2,
+  Camarillo: 1,
+};
 
 interface GenerateOptions {
   preset?: ScoringPreset;
   startDate?: string; // YYYY-MM-DD, defaults to next business day after today
   existingBookings?: ExistingBooking[];
+  locationCapacity?: Record<string, number>; // override default capacity per location
 }
 
 /* ------------------------------------------------------------------ */
@@ -156,6 +166,7 @@ export function generateOptimizedSchedule(
   const preset = options.preset || "balanced";
   const startDate = options.startDate || getDefaultStartDate();
   const defaultTimezone = "America/Denver";
+  const capacity = options.locationCapacity || DEFAULT_LOCATION_CAPACITY;
 
   if (projects.length === 0) {
     return { entries: [], skipped: [] };
@@ -168,69 +179,83 @@ export function generateOptimizedSchedule(
   }));
   scored.sort((a, b) => b.score - a.score);
 
-  // Note: we intentionally search from `startDate` for every crew on every
-  // project (no forward-only crewNextDate pointer). This allows smaller jobs
-  // to backfill gaps that larger jobs had to skip over. The `addBlockedDates`
-  // call after each assignment prevents double-booking.
+  // Per-location daily job count: location → date → count
+  const locationDayCount: Record<string, Record<string, number>> = {};
 
-  // Build blocked dates per crew from existing bookings
-  const crewBlockedDates: Record<string, Set<string>> = {};
+  /** Get current job count for a location on a specific date */
+  function getDayCount(location: string, dateStr: string): number {
+    return locationDayCount[location]?.[dateStr] || 0;
+  }
+
+  /** Get the daily capacity for a location (defaults to 1 if not configured) */
+  function getCapacity(location: string): number {
+    return capacity[location] ?? 1;
+  }
+
+  // Seed counts from existing bookings
   if (options.existingBookings) {
     for (const booking of options.existingBookings) {
-      if (!crewBlockedDates[booking.crew]) crewBlockedDates[booking.crew] = new Set();
+      const loc = booking.location;
+      if (!locationDayCount[loc]) locationDayCount[loc] = {};
       const endDate = getBusinessEndDateInclusive(booking.startDate, booking.days);
       const cursor = parseYmdToUtcDate(booking.startDate);
       const end = parseYmdToUtcDate(endDate);
       while (cursor <= end) {
         const day = cursor.getUTCDay();
         if (day !== 0 && day !== 6) {
-          crewBlockedDates[booking.crew].add(formatUtcDateToYmd(cursor));
+          const ds = formatUtcDateToYmd(cursor);
+          locationDayCount[loc][ds] = (locationDayCount[loc][ds] || 0) + 1;
         }
         cursor.setUTCDate(cursor.getUTCDate() + 1);
       }
     }
   }
 
-  /** Check if assigning `days` business days starting at `dateStr` conflicts with blocked dates */
-  function hasConflict(crewName: string, dateStr: string, days: number): boolean {
-    const blocked = crewBlockedDates[crewName];
-    if (!blocked || blocked.size === 0) return false;
+  /** Check if a job spanning `days` business days starting at `dateStr` exceeds capacity */
+  function hasCapacityConflict(location: string, dateStr: string, days: number): boolean {
+    const cap = getCapacity(location);
     const endDate = getBusinessEndDateInclusive(dateStr, days);
     const cursor = parseYmdToUtcDate(dateStr);
     const end = parseYmdToUtcDate(endDate);
     while (cursor <= end) {
       const day = cursor.getUTCDay();
-      if (day !== 0 && day !== 6 && blocked.has(formatUtcDateToYmd(cursor))) {
-        return true;
+      if (day !== 0 && day !== 6) {
+        if (getDayCount(location, formatUtcDateToYmd(cursor)) >= cap) {
+          return true;
+        }
       }
       cursor.setUTCDate(cursor.getUTCDate() + 1);
     }
     return false;
   }
 
-  /** Advance from `fromDate` until a non-conflicting window of `days` business days is found */
-  function findNextAvailableDate(crewName: string, fromDate: string, days: number): string {
+  /** Find earliest date from `fromDate` where all business days in span have capacity */
+  function findNextAvailableDate(location: string, fromDate: string, days: number): string {
     let candidate = fromDate;
     for (let i = 0; i < 365; i++) {
-      if (!hasConflict(crewName, candidate, days)) return candidate;
+      if (!hasCapacityConflict(location, candidate, days)) return candidate;
       candidate = nextBusinessDayAfter(candidate);
     }
-    return candidate; // fallback — far out but won't loop forever
+    return candidate; // fallback
   }
 
-  /** Mark business days in a range as blocked for a crew */
-  function addBlockedDates(crewName: string, jobStart: string, days: number): void {
-    if (!crewBlockedDates[crewName]) crewBlockedDates[crewName] = new Set();
+  /** Increment job count for each business day in the span */
+  function addJobCounts(location: string, jobStart: string, days: number): void {
+    if (!locationDayCount[location]) locationDayCount[location] = {};
     const endInc = getBusinessEndDateInclusive(jobStart, days);
     const c = parseYmdToUtcDate(jobStart);
     const e = parseYmdToUtcDate(endInc);
     while (c <= e) {
       if (c.getUTCDay() !== 0 && c.getUTCDay() !== 6) {
-        crewBlockedDates[crewName].add(formatUtcDateToYmd(c));
+        const ds = formatUtcDateToYmd(c);
+        locationDayCount[location][ds] = (locationDayCount[location][ds] || 0) + 1;
       }
       c.setUTCDate(c.getUTCDate() + 1);
     }
   }
+
+  // Track crew round-robin index per location
+  const crewRotation: Record<string, number> = {};
 
   const entries: OptimizedEntry[] = [];
   const skipped: OptimizableProject[] = [];
@@ -247,30 +272,21 @@ export function generateOptimizedSchedule(
 
     const days = Math.max(1, Math.ceil(project.daysInstall));
 
-    // Find the crew with the earliest non-conflicting start date.
-    // Always search from `startDate` so smaller jobs can backfill gaps
-    // that larger jobs had to skip over.
-    let bestCrew = locationCrews[0];
-    let bestDate = findNextAvailableDate(bestCrew.name, startDate, days);
+    // Find earliest date with capacity at this location
+    const jobStartDate = findNextAvailableDate(project.location, startDate, days);
 
-    for (let i = 1; i < locationCrews.length; i++) {
-      const crew = locationCrews[i];
-      const nextDate = findNextAvailableDate(crew.name, startDate, days);
-      if (nextDate < bestDate) {
-        bestCrew = crew;
-        bestDate = nextDate;
-      }
-    }
+    // Increment daily counts for this assignment
+    addJobCounts(project.location, jobStartDate, days);
 
-    const jobStartDate = bestDate;
-
-    // Mark these dates as blocked for future assignments in this run
-    addBlockedDates(bestCrew.name, jobStartDate, days);
+    // Round-robin crew assignment within the location
+    const rotIdx = crewRotation[project.location] || 0;
+    const assignedCrew = locationCrews[rotIdx % locationCrews.length];
+    crewRotation[project.location] = rotIdx + 1;
 
     entries.push({
       project,
-      crew: bestCrew.name,
-      crewColor: bestCrew.color,
+      crew: assignedCrew.name,
+      crewColor: assignedCrew.color,
       startDate: jobStartDate,
       days,
       score,

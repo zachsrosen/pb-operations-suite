@@ -2,6 +2,7 @@ import {
   calculatePriorityScore,
   generateOptimizedSchedule,
   nextBusinessDayAfter,
+  DEFAULT_LOCATION_CAPACITY,
   type OptimizableProject,
   type ScoringPreset,
 } from "@/lib/schedule-optimizer";
@@ -181,6 +182,20 @@ describe("nextBusinessDayAfter", () => {
 });
 
 /* ================================================================== */
+/*  DEFAULT_LOCATION_CAPACITY                                          */
+/* ================================================================== */
+
+describe("DEFAULT_LOCATION_CAPACITY", () => {
+  it("exports expected location capacities", () => {
+    expect(DEFAULT_LOCATION_CAPACITY["Westminster"]).toBe(2);
+    expect(DEFAULT_LOCATION_CAPACITY["Centennial"]).toBe(2);
+    expect(DEFAULT_LOCATION_CAPACITY["Colorado Springs"]).toBe(1);
+    expect(DEFAULT_LOCATION_CAPACITY["San Luis Obispo"]).toBe(2);
+    expect(DEFAULT_LOCATION_CAPACITY["Camarillo"]).toBe(1);
+  });
+});
+
+/* ================================================================== */
 /*  generateOptimizedSchedule Tests                                    */
 /* ================================================================== */
 
@@ -191,8 +206,41 @@ describe("generateOptimizedSchedule", () => {
     expect(result.skipped).toHaveLength(0);
   });
 
-  it("round-robins across crews at same location", () => {
-    // 4 projects at Westminster with 2 crews → 2 each
+  it("schedules 2 jobs on same day at Westminster (capacity=2)", () => {
+    const projects = [
+      makeProject({ id: "p1", amount: 40000, daysInstall: 1 }),
+      makeProject({ id: "p2", amount: 30000, daysInstall: 1 }),
+    ];
+
+    const result = generateOptimizedSchedule(projects, CREWS, DIRECTORS, TIMEZONES, {
+      startDate: "2026-02-18", // Wednesday
+    });
+
+    expect(result.entries).toHaveLength(2);
+    // Both should be on the same day since Westminster capacity = 2
+    expect(result.entries[0].startDate).toBe("2026-02-18");
+    expect(result.entries[1].startDate).toBe("2026-02-18");
+  });
+
+  it("third job at Westminster overflows to next day", () => {
+    const projects = [
+      makeProject({ id: "p1", amount: 40000, daysInstall: 1 }),
+      makeProject({ id: "p2", amount: 30000, daysInstall: 1 }),
+      makeProject({ id: "p3", amount: 20000, daysInstall: 1 }),
+    ];
+
+    const result = generateOptimizedSchedule(projects, CREWS, DIRECTORS, TIMEZONES, {
+      startDate: "2026-02-18", // Wednesday
+    });
+
+    expect(result.entries).toHaveLength(3);
+    expect(result.entries[0].startDate).toBe("2026-02-18");
+    expect(result.entries[1].startDate).toBe("2026-02-18");
+    // Third job must go to next day since capacity is 2
+    expect(result.entries[2].startDate).toBe("2026-02-19");
+  });
+
+  it("round-robins crew names within a location", () => {
     const projects = [
       makeProject({ id: "p1", amount: 40000, daysInstall: 1 }),
       makeProject({ id: "p2", amount: 30000, daysInstall: 1 }),
@@ -201,17 +249,18 @@ describe("generateOptimizedSchedule", () => {
     ];
 
     const result = generateOptimizedSchedule(projects, CREWS, DIRECTORS, TIMEZONES, {
-      startDate: "2026-02-18", // Wednesday
+      startDate: "2026-02-18",
     });
 
     expect(result.entries).toHaveLength(4);
-    const alphaCount = result.entries.filter((e) => e.crew === "WESTY Alpha").length;
-    const bravoCount = result.entries.filter((e) => e.crew === "WESTY Bravo").length;
-    expect(alphaCount).toBe(2);
-    expect(bravoCount).toBe(2);
+    // Round-robin: Alpha, Bravo, Alpha, Bravo
+    expect(result.entries[0].crew).toBe("WESTY Alpha");
+    expect(result.entries[1].crew).toBe("WESTY Bravo");
+    expect(result.entries[2].crew).toBe("WESTY Alpha");
+    expect(result.entries[3].crew).toBe("WESTY Bravo");
   });
 
-  it("single-crew location stacks sequentially", () => {
+  it("single-crew location with capacity=1 stacks sequentially", () => {
     const projects = [
       makeProject({ id: "p1", location: "Colorado Springs", daysInstall: 2 }),
       makeProject({ id: "p2", location: "Colorado Springs", daysInstall: 2 }),
@@ -224,12 +273,12 @@ describe("generateOptimizedSchedule", () => {
     expect(result.entries).toHaveLength(2);
     expect(result.entries[0].crew).toBe("COSP Alpha");
     expect(result.entries[1].crew).toBe("COSP Alpha");
-    // First: Wed Feb 18, 2 days → ends Thu Feb 19, next = Fri Feb 20
+    // First: Wed Feb 18, 2 days → ends Thu Feb 19, next available = Fri Feb 20
     expect(result.entries[0].startDate).toBe("2026-02-18");
     expect(result.entries[1].startDate).toBe("2026-02-20");
   });
 
-  it("off-by-one: 1-day job on Friday → crew next available Monday", () => {
+  it("off-by-one: 1-day job on Friday → both fit same day at capacity=2 location", () => {
     const projects = [
       makeProject({ id: "p1", amount: 100000, daysInstall: 1 }),
       makeProject({ id: "p2", amount: 50000, daysInstall: 1 }),
@@ -239,14 +288,13 @@ describe("generateOptimizedSchedule", () => {
       startDate: "2026-02-20", // Friday
     });
 
-    // p1 (higher score) → Alpha, starts Fri, 1 day → ends Fri, next = Mon
-    // p2 → Bravo, starts Fri (both start same date), 1 day → ends Fri, next = Mon
+    // Both on Friday since Westminster has capacity=2
     expect(result.entries).toHaveLength(2);
     expect(result.entries[0].startDate).toBe("2026-02-20");
     expect(result.entries[1].startDate).toBe("2026-02-20");
   });
 
-  it("off-by-one: single crew, 1-day Friday → next job Monday", () => {
+  it("off-by-one: single crew capacity=1, 1-day Friday → next job Monday", () => {
     const projects = [
       makeProject({ id: "p1", location: "Colorado Springs", amount: 100000, daysInstall: 1 }),
       makeProject({ id: "p2", location: "Colorado Springs", amount: 50000, daysInstall: 1 }),
@@ -257,7 +305,7 @@ describe("generateOptimizedSchedule", () => {
     });
 
     expect(result.entries[0].startDate).toBe("2026-02-20"); // Friday
-    expect(result.entries[1].startDate).toBe("2026-02-23"); // Monday (not Friday!)
+    expect(result.entries[1].startDate).toBe("2026-02-23"); // Monday (capacity=1, so next day)
   });
 
   it("multi-day span: 3-day job starting Wednesday → ends Friday, next Monday", () => {
@@ -270,7 +318,7 @@ describe("generateOptimizedSchedule", () => {
       startDate: "2026-02-18", // Wednesday
     });
 
-    // p1: starts Wed, 3 days → Wed, Thu, Fri → ends Fri Feb 20, next = Mon Feb 23
+    // p1: starts Wed, 3 days → Wed, Thu, Fri → all at capacity, next available = Mon Feb 23
     expect(result.entries[0].startDate).toBe("2026-02-18");
     expect(result.entries[1].startDate).toBe("2026-02-23");
   });
@@ -352,39 +400,52 @@ describe("generateOptimizedSchedule", () => {
     expect(balanced.entries[0].score).not.toBe(revFirst.entries[0].score);
   });
 
-  it("does not assign crew on dates with existing bookings", () => {
-    const projects = [makeProject({ id: "new-1", daysInstall: 2 })];
+  it("existing bookings reduce available capacity on those days", () => {
+    // Westminster capacity=2. One existing booking on Mon → only 1 slot left.
+    // Two new 1-day jobs: first fits Mon, second must go to Tue.
+    const projects = [
+      makeProject({ id: "new-1", daysInstall: 1, amount: 50000 }),
+      makeProject({ id: "new-2", daysInstall: 1, amount: 40000 }),
+    ];
     const existingBookings = [
-      { crew: "WESTY Alpha", startDate: "2026-03-02", days: 3 }, // Mon-Wed
+      { location: "Westminster", startDate: "2026-03-02", days: 1 }, // Mon
     ];
     const result = generateOptimizedSchedule(projects, CREWS, DIRECTORS, TIMEZONES, {
       startDate: "2026-03-02",
       existingBookings,
     });
-    expect(result.entries).toHaveLength(1);
-    const entry = result.entries[0];
-    // Should be assigned to WESTY Bravo (starts Mon) since Alpha is blocked Mon-Wed
-    // OR to WESTY Alpha starting Thu (after existing booking ends)
-    if (entry.crew === "WESTY Alpha") {
-      expect(entry.startDate).toBe("2026-03-05"); // Thu
-    } else {
-      expect(entry.crew).toBe("WESTY Bravo");
-      expect(entry.startDate).toBe("2026-03-02"); // Mon
-    }
+    expect(result.entries).toHaveLength(2);
+    expect(result.entries[0].startDate).toBe("2026-03-02"); // Mon (1 slot left)
+    expect(result.entries[1].startDate).toBe("2026-03-03"); // Tue (Mon now full)
   });
 
-  it("prefers crew with earlier availability when one is blocked", () => {
+  it("location at full capacity pushes to next available day", () => {
+    // Westminster capacity=2. Two existing bookings on Mon → no slots left.
     const projects = [makeProject({ id: "new-1", daysInstall: 1 })];
     const existingBookings = [
-      { crew: "WESTY Alpha", startDate: "2026-03-02", days: 5 }, // Full week
+      { location: "Westminster", startDate: "2026-03-02", days: 1 },
+      { location: "Westminster", startDate: "2026-03-02", days: 1 },
     ];
     const result = generateOptimizedSchedule(projects, CREWS, DIRECTORS, TIMEZONES, {
       startDate: "2026-03-02",
       existingBookings,
     });
     expect(result.entries).toHaveLength(1);
-    expect(result.entries[0].crew).toBe("WESTY Bravo");
-    expect(result.entries[0].startDate).toBe("2026-03-02");
+    expect(result.entries[0].startDate).toBe("2026-03-03"); // Tue
+  });
+
+  it("COSP capacity=1 means one booking blocks that day entirely", () => {
+    const projects = [makeProject({ id: "new-1", location: "Colorado Springs", daysInstall: 1 })];
+    const existingBookings = [
+      { location: "Colorado Springs", startDate: "2026-03-02", days: 3 }, // Mon-Wed
+    ];
+    const result = generateOptimizedSchedule(projects, CREWS, DIRECTORS, TIMEZONES, {
+      startDate: "2026-03-02",
+      existingBookings,
+    });
+    expect(result.entries).toHaveLength(1);
+    // Mon-Wed blocked, next available is Thu
+    expect(result.entries[0].startDate).toBe("2026-03-05");
   });
 
   it("no existing bookings behaves same as before", () => {
@@ -396,44 +457,36 @@ describe("generateOptimizedSchedule", () => {
       startDate: "2026-03-02",
       existingBookings: [],
     });
-    expect(r1.entries.map(e => e.crew)).toEqual(r2.entries.map(e => e.crew));
     expect(r1.entries.map(e => e.startDate)).toEqual(r2.entries.map(e => e.startDate));
   });
 
-  it("multi-day job avoids partial overlap with existing booking", () => {
-    // Existing booking blocks Wed-Fri. New 3-day job should not start Mon
-    // because it would span Mon-Wed and overlap on Wed.
+  it("multi-day job avoids days at capacity", () => {
+    // COSP capacity=1. Existing booking Wed only.
+    // New 3-day job: Mon-Wed would overlap blocked Wed → must skip.
     const projects = [makeProject({ id: "p1", location: "Colorado Springs", daysInstall: 3 })];
     const existingBookings = [
-      { crew: "COSP Alpha", startDate: "2026-03-04", days: 3 }, // Wed-Fri
+      { location: "Colorado Springs", startDate: "2026-03-04", days: 1 }, // Wed
     ];
     const result = generateOptimizedSchedule(projects, CREWS, DIRECTORS, TIMEZONES, {
       startDate: "2026-03-02", // Mon
       existingBookings,
     });
     expect(result.entries).toHaveLength(1);
-    // COSP has only one crew — must start after Fri, so next Mon
-    expect(result.entries[0].startDate).toBe("2026-03-09"); // Next Monday
+    // Mon-Wed: Wed is full → conflict. Tue-Thu: Wed full → conflict.
+    // Wed: full. Thu-Mon: Thu, Fri, Mon → no conflict
+    expect(result.entries[0].startDate).toBe("2026-03-05"); // Thu
   });
 
   it("backfills earlier gaps when a smaller job fits in a slot a larger job skipped", () => {
-    // Scenario: single-crew location, existing booking blocks Thu.
-    // Project A (3 days, high priority) can't fit Mon-Wed because the 3-day span
-    // Mon-Wed is fine, but let's say we have a booking Thu-Fri that pushes
-    // a 3-day job past Mon. Actually:
-    // - Existing booking: COSP Alpha blocked on Wed Mar 4 (1 day)
-    // - Project A needs 3 days → Mon(2)-Wed(4) overlaps Wed → conflict.
-    //   Tries Tue(3)-Thu(5): Wed blocked → conflict. Wed(4): blocked → conflict.
-    //   Thu(5): Thu-Mon(9) → no conflict → schedules Thu Mar 5.
-    //   crewNextDate advances to Tue Mar 10.
-    // - Project B needs 1 day → should fill Mon Mar 2 or Tue Mar 3 (the gap),
-    //   NOT start from Mar 10.
+    // COSP capacity=1. Existing booking on Wed Mar 4 (1 day).
+    // Big job (3 days) can't start Mon (Mon-Wed overlaps Wed) → starts Thu.
+    // Small job (1 day) SHOULD backfill to Mon.
     const projects = [
       makeProject({ id: "big", location: "Colorado Springs", amount: 100000, daysInstall: 3 }),
       makeProject({ id: "small", location: "Colorado Springs", amount: 10000, daysInstall: 1 }),
     ];
     const existingBookings = [
-      { crew: "COSP Alpha", startDate: "2026-03-04", days: 1 }, // Wed blocked
+      { location: "Colorado Springs", startDate: "2026-03-04", days: 1 }, // Wed blocked
     ];
     const result = generateOptimizedSchedule(projects, CREWS, DIRECTORS, TIMEZONES, {
       startDate: "2026-03-02", // Mon
@@ -442,27 +495,37 @@ describe("generateOptimizedSchedule", () => {
     expect(result.entries).toHaveLength(2);
     const big = result.entries.find(e => e.project.id === "big")!;
     const small = result.entries.find(e => e.project.id === "small")!;
-    // Big job can't start Mon (Mon-Wed overlaps blocked Wed), starts Thu Mar 5
-    expect(big.startDate).toBe("2026-03-05");
-    // Small job (1 day) SHOULD backfill to Mon Mar 2 — the gap before the blocked Wed
-    expect(small.startDate).toBe("2026-03-02");
+    expect(big.startDate).toBe("2026-03-05"); // Thu
+    expect(small.startDate).toBe("2026-03-02"); // Mon (backfill!)
   });
 
-  it("blocks all location crews when all are booked (fallback behavior)", () => {
-    // Simulates what happens when existingBookings are built from an
-    // unresolvable crew name — the scheduler page blocks ALL crews at the
-    // location. The optimizer should see both WESTY crews as blocked.
-    const projects = [makeProject({ id: "new-1", daysInstall: 1 })];
-    const existingBookings = [
-      { crew: "WESTY Alpha", startDate: "2026-03-02", days: 3 },
-      { crew: "WESTY Bravo", startDate: "2026-03-02", days: 3 },
+  it("custom locationCapacity overrides defaults", () => {
+    // Override Westminster to capacity=1 (default is 2)
+    const projects = [
+      makeProject({ id: "p1", daysInstall: 1, amount: 50000 }),
+      makeProject({ id: "p2", daysInstall: 1, amount: 40000 }),
     ];
     const result = generateOptimizedSchedule(projects, CREWS, DIRECTORS, TIMEZONES, {
-      startDate: "2026-03-02",
-      existingBookings,
+      startDate: "2026-02-18",
+      locationCapacity: { ...DEFAULT_LOCATION_CAPACITY, Westminster: 1 },
     });
-    expect(result.entries).toHaveLength(1);
-    // Both Westminster crews blocked Mon-Wed, so earliest available is Thu
-    expect(result.entries[0].startDate).toBe("2026-03-05");
+    expect(result.entries).toHaveLength(2);
+    // With capacity=1, second job goes to next day
+    expect(result.entries[0].startDate).toBe("2026-02-18");
+    expect(result.entries[1].startDate).toBe("2026-02-19");
+  });
+
+  it("capacity=2 allows two multi-day jobs to overlap at Westminster", () => {
+    // Two 2-day jobs at Westminster should both start on same day
+    const projects = [
+      makeProject({ id: "p1", daysInstall: 2, amount: 50000 }),
+      makeProject({ id: "p2", daysInstall: 2, amount: 40000 }),
+    ];
+    const result = generateOptimizedSchedule(projects, CREWS, DIRECTORS, TIMEZONES, {
+      startDate: "2026-02-18", // Wed
+    });
+    expect(result.entries).toHaveLength(2);
+    expect(result.entries[0].startDate).toBe("2026-02-18");
+    expect(result.entries[1].startDate).toBe("2026-02-18");
   });
 });

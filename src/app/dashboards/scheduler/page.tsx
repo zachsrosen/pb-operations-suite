@@ -6,7 +6,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { LOCATION_TIMEZONES } from "@/lib/constants";
-import { generateOptimizedSchedule, type OptimizableProject, type ScoringPreset, type ExistingBooking } from "@/lib/schedule-optimizer";
+import { generateOptimizedSchedule, type OptimizableProject, type ScoringPreset, type ExistingBooking, DEFAULT_LOCATION_CAPACITY } from "@/lib/schedule-optimizer";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -892,74 +892,71 @@ export default function SchedulerPage() {
     (excludeProjectId?: string): ExistingBooking[] => {
       const bookings: ExistingBooking[] = [];
 
-      const addLocationWideBooking = (location: string, startDate: string, days: number) => {
-        const loc = normalizeLocation(location);
-        const locationCrews = CREWS[loc];
-        if (!locationCrews) return;
-        for (const crew of locationCrews) {
-          bookings.push({ crew: crew.name, startDate, days });
-        }
-      };
-
       for (const p of projects) {
         if (excludeProjectId && p.id === excludeProjectId) continue;
+        const loc = normalizeLocation(p.location);
 
-        // Zuper-scheduled construction jobs — we don't know the actual crew from
-        // Zuper, so block ALL crews at that location to prevent any overlap.
+        // Zuper-scheduled construction jobs — counts as 1 job at this location
         if (p.zuperJobCategory === "construction" && p.zuperScheduledStart) {
           const startStr = p.zuperScheduledStart.split("T")[0];
           const days = p.zuperScheduledDays || p.daysInstall || 1;
-          addLocationWideBooking(p.location, startStr, days);
+          bookings.push({ location: loc, startDate: startStr, days });
         }
 
-        // Manual/tentative schedules — resolve crew name if possible
+        // Manual/tentative schedules — counts as 1 job at this location
         const ms = manualSchedules[p.id];
-        if (ms && ms.scheduleType === "installation" && ms.crew) {
-          const crewName = resolveCrewName(ms.crew);
-          if (crewName) {
-            bookings.push({ crew: crewName, startDate: ms.startDate, days: ms.days });
-          } else {
-            // Can't resolve crew — block all location crews conservatively
-            addLocationWideBooking(p.location, ms.startDate, ms.days);
-          }
+        if (ms && ms.scheduleType === "installation") {
+          bookings.push({ location: loc, startDate: ms.startDate, days: ms.days });
         }
 
-        // HubSpot construction schedule date (not yet in Zuper) — block all location crews
+        // HubSpot construction schedule date (not yet in Zuper) — counts as 1 job
         if (p.constructionScheduleDate && !p.zuperScheduledStart) {
           const days = p.daysInstall || 1;
-          addLocationWideBooking(p.location, p.constructionScheduleDate, days);
+          bookings.push({ location: loc, startDate: p.constructionScheduleDate, days });
         }
       }
 
       return bookings;
     },
-    [projects, manualSchedules, resolveCrewName]
+    [projects, manualSchedules]
   );
 
-  /** Filter construction crew choices by booking conflicts for the schedule modal. */
+  /** Check if a location has remaining capacity on the chosen date for scheduling modal. */
+  const locationHasCapacity = useMemo(() => {
+    if (!scheduleModal) return true;
+    const isConstruction = scheduleModal.project.stage !== "survey" && scheduleModal.project.stage !== "inspection";
+    if (!isConstruction) return true;
+
+    const loc = normalizeLocation(scheduleModal.project.location);
+    const eb = buildExistingBookings(scheduleModal.project.id);
+    const days = Math.max(1, Math.ceil(installDaysInput || scheduleModal.project.daysInstall || 1));
+    const cap = DEFAULT_LOCATION_CAPACITY[loc] ?? 1;
+
+    // Count existing jobs per day in the span
+    const dayCounts: Record<string, number> = {};
+    for (const booking of eb) {
+      if (normalizeLocation(booking.location) !== loc) continue;
+      const dates = getBusinessDatesInSpan(booking.startDate, booking.days);
+      for (const d of dates) {
+        dayCounts[d] = (dayCounts[d] || 0) + 1;
+      }
+    }
+
+    // Check if any day in the proposed span is at capacity
+    const spanDates = getBusinessDatesInSpan(scheduleModal.date, days);
+    return spanDates.every((d) => (dayCounts[d] || 0) < cap);
+  }, [scheduleModal, installDaysInput, buildExistingBookings]);
+
+  /** Get available construction crews for the schedule modal (all crews if location has capacity). */
   const availableConstructionCrews = useMemo(() => {
     if (!scheduleModal) return [] as CrewConfig[];
     const isConstruction = scheduleModal.project.stage !== "survey" && scheduleModal.project.stage !== "inspection";
     if (!isConstruction) return [] as CrewConfig[];
 
     const locationCrews = CREWS[scheduleModal.project.location] || [];
-    if (locationCrews.length === 0) return [] as CrewConfig[];
-
-    const eb = buildExistingBookings(scheduleModal.project.id);
-    const blockedDatesByCrew: Record<string, Set<string>> = {};
-    for (const booking of eb) {
-      if (!blockedDatesByCrew[booking.crew]) blockedDatesByCrew[booking.crew] = new Set();
-      const blockedDates = getBusinessDatesInSpan(booking.startDate, booking.days);
-      for (const date of blockedDates) {
-        blockedDatesByCrew[booking.crew].add(date);
-      }
-    }
-
-    const days = Math.max(1, Math.ceil(installDaysInput || scheduleModal.project.daysInstall || 1));
-    return locationCrews.filter((crew) =>
-      !hasBlockedDateConflict(blockedDatesByCrew[crew.name], scheduleModal.date, days)
-    );
-  }, [scheduleModal, installDaysInput, buildExistingBookings]);
+    if (!locationHasCapacity) return [] as CrewConfig[];
+    return locationCrews;
+  }, [scheduleModal, locationHasCapacity]);
 
   // Clear crew selection when it becomes unavailable due to booking conflicts
   useEffect(() => {
