@@ -48,6 +48,38 @@ async function refreshUserToken(refreshToken: string): Promise<string | null> {
   }
 }
 
+function isHttpsRequest(request: NextRequest): boolean {
+  const proto = request.headers.get("x-forwarded-proto") ?? request.nextUrl.protocol.replace(":", "");
+  return proto === "https";
+}
+
+/**
+ * Auth.js v5 getToken() needs both:
+ * 1) explicit secret
+ * 2) matching secureCookie mode (affects cookie name + salt)
+ * Try both secure/non-secure cookie modes to handle local + production.
+ */
+async function getJwtToken(request: NextRequest): Promise<Record<string, unknown> | null> {
+  const secret = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
+  if (!secret) return null;
+
+  const secureFirst = isHttpsRequest(request);
+  const attempts = secureFirst ? [true, false] : [false, true];
+
+  for (const secureCookie of attempts) {
+    try {
+      const token = await getToken({ req: request, secret, secureCookie });
+      if (token && typeof token === "object") {
+        return token as Record<string, unknown>;
+      }
+    } catch {
+      // try the next cookie mode
+    }
+  }
+
+  return null;
+}
+
 /**
  * Returns the best available Google OAuth token for Drive access.
  * Priority:
@@ -59,10 +91,10 @@ async function refreshUserToken(refreshToken: string): Promise<string | null> {
  */
 async function getDriveToken(request: NextRequest): Promise<{ token: string; tokenSource: string }> {
   try {
-    const jwtToken = await getToken({ req: request });
-    const accessToken = (jwtToken as Record<string, unknown> | null)?.accessToken as string | undefined;
-    const expires = (jwtToken as Record<string, unknown> | null)?.accessTokenExpires as number | undefined;
-    const refreshToken = (jwtToken as Record<string, unknown> | null)?.refreshToken as string | undefined;
+    const jwtToken = await getJwtToken(request);
+    const accessToken = jwtToken?.accessToken as string | undefined;
+    const expires = jwtToken?.accessTokenExpires as number | undefined;
+    const refreshToken = jwtToken?.refreshToken as string | undefined;
 
     if (accessToken && (expires == null || Date.now() < expires - 60_000)) {
       return { token: accessToken, tokenSource: "user_oauth" };
