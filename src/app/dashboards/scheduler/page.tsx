@@ -899,13 +899,13 @@ export default function SchedulerPage() {
   );
 
   const getEffectiveConstructionDays = useCallback((project: SchedulerProject): number | undefined => {
-    if (project.zuperScheduledDays && project.zuperScheduledDays > 0) return project.zuperScheduledDays;
     if (project.zuperJobCategory !== "construction") return undefined;
     if (project.zuperScheduledStart && project.zuperScheduledEnd) {
       const startDate = project.zuperScheduledStart.split("T")[0];
       const endDate = project.zuperScheduledEnd.split("T")[0];
       return countBusinessDaysInclusive(startDate, endDate);
     }
+    if (project.zuperScheduledDays && project.zuperScheduledDays > 0) return project.zuperScheduledDays;
     return undefined;
   }, []);
 
