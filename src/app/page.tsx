@@ -310,6 +310,7 @@ export default function Home() {
   const redirectTarget = useMemo(() => {
     if (!userRole) return null;
     if (userRole === "VIEWER") return "/unassigned";
+    if (userRole === "OPERATIONS") return "/suites/operations";
     return null;
   }, [userRole]);
 
