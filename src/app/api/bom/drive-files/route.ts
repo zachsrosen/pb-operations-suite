@@ -15,32 +15,41 @@ interface DriveFile {
   size: string;
 }
 
+const DRIVE_BASE = "https://www.googleapis.com/drive/v3/files";
+const DRIVE_PARAMS = "includeItemsFromAllDrives=true&supportsAllDrives=true";
+
 /**
  * Returns the best available Google OAuth token for Drive access.
  * Reads the user's OAuth access_token directly from the JWT (server-side only —
  * never exposed to the client). Falls back to the service account token if the
  * user token is missing or expired.
  */
-async function getDriveToken(request: NextRequest): Promise<{ token: string; source: string }> {
-  // Prefer user's OAuth token — has natural Workspace Drive access
+async function getDriveToken(request: NextRequest): Promise<string> {
   try {
     const jwtToken = await getToken({ req: request });
     const accessToken = (jwtToken as Record<string, unknown> | null)?.accessToken as string | undefined;
     const expires = (jwtToken as Record<string, unknown> | null)?.accessTokenExpires as number | undefined;
-    const scopes = (jwtToken as Record<string, unknown> | null)?.scope as string | undefined;
     if (accessToken && (expires == null || Date.now() < expires)) {
-      return { token: accessToken, source: `user-oauth (scopes: ${scopes ?? "unknown"}, expires: ${expires ? new Date(expires).toISOString() : "none"})` };
+      return accessToken;
     }
-    if (accessToken) {
-      return { token: accessToken, source: `user-oauth-expired (expired at ${expires ? new Date(expires).toISOString() : "unknown"})` };
-    }
-  } catch (e) {
-    console.error("[drive-files] getToken error:", e);
+  } catch {
+    // fall through to service account
   }
+  return getServiceAccountToken(["https://www.googleapis.com/auth/drive.readonly"]);
+}
 
-  // Fallback: service account (requires manual folder sharing)
-  const saToken = await getServiceAccountToken(["https://www.googleapis.com/auth/drive.readonly"]);
-  return { token: saToken, source: "service-account" };
+/** List all items (files + folders) directly inside a Drive folder. */
+async function listFolder(folderId: string, token: string): Promise<DriveFile[]> {
+  const q = encodeURIComponent(`'${folderId}' in parents and trashed=false`);
+  const fields = encodeURIComponent("files(id,name,mimeType,modifiedTime,size)");
+  const url = `${DRIVE_BASE}?q=${q}&fields=${fields}&orderBy=modifiedTime%20desc&${DRIVE_PARAMS}`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({})) as { error?: { message?: string } };
+    throw new Error(err.error?.message ?? `Drive error ${res.status}`);
+  }
+  const data = await res.json() as { files: DriveFile[] };
+  return data.files ?? [];
 }
 
 export async function GET(request: NextRequest) {
@@ -50,54 +59,62 @@ export async function GET(request: NextRequest) {
   const folderParam = request.nextUrl.searchParams.get("folderId");
   if (!folderParam) return NextResponse.json({ error: "folderId required" }, { status: 400 });
 
-  // Accept either a bare folder ID or a full Drive URL — extract ID from URL if needed.
-  // Handles: https://drive.google.com/drive/folders/FOLDER_ID
-  //          https://drive.google.com/drive/folders/FOLDER_ID?usp=sharing
+  // Accept either a bare folder ID or a full Drive URL
   const driveUrlMatch = folderParam.match(/\/folders\/([a-zA-Z0-9_-]{10,})/);
   const folderId = driveUrlMatch ? driveUrlMatch[1] : folderParam;
 
-  // Validate bare folder ID format to prevent Drive query injection
   if (!/^[a-zA-Z0-9_-]{10,}$/.test(folderId)) {
     return NextResponse.json({ error: "Invalid folderId format" }, { status: 400 });
   }
 
   try {
-    const { token, source: tokenSource } = await getDriveToken(request);
+    const token = await getDriveToken(request);
 
-    // DEBUG: list ALL files+folders (no mimeType filter) to see actual folder contents
-    const query = encodeURIComponent(
-      `'${folderId}' in parents and trashed=false`
-    );
-    const fields = encodeURIComponent("files(id,name,mimeType,modifiedTime,size)");
-    // includeItemsFromAllDrives + supportsAllDrives are required for Shared/Team Drives
-    const url = `https://www.googleapis.com/drive/v3/files?q=${query}&fields=${fields}&orderBy=modifiedTime%20desc&includeItemsFromAllDrives=true&supportsAllDrives=true`;
+    // Step 1: list everything directly in the folder
+    const items = await listFolder(folderId, token);
 
-    console.log(`[drive-files] folderId=${folderId} token=${tokenSource}`);
+    // Step 2: collect PDFs directly in this folder
+    const pdfs = items.filter(f => f.mimeType === "application/pdf");
 
-    const driveRes = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    const rawBody = await driveRes.text();
-    console.log(`[drive-files] Drive API status=${driveRes.status} body=${rawBody.slice(0, 500)}`);
-
-    if (!driveRes.ok) {
-      let errMsg = `Drive error ${driveRes.status}`;
-      try { errMsg = (JSON.parse(rawBody) as { error?: { message?: string } }).error?.message ?? errMsg; } catch { /* raw */ }
-      return NextResponse.json(
-        { files: [], error: errMsg, debug: { folderId, tokenSource, status: driveRes.status, body: rawBody.slice(0, 500) } },
-        { status: 200 }
-      );
+    if (pdfs.length > 0) {
+      return NextResponse.json({ files: pdfs });
     }
 
-    const data = JSON.parse(rawBody) as { files: DriveFile[] };
-    return NextResponse.json({
-      files: data.files ?? [],
-      debug: { folderId, tokenSource, fileCount: (data.files ?? []).length },
-    });
+    // Step 3: no PDFs directly here — search one level of subfolders.
+    // PB Drive structure: all_document_parent_folder contains subfolders
+    // like "Design Documents", "Permit Documents", etc. Prefer a subfolder
+    // whose name contains "design" (case-insensitive); fall back to any subfolder.
+    const subfolders = items.filter(f =>
+      f.mimeType === "application/vnd.google-apps.folder"
+    );
+
+    if (subfolders.length === 0) {
+      return NextResponse.json({ files: [] });
+    }
+
+    // Prioritise design subfolder; otherwise search all subfolders in parallel
+    const designFolder = subfolders.find(f =>
+      f.name.toLowerCase().includes("design")
+    );
+    const foldersToSearch = designFolder ? [designFolder] : subfolders;
+
+    const subResults = await Promise.all(
+      foldersToSearch.map(sub =>
+        listFolder(sub.id, token)
+          .then(files => files.filter(f => f.mimeType === "application/pdf"))
+          .catch(() => [] as DriveFile[])
+      )
+    );
+
+    const allPdfs = subResults.flat().sort(
+      (a, b) => new Date(b.modifiedTime).getTime() - new Date(a.modifiedTime).getTime()
+    );
+
+    return NextResponse.json({ files: allPdfs });
+
   } catch (e) {
     return NextResponse.json(
-      { files: [], error: e instanceof Error ? e.message : "Drive fetch failed", debug: { folderId } },
+      { files: [], error: e instanceof Error ? e.message : "Drive fetch failed" },
       { status: 200 }
     );
   }
