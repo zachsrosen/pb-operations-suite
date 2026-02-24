@@ -738,13 +738,14 @@ export default function SiteSurveySchedulerPage() {
 
   // Fetch availability when project is selected or month changes
   useEffect(() => {
-    if (selectedProject && zuperConfigured) {
-      fetchAvailability(selectedProject.location, selectedProject);
+    const activeProject = selectedPreSaleDeal || selectedProject;
+    if (activeProject && zuperConfigured) {
+      fetchAvailability(activeProject.location, activeProject);
     } else if (zuperConfigured && showAvailability) {
       // Fetch general availability when no project selected but overlay is on
       fetchAvailability();
     }
-  }, [selectedProject, zuperConfigured, currentMonth, currentYear, fetchAvailability, showAvailability]);
+  }, [selectedProject, selectedPreSaleDeal, zuperConfigured, currentMonth, currentYear, fetchAvailability, showAvailability]);
 
   /* ================================================================ */
   /*  Toast                                                            */
@@ -2231,7 +2232,7 @@ export default function SiteSurveySchedulerPage() {
                                                     {/* Show available surveyors with time slots - scrollable list */}
                           {showAvailability && hasAvailability && (() => {
                             // Filter slots by project location if a project is selected
-                            const projectLocation = selectedProject?.location;
+                            const projectLocation = (selectedPreSaleDeal || selectedProject)?.location;
                             const bookedForDay = dayAvailability?.bookedSlots || [];
                             const matchingSlots = dayAvailability?.availableSlots?.filter(slot => {
                               // If no project selected, show all slots
@@ -2273,9 +2274,10 @@ export default function SiteSurveySchedulerPage() {
                                       key={`${surveyorName}-${slotIndex}`}
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        if (selectedProject && !isPast) {
+                                        const activeProject = selectedPreSaleDeal || selectedProject;
+                                        if (activeProject && !isPast) {
                                           openScheduleModal({
-                                            project: selectedProject,
+                                            project: activeProject,
                                             date: dateStr,
                                             slot: {
                                               userName: surveyorName,
@@ -2289,9 +2291,9 @@ export default function SiteSurveySchedulerPage() {
                                           });
                                         }
                                       }}
-                                      disabled={!selectedProject || isPast}
+                                      disabled={!(selectedPreSaleDeal || selectedProject) || isPast}
                                       className={`text-[0.55rem] px-1 py-0.5 rounded ${
-                                        selectedProject && !isPast
+                                        (selectedPreSaleDeal || selectedProject) && !isPast
                                           ? slot.travelWarning?.type === "tight"
                                             ? "bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 cursor-pointer border border-amber-500/30 hover:border-amber-500/50"
                                             : slot.travelWarning?.type === "unknown"
@@ -2299,7 +2301,7 @@ export default function SiteSurveySchedulerPage() {
                                               : "bg-emerald-500/10 hover:bg-emerald-500/30 text-emerald-400 cursor-pointer border border-emerald-500/20 hover:border-emerald-500/40"
                                           : "text-emerald-500/50"
                                       }`}
-                                      title={selectedProject
+                                      title={(selectedPreSaleDeal || selectedProject)
                                         ? slot.travelWarning?.type === "tight"
                                           ? `⚠️ Tight travel — ${slot.travelWarning.prevJob?.travelMinutes || slot.travelWarning.nextJob?.travelMinutes || "?"}min drive between adjacent jobs`
                                           : slot.travelWarning?.type === "unknown"
@@ -2316,7 +2318,7 @@ export default function SiteSurveySchedulerPage() {
                           })()}
                           {/* Show booked slots so users can see what's already scheduled */}
                           {showAvailability && dayAvailability?.bookedSlots && dayAvailability.bookedSlots.length > 0 && (() => {
-                            const projectLocation = selectedProject?.location;
+                            const projectLocation = (selectedPreSaleDeal || selectedProject)?.location;
                             const matchingBooked = dayAvailability.bookedSlots.filter(slot => {
                               if (!projectLocation) return true;
                               if (!slot.location) return true;
