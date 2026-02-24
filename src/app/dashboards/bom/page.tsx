@@ -534,6 +534,13 @@ function BomDashboardInner() {
     setImportError(null);
   }, [linkedProject?.designFolderUrl]);
 
+  // If deal context is cleared, reset away from the design-folder tab.
+  useEffect(() => {
+    if (!linkedProject?.designFolderUrl && importTab === "project-files") {
+      setImportTab("upload");
+    }
+  }, [linkedProject?.designFolderUrl, importTab]);
+
   /* ---- Auto-link: search HubSpot when BOM loads and no project is linked ---- */
   useEffect(() => {
     if (linkedProject || !bom?.project?.address) {
@@ -586,16 +593,22 @@ function BomDashboardInner() {
 
 
   /* ---- Save snapshot helper ---- */
-  const saveSnapshot = useCallback(async (bomData: BomData, sourceFile?: string, blobUrl?: string) => {
-    if (!linkedProject) return;
+  const saveSnapshot = useCallback(async (
+    bomData: BomData,
+    sourceFile?: string,
+    blobUrl?: string,
+    projectOverride?: ProjectResult | null
+  ) => {
+    const targetProject = projectOverride ?? linkedProject;
+    if (!targetProject) return;
     setSaving(true);
     try {
       const res = await fetch("/api/bom/history", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          dealId: linkedProject.hs_object_id,
-          dealName: linkedProject.dealname,
+          dealId: targetProject.hs_object_id,
+          dealName: targetProject.dealname,
           bomData,
           sourceFile,
           blobUrl,
@@ -607,12 +620,12 @@ function BomDashboardInner() {
       setZohoPoId(null);    // New save = no PO yet
       setZohoVendors(null); // Re-fetch vendors for this project on next render
       // Reload history list
-      const histRes = await fetch(`/api/bom/history?dealId=${encodeURIComponent(linkedProject.hs_object_id)}`);
+      const histRes = await fetch(`/api/bom/history?dealId=${encodeURIComponent(targetProject.hs_object_id)}`);
       if (histRes.ok) {
         const histData = await histRes.json() as { snapshots: BomSnapshot[] };
         setSnapshots(histData.snapshots);
       }
-      addToast({ type: "success", title: `BOM v${saved.version} saved to ${linkedProject.dealname}` });
+      addToast({ type: "success", title: `BOM v${saved.version} saved to ${targetProject.dealname}` });
       // Fire-and-forget email notification
       if (session?.user?.email) {
         fetch("/api/bom/notify", {
@@ -620,8 +633,8 @@ function BomDashboardInner() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             userEmail: session.user.email,
-            dealName: linkedProject.dealname,
-            dealId: linkedProject.hs_object_id,
+            dealName: targetProject.dealname,
+            dealId: targetProject.hs_object_id,
             version: saved.version,
             sourceFile,
             itemCount: bomData.items.length,
@@ -640,8 +653,8 @@ function BomDashboardInner() {
               qty: Number(item.qty),
               unitSpec: item.unitSpec != null ? String(item.unitSpec) : null,
             })),
-            hubspotUrl: `https://app.hubspot.com/contacts/21710069/deal/${linkedProject.hs_object_id}`,
-            zuperUrl: linkedProject.zuperUid ? `https://app.zuper.co/jobs/${linkedProject.zuperUid}` : null,
+            hubspotUrl: `https://app.hubspot.com/contacts/21710069/deal/${targetProject.hs_object_id}`,
+            zuperUrl: targetProject.zuperUid ? `https://app.zuper.co/jobs/${targetProject.zuperUid}` : null,
           }),
         }).catch(() => {/* silent */});
       }
@@ -692,28 +705,35 @@ function BomDashboardInner() {
 
   /* ---- Load BOM helper ---- */
   // freshExtract=true when loading a newly extracted PDF (not a saved snapshot).
-  // By default this clears linked project state to avoid carrying over stale
-  // deal context. For "extract from this linked project's design file" flows,
-  // pass preserveLinkedProject=true to keep the current deal link.
-  const loadBomData = useCallback((data: BomData, freshExtract = false, preserveLinkedProject = false) => {
+  // Pass preserveProject to keep the BOM tied to the current HubSpot deal.
+  const loadBomData = useCallback((data: BomData, freshExtract = false, preserveProject: ProjectResult | null = null) => {
     if (!data.items || !Array.isArray(data.items)) {
       throw new Error('Response must have an "items" array');
     }
     setBom(data);
     setItems(assignIds(data.items));
-    if (freshExtract && !preserveLinkedProject) {
-      setLinkedProject(null);
-      setImportTab("upload");
-      setDriveFiles([]);
-      setSnapshots([]);
-      setSavedVersion(null);
-      setZohoPoId(null);
-      setAutoLinkSuggestion(null);
-      // Remove stale ?deal= param from URL without a navigation
-      const url = new URL(window.location.href);
-      url.searchParams.delete("deal");
-      url.searchParams.delete("load");
-      window.history.replaceState({}, "", url.toString());
+    if (freshExtract) {
+      if (preserveProject) {
+        setLinkedProject(preserveProject);
+        setImportTab(preserveProject.designFolderUrl ? "project-files" : "upload");
+        const url = new URL(window.location.href);
+        url.searchParams.set("deal", preserveProject.hs_object_id);
+        url.searchParams.delete("load");
+        window.history.replaceState({}, "", url.toString());
+      } else {
+        setLinkedProject(null);
+        setImportTab("upload");
+        setDriveFiles([]);
+        setSnapshots([]);
+        setSavedVersion(null);
+        setZohoPoId(null);
+        setAutoLinkSuggestion(null);
+        // Remove stale ?deal= param from URL without a navigation
+        const url = new URL(window.location.href);
+        url.searchParams.delete("deal");
+        url.searchParams.delete("load");
+        window.history.replaceState({}, "", url.toString());
+      }
     }
   }, []);
 
@@ -741,6 +761,7 @@ function BomDashboardInner() {
   // for Claude to fetch server-side.
   const handleExtractUpload = useCallback(async () => {
     if (!uploadFile) return;
+    const projectAtExtractStart = linkedProject;
     setExtracting(true);
     setImportError(null);
     setUploadProgress("");
@@ -799,12 +820,11 @@ function BomDashboardInner() {
         body: JSON.stringify({ blobUrl }),
       });
       const data = await safeFetchBom(res);
-      const projectAtExtract = linkedProject; // capture before loadBomData clears it
-      loadBomData(data, true, !!projectAtExtract);
+      loadBomData(data, true, projectAtExtractStart);
       addToast({ type: "success", title: `BOM extracted from ${uploadFile.name}` });
       // Auto-save snapshot if a project was linked at extract time
-      if (projectAtExtract) {
-        await saveSnapshot(data, uploadFile.name, blobUrl);
+      if (projectAtExtractStart) {
+        await saveSnapshot(data, uploadFile.name, blobUrl, projectAtExtractStart);
       }
     } catch (e) {
       setImportError(e instanceof Error ? e.message : "Upload failed");
@@ -818,6 +838,7 @@ function BomDashboardInner() {
   const handleExtractDrive = useCallback(async () => {
     const url = driveUrl.trim();
     if (!url) return;
+    const projectAtExtractStart = linkedProject;
 
     // Convert Drive share URL → direct download URL
     // https://drive.google.com/file/d/FILE_ID/view → /uc?export=download&id=FILE_ID
@@ -839,11 +860,10 @@ function BomDashboardInner() {
         body: JSON.stringify({ driveUrl: downloadUrl, fileId }),
       });
       const data = await safeFetchBom(proxyRes);
-      const projectAtExtract = linkedProject;
-      loadBomData(data, true, !!projectAtExtract);
+      loadBomData(data, true, projectAtExtractStart);
       addToast({ type: "success", title: "BOM extracted from Google Drive" });
-      if (projectAtExtract) {
-        await saveSnapshot(data, driveUrl);
+      if (projectAtExtractStart) {
+        await saveSnapshot(data, driveUrl, undefined, projectAtExtractStart);
       }
     } catch (e) {
       setImportError(e instanceof Error ? e.message : "Drive extraction failed");
@@ -854,6 +874,7 @@ function BomDashboardInner() {
 
   /* ---- Extract from a Drive file ID directly (from design files picker) ---- */
   const handleExtractDriveFile = useCallback(async (file: DriveFile) => {
+    const projectAtExtractStart = linkedProject;
     setExtractingDriveFileId(file.id);
     setImportError(null);
     const downloadUrl = `https://drive.google.com/uc?export=download&id=${file.id}`;
@@ -864,10 +885,9 @@ function BomDashboardInner() {
         body: JSON.stringify({ driveUrl: downloadUrl, fileId: file.id }),
       });
       const data = await safeFetchBom(proxyRes);
-      const projectAtExtract = linkedProject;
-      loadBomData(data, true, !!projectAtExtract);
+      loadBomData(data, true, projectAtExtractStart);
       addToast({ type: "success", title: `BOM extracted from ${file.name}` });
-      if (projectAtExtract) await saveSnapshot(data, file.name, downloadUrl);
+      if (projectAtExtractStart) await saveSnapshot(data, file.name, downloadUrl, projectAtExtractStart);
     } catch (e) {
       addToast({ type: "error", title: e instanceof Error ? e.message : "Extraction failed" });
     } finally {
