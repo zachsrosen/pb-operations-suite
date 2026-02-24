@@ -179,6 +179,30 @@ async function handleLookup(projectIds: string[], projectNames: string[], catego
     return Math.max(count, 1);
   };
 
+  const startOfDay = (date: Date): Date =>
+    new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+  // Some Zuper jobs store the end boundary as exclusive (for example, start 08:00
+  // on day 1 and end 08:00 on day 3 for a 2-day span). In that case, counting
+  // both boundary dates inflates by one day.
+  const normalizeInclusiveEndDate = (start: Date, end: Date): Date => {
+    const startDate = startOfDay(start);
+    const endDate = startOfDay(end);
+    if (endDate <= startDate) return endDate;
+
+    const startMinutes = start.getHours() * 60 + start.getMinutes();
+    const endMinutes = end.getHours() * 60 + end.getMinutes();
+
+    // Heuristic: if end time is at/before start time on a later date, treat end
+    // as an exclusive boundary and shift back one day for inclusive day counts.
+    if (endMinutes <= startMinutes) {
+      const adjusted = new Date(endDate);
+      adjusted.setDate(adjusted.getDate() - 1);
+      return adjusted >= startDate ? adjusted : startDate;
+    }
+    return endDate;
+  };
+
   // Helper to extract customer name from project name
   const extractCustomerName = (name: string): string => {
     const decoded = decodeURIComponent(name);
@@ -534,15 +558,17 @@ async function handleLookup(projectIds: string[], projectNames: string[], catego
         // A 3-day job spans 3 calendar days
         if (diffDays > 0) {
           // Count calendar days by default; construction spans are business days.
-          const startDate = new Date(start.getFullYear(), start.getMonth(), start.getDate());
-          const endDate = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+          // Normalize end boundary to avoid off-by-one when Zuper returns an
+          // exclusive end timestamp for multi-day jobs.
+          const startDate = startOfDay(start);
+          const inclusiveEndDate = normalizeInclusiveEndDate(start, end);
           const calendarDaysDiff = Math.round(
-            (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
+            (inclusiveEndDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
           );
           // +1 because the span is inclusive: Feb 19→20 = 2 days, not 1
           scheduledDays = Math.max(calendarDaysDiff + 1, 1);
           if (targetCategory === JOB_CATEGORIES.CONSTRUCTION) {
-            scheduledDays = countBusinessDaysInclusive(startDate, endDate);
+            scheduledDays = countBusinessDaysInclusive(startDate, inclusiveEndDate);
           }
         }
       }

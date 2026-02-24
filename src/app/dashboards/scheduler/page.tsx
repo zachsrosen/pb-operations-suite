@@ -385,6 +385,18 @@ function addBusinessDays(dateStr: string, days: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+function countBusinessDaysInclusive(startDate: string, endDate: string): number {
+  if (!startDate || !endDate) return 1;
+  if (endDate < startDate) return 1;
+  let cursor = startDate;
+  let count = 0;
+  while (cursor <= endDate) {
+    if (!isWeekend(cursor)) count += 1;
+    cursor = addDays(cursor, 1);
+  }
+  return Math.max(count, 1);
+}
+
 function getNextWorkday(dateStr: string): string {
   const [year, month, day] = dateStr.split("-").map(Number);
   const d = new Date(year, month - 1, day);
@@ -886,6 +898,17 @@ export default function SchedulerPage() {
     []
   );
 
+  const getEffectiveConstructionDays = useCallback((project: SchedulerProject): number | undefined => {
+    if (project.zuperScheduledDays && project.zuperScheduledDays > 0) return project.zuperScheduledDays;
+    if (project.zuperJobCategory !== "construction") return undefined;
+    if (project.zuperScheduledStart && project.zuperScheduledEnd) {
+      const startDate = project.zuperScheduledStart.split("T")[0];
+      const endDate = project.zuperScheduledEnd.split("T")[0];
+      return countBusinessDaysInclusive(startDate, endDate);
+    }
+    return undefined;
+  }, []);
+
   /** Build a list of existing crew bookings from Zuper jobs, manual schedules,
    *  and HubSpot construction dates so the optimizer avoids double-booking. */
   const buildExistingBookings = useCallback(
@@ -899,7 +922,7 @@ export default function SchedulerPage() {
         // Zuper-scheduled construction jobs — counts as 1 job at this location
         if (p.zuperJobCategory === "construction" && p.zuperScheduledStart) {
           const startStr = p.zuperScheduledStart.split("T")[0];
-          const days = p.zuperScheduledDays || p.daysInstall || 1;
+          const days = getEffectiveConstructionDays(p) || p.daysInstall || 1;
           bookings.push({ location: loc, startDate: startStr, days });
         }
 
@@ -918,7 +941,7 @@ export default function SchedulerPage() {
 
       return bookings;
     },
-    [projects, manualSchedules]
+    [projects, manualSchedules, getEffectiveConstructionDays]
   );
 
   /** Check if a location has remaining capacity on the chosen date for scheduling modal. */
@@ -947,16 +970,15 @@ export default function SchedulerPage() {
     return spanDates.every((d) => (dayCounts[d] || 0) < cap);
   }, [scheduleModal, installDaysInput, buildExistingBookings]);
 
-  /** Get available construction crews for the schedule modal (all crews if location has capacity). */
+  /** Get available construction crews for the schedule modal. */
   const availableConstructionCrews = useMemo(() => {
     if (!scheduleModal) return [] as CrewConfig[];
     const isConstruction = scheduleModal.project.stage !== "survey" && scheduleModal.project.stage !== "inspection";
     if (!isConstruction) return [] as CrewConfig[];
 
     const locationCrews = CREWS[scheduleModal.project.location] || [];
-    if (!locationHasCapacity) return [] as CrewConfig[];
     return locationCrews;
-  }, [scheduleModal, locationHasCapacity]);
+  }, [scheduleModal]);
 
   // Clear crew selection when it becomes unavailable due to booking conflicts
   useEffect(() => {
@@ -1056,7 +1078,7 @@ export default function SchedulerPage() {
       if (constructionDate) {
         const schedDate = new Date(constructionDate + "T12:00:00");
         const done = !!p.constructionCompleted;
-        const days = (zuperIsConstruction ? p.zuperScheduledDays : null) || p.daysInstall || 1;
+        const days = (zuperIsConstruction ? getEffectiveConstructionDays(p) : null) || p.daysInstall || 1;
         const key = `${p.id}-construction`;
         if (!seenKeys.has(key)) {
           seenKeys.add(key);
@@ -1113,7 +1135,7 @@ export default function SchedulerPage() {
       if (p.scheduleDate && (p.stage === "rtb" || p.stage === "blocked") && !seenKeys.has(`${p.id}-construction`)) {
         const schedDate = new Date(p.scheduleDate + "T12:00:00");
         const done = !!p.constructionCompleted;
-        const days = (zuperIsConstruction ? p.zuperScheduledDays : null) || p.daysInstall || 1;
+        const days = (zuperIsConstruction ? getEffectiveConstructionDays(p) : null) || p.daysInstall || 1;
         const key = `${p.id}-construction`;
         seenKeys.add(key);
         events.push({
@@ -1150,7 +1172,7 @@ export default function SchedulerPage() {
       }
     });
     return events;
-  }, [projects, manualSchedules]);
+  }, [projects, manualSchedules, getEffectiveConstructionDays]);
 
   // Apply calendar multi-select filters for all views (month, week, Gantt)
   // Map base stage types to include their completed variants so the stage
@@ -1426,7 +1448,7 @@ export default function SchedulerPage() {
       const adjustedDate = getNextWorkday(dateStr);
       const isSurveyOrInspection =
         project.stage === "survey" || project.stage === "inspection";
-      setInstallDaysInput(isSurveyOrInspection ? 1 : project.zuperScheduledDays || project.daysInstall || 2);
+      setInstallDaysInput(isSurveyOrInspection ? 1 : getEffectiveConstructionDays(project) || project.daysInstall || 2);
       // Pre-select the default user/crew based on schedule type
       if (project.stage === "survey") {
         const surveyUsers = ZUPER_SURVEY_USERS[project.location] || [];
@@ -1446,7 +1468,7 @@ export default function SchedulerPage() {
       });
       setScheduleModal({ project, date: adjustedDate });
     },
-    [trackFeature]
+    [trackFeature, getEffectiveConstructionDays]
   );
 
   const confirmSchedule = useCallback(async () => {
@@ -4081,34 +4103,41 @@ export default function SchedulerPage() {
                   </>
                 ) : (
                   /* Construction: Days + Crew */
-                  <div className="flex gap-2.5 mt-2 flex-wrap items-center">
-                    <label className="text-[0.7rem] text-muted">Days:</label>
-                    <input
-                      type="number"
-                      value={installDaysInput}
-                      onChange={(e) =>
-                        setInstallDaysInput(parseInt(e.target.value, 10) || 1)
-                      }
-                      min={1}
-                      max={10}
-                      step={1}
-                      className="bg-background border border-t-border text-foreground/90 px-2 py-1.5 rounded font-mono text-[0.75rem] w-[60px] text-center focus:outline-none focus:border-orange-500"
-                    />
-                    <label className="text-[0.7rem] text-muted">Crew:</label>
-                    <select
-                      value={crewSelectInput}
-                      onChange={(e) => setCrewSelectInput(e.target.value)}
-                      className="bg-background border border-t-border text-foreground/90 px-2 py-1.5 rounded font-mono text-[0.75rem] focus:outline-none focus:border-orange-500"
-                    >
-                      <option value="">Select crew…</option>
-                      {availableConstructionCrews.map((c) => (
-                        <option key={c.name} value={c.name}>{c.name}</option>
-                      ))}
-                      {availableConstructionCrews.length === 0 && (
-                        <option disabled>No crews available on this date</option>
-                      )}
-                    </select>
-                  </div>
+                  <>
+                    <div className="flex gap-2.5 mt-2 flex-wrap items-center">
+                      <label className="text-[0.7rem] text-muted">Days:</label>
+                      <input
+                        type="number"
+                        value={installDaysInput}
+                        onChange={(e) =>
+                          setInstallDaysInput(parseInt(e.target.value, 10) || 1)
+                        }
+                        min={1}
+                        max={10}
+                        step={1}
+                        className="bg-background border border-t-border text-foreground/90 px-2 py-1.5 rounded font-mono text-[0.75rem] w-[60px] text-center focus:outline-none focus:border-orange-500"
+                      />
+                      <label className="text-[0.7rem] text-muted">Crew:</label>
+                      <select
+                        value={crewSelectInput}
+                        onChange={(e) => setCrewSelectInput(e.target.value)}
+                        className="bg-background border border-t-border text-foreground/90 px-2 py-1.5 rounded font-mono text-[0.75rem] focus:outline-none focus:border-orange-500"
+                      >
+                        <option value="">Select crew…</option>
+                        {availableConstructionCrews.map((c) => (
+                          <option key={c.name} value={c.name}>{c.name}</option>
+                        ))}
+                        {availableConstructionCrews.length === 0 && (
+                          <option disabled>No crews configured for this location</option>
+                        )}
+                      </select>
+                    </div>
+                    {!locationHasCapacity && (
+                      <div className="text-[0.6rem] text-amber-400/80 mt-1">
+                        Capacity warning: calendar data suggests this date is full, but scheduling is still allowed.
+                      </div>
+                    )}
+                  </>
                 )}
               </ModalSection>
 
