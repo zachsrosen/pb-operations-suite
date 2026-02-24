@@ -60,6 +60,7 @@ export async function GET(request: NextRequest) {
   if (!q || q.length < 2) {
     return NextResponse.json({ deals: [], message: "Query must be at least 2 characters" });
   }
+  const normalizedQuery = q.toLowerCase();
 
   const portalId = process.env.HUBSPOT_PORTAL_ID || "21710069";
 
@@ -93,7 +94,27 @@ export async function GET(request: NextRequest) {
       )
     );
 
-    // Merge and dedupe by deal ID
+    const getRelevanceScore = (deal: { id: string; properties?: Record<string, string> }): number => {
+      const props = deal.properties || {};
+      const name = String(props.dealname || "").toLowerCase();
+      const address = [props.address_line_1, props.city, props.state].filter(Boolean).join(" ").toLowerCase();
+      const location = String(props.pb_location || "").toLowerCase();
+      let score = 0;
+
+      if (name === normalizedQuery) score += 100;
+      else if (name.startsWith(normalizedQuery)) score += 75;
+      else if (name.includes(normalizedQuery)) score += 55;
+
+      if (address.startsWith(normalizedQuery)) score += 35;
+      else if (address.includes(normalizedQuery)) score += 20;
+
+      if (location.startsWith(normalizedQuery)) score += 15;
+      else if (location.includes(normalizedQuery)) score += 10;
+
+      return score;
+    };
+
+    // Merge and dedupe by deal ID, then apply deterministic relevance ordering.
     const seen = new Set<string>();
     const response = {
       results: allResults.flatMap((r) =>
@@ -103,7 +124,15 @@ export async function GET(request: NextRequest) {
           seen.add(id);
           return true;
         })
-      ).slice(0, 20),
+      )
+        .sort((a, b) => {
+          const scoreDiff = getRelevanceScore(b) - getRelevanceScore(a);
+          if (scoreDiff !== 0) return scoreDiff;
+          const amountDiff = Number(b.properties?.amount || 0) - Number(a.properties?.amount || 0);
+          if (amountDiff !== 0) return amountDiff;
+          return String(a.id).localeCompare(String(b.id));
+        })
+        .slice(0, 20),
     };
 
     const deals = (response.results || []).map((deal) => {

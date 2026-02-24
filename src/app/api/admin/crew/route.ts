@@ -65,7 +65,7 @@ const SEED_DATA = [
   },
   {
     name: "Ryszard Szymanski",
-    email: "ryszard@photonbrothers.com",
+    email: "richard@photonbrothers.com",
     zuperUserUid: "e043bf1d-006b-4033-a46e-3b5d06ed3d00",
     zuperTeamUid: ZUPER_TEAM_UIDS.Westminster,
     role: "surveyor",

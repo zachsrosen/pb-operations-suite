@@ -16,40 +16,130 @@ interface DriveFile {
 }
 
 const DRIVE_BASE = "https://www.googleapis.com/drive/v3/files";
-const DRIVE_PARAMS = "includeItemsFromAllDrives=true&supportsAllDrives=true";
+const DRIVE_PARAMS = "includeItemsFromAllDrives=true&supportsAllDrives=true&pageSize=100";
+const MAX_SEARCH_DEPTH = 4;
+const MAX_FOLDERS_TO_SCAN = 60;
+
+/**
+ * Refreshes a Google OAuth access token using the stored refresh token.
+ * Returns the new access token string, or null if refresh fails.
+ */
+async function refreshUserToken(refreshToken: string): Promise<string | null> {
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  if (!clientId || !clientSecret) return null;
+
+  try {
+    const res = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        refresh_token: refreshToken,
+        grant_type: "refresh_token",
+      }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json() as { access_token?: string };
+    return data.access_token ?? null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Returns the best available Google OAuth token for Drive access.
- * Reads the user's OAuth access_token directly from the JWT (server-side only —
- * never exposed to the client). Falls back to the service account token if the
- * user token is missing or expired.
+ * Priority:
+ *  1. User's JWT access_token if not expired
+ *  2. Refreshed user token (using stored refresh_token) when access_token is expired
+ *  3. Service account token as final fallback
+ *
+ * Returns both the token and a tokenSource label for debugging.
  */
-async function getDriveToken(request: NextRequest): Promise<string> {
+async function getDriveToken(request: NextRequest): Promise<{ token: string; tokenSource: string }> {
   try {
     const jwtToken = await getToken({ req: request });
     const accessToken = (jwtToken as Record<string, unknown> | null)?.accessToken as string | undefined;
     const expires = (jwtToken as Record<string, unknown> | null)?.accessTokenExpires as number | undefined;
-    if (accessToken && (expires == null || Date.now() < expires)) {
-      return accessToken;
+    const refreshToken = (jwtToken as Record<string, unknown> | null)?.refreshToken as string | undefined;
+
+    if (accessToken && (expires == null || Date.now() < expires - 60_000)) {
+      return { token: accessToken, tokenSource: "user_oauth" };
+    }
+
+    // Access token expired — try to refresh using the stored refresh_token
+    if (refreshToken) {
+      const refreshed = await refreshUserToken(refreshToken);
+      if (refreshed) {
+        return { token: refreshed, tokenSource: "user_oauth_refreshed" };
+      }
     }
   } catch {
     // fall through to service account
   }
-  return getServiceAccountToken(["https://www.googleapis.com/auth/drive.readonly"]);
+
+  const saToken = await getServiceAccountToken(["https://www.googleapis.com/auth/drive.readonly"]);
+  return { token: saToken, tokenSource: "service_account" };
 }
 
-/** List all items (files + folders) directly inside a Drive folder. */
-async function listFolder(folderId: string, token: string): Promise<DriveFile[]> {
-  const q = encodeURIComponent(`'${folderId}' in parents and trashed=false`);
-  const fields = encodeURIComponent("files(id,name,mimeType,modifiedTime,size)");
-  const url = `${DRIVE_BASE}?q=${q}&fields=${fields}&orderBy=modifiedTime%20desc&${DRIVE_PARAMS}`;
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({})) as { error?: { message?: string } };
-    throw new Error(err.error?.message ?? `Drive error ${res.status}`);
+function parseFolderId(rawFolderParam: string): string {
+  const folderPathMatch = rawFolderParam.match(/\/folders\/([a-zA-Z0-9_-]{10,})/);
+  if (folderPathMatch?.[1]) return folderPathMatch[1];
+
+  try {
+    const parsed = new URL(rawFolderParam);
+    const id = parsed.searchParams.get("id");
+    if (id) return id;
+  } catch {
+    // rawFolderParam may already be a bare folder ID
   }
-  const data = await res.json() as { files: DriveFile[] };
-  return data.files ?? [];
+
+  return rawFolderParam;
+}
+
+async function listDriveFilesByQuery(
+  query: string,
+  token: string,
+  fields: string
+): Promise<DriveFile[]> {
+  const files: DriveFile[] = [];
+  let pageToken: string | undefined;
+
+  do {
+    const q = encodeURIComponent(query);
+    const encodedFields = encodeURIComponent(`nextPageToken,files(${fields})`);
+    const pageTokenParam = pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : "";
+    const url = `${DRIVE_BASE}?q=${q}&fields=${encodedFields}&orderBy=modifiedTime%20desc&${DRIVE_PARAMS}${pageTokenParam}`;
+
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({})) as { error?: { message?: string } };
+      throw new Error(err.error?.message ?? `Drive error ${res.status}`);
+    }
+
+    const data = await res.json() as { files?: DriveFile[]; nextPageToken?: string };
+    files.push(...(data.files ?? []));
+    pageToken = data.nextPageToken;
+  } while (pageToken);
+
+  return files;
+}
+
+async function listPdfFilesInFolder(folderId: string, token: string): Promise<DriveFile[]> {
+  return listDriveFilesByQuery(
+    `'${folderId}' in parents and mimeType='application/pdf' and trashed=false`,
+    token,
+    "id,name,mimeType,modifiedTime,size"
+  );
+}
+
+async function listSubfolders(folderId: string, token: string): Promise<DriveFile[]> {
+  return listDriveFilesByQuery(
+    `'${folderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+    token,
+    "id,name,mimeType,modifiedTime,size"
+  );
 }
 
 export async function GET(request: NextRequest) {
@@ -60,57 +150,55 @@ export async function GET(request: NextRequest) {
   if (!folderParam) return NextResponse.json({ error: "folderId required" }, { status: 400 });
 
   // Accept either a bare folder ID or a full Drive URL
-  const driveUrlMatch = folderParam.match(/\/folders\/([a-zA-Z0-9_-]{10,})/);
-  const folderId = driveUrlMatch ? driveUrlMatch[1] : folderParam;
+  const folderId = parseFolderId(folderParam);
 
   if (!/^[a-zA-Z0-9_-]{10,}$/.test(folderId)) {
     return NextResponse.json({ error: "Invalid folderId format" }, { status: 400 });
   }
 
   try {
-    const token = await getDriveToken(request);
+    const { token, tokenSource } = await getDriveToken(request);
+    // Breadth-first folder scan so PDFs nested under "Design Documents/..." are found.
+    const queue: Array<{ id: string; depth: number }> = [{ id: folderId, depth: 0 }];
+    const visited = new Set<string>();
+    const foundPdfs = new Map<string, DriveFile>();
+    let scannedFolders = 0;
 
-    // Step 1: list everything directly in the folder
-    const items = await listFolder(folderId, token);
+    while (queue.length > 0 && scannedFolders < MAX_FOLDERS_TO_SCAN) {
+      const current = queue.shift()!;
+      if (visited.has(current.id)) continue;
+      visited.add(current.id);
+      scannedFolders += 1;
 
-    // Step 2: collect PDFs directly in this folder
-    const pdfs = items.filter(f => f.mimeType === "application/pdf");
+      const pdfs = await listPdfFilesInFolder(current.id, token);
+      for (const pdf of pdfs) {
+        if (!foundPdfs.has(pdf.id)) foundPdfs.set(pdf.id, pdf);
+      }
 
-    if (pdfs.length > 0) {
-      return NextResponse.json({ files: pdfs });
+      if (current.depth >= MAX_SEARCH_DEPTH) continue;
+
+      const subfolders = await listSubfolders(current.id, token);
+      for (const folder of subfolders) {
+        if (!visited.has(folder.id)) {
+          queue.push({ id: folder.id, depth: current.depth + 1 });
+        }
+      }
     }
 
-    // Step 3: no PDFs directly here — search one level of subfolders.
-    // PB Drive structure: all_document_parent_folder contains subfolders
-    // like "Design Documents", "Permit Documents", etc. Prefer a subfolder
-    // whose name contains "design" (case-insensitive); fall back to any subfolder.
-    const subfolders = items.filter(f =>
-      f.mimeType === "application/vnd.google-apps.folder"
-    );
-
-    if (subfolders.length === 0) {
-      return NextResponse.json({ files: [] });
-    }
-
-    // Prioritise design subfolder; otherwise search all subfolders in parallel
-    const designFolder = subfolders.find(f =>
-      f.name.toLowerCase().includes("design")
-    );
-    const foldersToSearch = designFolder ? [designFolder] : subfolders;
-
-    const subResults = await Promise.all(
-      foldersToSearch.map(sub =>
-        listFolder(sub.id, token)
-          .then(files => files.filter(f => f.mimeType === "application/pdf"))
-          .catch(() => [] as DriveFile[])
-      )
-    );
-
-    const allPdfs = subResults.flat().sort(
+    const files = Array.from(foundPdfs.values()).sort(
       (a, b) => new Date(b.modifiedTime).getTime() - new Date(a.modifiedTime).getTime()
     );
 
-    return NextResponse.json({ files: allPdfs });
+    return NextResponse.json({
+      files,
+      debug: {
+        tokenSource,
+        folderId,
+        scannedFolders,
+        maxDepth: MAX_SEARCH_DEPTH,
+        pdfsFound: files.length,
+      },
+    });
 
   } catch (e) {
     return NextResponse.json(
