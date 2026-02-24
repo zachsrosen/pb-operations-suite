@@ -68,6 +68,7 @@ interface SurveyProject {
   tentativeRecordId?: string;
   scheduledBy?: string;
   scheduledByEmail?: string;
+  isPreSale?: boolean; // true for Sales Pipeline deals (pre-sale surveys)
 }
 
 interface PendingSchedule {
@@ -361,6 +362,63 @@ export default function SiteSurveySchedulerPage() {
   const [useTestSlot, setUseTestSlot] = useState(false);
   const [confirmingTentative, setConfirmingTentative] = useState(false);
   const [cancellingTentative, setCancellingTentative] = useState(false);
+
+  /* ---- pre-sale mode ---- */
+  const [surveyMode, setSurveyMode] = useState<"ops" | "pre-sale">("ops");
+  const [preSaleSearch, setPreSaleSearch] = useState("");
+  const [preSaleResults, setPreSaleResults] = useState<SurveyProject[]>([]);
+  const [preSaleSearching, setPreSaleSearching] = useState(false);
+  const [selectedPreSaleDeal, setSelectedPreSaleDeal] = useState<SurveyProject | null>(null);
+
+  /* ---- pre-sale deal search ---- */
+  useEffect(() => {
+    if (surveyMode !== "pre-sale" || preSaleSearch.trim().length < 2) {
+      setPreSaleResults([]);
+      return;
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      setPreSaleSearching(true);
+      try {
+        const res = await fetch(`/api/deals/search?q=${encodeURIComponent(preSaleSearch.trim())}`, {
+          signal: controller.signal,
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setPreSaleResults(
+            (data.deals || []).map((d: Record<string, unknown>) => ({
+              id: String(d.id),
+              name: String(d.name || "Unknown"),
+              address: [d.address, d.city, d.state].filter(Boolean).join(", "),
+              location: String(d.location || "Unknown"),
+              amount: Number(d.amount) || 0,
+              type: String(d.type || "Solar"),
+              systemSize: 0,
+              batteries: 0,
+              evCount: 0,
+              scheduleDate: d.surveyDate ? String(d.surveyDate) : null,
+              surveyStatus: d.surveyStatus ? String(d.surveyStatus) : "Not Started",
+              completionDate: null,
+              closeDate: null,
+              hubspotUrl: String(d.url || ""),
+              dealOwner: "",
+              isPreSale: true,
+            }))
+          );
+        }
+      } catch (err) {
+        if ((err as Error).name !== "AbortError") {
+          console.error("[Pre-sale search] Error:", err);
+        }
+      } finally {
+        setPreSaleSearching(false);
+      }
+    }, 300);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [surveyMode, preSaleSearch]);
 
   /* ---- Assisted scheduling ---- */
   const [loadingSlots, setLoadingSlots] = useState(false);
@@ -961,6 +1019,20 @@ export default function SiteSurveySchedulerPage() {
         method: "click",
       });
       openScheduleModal({ project, date, currentSlot });
+    } else if (selectedPreSaleDeal) {
+      trackFeature("schedule-modal-open", "Opened pre-sale survey schedule modal", {
+        scheduler: "site-survey",
+        projectId: selectedPreSaleDeal.id,
+        projectName: selectedPreSaleDeal.name,
+        dealOwner: selectedPreSaleDeal.dealOwner || null,
+        location: selectedPreSaleDeal.location,
+        address: selectedPreSaleDeal.address,
+        date,
+        method: "click",
+        surveyType: "pre-sale",
+      });
+      openScheduleModal({ project: selectedPreSaleDeal, date });
+      // Don't clear selection - user might want to schedule same deal on different date
     } else if (selectedProject) {
       const currentSlot = findCurrentSlotForProject(selectedProject.id, date, selectedProject.name, selectedProject.zuperJobUid);
       trackFeature("schedule-modal-open", "Opened survey schedule modal via click", {
@@ -976,7 +1048,7 @@ export default function SiteSurveySchedulerPage() {
       openScheduleModal({ project: selectedProject, date, currentSlot });
       setSelectedProject(null);
     }
-  }, [selectedProject, findCurrentSlotForProject, showToast, userRole, trackFeature, openScheduleModal]);
+  }, [selectedProject, selectedPreSaleDeal, findCurrentSlotForProject, showToast, userRole, trackFeature, openScheduleModal]);
 
   const confirmSchedule = useCallback(async () => {
     if (!scheduleModal) return;
@@ -1080,11 +1152,13 @@ export default function SiteSurveySchedulerPage() {
               timezone: slot?.timezone, // Slot's local timezone (e.g. "America/Los_Angeles" for CA)
               notes: useTestSlot
                 ? `TEST SLOT - ${effectiveAssignee} at ${slot?.startTime || "N/A"}`
-                : (slot ? `Surveyor: ${slot.userName} at ${slot.startTime}` : "Scheduled via Site Survey Schedule"),
+                : (project.isPreSale
+                  ? `[PRE_SALE] ${slot ? `Surveyor: ${slot.userName} at ${slot.startTime}` : "Scheduled via Site Survey Scheduler"}`
+                  : (slot ? `Surveyor: ${slot.userName} at ${slot.startTime}` : "Scheduled via Site Survey Scheduler")),
               testMode: useTestSlot,
               isReschedule: !!scheduleModal.isRescheduling,
             },
-            rescheduleOnly: true,
+            rescheduleOnly: !project.isPreSale,
           }),
         });
 
@@ -1160,8 +1234,8 @@ export default function SiteSurveySchedulerPage() {
               notes: slot
                 ? (useTestSlot
                   ? `TEST SLOT - Tentative ${effectiveAssignee} at ${slot.startTime}`
-                  : `Tentative surveyor: ${slot.userName} at ${slot.startTime}`)
-                : "Tentatively scheduled via Site Survey Scheduler",
+                  : `${project.isPreSale ? "[PRE_SALE] " : ""}Tentative surveyor: ${slot.userName} at ${slot.startTime}`)
+                : `${project.isPreSale ? "[PRE_SALE] " : ""}Tentatively scheduled via Site Survey Scheduler`,
             },
           }),
         });
@@ -1315,6 +1389,12 @@ export default function SiteSurveySchedulerPage() {
     }
 
     setScheduleModal(null);
+    // Clear pre-sale deal after successful scheduling
+    if (project.isPreSale) {
+      setSelectedPreSaleDeal(null);
+      setPreSaleSearch("");
+      setPreSaleResults([]);
+    }
   }, [
     scheduleModal,
     useTestSlot,
@@ -1808,15 +1888,121 @@ export default function SiteSurveySchedulerPage() {
           <div className="w-full lg:w-80 lg:flex-shrink-0">
             <div className="lg:sticky lg:top-[180px] bg-surface border border-t-border rounded-xl overflow-hidden">
               <div className="p-3 border-b border-t-border bg-surface/50">
-                <h2 className="text-sm font-semibold text-cyan-400">
-                  Ready to Schedule ({unscheduledProjects.length})
-                </h2>
-                <p className="text-xs text-muted mt-1 hidden sm:block">
-                  Drag to calendar or click to select
-                </p>
+                {/* Mode toggle */}
+                <div className="flex items-center gap-1 mb-2 bg-surface-2 rounded-lg p-0.5">
+                  <button
+                    onClick={() => { setSurveyMode("ops"); setSelectedPreSaleDeal(null); setPreSaleSearch(""); setPreSaleResults([]); }}
+                    className={`flex-1 text-xs font-medium px-2 py-1 rounded-md transition-colors ${
+                      surveyMode === "ops"
+                        ? "bg-cyan-600 text-white shadow-sm"
+                        : "text-muted hover:text-foreground"
+                    }`}
+                  >
+                    Ops Surveys
+                  </button>
+                  <button
+                    onClick={() => { setSurveyMode("pre-sale"); setSelectedProject(null); }}
+                    className={`flex-1 text-xs font-medium px-2 py-1 rounded-md transition-colors ${
+                      surveyMode === "pre-sale"
+                        ? "bg-orange-600 text-white shadow-sm"
+                        : "text-muted hover:text-foreground"
+                    }`}
+                  >
+                    Pre-Sale
+                  </button>
+                </div>
+                {surveyMode === "ops" ? (
+                  <>
+                    <h2 className="text-sm font-semibold text-cyan-400">
+                      Ready to Schedule ({unscheduledProjects.length})
+                    </h2>
+                    <p className="text-xs text-muted mt-1 hidden sm:block">
+                      Drag to calendar or click to select
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <h2 className="text-sm font-semibold text-orange-400">
+                      Pre-Sale Survey
+                    </h2>
+                    <p className="text-xs text-muted mt-1 hidden sm:block">
+                      Search deals to schedule a survey
+                    </p>
+                  </>
+                )}
               </div>
               <div className="max-h-[40vh] lg:max-h-[calc(100vh-280px)] overflow-y-auto">
-                {unscheduledProjects.length === 0 ? (
+                {surveyMode === "pre-sale" ? (
+                  /* ---- Pre-sale search & results ---- */
+                  <div className="p-3 space-y-3">
+                    <div className="relative">
+                      <input
+                        type="text"
+                        placeholder="Search by name or address…"
+                        value={preSaleSearch}
+                        onChange={(e) => setPreSaleSearch(e.target.value)}
+                        className="w-full px-3 py-2 pr-8 text-sm bg-surface-2 border border-t-border rounded-lg text-foreground placeholder:text-muted focus:outline-none focus:ring-1 focus:ring-orange-500 focus:border-orange-500"
+                      />
+                      {preSaleSearching && (
+                        <div className="absolute right-2.5 top-1/2 -translate-y-1/2">
+                          <div className="w-4 h-4 border-2 border-orange-500/30 border-t-orange-500 rounded-full animate-spin" />
+                        </div>
+                      )}
+                    </div>
+                    {selectedPreSaleDeal ? (
+                      <div className="p-3 bg-orange-500/10 border border-orange-500/30 rounded-lg">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-foreground truncate">{selectedPreSaleDeal.name}</p>
+                            <p className="text-xs text-muted truncate mt-0.5">{selectedPreSaleDeal.address}</p>
+                            <p className="text-xs text-muted truncate mt-0.5">{selectedPreSaleDeal.location}</p>
+                          </div>
+                          <button
+                            onClick={() => setSelectedPreSaleDeal(null)}
+                            className="text-muted hover:text-foreground text-xs ml-2"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                        <div className="flex items-center gap-2 mt-2">
+                          <span className="text-xs px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400 border border-orange-500/30 font-medium">
+                            Pre-Sale
+                          </span>
+                          <span className="text-xs font-mono text-orange-400">${selectedPreSaleDeal.amount.toLocaleString()}</span>
+                        </div>
+                        <p className="text-xs text-cyan-400 mt-2">
+                          Click a date on the calendar to schedule →
+                        </p>
+                      </div>
+                    ) : preSaleResults.length > 0 ? (
+                      preSaleResults.map((deal) => (
+                        <div
+                          key={deal.id}
+                          onClick={() => { setSelectedPreSaleDeal(deal); setSelectedProject(null); }}
+                          className="p-2.5 bg-surface-2 border border-t-border rounded-lg cursor-pointer hover:border-orange-500/50 transition-colors"
+                        >
+                          <p className="text-sm font-medium text-foreground truncate">{deal.name}</p>
+                          <p className="text-xs text-muted truncate mt-0.5">{deal.address}</p>
+                          <div className="flex items-center justify-between mt-1.5">
+                            <span className="text-xs text-muted">{deal.location}</span>
+                            <span className="text-xs font-mono text-orange-400">${deal.amount.toLocaleString()}</span>
+                          </div>
+                          {deal.scheduleDate && (
+                            <p className="text-xs text-yellow-400 mt-1">
+                              Survey: {deal.scheduleDate}
+                            </p>
+                          )}
+                        </div>
+                      ))
+                    ) : preSaleSearch.trim().length >= 2 && !preSaleSearching ? (
+                      <p className="text-sm text-muted text-center py-4">No deals found</p>
+                    ) : (
+                      <p className="text-xs text-muted text-center py-4">
+                        Type at least 2 characters to search
+                      </p>
+                    )}
+                  </div>
+                ) : unscheduledProjects.length === 0 ? (
                   <div className="p-4 text-center text-muted text-sm">
                     No projects need scheduling
                   </div>
