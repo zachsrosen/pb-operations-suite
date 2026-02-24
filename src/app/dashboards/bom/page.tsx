@@ -685,15 +685,16 @@ function BomDashboardInner() {
 
   /* ---- Load BOM helper ---- */
   // freshExtract=true when loading a newly extracted PDF (not a saved snapshot).
-  // In that case we clear the linked project and stale ?deal= URL param so a
-  // previously linked project doesn't carry over to a completely different job.
-  const loadBomData = useCallback((data: BomData, freshExtract = false) => {
+  // By default this clears linked project state to avoid carrying over stale
+  // deal context. For "extract from this linked project's design file" flows,
+  // pass preserveLinkedProject=true to keep the current deal link.
+  const loadBomData = useCallback((data: BomData, freshExtract = false, preserveLinkedProject = false) => {
     if (!data.items || !Array.isArray(data.items)) {
       throw new Error('Response must have an "items" array');
     }
     setBom(data);
     setItems(assignIds(data.items));
-    if (freshExtract) {
+    if (freshExtract && !preserveLinkedProject) {
       setLinkedProject(null);
       setImportTab("upload");
       setDriveFiles([]);
@@ -832,7 +833,7 @@ function BomDashboardInner() {
       });
       const data = await safeFetchBom(proxyRes);
       const projectAtExtract = linkedProject;
-      loadBomData(data, true);
+      loadBomData(data, true, !!projectAtExtract);
       addToast({ type: "success", title: "BOM extracted from Google Drive" });
       if (projectAtExtract) {
         await saveSnapshot(data, driveUrl);
@@ -857,7 +858,7 @@ function BomDashboardInner() {
       });
       const data = await safeFetchBom(proxyRes);
       const projectAtExtract = linkedProject;
-      loadBomData(data, true);
+      loadBomData(data, true, !!projectAtExtract);
       addToast({ type: "success", title: `BOM extracted from ${file.name}` });
       if (projectAtExtract) await saveSnapshot(data, file.name, downloadUrl);
     } catch (e) {
