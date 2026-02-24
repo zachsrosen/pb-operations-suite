@@ -94,7 +94,10 @@ export async function GET(request: NextRequest) {
       )
     );
 
-    const getRelevanceScore = (deal: { id: string; properties?: Record<string, string> }): number => {
+    const getRelevanceScore = (deal: {
+      id: string;
+      properties?: Record<string, string | null> | null;
+    }): number => {
       const props = deal.properties || {};
       const name = String(props.dealname || "").toLowerCase();
       const address = [props.address_line_1, props.city, props.state].filter(Boolean).join(" ").toLowerCase();
