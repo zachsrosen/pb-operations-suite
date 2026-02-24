@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getUserByEmail, logActivity, createScheduleRecord, canScheduleType, prisma, UserRole } from "@/lib/db";
 import { headers } from "next/headers";
+import { getSalesSurveyLeadTimeError, resolveEffectiveRoleFromRequest } from "@/lib/scheduling-policy";
 
 /**
  * PUT /api/zuper/jobs/schedule/tentative
@@ -21,6 +22,7 @@ export async function PUT(request: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 403 });
     }
+    const effectiveRole = resolveEffectiveRoleFromRequest(request, user.role as UserRole);
 
     const body = await request.json();
     const { project, schedule } = body;
@@ -33,7 +35,7 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    if (!canScheduleType(user.role as UserRole, scheduleType)) {
+    if (!canScheduleType(effectiveRole, scheduleType)) {
       return NextResponse.json(
         { error: `You don't have permission to schedule ${scheduleType}s.` },
         { status: 403 }
@@ -45,6 +47,15 @@ export async function PUT(request: NextRequest) {
         { error: "Missing required fields: project.id, schedule.date" },
         { status: 400 }
       );
+    }
+    const salesLeadTimeError = getSalesSurveyLeadTimeError({
+      role: effectiveRole,
+      scheduleType,
+      scheduleDate: schedule.date,
+      timezone: typeof schedule.timezone === "string" ? schedule.timezone : undefined,
+    });
+    if (salesLeadTimeError) {
+      return NextResponse.json({ error: salesLeadTimeError }, { status: 403 });
     }
 
     const rawCrew = typeof schedule.crew === "string" ? schedule.crew : undefined;

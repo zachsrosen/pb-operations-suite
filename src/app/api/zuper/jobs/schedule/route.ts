@@ -16,6 +16,7 @@ import {
 } from "@/lib/google-calendar";
 import { getBusinessEndDateInclusive, isWeekendDate } from "@/lib/business-days";
 import { getInstallCalendarTimezone, resolveInstallCalendarLocation } from "@/lib/install-calendar-location";
+import { getSalesSurveyLeadTimeError, resolveEffectiveRoleFromRequest } from "@/lib/scheduling-policy";
 
 type ScheduleType = "survey" | "installation" | "inspection";
 const MANAGER_ROLES = ["ADMIN", "OWNER", "MANAGER", "OPERATIONS_MANAGER"];
@@ -342,6 +343,7 @@ export async function PUT(request: NextRequest) {
         { status: 403 }
       );
     }
+    const effectiveRole = resolveEffectiveRoleFromRequest(request, user.role as UserRole);
 
     const body = await request.json();
     const { project, schedule, rescheduleOnly } = body;
@@ -360,16 +362,16 @@ export async function PUT(request: NextRequest) {
     }
 
     // Check if user has permission to schedule this type
-    if (!canScheduleType(user.role as UserRole, scheduleType)) {
-      console.log(`[Zuper Schedule] Permission denied: User ${session.user.email} (${user.role}) cannot schedule ${scheduleType}`);
+    if (!canScheduleType(effectiveRole, scheduleType)) {
+      console.log(`[Zuper Schedule] Permission denied: User ${session.user.email} (${effectiveRole}) cannot schedule ${scheduleType}`);
       return NextResponse.json(
         { error: `You don't have permission to schedule ${scheduleType}s. Contact an admin if you need access.` },
         { status: 403 }
       );
     }
 
-    if (isTestMode && !canUseTestMode(user.role)) {
-      console.log(`[Zuper Schedule] Permission denied: User ${session.user.email} (${user.role}) cannot use test mode`);
+    if (isTestMode && !canUseTestMode(effectiveRole)) {
+      console.log(`[Zuper Schedule] Permission denied: User ${session.user.email} (${effectiveRole}) cannot use test mode`);
       return NextResponse.json(
         { error: "You don't have permission to use test slot mode." },
         { status: 403 }
@@ -390,8 +392,17 @@ export async function PUT(request: NextRequest) {
         { status: 400 }
       );
     }
+    const salesLeadTimeError = getSalesSurveyLeadTimeError({
+      role: effectiveRole,
+      scheduleType,
+      scheduleDate: schedule.date,
+      timezone: typeof schedule.timezone === "string" ? schedule.timezone : undefined,
+    });
+    if (salesLeadTimeError) {
+      return NextResponse.json({ error: salesLeadTimeError }, { status: 403 });
+    }
     const ownership = await checkScheduleOwnership(
-      { email: session.user.email, role: user.role || "" },
+      { email: session.user.email, role: effectiveRole || "" },
       String(project.id),
       scheduleType
     );
@@ -1104,6 +1115,7 @@ export async function DELETE(request: NextRequest) {
         { status: 403 }
       );
     }
+    const effectiveRole = resolveEffectiveRoleFromRequest(request, user.role as UserRole);
 
     const body = await request.json();
     const scheduleType = (body?.scheduleType as ScheduleType) || "survey";
@@ -1114,7 +1126,7 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    if (!canScheduleType(user.role as UserRole, scheduleType)) {
+    if (!canScheduleType(effectiveRole, scheduleType)) {
       return NextResponse.json(
         { error: `You don't have permission to manage ${scheduleType} schedules.` },
         { status: 403 }
@@ -1142,7 +1154,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     const ownership = await checkScheduleOwnership(
-      { email: session.user.email, role: user.role || "" },
+      { email: session.user.email, role: effectiveRole || "" },
       String(projectId),
       scheduleType
     );

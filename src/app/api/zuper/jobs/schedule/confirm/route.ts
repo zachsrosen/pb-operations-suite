@@ -9,6 +9,7 @@ import { upsertSiteSurveyCalendarEvent, upsertInstallationCalendarEvent, getInst
 import { getBusinessEndDateInclusive, isWeekendDate } from "@/lib/business-days";
 import { getInstallNotificationDetails } from "@/lib/scheduling-email-details";
 import { getInstallCalendarTimezone, resolveInstallCalendarLocation } from "@/lib/install-calendar-location";
+import { getSalesSurveyLeadTimeError, resolveEffectiveRoleFromRequest } from "@/lib/scheduling-policy";
 
 function getConstructionScheduleBoundaryProperties(): { start: string | null; end: string | null } {
   const start = process.env.HUBSPOT_CONSTRUCTION_START_DATE_PROPERTY?.trim() || null;
@@ -171,6 +172,7 @@ export async function POST(request: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 403 });
     }
+    const effectiveRole = resolveEffectiveRoleFromRequest(request, user.role as UserRole);
 
     if (!prisma) {
       return NextResponse.json({ error: "Database not configured" }, { status: 503 });
@@ -210,11 +212,21 @@ export async function POST(request: NextRequest) {
 
     // Check schedule type permission
     const scheduleType = record.scheduleType as "survey" | "installation" | "inspection";
-    if (!canScheduleType(user.role as UserRole, scheduleType)) {
+    if (!canScheduleType(effectiveRole, scheduleType)) {
       return NextResponse.json(
         { error: `You don't have permission to schedule ${scheduleType}s.` },
         { status: 403 }
       );
+    }
+    const timezoneFromNotes = record.notes?.match(/\[TZ:([A-Za-z_\/]+)\]/)?.[1];
+    const salesLeadTimeError = getSalesSurveyLeadTimeError({
+      role: effectiveRole,
+      scheduleType,
+      scheduleDate: record.scheduledDate,
+      timezone: timezoneFromNotes,
+    });
+    if (salesLeadTimeError) {
+      return NextResponse.json({ error: salesLeadTimeError }, { status: 403 });
     }
 
     // Check if Zuper is configured
@@ -281,11 +293,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const timezoneFromNotes = record.notes?.match(/\[TZ:([A-Za-z_\/]+)\]/)?.[1];
+    const timezoneFromNotes2 = record.notes?.match(/\[TZ:([A-Za-z_\/]+)\]/)?.[1];
     const inferredTimezone = /\b(San Luis Obispo|Camarillo)\b|,\s*CA\b/i.test(record.projectName)
       ? "America/Los_Angeles"
       : "America/Denver";
-    const slotTimezone = timezoneFromNotes || inferredTimezone;
+    const slotTimezone = timezoneFromNotes2 || inferredTimezone;
 
     const localToUtc = (dateStr: string, timeStr: string): string => {
       const [year, month, day] = dateStr.split("-").map(Number);
