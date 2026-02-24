@@ -23,7 +23,9 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
+import { getServiceAccountToken } from "@/lib/google-auth";
 import Anthropic from "@anthropic-ai/sdk";
+import { getToken } from "next-auth/jwt";
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
@@ -146,6 +148,81 @@ export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
 export const runtime = "nodejs";
 
+async function refreshUserToken(refreshToken: string): Promise<string | null> {
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  if (!clientId || !clientSecret) return null;
+
+  try {
+    const res = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        refresh_token: refreshToken,
+        grant_type: "refresh_token",
+      }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json() as { access_token?: string };
+    return data.access_token ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function isHttpsRequest(request: NextRequest): boolean {
+  const proto = request.headers.get("x-forwarded-proto") ?? request.nextUrl.protocol.replace(":", "");
+  return proto === "https";
+}
+
+async function getJwtToken(request: NextRequest): Promise<Record<string, unknown> | null> {
+  const secret = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
+  if (!secret) return null;
+
+  const secureFirst = isHttpsRequest(request);
+  const attempts = secureFirst ? [true, false] : [false, true];
+
+  for (const secureCookie of attempts) {
+    try {
+      const token = await getToken({ req: request, secret, secureCookie });
+      if (token && typeof token === "object") {
+        return token as Record<string, unknown>;
+      }
+    } catch {
+      // try next cookie mode
+    }
+  }
+
+  return null;
+}
+
+async function getDriveToken(request: NextRequest): Promise<{ token: string; tokenSource: string }> {
+  try {
+    const jwtToken = await getJwtToken(request);
+    const accessToken = jwtToken?.accessToken as string | undefined;
+    const expires = jwtToken?.accessTokenExpires as number | undefined;
+    const refreshToken = jwtToken?.refreshToken as string | undefined;
+
+    if (accessToken && (expires == null || Date.now() < expires - 60_000)) {
+      return { token: accessToken, tokenSource: "user_oauth" };
+    }
+
+    if (refreshToken) {
+      const refreshed = await refreshUserToken(refreshToken);
+      if (refreshed) {
+        return { token: refreshed, tokenSource: "user_oauth_refreshed" };
+      }
+    }
+  } catch {
+    // fall through to service account
+  }
+
+  const saToken = await getServiceAccountToken(["https://www.googleapis.com/auth/drive.readonly"]);
+  return { token: saToken, tokenSource: "service_account" };
+}
+
 export async function POST(req: NextRequest) {
   // Auth check
   const authResult = await requireApiAuth();
@@ -168,7 +245,7 @@ export async function POST(req: NextRequest) {
 
   // All paths go through JSON body now:
   //   { blobUrl: "https://..." }          ← Vercel Blob upload
-  //   { driveUrl: "...", fileId: "..." }  ← Google Drive link
+  //   { driveUrl: "...", fileId: "..." }  ← Google Drive link (fileId preferred)
   let body: { blobUrl?: string; driveUrl?: string; fileId?: string };
   try {
     body = await req.json();
@@ -176,30 +253,54 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const sourceUrl = body.blobUrl ?? body.driveUrl;
-  if (!sourceUrl) {
-    return NextResponse.json({ error: "blobUrl or driveUrl is required" }, { status: 400 });
-  }
-
-  // Fetch the PDF from the URL (blob or Drive).
-  // Blob URLs require the token header — the store is private-access only.
-  const fetchHeaders: Record<string, string> = {};
-  if (body.blobUrl && process.env.BLOB_READ_WRITE_TOKEN) {
-    fetchHeaders["authorization"] = `Bearer ${process.env.BLOB_READ_WRITE_TOKEN}`;
+  if (!body.blobUrl && !body.driveUrl && !body.fileId) {
+    return NextResponse.json({ error: "blobUrl, driveUrl, or fileId is required" }, { status: 400 });
   }
 
   let fetchRes: Response;
   try {
-    fetchRes = await fetch(sourceUrl, { redirect: "follow", headers: fetchHeaders });
-    if (!fetchRes.ok) {
-      return NextResponse.json(
-        {
-          error: body.blobUrl
-            ? `Failed to read uploaded file (HTTP ${fetchRes.status})`
-            : `Failed to download from Drive (HTTP ${fetchRes.status}). Make sure the file is shared publicly.`,
-        },
-        { status: 400 }
-      );
+    if (body.fileId) {
+      const { token, tokenSource } = await getDriveToken(req);
+      const driveMediaUrl =
+        `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(body.fileId)}` +
+        `?alt=media&supportsAllDrives=true&acknowledgeAbuse=true`;
+
+      fetchRes = await fetch(driveMediaUrl, {
+        redirect: "follow",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!fetchRes.ok) {
+        const driveErr = await fetchRes.json().catch(() => ({})) as { error?: { message?: string } };
+        const msg = driveErr.error?.message ?? `HTTP ${fetchRes.status}`;
+        return NextResponse.json(
+          { error: `Failed to download Drive file (${msg})`, debug: { tokenSource } },
+          { status: 400 }
+        );
+      }
+    } else {
+      const sourceUrl = body.blobUrl ?? body.driveUrl;
+      if (!sourceUrl) {
+        return NextResponse.json({ error: "blobUrl or driveUrl is required" }, { status: 400 });
+      }
+
+      // Blob URLs require the token header — the store is private-access only.
+      const fetchHeaders: Record<string, string> = {};
+      if (body.blobUrl && process.env.BLOB_READ_WRITE_TOKEN) {
+        fetchHeaders["authorization"] = `Bearer ${process.env.BLOB_READ_WRITE_TOKEN}`;
+      }
+
+      fetchRes = await fetch(sourceUrl, { redirect: "follow", headers: fetchHeaders });
+      if (!fetchRes.ok) {
+        return NextResponse.json(
+          {
+            error: body.blobUrl
+              ? `Failed to read uploaded file (HTTP ${fetchRes.status})`
+              : `Failed to download from Drive (HTTP ${fetchRes.status}). Make sure the file is shared publicly.`,
+          },
+          { status: 400 }
+        );
+      }
     }
   } catch (e) {
     return NextResponse.json(
@@ -211,7 +312,7 @@ export async function POST(req: NextRequest) {
   const fetchContentType = fetchRes.headers.get("content-type") ?? "";
   if (!fetchContentType.includes("pdf") && !fetchContentType.includes("octet-stream")) {
     // Google Drive may redirect to a confirmation page for large files
-    if (!body.blobUrl) {
+    if (!body.blobUrl && !body.fileId) {
       return NextResponse.json(
         { error: "Drive URL did not return a PDF. The file may require confirmation — try downloading it and using Upload PDF instead." },
         { status: 400 }
