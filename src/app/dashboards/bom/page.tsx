@@ -654,6 +654,7 @@ function BomDashboardInner() {
               unitSpec: item.unitSpec != null ? String(item.unitSpec) : null,
             })),
             hubspotUrl: `https://app.hubspot.com/contacts/21710069/deal/${targetProject.hs_object_id}`,
+            designFolderUrl: targetProject.designFolderUrl,
             zuperUrl: targetProject.zuperUid ? `https://app.zuper.co/jobs/${targetProject.zuperUid}` : null,
           }),
         }).catch(() => {/* silent */});

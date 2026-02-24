@@ -47,6 +47,27 @@ function escHtml(s: string | null | undefined): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
+function toDriveFolderUrl(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  const folderMatch = trimmed.match(/\/folders\/([a-zA-Z0-9_-]{10,})/);
+  if (folderMatch?.[1]) {
+    return `https://drive.google.com/drive/folders/${folderMatch[1]}`;
+  }
+  if (/^[a-zA-Z0-9_-]{10,}$/.test(trimmed)) {
+    return `https://drive.google.com/drive/folders/${trimmed}`;
+  }
+  if (trimmed.startsWith("drive.google.com/")) {
+    return `https://${trimmed}`;
+  }
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+  return null;
+}
+
 export async function POST(request: NextRequest) {
   const authResult = await requireApiAuth();
   if (authResult instanceof NextResponse) return authResult;
@@ -84,6 +105,7 @@ export async function POST(request: NextRequest) {
     };
     items?: BomItemEmail[];
     hubspotUrl?: string | null;
+    designFolderUrl?: string | null;
     zuperUrl?: string | null;
   };
   try {
@@ -92,7 +114,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { userEmail, dealName, dealId, version, sourceFile, itemCount, projectInfo, items, hubspotUrl, zuperUrl } = body;
+  const {
+    userEmail,
+    dealName,
+    dealId,
+    version,
+    sourceFile,
+    itemCount,
+    projectInfo,
+    items,
+    hubspotUrl,
+    designFolderUrl,
+    zuperUrl,
+  } = body;
 
   // Validate required fields
   if (!userEmail || !dealName || !dealId || typeof version !== "number" || typeof itemCount !== "number") {
@@ -105,6 +139,7 @@ export async function POST(request: NextRequest) {
   }
 
   const bomUrl = `https://pbtechops.com/dashboards/bom?deal=${encodeURIComponent(dealId)}&load=latest`;
+  const designFolderHref = toDriveFolderUrl(designFolderUrl);
 
   // Format customer name to title case: "SILFVEN, ERIK" → "Erik Silfven"
   function formatCustomer(raw: string | undefined): string {
@@ -244,6 +279,7 @@ export async function POST(request: NextRequest) {
     <div style="padding:24px 32px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       <a href="${bomUrl}" style="display:inline-block;background:#0891b2;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;letter-spacing:0.01em">View BOM &rarr;</a>
       ${hubspotUrl ? `<a href="${hubspotUrl}" style="display:inline-block;background:#ff7a59;color:white;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px">HubSpot</a>` : ""}
+      ${designFolderHref ? `<a href="${designFolderHref}" style="display:inline-block;background:#2563eb;color:white;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px">Design Folder</a>` : ""}
       ${zuperUrl ? `<a href="${zuperUrl}" style="display:inline-block;background:#06b6d4;color:white;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px">Zuper</a>` : ""}
     </div>
 
