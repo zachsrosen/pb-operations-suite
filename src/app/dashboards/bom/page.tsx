@@ -1683,57 +1683,6 @@ function BomDashboardInner() {
               </div>
             )}
 
-            {/* Design Files — from HubSpot design_document_folder_id */}
-            {linkedProject?.designFolderUrl && (
-              <div className="design-files-panel rounded-xl bg-surface border border-t-border shadow-card overflow-hidden">
-                <div className="flex items-center justify-between px-5 py-3 border-b border-t-border bg-surface-2">
-                  <h3 className="text-sm font-semibold text-foreground">
-                    Design Files
-                    {!driveFilesLoading && driveFiles.length > 0 && (
-                      <span className="ml-2 text-xs text-muted font-normal">{driveFiles.length} PDF{driveFiles.length !== 1 ? "s" : ""}</span>
-                    )}
-                  </h3>
-                </div>
-                {driveFilesLoading ? (
-                  <p className="px-5 py-4 text-xs text-muted animate-pulse">Loading files…</p>
-                ) : driveFilesError ? (
-                  <p className="px-5 py-4 text-xs text-red-500">{driveFilesError}</p>
-                ) : driveFiles.length === 0 ? (
-                  <p className="px-5 py-4 text-xs text-muted">No PDFs found in design folder.</p>
-                ) : (
-                  <div className="divide-y divide-[color:var(--border)]">
-                    {driveFiles.map((file) => {
-                      const isExtracting = extractingDriveFileId === file.id;
-                      const anyExtracting = extractingDriveFileId !== null;
-                      const sizeKb = file.size ? Math.round(Number(file.size) / 1024) : null;
-                      return (
-                        <button
-                          key={file.id}
-                          onClick={() => handleExtractDriveFile(file)}
-                          disabled={anyExtracting}
-                          className="w-full flex items-center gap-3 px-5 py-3 text-left hover:bg-surface-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed group"
-                        >
-                          <span className="text-lg flex-shrink-0">{isExtracting ? "⏳" : "📄"}</span>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm text-foreground font-medium truncate">{file.name}</p>
-                            <p className="text-xs text-muted">
-                              {new Date(file.modifiedTime).toLocaleDateString()}
-                              {sizeKb && ` · ${sizeKb > 1024 ? `${(sizeKb / 1024).toFixed(1)} MB` : `${sizeKb} KB`}`}
-                            </p>
-                          </div>
-                          {isExtracting ? (
-                            <span className="text-xs text-cyan-500 animate-pulse">Extracting…</span>
-                          ) : (
-                            <span className="text-xs text-muted opacity-0 group-hover:opacity-100 transition-opacity">Extract →</span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
-
             {/* Action Bar */}
             <div className="flex flex-wrap gap-2">
               <button
@@ -2253,6 +2202,23 @@ function QuickLinks({ project }: { project: ProjectResult }) {
 
   if (project.driveUrl) {
     links.push({ label: "G-Drive", href: project.driveUrl, color: "text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-800" });
+  }
+  if (project.designFolderUrl) {
+    const raw = project.designFolderUrl.trim();
+    let designHref = raw;
+    const folderMatch = raw.match(/\/folders\/([a-zA-Z0-9_-]{10,})/);
+    if (folderMatch?.[1]) {
+      designHref = `https://drive.google.com/drive/folders/${folderMatch[1]}`;
+    } else if (/^[a-zA-Z0-9_-]{10,}$/.test(raw)) {
+      designHref = `https://drive.google.com/drive/folders/${raw}`;
+    } else if (raw.startsWith("drive.google.com/")) {
+      designHref = `https://${raw}`;
+    }
+    links.push({
+      label: "Design Folder",
+      href: designHref,
+      color: "text-sky-600 dark:text-sky-400 border-sky-200 dark:border-sky-800",
+    });
   }
   if (project.openSolarUrl) {
     links.push({ label: "OpenSolar", href: project.openSolarUrl, color: "text-yellow-600 dark:text-yellow-400 border-yellow-200 dark:border-yellow-800" });
