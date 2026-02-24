@@ -148,6 +148,31 @@ export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
 export const runtime = "nodejs";
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isPdfProcessingErrorMessage(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("could not process pdf") ||
+    normalized.includes("password") ||
+    normalized.includes("encrypted") ||
+    normalized.includes("corrupt")
+  );
+}
+
+function isRetryableClaudeError(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("overloaded") ||
+    normalized.includes("rate limit") ||
+    normalized.includes("timeout") ||
+    normalized.includes("temporarily unavailable") ||
+    normalized.includes("internal server error")
+  );
+}
+
 async function refreshUserToken(refreshToken: string): Promise<string | null> {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
@@ -354,30 +379,49 @@ export async function POST(req: NextRequest) {
   const INLINE_LIMIT = 20 * 1024 * 1024; // 20MB — Anthropic inline base64 limit
 
   try {
-    const message = await client.beta.messages.create({
-      model: "claude-opus-4-5",
-      max_tokens: 8000,
-      system: SYSTEM_PROMPT,
-      messages: [
-        {
-          role: "user",
-          content: [
+    let message: Awaited<ReturnType<typeof client.beta.messages.create>> | null = null;
+    let lastErr: unknown = null;
+
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        message = await client.beta.messages.create({
+          model: "claude-opus-4-5",
+          max_tokens: 8000,
+          system: SYSTEM_PROMPT,
+          messages: [
             {
-              type: "document",
-              source: {
-                type: "file",
-                file_id: fileId,
-              },
-            },
-            {
-              type: "text",
-              text: "Extract the complete Bill of Materials from this Photon Brothers planset PDF. Return only the JSON object.",
+              role: "user",
+              content: [
+                {
+                  type: "document",
+                  source: {
+                    type: "file",
+                    file_id: fileId,
+                  },
+                },
+                {
+                  type: "text",
+                  text: "Extract the complete Bill of Materials from this Photon Brothers planset PDF. Return only the JSON object.",
+                },
+              ],
             },
           ],
-        },
-      ],
-      betas: ["files-api-2025-04-14"],
-    });
+          betas: ["files-api-2025-04-14"],
+        });
+        break;
+      } catch (err) {
+        lastErr = err;
+        const attemptMsg = err instanceof Error ? err.message : String(err);
+        if (attempt < 2 && isRetryableClaudeError(attemptMsg)) {
+          await sleep(500);
+          continue;
+        }
+      }
+    }
+
+    if (!message) {
+      throw lastErr instanceof Error ? lastErr : new Error(String(lastErr ?? "Extraction failed"));
+    }
 
     const textBlock = message.content.find((b) => b.type === "text");
     rawText = textBlock && textBlock.type === "text" ? textBlock.text : "";
@@ -385,11 +429,10 @@ export async function POST(req: NextRequest) {
     const msg = e instanceof Error ? e.message : "Extraction failed";
     console.error("[bom/extract] Anthropic Files API error:", msg);
 
-    // "Could not process PDF" means Claude received the file but can't read it.
-    // Common causes: password-protected, encrypted, or non-standard PDF encoding.
+    // PDF processing errors mean Claude received the file but couldn't parse it.
+    // Other errors (timeouts, overload, etc.) should not be mislabeled as password issues.
     // Fallback: try base64 inline for PDFs under the inline size limit.
-    const isProcessingError =
-      msg.includes("Could not process PDF") || msg.includes("invalid_request_error");
+    const isProcessingError = isPdfProcessingErrorMessage(msg);
 
     if (isProcessingError && pdfBuffer.byteLength < INLINE_LIMIT) {
       console.log("[bom/extract] Falling back to base64 inline (file is", pdfBuffer.byteLength, "bytes)");
@@ -424,6 +467,9 @@ export async function POST(req: NextRequest) {
       } catch (fallbackErr) {
         const fallbackMsg = fallbackErr instanceof Error ? fallbackErr.message : "Unknown error";
         console.error("[bom/extract] Base64 fallback also failed:", fallbackMsg);
+        if (!isPdfProcessingErrorMessage(fallbackMsg)) {
+          return NextResponse.json({ error: `Extraction failed: ${fallbackMsg}` }, { status: 502 });
+        }
         return NextResponse.json(
           {
             error:
