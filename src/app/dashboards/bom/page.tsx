@@ -445,8 +445,10 @@ function BomDashboardInner() {
   useEffect(() => {
     const dealId = searchParams.get("deal");
     if (!dealId) return;
-    // Already loaded the correct deal — skip re-fetch (but allow switching deals)
-    if (linkedProject && linkedProject.hs_object_id === dealId) return;
+    // Always fetch fresh from HubSpot — the search-results cache may have
+    // stale data (e.g. designFolderUrl: null) if the deal was updated recently.
+    // The optimistic setLinkedProject() in dropdown click handlers prevents any
+    // UI flash while this fetch is in flight.
     setDealLoading(true);
     fetch(`/api/projects/${encodeURIComponent(dealId)}`)
       .then((r) => r.ok ? r.json() : Promise.reject(r.status))
@@ -1099,14 +1101,17 @@ function BomDashboardInner() {
       <div className="space-y-6 px-4 pb-10">
 
         {/* ---- Import Panel ---- */}
-        {!bom && (dealLoading || historyLoading) && (
+        {/* Full-panel spinner: only when we have NO project info yet.
+            If an optimistic linkedProject is set, show the panel instead
+            so the user sees the project name while fresh data loads. */}
+        {!bom && (historyLoading || (dealLoading && !linkedProject)) && (
           <div className="rounded-xl bg-surface border border-t-border shadow-card p-12 flex flex-col items-center gap-3 text-muted">
             <div className="w-8 h-8 border-2 border-t-foreground border-surface rounded-full animate-spin" />
             <p className="text-sm">{dealLoading ? "Loading project…" : "Loading BOM…"}</p>
           </div>
         )}
 
-        {!bom && !dealLoading && !historyLoading && (
+        {!bom && !(historyLoading || (dealLoading && !linkedProject)) && (
           <div className="rounded-xl bg-surface border border-t-border shadow-card overflow-hidden">
 
             {/* ---- Project link strip (pre-extraction) ---- */}
@@ -1147,9 +1152,10 @@ function BomDashboardInner() {
                         <button
                           key={p.hs_object_id}
                           onClick={() => {
-                            // Don't set linkedProject from stale search cache — navigate to
-                            // ?deal= and let the URL effect fetch fresh data from HubSpot
-                            // (avoids designFolderUrl being null due to cache staleness)
+                            // Set optimistically so the panel doesn't blank out while
+                            // the URL effect fetches fresh data (which may update
+                            // designFolderUrl from null → correct value).
+                            setLinkedProject(p);
                             router.replace(`/dashboards/bom?deal=${encodeURIComponent(p.hs_object_id)}`);
                             setProjectSearch("");
                             setProjectResults([]);
@@ -1636,7 +1642,8 @@ function BomDashboardInner() {
                         <button
                           key={p.hs_object_id}
                           onClick={() => {
-                            setLinkedProject(p);
+                            // Navigate via URL — the ?deal= effect fetches fresh HubSpot
+                            // data so designFolderUrl is always up-to-date.
                             router.replace(`/dashboards/bom?deal=${encodeURIComponent(p.hs_object_id)}`);
                             setProjectSearch("");
                             setProjectResults([]);
