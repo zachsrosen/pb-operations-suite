@@ -433,6 +433,13 @@ export default function Home() {
     if (userRole === "OPERATIONS_MANAGER") {
       return SUITE_LINKS.filter((suite) => suite.href === "/suites/operations");
     }
+    if (userRole === "TECH_OPS") {
+      const allowedTechOpsSuites = new Set([
+        "/suites/operations",
+        "/suites/department",
+      ]);
+      return SUITE_LINKS.filter((suite) => allowedTechOpsSuites.has(suite.href));
+    }
     if (userRole === "PROJECT_MANAGER") {
       const allowedPmSuites = new Set([
         "/suites/operations",
@@ -455,6 +462,7 @@ export default function Home() {
   const roleLandingCards = useMemo(() => {
     if (!userRole) return null;
     if (userRole === "OPERATIONS_MANAGER") return null;
+    if (userRole === "TECH_OPS") return null;
     if (userRole === "PROJECT_MANAGER") return null;
     return ROLE_LANDING_CARDS[userRole] || null;
   }, [userRole]);
