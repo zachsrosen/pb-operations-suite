@@ -11,6 +11,7 @@ import { ExecutiveLevelNotification } from "@/emails/ExecutiveLevelNotification"
 import { WeeklyChangelogSimple } from "@/emails/WeeklyChangelogSimple";
 import { OperationsOnlyUpdate } from "@/emails/OperationsOnlyUpdate";
 import { BacklogForecastingUpdate } from "@/emails/BacklogForecastingUpdate";
+import { getHubSpotDealUrl, getZuperJobUrl } from "@/lib/external-links";
 import * as React from "react";
 
 type SendResult = { success: boolean; error?: string };
@@ -467,6 +468,7 @@ interface SendSchedulingNotificationParams {
   scheduledStart?: string; // HH:mm
   scheduledEnd?: string; // HH:mm
   projectId: string;
+  zuperJobUid?: string;
   notes?: string;
   installDetails?: {
     forecastedInstallDays?: number;
@@ -497,6 +499,8 @@ export async function sendSchedulingNotification(
   const bccRecipients = dedupeEmails([...defaultBcc, ...explicitBcc], params.to);
   const installDetails = params.appointmentType === "installation" ? params.installDetails : undefined;
   const cleanedNotes = sanitizeScheduleEmailNotes(params.notes);
+  const hubSpotDealUrl = getHubSpotDealUrl(params.projectId);
+  const zuperJobUrl = getZuperJobUrl(params.zuperJobUid);
   const stakeholderTextLine = params.appointmentType === "survey" && params.dealOwnerName
     ? `Deal owner: ${params.dealOwnerName}\n`
     : (params.appointmentType === "installation" || params.appointmentType === "inspection") && params.projectManagerName
@@ -540,6 +544,8 @@ export async function sendSchedulingNotification(
       timeSlot,
       notes: cleanedNotes,
       installDetailLines: installDetailLines.length > 0 ? installDetailLines : undefined,
+      hubSpotDealUrl,
+      zuperJobUrl: zuperJobUrl || undefined,
     })
   );
 
@@ -562,6 +568,8 @@ Scheduled by: ${params.scheduledByName}
 ${stakeholderTextLine}
 ${installDetailLines.length > 0 ? `\nInstall Details:\n${installDetailLines.join("\n")}` : ""}
 ${cleanedNotes ? `\nNotes: ${cleanedNotes}` : ""}
+HubSpot Deal: ${hubSpotDealUrl}
+${zuperJobUrl ? `Zuper Job: ${zuperJobUrl}` : ""}
 
 Please check your Zuper app for complete details.
 
@@ -579,6 +587,8 @@ Please check your Zuper app for complete details.
       `Time: ${timeSlot}`,
       `Install Details: ${installDetailLines.length > 0 ? installDetailLines.join(" | ") : "None"}`,
       `Notes: ${cleanedNotes || "None"}`,
+      `HubSpot Deal: ${hubSpotDealUrl}`,
+      `Zuper Job: ${zuperJobUrl || "None"}`,
       `BCC: ${bccRecipients.join(", ") || "None"}`,
     ].join("\n"),
   });

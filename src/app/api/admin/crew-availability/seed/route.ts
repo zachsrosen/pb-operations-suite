@@ -76,9 +76,9 @@ const SEED_SCHEDULES = [
     reportLocation: "San Luis Obispo",
     timezone: "America/Los_Angeles",
     schedule: [
-      { day: 1, startTime: "08:00", endTime: "10:00" },
-      { day: 2, startTime: "08:00", endTime: "10:00" },
-      { day: 4, startTime: "08:00", endTime: "10:00" },
+      { day: 1, startTime: "08:00", endTime: "09:00" },
+      { day: 2, startTime: "08:00", endTime: "09:00" },
+      { day: 4, startTime: "08:00", endTime: "09:00" },
     ],
     jobTypes: ["survey"],
   },
@@ -88,7 +88,7 @@ const SEED_SCHEDULES = [
     reportLocation: "Camarillo",
     timezone: "America/Los_Angeles",
     schedule: [
-      { day: 3, startTime: "09:30", endTime: "11:30" },
+      { day: 3, startTime: "09:00", endTime: "10:00" },
     ],
     jobTypes: ["survey"],
   },

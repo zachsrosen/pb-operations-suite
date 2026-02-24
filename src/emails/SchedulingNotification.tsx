@@ -1,4 +1,4 @@
-import { Hr, Row, Section, Text } from "@react-email/components";
+import { Hr, Link, Row, Section, Text } from "@react-email/components";
 import * as React from "react";
 import { EmailShell } from "./_components/EmailShell";
 
@@ -16,6 +16,8 @@ export interface SchedulingNotificationProps {
   timeSlot: string; // Pre-formatted: "8:00 AM - 9:00 AM" | "Full day"
   notes?: string;
   installDetailLines?: string[]; // Pre-built lines from email.ts
+  hubSpotDealUrl?: string;
+  zuperJobUrl?: string;
 }
 
 export function SchedulingNotification({
@@ -31,8 +33,11 @@ export function SchedulingNotification({
   timeSlot,
   notes,
   installDetailLines,
+  hubSpotDealUrl,
+  zuperJobUrl,
 }: SchedulingNotificationProps) {
   const hasInstallDetails = installDetailLines && installDetailLines.length > 0;
+  const hasLinks = !!hubSpotDealUrl || !!zuperJobUrl;
   const stakeholder =
     appointmentType === "survey" && dealOwnerName
       ? { icon: "🧑‍💼", label: "Deal owner", value: dealOwnerName }
@@ -78,6 +83,26 @@ export function SchedulingNotification({
           <Section style={detailBlock}>
             <Text style={detailBlockLabel}>📝 Notes</Text>
             <Text style={detailBlockText}>{notes}</Text>
+          </Section>
+        )}
+
+        {hasLinks && (
+          <Section style={detailBlock}>
+            <Text style={detailBlockLabel}>🔗 Links</Text>
+            {hubSpotDealUrl && (
+              <Text style={detailBlockText}>
+                <Link href={hubSpotDealUrl} style={link}>
+                  Open HubSpot Deal
+                </Link>
+              </Text>
+            )}
+            {zuperJobUrl && (
+              <Text style={detailBlockText}>
+                <Link href={zuperJobUrl} style={link}>
+                  Open Zuper Job
+                </Link>
+              </Text>
+            )}
           </Section>
         )}
       </Section>
@@ -186,6 +211,11 @@ const detailBlockText: React.CSSProperties = {
   whiteSpace: "pre-line",
 };
 
+const link: React.CSSProperties = {
+  color: "#60a5fa",
+  textDecoration: "underline",
+};
+
 const footer: React.CSSProperties = {
   color: "#71717a",
   fontSize: "12px",
@@ -214,6 +244,8 @@ SchedulingNotification.PreviewProps = {
   formattedDate: "Friday, February 21, 2025",
   timeSlot: "9:00 AM - 10:00 AM",
   notes: "Gate code is 4512. Dog in backyard.",
+  hubSpotDealUrl: "https://app.hubspot.com/contacts/21710069/record/0-3/12345678901",
+  zuperJobUrl: "https://us-west-1c.zuperpro.com/app/job/123e4567-e89b-12d3-a456-426614174000",
 } satisfies SchedulingNotificationProps;
 
 export default SchedulingNotification;

@@ -7,8 +7,15 @@ import { auth } from "@/auth";
 import { getUserByEmail, logActivity, createScheduleRecord, cacheZuperJob, canScheduleType, getCrewMemberByName, getCrewMemberByZuperUserUid, getCachedZuperJobByDealId, prisma, UserRole } from "@/lib/db";
 import { sendSchedulingNotification, sendCancellationNotification } from "@/lib/email";
 import { updateDealProperty, getDealProperties, updateSiteSurveyorProperty, getDealProjectManagerContact } from "@/lib/hubspot";
-import { upsertSiteSurveyCalendarEvent } from "@/lib/google-calendar";
+import {
+  upsertSiteSurveyCalendarEvent,
+  upsertInstallationCalendarEvent,
+  deleteSiteSurveyCalendarEvent,
+  deleteInstallationCalendarEvent,
+  getInstallCalendarIdForLocation,
+} from "@/lib/google-calendar";
 import { getBusinessEndDateInclusive, isWeekendDate } from "@/lib/business-days";
+import { getInstallCalendarTimezone, resolveInstallCalendarLocation } from "@/lib/install-calendar-location";
 
 type ScheduleType = "survey" | "installation" | "inspection";
 const MANAGER_ROLES = ["ADMIN", "OWNER", "MANAGER", "OPERATIONS_MANAGER"];
@@ -836,7 +843,8 @@ export async function PUT(request: NextRequest) {
           schedule,
           project,
           session.user.name || session.user.email,
-          session.user.email
+          session.user.email,
+          existingJob.job_uid
         );
       } else {
         console.log("[Zuper Schedule] Test slot mode enabled; skipping crew notification email");
@@ -966,7 +974,8 @@ export async function PUT(request: NextRequest) {
           schedule,
           project,
           session.user.name || session.user.email,
-          session.user.email
+          session.user.email,
+          newJobUid
         );
       } else {
         console.log("[Zuper Schedule] Test slot mode enabled; skipping crew notification email");
@@ -1477,6 +1486,72 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
+    // Keep Google Calendar in sync when a schedule is removed.
+    let calendarDeleteAttempted = false;
+    let calendarDeleteSucceeded = false;
+    let calendarDeleteError: string | null = null;
+    let calendarDeleteReason: string | null = null;
+    if (scheduleType === "installation") {
+      try {
+        const dealProps = await getDealProperties(String(projectId), ["pb_location"]);
+        const pbLocation = dealProps?.pb_location as string | undefined;
+        const locationResolution = resolveInstallCalendarLocation({
+          pbLocation,
+          assignedUserUid: latestActiveRecord?.assignedUserUid || null,
+          assignedUserName: latestActiveRecord?.assignedUser || (typeof assignedUser === "string" ? assignedUser : null),
+        });
+        const installCalendarId = getInstallCalendarIdForLocation(locationResolution.location);
+        if (!installCalendarId) {
+          calendarDeleteReason = `no_install_calendar_for_location(${locationResolution.location || "unknown"})`;
+          console.log(
+            `[Zuper Unschedule] No install calendar configured for location "${pbLocation || "unknown"}" (resolved=${locationResolution.location || "unknown"}, source=${locationResolution.source}), skipping install calendar delete`
+          );
+        } else {
+          calendarDeleteAttempted = true;
+          const calendarDelete = await deleteInstallationCalendarEvent({
+            projectId: String(projectId),
+            calendarId: installCalendarId,
+          });
+          calendarDeleteSucceeded = calendarDelete.success;
+          if (!calendarDelete.success) {
+            calendarDeleteError = calendarDelete.error || "Unknown install calendar delete error";
+            console.warn(
+              `[Zuper Unschedule] Google Calendar install delete warning for ${projectId}: ${calendarDeleteError}`
+            );
+          }
+        }
+      } catch (calendarErr) {
+        calendarDeleteAttempted = true;
+        calendarDeleteError = calendarErr instanceof Error ? calendarErr.message : "Unknown install calendar delete error";
+        console.warn("[Zuper Unschedule] Installation calendar delete failed:", calendarErr);
+      }
+    } else if (scheduleType === "survey") {
+      try {
+        const resolvedRecipient = await resolveCrewNotificationRecipient({
+          assignedUser: latestActiveRecord?.assignedUser || (typeof assignedUser === "string" ? assignedUser : undefined),
+          assignedUserUid: latestActiveRecord?.assignedUserUid || undefined,
+        });
+        calendarDeleteAttempted = true;
+        const calendarDelete = await deleteSiteSurveyCalendarEvent({
+          projectId: String(projectId),
+          surveyorEmail: resolvedRecipient.recipientEmail || undefined,
+        });
+        calendarDeleteSucceeded = calendarDelete.success;
+        if (!calendarDelete.success) {
+          calendarDeleteError = calendarDelete.error || "Unknown survey calendar delete error";
+          console.warn(
+            `[Zuper Unschedule] Google Calendar survey delete warning for ${projectId}: ${calendarDeleteError}`
+          );
+        }
+      } catch (calendarErr) {
+        calendarDeleteAttempted = true;
+        calendarDeleteError = calendarErr instanceof Error ? calendarErr.message : "Unknown survey calendar delete error";
+        console.warn("[Zuper Unschedule] Survey calendar delete failed:", calendarErr);
+      }
+    } else {
+      calendarDeleteReason = "schedule_type_not_synced_to_google";
+    }
+
     // Mark latest active schedule record as cancelled and persist cancellation reason.
     if (prisma) {
       try {
@@ -1547,6 +1622,10 @@ export async function DELETE(request: NextRequest) {
       hubspotFieldsCleared,
       hubspotStatusUpdated,
       hubspotVerification,
+      calendarDeleteAttempted,
+      calendarDeleteSucceeded,
+      calendarDeleteReason,
+      calendarDeleteError,
       zuperJobUid: resolvedJobUid || null,
       message: `${scheduleType} schedule cleared${zuperCleared ? " (Zuper + HubSpot)" : " (HubSpot only)"}`,
     });
@@ -1639,6 +1718,18 @@ async function resolveCrewNotificationRecipient(params: {
     }
   }
 
+  // Fallback: support assignments that use app user display names (non-crew).
+  if (!recipientEmail && params.assignedUser && prisma) {
+    const byAppUserName = await prisma.user.findFirst({
+      where: { name: params.assignedUser },
+      select: { email: true, name: true },
+    });
+    if (byAppUserName?.email) {
+      recipientEmail = byAppUserName.email;
+      recipientName = byAppUserName.name || recipientName;
+    }
+  }
+
   if (!recipientEmail && assignedUserUid) {
     const byUid = await getCrewMemberByZuperUserUid(assignedUserUid);
     if (byUid?.email) {
@@ -1681,6 +1772,7 @@ async function sendCrewNotification(
   schedule: {
     type: string;
     date: string;
+    days?: number | string;
     startTime?: string;
     endTime?: string;
     assignedUser?: string;
@@ -1691,7 +1783,8 @@ async function sendCrewNotification(
   },
   project: { id: string; name?: string; address?: string; dealOwner?: string; projectManager?: string },
   schedulerName: string,
-  schedulerEmail: string
+  schedulerEmail: string,
+  zuperJobUid?: string
 ) {
   try {
     // If no assigned user, skip notification
@@ -1754,6 +1847,7 @@ async function sendCrewNotification(
       scheduledStart: schedule.startTime,
       scheduledEnd: schedule.endTime,
       projectId: project.id,
+      zuperJobUid,
       notes: schedule.notes,
     });
 
@@ -1770,9 +1864,55 @@ async function sendCrewNotification(
         endTime: schedule.endTime,
         timezone: schedule.timezone,
         notes: schedule.notes,
+        zuperJobUid,
       });
       if (!syncResult.success) {
         console.warn(`[Zuper Schedule] Google Calendar sync warning: ${syncResult.error}`);
+      }
+    }
+
+    // Keep location-based Google Calendar in sync for installations.
+    if (schedule.type === "installation") {
+      try {
+        const dealProps = await getDealProperties(project.id, ["pb_location"]);
+        const pbLocation = dealProps?.pb_location as string | undefined;
+        const locationResolution = resolveInstallCalendarLocation({
+          pbLocation,
+          assignedUserUid: schedule.assignedUserUid || schedule.crew,
+          assignedUserName: schedule.assignedUser,
+        });
+        const installCalendarId = getInstallCalendarIdForLocation(locationResolution.location);
+        if (installCalendarId) {
+          const days = Number.isFinite(Number(schedule.days)) ? Number(schedule.days) : 1;
+          const endDate = getBusinessEndDateInclusive(schedule.date, days);
+          const timezone =
+            getInstallCalendarTimezone(locationResolution.bucket) ||
+            schedule.timezone ||
+            "America/Denver";
+          const syncResult = await upsertInstallationCalendarEvent({
+            projectId: project.id,
+            projectName: project.name || project.id,
+            customerName,
+            customerAddress,
+            startDate: schedule.date,
+            startTime: schedule.startTime,
+            endDate,
+            endTime: schedule.endTime,
+            timezone,
+            notes: schedule.notes,
+            zuperJobUid,
+            calendarId: installCalendarId,
+          });
+          if (!syncResult.success) {
+            console.warn(`[Zuper Schedule] Google Calendar install sync warning: ${syncResult.error}`);
+          }
+        } else {
+          console.log(
+            `[Zuper Schedule] No install calendar configured for location "${pbLocation || "unknown"}" (resolved=${locationResolution.location || "unknown"}, source=${locationResolution.source}), skipping calendar sync`
+          );
+        }
+      } catch (calErr) {
+        console.warn("[Zuper Schedule] Installation calendar sync failed:", calErr);
       }
     }
 

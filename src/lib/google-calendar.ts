@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { getHubSpotDealUrl, getZuperJobUrl } from "@/lib/external-links";
 
 type ServiceAccountTokenResponse = {
   access_token?: string;
@@ -83,17 +84,27 @@ export function normalizeLocationForInstallCalendars(location?: string | null): 
 
   if (
     normalized === "dtc" ||
+    normalized.includes("dtc") ||
     normalized === "centennial" ||
+    normalized.includes("centennial") ||
     normalized.includes("denver tech")
   ) {
     return "dtc";
   }
-  if (normalized === "westminster" || normalized === "westy") {
+  if (
+    normalized === "westminster" ||
+    normalized === "westy" ||
+    normalized.includes("westminster") ||
+    normalized.includes("westy")
+  ) {
     return "westy";
   }
   if (
     normalized === "colorado springs" ||
+    normalized.includes("colorado springs") ||
+    normalized.includes("co springs") ||
     normalized === "cosp" ||
+    normalized.includes("cosp") ||
     normalized === "pueblo"
   ) {
     return "cosp";
@@ -448,6 +459,7 @@ export async function upsertSiteSurveyCalendarEvent(params: {
   endTime?: string;
   timezone?: string;
   notes?: string;
+  zuperJobUid?: string;
   calendarId?: string;
   impersonateEmail?: string;
 }): Promise<{ success: boolean; error?: string }> {
@@ -478,6 +490,8 @@ export async function upsertSiteSurveyCalendarEvent(params: {
   const timezone = params.timezone || "America/Denver";
   const startTime = params.startTime || "08:00";
   const endTime = params.endTime || "09:00";
+  const hubSpotDealUrl = getHubSpotDealUrl(params.projectId);
+  const zuperJobUrl = getZuperJobUrl(params.zuperJobUid);
   const eventId = getSurveyCalendarEventId(params.projectId);
   const calendarId = (params.calendarId || "").trim() || getDefaultSurveyCalendarId();
   const isSharedMirrorWrite = (params.calendarId || "").trim().length > 0;
@@ -507,6 +521,8 @@ export async function upsertSiteSurveyCalendarEvent(params: {
     description: [
       `Project: ${params.projectName}`,
       `Deal ID: ${params.projectId}`,
+      `HubSpot Deal: ${hubSpotDealUrl}`,
+      zuperJobUrl ? `Zuper Job: ${zuperJobUrl}` : "",
       params.notes ? `Notes: ${params.notes}` : "",
     ].filter(Boolean).join("\n"),
     start: {
@@ -636,6 +652,7 @@ export async function upsertInstallationCalendarEvent(params: {
   endTime?: string;
   timezone?: string;
   notes?: string;
+  zuperJobUid?: string;
   calendarId: string;
   impersonateEmail?: string;
 }): Promise<{ success: boolean; error?: string }> {
@@ -665,6 +682,8 @@ export async function upsertInstallationCalendarEvent(params: {
   const timezone = params.timezone || "America/Denver";
   const startTime = params.startTime || "08:00";
   const endTime = params.endTime || "16:00";
+  const hubSpotDealUrl = getHubSpotDealUrl(params.projectId);
+  const zuperJobUrl = getZuperJobUrl(params.zuperJobUid);
   const eventId = getInstallationCalendarEventId(params.projectId);
   const calendarId = (params.calendarId || "").trim();
   if (!calendarId) {
@@ -694,6 +713,8 @@ export async function upsertInstallationCalendarEvent(params: {
     description: [
       `Project: ${params.projectName}`,
       `Deal ID: ${params.projectId}`,
+      `HubSpot Deal: ${hubSpotDealUrl}`,
+      zuperJobUrl ? `Zuper Job: ${zuperJobUrl}` : "",
       params.notes ? `Notes: ${params.notes}` : "",
     ].filter(Boolean).join("\n"),
     start: {

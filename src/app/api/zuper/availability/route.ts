@@ -202,9 +202,9 @@ const CREW_SCHEDULES: CrewSchedule[] = [
     reportLocation: "San Luis Obispo",
     timezone: "America/Los_Angeles",
     schedule: [
-      { day: 1, startTime: "08:00", endTime: "10:00" }, // Mon 8-10am PT
-      { day: 2, startTime: "08:00", endTime: "10:00" }, // Tue 8-10am PT
-      { day: 4, startTime: "08:00", endTime: "10:00" }, // Thu 8-10am PT
+      { day: 1, startTime: "08:00", endTime: "09:00" }, // Mon 8-9am PT
+      { day: 2, startTime: "08:00", endTime: "09:00" }, // Tue 8-9am PT
+      { day: 4, startTime: "08:00", endTime: "09:00" }, // Thu 8-9am PT
     ],
     jobTypes: ["survey"],
   },
@@ -214,7 +214,7 @@ const CREW_SCHEDULES: CrewSchedule[] = [
     reportLocation: "Camarillo",
     timezone: "America/Los_Angeles",
     schedule: [
-      { day: 3, startTime: "09:30", endTime: "11:30" }, // Wed 9:30-11:30am PT
+      { day: 3, startTime: "09:00", endTime: "10:00" }, // Wed 9-10am PT
     ],
     jobTypes: ["survey"],
   },

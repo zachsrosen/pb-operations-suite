@@ -5,9 +5,10 @@ import { zuper, JOB_CATEGORY_UIDS } from "@/lib/zuper";
 import { headers } from "next/headers";
 import { sendSchedulingNotification } from "@/lib/email";
 import { updateDealProperty, updateSiteSurveyorProperty, getDealProperties, getDealOwnerContact, getDealProjectManagerContact } from "@/lib/hubspot";
-import { upsertSiteSurveyCalendarEvent } from "@/lib/google-calendar";
+import { upsertSiteSurveyCalendarEvent, upsertInstallationCalendarEvent, getInstallCalendarIdForLocation } from "@/lib/google-calendar";
 import { getBusinessEndDateInclusive, isWeekendDate } from "@/lib/business-days";
 import { getInstallNotificationDetails } from "@/lib/scheduling-email-details";
+import { getInstallCalendarTimezone, resolveInstallCalendarLocation } from "@/lib/install-calendar-location";
 
 function getConstructionScheduleBoundaryProperties(): { start: string | null; end: string | null } {
   const start = process.env.HUBSPOT_CONSTRUCTION_START_DATE_PROPERTY?.trim() || null;
@@ -636,6 +637,19 @@ export async function POST(request: NextRequest) {
           }
         }
 
+        // Fallback: support tentative assignees that are app users by name
+        // (not present in CrewMember), e.g. internal/admin test scheduling.
+        if (!recipientEmail) {
+          const byAppUserName = await prisma.user.findFirst({
+            where: { name: record.assignedUser },
+            select: { email: true, name: true },
+          });
+          if (byAppUserName?.email) {
+            recipientEmail = byAppUserName.email;
+            recipientName = byAppUserName.name || recipientName;
+          }
+        }
+
         if (!recipientEmail && firstAssignedUid) {
           const userResult = await zuper.getUser(firstAssignedUid);
           if (userResult.type === "success" && userResult.data?.email) {
@@ -646,14 +660,15 @@ export async function POST(request: NextRequest) {
           }
         }
 
+        const customerNameParts = record.projectName.split(" | ");
+        const customerName = customerNameParts.length >= 2
+          ? customerNameParts[1]?.trim()
+          : customerNameParts[0]?.trim() || "Customer";
+        const customerAddress = customerNameParts.length >= 3
+          ? customerNameParts[2]?.trim()
+          : "See Zuper for address";
+
         if (recipientEmail) {
-          const customerNameParts = record.projectName.split(" | ");
-          const customerName = customerNameParts.length >= 2
-            ? customerNameParts[1]?.trim()
-            : customerNameParts[0]?.trim() || "Customer";
-          const customerAddress = customerNameParts.length >= 3
-            ? customerNameParts[2]?.trim()
-            : "See Zuper for address";
           let dealOwnerName: string | null = null;
           let projectManagerName: string | null = null;
           if (scheduleType === "survey") {
@@ -700,6 +715,7 @@ export async function POST(request: NextRequest) {
             scheduledStart: record.scheduledStart || undefined,
             scheduledEnd: record.scheduledEnd || undefined,
             projectId: record.projectId,
+            zuperJobUid: zuperJobUid || record.zuperJobUid || undefined,
             notes: record.notes || undefined,
             installDetails,
           });
@@ -716,6 +732,7 @@ export async function POST(request: NextRequest) {
               endTime: record.scheduledEnd || undefined,
               timezone: slotTimezone,
               notes: record.notes || undefined,
+              zuperJobUid: zuperJobUid || record.zuperJobUid || undefined,
             });
             if (!calendarSync.success) {
               console.warn(`[Zuper Confirm] Google Calendar sync warning: ${calendarSync.error}`);
@@ -725,6 +742,50 @@ export async function POST(request: NextRequest) {
           console.warn(
             `[Zuper Confirm] No email found for assigned surveyor: name="${record.assignedUser}", uid="${firstAssignedUid || ""}"`
           );
+        }
+
+        if (scheduleType === "installation") {
+          try {
+            const dealProps = await getDealProperties(record.projectId, ["pb_location"]);
+            const pbLocation = dealProps?.pb_location as string | undefined;
+            const locationResolution = resolveInstallCalendarLocation({
+              pbLocation,
+              assignedUserUid: record.assignedUserUid || null,
+              assignedUserName: record.assignedUser || null,
+            });
+            const installCalendarId = getInstallCalendarIdForLocation(locationResolution.location);
+            if (installCalendarId) {
+              const days = record.scheduledDays || 1;
+              const endDate = getBusinessEndDateInclusive(record.scheduledDate, days);
+              const timezone =
+                getInstallCalendarTimezone(locationResolution.bucket) ||
+                slotTimezone ||
+                "America/Denver";
+              const calendarSync = await upsertInstallationCalendarEvent({
+                projectId: record.projectId,
+                projectName: record.projectName,
+                customerName,
+                customerAddress,
+                startDate: record.scheduledDate,
+                startTime: record.scheduledStart || undefined,
+                endDate,
+                endTime: record.scheduledEnd || undefined,
+                timezone,
+                notes: record.notes || undefined,
+                zuperJobUid: zuperJobUid || record.zuperJobUid || undefined,
+                calendarId: installCalendarId,
+              });
+              if (!calendarSync.success) {
+                console.warn(`[Zuper Confirm] Google Calendar install sync warning: ${calendarSync.error}`);
+              }
+            } else {
+              console.log(
+                `[Zuper Confirm] No install calendar configured for location "${pbLocation || "unknown"}" (resolved=${locationResolution.location || "unknown"}, source=${locationResolution.source}), skipping calendar sync`
+              );
+            }
+          } catch (calErr) {
+            console.warn("[Zuper Confirm] Installation calendar sync failed:", calErr);
+          }
         }
       }
     } catch (emailErr) {
