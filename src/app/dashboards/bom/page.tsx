@@ -512,10 +512,11 @@ function BomDashboardInner() {
     setDriveFilesError(null);
     fetch(`/api/bom/drive-files?folderId=${encodeURIComponent(folderId)}`)
       .then((r) => r.json())
-      .then((data: { files: DriveFile[]; error?: string }) => {
+      .then((data: { files: DriveFile[]; error?: string; debug?: Record<string, unknown> }) => {
+        if (data.debug) console.log("[drive-files debug]", data.debug);
         const files = data.files ?? [];
         setDriveFiles(files);
-        if (data.error) setDriveFilesError(data.error);
+        if (data.error) setDriveFilesError(`${data.error}${data.debug ? ` | token: ${data.debug.tokenSource}` : ""}`);
         if (files.length > 0) {
           setImportTab("project-files");
         }
