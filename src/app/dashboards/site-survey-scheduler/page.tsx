@@ -411,6 +411,7 @@ export default function SiteSurveySchedulerPage() {
       } catch (err) {
         if ((err as Error).name !== "AbortError") {
           console.error("[Pre-sale search] Error:", err);
+          setPreSaleResults([]);
         }
       } finally {
         setPreSaleSearching(false);
