@@ -433,6 +433,14 @@ export default function Home() {
     if (userRole === "OPERATIONS_MANAGER") {
       return SUITE_LINKS.filter((suite) => suite.href === "/suites/operations");
     }
+    if (userRole === "PROJECT_MANAGER") {
+      const allowedPmSuites = new Set([
+        "/suites/operations",
+        "/suites/department",
+        "/suites/intelligence",
+      ]);
+      return SUITE_LINKS.filter((suite) => allowedPmSuites.has(suite.href));
+    }
     // Roles with landing cards don't show suite grid (they get Browse All instead)
     if (ROLE_LANDING_CARDS[userRole]) return [];
     const isAdmin = userRole === "ADMIN";
@@ -447,6 +455,7 @@ export default function Home() {
   const roleLandingCards = useMemo(() => {
     if (!userRole) return null;
     if (userRole === "OPERATIONS_MANAGER") return null;
+    if (userRole === "PROJECT_MANAGER") return null;
     return ROLE_LANDING_CARDS[userRole] || null;
   }, [userRole]);
 
