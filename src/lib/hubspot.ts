@@ -545,6 +545,7 @@ const DEAL_PROPERTIES = [
 
   // External system links & folder IDs
   "design_document_folder_id",
+  "all_document_parent_folder_id",
   "g_drive",
   "link_to_opensolar",
   "os_project_link",
@@ -851,7 +852,9 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
     daToPermit: msToDays(deal.da_to_permit),
 
     // External links
-    designFolderUrl: String(deal.design_document_folder_id || "").trim() || null,
+    // design_document_folder_id is preferred; fall back to all_document_parent_folder_id
+    // (HubSpot workflows often populate the parent folder field instead)
+    designFolderUrl: String(deal.design_document_folder_id || deal.all_document_parent_folder_id || "").trim() || null,
     driveUrl: String(deal.g_drive || "").trim() || null,
     openSolarUrl: String(deal.os_project_link || deal.link_to_opensolar || "").trim() || null,
     openSolarId: String(deal.os_project_id || "").trim() || null,

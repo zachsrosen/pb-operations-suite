@@ -1146,7 +1146,9 @@ function BomDashboardInner() {
                         <button
                           key={p.hs_object_id}
                           onClick={() => {
-                            setLinkedProject(p);
+                            // Don't set linkedProject from stale search cache — navigate to
+                            // ?deal= and let the URL effect fetch fresh data from HubSpot
+                            // (avoids designFolderUrl being null due to cache staleness)
                             router.replace(`/dashboards/bom?deal=${encodeURIComponent(p.hs_object_id)}`);
                             setProjectSearch("");
                             setProjectResults([]);
@@ -1524,11 +1526,9 @@ function BomDashboardInner() {
                 <div className="ml-auto flex items-center gap-2 shrink-0">
                   <button
                     onClick={() => {
-                      setLinkedProject(autoLinkSuggestion);
+                      // Navigate via URL so the effect fetches fresh HubSpot data
+                      router.replace(`/dashboards/bom?deal=${encodeURIComponent(autoLinkSuggestion.hs_object_id)}`);
                       setAutoLinkSuggestion(null);
-                      const url = new URL(window.location.href);
-                      url.searchParams.set("dealId", autoLinkSuggestion.hs_object_id);
-                      window.history.replaceState({}, "", url.toString());
                     }}
                     className="text-xs bg-cyan-600 text-white px-3 py-1 rounded-lg hover:bg-cyan-700 transition-colors"
                   >

@@ -77,6 +77,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           response_type: "code",
           // Allow multiple Google Workspace domains — actual enforcement is in signIn callback
           hd: "*",
+          // Request Drive read-only scope so user's token can access design folder PDFs
+          scope: "openid email profile https://www.googleapis.com/auth/drive.readonly",
         },
       },
     }),
