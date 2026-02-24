@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { renderToBuffer } from "@react-pdf/renderer";
-import { prisma } from "@/lib/db";
+import { logActivity, prisma } from "@/lib/db";
 import { BomPdfDocument } from "@/components/BomPdfDocument";
 import React from "react";
 
@@ -10,11 +10,41 @@ export const runtime = "nodejs";
 export const maxDuration = 30;
 
 export async function POST(request: NextRequest) {
+  const startedAt = Date.now();
   const authResult = await requireApiAuth();
   if (authResult instanceof NextResponse) return authResult;
 
   // authResult is AuthenticatedUser — email is a direct string property
   const { email } = authResult;
+
+  const logExport = async (
+    outcome: "succeeded" | "failed",
+    details: Record<string, unknown>,
+    responseStatus: number
+  ) => {
+    await logActivity({
+      type: outcome === "failed" ? "API_ERROR" : "FEATURE_USED",
+      description:
+        outcome === "succeeded"
+          ? "Exported BOM PDF"
+          : "BOM PDF export failed",
+      userEmail: authResult.email,
+      userName: authResult.name,
+      entityType: "bom",
+      entityName: "export_pdf",
+      metadata: {
+        event: "bom_export_pdf",
+        outcome,
+        ...details,
+      },
+      ipAddress: authResult.ip,
+      userAgent: authResult.userAgent,
+      requestPath: "/api/bom/export-pdf",
+      requestMethod: "POST",
+      responseStatus,
+      durationMs: Date.now() - startedAt,
+    });
+  };
 
   let body: {
     snapshotId?: string;
@@ -25,6 +55,7 @@ export async function POST(request: NextRequest) {
   try {
     body = await request.json();
   } catch {
+    await logExport("failed", { reason: "invalid_json" }, 400);
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
@@ -34,6 +65,7 @@ export async function POST(request: NextRequest) {
 
   if (body.snapshotId) {
     if (!prisma) {
+      await logExport("failed", { reason: "database_not_configured", snapshotId: body.snapshotId }, 503);
       return NextResponse.json({ error: "Database not configured" }, { status: 503 });
     }
     const snap = await prisma.projectBomSnapshot.findUnique({
@@ -41,6 +73,7 @@ export async function POST(request: NextRequest) {
       select: { bomData: true, dealName: true, version: true },
     });
     if (!snap) {
+      await logExport("failed", { reason: "snapshot_not_found", snapshotId: body.snapshotId }, 404);
       return NextResponse.json({ error: "Snapshot not found" }, { status: 404 });
     }
     bomData = snap.bomData;
@@ -49,6 +82,11 @@ export async function POST(request: NextRequest) {
   }
 
   if (!bomData) {
+    await logExport(
+      "failed",
+      { reason: "missing_bom_data", snapshotId: body.snapshotId ?? null, dealName: dealName ?? null },
+      400
+    );
     return NextResponse.json({ error: "bomData required" }, { status: 400 });
   }
 
@@ -81,6 +119,18 @@ export async function POST(request: NextRequest) {
     // compatibility with the edge/fetch-based BodyInit type.
     const blob = new Blob([new Uint8Array(buffer)], { type: "application/pdf" });
 
+    await logExport(
+      "succeeded",
+      {
+        snapshotId: body.snapshotId ?? null,
+        dealName: dealName ?? null,
+        version: version ?? null,
+        filename,
+        sizeBytes: buffer.length,
+      },
+      200
+    );
+
     return new NextResponse(blob, {
       status: 200,
       headers: {
@@ -91,6 +141,17 @@ export async function POST(request: NextRequest) {
     });
   } catch (e) {
     console.error("[bom/export-pdf]", e);
+    await logExport(
+      "failed",
+      {
+        reason: "pdf_generation_failed",
+        snapshotId: body.snapshotId ?? null,
+        dealName: dealName ?? null,
+        version: version ?? null,
+        error: e instanceof Error ? e.message : "PDF generation failed",
+      },
+      500
+    );
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "PDF generation failed" },
       { status: 500 }

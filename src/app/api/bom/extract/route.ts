@@ -24,6 +24,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { getServiceAccountToken } from "@/lib/google-auth";
+import { logActivity } from "@/lib/db";
 import Anthropic from "@anthropic-ai/sdk";
 import { getToken } from "next-auth/jwt";
 
@@ -249,17 +250,57 @@ async function getDriveToken(request: NextRequest): Promise<{ token: string; tok
 }
 
 export async function POST(req: NextRequest) {
+  const startedAt = Date.now();
   // Auth check
   const authResult = await requireApiAuth();
   if (authResult instanceof NextResponse) return authResult;
   const { role } = authResult;
+
+  let sourceType: "blob" | "drive_url" | "drive_file" | "unknown" = "unknown";
+  let sourceRef: string | null = null;
+  const logExtract = async (
+    outcome: "started" | "succeeded" | "failed",
+    details: Record<string, unknown>,
+    responseStatus: number
+  ) => {
+    await logActivity({
+      type: outcome === "failed" ? "API_ERROR" : "FEATURE_USED",
+      description:
+        outcome === "started"
+          ? "Started BOM extraction"
+          : outcome === "succeeded"
+            ? "Completed BOM extraction"
+            : "BOM extraction failed",
+      userEmail: authResult.email,
+      userName: authResult.name,
+      entityType: "bom",
+      entityId: sourceRef || undefined,
+      entityName: "extract",
+      metadata: {
+        event: "bom_extract",
+        outcome,
+        sourceType,
+        sourceRef,
+        ...details,
+      },
+      ipAddress: authResult.ip,
+      userAgent: authResult.userAgent,
+      requestPath: "/api/bom/extract",
+      requestMethod: "POST",
+      responseStatus,
+      durationMs: Date.now() - startedAt,
+    });
+  };
+
   if (!ALLOWED_ROLES.has(role)) {
+    await logExtract("failed", { reason: "insufficient_permissions", role }, 403);
     return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
   }
 
   // Check Anthropic key
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
+    await logExtract("failed", { reason: "anthropic_key_missing" }, 503);
     return NextResponse.json({ error: "ANTHROPIC_API_KEY is not configured" }, { status: 503 });
   }
 
@@ -275,12 +316,18 @@ export async function POST(req: NextRequest) {
   try {
     body = await req.json();
   } catch {
+    await logExtract("failed", { reason: "invalid_json_body" }, 400);
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
   if (!body.blobUrl && !body.driveUrl && !body.fileId) {
+    await logExtract("failed", { reason: "missing_source_input" }, 400);
     return NextResponse.json({ error: "blobUrl, driveUrl, or fileId is required" }, { status: 400 });
   }
+
+  sourceType = body.fileId ? "drive_file" : body.blobUrl ? "blob" : body.driveUrl ? "drive_url" : "unknown";
+  sourceRef = body.fileId ?? body.blobUrl ?? body.driveUrl ?? null;
+  await logExtract("started", { hasBlobUrl: !!body.blobUrl, hasDriveUrl: !!body.driveUrl, hasFileId: !!body.fileId }, 200);
 
   let fetchRes: Response;
   try {
@@ -298,6 +345,7 @@ export async function POST(req: NextRequest) {
       if (!fetchRes.ok) {
         const driveErr = await fetchRes.json().catch(() => ({})) as { error?: { message?: string } };
         const msg = driveErr.error?.message ?? `HTTP ${fetchRes.status}`;
+        await logExtract("failed", { reason: "drive_download_failed", error: msg }, 400);
         return NextResponse.json(
           { error: `Failed to download Drive file (${msg})`, debug: { tokenSource } },
           { status: 400 }
@@ -306,6 +354,7 @@ export async function POST(req: NextRequest) {
     } else {
       const sourceUrl = body.blobUrl ?? body.driveUrl;
       if (!sourceUrl) {
+        await logExtract("failed", { reason: "missing_source_url" }, 400);
         return NextResponse.json({ error: "blobUrl or driveUrl is required" }, { status: 400 });
       }
 
@@ -317,6 +366,7 @@ export async function POST(req: NextRequest) {
 
       fetchRes = await fetch(sourceUrl, { redirect: "follow", headers: fetchHeaders });
       if (!fetchRes.ok) {
+        await logExtract("failed", { reason: "source_fetch_failed", sourceUrl, status: fetchRes.status }, 400);
         return NextResponse.json(
           {
             error: body.blobUrl
@@ -328,6 +378,7 @@ export async function POST(req: NextRequest) {
       }
     }
   } catch (e) {
+    await logExtract("failed", { reason: "source_fetch_exception", error: e instanceof Error ? e.message : String(e) }, 400);
     return NextResponse.json(
       { error: `Fetch failed: ${e instanceof Error ? e.message : String(e)}` },
       { status: 400 }
@@ -338,6 +389,7 @@ export async function POST(req: NextRequest) {
   if (!fetchContentType.includes("pdf") && !fetchContentType.includes("octet-stream")) {
     // Google Drive may redirect to a confirmation page for large files
     if (!body.blobUrl && !body.fileId) {
+      await logExtract("failed", { reason: "drive_not_pdf", contentType: fetchContentType }, 400);
       return NextResponse.json(
         { error: "Drive URL did not return a PDF. The file may require confirmation — try downloading it and using Upload PDF instead." },
         { status: 400 }
@@ -347,6 +399,7 @@ export async function POST(req: NextRequest) {
 
   const arrayBuffer = await fetchRes.arrayBuffer();
   if (arrayBuffer.byteLength > MAX_SIZE) {
+    await logExtract("failed", { reason: "pdf_too_large", sizeBytes: arrayBuffer.byteLength }, 400);
     return NextResponse.json({ error: "PDF exceeds 500MB limit" }, { status: 400 });
   }
 
@@ -371,6 +424,7 @@ export async function POST(req: NextRequest) {
   } catch (e) {
     const msg = e instanceof Error ? e.message : "File upload failed";
     console.error("[bom/extract] Files API upload error:", msg);
+    await logExtract("failed", { reason: "anthropic_files_upload_failed", error: msg, filename }, 502);
     return NextResponse.json({ error: `PDF upload failed: ${msg}` }, { status: 502 });
   }
 
@@ -468,8 +522,10 @@ export async function POST(req: NextRequest) {
         const fallbackMsg = fallbackErr instanceof Error ? fallbackErr.message : "Unknown error";
         console.error("[bom/extract] Base64 fallback also failed:", fallbackMsg);
         if (!isPdfProcessingErrorMessage(fallbackMsg)) {
+          await logExtract("failed", { reason: "anthropic_fallback_failed", error: fallbackMsg }, 502);
           return NextResponse.json({ error: `Extraction failed: ${fallbackMsg}` }, { status: 502 });
         }
+        await logExtract("failed", { reason: "pdf_processing_error", error: fallbackMsg, fallback: true }, 422);
         return NextResponse.json(
           {
             error:
@@ -479,6 +535,7 @@ export async function POST(req: NextRequest) {
         );
       }
     } else if (isProcessingError) {
+      await logExtract("failed", { reason: "pdf_processing_error", error: msg }, 422);
       return NextResponse.json(
         {
           error: `PDF could not be processed — the file may be password-protected, encrypted, or corrupt (${Math.round(pdfBuffer.byteLength / 1024 / 1024)}MB). Try re-saving or flattening the PDF and uploading again.`,
@@ -486,6 +543,7 @@ export async function POST(req: NextRequest) {
         { status: 422 }
       );
     } else {
+      await logExtract("failed", { reason: "anthropic_extract_failed", error: msg }, 502);
       return NextResponse.json({ error: `Extraction failed: ${msg}` }, { status: 502 });
     }
   } finally {
@@ -505,6 +563,7 @@ export async function POST(req: NextRequest) {
     bomJson = JSON.parse(cleaned);
   } catch {
     console.error("[bom/extract] JSON parse failed. Raw:", rawText.slice(0, 500));
+    await logExtract("failed", { reason: "invalid_json_response", rawPreview: rawText.slice(0, 500) }, 422);
     return NextResponse.json(
       {
         error: "Model returned invalid JSON. Try again or paste JSON manually.",
@@ -518,6 +577,17 @@ export async function POST(req: NextRequest) {
   const bom = bomJson as Record<string, unknown>;
   bom.generatedAt = new Date().toISOString();
   bom._extractedFrom = filename;
+
+  const bomItems = (bom as { items?: unknown[] }).items;
+  await logExtract(
+    "succeeded",
+    {
+      filename,
+      sizeBytes: pdfBuffer.byteLength,
+      itemCount: Array.isArray(bomItems) ? bomItems.length : null,
+    },
+    200
+  );
 
   return NextResponse.json(bom);
 }

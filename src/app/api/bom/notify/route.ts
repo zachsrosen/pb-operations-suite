@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { getServiceAccountToken } from "@/lib/google-auth";
+import { logActivity } from "@/lib/db";
 
 export const runtime = "nodejs";
 export const maxDuration = 15;
@@ -69,12 +70,41 @@ function toDriveFolderUrl(raw: string | null | undefined): string | null {
 }
 
 export async function POST(request: NextRequest) {
+  const startedAt = Date.now();
   const authResult = await requireApiAuth();
   if (authResult instanceof NextResponse) return authResult;
+
+  const logNotify = async (outcome: "sent" | "failed" | "skipped", details: Record<string, unknown>, responseStatus: number) => {
+    await logActivity({
+      type: outcome === "failed" ? "API_ERROR" : "FEATURE_USED",
+      description:
+        outcome === "sent"
+          ? "BOM notification email sent"
+          : outcome === "skipped"
+            ? "BOM notification email skipped"
+            : "BOM notification email failed",
+      userEmail: authResult.email,
+      userName: authResult.name,
+      entityType: "bom",
+      entityName: "notify",
+      metadata: {
+        event: "bom_notify",
+        outcome,
+        ...details,
+      },
+      ipAddress: authResult.ip,
+      userAgent: authResult.userAgent,
+      requestPath: "/api/bom/notify",
+      requestMethod: "POST",
+      responseStatus,
+      durationMs: Date.now() - startedAt,
+    });
+  };
 
   const senderEmail = process.env.GMAIL_SENDER_EMAIL;
   if (!senderEmail) {
     // Silently skip if not configured — don't fail the BOM save
+    await logNotify("skipped", { reason: "gmail_sender_not_configured" }, 200);
     return NextResponse.json({ skipped: true, reason: "GMAIL_SENDER_EMAIL not configured" });
   }
 
@@ -111,6 +141,7 @@ export async function POST(request: NextRequest) {
   try {
     body = await request.json();
   } catch {
+    await logNotify("failed", { reason: "invalid_json" }, 400);
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
@@ -130,11 +161,22 @@ export async function POST(request: NextRequest) {
 
   // Validate required fields
   if (!userEmail || !dealName || !dealId || typeof version !== "number" || typeof itemCount !== "number") {
+    await logNotify(
+      "failed",
+      {
+        reason: "missing_required_fields",
+        dealId: dealId ?? null,
+        dealName: dealName ?? null,
+        version: typeof version === "number" ? version : null,
+      },
+      400
+    );
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
   }
 
   // Prevent sending to arbitrary addresses — only send to the authenticated user's email
   if (userEmail !== authResult.email) {
+    await logNotify("failed", { reason: "forbidden_target_email", dealId, userEmail }, 403);
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -325,15 +367,40 @@ export async function POST(request: NextRequest) {
       }
     );
 
+    const gmailData = await gmailRes.json().catch(() => ({})) as { id?: string; error?: { message?: string } };
     if (!gmailRes.ok) {
-      const err = await gmailRes.json().catch(() => ({})) as { error?: { message?: string } };
+      const err = gmailData;
       console.error("[bom/notify] Gmail send failed:", err);
+      await logNotify(
+        "failed",
+        { reason: "gmail_send_failed", dealId, dealName, version, error: err.error?.message ?? "Gmail error" },
+        500
+      );
       return NextResponse.json({ error: err.error?.message ?? "Gmail error" }, { status: 500 });
     }
+
+    await logNotify(
+      "sent",
+      {
+        dealId,
+        dealName,
+        version,
+        itemCount,
+        sourceFile: sourceFile ?? null,
+        recipient: userEmail,
+        gmailMessageId: gmailData.id ?? null,
+      },
+      200
+    );
 
     return NextResponse.json({ sent: true });
   } catch (e) {
     console.error("[bom/notify]", e);
+    await logNotify(
+      "failed",
+      { reason: "send_exception", dealId, dealName, version, error: e instanceof Error ? e.message : "Send failed" },
+      500
+    );
     return NextResponse.json({ error: e instanceof Error ? e.message : "Send failed" }, { status: 500 });
   }
 }

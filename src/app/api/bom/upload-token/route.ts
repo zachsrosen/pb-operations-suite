@@ -19,6 +19,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
+import { logActivity } from "@/lib/db";
 import { generateClientTokenFromReadWriteToken } from "@vercel/blob/client";
 
 const ALLOWED_ROLES = new Set([
@@ -33,15 +34,48 @@ const ALLOWED_ROLES = new Set([
 ]);
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  const startedAt = Date.now();
   // Auth check
   const authResult = await requireApiAuth();
   if (authResult instanceof NextResponse) return authResult;
   const { role } = authResult;
+
+  const logUploadToken = async (
+    outcome: "issued" | "failed",
+    details: Record<string, unknown>,
+    responseStatus: number
+  ) => {
+    await logActivity({
+      type: outcome === "failed" ? "API_ERROR" : "FEATURE_USED",
+      description:
+        outcome === "issued"
+          ? "Issued BOM upload token"
+          : "BOM upload token request failed",
+      userEmail: authResult.email,
+      userName: authResult.name,
+      entityType: "bom",
+      entityName: "upload_token",
+      metadata: {
+        event: "bom_upload_token",
+        outcome,
+        ...details,
+      },
+      ipAddress: authResult.ip,
+      userAgent: authResult.userAgent,
+      requestPath: "/api/bom/upload-token",
+      requestMethod: "POST",
+      responseStatus,
+      durationMs: Date.now() - startedAt,
+    });
+  };
+
   if (!ALLOWED_ROLES.has(role)) {
+    await logUploadToken("failed", { reason: "insufficient_permissions", role }, 403);
     return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
   }
 
   if (!process.env.BLOB_READ_WRITE_TOKEN) {
+    await logUploadToken("failed", { reason: "blob_token_missing" }, 503);
     return NextResponse.json({ error: "Blob storage not configured (missing BLOB_READ_WRITE_TOKEN)" }, { status: 503 });
   }
 
@@ -56,11 +90,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     };
     pathname = body.payload?.pathname ?? body.pathname ?? "bom-uploads/planset.pdf";
   } catch {
+    await logUploadToken("failed", { reason: "invalid_json_body" }, 400);
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
 
   // Validate PDF only
   if (!pathname.toLowerCase().endsWith(".pdf")) {
+    await logUploadToken("failed", { reason: "invalid_file_extension", pathname }, 400);
     return NextResponse.json({ error: "Only PDF files are allowed" }, { status: 400 });
   }
 
@@ -79,10 +115,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       validUntil,
     });
 
+    await logUploadToken("issued", { pathname, validUntil }, 200);
     return NextResponse.json({ clientToken });
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Token generation failed";
     console.error("[bom/upload-token] Error:", msg);
+    await logUploadToken("failed", { reason: "token_generation_failed", pathname, error: msg }, 500);
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

@@ -64,92 +64,122 @@ export async function POST(request: NextRequest) {
 
   const authResult = await requireApiAuth();
   if (authResult instanceof NextResponse) return authResult;
+  const startedAt = Date.now();
+
+  const logSave = async (
+    outcome: "succeeded" | "failed",
+    details: Record<string, unknown>,
+    responseStatus: number
+  ) => {
+    await logActivity({
+      type: outcome === "failed" ? "API_ERROR" : "INVENTORY_SKU_SYNCED",
+      description:
+        outcome === "succeeded"
+          ? "Saved BOM data to inventory SKUs"
+          : "BOM save failed",
+      userEmail: authResult.email,
+      userName: authResult.name,
+      entityType: "inventory",
+      entityName: "bom_save",
+      metadata: {
+        event: "bom_save",
+        outcome,
+        ...details,
+      },
+      ipAddress: authResult.ip,
+      userAgent: authResult.userAgent,
+      requestPath: "/api/bom/save",
+      requestMethod: "POST",
+      responseStatus,
+      durationMs: Date.now() - startedAt,
+    });
+  };
 
   let body: { bom: BomData };
   try {
     body = await request.json();
   } catch {
+    await logSave("failed", { reason: "invalid_json_body" }, 400);
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
   const { bom } = body;
   if (!bom?.items?.length) {
+    await logSave("failed", { reason: "missing_bom_items" }, 400);
     return NextResponse.json(
       { error: "BOM items array is required" },
       { status: 400 }
     );
   }
 
-  let created = 0;
-  let updated = 0;
-  let skipped = 0;
+  try {
+    let created = 0;
+    let updated = 0;
+    let skipped = 0;
 
-  for (const item of bom.items) {
-    const inventoryCategory = INVENTORY_CATEGORIES[item.category];
-    if (!inventoryCategory) {
-      skipped++;
-      continue;
-    }
+    for (const item of bom.items) {
+      const inventoryCategory = INVENTORY_CATEGORIES[item.category];
+      if (!inventoryCategory) {
+        skipped++;
+        continue;
+      }
 
-    const brand = item.brand?.trim();
-    const model = item.model?.trim();
-    if (!brand || !model) {
-      skipped++;
-      continue;
-    }
+      const brand = item.brand?.trim();
+      const model = item.model?.trim();
+      if (!brand || !model) {
+        skipped++;
+        continue;
+      }
 
-    const unitSpec = item.unitSpec != null ? Number(item.unitSpec) : null;
-    const unitLabel = item.unitLabel || null;
+      const unitSpec = item.unitSpec != null ? Number(item.unitSpec) : null;
+      const unitLabel = item.unitLabel || null;
 
-    const result = await prisma.equipmentSku.upsert({
-      where: {
-        category_brand_model: {
+      const result = await prisma.equipmentSku.upsert({
+        where: {
+          category_brand_model: {
+            category: inventoryCategory,
+            brand,
+            model,
+          },
+        },
+        update: {
+          unitSpec: unitSpec ?? undefined,
+          unitLabel: unitLabel ?? undefined,
+          isActive: true,
+        },
+        create: {
           category: inventoryCategory,
           brand,
           model,
+          unitSpec,
+          unitLabel,
         },
-      },
-      update: {
-        unitSpec: unitSpec ?? undefined,
-        unitLabel: unitLabel ?? undefined,
-        isActive: true,
-      },
-      create: {
-        category: inventoryCategory,
-        brand,
-        model,
-        unitSpec,
-        unitLabel,
-      },
-    });
+      });
 
-    if (result.createdAt.getTime() === result.updatedAt.getTime()) {
-      created++;
-    } else {
-      updated++;
+      if (result.createdAt.getTime() === result.updatedAt.getTime()) {
+        created++;
+      } else {
+        updated++;
+      }
     }
+
+    await logSave(
+      "succeeded",
+      {
+        created,
+        updated,
+        skipped,
+        customer: bom.project?.customer,
+        address: bom.project?.address,
+        plansetRev: bom.project?.plansetRev,
+      },
+      200
+    );
+
+    return NextResponse.json({ created, updated, skipped });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await logSave("failed", { reason: "sku_sync_failed", error: message }, 500);
+    return NextResponse.json({ error: "Failed to save BOM data" }, { status: 500 });
   }
-
-  await logActivity({
-    type: "INVENTORY_SKU_SYNCED",
-    description: `BOM save: ${created} created, ${updated} updated, ${skipped} skipped (non-inventory categories) from planset ${bom.project?.customer || "unknown"}`,
-    userEmail: authResult.email,
-    userName: authResult.name,
-    entityType: "inventory",
-    metadata: {
-      created,
-      updated,
-      skipped,
-      customer: bom.project?.customer,
-      address: bom.project?.address,
-      plansetRev: bom.project?.plansetRev,
-    },
-    ipAddress: authResult.ip,
-    userAgent: authResult.userAgent,
-    requestPath: "/api/bom/save",
-    requestMethod: "POST",
-    responseStatus: 200,
-  });
-
-  return NextResponse.json({ created, updated, skipped });
 }

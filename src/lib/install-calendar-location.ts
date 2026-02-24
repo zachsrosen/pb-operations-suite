@@ -1,7 +1,7 @@
 import { COMPLIANCE_TEAM_OVERRIDES } from "@/lib/compliance-team-overrides";
 import { normalizeLocationForInstallCalendars } from "@/lib/google-calendar";
 
-type InstallBucket = "dtc" | "westy" | "cosp";
+type InstallBucket = "dtc" | "westy" | "cosp" | "california" | "camarillo";
 
 const NAME_FALLBACKS: Array<{ matcher: RegExp; location: string }> = [
   { matcher: /\bdrew perry\b/i, location: "Centennial" },
@@ -16,6 +16,8 @@ const NAME_FALLBACKS: Array<{ matcher: RegExp; location: string }> = [
 function canonicalLocationFromBucket(bucket: InstallBucket): string {
   if (bucket === "dtc") return "Centennial";
   if (bucket === "westy") return "Westminster";
+  if (bucket === "california") return "San Luis Obispo";
+  if (bucket === "camarillo") return "Camarillo";
   return "Colorado Springs";
 }
 
@@ -79,6 +81,8 @@ export function resolveInstallCalendarLocation(params: {
 
 export function getInstallCalendarTimezone(bucket: InstallBucket | null): string | null {
   if (!bucket) return null;
-  // Current install calendars mapped in this app are Colorado locations.
+  if (bucket === "california" || bucket === "camarillo") {
+    return "America/Los_Angeles";
+  }
   return "America/Denver";
 }

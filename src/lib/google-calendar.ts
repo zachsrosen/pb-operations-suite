@@ -31,7 +31,7 @@ type GoogleCalendarListResponse = {
   };
 };
 
-type LocationBucket = "dtc" | "westy" | "cosp";
+type LocationBucket = "dtc" | "westy" | "cosp" | "california" | "camarillo";
 
 function isEnabled(): boolean {
   const raw = (process.env.GOOGLE_CALENDAR_SYNC_ENABLED || "false").toLowerCase().trim();
@@ -41,6 +41,33 @@ function isEnabled(): boolean {
 function getDefaultSurveyCalendarId(): string {
   const configured = (process.env.GOOGLE_SITE_SURVEY_CALENDAR_ID || "").trim();
   return configured || "primary";
+}
+
+function getNickSiteSurveyCalendarId(): string | null {
+  return (
+    (process.env.GOOGLE_SITE_SURVEY_NICK_CALENDAR_ID || "").trim() ||
+    (process.env.GOOGLE_NICK_SITE_SURVEY_CALENDAR_ID || "").trim() ||
+    null
+  );
+}
+
+function isNickSurveyorEmail(email?: string | null): boolean {
+  const parsed = parseEmailAddress(email || undefined);
+  if (!parsed) return false;
+  const normalized = parsed.toLowerCase();
+  return normalized === "nick.scarpellino@photonbrothers.com" || normalized === "nick@photonbrothers.com";
+}
+
+function resolveSurveyCalendarId(params: { calendarId?: string; surveyorEmail?: string }): string {
+  const explicitCalendarId = (params.calendarId || "").trim();
+  if (explicitCalendarId) return explicitCalendarId;
+
+  const nickCalendarId = getNickSiteSurveyCalendarId();
+  if (nickCalendarId && isNickSurveyorEmail(params.surveyorEmail)) {
+    return nickCalendarId;
+  }
+
+  return getDefaultSurveyCalendarId();
 }
 
 function parseServiceAccountPrivateKey(serviceAccountKey: string): string | null {
@@ -100,6 +127,20 @@ export function normalizeLocationForInstallCalendars(location?: string | null): 
     return "westy";
   }
   if (
+    normalized === "camarillo" ||
+    normalized.includes("camarillo")
+  ) {
+    return "california";
+  }
+  if (
+    normalized === "california" ||
+    normalized.includes("san luis obispo") ||
+    normalized === "slo" ||
+    normalized.includes("san luis")
+  ) {
+    return "california";
+  }
+  if (
     normalized === "colorado springs" ||
     normalized.includes("colorado springs") ||
     normalized.includes("co springs") ||
@@ -133,6 +174,21 @@ export function getInstallCalendarIdForLocation(location?: string | null): strin
     return (
       (process.env.GOOGLE_INSTALL_CALENDAR_COSP_ID || "").trim() ||
       (process.env.GOOGLE_INSTALL_CALENDAR_PUEBLO_ID || "").trim() ||
+      null
+    );
+  }
+  if (bucket === "california") {
+    return (
+      (process.env.GOOGLE_INSTALL_CALENDAR_CA_ID || "").trim() ||
+      (process.env.GOOGLE_INSTALL_CALENDAR_CALIFORNIA_ID || "").trim() ||
+      null
+    );
+  }
+  if (bucket === "camarillo") {
+    return (
+      (process.env.GOOGLE_INSTALL_CALENDAR_CAMARILLO_ID || "").trim() ||
+      (process.env.GOOGLE_INSTALL_CALENDAR_CA_ID || "").trim() ||
+      (process.env.GOOGLE_INSTALL_CALENDAR_CALIFORNIA_ID || "").trim() ||
       null
     );
   }
@@ -493,7 +549,10 @@ export async function upsertSiteSurveyCalendarEvent(params: {
   const hubSpotDealUrl = getHubSpotDealUrl(params.projectId);
   const zuperJobUrl = getZuperJobUrl(params.zuperJobUid);
   const eventId = getSurveyCalendarEventId(params.projectId);
-  const calendarId = (params.calendarId || "").trim() || getDefaultSurveyCalendarId();
+  const calendarId = resolveSurveyCalendarId({
+    calendarId: params.calendarId,
+    surveyorEmail: params.surveyorEmail,
+  });
   const isSharedMirrorWrite = (params.calendarId || "").trim().length > 0;
 
   if (isSharedMirrorWrite) {
@@ -613,7 +672,10 @@ export async function deleteSiteSurveyCalendarEvent(params: {
   }
 
   const eventId = getSurveyCalendarEventId(params.projectId);
-  const calendarId = (params.calendarId || "").trim() || getDefaultSurveyCalendarId();
+  const calendarId = resolveSurveyCalendarId({
+    calendarId: params.calendarId,
+    surveyorEmail: params.surveyorEmail,
+  });
   const response = await fetch(
     `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${eventId}`,
     {
