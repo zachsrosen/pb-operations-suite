@@ -10,6 +10,7 @@ export const maxDuration = 15;
 interface DriveFile {
   id: string;
   name: string;
+  mimeType: string;
   modifiedTime: string;
   size: string;
 }
@@ -63,10 +64,11 @@ export async function GET(request: NextRequest) {
   try {
     const { token, source: tokenSource } = await getDriveToken(request);
 
+    // DEBUG: list ALL files+folders (no mimeType filter) to see actual folder contents
     const query = encodeURIComponent(
-      `'${folderId}' in parents and mimeType='application/pdf' and trashed=false`
+      `'${folderId}' in parents and trashed=false`
     );
-    const fields = encodeURIComponent("files(id,name,modifiedTime,size)");
+    const fields = encodeURIComponent("files(id,name,mimeType,modifiedTime,size)");
     // includeItemsFromAllDrives + supportsAllDrives are required for Shared/Team Drives
     const url = `https://www.googleapis.com/drive/v3/files?q=${query}&fields=${fields}&orderBy=modifiedTime%20desc&includeItemsFromAllDrives=true&supportsAllDrives=true`;
 
