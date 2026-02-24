@@ -527,6 +527,13 @@ function BomDashboardInner() {
       .finally(() => setDriveFilesLoading(false));
   }, [linkedProject?.designFolderUrl]);
 
+  // If the linked deal has a design folder, lock import UI to that flow.
+  useEffect(() => {
+    if (!linkedProject?.designFolderUrl) return;
+    setImportTab("project-files");
+    setImportError(null);
+  }, [linkedProject?.designFolderUrl]);
+
   /* ---- Auto-link: search HubSpot when BOM loads and no project is linked ---- */
   useEffect(() => {
     if (linkedProject || !bom?.project?.address) {
@@ -793,7 +800,7 @@ function BomDashboardInner() {
       });
       const data = await safeFetchBom(res);
       const projectAtExtract = linkedProject; // capture before loadBomData clears it
-      loadBomData(data, true);
+      loadBomData(data, true, !!projectAtExtract);
       addToast({ type: "success", title: `BOM extracted from ${uploadFile.name}` });
       // Auto-save snapshot if a project was linked at extract time
       if (projectAtExtract) {
@@ -1082,6 +1089,7 @@ function BomDashboardInner() {
     const s = catalogStatus.get(i.id);
     return s && catalogSources.some((src) => !s[src]);
   }).length;
+  const designFolderOnlyMode = !!linkedProject?.designFolderUrl;
 
   return (
     <>
@@ -1186,7 +1194,7 @@ function BomDashboardInner() {
 
             {/* Tab bar */}
             <div className="flex border-b border-t-border">
-              {(["upload", "drive", "paste"] as ImportTab[]).map((tab) => (
+              {!designFolderOnlyMode && (["upload", "drive", "paste"] as ImportTab[]).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => { setImportTab(tab); setImportError(null); }}
@@ -1201,7 +1209,7 @@ function BomDashboardInner() {
                   {tab === "paste" && "{ } Paste JSON"}
                 </button>
               ))}
-              {linkedProject?.designFolderUrl && (
+              {designFolderOnlyMode && (
                 <button
                   onClick={() => { setImportTab("project-files"); setImportError(null); }}
                   className={`px-5 py-3 text-sm font-medium transition-colors whitespace-nowrap ${

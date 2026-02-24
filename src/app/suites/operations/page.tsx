@@ -52,6 +52,7 @@ const LINKS: SuitePageCard[] = [
     tag: "BOM",
     tagColor: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
     section: "Inventory & Equipment",
+    hardNavigate: true,
   },
   {
     href: "/dashboards/bom/history",
@@ -60,6 +61,7 @@ const LINKS: SuitePageCard[] = [
     tag: "BOM",
     tagColor: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
     section: "Inventory & Equipment",
+    hardNavigate: true,
   },
   {
     href: "/dashboards/catalog",

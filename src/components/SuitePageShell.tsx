@@ -10,6 +10,7 @@ export interface SuitePageCard {
   tag: string;
   tagColor?: string;
   section?: string;
+  hardNavigate?: boolean;
 }
 
 interface SuitePageShellProps {
@@ -122,24 +123,41 @@ export default function SuitePageShell({
           <section key={section} className="mb-8">
             <h2 className="text-lg font-semibold text-foreground/80 mb-4">{section}</h2>
             <div className={columnsClassName}>
-              {sectionCards.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  prefetch={false}
-                  className={`group block rounded-xl border border-t-border/80 bg-gradient-to-br from-surface-elevated/80 via-surface/70 to-surface-2/50 p-5 shadow-card backdrop-blur-sm ${hoverBorderClass} hover:bg-surface transition-all`}
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <h3 className="font-semibold text-foreground group-hover:text-orange-400 transition-colors">
-                      {item.title}
-                    </h3>
-                    <span className={`text-xs font-medium px-2 py-0.5 rounded border ${item.tagColor || tagColorClass}`}>
-                      {item.tag}
-                    </span>
-                  </div>
-                  <p className="text-sm text-muted">{item.description}</p>
-                </Link>
-              ))}
+              {sectionCards.map((item) => {
+                const className = `group block rounded-xl border border-t-border/80 bg-gradient-to-br from-surface-elevated/80 via-surface/70 to-surface-2/50 p-5 shadow-card backdrop-blur-sm ${hoverBorderClass} hover:bg-surface transition-all`;
+                const content = (
+                  <>
+                    <div className="flex items-center justify-between mb-1">
+                      <h3 className="font-semibold text-foreground group-hover:text-orange-400 transition-colors">
+                        {item.title}
+                      </h3>
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded border ${item.tagColor || tagColorClass}`}>
+                        {item.tag}
+                      </span>
+                    </div>
+                    <p className="text-sm text-muted">{item.description}</p>
+                  </>
+                );
+
+                if (item.hardNavigate) {
+                  return (
+                    <a key={item.href} href={item.href} className={className}>
+                      {content}
+                    </a>
+                  );
+                }
+
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    prefetch={false}
+                    className={className}
+                  >
+                    {content}
+                  </Link>
+                );
+              })}
             </div>
           </section>
         ))}
