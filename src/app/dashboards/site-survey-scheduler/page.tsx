@@ -389,7 +389,7 @@ export default function SiteSurveySchedulerPage() {
             (data.deals || []).map((d: Record<string, unknown>) => ({
               id: String(d.id),
               name: String(d.name || "Unknown"),
-              address: [d.address, d.city, d.state].filter(Boolean).join(", "),
+              address: String(d.address || ""),
               location: String(d.location || "Unknown"),
               amount: Number(d.amount) || 0,
               type: String(d.type || "Solar"),
@@ -405,6 +405,8 @@ export default function SiteSurveySchedulerPage() {
               isPreSale: true,
             }))
           );
+        } else {
+          setPreSaleResults([]);
         }
       } catch (err) {
         if ((err as Error).name !== "AbortError") {
@@ -1151,7 +1153,7 @@ export default function SiteSurveySchedulerPage() {
               assignedUser: effectiveAssignee,
               timezone: slot?.timezone, // Slot's local timezone (e.g. "America/Los_Angeles" for CA)
               notes: useTestSlot
-                ? `TEST SLOT - ${effectiveAssignee} at ${slot?.startTime || "N/A"}`
+                ? `${project.isPreSale ? "[PRE_SALE] " : ""}TEST SLOT - ${effectiveAssignee} at ${slot?.startTime || "N/A"}`
                 : (project.isPreSale
                   ? `[PRE_SALE] ${slot ? `Surveyor: ${slot.userName} at ${slot.startTime}` : "Scheduled via Site Survey Scheduler"}`
                   : (slot ? `Surveyor: ${slot.userName} at ${slot.startTime}` : "Scheduled via Site Survey Scheduler")),
@@ -1233,7 +1235,7 @@ export default function SiteSurveySchedulerPage() {
               timezone: slot?.timezone,
               notes: slot
                 ? (useTestSlot
-                  ? `TEST SLOT - Tentative ${effectiveAssignee} at ${slot.startTime}`
+                  ? `${project.isPreSale ? "[PRE_SALE] " : ""}TEST SLOT - Tentative ${effectiveAssignee} at ${slot.startTime}`
                   : `${project.isPreSale ? "[PRE_SALE] " : ""}Tentative surveyor: ${slot.userName} at ${slot.startTime}`)
                 : `${project.isPreSale ? "[PRE_SALE] " : ""}Tentatively scheduled via Site Survey Scheduler`,
             },

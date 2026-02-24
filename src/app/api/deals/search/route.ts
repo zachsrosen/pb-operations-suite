@@ -70,18 +70,41 @@ export async function GET(request: NextRequest) {
       (id) => !["closedwon", "closedlost"].includes(id)
     );
 
-    const filterGroups = activeStageIds.map((stageId) => ({
-      filters: [
-        { propertyName: "dealstage", operator: FilterOperatorEnum.Eq, value: stageId },
-      ],
-    }));
+    // HubSpot allows max 5 filterGroups per search request.
+    // Chunk stage IDs into batches of 3 (conservative) and merge results.
+    const BATCH_SIZE = 3;
+    const batches: string[][] = [];
+    for (let i = 0; i < activeStageIds.length; i += BATCH_SIZE) {
+      batches.push(activeStageIds.slice(i, i + BATCH_SIZE));
+    }
 
-    const response = await searchWithRetry({
-      query: q,
-      filterGroups,
-      properties: SEARCH_PROPERTIES,
-      limit: 20,
-    });
+    const allResults = await Promise.all(
+      batches.map((batch) =>
+        searchWithRetry({
+          query: q,
+          filterGroups: batch.map((stageId) => ({
+            filters: [
+              { propertyName: "dealstage", operator: FilterOperatorEnum.Eq, value: stageId },
+            ],
+          })),
+          properties: SEARCH_PROPERTIES,
+          limit: 20,
+        })
+      )
+    );
+
+    // Merge and dedupe by deal ID
+    const seen = new Set<string>();
+    const response = {
+      results: allResults.flatMap((r) =>
+        (r.results || []).filter((deal) => {
+          const id = deal.id;
+          if (seen.has(id)) return false;
+          seen.add(id);
+          return true;
+        })
+      ).slice(0, 20),
+    };
 
     const deals = (response.results || []).map((deal) => {
       const props = deal.properties || {};
