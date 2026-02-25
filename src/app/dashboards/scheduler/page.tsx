@@ -436,12 +436,10 @@ function normalizeZuperBoundaryDates(
   const startDate = startIso ? (startLocal?.ymd || startIso.split("T")[0]) : undefined;
   let endDate = endIso ? (endLocal?.ymd || endIso.split("T")[0]) : undefined;
 
-  if (startLocal && endLocal && startDate && endDate && endDate > startDate) {
-    // Treat as exclusive boundary only when local end time is <= local start time.
-    if (endLocal.minutes <= startLocal.minutes) {
-      endDate = addDays(endDate, -1);
-      if (endDate < startDate) endDate = startDate;
-    }
+  // Use actual Zuper local boundary dates directly.
+  // Guard malformed data where end is earlier than start.
+  if (startDate && endDate && endDate < startDate) {
+    endDate = startDate;
   }
 
   return { startDate, endDate };
