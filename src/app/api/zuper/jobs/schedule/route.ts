@@ -2053,7 +2053,6 @@ async function sendCrewNotification(
 
       const personalSyncResult = await upsertSiteSurveyCalendarEvent({
         surveyorEmail: recipientEmail,
-        surveyorName: recipientName || schedule.assignedUser,
         projectId: project.id,
         projectName: project.name || project.id,
         customerName,
@@ -2075,7 +2074,6 @@ async function sendCrewNotification(
       if (sharedSurveyCalendarId) {
         const sharedSyncResult = await upsertSiteSurveyCalendarEvent({
           surveyorEmail: recipientEmail,
-          surveyorName: recipientName || schedule.assignedUser,
           projectId: project.id,
           projectName: project.name || project.id,
           customerName,
