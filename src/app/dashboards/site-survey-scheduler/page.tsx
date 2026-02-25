@@ -1540,7 +1540,10 @@ export default function SiteSurveySchedulerPage() {
       const res = await fetch("/api/zuper/jobs/schedule/confirm", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scheduleRecordId: recordId }),
+        body: JSON.stringify({
+          scheduleRecordId: recordId,
+          zuperJobUid: project.zuperJobUid || undefined,
+        }),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.success) {

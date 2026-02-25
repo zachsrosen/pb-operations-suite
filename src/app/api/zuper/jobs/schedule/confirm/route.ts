@@ -5,11 +5,21 @@ import { zuper, JOB_CATEGORY_UIDS } from "@/lib/zuper";
 import { headers } from "next/headers";
 import { sendSchedulingNotification } from "@/lib/email";
 import { updateDealProperty, updateSiteSurveyorProperty, getDealProperties, getDealOwnerContact, getDealProjectManagerContact } from "@/lib/hubspot";
-import { upsertSiteSurveyCalendarEvent, upsertInstallationCalendarEvent, getInstallCalendarIdForLocation } from "@/lib/google-calendar";
+import {
+  upsertSiteSurveyCalendarEvent,
+  deleteSiteSurveyCalendarEvent,
+  upsertInstallationCalendarEvent,
+  getSiteSurveySharedCalendarIdForSurveyor,
+  getSiteSurveySharedCalendarImpersonationEmail,
+  getInstallCalendarIdForLocation,
+  getSurveyCalendarEventId,
+  getInstallationCalendarEventId,
+} from "@/lib/google-calendar";
 import { getBusinessEndDateInclusive, isWeekendDate } from "@/lib/business-days";
 import { getInstallNotificationDetails } from "@/lib/scheduling-email-details";
 import { getInstallCalendarTimezone, resolveInstallCalendarLocation } from "@/lib/install-calendar-location";
 import { getSalesSurveyLeadTimeError, resolveEffectiveRoleFromRequest } from "@/lib/scheduling-policy";
+import { getGoogleCalendarEventUrl } from "@/lib/external-links";
 
 function getConstructionScheduleBoundaryProperties(): { start: string | null; end: string | null } {
   const start = process.env.HUBSPOT_CONSTRUCTION_START_DATE_PROPERTY?.trim() || null;
@@ -74,6 +84,12 @@ function parseHubSpotValueToDateOnly(raw: string): string | null {
   const ms = parseHubSpotValueToMs(value);
   if (typeof ms !== "number" || !Number.isFinite(ms)) return null;
   return new Date(ms).toISOString().slice(0, 10);
+}
+
+function normalizeEmail(value?: string | null): string | null {
+  const trimmed = (value || "").trim().toLowerCase();
+  if (!trimmed) return null;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed) ? trimmed : null;
 }
 
 function matchesHubSpotDateValue(actualRaw: string | null | undefined, expectedCandidates: string[]): boolean {
@@ -179,7 +195,8 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { scheduleRecordId } = body;
+    const scheduleRecordId = typeof body?.scheduleRecordId === "string" ? body.scheduleRecordId : "";
+    const hintedZuperJobUid = typeof body?.zuperJobUid === "string" ? body.zuperJobUid.trim() : "";
 
     if (!scheduleRecordId) {
       return NextResponse.json(
@@ -211,7 +228,18 @@ export async function POST(request: NextRequest) {
     }
 
     // Check schedule type permission
-    const scheduleType = record.scheduleType as "survey" | "installation" | "inspection";
+    const normalizedScheduleType = String(record.scheduleType || "").toLowerCase();
+    const scheduleType = (
+      normalizedScheduleType === "construction"
+        ? "installation"
+        : normalizedScheduleType
+    ) as "survey" | "installation" | "inspection";
+    if (!["survey", "installation", "inspection"].includes(scheduleType)) {
+      return NextResponse.json(
+        { error: `Unsupported schedule type on record: ${record.scheduleType}` },
+        { status: 400 }
+      );
+    }
     if (!canScheduleType(effectiveRole, scheduleType)) {
       return NextResponse.json(
         { error: `You don't have permission to schedule ${scheduleType}s.` },
@@ -237,22 +265,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Build project object for Zuper
+    // Parse project name details used by matching and notifications.
     const projectNameParts = record.projectName.split(" | ");
-    const derivedCustomerName = projectNameParts.length >= 2
-      ? projectNameParts[1]?.trim() || ""
-      : projectNameParts[0]?.trim() || "";
-    const derivedAddress = projectNameParts.length >= 3
-      ? projectNameParts[2]?.trim() || ""
-      : "";
-    const project = {
-      id: record.projectId,
-      name: record.projectName,
-      address: derivedAddress,
-      city: "",
-      state: "",
-      customerName: derivedCustomerName,
-    };
 
     // Resolve assignment UIDs from record data so tentative confirms can still
     // assign when only a crew name was stored (e.g. test-slot workflows).
@@ -365,6 +379,7 @@ export async function POST(request: NextRequest) {
     let endDateTimeForHubSpot: string | undefined;
     let boundaryStartDateForHubSpot: string | undefined;
     let boundaryEndDateForHubSpot: string | undefined;
+    let previousSurveyorEmailFromJob: string | null = null;
 
     try {
       // Category config for matching
@@ -375,22 +390,48 @@ export async function POST(request: NextRequest) {
       };
       const targetCategoryName = categoryConfig[scheduleType].name;
       const targetCategoryUid = categoryConfig[scheduleType].uid;
+      const targetCategoryNameLower = targetCategoryName.toLowerCase();
+      const hubspotTagLower = hubspotTag.toLowerCase();
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const categoryMatches = (job: any): boolean => {
         if (typeof job.job_category === "string") {
-          return job.job_category.toLowerCase() === targetCategoryName.toLowerCase() ||
-                 job.job_category === targetCategoryUid;
+          const categoryValue = job.job_category.toLowerCase();
+          return categoryValue === targetCategoryNameLower ||
+            categoryValue.includes(targetCategoryNameLower) ||
+            job.job_category === targetCategoryUid;
         }
-        return job.job_category?.category_name?.toLowerCase() === targetCategoryName.toLowerCase() ||
-               job.job_category?.category_uid === targetCategoryUid;
+        const categoryName = String(job.job_category?.category_name || "").toLowerCase();
+        const categoryUid = String(job.job_category?.category_uid || "");
+        return categoryName === targetCategoryNameLower ||
+          categoryName.includes(targetCategoryNameLower) ||
+          categoryUid === targetCategoryUid;
+      };
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const getHubSpotDealId = (job: any): string | null => {
+        const customFields =
+          (job?.custom_fields as Array<{ label?: string; name?: string; value?: string }> | undefined) || [];
+        const dealIdField = customFields.find((field) => {
+          const label = (field.label || "").toLowerCase();
+          const name = (field.name || "").toLowerCase();
+          return label === "hubspot deal id" ||
+            label === "hubspot_deal_id" ||
+            name === "hubspot deal id" ||
+            name === "hubspot_deal_id";
+        });
+        if (dealIdField?.value) return String(dealIdField.value);
+        return null;
       };
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let existingJob: any = null;
 
-      // Strategy 1: use UID persisted with tentative record (if present).
-      if (record.zuperJobUid) {
+      // Strategy 1: use UID provided by the client modal link (if present),
+      // then persisted UID on the tentative record.
+      if (hintedZuperJobUid) {
+        existingJob = { job_uid: hintedZuperJobUid };
+      } else if (record.zuperJobUid) {
         existingJob = { job_uid: record.zuperJobUid };
       }
 
@@ -402,48 +443,66 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Strategy 3: targeted lastname search.
+      // Strategy 3: robust API search (name + broad range), matching by
+      // HubSpot deal ID custom field, tags, PROJ number, then title.
       if (!existingJob) {
-        const searchResult = await zuper.searchJobs({
-          limit: 100,
-          search: customerLastName,
-        });
-        if (searchResult.type === "success" && searchResult.data?.jobs) {
-          // Try matching by HubSpot tag first
-          existingJob = searchResult.data.jobs.find(
-            (job) => job.job_tags?.some(t => t.toLowerCase() === hubspotTag.toLowerCase()) && categoryMatches(job)
-          );
+        const [nameSearch, broadSearch] = await Promise.all([
+          customerLastName
+            ? zuper.searchJobs({ limit: 100, search: customerLastName })
+            : Promise.resolve({ type: "success" as const, data: { jobs: [] } }),
+          zuper.searchJobs({
+            limit: 500,
+            from_date: new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+            to_date: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+          }),
+        ]);
 
-          // Fallback: match by PROJ number or last name
-          if (!existingJob && (customerLastName || projNumber)) {
-            const normalizedLastName = customerLastName.toLowerCase().trim();
-            const normalizedProjNumber = projNumber.toLowerCase().trim();
-            existingJob = searchResult.data.jobs.find((job) => {
-              const jobTitle = job.job_title?.toLowerCase() || "";
-              if (!categoryMatches(job)) return false;
-              if (normalizedProjNumber && jobTitle.includes(normalizedProjNumber)) return true;
-              if (normalizedLastName.length > 2) {
-                return jobTitle.includes(normalizedLastName + ",") ||
-                       jobTitle.startsWith(normalizedLastName + " ");
+        const allJobs = new Map<string, unknown>();
+        for (const result of [nameSearch, broadSearch]) {
+          if (result.type === "success" && result.data?.jobs) {
+            for (const job of result.data.jobs) {
+              if (job?.job_uid && !allJobs.has(job.job_uid)) {
+                allJobs.set(job.job_uid, job);
               }
-              return false;
-            });
+            }
           }
         }
-      }
 
-      // Strategy 4: broad recent search as last fallback (same intent as main schedule route).
-      if (!existingJob) {
-        const broadSearch = await zuper.searchJobs({
-          limit: 500,
-          from_date: new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-        });
-        if (broadSearch.type === "success" && broadSearch.data?.jobs) {
-          existingJob = broadSearch.data.jobs.find((job) => {
-            const tagMatch = job.job_tags?.some(t => t.toLowerCase() === hubspotTag.toLowerCase());
-            const title = (job.job_title || "").toLowerCase();
-            const projMatch = !!projNumber && title.includes(projNumber.toLowerCase());
-            return categoryMatches(job) && (tagMatch || projMatch);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const categoryJobs = [...allJobs.values()].filter((job: any) => categoryMatches(job));
+        const normalizedLastName = customerLastName.toLowerCase().trim();
+        const normalizedProjNumber = projNumber.toLowerCase().trim();
+
+        existingJob = categoryJobs.find(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (job: any) => getHubSpotDealId(job) === record.projectId
+        );
+
+        if (!existingJob) {
+          existingJob = categoryJobs.find(
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (job: any) => job.job_tags?.some((tag: string) => tag.toLowerCase() === hubspotTagLower)
+          );
+        }
+
+        if (!existingJob && normalizedProjNumber) {
+          existingJob = categoryJobs.find(
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (job: any) => job.job_tags?.some((tag: string) => tag.toLowerCase() === normalizedProjNumber)
+          );
+        }
+
+        if (!existingJob && normalizedProjNumber) {
+          existingJob = categoryJobs.find(
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (job: any) => String(job.job_title || "").toLowerCase().includes(normalizedProjNumber)
+          );
+        }
+
+        if (!existingJob && normalizedLastName.length > 2) {
+          existingJob = categoryJobs.find((job: unknown) => {
+            const title = String((job as { job_title?: string }).job_title || "").toLowerCase();
+            return title.includes(`${normalizedLastName},`) || title.startsWith(`${normalizedLastName} `);
           });
         }
       }
@@ -468,6 +527,27 @@ export async function POST(request: NextRequest) {
       boundaryEndDateForHubSpot = endDateForSchedule;
 
       if (existingJob?.job_uid) {
+        if (scheduleType === "survey") {
+          const existingJobResult = await zuper.getJob(existingJob.job_uid);
+          if (existingJobResult.type === "success" && existingJobResult.data) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const assignedUser = (existingJobResult.data as any)?.assigned_to?.[0]?.user;
+            previousSurveyorEmailFromJob = normalizeEmail(assignedUser?.email);
+
+            const assignedUid = (assignedUser?.user_uid || "").trim();
+            if (!previousSurveyorEmailFromJob && assignedUid) {
+              const byUid = await getCrewMemberByZuperUserUid(assignedUid);
+              previousSurveyorEmailFromJob = normalizeEmail(byUid?.email);
+            }
+            if (!previousSurveyorEmailFromJob && assignedUid) {
+              const userResult = await zuper.getUser(assignedUid);
+              if (userResult.type === "success") {
+                previousSurveyorEmailFromJob = normalizeEmail(userResult.data?.email);
+              }
+            }
+          }
+        }
+
         // Reschedule existing job
         const rescheduleResult = await zuper.rescheduleJob(
           existingJob.job_uid,
@@ -672,6 +752,16 @@ export async function POST(request: NextRequest) {
           }
         }
 
+        if (!recipientEmail && session.user.email) {
+          console.warn(
+            `[Zuper Confirm] No email found for assigned surveyor; falling back to scheduler email: ${session.user.email}`
+          );
+          recipientEmail = session.user.email;
+          if (!recipientName) {
+            recipientName = session.user.name || session.user.email;
+          }
+        }
+
         const customerNameParts = record.projectName.split(" | ");
         const customerName = customerNameParts.length >= 2
           ? customerNameParts[1]?.trim()
@@ -712,6 +802,29 @@ export async function POST(request: NextRequest) {
               console.warn(`[Zuper Confirm] ${detailResult.warning}`);
             }
           }
+          let googleCalendarEventUrl: string | undefined;
+          if (scheduleType === "survey") {
+            googleCalendarEventUrl =
+              getGoogleCalendarEventUrl(getSurveyCalendarEventId(record.projectId), recipientEmail) || undefined;
+          } else if (scheduleType === "installation") {
+            try {
+              const dealProps = await getDealProperties(record.projectId, ["pb_location"]);
+              const pbLocation = dealProps?.pb_location as string | undefined;
+              const locationResolution = resolveInstallCalendarLocation({
+                pbLocation,
+                assignedUserUid: record.assignedUserUid || null,
+                assignedUserName: record.assignedUser || null,
+              });
+              const installCalendarId = getInstallCalendarIdForLocation(locationResolution.location);
+              googleCalendarEventUrl =
+                getGoogleCalendarEventUrl(
+                  getInstallationCalendarEventId(record.projectId),
+                  installCalendarId
+                ) || undefined;
+            } catch (calendarLinkErr) {
+              console.warn("[Zuper Confirm] Unable to build install Google Calendar link:", calendarLinkErr);
+            }
+          }
 
           await sendSchedulingNotification({
             to: recipientEmail,
@@ -728,13 +841,51 @@ export async function POST(request: NextRequest) {
             scheduledEnd: record.scheduledEnd || undefined,
             projectId: record.projectId,
             zuperJobUid: zuperJobUid || record.zuperJobUid || undefined,
+            googleCalendarEventUrl,
             notes: record.notes || undefined,
             installDetails,
           });
 
           if (scheduleType === "survey") {
-            const calendarSync = await upsertSiteSurveyCalendarEvent({
+            const previousSurveyorEmail = normalizeEmail(previousSurveyorEmailFromJob);
+            const currentSurveyorEmail = normalizeEmail(recipientEmail);
+            if (
+              previousSurveyorEmail &&
+              currentSurveyorEmail &&
+              previousSurveyorEmail !== currentSurveyorEmail
+            ) {
+              const previousPersonalDelete = await deleteSiteSurveyCalendarEvent({
+                projectId: record.projectId,
+                surveyorEmail: previousSurveyorEmail,
+                calendarId: "primary",
+                impersonateEmail: previousSurveyorEmail,
+              });
+              if (!previousPersonalDelete.success) {
+                console.warn(
+                  `[Zuper Confirm] Google Calendar reassignment cleanup warning (old personal ${previousSurveyorEmail}): ${previousPersonalDelete.error || "unknown error"}`
+                );
+              }
+
+              const previousSharedCalendarId = getSiteSurveySharedCalendarIdForSurveyor(previousSurveyorEmail);
+              const currentSharedCalendarId = getSiteSurveySharedCalendarIdForSurveyor(currentSurveyorEmail);
+              if (previousSharedCalendarId && previousSharedCalendarId !== currentSharedCalendarId) {
+                const previousSharedDelete = await deleteSiteSurveyCalendarEvent({
+                  projectId: record.projectId,
+                  surveyorEmail: previousSurveyorEmail,
+                  calendarId: previousSharedCalendarId,
+                  impersonateEmail: getSiteSurveySharedCalendarImpersonationEmail(previousSurveyorEmail) || undefined,
+                });
+                if (!previousSharedDelete.success) {
+                  console.warn(
+                    `[Zuper Confirm] Google Calendar reassignment cleanup warning (old shared ${previousSharedCalendarId}): ${previousSharedDelete.error || "unknown error"}`
+                  );
+                }
+              }
+            }
+
+            const personalCalendarSync = await upsertSiteSurveyCalendarEvent({
               surveyorEmail: recipientEmail,
+              surveyorName: recipientName || record.assignedUser || undefined,
               projectId: record.projectId,
               projectName: record.projectName,
               customerName,
@@ -745,9 +896,34 @@ export async function POST(request: NextRequest) {
               timezone: slotTimezone,
               notes: record.notes || undefined,
               zuperJobUid: zuperJobUid || record.zuperJobUid || undefined,
+              calendarId: "primary",
+              impersonateEmail: recipientEmail,
             });
-            if (!calendarSync.success) {
-              console.warn(`[Zuper Confirm] Google Calendar sync warning: ${calendarSync.error}`);
+            if (!personalCalendarSync.success) {
+              console.warn(`[Zuper Confirm] Google Calendar personal survey sync warning: ${personalCalendarSync.error}`);
+            }
+
+            const sharedSurveyCalendarId = getSiteSurveySharedCalendarIdForSurveyor(recipientEmail);
+            if (sharedSurveyCalendarId) {
+              const sharedCalendarSync = await upsertSiteSurveyCalendarEvent({
+                surveyorEmail: recipientEmail,
+                surveyorName: recipientName || record.assignedUser || undefined,
+                projectId: record.projectId,
+                projectName: record.projectName,
+                customerName,
+                customerAddress,
+                date: record.scheduledDate,
+                startTime: record.scheduledStart || undefined,
+                endTime: record.scheduledEnd || undefined,
+                timezone: slotTimezone,
+                notes: record.notes || undefined,
+                zuperJobUid: zuperJobUid || record.zuperJobUid || undefined,
+                calendarId: sharedSurveyCalendarId,
+                impersonateEmail: getSiteSurveySharedCalendarImpersonationEmail(recipientEmail) || recipientEmail,
+              });
+              if (!sharedCalendarSync.success) {
+                console.warn(`[Zuper Confirm] Google Calendar shared survey sync warning: ${sharedCalendarSync.error}`);
+              }
             }
           }
         } else {

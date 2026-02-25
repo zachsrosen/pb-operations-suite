@@ -12,11 +12,16 @@ import {
   upsertInstallationCalendarEvent,
   deleteSiteSurveyCalendarEvent,
   deleteInstallationCalendarEvent,
+  getSiteSurveySharedCalendarIdForSurveyor,
+  getSiteSurveySharedCalendarImpersonationEmail,
   getInstallCalendarIdForLocation,
+  getSurveyCalendarEventId,
+  getInstallationCalendarEventId,
 } from "@/lib/google-calendar";
 import { getBusinessEndDateInclusive, isWeekendDate } from "@/lib/business-days";
 import { getInstallCalendarTimezone, resolveInstallCalendarLocation } from "@/lib/install-calendar-location";
 import { getSalesSurveyLeadTimeError, resolveEffectiveRoleFromRequest } from "@/lib/scheduling-policy";
+import { getGoogleCalendarEventUrl } from "@/lib/external-links";
 
 type ScheduleType = "survey" | "installation" | "inspection";
 const MANAGER_ROLES = ["ADMIN", "OWNER", "MANAGER", "OPERATIONS_MANAGER"];
@@ -730,6 +735,36 @@ export async function PUT(request: NextRequest) {
       // Reschedule existing job
       console.log(`[Zuper Schedule] ACTION: RESCHEDULE - Job UID: ${existingJob.job_uid}`);
 
+      let previousSurveyorEmail: string | null = null;
+      if (schedule.type === "survey") {
+        try {
+          previousSurveyorEmail = await resolvePrimarySurveyorEmailFromJob(existingJob.job_uid);
+        } catch (prevErr) {
+          console.warn(
+            `[Zuper Schedule] Could not resolve previous surveyor from Zuper job ${existingJob.job_uid}: ${prevErr instanceof Error ? prevErr.message : String(prevErr)}`
+          );
+        }
+
+        if (!previousSurveyorEmail && prisma) {
+          const previousRecord = await prisma.scheduleRecord.findFirst({
+            where: {
+              projectId: String(project.id),
+              scheduleType: "survey",
+              status: { in: ["scheduled", "tentative"] },
+            },
+            orderBy: { createdAt: "desc" },
+            select: { assignedUser: true, assignedUserUid: true },
+          });
+          if (previousRecord) {
+            const resolvedPrevious = await resolveCrewNotificationRecipient({
+              assignedUser: previousRecord.assignedUser || undefined,
+              assignedUserUid: previousRecord.assignedUserUid || undefined,
+            });
+            previousSurveyorEmail = normalizeEmail(resolvedPrevious.recipientEmail);
+          }
+        }
+      }
+
       // Get user UIDs from crew selection (crew can be a user UID or comma-separated list)
       const userUids = resolvedCrew ? resolvedCrew.split(",").map((u: string) => u.trim()).filter(Boolean) : [];
       const teamUid = resolvedTeamUid; // Team UID required for assignment API
@@ -855,7 +890,8 @@ export async function PUT(request: NextRequest) {
           project,
           session.user.name || session.user.email,
           session.user.email,
-          existingJob.job_uid
+          existingJob.job_uid,
+          { previousSurveyorEmail }
         );
       } else {
         console.log("[Zuper Schedule] Test slot mode enabled; skipping crew notification email");
@@ -1544,16 +1580,40 @@ export async function DELETE(request: NextRequest) {
           assignedUserUid: latestActiveRecord?.assignedUserUid || undefined,
         });
         calendarDeleteAttempted = true;
-        const calendarDelete = await deleteSiteSurveyCalendarEvent({
+        const personalDelete = await deleteSiteSurveyCalendarEvent({
           projectId: String(projectId),
           surveyorEmail: resolvedRecipient.recipientEmail || undefined,
+          calendarId: "primary",
+          impersonateEmail: resolvedRecipient.recipientEmail || undefined,
         });
-        calendarDeleteSucceeded = calendarDelete.success;
-        if (!calendarDelete.success) {
-          calendarDeleteError = calendarDelete.error || "Unknown survey calendar delete error";
+        calendarDeleteSucceeded = personalDelete.success;
+        if (!personalDelete.success) {
+          calendarDeleteError = personalDelete.error || "Unknown survey calendar delete error";
           console.warn(
-            `[Zuper Unschedule] Google Calendar survey delete warning for ${projectId}: ${calendarDeleteError}`
+            `[Zuper Unschedule] Google Calendar personal survey delete warning for ${projectId}: ${calendarDeleteError}`
           );
+        }
+
+        const sharedSurveyCalendarId = getSiteSurveySharedCalendarIdForSurveyor(
+          resolvedRecipient.recipientEmail || undefined
+        );
+        if (sharedSurveyCalendarId) {
+          const sharedDelete = await deleteSiteSurveyCalendarEvent({
+            projectId: String(projectId),
+            surveyorEmail: resolvedRecipient.recipientEmail || undefined,
+            calendarId: sharedSurveyCalendarId,
+            impersonateEmail: getSiteSurveySharedCalendarImpersonationEmail(resolvedRecipient.recipientEmail) || undefined,
+          });
+          if (!sharedDelete.success) {
+            const sharedDeleteError = sharedDelete.error || "Unknown shared survey calendar delete error";
+            console.warn(
+              `[Zuper Unschedule] Google Calendar shared survey delete warning for ${projectId}: ${sharedDeleteError}`
+            );
+            calendarDeleteError = calendarDeleteError || sharedDeleteError;
+            if (calendarDeleteSucceeded) {
+              calendarDeleteSucceeded = false;
+            }
+          }
         }
       } catch (calendarErr) {
         calendarDeleteAttempted = true;
@@ -1766,6 +1826,46 @@ async function resolveCrewNotificationRecipient(params: {
   return { recipientEmail, recipientName };
 }
 
+function normalizeEmail(input?: string | null): string | null {
+  const raw = (input || "").trim().toLowerCase();
+  if (!raw) return null;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw) ? raw : null;
+}
+
+async function resolvePrimarySurveyorEmailFromJob(jobUid: string): Promise<string | null> {
+  const jobResult = await zuper.getJob(jobUid);
+  if (jobResult.type !== "success" || !jobResult.data) return null;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const assignedUser = (jobResult.data as any)?.assigned_to?.[0]?.user;
+  if (!assignedUser) return null;
+
+  const directEmail = normalizeEmail(assignedUser.email);
+  if (directEmail) return directEmail;
+
+  const userUid = (assignedUser.user_uid || "").trim();
+  if (userUid) {
+    const byUid = await getCrewMemberByZuperUserUid(userUid);
+    const byUidEmail = normalizeEmail(byUid?.email);
+    if (byUidEmail) return byUidEmail;
+
+    const zuperUser = await zuper.getUser(userUid);
+    if (zuperUser.type === "success") {
+      const zuperEmail = normalizeEmail(zuperUser.data?.email);
+      if (zuperEmail) return zuperEmail;
+    }
+  }
+
+  const fullName = [assignedUser.first_name, assignedUser.last_name].filter(Boolean).join(" ").trim();
+  if (fullName) {
+    const byName = await getCrewMemberByName(fullName);
+    const byNameEmail = normalizeEmail(byName?.email);
+    if (byNameEmail) return byNameEmail;
+  }
+
+  return null;
+}
+
 function deriveCustomerDetails(project: { name?: string; address?: string }): { customerName: string; customerAddress: string } {
   const nameParts = project.name?.split(" | ") || [];
   const customerName = nameParts.length >= 2
@@ -1796,7 +1896,8 @@ async function sendCrewNotification(
   project: { id: string; name?: string; address?: string; dealOwner?: string; projectManager?: string },
   schedulerName: string,
   schedulerEmail: string,
-  zuperJobUid?: string
+  zuperJobUid?: string,
+  options?: { previousSurveyorEmail?: string | null }
 ) {
   try {
     // If no assigned user, skip notification
@@ -1844,6 +1945,26 @@ async function sendCrewNotification(
         );
       }
     }
+    let googleCalendarEventUrl: string | undefined;
+    if (schedule.type === "survey") {
+      googleCalendarEventUrl =
+        getGoogleCalendarEventUrl(getSurveyCalendarEventId(project.id), recipientEmail) || undefined;
+    } else if (schedule.type === "installation") {
+      try {
+        const dealProps = await getDealProperties(project.id, ["pb_location"]);
+        const pbLocation = dealProps?.pb_location as string | undefined;
+        const locationResolution = resolveInstallCalendarLocation({
+          pbLocation,
+          assignedUserUid: schedule.assignedUserUid || schedule.crew,
+          assignedUserName: schedule.assignedUser,
+        });
+        const installCalendarId = getInstallCalendarIdForLocation(locationResolution.location);
+        googleCalendarEventUrl =
+          getGoogleCalendarEventUrl(getInstallationCalendarEventId(project.id), installCalendarId) || undefined;
+      } catch (calendarLinkErr) {
+        console.warn("[Zuper Schedule] Unable to build install Google Calendar link:", calendarLinkErr);
+      }
+    }
 
     await sendSchedulingNotification({
       to: recipientEmail,
@@ -1860,13 +1981,52 @@ async function sendCrewNotification(
       scheduledEnd: schedule.endTime,
       projectId: project.id,
       zuperJobUid,
+      googleCalendarEventUrl,
       notes: schedule.notes,
     });
 
     // Keep surveyor Google Calendar in sync for site surveys.
     if (schedule.type === "survey") {
-      const syncResult = await upsertSiteSurveyCalendarEvent({
+      const previousSurveyorEmail = normalizeEmail(options?.previousSurveyorEmail);
+      const currentSurveyorEmail = normalizeEmail(recipientEmail);
+
+      if (
+        previousSurveyorEmail &&
+        currentSurveyorEmail &&
+        previousSurveyorEmail !== currentSurveyorEmail
+      ) {
+        const previousPersonalDelete = await deleteSiteSurveyCalendarEvent({
+          projectId: project.id,
+          surveyorEmail: previousSurveyorEmail,
+          calendarId: "primary",
+          impersonateEmail: previousSurveyorEmail,
+        });
+        if (!previousPersonalDelete.success) {
+          console.warn(
+            `[Zuper Schedule] Google Calendar reassignment cleanup warning (old personal ${previousSurveyorEmail}): ${previousPersonalDelete.error || "unknown error"}`
+          );
+        }
+
+        const previousSharedCalendarId = getSiteSurveySharedCalendarIdForSurveyor(previousSurveyorEmail);
+        const currentSharedCalendarId = getSiteSurveySharedCalendarIdForSurveyor(currentSurveyorEmail);
+        if (previousSharedCalendarId && previousSharedCalendarId !== currentSharedCalendarId) {
+          const previousSharedDelete = await deleteSiteSurveyCalendarEvent({
+            projectId: project.id,
+            surveyorEmail: previousSurveyorEmail,
+            calendarId: previousSharedCalendarId,
+            impersonateEmail: getSiteSurveySharedCalendarImpersonationEmail(previousSurveyorEmail) || undefined,
+          });
+          if (!previousSharedDelete.success) {
+            console.warn(
+              `[Zuper Schedule] Google Calendar reassignment cleanup warning (old shared ${previousSharedCalendarId}): ${previousSharedDelete.error || "unknown error"}`
+            );
+          }
+        }
+      }
+
+      const personalSyncResult = await upsertSiteSurveyCalendarEvent({
         surveyorEmail: recipientEmail,
+        surveyorName: recipientName || schedule.assignedUser,
         projectId: project.id,
         projectName: project.name || project.id,
         customerName,
@@ -1877,9 +2037,34 @@ async function sendCrewNotification(
         timezone: schedule.timezone,
         notes: schedule.notes,
         zuperJobUid,
+        calendarId: "primary",
+        impersonateEmail: recipientEmail,
       });
-      if (!syncResult.success) {
-        console.warn(`[Zuper Schedule] Google Calendar sync warning: ${syncResult.error}`);
+      if (!personalSyncResult.success) {
+        console.warn(`[Zuper Schedule] Google Calendar personal survey sync warning: ${personalSyncResult.error}`);
+      }
+
+      const sharedSurveyCalendarId = getSiteSurveySharedCalendarIdForSurveyor(recipientEmail);
+      if (sharedSurveyCalendarId) {
+        const sharedSyncResult = await upsertSiteSurveyCalendarEvent({
+          surveyorEmail: recipientEmail,
+          surveyorName: recipientName || schedule.assignedUser,
+          projectId: project.id,
+          projectName: project.name || project.id,
+          customerName,
+          customerAddress,
+          date: schedule.date,
+          startTime: schedule.startTime,
+          endTime: schedule.endTime,
+          timezone: schedule.timezone,
+          notes: schedule.notes,
+          zuperJobUid,
+          calendarId: sharedSurveyCalendarId,
+          impersonateEmail: getSiteSurveySharedCalendarImpersonationEmail(recipientEmail) || recipientEmail,
+        });
+        if (!sharedSyncResult.success) {
+          console.warn(`[Zuper Schedule] Google Calendar shared survey sync warning: ${sharedSyncResult.error}`);
+        }
       }
     }
 

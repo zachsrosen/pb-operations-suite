@@ -729,6 +729,7 @@ export default function ConstructionSchedulerPage() {
 
   const handleConfirmTentative = useCallback(async (projectId: string) => {
     const recordId = getTentativeRecordId(projectId);
+    const hintedZuperJobUid = projects.find((p) => p.id === projectId)?.zuperJobUid;
     if (!recordId) {
       showToast("No tentative record found to confirm", "warning");
       return;
@@ -738,7 +739,10 @@ export default function ConstructionSchedulerPage() {
       const res = await fetch("/api/zuper/jobs/schedule/confirm", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scheduleRecordId: recordId }),
+        body: JSON.stringify({
+          scheduleRecordId: recordId,
+          zuperJobUid: hintedZuperJobUid || undefined,
+        }),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.success) {
@@ -762,7 +766,7 @@ export default function ConstructionSchedulerPage() {
     } finally {
       setConfirmingTentative(false);
     }
-  }, [fetchProjects, getTentativeRecordId, showToast]);
+  }, [fetchProjects, getTentativeRecordId, projects, showToast]);
 
   const handleCancelTentative = useCallback(async (projectId: string) => {
     const recordId = getTentativeRecordId(projectId);

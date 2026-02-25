@@ -469,6 +469,7 @@ interface SendSchedulingNotificationParams {
   scheduledEnd?: string; // HH:mm
   projectId: string;
   zuperJobUid?: string;
+  googleCalendarEventUrl?: string;
   notes?: string;
   installDetails?: {
     forecastedInstallDays?: number;
@@ -546,6 +547,7 @@ export async function sendSchedulingNotification(
       installDetailLines: installDetailLines.length > 0 ? installDetailLines : undefined,
       hubSpotDealUrl,
       zuperJobUrl: zuperJobUrl || undefined,
+      googleCalendarEventUrl: params.googleCalendarEventUrl || undefined,
     })
   );
 
@@ -570,6 +572,7 @@ ${installDetailLines.length > 0 ? `\nInstall Details:\n${installDetailLines.join
 ${cleanedNotes ? `\nNotes: ${cleanedNotes}` : ""}
 HubSpot Deal: ${hubSpotDealUrl}
 ${zuperJobUrl ? `Zuper Job: ${zuperJobUrl}` : ""}
+${params.googleCalendarEventUrl ? `Google Calendar Event: ${params.googleCalendarEventUrl}` : ""}
 
 Please check your Zuper app for complete details.
 
@@ -589,6 +592,7 @@ Please check your Zuper app for complete details.
       `Notes: ${cleanedNotes || "None"}`,
       `HubSpot Deal: ${hubSpotDealUrl}`,
       `Zuper Job: ${zuperJobUrl || "None"}`,
+      `Google Calendar Event: ${params.googleCalendarEventUrl || "None"}`,
       `BCC: ${bccRecipients.join(", ") || "None"}`,
     ].join("\n"),
   });

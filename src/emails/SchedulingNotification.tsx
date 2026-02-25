@@ -18,6 +18,7 @@ export interface SchedulingNotificationProps {
   installDetailLines?: string[]; // Pre-built lines from email.ts
   hubSpotDealUrl?: string;
   zuperJobUrl?: string;
+  googleCalendarEventUrl?: string;
 }
 
 export function SchedulingNotification({
@@ -35,9 +36,10 @@ export function SchedulingNotification({
   installDetailLines,
   hubSpotDealUrl,
   zuperJobUrl,
+  googleCalendarEventUrl,
 }: SchedulingNotificationProps) {
   const hasInstallDetails = installDetailLines && installDetailLines.length > 0;
-  const hasLinks = !!hubSpotDealUrl || !!zuperJobUrl;
+  const hasLinks = !!hubSpotDealUrl || !!zuperJobUrl || !!googleCalendarEventUrl;
   const stakeholder =
     appointmentType === "survey" && dealOwnerName
       ? { icon: "🧑‍💼", label: "Deal owner", value: dealOwnerName }
@@ -100,6 +102,13 @@ export function SchedulingNotification({
               <Text style={detailBlockText}>
                 <Link href={zuperJobUrl} style={link}>
                   Open Zuper Job
+                </Link>
+              </Text>
+            )}
+            {googleCalendarEventUrl && (
+              <Text style={detailBlockText}>
+                <Link href={googleCalendarEventUrl} style={link}>
+                  Open Google Calendar Event
                 </Link>
               </Text>
             )}
@@ -245,7 +254,8 @@ SchedulingNotification.PreviewProps = {
   timeSlot: "9:00 AM - 10:00 AM",
   notes: "Gate code is 4512. Dog in backyard.",
   hubSpotDealUrl: "https://app.hubspot.com/contacts/21710069/record/0-3/12345678901",
-  zuperJobUrl: "https://us-west-1c.zuperpro.com/app/job/123e4567-e89b-12d3-a456-426614174000",
+  zuperJobUrl: "https://us-west-1c.zuperpro.com/jobs/123e4567-e89b-12d3-a456-426614174000/details",
+  googleCalendarEventUrl: "https://calendar.google.com/calendar/event?eid=example",
 } satisfies SchedulingNotificationProps;
 
 export default SchedulingNotification;

@@ -394,6 +394,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/",
       "/dashboards/site-survey-scheduler",
       "/dashboards/sales",
+      "/api/deals/search",
       "/api/projects",
       "/api/zuper/availability",
       "/api/zuper/status",

@@ -1785,6 +1785,9 @@ export default function SchedulerPage() {
     setConfirmingTentative(true);
     try {
       const recordId = await resolveMasterTentativeRecordId(projectId);
+      const hintedZuperJobUid =
+        (detailModal && detailModal.id === projectId ? detailModal.zuperJobUid : undefined) ||
+        projects.find((p) => p.id === projectId)?.zuperJobUid;
       if (!recordId) {
         showToast("No tentative record found to confirm", "error");
         return;
@@ -1793,7 +1796,10 @@ export default function SchedulerPage() {
       const res = await fetch("/api/zuper/jobs/schedule/confirm", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scheduleRecordId: recordId }),
+        body: JSON.stringify({
+          scheduleRecordId: recordId,
+          zuperJobUid: hintedZuperJobUid || undefined,
+        }),
       });
       const data = await res.json();
       if (res.ok && data.success) {
@@ -1816,7 +1822,7 @@ export default function SchedulerPage() {
     } finally {
       setConfirmingTentative(false);
     }
-  }, [resolveMasterTentativeRecordId, showToast]);
+  }, [detailModal, projects, resolveMasterTentativeRecordId, showToast]);
 
   const handleCancelTentative = useCallback(async (projectId: string) => {
     const hasLocalOnlyTentative = !!manualSchedules[projectId]?.isTentative && !manualSchedules[projectId]?.recordId;
