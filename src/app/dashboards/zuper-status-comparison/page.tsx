@@ -166,8 +166,8 @@ function formatShortDate(dateStr: string | null): string {
 }
 
 function getZuperJobUrl(jobUid: string): string {
-  const webBase = "https://us-west-1c.zuperpro.com";
-  return `${webBase}/app/job/${jobUid}`;
+  const webBase = "https://web.zuperpro.com";
+  return `${webBase}/jobs/${encodeURIComponent(jobUid)}/details`;
 }
 
 // ---- Status dot color helper ----

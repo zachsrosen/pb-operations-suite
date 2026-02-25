@@ -11,6 +11,7 @@
 
 import * as Sentry from "@sentry/nextjs";
 import { getBusinessEndDateInclusive } from "@/lib/business-days";
+import { getZuperWebBaseUrl } from "@/lib/external-links";
 
 // Types for Zuper API
 export interface ZuperJobCategory {
@@ -223,10 +224,8 @@ export class ZuperClient {
    * The web app uses the same region-specific domain as the API
    */
   static getJobWebUrl(jobUid: string): string {
-    // Use environment variable if set, otherwise derive from API URL
-    const webBaseUrl = process.env.ZUPER_WEB_URL ||
-      (process.env.ZUPER_API_URL?.replace("/api", "") || "https://us-west-1c.zuperpro.com");
-    return `${webBaseUrl}/app/job/${jobUid}`;
+    const webBaseUrl = getZuperWebBaseUrl();
+    return `${webBaseUrl}/jobs/${encodeURIComponent(jobUid)}/details`;
   }
 
   private async request<T>(

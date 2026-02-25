@@ -3,6 +3,7 @@ import { requireApiAuth } from "@/lib/api-auth";
 import { getUserByEmail } from "@/lib/db";
 import { normalizeRole, type UserRole } from "@/lib/role-permissions";
 import { zohoInventory, type ZohoInventoryItem } from "@/lib/zoho-inventory";
+import { getZuperWebBaseUrl } from "@/lib/external-links";
 
 const ALL_SOURCES = ["hubspot", "zuper", "zoho", "opensolar", "quickbooks"] as const;
 type SourceName = (typeof ALL_SOURCES)[number];
@@ -127,10 +128,7 @@ function buildHubSpotProductUrl(productId: string): string {
 }
 
 function buildZuperProductUrl(productId: string): string {
-  const baseUrl =
-    process.env.ZUPER_WEB_URL ||
-    process.env.ZUPER_API_URL?.replace(/\/api\/?$/, "") ||
-    "https://us-west-1c.zuperpro.com";
+  const baseUrl = getZuperWebBaseUrl();
   return `${baseUrl.replace(/\/$/, "")}/app/product/${encodeURIComponent(productId)}`;
 }
 

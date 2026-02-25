@@ -254,7 +254,7 @@ SchedulingNotification.PreviewProps = {
   timeSlot: "9:00 AM - 10:00 AM",
   notes: "Gate code is 4512. Dog in backyard.",
   hubSpotDealUrl: "https://app.hubspot.com/contacts/21710069/record/0-3/12345678901",
-  zuperJobUrl: "https://us-west-1c.zuperpro.com/jobs/123e4567-e89b-12d3-a456-426614174000/details",
+  zuperJobUrl: "https://web.zuperpro.com/jobs/123e4567-e89b-12d3-a456-426614174000/details",
   googleCalendarEventUrl: "https://calendar.google.com/calendar/event?eid=example",
 } satisfies SchedulingNotificationProps;
 

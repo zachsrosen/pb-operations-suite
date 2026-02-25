@@ -93,7 +93,7 @@ function getCustomerName(title: string): string {
   return parts[1] || parts[0] || title;
 }
 
-const ZUPER_WEB_BASE = "https://app.zuper.co";
+const ZUPER_WEB_BASE = "https://web.zuperpro.com";
 
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */

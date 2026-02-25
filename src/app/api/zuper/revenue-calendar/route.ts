@@ -3,6 +3,7 @@ import { requireApiAuth } from "@/lib/api-auth";
 import { zuper, JOB_CATEGORY_UIDS } from "@/lib/zuper";
 import { prisma } from "@/lib/db";
 import { getBusinessEndDateInclusive, isWeekendDate } from "@/lib/business-days";
+import { getZuperWebBaseUrl } from "@/lib/external-links";
 import { Client } from "@hubspot/api-client";
 
 const hubspotClient = new Client({
@@ -292,9 +293,7 @@ function normalizeTentativeSpanDays(days?: number | null): number {
 }
 
 function getZuperJobDetailsUrl(jobUid: string): string {
-  // Match scheduler behavior: use configured ZUPER_WEB_URL or the same
-  // default returned by /api/zuper/status.
-  const rawBaseUrl = process.env.ZUPER_WEB_URL || "https://web.zuperpro.com";
+  const rawBaseUrl = getZuperWebBaseUrl();
   const trimmedBase = rawBaseUrl.replace(/\/+$/, "");
   const normalizedBase = trimmedBase.endsWith("/app") ? trimmedBase.slice(0, -4) : trimmedBase;
   return `${normalizedBase}/jobs/${encodeURIComponent(jobUid)}/details`;

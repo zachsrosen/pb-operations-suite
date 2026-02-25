@@ -682,7 +682,7 @@ function BomDashboardInner() {
             })),
             hubspotUrl: `https://app.hubspot.com/contacts/21710069/deal/${targetProject.hs_object_id}`,
             designFolderUrl: targetProject.designFolderUrl,
-            zuperUrl: targetProject.zuperUid ? `https://app.zuper.co/jobs/${targetProject.zuperUid}` : null,
+            zuperUrl: targetProject.zuperUid ? `https://web.zuperpro.com/jobs/${targetProject.zuperUid}/details` : null,
           }),
         }).catch(() => {/* silent */});
       }
@@ -2363,7 +2363,7 @@ function QuickLinks({ project }: { project: ProjectResult }) {
     links.push({ label: "OpenSolar", href: project.openSolarUrl, color: "text-yellow-600 dark:text-yellow-400 border-yellow-200 dark:border-yellow-800" });
   }
   if (project.zuperUid) {
-    links.push({ label: "Zuper", href: `https://app.zuper.co/jobs/${project.zuperUid}`, color: "text-cyan-600 dark:text-cyan-400 border-cyan-200 dark:border-cyan-800" });
+    links.push({ label: "Zuper", href: `https://web.zuperpro.com/jobs/${project.zuperUid}/details`, color: "text-cyan-600 dark:text-cyan-400 border-cyan-200 dark:border-cyan-800" });
   }
 
   return (

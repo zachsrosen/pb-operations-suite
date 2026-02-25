@@ -293,7 +293,7 @@ export default function InspectionSchedulerPage() {
 
   /* ---- Zuper integration ---- */
   const [zuperConfigured, setZuperConfigured] = useState(false);
-  const [zuperWebBaseUrl, setZuperWebBaseUrl] = useState("https://us-west-1c.zuperpro.com");
+  const [zuperWebBaseUrl, setZuperWebBaseUrl] = useState("https://web.zuperpro.com");
   const [syncToZuper, setSyncToZuper] = useState(true);
   const [syncingToZuper, setSyncingToZuper] = useState(false);
 

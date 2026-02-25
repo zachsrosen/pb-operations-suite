@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { zuper } from "@/lib/zuper";
+import { getZuperWebBaseUrl } from "@/lib/external-links";
 
 export async function GET() {
   const authResult = await requireApiAuth();
@@ -8,9 +9,8 @@ export async function GET() {
 
   const configured = zuper.isConfigured();
 
-  // Get the web URL base for constructing job links
-  // Web app is at web.zuperpro.com with format: /jobs/{uid}/details
-  const webBaseUrl = process.env.ZUPER_WEB_URL || "https://web.zuperpro.com";
+  // Canonical web base used everywhere we generate job links.
+  const webBaseUrl = getZuperWebBaseUrl();
 
   return NextResponse.json({
     configured,

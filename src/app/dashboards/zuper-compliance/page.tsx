@@ -137,7 +137,7 @@ interface ScorePreviewRow {
 /*  Constants                                                          */
 /* ------------------------------------------------------------------ */
 
-const ZUPER_WEB_BASE = "https://us-west-1c.zuperpro.com";
+const ZUPER_WEB_BASE = "https://web.zuperpro.com";
 
 type SortField =
   | "userName"
