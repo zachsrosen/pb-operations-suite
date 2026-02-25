@@ -35,7 +35,21 @@ declare module "next-auth/jwt" {
 
 const ROLE_SYNC_INTERVAL_MS = 5 * 60 * 1000;
 
+function ensureDevAuthUrl(): void {
+  if (process.env.NODE_ENV === "production") return;
+
+  const currentAuthUrl = process.env.AUTH_URL?.trim();
+  const currentNextAuthUrl = process.env.NEXTAUTH_URL?.trim();
+  if (currentAuthUrl || currentNextAuthUrl) return;
+
+  const localAuthUrl = "http://localhost:3000";
+  process.env.AUTH_URL = localAuthUrl;
+  process.env.NEXTAUTH_URL = localAuthUrl;
+  console.log(`[auth] Using default local auth URL: ${localAuthUrl}`);
+}
+
 assertProductionEnvConfigured();
+ensureDevAuthUrl();
 
 async function syncRoleToToken(token: JWT): Promise<JWT> {
   // Prisma is not edge-compatible; skip DB sync if this callback executes in edge runtime.

@@ -18,6 +18,7 @@ Open `http://localhost:3000`.
 - `GOOGLE_CLIENT_ID`
 - `GOOGLE_CLIENT_SECRET`
 - `NEXTAUTH_SECRET`
+- `AUTH_URL` (use `http://localhost:3000` for local dev)
 - `NEXTAUTH_URL`
 - `ALLOWED_EMAIL_DOMAIN`
 

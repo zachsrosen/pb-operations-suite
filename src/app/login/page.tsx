@@ -21,6 +21,10 @@ function LoginForm() {
         return "Server configuration error. Please contact support.";
       case "Verification":
         return "The verification link has expired or has already been used.";
+      case "OAuthSignin":
+      case "OAuthCallback":
+      case "Callback":
+        return "Google OAuth configuration issue. For local dev, verify localhost callback URI is configured in Google Cloud Console.";
       default:
         return error ? "An error occurred during sign in. Please try again." : null;
     }

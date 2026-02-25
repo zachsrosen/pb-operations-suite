@@ -17,12 +17,26 @@
    HUBSPOT_ACCESS_TOKEN=pat-na1-xxxx-xxxx-xxxx
    ```
 
-3. **Start the development server:**
+   For local auth, also set:
+   ```
+   AUTH_URL=http://localhost:3000
+   NEXTAUTH_URL=http://localhost:3000
+   ```
+
+3. **Configure Google OAuth for localhost:**
+   - Open your OAuth Client in Google Cloud Console: https://console.cloud.google.com/apis/credentials
+   - Add **Authorized JavaScript origins**:
+     - `http://localhost:3000`
+   - Add **Authorized redirect URIs**:
+     - `http://localhost:3000/api/auth/callback/google`
+   - If you run on a different port, use that same port in both entries.
+
+4. **Start the development server:**
    ```bash
    npm run dev
    ```
 
-4. **Open the dashboards:**
+5. **Open the dashboards:**
    - API: http://localhost:3000/api/projects?stats=true
    - Static dashboards: http://localhost:3000/dashboards/pb-dashboard-hub.html
 
