@@ -2,11 +2,20 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Extend the BOM tool with a standalone product catalog page and pricing fields, fix Zuper compliance data accuracy bugs, add roofing categories, and build a weekly ops email digest via Gmail API.
+**Goal:** Extend the BOM tool with pricing/vendor fields on the existing catalog page, fix Zuper compliance data accuracy bugs across ALL accumulator paths (user, team, category, crew), add roofing categories, and build a weekly ops email digest via the existing `sendEmailMessage()` transport.
 
-**Architecture:** Three independent workstreams that share no code dependencies. Workstream 2 (compliance audit) should be done before Workstream 3 (weekly email) since the email relies on accurate compliance data. Workstream 1 (BOM catalog) is fully independent.
+**Architecture:** Three independent workstreams. Workstream 2 (compliance audit) must complete before Workstream 3 (weekly email) since the email relies on accurate compliance data. Workstream 1 (BOM catalog) is fully independent.
 
-**Tech Stack:** Next.js 16.1, React 19.2, Prisma 7.3, Tailwind v4, Google service account JWT (gmail send), Zuper API
+**Tech Stack:** Next.js 16.1, React 19.2, Prisma 7.3, Tailwind v4, existing `sendEmailMessage()` in `src/lib/email.ts` (Gmail API via service account + Resend fallback), Zuper API
+
+**Review corrections applied:**
+- P1-1: All compliance fixes applied to ALL FOUR accumulator loops (user, team, category, crew composition)
+- P1-2: Extend existing `/dashboards/catalog` and `/api/inventory/skus` — NO new duplicate surfaces
+- P1-3: Update BOTH `save/route.ts` AND `history/route.ts` for category sync
+- P2-4: Null-guard `scheduledEnd` in started-on-time logic
+- P2-5: Use existing `sendEmailMessage()` from `email.ts` — NO new Gmail helper
+- P2-6: Use existing token-based matching from BOM page — NOT strict key matching
+- P2-7: Use existing POST endpoint for reject — NOT PATCH
 
 ---
 
@@ -53,23 +62,17 @@ git commit -m "feat(compliance): add roofing job categories to Zuper constants"
 ### Task 2: Fix Completion Time Fallback (Silent On-Time Bug)
 
 **Files:**
-- Modify: `src/app/api/zuper/compliance/route.ts:656-684`
+- Modify: `src/app/api/zuper/compliance/route.ts` — ALL FOUR accumulator loops
 
-**Step 1: Identify the bug**
+**Critical context:** The `effectiveCompletedTime = completedTime || scheduledEnd` pattern and its downstream on-time counting appear in FOUR places:
+1. **User accumulator** (~line 656-684)
+2. **Team accumulator** (~line 920-954)
+3. **Category accumulator** (similar section)
+4. **Crew composition accumulator** (similar section)
 
-At line 656, `effectiveCompletedTime` falls back to `scheduledEnd` when no real completion time exists:
-```typescript
-const effectiveCompletedTime = completedTime || scheduledEnd;
-```
+ALL FOUR must be fixed together.
 
-Then at line 682-684, when `scheduledEnd` exists but there's no real `completedTime`, the job is silently counted as on-time:
-```typescript
-} else {
-  acc.onTimeCompletions++;  // BUG: no completion time, but counted as on-time
-}
-```
-
-**Step 2: Add unknownCompletionTime tracking to UserAccumulator**
+**Step 1: Add unknownCompletionJobs tracking to UserAccumulator**
 
 Add to the `UserAccumulator` interface (around line 550):
 ```typescript
@@ -77,51 +80,42 @@ unknownCompletionJobs: number;
 unknownCompletionJobsList: JobEntry[];
 ```
 
-Initialize both in the `userMap.set()` block (around line 623):
+Initialize both in the `userMap.set()` block.
+
+**Step 2: Fix ALL FOUR accumulator loops**
+
+In each loop, replace the pattern:
 ```typescript
-unknownCompletionJobs: 0,
-unknownCompletionJobsList: [],
+// OLD — in all four accumulators:
+const effectiveCompletedTime = completedTime || scheduledEnd;
+// ... later:
+} else {
+  acc.onTimeCompletions++;  // BUG: no completion time, counted as on-time
+}
 ```
 
-**Step 3: Fix the fallback logic**
-
-Replace the completed-job block (lines 662-728). The key change: when a job is completed but has no real `completedTime`, track it as unknown instead of silently counting on-time:
-
+With:
 ```typescript
+// NEW — use real completedTime only:
 if (COMPLETED_STATUSES.has(statusLower)) {
   acc.completedJobs++;
 
-  let isLate = false;
   if (scheduledEnd && completedTime) {
-    // Real completion time exists — normal on-time check
+    // Real completion time — normal on-time check
     const deadline = new Date(scheduledEnd.getTime() + GRACE_MS);
     if (completedTime <= deadline) {
       acc.onTimeCompletions++;
     } else {
       acc.lateCompletions++;
-      isLate = true;
     }
     if (completedTime > scheduledEnd) {
       const diffMs = completedTime.getTime() - scheduledEnd.getTime();
-      jobDaysLate = Math.round((diffMs / (1000 * 60 * 60 * 24)) * 10) / 10;
-      acc.daysLatePastEnd.push(jobDaysLate);
+      // push to daysLatePastEnd...
     }
   } else if (!completedTime) {
-    // No real completion time — flag as unknown
+    // No real completion time — flag as unknown, do NOT count as on-time
     acc.unknownCompletionJobs++;
-    acc.unknownCompletionJobsList.push({
-      jobUid: job.job_uid || "",
-      title: job.job_title || "",
-      status: statusName,
-      category: categoryName,
-      scheduledStart: job.scheduled_start_time || null,
-      scheduledEnd: job.scheduled_end_time || null,
-      completedTime: null,
-      daysToComplete: null,
-      daysLate: null,
-      onOurWayTime: onOurWayTime?.toISOString() || null,
-      onOurWayOnTime: null,
-    });
+    // (user accumulator only: add to unknownCompletionJobsList)
   } else {
     // Has completedTime but no scheduledEnd — count as on-time (can't measure)
     acc.onTimeCompletions++;
@@ -129,36 +123,32 @@ if (COMPLETED_STATUSES.has(statusLower)) {
 
   // Days to complete — only use real completedTime
   if (scheduledStart && completedTime && completedTime > scheduledStart) {
-    const diffMs = completedTime.getTime() - scheduledStart.getTime();
-    jobDaysToComplete = Math.round((diffMs / (1000 * 60 * 60 * 24)) * 10) / 10;
-    acc.completionDays.push(jobDaysToComplete);
+    // push to completionDays...
   }
-  // ... rest of OOW/Started tracking unchanged ...
 ```
 
-**Step 4: Add unknownCompletionJobs to the UserMetrics output**
+For team/category/crew accumulators: track `unknownCompletionJobs: number` (no job list needed, just the count).
 
-In the `users.push()` block (around line 825), add:
-```typescript
-unknownCompletionJobs: acc.unknownCompletionJobs,
-unknownCompletionJobsList: acc.unknownCompletionJobsList,
-```
+**Step 3: Add unknownCompletionJobs to all output types**
 
-Also add the field to the `UserMetrics` interface / type near the top of the file.
+- `UserMetrics`: add `unknownCompletionJobs` and `unknownCompletionJobsList`
+- `GroupComparison` (used for team/category/crew): add `unknownCompletionJobs`
+- `buildGroupFromAcc()` helper: compute and include the count
+- Response `summary`: add `unknownCompletionJobs` total
 
-**Step 5: Apply the same fix to TeamAccumulator and CategoryAccumulator**
+**Step 4: Remove all `effectiveCompletedTime` references**
 
-The team comparison (line 877+) and category comparison sections repeat the same `effectiveCompletedTime = completedTime || scheduledEnd` pattern. Apply the same fix: track `unknownCompletionJobs` count and don't silently count them as on-time.
+Search the entire route for remaining uses of `effectiveCompletedTime`. Replace with `completedTime` in all downstream logic (OOW tracking, job entry construction, etc.). The `completedTime` variable may be null — handle accordingly.
 
-**Step 6: Verify**
+**Step 5: Verify**
 
-Run: `npx next build` — confirm no type errors. Test manually: `curl localhost:3000/api/zuper/compliance?days=7` and check that `unknownCompletionJobs` appears in the response.
+Run: `npx next build` — confirm no type errors.
 
-**Step 7: Commit**
+**Step 6: Commit**
 
 ```bash
 git add src/app/api/zuper/compliance/route.ts
-git commit -m "fix(compliance): track unknown completion times instead of counting as on-time"
+git commit -m "fix(compliance): track unknown completion times across all accumulators"
 ```
 
 ---
@@ -166,36 +156,36 @@ git commit -m "fix(compliance): track unknown completion times instead of counti
 ### Task 3: Fix OOW Metric — Compare Against Scheduled Start
 
 **Files:**
-- Modify: `src/app/api/zuper/compliance/route.ts:693-703` and team/category equivalents
+- Modify: `src/app/api/zuper/compliance/route.ts` — ALL FOUR accumulator loops
 
-**Step 1: Fix user-level OOW comparison**
+**Critical context:** The OOW comparison appears in all four accumulators. Fix all of them.
 
-Current code (line 694-702) compares OOW time to `scheduledEnd`:
+**Step 1: Fix in ALL FOUR accumulator loops**
+
+Current pattern (appears 4 times):
 ```typescript
 if (onOurWayTime && scheduledStart) {
   acc.onOurWayTotal++;
-  if (scheduledEnd && onOurWayTime > scheduledEnd) {  // BUG: should be scheduledStart
+  if (scheduledEnd && onOurWayTime > scheduledEnd) {  // BUG: compares to end
     acc.onOurWayLate++;
 ```
 
-Change to compare against `scheduledStart`:
+Replace with:
 ```typescript
 if (onOurWayTime && scheduledStart) {
   acc.onOurWayTotal++;
   if (onOurWayTime > scheduledStart) {
     // OOW sent after scheduled start = late notification
     acc.onOurWayLate++;
-    jobOowOnTime = false;
+    jobOowOnTime = false;  // (user accumulator only)
   } else {
     acc.onOurWayOnTime++;
-    jobOowOnTime = true;
+    jobOowOnTime = true;   // (user accumulator only)
   }
 }
 ```
 
-**Step 2: Apply same fix to team accumulator**
-
-In the team comparison block (around line 959-964), change:
+For team/category/crew accumulators (no `jobOowOnTime` variable):
 ```typescript
 if (onOurWayTime && scheduledStart) {
   if (onOurWayTime > scheduledStart) {
@@ -206,15 +196,11 @@ if (onOurWayTime && scheduledStart) {
 }
 ```
 
-**Step 3: Apply same fix to category accumulator**
-
-Find the equivalent section in the category comparison block and make the same change.
-
-**Step 4: Verify and commit**
+**Step 2: Verify and commit**
 
 ```bash
 git add src/app/api/zuper/compliance/route.ts
-git commit -m "fix(compliance): compare OOW time to scheduled start instead of end"
+git commit -m "fix(compliance): compare OOW time to scheduled start across all accumulators"
 ```
 
 ---
@@ -222,7 +208,7 @@ git commit -m "fix(compliance): compare OOW time to scheduled start instead of e
 ### Task 4: Extract Started Timestamp (Not Just Boolean)
 
 **Files:**
-- Modify: `src/app/api/zuper/compliance/route.ts:238-249` (helper) and accumulator logic
+- Modify: `src/app/api/zuper/compliance/route.ts:238-249` (helper) and ALL FOUR accumulator loops
 
 **Step 1: Convert `hasStartedStatus` to `getStartedTime`**
 
@@ -243,7 +229,7 @@ function getStartedTime(job: any): Date | null {
 }
 ```
 
-**Step 2: Update all call sites**
+**Step 2: Update ALL FOUR accumulator loops**
 
 Replace `const usedStarted = hasStartedStatus(job);` with:
 ```typescript
@@ -251,23 +237,25 @@ const startedTime = getStartedTime(job);
 const usedStarted = startedTime !== null;
 ```
 
-This appears in three places:
-1. User accumulator loop (~line 618)
-2. Team accumulator loop (~line 922)
-3. Category accumulator loop (similar location)
+This appears in:
+1. User accumulator loop
+2. Team accumulator loop
+3. Category accumulator loop
+4. Crew composition accumulator loop
 
-**Step 3: Add startedOnTime tracking**
+**Step 3: Add startedOnTime tracking to ALL FOUR accumulators**
 
-Add to `UserAccumulator`:
+Add to each accumulator type:
 ```typescript
-startedOnTime: number;   // started within scheduled window
-startedLate: number;     // started after scheduled end
+startedOnTime: number;
+startedLate: number;
 ```
 
-In the completed-job block, after OOW tracking:
+In each completed-job block, after OOW tracking:
 ```typescript
-if (startedTime && scheduledStart) {
-  if (startedTime <= scheduledEnd!) {
+// Null-safe: guard BOTH scheduledStart AND scheduledEnd
+if (startedTime && scheduledStart && scheduledEnd) {
+  if (startedTime <= scheduledEnd) {
     acc.startedOnTime++;
   } else {
     acc.startedLate++;
@@ -275,17 +263,21 @@ if (startedTime && scheduledStart) {
 }
 ```
 
-Add `startedOnTime` and `startedLate` to `UserMetrics` output and team/category accumulators.
+**Step 4: Add startedTime to JobEntry interface**
 
-**Step 4: Add startedTime to JobEntry**
+Add `startedTime: string | null` and populate in all job entry construction blocks.
 
-Add `startedTime: string | null` to the `JobEntry` interface and populate it in all job entry construction.
+**Step 5: Add to output types**
 
-**Step 5: Verify and commit**
+- `UserMetrics`: add `startedOnTime`, `startedLate`
+- `GroupComparison`: add `startedOnTime`, `startedLate`
+- `buildGroupFromAcc()`: compute and include
+
+**Step 6: Verify and commit**
 
 ```bash
 git add src/app/api/zuper/compliance/route.ts
-git commit -m "feat(compliance): extract started timestamp and track started-on-time metric"
+git commit -m "feat(compliance): extract started timestamp and track on-time across all accumulators"
 ```
 
 ---
@@ -313,7 +305,7 @@ Possible causes:
 
 **Step 4: Fix**
 
-Update `COMPLIANCE_TEAM_OVERRIDES` and/or `COMPLIANCE_EXCLUDED_USER_UIDS` based on findings. If users have moved teams, update their UID mapping. If users are no longer active, add them to the exclusion set.
+Update `COMPLIANCE_TEAM_OVERRIDES` and/or `COMPLIANCE_EXCLUDED_USER_UIDS` based on findings.
 
 **Step 5: Verify and commit**
 
@@ -324,97 +316,35 @@ git commit -m "fix(compliance): correct service team user mappings"
 
 ---
 
-## Workstream 3: Weekly 7-Day Ops Email via Gmail
+## Workstream 3: Weekly 7-Day Ops Email
 
-### Task 6: Create Gmail Send Helper
-
-**Files:**
-- Modify: `src/lib/google-auth.ts` (add Gmail send function)
-
-**Step 1: Add sendGmailMessage function**
-
-The existing `getServiceAccountToken()` in `google-auth.ts` handles JWT auth with impersonation. Add a Gmail send helper that uses it:
-
-```typescript
-export async function sendGmailMessage(options: {
-  to: string | string[];
-  subject: string;
-  htmlBody: string;
-  from?: string; // defaults to GOOGLE_ADMIN_EMAIL
-}): Promise<{ id: string; threadId: string }> {
-  const fromEmail = options.from || process.env.GOOGLE_ADMIN_EMAIL;
-  if (!fromEmail) throw new Error("GOOGLE_ADMIN_EMAIL not configured");
-
-  const token = await getServiceAccountToken(
-    ["https://www.googleapis.com/auth/gmail.send"],
-    fromEmail
-  );
-
-  const toList = Array.isArray(options.to) ? options.to.join(", ") : options.to;
-  const rawEmail = [
-    `From: ${fromEmail}`,
-    `To: ${toList}`,
-    `Subject: ${options.subject}`,
-    `MIME-Version: 1.0`,
-    `Content-Type: text/html; charset=UTF-8`,
-    ``,
-    options.htmlBody,
-  ].join("\r\n");
-
-  const encodedMessage = Buffer.from(rawEmail)
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
-
-  const res = await fetch(
-    `https://gmail.googleapis.com/gmail/v1/users/me/messages/send`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ raw: encodedMessage }),
-    }
-  );
-
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Gmail send failed (${res.status}): ${err}`);
-  }
-
-  return res.json() as Promise<{ id: string; threadId: string }>;
-}
-```
-
-**Step 2: Verify**
-
-Run: `npx next build` — confirm no type errors.
-
-**Step 3: Commit**
-
-```bash
-git add src/lib/google-auth.ts
-git commit -m "feat: add Gmail API send helper via service account"
-```
-
----
-
-### Task 7: Extract Compliance Digest Data Function
+### Task 6: Extract Compliance Digest Data Function
 
 **Files:**
-- Create: `src/lib/compliance-digest.ts`
+- Create: `src/lib/compliance-helpers.ts` (extracted shared helpers)
+- Create: `src/lib/compliance-digest.ts` (digest function)
+- Modify: `src/app/api/zuper/compliance/route.ts` (update imports)
 
-**Step 1: Create the shared data function**
+**Step 1: Extract shared helpers**
 
-This function calls the same Zuper APIs and calculation logic as the compliance route, but returns a structured digest object instead of a full API response. It should import and reuse helpers from the compliance route.
+Move these pure functions from the compliance route into `src/lib/compliance-helpers.ts`:
+- `getCompletedTimeFromHistory()`
+- `getOnOurWayTime()`
+- `getStartedTime()`
+- `extractAssignedUsers()` + its options type
+- `getCategoryUid()`
+- `getStatusName()`
+- `isExcludedUser()` / `isExcludedTeam()`
+- `computeGrade()`
+- `fetchJobsForCategory()`
+- Status sets: `COMPLETED_STATUSES`, `STUCK_STATUSES`, `NEVER_STARTED_STATUSES`
+- Constants: `GRACE_MS`, `MAX_PAGES_PER_CATEGORY`, `EXCLUDED_USER_NAMES`, `EXCLUDED_TEAM_PREFIXES`
 
-First, refactor the compliance route to export its helper functions (`getCompletedTimeFromHistory`, `getOnOurWayTime`, `getStartedTime`, `extractAssignedUsers`, `fetchJobsForCategory`, `buildGroupFromAcc`, etc.) from a shared module, OR duplicate the minimal set needed.
+Update the compliance route to import from `compliance-helpers.ts`.
 
-**Recommended approach:** Extract the pure calculation helpers into `src/lib/compliance-helpers.ts` and import them in both the route and the digest function. This avoids duplicating ~200 lines of logic.
+**Step 2: Create digest function**
 
-The digest function signature:
+`src/lib/compliance-digest.ts` — calls the same Zuper APIs and reuses helpers:
 
 ```typescript
 export interface ComplianceDigest {
@@ -434,20 +364,12 @@ export interface ComplianceDigest {
     stuckJobs: number;
   };
   teams: Array<{
-    name: string;
-    completedJobs: number;
-    onTimePercent: number;
-    avgDaysLate: number;
-    stuckJobs: number;
-    grade: string;
+    name: string; completedJobs: number; onTimePercent: number;
+    avgDaysLate: number; stuckJobs: number; grade: string;
   }>;
   categories: Array<{
-    name: string;
-    completedJobs: number;
-    onTimePercent: number;
-    avgDaysLate: number;
-    stuckJobs: number;
-    grade: string;
+    name: string; completedJobs: number; onTimePercent: number;
+    avgDaysLate: number; stuckJobs: number; grade: string;
   }>;
   notificationReliability: {
     oowBeforeStartPercent: number;
@@ -464,72 +386,83 @@ export interface ComplianceDigest {
 export async function getComplianceDigest(days: number): Promise<ComplianceDigest>
 ```
 
-The function fetches two periods (current N days + prior N days) to compute trend data.
+Fetches current + prior period for trend computation.
 
-**Step 2: Verify**
-
-Import the function in a test or script and confirm it returns valid data.
-
-**Step 3: Commit**
+**Step 3: Verify and commit**
 
 ```bash
-git add src/lib/compliance-helpers.ts src/lib/compliance-digest.ts
-git add src/app/api/zuper/compliance/route.ts  # updated imports
-git commit -m "feat: extract compliance digest data function for email reports"
+git add src/lib/compliance-helpers.ts src/lib/compliance-digest.ts src/app/api/zuper/compliance/route.ts
+git commit -m "feat: extract compliance helpers and digest data function"
 ```
 
 ---
 
-### Task 8: Build Weekly Compliance Email Template
+### Task 7: Build Weekly Compliance Email Function
 
 **Files:**
-- Create: `src/lib/compliance-email.ts`
+- Modify: `src/lib/email.ts` (add new export function)
 
-**Step 1: Create the HTML email builder**
+**Step 1: Add `sendWeeklyComplianceEmail()` to `email.ts`**
 
-Build a function that takes a `ComplianceDigest` and returns an HTML string. Follow the existing email patterns in `src/lib/email.ts` for styling.
+Follow the existing pattern of `sendWeeklyChangelogSimpleEmail()` and other exported functions. Use the existing `sendEmailMessage()` internal transport (Gmail API primary + Resend fallback). Do NOT create a separate Gmail helper.
 
 ```typescript
-export function buildComplianceEmailHtml(digest: ComplianceDigest): string
+export async function sendWeeklyComplianceEmail(params: {
+  to: string;
+  bcc?: string[];
+  digest: ComplianceDigest;
+}): Promise<SendResult> {
+  const weekLabel = `${params.digest.period.from} – ${params.digest.period.to}`;
+  const html = buildComplianceEmailHtml(params.digest);
+  const text = buildComplianceEmailText(params.digest); // plain text fallback
+
+  return sendEmailMessage({
+    to: params.to,
+    bcc: params.bcc,
+    subject: `Weekly Ops Report — ${weekLabel}`,
+    html,
+    text,
+    debugFallbackTitle: "Weekly Compliance Report",
+    debugFallbackBody: text,
+  });
+}
 ```
 
-Sections:
+**Step 2: Build the HTML template inline (or as helper)**
+
+Build `buildComplianceEmailHtml(digest)` as a private function in `email.ts` (same file, following existing patterns). Sections:
+
 1. **Header** — "Weekly Operations Report — [date range]"
-2. **4 key metrics** with trend arrows (up arrow green if improving, red if declining)
+2. **4 key metrics** with trend arrows (green up if improving, red down if declining)
 3. **Team table** — rows sorted by grade, highlight best (green) and worst (red)
 4. **Category table** — same format
 5. **Notification reliability** — OOW %, Started %, low-OOW user callouts
 6. **Callouts** — stuck jobs, failing users, unknown completions
 7. **Footer** — link to full compliance dashboard
 
-Use inline CSS for email compatibility. Keep it clean — dark header, white body, minimal color (match PB brand orange `#f97316` for accents).
+Use inline CSS for email compatibility. PB brand orange `#f97316` for accents.
 
-**Step 2: Verify**
-
-Write the HTML to a temp file and open in browser to visually inspect.
-
-**Step 3: Commit**
+**Step 3: Verify and commit**
 
 ```bash
-git add src/lib/compliance-email.ts
-git commit -m "feat: build weekly compliance email HTML template"
+git add src/lib/email.ts
+git commit -m "feat: add weekly compliance email template and send function"
 ```
 
 ---
 
-### Task 9: Create Weekly Compliance Send Script
+### Task 8: Create Weekly Compliance Send Script
 
 **Files:**
 - Create: `scripts/send-weekly-compliance.ts`
 
 **Step 1: Create the script**
 
-Follow the pattern of `scripts/send-weekly-review.ts`:
+Follow the exact pattern of `scripts/send-weekly-review.ts`:
 - Load `.env` / `.env.local`
 - Parse CLI args for recipient override
 - Call `getComplianceDigest(7)`
-- Call `buildComplianceEmailHtml(digest)`
-- Call `sendGmailMessage()` with recipients from `COMPLIANCE_REPORT_RECIPIENTS` env var
+- Call `sendWeeklyComplianceEmail()` with recipients from `COMPLIANCE_REPORT_RECIPIENTS` env var
 
 ```typescript
 async function main() {
@@ -540,23 +473,24 @@ async function main() {
   console.log(`Sending weekly compliance report to: ${recipients}`);
 
   const digest = await getComplianceDigest(7);
-  const html = buildComplianceEmailHtml(digest);
-  const weekLabel = formatDateRange(digest.period.from, digest.period.to);
 
-  await sendGmailMessage({
-    to: recipients.split(",").map(s => s.trim()),
-    subject: `Weekly Ops Report — ${weekLabel}`,
-    htmlBody: html,
+  const result = await sendWeeklyComplianceEmail({
+    to: recipients,
+    digest,
   });
 
-  console.log("Sent successfully.");
+  if (result.success) {
+    console.log("Sent successfully.");
+  } else {
+    console.error("Send failed:", result.error);
+    process.exit(1);
+  }
 }
 ```
 
 **Step 2: Test locally**
 
 Run: `npx tsx scripts/send-weekly-compliance.ts zach@photonbrothers.com`
-Verify email arrives from the Google Workspace account.
 
 **Step 3: Commit**
 
@@ -569,7 +503,7 @@ git commit -m "feat: add weekly compliance email send script"
 
 ## Workstream 1: BOM Product Catalog
 
-### Task 10: Extend Prisma Schema
+### Task 9: Extend Prisma Schema
 
 **Files:**
 - Modify: `prisma/schema.prisma:571-605`
@@ -627,11 +561,7 @@ npx prisma generate
 npx prisma migrate dev --name add-catalog-pricing-fields
 ```
 
-**Step 4: Verify**
-
-Run: `npx next build` — confirm no type errors from the new enum values or fields.
-
-**Step 5: Commit**
+**Step 4: Verify and commit**
 
 ```bash
 git add prisma/
@@ -640,106 +570,79 @@ git commit -m "feat(bom): extend EquipmentSku with pricing, vendor, and new cate
 
 ---
 
-### Task 11: Build Product Catalog API Routes
+### Task 10: Extend Existing Catalog API with Pricing/Vendor Fields
 
 **Files:**
-- Create: `src/app/api/catalog/route.ts` (GET list, POST create)
-- Create: `src/app/api/catalog/[id]/route.ts` (GET single, PATCH update)
-- Create: `src/app/api/catalog/stats/route.ts` (GET sync health stats)
+- Modify: `src/app/api/inventory/skus/route.ts` (extend existing — do NOT create new /api/catalog/)
 
-**Step 1: GET /api/catalog — List all SKUs**
+**Step 1: Update GET to return new fields**
 
-Query `EquipmentSku` with optional filters: `?category=MODULE&active=true&search=tesla`. Return paginated results with all fields including the new pricing/vendor fields.
+The existing `GET /api/inventory/skus` already queries `EquipmentSku`. Update the Prisma select/include to return the new fields: `description`, `vendorName`, `vendorPartNumber`, `unitCost`, `sellPrice`, `hubspotProductId`, `zuperItemId`.
 
-**Step 2: POST /api/catalog — Create a new SKU**
+**Step 2: Update POST to accept new fields**
 
-Accept all `EquipmentSku` fields. Validate required fields (category, brand, model). Check for duplicate `[category, brand, model]` before creating.
+Extend the create/upsert body parsing to accept the new fields. No new validation needed — all are optional.
 
-**Step 3: PATCH /api/catalog/[id] — Update a SKU**
+**Step 3: Add PATCH support for inline editing**
 
-Accept partial updates. Support updating cost, price, vendor info, sync IDs, active status.
+Add a PATCH handler (or extend existing) that accepts partial updates to an existing SKU. This is needed for inline price editing on the catalog page.
 
-**Step 4: GET /api/catalog/stats — Sync health**
+**Step 4: Add sync health stats endpoint**
 
-Count SKUs by category. For each category, count how many have `zohoItemId`, `hubspotProductId`, `zuperItemId` populated vs null. Return summary stats.
+Create `src/app/api/inventory/skus/stats/route.ts` — count SKUs by category and report how many have `zohoItemId`, `hubspotProductId`, `zuperItemId` populated.
 
-**Step 5: Verify**
-
-Run: `npx next build`
-
-**Step 6: Commit**
+**Step 5: Verify and commit**
 
 ```bash
-git add src/app/api/catalog/
-git commit -m "feat(bom): add product catalog CRUD API routes"
+git add src/app/api/inventory/skus/
+git commit -m "feat(bom): extend inventory SKU API with pricing, vendor, and sync health stats"
 ```
 
 ---
 
-### Task 12: Build Product Catalog Dashboard Page
+### Task 11: Extend Existing Catalog Dashboard with Pricing & Sync Health
 
 **Files:**
-- Create: `src/app/dashboards/product-catalog/page.tsx`
+- Modify: `src/app/dashboards/catalog/page.tsx` (extend existing — do NOT create new page)
 
-**Step 1: Create the page**
+**Step 1: Add pricing columns to catalog table**
 
-Three-tab layout inside `<DashboardShell>`:
+Add columns: unit cost, sell price, margin % (derived), vendor name. Make unit cost and sell price inline-editable (click to edit, blur to PATCH).
 
-**Catalog Tab:**
-- Fetch from `GET /api/catalog`
-- Searchable table with columns: category, brand, model, description, unit cost, sell price, margin %, vendor, sync dots
-- Inline editing for unitCost and sellPrice (click to edit, blur to save via PATCH)
-- "Add Product" button opens creation form
-- Bulk activate/deactivate via checkboxes
-- Category and active/inactive filter dropdowns
+**Step 2: Add Sync Health tab**
 
-**Approval Queue Tab:**
-- Fetch from `GET /api/catalog/push-requests?status=PENDING`
-- Table of pending requests with requester, deal context, proposed data
-- Approve: opens product form pre-filled with request data
-- Reject: opens reason textarea, then PATCH status to REJECTED
+Add a third tab alongside existing Catalog and Pending Approvals tabs. Fetch from `GET /api/inventory/skus/stats`. Show per-category cards with sync completion counts and a list of SKUs missing external IDs.
 
-**Sync Health Tab:**
-- Fetch from `GET /api/catalog/stats`
-- Per-category cards showing: total SKUs, linked to Zoho (count + %), linked to HubSpot, linked to Zuper
-- List of SKUs missing external IDs (filterable by category)
+**Step 3: Enhance the product creation form**
 
-**Step 2: Add product creation form**
+Add the new fields to the existing creation modal or form: description, vendor name, vendor part number, unit cost, sell price. Update the dropdown to include all 8 categories.
 
-Either a modal or expandable form section. Fields: brand, model, description, category (dropdown with all 8 values), unit spec, unit label, vendor name, vendor part number, unit cost, sell price, target systems checkboxes.
-
-Submit calls `POST /api/catalog` for direct creation (admin) or `POST /api/catalog/push-requests` for approval flow.
-
-**Step 3: Verify**
-
-Run dev server, navigate to `/dashboards/product-catalog`, verify all three tabs render.
-
-**Step 4: Commit**
+**Step 4: Verify and commit**
 
 ```bash
-git add src/app/dashboards/product-catalog/
-git commit -m "feat(bom): add product catalog dashboard with approval queue and sync health"
+git add src/app/dashboards/catalog/
+git commit -m "feat(bom): add pricing, vendor, and sync health to existing catalog dashboard"
 ```
 
 ---
 
-### Task 13: Add Pricing Columns to BOM Table
+### Task 12: Add Pricing Columns to BOM Table
 
 **Files:**
-- Modify: `src/app/dashboards/bom/page.tsx` (the BOM table component)
+- Modify: `src/app/dashboards/bom/page.tsx`
 
-**Step 1: Fetch catalog data alongside BOM**
+**Step 1: Use existing token-based matching**
 
-When a BOM is loaded, also fetch `GET /api/catalog?active=true` and build a lookup map: `Map<string, EquipmentSku>` keyed by normalized `${category}-${brand}-${model}`.
+The BOM page already has a catalog comparison mechanism that uses token-based matching (normalize text, tokenize, similarity >= 0.5). Reuse this existing matching to link BOM items to catalog SKUs. Do NOT introduce strict `category-brand-model` key matching.
 
 **Step 2: Add columns to the BOM table**
 
-For each BOM item, if it matches a catalog SKU:
+For each BOM item, when it matches a catalog SKU via the existing matcher:
 - Show `unitCost` column
 - Show `extendedCost` column (qty x unitCost)
 - Show `sellPrice` column
 
-Unmatched items show "—" with a small link/button "Add to catalog" that navigates to `/dashboards/product-catalog` with query params pre-filling the form.
+Unmatched items show "—" with a link to `/dashboards/catalog` with query params pre-filling the creation form.
 
 **Step 3: Add a totals row**
 
@@ -749,27 +652,49 @@ Bottom of the table: sum of all extended costs and extended sell prices for matc
 
 ```bash
 git add src/app/dashboards/bom/page.tsx
-git commit -m "feat(bom): add pricing columns to BOM table with catalog matching"
+git commit -m "feat(bom): add pricing columns to BOM table using existing token matching"
 ```
 
 ---
 
-### Task 14: Update BOM Extraction to Save All Categories
+### Task 13: Update BOTH BOM Save Routes to Sync All Categories
 
 **Files:**
-- Modify: `src/app/api/bom/save/route.ts` (or `history` route — wherever SKU sync happens)
+- Modify: `src/app/api/bom/save/route.ts`
+- Modify: `src/app/api/bom/history/route.ts` (POST handler)
 
-**Step 1: Expand category sync**
+**Critical context:** Both routes independently sync BOM items to `EquipmentSku`. Both must be updated together to avoid inconsistent catalog data depending on which save path is used.
 
-Currently only syncs MODULE, INVERTER, BATTERY, EV_CHARGER to `EquipmentSku`. Update the filter to include all 8 `EquipmentCategory` values so that RAPID_SHUTDOWN, RACKING, ELECTRICAL_BOS, and MONITORING items also get persisted.
+**Step 1: Identify the sync logic in both routes**
 
-**Step 2: Map BOM category strings to enum values**
+Find the filter that restricts sync to MODULE/INVERTER/BATTERY/EV_CHARGER in each route.
 
-The BOM extraction uses string categories like `"RAPID_SHUTDOWN"`. Add a mapping function that converts these to the Prisma `EquipmentCategory` enum, handling any case mismatches.
+**Step 2: Expand to all 8 categories**
 
-**Step 3: Verify and commit**
+In BOTH routes, update the category filter to include: RAPID_SHUTDOWN, RACKING, ELECTRICAL_BOS, MONITORING.
+
+**Step 3: Add category string-to-enum mapping**
+
+Create a shared helper (can live in `src/lib/bom-helpers.ts` or similar) that maps BOM category strings to `EquipmentCategory` enum values, handling case insensitivity:
+
+```typescript
+const BOM_CATEGORY_TO_ENUM: Record<string, EquipmentCategory> = {
+  MODULE: "MODULE",
+  INVERTER: "INVERTER",
+  BATTERY: "BATTERY",
+  EV_CHARGER: "EV_CHARGER",
+  RAPID_SHUTDOWN: "RAPID_SHUTDOWN",
+  RACKING: "RACKING",
+  ELECTRICAL_BOS: "ELECTRICAL_BOS",
+  MONITORING: "MONITORING",
+};
+```
+
+Import and use in both routes.
+
+**Step 4: Verify and commit**
 
 ```bash
-git add src/app/api/bom/
-git commit -m "feat(bom): sync all 8 equipment categories to catalog on BOM save"
+git add src/app/api/bom/save/route.ts src/app/api/bom/history/route.ts
+git commit -m "feat(bom): sync all 8 equipment categories in both save paths"
 ```
