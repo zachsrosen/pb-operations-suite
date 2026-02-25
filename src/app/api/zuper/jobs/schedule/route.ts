@@ -12,8 +12,8 @@ import {
   upsertInstallationCalendarEvent,
   deleteSiteSurveyCalendarEvent,
   deleteInstallationCalendarEvent,
-  getSiteSurveySharedCalendarIdForSurveyor,
-  getSiteSurveySharedCalendarImpersonationEmail,
+  getDenverSiteSurveyCalendarId,
+  getSharedCalendarImpersonationEmail,
   getInstallCalendarIdForLocation,
   getSurveyCalendarEventId,
   getInstallationCalendarEventId,
@@ -1830,6 +1830,33 @@ function normalizeEmail(input?: string | null): string | null {
   const raw = (input || "").trim().toLowerCase();
   if (!raw) return null;
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw) ? raw : null;
+}
+
+function isNickSurveyorEmail(email?: string | null): boolean {
+  const normalized = normalizeEmail(email);
+  return normalized === "nick.scarpellino@photonbrothers.com" || normalized === "nick@photonbrothers.com";
+}
+
+function getNickSiteSurveyCalendarId(): string | null {
+  return (
+    (process.env.GOOGLE_SITE_SURVEY_NICK_CALENDAR_ID || "").trim() ||
+    (process.env.GOOGLE_NICK_SITE_SURVEY_CALENDAR_ID || "").trim() ||
+    null
+  );
+}
+
+function getSiteSurveySharedCalendarIdForSurveyor(email?: string | null): string | null {
+  if (isNickSurveyorEmail(email)) {
+    return getNickSiteSurveyCalendarId() || getDenverSiteSurveyCalendarId();
+  }
+  return getDenverSiteSurveyCalendarId();
+}
+
+function getSiteSurveySharedCalendarImpersonationEmail(email?: string | null): string | null {
+  if (isNickSurveyorEmail(email)) {
+    return normalizeEmail(email) || getSharedCalendarImpersonationEmail();
+  }
+  return getSharedCalendarImpersonationEmail() || normalizeEmail(email);
 }
 
 async function resolvePrimarySurveyorEmailFromJob(jobUid: string): Promise<string | null> {
