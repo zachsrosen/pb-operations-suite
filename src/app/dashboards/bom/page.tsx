@@ -120,6 +120,7 @@ interface BomSnapshot {
   savedBy: string | null;
   createdAt: string;
   zohoPoId: string | null;
+  zohoSoId: string | null;
 }
 
 /* One row in the diff view */
@@ -387,6 +388,12 @@ function BomDashboardInner() {
   const [selectedVendorId, setSelectedVendorId] = useState<string>("");
   const [zohoPoId, setZohoPoId] = useState<string | null>(null);
   const [creatingPo, setCreatingPo] = useState(false);
+  // Zoho SO state
+  const [zohoCustomers, setZohoCustomers] = useState<{ contact_id: string; contact_name: string }[] | null>(null);
+  const [customersLoading, setCustomersLoading] = useState(false);
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
+  const [zohoSoId, setZohoSoId] = useState<string | null>(null);
+  const [creatingSo, setCreatingSo] = useState(false);
   // Diff / compare
   const [compareA, setCompareA] = useState<BomSnapshot | null>(null);
   const [compareB, setCompareB] = useState<BomSnapshot | null>(null);
@@ -484,6 +491,7 @@ function BomDashboardInner() {
           loadBomData(latest.bomData);
           setSavedVersion(latest.version);
           setZohoPoId(latest.zohoPoId ?? null);
+          setZohoSoId(latest.zohoSoId ?? null);
         }
       })
       .catch(() => {/* silent */})
@@ -505,6 +513,21 @@ function BomDashboardInner() {
       })
       .finally(() => setVendorsLoading(false));
   }, [savedVersion, linkedProject, zohoVendors]);
+
+  /* ---- Fetch Zoho customers when BOM is saved + project linked ---- */
+  useEffect(() => {
+    if (!savedVersion || !linkedProject || zohoCustomers !== null) return;
+    setCustomersLoading(true);
+    fetch("/api/bom/zoho-customers")
+      .then((r) => r.ok ? r.json() : Promise.reject(r.status))
+      .then((data: { customers: { contact_id: string; contact_name: string }[] }) => {
+        setZohoCustomers(data.customers ?? []);
+      })
+      .catch(() => {
+        setZohoCustomers([]); // empty = Zoho not configured or unavailable; hide section
+      })
+      .finally(() => setCustomersLoading(false));
+  }, [savedVersion, linkedProject, zohoCustomers]);
 
   /* ---- Load Drive design files when project has a design folder ---- */
   useEffect(() => {
@@ -617,8 +640,12 @@ function BomDashboardInner() {
       if (!res.ok) throw new Error(`Save failed (${res.status})`);
       const saved = await res.json() as { id: string; version: number; createdAt: string };
       setSavedVersion(saved.version);
-      setZohoPoId(null);    // New save = no PO yet
-      setZohoVendors(null); // Re-fetch vendors for this project on next render
+      setZohoPoId(null);         // New save = no PO yet
+      setZohoSoId(null);         // New save = no SO yet
+      setZohoVendors(null);      // Re-fetch vendors for this project on next render
+      setZohoCustomers(null);    // Re-fetch customers for this project on next render
+      setSelectedVendorId("");   // Clear stale vendor selection
+      setSelectedCustomerId(""); // Clear stale customer selection
       // Reload history list
       const histRes = await fetch(`/api/bom/history?dealId=${encodeURIComponent(targetProject.hs_object_id)}`);
       if (histRes.ok) {
@@ -704,6 +731,44 @@ function BomDashboardInner() {
     }
   }, [linkedProject, savedVersion, selectedVendorId, addToast]);
 
+  /* ---- Create Zoho SO ---- */
+  const createSo = useCallback(async () => {
+    if (!linkedProject || !savedVersion || !selectedCustomerId) return;
+    setCreatingSo(true);
+    try {
+      const res = await fetch("/api/bom/create-so", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dealId: linkedProject.hs_object_id,
+          version: savedVersion,
+          customerId: selectedCustomerId,
+        }),
+      });
+      const data = await res.json() as {
+        salesorder_id?: string;
+        salesorder_number?: string;
+        unmatchedCount?: number;
+        error?: string;
+      };
+      if (!res.ok || !data.salesorder_id) {
+        addToast({ type: "error", title: data.error ?? "Failed to create SO" });
+        return;
+      }
+      setZohoSoId(data.salesorder_id);
+      const unmatch = data.unmatchedCount ?? 0;
+      addToast({
+        type: "success",
+        title: `SO ${data.salesorder_number ?? ""} created in Zoho`,
+        ...(unmatch > 0 ? { description: `${unmatch} item${unmatch === 1 ? "" : "s"} had no Zoho SKU match — added as description-only lines` } : {}),
+      });
+    } catch {
+      addToast({ type: "error", title: "Network error creating SO" });
+    } finally {
+      setCreatingSo(false);
+    }
+  }, [linkedProject, savedVersion, selectedCustomerId, addToast]);
+
   /* ---- Load BOM helper ---- */
   // freshExtract=true when loading a newly extracted PDF (not a saved snapshot).
   // Pass preserveProject to keep the BOM tied to the current HubSpot deal.
@@ -728,6 +793,11 @@ function BomDashboardInner() {
         setSnapshots([]);
         setSavedVersion(null);
         setZohoPoId(null);
+        setZohoSoId(null);
+        setZohoVendors(null);
+        setZohoCustomers(null);
+        setSelectedVendorId("");
+        setSelectedCustomerId("");
         setAutoLinkSuggestion(null);
         // Remove stale ?deal= param from URL without a navigation
         const url = new URL(window.location.href);
@@ -1647,8 +1717,47 @@ function BomDashboardInner() {
                   {vendorsLoading && (
                     <span className="text-xs text-muted animate-pulse">Loading vendors…</span>
                   )}
+                  {/* Zoho SO — only show when saved + customers available */}
+                  {savedVersion && zohoCustomers && zohoCustomers.length > 0 && (
+                    zohoSoId ? (
+                      <a
+                        href={`https://inventory.zoho.com/app#/salesorders/${zohoSoId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-cyan-600 dark:text-cyan-400 hover:underline"
+                      >
+                        View SO in Zoho →
+                      </a>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={selectedCustomerId}
+                          onChange={(e) => setSelectedCustomerId(e.target.value)}
+                          className="text-xs rounded bg-surface-2 border border-t-border text-foreground px-2 py-1 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                        >
+                          <option value="">Select customer…</option>
+                          {zohoCustomers.map((c) => (
+                            <option key={c.contact_id} value={c.contact_id}>
+                              {c.contact_name}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={createSo}
+                          disabled={!selectedCustomerId || creatingSo}
+                          title={!selectedCustomerId ? "Select a customer first" : "Create draft SO in Zoho Inventory"}
+                          className="text-xs rounded bg-cyan-600 text-white px-3 py-1 hover:bg-cyan-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          {creatingSo ? "Creating…" : "Create SO in Zoho"}
+                        </button>
+                      </div>
+                    )
+                  )}
+                  {customersLoading && (
+                    <span className="text-xs text-muted animate-pulse">Loading customers…</span>
+                  )}
                   <button
-                    onClick={() => { setLinkedProject(null); setImportTab("upload"); setDriveFiles([]); setSnapshots([]); setSavedVersion(null); setZohoPoId(null); setZohoVendors(null); router.replace("/dashboards/bom"); }}
+                    onClick={() => { setLinkedProject(null); setImportTab("upload"); setDriveFiles([]); setSnapshots([]); setSavedVersion(null); setZohoPoId(null); setZohoVendors(null); setZohoSoId(null); setZohoCustomers(null); setSelectedVendorId(""); setSelectedCustomerId(""); router.replace("/dashboards/bom"); }}
                     className="text-xs text-muted hover:text-foreground"
                   >
                     Unlink
@@ -1679,7 +1788,11 @@ function BomDashboardInner() {
                             setProjectResults([]);
                             setSavedVersion(null);
                             setZohoPoId(null);
+                            setZohoSoId(null);
                             setZohoVendors(null);
+                            setZohoCustomers(null);
+                            setSelectedVendorId("");
+                            setSelectedCustomerId("");
                           }}
                           className="w-full text-left px-4 py-2.5 text-sm text-foreground hover:bg-surface-2 transition-colors"
                         >
@@ -1798,7 +1911,11 @@ function BomDashboardInner() {
                               loadBomData(snap.bomData);
                               setSavedVersion(snap.version);
                               setZohoPoId(snap.zohoPoId ?? null);
-                              setZohoVendors(null); // re-fetch vendors for this version
+                              setZohoSoId(snap.zohoSoId ?? null);
+                              setZohoVendors(null);      // re-fetch vendors for this version
+                              setZohoCustomers(null);    // re-fetch customers for this version
+                              setSelectedVendorId("");   // clear stale selection
+                              setSelectedCustomerId(""); // clear stale selection
                               addToast({ type: "success", title: `Loaded v${snap.version}` });
                             }}
                             className="text-xs text-cyan-600 dark:text-cyan-400 hover:underline"
@@ -2146,6 +2263,7 @@ function BomDashboardInner() {
                   loadBomData(latest.bomData);
                   setSavedVersion(latest.version);
                   setZohoPoId(latest.zohoPoId ?? null);
+                  setZohoSoId(latest.zohoSoId ?? null);
                 }
               })
               .catch(() => {/* silent */})

@@ -694,7 +694,8 @@ model ProjectBomSnapshot {
   sourceFile  String?                       // original PDF filename
   blobUrl     String?                       // Vercel Blob URL of the source PDF
   savedBy     String                        // user email
-  zohoPoId    String?                       // Zoho PO ID once created
+  zohoPoId    String?                       // Zoho Purchase Order ID once created
+  zohoSoId    String?                       // Zoho Sales Order ID once created
 
   createdAt   DateTime @default(now())
 

@@ -71,6 +71,30 @@ interface ZohoPurchaseOrderCreateResponse {
   };
 }
 
+export interface ZohoSalesOrderLineItem {
+  item_id?: string;       // Omit when no Zoho SKU match
+  name: string;
+  quantity: number;
+  description?: string;
+}
+
+export interface ZohoSalesOrderPayload {
+  customer_id: string;
+  reference_number: string;
+  notes?: string;
+  status: "draft";
+  line_items: ZohoSalesOrderLineItem[];
+}
+
+interface ZohoSalesOrderCreateResponse {
+  code?: number;
+  message?: string;
+  salesorder?: {
+    salesorder_id: string;
+    salesorder_number: string;
+  };
+}
+
 interface ZohoTokenRefreshResponse {
   access_token?: string;
   expires_in?: number;
@@ -198,6 +222,31 @@ export class ZohoInventoryClient {
       per_page: 200,
     });
     return Array.isArray(response.contacts) ? response.contacts : [];
+  }
+
+  async listCustomers(): Promise<ZohoVendor[]> {
+    const response = await this.request<ZohoVendorListResponse>("/contacts", {
+      contact_type: "customer",
+      per_page: 200,
+    });
+    return Array.isArray(response.contacts) ? response.contacts : [];
+  }
+
+  async createSalesOrder(
+    payload: ZohoSalesOrderPayload
+  ): Promise<{ salesorder_id: string; salesorder_number: string }> {
+    const result = await this.requestPost<ZohoSalesOrderCreateResponse>(
+      "/salesorders",
+      payload
+    );
+    const so = result.salesorder;
+    if (!so?.salesorder_id) {
+      throw new Error(result.message ?? "Zoho did not return a sales order ID");
+    }
+    return {
+      salesorder_id: so.salesorder_id,
+      salesorder_number: so.salesorder_number,
+    };
   }
 
   async createPurchaseOrder(

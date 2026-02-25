@@ -87,6 +87,7 @@ export async function GET(req: NextRequest) {
       savedBy: true,
       createdAt: true,
       zohoPoId: true,
+      zohoSoId: true,
     },
   });
 
