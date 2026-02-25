@@ -397,6 +397,46 @@ function countBusinessDaysInclusive(startDate: string, endDate: string): number 
   return Math.max(count, 1);
 }
 
+function isoToYmdInTimezone(iso: string, timezone: string): string | null {
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return null;
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(d);
+  const year = parts.find((p) => p.type === "year")?.value;
+  const month = parts.find((p) => p.type === "month")?.value;
+  const day = parts.find((p) => p.type === "day")?.value;
+  if (!year || !month || !day) return null;
+  return `${year}-${month}-${day}`;
+}
+
+function normalizeZuperBoundaryDates(
+  startIso?: string | null,
+  endIso?: string | null,
+  location?: string | null
+): { startDate?: string; endDate?: string } {
+  const tz = LOCATION_TIMEZONES[location || ""] || "America/Denver";
+  const startDate = startIso ? (isoToYmdInTimezone(startIso, tz) || startIso.split("T")[0]) : undefined;
+  let endDate = endIso ? (isoToYmdInTimezone(endIso, tz) || endIso.split("T")[0]) : undefined;
+
+  if (startIso && endIso && startDate && endDate) {
+    const start = new Date(startIso);
+    const end = new Date(endIso);
+    if (Number.isFinite(start.getTime()) && Number.isFinite(end.getTime()) && endDate > startDate) {
+      const startMinutesUtc = start.getUTCHours() * 60 + start.getUTCMinutes();
+      const endMinutesUtc = end.getUTCHours() * 60 + end.getUTCMinutes();
+      if (endMinutesUtc <= startMinutesUtc) {
+        endDate = addDays(endDate, -1);
+      }
+    }
+  }
+
+  return { startDate, endDate };
+}
+
 function getNextWorkday(dateStr: string): string {
   const [year, month, day] = dateStr.split("-").map(Number);
   const d = new Date(year, month - 1, day);
@@ -901,9 +941,14 @@ export default function SchedulerPage() {
   const getEffectiveConstructionDays = useCallback((project: SchedulerProject): number | undefined => {
     if (project.zuperJobCategory !== "construction") return undefined;
     if (project.zuperScheduledStart && project.zuperScheduledEnd) {
-      const startDate = project.zuperScheduledStart.split("T")[0];
-      const endDate = project.zuperScheduledEnd.split("T")[0];
-      return countBusinessDaysInclusive(startDate, endDate);
+      const { startDate, endDate } = normalizeZuperBoundaryDates(
+        project.zuperScheduledStart,
+        project.zuperScheduledEnd,
+        project.location
+      );
+      if (startDate && endDate) {
+        return countBusinessDaysInclusive(startDate, endDate);
+      }
     }
     if (project.zuperScheduledDays && project.zuperScheduledDays > 0) return project.zuperScheduledDays;
     return undefined;
@@ -921,7 +966,12 @@ export default function SchedulerPage() {
 
         // Zuper-scheduled construction jobs — counts as 1 job at this location
         if (p.zuperJobCategory === "construction" && p.zuperScheduledStart) {
-          const startStr = p.zuperScheduledStart.split("T")[0];
+          const { startDate } = normalizeZuperBoundaryDates(
+            p.zuperScheduledStart,
+            p.zuperScheduledEnd,
+            p.location
+          );
+          const startStr = startDate || p.zuperScheduledStart.split("T")[0];
           const days = getEffectiveConstructionDays(p) || p.daysInstall || 1;
           bookings.push({ location: loc, startDate: startStr, days });
         }
@@ -1072,8 +1122,13 @@ export default function SchedulerPage() {
       // Only use Zuper dates for construction if the matched Zuper job is actually
       // a construction job (not a survey/inspection job that happened to match).
       const zuperIsConstruction = p.zuperJobCategory === "construction";
-      const constructionDate = (zuperIsConstruction && p.zuperScheduledStart
-        ? p.zuperScheduledStart.split("T")[0]
+      const normalizedZuperDates = normalizeZuperBoundaryDates(
+        p.zuperScheduledStart,
+        p.zuperScheduledEnd,
+        p.location
+      );
+      const constructionDate = (zuperIsConstruction
+        ? normalizedZuperDates.startDate
         : null) || p.constructionScheduleDate;
       if (constructionDate) {
         const schedDate = new Date(constructionDate + "T12:00:00");
@@ -4045,17 +4100,26 @@ export default function SchedulerPage() {
                     className="bg-background border border-t-border text-foreground/90 px-2 py-1.5 rounded font-mono text-[0.75rem] focus:outline-none focus:border-orange-500"
                   />
                 </div>
-                {scheduleModal.project.zuperScheduledStart && (
-                  <div className="text-[0.6rem] text-cyan-400/80 mt-1">
-                    Zuper: {formatShortDate(scheduleModal.project.zuperScheduledStart.split("T")[0])}
-                    {scheduleModal.project.zuperScheduledEnd && (
-                      <> → {formatShortDate(scheduleModal.project.zuperScheduledEnd.split("T")[0])}</>
-                    )}
-                    {scheduleModal.project.zuperScheduledDays && (
-                      <> ({scheduleModal.project.zuperScheduledDays}d)</>
-                    )}
-                  </div>
-                )}
+                {scheduleModal.project.zuperScheduledStart && (() => {
+                  const { startDate, endDate } = normalizeZuperBoundaryDates(
+                    scheduleModal.project.zuperScheduledStart,
+                    scheduleModal.project.zuperScheduledEnd,
+                    scheduleModal.project.location
+                  );
+                  if (!startDate) return null;
+                  const effectiveDays = getEffectiveConstructionDays(scheduleModal.project);
+                  return (
+                    <div className="text-[0.6rem] text-cyan-400/80 mt-1">
+                      Zuper: {formatShortDate(startDate)}
+                      {endDate && endDate !== startDate && (
+                        <> → {formatShortDate(endDate)}</>
+                      )}
+                      {effectiveDays && (
+                        <> ({effectiveDays}d)</>
+                      )}
+                    </div>
+                  );
+                })()}
                 {/* Survey/Inspection: Surveyor + Time slot */}
                 {(scheduleModal.project.stage === "survey" || scheduleModal.project.stage === "inspection") ? (
                   <>
@@ -4395,15 +4459,20 @@ export default function SchedulerPage() {
                   const isSurveyOrInspection =
                     detailModal.stage === "survey" ||
                     detailModal.stage === "inspection";
+                  const normalizedZuperDates = normalizeZuperBoundaryDates(
+                    detailModal.zuperScheduledStart,
+                    detailModal.zuperScheduledEnd,
+                    detailModal.location
+                  );
+                  const effectiveZuperDays = getEffectiveConstructionDays(detailModal);
                   const displayDays =
+                    effectiveZuperDays ||
                     detailModal.zuperScheduledDays ||
                     scheduleInfo?.days ||
                     detailModal.daysInstall ||
                     (isSurveyOrInspection ? 1 : 2);
                   // Prefer Zuper start date if available
-                  const displayDate = detailModal.zuperScheduledStart
-                    ? detailModal.zuperScheduledStart.split("T")[0]
-                    : scheduleInfo?.startDate || null;
+                  const displayDate = normalizedZuperDates.startDate || scheduleInfo?.startDate || null;
                   return (
                     <>
                       <ModalRow
@@ -4436,9 +4505,9 @@ export default function SchedulerPage() {
                       )}
                       {detailModal.zuperScheduledStart && (
                         <div className="text-[0.6rem] text-cyan-400/70 mt-1">
-                          Zuper: {formatShortDate(detailModal.zuperScheduledStart.split("T")[0])}
-                          {detailModal.zuperScheduledEnd && (
-                            <> → {formatShortDate(detailModal.zuperScheduledEnd.split("T")[0])}</>
+                          Zuper: {formatShortDate(normalizedZuperDates.startDate || detailModal.zuperScheduledStart.split("T")[0])}
+                          {normalizedZuperDates.endDate && normalizedZuperDates.endDate !== (normalizedZuperDates.startDate || "") && (
+                            <> → {formatShortDate(normalizedZuperDates.endDate)}</>
                           )}
                         </div>
                       )}
