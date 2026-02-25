@@ -32,7 +32,7 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   title: "PB Operations Suite",
   description: "Pipeline management dashboard for Photon Brothers",
-  manifest: "/manifest.json",
+  manifest: "/manifest.json?v=20260225",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
@@ -42,8 +42,8 @@ export const metadata: Metadata = {
     "mobile-web-app-capable": "yes",
   },
   icons: {
-    icon: "/icons/icon-192.png",
-    apple: "/icons/apple-touch-icon.png",
+    icon: "/icons/icon-192.png?v=20260225",
+    apple: "/icons/apple-touch-icon.png?v=20260225",
   },
 };
 
