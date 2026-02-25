@@ -397,7 +397,10 @@ function countBusinessDaysInclusive(startDate: string, endDate: string): number 
   return Math.max(count, 1);
 }
 
-function isoToYmdInTimezone(iso: string, timezone: string): string | null {
+function isoToLocalPartsInTimezone(
+  iso: string,
+  timezone: string
+): { ymd: string; minutes: number } | null {
   const d = new Date(iso);
   if (!Number.isFinite(d.getTime())) return null;
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -405,12 +408,20 @@ function isoToYmdInTimezone(iso: string, timezone: string): string | null {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
   }).formatToParts(d);
   const year = parts.find((p) => p.type === "year")?.value;
   const month = parts.find((p) => p.type === "month")?.value;
   const day = parts.find((p) => p.type === "day")?.value;
-  if (!year || !month || !day) return null;
-  return `${year}-${month}-${day}`;
+  const hour = parts.find((p) => p.type === "hour")?.value;
+  const minute = parts.find((p) => p.type === "minute")?.value;
+  if (!year || !month || !day || hour == null || minute == null) return null;
+  return {
+    ymd: `${year}-${month}-${day}`,
+    minutes: Number(hour) * 60 + Number(minute),
+  };
 }
 
 function normalizeZuperBoundaryDates(
@@ -419,18 +430,17 @@ function normalizeZuperBoundaryDates(
   location?: string | null
 ): { startDate?: string; endDate?: string } {
   const tz = LOCATION_TIMEZONES[location || ""] || "America/Denver";
-  const startDate = startIso ? (isoToYmdInTimezone(startIso, tz) || startIso.split("T")[0]) : undefined;
-  let endDate = endIso ? (isoToYmdInTimezone(endIso, tz) || endIso.split("T")[0]) : undefined;
+  const startLocal = startIso ? isoToLocalPartsInTimezone(startIso, tz) : null;
+  const endLocal = endIso ? isoToLocalPartsInTimezone(endIso, tz) : null;
 
-  if (startIso && endIso && startDate && endDate) {
-    const start = new Date(startIso);
-    const end = new Date(endIso);
-    if (Number.isFinite(start.getTime()) && Number.isFinite(end.getTime()) && endDate > startDate) {
-      const startMinutesUtc = start.getUTCHours() * 60 + start.getUTCMinutes();
-      const endMinutesUtc = end.getUTCHours() * 60 + end.getUTCMinutes();
-      if (endMinutesUtc <= startMinutesUtc) {
-        endDate = addDays(endDate, -1);
-      }
+  const startDate = startIso ? (startLocal?.ymd || startIso.split("T")[0]) : undefined;
+  let endDate = endIso ? (endLocal?.ymd || endIso.split("T")[0]) : undefined;
+
+  if (startLocal && endLocal && startDate && endDate && endDate > startDate) {
+    // Treat as exclusive boundary only when local end time is <= local start time.
+    if (endLocal.minutes <= startLocal.minutes) {
+      endDate = addDays(endDate, -1);
+      if (endDate < startDate) endDate = startDate;
     }
   }
 
