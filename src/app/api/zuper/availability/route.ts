@@ -60,6 +60,22 @@ function getSlotKey(date: string, userName: string, startTime: string): string {
   return `${date}|${userName}|${startTime}`;
 }
 
+function parseZuperTimestamp(value?: string | null): Date | null {
+  const raw = (value || "").trim();
+  if (!raw) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    const dateOnly = new Date(`${raw}T00:00:00.000Z`);
+    return Number.isFinite(dateOnly.getTime()) ? dateOnly : null;
+  }
+  if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2})?$/.test(raw)) {
+    const normalized = `${raw.replace(" ", "T")}Z`;
+    const parsedNoTz = new Date(normalized);
+    return Number.isFinite(parsedNoTz.getTime()) ? parsedNoTz : null;
+  }
+  const parsed = new Date(raw);
+  return Number.isFinite(parsed.getTime()) ? parsed : null;
+}
+
 function timeToMinutes(time: string): number {
   const [h, m] = time.split(":").map(Number);
   return h * 60 + m;
@@ -629,11 +645,11 @@ export async function GET(request: NextRequest) {
       for (const job of jobsResult.data) {
         if (job.scheduled_start_time && !isEffectivelyUnscheduled(job)) {
           // Parse the scheduled time - Zuper returns UTC times
-          const scheduledDate = new Date(job.scheduled_start_time);
-
-          // Default: convert to Mountain Time for date/logging
-          const mtLocal = utcToLocalTime(scheduledDate, 'America/Denver');
-          const dateStr = mtLocal.dateStr;
+          const scheduledDate = parseZuperTimestamp(job.scheduled_start_time);
+          if (!scheduledDate) continue;
+          const requestTimezone = LOCATION_TIMEZONE[location || ""] || "America/Denver";
+          const requestLocal = utcToLocalTime(scheduledDate, requestTimezone);
+          const dateStr = requestLocal.dateStr;
 
           if (job.job_uid) zuperJobUids.add(job.job_uid);
 
@@ -672,7 +688,7 @@ export async function GET(request: NextRequest) {
             // Log for debugging
             console.log(`[Zuper Availability] Job: ${job.job_title}`);
             console.log(`[Zuper Availability] Scheduled UTC: ${job.scheduled_start_time}`);
-            console.log(`[Zuper Availability] MT date: ${dateStr}`);
+            console.log(`[Zuper Availability] Local date (${requestTimezone}): ${dateStr}`);
             console.log(`[Zuper Availability] Assigned user from Zuper: "${assignedUserName}" (uid: ${assignedUserUid})`);
 
             // Find matching crew member - ONLY if we know who it's assigned to
@@ -766,13 +782,14 @@ export async function GET(request: NextRequest) {
             } else {
               // Job has no assigned user — still create a booking so the frontend
               // can match by zuperJobUid and show the job is scheduled
-              const mtStartTime = `${mtLocal.hour.toString().padStart(2, "0")}:00`;
-              const startHour = mtLocal.hour;
+              const requestLocalHour = requestLocal.hour;
+              const requestStartTime = `${requestLocalHour.toString().padStart(2, "0")}:00`;
+              const startHour = requestLocalHour;
               const endTime = `${(startHour + 1).toString().padStart(2, "0")}:00`;
-              const key = getSlotKey(dateStr, "Unassigned", mtStartTime);
+              const key = getSlotKey(dateStr, "Unassigned", requestStartTime);
               zuperBookings.set(key, {
                 date: dateStr,
-                startTime: mtStartTime,
+                startTime: requestStartTime,
                 endTime,
                 userName: "Unassigned",
                 location: "",

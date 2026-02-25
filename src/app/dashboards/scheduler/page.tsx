@@ -401,8 +401,24 @@ function isoToLocalPartsInTimezone(
   iso: string,
   timezone: string
 ): { ymd: string; minutes: number } | null {
-  const d = new Date(iso);
-  if (!Number.isFinite(d.getTime())) return null;
+  const parseZuperTimestamp = (value: string): Date | null => {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      const parsedDateOnly = new Date(`${trimmed}T00:00:00.000Z`);
+      return Number.isFinite(parsedDateOnly.getTime()) ? parsedDateOnly : null;
+    }
+    if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2})?$/.test(trimmed)) {
+      const normalized = `${trimmed.replace(" ", "T")}Z`;
+      const parsedNoTz = new Date(normalized);
+      return Number.isFinite(parsedNoTz.getTime()) ? parsedNoTz : null;
+    }
+    const parsed = new Date(trimmed);
+    return Number.isFinite(parsed.getTime()) ? parsed : null;
+  };
+
+  const d = parseZuperTimestamp(iso);
+  if (!d) return null;
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: timezone,
     year: "numeric",
@@ -424,6 +440,12 @@ function isoToLocalPartsInTimezone(
   };
 }
 
+function fallbackYmdFromTimestamp(value?: string | null): string | undefined {
+  if (!value) return undefined;
+  const match = value.match(/\d{4}-\d{2}-\d{2}/);
+  return match?.[0];
+}
+
 function normalizeZuperBoundaryDates(
   startIso?: string | null,
   endIso?: string | null,
@@ -433,8 +455,8 @@ function normalizeZuperBoundaryDates(
   const startLocal = startIso ? isoToLocalPartsInTimezone(startIso, tz) : null;
   const endLocal = endIso ? isoToLocalPartsInTimezone(endIso, tz) : null;
 
-  const startDate = startIso ? (startLocal?.ymd || startIso.split("T")[0]) : undefined;
-  let endDate = endIso ? (endLocal?.ymd || endIso.split("T")[0]) : undefined;
+  const startDate = startIso ? (startLocal?.ymd || fallbackYmdFromTimestamp(startIso)) : undefined;
+  let endDate = endIso ? (endLocal?.ymd || fallbackYmdFromTimestamp(endIso)) : undefined;
 
   // Use actual Zuper local boundary dates directly.
   // Guard malformed data where end is earlier than start.

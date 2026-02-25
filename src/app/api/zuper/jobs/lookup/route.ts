@@ -158,6 +158,22 @@ async function handleLookup(projectIds: string[], projectNames: string[], catego
     return job.scheduled_end_time || job.scheduled_end_time_dt || undefined;
   };
 
+  const parseZuperTimestamp = (value?: string): Date | null => {
+    const raw = (value || "").trim();
+    if (!raw) return null;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+      const dateOnly = new Date(`${raw}T00:00:00.000Z`);
+      return Number.isFinite(dateOnly.getTime()) ? dateOnly : null;
+    }
+    if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2})?$/.test(raw)) {
+      const normalized = `${raw.replace(" ", "T")}Z`;
+      const parsedNoTz = new Date(normalized);
+      return Number.isFinite(parsedNoTz.getTime()) ? parsedNoTz : null;
+    }
+    const parsed = new Date(raw);
+    return Number.isFinite(parsed.getTime()) ? parsed : null;
+  };
+
   const isEffectivelyUnscheduled = (job: ZuperJob): boolean => {
     const start = getScheduledStart(job) || "";
     const end = getScheduledEnd(job) || "";
@@ -549,26 +565,28 @@ async function handleLookup(projectIds: string[], projectNames: string[], catego
       const scheduledEnd = getScheduledEnd(best.job);
       let scheduledDays: number | undefined;
       if (!effectivelyUnscheduled && scheduledStart && scheduledEnd) {
-        const start = new Date(scheduledStart);
-        const end = new Date(scheduledEnd);
-        const diffMs = end.getTime() - start.getTime();
-        const diffDays = diffMs / (1000 * 60 * 60 * 24);
-        // Round to nearest 0.25 (quarter day) — Zuper often stores full-day windows
-        // A 1-day job is typically 8am-5pm (same day) = ~0.375 days, round to 1
-        // A 3-day job spans 3 calendar days
-        if (diffDays > 0) {
-          // Count calendar days by default; construction spans are business days.
-          // Normalize end boundary to avoid off-by-one when Zuper returns an
-          // exclusive end timestamp for multi-day jobs.
-          const startDate = startOfDay(start);
-          const inclusiveEndDate = normalizeInclusiveEndDate(start, end);
-          const calendarDaysDiff = Math.round(
-            (inclusiveEndDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
-          );
-          // +1 because the span is inclusive: Feb 19→20 = 2 days, not 1
-          scheduledDays = Math.max(calendarDaysDiff + 1, 1);
-          if (targetCategory === JOB_CATEGORIES.CONSTRUCTION) {
-            scheduledDays = countBusinessDaysInclusive(startDate, inclusiveEndDate);
+        const start = parseZuperTimestamp(scheduledStart);
+        const end = parseZuperTimestamp(scheduledEnd);
+        if (start && end) {
+          const diffMs = end.getTime() - start.getTime();
+          const diffDays = diffMs / (1000 * 60 * 60 * 24);
+          // Round to nearest 0.25 (quarter day) — Zuper often stores full-day windows
+          // A 1-day job is typically 8am-5pm (same day) = ~0.375 days, round to 1
+          // A 3-day job spans 3 calendar days
+          if (diffDays > 0) {
+            // Count calendar days by default; construction spans are business days.
+            // Normalize end boundary to avoid off-by-one when Zuper returns an
+            // exclusive end timestamp for multi-day jobs.
+            const startDate = startOfDay(start);
+            const inclusiveEndDate = normalizeInclusiveEndDate(start, end);
+            const calendarDaysDiff = Math.round(
+              (inclusiveEndDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
+            );
+            // +1 because the span is inclusive: Feb 19→20 = 2 days, not 1
+            scheduledDays = Math.max(calendarDaysDiff + 1, 1);
+            if (targetCategory === JOB_CATEGORIES.CONSTRUCTION) {
+              scheduledDays = countBusinessDaysInclusive(startDate, inclusiveEndDate);
+            }
           }
         }
       }
