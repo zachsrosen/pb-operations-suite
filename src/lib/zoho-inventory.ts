@@ -110,7 +110,7 @@ interface ZohoTokenRefreshResponse {
 
 const DEFAULT_BASE_URL = "https://www.zohoapis.com/inventory/v1";
 const DEFAULT_ACCOUNTS_URL = "https://accounts.zoho.com";
-const DEFAULT_TIMEOUT_MS = 20_000;
+const DEFAULT_TIMEOUT_MS = 30_000;
 
 function isBlank(value: string | undefined | null): boolean {
   return !value || value.trim().length === 0;

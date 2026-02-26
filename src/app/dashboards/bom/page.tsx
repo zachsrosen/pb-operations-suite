@@ -670,17 +670,21 @@ function CustomerSearchCombobox({ value, valueName, onChange, autoSearch }: Cust
   const containerRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Auto-search on mount if autoSearch is provided and nothing selected yet
+  // Auto-search on mount if autoSearch is provided and nothing selected yet.
+  // Use only the first two words of the dealname as the query — long strings
+  // can cause Zoho's search_text to time out on large contact lists.
   useEffect(() => {
     if (autoSearch && !value && !autoSearched) {
       setAutoSearched(true);
+      const shortQuery = autoSearch.trim().split(/\s+/).slice(0, 2).join(" ");
+      if (!shortQuery) return;
       setLoading(true);
-      fetch(`/api/bom/zoho-customers?search=${encodeURIComponent(autoSearch)}`)
+      fetch(`/api/bom/zoho-customers?search=${encodeURIComponent(shortQuery)}`)
         .then((r) => r.json())
         .then((data: { customers: { contact_id: string; contact_name: string }[] }) => {
           const matches = data.customers ?? [];
           setResults(matches);
-          // Auto-select if there's an exact or very close match
+          // Auto-select if there's an exact match against the full dealname
           if (matches.length === 1) {
             onChange(matches[0].contact_id, matches[0].contact_name);
           } else if (matches.length > 1) {
