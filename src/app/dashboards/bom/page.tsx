@@ -757,10 +757,17 @@ function CustomerSearchCombobox({ value, valueName, onChange, autoSearch }: Cust
         <div className="absolute z-50 mt-1 w-72 max-h-56 overflow-y-auto rounded-lg border border-t-border bg-surface-elevated shadow-card-lg text-xs top-full left-0">
           {loading ? (
             <div className="px-3 py-2 text-muted animate-pulse">Searching…</div>
-          ) : results.length === 0 ? (
-            <div className="px-3 py-2 text-muted">{query.trim() ? "No matches" : "Type to search"}</div>
-          ) : (
-            results.map((c) => (
+          ) : (() => {
+            // Client-side filter on top of whatever Zoho returned — handles the case
+            // where search_text is ignored server-side and we get back all contacts.
+            const q = query.trim().toLowerCase();
+            const filtered = q
+              ? results.filter((c) => c.contact_name.toLowerCase().includes(q))
+              : results;
+            if (filtered.length === 0) {
+              return <div className="px-3 py-2 text-muted">{q ? "No matches" : "Type to search"}</div>;
+            }
+            return filtered.map((c) => (
               <button
                 key={c.contact_id}
                 type="button"
@@ -769,8 +776,8 @@ function CustomerSearchCombobox({ value, valueName, onChange, autoSearch }: Cust
               >
                 {c.contact_name}
               </button>
-            ))
-          )}
+            ));
+          })()}
         </div>
       )}
     </div>
