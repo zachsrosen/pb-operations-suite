@@ -20,6 +20,12 @@ const VALID_CATEGORIES = Object.values(EquipmentCategory);
 
 type ParsedNumber = { provided: false } | { provided: true; value: number | null } | { provided: true; error: string };
 
+function isPrismaMissingColumnError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const code = (error as { code?: unknown }).code;
+  return code === "P2022";
+}
+
 function parseOptionalNumber(input: Record<string, unknown>, key: string): ParsedNumber {
   if (!(key in input)) return { provided: false };
   const raw = input[key];
@@ -95,24 +101,93 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const skus = await prisma.equipmentSku.findMany({
-      where: {
-        ...(categoryParam && {
-          category: categoryParam as EquipmentCategory,
-        }),
-        ...(activeOnly && { isActive: true }),
-      },
-      include: {
-        stockLevels: {
-          select: { location: true, quantityOnHand: true },
+    const where = {
+      ...(categoryParam && {
+        category: categoryParam as EquipmentCategory,
+      }),
+      ...(activeOnly && { isActive: true }),
+    };
+    const orderBy = [
+      { category: "asc" as const },
+      { brand: "asc" as const },
+      { model: "asc" as const },
+    ];
+
+    let skus: Array<{
+      id: string;
+      category: EquipmentCategory;
+      brand: string;
+      model: string;
+      description: string | null;
+      vendorName: string | null;
+      vendorPartNumber: string | null;
+      unitSpec: number | null;
+      unitLabel: string | null;
+      unitCost: number | null;
+      sellPrice: number | null;
+      isActive: boolean;
+      zohoItemId: string | null;
+      hubspotProductId: string | null;
+      zuperItemId: string | null;
+      createdAt: Date;
+      updatedAt: Date;
+      stockLevels: { location: string; quantityOnHand: number }[];
+    }> = [];
+
+    try {
+      skus = await prisma.equipmentSku.findMany({
+        where,
+        include: {
+          stockLevels: {
+            select: { location: true, quantityOnHand: true },
+          },
         },
-      },
-      orderBy: [
-        { category: "asc" },
-        { brand: "asc" },
-        { model: "asc" },
-      ],
-    });
+        orderBy,
+      });
+    } catch (error) {
+      if (!isPrismaMissingColumnError(error)) throw error;
+
+      // Backward-compatible fallback for databases that have not applied the
+      // latest EquipmentSku migration yet.
+      console.warn(
+        "[Inventory SKUs] Falling back to legacy SKU query due to missing database columns"
+      );
+      Sentry.captureMessage(
+        "Inventory SKUs endpoint using legacy schema fallback (migration pending)",
+        "warning"
+      );
+
+      const legacySkus = await prisma.equipmentSku.findMany({
+        where,
+        select: {
+          id: true,
+          category: true,
+          brand: true,
+          model: true,
+          unitSpec: true,
+          unitLabel: true,
+          isActive: true,
+          zohoItemId: true,
+          createdAt: true,
+          updatedAt: true,
+          stockLevels: {
+            select: { location: true, quantityOnHand: true },
+          },
+        },
+        orderBy,
+      });
+
+      skus = legacySkus.map((sku) => ({
+        ...sku,
+        description: null,
+        vendorName: null,
+        vendorPartNumber: null,
+        unitCost: null,
+        sellPrice: null,
+        hubspotProductId: null,
+        zuperItemId: null,
+      }));
+    }
 
     const enriched = skus.map((sku) => ({
       ...sku,
@@ -277,6 +352,17 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ sku: { ...sku, syncHealth: buildSyncHealth(sku) } }, { status: 201 });
   } catch (error) {
+    if (isPrismaMissingColumnError(error)) {
+      console.error("SKU upsert blocked by missing database columns:", error);
+      Sentry.captureException(error);
+      return NextResponse.json(
+        {
+          error:
+            "Inventory catalog schema migration is not applied yet. Run `prisma migrate deploy` on production.",
+        },
+        { status: 503 }
+      );
+    }
     console.error("Error creating/upserting SKU:", error);
     Sentry.captureException(error);
     return NextResponse.json(
