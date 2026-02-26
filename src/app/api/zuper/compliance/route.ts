@@ -9,13 +9,11 @@ import {
   COMPLIANCE_TEAM_OVERRIDES,
 } from "@/lib/compliance-team-overrides";
 import {
-  type AssignedUser,
   STUCK_STATUSES,
   NEVER_STARTED_STATUSES,
   COMPLETED_STATUSES,
   GRACE_MS,
   CATEGORY_UID_TO_NAME,
-  getCategoryUid,
   getStatusName,
   getCompletedTimeFromHistory,
   getOnOurWayTime,
@@ -621,7 +619,16 @@ export async function GET(request: NextRequest) {
         }
         const tAcc = teamAccMap.get(team)!;
         tAcc.totalJobs++;
-        for (const u of filteredAssignedUsers) tAcc.assignedUsers.add(u.userUid);
+        // Count only users who are actually mapped to this team for userCount.
+        // Previous behavior added all assigned users for every team on the job,
+        // inflating counts when multi-team jobs were present.
+        for (const u of filteredAssignedUsers) {
+          const belongsToTeam =
+            team === "Unassigned"
+              ? u.teamNames.length === 0
+              : u.teamNames.includes(team);
+          if (belongsToTeam) tAcc.assignedUsers.add(u.userUid);
+        }
 
         if (COMPLETED_STATUSES.has(statusLower)) {
           tAcc.completedJobs++;
