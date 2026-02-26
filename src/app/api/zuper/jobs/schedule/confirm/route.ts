@@ -821,38 +821,40 @@ export async function POST(request: NextRequest) {
           ? customerNameParts[2]?.trim()
           : "See Zuper for address";
 
+        // Fetch project manager + install details before email/calendar blocks
+        let dealOwnerName: string | null = null;
+        let projectManagerName: string | null = null;
+        if (scheduleType === "survey") {
+          try {
+            const owner = await getDealOwnerContact(record.projectId);
+            dealOwnerName = owner.ownerName;
+          } catch (ownerErr) {
+            console.warn(
+              `[Zuper Confirm] Unable to resolve deal owner for ${record.projectId}:`,
+              ownerErr instanceof Error ? ownerErr.message : ownerErr
+            );
+          }
+        } else if (scheduleType === "installation" || scheduleType === "inspection") {
+          try {
+            const manager = await getDealProjectManagerContact(record.projectId);
+            projectManagerName = manager.projectManagerName;
+          } catch (managerErr) {
+            console.warn(
+              `[Zuper Confirm] Unable to resolve project manager for ${record.projectId}:`,
+              managerErr instanceof Error ? managerErr.message : managerErr
+            );
+          }
+        }
+        let installDetails: Awaited<ReturnType<typeof getInstallNotificationDetails>>["details"];
+        if (scheduleType === "installation") {
+          const detailResult = await getInstallNotificationDetails(record.projectId);
+          installDetails = detailResult.details;
+          if (detailResult.warning) {
+            console.warn(`[Zuper Confirm] ${detailResult.warning}`);
+          }
+        }
+
         if (recipientEmail) {
-          let dealOwnerName: string | null = null;
-          let projectManagerName: string | null = null;
-          if (scheduleType === "survey") {
-            try {
-              const owner = await getDealOwnerContact(record.projectId);
-              dealOwnerName = owner.ownerName;
-            } catch (ownerErr) {
-              console.warn(
-                `[Zuper Confirm] Unable to resolve deal owner for ${record.projectId}:`,
-                ownerErr instanceof Error ? ownerErr.message : ownerErr
-              );
-            }
-          } else if (scheduleType === "installation" || scheduleType === "inspection") {
-            try {
-              const manager = await getDealProjectManagerContact(record.projectId);
-              projectManagerName = manager.projectManagerName;
-            } catch (managerErr) {
-              console.warn(
-                `[Zuper Confirm] Unable to resolve project manager for ${record.projectId}:`,
-                managerErr instanceof Error ? managerErr.message : managerErr
-              );
-            }
-          }
-          let installDetails: Awaited<ReturnType<typeof getInstallNotificationDetails>>["details"];
-          if (scheduleType === "installation") {
-            const detailResult = await getInstallNotificationDetails(record.projectId);
-            installDetails = detailResult.details;
-            if (detailResult.warning) {
-              console.warn(`[Zuper Confirm] ${detailResult.warning}`);
-            }
-          }
           let googleCalendarEventUrl: string | undefined;
           if (scheduleType === "survey") {
             googleCalendarEventUrl =
@@ -1013,6 +1015,9 @@ export async function POST(request: NextRequest) {
                 notes: record.notes || undefined,
                 zuperJobUid: zuperJobUid || record.zuperJobUid || undefined,
                 calendarId: installCalendarId,
+                installDetails,
+                scheduledBy: session.user.name || session.user.email,
+                projectManagerName: projectManagerName || undefined,
               });
               if (!calendarSync.success) {
                 console.warn(`[Zuper Confirm] Google Calendar install sync warning: ${calendarSync.error}`);

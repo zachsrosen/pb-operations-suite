@@ -760,6 +760,17 @@ export async function upsertInstallationCalendarEvent(params: {
   zuperJobUid?: string;
   calendarId: string;
   impersonateEmail?: string;
+  installDetails?: {
+    forecastedInstallDays?: number;
+    installerDays?: number;
+    electricianDays?: number;
+    installersCount?: number;
+    electriciansCount?: number;
+    installNotes?: string;
+    equipmentSummary?: string;
+  };
+  scheduledBy?: string;
+  projectManagerName?: string;
 }): Promise<{ success: boolean; error?: string }> {
   if (!isEnabled()) return { success: true };
 
@@ -812,16 +823,59 @@ export async function upsertInstallationCalendarEvent(params: {
     return { success: true };
   }
 
+  // Strip internal tags ([TENTATIVE], [CONFIRMED], [TZ:...]) from notes
+  const cleanedNotes = params.notes
+    ? params.notes
+        .replace(/\[(?:TENTATIVE|CONFIRMED)\]\s*/gi, "")
+        .replace(/\[TZ:[^\]]+\]/gi, "")
+        .trim()
+    : "";
+
+  const descriptionLines: string[] = [
+    `Project: ${params.projectName}`,
+  ];
+
+  // Install details (crew & equipment)
+  const d = params.installDetails;
+  if (d) {
+    descriptionLines.push("");
+    descriptionLines.push("Install Details:");
+    if (d.forecastedInstallDays != null) descriptionLines.push(`Forecasted Install Days: ${d.forecastedInstallDays}`);
+    if (d.installerDays != null) descriptionLines.push(`Installer Days: ${d.installerDays}`);
+    if (d.electricianDays != null) descriptionLines.push(`Electrician Days: ${d.electricianDays}`);
+    if (d.installersCount != null) descriptionLines.push(`Installers: ${d.installersCount}`);
+    if (d.electriciansCount != null) descriptionLines.push(`Electricians: ${d.electriciansCount}`);
+
+    if (d.equipmentSummary) {
+      descriptionLines.push("");
+      descriptionLines.push("Equipment:");
+      descriptionLines.push(d.equipmentSummary);
+    }
+
+    if (d.installNotes) {
+      descriptionLines.push(`Install Notes: ${d.installNotes}`);
+    } else {
+      descriptionLines.push("Install Notes: N/A");
+    }
+  }
+
+  // Scheduling metadata
+  if (params.scheduledBy || params.projectManagerName || cleanedNotes) {
+    descriptionLines.push("");
+    if (params.scheduledBy) descriptionLines.push(`Scheduled by: ${params.scheduledBy}`);
+    if (params.projectManagerName) descriptionLines.push(`Project Manager: ${params.projectManagerName}`);
+    if (cleanedNotes) descriptionLines.push(`Notes: ${cleanedNotes}`);
+  }
+
+  // Links
+  descriptionLines.push("");
+  descriptionLines.push(`HubSpot Deal: ${hubSpotDealUrl}`);
+  if (zuperJobUrl) descriptionLines.push(`Zuper Job: ${zuperJobUrl}`);
+
   const body = {
     summary: `Installation - ${params.customerName}`,
     location: params.customerAddress,
-    description: [
-      `Project: ${params.projectName}`,
-      `Deal ID: ${params.projectId}`,
-      `HubSpot Deal: ${hubSpotDealUrl}`,
-      zuperJobUrl ? `Zuper Job: ${zuperJobUrl}` : "",
-      params.notes ? `Notes: ${params.notes}` : "",
-    ].filter(Boolean).join("\n"),
+    description: descriptionLines.join("\n"),
     start: {
       dateTime: `${params.startDate}T${startTime}:00`,
       timeZone: timezone,

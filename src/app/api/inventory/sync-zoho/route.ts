@@ -364,12 +364,14 @@ export async function POST(request: NextRequest) {
           },
           update: {
             isActive: true,
+            zohoItemId: item.item_id,
           },
           create: {
             category: mapped.category,
             brand: mapped.brand,
             model: mapped.model,
             isActive: true,
+            zohoItemId: item.item_id,
           },
           select: { id: true, category: true, brand: true, model: true },
         });
