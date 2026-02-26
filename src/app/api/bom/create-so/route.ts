@@ -186,6 +186,7 @@ export async function POST(request: NextRequest) {
   // Name-only fallback is intentionally avoided: unmatched items are skipped
   // so we never create phantom products in Zoho's item catalog.
   let unmatchedCount = 0;
+  const unmatchedItems: string[] = [];
   const resolvedItems = await Promise.all(bomItems.map(async (item) => {
     const name =
       item.model
@@ -202,6 +203,7 @@ export async function POST(request: NextRequest) {
 
     if (!zohoItemId) {
       unmatchedCount++;
+      unmatchedItems.push(name); // record what we searched for so caller can diagnose
       return null; // will be filtered out — do not create name-only lines
     }
 
@@ -291,5 +293,6 @@ export async function POST(request: NextRequest) {
     salesorder_id: soResult.salesorder_id,
     salesorder_number: soResult.salesorder_number,
     unmatchedCount,
+    unmatchedItems,
   });
 }

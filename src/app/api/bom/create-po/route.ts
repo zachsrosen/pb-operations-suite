@@ -190,6 +190,7 @@ export async function POST(request: NextRequest) {
   // so we never create phantom products in Zoho's item catalog.
   // Note: matched items must have "Can be Purchased" enabled in Zoho to appear on POs.
   let unmatchedCount = 0;
+  const unmatchedItems: string[] = [];
   const resolvedItems = await Promise.all(bomItems.map(async (item) => {
     const name =
       item.model
@@ -206,6 +207,7 @@ export async function POST(request: NextRequest) {
 
     if (!zohoItemId) {
       unmatchedCount++;
+      unmatchedItems.push(name); // record what we searched for so caller can diagnose
       return null; // will be filtered out — do not create name-only lines
     }
 
@@ -297,5 +299,6 @@ export async function POST(request: NextRequest) {
     purchaseorder_id: poResult.purchaseorder_id,
     purchaseorder_number: poResult.purchaseorder_number,
     unmatchedCount,
+    unmatchedItems,
   });
 }
