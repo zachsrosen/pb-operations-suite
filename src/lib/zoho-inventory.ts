@@ -72,6 +72,7 @@ export interface ZohoPurchaseOrderLineItem {
 
 export interface ZohoPurchaseOrderPayload {
   vendor_id: string;
+  purchaseorder_number?: string;
   reference_number: string;
   notes?: string;
   status: "draft";
@@ -96,6 +97,7 @@ export interface ZohoSalesOrderLineItem {
 
 export interface ZohoSalesOrderPayload {
   customer_id: string;
+  salesorder_number?: string;
   reference_number: string;
   notes?: string;
   status: "draft";
