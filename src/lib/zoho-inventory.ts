@@ -230,6 +230,17 @@ export class ZohoInventoryClient {
     return this.listContacts("customer");
   }
 
+  /** Search customers by name using Zoho's server-side search_text filter.
+   *  Returns only the first page (up to 200 matches) — fast even with 9k+ contacts. */
+  async searchCustomers(query: string): Promise<ZohoVendor[]> {
+    const response = await this.request<ZohoVendorListResponse>("/contacts", {
+      contact_type: "customer",
+      search_text: query,
+      per_page: 200,
+    });
+    return Array.isArray(response.contacts) ? response.contacts : [];
+  }
+
   private async listContacts(contactType: "vendor" | "customer"): Promise<ZohoVendor[]> {
     const contacts: ZohoVendor[] = [];
     let page = 1;

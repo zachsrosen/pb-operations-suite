@@ -651,6 +651,129 @@ function ContactCombobox({ contacts, value, onChange, placeholder = "Search…",
 }
 
 /* ------------------------------------------------------------------ */
+/*  CustomerSearchCombobox — live server-side search (9k+ contacts)    */
+/* ------------------------------------------------------------------ */
+
+interface CustomerSearchComboboxProps {
+  value: string;           // selected contact_id
+  valueName: string;       // display name of selected contact
+  onChange: (id: string, name: string) => void;
+  autoSearch?: string;     // initial search query for auto-match (e.g. project customer name)
+}
+
+function CustomerSearchCombobox({ value, valueName, onChange, autoSearch }: CustomerSearchComboboxProps) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const [results, setResults] = useState<{ contact_id: string; contact_name: string }[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [autoSearched, setAutoSearched] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Auto-search on mount if autoSearch is provided and nothing selected yet
+  useEffect(() => {
+    if (autoSearch && !value && !autoSearched) {
+      setAutoSearched(true);
+      setLoading(true);
+      fetch(`/api/bom/zoho-customers?search=${encodeURIComponent(autoSearch)}`)
+        .then((r) => r.json())
+        .then((data: { customers: { contact_id: string; contact_name: string }[] }) => {
+          const matches = data.customers ?? [];
+          setResults(matches);
+          // Auto-select if there's an exact or very close match
+          if (matches.length === 1) {
+            onChange(matches[0].contact_id, matches[0].contact_name);
+          } else if (matches.length > 1) {
+            const exact = matches.find(
+              (c) => c.contact_name.toLowerCase() === autoSearch.toLowerCase()
+            );
+            if (exact) onChange(exact.contact_id, exact.contact_name);
+            else setOpen(true); // show dropdown with candidates
+          }
+        })
+        .catch(() => {})
+        .finally(() => setLoading(false));
+    }
+  }, [autoSearch, value, autoSearched, onChange]);
+
+  // Debounced search as user types
+  function handleInput(q: string) {
+    setQuery(q);
+    setOpen(true);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (!q.trim()) { setResults([]); return; }
+    debounceRef.current = setTimeout(() => {
+      setLoading(true);
+      fetch(`/api/bom/zoho-customers?search=${encodeURIComponent(q)}`)
+        .then((r) => r.json())
+        .then((data: { customers: { contact_id: string; contact_name: string }[] }) => setResults(data.customers ?? []))
+        .catch(() => setResults([]))
+        .finally(() => setLoading(false));
+    }, 350);
+  }
+
+  // Close on outside click
+  useEffect(() => {
+    function onMouseDown(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onMouseDown);
+    return () => document.removeEventListener("mousedown", onMouseDown);
+  }, []);
+
+  function handleSelect(id: string, name: string) {
+    onChange(id, name);
+    setQuery("");
+    setOpen(false);
+  }
+
+  return (
+    <div ref={containerRef} className="relative flex items-center gap-1">
+      <input
+        type="text"
+        className="text-xs rounded bg-surface-2 border border-t-border text-foreground px-2 py-1 w-48 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+        placeholder={valueName || (loading ? "Searching…" : "Type to search customers…")}
+        value={open ? query : (valueName || "")}
+        onFocus={() => { setOpen(true); setQuery(""); }}
+        onChange={(e) => handleInput(e.target.value)}
+      />
+      {value && !open && (
+        <button
+          type="button"
+          onMouseDown={(e) => { e.preventDefault(); onChange("", ""); setQuery(""); setResults([]); }}
+          className="text-muted hover:text-foreground text-sm leading-none"
+          title="Clear selection"
+        >
+          ×
+        </button>
+      )}
+      {open && (
+        <div className="absolute z-50 mt-1 w-72 max-h-56 overflow-y-auto rounded-lg border border-t-border bg-surface-elevated shadow-card-lg text-xs top-full left-0">
+          {loading ? (
+            <div className="px-3 py-2 text-muted animate-pulse">Searching…</div>
+          ) : results.length === 0 ? (
+            <div className="px-3 py-2 text-muted">{query.trim() ? "No matches" : "Type to search"}</div>
+          ) : (
+            results.map((c) => (
+              <button
+                key={c.contact_id}
+                type="button"
+                onMouseDown={() => handleSelect(c.contact_id, c.contact_name)}
+                className={`w-full text-left px-3 py-1.5 hover:bg-surface-2 transition-colors ${c.contact_id === value ? "font-medium text-cyan-600 dark:text-cyan-400" : "text-foreground"}`}
+              >
+                {c.contact_name}
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  Component                                                           */
 /* ------------------------------------------------------------------ */
 
@@ -702,10 +825,8 @@ function BomDashboardInner() {
   const [zohoPoId, setZohoPoId] = useState<string | null>(null);
   const [creatingPo, setCreatingPo] = useState(false);
   // Zoho SO state
-  const [zohoCustomers, setZohoCustomers] = useState<{ contact_id: string; contact_name: string }[] | null>(null);
-  const [customersLoading, setCustomersLoading] = useState(false);
-  const [zohoCustomerError, setZohoCustomerError] = useState<string | null>(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
+  const [selectedCustomerName, setSelectedCustomerName] = useState<string>("");
   const [zohoSoId, setZohoSoId] = useState<string | null>(null);
   const [creatingSo, setCreatingSo] = useState(false);
   // Diff / compare
@@ -841,24 +962,7 @@ function BomDashboardInner() {
       .finally(() => setVendorsLoading(false));
   }, [savedVersion, linkedProject, zohoVendors]);
 
-  /* ---- Fetch Zoho customers when BOM is saved + project linked ---- */
-  useEffect(() => {
-    if (!savedVersion || !linkedProject || zohoCustomers !== null) return;
-    setCustomersLoading(true);
-    fetch("/api/bom/zoho-customers")
-      .then((r) => r.json())
-      .then((data: { customers: { contact_id: string; contact_name: string }[]; error?: string }) => {
-        setZohoCustomers(data.customers ?? []);
-        if (data.error) setZohoCustomerError(data.error);
-      })
-      .catch(() => {
-        setZohoCustomers([]);
-        setZohoCustomerError("Could not reach /api/bom/zoho-customers");
-      })
-      .finally(() => setCustomersLoading(false));
-  }, [savedVersion, linkedProject, zohoCustomers]);
-
-  /* ---- Load Drive design files when project has a design folder ---- */
+/* ---- Load Drive design files when project has a design folder ---- */
   useEffect(() => {
     const folderId = linkedProject?.designFolderUrl;
     if (!folderId) { setDriveFiles([]); return; }
@@ -969,12 +1073,12 @@ function BomDashboardInner() {
       if (!res.ok) throw new Error(`Save failed (${res.status})`);
       const saved = await res.json() as { id: string; version: number; createdAt: string };
       setSavedVersion(saved.version);
-      setZohoPoId(null);         // New save = no PO yet
-      setZohoSoId(null);         // New save = no SO yet
-      setZohoVendors(null);      // Re-fetch vendors for this project on next render
-      setZohoCustomers(null);    // Re-fetch customers for this project on next render
-      setSelectedVendorId("");   // Clear stale vendor selection
-      setSelectedCustomerId(""); // Clear stale customer selection
+      setZohoPoId(null);            // New save = no PO yet
+      setZohoSoId(null);            // New save = no SO yet
+      setZohoVendors(null);         // Re-fetch vendors for this project on next render
+      setSelectedVendorId("");      // Clear stale vendor selection
+      setSelectedCustomerId("");    // Clear stale customer selection
+      setSelectedCustomerName("");  // Clear stale customer name
       // Reload history list
       const histRes = await fetch(`/api/bom/history?dealId=${encodeURIComponent(targetProject.hs_object_id)}`);
       if (histRes.ok) {
@@ -1125,9 +1229,9 @@ function BomDashboardInner() {
         setZohoPoId(null);
         setZohoSoId(null);
         setZohoVendors(null);
-        setZohoCustomers(null);
         setSelectedVendorId("");
         setSelectedCustomerId("");
+        setSelectedCustomerName("");
         setAutoLinkSuggestion(null);
         // Remove stale ?deal= param from URL without a navigation
         const url = new URL(window.location.href);
@@ -2333,8 +2437,8 @@ function BomDashboardInner() {
                         : "Zoho vendors unavailable (or none found)."}
                     </span>
                   )}
-                  {/* Zoho SO — only show when saved + customers available */}
-                  {savedVersion && zohoCustomers && zohoCustomers.length > 0 && (
+                  {/* Zoho SO — show when saved */}
+                  {savedVersion && (
                     zohoSoId ? (
                       <a
                         href={`https://inventory.zoho.com/app#/salesorders/${zohoSoId}`}
@@ -2346,11 +2450,11 @@ function BomDashboardInner() {
                       </a>
                     ) : (
                       <div className="flex items-center gap-2">
-                        <ContactCombobox
-                          contacts={zohoCustomers}
+                        <CustomerSearchCombobox
                           value={selectedCustomerId}
-                          onChange={setSelectedCustomerId}
-                          placeholder="Search customers…"
+                          valueName={selectedCustomerName}
+                          onChange={(id, name) => { setSelectedCustomerId(id); setSelectedCustomerName(name); }}
+                          autoSearch={linkedProject?.dealname}
                         />
                         <button
                           onClick={createSo}
@@ -2363,31 +2467,19 @@ function BomDashboardInner() {
                       </div>
                     )
                   )}
-                  {customersLoading && (
-                    <span className="text-xs text-muted animate-pulse">Loading customers…</span>
-                  )}
-                  {savedVersion && !customersLoading && zohoCustomers && zohoCustomers.length === 0 && (
-                    <span className="text-xs text-amber-600 dark:text-amber-400">
-                      {zohoCustomerError
-                        ? `Zoho customers error: ${zohoCustomerError}`
-                        : "Zoho customers unavailable (or none found)."}
-                    </span>
-                  )}
-                  {savedVersion && !vendorsLoading && !customersLoading && (
+                  {savedVersion && !vendorsLoading && (
                     <button
                       onClick={() => {
                         setZohoVendors(null);
-                        setZohoCustomers(null);
                         setZohoVendorError(null);
-                        setZohoCustomerError(null);
                       }}
                       className="text-xs text-cyan-600 dark:text-cyan-400 hover:underline"
                     >
-                      Retry Zoho lists
+                      Retry Zoho vendors
                     </button>
                   )}
                   <button
-                    onClick={() => { setLinkedProject(null); setImportTab("upload"); setDriveFiles([]); setSnapshots([]); setSavedVersion(null); setZohoPoId(null); setZohoVendors(null); setZohoSoId(null); setZohoCustomers(null); setSelectedVendorId(""); setSelectedCustomerId(""); router.replace("/dashboards/bom"); }}
+                    onClick={() => { setLinkedProject(null); setImportTab("upload"); setDriveFiles([]); setSnapshots([]); setSavedVersion(null); setZohoPoId(null); setZohoVendors(null); setZohoSoId(null); setSelectedVendorId(""); setSelectedCustomerId(""); setSelectedCustomerName(""); router.replace("/dashboards/bom"); }}
                     className="text-xs text-muted hover:text-foreground"
                   >
                     Unlink
@@ -2420,9 +2512,9 @@ function BomDashboardInner() {
                             setZohoPoId(null);
                             setZohoSoId(null);
                             setZohoVendors(null);
-                            setZohoCustomers(null);
                             setSelectedVendorId("");
                             setSelectedCustomerId("");
+                            setSelectedCustomerName("");
                           }}
                           className="w-full text-left px-4 py-2.5 text-sm text-foreground hover:bg-surface-2 transition-colors"
                         >
@@ -2587,10 +2679,10 @@ function BomDashboardInner() {
                               setSavedVersion(snap.version);
                               setZohoPoId(snap.zohoPoId ?? null);
                               setZohoSoId(snap.zohoSoId ?? null);
-                              setZohoVendors(null);      // re-fetch vendors for this version
-                              setZohoCustomers(null);    // re-fetch customers for this version
-                              setSelectedVendorId("");   // clear stale selection
-                              setSelectedCustomerId(""); // clear stale selection
+                              setZohoVendors(null);         // re-fetch vendors for this version
+                              setSelectedVendorId("");      // clear stale selection
+                              setSelectedCustomerId("");    // clear stale selection
+                              setSelectedCustomerName("");  // clear stale selection
                               addToast({ type: "success", title: `Loaded v${snap.version}` });
                             }}
                             className="text-xs text-cyan-600 dark:text-cyan-400 hover:underline"
