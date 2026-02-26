@@ -18,6 +18,7 @@ export interface ZohoInventoryItem {
   item_id: string;
   name: string;
   sku?: string;
+  description?: string;
   status?: string;
   stock_on_hand?: number | string;
   available_stock?: number | string;

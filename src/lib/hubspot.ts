@@ -387,6 +387,7 @@ export interface Project {
 export interface LineItem {
   id: string;
   name: string;
+  sku: string;
   description: string;
   quantity: number;
   price: number;
@@ -1537,6 +1538,8 @@ export async function fetchLineItemsForDeal(dealId: string): Promise<LineItem[]>
       inputs: lineItemIds.map((id) => ({ id })),
       properties: [
         "name",
+        "hs_sku",
+        "sku",
         "description",
         "quantity",
         "price",
@@ -1553,6 +1556,7 @@ export async function fetchLineItemsForDeal(dealId: string): Promise<LineItem[]>
     return lineItemsResponse.results.map((item) => ({
       id: item.id,
       name: String(item.properties.name || ""),
+      sku: String(item.properties.hs_sku || item.properties.sku || ""),
       description: String(item.properties.description || ""),
       quantity: Number(item.properties.quantity) || 1,
       price: Number(item.properties.price) || 0,

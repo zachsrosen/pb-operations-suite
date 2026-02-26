@@ -30,6 +30,7 @@ interface BomItem {
   brand: string | null;
   model: string | null;
   description: string;
+  aiFeedbackNotes?: string | null;
   qty: number | string;
   unitSpec?: number | string | null;
   unitLabel?: string | null;

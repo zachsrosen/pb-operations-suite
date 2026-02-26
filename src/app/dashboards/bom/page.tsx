@@ -31,6 +31,7 @@ interface BomItem {
   brand: string | null;
   model: string | null;
   description: string;
+  aiFeedbackNotes?: string | null;
   qty: number | string;
   unitSpec?: string | number | null;
   unitLabel?: string | null;
@@ -122,6 +123,20 @@ interface PricingMatch {
   unitCost: number | null;
   sellPrice: number | null;
   marginPercent: number | null;
+}
+
+interface LinkedBomProduct {
+  id: string;
+  name: string;
+  sku: string | null;
+  description: string | null;
+  manufacturer: string | null;
+  productCategory: string | null;
+  quantity: number;
+  zohoItemId: string | null;
+  zohoName: string | null;
+  zohoSku: string | null;
+  zohoDescription: string | null;
 }
 
 /* Saved snapshot row from /api/bom/history */
@@ -285,6 +300,122 @@ function scoreSkuMatch(sku: InternalCatalogSku, item: BomItem): number {
 function formatMoney(value: number | null): string {
   if (value == null) return "—";
   return `$${value.toFixed(2)}`;
+}
+
+function isBlankText(value: string | null | undefined): boolean {
+  return !value || value.trim().length === 0;
+}
+
+function inferLinkedBrand(product: LinkedBomProduct): string | null {
+  return product.manufacturer?.trim() || null;
+}
+
+function inferLinkedModel(product: LinkedBomProduct): string | null {
+  const sku = product.sku?.trim() || product.zohoSku?.trim();
+  if (sku) return sku;
+
+  const rawName = product.name?.trim() || product.zohoName?.trim() || "";
+  if (!rawName) return null;
+
+  const maker = inferLinkedBrand(product);
+  if (maker) {
+    const makerNorm = normalizeText(maker);
+    const nameNorm = normalizeText(rawName);
+    if (nameNorm.startsWith(makerNorm)) {
+      const parts = rawName.split(" ");
+      if (parts.length > 1) {
+        const trimmed = parts.slice(1).join(" ").trim();
+        if (trimmed) return trimmed;
+      }
+    }
+  }
+
+  return rawName;
+}
+
+function inferLinkedDescription(product: LinkedBomProduct): string | null {
+  return (
+    product.description?.trim() ||
+    product.zohoDescription?.trim() ||
+    product.name?.trim() ||
+    product.zohoName?.trim() ||
+    null
+  );
+}
+
+function mapLinkedCategoryToBomCategory(rawCategory: string | null | undefined): BomCategory | null {
+  const normalized = normalizeText(rawCategory);
+  if (!normalized) return null;
+  if (normalized.includes("module")) return "MODULE";
+  if (normalized.includes("battery")) return "BATTERY";
+  if (normalized.includes("inverter")) return "INVERTER";
+  if (normalized.includes("ev")) return "EV_CHARGER";
+  if (normalized.includes("charger")) return "EV_CHARGER";
+  if (normalized.includes("rack")) return "RACKING";
+  if (normalized.includes("rail")) return "RACKING";
+  if (normalized.includes("rapid")) return "RAPID_SHUTDOWN";
+  if (normalized.includes("shutdown")) return "RAPID_SHUTDOWN";
+  if (normalized.includes("monitor")) return "MONITORING";
+  if (normalized.includes("gateway")) return "MONITORING";
+  if (normalized.includes("electrical")) return "ELECTRICAL_BOS";
+  if (normalized.includes("bos")) return "ELECTRICAL_BOS";
+  return null;
+}
+
+function scoreLinkedMatch(item: BomItem, product: LinkedBomProduct): number {
+  const itemTokens = new Set([
+    ...tokenize(item.brand),
+    ...tokenize(item.model),
+    ...tokenize(item.description),
+  ]);
+  const productTokens = new Set([
+    ...tokenize(product.name),
+    ...tokenize(product.description),
+    ...tokenize(product.sku),
+    ...tokenize(product.zohoName),
+    ...tokenize(product.zohoDescription),
+    ...tokenize(product.zohoSku),
+    ...tokenize(product.manufacturer),
+  ]);
+
+  const tokenScore = tokenSimilarity(itemTokens, productTokens);
+  let score = tokenScore * 0.8;
+
+  const linkedCategory = mapLinkedCategoryToBomCategory(product.productCategory);
+  if (linkedCategory && linkedCategory === item.category) {
+    score += 0.2;
+  }
+
+  const itemModelNorm = normalizeText(item.model);
+  const productSkuNorm = normalizeText(product.sku || product.zohoSku);
+  const productNameNorm = normalizeText(product.name || product.zohoName);
+  if (
+    itemModelNorm &&
+    ((productSkuNorm && productSkuNorm.includes(itemModelNorm)) ||
+      (productNameNorm && productNameNorm.includes(itemModelNorm)))
+  ) {
+    score += 0.15;
+  }
+
+  return Math.min(1, score);
+}
+
+function findBestLinkedProduct(item: BomItem, products: LinkedBomProduct[]): LinkedBomProduct | null {
+  if (!products.length) return null;
+
+  let best: LinkedBomProduct | null = null;
+  let bestScore = 0;
+
+  for (const product of products) {
+    const score = scoreLinkedMatch(item, product);
+    if (score > bestScore) {
+      best = product;
+      bestScore = score;
+    }
+  }
+
+  if (bestScore < 0.35) return null;
+  return best;
 }
 
 // Non-product keys in a ComparisonRow that should be ignored when iterating sources
@@ -453,6 +584,7 @@ function BomDashboardInner() {
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [internalSkus, setInternalSkus] = useState<InternalCatalogSku[]>([]);
+  const [backfillingLinkedProducts, setBackfillingLinkedProducts] = useState(false);
 
   // Derived source list — updates automatically when comparison data arrives
   const catalogSources = sourcesFromRows(comparisonRows);
@@ -1031,6 +1163,94 @@ function BomDashboardInner() {
     }
   }, [jsonInput, loadBomData]);
 
+  /* ---- Backfill empty BOM fields from linked HubSpot/Zoho products ---- */
+  const handleBackfillFromLinkedProducts = useCallback(async () => {
+    if (!linkedProject) {
+      addToast({ type: "error", title: "Link a HubSpot project first" });
+      return;
+    }
+
+    setBackfillingLinkedProducts(true);
+    try {
+      const res = await fetch(`/api/bom/linked-products?dealId=${encodeURIComponent(linkedProject.hs_object_id)}`);
+      const data = await res.json() as {
+        products?: LinkedBomProduct[];
+        error?: string;
+        summary?: { hubspotLinkedCount: number; zohoMatchedCount: number };
+      };
+
+      if (!res.ok) {
+        throw new Error(data.error || `Backfill failed (${res.status})`);
+      }
+
+      const linkedProducts = Array.isArray(data.products) ? data.products : [];
+      if (!linkedProducts.length) {
+        addToast({ type: "error", title: "No linked products found for this deal" });
+        return;
+      }
+
+      let rowsUpdated = 0;
+      let fieldsFilled = 0;
+
+      const nextItems = items.map((item) => {
+        const best = findBestLinkedProduct(item, linkedProducts);
+        if (!best) return item;
+
+        let changed = false;
+        const next: BomItem = { ...item };
+
+        if (isBlankText(next.brand)) {
+          const inferredBrand = inferLinkedBrand(best);
+          if (inferredBrand) {
+            next.brand = inferredBrand;
+            changed = true;
+            fieldsFilled += 1;
+          }
+        }
+
+        if (isBlankText(next.model)) {
+          const inferredModel = inferLinkedModel(best);
+          if (inferredModel) {
+            next.model = inferredModel;
+            changed = true;
+            fieldsFilled += 1;
+          }
+        }
+
+        if (isBlankText(next.description)) {
+          const inferredDescription = inferLinkedDescription(best);
+          if (inferredDescription) {
+            next.description = inferredDescription;
+            changed = true;
+            fieldsFilled += 1;
+          }
+        }
+
+        if (!changed) return item;
+        rowsUpdated += 1;
+        return next;
+      });
+
+      if (fieldsFilled === 0) {
+        addToast({ type: "success", title: "No empty BOM fields needed backfill" });
+        return;
+      }
+
+      setItems(nextItems);
+      const zohoSummary = data.summary
+        ? ` (Zoho matches: ${data.summary.zohoMatchedCount}/${data.summary.hubspotLinkedCount})`
+        : "";
+      addToast({
+        type: "success",
+        title: `Backfilled ${fieldsFilled} field${fieldsFilled === 1 ? "" : "s"} across ${rowsUpdated} item${rowsUpdated === 1 ? "" : "s"}${zohoSummary}`,
+      });
+    } catch (e) {
+      addToast({ type: "error", title: e instanceof Error ? e.message : "Failed to backfill linked products" });
+    } finally {
+      setBackfillingLinkedProducts(false);
+    }
+  }, [linkedProject, items, addToast]);
+
   /* ---- Editable table ---- */
   const updateItem = useCallback(
     (id: string, field: keyof BomItem, value: string | number | null) => {
@@ -1052,6 +1272,7 @@ function BomDashboardInner() {
       brand: "",
       model: "",
       description: "",
+      aiFeedbackNotes: "",
       qty: 1,
       unitSpec: null,
       unitLabel: null,
@@ -1147,6 +1368,7 @@ function BomDashboardInner() {
         brand: item.brand || "",
         model: item.model || "",
         description: item.description,
+        aiFeedbackNotes: item.aiFeedbackNotes || "",
         qty: String(item.qty),
         unitSpec: item.unitSpec != null ? String(item.unitSpec) : "",
         unitLabel: item.unitLabel || "",
@@ -1189,15 +1411,16 @@ function BomDashboardInner() {
       lines.push("");
       const srcHeaders = catalogSources.map((s) => SOURCE_DISPLAY_LABELS[s] ?? s).join(" | ");
       const srcSeps = catalogSources.map(() => "------").join("|");
-      lines.push(`| Brand | Model | Description | Qty | Spec | Unit Cost | Sell Price | Margin |${srcHeaders ? ` ${srcHeaders} |` : ""}`);
-      lines.push(`|-------|-------|-------------|-----|------|-----------|------------|--------|${srcSeps ? `${srcSeps}|` : ""}`);
+      lines.push(`| Brand | Model | Description | AI Notes | Qty | Spec | Unit Cost | Sell Price | Margin |${srcHeaders ? ` ${srcHeaders} |` : ""}`);
+      lines.push(`|-------|-------|-------------|----------|-----|------|-----------|------------|--------|${srcSeps ? `${srcSeps}|` : ""}`);
       for (const item of catItems) {
         const flags = item.flags?.length ? ` ⚠️ ${item.flags.join(", ")}` : "";
         const status = catalogStatus.get(item.id);
         const pricing = pricingByItem.get(item.id);
         const srcCols = catalogSources.map((s) => status?.[s] ? "✅" : "—").join(" | ");
+        const aiNotes = (item.aiFeedbackNotes || "—").replace(/\|/g, "/").replace(/\s+/g, " ").trim() || "—";
         lines.push(
-          `| ${item.brand || "—"} | ${item.model || "—"} | ${item.description}${flags} | ${item.qty} | ${item.unitSpec || ""} ${item.unitLabel || ""} | ${formatMoney(pricing?.unitCost ?? null)} | ${formatMoney(pricing?.sellPrice ?? null)} | ${pricing?.marginPercent != null ? `${pricing.marginPercent.toFixed(1)}%` : "—"} |${srcCols ? ` ${srcCols} |` : ""}`
+          `| ${item.brand || "—"} | ${item.model || "—"} | ${item.description}${flags} | ${aiNotes} | ${item.qty} | ${item.unitSpec || ""} ${item.unitLabel || ""} | ${formatMoney(pricing?.unitCost ?? null)} | ${formatMoney(pricing?.sellPrice ?? null)} | ${pricing?.marginPercent != null ? `${pricing.marginPercent.toFixed(1)}%` : "—"} |${srcCols ? ` ${srcCols} |` : ""}`
         );
       }
       lines.push("");
@@ -1928,6 +2151,14 @@ function BomDashboardInner() {
                 ↑ Save to Inventory
               </button>
               <button
+                onClick={handleBackfillFromLinkedProducts}
+                disabled={!linkedProject || backfillingLinkedProducts}
+                className="px-4 py-2 rounded-lg bg-surface border border-t-border text-sm text-foreground hover:bg-surface-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                title={!linkedProject ? "Link a HubSpot project first" : "Fill blank BOM fields from linked HubSpot/Zoho products"}
+              >
+                {backfillingLinkedProducts ? "⟳ Backfilling…" : "⇄ Fill Empty from Linked Products"}
+              </button>
+              <button
                 onClick={handleExportPdf}
                 disabled={!bom}
                 className="px-4 py-2 rounded-lg bg-surface border border-t-border text-sm text-foreground hover:bg-surface-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
@@ -2210,18 +2441,19 @@ function BomDashboardInner() {
                   </button>
                 </div>
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
+                  <table className="w-full min-w-[1650px] text-sm">
                     <thead>
                       <tr className="text-xs text-muted border-b border-t-border">
-                        <th className="text-left px-4 py-2 font-medium w-32">Brand</th>
-                        <th className="text-left px-4 py-2 font-medium w-44">Model</th>
-                        <th className="text-left px-4 py-2 font-medium">Description</th>
+                        <th className="text-left px-4 py-2 font-medium w-40">Brand</th>
+                        <th className="text-left px-4 py-2 font-medium w-56">Model</th>
+                        <th className="text-left px-4 py-2 font-medium w-[30rem]">Description</th>
+                        <th className="text-left px-4 py-2 font-medium w-[26rem]">AI Feedback Notes</th>
                         <th className="text-left px-4 py-2 font-medium w-16">Qty</th>
                         <th className="text-left px-4 py-2 font-medium w-24">Spec</th>
                         <th className="text-left px-4 py-2 font-medium w-28">Unit Cost</th>
                         <th className="text-left px-4 py-2 font-medium w-28">Sell Price</th>
                         <th className="text-left px-4 py-2 font-medium w-20">Margin</th>
-                        <th className="text-left px-4 py-2 font-medium w-20">Source</th>
+                        <th className="text-left px-4 py-2 font-medium w-16">Source</th>
                         {catalogSources.length > 0 && (
                           <th className="text-left px-4 py-2 font-medium" colSpan={catalogSources.length}>
                             Catalogs
@@ -2231,7 +2463,7 @@ function BomDashboardInner() {
                       </tr>
                       {catalogSources.length > 0 && (
                         <tr className="text-xs text-muted border-b border-t-border bg-surface-2/50">
-                          <th colSpan={9} />
+                          <th colSpan={10} />
                           {catalogSources.map((src) => (
                             <th key={src} className="px-2 py-1 font-normal text-center w-10" title={SOURCE_DISPLAY_LABELS[src] ?? src}>
                               {SOURCE_SHORT_LABELS[src] ?? src.slice(0, 2).toUpperCase()}
@@ -2266,10 +2498,17 @@ function BomDashboardInner() {
                               />
                             </td>
                             <td className="px-4 py-1.5">
-                              <EditableCell
+                              <EditableTextAreaCell
                                 value={item.description}
                                 onChange={(v) => updateItem(item.id, "description", v)}
                                 placeholder="Description"
+                              />
+                            </td>
+                            <td className="px-4 py-1.5">
+                              <EditableTextAreaCell
+                                value={item.aiFeedbackNotes || ""}
+                                onChange={(v) => updateItem(item.id, "aiFeedbackNotes", v)}
+                                placeholder="Notes for AI follow-up, corrections, assumptions…"
                               />
                             </td>
                             <td className="px-4 py-1.5">
@@ -2296,7 +2535,7 @@ function BomDashboardInner() {
                             <td className="px-4 py-1.5 text-xs text-muted">
                               {pricing?.marginPercent != null ? `${pricing.marginPercent.toFixed(1)}%` : "—"}
                             </td>
-                            <td className="px-4 py-1.5 text-muted text-xs">{item.source}</td>
+                            <td className="px-4 py-1.5 text-muted text-xs whitespace-nowrap">{item.source}</td>
                             {catalogSources.map((src) => (
                               <td key={src} className="px-2 py-1.5 text-center">
                                 <span className="inline-flex items-center gap-1">
@@ -2408,6 +2647,28 @@ function EditableCell({
   );
 }
 
+function EditableTextAreaCell({
+  value,
+  onChange,
+  placeholder,
+  className = "",
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  className?: string;
+}) {
+  return (
+    <textarea
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      rows={2}
+      className={`w-full min-h-[56px] bg-transparent text-foreground text-sm leading-5 focus:outline-none focus:ring-1 focus:ring-cyan-500 rounded px-1.5 py-1 hover:bg-surface-2 focus:bg-surface-2 transition-colors resize-y ${className}`}
+    />
+  );
+}
+
 function ValidationBadge({ value, label }: { value: boolean | null; label: string }) {
   if (value === true) {
     return (
@@ -2488,15 +2749,15 @@ function QuickLinks({ project }: { project: ProjectResult }) {
 
 function CatalogDot({ present, loading }: { present?: boolean; loading?: boolean }) {
   if (loading) {
-    return <span className="inline-block w-2 h-2 rounded-full bg-surface-2 animate-pulse" />;
+    return <span className="inline-block w-1.5 h-1.5 rounded-full bg-surface-2 animate-pulse" />;
   }
   if (present === undefined) {
     return <span className="text-muted text-xs">—</span>;
   }
   return present ? (
-    <span className="inline-block w-2 h-2 rounded-full bg-green-500" title="In catalog" />
+    <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500" title="In catalog" />
   ) : (
-    <span className="inline-block w-2 h-2 rounded-full bg-red-400" title="Not in catalog" />
+    <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-400" title="Not in catalog" />
   );
 }
 
