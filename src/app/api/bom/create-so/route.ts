@@ -17,13 +17,10 @@ const ALLOWED_ROLES = new Set([
   "DESIGNER",
 ]);
 
-// Only these BOM categories map to EquipmentSku rows
-const INVENTORY_CATEGORIES = new Set<EquipmentCategory>([
-  "MODULE",
-  "INVERTER",
-  "BATTERY",
-  "EV_CHARGER",
-]);
+// All EquipmentCategory enum values are valid for SKU lookup.
+const INVENTORY_CATEGORIES = new Set<EquipmentCategory>(
+  Object.values(EquipmentCategory)
+);
 
 export async function POST(request: NextRequest) {
   const startedAt = Date.now();

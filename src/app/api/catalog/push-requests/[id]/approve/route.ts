@@ -43,11 +43,21 @@ export async function POST(
           model: push.model,
         },
       },
-      update: { isActive: true },
+      update: {
+        isActive: true,
+        description: push.description || undefined,
+        unitSpec: (() => {
+          if (!push.unitSpec) return undefined;
+          const parsed = parseFloat(push.unitSpec);
+          return isNaN(parsed) ? undefined : parsed;
+        })(),
+        unitLabel: push.unitLabel || undefined,
+      },
       create: {
         category: push.category as EquipmentCategory,
         brand: push.brand,
         model: push.model,
+        description: push.description || null,
         unitSpec: (() => {
           if (!push.unitSpec) return null;
           const parsed = parseFloat(push.unitSpec);

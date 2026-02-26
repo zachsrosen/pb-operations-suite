@@ -573,6 +573,10 @@ enum EquipmentCategory {
   INVERTER
   BATTERY
   EV_CHARGER
+  RAPID_SHUTDOWN
+  RACKING
+  ELECTRICAL_BOS
+  MONITORING
 }
 
 enum TransactionType {
@@ -588,9 +592,16 @@ model EquipmentSku {
   category    EquipmentCategory
   brand       String
   model       String
+  description String?
+  vendorName  String?
+  vendorPartNumber String?
   unitSpec    Float?            // Wattage for modules, kW for inverters, kWh for batteries
   unitLabel   String?           // "W", "kW AC", "kWh"
+  unitCost    Float?
+  sellPrice   Float?
   isActive    Boolean           @default(true)
+  hubspotProductId String?
+  zuperItemId      String?
   zohoItemId  String?           // Zoho Inventory item_id for PO line item matching
 
   createdAt   DateTime          @default(now())
@@ -602,6 +613,10 @@ model EquipmentSku {
   @@unique([category, brand, model])
   @@index([category])
   @@index([isActive])
+  @@index([vendorPartNumber])
+  @@index([hubspotProductId])
+  @@index([zuperItemId])
+  @@index([zohoItemId])
 }
 
 model InventoryStock {

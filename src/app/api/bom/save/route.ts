@@ -3,7 +3,7 @@
  *
  * POST /api/bom/save
  *   Accepts a structured BOM from the planset-bom skill and upserts
- *   equipment SKUs (MODULE, INVERTER, BATTERY, EV_CHARGER) into EquipmentSku.
+ *   equipment SKUs (all 8 BOM categories) into EquipmentSku.
  *   Returns counts of created/updated items.
  *   Auth required.
  */
@@ -19,6 +19,10 @@ const INVENTORY_CATEGORIES: Record<string, EquipmentCategory> = {
   INVERTER: "INVERTER",
   BATTERY: "BATTERY",
   EV_CHARGER: "EV_CHARGER",
+  RAPID_SHUTDOWN: "RAPID_SHUTDOWN",
+  RACKING: "RACKING",
+  ELECTRICAL_BOS: "ELECTRICAL_BOS",
+  MONITORING: "MONITORING",
 };
 
 interface BomItem {
@@ -126,6 +130,7 @@ export async function POST(request: NextRequest) {
 
       const brand = item.brand?.trim();
       const model = item.model?.trim();
+      const description = item.description?.trim();
       if (!brand || !model) {
         skipped++;
         continue;
@@ -143,6 +148,7 @@ export async function POST(request: NextRequest) {
           },
         },
         update: {
+          description: description || undefined,
           unitSpec: unitSpec ?? undefined,
           unitLabel: unitLabel ?? undefined,
           isActive: true,
@@ -151,6 +157,7 @@ export async function POST(request: NextRequest) {
           category: inventoryCategory,
           brand,
           model,
+          description: description || null,
           unitSpec,
           unitLabel,
         },

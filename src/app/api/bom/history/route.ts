@@ -27,6 +27,10 @@ const INVENTORY_CATEGORIES: Record<string, EquipmentCategory> = {
   INVERTER: "INVERTER",
   BATTERY: "BATTERY",
   EV_CHARGER: "EV_CHARGER",
+  RAPID_SHUTDOWN: "RAPID_SHUTDOWN",
+  RACKING: "RACKING",
+  ELECTRICAL_BOS: "ELECTRICAL_BOS",
+  MONITORING: "MONITORING",
 };
 
 interface BomItem {
@@ -185,13 +189,26 @@ export async function POST(req: NextRequest) {
       if (!inventoryCategory) { skuSkipped++; continue; }
       const brand = item.brand?.trim();
       const model = item.model?.trim();
+      const description = item.description?.trim();
       if (!brand || !model) { skuSkipped++; continue; }
 
       const unitSpec = item.unitSpec != null ? Number(item.unitSpec) : null;
       const result = await prisma.equipmentSku.upsert({
         where: { category_brand_model: { category: inventoryCategory, brand, model } },
-        update: { unitSpec: unitSpec ?? undefined, unitLabel: item.unitLabel ?? undefined, isActive: true },
-        create: { category: inventoryCategory, brand, model, unitSpec, unitLabel: item.unitLabel ?? null },
+        update: {
+          description: description || undefined,
+          unitSpec: unitSpec ?? undefined,
+          unitLabel: item.unitLabel ?? undefined,
+          isActive: true,
+        },
+        create: {
+          category: inventoryCategory,
+          brand,
+          model,
+          description: description || null,
+          unitSpec,
+          unitLabel: item.unitLabel ?? null,
+        },
       });
       if (result.createdAt.getTime() === result.updatedAt.getTime()) skuCreated++; else skuUpdated++;
     }

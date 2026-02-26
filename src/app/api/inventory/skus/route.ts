@@ -18,6 +18,48 @@ const WRITE_ROLES = ["ADMIN", "OWNER", "PROJECT_MANAGER"];
 // Valid EquipmentCategory values for validation
 const VALID_CATEGORIES = Object.values(EquipmentCategory);
 
+type ParsedNumber = { provided: false } | { provided: true; value: number | null } | { provided: true; error: string };
+
+function parseOptionalNumber(input: Record<string, unknown>, key: string): ParsedNumber {
+  if (!(key in input)) return { provided: false };
+  const raw = input[key];
+  if (raw === null || raw === undefined || raw === "") return { provided: true, value: null };
+  if (typeof raw === "string" && raw.trim() === "") return { provided: true, value: null };
+
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) {
+    return { provided: true, error: `${key} must be a valid number` };
+  }
+  return { provided: true, value: parsed };
+}
+
+function parseOptionalString(input: Record<string, unknown>, key: string): { provided: boolean; value: string | null } {
+  if (!(key in input)) return { provided: false, value: null };
+  const raw = input[key];
+  if (raw === null || raw === undefined) return { provided: true, value: null };
+  const trimmed = String(raw).trim();
+  return { provided: true, value: trimmed || null };
+}
+
+function buildSyncHealth(sku: {
+  zohoItemId: string | null;
+  hubspotProductId: string | null;
+  zuperItemId: string | null;
+}) {
+  const zoho = Boolean(sku.zohoItemId);
+  const hubspot = Boolean(sku.hubspotProductId);
+  const zuper = Boolean(sku.zuperItemId);
+  const connectedCount = (zoho ? 1 : 0) + (hubspot ? 1 : 0) + (zuper ? 1 : 0);
+  return {
+    internal: true,
+    zoho,
+    hubspot,
+    zuper,
+    connectedCount,
+    fullySynced: connectedCount === 3,
+  };
+}
+
 /**
  * GET /api/inventory/skus
  *
@@ -72,7 +114,21 @@ export async function GET(request: NextRequest) {
       ],
     });
 
-    return NextResponse.json({ skus, count: skus.length });
+    const enriched = skus.map((sku) => ({
+      ...sku,
+      syncHealth: buildSyncHealth(sku),
+    }));
+
+    const summary = {
+      total: enriched.length,
+      fullySynced: enriched.filter((s) => s.syncHealth.fullySynced).length,
+      missingZoho: enriched.filter((s) => !s.syncHealth.zoho).length,
+      missingHubspot: enriched.filter((s) => !s.syncHealth.hubspot).length,
+      missingZuper: enriched.filter((s) => !s.syncHealth.zuper).length,
+      withPricing: enriched.filter((s) => s.unitCost != null && s.sellPrice != null).length,
+    };
+
+    return NextResponse.json({ skus: enriched, count: enriched.length, summary });
   } catch (error) {
     console.error("Error fetching SKUs:", error);
     Sentry.captureException(error);
@@ -86,7 +142,12 @@ export async function GET(request: NextRequest) {
 /**
  * POST /api/inventory/skus
  *
- * Body: { category, brand, model, unitSpec?, unitLabel? }
+ * Body: {
+ *   category, brand, model,
+ *   description?, vendorName?, vendorPartNumber?,
+ *   unitSpec?, unitLabel?, unitCost?, sellPrice?,
+ *   zohoItemId?, hubspotProductId?, zuperItemId?
+ * }
  *
  * Upserts on the compound unique (category + brand + model).
  * Requires ADMIN, OWNER, or PROJECT_MANAGER role.
@@ -113,9 +174,9 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    let body;
+    let body: Record<string, unknown>;
     try {
-      body = await request.json();
+      body = await request.json() as Record<string, unknown>;
     } catch {
       return NextResponse.json(
         { error: "Invalid JSON in request body" },
@@ -123,7 +184,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { category, brand, model, unitSpec, unitLabel } = body;
+    const category = body.category;
+    const brand = body.brand;
+    const model = body.model;
 
     // Validate required fields
     if (!category || !brand || !model) {
@@ -153,6 +216,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const unitSpecParsed = parseOptionalNumber(body, "unitSpec");
+    const unitCostParsed = parseOptionalNumber(body, "unitCost");
+    const sellPriceParsed = parseOptionalNumber(body, "sellPrice");
+
+    if ("error" in unitSpecParsed) return NextResponse.json({ error: unitSpecParsed.error }, { status: 400 });
+    if ("error" in unitCostParsed) return NextResponse.json({ error: unitCostParsed.error }, { status: 400 });
+    if ("error" in sellPriceParsed) return NextResponse.json({ error: sellPriceParsed.error }, { status: 400 });
+
+    const unitLabelParsed = parseOptionalString(body, "unitLabel");
+    const descriptionParsed = parseOptionalString(body, "description");
+    const vendorNameParsed = parseOptionalString(body, "vendorName");
+    const vendorPartParsed = parseOptionalString(body, "vendorPartNumber");
+    const zohoItemParsed = parseOptionalString(body, "zohoItemId");
+    const hubspotProductParsed = parseOptionalString(body, "hubspotProductId");
+    const zuperItemParsed = parseOptionalString(body, "zuperItemId");
+
     const sku = await prisma.equipmentSku.upsert({
       where: {
         category_brand_model: {
@@ -162,20 +241,41 @@ export async function POST(request: NextRequest) {
         },
       },
       update: {
-        ...(unitSpec !== undefined && { unitSpec: unitSpec ? Number(unitSpec) : null }),
-        ...(unitLabel !== undefined && { unitLabel: unitLabel || null }),
+        ...(unitSpecParsed.provided && { unitSpec: unitSpecParsed.value }),
+        ...(unitLabelParsed.provided && { unitLabel: unitLabelParsed.value }),
+        ...(descriptionParsed.provided && { description: descriptionParsed.value }),
+        ...(vendorNameParsed.provided && { vendorName: vendorNameParsed.value }),
+        ...(vendorPartParsed.provided && { vendorPartNumber: vendorPartParsed.value }),
+        ...(unitCostParsed.provided && { unitCost: unitCostParsed.value }),
+        ...(sellPriceParsed.provided && { sellPrice: sellPriceParsed.value }),
+        ...(zohoItemParsed.provided && { zohoItemId: zohoItemParsed.value }),
+        ...(hubspotProductParsed.provided && { hubspotProductId: hubspotProductParsed.value }),
+        ...(zuperItemParsed.provided && { zuperItemId: zuperItemParsed.value }),
         isActive: true,
       },
       create: {
         category: category as EquipmentCategory,
         brand: trimmedBrand,
         model: trimmedModel,
-        unitSpec: unitSpec ? Number(unitSpec) : null,
-        unitLabel: unitLabel || null,
+        unitSpec: unitSpecParsed.provided ? unitSpecParsed.value : null,
+        unitLabel: unitLabelParsed.provided ? unitLabelParsed.value : null,
+        description: descriptionParsed.provided ? descriptionParsed.value : null,
+        vendorName: vendorNameParsed.provided ? vendorNameParsed.value : null,
+        vendorPartNumber: vendorPartParsed.provided ? vendorPartParsed.value : null,
+        unitCost: unitCostParsed.provided ? unitCostParsed.value : null,
+        sellPrice: sellPriceParsed.provided ? sellPriceParsed.value : null,
+        zohoItemId: zohoItemParsed.provided ? zohoItemParsed.value : null,
+        hubspotProductId: hubspotProductParsed.provided ? hubspotProductParsed.value : null,
+        zuperItemId: zuperItemParsed.provided ? zuperItemParsed.value : null,
+      },
+      include: {
+        stockLevels: {
+          select: { location: true, quantityOnHand: true },
+        },
       },
     });
 
-    return NextResponse.json({ sku }, { status: 201 });
+    return NextResponse.json({ sku: { ...sku, syncHealth: buildSyncHealth(sku) } }, { status: 201 });
   } catch (error) {
     console.error("Error creating/upserting SKU:", error);
     Sentry.captureException(error);

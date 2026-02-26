@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback, useRef, useEffect, Suspense } from "react";
+import React, { useState, useCallback, useRef, useEffect, useMemo, Suspense } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { exportToCSV } from "@/lib/export";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -105,8 +105,24 @@ interface ProductComparisonResponse {
   health: Record<string, SourceHealth>;
 }
 
+interface InternalCatalogSku {
+  id: string;
+  category: string;
+  brand: string;
+  model: string;
+  description: string | null;
+  unitCost: number | null;
+  sellPrice: number | null;
+}
+
 // Per-BOM-item catalog presence — keyed by source name
 type CatalogStatus = Record<string, boolean>;
+
+interface PricingMatch {
+  unitCost: number | null;
+  sellPrice: number | null;
+  marginPercent: number | null;
+}
 
 /* Saved snapshot row from /api/bom/history */
 interface BomSnapshot {
@@ -240,6 +256,35 @@ function productMatchesBomItem(product: ComparableProduct, item: BomItem): boole
   const bomTokens = new Set([...tokenize(brand), ...tokenize(model)]);
   const catalogTokens = new Set([...tokenize(product.name), ...tokenize(product.sku)]);
   return tokenSimilarity(bomTokens, catalogTokens) >= 0.5;
+}
+
+/** Returns a numeric similarity score for internal SKU ↔ BOM item matching. */
+function scoreSkuMatch(sku: InternalCatalogSku, item: BomItem): number {
+  const modelNorm = normalizeText(item.model);
+  const skuModelNorm = normalizeText(sku.model);
+  const skuBrandNorm = normalizeText(sku.brand);
+  const itemBrandNorm = normalizeText(item.brand);
+
+  // Strong score for direct model inclusion/equality.
+  if (modelNorm && (skuModelNorm === modelNorm || skuModelNorm.includes(modelNorm) || modelNorm.includes(skuModelNorm))) {
+    return 1;
+  }
+
+  const bomTokens = new Set([...tokenize(item.brand), ...tokenize(item.model)]);
+  const skuTokens = new Set([...tokenize(sku.brand), ...tokenize(sku.model), ...tokenize(sku.description)]);
+  const similarity = tokenSimilarity(bomTokens, skuTokens);
+
+  // Brand boost when both are available and align.
+  if (itemBrandNorm && skuBrandNorm && (itemBrandNorm === skuBrandNorm || skuBrandNorm.includes(itemBrandNorm))) {
+    return Math.min(1, similarity + 0.15);
+  }
+
+  return similarity;
+}
+
+function formatMoney(value: number | null): string {
+  if (value == null) return "—";
+  return `$${value.toFixed(2)}`;
 }
 
 // Non-product keys in a ComparisonRow that should be ignored when iterating sources
@@ -407,6 +452,7 @@ function BomDashboardInner() {
   const [catalogHealth, setCatalogHealth] = useState<ProductComparisonResponse["health"] | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [internalSkus, setInternalSkus] = useState<InternalCatalogSku[]>([]);
 
   // Derived source list — updates automatically when comparison data arrives
   const catalogSources = sourcesFromRows(comparisonRows);
@@ -424,14 +470,22 @@ function BomDashboardInner() {
     setCatalogLoading(true);
     setCatalogError(null);
 
-    fetch("/api/products/comparison")
-      .then((res) => {
+    Promise.all([
+      fetch("/api/products/comparison").then((res) => {
         if (!res.ok) throw new Error(`Catalog fetch failed (${res.status})`);
         return res.json() as Promise<ProductComparisonResponse>;
-      })
-      .then((data) => {
-        setComparisonRows(data.rows);
-        setCatalogHealth(data.health);
+      }),
+      fetch("/api/inventory/skus?active=false")
+        .then((res) => {
+          if (!res.ok) throw new Error(`Inventory SKU fetch failed (${res.status})`);
+          return res.json() as Promise<{ skus?: InternalCatalogSku[] }>;
+        })
+        .catch(() => ({ skus: [] })),
+    ])
+      .then(([comparisonData, skuData]) => {
+        setComparisonRows(comparisonData.rows);
+        setCatalogHealth(comparisonData.health);
+        setInternalSkus(skuData.skus ?? []);
       })
       .catch((e) => {
         setCatalogError(e instanceof Error ? e.message : "Failed to load catalog");
@@ -1047,11 +1101,43 @@ function BomDashboardInner() {
     }, 300);
   }, []);
 
+  /* ---- Internal SKU pricing match per BOM item (token-based) ---- */
+  const pricingByItem = useMemo(() => {
+    const map = new Map<string, PricingMatch>();
+    if (!items.length || !internalSkus.length) return map;
+
+    for (const item of items) {
+      const candidates = internalSkus.filter((sku) => sku.category === item.category);
+      let best: InternalCatalogSku | null = null;
+      let bestScore = 0;
+
+      for (const sku of candidates) {
+        const score = scoreSkuMatch(sku, item);
+        if (score >= 0.5 && score > bestScore) {
+          best = sku;
+          bestScore = score;
+        }
+      }
+
+      const unitCost = best?.unitCost ?? null;
+      const sellPrice = best?.sellPrice ?? null;
+      const marginPercent =
+        unitCost != null && sellPrice != null && sellPrice > 0
+          ? ((sellPrice - unitCost) / sellPrice) * 100
+          : null;
+
+      map.set(item.id, { unitCost, sellPrice, marginPercent });
+    }
+
+    return map;
+  }, [items, internalSkus]);
+
   /* ---- Export CSV ---- */
   const handleExportCsv = useCallback(() => {
     if (!items.length) return;
     const rows = items.map((item) => {
       const status = catalogStatus.get(item.id);
+      const pricing = pricingByItem.get(item.id);
       const catalogCols: Record<string, string> = {};
       for (const src of catalogSources) {
         catalogCols[`in_${src}`] = status?.[src] ? "yes" : "no";
@@ -1064,6 +1150,9 @@ function BomDashboardInner() {
         qty: String(item.qty),
         unitSpec: item.unitSpec != null ? String(item.unitSpec) : "",
         unitLabel: item.unitLabel || "",
+        unitCost: pricing?.unitCost != null ? String(pricing.unitCost) : "",
+        sellPrice: pricing?.sellPrice != null ? String(pricing.sellPrice) : "",
+        marginPercent: pricing?.marginPercent != null ? pricing.marginPercent.toFixed(1) : "",
         source: item.source,
         flags: item.flags?.join(", ") || "",
         ...catalogCols,
@@ -1071,7 +1160,7 @@ function BomDashboardInner() {
     });
     const customer = bom?.project?.customer || "bom";
     exportToCSV(rows, `${customer.replace(/\s+/g, "_")}_BOM`);
-  }, [items, bom, catalogStatus, catalogSources]);
+  }, [items, bom, catalogStatus, catalogSources, pricingByItem]);
 
   /* ---- Copy Markdown ---- */
   const handleCopyMarkdown = useCallback(async () => {
@@ -1100,14 +1189,15 @@ function BomDashboardInner() {
       lines.push("");
       const srcHeaders = catalogSources.map((s) => SOURCE_DISPLAY_LABELS[s] ?? s).join(" | ");
       const srcSeps = catalogSources.map(() => "------").join("|");
-      lines.push(`| Brand | Model | Description | Qty | Spec |${srcHeaders ? ` ${srcHeaders} |` : ""}`);
-      lines.push(`|-------|-------|-------------|-----|------|${srcSeps ? `${srcSeps}|` : ""}`);
+      lines.push(`| Brand | Model | Description | Qty | Spec | Unit Cost | Sell Price | Margin |${srcHeaders ? ` ${srcHeaders} |` : ""}`);
+      lines.push(`|-------|-------|-------------|-----|------|-----------|------------|--------|${srcSeps ? `${srcSeps}|` : ""}`);
       for (const item of catItems) {
         const flags = item.flags?.length ? ` ⚠️ ${item.flags.join(", ")}` : "";
         const status = catalogStatus.get(item.id);
+        const pricing = pricingByItem.get(item.id);
         const srcCols = catalogSources.map((s) => status?.[s] ? "✅" : "—").join(" | ");
         lines.push(
-          `| ${item.brand || "—"} | ${item.model || "—"} | ${item.description}${flags} | ${item.qty} | ${item.unitSpec || ""} ${item.unitLabel || ""} |${srcCols ? ` ${srcCols} |` : ""}`
+          `| ${item.brand || "—"} | ${item.model || "—"} | ${item.description}${flags} | ${item.qty} | ${item.unitSpec || ""} ${item.unitLabel || ""} | ${formatMoney(pricing?.unitCost ?? null)} | ${formatMoney(pricing?.sellPrice ?? null)} | ${pricing?.marginPercent != null ? `${pricing.marginPercent.toFixed(1)}%` : "—"} |${srcCols ? ` ${srcCols} |` : ""}`
         );
       }
       lines.push("");
@@ -1115,7 +1205,7 @@ function BomDashboardInner() {
 
     await navigator.clipboard.writeText(lines.join("\n"));
     addToast({ type: "success", title: "Markdown copied to clipboard" });
-  }, [items, bom, catalogStatus, addToast, catalogSources]);
+  }, [items, bom, catalogStatus, addToast, catalogSources, pricingByItem]);
 
   /* ---- Save to Inventory ---- */
   const handleSaveInventory = useCallback(async () => {
@@ -2128,6 +2218,9 @@ function BomDashboardInner() {
                         <th className="text-left px-4 py-2 font-medium">Description</th>
                         <th className="text-left px-4 py-2 font-medium w-16">Qty</th>
                         <th className="text-left px-4 py-2 font-medium w-24">Spec</th>
+                        <th className="text-left px-4 py-2 font-medium w-28">Unit Cost</th>
+                        <th className="text-left px-4 py-2 font-medium w-28">Sell Price</th>
+                        <th className="text-left px-4 py-2 font-medium w-20">Margin</th>
                         <th className="text-left px-4 py-2 font-medium w-20">Source</th>
                         {catalogSources.length > 0 && (
                           <th className="text-left px-4 py-2 font-medium" colSpan={catalogSources.length}>
@@ -2138,7 +2231,7 @@ function BomDashboardInner() {
                       </tr>
                       {catalogSources.length > 0 && (
                         <tr className="text-xs text-muted border-b border-t-border bg-surface-2/50">
-                          <th colSpan={6} />
+                          <th colSpan={9} />
                           {catalogSources.map((src) => (
                             <th key={src} className="px-2 py-1 font-normal text-center w-10" title={SOURCE_DISPLAY_LABELS[src] ?? src}>
                               {SOURCE_SHORT_LABELS[src] ?? src.slice(0, 2).toUpperCase()}
@@ -2151,6 +2244,7 @@ function BomDashboardInner() {
                     <tbody className="divide-y divide-[color:var(--border)]">
                       {grouped[cat]!.map((item) => {
                         const status = catalogStatus.get(item.id);
+                        const pricing = pricingByItem.get(item.id);
                         const missing = status && catalogSources.some((s) => !status[s]);
                         return (
                           <tr
@@ -2192,6 +2286,15 @@ function BomDashboardInner() {
                                 onChange={(v) => updateItem(item.id, "unitSpec", v)}
                                 placeholder="—"
                               />
+                            </td>
+                            <td className="px-4 py-1.5 text-xs text-muted">
+                              {formatMoney(pricing?.unitCost ?? null)}
+                            </td>
+                            <td className="px-4 py-1.5 text-xs text-muted">
+                              {formatMoney(pricing?.sellPrice ?? null)}
+                            </td>
+                            <td className="px-4 py-1.5 text-xs text-muted">
+                              {pricing?.marginPercent != null ? `${pricing.marginPercent.toFixed(1)}%` : "—"}
                             </td>
                             <td className="px-4 py-1.5 text-muted text-xs">{item.source}</td>
                             {catalogSources.map((src) => (

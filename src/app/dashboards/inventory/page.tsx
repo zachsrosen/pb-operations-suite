@@ -85,9 +85,22 @@ const CATEGORY_LABELS: Record<string, string> = {
   INVERTER: "Inverters",
   BATTERY: "Batteries",
   EV_CHARGER: "EV Chargers",
+  RAPID_SHUTDOWN: "Rapid Shutdown",
+  RACKING: "Racking",
+  ELECTRICAL_BOS: "Electrical BOS",
+  MONITORING: "Monitoring",
 };
 
-const CATEGORY_ORDER = ["MODULE", "INVERTER", "BATTERY", "EV_CHARGER"];
+const CATEGORY_ORDER = [
+  "MODULE",
+  "INVERTER",
+  "BATTERY",
+  "EV_CHARGER",
+  "RAPID_SHUTDOWN",
+  "RACKING",
+  "ELECTRICAL_BOS",
+  "MONITORING",
+];
 
 /* ------------------------------------------------------------------ */
 /*  Placeholder tab components (Tasks 9-11)                            */
@@ -132,6 +145,10 @@ function StockOverviewTab(props: {
     INVERTER: { short: "INV", color: "text-amber-400" },
     BATTERY: { short: "BAT", color: "text-green-400" },
     EV_CHARGER: { short: "EV", color: "text-purple-400" },
+    RAPID_SHUTDOWN: { short: "RSD", color: "text-red-400" },
+    RACKING: { short: "RCK", color: "text-orange-400" },
+    ELECTRICAL_BOS: { short: "BOS", color: "text-cyan-400" },
+    MONITORING: { short: "MON", color: "text-indigo-400" },
   };
 
   /* Compute relative time string */

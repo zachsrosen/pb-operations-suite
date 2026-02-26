@@ -7,18 +7,44 @@ import { useToast } from "@/contexts/ToastContext";
 import { useSession } from "next-auth/react";
 import PushToSystemsModal, { type PushItem } from "@/components/PushToSystemsModal";
 
-type Tab = "skus" | "pending";
+type Tab = "skus" | "sync" | "pending";
+
+interface SkuSyncHealth {
+  internal: boolean;
+  zoho: boolean;
+  hubspot: boolean;
+  zuper: boolean;
+  connectedCount: number;
+  fullySynced: boolean;
+}
 
 interface Sku {
   id: string;
   category: string;
   brand: string;
   model: string;
+  description: string | null;
+  vendorName: string | null;
+  vendorPartNumber: string | null;
   unitSpec: number | null;
   unitLabel: string | null;
+  unitCost: number | null;
+  sellPrice: number | null;
   isActive: boolean;
   zohoItemId: string | null;
+  hubspotProductId: string | null;
+  zuperItemId: string | null;
+  syncHealth: SkuSyncHealth;
   stockLevels: { location: string; quantityOnHand: number }[];
+}
+
+interface SkuSummary {
+  total: number;
+  fullySynced: number;
+  missingZoho: number;
+  missingHubspot: number;
+  missingZuper: number;
+  withPricing: number;
 }
 
 interface PushRequest {
@@ -37,7 +63,41 @@ interface PushRequest {
 }
 
 const ADMIN_ROLES = ["ADMIN", "OWNER", "MANAGER"];
-const CATEGORIES = ["MODULE", "INVERTER", "BATTERY", "EV_CHARGER"] as const;
+const CATEGORIES = [
+  "MODULE",
+  "INVERTER",
+  "BATTERY",
+  "EV_CHARGER",
+  "RAPID_SHUTDOWN",
+  "RACKING",
+  "ELECTRICAL_BOS",
+  "MONITORING",
+] as const;
+
+function money(value: number | null): string {
+  if (value == null) return "—";
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+function marginPercent(cost: number | null, sell: number | null): string {
+  if (cost == null || sell == null || sell <= 0) return "—";
+  const pct = ((sell - cost) / sell) * 100;
+  return `${pct.toFixed(1)}%`;
+}
+
+function SyncDot({ label, ok }: { label: string; ok: boolean }) {
+  return (
+    <span title={label} className="flex items-center gap-1">
+      <span className={`w-2 h-2 rounded-full ${ok ? "bg-green-500" : "bg-red-400"}`} />
+      <span className="text-muted">{label}</span>
+    </span>
+  );
+}
 
 export default function CatalogPage() {
   const { data: session } = useSession();
@@ -45,6 +105,14 @@ export default function CatalogPage() {
   const [tab, setTab] = useState<Tab>("skus");
   const [skus, setSkus] = useState<Sku[]>([]);
   const [skuLoading, setSkuLoading] = useState(true);
+  const [skuSummary, setSkuSummary] = useState<SkuSummary>({
+    total: 0,
+    fullySynced: 0,
+    missingZoho: 0,
+    missingHubspot: 0,
+    missingZuper: 0,
+    withPricing: 0,
+  });
   const [pendingPushes, setPendingPushes] = useState<PushRequest[]>([]);
   const [pendingLoading, setPendingLoading] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
@@ -60,7 +128,17 @@ export default function CatalogPage() {
     setSkuLoading(true);
     fetch("/api/inventory/skus?active=false")
       .then((r) => r.json())
-      .then((d: { skus?: Sku[] }) => setSkus(d.skus ?? []))
+      .then((d: { skus?: Sku[]; summary?: SkuSummary }) => {
+        setSkus(d.skus ?? []);
+        setSkuSummary(d.summary ?? {
+          total: 0,
+          fullySynced: 0,
+          missingZoho: 0,
+          missingHubspot: 0,
+          missingZuper: 0,
+          withPricing: 0,
+        });
+      })
       .catch(() => addToast({ type: "error", title: "Failed to load SKUs" }))
       .finally(() => setSkuLoading(false));
   }, [addToast]);
@@ -97,11 +175,21 @@ export default function CatalogPage() {
       if (categoryFilter && s.category !== categoryFilter) return false;
       if (search) {
         const q = search.toLowerCase();
-        return s.brand.toLowerCase().includes(q) || s.model.toLowerCase().includes(q);
+        return (
+          s.brand.toLowerCase().includes(q) ||
+          s.model.toLowerCase().includes(q) ||
+          (s.description ?? "").toLowerCase().includes(q) ||
+          (s.vendorPartNumber ?? "").toLowerCase().includes(q)
+        );
       }
       return true;
     });
   }, [skus, categoryFilter, search]);
+
+  const unsynced = useMemo(
+    () => filtered.filter((sku) => !sku.syncHealth?.fullySynced),
+    [filtered]
+  );
 
   async function handleApprove(id: string) {
     try {
@@ -111,7 +199,6 @@ export default function CatalogPage() {
       setPendingPushes((prev) => prev.filter((p) => p.id !== id));
       setPendingCount((c) => Math.max(0, c - 1));
       addToast({ type: "success", title: "Approved and pushed to selected systems" });
-      // Refresh SKUs if internal was pushed
       fetchSkus();
     } catch (err: unknown) {
       addToast({ type: "error", title: err instanceof Error ? err.message : "Approval failed" });
@@ -135,7 +222,7 @@ export default function CatalogPage() {
     <DashboardShell title="Equipment Catalog" accentColor="cyan">
       {/* Tabs + Submit button */}
       <div className="flex items-center gap-1 mb-6 border-b border-t-border">
-        {(["skus", "pending"] as Tab[]).map((t) => (
+        {(["skus", "sync", "pending"] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -145,7 +232,9 @@ export default function CatalogPage() {
                 : "border-transparent text-muted hover:text-foreground"
             }`}
           >
-            {t === "skus" ? "Equipment SKUs" : (
+            {t === "skus" && "Equipment SKUs"}
+            {t === "sync" && "Sync Health"}
+            {t === "pending" && (
               <span className="flex items-center gap-2">
                 Pending Approvals
                 {pendingCount > 0 && (
@@ -167,75 +256,156 @@ export default function CatalogPage() {
         </div>
       </div>
 
+      {(tab === "skus" || tab === "sync") && (
+        <div className="flex flex-wrap gap-3 mb-4">
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className="rounded-lg border border-t-border bg-surface px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
+          >
+            <option value="">All categories</option>
+            {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <input
+            type="text"
+            placeholder="Search brand, model, description, or vendor part…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="rounded-lg border border-t-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-cyan-500/50 flex-1 min-w-48"
+          />
+          <span className="ml-auto text-xs text-muted self-center">
+            {filtered.length} of {skus.length} SKU{skus.length !== 1 ? "s" : ""}
+          </span>
+        </div>
+      )}
+
       {/* SKUs Tab */}
       {tab === "skus" && (
         <div className="space-y-4">
-          {/* Filters */}
-          <div className="flex flex-wrap gap-3">
-            <select
-              value={categoryFilter}
-              onChange={(e) => setCategoryFilter(e.target.value)}
-              className="rounded-lg border border-t-border bg-surface px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
-            >
-              <option value="">All categories</option>
-              {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-            <input
-              type="text"
-              placeholder="Search brand or model…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="rounded-lg border border-t-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-cyan-500/50 flex-1 min-w-48"
-            />
-            <span className="ml-auto text-xs text-muted self-center">
-              {filtered.length} of {skus.length} SKU{skus.length !== 1 ? "s" : ""}
-            </span>
-          </div>
-
-          {/* Table */}
           {skuLoading ? (
             <p className="text-sm text-muted animate-pulse py-8 text-center">Loading SKUs…</p>
           ) : (
-            <div className="rounded-xl border border-t-border bg-surface shadow-card overflow-hidden">
-              <div className="grid grid-cols-[120px_1fr_1fr_90px_160px_70px] gap-x-3 border-b border-t-border bg-surface-2 px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted">
-                <span>Category</span>
-                <span>Brand</span>
-                <span>Model</span>
-                <span>Unit</span>
-                <span>Sync Status</span>
-                <span className="text-right">Stock</span>
-              </div>
-              {filtered.length === 0 ? (
-                <div className="px-4 py-8 text-center text-sm text-muted">No SKUs found.</div>
-              ) : filtered.map((sku) => (
-                <div key={sku.id} className="grid grid-cols-[120px_1fr_1fr_90px_160px_70px] gap-x-3 items-center border-b border-t-border last:border-b-0 px-4 py-3 text-sm hover:bg-surface-2 transition-colors">
-                  <span className="text-xs text-muted font-medium">{sku.category}</span>
-                  <span className="font-medium text-foreground truncate" title={sku.brand}>{sku.brand}</span>
-                  <span className="text-muted truncate text-xs" title={sku.model}>{sku.model}</span>
-                  <span className="text-muted text-xs">{sku.unitSpec != null ? `${sku.unitSpec}${sku.unitLabel ? ` ${sku.unitLabel}` : ""}` : "—"}</span>
-                  <div className="flex items-center gap-2 text-xs">
-                    <span title="Internal Catalog" className="flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" />
-                      <span className="text-muted">Int</span>
-                    </span>
-                    <span title="Zoho" className="flex items-center gap-1">
-                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${sku.zohoItemId ? "bg-green-500" : "bg-red-400"}`} />
-                      <span className="text-muted">Zoho</span>
-                    </span>
-                    <span title="HubSpot (not tracked yet)" className="flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-full bg-zinc-500 flex-shrink-0" />
-                      <span className="text-muted">HS</span>
-                    </span>
-                    <span title="Zuper (not tracked yet)" className="flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-full bg-zinc-500 flex-shrink-0" />
-                      <span className="text-muted">Zu</span>
-                    </span>
-                  </div>
-                  <span className="text-xs text-muted text-right">
-                    {sku.stockLevels.reduce((sum, l) => sum + l.quantityOnHand, 0)}
-                  </span>
-                </div>
-              ))}
+            <div className="rounded-xl border border-t-border bg-surface shadow-card overflow-x-auto">
+              <table className="min-w-[1260px] w-full text-sm">
+                <thead>
+                  <tr className="border-b border-t-border bg-surface-2 text-xs font-medium uppercase tracking-wide text-muted">
+                    <th className="px-4 py-2 text-left">Category</th>
+                    <th className="px-4 py-2 text-left">Brand</th>
+                    <th className="px-4 py-2 text-left">Model / Description</th>
+                    <th className="px-4 py-2 text-left">Vendor Part</th>
+                    <th className="px-4 py-2 text-left">Unit</th>
+                    <th className="px-4 py-2 text-right">Unit Cost</th>
+                    <th className="px-4 py-2 text-right">Sell Price</th>
+                    <th className="px-4 py-2 text-right">Margin</th>
+                    <th className="px-4 py-2 text-left">Sync Status</th>
+                    <th className="px-4 py-2 text-right">Stock</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.length === 0 ? (
+                    <tr>
+                      <td colSpan={10} className="px-4 py-8 text-center text-sm text-muted">No SKUs found.</td>
+                    </tr>
+                  ) : filtered.map((sku) => (
+                    <tr key={sku.id} className="border-b border-t-border last:border-b-0 hover:bg-surface-2 transition-colors align-top">
+                      <td className="px-4 py-3 text-xs text-muted font-medium">{sku.category}</td>
+                      <td className="px-4 py-3 font-medium text-foreground">{sku.brand}</td>
+                      <td className="px-4 py-3 min-w-[280px]">
+                        <div className="font-medium text-foreground">{sku.model}</div>
+                        {sku.description && (
+                          <div className="text-xs text-muted mt-0.5">{sku.description}</div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-muted">{sku.vendorPartNumber || "—"}</td>
+                      <td className="px-4 py-3 text-xs text-muted">
+                        {sku.unitSpec != null ? `${sku.unitSpec}${sku.unitLabel ? ` ${sku.unitLabel}` : ""}` : "—"}
+                      </td>
+                      <td className="px-4 py-3 text-right text-xs text-muted">{money(sku.unitCost)}</td>
+                      <td className="px-4 py-3 text-right text-xs text-muted">{money(sku.sellPrice)}</td>
+                      <td className="px-4 py-3 text-right text-xs text-muted">{marginPercent(sku.unitCost, sku.sellPrice)}</td>
+                      <td className="px-4 py-3 text-xs">
+                        <div className="flex items-center gap-3">
+                          <SyncDot label="Zoho" ok={sku.syncHealth?.zoho ?? Boolean(sku.zohoItemId)} />
+                          <SyncDot label="HS" ok={sku.syncHealth?.hubspot ?? Boolean(sku.hubspotProductId)} />
+                          <SyncDot label="Zu" ok={sku.syncHealth?.zuper ?? Boolean(sku.zuperItemId)} />
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-right text-xs text-muted">
+                        {sku.stockLevels.reduce((sum, l) => sum + l.quantityOnHand, 0)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Sync Tab */}
+      {tab === "sync" && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            <MetricCard label="Total" value={skuSummary.total} />
+            <MetricCard label="Fully Synced" value={skuSummary.fullySynced} />
+            <MetricCard label="Missing Zoho" value={skuSummary.missingZoho} />
+            <MetricCard label="Missing HubSpot" value={skuSummary.missingHubspot} />
+            <MetricCard label="Missing Zuper" value={skuSummary.missingZuper} />
+            <MetricCard label="With Pricing" value={skuSummary.withPricing} />
+          </div>
+
+          {skuLoading ? (
+            <p className="text-sm text-muted animate-pulse py-8 text-center">Loading sync health…</p>
+          ) : (
+            <div className="rounded-xl border border-t-border bg-surface shadow-card overflow-x-auto">
+              <table className="min-w-[980px] w-full text-sm">
+                <thead>
+                  <tr className="border-b border-t-border bg-surface-2 text-xs font-medium uppercase tracking-wide text-muted">
+                    <th className="px-4 py-2 text-left">Category</th>
+                    <th className="px-4 py-2 text-left">Brand</th>
+                    <th className="px-4 py-2 text-left">Model</th>
+                    <th className="px-4 py-2 text-left">Missing Integrations</th>
+                    <th className="px-4 py-2 text-left">IDs</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {unsynced.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-4 py-8 text-center text-sm text-muted">
+                        All filtered SKUs are fully synced.
+                      </td>
+                    </tr>
+                  ) : unsynced.map((sku) => {
+                    const missing: string[] = [];
+                    if (!sku.syncHealth?.zoho && !sku.zohoItemId) missing.push("Zoho");
+                    if (!sku.syncHealth?.hubspot && !sku.hubspotProductId) missing.push("HubSpot");
+                    if (!sku.syncHealth?.zuper && !sku.zuperItemId) missing.push("Zuper");
+                    return (
+                      <tr key={sku.id} className="border-b border-t-border last:border-b-0 hover:bg-surface-2 transition-colors align-top">
+                        <td className="px-4 py-3 text-xs text-muted">{sku.category}</td>
+                        <td className="px-4 py-3 text-foreground font-medium">{sku.brand}</td>
+                        <td className="px-4 py-3 text-foreground">{sku.model}</td>
+                        <td className="px-4 py-3 text-xs">
+                          {missing.length > 0 ? (
+                            <div className="flex flex-wrap gap-1.5">
+                              {missing.map((m) => (
+                                <span key={m} className="inline-flex items-center rounded-md bg-red-500/15 px-2 py-0.5 text-red-400 ring-1 ring-red-500/30">
+                                  {m}
+                                </span>
+                              ))}
+                            </div>
+                          ) : "—"}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-muted">
+                          <div>Zoho: {sku.zohoItemId || "—"}</div>
+                          <div>HubSpot: {sku.hubspotProductId || "—"}</div>
+                          <div>Zuper: {sku.zuperItemId || "—"}</div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
         </div>
@@ -307,5 +477,14 @@ export default function CatalogPage() {
         onClose={() => setNewProductItem(null)}
       />
     </DashboardShell>
+  );
+}
+
+function MetricCard({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-xl border border-t-border bg-surface shadow-card px-4 py-3">
+      <p className="text-xs text-muted uppercase tracking-wide">{label}</p>
+      <p className="text-xl font-semibold text-foreground mt-1">{value}</p>
+    </div>
   );
 }

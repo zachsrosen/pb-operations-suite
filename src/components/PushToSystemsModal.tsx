@@ -26,7 +26,16 @@ const SYSTEMS = [
   { key: "ZUPER",    label: "Zuper Parts",        description: "Part in Zuper" },
 ] as const;
 
-const CATEGORIES = ["MODULE", "INVERTER", "BATTERY", "EV_CHARGER"] as const;
+const CATEGORIES = [
+  "MODULE",
+  "INVERTER",
+  "BATTERY",
+  "EV_CHARGER",
+  "RAPID_SHUTDOWN",
+  "RACKING",
+  "ELECTRICAL_BOS",
+  "MONITORING",
+] as const;
 
 export default function PushToSystemsModal({ item, onClose }: Props) {
   const { addToast } = useToast();
