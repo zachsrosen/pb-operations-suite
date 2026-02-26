@@ -12,6 +12,7 @@ import { WeeklyChangelogSimple } from "@/emails/WeeklyChangelogSimple";
 import { OperationsOnlyUpdate } from "@/emails/OperationsOnlyUpdate";
 import { BacklogForecastingUpdate } from "@/emails/BacklogForecastingUpdate";
 import { getHubSpotDealUrl, getZuperJobUrl } from "@/lib/external-links";
+import type { ComplianceDigest } from "@/lib/compliance-digest";
 import * as React from "react";
 
 type SendResult = { success: boolean; error?: string };
@@ -417,6 +418,15 @@ function formatDate(dateStr: string): string {
     month: "long",
     day: "numeric",
   });
+}
+
+function escapeHtml(input: string): string {
+  return input
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function sanitizeScheduleEmailNotes(notes?: string | null): string | undefined {
@@ -1189,6 +1199,340 @@ ${actions.length > 0 ? `\n\nRecommended Actions:\n${bulletLines(actions)}` : ""}
       ...(risks.length > 0 ? ["Risks:", bulletLines(risks)] : []),
       ...(actions.length > 0 ? ["Actions:", bulletLines(actions)] : []),
     ].join("\n"),
+  });
+}
+
+interface SendWeeklyComplianceEmailParams {
+  to: string;
+  bcc?: string[];
+  digest: ComplianceDigest;
+  dashboardUrl?: string;
+}
+
+function formatCompliancePercent(value: number): string {
+  return `${Math.round(value * 10) / 10}%`;
+}
+
+function getTrend(current: number, prior: number, higherIsBetter: boolean): {
+  arrow: string;
+  color: string;
+  deltaLabel: string;
+} {
+  const delta = Math.round((current - prior) * 10) / 10;
+  const improved = higherIsBetter ? delta >= 0 : delta <= 0;
+  const arrow = delta === 0 ? "→" : improved ? "▲" : "▼";
+  const color = delta === 0 ? "#a1a1aa" : improved ? "#22c55e" : "#ef4444";
+  const deltaLabel = `${delta > 0 ? "+" : ""}${delta}`;
+  return { arrow, color, deltaLabel };
+}
+
+function gradeRank(grade: string): number {
+  const key = grade.trim().toUpperCase();
+  if (key === "A") return 5;
+  if (key === "B") return 4;
+  if (key === "C") return 3;
+  if (key === "D") return 2;
+  if (key === "F") return 1;
+  return 0;
+}
+
+function buildWeeklyComplianceEmailHtml(digest: ComplianceDigest, dashboardUrl: string): string {
+  const periodLabel = `${digest.period.from} - ${digest.period.to}`;
+
+  const onTimeTrend = getTrend(digest.summary.onTimePercent, digest.priorPeriod.onTimePercent, true);
+  const oowTrend = getTrend(
+    digest.summary.oowUsagePercent,
+    digest.priorPeriod.oowUsagePercent,
+    true
+  );
+  const stuckTrend = getTrend(digest.summary.stuckJobs, digest.priorPeriod.stuckJobs, false);
+  const completedTrend = getTrend(digest.summary.completedJobs, digest.priorPeriod.completedJobs, true);
+
+  const teamRows = digest.teams.slice(0, 10);
+  const bestTeamName =
+    teamRows.length > 0
+      ? teamRows
+          .slice()
+          .sort(
+            (a, b) =>
+              gradeRank(b.grade) - gradeRank(a.grade) || b.onTimePercent - a.onTimePercent
+          )[0]?.name
+      : null;
+  const worstTeamName =
+    teamRows.length > 0
+      ? teamRows
+          .slice()
+          .sort(
+            (a, b) =>
+              gradeRank(a.grade) - gradeRank(b.grade) || a.onTimePercent - b.onTimePercent
+          )[0]?.name
+      : null;
+
+  const categoryRows = digest.categories.slice(0, 10);
+  const lowOowUsers = digest.notificationReliability.lowOowUsers.slice(0, 8);
+  const stuckCallouts = digest.callouts.stuckOver3Days.slice(0, 8);
+  const failingUsers = digest.callouts.failingUsers.slice(0, 8);
+  const unknownCompletion = digest.callouts.unknownCompletionJobs.slice(0, 8);
+
+  const metricCard = (label: string, value: string, trend: { arrow: string; color: string; deltaLabel: string }) => `
+    <td style="width: 25%; padding: 10px;">
+      <div style="background:#12121a; border:1px solid #1e1e2e; border-radius:10px; padding:12px;">
+        <div style="color:#a1a1aa; font-size:12px; margin-bottom:6px;">${label}</div>
+        <div style="color:#ffffff; font-size:24px; font-weight:700; margin-bottom:4px;">${value}</div>
+        <div style="font-size:12px; color:${trend.color};">${trend.arrow} ${trend.deltaLabel} vs prior</div>
+      </div>
+    </td>
+  `;
+
+  const teamTableRows =
+    teamRows.length === 0
+      ? `<tr><td colspan="6" style="padding:10px; color:#a1a1aa;">No team data available.</td></tr>`
+      : teamRows
+          .map((team) => {
+            const rowColor =
+              team.name === bestTeamName
+                ? "rgba(34,197,94,0.08)"
+                : team.name === worstTeamName
+                  ? "rgba(239,68,68,0.08)"
+                  : "transparent";
+            return `
+              <tr style="background:${rowColor};">
+                <td style="padding:8px; border-top:1px solid #1e1e2e;">${escapeHtml(team.name)}</td>
+                <td style="padding:8px; border-top:1px solid #1e1e2e;">${team.grade}</td>
+                <td style="padding:8px; border-top:1px solid #1e1e2e;">${team.completedJobs}</td>
+                <td style="padding:8px; border-top:1px solid #1e1e2e;">${formatCompliancePercent(team.onTimePercent)}</td>
+                <td style="padding:8px; border-top:1px solid #1e1e2e;">${team.avgDaysLate}</td>
+                <td style="padding:8px; border-top:1px solid #1e1e2e;">${team.stuckJobs}</td>
+              </tr>
+            `;
+          })
+          .join("");
+
+  const categoryTableRows =
+    categoryRows.length === 0
+      ? `<tr><td colspan="6" style="padding:10px; color:#a1a1aa;">No category data available.</td></tr>`
+      : categoryRows
+          .map(
+            (category) => `
+              <tr>
+                <td style="padding:8px; border-top:1px solid #1e1e2e;">${escapeHtml(category.name)}</td>
+                <td style="padding:8px; border-top:1px solid #1e1e2e;">${category.grade}</td>
+                <td style="padding:8px; border-top:1px solid #1e1e2e;">${category.completedJobs}</td>
+                <td style="padding:8px; border-top:1px solid #1e1e2e;">${formatCompliancePercent(category.onTimePercent)}</td>
+                <td style="padding:8px; border-top:1px solid #1e1e2e;">${category.avgDaysLate}</td>
+                <td style="padding:8px; border-top:1px solid #1e1e2e;">${category.stuckJobs}</td>
+              </tr>
+            `
+          )
+          .join("");
+
+  const lowOowHtml =
+    lowOowUsers.length === 0
+      ? `<li style="margin-bottom:6px; color:#a1a1aa;">No low-OOW users in this period.</li>`
+      : lowOowUsers
+          .map(
+            (item) =>
+              `<li style="margin-bottom:6px;">${escapeHtml(item.name)} (${escapeHtml(item.team)}): ${formatCompliancePercent(item.oowPercent)}</li>`
+          )
+          .join("");
+
+  const stuckHtml =
+    stuckCallouts.length === 0
+      ? `<li style="margin-bottom:6px; color:#a1a1aa;">No stuck jobs over 3 days.</li>`
+      : stuckCallouts
+          .map(
+            (job) =>
+              `<li style="margin-bottom:6px;"><strong>${escapeHtml(job.title || job.jobUid)}</strong> (${escapeHtml(job.team)}) - ${job.daysPastEnd} days past end</li>`
+          )
+          .join("");
+
+  const failingUsersHtml =
+    failingUsers.length === 0
+      ? `<li style="margin-bottom:6px; color:#a1a1aa;">No failing users in this period.</li>`
+      : failingUsers
+          .map(
+            (user) =>
+              `<li style="margin-bottom:6px;">${escapeHtml(user.name)} (${escapeHtml(user.team)}) - ${user.grade} (${user.score})</li>`
+          )
+          .join("");
+
+  const unknownCompletionHtml =
+    unknownCompletion.length === 0
+      ? `<li style="margin-bottom:6px; color:#a1a1aa;">No unknown completion timestamps.</li>`
+      : unknownCompletion
+          .map(
+            (job) =>
+              `<li style="margin-bottom:6px;"><strong>${escapeHtml(job.title || job.jobUid)}</strong> (${escapeHtml(job.category)})</li>`
+          )
+          .join("");
+
+  return `
+    <!doctype html>
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      </head>
+      <body style="margin:0; padding:24px; background:#0a0a0f; color:#ffffff; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+        <div style="max-width:920px; margin:0 auto; background:#0f1118; border:1px solid #1e1e2e; border-radius:14px; overflow:hidden;">
+          <div style="padding:20px 24px; border-bottom:1px solid #1e1e2e; background:linear-gradient(180deg,#151823,#0f1118);">
+            <h1 style="margin:0 0 4px 0; font-size:24px; color:#f97316;">Weekly Operations Report</h1>
+            <p style="margin:0; color:#a1a1aa; font-size:13px;">${periodLabel}</p>
+          </div>
+
+          <div style="padding:14px 14px 4px 14px;">
+            <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
+              <tr>
+                ${metricCard("On-Time Completion", formatCompliancePercent(digest.summary.onTimePercent), onTimeTrend)}
+                ${metricCard("OOW Usage", formatCompliancePercent(digest.summary.oowUsagePercent), oowTrend)}
+                ${metricCard("Stuck Jobs", `${digest.summary.stuckJobs}`, stuckTrend)}
+                ${metricCard("Completed Jobs", `${digest.summary.completedJobs}`, completedTrend)}
+              </tr>
+            </table>
+          </div>
+
+          <div style="padding:0 24px 20px 24px;">
+            <h2 style="font-size:16px; margin:10px 0;">Team Performance</h2>
+            <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="border:1px solid #1e1e2e; border-radius:8px; overflow:hidden; font-size:13px;">
+              <thead style="background:#12121a; color:#a1a1aa;">
+                <tr>
+                  <th align="left" style="padding:8px;">Team</th>
+                  <th align="left" style="padding:8px;">Grade</th>
+                  <th align="left" style="padding:8px;">Completed</th>
+                  <th align="left" style="padding:8px;">On-Time</th>
+                  <th align="left" style="padding:8px;">Avg Days Late</th>
+                  <th align="left" style="padding:8px;">Stuck</th>
+                </tr>
+              </thead>
+              <tbody>${teamTableRows}</tbody>
+            </table>
+
+            <h2 style="font-size:16px; margin:18px 0 8px;">Category Performance</h2>
+            <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="border:1px solid #1e1e2e; border-radius:8px; overflow:hidden; font-size:13px;">
+              <thead style="background:#12121a; color:#a1a1aa;">
+                <tr>
+                  <th align="left" style="padding:8px;">Category</th>
+                  <th align="left" style="padding:8px;">Grade</th>
+                  <th align="left" style="padding:8px;">Completed</th>
+                  <th align="left" style="padding:8px;">On-Time</th>
+                  <th align="left" style="padding:8px;">Avg Days Late</th>
+                  <th align="left" style="padding:8px;">Stuck</th>
+                </tr>
+              </thead>
+              <tbody>${categoryTableRows}</tbody>
+            </table>
+
+            <h2 style="font-size:16px; margin:18px 0 8px;">Notification Reliability</h2>
+            <p style="margin:0 0 8px 0; font-size:13px;">
+              OOW before start: <strong>${formatCompliancePercent(digest.notificationReliability.oowBeforeStartPercent)}</strong><br/>
+              Started on time: <strong>${formatCompliancePercent(digest.notificationReliability.startedOnTimePercent)}</strong>
+            </p>
+            <ul style="padding-left:20px; margin:8px 0 0 0; font-size:13px; color:#d4d4d8;">
+              ${lowOowHtml}
+            </ul>
+
+            <h2 style="font-size:16px; margin:18px 0 8px;">Callouts</h2>
+            <p style="margin:0 0 6px 0; color:#f97316; font-size:13px;">Stuck jobs (&gt;3 days overdue)</p>
+            <ul style="padding-left:20px; margin:0 0 10px 0; font-size:13px; color:#d4d4d8;">${stuckHtml}</ul>
+
+            <p style="margin:0 0 6px 0; color:#f97316; font-size:13px;">Lowest-performing users</p>
+            <ul style="padding-left:20px; margin:0 0 10px 0; font-size:13px; color:#d4d4d8;">${failingUsersHtml}</ul>
+
+            <p style="margin:0 0 6px 0; color:#f97316; font-size:13px;">Unknown completion timestamps</p>
+            <ul style="padding-left:20px; margin:0 0 14px 0; font-size:13px; color:#d4d4d8;">${unknownCompletionHtml}</ul>
+
+            <a href="${escapeHtml(dashboardUrl)}" style="display:inline-block; background:#f97316; color:#111827; text-decoration:none; font-weight:700; border-radius:8px; padding:10px 14px; font-size:13px;">
+              Open Full Compliance Dashboard
+            </a>
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+}
+
+function buildWeeklyComplianceEmailText(digest: ComplianceDigest, dashboardUrl: string): string {
+  const lines: string[] = [];
+  lines.push(`Weekly Operations Report (${digest.period.from} - ${digest.period.to})`);
+  lines.push("");
+  lines.push(`Total Jobs: ${digest.summary.totalJobs}`);
+  lines.push(`Completed Jobs: ${digest.summary.completedJobs}`);
+  lines.push(`On-Time Completion: ${formatCompliancePercent(digest.summary.onTimePercent)}`);
+  lines.push(`OOW Usage: ${formatCompliancePercent(digest.summary.oowUsagePercent)}`);
+  lines.push(`Stuck Jobs: ${digest.summary.stuckJobs}`);
+  lines.push(`Unknown Completion Timestamps: ${digest.summary.unknownCompletionJobs}`);
+  lines.push("");
+  lines.push("Top Teams:");
+  for (const team of digest.teams.slice(0, 8)) {
+    lines.push(
+      `- ${team.name}: grade ${team.grade}, on-time ${formatCompliancePercent(team.onTimePercent)}, completed ${team.completedJobs}, stuck ${team.stuckJobs}`
+    );
+  }
+  lines.push("");
+  lines.push("Top Categories:");
+  for (const category of digest.categories.slice(0, 8)) {
+    lines.push(
+      `- ${category.name}: grade ${category.grade}, on-time ${formatCompliancePercent(category.onTimePercent)}, completed ${category.completedJobs}, stuck ${category.stuckJobs}`
+    );
+  }
+  lines.push("");
+  lines.push(
+    `Notification Reliability: OOW before start ${formatCompliancePercent(digest.notificationReliability.oowBeforeStartPercent)}, Started on time ${formatCompliancePercent(digest.notificationReliability.startedOnTimePercent)}`
+  );
+  if (digest.notificationReliability.lowOowUsers.length > 0) {
+    lines.push("Low OOW Users:");
+    for (const user of digest.notificationReliability.lowOowUsers.slice(0, 8)) {
+      lines.push(`- ${user.name} (${user.team}): ${formatCompliancePercent(user.oowPercent)}`);
+    }
+  }
+  if (digest.callouts.stuckOver3Days.length > 0) {
+    lines.push("");
+    lines.push("Stuck Jobs > 3 days:");
+    for (const job of digest.callouts.stuckOver3Days.slice(0, 8)) {
+      lines.push(`- ${job.title || job.jobUid} (${job.team}): ${job.daysPastEnd} days past end`);
+    }
+  }
+  if (digest.callouts.failingUsers.length > 0) {
+    lines.push("");
+    lines.push("Lowest-performing users:");
+    for (const user of digest.callouts.failingUsers.slice(0, 8)) {
+      lines.push(`- ${user.name} (${user.team}): ${user.grade} (${user.score})`);
+    }
+  }
+  if (digest.callouts.unknownCompletionJobs.length > 0) {
+    lines.push("");
+    lines.push("Unknown completion timestamps:");
+    for (const job of digest.callouts.unknownCompletionJobs.slice(0, 8)) {
+      lines.push(`- ${job.title || job.jobUid} (${job.category})`);
+    }
+  }
+  lines.push("");
+  lines.push(`Full dashboard: ${dashboardUrl}`);
+  return lines.join("\n");
+}
+
+export async function sendWeeklyComplianceEmail(
+  params: SendWeeklyComplianceEmailParams
+): Promise<{ success: boolean; error?: string }> {
+  const appBase =
+    (process.env.NEXT_PUBLIC_APP_URL || "").trim() ||
+    (process.env.APP_URL || "").trim() ||
+    "https://www.pbtechops.com";
+  const defaultDashboardUrl = `${appBase.replace(/\/$/, "")}/dashboards/zuper-compliance`;
+  const dashboardUrl = params.dashboardUrl?.trim() || defaultDashboardUrl;
+  const weekLabel = `${params.digest.period.from} - ${params.digest.period.to}`;
+
+  const html = buildWeeklyComplianceEmailHtml(params.digest, dashboardUrl);
+  const text = buildWeeklyComplianceEmailText(params.digest, dashboardUrl);
+
+  return sendEmailMessage({
+    to: params.to,
+    bcc: params.bcc,
+    subject: `Weekly Ops Report - ${weekLabel}`,
+    html,
+    text,
+    debugFallbackTitle: `WEEKLY COMPLIANCE REPORT for ${params.to}`,
+    debugFallbackBody: text,
   });
 }
 
