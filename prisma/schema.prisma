@@ -687,6 +687,21 @@ model StockTransaction {
 }
 
 // ===========================================
+// BOM TOOL FEEDBACK
+// ===========================================
+
+model BomToolFeedback {
+  id            String   @id @default(cuid())
+  notes         String   // Free-text feedback from the user
+  dealId        String?  // HubSpot deal ID if linked
+  dealName      String?  // Deal/project name for context
+  submittedBy   String   // User email
+  createdAt     DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+// ===========================================
 // BUG REPORTS / TICKETS
 // ===========================================
 

@@ -1608,35 +1608,32 @@ function BomDashboardInner() {
     addToast({ type: "success", title: "Markdown copied to clipboard" });
   }, [items, bom, catalogStatus, addToast, catalogSources]);
 
-  /* ---- Copy BOM Tool feedback notes ---- */
-  const handleCopyBomToolNotes = useCallback(async () => {
-    const overallNotes = String(bom?.project?.aiFeedbackOverall || "").trim();
-    if (!overallNotes) {
-      addToast({
-        type: "error",
-        title: "Add overall BOM Tool notes first",
-      });
+  /* ---- Submit BOM Tool feedback to DB (for Claude to read) ---- */
+  const [submittingFeedback, setSubmittingFeedback] = useState(false);
+  const handleSubmitBomFeedback = useCallback(async () => {
+    const notes = String(bom?.project?.aiFeedbackOverall || "").trim();
+    if (!notes) {
+      addToast({ type: "error", title: "Add overall BOM Tool notes first" });
       return;
     }
-
-    const lines: string[] = [
-      "# BOM Tool Feedback",
-      "",
-      `Date: ${new Date().toLocaleDateString()}`,
-      `Deal: ${linkedProject?.dealname || bom?.project?.customer || "Unknown"}`,
-      `Deal ID: ${linkedProject?.hs_object_id || "N/A"}`,
-      "",
-      "## Feedback",
-      overallNotes,
-      "",
-      "## Requested outcome",
-      "- Update BOM extraction prompt/parsing behavior to address this recurring issue.",
-      "- Keep existing category taxonomy and output schema stable.",
-      "- Prefer deterministic extraction where possible over ambiguous inference.",
-    ];
-
-    await navigator.clipboard.writeText(lines.join("\n"));
-    addToast({ type: "success", title: "BOM Tool notes copied" });
+    setSubmittingFeedback(true);
+    try {
+      const res = await fetch("/api/bom/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          notes,
+          dealId: linkedProject?.hs_object_id || null,
+          dealName: linkedProject?.dealname || bom?.project?.customer || null,
+        }),
+      });
+      if (!res.ok) throw new Error(`Submit failed (${res.status})`);
+      addToast({ type: "success", title: "Feedback submitted — Claude will review before next BOM session" });
+    } catch {
+      addToast({ type: "error", title: "Failed to submit feedback" });
+    } finally {
+      setSubmittingFeedback(false);
+    }
   }, [bom, linkedProject, addToast]);
 
   /* ---- Save to Inventory ---- */
@@ -2370,14 +2367,15 @@ function BomDashboardInner() {
               <div className="flex items-center justify-between gap-2 mb-2">
                 <h3 className="text-sm font-semibold text-foreground">Overall AI Feedback</h3>
                 <button
-                  onClick={handleCopyBomToolNotes}
-                  className="px-3 py-1.5 rounded-lg bg-surface-2 border border-t-border text-xs text-foreground hover:bg-surface transition-colors"
+                  onClick={handleSubmitBomFeedback}
+                  disabled={submittingFeedback}
+                  className="px-3 py-1.5 rounded-lg bg-cyan-600 text-white text-xs hover:bg-cyan-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
-                  ⎘ Copy BOM Tool Notes
+                  {submittingFeedback ? "Submitting…" : "↑ Submit to Claude"}
                 </button>
               </div>
               <p className="text-xs text-muted mb-2">
-                Capture global extraction feedback for BOM Tool behavior and parsing quality.
+                Notes submitted here are stored and reviewed by Claude before the next BOM session to improve extraction behavior.
               </p>
               <textarea
                 value={bom.project.aiFeedbackOverall || ""}
@@ -2414,12 +2412,6 @@ function BomDashboardInner() {
                 className="px-4 py-2 rounded-lg bg-surface border border-t-border text-sm text-foreground hover:bg-surface-2 transition-colors"
               >
                 ⎘ Copy Markdown
-              </button>
-              <button
-                onClick={handleCopyBomToolNotes}
-                className="px-4 py-2 rounded-lg bg-surface border border-t-border text-sm text-foreground hover:bg-surface-2 transition-colors"
-              >
-                ⎘ Copy BOM Tool Notes
               </button>
               <button
                 onClick={handleSaveInventory}
