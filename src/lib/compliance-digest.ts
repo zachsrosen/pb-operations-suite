@@ -4,37 +4,25 @@ import {
   COMPLIANCE_EXCLUDED_USER_UIDS,
   COMPLIANCE_TEAM_OVERRIDES,
 } from "@/lib/compliance-team-overrides";
-import { JOB_CATEGORIES, JOB_CATEGORY_UIDS, zuper } from "@/lib/zuper";
-
-const STUCK_STATUSES = new Set(
-  ["on our way", "started", "in progress"].map((s) => s.toLowerCase())
-);
-
-const NEVER_STARTED_STATUSES = new Set(
-  [
-    "new",
-    "scheduled",
-    "unassigned",
-    "ready to schedule",
-    "ready to build",
-    "ready for inspection",
-  ].map((s) => s.toLowerCase())
-);
-
-const COMPLETED_STATUSES = new Set(
-  [
-    "completed",
-    "construction complete",
-    "passed",
-    "partial pass",
-    "failed",
-  ].map((s) => s.toLowerCase())
-);
-
-const EXCLUDED_USER_NAMES = ["patrick", "jessica", "matt raichart"];
-const EXCLUDED_TEAM_PREFIXES = ["backoffice", "back office", "admin", "office", "sales"];
-const GRACE_MS = 24 * 60 * 60 * 1000;
-const MAX_PAGES_PER_CATEGORY = 50;
+import { JOB_CATEGORIES, JOB_CATEGORY_UIDS } from "@/lib/zuper";
+import {
+  type AssignedUser,
+  STUCK_STATUSES,
+  NEVER_STARTED_STATUSES,
+  COMPLETED_STATUSES,
+  GRACE_MS,
+  CATEGORY_UID_TO_NAME,
+  getCategoryUid,
+  getStatusName,
+  getCompletedTimeFromHistory,
+  getOnOurWayTime,
+  getStartedTime,
+  isExcludedUser,
+  isExcludedTeam,
+  extractAssignedUsers,
+  computeGrade,
+  fetchJobsForCategory,
+} from "@/lib/compliance-helpers";
 
 export interface ComplianceDigest {
   period: { from: string; to: string; days: number };
@@ -79,12 +67,6 @@ export interface ComplianceDigest {
     unknownCompletionJobs: Array<{ jobUid: string; title: string; category: string }>;
   };
 }
-
-type AssignedUser = {
-  userUid: string;
-  userName: string;
-  teamNames: string[];
-};
 
 type JobWithCategory = {
   job: any;
