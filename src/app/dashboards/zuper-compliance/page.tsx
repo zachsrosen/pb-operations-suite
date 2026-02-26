@@ -1361,6 +1361,41 @@ export default function ZuperCompliancePage() {
       </div>
 
       <div className="mb-3">
+        <h3 className="text-sm font-semibold text-foreground">Composite Comparisons</h3>
+        <p className="text-xs text-muted">Team and category rollups.</p>
+      </div>
+
+      {/* Team Comparison */}
+      {data?.teamComparison && data.teamComparison.length > 1 && (
+        <div className="mb-8">
+          <ComparisonTable
+            rows={data.teamComparison}
+            title="Team Comparison"
+            nameLabel="Team"
+            accentColor="orange"
+            users={data.users}
+            groupType="team"
+            onInspectUser={inspectUserFromGroup}
+          />
+        </div>
+      )}
+
+      {/* Category Comparison */}
+      {data?.categoryComparison && data.categoryComparison.length > 1 && (
+        <div className="mb-8">
+          <ComparisonTable
+            rows={data.categoryComparison}
+            title="Job Category Comparison"
+            nameLabel="Category"
+            accentColor="blue"
+            users={data.users}
+            groupType="category"
+            onInspectUser={inspectUserFromGroup}
+          />
+        </div>
+      )}
+
+      <div className="mb-3">
         <h3 className="text-sm font-semibold text-foreground">User Scorecard</h3>
         <p className="text-xs text-muted">Primary view: start here for person-level accountability.</p>
       </div>
@@ -1635,41 +1670,6 @@ export default function ZuperCompliancePage() {
           </table>
         </div>
       </div>
-
-      <div className="mt-8 mb-3">
-        <h3 className="text-sm font-semibold text-foreground">Composite Comparisons</h3>
-        <p className="text-xs text-muted">Rollups by team, category, and crew composition.</p>
-      </div>
-
-      {/* Team Comparison */}
-      {data?.teamComparison && data.teamComparison.length > 1 && (
-        <div className="mb-8">
-          <ComparisonTable
-            rows={data.teamComparison}
-            title="Team Comparison"
-            nameLabel="Team"
-            accentColor="orange"
-            users={data.users}
-            groupType="team"
-            onInspectUser={inspectUserFromGroup}
-          />
-        </div>
-      )}
-
-      {/* Category Comparison */}
-      {data?.categoryComparison && data.categoryComparison.length > 1 && (
-        <div className="mb-8">
-          <ComparisonTable
-            rows={data.categoryComparison}
-            title="Job Category Comparison"
-            nameLabel="Category"
-            accentColor="blue"
-            users={data.users}
-            groupType="category"
-            onInspectUser={inspectUserFromGroup}
-          />
-        </div>
-      )}
 
       {/* Crew Composition Comparison */}
       {data?.crewComposition && data.crewComposition.length > 0 && (
