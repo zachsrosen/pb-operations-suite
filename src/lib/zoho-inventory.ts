@@ -252,7 +252,9 @@ export class ZohoInventoryClient {
   /** Load all Zoho items into a module-level cache (60 min TTL). */
   async getItemsForMatching(): Promise<ZohoInventoryItem[]> {
     if (_itemCache && Date.now() < _itemCache.expiresAt) return _itemCache.items;
-    const items = await this.listItems();
+    const allItems = await this.listItems();
+    // Only match against active items — inactive items cannot be added to SOs/POs
+    const items = allItems.filter(i => !i.status || i.status === "active");
     _itemCache = { items, expiresAt: Date.now() + ITEM_CACHE_TTL_MS };
     return items;
   }
