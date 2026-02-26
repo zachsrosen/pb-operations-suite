@@ -430,7 +430,7 @@ export async function POST(req: NextRequest) {
 
   // ── Call Claude with the uploaded file (Files API) ─────────────────────────
   let rawText = "";
-  const INLINE_LIMIT = 20 * 1024 * 1024; // 20MB — Anthropic inline base64 limit
+  const INLINE_LIMIT = 45 * 1024 * 1024; // 45MB — covers typical large plansets
 
   try {
     let message: Awaited<ReturnType<typeof client.beta.messages.create>> | null = null;
