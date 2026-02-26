@@ -185,27 +185,39 @@ export async function POST(request: NextRequest) {
 
   const bomItems = Array.isArray(bomData?.items) ? bomData.items : [];
 
-  // Build line items — POs use name-only line items (no item_id).
-  // Zoho restricts item_id on POs to items flagged "Can be Purchased";
-  // most inventory items are sales-only, so we skip item linking here.
-  const unmatchedCount = 0;
-  const lineItems = bomItems.map((item) => {
+  // Build line items — only include items matched to an existing Zoho item_id.
+  // Name-only fallback is intentionally avoided: unmatched items are skipped
+  // so we never create phantom products in Zoho's item catalog.
+  // Note: matched items must have "Can be Purchased" enabled in Zoho to appear on POs.
+  let unmatchedCount = 0;
+  const resolvedItems = await Promise.all(bomItems.map(async (item) => {
     const name =
       item.model
         ? `${item.brand ? item.brand + " " : ""}${item.model}`
         : item.description;
+
+    // Try model first, then full "brand model" name, then description
+    const searchTerms = [item.model, name, item.description].filter((t): t is string => !!t && t.trim().length > 1);
+    let zohoItemId: string | null = null;
+    for (const term of searchTerms) {
+      zohoItemId = await zohoInventory.findItemIdByName(term);
+      if (zohoItemId) break;
+    }
+
+    if (!zohoItemId) {
+      unmatchedCount++;
+      return null; // will be filtered out — do not create name-only lines
+    }
 
     // Quantity: parse carefully — `|| 1` would silently over-order on invalid values.
     // Use 1 as minimum only when the parsed value is truly 0/NaN after rounding.
     const parsedQty = Math.round(Number(item.qty));
     const quantity = Number.isFinite(parsedQty) && parsedQty > 0 ? parsedQty : 1;
 
-    return {
-      name,
-      quantity,
-      description: item.description,
-    };
-  });
+    return { item_id: zohoItemId, name, quantity, description: item.description };
+  }));
+
+  const lineItems = resolvedItems.filter((item): item is NonNullable<typeof item> => item !== null);
 
   // 4. Create PO in Zoho
   const address = bomData?.project?.address ?? "";
