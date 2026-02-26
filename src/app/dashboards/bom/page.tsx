@@ -1614,7 +1614,7 @@ function BomDashboardInner() {
     addToast({ type: "success", title: "Markdown copied to clipboard" });
   }, [items, bom, catalogStatus, addToast, catalogSources]);
 
-  /* ---- Submit BOM Tool feedback to DB (for Claude to read) ---- */
+  /* ---- Submit BOM Tool feedback to DB (for BOM Tool automation to read) ---- */
   const [submittingFeedback, setSubmittingFeedback] = useState(false);
   const handleSubmitBomFeedback = useCallback(async () => {
     const notes = String(bom?.project?.aiFeedbackOverall || "").trim();
@@ -1634,7 +1634,7 @@ function BomDashboardInner() {
         }),
       });
       if (!res.ok) throw new Error(`Submit failed (${res.status})`);
-      addToast({ type: "success", title: "Feedback submitted — Claude will review before next BOM session" });
+      addToast({ type: "success", title: "Feedback submitted — BOM Tool automation will review before next session" });
     } catch {
       addToast({ type: "error", title: "Failed to submit feedback" });
     } finally {
@@ -2383,11 +2383,11 @@ function BomDashboardInner() {
                   disabled={submittingFeedback}
                   className="px-3 py-1.5 rounded-lg bg-cyan-600 text-white text-xs hover:bg-cyan-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
-                  {submittingFeedback ? "Submitting…" : "↑ Submit to Claude"}
+                  {submittingFeedback ? "Submitting…" : "↑ Submit to BOM Tool"}
                 </button>
               </div>
               <p className="text-xs text-muted mb-2">
-                Notes submitted here are stored and reviewed by Claude before the next BOM session to improve extraction behavior.
+                Notes submitted here are stored and reviewed by the BOM Tool automation before the next session to improve extraction behavior.
               </p>
               <textarea
                 value={bom.project.aiFeedbackOverall || ""}
