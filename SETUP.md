@@ -42,6 +42,108 @@
 
 ---
 
+## External Catalog Integrations (Zoho, OpenSolar, QuickBooks)
+
+These credentials power:
+- Product catalog comparison (`/dashboards/product-comparison`)
+- Zoho draft purchase order creation (`POST /api/bom/create-po`)
+- Zoho draft sales order creation (`POST /api/bom/create-so`)
+- Zoho inventory sync (`POST /api/inventory/sync-zoho`)
+
+### Zoho Inventory
+
+Required environment variables:
+```bash
+ZOHO_INVENTORY_ORG_ID=
+ZOHO_INVENTORY_CLIENT_ID=
+ZOHO_INVENTORY_CLIENT_SECRET=
+ZOHO_INVENTORY_REFRESH_TOKEN=
+```
+
+Optional (non-US accounts):
+```bash
+ZOHO_INVENTORY_API_BASE_URL=https://www.zohoapis.eu/inventory/v1
+ZOHO_ACCOUNTS_BASE_URL=https://accounts.zoho.eu
+```
+
+Credential retrieval:
+- Org ID: Zoho Inventory -> Settings -> Organization Profile -> Organization ID
+- OAuth app credentials: [api-console.zoho.com](https://api-console.zoho.com) -> your app -> Client Details
+- Refresh token: use Zoho Self Client flow with scopes:
+  - `ZohoInventory.purchaseorders.CREATE`
+  - `ZohoInventory.salesorders.CREATE`
+  - `ZohoInventory.contacts.READ`
+  - `ZohoInventory.items.READ`
+
+### OpenSolar
+
+Required environment variables:
+```bash
+OPENSOLAR_API_KEY=
+```
+
+Optional:
+```bash
+OPENSOLAR_API_URL=https://api.opensolar.com/api
+OPENSOLAR_WEB_URL=https://app.opensolar.com
+```
+
+Credential retrieval:
+- OpenSolar -> top-right menu -> Account Settings -> API
+
+### QuickBooks Online
+
+Required environment variables:
+```bash
+QUICKBOOKS_COMPANY_ID=
+QUICKBOOKS_ACCESS_TOKEN=
+```
+
+Optional:
+```bash
+QUICKBOOKS_API_BASE_URL=https://quickbooks.api.intuit.com/v3/company
+QUICKBOOKS_WEB_URL=https://app.qbo.intuit.com
+QUICKBOOKS_MINOR_VERSION=75
+```
+
+Credential retrieval:
+- Company ID: in the QBO URL when logged in (`...company=1234567890`)
+- Access token: Intuit Developer -> OAuth 2.0 Playground -> authorize company -> copy Bearer token
+
+Note: QuickBooks access tokens expire every hour. This is acceptable for on-demand comparison runs; for persistent automation, add refresh token + Intuit app client credentials.
+
+### IT Request Template
+
+Use this email when requesting credentials:
+
+```text
+Subject: API Credentials Needed — Zoho Inventory, OpenSolar, QuickBooks
+
+Hi [IT],
+
+We’re connecting PB Operations Suite to three external systems for product catalog sync, purchase order creation, and sales order creation. Please provide these credentials for environment variables:
+
+Zoho Inventory
+- ZOHO_INVENTORY_ORG_ID
+- ZOHO_INVENTORY_CLIENT_ID
+- ZOHO_INVENTORY_CLIENT_SECRET
+- ZOHO_INVENTORY_REFRESH_TOKEN
+- (optional, non-US) ZOHO_INVENTORY_API_BASE_URL, ZOHO_ACCOUNTS_BASE_URL
+
+OpenSolar
+- OPENSOLAR_API_KEY
+
+QuickBooks Online
+- QUICKBOOKS_COMPANY_ID
+- QUICKBOOKS_ACCESS_TOKEN
+
+QuickBooks note: access tokens expire every hour. If this needs to run continuously, we will also need refresh token + Intuit app client credentials.
+
+Thanks.
+```
+
+---
+
 ## Deploy to Vercel
 
 ### Option 1: Vercel CLI
@@ -66,6 +168,10 @@
    - `DEPLOYMENT_WEBHOOK_SECRET` - Secret required by `/api/deployment` in production
    - `API_SECRET_TOKEN` - (Optional) Token for external API access
    - `SITE_PASSWORD` - (Optional) Legacy password gate
+   - Optional integration creds for product comparison / Zoho transactions:
+     - `ZOHO_INVENTORY_ORG_ID`, `ZOHO_INVENTORY_CLIENT_ID`, `ZOHO_INVENTORY_CLIENT_SECRET`, `ZOHO_INVENTORY_REFRESH_TOKEN`
+     - `OPENSOLAR_API_KEY`
+     - `QUICKBOOKS_COMPANY_ID`, `QUICKBOOKS_ACCESS_TOKEN`
 
 ### Option 2: GitHub Integration
 

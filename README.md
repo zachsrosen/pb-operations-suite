@@ -32,7 +32,12 @@ Open `http://localhost:3000`.
 
 ## Optional Integrations
 
-- `ZOHO_INVENTORY_ORG_ID` + Zoho credentials to enable `POST /api/inventory/sync-zoho` (Zoho Inventory -> PB stock sync)
+- Zoho Inventory (`ZOHO_INVENTORY_ORG_ID` + Zoho OAuth credentials) for:
+  - `POST /api/inventory/sync-zoho` (Zoho Inventory -> PB stock sync)
+  - `POST /api/bom/create-po` and `POST /api/bom/create-so` (draft PO/SO creation)
+  - `GET /api/products/comparison` (product catalog comparison)
+- OpenSolar (`OPENSOLAR_API_KEY`) for `GET /api/products/comparison`
+- QuickBooks Online (`QUICKBOOKS_COMPANY_ID` + `QUICKBOOKS_ACCESS_TOKEN`) for `GET /api/products/comparison`
 
 ## Documentation
 

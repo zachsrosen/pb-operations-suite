@@ -2200,6 +2200,11 @@ function BomDashboardInner() {
                       Save current BOM
                     </button>
                   )}
+                  {!savedVersion && !saving && (
+                    <span className="text-xs text-amber-600 dark:text-amber-400">
+                      Save current BOM to enable Zoho PO/SO actions.
+                    </span>
+                  )}
                   {/* Zoho PO — only show when saved + vendors available */}
                   {savedVersion && zohoVendors && zohoVendors.length > 0 && (
                     zohoPoId ? (
@@ -2239,6 +2244,11 @@ function BomDashboardInner() {
                   {vendorsLoading && (
                     <span className="text-xs text-muted animate-pulse">Loading vendors…</span>
                   )}
+                  {savedVersion && !vendorsLoading && zohoVendors && zohoVendors.length === 0 && (
+                    <span className="text-xs text-amber-600 dark:text-amber-400">
+                      Zoho vendors unavailable (or none found). Check `/api/bom/zoho-vendors`.
+                    </span>
+                  )}
                   {/* Zoho SO — only show when saved + customers available */}
                   {savedVersion && zohoCustomers && zohoCustomers.length > 0 && (
                     zohoSoId ? (
@@ -2277,6 +2287,22 @@ function BomDashboardInner() {
                   )}
                   {customersLoading && (
                     <span className="text-xs text-muted animate-pulse">Loading customers…</span>
+                  )}
+                  {savedVersion && !customersLoading && zohoCustomers && zohoCustomers.length === 0 && (
+                    <span className="text-xs text-amber-600 dark:text-amber-400">
+                      Zoho customers unavailable (or none found). Check `/api/bom/zoho-customers`.
+                    </span>
+                  )}
+                  {savedVersion && !vendorsLoading && !customersLoading && (
+                    <button
+                      onClick={() => {
+                        setZohoVendors(null);
+                        setZohoCustomers(null);
+                      }}
+                      className="text-xs text-cyan-600 dark:text-cyan-400 hover:underline"
+                    >
+                      Retry Zoho lists
+                    </button>
                   )}
                   <button
                     onClick={() => { setLinkedProject(null); setImportTab("upload"); setDriveFiles([]); setSnapshots([]); setSavedVersion(null); setZohoPoId(null); setZohoVendors(null); setZohoSoId(null); setZohoCustomers(null); setSelectedVendorId(""); setSelectedCustomerId(""); router.replace("/dashboards/bom"); }}

@@ -62,7 +62,37 @@ interface PushRequest {
   createdAt: string;
 }
 
+interface SkuEditDraft {
+  id: string;
+  category: string;
+  brand: string;
+  model: string;
+  description: string;
+  vendorName: string;
+  vendorPartNumber: string;
+  unitSpec: string;
+  unitLabel: string;
+  unitCost: string;
+  sellPrice: string;
+  zohoItemId: string;
+  hubspotProductId: string;
+  zuperItemId: string;
+  isActive: boolean;
+}
+
+interface PushEditDraft {
+  id: string;
+  brand: string;
+  model: string;
+  description: string;
+  category: string;
+  unitSpec: string;
+  unitLabel: string;
+  systems: string[];
+}
+
 const ADMIN_ROLES = ["ADMIN", "OWNER", "MANAGER"];
+const SYSTEM_OPTIONS = ["INTERNAL", "ZOHO", "HUBSPOT", "ZUPER"] as const;
 const CATEGORIES = [
   "MODULE",
   "INVERTER",
@@ -88,6 +118,13 @@ function marginPercent(cost: number | null, sell: number | null): string {
   if (cost == null || sell == null || sell <= 0) return "—";
   const pct = ((sell - cost) / sell) * 100;
   return `${pct.toFixed(1)}%`;
+}
+
+function parseNumberOrNull(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function SyncDot({ label, ok }: { label: string; ok: boolean }) {
@@ -118,6 +155,12 @@ export default function CatalogPage() {
   const [pendingCount, setPendingCount] = useState(0);
   const [categoryFilter, setCategoryFilter] = useState("");
   const [search, setSearch] = useState("");
+  const [editingSkuId, setEditingSkuId] = useState<string | null>(null);
+  const [skuEditDraft, setSkuEditDraft] = useState<SkuEditDraft | null>(null);
+  const [savingSkuEdit, setSavingSkuEdit] = useState(false);
+  const [editingPushId, setEditingPushId] = useState<string | null>(null);
+  const [pushEditDraft, setPushEditDraft] = useState<PushEditDraft | null>(null);
+  const [savingPushEdit, setSavingPushEdit] = useState(false);
 
   const userRole = (session?.user as { role?: string } | undefined)?.role ?? "";
   const isAdmin = ADMIN_ROLES.includes(userRole);
@@ -218,6 +261,134 @@ export default function CatalogPage() {
     }
   }
 
+  function beginSkuEdit(sku: Sku) {
+    setEditingSkuId(sku.id);
+    setSkuEditDraft({
+      id: sku.id,
+      category: sku.category,
+      brand: sku.brand,
+      model: sku.model,
+      description: sku.description ?? "",
+      vendorName: sku.vendorName ?? "",
+      vendorPartNumber: sku.vendorPartNumber ?? "",
+      unitSpec: sku.unitSpec != null ? String(sku.unitSpec) : "",
+      unitLabel: sku.unitLabel ?? "",
+      unitCost: sku.unitCost != null ? String(sku.unitCost) : "",
+      sellPrice: sku.sellPrice != null ? String(sku.sellPrice) : "",
+      zohoItemId: sku.zohoItemId ?? "",
+      hubspotProductId: sku.hubspotProductId ?? "",
+      zuperItemId: sku.zuperItemId ?? "",
+      isActive: sku.isActive,
+    });
+  }
+
+  function cancelSkuEdit() {
+    setEditingSkuId(null);
+    setSkuEditDraft(null);
+    setSavingSkuEdit(false);
+  }
+
+  async function saveSkuEdit() {
+    if (!skuEditDraft) return;
+    setSavingSkuEdit(true);
+    try {
+      const res = await fetch("/api/inventory/skus", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: skuEditDraft.id,
+          category: skuEditDraft.category,
+          brand: skuEditDraft.brand,
+          model: skuEditDraft.model,
+          description: skuEditDraft.description,
+          vendorName: skuEditDraft.vendorName,
+          vendorPartNumber: skuEditDraft.vendorPartNumber,
+          unitSpec: skuEditDraft.unitSpec || null,
+          unitLabel: skuEditDraft.unitLabel || null,
+          unitCost: skuEditDraft.unitCost || null,
+          sellPrice: skuEditDraft.sellPrice || null,
+          zohoItemId: skuEditDraft.zohoItemId || null,
+          hubspotProductId: skuEditDraft.hubspotProductId || null,
+          zuperItemId: skuEditDraft.zuperItemId || null,
+          isActive: skuEditDraft.isActive,
+        }),
+      });
+      const data = await res.json() as { error?: string; sku?: Sku };
+      if (!res.ok || !data.sku) throw new Error(data.error || "Save failed");
+      setSkus((prev) => prev.map((row) => (row.id === data.sku!.id ? data.sku! : row)));
+      addToast({ type: "success", title: "SKU updated" });
+      cancelSkuEdit();
+    } catch (err: unknown) {
+      addToast({ type: "error", title: err instanceof Error ? err.message : "Failed to update SKU" });
+    } finally {
+      setSavingSkuEdit(false);
+    }
+  }
+
+  function beginPushEdit(push: PushRequest) {
+    setEditingPushId(push.id);
+    setPushEditDraft({
+      id: push.id,
+      brand: push.brand,
+      model: push.model,
+      description: push.description,
+      category: push.category,
+      unitSpec: push.unitSpec ?? "",
+      unitLabel: push.unitLabel ?? "",
+      systems: [...push.systems],
+    });
+  }
+
+  function cancelPushEdit() {
+    setEditingPushId(null);
+    setPushEditDraft(null);
+    setSavingPushEdit(false);
+  }
+
+  function togglePushSystem(system: string) {
+    setPushEditDraft((prev) => {
+      if (!prev) return prev;
+      const has = prev.systems.includes(system);
+      const nextSystems = has
+        ? prev.systems.filter((s) => s !== system)
+        : [...prev.systems, system];
+      return { ...prev, systems: nextSystems };
+    });
+  }
+
+  async function savePushEdit() {
+    if (!pushEditDraft) return;
+    if (pushEditDraft.systems.length === 0) {
+      addToast({ type: "error", title: "Select at least one target system" });
+      return;
+    }
+    setSavingPushEdit(true);
+    try {
+      const res = await fetch(`/api/catalog/push-requests/${pushEditDraft.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          brand: pushEditDraft.brand,
+          model: pushEditDraft.model,
+          description: pushEditDraft.description,
+          category: pushEditDraft.category,
+          unitSpec: pushEditDraft.unitSpec || null,
+          unitLabel: pushEditDraft.unitLabel || null,
+          systems: pushEditDraft.systems,
+        }),
+      });
+      const data = await res.json() as { error?: string; push?: PushRequest };
+      if (!res.ok || !data.push) throw new Error(data.error || "Save failed");
+      setPendingPushes((prev) => prev.map((row) => (row.id === data.push!.id ? data.push! : row)));
+      addToast({ type: "success", title: "Pending request updated" });
+      cancelPushEdit();
+    } catch (err: unknown) {
+      addToast({ type: "error", title: err instanceof Error ? err.message : "Failed to update request" });
+    } finally {
+      setSavingPushEdit(false);
+    }
+  }
+
   return (
     <DashboardShell title="Equipment Catalog" accentColor="cyan">
       {/* Tabs + Submit button */}
@@ -286,7 +457,7 @@ export default function CatalogPage() {
             <p className="text-sm text-muted animate-pulse py-8 text-center">Loading SKUs…</p>
           ) : (
             <div className="rounded-xl border border-t-border bg-surface shadow-card overflow-x-auto">
-              <table className="min-w-[1260px] w-full text-sm">
+              <table className="min-w-[1420px] w-full text-sm">
                 <thead>
                   <tr className="border-b border-t-border bg-surface-2 text-xs font-medium uppercase tracking-wide text-muted">
                     <th className="px-4 py-2 text-left">Category</th>
@@ -299,40 +470,193 @@ export default function CatalogPage() {
                     <th className="px-4 py-2 text-right">Margin</th>
                     <th className="px-4 py-2 text-left">Sync Status</th>
                     <th className="px-4 py-2 text-right">Stock</th>
+                    {isAdmin && <th className="px-4 py-2 text-right">Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.length === 0 ? (
                     <tr>
-                      <td colSpan={10} className="px-4 py-8 text-center text-sm text-muted">No SKUs found.</td>
+                      <td colSpan={isAdmin ? 11 : 10} className="px-4 py-8 text-center text-sm text-muted">No SKUs found.</td>
                     </tr>
                   ) : filtered.map((sku) => (
                     <tr key={sku.id} className="border-b border-t-border last:border-b-0 hover:bg-surface-2 transition-colors align-top">
-                      <td className="px-4 py-3 text-xs text-muted font-medium">{sku.category}</td>
-                      <td className="px-4 py-3 font-medium text-foreground">{sku.brand}</td>
+                      <td className="px-4 py-3 text-xs text-muted font-medium">
+                        {editingSkuId === sku.id && skuEditDraft ? (
+                          <select
+                            value={skuEditDraft.category}
+                            onChange={(e) => setSkuEditDraft((prev) => prev ? { ...prev, category: e.target.value } : prev)}
+                            className="w-full rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                          >
+                            {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                          </select>
+                        ) : sku.category}
+                      </td>
+                      <td className="px-4 py-3 font-medium text-foreground">
+                        {editingSkuId === sku.id && skuEditDraft ? (
+                          <input
+                            value={skuEditDraft.brand}
+                            onChange={(e) => setSkuEditDraft((prev) => prev ? { ...prev, brand: e.target.value } : prev)}
+                            className="w-full rounded border border-t-border bg-surface px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                          />
+                        ) : sku.brand}
+                      </td>
                       <td className="px-4 py-3 min-w-[280px]">
-                        <div className="font-medium text-foreground">{sku.model}</div>
-                        {sku.description && (
-                          <div className="text-xs text-muted mt-0.5">{sku.description}</div>
+                        {editingSkuId === sku.id && skuEditDraft ? (
+                          <div className="space-y-1.5">
+                            <input
+                              value={skuEditDraft.model}
+                              onChange={(e) => setSkuEditDraft((prev) => prev ? { ...prev, model: e.target.value } : prev)}
+                              className="w-full rounded border border-t-border bg-surface px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                              placeholder="Model"
+                            />
+                            <input
+                              value={skuEditDraft.description}
+                              onChange={(e) => setSkuEditDraft((prev) => prev ? { ...prev, description: e.target.value } : prev)}
+                              className="w-full rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                              placeholder="Description"
+                            />
+                            <input
+                              value={skuEditDraft.vendorName}
+                              onChange={(e) => setSkuEditDraft((prev) => prev ? { ...prev, vendorName: e.target.value } : prev)}
+                              className="w-full rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                              placeholder="Vendor Name"
+                            />
+                          </div>
+                        ) : (
+                          <>
+                            <div className="font-medium text-foreground">{sku.model}</div>
+                            {sku.description && (
+                              <div className="text-xs text-muted mt-0.5">{sku.description}</div>
+                            )}
+                            {sku.vendorName && (
+                              <div className="text-xs text-muted/70 mt-0.5">Vendor: {sku.vendorName}</div>
+                            )}
+                          </>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-xs text-muted">{sku.vendorPartNumber || "—"}</td>
                       <td className="px-4 py-3 text-xs text-muted">
-                        {sku.unitSpec != null ? `${sku.unitSpec}${sku.unitLabel ? ` ${sku.unitLabel}` : ""}` : "—"}
+                        {editingSkuId === sku.id && skuEditDraft ? (
+                          <input
+                            value={skuEditDraft.vendorPartNumber}
+                            onChange={(e) => setSkuEditDraft((prev) => prev ? { ...prev, vendorPartNumber: e.target.value } : prev)}
+                            className="w-full rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                          />
+                        ) : (sku.vendorPartNumber || "—")}
                       </td>
-                      <td className="px-4 py-3 text-right text-xs text-muted">{money(sku.unitCost)}</td>
-                      <td className="px-4 py-3 text-right text-xs text-muted">{money(sku.sellPrice)}</td>
-                      <td className="px-4 py-3 text-right text-xs text-muted">{marginPercent(sku.unitCost, sku.sellPrice)}</td>
+                      <td className="px-4 py-3 text-xs text-muted">
+                        {editingSkuId === sku.id && skuEditDraft ? (
+                          <div className="flex gap-1.5">
+                            <input
+                              value={skuEditDraft.unitSpec}
+                              onChange={(e) => setSkuEditDraft((prev) => prev ? { ...prev, unitSpec: e.target.value } : prev)}
+                              className="w-20 rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                              placeholder="Spec"
+                            />
+                            <input
+                              value={skuEditDraft.unitLabel}
+                              onChange={(e) => setSkuEditDraft((prev) => prev ? { ...prev, unitLabel: e.target.value } : prev)}
+                              className="w-16 rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                              placeholder="Unit"
+                            />
+                          </div>
+                        ) : (
+                          sku.unitSpec != null ? `${sku.unitSpec}${sku.unitLabel ? ` ${sku.unitLabel}` : ""}` : "—"
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right text-xs text-muted">
+                        {editingSkuId === sku.id && skuEditDraft ? (
+                          <input
+                            value={skuEditDraft.unitCost}
+                            onChange={(e) => setSkuEditDraft((prev) => prev ? { ...prev, unitCost: e.target.value } : prev)}
+                            className="w-24 rounded border border-t-border bg-surface px-2 py-1 text-right text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                            placeholder="0.00"
+                          />
+                        ) : money(sku.unitCost)}
+                      </td>
+                      <td className="px-4 py-3 text-right text-xs text-muted">
+                        {editingSkuId === sku.id && skuEditDraft ? (
+                          <input
+                            value={skuEditDraft.sellPrice}
+                            onChange={(e) => setSkuEditDraft((prev) => prev ? { ...prev, sellPrice: e.target.value } : prev)}
+                            className="w-24 rounded border border-t-border bg-surface px-2 py-1 text-right text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                            placeholder="0.00"
+                          />
+                        ) : money(sku.sellPrice)}
+                      </td>
+                      <td className="px-4 py-3 text-right text-xs text-muted">{marginPercent(
+                        editingSkuId === sku.id && skuEditDraft ? parseNumberOrNull(skuEditDraft.unitCost) : sku.unitCost,
+                        editingSkuId === sku.id && skuEditDraft ? parseNumberOrNull(skuEditDraft.sellPrice) : sku.sellPrice
+                      )}</td>
                       <td className="px-4 py-3 text-xs">
-                        <div className="flex items-center gap-3">
-                          <SyncDot label="Zoho" ok={sku.syncHealth?.zoho ?? Boolean(sku.zohoItemId)} />
-                          <SyncDot label="HS" ok={sku.syncHealth?.hubspot ?? Boolean(sku.hubspotProductId)} />
-                          <SyncDot label="Zu" ok={sku.syncHealth?.zuper ?? Boolean(sku.zuperItemId)} />
-                        </div>
+                        {editingSkuId === sku.id && skuEditDraft ? (
+                          <div className="space-y-1">
+                            <input
+                              value={skuEditDraft.zohoItemId}
+                              onChange={(e) => setSkuEditDraft((prev) => prev ? { ...prev, zohoItemId: e.target.value } : prev)}
+                              className="w-full rounded border border-t-border bg-surface px-2 py-1 text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                              placeholder="Zoho Item ID"
+                            />
+                            <input
+                              value={skuEditDraft.hubspotProductId}
+                              onChange={(e) => setSkuEditDraft((prev) => prev ? { ...prev, hubspotProductId: e.target.value } : prev)}
+                              className="w-full rounded border border-t-border bg-surface px-2 py-1 text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                              placeholder="HubSpot Product ID"
+                            />
+                            <input
+                              value={skuEditDraft.zuperItemId}
+                              onChange={(e) => setSkuEditDraft((prev) => prev ? { ...prev, zuperItemId: e.target.value } : prev)}
+                              className="w-full rounded border border-t-border bg-surface px-2 py-1 text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                              placeholder="Zuper Item ID"
+                            />
+                            <label className="inline-flex items-center gap-1 text-[11px] text-muted">
+                              <input
+                                type="checkbox"
+                                checked={skuEditDraft.isActive}
+                                onChange={(e) => setSkuEditDraft((prev) => prev ? { ...prev, isActive: e.target.checked } : prev)}
+                              />
+                              Active
+                            </label>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-3">
+                            <SyncDot label="Zoho" ok={sku.syncHealth?.zoho ?? Boolean(sku.zohoItemId)} />
+                            <SyncDot label="HS" ok={sku.syncHealth?.hubspot ?? Boolean(sku.hubspotProductId)} />
+                            <SyncDot label="Zu" ok={sku.syncHealth?.zuper ?? Boolean(sku.zuperItemId)} />
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-right text-xs text-muted">
                         {sku.stockLevels.reduce((sum, l) => sum + l.quantityOnHand, 0)}
                       </td>
+                      {isAdmin && (
+                        <td className="px-4 py-3 text-right text-xs">
+                          {editingSkuId === sku.id ? (
+                            <div className="inline-flex items-center gap-2">
+                              <button
+                                onClick={saveSkuEdit}
+                                disabled={savingSkuEdit}
+                                className="text-cyan-400 hover:text-cyan-300 disabled:opacity-50"
+                              >
+                                {savingSkuEdit ? "Saving…" : "Save"}
+                              </button>
+                              <button
+                                onClick={cancelSkuEdit}
+                                disabled={savingSkuEdit}
+                                className="text-muted hover:text-foreground"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => beginSkuEdit(sku)}
+                              className="text-cyan-400 hover:text-cyan-300"
+                            >
+                              Edit
+                            </button>
+                          )}
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -433,16 +757,81 @@ export default function CatalogPage() {
               {pendingPushes.map((p) => (
                 <div key={p.id} className={`grid ${isAdmin ? "grid-cols-[1fr_1fr_140px_100px_120px]" : "grid-cols-[1fr_1fr_140px_100px]"} gap-x-3 items-center border-b border-t-border last:border-b-0 px-4 py-3 text-sm hover:bg-surface-2 transition-colors`}>
                   <div className="min-w-0">
-                    <div className="font-medium text-foreground truncate">{p.brand} — {p.model}</div>
-                    <div className="text-xs text-muted truncate">{p.description}</div>
-                    <div className="text-xs text-muted/60 mt-0.5">{p.category}</div>
+                    {editingPushId === p.id && pushEditDraft ? (
+                      <div className="space-y-1.5">
+                        <input
+                          value={pushEditDraft.brand}
+                          onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, brand: e.target.value } : prev)}
+                          className="w-full rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                          placeholder="Brand"
+                        />
+                        <input
+                          value={pushEditDraft.model}
+                          onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, model: e.target.value } : prev)}
+                          className="w-full rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                          placeholder="Model"
+                        />
+                        <input
+                          value={pushEditDraft.description}
+                          onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, description: e.target.value } : prev)}
+                          className="w-full rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                          placeholder="Description"
+                        />
+                        <div className="flex gap-1.5">
+                          <select
+                            value={pushEditDraft.category}
+                            onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, category: e.target.value } : prev)}
+                            className="w-full rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                          >
+                            {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                          </select>
+                          <input
+                            value={pushEditDraft.unitSpec}
+                            onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, unitSpec: e.target.value } : prev)}
+                            className="w-20 rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                            placeholder="Spec"
+                          />
+                          <input
+                            value={pushEditDraft.unitLabel}
+                            onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, unitLabel: e.target.value } : prev)}
+                            className="w-16 rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                            placeholder="Unit"
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="font-medium text-foreground truncate">{p.brand} — {p.model}</div>
+                        <div className="text-xs text-muted truncate">{p.description}</div>
+                        <div className="text-xs text-muted/60 mt-0.5">{p.category}</div>
+                      </>
+                    )}
                   </div>
                   <div className="flex flex-wrap gap-1">
-                    {p.systems.map((s) => (
-                      <span key={s} className="inline-flex items-center rounded-md bg-cyan-500/15 px-1.5 py-0.5 text-xs font-medium text-cyan-400 ring-1 ring-cyan-500/30">
-                        {s}
-                      </span>
-                    ))}
+                    {editingPushId === p.id && pushEditDraft ? (
+                      SYSTEM_OPTIONS.map((system) => {
+                        const checked = pushEditDraft.systems.includes(system);
+                        return (
+                          <label
+                            key={system}
+                            className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs ring-1 ${checked ? "bg-cyan-500/15 text-cyan-400 ring-cyan-500/30" : "bg-surface text-muted ring-[color:var(--border)]"}`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => togglePushSystem(system)}
+                            />
+                            {system}
+                          </label>
+                        );
+                      })
+                    ) : (
+                      p.systems.map((s) => (
+                        <span key={s} className="inline-flex items-center rounded-md bg-cyan-500/15 px-1.5 py-0.5 text-xs font-medium text-cyan-400 ring-1 ring-cyan-500/30">
+                          {s}
+                        </span>
+                      ))
+                    )}
                   </div>
                   <span className="text-xs text-muted truncate">{p.requestedBy}</span>
                   <span className="text-xs text-muted">
@@ -450,18 +839,45 @@ export default function CatalogPage() {
                   </span>
                   {isAdmin ? (
                     <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => handleApprove(p.id)}
-                        className="text-xs text-green-400 hover:text-green-300 hover:underline font-medium transition-colors"
-                      >
-                        Approve
-                      </button>
-                      <button
-                        onClick={() => handleReject(p.id)}
-                        className="text-xs text-red-400 hover:text-red-300 hover:underline transition-colors"
-                      >
-                        Reject
-                      </button>
+                      {editingPushId === p.id ? (
+                        <>
+                          <button
+                            onClick={savePushEdit}
+                            disabled={savingPushEdit}
+                            className="text-xs text-cyan-400 hover:text-cyan-300 hover:underline font-medium transition-colors disabled:opacity-50"
+                          >
+                            {savingPushEdit ? "Saving…" : "Save"}
+                          </button>
+                          <button
+                            onClick={cancelPushEdit}
+                            disabled={savingPushEdit}
+                            className="text-xs text-muted hover:text-foreground hover:underline transition-colors"
+                          >
+                            Cancel
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => beginPushEdit(p)}
+                            className="text-xs text-cyan-400 hover:text-cyan-300 hover:underline transition-colors"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => handleApprove(p.id)}
+                            className="text-xs text-green-400 hover:text-green-300 hover:underline font-medium transition-colors"
+                          >
+                            Approve
+                          </button>
+                          <button
+                            onClick={() => handleReject(p.id)}
+                            className="text-xs text-red-400 hover:text-red-300 hover:underline transition-colors"
+                          >
+                            Reject
+                          </button>
+                        </>
+                      )}
                     </div>
                   ) : (
                     <span className="text-xs text-muted italic">Awaiting admin</span>
