@@ -260,36 +260,53 @@ export class ZohoInventoryClient {
   }
 
   /**
-   * Find a Zoho item_id by matching a BOM item name/model against the cached
+   * Find a Zoho item by matching a BOM item name/model against the cached
    * item list. Tries (in order):
    *   1. Exact normalized match on name
    *   2. Exact normalized match on SKU
    *   3. Zoho item name contains the query (normalized)
    *   4. Query contains the Zoho item name (normalized, min 5 chars)
+   *
+   * Returns { item_id, zohoName } so callers can verify the match,
+   * or null if no match found.
    */
-  async findItemIdByName(query: string): Promise<string | null> {
+  async findItemIdByName(query: string): Promise<{ item_id: string; zohoName: string } | null> {
     if (!query || query.trim().length < 2) return null;
     const q = normalizeName(query);
     const items = await this.getItemsForMatching();
 
     // 1. Exact name match
     const exactName = items.find(i => normalizeName(i.name) === q);
-    if (exactName) return exactName.item_id;
+    if (exactName) return { item_id: exactName.item_id, zohoName: exactName.name };
 
     // 2. Exact SKU match
     const exactSku = items.find(i => i.sku && normalizeName(i.sku) === q);
-    if (exactSku) return exactSku.item_id;
+    if (exactSku) return { item_id: exactSku.item_id, zohoName: exactSku.name };
 
-    // 3. Zoho name contains query
+    // 3. Zoho SKU contains query (e.g. query "HIN-T440NF(BK)" → SKU "HYU HIN-T440NF(BK)")
+    if (q.length >= 3) {
+      const skuContains = items.find(i => i.sku && normalizeName(i.sku).includes(q));
+      if (skuContains) return { item_id: skuContains.item_id, zohoName: skuContains.name };
+    }
+
+    // 4. Query contains Zoho SKU (only if SKU is substantive)
+    const queryContainsSku = items.find(i => {
+      if (!i.sku) return false;
+      const s = normalizeName(i.sku);
+      return s.length >= 5 && q.includes(s);
+    });
+    if (queryContainsSku) return { item_id: queryContainsSku.item_id, zohoName: queryContainsSku.name };
+
+    // 5. Zoho name contains query
     const nameContains = items.find(i => normalizeName(i.name).includes(q));
-    if (nameContains) return nameContains.item_id;
+    if (nameContains) return { item_id: nameContains.item_id, zohoName: nameContains.name };
 
-    // 4. Query contains Zoho name (only if Zoho name is substantive)
+    // 6. Query contains Zoho name (only if Zoho name is substantive)
     const queryContains = items.find(i => {
       const n = normalizeName(i.name);
       return n.length >= 5 && q.includes(n);
     });
-    if (queryContains) return queryContains.item_id;
+    if (queryContains) return { item_id: queryContains.item_id, zohoName: queryContains.name };
 
     return null;
   }
