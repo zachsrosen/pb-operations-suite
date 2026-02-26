@@ -182,10 +182,12 @@ export async function POST(request: NextRequest) {
 
   const bomItems = Array.isArray(bomData?.items) ? bomData.items : [];
 
-  // Build line items — match each BOM item to a Zoho item_id by name.
-  // Uses a module-level cache of all Zoho items (loaded once, reused 60 min).
+  // Build line items — only include items matched to an existing Zoho item_id.
+  // Name-only fallback is intentionally avoided: unmatched items are skipped
+  // so we never create phantom products in Zoho's item catalog.
   let unmatchedCount = 0;
-  const lineItems = await Promise.all(bomItems.map(async (item) => {
+  const unmatchedItems: string[] = [];
+  const resolvedItems = await Promise.all(bomItems.map(async (item) => {
     const name =
       item.model
         ? `${item.brand ? item.brand + " " : ""}${item.model}`
@@ -199,18 +201,19 @@ export async function POST(request: NextRequest) {
       if (zohoItemId) break;
     }
 
-    if (!zohoItemId) unmatchedCount++;
+    if (!zohoItemId) {
+      unmatchedCount++;
+      unmatchedItems.push(name); // record what we searched for so caller can diagnose
+      return null; // will be filtered out — do not create name-only lines
+    }
 
     const parsedQty = Math.round(Number(item.qty));
     const quantity = Number.isFinite(parsedQty) && parsedQty > 0 ? parsedQty : 1;
 
-    return {
-      ...(zohoItemId ? { item_id: zohoItemId } : {}),
-      name,
-      quantity,
-      description: item.description,
-    };
+    return { item_id: zohoItemId, name, quantity, description: item.description };
   }));
+
+  const lineItems = resolvedItems.filter((item): item is NonNullable<typeof item> => item !== null);
 
   // 4. Create SO in Zoho
   const address = bomData?.project?.address ?? "";
@@ -290,5 +293,6 @@ export async function POST(request: NextRequest) {
     salesorder_id: soResult.salesorder_id,
     salesorder_number: soResult.salesorder_number,
     unmatchedCount,
+    unmatchedItems,
   });
 }

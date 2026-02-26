@@ -1154,6 +1154,7 @@ function BomDashboardInner() {
         purchaseorder_id?: string;
         purchaseorder_number?: string;
         unmatchedCount?: number;
+        unmatchedItems?: string[];
         error?: string;
       };
       if (!res.ok || !data.purchaseorder_id) {
@@ -1162,10 +1163,11 @@ function BomDashboardInner() {
       }
       setZohoPoId(data.purchaseorder_id);
       const unmatch = data.unmatchedCount ?? 0;
+      const skippedList = data.unmatchedItems ?? [];
       addToast({
-        type: "success",
+        type: unmatch > 0 ? "warning" : "success",
         title: `PO ${data.purchaseorder_number ?? ""} created in Zoho`,
-        ...(unmatch > 0 ? { description: `${unmatch} item${unmatch === 1 ? "" : "s"} had no Zoho SKU match — added as description-only lines` } : {}),
+        ...(unmatch > 0 ? { description: `${unmatch} item${unmatch === 1 ? "" : "s"} skipped (no Zoho match): ${skippedList.join(", ")}` } : {}),
       });
     } catch {
       addToast({ type: "error", title: "Network error creating PO" });
@@ -1192,6 +1194,7 @@ function BomDashboardInner() {
         salesorder_id?: string;
         salesorder_number?: string;
         unmatchedCount?: number;
+        unmatchedItems?: string[];
         error?: string;
       };
       if (!res.ok || !data.salesorder_id) {
@@ -1200,10 +1203,11 @@ function BomDashboardInner() {
       }
       setZohoSoId(data.salesorder_id);
       const unmatch = data.unmatchedCount ?? 0;
+      const skippedList = data.unmatchedItems ?? [];
       addToast({
-        type: "success",
+        type: unmatch > 0 ? "warning" : "success",
         title: `SO ${data.salesorder_number ?? ""} created in Zoho`,
-        ...(unmatch > 0 ? { description: `${unmatch} item${unmatch === 1 ? "" : "s"} had no Zoho SKU match — added as description-only lines` } : {}),
+        ...(unmatch > 0 ? { description: `${unmatch} item${unmatch === 1 ? "" : "s"} skipped (no Zoho match): ${skippedList.join(", ")}` } : {}),
       });
     } catch {
       addToast({ type: "error", title: "Network error creating SO" });
