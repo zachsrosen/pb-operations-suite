@@ -566,6 +566,81 @@ function diffBoms(itemsA: Omit<BomItem, "id">[], itemsB: Omit<BomItem, "id">[]):
 }
 
 /* ------------------------------------------------------------------ */
+/*  ContactCombobox — searchable vendor/customer picker                 */
+/* ------------------------------------------------------------------ */
+
+interface ContactComboboxProps {
+  contacts: { contact_id: string; contact_name: string }[];
+  value: string;
+  onChange: (id: string) => void;
+  placeholder?: string;
+  accentClass?: string;
+}
+
+function ContactCombobox({ contacts, value, onChange, placeholder = "Search…", accentClass = "focus:ring-cyan-500" }: ContactComboboxProps) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const selected = contacts.find((c) => c.contact_id === value) ?? null;
+
+  const filtered = useMemo(() => {
+    if (!query.trim()) return contacts;
+    const q = query.toLowerCase();
+    return contacts.filter((c) => c.contact_name.toLowerCase().includes(q));
+  }, [contacts, query]);
+
+  // Close on outside click
+  useEffect(() => {
+    function onMouseDown(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+        setQuery("");
+      }
+    }
+    document.addEventListener("mousedown", onMouseDown);
+    return () => document.removeEventListener("mousedown", onMouseDown);
+  }, []);
+
+  function handleSelect(id: string) {
+    onChange(id);
+    setQuery("");
+    setOpen(false);
+  }
+
+  return (
+    <div ref={containerRef} className="relative">
+      <input
+        type="text"
+        className={`text-xs rounded bg-surface-2 border border-t-border text-foreground px-2 py-1 w-48 focus:outline-none focus:ring-1 ${accentClass}`}
+        placeholder={selected ? selected.contact_name : placeholder}
+        value={open ? query : (selected ? selected.contact_name : "")}
+        onFocus={() => { setOpen(true); setQuery(""); }}
+        onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+      />
+      {open && (
+        <div className="absolute z-50 mt-1 w-64 max-h-56 overflow-y-auto rounded-lg border border-t-border bg-surface-elevated shadow-card-lg text-xs">
+          {filtered.length === 0 ? (
+            <div className="px-3 py-2 text-muted">No matches</div>
+          ) : (
+            filtered.map((c) => (
+              <button
+                key={c.contact_id}
+                type="button"
+                onMouseDown={() => handleSelect(c.contact_id)}
+                className={`w-full text-left px-3 py-1.5 hover:bg-surface-2 transition-colors ${c.contact_id === value ? "font-medium text-cyan-600 dark:text-cyan-400" : "text-foreground"}`}
+              >
+                {c.contact_name}
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  Component                                                           */
 /* ------------------------------------------------------------------ */
 
@@ -2221,18 +2296,12 @@ function BomDashboardInner() {
                       </a>
                     ) : (
                       <div className="flex items-center gap-2">
-                        <select
+                        <ContactCombobox
+                          contacts={zohoVendors}
                           value={selectedVendorId}
-                          onChange={(e) => setSelectedVendorId(e.target.value)}
-                          className="text-xs rounded bg-surface-2 border border-t-border text-foreground px-2 py-1 focus:outline-none focus:ring-1 focus:ring-cyan-500"
-                        >
-                          <option value="">Select vendor…</option>
-                          {zohoVendors.map((v) => (
-                            <option key={v.contact_id} value={v.contact_id}>
-                              {v.contact_name}
-                            </option>
-                          ))}
-                        </select>
+                          onChange={setSelectedVendorId}
+                          placeholder="Search vendors…"
+                        />
                         <button
                           onClick={createPo}
                           disabled={!selectedVendorId || creatingPo}
@@ -2267,18 +2336,12 @@ function BomDashboardInner() {
                       </a>
                     ) : (
                       <div className="flex items-center gap-2">
-                        <select
+                        <ContactCombobox
+                          contacts={zohoCustomers}
                           value={selectedCustomerId}
-                          onChange={(e) => setSelectedCustomerId(e.target.value)}
-                          className="text-xs rounded bg-surface-2 border border-t-border text-foreground px-2 py-1 focus:outline-none focus:ring-1 focus:ring-cyan-500"
-                        >
-                          <option value="">Select customer…</option>
-                          {zohoCustomers.map((c) => (
-                            <option key={c.contact_id} value={c.contact_id}>
-                              {c.contact_name}
-                            </option>
-                          ))}
-                        </select>
+                          onChange={setSelectedCustomerId}
+                          placeholder="Search customers…"
+                        />
                         <button
                           onClick={createSo}
                           disabled={!selectedCustomerId || creatingSo}

@@ -46,6 +46,11 @@ interface ZohoVendorListResponse {
   code?: number;
   message?: string;
   contacts?: ZohoVendor[];
+  page_context?: {
+    page?: number;
+    per_page?: number;
+    has_more_page?: boolean;
+  };
 }
 
 export interface ZohoPurchaseOrderLineItem {
@@ -218,19 +223,38 @@ export class ZohoInventoryClient {
   }
 
   async listVendors(): Promise<ZohoVendor[]> {
-    const response = await this.request<ZohoVendorListResponse>("/contacts", {
-      contact_type: "vendor",
-      per_page: 200,
-    });
-    return Array.isArray(response.contacts) ? response.contacts : [];
+    return this.listContacts("vendor");
   }
 
   async listCustomers(): Promise<ZohoVendor[]> {
-    const response = await this.request<ZohoVendorListResponse>("/contacts", {
-      contact_type: "customer",
-      per_page: 200,
-    });
-    return Array.isArray(response.contacts) ? response.contacts : [];
+    return this.listContacts("customer");
+  }
+
+  private async listContacts(contactType: "vendor" | "customer"): Promise<ZohoVendor[]> {
+    const contacts: ZohoVendor[] = [];
+    let page = 1;
+    const perPage = 200;
+
+    while (true) {
+      const response = await this.request<ZohoVendorListResponse>("/contacts", {
+        contact_type: contactType,
+        per_page: perPage,
+        page,
+      });
+
+      const batch = Array.isArray(response.contacts) ? response.contacts : [];
+      contacts.push(...batch);
+
+      const hasMore = !!response.page_context?.has_more_page;
+      if (!hasMore || batch.length === 0) break;
+      page += 1;
+
+      if (page > 100) {
+        throw new Error(`Zoho contacts pagination exceeded safety limit (100 pages)`);
+      }
+    }
+
+    return contacts;
   }
 
   async createSalesOrder(
