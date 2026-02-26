@@ -3,7 +3,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { zohoInventory } from "@/lib/zoho-inventory";
 import { logActivity, prisma } from "@/lib/db";
-import { EquipmentCategory } from "@/generated/prisma/enums";
 
 export const runtime = "nodejs";
 
@@ -16,11 +15,6 @@ const ALLOWED_ROLES = new Set([
   "PROJECT_MANAGER",
   "DESIGNER",
 ]);
-
-// All EquipmentCategory enum values are valid for SKU lookup.
-const INVENTORY_CATEGORIES = new Set<EquipmentCategory>(
-  Object.values(EquipmentCategory)
-);
 
 export async function POST(request: NextRequest) {
   const startedAt = Date.now();
@@ -191,45 +185,22 @@ export async function POST(request: NextRequest) {
 
   const bomItems = Array.isArray(bomData?.items) ? bomData.items : [];
 
-  // Batch-lookup SKUs by (category, brand, model) to get zohoItemId.
-  const skuLookups = bomItems
-    .filter(
-      (item) =>
-        item.category &&
-        item.brand &&
-        item.model &&
-        INVENTORY_CATEGORIES.has(item.category as EquipmentCategory)
-    )
-    .map((item) => ({
-      category: item.category,
-      brand: item.brand!,
-      model: item.model!,
-    }));
-
-  const skuMap = new Map<string, string | null>(); // "category:brand:model" → zohoItemId
-  if (skuLookups.length > 0) {
-    const skus = await prisma.equipmentSku.findMany({
-      where: {
-        OR: skuLookups.map((s) => ({
-          brand: s.brand,
-          model: s.model,
-        })),
-      },
-      select: { category: true, brand: true, model: true, zohoItemId: true },
-    });
-    for (const sku of skus) {
-      skuMap.set(`${sku.category}:${sku.brand}:${sku.model}`, sku.zohoItemId ?? null);
-    }
-  }
-
+  // Build line items — match each BOM item to a Zoho item_id by name.
+  // Uses a module-level cache of all Zoho items (loaded once, reused 60 min).
   let unmatchedCount = 0;
-  const lineItems = bomItems.map((item) => {
-    const key = `${item.category}:${item.brand ?? ""}:${item.model ?? ""}`;
-    const zohoItemId = skuMap.get(key) ?? null;
+  const lineItems = await Promise.all(bomItems.map(async (item) => {
     const name =
       item.model
         ? `${item.brand ? item.brand + " " : ""}${item.model}`
         : item.description;
+
+    // Try model first, then full "brand model" name, then description
+    const searchTerms = [item.model, name, item.description].filter((t): t is string => !!t && t.trim().length > 1);
+    let zohoItemId: string | null = null;
+    for (const term of searchTerms) {
+      zohoItemId = await zohoInventory.findItemIdByName(term);
+      if (zohoItemId) break;
+    }
 
     if (!zohoItemId) unmatchedCount++;
 
@@ -244,7 +215,7 @@ export async function POST(request: NextRequest) {
       quantity,
       description: item.description,
     };
-  });
+  }));
 
   // 4. Create PO in Zoho
   const address = bomData?.project?.address ?? "";

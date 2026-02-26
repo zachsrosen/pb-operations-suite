@@ -124,6 +124,21 @@ const DEFAULT_BASE_URL = "https://www.zohoapis.com/inventory/v1";
 const DEFAULT_ACCOUNTS_URL = "https://accounts.zoho.com";
 const DEFAULT_TIMEOUT_MS = 30_000;
 
+// ---------------------------------------------------------------------------
+// Module-level item cache (shared across warm serverless instances)
+// Populated on first SO/PO creation, reused for 60 min.
+// ---------------------------------------------------------------------------
+interface ItemCacheEntry {
+  items: ZohoInventoryItem[];
+  expiresAt: number;
+}
+let _itemCache: ItemCacheEntry | null = null;
+const ITEM_CACHE_TTL_MS = 60 * 60 * 1000; // 60 min
+
+function normalizeName(s: string): string {
+  return s.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
 function isBlank(value: string | undefined | null): boolean {
   return !value || value.trim().length === 0;
 }
@@ -232,6 +247,49 @@ export class ZohoInventoryClient {
     }
 
     return items;
+  }
+
+  /** Load all Zoho items into a module-level cache (60 min TTL). */
+  async getItemsForMatching(): Promise<ZohoInventoryItem[]> {
+    if (_itemCache && Date.now() < _itemCache.expiresAt) return _itemCache.items;
+    const items = await this.listItems();
+    _itemCache = { items, expiresAt: Date.now() + ITEM_CACHE_TTL_MS };
+    return items;
+  }
+
+  /**
+   * Find a Zoho item_id by matching a BOM item name/model against the cached
+   * item list. Tries (in order):
+   *   1. Exact normalized match on name
+   *   2. Exact normalized match on SKU
+   *   3. Zoho item name contains the query (normalized)
+   *   4. Query contains the Zoho item name (normalized, min 5 chars)
+   */
+  async findItemIdByName(query: string): Promise<string | null> {
+    if (!query || query.trim().length < 2) return null;
+    const q = normalizeName(query);
+    const items = await this.getItemsForMatching();
+
+    // 1. Exact name match
+    const exactName = items.find(i => normalizeName(i.name) === q);
+    if (exactName) return exactName.item_id;
+
+    // 2. Exact SKU match
+    const exactSku = items.find(i => i.sku && normalizeName(i.sku) === q);
+    if (exactSku) return exactSku.item_id;
+
+    // 3. Zoho name contains query
+    const nameContains = items.find(i => normalizeName(i.name).includes(q));
+    if (nameContains) return nameContains.item_id;
+
+    // 4. Query contains Zoho name (only if Zoho name is substantive)
+    const queryContains = items.find(i => {
+      const n = normalizeName(i.name);
+      return n.length >= 5 && q.includes(n);
+    });
+    if (queryContains) return queryContains.item_id;
+
+    return null;
   }
 
   async listVendors(): Promise<ZohoVendor[]> {
