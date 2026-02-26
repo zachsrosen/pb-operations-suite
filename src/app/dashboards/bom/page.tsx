@@ -666,39 +666,57 @@ function CustomerSearchCombobox({ value, valueName, onChange, autoSearch }: Cust
   const [open, setOpen] = useState(false);
   const [results, setResults] = useState<{ contact_id: string; contact_name: string }[]>([]);
   const [loading, setLoading] = useState(false);
+  const [cacheReady, setCacheReady] = useState(false); // true once server has all contacts loaded
   const [autoSearched, setAutoSearched] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Auto-search on mount if autoSearch is provided and nothing selected yet.
-  // Use only the first two words of the dealname as the query — long strings
-  // can cause Zoho's search_text to time out on large contact lists.
+  // Fetch helper — handles loading:true by polling until cache is ready
+  const fetchCustomers = useCallback((search: string, onDone: (contacts: { contact_id: string; contact_name: string }[]) => void) => {
+    setLoading(true);
+    fetch(`/api/bom/zoho-customers?search=${encodeURIComponent(search)}`)
+      .then((r) => r.json())
+      .then((data: { customers: { contact_id: string; contact_name: string }[]; loading?: boolean }) => {
+        if (data.loading) {
+          // Server is still loading all pages — retry in 3s
+          setCacheReady(false);
+          retryRef.current = setTimeout(() => fetchCustomers(search, onDone), 3000);
+        } else {
+          setCacheReady(true);
+          onDone(data.customers ?? []);
+          setLoading(false);
+        }
+      })
+      .catch(() => { setLoading(false); });
+  }, []);
+
+  // Auto-search on mount using the first two words of the dealname
   useEffect(() => {
     if (autoSearch && !value && !autoSearched) {
       setAutoSearched(true);
       const shortQuery = autoSearch.trim().split(/\s+/).slice(0, 2).join(" ");
       if (!shortQuery) return;
-      setLoading(true);
-      fetch(`/api/bom/zoho-customers?search=${encodeURIComponent(shortQuery)}`)
-        .then((r) => r.json())
-        .then((data: { customers: { contact_id: string; contact_name: string }[] }) => {
-          const matches = data.customers ?? [];
-          setResults(matches);
-          // Auto-select if there's an exact match against the full dealname
-          if (matches.length === 1) {
-            onChange(matches[0].contact_id, matches[0].contact_name);
-          } else if (matches.length > 1) {
-            const exact = matches.find(
-              (c) => c.contact_name.toLowerCase() === autoSearch.toLowerCase()
-            );
-            if (exact) onChange(exact.contact_id, exact.contact_name);
-            else setOpen(true); // show dropdown with candidates
-          }
-        })
-        .catch(() => {})
-        .finally(() => setLoading(false));
+      fetchCustomers(shortQuery, (matches) => {
+        setResults(matches);
+        if (matches.length === 1) {
+          onChange(matches[0].contact_id, matches[0].contact_name);
+        } else if (matches.length > 1) {
+          const exact = matches.find(
+            (c) => c.contact_name.toLowerCase() === autoSearch.toLowerCase()
+          );
+          if (exact) onChange(exact.contact_id, exact.contact_name);
+          else setOpen(true);
+        }
+      });
     }
-  }, [autoSearch, value, autoSearched, onChange]);
+  }, [autoSearch, value, autoSearched, onChange, fetchCustomers]);
+
+  // Cleanup on unmount
+  useEffect(() => () => {
+    if (retryRef.current) clearTimeout(retryRef.current);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+  }, []);
 
   // Debounced search as user types
   function handleInput(q: string) {
@@ -707,12 +725,7 @@ function CustomerSearchCombobox({ value, valueName, onChange, autoSearch }: Cust
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (!q.trim()) { setResults([]); return; }
     debounceRef.current = setTimeout(() => {
-      setLoading(true);
-      fetch(`/api/bom/zoho-customers?search=${encodeURIComponent(q)}`)
-        .then((r) => r.json())
-        .then((data: { customers: { contact_id: string; contact_name: string }[] }) => setResults(data.customers ?? []))
-        .catch(() => setResults([]))
-        .finally(() => setLoading(false));
+      fetchCustomers(q, (contacts) => setResults(contacts));
     }, 350);
   }
 
@@ -738,7 +751,7 @@ function CustomerSearchCombobox({ value, valueName, onChange, autoSearch }: Cust
       <input
         type="text"
         className="text-xs rounded bg-surface-2 border border-t-border text-foreground px-2 py-1 w-48 focus:outline-none focus:ring-1 focus:ring-cyan-500"
-        placeholder={valueName || (loading ? "Searching…" : "Type to search customers…")}
+        placeholder={valueName || (loading && !cacheReady ? "Loading customers…" : loading ? "Searching…" : "Type to search customers…")}
         value={open ? query : (valueName || "")}
         onFocus={() => { setOpen(true); setQuery(""); }}
         onChange={(e) => handleInput(e.target.value)}
@@ -2478,7 +2491,7 @@ function BomDashboardInner() {
                       </div>
                     )
                   )}
-                  {savedVersion && !vendorsLoading && (
+                  {savedVersion && zohoVendorError && !vendorsLoading && (
                     <button
                       onClick={() => {
                         setZohoVendors(null);
