@@ -712,8 +712,11 @@ export default function ZuperCompliancePage() {
       const params = new URLSearchParams({ days: String(days) });
       if (filterTeams.length === 1) params.set("team", filterTeams[0]);
       if (filterCategories.length === 1) params.set("category", filterCategories[0]);
+      params.set("_ts", String(Date.now()));
 
-      const res = await fetch(`/api/zuper/compliance?${params.toString()}`);
+      const res = await fetch(`/api/zuper/compliance?${params.toString()}`, {
+        cache: "no-store",
+      });
       if (!res.ok) throw new Error("Failed to fetch compliance data");
       const json: ComplianceData = await res.json();
       setData(json);

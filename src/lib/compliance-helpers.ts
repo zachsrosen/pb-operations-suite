@@ -340,6 +340,38 @@ export async function fetchJobsForCategory(
   toDate: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<any[]> {
+  const fromBoundary = new Date(`${fromDate}T00:00:00.000Z`);
+  const toBoundary = new Date(`${toDate}T23:59:59.999Z`);
+
+  // Use schedule timestamps first so the compliance date window tracks the
+  // planned work window, with fallback to completion/created timestamps.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const getJobAnchorTime = (job: any): Date | null => {
+    const candidates = [
+      job.scheduled_start_time,
+      job.scheduled_end_time,
+      job.completed_time,
+      job.completed_at,
+    ];
+    for (const value of candidates) {
+      if (!value) continue;
+      const dt = new Date(value);
+      if (!Number.isNaN(dt.getTime())) return dt;
+    }
+
+    const completedFromHistory = getCompletedTimeFromHistory(job);
+    if (completedFromHistory) return completedFromHistory;
+
+    const fallbackCandidates = [job.created_at, job.updated_at];
+    for (const value of fallbackCandidates) {
+      if (!value) continue;
+      const dt = new Date(value);
+      if (!Number.isNaN(dt.getTime())) return dt;
+    }
+
+    return null;
+  };
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const allJobs: any[] = [];
   let page = 1;
@@ -368,6 +400,11 @@ export async function fetchJobsForCategory(
       // Client-side filter: enforce category UID match
       const jobCatUid = getCategoryUid(job);
       if (jobCatUid && jobCatUid !== categoryUid) continue;
+
+      // Client-side filter: enforce date window in case Zuper ignores
+      // from_date/to_date for a subset of records.
+      const anchor = getJobAnchorTime(job);
+      if (anchor && (anchor < fromBoundary || anchor > toBoundary)) continue;
       allJobs.push(job);
     }
 
