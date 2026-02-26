@@ -386,6 +386,7 @@ export interface Project {
 
 export interface LineItem {
   id: string;
+  hubspotProductId: string | null;
   name: string;
   sku: string;
   description: string;
@@ -397,6 +398,22 @@ export interface LineItem {
   dcSize: number;
   acSize: number;
   energyStorageCapacity: number;
+}
+
+export interface CreateDealLineItemInput {
+  dealId: string;
+  name: string;
+  quantity: number;
+  description?: string | null;
+  unitPrice?: number | null;
+  sku?: string | null;
+  hubspotProductId?: string | null;
+}
+
+export interface CreateDealLineItemResult {
+  lineItemId: string;
+  associated: boolean;
+  usedProductId: string | null;
 }
 
 // All properties we need from HubSpot deals
@@ -1537,6 +1554,7 @@ export async function fetchLineItemsForDeal(dealId: string): Promise<LineItem[]>
     const lineItemsResponse = await hubspotClient.crm.lineItems.batchApi.read({
       inputs: lineItemIds.map((id) => ({ id })),
       properties: [
+        "hs_product_id",
         "name",
         "hs_sku",
         "sku",
@@ -1553,16 +1571,84 @@ export async function fetchLineItemsForDeal(dealId: string): Promise<LineItem[]>
       propertiesWithHistory: [],
     });
 
+    const productIdSet = new Set<string>();
+    for (const item of lineItemsResponse.results) {
+      const rawProductId = String(item.properties.hs_product_id || "").trim();
+      if (rawProductId) productIdSet.add(rawProductId);
+    }
+
+    const productById = new Map<string, {
+      name: string;
+      sku: string;
+      description: string;
+      productCategory: string;
+      manufacturer: string;
+    }>();
+
+    if (productIdSet.size > 0) {
+      try {
+        const productsResponse = await hubspotClient.crm.products.batchApi.read({
+          inputs: Array.from(productIdSet).map((id) => ({ id })),
+          properties: [
+            "name",
+            "hs_sku",
+            "sku",
+            "description",
+            "product_category",
+            "manufacturer",
+          ],
+          propertiesWithHistory: [],
+        });
+
+        for (const product of productsResponse.results) {
+          const productId = String(product.id || "").trim();
+          if (!productId) continue;
+          productById.set(productId, {
+            name: String(product.properties.name || ""),
+            sku: String(product.properties.hs_sku || product.properties.sku || ""),
+            description: String(product.properties.description || ""),
+            productCategory: String(product.properties.product_category || ""),
+            manufacturer: String(product.properties.manufacturer || ""),
+          });
+        }
+      } catch (productReadError) {
+        // Product lookups are an enrichment step only; don't fail line-item reads.
+        console.warn("[HubSpot] Failed to hydrate associated products for line items:", productReadError);
+      }
+    }
+
     return lineItemsResponse.results.map((item) => ({
+      hubspotProductId: String(item.properties.hs_product_id || "").trim() || null,
       id: item.id,
-      name: String(item.properties.name || ""),
-      sku: String(item.properties.hs_sku || item.properties.sku || ""),
-      description: String(item.properties.description || ""),
+      name: String(
+        item.properties.name ||
+        productById.get(String(item.properties.hs_product_id || "").trim())?.name ||
+        ""
+      ),
+      sku: String(
+        item.properties.hs_sku ||
+        item.properties.sku ||
+        productById.get(String(item.properties.hs_product_id || "").trim())?.sku ||
+        ""
+      ),
+      description: String(
+        item.properties.description ||
+        productById.get(String(item.properties.hs_product_id || "").trim())?.description ||
+        ""
+      ),
       quantity: Number(item.properties.quantity) || 1,
       price: Number(item.properties.price) || 0,
       amount: Number(item.properties.amount) || 0,
-      productCategory: String(item.properties.product_category || ""),
-      manufacturer: String(item.properties.manufacturer || ""),
+      productCategory: String(
+        item.properties.product_category ||
+        productById.get(String(item.properties.hs_product_id || "").trim())?.productCategory ||
+        ""
+      ),
+      manufacturer: String(
+        item.properties.manufacturer ||
+        productById.get(String(item.properties.hs_product_id || "").trim())?.manufacturer ||
+        ""
+      ),
       dcSize: Number(item.properties.dc_size) || 0,
       acSize: Number(item.properties.ac_size) || 0,
       energyStorageCapacity: Number(item.properties.energy_storage_capacity) || 0,
@@ -1571,6 +1657,109 @@ export async function fetchLineItemsForDeal(dealId: string): Promise<LineItem[]>
     console.error("Error fetching line items:", error);
     return [];
   }
+}
+
+export async function createDealLineItem(
+  input: CreateDealLineItemInput
+): Promise<CreateDealLineItemResult> {
+  const token = process.env.HUBSPOT_ACCESS_TOKEN;
+  if (!token) {
+    throw new Error("HUBSPOT_ACCESS_TOKEN is not configured");
+  }
+
+  const dealId = String(input.dealId || "").trim();
+  const name = String(input.name || "").trim();
+  const quantity = Number(input.quantity);
+  if (!dealId) throw new Error("dealId is required");
+  if (!name) throw new Error("line item name is required");
+  if (!Number.isFinite(quantity) || quantity <= 0) throw new Error("quantity must be > 0");
+
+  const properties: Record<string, string> = {
+    name,
+    quantity: String(Math.round(quantity * 1000) / 1000),
+  };
+
+  const description = String(input.description || "").trim();
+  if (description) properties.description = description;
+
+  if (input.unitPrice != null && Number.isFinite(Number(input.unitPrice))) {
+    properties.price = String(Number(input.unitPrice));
+  }
+
+  const sku = String(input.sku || "").trim();
+  if (sku) properties.hs_sku = sku;
+
+  const productId = String(input.hubspotProductId || "").trim();
+  if (productId) properties.hs_product_id = productId;
+
+  const createResponse = await fetch("https://api.hubapi.com/crm/v3/objects/line_items", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ properties }),
+  });
+
+  const createRaw = await createResponse.text();
+  let createJson: { id?: string; message?: string } = {};
+  try {
+    createJson = createRaw ? JSON.parse(createRaw) as { id?: string; message?: string } : {};
+  } catch {
+    createJson = {};
+  }
+  if (!createResponse.ok || !createJson?.id) {
+    throw new Error(
+      `Failed to create HubSpot line item (${createResponse.status}): ${createJson?.message || createRaw || "unknown error"}`
+    );
+  }
+
+  const lineItemId = String(createJson.id).trim();
+
+  let associated = false;
+
+  const assocBatchResponse = await fetch("https://api.hubapi.com/crm/v3/associations/line_items/deals/batch/create", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      inputs: [
+        {
+          from: { id: lineItemId },
+          to: { id: dealId },
+          type: "line_item_to_deal",
+        },
+      ],
+    }),
+  });
+
+  if (assocBatchResponse.ok) {
+    associated = true;
+  } else {
+    const assocDefaultResponse = await fetch(
+      `https://api.hubapi.com/crm/v4/objects/line_items/${encodeURIComponent(lineItemId)}/associations/default/deals/${encodeURIComponent(dealId)}`,
+      {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+    associated = assocDefaultResponse.ok;
+  }
+
+  if (!associated) {
+    throw new Error(`Created line item ${lineItemId}, but failed to associate it with deal ${dealId}`);
+  }
+
+  return {
+    lineItemId,
+    associated: true,
+    usedProductId: productId || null,
+  };
 }
 
 export function calculateStats(projects: Project[]) {

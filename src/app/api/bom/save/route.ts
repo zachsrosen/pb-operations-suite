@@ -42,6 +42,7 @@ interface BomData {
   project: {
     customer?: string;
     address?: string;
+    aiFeedbackOverall?: string;
     systemSizeKwdc?: number;
     systemSizeKwac?: number;
     moduleCount?: number;

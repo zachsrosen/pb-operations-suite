@@ -17,6 +17,7 @@ const ALLOWED_ROLES = new Set([
 
 interface LinkedProduct {
   id: string;
+  hubspotProductId: string | null;
   name: string;
   sku: string | null;
   description: string | null;
@@ -134,6 +135,7 @@ export async function GET(request: NextRequest) {
 
     return {
       id: String(line.id),
+      hubspotProductId: String(line.hubspotProductId || "").trim() || null,
       name: String(line.name || "").trim(),
       sku: String(line.sku || "").trim() || null,
       description: String(line.description || "").trim() || null,

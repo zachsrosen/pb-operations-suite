@@ -50,6 +50,7 @@ interface BomData {
   project: {
     customer?: string;
     address?: string;
+    aiFeedbackOverall?: string;
     systemSizeKwdc?: number | string;
     systemSizeKwac?: number | string;
     moduleCount?: number | string;

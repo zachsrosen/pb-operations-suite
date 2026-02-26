@@ -43,6 +43,7 @@ interface BomData {
   project: {
     customer?: string;
     address?: string;
+    aiFeedbackOverall?: string;
     systemSizeKwdc?: number | string;
     systemSizeKwac?: number | string;
     moduleCount?: number | string;
@@ -112,8 +113,12 @@ interface InternalCatalogSku {
   brand: string;
   model: string;
   description: string | null;
+  vendorPartNumber: string | null;
   unitCost: number | null;
   sellPrice: number | null;
+  zohoItemId: string | null;
+  hubspotProductId: string | null;
+  zuperItemId: string | null;
 }
 
 // Per-BOM-item catalog presence — keyed by source name
@@ -127,6 +132,7 @@ interface PricingMatch {
 
 interface LinkedBomProduct {
   id: string;
+  hubspotProductId?: string | null;
   name: string;
   sku: string | null;
   description: string | null;
@@ -302,6 +308,12 @@ function formatMoney(value: number | null): string {
   return `$${value.toFixed(2)}`;
 }
 
+function parsePositiveQty(value: number | string | null | undefined): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 1;
+  return parsed;
+}
+
 function isBlankText(value: string | null | undefined): boolean {
   return !value || value.trim().length === 0;
 }
@@ -415,6 +427,52 @@ function findBestLinkedProduct(item: BomItem, products: LinkedBomProduct[]): Lin
   }
 
   if (bestScore < 0.35) return null;
+  return best;
+}
+
+function hasLinkedProductIdentity(product: LinkedBomProduct): boolean {
+  return Boolean(
+    normalizeText(product.name) ||
+    normalizeText(product.sku) ||
+    normalizeText(product.description) ||
+    normalizeText(product.zohoName) ||
+    normalizeText(product.zohoSku)
+  );
+}
+
+function findFallbackLinkedProductForSparseItem(
+  item: BomItem,
+  products: LinkedBomProduct[]
+): LinkedBomProduct | null {
+  if (!products.length) return null;
+
+  const itemQty = parsePositiveQty(item.qty);
+  let best: LinkedBomProduct | null = null;
+  let bestScore = 0;
+
+  for (const product of products) {
+    if (!hasLinkedProductIdentity(product)) continue;
+
+    const linkedCategory = mapLinkedCategoryToBomCategory(product.productCategory);
+    if (linkedCategory && linkedCategory !== item.category) {
+      // Avoid cross-category fills when HubSpot gives us a known category.
+      continue;
+    }
+
+    const productQty = Number(product.quantity) > 0 ? Number(product.quantity) : 1;
+    const qtyDiff = Math.abs(productQty - itemQty);
+    const qtyScore = qtyDiff === 0 ? 0.3 : qtyDiff <= 1 ? 0.2 : qtyDiff <= 2 ? 0.1 : 0;
+    const categoryScore = linkedCategory === item.category ? 0.6 : 0.2;
+    const signalScore = product.zohoItemId ? 0.05 : 0;
+    const score = categoryScore + qtyScore + signalScore;
+
+    if (score > bestScore) {
+      best = product;
+      bestScore = score;
+    }
+  }
+
+  if (bestScore < 0.5) return null;
   return best;
 }
 
@@ -585,6 +643,7 @@ function BomDashboardInner() {
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [internalSkus, setInternalSkus] = useState<InternalCatalogSku[]>([]);
   const [backfillingLinkedProducts, setBackfillingLinkedProducts] = useState(false);
+  const [rowActionBusyKey, setRowActionBusyKey] = useState<string | null>(null);
 
   // Derived source list — updates automatically when comparison data arrives
   const catalogSources = sourcesFromRows(comparisonRows);
@@ -854,6 +913,7 @@ function BomDashboardInner() {
             projectInfo: {
               customer: bomData.project?.customer,
               address: bomData.project?.address,
+              aiFeedbackOverall: bomData.project?.aiFeedbackOverall,
               systemSizeKwdc: bomData.project?.systemSizeKwdc,
               moduleCount: bomData.project?.moduleCount,
             },
@@ -1191,10 +1251,25 @@ function BomDashboardInner() {
 
       let rowsUpdated = 0;
       let fieldsFilled = 0;
+      let fallbackMatchedRows = 0;
+      const remainingLinkedProducts = [...linkedProducts];
 
       const nextItems = items.map((item) => {
-        const best = findBestLinkedProduct(item, linkedProducts);
+        let usedFallback = false;
+        let best = findBestLinkedProduct(item, remainingLinkedProducts);
+
+        const missingIdentity = isBlankText(item.brand) && isBlankText(item.model);
+        if (!best && missingIdentity) {
+          best = findFallbackLinkedProductForSparseItem(item, remainingLinkedProducts);
+          usedFallback = Boolean(best);
+        }
+
         if (!best) return item;
+
+        const usedIndex = remainingLinkedProducts.findIndex((p) => p.id === best?.id);
+        if (usedIndex >= 0) {
+          remainingLinkedProducts.splice(usedIndex, 1);
+        }
 
         let changed = false;
         const next: BomItem = { ...item };
@@ -1228,6 +1303,7 @@ function BomDashboardInner() {
 
         if (!changed) return item;
         rowsUpdated += 1;
+        if (usedFallback) fallbackMatchedRows += 1;
         return next;
       });
 
@@ -1242,7 +1318,7 @@ function BomDashboardInner() {
         : "";
       addToast({
         type: "success",
-        title: `Backfilled ${fieldsFilled} field${fieldsFilled === 1 ? "" : "s"} across ${rowsUpdated} item${rowsUpdated === 1 ? "" : "s"}${zohoSummary}`,
+        title: `Backfilled ${fieldsFilled} field${fieldsFilled === 1 ? "" : "s"} across ${rowsUpdated} item${rowsUpdated === 1 ? "" : "s"}${zohoSummary}${fallbackMatchedRows > 0 ? ` | fallback matched: ${fallbackMatchedRows}` : ""}`,
       });
     } catch (e) {
       addToast({ type: "error", title: e instanceof Error ? e.message : "Failed to backfill linked products" });
@@ -1322,9 +1398,9 @@ function BomDashboardInner() {
     }, 300);
   }, []);
 
-  /* ---- Internal SKU pricing match per BOM item (token-based) ---- */
-  const pricingByItem = useMemo(() => {
-    const map = new Map<string, PricingMatch>();
+  /* ---- Internal SKU best match per BOM item (token-based) ---- */
+  const bestSkuByItem = useMemo(() => {
+    const map = new Map<string, InternalCatalogSku>();
     if (!items.length || !internalSkus.length) return map;
 
     for (const item of items) {
@@ -1340,18 +1416,116 @@ function BomDashboardInner() {
         }
       }
 
-      const unitCost = best?.unitCost ?? null;
-      const sellPrice = best?.sellPrice ?? null;
-      const marginPercent =
-        unitCost != null && sellPrice != null && sellPrice > 0
-          ? ((sellPrice - unitCost) / sellPrice) * 100
-          : null;
-
-      map.set(item.id, { unitCost, sellPrice, marginPercent });
+      if (best) {
+        map.set(item.id, best);
+      }
     }
 
     return map;
   }, [items, internalSkus]);
+
+  /* ---- Internal SKU pricing map ---- */
+  const pricingByItem = useMemo(() => {
+    const map = new Map<string, PricingMatch>();
+    for (const item of items) {
+      const sku = bestSkuByItem.get(item.id);
+      const unitCost = sku?.unitCost ?? null;
+      const sellPrice = sku?.sellPrice ?? null;
+      const marginPercent =
+        unitCost != null && sellPrice != null && sellPrice > 0
+          ? ((sellPrice - unitCost) / sellPrice) * 100
+          : null;
+      map.set(item.id, { unitCost, sellPrice, marginPercent });
+    }
+    return map;
+  }, [items, bestSkuByItem]);
+
+  /* ---- Per-row push actions: HubSpot deal line item / Zuper job part ---- */
+  const handleAddHubspotDealLineItem = useCallback(async (item: BomItem) => {
+    if (!linkedProject?.hs_object_id) {
+      addToast({ type: "error", title: "Link a HubSpot project first" });
+      return;
+    }
+
+    const actionKey = `hs:${item.id}`;
+    setRowActionBusyKey(actionKey);
+    try {
+      const sku = bestSkuByItem.get(item.id);
+      const quantity = parsePositiveQty(item.qty);
+      const res = await fetch("/api/bom/linked-products/add-hubspot-line-item", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dealId: linkedProject.hs_object_id,
+          skuId: sku?.id || null,
+          category: item.category,
+          brand: item.brand,
+          model: item.model,
+          name: [item.brand || "", item.model || ""].filter(Boolean).join(" ").trim() || item.description,
+          description: item.description,
+          quantity,
+          unitPrice: sku?.sellPrice ?? null,
+          sku: sku?.vendorPartNumber || item.model || null,
+          hubspotProductId: sku?.hubspotProductId || null,
+        }),
+      });
+      const data = await res.json() as { error?: string; lineItemId?: string };
+      if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
+      addToast({
+        type: "success",
+        title: `Added HubSpot line item${data.lineItemId ? ` (${data.lineItemId})` : ""}`,
+      });
+    } catch (e) {
+      addToast({ type: "error", title: e instanceof Error ? e.message : "Failed to add HubSpot line item" });
+    } finally {
+      setRowActionBusyKey((current) => (current === actionKey ? null : current));
+    }
+  }, [linkedProject, bestSkuByItem, addToast]);
+
+  const handleAddZuperJobPart = useCallback(async (item: BomItem) => {
+    if (!linkedProject?.zuperUid) {
+      addToast({ type: "error", title: "Linked project has no Zuper job UID" });
+      return;
+    }
+
+    const actionKey = `zu:${item.id}`;
+    setRowActionBusyKey(actionKey);
+    try {
+      const sku = bestSkuByItem.get(item.id);
+      const quantity = parsePositiveQty(item.qty);
+      const res = await fetch("/api/bom/linked-products/add-zuper-part", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jobUid: linkedProject.zuperUid,
+          skuId: sku?.id || null,
+          category: item.category,
+          brand: item.brand,
+          model: item.model,
+          name: [item.brand || "", item.model || ""].filter(Boolean).join(" ").trim() || item.description,
+          description: item.description,
+          quantity,
+          unitPrice: sku?.sellPrice ?? null,
+          sku: sku?.vendorPartNumber || item.model || null,
+          zuperItemId: sku?.zuperItemId || null,
+        }),
+      });
+      const data = await res.json() as { error?: string; mode?: "part_added" | "note_fallback"; warning?: string };
+      if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
+      if (data.mode === "note_fallback") {
+        addToast({
+          type: "error",
+          title: data.warning || "Zuper part endpoint unavailable; part request added as job note",
+        });
+      } else {
+        addToast({ type: "success", title: "Added Zuper part to job" });
+      }
+    } catch (e) {
+      addToast({ type: "error", title: e instanceof Error ? e.message : "Failed to add Zuper part" });
+    } finally {
+      setRowActionBusyKey((current) => (current === actionKey ? null : current));
+    }
+  }, [linkedProject, bestSkuByItem, addToast]);
 
   /* ---- Export CSV ---- */
   const handleExportCsv = useCallback(() => {
@@ -1404,6 +1578,13 @@ function BomDashboardInner() {
       lines.push("");
     }
 
+    const overallNotes = String(bom?.project?.aiFeedbackOverall || "").trim();
+    if (overallNotes) {
+      lines.push("## Overall AI Feedback");
+      lines.push(overallNotes);
+      lines.push("");
+    }
+
     for (const cat of CATEGORY_ORDER) {
       const catItems = grouped[cat];
       if (!catItems?.length) continue;
@@ -1429,6 +1610,68 @@ function BomDashboardInner() {
     await navigator.clipboard.writeText(lines.join("\n"));
     addToast({ type: "success", title: "Markdown copied to clipboard" });
   }, [items, bom, catalogStatus, addToast, catalogSources, pricingByItem]);
+
+  /* ---- Copy Claude skill-update notes ---- */
+  const handleCopyClaudeSkillUpdateNotes = useCallback(async () => {
+    const overallNotes = String(bom?.project?.aiFeedbackOverall || "").trim();
+    const notedItems = items
+      .filter((item) => String(item.aiFeedbackNotes || "").trim().length > 0)
+      .map((item) => ({
+        category: CATEGORY_LABELS[item.category as BomCategory] ?? item.category,
+        brand: item.brand || "—",
+        model: item.model || "—",
+        description: item.description || "—",
+        note: String(item.aiFeedbackNotes || "").trim(),
+      }));
+
+    if (!overallNotes && notedItems.length === 0) {
+      addToast({
+        type: "error",
+        title: "Add overall notes or row AI notes first",
+      });
+      return;
+    }
+
+    const lines: string[] = [
+      "# Skill Update Request: BOM Extraction",
+      "",
+      `Date: ${new Date().toLocaleDateString()}`,
+      `Deal: ${linkedProject?.dealname || bom?.project?.customer || "Unknown"}`,
+      `Deal ID: ${linkedProject?.hs_object_id || "N/A"}`,
+      "",
+      "## What to improve",
+    ];
+
+    if (overallNotes) {
+      lines.push(overallNotes, "");
+    } else {
+      lines.push("- No overall note provided; use row-level notes below.", "");
+    }
+
+    lines.push("## Row-level AI Feedback");
+    if (notedItems.length === 0) {
+      lines.push("- No row-level notes provided.");
+    } else {
+      for (const [index, row] of notedItems.entries()) {
+        lines.push(
+          `${index + 1}. [${row.category}] ${row.brand} | ${row.model}`,
+          `   Description: ${row.description}`,
+          `   Feedback: ${row.note}`
+        );
+      }
+    }
+
+    lines.push(
+      "",
+      "## Requested outcome",
+      "- Update the BOM extraction skill/prompt/parsing rules to address these recurring misses.",
+      "- Keep existing category taxonomy and output schema stable.",
+      "- Prefer deterministic extraction where possible over ambiguous inference."
+    );
+
+    await navigator.clipboard.writeText(lines.join("\n"));
+    addToast({ type: "success", title: "Claude skill update notes copied" });
+  }, [bom, items, linkedProject, addToast]);
 
   /* ---- Save to Inventory ---- */
   const handleSaveInventory = useCallback(async () => {
@@ -2130,6 +2373,42 @@ function BomDashboardInner() {
               </div>
             )}
 
+            {/* Overall AI feedback for skill updates */}
+            <div className="rounded-xl bg-surface border border-t-border p-4 shadow-card">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <h3 className="text-sm font-semibold text-foreground">Overall AI Feedback</h3>
+                <button
+                  onClick={handleCopyClaudeSkillUpdateNotes}
+                  className="px-3 py-1.5 rounded-lg bg-surface-2 border border-t-border text-xs text-foreground hover:bg-surface transition-colors"
+                >
+                  ⎘ Copy Claude Skill Notes
+                </button>
+              </div>
+              <p className="text-xs text-muted mb-2">
+                Capture global extraction feedback here; row-level notes are still available in each BOM item.
+              </p>
+              <textarea
+                value={bom.project.aiFeedbackOverall || ""}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setBom((prev) => (
+                    prev
+                      ? {
+                        ...prev,
+                        project: {
+                          ...prev.project,
+                          aiFeedbackOverall: next,
+                        },
+                      }
+                      : prev
+                  ));
+                }}
+                rows={4}
+                placeholder="Example: Claude keeps missing EV charger breaker size and often confuses racking rail model names with module model names..."
+                className="w-full rounded-lg bg-surface-2 border border-t-border text-sm text-foreground px-3 py-2 focus:outline-none focus:ring-1 focus:ring-cyan-500 placeholder:text-muted resize-y"
+              />
+            </div>
+
             {/* Action Bar */}
             <div className="flex flex-wrap gap-2">
               <button
@@ -2143,6 +2422,12 @@ function BomDashboardInner() {
                 className="px-4 py-2 rounded-lg bg-surface border border-t-border text-sm text-foreground hover:bg-surface-2 transition-colors"
               >
                 ⎘ Copy Markdown
+              </button>
+              <button
+                onClick={handleCopyClaudeSkillUpdateNotes}
+                className="px-4 py-2 rounded-lg bg-surface border border-t-border text-sm text-foreground hover:bg-surface-2 transition-colors"
+              >
+                ⎘ Copy Claude Skill Notes
               </button>
               <button
                 onClick={handleSaveInventory}
@@ -2441,19 +2726,14 @@ function BomDashboardInner() {
                   </button>
                 </div>
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[1650px] text-sm">
+                  <table className="w-full min-w-[1120px] text-sm">
                     <thead>
                       <tr className="text-xs text-muted border-b border-t-border">
-                        <th className="text-left px-4 py-2 font-medium w-40">Brand</th>
-                        <th className="text-left px-4 py-2 font-medium w-56">Model</th>
-                        <th className="text-left px-4 py-2 font-medium w-[30rem]">Description</th>
-                        <th className="text-left px-4 py-2 font-medium w-[26rem]">AI Feedback Notes</th>
-                        <th className="text-left px-4 py-2 font-medium w-16">Qty</th>
-                        <th className="text-left px-4 py-2 font-medium w-24">Spec</th>
-                        <th className="text-left px-4 py-2 font-medium w-28">Unit Cost</th>
-                        <th className="text-left px-4 py-2 font-medium w-28">Sell Price</th>
-                        <th className="text-left px-4 py-2 font-medium w-20">Margin</th>
-                        <th className="text-left px-4 py-2 font-medium w-16">Source</th>
+                        <th className="text-left px-4 py-2 font-medium w-52">Item</th>
+                        <th className="text-left px-4 py-2 font-medium w-[26rem]">Details</th>
+                        <th className="text-left px-4 py-2 font-medium w-56">Qty / Spec</th>
+                        <th className="text-left px-4 py-2 font-medium w-44">Pricing</th>
+                        <th className="text-left px-4 py-2 font-medium w-40">Deal / Job</th>
                         {catalogSources.length > 0 && (
                           <th className="text-left px-4 py-2 font-medium" colSpan={catalogSources.length}>
                             Catalogs
@@ -2463,7 +2743,7 @@ function BomDashboardInner() {
                       </tr>
                       {catalogSources.length > 0 && (
                         <tr className="text-xs text-muted border-b border-t-border bg-surface-2/50">
-                          <th colSpan={10} />
+                          <th colSpan={5} />
                           {catalogSources.map((src) => (
                             <th key={src} className="px-2 py-1 font-normal text-center w-10" title={SOURCE_DISPLAY_LABELS[src] ?? src}>
                               {SOURCE_SHORT_LABELS[src] ?? src.slice(0, 2).toUpperCase()}
@@ -2484,58 +2764,102 @@ function BomDashboardInner() {
                             className={`hover:bg-surface-2 transition-colors group ${missing ? "bg-yellow-50/30 dark:bg-yellow-900/10" : ""}`}
                           >
                             <td className="px-4 py-1.5">
-                              <EditableCell
-                                value={item.brand || ""}
-                                onChange={(v) => updateItem(item.id, "brand", v)}
-                                placeholder="Brand"
-                              />
+                              <div className="space-y-1.5">
+                                <div className="text-[11px] uppercase tracking-wide text-muted">Brand</div>
+                                <EditableCell
+                                  value={item.brand || ""}
+                                  onChange={(v) => updateItem(item.id, "brand", v)}
+                                  placeholder="Brand"
+                                />
+                                <div className="text-[11px] uppercase tracking-wide text-muted">Model</div>
+                                <EditableCell
+                                  value={item.model || ""}
+                                  onChange={(v) => updateItem(item.id, "model", v)}
+                                  placeholder="Model"
+                                />
+                              </div>
                             </td>
                             <td className="px-4 py-1.5">
-                              <EditableCell
-                                value={item.model || ""}
-                                onChange={(v) => updateItem(item.id, "model", v)}
-                                placeholder="Model"
-                              />
+                              <div className="space-y-2">
+                                <div>
+                                  <div className="text-[11px] uppercase tracking-wide text-muted mb-1">Description</div>
+                                  <EditableTextAreaCell
+                                    value={item.description}
+                                    onChange={(v) => updateItem(item.id, "description", v)}
+                                    placeholder="Description"
+                                    className="min-h-[48px]"
+                                  />
+                                </div>
+                                <div>
+                                  <div className="text-[11px] uppercase tracking-wide text-muted mb-1">AI Feedback Notes</div>
+                                  <EditableTextAreaCell
+                                    value={item.aiFeedbackNotes || ""}
+                                    onChange={(v) => updateItem(item.id, "aiFeedbackNotes", v)}
+                                    placeholder="Notes for AI follow-up, corrections, assumptions…"
+                                    className="min-h-[48px]"
+                                  />
+                                </div>
+                              </div>
                             </td>
                             <td className="px-4 py-1.5">
-                              <EditableTextAreaCell
-                                value={item.description}
-                                onChange={(v) => updateItem(item.id, "description", v)}
-                                placeholder="Description"
-                              />
-                            </td>
-                            <td className="px-4 py-1.5">
-                              <EditableTextAreaCell
-                                value={item.aiFeedbackNotes || ""}
-                                onChange={(v) => updateItem(item.id, "aiFeedbackNotes", v)}
-                                placeholder="Notes for AI follow-up, corrections, assumptions…"
-                              />
-                            </td>
-                            <td className="px-4 py-1.5">
-                              <EditableCell
-                                value={String(item.qty)}
-                                onChange={(v) => updateItem(item.id, "qty", v)}
-                                placeholder="Qty"
-                                className="w-12"
-                              />
-                            </td>
-                            <td className="px-4 py-1.5">
-                              <EditableCell
-                                value={item.unitSpec != null ? String(item.unitSpec) : ""}
-                                onChange={(v) => updateItem(item.id, "unitSpec", v)}
-                                placeholder="—"
-                              />
+                              <div className="grid grid-cols-3 gap-2 items-end">
+                                <div>
+                                  <div className="text-[11px] uppercase tracking-wide text-muted mb-1">Qty</div>
+                                  <EditableCell
+                                    value={String(item.qty)}
+                                    onChange={(v) => updateItem(item.id, "qty", v)}
+                                    placeholder="Qty"
+                                    className="w-14"
+                                  />
+                                </div>
+                                <div>
+                                  <div className="text-[11px] uppercase tracking-wide text-muted mb-1">Spec</div>
+                                  <EditableCell
+                                    value={item.unitSpec != null ? String(item.unitSpec) : ""}
+                                    onChange={(v) => updateItem(item.id, "unitSpec", v)}
+                                    placeholder="—"
+                                    className="w-20"
+                                  />
+                                </div>
+                                <div>
+                                  <div className="text-[11px] uppercase tracking-wide text-muted mb-1">Label</div>
+                                  <EditableCell
+                                    value={item.unitLabel ?? ""}
+                                    onChange={(v) => updateItem(item.id, "unitLabel", v)}
+                                    placeholder="Unit"
+                                    className="w-16"
+                                  />
+                                </div>
+                              </div>
                             </td>
                             <td className="px-4 py-1.5 text-xs text-muted">
-                              {formatMoney(pricing?.unitCost ?? null)}
+                              <div className="space-y-1">
+                                <div><span className="text-muted">Unit Cost:</span> {formatMoney(pricing?.unitCost ?? null)}</div>
+                                <div><span className="text-muted">Sell Price:</span> {formatMoney(pricing?.sellPrice ?? null)}</div>
+                                <div><span className="text-muted">Margin:</span> {pricing?.marginPercent != null ? `${pricing.marginPercent.toFixed(1)}%` : "—"}</div>
+                                <div className="text-[11px]"><span className="text-muted">Source:</span> {item.source}</div>
+                              </div>
                             </td>
-                            <td className="px-4 py-1.5 text-xs text-muted">
-                              {formatMoney(pricing?.sellPrice ?? null)}
+                            <td className="px-4 py-1.5">
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  onClick={() => handleAddHubspotDealLineItem(item)}
+                                  disabled={!linkedProject?.hs_object_id || rowActionBusyKey === `hs:${item.id}`}
+                                  className="text-[11px] px-2 py-1 rounded border border-t-border text-foreground hover:bg-surface-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                                  title={linkedProject?.hs_object_id ? "Add line item to linked HubSpot deal" : "Link a HubSpot project first"}
+                                >
+                                  {rowActionBusyKey === `hs:${item.id}` ? "Adding…" : "HS +"}
+                                </button>
+                                <button
+                                  onClick={() => handleAddZuperJobPart(item)}
+                                  disabled={!linkedProject?.zuperUid || rowActionBusyKey === `zu:${item.id}`}
+                                  className="text-[11px] px-2 py-1 rounded border border-t-border text-foreground hover:bg-surface-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                                  title={linkedProject?.zuperUid ? "Add part to linked Zuper job" : "Linked project has no Zuper job"}
+                                >
+                                  {rowActionBusyKey === `zu:${item.id}` ? "Adding…" : "ZU +"}
+                                </button>
+                              </div>
                             </td>
-                            <td className="px-4 py-1.5 text-xs text-muted">
-                              {pricing?.marginPercent != null ? `${pricing.marginPercent.toFixed(1)}%` : "—"}
-                            </td>
-                            <td className="px-4 py-1.5 text-muted text-xs whitespace-nowrap">{item.source}</td>
                             {catalogSources.map((src) => (
                               <td key={src} className="px-2 py-1.5 text-center">
                                 <span className="inline-flex items-center gap-1">

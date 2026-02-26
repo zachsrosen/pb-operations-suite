@@ -137,6 +137,21 @@ export interface ZuperApiResponse<T> {
   error?: string;
 }
 
+export interface ZuperJobPartInput {
+  itemUid?: string | null;
+  name: string;
+  quantity: number;
+  description?: string | null;
+  unitPrice?: number | null;
+  sku?: string | null;
+}
+
+export interface ZuperAddJobPartResult {
+  mode: "part_added" | "note_fallback";
+  endpoint?: string;
+  warning?: string;
+}
+
 interface ZuperAssignmentRef {
   userUid: string;
   teamUid?: string;
@@ -388,6 +403,104 @@ export class ZuperClient {
 
     const mergedNotes = [existingNotes, trimmedNote].filter(Boolean).join("\n\n");
     return this.updateJob(jobUid, { job_notes: mergedNotes });
+  }
+
+  async addPartToJob(
+    jobUid: string,
+    part: ZuperJobPartInput
+  ): Promise<ZuperApiResponse<ZuperAddJobPartResult>> {
+    const name = String(part.name || "").trim();
+    if (!name) return { type: "error", error: "Part name is required" };
+
+    const quantityRaw = Number(part.quantity);
+    const quantity = Number.isFinite(quantityRaw) && quantityRaw > 0 ? quantityRaw : 1;
+    const itemUid = String(part.itemUid || "").trim() || undefined;
+    const sku = String(part.sku || "").trim() || undefined;
+    const description = String(part.description || "").trim() || undefined;
+    const unitPrice =
+      part.unitPrice != null && Number.isFinite(Number(part.unitPrice))
+        ? Number(part.unitPrice)
+        : undefined;
+
+    const corePart = {
+      ...(itemUid ? { item_uid: itemUid } : {}),
+      ...(itemUid ? { item_id: itemUid } : {}),
+      name,
+      quantity,
+      ...(sku ? { sku } : {}),
+      ...(description ? { description } : {}),
+      ...(unitPrice != null ? { unit_price: unitPrice, price: unitPrice } : {}),
+    };
+
+    const attempts: Array<{ endpoint: string; method: "POST" | "PUT"; body: Record<string, unknown> }> = [
+      {
+        endpoint: `/jobs/${encodeURIComponent(jobUid)}/parts`,
+        method: "POST",
+        body: { parts: [corePart] },
+      },
+      {
+        endpoint: `/jobs/${encodeURIComponent(jobUid)}/parts`,
+        method: "POST",
+        body: { part: corePart },
+      },
+      {
+        endpoint: `/jobs/${encodeURIComponent(jobUid)}/job_parts`,
+        method: "POST",
+        body: { job_parts: [corePart] },
+      },
+      {
+        endpoint: `/jobs/${encodeURIComponent(jobUid)}/line_items`,
+        method: "POST",
+        body: { line_items: [corePart] },
+      },
+    ];
+
+    const errors: string[] = [];
+    for (const attempt of attempts) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const result = await this.request<any>(attempt.endpoint, {
+        method: attempt.method,
+        body: JSON.stringify(attempt.body),
+      });
+      if (result.type === "success") {
+        return {
+          type: "success",
+          data: {
+            mode: "part_added",
+            endpoint: attempt.endpoint,
+          },
+        };
+      }
+      errors.push(`${attempt.endpoint}: ${result.error || "unknown error"}`);
+    }
+
+    // Graceful fallback: preserve the request as a job note so operations still
+    // has the part request in context even if this tenant lacks parts endpoints.
+    const noteBlock = [
+      "[PB Ops] Part requested from BOM",
+      `Name: ${name}`,
+      `Quantity: ${quantity}`,
+      ...(itemUid ? [`Zuper Item ID: ${itemUid}`] : []),
+      ...(sku ? [`SKU: ${sku}`] : []),
+      ...(unitPrice != null ? [`Unit Price: ${unitPrice}`] : []),
+      ...(description ? [`Description: ${description}`] : []),
+    ].join("\n");
+
+    const noteResult = await this.appendJobNote(jobUid, noteBlock);
+    if (noteResult.type === "success") {
+      return {
+        type: "success",
+        data: {
+          mode: "note_fallback",
+          warning: "Zuper parts endpoint unavailable; added request as job note instead",
+        },
+      };
+    }
+
+    return {
+      type: "error",
+      error: `Failed to add job part. Attempts: ${errors.join(" | ")}`,
+    };
   }
 
   async clearJobSchedule(
