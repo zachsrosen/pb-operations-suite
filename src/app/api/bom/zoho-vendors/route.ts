@@ -32,6 +32,7 @@ export async function GET() {
   } catch (e) {
     const message = e instanceof Error ? e.message : "Failed to fetch vendors";
     console.error("[bom/zoho-vendors]", message);
-    return NextResponse.json({ error: message }, { status: 502 });
+    // Return empty vendors + error so the UI can surface the real reason
+    return NextResponse.json({ vendors: [], error: message });
   }
 }

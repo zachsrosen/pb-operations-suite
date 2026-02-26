@@ -612,12 +612,14 @@ function BomDashboardInner() {
   // Zoho PO state
   const [zohoVendors, setZohoVendors] = useState<{ contact_id: string; contact_name: string }[] | null>(null);
   const [vendorsLoading, setVendorsLoading] = useState(false);
+  const [zohoVendorError, setZohoVendorError] = useState<string | null>(null);
   const [selectedVendorId, setSelectedVendorId] = useState<string>("");
   const [zohoPoId, setZohoPoId] = useState<string | null>(null);
   const [creatingPo, setCreatingPo] = useState(false);
   // Zoho SO state
   const [zohoCustomers, setZohoCustomers] = useState<{ contact_id: string; contact_name: string }[] | null>(null);
   const [customersLoading, setCustomersLoading] = useState(false);
+  const [zohoCustomerError, setZohoCustomerError] = useState<string | null>(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
   const [zohoSoId, setZohoSoId] = useState<string | null>(null);
   const [creatingSo, setCreatingSo] = useState(false);
@@ -742,12 +744,14 @@ function BomDashboardInner() {
     if (!savedVersion || !linkedProject || zohoVendors !== null) return;
     setVendorsLoading(true);
     fetch("/api/bom/zoho-vendors")
-      .then((r) => r.ok ? r.json() : Promise.reject(r.status))
-      .then((data: { vendors: { contact_id: string; contact_name: string }[] }) => {
+      .then((r) => r.json())
+      .then((data: { vendors: { contact_id: string; contact_name: string }[]; error?: string }) => {
         setZohoVendors(data.vendors ?? []);
+        if (data.error) setZohoVendorError(data.error);
       })
       .catch(() => {
-        setZohoVendors([]); // empty = Zoho not configured or unavailable; hide section
+        setZohoVendors([]);
+        setZohoVendorError("Could not reach /api/bom/zoho-vendors");
       })
       .finally(() => setVendorsLoading(false));
   }, [savedVersion, linkedProject, zohoVendors]);
@@ -757,12 +761,14 @@ function BomDashboardInner() {
     if (!savedVersion || !linkedProject || zohoCustomers !== null) return;
     setCustomersLoading(true);
     fetch("/api/bom/zoho-customers")
-      .then((r) => r.ok ? r.json() : Promise.reject(r.status))
-      .then((data: { customers: { contact_id: string; contact_name: string }[] }) => {
+      .then((r) => r.json())
+      .then((data: { customers: { contact_id: string; contact_name: string }[]; error?: string }) => {
         setZohoCustomers(data.customers ?? []);
+        if (data.error) setZohoCustomerError(data.error);
       })
       .catch(() => {
-        setZohoCustomers([]); // empty = Zoho not configured or unavailable; hide section
+        setZohoCustomers([]);
+        setZohoCustomerError("Could not reach /api/bom/zoho-customers");
       })
       .finally(() => setCustomersLoading(false));
   }, [savedVersion, linkedProject, zohoCustomers]);
@@ -2243,7 +2249,9 @@ function BomDashboardInner() {
                   )}
                   {savedVersion && !vendorsLoading && zohoVendors && zohoVendors.length === 0 && (
                     <span className="text-xs text-amber-600 dark:text-amber-400">
-                      Zoho vendors unavailable (or none found). Check `/api/bom/zoho-vendors`.
+                      {zohoVendorError
+                        ? `Zoho vendors error: ${zohoVendorError}`
+                        : "Zoho vendors unavailable (or none found)."}
                     </span>
                   )}
                   {/* Zoho SO — only show when saved + customers available */}
@@ -2287,7 +2295,9 @@ function BomDashboardInner() {
                   )}
                   {savedVersion && !customersLoading && zohoCustomers && zohoCustomers.length === 0 && (
                     <span className="text-xs text-amber-600 dark:text-amber-400">
-                      Zoho customers unavailable (or none found). Check `/api/bom/zoho-customers`.
+                      {zohoCustomerError
+                        ? `Zoho customers error: ${zohoCustomerError}`
+                        : "Zoho customers unavailable (or none found)."}
                     </span>
                   )}
                   {savedVersion && !vendorsLoading && !customersLoading && (
@@ -2295,6 +2305,8 @@ function BomDashboardInner() {
                       onClick={() => {
                         setZohoVendors(null);
                         setZohoCustomers(null);
+                        setZohoVendorError(null);
+                        setZohoCustomerError(null);
                       }}
                       className="text-xs text-cyan-600 dark:text-cyan-400 hover:underline"
                     >

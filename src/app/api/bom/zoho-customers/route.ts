@@ -31,6 +31,7 @@ export async function GET() {
   } catch (e) {
     const message = e instanceof Error ? e.message : "Failed to fetch customers";
     console.error("[bom/zoho-customers]", message);
-    return NextResponse.json({ error: message }, { status: 502 });
+    // Return empty customers + error so the UI can surface the real reason
+    return NextResponse.json({ customers: [], error: message });
   }
 }
