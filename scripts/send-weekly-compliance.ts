@@ -57,7 +57,8 @@ async function main() {
 
   console.log(`Building ${days}-day compliance digest for ${to}${bcc.length ? ` (bcc: ${bcc.join(", ")})` : ""}`);
 
-  const digest = await getComplianceDigest(days);
+  const threshold = Number(process.env.COMPLIANCE_REPORT_THRESHOLD || "5");
+  const digest = await getComplianceDigest(days, { threshold });
   const sendResult = await sendWeeklyComplianceEmail({
     to,
     ...(bcc.length ? { bcc } : {}),
