@@ -37,9 +37,19 @@ interface ZohoInventoryListItemsResponse {
   };
 }
 
+export interface ZohoAddress {
+  address?: string;
+  city?: string;
+  state?: string;
+  zip?: string;
+  country?: string;
+}
+
 export interface ZohoVendor {
   contact_id: string;
   contact_name: string;
+  billing_address?: ZohoAddress;
+  shipping_address?: ZohoAddress;
 }
 
 interface ZohoVendorListResponse {

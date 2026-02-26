@@ -666,29 +666,18 @@ function CustomerSearchCombobox({ value, valueName, onChange, autoSearch }: Cust
   const [open, setOpen] = useState(false);
   const [results, setResults] = useState<{ contact_id: string; contact_name: string }[]>([]);
   const [loading, setLoading] = useState(false);
-  const [cacheReady, setCacheReady] = useState(false); // true once server has all contacts loaded
   const [autoSearched, setAutoSearched] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Fetch helper — handles loading:true by polling until cache is ready
+  // Route now waits synchronously for the full cache load — no retry needed
   const fetchCustomers = useCallback((search: string, onDone: (contacts: { contact_id: string; contact_name: string }[]) => void) => {
     setLoading(true);
     fetch(`/api/bom/zoho-customers?search=${encodeURIComponent(search)}`)
       .then((r) => r.json())
-      .then((data: { customers: { contact_id: string; contact_name: string }[]; loading?: boolean }) => {
-        if (data.loading) {
-          // Server is still loading all pages — retry in 3s
-          setCacheReady(false);
-          retryRef.current = setTimeout(() => fetchCustomers(search, onDone), 3000);
-        } else {
-          setCacheReady(true);
-          onDone(data.customers ?? []);
-          setLoading(false);
-        }
-      })
-      .catch(() => { setLoading(false); });
+      .then((data: { customers: { contact_id: string; contact_name: string }[] }) => onDone(data.customers ?? []))
+      .catch(() => onDone([]))
+      .finally(() => setLoading(false));
   }, []);
 
   // Auto-search on mount using the first two words of the dealname
@@ -712,11 +701,7 @@ function CustomerSearchCombobox({ value, valueName, onChange, autoSearch }: Cust
     }
   }, [autoSearch, value, autoSearched, onChange, fetchCustomers]);
 
-  // Cleanup on unmount
-  useEffect(() => () => {
-    if (retryRef.current) clearTimeout(retryRef.current);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-  }, []);
+  useEffect(() => () => { if (debounceRef.current) clearTimeout(debounceRef.current); }, []);
 
   // Debounced search as user types
   function handleInput(q: string) {
@@ -751,7 +736,7 @@ function CustomerSearchCombobox({ value, valueName, onChange, autoSearch }: Cust
       <input
         type="text"
         className="text-xs rounded bg-surface-2 border border-t-border text-foreground px-2 py-1 w-48 focus:outline-none focus:ring-1 focus:ring-cyan-500"
-        placeholder={valueName || (loading && !cacheReady ? "Loading customers…" : loading ? "Searching…" : "Type to search customers…")}
+        placeholder={valueName || (loading ? "Searching…" : "Type to search customers…")}
         value={open ? query : (valueName || "")}
         onFocus={() => { setOpen(true); setQuery(""); }}
         onChange={(e) => handleInput(e.target.value)}
