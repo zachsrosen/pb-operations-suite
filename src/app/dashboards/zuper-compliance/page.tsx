@@ -1359,6 +1359,20 @@ export default function ZuperCompliancePage() {
         <div><span className="text-foreground/80">3) User:</span> primary accountability view; click a user row for detailed job lists.</div>
         <div><span className="text-foreground/80">4) Crew:</span> review shared-assignment combinations after team/category/user context is clear.</div>
         <div className="pt-1"><span className="text-foreground/80">Hover any column header</span> for metric definitions, and click headers to sort.</div>
+        <details className="pt-2">
+          <summary className="cursor-pointer select-none text-foreground/85 font-medium">How Metrics Are Calculated</summary>
+          <div className="mt-2 space-y-1 text-[11px] leading-relaxed">
+            <div><span className="text-foreground/80">On-Time %</span> = on-time completions / (on-time + late completions).</div>
+            <div><span className="text-foreground/80">Stuck</span> = in-progress status + scheduled end is in the past.</div>
+            <div><span className="text-foreground/80">Not Started</span> = pre-start status + scheduled start is in the past.</div>
+            <div><span className="text-foreground/80">Avg Days</span> = average(completed time - scheduled start) for completed jobs with both timestamps.</div>
+            <div><span className="text-foreground/80">Avg Late</span> = average(completed time - scheduled end) for late completed jobs only.</div>
+            <div><span className="text-foreground/80">OOW %</span> = OOW on-time / (OOW on-time + OOW late).</div>
+            <div><span className="text-foreground/80">Usage %</span> = (completed jobs using OOW + completed jobs using Started) / (completed jobs * 2).</div>
+            <div><span className="text-foreground/80">Raw Score</span> = 50% On-Time + 30% (1 - Stuck rate) + 20% (1 - Not Started rate).</div>
+            <div><span className="text-foreground/80">Adj Score</span> = Bayesian smoothing with C=10: ((jobs * raw) + (10 * global average)) / (jobs + 10).</div>
+          </div>
+        </details>
       </div>
 
       <div className="mb-3">
