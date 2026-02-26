@@ -107,6 +107,7 @@ function isEffectivelyUnscheduled(job: any): boolean {
 interface CrewSchedule {
   crewMemberId?: string; // DB crew member ID (undefined for hardcoded fallback)
   name: string;
+  teamName?: string | null; // Crew member team label from PB DB (if available)
   location: string; // "DTC", "Westminster", "Colorado Springs", etc.
   reportLocation: string; // Where they report to
   // Days of week: 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
@@ -124,6 +125,26 @@ interface CrewSchedule {
 
 // Location → timezone mapping (imported from shared constants)
 const LOCATION_TIMEZONE = LOCATION_TIMEZONES;
+
+const EXCLUDED_TEAM_PREFIXES = ["backoffice", "back office", "admin", "office", "sales"];
+
+function isExcludedTeamName(teamName: string | null | undefined): boolean {
+  if (!teamName) return false;
+  const lower = teamName.toLowerCase().trim();
+  if (!lower) return false;
+  return EXCLUDED_TEAM_PREFIXES.some((prefix) => lower.startsWith(prefix));
+}
+
+function shouldExcludeCrewByTeam(teamName: string | null | undefined): boolean {
+  if (!teamName) return false;
+  // Defensive split in case team names are stored as comma-separated labels.
+  const labels = teamName
+    .split(",")
+    .map((label) => label.trim())
+    .filter(Boolean);
+  if (labels.length === 0) return false;
+  return labels.some((label) => isExcludedTeamName(label));
+}
 
 // Team and user UIDs are now resolved dynamically from Zuper API (cached in ZuperClient).
 // Location names used for team resolution:
@@ -278,7 +299,8 @@ const LOCATION_ALIASES: Record<string, string[]> = {
   DTC: ["DTC", "Centennial"],
   "Colorado Springs": ["Colorado Springs"],
   "San Luis Obispo": ["San Luis Obispo", "SLO"],
-  Camarillo: ["Camarillo"],
+  // Camarillo jobs can be staffed by either Camarillo or SLO teams.
+  Camarillo: ["Camarillo", "San Luis Obispo", "SLO"],
 };
 
 function getLocationMatches(location: string): string[] {
@@ -418,6 +440,7 @@ export async function GET(request: NextRequest) {
       activeSchedules = dbSchedules.map(s => ({
         crewMemberId: s.crewMemberId,
         name: s.name,
+        teamName: s.teamName,
         location: s.location,
         reportLocation: s.reportLocation,
         schedule: s.schedule,
@@ -471,6 +494,10 @@ export async function GET(request: NextRequest) {
   }
 
   for (const crew of activeSchedules) {
+    // Team-based exclusion is construction-only.
+    // Survey + inspection availability should keep dual-team field users.
+    if (jobType === "construction" && shouldExcludeCrewByTeam(crew.teamName)) continue;
+
     // Filter by job type
     if (!crew.jobTypes.includes(jobType)) continue;
 

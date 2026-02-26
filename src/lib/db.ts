@@ -969,6 +969,7 @@ export async function deleteCrewAvailability(id: string) {
 export async function getCrewSchedulesFromDB(): Promise<Array<{
   crewMemberId: string;
   name: string;
+  teamName?: string | null;
   location: string;
   reportLocation: string;
   schedule: Array<{ day: number; startTime: string; endTime: string; availabilityId: string }>;
@@ -983,7 +984,7 @@ export async function getCrewSchedulesFromDB(): Promise<Array<{
     where: { isActive: true },
     include: {
       crewMember: {
-        select: { name: true, zuperUserUid: true, zuperTeamUid: true, isActive: true },
+        select: { name: true, teamName: true, zuperUserUid: true, zuperTeamUid: true, isActive: true },
       },
     },
   });
@@ -995,6 +996,7 @@ export async function getCrewSchedulesFromDB(): Promise<Array<{
   const grouped = new Map<string, {
     crewMemberId: string;
     name: string;
+    teamName?: string | null;
     location: string;
     reportLocation: string;
     schedule: Array<{ day: number; startTime: string; endTime: string; availabilityId: string }>;
@@ -1010,6 +1012,7 @@ export async function getCrewSchedulesFromDB(): Promise<Array<{
       grouped.set(key, {
         crewMemberId: record.crewMemberId,
         name: record.crewMember.name,
+        teamName: record.crewMember.teamName,
         location: record.location,
         reportLocation: record.reportLocation || record.location,
         schedule: [],

@@ -191,6 +191,26 @@ function isPastDate(dateStr: string): boolean {
   return dateStr < getTodayStr();
 }
 
+function locationKey(value: string | null | undefined): string {
+  return String(value || "").trim().toLowerCase();
+}
+
+const PROJECT_LOCATION_MATCHES: Record<string, string[]> = {
+  dtc: ["dtc", "centennial"],
+  centennial: ["centennial", "dtc"],
+  // Camarillo projects may be assigned to Camarillo or SLO teams.
+  camarillo: ["camarillo", "san luis obispo", "slo"],
+};
+
+function slotMatchesProjectLocation(slotLocation?: string, projectLocation?: string): boolean {
+  if (!projectLocation || !slotLocation) return true;
+  const slotKey = locationKey(slotLocation);
+  const projectKey = locationKey(projectLocation);
+  if (slotKey === projectKey) return true;
+  const allowed = PROJECT_LOCATION_MATCHES[projectKey];
+  return !!allowed && allowed.includes(slotKey);
+}
+
 // Extract the base project number, stripping " New Inspection" or similar suffixes
 // e.g. "PROJ-1234 New Inspection | Smith, John" → "PROJ-1234"
 function getBaseProjectNumber(name: string): string {
@@ -1667,12 +1687,7 @@ export default function InspectionSchedulerPage() {
                           {showAvailability && selectedProject && hasAvailability && !isPast && (() => {
                             const projectLocation = selectedProject?.location;
                             const matchingSlots = dayAvailability?.availableSlots?.filter(slot => {
-                              if (!projectLocation) return true;
-                              if (!slot.location) return true;
-                              if (slot.location === projectLocation) return true;
-                              if ((slot.location === "DTC" || slot.location === "Centennial") &&
-                                  (projectLocation === "DTC" || projectLocation === "Centennial")) return true;
-                              return false;
+                              return slotMatchesProjectLocation(slot.location, projectLocation);
                             }) || [];
 
                             // Group by inspector
@@ -1723,12 +1738,7 @@ export default function InspectionSchedulerPage() {
                           {showAvailability && selectedProject && dayAvailability?.bookedSlots && dayAvailability.bookedSlots.length > 0 && (() => {
                             const projectLocation = selectedProject?.location;
                             const matchingBooked = dayAvailability.bookedSlots.filter(slot => {
-                              if (!projectLocation) return true;
-                              if (!slot.location) return true;
-                              if (slot.location === projectLocation) return true;
-                              if ((slot.location === "DTC" || slot.location === "Centennial") &&
-                                  (projectLocation === "DTC" || projectLocation === "Centennial")) return true;
-                              return false;
+                              return slotMatchesProjectLocation(slot.location, projectLocation);
                             });
 
                             if (matchingBooked.length === 0) return null;
@@ -1991,12 +2001,7 @@ export default function InspectionSchedulerPage() {
                       const dayAvail = availabilityByDate[scheduleModal.date];
                       const projectLocation = scheduleModal.project.location;
                       const availSlots = dayAvail?.availableSlots?.filter(slot => {
-                        if (!projectLocation) return true;
-                        if (!slot.location) return true;
-                        if (slot.location === projectLocation) return true;
-                        if ((slot.location === "DTC" || slot.location === "Centennial") &&
-                            (projectLocation === "DTC" || projectLocation === "Centennial")) return true;
-                        return false;
+                        return slotMatchesProjectLocation(slot.location, projectLocation);
                       }) || [];
 
                       if (availSlots.length === 0) {

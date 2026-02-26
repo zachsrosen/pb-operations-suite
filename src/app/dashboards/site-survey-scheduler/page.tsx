@@ -240,6 +240,26 @@ function isTomorrow(dateStr: string): boolean {
   return dateStr === toDateStr(tomorrow);
 }
 
+function locationKey(value: string | null | undefined): string {
+  return String(value || "").trim().toLowerCase();
+}
+
+const PROJECT_LOCATION_MATCHES: Record<string, string[]> = {
+  dtc: ["dtc", "centennial"],
+  centennial: ["centennial", "dtc"],
+  // Camarillo projects may be assigned to Camarillo or SLO teams.
+  camarillo: ["camarillo", "san luis obispo", "slo"],
+};
+
+function slotMatchesProjectLocation(slotLocation?: string, projectLocation?: string): boolean {
+  if (!projectLocation || !slotLocation) return true;
+  const slotKey = locationKey(slotLocation);
+  const projectKey = locationKey(projectLocation);
+  if (slotKey === projectKey) return true;
+  const allowed = PROJECT_LOCATION_MATCHES[projectKey];
+  return !!allowed && allowed.includes(slotKey);
+}
+
 // Check if a survey is overdue: scheduled in the past but not completed
 function isSurveyOverdue(project: SurveyProject, manualScheduleDate?: string): boolean {
   const schedDate = manualScheduleDate || project.scheduleDate;
@@ -2238,15 +2258,7 @@ export default function SiteSurveySchedulerPage() {
                             const projectLocation = (selectedPreSaleDeal || selectedProject)?.location;
                             const bookedForDay = dayAvailability?.bookedSlots || [];
                             const matchingSlots = dayAvailability?.availableSlots?.filter(slot => {
-                              // If no project selected, show all slots
-                              const locationMatches = !projectLocation
-                                || !slot.location
-                                || slot.location === projectLocation
-                                || (
-                                  (slot.location === "DTC" || slot.location === "Centennial") &&
-                                  (projectLocation === "DTC" || projectLocation === "Centennial")
-                                );
-                              if (!locationMatches) return false;
+                              if (!slotMatchesProjectLocation(slot.location, projectLocation)) return false;
 
                               // Defensive client-side guard: hide slots already booked for this surveyor+time.
                               // This prevents stale/mismatched key edge cases from showing double-bookable slots.
@@ -2323,12 +2335,7 @@ export default function SiteSurveySchedulerPage() {
                           {showAvailability && dayAvailability?.bookedSlots && dayAvailability.bookedSlots.length > 0 && (() => {
                             const projectLocation = (selectedPreSaleDeal || selectedProject)?.location;
                             const matchingBooked = dayAvailability.bookedSlots.filter(slot => {
-                              if (!projectLocation) return true;
-                              if (!slot.location) return true;
-                              if (slot.location === projectLocation) return true;
-                              if ((slot.location === "DTC" || slot.location === "Centennial") &&
-                                  (projectLocation === "DTC" || projectLocation === "Centennial")) return true;
-                              return false;
+                              return slotMatchesProjectLocation(slot.location, projectLocation);
                             });
 
                             // Group booked slots by surveyor
@@ -2717,14 +2724,7 @@ export default function SiteSurveySchedulerPage() {
                       const projectLocation = scheduleModal.project.location;
                       const bookedForDay = dayAvail?.bookedSlots || [];
                       const availableSlots = dayAvail?.availableSlots?.filter(slot => {
-                        const locationMatches = !projectLocation
-                          || !slot.location
-                          || slot.location === projectLocation
-                          || (
-                            (slot.location === "DTC" || slot.location === "Centennial") &&
-                            (projectLocation === "DTC" || projectLocation === "Centennial")
-                          );
-                        if (!locationMatches) return false;
+                        if (!slotMatchesProjectLocation(slot.location, projectLocation)) return false;
 
                         const isBooked = bookedForDay.some(booked => {
                           if (booked.start_time !== slot.start_time || booked.end_time !== slot.end_time) return false;

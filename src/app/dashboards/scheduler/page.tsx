@@ -1100,8 +1100,11 @@ export default function SchedulerPage() {
     if (!isConstruction) return [] as ZuperAssignee[];
 
     const location = scheduleModal.project.location;
-    const live = liveConstructionAssigneesByLocation[location] || [];
-    if (live.length > 0) return live;
+    const hasLiveForLocation = Object.prototype.hasOwnProperty.call(
+      liveConstructionAssigneesByLocation,
+      location
+    );
+    if (hasLiveForLocation) return liveConstructionAssigneesByLocation[location] || [];
     return ZUPER_CONSTRUCTION_USERS[location] || [];
   }, [scheduleModal, liveConstructionAssigneesByLocation]);
 
@@ -1117,7 +1120,7 @@ export default function SchedulerPage() {
     if (!teamUid) return;
 
     // Skip if we already have live members for this location in the current session.
-    if ((liveConstructionAssigneesByLocation[location] || []).length > 0) return;
+    if (Object.prototype.hasOwnProperty.call(liveConstructionAssigneesByLocation, location)) return;
 
     let cancelled = false;
     setLoadingConstructionAssignees(true);
@@ -1145,17 +1148,16 @@ export default function SchedulerPage() {
           })
           .filter((user): user is ZuperAssignee => !!user);
 
-        const fallbackDefaults = ZUPER_CONSTRUCTION_USERS[location] || [];
-        const merged = dedupeAssignees(
-          [director, ...teamUsers, ...fallbackDefaults].filter(
-            (assignee): assignee is ZuperAssignee => !!assignee
-          )
-        );
-        setLiveConstructionAssigneesByLocation((prev) => ({ ...prev, [location]: merged }));
+        setLiveConstructionAssigneesByLocation((prev) => ({
+          ...prev,
+          [location]: dedupeAssignees(teamUsers),
+        }));
       })
       .catch((error) => {
         if (cancelled) return;
         console.warn(`[Scheduler] Failed to load live construction assignees for ${location}:`, error);
+        // Mark as loaded with an empty list to avoid leaking hardcoded fallback users.
+        setLiveConstructionAssigneesByLocation((prev) => ({ ...prev, [location]: [] }));
       })
       .finally(() => {
         if (!cancelled) setLoadingConstructionAssignees(false);
@@ -1654,10 +1656,13 @@ export default function SchedulerPage() {
         setConstructionAssigneeNames([]);
         setInstallerNotesInput("");
       } else {
-        const constructionUsers =
-          liveConstructionAssigneesByLocation[project.location]?.length
-            ? liveConstructionAssigneesByLocation[project.location]
-            : (ZUPER_CONSTRUCTION_USERS[project.location] || []);
+        const hasLiveForLocation = Object.prototype.hasOwnProperty.call(
+          liveConstructionAssigneesByLocation,
+          project.location
+        );
+        const constructionUsers = hasLiveForLocation
+          ? (liveConstructionAssigneesByLocation[project.location] || [])
+          : (ZUPER_CONSTRUCTION_USERS[project.location] || []);
         const existingNames = (project.crew || "")
           .split(",")
           .map((name) => name.trim())
