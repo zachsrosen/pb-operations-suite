@@ -1439,7 +1439,24 @@ function buildWeeklyComplianceEmailHtml(digest: ComplianceDigest, dashboardUrl: 
             <p style="margin:0; color:#a1a1aa; font-size:13px;">${periodLabel}</p>
           </div>
 
-          <div style="padding:14px 14px 4px 14px;">
+          <div style="padding:14px 24px 8px 24px;">
+            <details style="margin:0 0 6px 0;">
+              <summary style="cursor:pointer; color:#a1a1aa; font-size:12px; list-style:none;">
+                <span style="text-decoration:underline;">What do these metrics mean?</span>
+              </summary>
+              <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="margin-top:8px; border:1px solid #1e1e2e; border-radius:8px; overflow:hidden; font-size:12px; color:#d4d4d8;">
+                <tr><td style="padding:6px 10px; border-bottom:1px solid #1e1e2e; color:#a1a1aa; width:140px;"><strong>On-Time %</strong></td><td style="padding:6px 10px; border-bottom:1px solid #1e1e2e;">Jobs completed within 1 day of their scheduled end date</td></tr>
+                <tr><td style="padding:6px 10px; border-bottom:1px solid #1e1e2e; color:#a1a1aa;"><strong>OOW Usage</strong></td><td style="padding:6px 10px; border-bottom:1px solid #1e1e2e;">&ldquo;On Our Way&rdquo; status used before arriving at completed jobs</td></tr>
+                <tr><td style="padding:6px 10px; border-bottom:1px solid #1e1e2e; color:#a1a1aa;"><strong>Stuck Jobs</strong></td><td style="padding:6px 10px; border-bottom:1px solid #1e1e2e;">In-progress jobs past their scheduled end (OOW / Started / In Progress)</td></tr>
+                <tr><td style="padding:6px 10px; border-bottom:1px solid #1e1e2e; color:#a1a1aa;"><strong>Compliance Score</strong></td><td style="padding:6px 10px; border-bottom:1px solid #1e1e2e;">50% on-time rate + 30% not-stuck rate + 20% not-never-started rate</td></tr>
+                <tr><td style="padding:6px 10px; border-bottom:1px solid #1e1e2e; color:#a1a1aa;"><strong>Grade</strong></td><td style="padding:6px 10px; border-bottom:1px solid #1e1e2e;">A &ge;90 &middot; B &ge;75 &middot; C &ge;60 &middot; D &ge;45 &middot; F &lt;45</td></tr>
+                <tr><td style="padding:6px 10px; border-bottom:1px solid #1e1e2e; color:#a1a1aa;"><strong>Avg Days Late</strong></td><td style="padding:6px 10px; border-bottom:1px solid #1e1e2e;">Average days past scheduled end for late completions</td></tr>
+                <tr><td style="padding:6px 10px; color:#a1a1aa;"><strong>OOW Before Start</strong></td><td style="padding:6px 10px;">Crew sent &ldquo;On Our Way&rdquo; before the scheduled start time</td></tr>
+              </table>
+            </details>
+          </div>
+
+          <div style="padding:0 14px 4px 14px;">
             <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
               <tr>
                 ${metricCard("On-Time Completion", formatCompliancePercent(digest.summary.onTimePercent), onTimeTrend, onTimeBaseline)}
@@ -1515,6 +1532,15 @@ function buildWeeklyComplianceEmailHtml(digest: ComplianceDigest, dashboardUrl: 
 function buildWeeklyComplianceEmailText(digest: ComplianceDigest, dashboardUrl: string): string {
   const lines: string[] = [];
   lines.push(`Weekly Operations Report (${digest.period.from} - ${digest.period.to})`);
+  lines.push("");
+  lines.push("Metric Definitions:");
+  lines.push("  On-Time %        - Jobs completed within 1 day of scheduled end");
+  lines.push("  OOW Usage        - \"On Our Way\" status used before arriving at completed jobs");
+  lines.push("  Stuck Jobs       - In-progress jobs past their scheduled end");
+  lines.push("  Compliance Score - 50% on-time + 30% not-stuck + 20% not-never-started");
+  lines.push("  Grade            - A>=90, B>=75, C>=60, D>=45, F<45");
+  lines.push("  Avg Days Late    - Average days past scheduled end for late completions");
+  lines.push("  OOW Before Start - Crew sent \"On Our Way\" before scheduled start time");
   lines.push("");
   lines.push(`Total Jobs: ${digest.summary.totalJobs}`);
   lines.push(`Completed Jobs: ${digest.summary.completedJobs}`);
