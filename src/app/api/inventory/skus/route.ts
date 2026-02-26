@@ -19,6 +19,7 @@ const WRITE_ROLES = ["ADMIN", "OWNER", "PROJECT_MANAGER"];
 const VALID_CATEGORIES = Object.values(EquipmentCategory);
 
 type ParsedNumber = { provided: false } | { provided: true; value: number | null } | { provided: true; error: string };
+type ParsedBoolean = { provided: false } | { provided: true; value: boolean } | { provided: true; error: string };
 
 function isPrismaMissingColumnError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
@@ -45,6 +46,18 @@ function parseOptionalString(input: Record<string, unknown>, key: string): { pro
   if (raw === null || raw === undefined) return { provided: true, value: null };
   const trimmed = String(raw).trim();
   return { provided: true, value: trimmed || null };
+}
+
+function parseOptionalBoolean(input: Record<string, unknown>, key: string): ParsedBoolean {
+  if (!(key in input)) return { provided: false };
+  const raw = input[key];
+  if (typeof raw === "boolean") return { provided: true, value: raw };
+  if (typeof raw === "string") {
+    const normalized = raw.trim().toLowerCase();
+    if (normalized === "true") return { provided: true, value: true };
+    if (normalized === "false") return { provided: true, value: false };
+  }
+  return { provided: true, error: `${key} must be a boolean` };
 }
 
 function buildSyncHealth(sku: {
@@ -151,10 +164,6 @@ export async function GET(request: NextRequest) {
       // latest EquipmentSku migration yet.
       console.warn(
         "[Inventory SKUs] Falling back to legacy SKU query due to missing database columns"
-      );
-      Sentry.captureMessage(
-        "Inventory SKUs endpoint using legacy schema fallback (migration pending)",
-        "warning"
       );
 
       const legacySkus = await prisma.equipmentSku.findMany({
@@ -367,6 +376,160 @@ export async function POST(request: NextRequest) {
     Sentry.captureException(error);
     return NextResponse.json(
       { error: "Failed to create/upsert SKU" },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * PATCH /api/inventory/skus
+ *
+ * Body: {
+ *   id: string,
+ *   category?, brand?, model?,
+ *   description?, vendorName?, vendorPartNumber?,
+ *   unitSpec?, unitLabel?, unitCost?, sellPrice?,
+ *   zohoItemId?, hubspotProductId?, zuperItemId?,
+ *   isActive?
+ * }
+ *
+ * Updates a SKU by id.
+ * Requires ADMIN, OWNER, or PROJECT_MANAGER role.
+ */
+export async function PATCH(request: NextRequest) {
+  tagSentryRequest(request);
+  if (!prisma) {
+    return NextResponse.json(
+      { error: "Database not configured" },
+      { status: 503 }
+    );
+  }
+
+  const authResult = await requireApiAuth();
+  if (authResult instanceof NextResponse) return authResult;
+
+  if (!WRITE_ROLES.includes(authResult.role)) {
+    return NextResponse.json(
+      { error: "Insufficient permissions. Requires ADMIN, EXECUTIVE, or PROJECT_MANAGER role." },
+      { status: 403 }
+    );
+  }
+
+  try {
+    let body: Record<string, unknown>;
+    try {
+      body = await request.json() as Record<string, unknown>;
+    } catch {
+      return NextResponse.json(
+        { error: "Invalid JSON in request body" },
+        { status: 400 }
+      );
+    }
+
+    const idRaw = body.id;
+    const id = typeof idRaw === "string" ? idRaw.trim() : "";
+    if (!id) {
+      return NextResponse.json({ error: "id is required" }, { status: 400 });
+    }
+
+    const categoryProvided = "category" in body;
+    const category = categoryProvided ? String(body.category || "").trim() : "";
+    if (categoryProvided && !VALID_CATEGORIES.includes(category as EquipmentCategory)) {
+      return NextResponse.json(
+        { error: `Invalid category. Must be one of: ${VALID_CATEGORIES.join(", ")}` },
+        { status: 400 }
+      );
+    }
+
+    const brandProvided = "brand" in body;
+    const modelProvided = "model" in body;
+    const brand = brandProvided ? String(body.brand || "").trim() : "";
+    const model = modelProvided ? String(body.model || "").trim() : "";
+    if (brandProvided && !brand) {
+      return NextResponse.json({ error: "brand must not be empty after trimming" }, { status: 400 });
+    }
+    if (modelProvided && !model) {
+      return NextResponse.json({ error: "model must not be empty after trimming" }, { status: 400 });
+    }
+
+    const unitSpecParsed = parseOptionalNumber(body, "unitSpec");
+    const unitCostParsed = parseOptionalNumber(body, "unitCost");
+    const sellPriceParsed = parseOptionalNumber(body, "sellPrice");
+    if ("error" in unitSpecParsed) return NextResponse.json({ error: unitSpecParsed.error }, { status: 400 });
+    if ("error" in unitCostParsed) return NextResponse.json({ error: unitCostParsed.error }, { status: 400 });
+    if ("error" in sellPriceParsed) return NextResponse.json({ error: sellPriceParsed.error }, { status: 400 });
+
+    const isActiveParsed = parseOptionalBoolean(body, "isActive");
+    if ("error" in isActiveParsed) return NextResponse.json({ error: isActiveParsed.error }, { status: 400 });
+
+    const unitLabelParsed = parseOptionalString(body, "unitLabel");
+    const descriptionParsed = parseOptionalString(body, "description");
+    const vendorNameParsed = parseOptionalString(body, "vendorName");
+    const vendorPartParsed = parseOptionalString(body, "vendorPartNumber");
+    const zohoItemParsed = parseOptionalString(body, "zohoItemId");
+    const hubspotProductParsed = parseOptionalString(body, "hubspotProductId");
+    const zuperItemParsed = parseOptionalString(body, "zuperItemId");
+
+    const updateData: Record<string, unknown> = {
+      ...(categoryProvided && { category: category as EquipmentCategory }),
+      ...(brandProvided && { brand }),
+      ...(modelProvided && { model }),
+      ...(unitSpecParsed.provided && { unitSpec: unitSpecParsed.value }),
+      ...(unitLabelParsed.provided && { unitLabel: unitLabelParsed.value }),
+      ...(descriptionParsed.provided && { description: descriptionParsed.value }),
+      ...(vendorNameParsed.provided && { vendorName: vendorNameParsed.value }),
+      ...(vendorPartParsed.provided && { vendorPartNumber: vendorPartParsed.value }),
+      ...(unitCostParsed.provided && { unitCost: unitCostParsed.value }),
+      ...(sellPriceParsed.provided && { sellPrice: sellPriceParsed.value }),
+      ...(zohoItemParsed.provided && { zohoItemId: zohoItemParsed.value }),
+      ...(hubspotProductParsed.provided && { hubspotProductId: hubspotProductParsed.value }),
+      ...(zuperItemParsed.provided && { zuperItemId: zuperItemParsed.value }),
+      ...(isActiveParsed.provided && { isActive: isActiveParsed.value }),
+    };
+
+    if (Object.keys(updateData).length === 0) {
+      return NextResponse.json({ error: "No fields provided to update" }, { status: 400 });
+    }
+
+    const sku = await prisma.equipmentSku.update({
+      where: { id },
+      data: updateData,
+      include: {
+        stockLevels: {
+          select: { location: true, quantityOnHand: true },
+        },
+      },
+    });
+
+    return NextResponse.json({ sku: { ...sku, syncHealth: buildSyncHealth(sku) } });
+  } catch (error) {
+    if (isPrismaMissingColumnError(error)) {
+      console.error("SKU patch blocked by missing database columns:", error);
+      Sentry.captureException(error);
+      return NextResponse.json(
+        {
+          error:
+            "Inventory catalog schema migration is not applied yet. Run `prisma migrate deploy` on production.",
+        },
+        { status: 503 }
+      );
+    }
+
+    const prismaCode = (error as { code?: string } | null)?.code;
+    if (prismaCode === "P2002") {
+      return NextResponse.json(
+        { error: "Another SKU already uses this category + brand + model combination." },
+        { status: 409 }
+      );
+    }
+    if (prismaCode === "P2025") {
+      return NextResponse.json({ error: "SKU not found" }, { status: 404 });
+    }
+
+    console.error("Error updating SKU:", error);
+    Sentry.captureException(error);
+    return NextResponse.json(
+      { error: "Failed to update SKU" },
       { status: 500 }
     );
   }
