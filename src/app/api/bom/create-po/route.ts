@@ -201,7 +201,7 @@ export async function POST(request: NextRequest) {
         INVENTORY_CATEGORIES.has(item.category as EquipmentCategory)
     )
     .map((item) => ({
-      category: item.category as EquipmentCategory,
+      category: item.category,
       brand: item.brand!,
       model: item.model!,
     }));
@@ -211,7 +211,6 @@ export async function POST(request: NextRequest) {
     const skus = await prisma.equipmentSku.findMany({
       where: {
         OR: skuLookups.map((s) => ({
-          category: s.category,
           brand: s.brand,
           model: s.model,
         })),

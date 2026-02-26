@@ -57,21 +57,55 @@ async function loadSku(skuId: string | null, category: string | null, brand: str
     model: true,
     unitSpec: true,
     unitLabel: true,
+    updatedAt: true,
   } as const;
 
   const where = skuId
     ? { id: skuId }
-    : (category && brand && model
-      ? { category: category as never, brand, model }
+    : (brand && model
+      ? { brand, model }
       : null);
 
   if (!where) return null;
 
+  const pickBest = <T extends { category: string }>(rows: T[]): T | null => {
+    if (!rows.length) return null;
+    if (!category) return rows[0];
+    const exact = rows.find((row) => row.category === category);
+    return exact || rows[0];
+  };
+
   try {
-    return await prisma.equipmentSku.findFirst({ where, select: fullSelect });
+    if (skuId) {
+      return await prisma.equipmentSku.findFirst({ where, select: fullSelect });
+    }
+    const rows = await prisma.equipmentSku.findMany({
+      where,
+      select: fullSelect,
+      orderBy: { updatedAt: "desc" },
+      take: 10,
+    });
+    return pickBest(rows);
   } catch (error) {
     if (!isPrismaMissingColumnError(error)) throw error;
-    const legacy = await prisma.equipmentSku.findFirst({ where, select: legacySelect });
+    if (skuId) {
+      const legacy = await prisma.equipmentSku.findFirst({ where, select: legacySelect });
+      if (!legacy) return null;
+      return {
+        ...legacy,
+        description: null,
+        vendorPartNumber: null,
+        sellPrice: null,
+        hubspotProductId: null,
+      };
+    }
+    const legacyRows = await prisma.equipmentSku.findMany({
+      where,
+      select: legacySelect,
+      orderBy: { updatedAt: "desc" },
+      take: 10,
+    });
+    const legacy = pickBest(legacyRows);
     if (!legacy) return null;
     return {
       ...legacy,
