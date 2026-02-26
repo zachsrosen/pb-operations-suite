@@ -47,6 +47,16 @@ interface SkuSummary {
   withPricing: number;
 }
 
+interface CategorySyncStat {
+  category: string;
+  total: number;
+  fullySynced: number;
+  hasZoho: number;
+  hasHubspot: number;
+  hasZuper: number;
+  withPricing: number;
+}
+
 interface PushRequest {
   id: string;
   status: "PENDING" | "APPROVED" | "REJECTED";
@@ -162,6 +172,9 @@ export default function CatalogPage() {
   const [pushEditDraft, setPushEditDraft] = useState<PushEditDraft | null>(null);
   const [savingPushEdit, setSavingPushEdit] = useState(false);
 
+  const [categoryStats, setCategoryStats] = useState<CategorySyncStat[]>([]);
+  const [categoryStatsLoading, setCategoryStatsLoading] = useState(false);
+
   const userRole = (session?.user as { role?: string } | undefined)?.role ?? "";
   const isAdmin = ADMIN_ROLES.includes(userRole);
   const [newProductItem, setNewProductItem] = useState<PushItem | null>(null);
@@ -195,6 +208,19 @@ export default function CatalogPage() {
       .then((d: { count?: number }) => setPendingCount(d.count ?? 0))
       .catch(() => { /* silent */ });
   }, []);
+
+  // Fetch per-category sync stats when sync tab is active
+  useEffect(() => {
+    if (tab !== "sync") return;
+    setCategoryStatsLoading(true);
+    fetch("/api/inventory/skus/stats")
+      .then((r) => r.json())
+      .then((d: { categories?: CategorySyncStat[] }) => {
+        setCategoryStats(d.categories ?? []);
+      })
+      .catch(() => { /* silent — global stats still show from main fetch */ })
+      .finally(() => setCategoryStatsLoading(false));
+  }, [tab]);
 
   // Fetch pending pushes when tab switches to pending
   const fetchPending = useCallback(() => {
@@ -677,6 +703,56 @@ export default function CatalogPage() {
             <MetricCard label="Missing Zuper" value={skuSummary.missingZuper} />
             <MetricCard label="With Pricing" value={skuSummary.withPricing} />
           </div>
+
+          {/* Per-Category Sync Breakdown */}
+          {categoryStatsLoading ? (
+            <p className="text-sm text-muted animate-pulse py-4 text-center">Loading per-category stats…</p>
+          ) : categoryStats.length > 0 && (
+            <div>
+              <h3 className="text-sm font-medium text-foreground mb-3">By Category</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                {categoryStats.map((cat) => {
+                  const syncPct = cat.total > 0 ? Math.round((cat.fullySynced / cat.total) * 100) : 0;
+                  return (
+                    <div
+                      key={cat.category}
+                      className="rounded-xl border border-t-border bg-surface shadow-card p-4 space-y-2"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-foreground">
+                          {cat.category.replace(/_/g, " ")}
+                        </span>
+                        <span className="text-xs text-muted">{cat.total} SKUs</span>
+                      </div>
+                      <div className="w-full bg-surface-2 rounded-full h-2">
+                        <div
+                          className={`h-2 rounded-full transition-all ${syncPct === 100 ? "bg-green-500" : syncPct >= 50 ? "bg-yellow-500" : "bg-red-400"}`}
+                          style={{ width: `${syncPct}%` }}
+                        />
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 text-xs text-muted">
+                        <div className="flex items-center gap-1">
+                          <span className={`w-1.5 h-1.5 rounded-full ${cat.hasZoho === cat.total ? "bg-green-500" : "bg-red-400"}`} />
+                          Zoho {cat.hasZoho}/{cat.total}
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className={`w-1.5 h-1.5 rounded-full ${cat.hasHubspot === cat.total ? "bg-green-500" : "bg-red-400"}`} />
+                          HS {cat.hasHubspot}/{cat.total}
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className={`w-1.5 h-1.5 rounded-full ${cat.hasZuper === cat.total ? "bg-green-500" : "bg-red-400"}`} />
+                          Zu {cat.hasZuper}/{cat.total}
+                        </div>
+                      </div>
+                      <div className="text-xs text-muted">
+                        {syncPct}% synced · {cat.withPricing} with pricing
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {skuLoading ? (
             <p className="text-sm text-muted animate-pulse py-8 text-center">Loading sync health…</p>
