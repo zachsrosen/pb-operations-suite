@@ -579,6 +579,12 @@ enum EquipmentCategory {
   MONITORING
 }
 
+enum CatalogProductSource {
+  HUBSPOT
+  ZUPER
+  ZOHO
+}
+
 enum TransactionType {
   RECEIVED
   ALLOCATED
@@ -617,6 +623,29 @@ model EquipmentSku {
   @@index([hubspotProductId])
   @@index([zuperItemId])
   @@index([zohoItemId])
+}
+
+model CatalogProduct {
+  id             String               @id @default(cuid())
+  source         CatalogProductSource
+  externalId     String
+  name           String?
+  sku            String?
+  normalizedName String?
+  normalizedSku  String?
+  description    String?
+  price          Float?
+  status         String?
+  url            String?
+  lastSyncedAt   DateTime             @default(now())
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  @@unique([source, externalId])
+  @@index([source])
+  @@index([sku])
+  @@index([normalizedSku])
+  @@index([normalizedName])
 }
 
 model InventoryStock {

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
-import { getUserByEmail } from "@/lib/db";
+import { getUserByEmail, prisma } from "@/lib/db";
+import { CatalogProductSource } from "@/generated/prisma/enums";
 import { normalizeRole, type UserRole } from "@/lib/role-permissions";
 import { zohoInventory, type ZohoInventoryItem } from "@/lib/zoho-inventory";
 import { getZuperWebBaseUrl } from "@/lib/external-links";
@@ -14,6 +15,15 @@ const SOURCE_LABELS: Record<SourceName, string> = {
   zoho: "Zoho",
   opensolar: "OpenSolar",
   quickbooks: "QuickBooks",
+};
+
+const CACHE_SOURCES = ["hubspot", "zuper", "zoho"] as const;
+type CacheSourceName = (typeof CACHE_SOURCES)[number];
+
+const CACHE_SOURCE_ENUM: Record<CacheSourceName, CatalogProductSource> = {
+  hubspot: "HUBSPOT",
+  zuper: "ZUPER",
+  zoho: "ZOHO",
 };
 
 type RowProducts = Record<SourceName, ComparableProduct | null>;
@@ -66,6 +76,12 @@ interface ProductComparisonResponse {
   health: Record<SourceName, SourceHealth>;
   warnings: string[];
   lastUpdated: string;
+}
+
+interface SourceFetchResult {
+  products: NormalizedProduct[];
+  configured: boolean;
+  error: string | null;
 }
 
 interface HubSpotObjectResponse {
@@ -1129,6 +1145,149 @@ function createGroupedProductBuckets(): Record<SourceName, NormalizedProduct[]> 
   };
 }
 
+function sourceFromCacheEnum(source: CatalogProductSource): CacheSourceName {
+  if (source === "HUBSPOT") return "hubspot";
+  if (source === "ZUPER") return "zuper";
+  return "zoho";
+}
+
+function normalizeForCache(source: CacheSourceName, product: NormalizedProduct): NormalizedProduct {
+  const id = String(product.id || "").trim();
+  const name = product.name || null;
+  const sku = product.sku || null;
+  return {
+    source,
+    id,
+    name,
+    sku,
+    price: product.price ?? null,
+    status: product.status ?? null,
+    description: product.description ?? null,
+    url: product.url ?? null,
+    key: keyForProduct(sku, name, source, id),
+    normalizedName: normalizeText(name),
+  };
+}
+
+async function saveProductsToCache(source: CacheSourceName, products: NormalizedProduct[]): Promise<void> {
+  const db = prisma;
+  if (!db || products.length === 0) return;
+
+  const sourceEnum = CACHE_SOURCE_ENUM[source];
+  const deduped = new Map<string, NormalizedProduct>();
+  for (const product of products) {
+    const normalized = normalizeForCache(source, product);
+    if (!normalized.id) continue;
+    deduped.set(normalized.id, normalized);
+  }
+  if (deduped.size === 0) return;
+
+  const rows = [...deduped.values()];
+  const now = new Date();
+  for (let i = 0; i < rows.length; i += 200) {
+    const chunk = rows.slice(i, i + 200);
+    await Promise.all(
+      chunk.map((product) =>
+        db.catalogProduct.upsert({
+          where: {
+            source_externalId: {
+              source: sourceEnum,
+              externalId: product.id,
+            },
+          },
+          update: {
+            name: product.name,
+            sku: product.sku,
+            normalizedName: normalizeText(product.name),
+            normalizedSku: normalizeSku(product.sku),
+            description: product.description,
+            price: product.price,
+            status: product.status,
+            url: product.url,
+            lastSyncedAt: now,
+          },
+          create: {
+            source: sourceEnum,
+            externalId: product.id,
+            name: product.name,
+            sku: product.sku,
+            normalizedName: normalizeText(product.name),
+            normalizedSku: normalizeSku(product.sku),
+            description: product.description,
+            price: product.price,
+            status: product.status,
+            url: product.url,
+            lastSyncedAt: now,
+          },
+        })
+      )
+    );
+  }
+}
+
+async function loadProductsFromCache(source: CacheSourceName): Promise<NormalizedProduct[]> {
+  const db = prisma;
+  if (!db) return [];
+
+  const rows = await db.catalogProduct.findMany({
+    where: { source: CACHE_SOURCE_ENUM[source] },
+    orderBy: { updatedAt: "desc" },
+    take: 10000,
+  });
+
+  return rows.map((row) => {
+    const normalizedSource = sourceFromCacheEnum(row.source);
+    return {
+      source: normalizedSource,
+      id: row.externalId,
+      name: row.name,
+      sku: row.sku,
+      price: row.price,
+      status: row.status,
+      description: row.description,
+      url: row.url,
+      key: keyForProduct(row.sku, row.name, normalizedSource, row.externalId),
+      normalizedName: normalizeText(row.name),
+    };
+  });
+}
+
+async function hydrateSourceWithCache(source: CacheSourceName, result: SourceFetchResult): Promise<{
+  result: SourceFetchResult;
+  warning: string | null;
+}> {
+  const db = prisma;
+  if (!db) return { result, warning: null };
+
+  try {
+    if (result.products.length > 0) {
+      await saveProductsToCache(source, result.products);
+      return { result, warning: null };
+    }
+
+    const cachedProducts = await loadProductsFromCache(source);
+    if (cachedProducts.length === 0) return { result, warning: null };
+
+    const warning = result.error
+      ? `${SOURCE_LABELS[source]} live fetch failed; using ${cachedProducts.length} cached products`
+      : `${SOURCE_LABELS[source]} returned no products; using ${cachedProducts.length} cached products`;
+
+    return {
+      result: {
+        products: cachedProducts,
+        configured: true,
+        error: result.error,
+      },
+      warning,
+    };
+  } catch (error) {
+    return {
+      result,
+      warning: `Catalog cache unavailable for ${SOURCE_LABELS[source]}: ${error instanceof Error ? error.message : "unknown error"}`,
+    };
+  }
+}
+
 function buildComparisonRows(products: NormalizedProduct[], sources: SourceName[]): ComparisonRow[] {
   const grouped = new Map<string, Record<SourceName, NormalizedProduct[]>>();
 
@@ -1198,27 +1357,64 @@ export async function GET() {
     fetchQuickBooksProducts(),
   ]);
 
+  const [hubspotCache, zuperCache, zohoCache] = await Promise.all([
+    hydrateSourceWithCache("hubspot", {
+      products: hubspotResult.products,
+      configured: hubspotResult.configured,
+      error: hubspotResult.error,
+    }),
+    hydrateSourceWithCache("zuper", {
+      products: zuperResult.products,
+      configured: zuperResult.configured,
+      error: zuperResult.error,
+    }),
+    hydrateSourceWithCache("zoho", {
+      products: zohoResult.products,
+      configured: zohoResult.configured,
+      error: zohoResult.error,
+    }),
+  ]);
+
+  const effectiveHubspotResult = {
+    ...hubspotResult,
+    products: hubspotCache.result.products,
+    configured: hubspotCache.result.configured,
+    error: hubspotCache.result.error,
+  };
+  const effectiveZuperResult = {
+    ...zuperResult,
+    products: zuperCache.result.products,
+    configured: zuperCache.result.configured,
+    error: zuperCache.result.error,
+  };
+  const effectiveZohoResult = {
+    ...zohoResult,
+    products: zohoCache.result.products,
+    configured: zohoCache.result.configured,
+    error: zohoCache.result.error,
+  };
+
   const sourceResults = {
-    hubspot: hubspotResult,
-    zuper: zuperResult,
-    zoho: zohoResult,
+    hubspot: effectiveHubspotResult,
+    zuper: effectiveZuperResult,
+    zoho: effectiveZohoResult,
     opensolar: opensolarResult,
     quickbooks: quickbooksResult,
   } as const;
   const comparisonSources = ALL_SOURCES.filter((source) => sourceResults[source].configured);
 
   const allProducts = [
-    ...hubspotResult.products,
-    ...zuperResult.products,
-    ...zohoResult.products,
+    ...effectiveHubspotResult.products,
+    ...effectiveZuperResult.products,
+    ...effectiveZohoResult.products,
     ...opensolarResult.products,
     ...quickbooksResult.products,
   ];
   const rows = buildComparisonRows(allProducts, comparisonSources);
   const productsBySource: Record<SourceName, ComparableProduct[]> = {
-    hubspot: hubspotResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
-    zuper: zuperResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
-    zoho: zohoResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
+    hubspot: effectiveHubspotResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
+    zuper: effectiveZuperResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
+    zoho: effectiveZohoResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
     opensolar: opensolarResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
     quickbooks: quickbooksResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
   };
@@ -1241,9 +1437,12 @@ export async function GET() {
     quickbooks: sourceResults.quickbooks.configured ? enrichedRows.filter((row) => row.quickbooks === null).length : 0,
   };
 
-  const warnings = ALL_SOURCES
+  const warnings = [
+    ...ALL_SOURCES
     .map((source) => sourceResults[source].error)
-    .filter(Boolean) as string[];
+    .filter(Boolean) as string[],
+    ...[hubspotCache.warning, zuperCache.warning, zohoCache.warning].filter(Boolean) as string[],
+  ];
 
   const payload: ProductComparisonResponse = {
     rows: enrichedRows,
@@ -1253,28 +1452,28 @@ export async function GET() {
       fullyMatchedRows: enrichedRows.length - mismatchRows,
       missingBySource,
       sourceCounts: {
-        hubspot: hubspotResult.products.length,
-        zuper: zuperResult.products.length,
-        zoho: zohoResult.products.length,
+        hubspot: effectiveHubspotResult.products.length,
+        zuper: effectiveZuperResult.products.length,
+        zoho: effectiveZohoResult.products.length,
         opensolar: opensolarResult.products.length,
         quickbooks: quickbooksResult.products.length,
       },
     },
     health: {
       hubspot: {
-        configured: hubspotResult.configured,
-        count: hubspotResult.products.length,
-        error: hubspotResult.error,
+        configured: effectiveHubspotResult.configured,
+        count: effectiveHubspotResult.products.length,
+        error: effectiveHubspotResult.error,
       },
       zuper: {
-        configured: zuperResult.configured,
-        count: zuperResult.products.length,
-        error: zuperResult.error,
+        configured: effectiveZuperResult.configured,
+        count: effectiveZuperResult.products.length,
+        error: effectiveZuperResult.error,
       },
       zoho: {
-        configured: zohoResult.configured,
-        count: zohoResult.products.length,
-        error: zohoResult.error,
+        configured: effectiveZohoResult.configured,
+        count: effectiveZohoResult.products.length,
+        error: effectiveZohoResult.error,
       },
       opensolar: {
         configured: opensolarResult.configured,

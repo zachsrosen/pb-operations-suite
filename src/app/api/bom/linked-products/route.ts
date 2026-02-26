@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
+import { prisma } from "@/lib/db";
 import { fetchLineItemsForDeal } from "@/lib/hubspot";
 import { zohoInventory, type ZohoInventoryItem } from "@/lib/zoho-inventory";
 
@@ -115,11 +116,32 @@ export async function GET(request: NextRequest) {
   const lineItems = await fetchLineItemsForDeal(dealId);
 
   let zohoItems: ZohoInventoryItem[] = [];
+  let usedZohoCache = false;
   if (zohoInventory.isConfigured()) {
     try {
       zohoItems = await zohoInventory.listItems();
     } catch {
       zohoItems = [];
+    }
+  }
+  if (!zohoItems.length && prisma) {
+    try {
+      const cachedZohoProducts = await prisma.catalogProduct.findMany({
+        where: { source: "ZOHO" },
+        orderBy: { updatedAt: "desc" },
+        take: 10000,
+      });
+      zohoItems = cachedZohoProducts
+        .map((product) => ({
+          item_id: product.externalId,
+          name: product.name || "",
+          sku: product.sku || "",
+          description: product.description || undefined,
+        }))
+        .filter((item) => item.item_id && (item.name || item.sku)) as ZohoInventoryItem[];
+      usedZohoCache = zohoItems.length > 0;
+    } catch {
+      // ignore cache failures and continue without Zoho enrichment
     }
   }
 
@@ -155,6 +177,7 @@ export async function GET(request: NextRequest) {
     summary: {
       hubspotLinkedCount: products.length,
       zohoMatchedCount: products.filter((p) => p.zohoItemId).length,
+      zohoSource: usedZohoCache ? "cache" : "live",
     },
   });
 }

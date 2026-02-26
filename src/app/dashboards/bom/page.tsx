@@ -125,9 +125,7 @@ interface InternalCatalogSku {
 type CatalogStatus = Record<string, boolean>;
 
 interface PricingMatch {
-  unitCost: number | null;
   sellPrice: number | null;
-  marginPercent: number | null;
 }
 
 interface LinkedBomProduct {
@@ -301,11 +299,6 @@ function scoreSkuMatch(sku: InternalCatalogSku, item: BomItem): number {
   }
 
   return similarity;
-}
-
-function formatMoney(value: number | null): string {
-  if (value == null) return "—";
-  return `$${value.toFixed(2)}`;
 }
 
 function parsePositiveQty(value: number | string | null | undefined): number {
@@ -1442,13 +1435,8 @@ function BomDashboardInner() {
     const map = new Map<string, PricingMatch>();
     for (const item of items) {
       const sku = bestSkuByItem.get(item.id);
-      const unitCost = sku?.unitCost ?? null;
       const sellPrice = sku?.sellPrice ?? null;
-      const marginPercent =
-        unitCost != null && sellPrice != null && sellPrice > 0
-          ? ((sellPrice - unitCost) / sellPrice) * 100
-          : null;
-      map.set(item.id, { unitCost, sellPrice, marginPercent });
+      map.set(item.id, { sellPrice });
     }
     return map;
   }, [items, bestSkuByItem]);
@@ -1465,6 +1453,7 @@ function BomDashboardInner() {
     try {
       const sku = bestSkuByItem.get(item.id);
       const quantity = parsePositiveQty(item.qty);
+      const pricing = pricingByItem.get(item.id);
       const res = await fetch("/api/bom/linked-products/add-hubspot-line-item", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1477,7 +1466,7 @@ function BomDashboardInner() {
           name: [item.brand || "", item.model || ""].filter(Boolean).join(" ").trim() || item.description,
           description: item.description,
           quantity,
-          unitPrice: sku?.sellPrice ?? null,
+          unitPrice: pricing?.sellPrice ?? null,
           sku: sku?.vendorPartNumber || item.model || null,
           hubspotProductId: sku?.hubspotProductId || null,
         }),
@@ -1493,7 +1482,7 @@ function BomDashboardInner() {
     } finally {
       setRowActionBusyKey((current) => (current === actionKey ? null : current));
     }
-  }, [linkedProject, bestSkuByItem, addToast]);
+  }, [linkedProject, bestSkuByItem, pricingByItem, addToast]);
 
   const handleAddZuperJobPart = useCallback(async (item: BomItem) => {
     if (!linkedProject?.zuperUid) {
@@ -1506,6 +1495,7 @@ function BomDashboardInner() {
     try {
       const sku = bestSkuByItem.get(item.id);
       const quantity = parsePositiveQty(item.qty);
+      const pricing = pricingByItem.get(item.id);
       const res = await fetch("/api/bom/linked-products/add-zuper-part", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1518,7 +1508,7 @@ function BomDashboardInner() {
           name: [item.brand || "", item.model || ""].filter(Boolean).join(" ").trim() || item.description,
           description: item.description,
           quantity,
-          unitPrice: sku?.sellPrice ?? null,
+          unitPrice: pricing?.sellPrice ?? null,
           sku: sku?.vendorPartNumber || item.model || null,
           zuperItemId: sku?.zuperItemId || null,
         }),
@@ -1538,7 +1528,7 @@ function BomDashboardInner() {
     } finally {
       setRowActionBusyKey((current) => (current === actionKey ? null : current));
     }
-  }, [linkedProject, bestSkuByItem, addToast]);
+  }, [linkedProject, bestSkuByItem, pricingByItem, addToast]);
 
   /* ---- Export CSV ---- */
   const handleExportCsv = useCallback(() => {
@@ -1558,9 +1548,6 @@ function BomDashboardInner() {
         qty: String(item.qty),
         unitSpec: item.unitSpec != null ? String(item.unitSpec) : "",
         unitLabel: item.unitLabel || "",
-        unitCost: pricing?.unitCost != null ? String(pricing.unitCost) : "",
-        sellPrice: pricing?.sellPrice != null ? String(pricing.sellPrice) : "",
-        marginPercent: pricing?.marginPercent != null ? pricing.marginPercent.toFixed(1) : "",
         source: item.source,
         flags: item.flags?.join(", ") || "",
         ...catalogCols,
@@ -1604,15 +1591,14 @@ function BomDashboardInner() {
       lines.push("");
       const srcHeaders = catalogSources.map((s) => SOURCE_DISPLAY_LABELS[s] ?? s).join(" | ");
       const srcSeps = catalogSources.map(() => "------").join("|");
-      lines.push(`| Brand | Model | Description | Qty | Spec | Unit Cost | Sell Price | Margin |${srcHeaders ? ` ${srcHeaders} |` : ""}`);
-      lines.push(`|-------|-------|-------------|-----|------|-----------|------------|--------|${srcSeps ? `${srcSeps}|` : ""}`);
+      lines.push(`| Brand | Model | Description | Qty | Spec |${srcHeaders ? ` ${srcHeaders} |` : ""}`);
+      lines.push(`|-------|-------|-------------|-----|------|${srcSeps ? `${srcSeps}|` : ""}`);
       for (const item of catItems) {
         const flags = item.flags?.length ? ` ⚠️ ${item.flags.join(", ")}` : "";
         const status = catalogStatus.get(item.id);
-        const pricing = pricingByItem.get(item.id);
         const srcCols = catalogSources.map((s) => status?.[s] ? "✅" : "—").join(" | ");
         lines.push(
-          `| ${item.brand || "—"} | ${item.model || "—"} | ${item.description}${flags} | ${item.qty} | ${item.unitSpec || ""} ${item.unitLabel || ""} | ${formatMoney(pricing?.unitCost ?? null)} | ${formatMoney(pricing?.sellPrice ?? null)} | ${pricing?.marginPercent != null ? `${pricing.marginPercent.toFixed(1)}%` : "—"} |${srcCols ? ` ${srcCols} |` : ""}`
+          `| ${item.brand || "—"} | ${item.model || "—"} | ${item.description}${flags} | ${item.qty} | ${item.unitSpec || ""} ${item.unitLabel || ""} |${srcCols ? ` ${srcCols} |` : ""}`
         );
       }
       lines.push("");
@@ -1620,7 +1606,7 @@ function BomDashboardInner() {
 
     await navigator.clipboard.writeText(lines.join("\n"));
     addToast({ type: "success", title: "Markdown copied to clipboard" });
-  }, [items, bom, catalogStatus, addToast, catalogSources, pricingByItem]);
+  }, [items, bom, catalogStatus, addToast, catalogSources]);
 
   /* ---- Copy BOM Tool feedback notes ---- */
   const handleCopyBomToolNotes = useCallback(async () => {
@@ -2712,7 +2698,7 @@ function BomDashboardInner() {
                         <th className="text-left px-4 py-2 font-medium w-44">Item</th>
                         <th className="text-left px-4 py-2 font-medium w-[22rem]">Details</th>
                         <th className="text-left px-4 py-2 font-medium w-48">Qty / Spec</th>
-                        <th className="text-left px-4 py-2 font-medium w-48">Pricing</th>
+                        <th className="text-left px-4 py-2 font-medium w-48">Item Meta</th>
                         <th className="text-left px-3 py-2 font-medium w-32">Deal / Job</th>
                         {catalogSources.length > 0 && (
                           <th className="text-left px-2 py-2 font-medium" colSpan={catalogSources.length}>
@@ -2736,7 +2722,6 @@ function BomDashboardInner() {
                     <tbody className="divide-y divide-[color:var(--border)]">
                       {grouped[cat]!.map((item) => {
                         const status = catalogStatus.get(item.id);
-                        const pricing = pricingByItem.get(item.id);
                         const missing = status && catalogSources.some((s) => !status[s]);
                         return (
                           <tr
@@ -2816,10 +2801,7 @@ function BomDashboardInner() {
                               </div>
                             </td>
                             <td className="px-4 py-1.5 text-xs text-muted">
-                              <div className="space-y-1.5">
-                                <div><span className="text-muted">Unit Cost:</span> {formatMoney(pricing?.unitCost ?? null)}</div>
-                                <div><span className="text-muted">Sell Price:</span> {formatMoney(pricing?.sellPrice ?? null)}</div>
-                                <div><span className="text-muted">Margin:</span> {pricing?.marginPercent != null ? `${pricing.marginPercent.toFixed(1)}%` : "—"}</div>
+                                <div className="space-y-1.5">
                                 <div>
                                   <div className="text-[11px] uppercase tracking-wide text-muted mb-1">Source</div>
                                   <EditableCell
