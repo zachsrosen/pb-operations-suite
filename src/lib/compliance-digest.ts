@@ -4,21 +4,18 @@ import {
   COMPLIANCE_EXCLUDED_USER_UIDS,
   COMPLIANCE_TEAM_OVERRIDES,
 } from "@/lib/compliance-team-overrides";
-import { JOB_CATEGORIES, JOB_CATEGORY_UIDS } from "@/lib/zuper";
+import { JOB_CATEGORIES, JOB_CATEGORY_UIDS, zuper } from "@/lib/zuper";
 import {
   type AssignedUser,
   STUCK_STATUSES,
   NEVER_STARTED_STATUSES,
   COMPLETED_STATUSES,
   GRACE_MS,
-  CATEGORY_UID_TO_NAME,
   getCategoryUid,
   getStatusName,
   getCompletedTimeFromHistory,
   getOnOurWayTime,
   getStartedTime,
-  isExcludedUser,
-  isExcludedTeam,
   extractAssignedUsers,
   computeGrade,
   fetchJobsForCategory,

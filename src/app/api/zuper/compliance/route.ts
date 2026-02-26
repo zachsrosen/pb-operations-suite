@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import * as Sentry from "@sentry/nextjs";
 import { requireApiAuth } from "@/lib/api-auth";
 import { tagSentryRequest } from "@/lib/sentry-request";
-import { JOB_CATEGORY_UIDS } from "@/lib/zuper";
+import { JOB_CATEGORIES, JOB_CATEGORY_UIDS, zuper } from "@/lib/zuper";
 import { getActiveCrewMembers } from "@/lib/db";
 import {
   COMPLIANCE_EXCLUDED_USER_UIDS,
@@ -13,19 +13,13 @@ import {
   STUCK_STATUSES,
   NEVER_STARTED_STATUSES,
   COMPLETED_STATUSES,
-  EXCLUDED_USER_NAMES,
-  EXCLUDED_TEAM_PREFIXES,
   GRACE_MS,
-  MAX_PAGES_PER_CATEGORY,
   CATEGORY_UID_TO_NAME,
   getCategoryUid,
   getStatusName,
   getCompletedTimeFromHistory,
   getOnOurWayTime,
   getStartedTime,
-  isExcludedUser,
-  isExcludedTeam,
-  extractTeamNames,
   extractAssignedUsers,
   filterAssignedUsersByTeam,
   computeGrade,
