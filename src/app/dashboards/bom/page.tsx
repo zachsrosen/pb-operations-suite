@@ -1075,7 +1075,7 @@ function BomDashboardInner() {
   // Vercel's 4.5MB serverless body limit) and POSTs each to /api/bom/chunk.
   // All requests stay on our domain — no cross-origin CORS issues.
   // The server reassembles chunks in Vercel Blob and returns the final URL
-  // for Claude to fetch server-side.
+  // for BOM Tool extraction server-side.
   const handleExtractUpload = useCallback(async () => {
     if (!uploadFile) return;
     const projectAtExtractStart = linkedProject;
@@ -1130,7 +1130,7 @@ function BomDashboardInner() {
 
       if (!blobUrl) throw new Error("Upload completed but no blob URL returned — try again");
 
-      setUploadProgress("Extracting BOM with Claude — this takes 30–60 seconds…");
+      setUploadProgress("Extracting BOM with BOM Tool — this takes 30–60 seconds…");
       const res = await fetch("/api/bom/extract", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1337,6 +1337,20 @@ function BomDashboardInner() {
     []
   );
 
+  const updateItemFlags = useCallback((id: string, value: string) => {
+    const nextFlags = value
+      .split(",")
+      .map((flag) => flag.trim())
+      .filter(Boolean);
+    setItems((prev) =>
+      prev.map((item) => (
+        item.id === id
+          ? { ...item, flags: nextFlags.length ? nextFlags : undefined }
+          : item
+      ))
+    );
+  }, []);
+
   const deleteItem = useCallback((id: string) => {
     setItems((prev) => prev.filter((item) => item.id !== id));
   }, []);
@@ -1348,7 +1362,6 @@ function BomDashboardInner() {
       brand: "",
       model: "",
       description: "",
-      aiFeedbackNotes: "",
       qty: 1,
       unitSpec: null,
       unitLabel: null,
@@ -1542,7 +1555,6 @@ function BomDashboardInner() {
         brand: item.brand || "",
         model: item.model || "",
         description: item.description,
-        aiFeedbackNotes: item.aiFeedbackNotes || "",
         qty: String(item.qty),
         unitSpec: item.unitSpec != null ? String(item.unitSpec) : "",
         unitLabel: item.unitLabel || "",
@@ -1592,16 +1604,15 @@ function BomDashboardInner() {
       lines.push("");
       const srcHeaders = catalogSources.map((s) => SOURCE_DISPLAY_LABELS[s] ?? s).join(" | ");
       const srcSeps = catalogSources.map(() => "------").join("|");
-      lines.push(`| Brand | Model | Description | AI Notes | Qty | Spec | Unit Cost | Sell Price | Margin |${srcHeaders ? ` ${srcHeaders} |` : ""}`);
-      lines.push(`|-------|-------|-------------|----------|-----|------|-----------|------------|--------|${srcSeps ? `${srcSeps}|` : ""}`);
+      lines.push(`| Brand | Model | Description | Qty | Spec | Unit Cost | Sell Price | Margin |${srcHeaders ? ` ${srcHeaders} |` : ""}`);
+      lines.push(`|-------|-------|-------------|-----|------|-----------|------------|--------|${srcSeps ? `${srcSeps}|` : ""}`);
       for (const item of catItems) {
         const flags = item.flags?.length ? ` ⚠️ ${item.flags.join(", ")}` : "";
         const status = catalogStatus.get(item.id);
         const pricing = pricingByItem.get(item.id);
         const srcCols = catalogSources.map((s) => status?.[s] ? "✅" : "—").join(" | ");
-        const aiNotes = (item.aiFeedbackNotes || "—").replace(/\|/g, "/").replace(/\s+/g, " ").trim() || "—";
         lines.push(
-          `| ${item.brand || "—"} | ${item.model || "—"} | ${item.description}${flags} | ${aiNotes} | ${item.qty} | ${item.unitSpec || ""} ${item.unitLabel || ""} | ${formatMoney(pricing?.unitCost ?? null)} | ${formatMoney(pricing?.sellPrice ?? null)} | ${pricing?.marginPercent != null ? `${pricing.marginPercent.toFixed(1)}%` : "—"} |${srcCols ? ` ${srcCols} |` : ""}`
+          `| ${item.brand || "—"} | ${item.model || "—"} | ${item.description}${flags} | ${item.qty} | ${item.unitSpec || ""} ${item.unitLabel || ""} | ${formatMoney(pricing?.unitCost ?? null)} | ${formatMoney(pricing?.sellPrice ?? null)} | ${pricing?.marginPercent != null ? `${pricing.marginPercent.toFixed(1)}%` : "—"} |${srcCols ? ` ${srcCols} |` : ""}`
         );
       }
       lines.push("");
@@ -1611,67 +1622,36 @@ function BomDashboardInner() {
     addToast({ type: "success", title: "Markdown copied to clipboard" });
   }, [items, bom, catalogStatus, addToast, catalogSources, pricingByItem]);
 
-  /* ---- Copy Claude skill-update notes ---- */
-  const handleCopyClaudeSkillUpdateNotes = useCallback(async () => {
+  /* ---- Copy BOM Tool feedback notes ---- */
+  const handleCopyBomToolNotes = useCallback(async () => {
     const overallNotes = String(bom?.project?.aiFeedbackOverall || "").trim();
-    const notedItems = items
-      .filter((item) => String(item.aiFeedbackNotes || "").trim().length > 0)
-      .map((item) => ({
-        category: CATEGORY_LABELS[item.category as BomCategory] ?? item.category,
-        brand: item.brand || "—",
-        model: item.model || "—",
-        description: item.description || "—",
-        note: String(item.aiFeedbackNotes || "").trim(),
-      }));
-
-    if (!overallNotes && notedItems.length === 0) {
+    if (!overallNotes) {
       addToast({
         type: "error",
-        title: "Add overall notes or row AI notes first",
+        title: "Add overall BOM Tool notes first",
       });
       return;
     }
 
     const lines: string[] = [
-      "# Skill Update Request: BOM Extraction",
+      "# BOM Tool Feedback",
       "",
       `Date: ${new Date().toLocaleDateString()}`,
       `Deal: ${linkedProject?.dealname || bom?.project?.customer || "Unknown"}`,
       `Deal ID: ${linkedProject?.hs_object_id || "N/A"}`,
       "",
-      "## What to improve",
-    ];
-
-    if (overallNotes) {
-      lines.push(overallNotes, "");
-    } else {
-      lines.push("- No overall note provided; use row-level notes below.", "");
-    }
-
-    lines.push("## Row-level AI Feedback");
-    if (notedItems.length === 0) {
-      lines.push("- No row-level notes provided.");
-    } else {
-      for (const [index, row] of notedItems.entries()) {
-        lines.push(
-          `${index + 1}. [${row.category}] ${row.brand} | ${row.model}`,
-          `   Description: ${row.description}`,
-          `   Feedback: ${row.note}`
-        );
-      }
-    }
-
-    lines.push(
+      "## Feedback",
+      overallNotes,
       "",
       "## Requested outcome",
-      "- Update the BOM extraction skill/prompt/parsing rules to address these recurring misses.",
+      "- Update BOM extraction prompt/parsing behavior to address this recurring issue.",
       "- Keep existing category taxonomy and output schema stable.",
-      "- Prefer deterministic extraction where possible over ambiguous inference."
-    );
+      "- Prefer deterministic extraction where possible over ambiguous inference.",
+    ];
 
     await navigator.clipboard.writeText(lines.join("\n"));
-    addToast({ type: "success", title: "Claude skill update notes copied" });
-  }, [bom, items, linkedProject, addToast]);
+    addToast({ type: "success", title: "BOM Tool notes copied" });
+  }, [bom, linkedProject, addToast]);
 
   /* ---- Save to Inventory ---- */
   const handleSaveInventory = useCallback(async () => {
@@ -1880,7 +1860,7 @@ function BomDashboardInner() {
               {importTab === "upload" && (
                 <div className="space-y-4">
                   <p className="text-sm text-muted">
-                    Upload a PB stamped planset PDF. Claude will read all sheets and extract the full BOM automatically.
+                    Upload a PB stamped planset PDF. BOM Tool will read all sheets and extract the full BOM automatically.
                   </p>
 
                   {/* Drop zone */}
@@ -1986,7 +1966,7 @@ function BomDashboardInner() {
                   </button>
                   {extracting && (
                     <p className="text-xs text-muted animate-pulse">
-                      Downloading from Drive then extracting with Claude — allow 30–60 seconds.
+                      Downloading from Drive then extracting with BOM Tool — allow 30–60 seconds.
                     </p>
                   )}
                 </div>
@@ -1998,7 +1978,7 @@ function BomDashboardInner() {
                   <p className="text-sm text-muted">
                     Run the{" "}
                     <code className="bg-surface-2 px-1.5 py-0.5 rounded text-xs">planset-bom</code>{" "}
-                    skill in Claude Code, then paste the JSON output below.
+                    skill in BOM Tool, then paste the JSON output below.
                   </p>
                   <textarea
                     className="w-full h-48 rounded-lg bg-surface-2 border border-t-border text-foreground text-sm font-mono p-3 resize-y focus:outline-none focus:ring-2 focus:ring-cyan-500"
@@ -2378,14 +2358,14 @@ function BomDashboardInner() {
               <div className="flex items-center justify-between gap-2 mb-2">
                 <h3 className="text-sm font-semibold text-foreground">Overall AI Feedback</h3>
                 <button
-                  onClick={handleCopyClaudeSkillUpdateNotes}
+                  onClick={handleCopyBomToolNotes}
                   className="px-3 py-1.5 rounded-lg bg-surface-2 border border-t-border text-xs text-foreground hover:bg-surface transition-colors"
                 >
-                  ⎘ Copy Claude Skill Notes
+                  ⎘ Copy BOM Tool Notes
                 </button>
               </div>
               <p className="text-xs text-muted mb-2">
-                Capture global extraction feedback here; row-level notes are still available in each BOM item.
+                Capture global extraction feedback for BOM Tool behavior and parsing quality.
               </p>
               <textarea
                 value={bom.project.aiFeedbackOverall || ""}
@@ -2404,7 +2384,7 @@ function BomDashboardInner() {
                   ));
                 }}
                 rows={4}
-                placeholder="Example: Claude keeps missing EV charger breaker size and often confuses racking rail model names with module model names..."
+                placeholder="Example: BOM Tool keeps missing EV charger breaker size and often confuses racking rail model names with module model names..."
                 className="w-full rounded-lg bg-surface-2 border border-t-border text-sm text-foreground px-3 py-2 focus:outline-none focus:ring-1 focus:ring-cyan-500 placeholder:text-muted resize-y"
               />
             </div>
@@ -2424,10 +2404,10 @@ function BomDashboardInner() {
                 ⎘ Copy Markdown
               </button>
               <button
-                onClick={handleCopyClaudeSkillUpdateNotes}
+                onClick={handleCopyBomToolNotes}
                 className="px-4 py-2 rounded-lg bg-surface border border-t-border text-sm text-foreground hover:bg-surface-2 transition-colors"
               >
-                ⎘ Copy Claude Skill Notes
+                ⎘ Copy BOM Tool Notes
               </button>
               <button
                 onClick={handleSaveInventory}
@@ -2726,16 +2706,16 @@ function BomDashboardInner() {
                   </button>
                 </div>
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[1120px] text-sm">
+                  <table className="w-full min-w-[980px] text-sm">
                     <thead>
                       <tr className="text-xs text-muted border-b border-t-border">
-                        <th className="text-left px-4 py-2 font-medium w-52">Item</th>
-                        <th className="text-left px-4 py-2 font-medium w-[26rem]">Details</th>
-                        <th className="text-left px-4 py-2 font-medium w-56">Qty / Spec</th>
-                        <th className="text-left px-4 py-2 font-medium w-44">Pricing</th>
-                        <th className="text-left px-4 py-2 font-medium w-40">Deal / Job</th>
+                        <th className="text-left px-4 py-2 font-medium w-44">Item</th>
+                        <th className="text-left px-4 py-2 font-medium w-[22rem]">Details</th>
+                        <th className="text-left px-4 py-2 font-medium w-48">Qty / Spec</th>
+                        <th className="text-left px-4 py-2 font-medium w-48">Pricing</th>
+                        <th className="text-left px-3 py-2 font-medium w-32">Deal / Job</th>
                         {catalogSources.length > 0 && (
-                          <th className="text-left px-4 py-2 font-medium" colSpan={catalogSources.length}>
+                          <th className="text-left px-2 py-2 font-medium" colSpan={catalogSources.length}>
                             Catalogs
                           </th>
                         )}
@@ -2745,7 +2725,7 @@ function BomDashboardInner() {
                         <tr className="text-xs text-muted border-b border-t-border bg-surface-2/50">
                           <th colSpan={5} />
                           {catalogSources.map((src) => (
-                            <th key={src} className="px-2 py-1 font-normal text-center w-10" title={SOURCE_DISPLAY_LABELS[src] ?? src}>
+                            <th key={src} className="px-1 py-1 font-normal text-center w-7" title={SOURCE_DISPLAY_LABELS[src] ?? src}>
                               {SOURCE_SHORT_LABELS[src] ?? src.slice(0, 2).toUpperCase()}
                             </th>
                           ))}
@@ -2765,6 +2745,18 @@ function BomDashboardInner() {
                           >
                             <td className="px-4 py-1.5">
                               <div className="space-y-1.5">
+                                <div className="text-[11px] uppercase tracking-wide text-muted">Category</div>
+                                <select
+                                  value={item.category}
+                                  onChange={(e) => updateItem(item.id, "category", e.target.value as BomCategory)}
+                                  className="w-full bg-transparent text-foreground text-sm focus:outline-none focus:ring-1 focus:ring-cyan-500 rounded px-1 py-0.5 hover:bg-surface-2 focus:bg-surface-2 transition-colors"
+                                >
+                                  {CATEGORY_ORDER.map((option) => (
+                                    <option key={option} value={option} className="bg-surface text-foreground">
+                                      {CATEGORY_LABELS[option]}
+                                    </option>
+                                  ))}
+                                </select>
                                 <div className="text-[11px] uppercase tracking-wide text-muted">Brand</div>
                                 <EditableCell
                                   value={item.brand || ""}
@@ -2787,15 +2779,6 @@ function BomDashboardInner() {
                                     value={item.description}
                                     onChange={(v) => updateItem(item.id, "description", v)}
                                     placeholder="Description"
-                                    className="min-h-[48px]"
-                                  />
-                                </div>
-                                <div>
-                                  <div className="text-[11px] uppercase tracking-wide text-muted mb-1">AI Feedback Notes</div>
-                                  <EditableTextAreaCell
-                                    value={item.aiFeedbackNotes || ""}
-                                    onChange={(v) => updateItem(item.id, "aiFeedbackNotes", v)}
-                                    placeholder="Notes for AI follow-up, corrections, assumptions…"
                                     className="min-h-[48px]"
                                   />
                                 </div>
@@ -2833,14 +2816,29 @@ function BomDashboardInner() {
                               </div>
                             </td>
                             <td className="px-4 py-1.5 text-xs text-muted">
-                              <div className="space-y-1">
+                              <div className="space-y-1.5">
                                 <div><span className="text-muted">Unit Cost:</span> {formatMoney(pricing?.unitCost ?? null)}</div>
                                 <div><span className="text-muted">Sell Price:</span> {formatMoney(pricing?.sellPrice ?? null)}</div>
                                 <div><span className="text-muted">Margin:</span> {pricing?.marginPercent != null ? `${pricing.marginPercent.toFixed(1)}%` : "—"}</div>
-                                <div className="text-[11px]"><span className="text-muted">Source:</span> {item.source}</div>
+                                <div>
+                                  <div className="text-[11px] uppercase tracking-wide text-muted mb-1">Source</div>
+                                  <EditableCell
+                                    value={item.source || ""}
+                                    onChange={(v) => updateItem(item.id, "source", v)}
+                                    placeholder="source"
+                                  />
+                                </div>
+                                <div>
+                                  <div className="text-[11px] uppercase tracking-wide text-muted mb-1">Flags</div>
+                                  <EditableCell
+                                    value={item.flags?.join(", ") || ""}
+                                    onChange={(v) => updateItemFlags(item.id, v)}
+                                    placeholder="comma,separated"
+                                  />
+                                </div>
                               </div>
                             </td>
-                            <td className="px-4 py-1.5">
+                            <td className="px-3 py-1.5">
                               <div className="flex items-center gap-1.5">
                                 <button
                                   onClick={() => handleAddHubspotDealLineItem(item)}
@@ -2861,8 +2859,8 @@ function BomDashboardInner() {
                               </div>
                             </td>
                             {catalogSources.map((src) => (
-                              <td key={src} className="px-2 py-1.5 text-center">
-                                <span className="inline-flex items-center gap-1">
+                              <td key={src} className="px-1 py-1.5 text-center w-7">
+                                <span className="relative inline-flex items-center justify-center w-5 h-5">
                                   <CatalogDot present={status?.[src]} loading={catalogLoading} />
                                   {!status?.[src] && !catalogLoading && (
                                     <button
@@ -2875,9 +2873,10 @@ function BomDashboardInner() {
                                         unitLabel: item.unitLabel,
                                         dealId: linkedProject?.hs_object_id,
                                       })}
-                                      className="opacity-0 group-hover:opacity-100 transition-opacity text-xs text-cyan-600 dark:text-cyan-400 hover:underline px-1.5"
+                                      className="absolute -top-1.5 -right-1.5 opacity-0 group-hover:opacity-100 transition-opacity text-[10px] leading-none font-semibold text-cyan-600 dark:text-cyan-400 hover:text-cyan-500 bg-surface border border-t-border rounded px-0.5"
+                                      title="Add to missing catalog"
                                     >
-                                      + Add
+                                      +
                                     </button>
                                   )}
                                 </span>
