@@ -1248,6 +1248,11 @@ function buildWeeklyComplianceEmailHtml(digest: ComplianceDigest, dashboardUrl: 
   const stuckTrend = getTrend(digest.summary.stuckJobs, digest.priorPeriod.stuckJobs, false);
   const completedTrend = getTrend(digest.summary.completedJobs, digest.priorPeriod.completedJobs, true);
 
+  const onTimeBaseline = getTrend(digest.summary.onTimePercent, digest.baseline30Day.onTimePercent, true);
+  const oowBaseline = getTrend(digest.summary.oowUsagePercent, digest.baseline30Day.oowUsagePercent, true);
+  const stuckBaseline = getTrend(digest.summary.stuckJobs, digest.baseline30Day.stuckJobs, false);
+  const completedBaseline = getTrend(digest.summary.completedJobs, digest.baseline30Day.completedJobs, true);
+
   const teamRows = digest.teams.slice(0, 10);
   const bestTeamName =
     teamRows.length > 0
@@ -1274,12 +1279,18 @@ function buildWeeklyComplianceEmailHtml(digest: ComplianceDigest, dashboardUrl: 
   const failingUsers = digest.callouts.failingUsers.slice(0, 8);
   const unknownCompletion = digest.callouts.unknownCompletionJobs.slice(0, 8);
 
-  const metricCard = (label: string, value: string, trend: { arrow: string; color: string; deltaLabel: string }) => `
+  const metricCard = (
+    label: string,
+    value: string,
+    trend: { arrow: string; color: string; deltaLabel: string },
+    baseline: { arrow: string; color: string; deltaLabel: string }
+  ) => `
     <td style="width: 25%; padding: 10px;">
       <div style="background:#12121a; border:1px solid #1e1e2e; border-radius:10px; padding:12px;">
         <div style="color:#a1a1aa; font-size:12px; margin-bottom:6px;">${label}</div>
         <div style="color:#ffffff; font-size:24px; font-weight:700; margin-bottom:4px;">${value}</div>
-        <div style="font-size:12px; color:${trend.color};">${trend.arrow} ${trend.deltaLabel} vs prior</div>
+        <div style="font-size:12px; color:${trend.color};">${trend.arrow} ${trend.deltaLabel} vs prior week</div>
+        <div style="font-size:11px; color:${baseline.color}; margin-top:2px;">${baseline.arrow} ${baseline.deltaLabel} vs 30-day avg</div>
       </div>
     </td>
   `;
@@ -1366,6 +1377,54 @@ function buildWeeklyComplianceEmailHtml(digest: ComplianceDigest, dashboardUrl: 
           )
           .join("");
 
+  const growthTableRow = (entry: ComplianceDigest["userGrowth"]["improvers"][0], isImprover: boolean) => {
+    const deltaColor = isImprover ? "#22c55e" : "#ef4444";
+    const deltaSign = entry.scoreDelta > 0 ? "+" : "";
+    return `
+      <tr>
+        <td style="padding:8px; border-top:1px solid #1e1e2e;">${escapeHtml(entry.name)}</td>
+        <td style="padding:8px; border-top:1px solid #1e1e2e;">${escapeHtml(entry.team)}</td>
+        <td style="padding:8px; border-top:1px solid #1e1e2e;">${entry.priorGrade} &rarr; ${entry.currentGrade}</td>
+        <td style="padding:8px; border-top:1px solid #1e1e2e;">${formatCompliancePercent(entry.priorOnTimePercent)} &rarr; ${formatCompliancePercent(entry.currentOnTimePercent)}</td>
+        <td style="padding:8px; border-top:1px solid #1e1e2e; color:${deltaColor}; font-weight:700;">${deltaSign}${entry.scoreDelta}</td>
+      </tr>
+    `;
+  };
+
+  const growthTableHeaders = `
+    <thead style="background:#12121a; color:#a1a1aa;">
+      <tr>
+        <th align="left" style="padding:8px;">Name</th>
+        <th align="left" style="padding:8px;">Team</th>
+        <th align="left" style="padding:8px;">Grade</th>
+        <th align="left" style="padding:8px;">On-Time %</th>
+        <th align="left" style="padding:8px;">Score &Delta;</th>
+      </tr>
+    </thead>
+  `;
+
+  const improversHtml = digest.userGrowth.improvers.length === 0
+    ? `<p style="color:#a1a1aa; font-size:13px;">No significant improvements this period.</p>`
+    : `<table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="border:1px solid #1e1e2e; border-radius:8px; overflow:hidden; font-size:13px;">
+        ${growthTableHeaders}
+        <tbody>${digest.userGrowth.improvers.map((e) => growthTableRow(e, true)).join("")}</tbody>
+      </table>`;
+
+  const declinersHtml = digest.userGrowth.decliners.length === 0
+    ? `<p style="color:#a1a1aa; font-size:13px;">No significant declines this period.</p>`
+    : `<table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="border:1px solid #1e1e2e; border-radius:8px; overflow:hidden; font-size:13px;">
+        ${growthTableHeaders}
+        <tbody>${digest.userGrowth.decliners.map((e) => growthTableRow(e, false)).join("")}</tbody>
+      </table>`;
+
+  const userGrowthSection = `
+    <h2 style="font-size:16px; margin:18px 0 8px;">User Growth (&ge;${digest.userGrowth.threshold}pt change)</h2>
+    <p style="margin:0 0 6px 0; color:#22c55e; font-size:13px;">Most Improved</p>
+    ${improversHtml}
+    <p style="margin:14px 0 6px 0; color:#ef4444; font-size:13px;">Biggest Declines</p>
+    ${declinersHtml}
+  `;
+
   return `
     <!doctype html>
     <html>
@@ -1383,10 +1442,10 @@ function buildWeeklyComplianceEmailHtml(digest: ComplianceDigest, dashboardUrl: 
           <div style="padding:14px 14px 4px 14px;">
             <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
               <tr>
-                ${metricCard("On-Time Completion", formatCompliancePercent(digest.summary.onTimePercent), onTimeTrend)}
-                ${metricCard("OOW Usage", formatCompliancePercent(digest.summary.oowUsagePercent), oowTrend)}
-                ${metricCard("Stuck Jobs", `${digest.summary.stuckJobs}`, stuckTrend)}
-                ${metricCard("Completed Jobs", `${digest.summary.completedJobs}`, completedTrend)}
+                ${metricCard("On-Time Completion", formatCompliancePercent(digest.summary.onTimePercent), onTimeTrend, onTimeBaseline)}
+                ${metricCard("OOW Usage", formatCompliancePercent(digest.summary.oowUsagePercent), oowTrend, oowBaseline)}
+                ${metricCard("Stuck Jobs", `${digest.summary.stuckJobs}`, stuckTrend, stuckBaseline)}
+                ${metricCard("Completed Jobs", `${digest.summary.completedJobs}`, completedTrend, completedBaseline)}
               </tr>
             </table>
           </div>
@@ -1441,6 +1500,8 @@ function buildWeeklyComplianceEmailHtml(digest: ComplianceDigest, dashboardUrl: 
             <p style="margin:0 0 6px 0; color:#f97316; font-size:13px;">Unknown completion timestamps</p>
             <ul style="padding-left:20px; margin:0 0 14px 0; font-size:13px; color:#d4d4d8;">${unknownCompletionHtml}</ul>
 
+            ${userGrowthSection}
+
             <a href="${escapeHtml(dashboardUrl)}" style="display:inline-block; background:#f97316; color:#111827; text-decoration:none; font-weight:700; border-radius:8px; padding:10px 14px; font-size:13px;">
               Open Full Compliance Dashboard
             </a>
@@ -1461,6 +1522,12 @@ function buildWeeklyComplianceEmailText(digest: ComplianceDigest, dashboardUrl: 
   lines.push(`OOW Usage: ${formatCompliancePercent(digest.summary.oowUsagePercent)}`);
   lines.push(`Stuck Jobs: ${digest.summary.stuckJobs}`);
   lines.push(`Unknown Completion Timestamps: ${digest.summary.unknownCompletionJobs}`);
+  lines.push("");
+  lines.push("30-Day Baseline Comparison:");
+  lines.push(`  On-Time: ${formatCompliancePercent(digest.summary.onTimePercent)} (current) vs ${formatCompliancePercent(digest.baseline30Day.onTimePercent)} (30-day avg)`);
+  lines.push(`  OOW Usage: ${formatCompliancePercent(digest.summary.oowUsagePercent)} vs ${formatCompliancePercent(digest.baseline30Day.oowUsagePercent)}`);
+  lines.push(`  Stuck Jobs: ${digest.summary.stuckJobs} vs ${digest.baseline30Day.stuckJobs}`);
+  lines.push(`  Completed: ${digest.summary.completedJobs} vs ${digest.baseline30Day.completedJobs}`);
   lines.push("");
   lines.push("Top Teams:");
   for (const team of digest.teams.slice(0, 8)) {
@@ -1504,6 +1571,22 @@ function buildWeeklyComplianceEmailText(digest: ComplianceDigest, dashboardUrl: 
     lines.push("Unknown completion timestamps:");
     for (const job of digest.callouts.unknownCompletionJobs.slice(0, 8)) {
       lines.push(`- ${job.title || job.jobUid} (${job.category})`);
+    }
+  }
+  if (digest.userGrowth.improvers.length > 0 || digest.userGrowth.decliners.length > 0) {
+    lines.push("");
+    lines.push(`User Growth (>=${digest.userGrowth.threshold}pt change):`);
+    if (digest.userGrowth.improvers.length > 0) {
+      lines.push("  Most Improved:");
+      for (const u of digest.userGrowth.improvers) {
+        lines.push(`  - ${u.name} (${u.team}): ${u.priorGrade} -> ${u.currentGrade}, score +${u.scoreDelta}`);
+      }
+    }
+    if (digest.userGrowth.decliners.length > 0) {
+      lines.push("  Biggest Declines:");
+      for (const u of digest.userGrowth.decliners) {
+        lines.push(`  - ${u.name} (${u.team}): ${u.priorGrade} -> ${u.currentGrade}, score ${u.scoreDelta}`);
+      }
     }
   }
   lines.push("");
