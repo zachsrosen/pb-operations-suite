@@ -21,6 +21,18 @@ import {
   fetchJobsForCategory,
 } from "@/lib/compliance-helpers";
 
+export interface UserGrowthEntry {
+  name: string;
+  team: string;
+  currentScore: number;
+  currentGrade: string;
+  currentOnTimePercent: number;
+  priorScore: number;
+  priorGrade: string;
+  priorOnTimePercent: number;
+  scoreDelta: number;
+}
+
 export interface ComplianceDigest {
   period: { from: string; to: string; days: number };
   summary: {
@@ -62,6 +74,17 @@ export interface ComplianceDigest {
     stuckOver3Days: Array<{ jobUid: string; title: string; team: string; daysPastEnd: number }>;
     failingUsers: Array<{ name: string; team: string; grade: string; score: number }>;
     unknownCompletionJobs: Array<{ jobUid: string; title: string; category: string }>;
+  };
+  baseline30Day: {
+    completedJobs: number;
+    onTimePercent: number;
+    oowUsagePercent: number;
+    stuckJobs: number;
+  };
+  userGrowth: {
+    improvers: UserGrowthEntry[];
+    decliners: UserGrowthEntry[];
+    threshold: number;
   };
 }
 
@@ -128,6 +151,7 @@ interface AggregateResult {
     name: string;
     team: string;
     completedJobs: number;
+    onTimePercent: number;
     oowUsed: number;
     oowPercent: number;
     score: number;
@@ -482,6 +506,7 @@ async function analyzeJobs(allJobs: JobWithCategory[]): Promise<AggregateResult>
         name: acc.name,
         team: acc.teamNames.size > 0 ? Array.from(acc.teamNames).sort().join(", ") : "Unassigned",
         completedJobs: acc.completedJobs,
+        onTimePercent: stats.onTimePercent,
         oowUsed: acc.oowUsed,
         oowPercent: stats.oowUsagePercent,
         score: stats.score,
@@ -531,58 +556,91 @@ function buildPeriod(days: number, endDate: Date): { from: string; to: string; f
   };
 }
 
-export async function getComplianceDigest(days: number): Promise<ComplianceDigest> {
+export async function getComplianceDigest(
+  days: number,
+  options?: { threshold?: number }
+): Promise<ComplianceDigest> {
   if (!zuper.isConfigured()) {
     throw new Error("Zuper integration not configured");
   }
 
   const now = new Date();
   const safeDays = Math.max(1, Math.min(days, 90));
+  const threshold = options?.threshold ?? 5;
 
   const currentPeriod = buildPeriod(safeDays, now);
   const priorEnd = new Date(currentPeriod.fromDate);
   priorEnd.setDate(priorEnd.getDate() - 1);
   const priorPeriod = buildPeriod(safeDays, priorEnd);
+  const baselinePeriod = buildPeriod(30, now);
 
-  const [currentJobs, priorJobs] = await Promise.all([
+  // If current window IS 30 days, reuse it for the baseline
+  const is30Day = safeDays === 30;
+  const [currentJobs, priorJobs, baselineJobs] = await Promise.all([
     fetchAllJobs(currentPeriod.from, currentPeriod.to),
     fetchAllJobs(priorPeriod.from, priorPeriod.to),
+    is30Day ? Promise.resolve([]) : fetchAllJobs(baselinePeriod.from, baselinePeriod.to),
   ]);
 
-  const [current, prior] = await Promise.all([
+  const [current, prior, baseline] = await Promise.all([
     analyzeJobs(currentJobs),
     analyzeJobs(priorJobs),
+    is30Day ? Promise.resolve(null) : analyzeJobs(baselineJobs),
   ]);
+
+  const baselineSummary = is30Day ? current.summary : baseline!.summary;
 
   const lowOowUsers = current.users
     .filter((u) => u.completedJobs >= 3)
     .filter((u) => u.oowPercent < 50)
     .sort((a, b) => a.oowPercent - b.oowPercent)
     .slice(0, 10)
-    .map((u) => ({
-      name: u.name,
-      team: u.team,
-      oowPercent: u.oowPercent,
-    }));
+    .map((u) => ({ name: u.name, team: u.team, oowPercent: u.oowPercent }));
 
   const failingUsers = current.users
     .filter((u) => u.totalJobs >= 3)
     .filter((u) => u.grade === "D" || u.grade === "F")
     .sort((a, b) => a.score - b.score)
     .slice(0, 10)
-    .map((u) => ({
-      name: u.name,
-      team: u.team,
-      grade: u.grade,
-      score: u.score,
-    }));
+    .map((u) => ({ name: u.name, team: u.team, grade: u.grade, score: u.score }));
+
+  // User growth calculation
+  const priorUserMap = new Map(prior.users.map((u) => [u.uid, u]));
+  const growthEntries: UserGrowthEntry[] = [];
+
+  for (const cu of current.users) {
+    if (cu.totalJobs < 3) continue;
+    const pu = priorUserMap.get(cu.uid);
+    if (!pu || pu.totalJobs < 3) continue;
+
+    const scoreDelta = Math.round((cu.score - pu.score) * 10) / 10;
+    if (Math.abs(scoreDelta) < threshold) continue;
+
+    growthEntries.push({
+      name: cu.name,
+      team: cu.team,
+      currentScore: cu.score,
+      currentGrade: cu.grade,
+      currentOnTimePercent: cu.onTimePercent,
+      priorScore: pu.score,
+      priorGrade: pu.grade,
+      priorOnTimePercent: pu.onTimePercent,
+      scoreDelta,
+    });
+  }
+
+  const improvers = growthEntries
+    .filter((e) => e.scoreDelta > 0)
+    .sort((a, b) => b.scoreDelta - a.scoreDelta)
+    .slice(0, 10);
+
+  const decliners = growthEntries
+    .filter((e) => e.scoreDelta < 0)
+    .sort((a, b) => a.scoreDelta - b.scoreDelta)
+    .slice(0, 10);
 
   return {
-    period: {
-      from: currentPeriod.from,
-      to: currentPeriod.to,
-      days: safeDays,
-    },
+    period: { from: currentPeriod.from, to: currentPeriod.to, days: safeDays },
     summary: {
       totalJobs: current.summary.totalJobs,
       completedJobs: current.summary.completedJobs,
@@ -597,6 +655,12 @@ export async function getComplianceDigest(days: number): Promise<ComplianceDiges
       oowUsagePercent: prior.summary.oowUsagePercent,
       stuckJobs: prior.summary.stuckJobs,
     },
+    baseline30Day: {
+      completedJobs: baselineSummary.completedJobs,
+      onTimePercent: baselineSummary.onTimePercent,
+      oowUsagePercent: baselineSummary.oowUsagePercent,
+      stuckJobs: baselineSummary.stuckJobs,
+    },
     teams: current.teams,
     categories: current.categories,
     notificationReliability: {
@@ -609,5 +673,6 @@ export async function getComplianceDigest(days: number): Promise<ComplianceDiges
       failingUsers,
       unknownCompletionJobs: current.callouts.unknownCompletionJobs,
     },
+    userGrowth: { improvers, decliners, threshold },
   };
 }
