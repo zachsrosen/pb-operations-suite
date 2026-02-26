@@ -609,7 +609,7 @@ function ContactCombobox({ contacts, value, onChange, placeholder = "Search…",
   }
 
   return (
-    <div ref={containerRef} className="relative">
+    <div ref={containerRef} className="relative flex items-center gap-1">
       <input
         type="text"
         className={`text-xs rounded bg-surface-2 border border-t-border text-foreground px-2 py-1 w-48 focus:outline-none focus:ring-1 ${accentClass}`}
@@ -618,6 +618,16 @@ function ContactCombobox({ contacts, value, onChange, placeholder = "Search…",
         onFocus={() => { setOpen(true); setQuery(""); }}
         onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
       />
+      {selected && !open && (
+        <button
+          type="button"
+          onMouseDown={(e) => { e.preventDefault(); onChange(""); setQuery(""); }}
+          className="text-muted hover:text-foreground text-sm leading-none"
+          title="Clear selection"
+        >
+          ×
+        </button>
+      )}
       {open && (
         <div className="absolute z-50 mt-1 w-64 max-h-56 overflow-y-auto rounded-lg border border-t-border bg-surface-elevated shadow-card-lg text-xs">
           {filtered.length === 0 ? (
