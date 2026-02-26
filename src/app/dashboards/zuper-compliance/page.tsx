@@ -211,12 +211,12 @@ function JobListTable({
         <table className="w-full text-sm">
           <thead>
             <tr className="text-muted text-left border-b border-t-border">
-              <th className="px-3 py-2">Job</th>
-              <th className="px-3 py-2">Status</th>
-              <th className="px-3 py-2">Category</th>
-              <th className="px-3 py-2">Sched End</th>
-              {showTiming && <th className="px-3 py-2">Days Late</th>}
-              {showTiming && <th className="px-3 py-2">OOW</th>}
+              <th className="px-3 py-2" title="Work order title (click to open in Zuper)">Job</th>
+              <th className="px-3 py-2" title="Current status from Zuper">Status</th>
+              <th className="px-3 py-2" title="Job category">Category</th>
+              <th className="px-3 py-2" title="Scheduled end date">Sched End</th>
+              {showTiming && <th className="px-3 py-2" title="Days past scheduled end">Days Late</th>}
+              {showTiming && <th className="px-3 py-2" title="On Our Way timing quality">OOW</th>}
             </tr>
           </thead>
           <tbody>
@@ -425,19 +425,19 @@ function ComparisonTable({
         <table className="w-full text-sm">
           <thead>
             <tr className="text-muted text-left border-b border-t-border">
-              <th className="px-4 py-2.5 cursor-pointer hover:text-foreground" onClick={() => handleSort("name")}>{nameLabel}{sortArrow("name")}</th>
-              <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("userCount")}>Users{sortArrow("userCount")}</th>
-              <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("totalJobs")}>Jobs{sortArrow("totalJobs")}</th>
-              <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("completedJobs")}>Completed{sortArrow("completedJobs")}</th>
-              <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("onTimePercent")}>On-Time %{sortArrow("onTimePercent")}</th>
-              <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("lateCompletions")}>Late{sortArrow("lateCompletions")}</th>
-              <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("stuckJobs")}>Stuck{sortArrow("stuckJobs")}</th>
-              <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("neverStartedJobs")}>Not Started{sortArrow("neverStartedJobs")}</th>
-              <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("avgDaysToComplete")}>Avg Duration (d){sortArrow("avgDaysToComplete")}</th>
-              <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("avgDaysLate")}>Avg Late (d){sortArrow("avgDaysLate")}</th>
-              <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("onOurWayPercent")}>OOW On-Time %{sortArrow("onOurWayPercent")}</th>
-              <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("statusUsagePercent")} title="% of completed jobs that used OOW + Started statuses">Status Usage %{sortArrow("statusUsagePercent")}</th>
-              <th className="px-4 py-2.5 text-center cursor-pointer hover:text-foreground" onClick={() => handleSort("complianceScore")}>Raw Grade{sortArrow("complianceScore")}</th>
+              <th className="px-4 py-2.5 cursor-pointer hover:text-foreground" onClick={() => handleSort("name")} title="Group name">{nameLabel}{sortArrow("name")}</th>
+              <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("userCount")} title="Unique users attributed to this group">Users{sortArrow("userCount")}</th>
+              <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("totalJobs")} title="Total jobs in this group">Jobs{sortArrow("totalJobs")}</th>
+              <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("completedJobs")} title="Completed jobs in this group">Completed{sortArrow("completedJobs")}</th>
+              <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("onTimePercent")} title="Percent of measurable completions finished on time">On-Time %{sortArrow("onTimePercent")}</th>
+              <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("lateCompletions")} title="Count of late completed jobs">Late{sortArrow("lateCompletions")}</th>
+              <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("stuckJobs")} title="Jobs in in-progress statuses past scheduled end">Stuck{sortArrow("stuckJobs")}</th>
+              <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("neverStartedJobs")} title="Jobs not started despite scheduled start in the past">Not Started{sortArrow("neverStartedJobs")}</th>
+              <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("avgDaysToComplete")} title="Average days from scheduled start to completion">Avg Duration (d){sortArrow("avgDaysToComplete")}</th>
+              <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("avgDaysLate")} title="Average days late for late jobs only">Avg Late (d){sortArrow("avgDaysLate")}</th>
+              <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("onOurWayPercent")} title="Percent where On Our Way was set on time">OOW On-Time %{sortArrow("onOurWayPercent")}</th>
+              <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("statusUsagePercent")} title="Percent of completed jobs that used OOW + Started">Status Usage %{sortArrow("statusUsagePercent")}</th>
+              <th className="px-4 py-2.5 text-center cursor-pointer hover:text-foreground" onClick={() => handleSort("complianceScore")} title="Raw score converted to a grade">Raw Grade{sortArrow("complianceScore")}</th>
               <th className="px-4 py-2.5 text-center cursor-pointer hover:text-foreground" onClick={() => handleSort("adjustedScore")} title="Volume-adjusted score (Bayesian)">Adj Grade{sortArrow("adjustedScore")}</th>
             </tr>
           </thead>
@@ -578,17 +578,17 @@ function ComparisonTable({
                             <table className="w-full text-sm">
                               <thead>
                                 <tr className="text-muted text-left border-b border-t-border">
-                                  <th className="px-3 py-2">User</th>
-                                  <th className="px-3 py-2 text-right">Jobs in Group</th>
-                                  <th className="px-3 py-2 text-right">Share</th>
-                                  <th className="px-3 py-2 text-right">Total Jobs</th>
-                                  <th className="px-3 py-2 text-right">On-Time</th>
-                                  <th className="px-3 py-2 text-right">Stuck %</th>
-                                  <th className="px-3 py-2 text-right">Not Started %</th>
-                                  <th className="px-3 py-2 text-right">Usage / OOW</th>
-                                  <th className="px-3 py-2">Top Categories</th>
-                                  <th className="px-3 py-2 text-center">Adj</th>
-                                  <th className="px-3 py-2 text-right">Inspect</th>
+                                  <th className="px-3 py-2" title="User name and team">User</th>
+                                  <th className="px-3 py-2 text-right" title="Job attributions this user has in this group">Jobs in Group</th>
+                                  <th className="px-3 py-2 text-right" title="Jobs in Group / Total Jobs for this user">Share</th>
+                                  <th className="px-3 py-2 text-right" title="Total jobs for this user across all visible data">Total Jobs</th>
+                                  <th className="px-3 py-2 text-right" title="On-time percent and on-time/measurable count">On-Time</th>
+                                  <th className="px-3 py-2 text-right" title="Percent of this user's jobs that are stuck">Stuck %</th>
+                                  <th className="px-3 py-2 text-right" title="Percent of this user's jobs that are not started">Not Started %</th>
+                                  <th className="px-3 py-2 text-right" title="Status usage percent and OOW on-time count">Usage / OOW</th>
+                                  <th className="px-3 py-2" title="Most frequent categories for this user">Top Categories</th>
+                                  <th className="px-3 py-2 text-center" title="Adjusted grade for this user">Adj</th>
+                                  <th className="px-3 py-2 text-right" title="Open this user in the detailed table">Inspect</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -1297,15 +1297,15 @@ export default function ZuperCompliancePage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-muted text-left border-b border-t-border">
-                    <th className="px-3 py-2">User</th>
-                    <th className="px-3 py-2 text-right">Jobs</th>
-                    <th className="px-3 py-2 text-right">Current (Adj/Raw)</th>
-                    <th className="px-3 py-2 text-right">Outcome (Adj/Raw)</th>
-                    <th className="px-3 py-2 text-right">Δ Rank</th>
-                    <th className="px-3 py-2 text-right">Process (Adj/Raw)</th>
-                    <th className="px-3 py-2 text-right">Δ Rank</th>
-                    <th className="px-3 py-2 text-right">Balanced (Adj/Raw)</th>
-                    <th className="px-3 py-2 text-right">Δ Rank</th>
+                    <th className="px-3 py-2" title="User and current rank">User</th>
+                    <th className="px-3 py-2 text-right" title="Total jobs">Jobs</th>
+                    <th className="px-3 py-2 text-right" title="Current adjusted/raw scores">Current (Adj/Raw)</th>
+                    <th className="px-3 py-2 text-right" title="Outcome-heavy model adjusted/raw scores">Outcome (Adj/Raw)</th>
+                    <th className="px-3 py-2 text-right" title="Rank change vs current model">Δ Rank</th>
+                    <th className="px-3 py-2 text-right" title="Process-heavy model adjusted/raw scores">Process (Adj/Raw)</th>
+                    <th className="px-3 py-2 text-right" title="Rank change vs current model">Δ Rank</th>
+                    <th className="px-3 py-2 text-right" title="Balanced model adjusted/raw scores">Balanced (Adj/Raw)</th>
+                    <th className="px-3 py-2 text-right" title="Rank change vs current model">Δ Rank</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1353,11 +1353,12 @@ export default function ZuperCompliancePage() {
       </div>
 
       <div className="mb-4 rounded-lg border border-t-border bg-surface/40 px-4 py-3 text-xs text-muted space-y-1">
-        <div className="text-foreground/90 font-medium">Read This First</div>
-        <div><span className="text-foreground/80">Users:</span> individual performance rows.</div>
-        <div><span className="text-foreground/80">Composites:</span> Team/Category/Crew rollups across shared jobs.</div>
-        <div><span className="text-foreground/80">OOW On-Time %:</span> percent of completed jobs where “On Our Way” was set on time.</div>
-        <div><span className="text-foreground/80">Status Usage %:</span> percent of completed jobs that used both “On Our Way” and “Started”.</div>
+        <div className="text-foreground/90 font-medium">Read Here First</div>
+        <div><span className="text-foreground/80">1) Team:</span> compare performance by team, then open a row to inspect attributed users.</div>
+        <div><span className="text-foreground/80">2) Category:</span> see whether specific job types are driving late, stuck, or not-started work.</div>
+        <div><span className="text-foreground/80">3) User:</span> primary accountability view; click a user row for detailed job lists.</div>
+        <div><span className="text-foreground/80">4) Crew:</span> review shared-assignment combinations after team/category/user context is clear.</div>
+        <div className="pt-1"><span className="text-foreground/80">Hover any column header</span> for metric definitions, and click headers to sort.</div>
       </div>
 
       <div className="mb-3">
@@ -1406,37 +1407,37 @@ export default function ZuperCompliancePage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-muted text-left border-b border-t-border bg-surface/80">
-                <th className="px-4 py-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("userName")}>
+                <th className="px-4 py-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("userName")} title="Technician / assignee name">
                   User <SortIcon field="userName" />
                 </th>
-                <th className="px-4 py-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("teamName")}>
+                <th className="px-4 py-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("teamName")} title="Assigned team labels">
                   Team <SortIcon field="teamName" />
                 </th>
-                <th className="px-4 py-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("totalJobs")}>
+                <th className="px-4 py-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("totalJobs")} title="Total jobs attributed to this user">
                   Total <SortIcon field="totalJobs" />
                 </th>
-                <th className="px-4 py-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("onTimePercent")}>
+                <th className="px-4 py-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("onTimePercent")} title="Percent of measurable completions finished on time">
                   On-Time % <SortIcon field="onTimePercent" />
                 </th>
-                <th className="px-4 py-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("lateCompletions")}>
+                <th className="px-4 py-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("lateCompletions")} title="Count of late completed jobs">
                   Late <SortIcon field="lateCompletions" />
                 </th>
-                <th className="px-4 py-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("stuckJobs")}>
+                <th className="px-4 py-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("stuckJobs")} title="Jobs in in-progress statuses past scheduled end">
                   Stuck <SortIcon field="stuckJobs" />
                 </th>
-                <th className="px-4 py-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("neverStartedJobs")}>
+                <th className="px-4 py-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("neverStartedJobs")} title="Jobs not started despite past scheduled start">
                   Not Started <SortIcon field="neverStartedJobs" />
                 </th>
-                <th className="px-4 py-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("avgDaysToComplete")}>
+                <th className="px-4 py-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("avgDaysToComplete")} title="Average days from scheduled start to completion">
                   Avg Days <SortIcon field="avgDaysToComplete" />
                 </th>
-                <th className="px-4 py-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("avgDaysLate")}>
+                <th className="px-4 py-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("avgDaysLate")} title="Average days late for late jobs only">
                   Avg Late <SortIcon field="avgDaysLate" />
                 </th>
-                <th className="px-4 py-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("onOurWayPercent")} title="On Our Way set on time vs late">
+                <th className="px-4 py-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("onOurWayPercent")} title="Percent where On Our Way was set on time">
                   OOW % <SortIcon field="onOurWayPercent" />
                 </th>
-                <th className="px-4 py-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("statusUsagePercent")} title="% of completed jobs that used OOW + Started statuses">
+                <th className="px-4 py-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("statusUsagePercent")} title="Percent of completed jobs that used OOW + Started">
                   Usage % <SortIcon field="statusUsagePercent" />
                 </th>
                 <th className="px-4 py-3 cursor-pointer hover:text-foreground text-center" onClick={() => handleSort("complianceScore")} title="Raw compliance score">
@@ -1631,8 +1632,8 @@ export default function ZuperCompliancePage() {
                                   <table className="w-full text-sm">
                                     <thead>
                                       <tr className="text-muted text-left border-b border-t-border">
-                                        <th className="px-3 py-2">Category</th>
-                                        <th className="px-3 py-2 text-right">Jobs</th>
+                                        <th className="px-3 py-2" title="Job category">Category</th>
+                                        <th className="px-3 py-2 text-right" title="Count of jobs in this category">Jobs</th>
                                       </tr>
                                     </thead>
                                     <tbody>
