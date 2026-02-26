@@ -412,7 +412,10 @@ function ComparisonTable({
   return (
     <div className="bg-surface/50 border border-t-border rounded-xl overflow-hidden">
       <div className={`px-4 py-3 border-b border-t-border bg-surface/80 flex items-center justify-between`}>
-        <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+        <div>
+          <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+          <div className="text-[11px] text-muted/70">Composite view across shared jobs</div>
+        </div>
         <div className="text-right">
           <div className="text-xs text-muted">{rows.length} groups</div>
           <div className="text-[11px] text-muted/70">Click row to inspect users</div>
@@ -424,18 +427,18 @@ function ComparisonTable({
             <tr className="text-muted text-left border-b border-t-border">
               <th className="px-4 py-2.5 cursor-pointer hover:text-foreground" onClick={() => handleSort("name")}>{nameLabel}{sortArrow("name")}</th>
               <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("userCount")}>Users{sortArrow("userCount")}</th>
-              <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("totalJobs")}>Total{sortArrow("totalJobs")}</th>
-              <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("completedJobs")}>Done{sortArrow("completedJobs")}</th>
+              <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("totalJobs")}>Jobs{sortArrow("totalJobs")}</th>
+              <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("completedJobs")}>Completed{sortArrow("completedJobs")}</th>
               <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("onTimePercent")}>On-Time %{sortArrow("onTimePercent")}</th>
               <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("lateCompletions")}>Late{sortArrow("lateCompletions")}</th>
               <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("stuckJobs")}>Stuck{sortArrow("stuckJobs")}</th>
               <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("neverStartedJobs")}>Not Started{sortArrow("neverStartedJobs")}</th>
-              <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("avgDaysToComplete")}>Avg Days{sortArrow("avgDaysToComplete")}</th>
-              <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("avgDaysLate")}>Avg Late{sortArrow("avgDaysLate")}</th>
-              <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("onOurWayPercent")}>OOW %{sortArrow("onOurWayPercent")}</th>
-              <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("statusUsagePercent")} title="% of completed jobs that used OOW + Started statuses">Usage %{sortArrow("statusUsagePercent")}</th>
-              <th className="px-4 py-2.5 text-center cursor-pointer hover:text-foreground" onClick={() => handleSort("complianceScore")}>Raw{sortArrow("complianceScore")}</th>
-              <th className="px-4 py-2.5 text-center cursor-pointer hover:text-foreground" onClick={() => handleSort("adjustedScore")} title="Volume-adjusted score (Bayesian)">Adj{sortArrow("adjustedScore")}</th>
+              <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("avgDaysToComplete")}>Avg Duration (d){sortArrow("avgDaysToComplete")}</th>
+              <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("avgDaysLate")}>Avg Late (d){sortArrow("avgDaysLate")}</th>
+              <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("onOurWayPercent")}>OOW On-Time %{sortArrow("onOurWayPercent")}</th>
+              <th className="px-4 py-2.5 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("statusUsagePercent")} title="% of completed jobs that used OOW + Started statuses">Status Usage %{sortArrow("statusUsagePercent")}</th>
+              <th className="px-4 py-2.5 text-center cursor-pointer hover:text-foreground" onClick={() => handleSort("complianceScore")}>Raw Grade{sortArrow("complianceScore")}</th>
+              <th className="px-4 py-2.5 text-center cursor-pointer hover:text-foreground" onClick={() => handleSort("adjustedScore")} title="Volume-adjusted score (Bayesian)">Adj Grade{sortArrow("adjustedScore")}</th>
             </tr>
           </thead>
           <tbody>
@@ -1349,50 +1352,18 @@ export default function ZuperCompliancePage() {
         )}
       </div>
 
-      {/* Team Comparison */}
-      {data?.teamComparison && data.teamComparison.length > 1 && (
-        <div className="mb-8">
-          <ComparisonTable
-            rows={data.teamComparison}
-            title="Team Comparison"
-            nameLabel="Team"
-            accentColor="orange"
-            users={data.users}
-            groupType="team"
-            onInspectUser={inspectUserFromGroup}
-          />
-        </div>
-      )}
+      <div className="mb-4 rounded-lg border border-t-border bg-surface/40 px-4 py-3 text-xs text-muted space-y-1">
+        <div className="text-foreground/90 font-medium">Read This First</div>
+        <div><span className="text-foreground/80">Users:</span> individual performance rows.</div>
+        <div><span className="text-foreground/80">Composites:</span> Team/Category/Crew rollups across shared jobs.</div>
+        <div><span className="text-foreground/80">OOW On-Time %:</span> percent of completed jobs where “On Our Way” was set on time.</div>
+        <div><span className="text-foreground/80">Status Usage %:</span> percent of completed jobs that used both “On Our Way” and “Started”.</div>
+      </div>
 
-      {/* Category Comparison */}
-      {data?.categoryComparison && data.categoryComparison.length > 1 && (
-        <div className="mb-8">
-          <ComparisonTable
-            rows={data.categoryComparison}
-            title="Job Category Comparison"
-            nameLabel="Category"
-            accentColor="blue"
-            users={data.users}
-            groupType="category"
-            onInspectUser={inspectUserFromGroup}
-          />
-        </div>
-      )}
-
-      {/* Crew Composition Comparison */}
-      {data?.crewComposition && data.crewComposition.length > 0 && (
-        <div className="mb-8">
-          <ComparisonTable
-            rows={data.crewComposition}
-            title="Crew Composition Comparison"
-            nameLabel="Crew"
-            accentColor="emerald"
-            users={data.users}
-            groupType="crew"
-            onInspectUser={inspectUserFromGroup}
-          />
-        </div>
-      )}
+      <div className="mb-3">
+        <h3 className="text-sm font-semibold text-foreground">User Scorecard</h3>
+        <p className="text-xs text-muted">Primary view: start here for person-level accountability.</p>
+      </div>
 
       {/* User Scorecard Table */}
       <div className="bg-surface/50 border border-t-border rounded-xl overflow-hidden">
@@ -1664,6 +1635,56 @@ export default function ZuperCompliancePage() {
           </table>
         </div>
       </div>
+
+      <div className="mt-8 mb-3">
+        <h3 className="text-sm font-semibold text-foreground">Composite Comparisons</h3>
+        <p className="text-xs text-muted">Rollups by team, category, and crew composition.</p>
+      </div>
+
+      {/* Team Comparison */}
+      {data?.teamComparison && data.teamComparison.length > 1 && (
+        <div className="mb-8">
+          <ComparisonTable
+            rows={data.teamComparison}
+            title="Team Comparison"
+            nameLabel="Team"
+            accentColor="orange"
+            users={data.users}
+            groupType="team"
+            onInspectUser={inspectUserFromGroup}
+          />
+        </div>
+      )}
+
+      {/* Category Comparison */}
+      {data?.categoryComparison && data.categoryComparison.length > 1 && (
+        <div className="mb-8">
+          <ComparisonTable
+            rows={data.categoryComparison}
+            title="Job Category Comparison"
+            nameLabel="Category"
+            accentColor="blue"
+            users={data.users}
+            groupType="category"
+            onInspectUser={inspectUserFromGroup}
+          />
+        </div>
+      )}
+
+      {/* Crew Composition Comparison */}
+      {data?.crewComposition && data.crewComposition.length > 0 && (
+        <div className="mb-8">
+          <ComparisonTable
+            rows={data.crewComposition}
+            title="Crew Composition Comparison"
+            nameLabel="Crew"
+            accentColor="emerald"
+            users={data.users}
+            groupType="crew"
+            onInspectUser={inspectUserFromGroup}
+          />
+        </div>
+      )}
 
       {/* Footer summary */}
       <div className="mt-6 text-center text-sm text-muted space-y-1">
