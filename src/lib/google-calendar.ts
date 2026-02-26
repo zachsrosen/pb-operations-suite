@@ -38,15 +38,19 @@ function isEnabled(): boolean {
   return raw === "1" || raw === "true" || raw === "yes";
 }
 
+function normalizeCalendarId(raw?: string | null): string {
+  return (raw || "").replace(/\\n/g, "").trim();
+}
+
 function getDefaultSurveyCalendarId(): string {
-  const configured = (process.env.GOOGLE_SITE_SURVEY_CALENDAR_ID || "").trim();
+  const configured = normalizeCalendarId(process.env.GOOGLE_SITE_SURVEY_CALENDAR_ID);
   return configured || "primary";
 }
 
 function getNickSiteSurveyCalendarId(): string | null {
   return (
-    (process.env.GOOGLE_SITE_SURVEY_NICK_CALENDAR_ID || "").trim() ||
-    (process.env.GOOGLE_NICK_SITE_SURVEY_CALENDAR_ID || "").trim() ||
+    normalizeCalendarId(process.env.GOOGLE_SITE_SURVEY_NICK_CALENDAR_ID) ||
+    normalizeCalendarId(process.env.GOOGLE_NICK_SITE_SURVEY_CALENDAR_ID) ||
     null
   );
 }
@@ -59,7 +63,7 @@ function isNickSurveyorEmail(email?: string | null): boolean {
 }
 
 function resolveSurveyCalendarId(params: { calendarId?: string; surveyorEmail?: string }): string {
-  const explicitCalendarId = (params.calendarId || "").trim();
+  const explicitCalendarId = normalizeCalendarId(params.calendarId);
   if (explicitCalendarId) return explicitCalendarId;
 
   const nickCalendarId = getNickSiteSurveyCalendarId();
@@ -103,6 +107,14 @@ export function getSharedCalendarImpersonationEmail(): string | null {
     parseEmailAddress(process.env.GOOGLE_CALENDAR_IMPERSONATION_EMAIL) ||
     getFallbackImpersonationEmail()
   );
+}
+
+export function getSiteSurveySharedCalendarImpersonationEmail(surveyorEmail?: string | null): string | null {
+  const surveyor = parseEmailAddress(surveyorEmail || undefined);
+  if (isNickSurveyorEmail(surveyorEmail)) {
+    return surveyor || getSharedCalendarImpersonationEmail() || getFallbackImpersonationEmail();
+  }
+  return getSharedCalendarImpersonationEmail() || surveyor || getFallbackImpersonationEmail();
 }
 
 export function normalizeLocationForInstallCalendars(location?: string | null): LocationBucket | null {
@@ -156,39 +168,46 @@ export function normalizeLocationForInstallCalendars(location?: string | null): 
 
 export function getDenverSiteSurveyCalendarId(): string | null {
   return (
-    (process.env.GOOGLE_DENVER_SITE_SURVEY_CALENDAR_ID || "").trim() ||
-    (process.env.GOOGLE_SITE_SURVEY_SHARED_CALENDAR_ID || "").trim() ||
+    normalizeCalendarId(process.env.GOOGLE_DENVER_SITE_SURVEY_CALENDAR_ID) ||
+    normalizeCalendarId(process.env.GOOGLE_SITE_SURVEY_SHARED_CALENDAR_ID) ||
     null
   );
+}
+
+export function getSiteSurveySharedCalendarIdForSurveyor(surveyorEmail?: string | null): string | null {
+  if (isNickSurveyorEmail(surveyorEmail)) {
+    return getNickSiteSurveyCalendarId() || getDenverSiteSurveyCalendarId();
+  }
+  return getDenverSiteSurveyCalendarId();
 }
 
 export function getInstallCalendarIdForLocation(location?: string | null): string | null {
   const bucket = normalizeLocationForInstallCalendars(location);
   if (bucket === "dtc") {
-    return (process.env.GOOGLE_INSTALL_CALENDAR_DTC_ID || "").trim() || null;
+    return normalizeCalendarId(process.env.GOOGLE_INSTALL_CALENDAR_DTC_ID) || null;
   }
   if (bucket === "westy") {
-    return (process.env.GOOGLE_INSTALL_CALENDAR_WESTY_ID || "").trim() || null;
+    return normalizeCalendarId(process.env.GOOGLE_INSTALL_CALENDAR_WESTY_ID) || null;
   }
   if (bucket === "cosp") {
     return (
-      (process.env.GOOGLE_INSTALL_CALENDAR_COSP_ID || "").trim() ||
-      (process.env.GOOGLE_INSTALL_CALENDAR_PUEBLO_ID || "").trim() ||
+      normalizeCalendarId(process.env.GOOGLE_INSTALL_CALENDAR_COSP_ID) ||
+      normalizeCalendarId(process.env.GOOGLE_INSTALL_CALENDAR_PUEBLO_ID) ||
       null
     );
   }
   if (bucket === "california") {
     return (
-      (process.env.GOOGLE_INSTALL_CALENDAR_CA_ID || "").trim() ||
-      (process.env.GOOGLE_INSTALL_CALENDAR_CALIFORNIA_ID || "").trim() ||
+      normalizeCalendarId(process.env.GOOGLE_INSTALL_CALENDAR_CA_ID) ||
+      normalizeCalendarId(process.env.GOOGLE_INSTALL_CALENDAR_CALIFORNIA_ID) ||
       null
     );
   }
   if (bucket === "camarillo") {
     return (
-      (process.env.GOOGLE_INSTALL_CALENDAR_CAMARILLO_ID || "").trim() ||
-      (process.env.GOOGLE_INSTALL_CALENDAR_CA_ID || "").trim() ||
-      (process.env.GOOGLE_INSTALL_CALENDAR_CALIFORNIA_ID || "").trim() ||
+      normalizeCalendarId(process.env.GOOGLE_INSTALL_CALENDAR_CAMARILLO_ID) ||
+      normalizeCalendarId(process.env.GOOGLE_INSTALL_CALENDAR_CA_ID) ||
+      normalizeCalendarId(process.env.GOOGLE_INSTALL_CALENDAR_CALIFORNIA_ID) ||
       null
     );
   }
@@ -327,6 +346,28 @@ function isLikelyLegacyDuplicateEvent(
   }
 
   return false;
+}
+
+function normalizeSurveyorLineInNotes(notes?: string, surveyorName?: string): string | undefined {
+  const rawNotes = (notes || "").trim();
+  if (!rawNotes) return undefined;
+
+  const normalizedSurveyorName = (surveyorName || "").replace(/\s+/g, " ").trim();
+  if (!normalizedSurveyorName) return rawNotes;
+
+  let replaced = false;
+  const rewritten = rawNotes
+    .split(/\r?\n/)
+    .map((line) => {
+      if (/^\s*surveyor\s*:/i.test(line)) {
+        replaced = true;
+        return `Surveyor: ${normalizedSurveyorName}`;
+      }
+      return line;
+    })
+    .join("\n");
+
+  return replaced ? rewritten : rawNotes;
 }
 
 async function listCalendarEventsForDateWindow(params: {
@@ -506,6 +547,7 @@ export function getSurveyCalendarEventId(projectId: string): string {
 
 export async function upsertSiteSurveyCalendarEvent(params: {
   surveyorEmail: string;
+  surveyorName?: string;
   projectId: string;
   projectName: string;
   customerName: string;
@@ -548,6 +590,7 @@ export async function upsertSiteSurveyCalendarEvent(params: {
   const endTime = params.endTime || "09:00";
   const hubSpotDealUrl = getHubSpotDealUrl(params.projectId);
   const zuperJobUrl = getZuperJobUrl(params.zuperJobUid);
+  const normalizedNotes = normalizeSurveyorLineInNotes(params.notes, params.surveyorName);
   const eventId = getSurveyCalendarEventId(params.projectId);
   const calendarId = resolveSurveyCalendarId({
     calendarId: params.calendarId,
@@ -582,7 +625,7 @@ export async function upsertSiteSurveyCalendarEvent(params: {
       `Deal ID: ${params.projectId}`,
       `HubSpot Deal: ${hubSpotDealUrl}`,
       zuperJobUrl ? `Zuper Job: ${zuperJobUrl}` : "",
-      params.notes ? `Notes: ${params.notes}` : "",
+      normalizedNotes ? `Notes: ${normalizedNotes}` : "",
     ].filter(Boolean).join("\n"),
     start: {
       dateTime: `${params.date}T${startTime}:00`,

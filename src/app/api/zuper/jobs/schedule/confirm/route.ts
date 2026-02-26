@@ -912,6 +912,7 @@ export async function POST(request: NextRequest) {
 
             const personalCalendarSync = await upsertSiteSurveyCalendarEvent({
               surveyorEmail: recipientEmail,
+              surveyorName: recipientName || record.assignedUser || undefined,
               projectId: record.projectId,
               projectName: record.projectName,
               customerName,
@@ -933,6 +934,7 @@ export async function POST(request: NextRequest) {
             if (sharedSurveyCalendarId) {
               const sharedCalendarSync = await upsertSiteSurveyCalendarEvent({
                 surveyorEmail: recipientEmail,
+                surveyorName: recipientName || record.assignedUser || undefined,
                 projectId: record.projectId,
                 projectName: record.projectName,
                 customerName,
