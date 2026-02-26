@@ -185,24 +185,15 @@ export async function POST(request: NextRequest) {
 
   const bomItems = Array.isArray(bomData?.items) ? bomData.items : [];
 
-  // Build line items — match each BOM item to a Zoho item_id by name.
-  // Uses a module-level cache of all Zoho items (loaded once, reused 60 min).
-  let unmatchedCount = 0;
-  const lineItems = await Promise.all(bomItems.map(async (item) => {
+  // Build line items — POs use name-only line items (no item_id).
+  // Zoho restricts item_id on POs to items flagged "Can be Purchased";
+  // most inventory items are sales-only, so we skip item linking here.
+  const unmatchedCount = 0;
+  const lineItems = bomItems.map((item) => {
     const name =
       item.model
         ? `${item.brand ? item.brand + " " : ""}${item.model}`
         : item.description;
-
-    // Try model first, then full "brand model" name, then description
-    const searchTerms = [item.model, name, item.description].filter((t): t is string => !!t && t.trim().length > 1);
-    let zohoItemId: string | null = null;
-    for (const term of searchTerms) {
-      zohoItemId = await zohoInventory.findItemIdByName(term);
-      if (zohoItemId) break;
-    }
-
-    if (!zohoItemId) unmatchedCount++;
 
     // Quantity: parse carefully — `|| 1` would silently over-order on invalid values.
     // Use 1 as minimum only when the parsed value is truly 0/NaN after rounding.
@@ -210,12 +201,11 @@ export async function POST(request: NextRequest) {
     const quantity = Number.isFinite(parsedQty) && parsedQty > 0 ? parsedQty : 1;
 
     return {
-      ...(zohoItemId ? { item_id: zohoItemId } : {}),
       name,
       quantity,
       description: item.description,
     };
-  }));
+  });
 
   // 4. Create PO in Zoho
   const address = bomData?.project?.address ?? "";
