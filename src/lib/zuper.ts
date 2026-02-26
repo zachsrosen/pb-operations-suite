@@ -178,6 +178,9 @@ export const JOB_CATEGORY_UIDS = {
   DETACH: "d9d888a1-efc3-4f01-a8d6-c9e867374d71",
   RESET: "43df49e9-3835-48f2-80ca-cc77ad7c3f0d",
   DNR_INSPECTION: "a5e54b76-8b79-4cd7-a960-bad53d24e1c5",
+  WALK_ROOF: "b3289bad-d618-47c7-b592-43454b655982",
+  MID_ROOF_INSTALL: "18f08c0d-f767-4e4a-8970-7c67597f4b4a",
+  ROOF_FINAL: "92caf51d-1a53-4679-9b64-ba316ccb870d",
 } as const;
 
 // Human-readable category names (for display/logging)
@@ -191,6 +194,9 @@ export const JOB_CATEGORIES = {
   DETACH: "Detach",
   RESET: "Reset",
   DNR_INSPECTION: "D&R Inspection",
+  WALK_ROOF: "Walk Roof",
+  MID_ROOF_INSTALL: "Mid Roof Install",
+  ROOF_FINAL: "Roof Final",
 } as const;
 
 // Job type mapping based on project type
@@ -354,6 +360,34 @@ export class ZuperClient {
         },
       }),
     });
+  }
+
+  /**
+   * Append a note block to an existing job's notes.
+   * Uses a simple contains check to avoid duplicate appends.
+   */
+  async appendJobNote(
+    jobUid: string,
+    note: string
+  ): Promise<ZuperApiResponse<ZuperJob>> {
+    const trimmedNote = note.trim();
+    if (!trimmedNote) {
+      return this.getJob(jobUid);
+    }
+
+    const current = await this.getJob(jobUid);
+    if (current.type === "error" || !current.data) {
+      return { type: "error", error: current.error || "Failed to fetch job before appending note" };
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const existingNotes = String((current.data as any)?.job_notes || "").trim();
+    if (existingNotes.includes(trimmedNote)) {
+      return current;
+    }
+
+    const mergedNotes = [existingNotes, trimmedNote].filter(Boolean).join("\n\n");
+    return this.updateJob(jobUid, { job_notes: mergedNotes });
   }
 
   async clearJobSchedule(

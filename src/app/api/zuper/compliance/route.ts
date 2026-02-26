@@ -19,6 +19,7 @@ interface JobEntry {
   scheduledStart: string | null;
   scheduledEnd: string | null;
   completedTime: string | null;
+  startedTime: string | null;
   daysToComplete: number | null;
   daysLate: number | null;
   onOurWayTime: string | null;
@@ -29,6 +30,12 @@ interface CategoryBreakdown {
   [categoryName: string]: number;
 }
 
+interface AssignedUser {
+  userUid: string;
+  userName: string;
+  teamNames: string[];
+}
+
 interface UserMetrics {
   userUid: string;
   userName: string;
@@ -37,6 +44,7 @@ interface UserMetrics {
   completedJobs: number;
   onTimeCompletions: number;
   lateCompletions: number;
+  unknownCompletionJobs: number;
   onTimePercent: number;
   stuckJobs: number;
   neverStartedJobs: number;
@@ -47,6 +55,8 @@ interface UserMetrics {
   onOurWayPercent: number;
   oowUsed: number;
   startedUsed: number;
+  startedOnTime: number;
+  startedLate: number;
   statusUsagePercent: number;
   complianceScore: number;
   grade: string;
@@ -58,11 +68,13 @@ interface UserMetrics {
   lateJobsList: JobEntry[];
   neverStartedJobsList: JobEntry[];
   completedJobsList: JobEntry[];
+  unknownCompletionJobsList: JobEntry[];
 }
 
 interface ComplianceSummary {
   totalJobs: number;
   totalCompleted: number;
+  unknownCompletionJobs: number;
   overallOnTimePercent: number;
   totalStuck: number;
   totalNeverStarted: number;
@@ -78,6 +90,7 @@ interface GroupComparison {
   completedJobs: number;
   onTimeCompletions: number;
   lateCompletions: number;
+  unknownCompletionJobs: number;
   onTimePercent: number;
   stuckJobs: number;
   neverStartedJobs: number;
@@ -88,6 +101,8 @@ interface GroupComparison {
   onOurWayPercent: number;
   oowUsed: number;
   startedUsed: number;
+  startedOnTime: number;
+  startedLate: number;
   statusUsagePercent: number;
   complianceScore: number;
   grade: string;
@@ -233,19 +248,21 @@ function getOnOurWayTime(job: any): Date | null {
 }
 
 /**
- * Check if "Started" status was ever used in the job_status history.
+ * Extract the timestamp when "Started" was first set from job_status history.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function hasStartedStatus(job: any): boolean {
+function getStartedTime(job: any): Date | null {
   const statusHistory = job.job_status;
-  if (!Array.isArray(statusHistory)) return false;
+  if (!Array.isArray(statusHistory)) return null;
 
   for (const entry of statusHistory) {
     if (!entry) continue;
     const name = (entry.status_name || entry.name || "").toLowerCase();
-    if (name === "started") return true;
+    if (name === "started" && (entry.created_at || entry.updated_at)) {
+      return new Date(entry.created_at || entry.updated_at);
+    }
   }
-  return false;
+  return null;
 }
 
 /**
@@ -303,12 +320,8 @@ function extractAssignedUsers(
     directTeamByUserUid?: Map<string, string>;
     excludedUserUids?: Set<string>;
   }
-): Array<{
-  userUid: string;
-  userName: string;
-  teamNames: string[];
-}> {
-  const users: Array<{ userUid: string; userName: string; teamNames: string[] }> = [];
+): AssignedUser[] {
+  const users: AssignedUser[] = [];
 
   if (!Array.isArray(job.assigned_to)) return users;
 
@@ -382,6 +395,16 @@ function extractAssignedUsers(
   }
 
   return users;
+}
+
+function filterAssignedUsersByTeam(
+  assignedUsers: AssignedUser[],
+  teamFilter: string | null
+): AssignedUser[] {
+  if (!teamFilter) return assignedUsers;
+  return assignedUsers.filter((u) =>
+    u.teamNames.some((t) => t.toLowerCase().includes(teamFilter))
+  );
 }
 
 /**
@@ -555,6 +578,7 @@ export async function GET(request: NextRequest) {
       completedJobs: number;
       onTimeCompletions: number;
       lateCompletions: number;
+      unknownCompletionJobs: number;
       stuckJobs: number;
       neverStartedJobs: number;
       completionDays: number[];
@@ -564,11 +588,14 @@ export async function GET(request: NextRequest) {
       onOurWayTotal: number;
       oowUsed: number;      // completed jobs that used OOW
       startedUsed: number;  // completed jobs that used Started
+      startedOnTime: number;
+      startedLate: number;
       byCategory: CategoryBreakdown;
       stuckJobsList: JobEntry[];
       lateJobsList: JobEntry[];
       neverStartedJobsList: JobEntry[];
       completedJobsList: JobEntry[];
+      unknownCompletionJobsList: JobEntry[];
     }
 
     const userMap = new Map<string, UserAccumulator>();
@@ -579,28 +606,22 @@ export async function GET(request: NextRequest) {
       const statusName = getStatusName(job);
       const statusLower = statusName.toLowerCase();
       const assignedUsers = extractAssignedUsers(job, assignmentOptions);
+      const filteredAssignedUsers = filterAssignedUsersByTeam(assignedUsers, teamFilter);
 
       // Track filter options
       categoriesSet.add(categoryName);
-      for (const u of assignedUsers) {
+      for (const u of filteredAssignedUsers) {
         for (const t of u.teamNames) teamsSet.add(t);
       }
 
       // Skip unassigned jobs
-      if (assignedUsers.length === 0) {
-        unassignedJobCount++;
-        continue;
-      }
-
-      // Apply team filter if specified
-      if (teamFilter) {
-        const hasMatchingTeam = assignedUsers.some(
-          (u) => u.teamNames.some((t) => t.toLowerCase().includes(teamFilter))
-        );
-        if (!hasMatchingTeam) {
+      if (filteredAssignedUsers.length === 0) {
+        if (teamFilter && assignedUsers.length > 0) {
           filteredOutByTeam++;
-          continue;
+        } else {
+          unassignedJobCount++;
         }
+        continue;
       }
 
       const scheduledStart = job.scheduled_start_time
@@ -614,11 +635,12 @@ export async function GET(request: NextRequest) {
       const completedTime = getCompletedTimeFromHistory(job);
       // Extract when "On Our Way" was triggered
       const onOurWayTime = getOnOurWayTime(job);
-      // Check if "Started" was ever used
-      const usedStarted = hasStartedStatus(job);
+      // Extract when "Started" was triggered
+      const startedTime = getStartedTime(job);
+      const usedStarted = startedTime !== null;
 
       // Attribute job to each assigned user
-      for (const { userUid, userName, teamNames: jobTeams } of assignedUsers) {
+      for (const { userUid, userName, teamNames: jobTeams } of filteredAssignedUsers) {
         if (!userMap.has(userUid)) {
           userMap.set(userUid, {
             userUid,
@@ -628,6 +650,7 @@ export async function GET(request: NextRequest) {
             completedJobs: 0,
             onTimeCompletions: 0,
             lateCompletions: 0,
+            unknownCompletionJobs: 0,
             stuckJobs: 0,
             neverStartedJobs: 0,
             completionDays: [],
@@ -637,11 +660,14 @@ export async function GET(request: NextRequest) {
             onOurWayTotal: 0,
             oowUsed: 0,
             startedUsed: 0,
+            startedOnTime: 0,
+            startedLate: 0,
             byCategory: {},
             stuckJobsList: [],
             lateJobsList: [],
             neverStartedJobsList: [],
             completedJobsList: [],
+            unknownCompletionJobsList: [],
           });
         }
         const acc = userMap.get(userUid)!;
@@ -652,8 +678,17 @@ export async function GET(request: NextRequest) {
         acc.totalJobs++;
         acc.byCategory[categoryName] = (acc.byCategory[categoryName] || 0) + 1;
 
-        // Build a reusable job entry for detail lists
-        const effectiveCompletedTime = completedTime || scheduledEnd;
+        // Build reusable detail fields once
+        const baseJobEntry = {
+          jobUid: job.job_uid || "",
+          title: job.job_title || "",
+          status: statusName,
+          category: categoryName,
+          scheduledStart: job.scheduled_start_time || null,
+          scheduledEnd: job.scheduled_end_time || null,
+          startedTime: startedTime?.toISOString() || null,
+        };
+
         let jobDaysToComplete: number | null = null;
         let jobDaysLate: number | null = null;
         let jobOowOnTime: boolean | null = null;
@@ -664,9 +699,9 @@ export async function GET(request: NextRequest) {
 
           // On-time check: completed within scheduled_end + 1 day grace
           let isLate = false;
-          if (scheduledEnd && effectiveCompletedTime) {
+          if (scheduledEnd && completedTime) {
             const deadline = new Date(scheduledEnd.getTime() + GRACE_MS);
-            if (effectiveCompletedTime <= deadline) {
+            if (completedTime <= deadline) {
               acc.onTimeCompletions++;
             } else {
               acc.lateCompletions++;
@@ -674,18 +709,29 @@ export async function GET(request: NextRequest) {
             }
 
             // Days past scheduled end
-            if (effectiveCompletedTime > scheduledEnd) {
-              const diffMs = effectiveCompletedTime.getTime() - scheduledEnd.getTime();
+            if (completedTime > scheduledEnd) {
+              const diffMs = completedTime.getTime() - scheduledEnd.getTime();
               jobDaysLate = Math.round((diffMs / (1000 * 60 * 60 * 24)) * 10) / 10;
               acc.daysLatePastEnd.push(jobDaysLate);
             }
+          } else if (!completedTime) {
+            acc.unknownCompletionJobs++;
+            const unknownEntry: JobEntry = {
+              ...baseJobEntry,
+              completedTime: null,
+              daysToComplete: null,
+              daysLate: null,
+              onOurWayTime: onOurWayTime?.toISOString() || null,
+              onOurWayOnTime: null,
+            };
+            acc.unknownCompletionJobsList.push(unknownEntry);
           } else {
             acc.onTimeCompletions++;
           }
 
           // Days to complete: scheduled_start to completion
-          if (scheduledStart && effectiveCompletedTime && effectiveCompletedTime > scheduledStart) {
-            const diffMs = effectiveCompletedTime.getTime() - scheduledStart.getTime();
+          if (scheduledStart && completedTime && completedTime > scheduledStart) {
+            const diffMs = completedTime.getTime() - scheduledStart.getTime();
             jobDaysToComplete = Math.round((diffMs / (1000 * 60 * 60 * 24)) * 10) / 10;
             acc.completionDays.push(jobDaysToComplete);
           }
@@ -693,12 +739,20 @@ export async function GET(request: NextRequest) {
           // "On Our Way" compliance
           if (onOurWayTime && scheduledStart) {
             acc.onOurWayTotal++;
-            if (scheduledEnd && onOurWayTime > scheduledEnd) {
+            if (onOurWayTime > scheduledStart) {
               acc.onOurWayLate++;
               jobOowOnTime = false;
             } else {
               acc.onOurWayOnTime++;
               jobOowOnTime = true;
+            }
+          }
+
+          if (startedTime && scheduledStart && scheduledEnd) {
+            if (startedTime <= scheduledEnd) {
+              acc.startedOnTime++;
+            } else {
+              acc.startedLate++;
             }
           }
 
@@ -708,13 +762,8 @@ export async function GET(request: NextRequest) {
 
           // Build completed job entry
           const completedEntry: JobEntry = {
-            jobUid: job.job_uid || "",
-            title: job.job_title || "",
-            status: statusName,
-            category: categoryName,
-            scheduledStart: job.scheduled_start_time || null,
-            scheduledEnd: job.scheduled_end_time || null,
-            completedTime: effectiveCompletedTime?.toISOString() || null,
+            ...baseJobEntry,
+            completedTime: completedTime?.toISOString() || null,
             daysToComplete: jobDaysToComplete,
             daysLate: jobDaysLate,
             onOurWayTime: onOurWayTime?.toISOString() || null,
@@ -731,12 +780,7 @@ export async function GET(request: NextRequest) {
         if (STUCK_STATUSES.has(statusLower) && scheduledEnd && scheduledEnd < now) {
           acc.stuckJobs++;
           acc.stuckJobsList.push({
-            jobUid: job.job_uid || "",
-            title: job.job_title || "",
-            status: statusName,
-            category: categoryName,
-            scheduledStart: job.scheduled_start_time || null,
-            scheduledEnd: job.scheduled_end_time || null,
+            ...baseJobEntry,
             completedTime: null,
             daysToComplete: null,
             daysLate: null,
@@ -753,12 +797,7 @@ export async function GET(request: NextRequest) {
         ) {
           acc.neverStartedJobs++;
           acc.neverStartedJobsList.push({
-            jobUid: job.job_uid || "",
-            title: job.job_title || "",
-            status: statusName,
-            category: categoryName,
-            scheduledStart: job.scheduled_start_time || null,
-            scheduledEnd: job.scheduled_end_time || null,
+            ...baseJobEntry,
             completedTime: null,
             daysToComplete: null,
             daysLate: null,
@@ -830,6 +869,7 @@ export async function GET(request: NextRequest) {
         completedJobs: acc.completedJobs,
         onTimeCompletions: acc.onTimeCompletions,
         lateCompletions: acc.lateCompletions,
+        unknownCompletionJobs: acc.unknownCompletionJobs,
         onTimePercent,
         stuckJobs: acc.stuckJobs,
         neverStartedJobs: acc.neverStartedJobs,
@@ -840,6 +880,8 @@ export async function GET(request: NextRequest) {
         onOurWayPercent,
         oowUsed: acc.oowUsed,
         startedUsed: acc.startedUsed,
+        startedOnTime: acc.startedOnTime,
+        startedLate: acc.startedLate,
         statusUsagePercent: acc.completedJobs > 0
           ? Math.round(((acc.oowUsed + acc.startedUsed) / (acc.completedJobs * 2)) * 100 * 10) / 10
           : 0,
@@ -853,6 +895,7 @@ export async function GET(request: NextRequest) {
         lateJobsList: acc.lateJobsList,
         neverStartedJobsList: acc.neverStartedJobsList,
         completedJobsList: acc.completedJobsList,
+        unknownCompletionJobsList: acc.unknownCompletionJobsList,
       });
     }
 
@@ -881,6 +924,7 @@ export async function GET(request: NextRequest) {
       completedJobs: number;
       onTimeCompletions: number;
       lateCompletions: number;
+      unknownCompletionJobs: number;
       stuckJobs: number;
       neverStartedJobs: number;
       completionDays: number[];
@@ -889,6 +933,8 @@ export async function GET(request: NextRequest) {
       onOurWayLate: number;
       oowUsed: number;
       startedUsed: number;
+      startedOnTime: number;
+      startedLate: number;
       assignedUsers: Set<string>;
     }
     const teamAccMap = new Map<string, TeamAccumulator>();
@@ -897,20 +943,13 @@ export async function GET(request: NextRequest) {
       const statusName = getStatusName(job);
       const statusLower = statusName.toLowerCase();
       const assignedUsers = extractAssignedUsers(job, assignmentOptions);
+      const filteredAssignedUsers = filterAssignedUsersByTeam(assignedUsers, teamFilter);
 
-      if (assignedUsers.length === 0) continue;
-
-      // Apply team filter if specified
-      if (teamFilter) {
-        const hasMatchingTeam = assignedUsers.some(
-          (u) => u.teamNames.some((t) => t.toLowerCase().includes(teamFilter))
-        );
-        if (!hasMatchingTeam) continue;
-      }
+      if (filteredAssignedUsers.length === 0) continue;
 
       // Determine which teams this job belongs to
       const jobTeams = new Set<string>();
-      for (const u of assignedUsers) {
+      for (const u of filteredAssignedUsers) {
         for (const t of u.teamNames) jobTeams.add(t);
       }
       if (jobTeams.size === 0) jobTeams.add("Unassigned");
@@ -919,48 +958,59 @@ export async function GET(request: NextRequest) {
       const scheduledEnd = job.scheduled_end_time ? new Date(job.scheduled_end_time) : null;
       const completedTime = getCompletedTimeFromHistory(job);
       const onOurWayTime = getOnOurWayTime(job);
-      const usedStarted = hasStartedStatus(job);
-      const effectiveCompletedTime = completedTime || scheduledEnd;
+      const startedTime = getStartedTime(job);
+      const usedStarted = startedTime !== null;
 
       // Attribute this job once per team (not per user)
       for (const team of jobTeams) {
         if (!teamAccMap.has(team)) {
           teamAccMap.set(team, {
             totalJobs: 0, completedJobs: 0, onTimeCompletions: 0, lateCompletions: 0,
+            unknownCompletionJobs: 0,
             stuckJobs: 0, neverStartedJobs: 0, completionDays: [], daysLatePastEnd: [],
             onOurWayOnTime: 0, onOurWayLate: 0, oowUsed: 0, startedUsed: 0,
+            startedOnTime: 0, startedLate: 0,
             assignedUsers: new Set(),
           });
         }
         const tAcc = teamAccMap.get(team)!;
         tAcc.totalJobs++;
-        for (const u of assignedUsers) tAcc.assignedUsers.add(u.userUid);
+        for (const u of filteredAssignedUsers) tAcc.assignedUsers.add(u.userUid);
 
         if (COMPLETED_STATUSES.has(statusLower)) {
           tAcc.completedJobs++;
-          if (scheduledEnd && effectiveCompletedTime) {
+          if (scheduledEnd && completedTime) {
             const deadline = new Date(scheduledEnd.getTime() + GRACE_MS);
-            if (effectiveCompletedTime <= deadline) {
+            if (completedTime <= deadline) {
               tAcc.onTimeCompletions++;
             } else {
               tAcc.lateCompletions++;
             }
-            if (effectiveCompletedTime > scheduledEnd) {
-              const diffMs = effectiveCompletedTime.getTime() - scheduledEnd.getTime();
+            if (completedTime > scheduledEnd) {
+              const diffMs = completedTime.getTime() - scheduledEnd.getTime();
               tAcc.daysLatePastEnd.push(Math.round((diffMs / (1000 * 60 * 60 * 24)) * 10) / 10);
             }
+          } else if (!completedTime) {
+            tAcc.unknownCompletionJobs++;
           } else {
             tAcc.onTimeCompletions++;
           }
-          if (scheduledStart && effectiveCompletedTime && effectiveCompletedTime > scheduledStart) {
-            const diffMs = effectiveCompletedTime.getTime() - scheduledStart.getTime();
+          if (scheduledStart && completedTime && completedTime > scheduledStart) {
+            const diffMs = completedTime.getTime() - scheduledStart.getTime();
             tAcc.completionDays.push(Math.round((diffMs / (1000 * 60 * 60 * 24)) * 10) / 10);
           }
           if (onOurWayTime && scheduledStart) {
-            if (scheduledEnd && onOurWayTime > scheduledEnd) {
+            if (onOurWayTime > scheduledStart) {
               tAcc.onOurWayLate++;
             } else {
               tAcc.onOurWayOnTime++;
+            }
+          }
+          if (startedTime && scheduledStart && scheduledEnd) {
+            if (startedTime <= scheduledEnd) {
+              tAcc.startedOnTime++;
+            } else {
+              tAcc.startedLate++;
             }
           }
           if (onOurWayTime) tAcc.oowUsed++;
@@ -976,7 +1026,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Build team comparison from accumulators (same pattern as category comparison)
-    function buildGroupFromAcc(name: string, acc: { totalJobs: number; completedJobs: number; onTimeCompletions: number; lateCompletions: number; stuckJobs: number; neverStartedJobs: number; completionDays: number[]; daysLatePastEnd: number[]; onOurWayOnTime: number; onOurWayLate: number; oowUsed: number; startedUsed: number; assignedUsers: Set<string> }): GroupComparison {
+    function buildGroupFromAcc(name: string, acc: { totalJobs: number; completedJobs: number; onTimeCompletions: number; lateCompletions: number; unknownCompletionJobs: number; stuckJobs: number; neverStartedJobs: number; completionDays: number[]; daysLatePastEnd: number[]; onOurWayOnTime: number; onOurWayLate: number; oowUsed: number; startedUsed: number; startedOnTime: number; startedLate: number; assignedUsers: Set<string> }): GroupComparison {
       const measurable = acc.onTimeCompletions + acc.lateCompletions;
       const onTimePercent = measurable > 0 ? Math.round((acc.onTimeCompletions / measurable) * 100 * 10) / 10 : 0;
       const avgDaysToComplete = acc.completionDays.length > 0
@@ -1001,6 +1051,7 @@ export async function GET(request: NextRequest) {
         completedJobs: acc.completedJobs,
         onTimeCompletions: acc.onTimeCompletions,
         lateCompletions: acc.lateCompletions,
+        unknownCompletionJobs: acc.unknownCompletionJobs,
         onTimePercent,
         stuckJobs: acc.stuckJobs,
         neverStartedJobs: acc.neverStartedJobs,
@@ -1011,6 +1062,8 @@ export async function GET(request: NextRequest) {
         onOurWayPercent,
         oowUsed: acc.oowUsed,
         startedUsed: acc.startedUsed,
+        startedOnTime: acc.startedOnTime,
+        startedLate: acc.startedLate,
         statusUsagePercent,
         complianceScore,
         grade: computeGrade(complianceScore),
@@ -1044,6 +1097,7 @@ export async function GET(request: NextRequest) {
       completedJobs: number;
       onTimeCompletions: number;
       lateCompletions: number;
+      unknownCompletionJobs: number;
       stuckJobs: number;
       neverStartedJobs: number;
       completionDays: number[];
@@ -1052,6 +1106,8 @@ export async function GET(request: NextRequest) {
       onOurWayLate: number;
       oowUsed: number;
       startedUsed: number;
+      startedOnTime: number;
+      startedLate: number;
       assignedUsers: Set<string>;
     }
     const catAccMap = new Map<string, CategoryAccumulator>();
@@ -1060,61 +1116,65 @@ export async function GET(request: NextRequest) {
       const statusName = getStatusName(job);
       const statusLower = statusName.toLowerCase();
       const assignedUsers = extractAssignedUsers(job, assignmentOptions);
+      const filteredAssignedUsers = filterAssignedUsersByTeam(assignedUsers, teamFilter);
 
-      if (assignedUsers.length === 0) continue;
-
-      // Apply team filter if specified
-      if (teamFilter) {
-        const hasMatchingTeam = assignedUsers.some(
-          (u) => u.teamNames.some((t) => t.toLowerCase().includes(teamFilter))
-        );
-        if (!hasMatchingTeam) continue;
-      }
+      if (filteredAssignedUsers.length === 0) continue;
 
       if (!catAccMap.has(categoryName)) {
         catAccMap.set(categoryName, {
           totalJobs: 0, completedJobs: 0, onTimeCompletions: 0, lateCompletions: 0,
+          unknownCompletionJobs: 0,
           stuckJobs: 0, neverStartedJobs: 0, completionDays: [], daysLatePastEnd: [],
           onOurWayOnTime: 0, onOurWayLate: 0, oowUsed: 0, startedUsed: 0,
+          startedOnTime: 0, startedLate: 0,
           assignedUsers: new Set(),
         });
       }
       const catAcc = catAccMap.get(categoryName)!;
       catAcc.totalJobs++;
-      for (const u of assignedUsers) catAcc.assignedUsers.add(u.userUid);
+      for (const u of filteredAssignedUsers) catAcc.assignedUsers.add(u.userUid);
 
       const scheduledStart = job.scheduled_start_time ? new Date(job.scheduled_start_time) : null;
       const scheduledEnd = job.scheduled_end_time ? new Date(job.scheduled_end_time) : null;
       const completedTime = getCompletedTimeFromHistory(job);
       const onOurWayTime = getOnOurWayTime(job);
-      const usedStarted = hasStartedStatus(job);
-      const effectiveCompletedTime = completedTime || scheduledEnd;
+      const startedTime = getStartedTime(job);
+      const usedStarted = startedTime !== null;
 
       if (COMPLETED_STATUSES.has(statusLower)) {
         catAcc.completedJobs++;
-        if (scheduledEnd && effectiveCompletedTime) {
+        if (scheduledEnd && completedTime) {
           const deadline = new Date(scheduledEnd.getTime() + GRACE_MS);
-          if (effectiveCompletedTime <= deadline) {
+          if (completedTime <= deadline) {
             catAcc.onTimeCompletions++;
           } else {
             catAcc.lateCompletions++;
           }
-          if (effectiveCompletedTime > scheduledEnd) {
-            const diffMs = effectiveCompletedTime.getTime() - scheduledEnd.getTime();
+          if (completedTime > scheduledEnd) {
+            const diffMs = completedTime.getTime() - scheduledEnd.getTime();
             catAcc.daysLatePastEnd.push(Math.round((diffMs / (1000 * 60 * 60 * 24)) * 10) / 10);
           }
+        } else if (!completedTime) {
+          catAcc.unknownCompletionJobs++;
         } else {
           catAcc.onTimeCompletions++;
         }
-        if (scheduledStart && effectiveCompletedTime && effectiveCompletedTime > scheduledStart) {
-          const diffMs = effectiveCompletedTime.getTime() - scheduledStart.getTime();
+        if (scheduledStart && completedTime && completedTime > scheduledStart) {
+          const diffMs = completedTime.getTime() - scheduledStart.getTime();
           catAcc.completionDays.push(Math.round((diffMs / (1000 * 60 * 60 * 24)) * 10) / 10);
         }
         if (onOurWayTime && scheduledStart) {
-          if (scheduledEnd && onOurWayTime > scheduledEnd) {
+          if (onOurWayTime > scheduledStart) {
             catAcc.onOurWayLate++;
           } else {
             catAcc.onOurWayOnTime++;
+          }
+        }
+        if (startedTime && scheduledStart && scheduledEnd) {
+          if (startedTime <= scheduledEnd) {
+            catAcc.startedOnTime++;
+          } else {
+            catAcc.startedLate++;
           }
         }
         if (onOurWayTime) catAcc.oowUsed++;
@@ -1142,20 +1202,13 @@ export async function GET(request: NextRequest) {
       const statusName = getStatusName(job);
       const statusLower = statusName.toLowerCase();
       const assignedUsers = extractAssignedUsers(job, assignmentOptions);
+      const filteredAssignedUsers = filterAssignedUsersByTeam(assignedUsers, teamFilter);
 
       // Only multi-person crews
-      if (assignedUsers.length < 2) continue;
-
-      // Apply team filter if specified
-      if (teamFilter) {
-        const hasMatchingTeam = assignedUsers.some(
-          (u) => u.teamNames.some((t) => t.toLowerCase().includes(teamFilter))
-        );
-        if (!hasMatchingTeam) continue;
-      }
+      if (filteredAssignedUsers.length < 2) continue;
 
       // Create crew composition key from sorted user names
-      const crewKey = assignedUsers
+      const crewKey = filteredAssignedUsers
         .map((u) => u.userName)
         .sort()
         .join(" + ");
@@ -1163,47 +1216,58 @@ export async function GET(request: NextRequest) {
       if (!crewCompAccMap.has(crewKey)) {
         crewCompAccMap.set(crewKey, {
           totalJobs: 0, completedJobs: 0, onTimeCompletions: 0, lateCompletions: 0,
+          unknownCompletionJobs: 0,
           stuckJobs: 0, neverStartedJobs: 0, completionDays: [], daysLatePastEnd: [],
           onOurWayOnTime: 0, onOurWayLate: 0, oowUsed: 0, startedUsed: 0,
+          startedOnTime: 0, startedLate: 0,
           assignedUsers: new Set(),
         });
       }
       const crewAcc = crewCompAccMap.get(crewKey)!;
       crewAcc.totalJobs++;
-      for (const u of assignedUsers) crewAcc.assignedUsers.add(u.userUid);
+      for (const u of filteredAssignedUsers) crewAcc.assignedUsers.add(u.userUid);
 
       const scheduledStart = job.scheduled_start_time ? new Date(job.scheduled_start_time) : null;
       const scheduledEnd = job.scheduled_end_time ? new Date(job.scheduled_end_time) : null;
       const completedTime = getCompletedTimeFromHistory(job);
       const onOurWayTime = getOnOurWayTime(job);
-      const usedStarted = hasStartedStatus(job);
-      const effectiveCompletedTime = completedTime || scheduledEnd;
+      const startedTime = getStartedTime(job);
+      const usedStarted = startedTime !== null;
 
       if (COMPLETED_STATUSES.has(statusLower)) {
         crewAcc.completedJobs++;
-        if (scheduledEnd && effectiveCompletedTime) {
+        if (scheduledEnd && completedTime) {
           const deadline = new Date(scheduledEnd.getTime() + GRACE_MS);
-          if (effectiveCompletedTime <= deadline) {
+          if (completedTime <= deadline) {
             crewAcc.onTimeCompletions++;
           } else {
             crewAcc.lateCompletions++;
           }
-          if (effectiveCompletedTime > scheduledEnd) {
-            const diffMs = effectiveCompletedTime.getTime() - scheduledEnd.getTime();
+          if (completedTime > scheduledEnd) {
+            const diffMs = completedTime.getTime() - scheduledEnd.getTime();
             crewAcc.daysLatePastEnd.push(Math.round((diffMs / (1000 * 60 * 60 * 24)) * 10) / 10);
           }
+        } else if (!completedTime) {
+          crewAcc.unknownCompletionJobs++;
         } else {
           crewAcc.onTimeCompletions++;
         }
-        if (scheduledStart && effectiveCompletedTime && effectiveCompletedTime > scheduledStart) {
-          const diffMs = effectiveCompletedTime.getTime() - scheduledStart.getTime();
+        if (scheduledStart && completedTime && completedTime > scheduledStart) {
+          const diffMs = completedTime.getTime() - scheduledStart.getTime();
           crewAcc.completionDays.push(Math.round((diffMs / (1000 * 60 * 60 * 24)) * 10) / 10);
         }
         if (onOurWayTime && scheduledStart) {
-          if (scheduledEnd && onOurWayTime > scheduledEnd) {
+          if (onOurWayTime > scheduledStart) {
             crewAcc.onOurWayLate++;
           } else {
             crewAcc.onOurWayOnTime++;
+          }
+        }
+        if (startedTime && scheduledStart && scheduledEnd) {
+          if (startedTime <= scheduledEnd) {
+            crewAcc.startedOnTime++;
+          } else {
+            crewAcc.startedLate++;
           }
         }
         if (onOurWayTime) crewAcc.oowUsed++;
@@ -1228,6 +1292,8 @@ export async function GET(request: NextRequest) {
       totalJobs: 0,
       totalCompleted: 0,
       totalOnTime: 0,
+      totalLate: 0,
+      unknownCompletionJobs: 0,
       totalStuck: 0,
       totalNeverStarted: 0,
       completionDays: [] as number[],
@@ -1239,14 +1305,8 @@ export async function GET(request: NextRequest) {
     for (const { job } of allJobs) {
       const statusLower = getStatusName(job).toLowerCase();
       const assignedUsers = extractAssignedUsers(job, assignmentOptions);
-      if (assignedUsers.length === 0) continue;
-
-      if (teamFilter) {
-        const hasMatchingTeam = assignedUsers.some((u) =>
-          u.teamNames.some((t) => t.toLowerCase().includes(teamFilter))
-        );
-        if (!hasMatchingTeam) continue;
-      }
+      const filteredAssignedUsers = filterAssignedUsersByTeam(assignedUsers, teamFilter);
+      if (filteredAssignedUsers.length === 0) continue;
 
       summaryAcc.totalJobs++;
 
@@ -1254,33 +1314,35 @@ export async function GET(request: NextRequest) {
       const scheduledEnd = job.scheduled_end_time ? new Date(job.scheduled_end_time) : null;
       const completedTime = getCompletedTimeFromHistory(job);
       const onOurWayTime = getOnOurWayTime(job);
-      const effectiveCompletedTime = completedTime || scheduledEnd;
 
       if (COMPLETED_STATUSES.has(statusLower)) {
         summaryAcc.totalCompleted++;
-        if (scheduledEnd && effectiveCompletedTime) {
+        if (scheduledEnd && completedTime) {
           const deadline = new Date(scheduledEnd.getTime() + GRACE_MS);
-          if (effectiveCompletedTime <= deadline) {
+          if (completedTime <= deadline) {
             summaryAcc.totalOnTime++;
-          } else if (effectiveCompletedTime > scheduledEnd) {
-            const diffMs = effectiveCompletedTime.getTime() - scheduledEnd.getTime();
+          } else if (completedTime > scheduledEnd) {
+            summaryAcc.totalLate++;
+            const diffMs = completedTime.getTime() - scheduledEnd.getTime();
             summaryAcc.daysLatePastEnd.push(
               Math.round((diffMs / (1000 * 60 * 60 * 24)) * 10) / 10
             );
           }
+        } else if (!completedTime) {
+          summaryAcc.unknownCompletionJobs++;
         } else {
           summaryAcc.totalOnTime++;
         }
 
-        if (scheduledStart && effectiveCompletedTime && effectiveCompletedTime > scheduledStart) {
-          const diffMs = effectiveCompletedTime.getTime() - scheduledStart.getTime();
+        if (scheduledStart && completedTime && completedTime > scheduledStart) {
+          const diffMs = completedTime.getTime() - scheduledStart.getTime();
           summaryAcc.completionDays.push(
             Math.round((diffMs / (1000 * 60 * 60 * 24)) * 10) / 10
           );
         }
 
         if (onOurWayTime && scheduledStart) {
-          if (scheduledEnd && onOurWayTime > scheduledEnd) {
+          if (onOurWayTime > scheduledStart) {
             summaryAcc.totalOnOurWayLate++;
           } else {
             summaryAcc.totalOnOurWayOnTime++;
@@ -1298,13 +1360,15 @@ export async function GET(request: NextRequest) {
 
     const totalOnOurWayTotal =
       summaryAcc.totalOnOurWayOnTime + summaryAcc.totalOnOurWayLate;
+    const measurableCompletions = summaryAcc.totalOnTime + summaryAcc.totalLate;
 
     const summary: ComplianceSummary = {
       totalJobs: summaryAcc.totalJobs,
       totalCompleted: summaryAcc.totalCompleted,
+      unknownCompletionJobs: summaryAcc.unknownCompletionJobs,
       overallOnTimePercent:
-        summaryAcc.totalCompleted > 0
-          ? Math.round((summaryAcc.totalOnTime / summaryAcc.totalCompleted) * 100 * 10) / 10
+        measurableCompletions > 0
+          ? Math.round((summaryAcc.totalOnTime / measurableCompletions) * 100 * 10) / 10
           : 0,
       totalStuck: summaryAcc.totalStuck,
       totalNeverStarted: summaryAcc.totalNeverStarted,
