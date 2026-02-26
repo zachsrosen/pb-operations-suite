@@ -63,7 +63,18 @@ export async function PUT(request: NextRequest) {
     const rawUserUid = typeof schedule.userUid === "string" ? schedule.userUid : undefined;
     const rawZuperJobUid = typeof project?.zuperJobUid === "string" ? project.zuperJobUid.trim() : "";
     const rawTimezone = typeof schedule.timezone === "string" ? schedule.timezone.trim() : "";
-    const looksLikeUid = (value: string) => /^[0-9a-f-]{30,}$/i.test(value);
+    const looksLikeUid = (value: string) =>
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.trim());
+    const looksLikeUidList = (value: string) =>
+      value
+        .split(",")
+        .map((part) => part.trim())
+        .filter(Boolean)
+        .every((part) => looksLikeUid(part));
+    const normalizedAssignedUserUid =
+      (rawCrew && looksLikeUidList(rawCrew) ? rawCrew : undefined) ||
+      (rawUserUid && (looksLikeUid(rawUserUid) || looksLikeUidList(rawUserUid)) ? rawUserUid : undefined) ||
+      (rawCrew && looksLikeUid(rawCrew) ? rawCrew : undefined);
     const timezoneTag = rawTimezone ? ` [TZ:${rawTimezone}]` : "";
 
     // Ensure only one active tentative record per project + schedule type.
@@ -92,7 +103,7 @@ export async function PUT(request: NextRequest) {
       scheduledEnd: schedule.endTime,
       // Prefer display name; crew may be a UID in some clients.
       assignedUser: rawAssignedUser || (rawCrew && !looksLikeUid(rawCrew) ? rawCrew : undefined),
-      assignedUserUid: rawUserUid || (rawCrew && looksLikeUid(rawCrew) ? rawCrew : undefined),
+      assignedUserUid: normalizedAssignedUserUid,
       assignedTeamUid: schedule.teamUid,
       scheduledBy: session.user.name || session.user.email,
       scheduledByEmail: session.user.email,

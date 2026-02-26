@@ -119,6 +119,16 @@ function getSiteSurveySharedCalendarImpersonationEmail(email?: string | null): s
   return getSharedCalendarImpersonationEmail() || normalizeEmail(email);
 }
 
+function extractInstallerNote(rawNotes: unknown): string {
+  if (typeof rawNotes !== "string") return "";
+  const cleaned = rawNotes
+    .replace(/\[(?:TENTATIVE|CONFIRMED)\]\s*/gi, "")
+    .replace(/\[TZ:[^\]]+\]/gi, "")
+    .trim();
+  const markerMatch = cleaned.match(/Installer Notes:\s*([\s\S]+)/i);
+  return markerMatch?.[1]?.trim() || "";
+}
+
 function matchesHubSpotDateValue(actualRaw: string | null | undefined, expectedCandidates: string[]): boolean {
   const actual = String(actualRaw || "").trim();
   if (!actual) return false;
@@ -402,6 +412,7 @@ export async function POST(request: NextRequest) {
 
     let zuperJobUid: string | undefined;
     let zuperError: string | undefined;
+    let zuperNoteWarning: string | undefined;
     let startDateTimeForHubSpot: string | undefined;
     let endDateTimeForHubSpot: string | undefined;
     let boundaryStartDateForHubSpot: string | undefined;
@@ -586,6 +597,19 @@ export async function POST(request: NextRequest) {
 
         if (rescheduleResult.type === "success") {
           zuperJobUid = existingJob.job_uid;
+          if (scheduleType === "installation") {
+            const installerNote = extractInstallerNote(record.notes);
+            if (installerNote) {
+              const appendResult = await zuper.appendJobNote(
+                existingJob.job_uid,
+                `Installer Notes: ${installerNote}`
+              );
+              if (appendResult.type === "error") {
+                zuperNoteWarning = appendResult.error || "Failed to append installer notes to Zuper job";
+                console.warn(`[Zuper Confirm] ${zuperNoteWarning}`);
+              }
+            }
+          }
         } else {
           zuperError = rescheduleResult.error;
         }
@@ -1044,6 +1068,7 @@ export async function POST(request: NextRequest) {
       zuperSynced: true,
       zuperJobUid,
       zuperError: null,
+      zuperNoteWarning: zuperNoteWarning || undefined,
       hubspotWarnings: hubspotWarnings.length > 0 ? hubspotWarnings : undefined,
       record: {
         id: record.id,

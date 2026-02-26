@@ -112,6 +112,12 @@ interface CrewConfig {
   color: string;
 }
 
+interface ZuperAssignee {
+  name: string;
+  userUid: string;
+  teamUid: string;
+}
+
 interface ManualSchedule {
   startDate: string;
   days: number;
@@ -187,8 +193,8 @@ const LOCATION_COLORS: Record<string, string> = {
 };
 
 /* ---- Zuper default assignees per location (for auto-assignment when scheduling) ---- */
-// Construction: assign to location director (same as construction scheduler)
-const ZUPER_CONSTRUCTION_DIRECTORS: Record<string, { name: string; userUid: string; teamUid: string }> = {
+// Construction default assignee per location (same defaults as construction scheduler).
+const ZUPER_CONSTRUCTION_DIRECTORS: Record<string, ZuperAssignee> = {
   Westminster: { name: "Joe Lynch", userUid: "f203f99b-4aaf-488e-8e6a-8ee5e94ec217", teamUid: "1c23adb9-cefa-44c7-8506-804949afc56f" },
   Centennial: { name: "Drew Perry", userUid: "0ddc7e1d-62e1-49df-b89d-905a39c1e353", teamUid: "76b94bd3-e2fc-4cfe-8c2a-357b9a850b3c" },
   DTC: { name: "Drew Perry", userUid: "0ddc7e1d-62e1-49df-b89d-905a39c1e353", teamUid: "76b94bd3-e2fc-4cfe-8c2a-357b9a850b3c" },
@@ -245,6 +251,37 @@ const ZUPER_INSPECTION_USERS: Record<string, { name: string; userUid: string; te
     { name: "Anthony Villanueva", userUid: "", teamUid: "699cec60-f9f8-4e57-b41a-bb29b1f3649c" },
   ],
 };
+
+// Construction assignee choices in the master scheduler modal.
+// Starts with each location's construction director, then adds known survey/inspection users.
+const ZUPER_CONSTRUCTION_USERS: Record<string, ZuperAssignee[]> = Object.fromEntries(
+  Object.keys(ZUPER_CONSTRUCTION_DIRECTORS).map((location) => {
+    const locationTeamUid = ZUPER_CONSTRUCTION_DIRECTORS[location]?.teamUid;
+    const merged = [
+      ZUPER_CONSTRUCTION_DIRECTORS[location],
+      ...(ZUPER_SURVEY_USERS[location] || []),
+      ...(ZUPER_INSPECTION_USERS[location] || []),
+    ].filter((assignee) => !!assignee.userUid && assignee.teamUid === locationTeamUid);
+    const seen = new Set<string>();
+    const deduped = merged.filter((assignee) => {
+      const key = `${assignee.userUid || ""}|${assignee.name.toLowerCase()}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    return [location, deduped];
+  })
+) as Record<string, ZuperAssignee[]>;
+
+function dedupeAssignees(assignees: ZuperAssignee[]): ZuperAssignee[] {
+  const seen = new Set<string>();
+  return assignees.filter((assignee) => {
+    const key = `${assignee.userUid}|${assignee.name.toLowerCase()}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
 
 // Location → IANA timezone (imported from shared constants)
 
@@ -642,6 +679,12 @@ export default function SchedulerPage() {
   const [detailModal, setDetailModal] = useState<SchedulerProject | null>(null);
   const [installDaysInput, setInstallDaysInput] = useState(2);
   const [crewSelectInput, setCrewSelectInput] = useState("");
+  const [constructionAssigneeNames, setConstructionAssigneeNames] = useState<string[]>([]);
+  const [installerNotesInput, setInstallerNotesInput] = useState("");
+  const [liveConstructionAssigneesByLocation, setLiveConstructionAssigneesByLocation] = useState<
+    Record<string, ZuperAssignee[]>
+  >({});
+  const [loadingConstructionAssignees, setLoadingConstructionAssignees] = useState(false);
 
   /* ---- Availability time slots (for survey/inspection scheduling) ---- */
   interface AvailSlot {
@@ -1050,26 +1093,91 @@ export default function SchedulerPage() {
     return spanDates.every((d) => (dayCounts[d] || 0) < cap);
   }, [scheduleModal, installDaysInput, buildExistingBookings]);
 
-  /** Get available construction crews for the schedule modal. */
-  const availableConstructionCrews = useMemo(() => {
-    if (!scheduleModal) return [] as CrewConfig[];
+  /** Get available construction assignees for the schedule modal. */
+  const availableConstructionAssignees = useMemo(() => {
+    if (!scheduleModal) return [] as ZuperAssignee[];
     const isConstruction = scheduleModal.project.stage !== "survey" && scheduleModal.project.stage !== "inspection";
-    if (!isConstruction) return [] as CrewConfig[];
+    if (!isConstruction) return [] as ZuperAssignee[];
 
-    const locationCrews = CREWS[scheduleModal.project.location] || [];
-    return locationCrews;
-  }, [scheduleModal]);
+    const location = scheduleModal.project.location;
+    const live = liveConstructionAssigneesByLocation[location] || [];
+    if (live.length > 0) return live;
+    return ZUPER_CONSTRUCTION_USERS[location] || [];
+  }, [scheduleModal, liveConstructionAssigneesByLocation]);
 
-  // Clear crew selection when it becomes unavailable due to booking conflicts
+  // Pull fresh assignees from the location's Zuper team for construction scheduling.
   useEffect(() => {
     if (!scheduleModal) return;
     const isConstruction = scheduleModal.project.stage !== "survey" && scheduleModal.project.stage !== "inspection";
     if (!isConstruction) return;
 
-    if (crewSelectInput && !availableConstructionCrews.some((crew) => crew.name === crewSelectInput)) {
-      setCrewSelectInput("");
+    const location = scheduleModal.project.location;
+    const director = ZUPER_CONSTRUCTION_DIRECTORS[location];
+    const teamUid = director?.teamUid;
+    if (!teamUid) return;
+
+    // Skip if we already have live members for this location in the current session.
+    if ((liveConstructionAssigneesByLocation[location] || []).length > 0) return;
+
+    let cancelled = false;
+    setLoadingConstructionAssignees(true);
+
+    fetch(`/api/zuper/teams/${encodeURIComponent(teamUid)}/users`)
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`Failed to fetch team users (${res.status})`);
+        return res.json() as Promise<{
+          users?: Array<{
+            userUid?: string;
+            firstName?: string;
+            lastName?: string;
+            email?: string | null;
+          }>;
+        }>;
+      })
+      .then((data) => {
+        if (cancelled) return;
+        const teamUsers = (data.users || [])
+          .map((user) => {
+            const userUid = String(user.userUid || "").trim();
+            const name = `${String(user.firstName || "").trim()} ${String(user.lastName || "").trim()}`.trim();
+            if (!userUid || !name) return null;
+            return { name, userUid, teamUid };
+          })
+          .filter((user): user is ZuperAssignee => !!user);
+
+        const fallbackDefaults = ZUPER_CONSTRUCTION_USERS[location] || [];
+        const merged = dedupeAssignees(
+          [director, ...teamUsers, ...fallbackDefaults].filter(
+            (assignee): assignee is ZuperAssignee => !!assignee
+          )
+        );
+        setLiveConstructionAssigneesByLocation((prev) => ({ ...prev, [location]: merged }));
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.warn(`[Scheduler] Failed to load live construction assignees for ${location}:`, error);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingConstructionAssignees(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [scheduleModal, liveConstructionAssigneesByLocation]);
+
+  // Clear assignee selection when it is no longer available for this location
+  useEffect(() => {
+    if (!scheduleModal) return;
+    const isConstruction = scheduleModal.project.stage !== "survey" && scheduleModal.project.stage !== "inspection";
+    if (!isConstruction) return;
+
+    const availableNames = new Set(availableConstructionAssignees.map((assignee) => assignee.name));
+    const filtered = constructionAssigneeNames.filter((name) => availableNames.has(name));
+    if (filtered.length !== constructionAssigneeNames.length) {
+      setConstructionAssigneeNames(filtered);
     }
-  }, [scheduleModal, crewSelectInput, availableConstructionCrews]);
+  }, [scheduleModal, constructionAssigneeNames, availableConstructionAssignees]);
 
   /* ================================================================ */
   /*  Derived data                                                     */
@@ -1534,15 +1642,33 @@ export default function SchedulerPage() {
       const isSurveyOrInspection =
         project.stage === "survey" || project.stage === "inspection";
       setInstallDaysInput(isSurveyOrInspection ? 1 : getEffectiveConstructionDays(project) || project.daysInstall || 2);
-      // Pre-select the default user/crew based on schedule type
+      // Pre-select defaults based on schedule type
       if (project.stage === "survey") {
         const surveyUsers = ZUPER_SURVEY_USERS[project.location] || [];
         setCrewSelectInput(surveyUsers[0]?.name || "");
+        setConstructionAssigneeNames([]);
+        setInstallerNotesInput("");
       } else if (project.stage === "inspection") {
         const inspUsers = ZUPER_INSPECTION_USERS[project.location] || [];
         setCrewSelectInput(inspUsers[0]?.name || "");
+        setConstructionAssigneeNames([]);
+        setInstallerNotesInput("");
       } else {
-        setCrewSelectInput(project.crew || "");  // No default — user must explicitly choose a crew
+        const constructionUsers =
+          liveConstructionAssigneesByLocation[project.location]?.length
+            ? liveConstructionAssigneesByLocation[project.location]
+            : (ZUPER_CONSTRUCTION_USERS[project.location] || []);
+        const existingNames = (project.crew || "")
+          .split(",")
+          .map((name) => name.trim())
+          .filter(Boolean);
+        const validExisting = existingNames.filter((name) => constructionUsers.some((u) => u.name === name));
+        const selectedNames = validExisting.length > 0
+          ? validExisting
+          : (constructionUsers[0]?.name ? [constructionUsers[0].name] : []);
+        setConstructionAssigneeNames(selectedNames);
+        setCrewSelectInput("");
+        setInstallerNotesInput("");
       }
       trackFeature("schedule-modal-open", "Opened master schedule modal", {
         scheduler: "master",
@@ -1553,7 +1679,7 @@ export default function SchedulerPage() {
       });
       setScheduleModal({ project, date: adjustedDate });
     },
-    [trackFeature, getEffectiveConstructionDays]
+    [trackFeature, getEffectiveConstructionDays, liveConstructionAssigneesByLocation]
   );
 
   const confirmSchedule = useCallback(async () => {
@@ -1562,11 +1688,29 @@ export default function SchedulerPage() {
     const isSurveyOrInsp = project.stage === "survey" || project.stage === "inspection";
     const selectedSlot = isSurveyOrInsp ? availableSlots[selectedSlotIdx] : null;
     const days = isSurveyOrInsp ? 1 : (installDaysInput || 2);
-    const crew = crewSelectInput || project.crew || "";
+    const selectedConstructionAssignees = availableConstructionAssignees.filter((assignee) =>
+      constructionAssigneeNames.includes(assignee.name)
+    );
+    const selectedConstructionAssigneeNames = selectedConstructionAssignees.map((assignee) => assignee.name);
+    const selectedAssigneeName = isSurveyOrInsp
+      ? (crewSelectInput || project.crew || "")
+      : selectedConstructionAssigneeNames.join(", ");
+    const selectedConstructionCrewUids = selectedConstructionAssignees
+      .map((assignee) => assignee.userUid)
+      .filter(Boolean)
+      .join(",");
+    const selectedConstructionUserUid = selectedConstructionAssignees.find((assignee) => assignee.userUid)?.userUid;
+    const selectedConstructionTeamUids = [...new Set(
+      selectedConstructionAssignees
+        .map((assignee) => assignee.teamUid)
+        .filter(Boolean)
+    )];
+    const selectedConstructionTeamUid = ZUPER_CONSTRUCTION_DIRECTORS[project.location]?.teamUid || selectedConstructionTeamUids[0] || "";
+    const installerNotes = isSurveyOrInsp ? "" : installerNotesInput.trim();
 
-    // Require crew selection for construction installs
-    if (!isSurveyOrInsp && !crew) {
-      showToast("Please select a crew before scheduling", "warning");
+    // Require assignee selection for construction installs
+    if (!isSurveyOrInsp && selectedConstructionAssignees.length === 0) {
+      showToast("Please select an assignee before scheduling", "warning");
       return;
     }
     // For survey/inspection, derive times from selected slot; for construction, use defaults
@@ -1584,7 +1728,7 @@ export default function SchedulerPage() {
       date,
       stage: project.stage,
       days,
-      crew,
+      crew: selectedAssigneeName,
       syncToZuper,
       isReschedule: !!project.zuperJobUid,
     });
@@ -1594,7 +1738,7 @@ export default function SchedulerPage() {
       [project.id]: {
         startDate: date,
         days,
-        crew,
+        crew: selectedAssigneeName,
         isTentative: !syncToZuper,
         scheduleType: project.stage === "survey" ? "survey"
           : project.stage === "inspection" ? "inspection"
@@ -1612,7 +1756,7 @@ export default function SchedulerPage() {
         const users = ZUPER_INSPECTION_USERS[location] || [];
         return users.find(u => u.name === selectedName) || users[0];
       }
-      return ZUPER_CONSTRUCTION_DIRECTORS[location]; // installation/rtb/blocked
+      return selectedConstructionAssignees[0];
     };
 
     // Sync to Zuper if enabled
@@ -1628,7 +1772,12 @@ export default function SchedulerPage() {
         const scheduleType = project.stage === "survey" ? "survey"
           : project.stage === "inspection" ? "inspection"
           : "installation";
-        const assignee = resolveZuperAssignee(scheduleType, project.location, crew);
+        const assignee = resolveZuperAssignee(scheduleType, project.location, selectedAssigneeName);
+        const assigneeLabel = selectedSlot?.userName || (isSurveyOrInsp ? assignee?.name : selectedAssigneeName);
+        const scheduleNotes = [
+          `Scheduled via Master Schedule${assigneeLabel ? ` — ${assigneeLabel}` : ""}`,
+          installerNotes ? `Installer Notes: ${installerNotes}` : "",
+        ].filter(Boolean).join("\n\n");
 
         const response = await fetch("/api/zuper/jobs/schedule", {
           method: "PUT",
@@ -1651,11 +1800,12 @@ export default function SchedulerPage() {
               days: days,
               startTime: slotStartTime,
               endTime: slotEndTime,
-              crew: selectedSlot?.userUid || assignee?.userUid,
-              teamUid: selectedSlot?.teamUid || assignee?.teamUid,
-              assignedUser: selectedSlot?.userName || assignee?.name,
+              crew: selectedSlot?.userUid || (isSurveyOrInsp ? assignee?.userUid : selectedConstructionCrewUids),
+              teamUid: selectedSlot?.teamUid || (isSurveyOrInsp ? assignee?.teamUid : selectedConstructionTeamUid),
+              assignedUser: assigneeLabel,
               timezone: slotTimezone,
-              notes: `Scheduled via Master Schedule${(selectedSlot?.userName || assignee?.name) ? ` — ${selectedSlot?.userName || assignee?.name}` : ""}`,
+              notes: scheduleNotes,
+              installerNotes: installerNotes || undefined,
             },
             rescheduleOnly: true,
           }),
@@ -1696,7 +1846,12 @@ export default function SchedulerPage() {
         const scheduleType = project.stage === "survey" ? "survey"
           : project.stage === "inspection" ? "inspection"
           : "installation";
-        const assignee = resolveZuperAssignee(scheduleType, project.location, crew);
+        const assignee = resolveZuperAssignee(scheduleType, project.location, selectedAssigneeName);
+        const assigneeLabel = selectedSlot?.userName || (isSurveyOrInsp ? assignee?.name : selectedAssigneeName);
+        const tentativeNotes = [
+          `Tentatively scheduled via Master Scheduler${assigneeLabel ? ` — ${assigneeLabel}` : ""}`,
+          installerNotes ? `Installer Notes: ${installerNotes}` : "",
+        ].filter(Boolean).join("\n\n");
 
         const response = await fetch("/api/zuper/jobs/schedule/tentative", {
           method: "PUT",
@@ -1715,12 +1870,12 @@ export default function SchedulerPage() {
               days,
               startTime: slotStartTime,
               endTime: slotEndTime,
-              crew: selectedSlot?.userUid || assignee?.userUid || crew,
-              userUid: selectedSlot?.userUid || assignee?.userUid,
-              teamUid: selectedSlot?.teamUid || assignee?.teamUid,
-              assignedUser: selectedSlot?.userName || assignee?.name || crew,
+              crew: selectedSlot?.userUid || (isSurveyOrInsp ? assignee?.userUid : selectedConstructionCrewUids),
+              userUid: selectedSlot?.userUid || (isSurveyOrInsp ? assignee?.userUid : selectedConstructionUserUid),
+              teamUid: selectedSlot?.teamUid || (isSurveyOrInsp ? assignee?.teamUid : selectedConstructionTeamUid),
+              assignedUser: assigneeLabel,
               timezone: slotTimezone,
-              notes: `Tentatively scheduled via Master Scheduler${assignee ? ` — ${assignee.name}` : ""}`,
+              notes: tentativeNotes,
             },
           }),
         });
@@ -1745,7 +1900,7 @@ export default function SchedulerPage() {
 
     setScheduleModal(null);
     setSelectedProject(null);
-  }, [scheduleModal, installDaysInput, crewSelectInput, availableSlots, selectedSlotIdx, showToast, zuperConfigured, syncToZuper, trackFeature]);
+  }, [scheduleModal, installDaysInput, crewSelectInput, constructionAssigneeNames, installerNotesInput, availableConstructionAssignees, availableSlots, selectedSlotIdx, showToast, zuperConfigured, syncToZuper, trackFeature]);
 
   const handleDragStart = useCallback(
     (e: React.DragEvent, projectId: string) => {
@@ -2216,7 +2371,7 @@ export default function SchedulerPage() {
     scheduledEvents.forEach((e) => {
       text += `${formatDate(e.date)} - ${getCustomerName(e.name)}\n`;
       text += `  ${e.address}\n`;
-      text += `  Crew: ${e.crew || "Unassigned"} | ${e.days || e.daysInstall || 2} days | $${e.amount.toLocaleString()}\n\n`;
+      text += `  Assignee(s): ${e.crew || "Unassigned"} | ${e.days || e.daysInstall || 2} days | $${e.amount.toLocaleString()}\n\n`;
     });
     navigator.clipboard.writeText(text);
     showToast("Copied to clipboard");
@@ -4202,7 +4357,7 @@ export default function SchedulerPage() {
                     )}
                   </>
                 ) : (
-                  /* Construction: Days + Crew */
+                  /* Construction: Days + Assignee */
                   <>
                     <div className="flex gap-2.5 mt-2 flex-wrap items-center">
                       <label className="text-[0.7rem] text-muted">Days:</label>
@@ -4217,20 +4372,52 @@ export default function SchedulerPage() {
                         step={1}
                         className="bg-background border border-t-border text-foreground/90 px-2 py-1.5 rounded font-mono text-[0.75rem] w-[60px] text-center focus:outline-none focus:border-orange-500"
                       />
-                      <label className="text-[0.7rem] text-muted">Crew:</label>
-                      <select
-                        value={crewSelectInput}
-                        onChange={(e) => setCrewSelectInput(e.target.value)}
-                        className="bg-background border border-t-border text-foreground/90 px-2 py-1.5 rounded font-mono text-[0.75rem] focus:outline-none focus:border-orange-500"
-                      >
-                        <option value="">Select crew…</option>
-                        {availableConstructionCrews.map((c) => (
-                          <option key={c.name} value={c.name}>{c.name}</option>
-                        ))}
-                        {availableConstructionCrews.length === 0 && (
-                          <option disabled>No crews configured for this location</option>
+                      <label className="text-[0.7rem] text-muted">Assignees:</label>
+                      <div className="w-full border border-t-border rounded bg-background/70 p-2 max-h-28 overflow-y-auto">
+                        {loadingConstructionAssignees && (
+                          <div className="text-[0.65rem] text-muted mb-1">Loading team assignees from Zuper...</div>
                         )}
-                      </select>
+                        {availableConstructionAssignees.length === 0 ? (
+                          <div className="text-[0.7rem] text-muted">No assignees configured for this location</div>
+                        ) : (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                            {availableConstructionAssignees.map((assignee) => {
+                              const isChecked = constructionAssigneeNames.includes(assignee.name);
+                              return (
+                                <label key={`${assignee.teamUid}-${assignee.userUid || assignee.name}`} className="flex items-center gap-2 text-[0.72rem] text-foreground/90 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={(e) => {
+                                      const checked = e.target.checked;
+                                      setConstructionAssigneeNames((prev) => {
+                                        if (checked) {
+                                          if (prev.includes(assignee.name)) return prev;
+                                          return [...prev, assignee.name];
+                                        }
+                                        return prev.filter((name) => name !== assignee.name);
+                                      });
+                                    }}
+                                    className="w-3.5 h-3.5 accent-orange-500"
+                                  />
+                                  <span>{assignee.name}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                      <div className="w-full text-[0.62rem] text-muted">
+                        Selected: {constructionAssigneeNames.length > 0 ? constructionAssigneeNames.join(", ") : "None"}
+                      </div>
+                      <label className="text-[0.7rem] text-muted w-full">Installer Notes:</label>
+                      <textarea
+                        value={installerNotesInput}
+                        onChange={(e) => setInstallerNotesInput(e.target.value)}
+                        placeholder="Optional notes to append to the Zuper job"
+                        rows={3}
+                        className="w-full bg-background border border-t-border text-foreground/90 px-2 py-1.5 rounded font-mono text-[0.72rem] focus:outline-none focus:border-orange-500 resize-y"
+                      />
                     </div>
                     {!locationHasCapacity && (
                       <div className="text-[0.6rem] text-amber-400/80 mt-1">

@@ -281,6 +281,19 @@ function isBlank(value: unknown): boolean {
   return str === "" || str === "null" || str === "undefined";
 }
 
+function extractInstallerNote(rawNotes: unknown, rawInstallerNotes?: unknown): string {
+  const direct = typeof rawInstallerNotes === "string" ? rawInstallerNotes.trim() : "";
+  if (direct) return direct;
+  if (typeof rawNotes !== "string") return "";
+
+  const cleaned = rawNotes
+    .replace(/\[(?:TENTATIVE|CONFIRMED)\]\s*/gi, "")
+    .replace(/\[TZ:[^\]]+\]/gi, "")
+    .trim();
+  const markerMatch = cleaned.match(/Installer Notes:\s*([\s\S]+)/i);
+  return markerMatch?.[1]?.trim() || "";
+}
+
 async function verifyHubSpotScheduleWrite(
   dealId: string,
   scheduleType: ScheduleType,
@@ -717,9 +730,14 @@ export async function PUT(request: NextRequest) {
     // Resolve user UID from name if crew is empty but assignedUser is provided
     // This handles users whose UIDs aren't hardcoded in the frontend
     const isUuid = (s: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+    const isUuidList = (value: string) => value
+      .split(",")
+      .map((part: string) => part.trim())
+      .filter(Boolean)
+      .every((part: string) => isUuid(part));
     let resolvedCrew = schedule.crew || "";
     let resolvedTeamUid = schedule.teamUid || "";
-    if ((!resolvedCrew || !isUuid(resolvedCrew)) && schedule.assignedUser) {
+    if ((!resolvedCrew || !isUuidList(resolvedCrew)) && schedule.assignedUser && !String(schedule.assignedUser).includes(",")) {
       console.log(`[Zuper Schedule] Resolving UID for "${schedule.assignedUser}" (crew was "${resolvedCrew}")`);
       const resolved = await zuper.resolveUserUid(schedule.assignedUser);
       if (resolved) {
@@ -800,6 +818,21 @@ export async function PUT(request: NextRequest) {
         console.log(`[Zuper Schedule] RESCHEDULE SUCCESS but ASSIGNMENT FAILED: ${assignmentError}`);
       } else {
         console.log(`[Zuper Schedule] RESCHEDULE SUCCESS`);
+      }
+
+      let zuperNoteWarning: string | undefined;
+      if (schedule.type === "installation") {
+        const installerNote = extractInstallerNote(schedule.notes, schedule.installerNotes);
+        if (installerNote) {
+          const appendResult = await zuper.appendJobNote(
+            existingJob.job_uid,
+            `Installer Notes: ${installerNote}`
+          );
+          if (appendResult.type === "error") {
+            zuperNoteWarning = appendResult.error || "Failed to append installer notes to Zuper job";
+            console.warn(`[Zuper Schedule] ${zuperNoteWarning}`);
+          }
+        }
       }
 
       // Log as reschedule only when UI explicitly requested reschedule mode.
@@ -907,6 +940,7 @@ export async function PUT(request: NextRequest) {
         existingJobId: existingJob.job_uid,
         assignmentFailed,
         assignmentError,
+        zuperNoteWarning,
         hubspotWarnings: hubspotWarnings.length > 0 ? hubspotWarnings : undefined,
       });
     } else if (effectiveRescheduleOnly) {
@@ -1770,20 +1804,39 @@ function isUuidLike(value?: string): boolean {
   return !!value && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 }
 
+function firstToken(value?: string): string | undefined {
+  if (!value) return undefined;
+  return value
+    .split(",")
+    .map((token) => token.trim())
+    .find(Boolean);
+}
+
+function splitTokens(value?: string): string[] {
+  if (!value) return [];
+  return value
+    .split(",")
+    .map((token) => token.trim())
+    .filter(Boolean);
+}
+
 async function resolveCrewNotificationRecipient(params: {
   assignedUser?: string;
   assignedUserUid?: string;
   crew?: string;
 }): Promise<{ recipientEmail: string | null; recipientName: string }> {
+  const assignedUserName = firstToken(params.assignedUser);
+  const assignedUserUidCandidate = firstToken(params.assignedUserUid);
+  const crewUidCandidate = firstToken(params.crew);
   const assignedUserUid =
-    (params.assignedUserUid && isUuidLike(params.assignedUserUid) ? params.assignedUserUid : undefined) ||
-    (params.crew && isUuidLike(params.crew) ? params.crew : undefined);
+    (assignedUserUidCandidate && isUuidLike(assignedUserUidCandidate) ? assignedUserUidCandidate : undefined) ||
+    (crewUidCandidate && isUuidLike(crewUidCandidate) ? crewUidCandidate : undefined);
 
   let recipientEmail: string | null = null;
-  let recipientName = params.assignedUser || "";
+  let recipientName = assignedUserName || "";
 
-  if (params.assignedUser) {
-    const byName = await getCrewMemberByName(params.assignedUser);
+  if (assignedUserName) {
+    const byName = await getCrewMemberByName(assignedUserName);
     if (byName?.email) {
       recipientEmail = byName.email;
       recipientName = byName.name;
@@ -1791,9 +1844,9 @@ async function resolveCrewNotificationRecipient(params: {
   }
 
   // Fallback: support assignments that use app user display names (non-crew).
-  if (!recipientEmail && params.assignedUser && prisma) {
+  if (!recipientEmail && assignedUserName && prisma) {
     const byAppUserName = await prisma.user.findFirst({
-      where: { name: params.assignedUser },
+      where: { name: assignedUserName },
       select: { email: true, name: true },
     });
     if (byAppUserName?.email) {
@@ -1818,7 +1871,7 @@ async function resolveCrewNotificationRecipient(params: {
         recipientName = [userResult.data.first_name, userResult.data.last_name]
           .filter(Boolean)
           .join(" ")
-          .trim() || (params.assignedUser || "");
+          .trim() || (assignedUserName || "");
       }
     }
   }
@@ -1933,15 +1986,33 @@ async function sendCrewNotification(
       return;
     }
 
-    const resolvedRecipient = await resolveCrewNotificationRecipient({
-      assignedUser: schedule.assignedUser,
-      assignedUserUid: schedule.assignedUserUid,
-      crew: schedule.crew,
-    });
-    let recipientEmail = resolvedRecipient.recipientEmail;
-    const recipientName = resolvedRecipient.recipientName || schedule.assignedUser;
+    const assignedUserNames = splitTokens(schedule.assignedUser);
+    const assignedUserUids = splitTokens(schedule.assignedUserUid || schedule.crew);
+    const resolutionAttempts = Math.max(assignedUserNames.length, assignedUserUids.length, 1);
+    const recipientTargets: Array<{ email: string; name: string }> = [];
+    const seenEmails = new Set<string>();
 
-    if (!recipientEmail) {
+    for (let i = 0; i < resolutionAttempts; i++) {
+      const assignedUserName = assignedUserNames[i] || assignedUserNames[0] || schedule.assignedUser;
+      const assignedUserUid = assignedUserUids[i] || undefined;
+      const resolvedRecipient = await resolveCrewNotificationRecipient({
+        assignedUser: assignedUserName,
+        assignedUserUid,
+        crew: assignedUserUid,
+      });
+      const email = normalizeEmail(resolvedRecipient.recipientEmail);
+      if (!email || seenEmails.has(email)) continue;
+      seenEmails.add(email);
+      recipientTargets.push({
+        email,
+        name: resolvedRecipient.recipientName || assignedUserName || "Team Member",
+      });
+    }
+
+    let primaryRecipientEmail = recipientTargets[0]?.email || null;
+    const primaryRecipientName = recipientTargets[0]?.name || firstToken(schedule.assignedUser) || "Team Member";
+
+    if (!primaryRecipientEmail) {
       if (!schedulerEmail) {
         console.log(
           `[Zuper Schedule] No email found for assigned surveyor and no fallback recipient: name="${schedule.assignedUser}", uid="${schedule.assignedUserUid || schedule.crew || ""}"`
@@ -1951,7 +2022,11 @@ async function sendCrewNotification(
       console.log(
         `[Zuper Schedule] No email found for assigned surveyor; falling back to scheduler email: ${schedulerEmail}`
       );
-      recipientEmail = schedulerEmail;
+      primaryRecipientEmail = schedulerEmail;
+      recipientTargets.push({
+        email: schedulerEmail,
+        name: primaryRecipientName,
+      });
     }
 
     const { customerName, customerAddress } = deriveCustomerDetails(project);
@@ -1975,7 +2050,7 @@ async function sendCrewNotification(
     let googleCalendarEventUrl: string | undefined;
     if (schedule.type === "survey") {
       googleCalendarEventUrl =
-        getGoogleCalendarEventUrl(getSurveyCalendarEventId(project.id), recipientEmail) || undefined;
+        getGoogleCalendarEventUrl(getSurveyCalendarEventId(project.id), primaryRecipientEmail) || undefined;
     } else if (schedule.type === "installation") {
       try {
         const dealProps = await getDealProperties(project.id, ["pb_location"]);
@@ -1993,29 +2068,31 @@ async function sendCrewNotification(
       }
     }
 
-    await sendSchedulingNotification({
-      to: recipientEmail,
-      crewMemberName: recipientName || schedule.assignedUser,
-      scheduledByName: schedulerName,
-      scheduledByEmail: schedulerEmail,
-      dealOwnerName,
-      projectManagerName,
-      appointmentType: schedule.type as "survey" | "installation" | "inspection",
-      customerName,
-      customerAddress,
-      scheduledDate: schedule.date,
-      scheduledStart: schedule.startTime,
-      scheduledEnd: schedule.endTime,
-      projectId: project.id,
-      zuperJobUid,
-      googleCalendarEventUrl,
-      notes: schedule.notes,
-    });
+    for (const recipient of recipientTargets) {
+      await sendSchedulingNotification({
+        to: recipient.email,
+        crewMemberName: recipient.name || schedule.assignedUser,
+        scheduledByName: schedulerName,
+        scheduledByEmail: schedulerEmail,
+        dealOwnerName,
+        projectManagerName,
+        appointmentType: schedule.type as "survey" | "installation" | "inspection",
+        customerName,
+        customerAddress,
+        scheduledDate: schedule.date,
+        scheduledStart: schedule.startTime,
+        scheduledEnd: schedule.endTime,
+        projectId: project.id,
+        zuperJobUid,
+        googleCalendarEventUrl,
+        notes: schedule.notes,
+      });
+    }
 
     // Keep surveyor Google Calendar in sync for site surveys.
     if (schedule.type === "survey") {
       const previousSurveyorEmail = normalizeEmail(options?.previousSurveyorEmail);
-      const currentSurveyorEmail = normalizeEmail(recipientEmail);
+      const currentSurveyorEmail = normalizeEmail(primaryRecipientEmail);
 
       if (
         previousSurveyorEmail &&
@@ -2051,31 +2128,10 @@ async function sendCrewNotification(
         }
       }
 
-      const personalSyncResult = await upsertSiteSurveyCalendarEvent({
-        surveyorEmail: recipientEmail,
-        surveyorName: recipientName || schedule.assignedUser || undefined,
-        projectId: project.id,
-        projectName: project.name || project.id,
-        customerName,
-        customerAddress,
-        date: schedule.date,
-        startTime: schedule.startTime,
-        endTime: schedule.endTime,
-        timezone: schedule.timezone,
-        notes: schedule.notes,
-        zuperJobUid,
-        calendarId: "primary",
-        impersonateEmail: recipientEmail,
-      });
-      if (!personalSyncResult.success) {
-        console.warn(`[Zuper Schedule] Google Calendar personal survey sync warning: ${personalSyncResult.error}`);
-      }
-
-      const sharedSurveyCalendarId = getSiteSurveySharedCalendarIdForSurveyor(recipientEmail);
-      if (sharedSurveyCalendarId) {
-        const sharedSyncResult = await upsertSiteSurveyCalendarEvent({
-          surveyorEmail: recipientEmail,
-          surveyorName: recipientName || schedule.assignedUser || undefined,
+      if (primaryRecipientEmail) {
+        const personalSyncResult = await upsertSiteSurveyCalendarEvent({
+          surveyorEmail: primaryRecipientEmail,
+          surveyorName: primaryRecipientName || schedule.assignedUser || undefined,
           projectId: project.id,
           projectName: project.name || project.id,
           customerName,
@@ -2086,11 +2142,36 @@ async function sendCrewNotification(
           timezone: schedule.timezone,
           notes: schedule.notes,
           zuperJobUid,
-          calendarId: sharedSurveyCalendarId,
-          impersonateEmail: getSiteSurveySharedCalendarImpersonationEmail(recipientEmail) || recipientEmail,
+          calendarId: "primary",
+          impersonateEmail: primaryRecipientEmail,
         });
-        if (!sharedSyncResult.success) {
-          console.warn(`[Zuper Schedule] Google Calendar shared survey sync warning: ${sharedSyncResult.error}`);
+        if (!personalSyncResult.success) {
+          console.warn(`[Zuper Schedule] Google Calendar personal survey sync warning: ${personalSyncResult.error}`);
+        }
+
+        const sharedSurveyCalendarId = getSiteSurveySharedCalendarIdForSurveyor(primaryRecipientEmail);
+        if (sharedSurveyCalendarId) {
+          const sharedSyncResult = await upsertSiteSurveyCalendarEvent({
+            surveyorEmail: primaryRecipientEmail,
+            surveyorName: primaryRecipientName || schedule.assignedUser || undefined,
+            projectId: project.id,
+            projectName: project.name || project.id,
+            customerName,
+            customerAddress,
+            date: schedule.date,
+            startTime: schedule.startTime,
+            endTime: schedule.endTime,
+            timezone: schedule.timezone,
+            notes: schedule.notes,
+            zuperJobUid,
+            calendarId: sharedSurveyCalendarId,
+            impersonateEmail:
+              getSiteSurveySharedCalendarImpersonationEmail(primaryRecipientEmail) ||
+              primaryRecipientEmail,
+          });
+          if (!sharedSyncResult.success) {
+            console.warn(`[Zuper Schedule] Google Calendar shared survey sync warning: ${sharedSyncResult.error}`);
+          }
         }
       }
     }
@@ -2140,7 +2221,9 @@ async function sendCrewNotification(
       }
     }
 
-    console.log(`[Zuper Schedule] Notification sent to ${recipientEmail}`);
+    console.log(
+      `[Zuper Schedule] Notification sent to ${recipientTargets.map((target) => target.email).join(", ")}`
+    );
   } catch (err) {
     console.error("Failed to send crew notification:", err);
     // Don't throw - notification failures shouldn't break scheduling
