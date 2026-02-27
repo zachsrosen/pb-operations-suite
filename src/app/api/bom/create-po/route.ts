@@ -191,6 +191,7 @@ export async function POST(request: NextRequest) {
   // Note: matched items must have "Can be Purchased" enabled in Zoho to appear on POs.
   let unmatchedCount = 0;
   const unmatchedItems: string[] = [];
+  const matchedItems: Array<{ bomName: string; zohoName: string }> = [];
   const resolvedItems = await Promise.all(bomItems.map(async (item) => {
     const name =
       item.model
@@ -199,24 +200,25 @@ export async function POST(request: NextRequest) {
 
     // Try model first, then full "brand model" name, then description
     const searchTerms = [item.model, name, item.description].filter((t): t is string => !!t && t.trim().length > 1);
-    let zohoItemId: string | null = null;
+    let match: { item_id: string; zohoName: string } | null = null;
     for (const term of searchTerms) {
-      zohoItemId = await zohoInventory.findItemIdByName(term);
-      if (zohoItemId) break;
+      match = await zohoInventory.findItemIdByName(term);
+      if (match) break;
     }
 
-    if (!zohoItemId) {
+    if (!match) {
       unmatchedCount++;
       unmatchedItems.push(name); // record what we searched for so caller can diagnose
       return null; // will be filtered out — do not create name-only lines
     }
 
+    matchedItems.push({ bomName: name, zohoName: match.zohoName });
     // Quantity: parse carefully — `|| 1` would silently over-order on invalid values.
     // Use 1 as minimum only when the parsed value is truly 0/NaN after rounding.
     const parsedQty = Math.round(Number(item.qty));
     const quantity = Number.isFinite(parsedQty) && parsedQty > 0 ? parsedQty : 1;
 
-    return { item_id: zohoItemId, name, quantity, description: item.description };
+    return { item_id: match.item_id, name, quantity, description: item.description };
   }));
 
   const lineItems = resolvedItems.filter((item): item is NonNullable<typeof item> => item !== null);
@@ -300,5 +302,6 @@ export async function POST(request: NextRequest) {
     purchaseorder_number: poResult.purchaseorder_number,
     unmatchedCount,
     unmatchedItems,
+    matchedItems,
   });
 }

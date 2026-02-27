@@ -139,6 +139,77 @@ function normalizeName(s: string): string {
   return s.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
 }
 
+/**
+ * Static overrides that map known BOM query patterns directly to specific
+ * Zoho SKUs, checked BEFORE fuzzy name matching.
+ *
+ * Purpose: prevent false positives on common items where the fuzzy logic
+ * would match the wrong Zoho product (e.g. XR10 rail → splice connector,
+ * or HUG attachment → RD structural screw).
+ *
+ * Rules are checked in order; first matching pattern wins. If the mapped
+ * SKU is not found in the active item catalog, the override returns null
+ * rather than falling through to fuzzy matching (avoids substituting a
+ * wrong product for a known-but-uncataloged item).
+ */
+const BOM_QUERY_OVERRIDES: ReadonlyArray<{ pattern: RegExp; sku: string }> = [
+  // Powerwall 3 — wildcard model (1707000-XX-Y) → exact catalog SKU
+  { pattern: /\b1707000\b/i,                              sku: "1707000-21-K" },
+
+  // MCI-2 (all variants, standard or High Current) → always use High Current item
+  { pattern: /\bmci-?2\b/i,                               sku: "1879359-15-B" },
+
+  // IMO Rapid Shutdown Device (SI16 series)
+  { pattern: /\bimo\b|\bsi16\b/i,                         sku: "IMO SI16-PEL64R-2" },
+
+  // Tesla Backup Switch (1624171) — paired with PW3 but not in planset BOM
+  { pattern: /\bbackup\s+switch\b|\b1624171\b/i,          sku: "1624171-00-J" },
+
+  // 60A non-fused AC disconnect
+  { pattern: /\b60a?\s+non.?fused\b/i,                   sku: "DG222URB" },
+
+  // 200A non-fused AC disconnect (utility service upgrade, Burnham-style)
+  { pattern: /\b200a?\s+non.?fused\b/i,                  sku: "TGN3324R" },
+
+  // 200A fused AC disconnect
+  { pattern: /\b200a?\s+(utility\s+)?fused\b/i,          sku: "D224NRB" },
+
+  // Xcel Energy PV Production Meter → Milbank 200A Meter Housing w/ Bypass
+  { pattern: /xcel.*meter|pv\s+production\s+meter/i,     sku: "U4801XL5T9" },
+
+  // 125A sub panel
+  { pattern: /\b125a?\s+sub\s*panel\b/i,                 sku: "PAL2412" },
+
+  // IronRidge XR100 Bonded Splice — must come before the XR100 rail pattern below
+  { pattern: /\bxr100\s*(?:bonded\s*)?splice\b|\bxr-?100.*splice\b/i, sku: "XR100-BOSS-01-M1" },
+
+  // IronRidge XR100 168" rail (metal/trapezoidal roof) — must come before XR10 pattern
+  { pattern: /\bxr100\b|\bxr-100\b/i,                    sku: "XR-100-168A" },
+
+  // IronRidge XR10 Bonded Splice — must come before the XR10 rail pattern below
+  { pattern: /\bxr10\s*(?:bonded\s*)?splice\b|\bxr-?10.*splice\b/i,  sku: "XR10-BOSS-01-M1" },
+
+  // IronRidge XR10 168" rail — any remaining XR10 query (no "splice" keyword) → rail
+  { pattern: /\bxr10\b|\bxr-10\b/i,                      sku: "XR-10-168M" },
+
+  // IronRidge HUG attachment (Halo UltraGrip) — the word "hug" appears in the
+  // RD structural screw name "(HUG Screws)" causing false positives without this
+  { pattern: /\bhug\b/i,                                 sku: "2101151" },
+
+  // IronRidge XR10 Bonded Splice (generic "bonded splice" query — default to XR10)
+  { pattern: /\bbonded\s+splice\b/i,                     sku: "XR10-BOSS-01-M1" },
+
+  // IronRidge Mid Clamp → UFO mid clamp Black (ops standard for asphalt/trapezoidal roofs)
+  // Note: standing seam (S-5-U system) uses A1/Mill — those jobs don't use "mid clamp" phrasing
+  { pattern: /\bmid\s+clamp\b/i,                         sku: "UFO-CL-01-B1" },
+
+  // IronRidge End Clamp → UFO end clamp
+  { pattern: /\bend\s+clamp\b/i,                         sku: "UFO-END-01-B1" },
+
+  // Grounding lug — prefer IronRidge XR-specific lug over generic ballast lug
+  { pattern: /\bgrounding\s+lug\b/i,                     sku: "XR-LUG-03-A1" },
+];
+
 function isBlank(value: string | undefined | null): boolean {
   return !value || value.trim().length === 0;
 }
@@ -260,36 +331,66 @@ export class ZohoInventoryClient {
   }
 
   /**
-   * Find a Zoho item_id by matching a BOM item name/model against the cached
+   * Find a Zoho item by matching a BOM item name/model against the cached
    * item list. Tries (in order):
    *   1. Exact normalized match on name
    *   2. Exact normalized match on SKU
    *   3. Zoho item name contains the query (normalized)
    *   4. Query contains the Zoho item name (normalized, min 5 chars)
+   *
+   * Returns { item_id, zohoName } so callers can verify the match,
+   * or null if no match found.
    */
-  async findItemIdByName(query: string): Promise<string | null> {
+  async findItemIdByName(query: string): Promise<{ item_id: string; zohoName: string } | null> {
     if (!query || query.trim().length < 2) return null;
-    const q = normalizeName(query);
     const items = await this.getItemsForMatching();
+
+    // 0. Static overrides — checked first to prevent false positives on known BOM patterns
+    //    (e.g. XR10 → rail not splice, HUG → attachment not screw, 1707000 → Powerwall 3)
+    for (const override of BOM_QUERY_OVERRIDES) {
+      if (override.pattern.test(query)) {
+        const skuQ = normalizeName(override.sku);
+        const hit = items.find(i => i.sku && normalizeName(i.sku) === skuQ);
+        // If override matches but SKU isn't in catalog, return null rather than
+        // falling through to fuzzy matching (avoids substituting wrong product)
+        return hit ? { item_id: hit.item_id, zohoName: hit.name } : null;
+      }
+    }
+
+    const q = normalizeName(query);
 
     // 1. Exact name match
     const exactName = items.find(i => normalizeName(i.name) === q);
-    if (exactName) return exactName.item_id;
+    if (exactName) return { item_id: exactName.item_id, zohoName: exactName.name };
 
     // 2. Exact SKU match
     const exactSku = items.find(i => i.sku && normalizeName(i.sku) === q);
-    if (exactSku) return exactSku.item_id;
+    if (exactSku) return { item_id: exactSku.item_id, zohoName: exactSku.name };
 
-    // 3. Zoho name contains query
+    // 3. Zoho SKU contains query (e.g. query "HIN-T440NF(BK)" → SKU "HYU HIN-T440NF(BK)")
+    if (q.length >= 3) {
+      const skuContains = items.find(i => i.sku && normalizeName(i.sku).includes(q));
+      if (skuContains) return { item_id: skuContains.item_id, zohoName: skuContains.name };
+    }
+
+    // 4. Query contains Zoho SKU (only if SKU is substantive)
+    const queryContainsSku = items.find(i => {
+      if (!i.sku) return false;
+      const s = normalizeName(i.sku);
+      return s.length >= 5 && q.includes(s);
+    });
+    if (queryContainsSku) return { item_id: queryContainsSku.item_id, zohoName: queryContainsSku.name };
+
+    // 5. Zoho name contains query
     const nameContains = items.find(i => normalizeName(i.name).includes(q));
-    if (nameContains) return nameContains.item_id;
+    if (nameContains) return { item_id: nameContains.item_id, zohoName: nameContains.name };
 
-    // 4. Query contains Zoho name (only if Zoho name is substantive)
+    // 6. Query contains Zoho name (only if Zoho name is substantive)
     const queryContains = items.find(i => {
       const n = normalizeName(i.name);
       return n.length >= 5 && q.includes(n);
     });
-    if (queryContains) return queryContains.item_id;
+    if (queryContains) return { item_id: queryContains.item_id, zohoName: queryContains.name };
 
     return null;
   }

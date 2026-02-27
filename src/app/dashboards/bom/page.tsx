@@ -1155,6 +1155,7 @@ function BomDashboardInner() {
         purchaseorder_number?: string;
         unmatchedCount?: number;
         unmatchedItems?: string[];
+        matchedItems?: Array<{ bomName: string; zohoName: string }>;
         error?: string;
       };
       if (!res.ok || !data.purchaseorder_id) {
@@ -1164,10 +1165,13 @@ function BomDashboardInner() {
       setZohoPoId(data.purchaseorder_id);
       const unmatch = data.unmatchedCount ?? 0;
       const skippedList = data.unmatchedItems ?? [];
+      const matchedList = data.matchedItems ?? [];
+      const matchSummary = matchedList.map(m => `${m.bomName} → ${m.zohoName}`).join("\n");
+      const skipSummary = skippedList.length > 0 ? `\nSkipped: ${skippedList.join(", ")}` : "";
       addToast({
         type: unmatch > 0 ? "warning" : "success",
-        title: `PO ${data.purchaseorder_number ?? ""} created in Zoho`,
-        ...(unmatch > 0 ? { description: `${unmatch} item${unmatch === 1 ? "" : "s"} skipped (no Zoho match): ${skippedList.join(", ")}` } : {}),
+        title: `PO ${data.purchaseorder_number ?? ""} created — ${matchedList.length} matched, ${unmatch} skipped`,
+        ...(matchSummary || skipSummary ? { description: matchSummary + skipSummary } : {}),
       });
     } catch {
       addToast({ type: "error", title: "Network error creating PO" });
@@ -1195,6 +1199,7 @@ function BomDashboardInner() {
         salesorder_number?: string;
         unmatchedCount?: number;
         unmatchedItems?: string[];
+        matchedItems?: Array<{ bomName: string; zohoName: string }>;
         error?: string;
       };
       if (!res.ok || !data.salesorder_id) {
@@ -1204,10 +1209,13 @@ function BomDashboardInner() {
       setZohoSoId(data.salesorder_id);
       const unmatch = data.unmatchedCount ?? 0;
       const skippedList = data.unmatchedItems ?? [];
+      const matchedList = data.matchedItems ?? [];
+      const matchSummary = matchedList.map(m => `${m.bomName} → ${m.zohoName}`).join("\n");
+      const skipSummary = skippedList.length > 0 ? `\nSkipped: ${skippedList.join(", ")}` : "";
       addToast({
         type: unmatch > 0 ? "warning" : "success",
-        title: `SO ${data.salesorder_number ?? ""} created in Zoho`,
-        ...(unmatch > 0 ? { description: `${unmatch} item${unmatch === 1 ? "" : "s"} skipped (no Zoho match): ${skippedList.join(", ")}` } : {}),
+        title: `SO ${data.salesorder_number ?? ""} created — ${matchedList.length} matched, ${unmatch} skipped`,
+        ...(matchSummary || skipSummary ? { description: matchSummary + skipSummary } : {}),
       });
     } catch {
       addToast({ type: "error", title: "Network error creating SO" });

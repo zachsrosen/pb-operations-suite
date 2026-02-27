@@ -63,9 +63,9 @@ lineItem, category, brand, model, description, qty, unitSpec, unitLabel, source=
 
 Also read the **module detail block** (upper-left of PV-2) for: module dimensions, weight, PSF, and roof coverage %.
 
-### 4. Extract Conductor Schedule (PV-4)
+### 4. Extract from PV-4 SLD (Three things to find)
 
-Find the conductor table at the bottom of PV-4 with columns:
+**A. Conductor schedule** — table at the bottom of PV-4:
 `TAG | CONDUCTOR | MIN CONDUCTOR SIZE | NUMBER OF CONDUCTORS | CONDUIT/CABLE TYPE | MIN CONDUIT SIZE`
 
 Add each row to the BOM as an `ELECTRICAL_BOS` item. Standard tags for Powerwall-3 jobs:
@@ -74,9 +74,23 @@ Add each row to the BOM as an `ELECTRICAL_BOS` item. Standard tags for Powerwall
 - **Tag C** — THWN-2, 6 AWG, 3/4" EMT (AC after Powerwall)
 - **Tag D** — THWN-2, 3/0 AWG, 2" EMT (utility/main panel feed)
 
-Also extract from PV-4 and use as the `model` field (part number, not product name):
-- Powerwall part number (e.g., `1707000-XX-Y`) from POWERWALL 3 SPECIFICATIONS table → `model: "1707000-XX-Y"`, `description: "TESLA POWERWALL 3, 13.5kWh BATTERY & INVERTER"`
-- Gateway part number (e.g., `1841000-X1-Y`) from SLD callout → `model: "1841000-X1-Y"`, `description: "TESLA BACKUP GATEWAY 3, 200A, NEMA 3R"`
+**B. Rapid Shutdown Switch** — scan the SLD diagram itself (not the table) for:
+`(N) RAPID SHUTDOWN SWITCH` (typically with a `16/2 COMM WIRE` label connecting it to MCI-2 devices)
+
+If present → add to BOM:
+```json
+{ "category": "RAPID_SHUTDOWN", "brand": "IMO", "model": "IMO SI16-PEL64R-2",
+  "description": "IMO RAPID SHUTDOWN DEVICE, SI16-PEL64R-2", "qty": 1, "source": "PV-4" }
+```
+This is the **control unit** that triggers the MCI-2 module-level devices. It does NOT appear in the PV-2 BOM table — only in the PV-4 SLD. Always qty 1 per job.
+
+**C. AC disconnect wire configuration** — read the SLD callout for the 60A disconnect:
+- If callout includes `1-PHASE, 3-WIRE` → use SKU **`TGN3322R`** (3-pole, for service upgrade jobs with neutral)
+- If callout says `2-WIRE` or no wire count → use SKU **`DG222URB`** (2-pole, standard)
+
+**D. Part numbers** — from PV-4 spec tables:
+- Powerwall part number (e.g., `1707000-XX-Y`) → `model: "1707000-XX-Y"`, `description: "TESLA POWERWALL 3, 13.5kWh BATTERY & INVERTER"`
+- Gateway part number (e.g., `1841000-X1-Y`) → `model: "1841000-X1-Y"`, `description: "TESLA BACKUP GATEWAY 3, 200A, NEMA 3R"`
 
 **Model field rule:** Always use the manufacturer part number (alphanumeric code from the planset specs) as `model`, never the marketing product name. Put the product name in `description`.
 
@@ -107,22 +121,23 @@ python3 .claude/skills/planset-bom/scripts/export-bom.py bom.json
 
 ## Category Mapping Quick Reference
 
-| PV-2 EQUIPMENT Label | Category | Brand Pattern |
-|----------------------|----------|--------------|
-| SOLAR PV MODULE | `MODULE` | e.g. "SEG Solar", "Hyundai Solar" |
-| BATTERY & INVERTER | `BATTERY` | "Tesla" (Powerwall-3 is combo unit) |
-| RAPID SHUTDOWN | `RAPID_SHUTDOWN` | "Tesla" (MCI-2) |
-| RAIL | `RACKING` | "IronRidge" (XR10) |
-| BONDED SPLICE | `RACKING` | "IronRidge" |
-| CLAMP (MID/END) | `RACKING` | "IronRidge" |
-| ATTACHMENT | `RACKING` | "IronRidge" (HUG = Halo Ultragrip) |
-| RD STRUCTURAL SCREW | `RACKING` | "IronRidge" (HW-RD1430-01-M1) |
-| GROUNDING LUG | `ELECTRICAL_BOS` | — |
-| JUNCTION BOX | `ELECTRICAL_BOS` | "EZ Solar" (JB-1.2) |
-| AC DISCONNECT | `ELECTRICAL_BOS` | — (60A non-fused) |
-| Wire/conduit (PV-4) | `ELECTRICAL_BOS` | — |
-| TESLA BACKUP GATEWAY | `MONITORING` | "Tesla" (Backup Gateway-3) |
-| PRODUCTION METER | `MONITORING` | "Xcel Energy" (Xcel jobs only) |
+| Source | EQUIPMENT Label | Category | Notes |
+|--------|----------------|----------|-------|
+| PV-2 | SOLAR PV MODULE | `MODULE` | e.g. "SEG Solar", "Hyundai Solar" |
+| PV-2 | BATTERY & INVERTER | `BATTERY` | "Tesla" (Powerwall-3 is combo unit) |
+| PV-2 | RAPID SHUTDOWN | `RAPID_SHUTDOWN` | "Tesla" MCI-2 devices |
+| **PV-4 SLD** | **RAPID SHUTDOWN SWITCH** | **`RAPID_SHUTDOWN`** | **"IMO" — NOT in PV-2 BOM; scan SLD diagram** |
+| PV-2 | RAIL | `RACKING` | "IronRidge" XR10 or XR100 per roof type |
+| PV-2 | BONDED SPLICE | `RACKING` | "IronRidge" |
+| PV-2 | CLAMP (MID/END) | `RACKING` | "IronRidge" |
+| PV-2 | ATTACHMENT | `RACKING` | "IronRidge" (HUG = Halo Ultragrip) |
+| PV-2 | RD STRUCTURAL SCREW | `RACKING` | "IronRidge" (HW-RD1430-01-M1) |
+| PV-2 | GROUNDING LUG | `ELECTRICAL_BOS` | — |
+| PV-2 | JUNCTION BOX | `ELECTRICAL_BOS` | "EZ Solar" (JB-1.2) |
+| PV-2 | AC DISCONNECT | `ELECTRICAL_BOS` | **Check PV-4 SLD: 2-WIRE → DG222URB, 3-WIRE → TGN3322R** |
+| PV-4 | Wire/conduit | `ELECTRICAL_BOS` | Conductor schedule rows |
+| PV-2 | TESLA BACKUP GATEWAY | `MONITORING` | "Tesla" (Backup Gateway-3) |
+| PV-2 | PRODUCTION METER | `MONITORING` | "Xcel Energy" (Xcel jobs only) |
 
 ---
 
