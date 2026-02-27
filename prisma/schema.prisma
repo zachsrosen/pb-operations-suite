@@ -630,6 +630,14 @@ model EquipmentSku {
   // Relations
   stockLevels InventoryStock[]
 
+  moduleSpec             ModuleSpec?
+  inverterSpec           InverterSpec?
+  batterySpec            BatterySpec?
+  evChargerSpec          EvChargerSpec?
+  mountingHardwareSpec   MountingHardwareSpec?
+  electricalHardwareSpec ElectricalHardwareSpec?
+  relayDeviceSpec        RelayDeviceSpec?
+
   @@unique([category, brand, model])
   @@index([category])
   @@index([isActive])
@@ -637,6 +645,90 @@ model EquipmentSku {
   @@index([hubspotProductId])
   @@index([zuperItemId])
   @@index([zohoItemId])
+}
+
+model ModuleSpec {
+  id               String @id @default(cuid())
+  skuId            String @unique
+  sku              EquipmentSku @relation(fields: [skuId], references: [id], onDelete: Cascade)
+  wattage          Float?
+  efficiency       Float?            // percentage
+  cellType         String?           // "Mono PERC", "TOPCon", "HJT", "Poly", "Thin Film"
+  voc              Float?            // Open Circuit Voltage (V)
+  isc              Float?            // Short Circuit Current (A)
+  vmp              Float?            // Max Power Voltage (V)
+  imp              Float?            // Max Power Current (A)
+  tempCoefficient  Float?            // %/°C
+}
+
+model InverterSpec {
+  id               String @id @default(cuid())
+  skuId            String @unique
+  sku              EquipmentSku @relation(fields: [skuId], references: [id], onDelete: Cascade)
+  acOutputKw       Float?
+  maxDcInput       Float?
+  phase            String?           // "Single", "Three-phase"
+  nominalAcVoltage String?           // "240V", "208V", "480V"
+  mpptChannels     Int?
+  maxInputVoltage  Float?
+  inverterType     String?           // "String", "Micro", "Hybrid", "Central"
+}
+
+model BatterySpec {
+  id                      String @id @default(cuid())
+  skuId                   String @unique
+  sku                     EquipmentSku @relation(fields: [skuId], references: [id], onDelete: Cascade)
+  capacityKwh             Float?
+  energyStorageCapacity   Float?
+  usableCapacityKwh       Float?
+  continuousPowerKw       Float?
+  peakPowerKw             Float?
+  chemistry               String?    // "LFP", "NMC"
+  roundTripEfficiency     Float?     // percentage
+  nominalVoltage          Float?
+}
+
+model EvChargerSpec {
+  id              String @id @default(cuid())
+  skuId           String @unique
+  sku             EquipmentSku @relation(fields: [skuId], references: [id], onDelete: Cascade)
+  powerKw         Float?
+  connectorType   String?           // "J1772", "NACS", "CCS"
+  amperage        Float?
+  voltage         Float?
+  level           String?           // "Level 1", "Level 2", "DC Fast"
+  smartFeatures   Boolean?
+}
+
+model MountingHardwareSpec {
+  id              String @id @default(cuid())
+  skuId           String @unique
+  sku             EquipmentSku @relation(fields: [skuId], references: [id], onDelete: Cascade)
+  mountType       String?           // "Roof", "Ground", "Carport", "Flat Roof"
+  material        String?           // "Aluminum", "Steel"
+  tiltRange       String?
+  windRating      Float?            // mph
+  snowLoad        Float?            // psf
+  roofAttachment  String?           // "Comp Shingle", "Tile", "Metal", "S-Tile"
+}
+
+model ElectricalHardwareSpec {
+  id              String @id @default(cuid())
+  skuId           String @unique
+  sku             EquipmentSku @relation(fields: [skuId], references: [id], onDelete: Cascade)
+  componentType   String?           // "Conduit", "Wire", "Disconnect", "Breaker", "Combiner"
+  gaugeSize       String?           // AWG or conduit size
+  voltageRating   Float?
+  material        String?           // "Copper", "Aluminum", "PVC", "EMT"
+}
+
+model RelayDeviceSpec {
+  id                  String @id @default(cuid())
+  skuId               String @unique
+  sku                 EquipmentSku @relation(fields: [skuId], references: [id], onDelete: Cascade)
+  deviceType          String?      // "Gateway", "Meter", "CT", "Consumption Monitor"
+  connectivity        String?      // "WiFi", "Cellular", "Ethernet", "Zigbee"
+  compatibleInverters String?
 }
 
 model CatalogProduct {
