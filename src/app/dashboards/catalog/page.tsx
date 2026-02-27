@@ -7,6 +7,7 @@ import DashboardShell from "@/components/DashboardShell";
 import { useToast } from "@/contexts/ToastContext";
 import { useSession } from "next-auth/react";
 import { FORM_CATEGORIES } from "@/lib/catalog-fields";
+import CategoryFields from "@/components/catalog/CategoryFields";
 
 type Tab = "skus" | "sync" | "pending";
 
@@ -67,6 +68,16 @@ interface PushRequest {
   category: string;
   unitSpec: string | null;
   unitLabel: string | null;
+  sku: string | null;
+  vendorName: string | null;
+  vendorPartNumber: string | null;
+  unitCost: number | null;
+  sellPrice: number | null;
+  hardToProcure: boolean;
+  length: number | null;
+  width: number | null;
+  weight: number | null;
+  metadata?: Record<string, unknown> | null;
   systems: string[];
   requestedBy: string;
   dealId: string | null;
@@ -115,6 +126,16 @@ interface PushEditDraft {
   category: string;
   unitSpec: string;
   unitLabel: string;
+  sku: string;
+  vendorName: string;
+  vendorPartNumber: string;
+  unitCost: string;
+  sellPrice: string;
+  hardToProcure: boolean;
+  length: string;
+  width: string;
+  weight: string;
+  metadata: Record<string, unknown>;
   systems: string[];
 }
 
@@ -390,6 +411,18 @@ export default function CatalogPage() {
       category: push.category,
       unitSpec: push.unitSpec ?? "",
       unitLabel: push.unitLabel ?? "",
+      sku: push.sku ?? "",
+      vendorName: push.vendorName ?? "",
+      vendorPartNumber: push.vendorPartNumber ?? "",
+      unitCost: push.unitCost != null ? String(push.unitCost) : "",
+      sellPrice: push.sellPrice != null ? String(push.sellPrice) : "",
+      hardToProcure: Boolean(push.hardToProcure),
+      length: push.length != null ? String(push.length) : "",
+      width: push.width != null ? String(push.width) : "",
+      weight: push.weight != null ? String(push.weight) : "",
+      metadata: push.metadata && typeof push.metadata === "object" && !Array.isArray(push.metadata)
+        ? { ...push.metadata }
+        : {},
       systems: [...push.systems],
     });
   }
@@ -429,6 +462,16 @@ export default function CatalogPage() {
           category: pushEditDraft.category,
           unitSpec: pushEditDraft.unitSpec || null,
           unitLabel: pushEditDraft.unitLabel || null,
+          sku: pushEditDraft.sku || null,
+          vendorName: pushEditDraft.vendorName || null,
+          vendorPartNumber: pushEditDraft.vendorPartNumber || null,
+          unitCost: pushEditDraft.unitCost || null,
+          sellPrice: pushEditDraft.sellPrice || null,
+          hardToProcure: pushEditDraft.hardToProcure,
+          length: pushEditDraft.length || null,
+          width: pushEditDraft.width || null,
+          weight: pushEditDraft.weight || null,
+          metadata: Object.keys(pushEditDraft.metadata).length > 0 ? pushEditDraft.metadata : null,
           systems: pushEditDraft.systems,
         }),
       });
@@ -871,7 +914,7 @@ export default function CatalogPage() {
                 <div key={p.id} className={`grid ${isAdmin ? "grid-cols-[1fr_1fr_140px_100px_120px]" : "grid-cols-[1fr_1fr_140px_100px]"} gap-x-3 items-center border-b border-t-border last:border-b-0 px-4 py-3 text-sm hover:bg-surface-2 transition-colors`}>
                   <div className="min-w-0">
                     {editingPushId === p.id && pushEditDraft ? (
-                      <div className="space-y-1.5">
+                      <div className="space-y-2">
                         <input
                           value={pushEditDraft.brand}
                           onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, brand: e.target.value } : prev)}
@@ -890,10 +933,10 @@ export default function CatalogPage() {
                           className="w-full rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
                           placeholder="Description"
                         />
-                        <div className="flex gap-1.5">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
                           <select
                             value={pushEditDraft.category}
-                            onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, category: e.target.value } : prev)}
+                            onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, category: e.target.value, metadata: {} } : prev)}
                             className="w-full rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
                           >
                             {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -901,14 +944,96 @@ export default function CatalogPage() {
                           <input
                             value={pushEditDraft.unitSpec}
                             onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, unitSpec: e.target.value } : prev)}
-                            className="w-20 rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                            className="w-full rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
                             placeholder="Spec"
                           />
                           <input
                             value={pushEditDraft.unitLabel}
                             onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, unitLabel: e.target.value } : prev)}
-                            className="w-16 rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                            className="w-full rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
                             placeholder="Unit"
+                          />
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+                          <input
+                            value={pushEditDraft.sku}
+                            onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, sku: e.target.value } : prev)}
+                            className="w-full rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                            placeholder="SKU"
+                          />
+                          <input
+                            value={pushEditDraft.vendorName}
+                            onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, vendorName: e.target.value } : prev)}
+                            className="w-full rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                            placeholder="Vendor Name"
+                          />
+                          <input
+                            value={pushEditDraft.vendorPartNumber}
+                            onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, vendorPartNumber: e.target.value } : prev)}
+                            className="w-full rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                            placeholder="Vendor Part #"
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
+                          <input
+                            type="number"
+                            step="any"
+                            value={pushEditDraft.unitCost}
+                            onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, unitCost: e.target.value } : prev)}
+                            className="w-full rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                            placeholder="Unit Cost"
+                          />
+                          <input
+                            type="number"
+                            step="any"
+                            value={pushEditDraft.sellPrice}
+                            onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, sellPrice: e.target.value } : prev)}
+                            className="w-full rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                            placeholder="Sell Price"
+                          />
+                          <input
+                            type="number"
+                            step="any"
+                            value={pushEditDraft.length}
+                            onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, length: e.target.value } : prev)}
+                            className="w-full rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                            placeholder="Length"
+                          />
+                          <input
+                            type="number"
+                            step="any"
+                            value={pushEditDraft.width}
+                            onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, width: e.target.value } : prev)}
+                            className="w-full rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                            placeholder="Width"
+                          />
+                          <input
+                            type="number"
+                            step="any"
+                            value={pushEditDraft.weight}
+                            onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, weight: e.target.value } : prev)}
+                            className="w-full rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                            placeholder="Weight"
+                          />
+                        </div>
+                        <label className="inline-flex items-center gap-1 text-xs text-muted">
+                          <input
+                            type="checkbox"
+                            checked={pushEditDraft.hardToProcure}
+                            onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, hardToProcure: e.target.checked } : prev)}
+                          />
+                          Hard to Procure
+                        </label>
+                        <div className="rounded-lg border border-t-border bg-surface px-3 py-2">
+                          <CategoryFields
+                            category={pushEditDraft.category}
+                            values={pushEditDraft.metadata}
+                            onChange={(key, value) =>
+                              setPushEditDraft((prev) => prev ? {
+                                ...prev,
+                                metadata: { ...prev.metadata, [key]: value },
+                              } : prev)
+                            }
                           />
                         </div>
                       </div>
