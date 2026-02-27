@@ -37,6 +37,7 @@ jest.mock("@/lib/catalog-fields", () => ({
   }),
   generateZuperSpecification: jest.fn(() => "Spec Summary"),
   getHubspotPropertiesFromMetadata: jest.fn(() => ({})),
+  filterMetadataToSpecFields: jest.fn((_cat: string, meta: Record<string, unknown>) => meta),
 }));
 
 // ── HubSpot adapter ────────────────────────────────────────────────────────────

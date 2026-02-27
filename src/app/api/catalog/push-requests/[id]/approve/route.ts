@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { requireApiAuth } from "@/lib/api-auth";
 import { EquipmentCategory } from "@/generated/prisma/enums";
 import {
+  filterMetadataToSpecFields,
   generateZuperSpecification,
   getHubspotCategoryValue,
   getHubspotPropertiesFromMetadata,
@@ -119,18 +120,21 @@ export async function POST(
       });
 
       // 2. Write category spec table from metadata (if present)
-      const metadata = push.metadata as Record<string, unknown> | null;
-      if (metadata && Object.keys(metadata).length > 0) {
+      const rawMetadata = push.metadata as Record<string, unknown> | null;
+      if (rawMetadata && Object.keys(rawMetadata).length > 0) {
         const specTable = getSpecTableName(push.category);
         if (specTable) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const prismaModel = (tx as any)[specTable];
-          if (prismaModel?.upsert) {
-            await prismaModel.upsert({
-              where: { skuId: sku.id },
-              create: { skuId: sku.id, ...metadata },
-              update: metadata,
-            });
+          const specData = filterMetadataToSpecFields(push.category, rawMetadata);
+          if (Object.keys(specData).length > 0) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const prismaModel = (tx as any)[specTable];
+            if (prismaModel?.upsert) {
+              await prismaModel.upsert({
+                where: { skuId: sku.id },
+                create: { skuId: sku.id, ...specData },
+                update: specData,
+              });
+            }
           }
         }
       }

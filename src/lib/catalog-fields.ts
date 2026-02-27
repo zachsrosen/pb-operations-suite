@@ -230,6 +230,21 @@ export function getSpecTableName(category: string): string | undefined {
   return CATEGORY_CONFIGS[category]?.specTable;
 }
 
+/** Filter metadata to only include keys defined in the category's field config. */
+export function filterMetadataToSpecFields(
+  category: string,
+  metadata: Record<string, unknown>
+): Record<string, unknown> {
+  const validKeys = new Set(getCategoryFields(category).map((f) => f.key));
+  const filtered: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(metadata)) {
+    if (validKeys.has(key) && value !== null && value !== undefined && value !== "") {
+      filtered[key] = value;
+    }
+  }
+  return filtered;
+}
+
 export function getHubspotCategoryValue(category: string): string | undefined {
   return CATEGORY_CONFIGS[category]?.hubspotValue;
 }
