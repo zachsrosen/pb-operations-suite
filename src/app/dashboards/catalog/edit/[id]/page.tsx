@@ -5,7 +5,9 @@ import { useParams, useRouter } from "next/navigation";
 import DashboardShell from "@/components/DashboardShell";
 import CategoryFields from "@/components/catalog/CategoryFields";
 import BrandDropdown from "@/components/catalog/BrandDropdown";
+import DeleteSkuModal from "@/components/catalog/DeleteSkuModal";
 import { useToast } from "@/contexts/ToastContext";
+import { useSession } from "next-auth/react";
 import {
   FORM_CATEGORIES,
   getCategoryFields,
@@ -56,9 +58,19 @@ export default function CatalogSkuEditPage() {
     return typeof value === "string" ? value : "";
   }, [params]);
 
+  const { data: session } = useSession();
+  const userRole = (session?.user as { role?: string } | undefined)?.role ?? "";
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{
+    warning?: string;
+    syncedSystems?: string[];
+    pendingCount?: number;
+  } | null>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const [category, setCategory] = useState<string>("");
   const [brand, setBrand] = useState("");
@@ -193,6 +205,49 @@ export default function CatalogSkuEditPage() {
       setSaving(false);
     }
   }
+
+  const handleDeleteClick = async () => {
+    setShowDeleteModal(true);
+    try {
+      const res = await fetch(`/api/inventory/skus/${skuId}`, { method: "DELETE" });
+      const data = await res.json();
+      if (res.ok && data.preflight) {
+        setDeleteTarget({
+          warning: data.warning,
+          syncedSystems: data.syncedSystems,
+          pendingCount: data.pendingCount,
+        });
+      } else {
+        addToast({ type: "error", title: data.error || "Failed to check SKU status" });
+        setShowDeleteModal(false);
+      }
+    } catch {
+      addToast({ type: "error", title: "Failed to check SKU status" });
+      setShowDeleteModal(false);
+    }
+  };
+
+  const handleForceDelete = async () => {
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/inventory/skus/${skuId}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ force: true }),
+      });
+      const data = await res.json();
+      if (res.status === 200 && data.deleted) {
+        addToast({ type: "success", title: "SKU deleted" });
+        router.replace("/dashboards/catalog");
+        return;
+      }
+      addToast({ type: "error", title: data.error || "Delete failed" });
+    } catch {
+      addToast({ type: "error", title: "Delete failed" });
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const categoryHasFields = category && getCategoryFields(category).length > 0;
 
@@ -391,6 +446,16 @@ export default function CatalogSkuEditPage() {
           )}
 
           <div className="flex flex-col sm:flex-row justify-end gap-3">
+            {userRole === "ADMIN" && (
+              <button
+                type="button"
+                onClick={handleDeleteClick}
+                disabled={deleting}
+                className="rounded-lg border border-red-500/30 bg-surface px-6 py-2.5 text-sm font-medium text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-colors mr-auto"
+              >
+                {deleting ? "Deleting..." : "Delete SKU"}
+              </button>
+            )}
             <button
               type="button"
               onClick={() => router.push("/dashboards/catalog")}
@@ -407,6 +472,17 @@ export default function CatalogSkuEditPage() {
             </button>
           </div>
         </form>
+      )}
+      {showDeleteModal && (
+        <DeleteSkuModal
+          sku={{ id: skuId, category, brand, model }}
+          warning={deleteTarget?.warning}
+          syncedSystems={deleteTarget?.syncedSystems}
+          pendingCount={deleteTarget?.pendingCount}
+          onConfirm={handleForceDelete}
+          onCancel={() => setShowDeleteModal(false)}
+          deleting={deleting}
+        />
       )}
     </DashboardShell>
   );
