@@ -332,6 +332,15 @@ Both are `MONITORING` category. Model numbers differ:
 - Gateway-3: `1841000-X1-Y`
 - Backup Switch: `1624171-XX-Y`
 
+**Active extraction rule:** A job will have one or the other, never both. Scan PV-2 BOM for a `BACKUP SWITCH` / `TBS` row, or scan PV-4 SLD for `(N) BACKUP SWITCH` callout. If found, output:
+
+```json
+{ "category": "MONITORING", "brand": "Tesla", "model": "1624171-00-J",
+  "description": "TESLA BACKUP SWITCH", "qty": 1, "source": "PV-4" }
+```
+
+If a Gateway-3 row is present instead, output the Gateway-3 entry (see category mapping). Do not include both.
+
 ---
 
 ## Sub Panel
@@ -421,6 +430,28 @@ These items are ordered on every **solar (PV module) job** (or triggered by a sp
 
 ### Always Add (Solar Jobs Only)
 
+#### Snow Dogs (Snow Guards)
+
+Every PB solar job gets Alpine Snow Dogs. Always output:
+
+```json
+{ "category": "RACKING", "brand": "", "model": "SNOW DOG-BLK",
+  "description": "ALPINE SNOW DOG", "qty": 10, "unitLabel": "pcs", "source": "OPS_STANDARD" }
+```
+
+**Rule:** Always add 10× snow dogs to every solar job. Qty is fixed at 10 regardless of array size. Skip for battery-only or EV-only jobs.
+
+#### Strain Relief 3/4" 5-Hole
+
+Every solar job gets strain reliefs for J-box conduit entries. Always output:
+
+```json
+{ "category": "ELECTRICAL_BOS", "brand": "", "model": "M3317GBZ-SM",
+  "description": "STRAIN RELIEF 3/4\" 5 HOLE", "qty": 5, "source": "OPS_STANDARD" }
+```
+
+**Rule:** Always add 5× strain reliefs to every solar job. Fixed qty. Skip for battery-only or EV-only jobs.
+
 #### Critter Guard — Two Products
 
 Every solar job gets critter guard bird proofing. Always output **two separate BOM items**:
@@ -459,6 +490,19 @@ When the job has a **XCEL ENERGY PV PRODUCTION METER** (or any production meter 
 ```
 
 **Rule:** Whenever you output a production meter BOM item (e.g., `U4801XL5T9`), also output the two meter accessories above. They ship with every meter install.
+
+---
+
+### Triggered by HUG Attachments (Asphalt Shingle Jobs)
+
+When the job uses IronRidge HUG attachments (XR10 rail, asphalt shingle roof), always add T-bolt bonding hardware. Qty = same as ATTACHMENT qty from PV-2 BOM:
+
+```json
+{ "category": "RACKING", "brand": "IronRidge", "model": "BHW-TB-03-A1",
+  "description": "IRONRIDGE T-BOLT BONDING HARDWARE", "qty": [HUG attachment qty], "source": "OPS_STANDARD" }
+```
+
+**Rule:** If the PV-2 BOM ATTACHMENT row uses HUG (not S-5! ProteaBracket), add T-bolts with qty equal to the ATTACHMENT qty. Do NOT add for metal roof (S-5!) jobs.
 
 ---
 

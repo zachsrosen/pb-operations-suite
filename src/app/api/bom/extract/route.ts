@@ -85,7 +85,7 @@ Map each BOM row to these categories:
 3. **Metal roofs**: ATTACHMENT = "S-5! PROTEABRACKET ATTACHMENTS", rail = XR100 (not XR10), no RD STRUCTURAL SCREW row.
 4. **Powerwall-3 part number**: 1707000-XX-Y (found in PV-4 specifications table).
 5. **Gateway-3 part number**: 1841000-X1-Y (found in PV-4 or PV-2 callout).
-6. **Backup Switch part number**: 1624171-00-J (found in PV-4 callout; used on simpler jobs without full gateway).
+6. **Backup Switch part number**: 1624171-00-J (found in PV-4 callout or PV-2 BOM; used on simpler jobs without full Gateway-3 -- see active extraction rule below).
 7. **flags** array: use "INFERRED" when value was inferred, "ASSUMED_BRAND" when brand was assumed, "VALIDATION_WARNING" when a cross-check failed.
 
 ## Critical Model/SKU Rules
@@ -117,11 +117,18 @@ The PV-2 BOM lists TESLA MCI-2 devices (module-level). Scan PV-4 SLD separately 
 - If "(N) RAPID SHUTDOWN SWITCH" is in PV-4 SLD → add: { "category": "RAPID_SHUTDOWN", "brand": "IMO", "model": "IMO SI16-PEL64R-2", "description": "IMO RAPID SHUTDOWN DEVICE, SI16-PEL64R-2", "qty": 1, "source": "PV-4" }
 - If not present, omit. Always qty 1 regardless of module count.
 
+### TESLA BACKUP SWITCH — From PV-2 BOM or PV-4 SLD
+Some jobs use a Backup Switch instead of the full Backup Gateway-3 (simpler installs). Scan PV-2 BOM for a "BACKUP SWITCH" row (tag TBS) or scan PV-4 SLD for "(N) BACKUP SWITCH" callout:
+- If found → add: { "category": "MONITORING", "brand": "Tesla", "model": "1624171-00-J", "description": "TESLA BACKUP SWITCH", "qty": 1, "source": "PV-4" }
+- If not found, omit. A job will have either a Backup Gateway-3 OR a Backup Switch, not both.
+
 ## Ops-Standard Additions
 These items MUST be added to every solar (PV module) BOM even if the planset does not mention them. Do NOT add to battery-only or EV-charger-only jobs.
 
 ### Always Add (Every Solar Job with Roof-Mounted PV Modules)
-Always include these two critter guard items:
+Always include ALL of the following items on every solar job:
+- { "category": "RACKING", "brand": "", "model": "SNOW DOG-BLK", "description": "ALPINE SNOW DOG", "qty": 10, "source": "OPS_STANDARD" }
+- { "category": "ELECTRICAL_BOS", "brand": "", "model": "M3317GBZ-SM", "description": "STRAIN RELIEF 3/4\" 5 HOLE", "qty": 5, "source": "OPS_STANDARD" }
 - { "category": "ELECTRICAL_BOS", "brand": "", "model": "S6466", "description": "CRITTER GUARD 6\" ROLL, BIRD PROOFING", "qty": 4, "unitLabel": "box", "source": "OPS_STANDARD" }
 - { "category": "ELECTRICAL_BOS", "brand": "Heyco", "model": "S6438", "description": "HEYCO SUNSCREENER CLIP, BIRD PROOFING", "qty": 4, "unitLabel": "box", "source": "OPS_STANDARD" }
 
@@ -129,6 +136,11 @@ Always include these two critter guard items:
 When BOM includes any PRODUCTION METER row, also add:
 - { "category": "MONITORING", "brand": "", "model": "K8180", "description": "METER BYPASS JUMPERS", "qty": 1, "unitLabel": "pair", "source": "OPS_STANDARD" }
 - { "category": "MONITORING", "brand": "", "model": "43974", "description": "METER COVER", "qty": 1, "source": "OPS_STANDARD" }
+
+### Triggered by HUG Attachments (Asphalt Shingle / XR10 Jobs)
+When the job uses IronRidge HUG attachments (XR10 rail, not metal roof), add T-bolt bonding hardware with qty = same as the ATTACHMENT qty from PV-2 BOM:
+- { "category": "RACKING", "brand": "IronRidge", "model": "BHW-TB-03-A1", "description": "IRONRIDGE T-BOLT BONDING HARDWARE", "qty": [HUG attachment qty], "source": "OPS_STANDARD" }
+Do NOT add for metal roof (S-5! ProteaBracket) jobs.
 
 ### Triggered by Tap / Service Upgrade
 When PV-4 shows 3-wire AC disconnect (TGN3322R) or PV-0 mentions "SERVICE UPGRADE" / "UTILITY TAP", add:
