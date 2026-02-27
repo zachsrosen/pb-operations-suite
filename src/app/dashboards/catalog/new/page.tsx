@@ -191,16 +191,17 @@ function NewProductForm() {
           <h2 className={sectionTitleClasses}>Product Identity</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className={labelClasses}>Brand</label>
+              <label className={labelClasses}>Brand <span className="text-red-400">*</span></label>
               <BrandDropdown value={brand} onChange={setBrand} />
             </div>
             <div>
-              <label className={labelClasses}>Model / Part #</label>
+              <label className={labelClasses}>Model / Part # <span className="text-red-400">*</span></label>
               <input
                 type="text"
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
                 placeholder="e.g. REC-400AA"
+                required
                 className={inputClasses}
               />
             </div>
@@ -236,12 +237,13 @@ function NewProductForm() {
             </div>
           </div>
           <div className="mt-4">
-            <label className={labelClasses}>Description</label>
+            <label className={labelClasses}>Description <span className="text-red-400">*</span></label>
             <textarea
               rows={3}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Product description..."
+              required
               className={inputClasses}
             />
           </div>
@@ -423,7 +425,7 @@ function NewProductForm() {
           </button>
           <button
             type="submit"
-            disabled={submitting || !brand || !category}
+            disabled={submitting || !brand || !model || !description || !category}
             className="rounded-lg bg-cyan-600 px-6 py-2.5 text-sm font-medium text-white hover:bg-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors w-full sm:w-auto"
           >
             {submitting ? "Submitting..." : "Submit for Approval"}

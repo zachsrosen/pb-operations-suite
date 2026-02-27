@@ -27,34 +27,48 @@ export async function POST(
     return NextResponse.json({ error: `Already ${push.status.toLowerCase()}` }, { status: 409 });
   }
 
-  const results: Record<string, string | null> = {
-    internalSkuId: null,
-    zohoItemId: null,
-    hubspotProductId: null,
-    zuperItemId: null,
-  };
+  // External system stubs — fire-and-forget logging for now.
+  // When wired, these should return IDs that get stored in results.
+  if (push.systems.includes("ZOHO")) {
+    console.log("[catalog/approve] ZOHO push not yet implemented for:", push.model);
+  }
+  if (push.systems.includes("HUBSPOT")) {
+    console.log("[catalog/approve] HUBSPOT push not yet implemented for:", push.model);
+  }
+  if (push.systems.includes("ZUPER")) {
+    console.log("[catalog/approve] ZUPER push not yet implemented for:", push.model);
+  }
 
-  // INTERNAL catalog
-  if (push.systems.includes("INTERNAL") && INTERNAL_CATEGORIES.includes(push.category)) {
-    const parsedUnitSpec = push.unitSpec ? parseFloat(push.unitSpec) : null;
-    const unitSpecValue = parsedUnitSpec != null && !isNaN(parsedUnitSpec) ? parsedUnitSpec : null;
-
-    const commonFields = {
-      description: push.description || null,
-      unitSpec: unitSpecValue,
-      unitLabel: push.unitLabel || null,
-      sku: push.sku || null,
-      vendorName: push.vendorName || null,
-      vendorPartNumber: push.vendorPartNumber || null,
-      unitCost: push.unitCost,
-      sellPrice: push.sellPrice,
-      hardToProcure: push.hardToProcure,
-      length: push.length,
-      width: push.width,
-      weight: push.weight,
+  // Single transaction: internal catalog writes + status update are atomic.
+  // If any step fails, neither the SKU nor the status change persists.
+  const updated = await prisma.$transaction(async (tx) => {
+    const results: Record<string, string | null> = {
+      internalSkuId: null,
+      zohoItemId: null,
+      hubspotProductId: null,
+      zuperItemId: null,
     };
 
-    const skuRecord = await prisma.$transaction(async (tx) => {
+    // INTERNAL catalog
+    if (push.systems.includes("INTERNAL") && INTERNAL_CATEGORIES.includes(push.category)) {
+      const parsedUnitSpec = push.unitSpec ? parseFloat(push.unitSpec) : null;
+      const unitSpecValue = parsedUnitSpec != null && !isNaN(parsedUnitSpec) ? parsedUnitSpec : null;
+
+      const commonFields = {
+        description: push.description || null,
+        unitSpec: unitSpecValue,
+        unitLabel: push.unitLabel || null,
+        sku: push.sku || null,
+        vendorName: push.vendorName || null,
+        vendorPartNumber: push.vendorPartNumber || null,
+        unitCost: push.unitCost,
+        sellPrice: push.sellPrice,
+        hardToProcure: push.hardToProcure,
+        length: push.length,
+        width: push.width,
+        weight: push.weight,
+      };
+
       // 1. Upsert EquipmentSku with all common fields
       const sku = await tx.equipmentSku.upsert({
         where: {
@@ -78,7 +92,6 @@ export async function POST(
       if (metadata && Object.keys(metadata).length > 0) {
         const specTable = getSpecTableName(push.category);
         if (specTable) {
-          // Dynamic upsert for the correct spec table
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const prismaModel = (tx as any)[specTable];
           if (prismaModel?.upsert) {
@@ -91,37 +104,18 @@ export async function POST(
         }
       }
 
-      return sku;
+      results.internalSkuId = sku.id;
+    }
+
+    // 3. Mark request approved (same transaction — atomic with writes above)
+    return tx.pendingCatalogPush.update({
+      where: { id },
+      data: {
+        status: "APPROVED",
+        resolvedAt: new Date(),
+        ...results,
+      },
     });
-
-    results.internalSkuId = skuRecord.id;
-  }
-
-  // ZOHO — TODO: implement when Zoho item-create API is wired
-  if (push.systems.includes("ZOHO")) {
-    // TODO: call zoho-inventory create item API
-    console.log("[catalog/approve] ZOHO push not yet implemented for:", push.model);
-  }
-
-  // HUBSPOT — TODO: implement when HubSpot product API is wired
-  if (push.systems.includes("HUBSPOT")) {
-    // TODO: call HubSpot Products API
-    console.log("[catalog/approve] HUBSPOT push not yet implemented for:", push.model);
-  }
-
-  // ZUPER — TODO: implement when Zuper parts API is wired
-  if (push.systems.includes("ZUPER")) {
-    // TODO: call Zuper parts/items API
-    console.log("[catalog/approve] ZUPER push not yet implemented for:", push.model);
-  }
-
-  const updated = await prisma.pendingCatalogPush.update({
-    where: { id },
-    data: {
-      status: "APPROVED",
-      resolvedAt: new Date(),
-      ...results,
-    },
   });
 
   return NextResponse.json({ push: updated });
