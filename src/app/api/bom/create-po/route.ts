@@ -223,12 +223,14 @@ export async function POST(request: NextRequest) {
       continue;
     }
 
-    matchedItems.push({ bomName: name, zohoName: match.zohoName });
-    // Quantity: parse carefully — `|| 1` would silently over-order on invalid values.
-    // Use 1 as minimum only when the parsed value is truly 0/NaN after rounding.
     const parsedQty = Math.round(Number(item.qty));
-    const quantity = Number.isFinite(parsedQty) && parsedQty > 0 ? parsedQty : 1;
-    resolvedItems.push({ item_id: match.item_id, name, quantity, description: item.description });
+    // Skip zero-qty items — do NOT default to 1 (would create line items for items not needed).
+    if (!Number.isFinite(parsedQty) || parsedQty <= 0) {
+      resolvedItems.push(null);
+      continue;
+    }
+    matchedItems.push({ bomName: name, zohoName: match.zohoName });
+    resolvedItems.push({ item_id: match.item_id, name, quantity: parsedQty, description: item.description });
   }
 
   const lineItems = resolvedItems.filter((item): item is NonNullable<typeof item> => item !== null);

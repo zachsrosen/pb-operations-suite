@@ -85,7 +85,7 @@ Map each BOM row to these categories:
 3. **Metal roofs**: ATTACHMENT = "S-5! PROTEABRACKET ATTACHMENTS", rail = XR100 (not XR10), no RD STRUCTURAL SCREW row.
 4. **Powerwall-3 part number**: 1707000-XX-Y (found in PV-4 specifications table).
 5. **Gateway-3 part number**: 1841000-X1-Y (found in PV-4 or PV-2 callout).
-6. **Backup Switch part number**: 1624171-00-J (found in PV-4 callout or PV-2 BOM; used on simpler jobs without full Gateway-3 -- see active extraction rule below).
+6. **Backup Switch part number**: 1624171-00-x (found in PV-4 callout or PV-2 BOM; used on simpler jobs without full Gateway-3 — see active extraction rule below).
 7. **flags** array: use "INFERRED" when value was inferred, "ASSUMED_BRAND" when brand was assumed, "VALIDATION_WARNING" when a cross-check failed.
 
 ## Critical Model/SKU Rules
@@ -132,18 +132,26 @@ Some battery-only jobs (no PV modules) include a Tesla Remote Meter for monitori
 - If not found, omit both.
 
 ### ENPHASE MICRO-INVERTER JOBS — Additional Items
-When the job uses Enphase micro-inverters (IQ8 series), scan PV-4 conductor schedule for Q-Cable and the AC circuit breaker rating:
+When the job uses Enphase micro-inverters (IQ8 series), extract the following items:
 - **Q-Cable**: If the conductor schedule lists Q-CABLE or a 12 AWG DC cable with free air routing → add: { "category": "ELECTRICAL_BOS", "brand": "Enphase", "model": "Q-12-RAW-300", "description": "Q-CABLE, 12 AWG, 3 CONDUCTORS, FREE AIR", "qty": 1, "source": "PV-4" }
 - **PV Circuit Breaker**: Enphase jobs typically use a 40A 2-pole breaker (not 60A). If PV-4 shows a 40A breaker → add: { "category": "ELECTRICAL_BOS", "brand": "GE", "model": "THQL2140", "description": "40A 2-POLE PV BREAKER", "qty": 1, "source": "PV-4" }
+- **Portrait Q-Cable Adapter**: If planset or conductor schedule references Q-12-10-240, portrait cable, or portrait module orientation → add: { "category": "ELECTRICAL_BOS", "brand": "Enphase", "model": "Q-12-10-240", "description": "ENPHASE Q-CABLE PORTRAIT ADAPTER", "qty": 1, "source": "PV-4" }
+- **Q-Cable Sealing Plugs**: Always add on Enphase jobs → { "category": "ELECTRICAL_BOS", "brand": "Enphase", "model": "Q-SEAL-10", "description": "ENPHASE Q-SEAL SEALING PLUGS", "qty": 1, "source": "OPS_STANDARD" }
+- **Q-Cable Termination Caps**: Always add on Enphase jobs → { "category": "ELECTRICAL_BOS", "brand": "Enphase", "model": "Q-TERM-10", "description": "ENPHASE Q-TERM TERMINATION CAPS", "qty": 1, "source": "OPS_STANDARD" }
+- **Microinverter Mounting Clip**: Add 1 clip per IQ8 microinverter (qty = IQ8 count from PV-2 BOM) → { "category": "RACKING", "brand": "Enphase", "model": "BHW-MI-01-A1", "description": "ENPHASE MICROINVERTER MOUNTING CLIP", "qty": [IQ8 qty], "source": "OPS_STANDARD" }
 
 ### CONDUCTOR SCHEDULE — Wire Model Naming
-When extracting wire rows from the PV-4 conductor schedule, always use standardized model names:
+**CRITICAL**: Every wire item MUST include the gauge in the model field. Never output a wire type alone without its AWG rating. The Zoho inventory lookup depends on exact gauge matching — a bare "THWN-2" without gauge will match the wrong inventory item.
+
+Always use standardized model names:
 - 10 AWG THHN or THWN-2 → model: "10 AWG THHN/THWN-2"
 - 6 AWG THWN-2 → model: "6 AWG THWN-2"
 - 8 AWG THWN-2 → model: "8 AWG THWN-2"
 - 3/0 AWG THWN-2 → model: "3/0 AWG THWN-2"
 - 10 AWG PV Wire (free air, DC at array) → model: "10 AWG PV-WIRE"
-Never output internal codes like "THHN-10AWG", "THWN2-6AWG", or "PV-Wire10". Always use the format "{gauge} {wire type}".
+
+Never output internal codes like "THHN-10AWG", "THWN2-6AWG", "THWN-2" (no gauge), or "PV-Wire10". Always use the format "{gauge} {wire type}".
+Example WRONG: "model": "THWN-2" — Example CORRECT: "model": "10 AWG THHN/THWN-2"
 
 ## Ops-Standard Additions
 These items MUST be added to solar jobs with roof-mounted PV modules. Do NOT add to battery-only or storage-only jobs (no PV modules).

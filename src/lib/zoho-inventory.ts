@@ -187,16 +187,20 @@ const BOM_QUERY_OVERRIDES: ReadonlyArray<{ pattern: RegExp; sku: string }> = [
   // 125A sub panel
   { pattern: /\b125a?\s+sub\s*panel\b/i,                 sku: "PAL2412" },
 
-  // IronRidge XR100 Bonded Splice — must come before the XR100 rail pattern below
-  { pattern: /\bxr100\s*(?:bonded\s*)?splice\b|\bxr-?100.*splice\b/i, sku: "XR100-BOSS-01-M1" },
+  // IronRidge XR100 Bonded Splice — must come before the XR100 rail pattern below.
+  // Matches both keyword-style ("XR100 BONDED SPLICE") AND direct model string ("XR100-BOSS-01-M1").
+  // Without the -boss pattern, the model string would fall through to the XR100 rail override below.
+  { pattern: /\bxr100\s*(?:bonded\s*)?splice\b|\bxr-?100.*splice\b|\bxr100-boss\b/i, sku: "XR100-BOSS-01-M1" },
 
   // IronRidge XR100 168" rail (metal/trapezoidal roof) — must come before XR10 pattern
   { pattern: /\bxr100\b|\bxr-100\b/i,                    sku: "XR-100-168A" },
 
-  // IronRidge XR10 Bonded Splice — must come before the XR10 rail pattern below
-  { pattern: /\bxr10\s*(?:bonded\s*)?splice\b|\bxr-?10.*splice\b/i,  sku: "XR10-BOSS-01-M1" },
+  // IronRidge XR10 Bonded Splice — must come before the XR10 rail pattern below.
+  // Matches both keyword-style ("XR10 BONDED SPLICE") AND direct model string ("XR10-BOSS-01-M1").
+  // Without the -boss pattern, "XR10" in the model string would match the rail override below.
+  { pattern: /\bxr10\s*(?:bonded\s*)?splice\b|\bxr-?10.*splice\b|\bxr10-boss\b/i, sku: "XR10-BOSS-01-M1" },
 
-  // IronRidge XR10 168" rail — any remaining XR10 query (no "splice" keyword) → rail
+  // IronRidge XR10 168" rail — any remaining XR10 query (no "splice"/"boss" keyword) → rail
   { pattern: /\bxr10\b|\bxr-10\b/i,                      sku: "XR-10-168M" },
 
   // IronRidge HUG attachment (Halo UltraGrip) — the word "hug" appears in the
@@ -256,11 +260,27 @@ const BOM_QUERY_OVERRIDES: ReadonlyArray<{ pattern: RegExp; sku: string }> = [
   { pattern: /\b1875157-05\b|0\.5\s*m.*expansion.*harness|expansion.*harness.*0\.5/i, sku: "1875157-05-y" },
   { pattern: /\b1875157\b/i,                              sku: "1875157-20-y" },
 
-  // Enphase Q-Cable — DC wiring harness used on Enphase micro-inverter jobs
+  // Enphase Q-Cable (300ft roll) — used on Enphase micro-inverter jobs
   { pattern: /\bq.?cable\b|\bQ-12-RAW\b/i,              sku: "Q-12-RAW-300" },
 
-  // 10 AWG THHN/THWN-2 wire — prefer the priced Zoho item (68731) over unpriced alternatives
-  { pattern: /\b10\s*awg\s*thh?n|\bthh?n.*10\s*awg\b/i, sku: "68731" },
+  // Enphase Q-Cable Portrait Adapter (Q-12-10-240) — needed when modules in portrait orientation
+  { pattern: /\bq-12-10-240\b|\bq.*portrait.*cable|portrait.*q.*cable/i, sku: "Q-12-10-240" },
+
+  // Enphase Q-SEAL-10 — waterproof sealing plugs for unused Q-Cable ports
+  { pattern: /\bq-?seal\b|\bq-?seal-?10\b/i,           sku: "Q-SEAL-10" },
+
+  // Enphase Q-TERM-10 — termination caps for Q-Cable branch circuit ends
+  { pattern: /\bq-?term\b|\bq-?term-?10\b/i,           sku: "Q-TERM-10" },
+
+  // Enphase BHW-MI-01-A1 microinverter mounting clip (also sold as 1275054)
+  { pattern: /\bbhw-mi\b|\b1275054\b|\bmicro.*inverter.*clip|inverter.*mounting.*clip/i, sku: "BHW-MI-01-A1" },
+
+  // 10 AWG THHN/THWN-2 wire — prefer the priced Zoho item (68731) over unpriced alternatives.
+  // Matches: "10 AWG THHN", "10 AWG THWN-2", "THHN 10 AWG", "THWN-2 10 AWG",
+  //          "10 AWG THHN/THWN-2" (standardized model field from extraction prompt).
+  // Also catches bare "THWN-2" or "THHN" without gauge only when qty context implies 10 AWG
+  // (model alone → override fires → if not in catalog → null, try description fallback).
+  { pattern: /\b10\s*awg\b.*\bthh?n|\bthh?n.*\b10\s*awg\b|\b10\s*awg\b.*\bthwn|\bthwn.*\b10\s*awg\b/i, sku: "68731" },
 
   // ── Ops-Standard Additions ─────────────────────────────────────────────────
   // Items always ordered regardless of planset content (critter guard, solobox,
@@ -277,11 +297,11 @@ const BOM_QUERY_OVERRIDES: ReadonlyArray<{ pattern: RegExp; sku: string }> = [
   // (planset may show a different J-box; always substitute SBOXCOMP-D)
   { pattern: /\bsolobox\b|\bsboxcomp/i,                     sku: "SBOXCOMP-D" },
 
-  // Meter Bypass Jumpers — ordered with every production meter install (1 pair)
-  { pattern: /\bmeter\s+bypass\s+jumper|\bk8180\b|\b44341\b/i, sku: "K8180" },
+  // Meter Bypass Jumpers — ordered with every production meter install (1 pair).
+  // No hard SKU override: the Zoho catalog SKU may not be "K8180"; rely on fuzzy name matching.
+  // (If override returned null before, item was silently dropped — fuzzy match is strictly better.)
 
-  // Meter Cover — ordered with every production meter install (1 pcs)
-  { pattern: /\bmeter\s+cover\b|\b43974\b|\b6003\b/i,       sku: "43974" },
+  // Meter Cover — same reasoning: no hard SKU override, rely on fuzzy name matching.
 
   // Insulation Piercing Connector — required when job has a tap / service upgrade
   { pattern: /\binsulation\s+pierc|\bbipc4\b|\b010s\b/i,    sku: "BIPC4/010S" },
