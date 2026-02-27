@@ -7,12 +7,14 @@ import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 import { ConstructionProjectDetailPanel } from "@/components/scheduler/ConstructionProjectDetailPanel";
+import { ConstructionMonthView } from "@/components/scheduler/construction/ConstructionMonthView";
+import { ConstructionWeekView } from "@/components/scheduler/construction/ConstructionWeekView";
+import { ConstructionGanttView } from "@/components/scheduler/construction/ConstructionGanttView";
 import { LOCATION_TIMEZONES } from "@/lib/constants";
 import { DEFAULT_LOCATION_CAPACITY } from "@/lib/schedule-optimizer";
 import {
   getBusinessDatesInSpan,
   getConstructionSpanDaysFromZuper,
-  isWeekendDateYmd,
   normalizeZuperBoundaryDates,
 } from "@/lib/scheduling-utils";
 
@@ -186,10 +188,6 @@ function normalizeLocation(location?: string | null): string {
   return value;
 }
 
-function isWeekend(dateStr: string): boolean {
-  return isWeekendDateYmd(dateStr);
-}
-
 function dedupeAssignees(assignees: ZuperAssignee[]): ZuperAssignee[] {
   const seen = new Set<string>();
   return assignees.filter((assignee) => {
@@ -236,16 +234,6 @@ function getWeekStartDateYmd(dateStr: string): string {
   const mondayBasedDow = (d.getDay() + 6) % 7;
   d.setDate(d.getDate() - mondayBasedDow);
   return toDateStr(d);
-}
-
-function getNextWeekdays(dateStr: string, count: number): string[] {
-  const days: string[] = [];
-  let cursor = dateStr;
-  while (days.length < count) {
-    if (!isWeekend(cursor)) days.push(cursor);
-    cursor = addCalendarDaysYmd(cursor, 1);
-  }
-  return days;
 }
 
 function isPastDate(dateStr: string): boolean {
@@ -779,103 +767,6 @@ export default function ConstructionSchedulerPage() {
   }, [scheduleModal, buildExistingBookings]);
 
   const locationHasCapacity = capacityConflictDates.length === 0;
-
-  /* ================================================================ */
-  /*  Calendar data                                                    */
-  /* ================================================================ */
-
-  const calendarDays = useMemo(() => {
-    const firstDay = new Date(currentYear, currentMonth, 1);
-    const lastDay = new Date(currentYear, currentMonth + 1, 0);
-    const days: string[] = [];
-
-    let startDow = firstDay.getDay();
-    startDow = startDow === 0 ? 6 : startDow - 1;
-
-    for (let i = startDow - 1; i >= 0; i--) {
-      const d = new Date(currentYear, currentMonth, -i);
-      days.push(toDateStr(d));
-    }
-
-    for (let i = 1; i <= lastDay.getDate(); i++) {
-      days.push(`${currentYear}-${String(currentMonth + 1).padStart(2, "0")}-${String(i).padStart(2, "0")}`);
-    }
-
-    while (days.length % 7 !== 0) {
-      const lastDate = new Date(days[days.length - 1] + "T12:00:00");
-      lastDate.setDate(lastDate.getDate() + 1);
-      days.push(toDateStr(lastDate));
-    }
-
-    return days;
-  }, [currentYear, currentMonth]);
-
-  const weekDays = useMemo(() => {
-    return Array.from({ length: 7 }, (_, idx) => addCalendarDaysYmd(weekStartDate, idx));
-  }, [weekStartDate]);
-
-  const eventsForDate = useCallback((dateStr: string): (ConstructionProject & { dayNum: number; totalDays: number })[] => {
-    const results: (ConstructionProject & { dayNum: number; totalDays: number })[] = [];
-    filteredProjects.forEach(p => {
-      const schedDate = manualSchedules[p.id] || getEffectiveInstallStartDate(p);
-      if (!schedDate) return;
-      const businessDays = getEffectiveInstallDays(p);
-      const startDate = new Date(schedDate + "T12:00:00");
-      let bDayCount = 0;
-      let calOffset = 0;
-      while (bDayCount < businessDays) {
-        const checkDate = new Date(startDate);
-        checkDate.setDate(checkDate.getDate() + calOffset);
-        const dow = checkDate.getDay();
-        if (dow !== 0 && dow !== 6) {
-          if (toDateStr(checkDate) === dateStr) {
-            results.push({ ...p, dayNum: bDayCount + 1, totalDays: businessDays });
-            return;
-          }
-          bDayCount++;
-        }
-        calOffset++;
-      }
-    });
-    return results;
-  }, [filteredProjects, manualSchedules]);
-
-  const ganttDays = useMemo(() => {
-    return getNextWeekdays(ganttStartDate, 20);
-  }, [ganttStartDate]);
-
-  const ganttRows = useMemo(() => {
-    return filteredProjects
-      .map((project) => {
-        const startDate = manualSchedules[project.id] || getEffectiveInstallStartDate(project);
-        if (!startDate) return null;
-        const span = getBusinessDatesInSpan(startDate, getEffectiveInstallDays(project));
-        const endDate = span[span.length - 1] || startDate;
-        const startIndex = ganttDays.indexOf(startDate);
-        const endIndex = ganttDays.indexOf(endDate);
-        const visibleStart = startIndex >= 0 ? startIndex : ganttDays.findIndex((d) => d > startDate);
-        const visibleEnd = endIndex >= 0 ? endIndex : (() => {
-          const idx = ganttDays.findIndex((d) => d > endDate);
-          return idx === -1 ? ganttDays.length - 1 : idx - 1;
-        })();
-        if (visibleStart === -1 || visibleStart >= ganttDays.length || visibleEnd < 0) return null;
-        return {
-          project,
-          startDate,
-          endDate,
-          visibleStart,
-          visibleEnd,
-        };
-      })
-      .filter((row): row is {
-        project: ConstructionProject;
-        startDate: string;
-        endDate: string;
-        visibleStart: number;
-        visibleEnd: number;
-      } => !!row)
-      .sort((a, b) => a.startDate.localeCompare(b.startDate));
-  }, [filteredProjects, manualSchedules, ganttDays]);
 
   /* ================================================================ */
   /*  Scheduling actions                                               */
@@ -1673,357 +1564,94 @@ export default function ConstructionSchedulerPage() {
           {/* Main Area - Calendar or List */}
           <div className="flex-1">
             {currentView === "calendar" ? (
-              <div className="bg-surface border border-t-border rounded-xl overflow-hidden">
-                {/* Calendar Header */}
-                <div className="p-3 border-b border-t-border flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <button onClick={goToPrevMonth} className="p-1.5 hover:bg-surface-2 rounded">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                      </svg>
-                    </button>
-                    <span className="text-lg font-semibold min-w-[180px] text-center">
-                      {MONTH_NAMES[currentMonth]} {currentYear}
-                    </span>
-                    <button onClick={goToNextMonth} className="p-1.5 hover:bg-surface-2 rounded">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
-                    </button>
-                  </div>
-                  <button onClick={goToToday} className="px-3 py-1 text-xs bg-surface-2 hover:bg-surface-2 rounded">
-                    Today
-                  </button>
-                  {/* Availability Legend */}
-                  {showAvailability && zuperConfigured && (
-                    <div className="flex items-center gap-3 text-xs text-muted">
-                      <div className="flex items-center gap-1">
-                        <div className="w-2 h-2 bg-emerald-500 rounded-full" />
-                        <span>Available</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <div className="w-2 h-2 bg-yellow-500/60 rounded-full" />
-                        <span>Limited</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <div className="w-2 h-2 bg-red-500/60 rounded-full" />
-                        <span>Booked</span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Day Headers */}
-                <div className="grid grid-cols-7 border-b border-t-border">
-                  {DAY_NAMES.map((day) => (
-                    <div key={day} className="p-2 text-center text-xs font-medium text-muted">
-                      {day}
-                    </div>
-                  ))}
-                </div>
-
-                {/* Calendar Grid */}
-                <div className="grid grid-cols-7">
-                  {calendarDays.map((dateStr) => {
-                    const [year, month] = dateStr.split("-").map(Number);
-                    const isCurrentMonth = month - 1 === currentMonth && year === currentYear;
-                    const isToday = dateStr === todayStr;
-                    const weekend = isWeekend(dateStr);
-                    const events = eventsForDate(dateStr);
-                    const dayAvailability = availabilityByDate[dateStr];
-                    const hasAvailability = dayAvailability?.hasAvailability && !dayAvailability?.isFullyBooked;
-                    const isFullyBooked = dayAvailability?.isFullyBooked;
-                    const slotCount = dayAvailability?.availableSlots?.length || 0;
-
-                    return (
-                      <div
-                        key={dateStr}
-                        onDragOver={handleDragOver}
-                        onDrop={() => handleDrop(dateStr)}
-                        onClick={() => handleDateClick(dateStr)}
-                        className={`min-h-[110px] max-h-[180px] overflow-y-auto p-1.5 border-b border-r border-t-border cursor-pointer transition-colors ${
-                          isCurrentMonth ? "" : "opacity-40"
-                        } ${weekend ? "bg-surface/30" : ""} ${
-                          isToday ? "bg-emerald-900/20" : ""
-                        } ${selectedProject ? "hover:bg-emerald-900/10" : "hover:bg-skeleton"} ${
-                          showAvailability && hasAvailability && selectedProject
-                            ? "ring-2 ring-inset ring-emerald-500/30 bg-emerald-900/10"
-                            : ""
-                        } ${
-                          showAvailability && isFullyBooked && selectedProject && !weekend
-                            ? "ring-2 ring-inset ring-red-500/20 bg-red-900/5"
-                            : ""
-                        }`}
-                      >
-                        <div className="flex items-center justify-between mb-1">
-                          <span className={`text-xs font-medium ${
-                            isToday ? "text-emerald-400" : "text-muted"
-                          }`}>
-                            {parseInt(dateStr.split("-")[2])}
-                          </span>
-                          {/* Availability indicator */}
-                          {showAvailability && zuperConfigured && isCurrentMonth && !weekend && (
-                            <div className="flex items-center gap-0.5">
-                              {loadingSlots ? (
-                                <div className="w-2 h-2 bg-zinc-600 rounded-full animate-pulse" />
-                              ) : hasAvailability ? (
-                                <div className="flex items-center gap-0.5" title={`${slotCount} slot${slotCount !== 1 ? "s" : ""} available`}>
-                                  <div className="w-2 h-2 bg-emerald-500 rounded-full" />
-                                  {slotCount > 1 && (
-                                    <span className="text-[0.55rem] text-emerald-400">{slotCount}</span>
-                                  )}
-                                </div>
-                              ) : isFullyBooked ? (
-                                <div className="w-2 h-2 bg-red-500/60 rounded-full" title="Fully booked" />
-                              ) : dayAvailability ? (
-                                <div className="w-2 h-2 bg-yellow-500/60 rounded-full" title="Limited availability" />
-                              ) : null}
-                            </div>
-                          )}
-                        </div>
-                        <div className="space-y-1">
-                          {events.map((ev) => {
-                            const overdue = isInstallOverdue(ev, manualSchedules[ev.id]);
-                            const isTentative = !!tentativeRecordIds[ev.id] || ev.installStatus.toLowerCase().includes("tentative");
-                            return (
-                            <div
-                              key={`${ev.id}-d${ev.dayNum}`}
-                              draggable
-                              onDragStart={(e) => {
-                                e.stopPropagation();
-                                handleDragStart(ev.id);
-                              }}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setScheduleModal({ project: ev, date: manualSchedules[ev.id] || getEffectiveInstallStartDate(ev) || dateStr });
-                              }}
-                              className={`text-xs p-1 rounded truncate cursor-grab active:cursor-grabbing ${
-                                overdue
-                                  ? "bg-red-500/20 border border-red-500/40 text-red-300 hover:bg-red-500/30"
-                                  : isTentative
-                                    ? "bg-amber-500/20 border border-amber-500/40 text-amber-300 hover:bg-amber-500/30"
-                                    : "bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/30"
-                              }`}
-                              title={overdue ? "⚠ OVERDUE - Install not completed. Drag to reschedule" : `${getCustomerName(ev.name)} - Day ${ev.dayNum}/${ev.totalDays}. Drag to reschedule`}
-                            >
-                              {overdue && <span className="text-red-400 mr-0.5">⚠</span>}
-                              {!overdue && isTentative && <span className="text-amber-300 mr-0.5">TENT</span>}
-                              {ev.totalDays > 1 && <span className="font-semibold mr-0.5">D{ev.dayNum}</span>}
-                              {getCustomerName(ev.name)}
-                            </div>
-                            );
-                          })}
-                                                    {showAvailability && selectedProject && hasAvailability && (() => {
-                            const projectLocation = selectedProject?.location;
-                            const matchingSlots = dayAvailability?.availableSlots?.filter(slot => {
-                              if (!projectLocation) return true;
-                              if (!slot.location) return true;
-                              if (slot.location === projectLocation) return true;
-                              // Allow DTC/Centennial interchangeability
-                              if ((slot.location === "DTC" || slot.location === "Centennial") &&
-                                  (projectLocation === "DTC" || projectLocation === "Centennial")) return true;
-                              return false;
-                            }) || [];
-                            return matchingSlots.slice(0, 2).map((slot, i) => (
-                              slot.user_name && (
-                                <div key={i} className="text-[0.55rem] text-emerald-400/70 truncate">
-                                  {slot.user_name} {slot.display_time && <span className="text-emerald-500/50">{slot.display_time}</span>}
-                                </div>
-                              )
-                            ));
-                          })()}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
+              <ConstructionMonthView
+                currentYear={currentYear}
+                currentMonth={currentMonth}
+                monthNames={MONTH_NAMES}
+                dayNames={DAY_NAMES}
+                todayStr={todayStr}
+                projects={filteredProjects}
+                manualSchedules={manualSchedules}
+                tentativeRecordIds={tentativeRecordIds}
+                selectedProject={selectedProject}
+                availabilityByDate={availabilityByDate}
+                showAvailability={showAvailability}
+                zuperConfigured={zuperConfigured}
+                loadingSlots={loadingSlots}
+                getEffectiveInstallStartDate={getEffectiveInstallStartDate}
+                getEffectiveInstallDays={getEffectiveInstallDays}
+                isInstallOverdue={isInstallOverdue}
+                getCustomerName={getCustomerName}
+                onPrev={goToPrevMonth}
+                onNext={goToNextMonth}
+                onToday={goToToday}
+                onDragOver={handleDragOver}
+                onDrop={handleDrop}
+                onDateClick={handleDateClick}
+                onEventDragStart={(projectId, e) => {
+                  e.stopPropagation();
+                  handleDragStart(projectId);
+                }}
+                onEventClick={(project, dateStr, e) => {
+                  e.stopPropagation();
+                  setScheduleModal({
+                    project,
+                    date: manualSchedules[project.id] || getEffectiveInstallStartDate(project) || dateStr,
+                  });
+                }}
+              />
             ) : currentView === "week" ? (
-              <div className="bg-surface border border-t-border rounded-xl overflow-hidden">
-                <div className="p-3 border-b border-t-border flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <button onClick={goToPrevMonth} className="p-1.5 hover:bg-surface-2 rounded">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                      </svg>
-                    </button>
-                    <span className="text-lg font-semibold min-w-[260px] text-center">
-                      Week of {formatShortDate(weekStartDate)} - {formatShortDate(addCalendarDaysYmd(weekStartDate, 6))}
-                    </span>
-                    <button onClick={goToNextMonth} className="p-1.5 hover:bg-surface-2 rounded">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
-                    </button>
-                  </div>
-                  <button onClick={goToToday} className="px-3 py-1 text-xs bg-surface-2 hover:bg-surface-2 rounded">
-                    Today
-                  </button>
-                </div>
-                <div className="grid grid-cols-7 border-b border-t-border">
-                  {weekDays.map((dateStr, idx) => (
-                    <div key={dateStr} className="p-2 text-center border-r border-t-border last:border-r-0">
-                      <div className="text-xs font-medium text-muted">{DAY_NAMES[idx]}</div>
-                      <div className={`text-xs mt-0.5 ${dateStr === todayStr ? "text-emerald-400 font-semibold" : "text-foreground/80"}`}>
-                        {formatShortDate(dateStr)}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <div className="grid grid-cols-7">
-                  {weekDays.map((dateStr) => {
-                    const weekend = isWeekend(dateStr);
-                    const isToday = dateStr === todayStr;
-                    const events = eventsForDate(dateStr);
-                    const dayAvailability = availabilityByDate[dateStr];
-                    const hasAvailability = dayAvailability?.hasAvailability && !dayAvailability?.isFullyBooked;
-                    const isFullyBooked = dayAvailability?.isFullyBooked;
-                    return (
-                      <div
-                        key={dateStr}
-                        onDragOver={handleDragOver}
-                        onDrop={() => handleDrop(dateStr)}
-                        onClick={() => handleDateClick(dateStr)}
-                        className={`min-h-[360px] p-2 border-r border-b border-t-border last:border-r-0 cursor-pointer transition-colors ${
-                          weekend ? "bg-surface/30" : ""
-                        } ${isToday ? "bg-emerald-900/20" : ""} ${
-                          selectedProject ? "hover:bg-emerald-900/10" : "hover:bg-skeleton"
-                        } ${
-                          showAvailability && hasAvailability && selectedProject
-                            ? "ring-2 ring-inset ring-emerald-500/30 bg-emerald-900/10"
-                            : ""
-                        } ${
-                          showAvailability && isFullyBooked && selectedProject && !weekend
-                            ? "ring-2 ring-inset ring-red-500/20 bg-red-900/5"
-                            : ""
-                        }`}
-                      >
-                        <div className="space-y-1">
-                          {events.map((ev) => {
-                            const overdue = isInstallOverdue(ev, manualSchedules[ev.id]);
-                            const isTentative =
-                              !!tentativeRecordIds[ev.id] || ev.installStatus.toLowerCase().includes("tentative");
-                            return (
-                              <div
-                                key={`${ev.id}-w${dateStr}-d${ev.dayNum}`}
-                                draggable
-                                onDragStart={(e) => {
-                                  e.stopPropagation();
-                                  handleDragStart(ev.id);
-                                }}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setScheduleModal({
-                                    project: ev,
-                                    date: manualSchedules[ev.id] || getEffectiveInstallStartDate(ev) || dateStr,
-                                  });
-                                }}
-                                className={`text-xs p-1 rounded truncate cursor-grab active:cursor-grabbing ${
-                                  overdue
-                                    ? "bg-red-500/20 border border-red-500/40 text-red-300 hover:bg-red-500/30"
-                                    : isTentative
-                                      ? "bg-amber-500/20 border border-amber-500/40 text-amber-300 hover:bg-amber-500/30"
-                                      : "bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/30"
-                                }`}
-                              >
-                                {overdue && <span className="text-red-400 mr-0.5">⚠</span>}
-                                {!overdue && isTentative && <span className="text-amber-300 mr-0.5">TENT</span>}
-                                {ev.totalDays > 1 && <span className="font-semibold mr-0.5">D{ev.dayNum}</span>}
-                                {getCustomerName(ev.name)}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
+              <ConstructionWeekView
+                weekStartDate={weekStartDate}
+                dayNames={DAY_NAMES}
+                todayStr={todayStr}
+                projects={filteredProjects}
+                manualSchedules={manualSchedules}
+                tentativeRecordIds={tentativeRecordIds}
+                selectedProject={selectedProject}
+                availabilityByDate={availabilityByDate}
+                showAvailability={showAvailability}
+                getEffectiveInstallStartDate={getEffectiveInstallStartDate}
+                getEffectiveInstallDays={getEffectiveInstallDays}
+                isInstallOverdue={isInstallOverdue}
+                getCustomerName={getCustomerName}
+                formatShortDate={formatShortDate}
+                onPrev={goToPrevMonth}
+                onNext={goToNextMonth}
+                onToday={goToToday}
+                onDragOver={handleDragOver}
+                onDrop={handleDrop}
+                onDateClick={handleDateClick}
+                onEventDragStart={(projectId, e) => {
+                  e.stopPropagation();
+                  handleDragStart(projectId);
+                }}
+                onEventClick={(project, dateStr, e) => {
+                  e.stopPropagation();
+                  setScheduleModal({
+                    project,
+                    date: manualSchedules[project.id] || getEffectiveInstallStartDate(project) || dateStr,
+                  });
+                }}
+              />
             ) : currentView === "gantt" ? (
-              <div className="bg-surface border border-t-border rounded-xl overflow-hidden">
-                <div className="p-3 border-b border-t-border flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <button onClick={goToPrevMonth} className="p-1.5 hover:bg-surface-2 rounded">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                      </svg>
-                    </button>
-                    <span className="text-lg font-semibold min-w-[260px] text-center">
-                      Gantt {formatShortDate(ganttDays[0])} - {formatShortDate(ganttDays[ganttDays.length - 1])}
-                    </span>
-                    <button onClick={goToNextMonth} className="p-1.5 hover:bg-surface-2 rounded">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
-                    </button>
-                  </div>
-                  <button onClick={goToToday} className="px-3 py-1 text-xs bg-surface-2 hover:bg-surface-2 rounded">
-                    Today
-                  </button>
-                </div>
-                {ganttRows.length === 0 ? (
-                  <div className="p-6 text-sm text-muted text-center">No scheduled projects in this timeline window.</div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <div className="min-w-[1100px]">
-                      <div className="flex border-b border-t-border bg-surface/50">
-                        <div className="w-56 p-2 text-xs font-semibold text-muted uppercase tracking-wide border-r border-t-border">
-                          Project
-                        </div>
-                        <div
-                          className="flex-1 grid"
-                          style={{ gridTemplateColumns: `repeat(${ganttDays.length}, minmax(42px, 1fr))` }}
-                        >
-                          {ganttDays.map((day) => (
-                            <div key={`gantt-h-${day}`} className="p-1 text-[0.65rem] text-center text-muted border-r border-t-border last:border-r-0">
-                              {formatShortDate(day)}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                      {ganttRows.map((row) => (
-                        <div key={`gantt-r-${row.project.id}`} className="flex border-b border-t-border hover:bg-surface/40">
-                          <div className="w-56 p-2 border-r border-t-border">
-                            <button
-                              onClick={() => setSelectedProject(row.project)}
-                              className="text-left w-full"
-                            >
-                              <div className="text-sm text-foreground truncate hover:text-emerald-300">
-                                {getCustomerName(row.project.name)}
-                              </div>
-                              <div className="text-[0.68rem] text-muted truncate">
-                                {formatShortDate(row.startDate)} - {formatShortDate(row.endDate)}
-                              </div>
-                            </button>
-                          </div>
-                          <div
-                            className="flex-1 grid relative"
-                            style={{ gridTemplateColumns: `repeat(${ganttDays.length}, minmax(42px, 1fr))` }}
-                          >
-                            {ganttDays.map((day) => (
-                              <div key={`gantt-c-${row.project.id}-${day}`} className="h-12 border-r border-t-border/60 last:border-r-0" />
-                            ))}
-                            <button
-                              onClick={() => {
-                                setSelectedProject(row.project);
-                                setScheduleModal({
-                                  project: row.project,
-                                  date: row.startDate,
-                                });
-                              }}
-                              className="z-10 mx-0.5 my-2 rounded bg-emerald-500/30 border border-emerald-500/40 hover:bg-emerald-500/45 text-[0.68rem] text-emerald-200 truncate px-1"
-                              style={{ gridColumn: `${row.visibleStart + 1} / ${row.visibleEnd + 2}` }}
-                              title={`${getCustomerName(row.project.name)} • ${formatShortDate(row.startDate)} - ${formatShortDate(row.endDate)}`}
-                            >
-                              {getCustomerName(row.project.name)}
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
+              <ConstructionGanttView
+                ganttStartDate={ganttStartDate}
+                projects={filteredProjects}
+                manualSchedules={manualSchedules}
+                getEffectiveInstallStartDate={getEffectiveInstallStartDate}
+                getEffectiveInstallDays={getEffectiveInstallDays}
+                getCustomerName={getCustomerName}
+                formatShortDate={formatShortDate}
+                onPrev={goToPrevMonth}
+                onNext={goToNextMonth}
+                onToday={goToToday}
+                onSelectProject={(project) => setSelectedProject(project)}
+                onOpenSchedule={(project, date) => {
+                  setSelectedProject(project);
+                  setScheduleModal({ project, date });
+                }}
+              />
             ) : (
               /* List View */
               <div className="bg-surface border border-t-border rounded-xl overflow-hidden">
