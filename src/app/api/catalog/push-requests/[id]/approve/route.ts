@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireApiAuth } from "@/lib/api-auth";
 import { EquipmentCategory } from "@/generated/prisma/enums";
+import { getSpecTableName } from "@/lib/catalog-fields";
 
 const ADMIN_ROLES = ["ADMIN", "OWNER", "MANAGER"];
 const INTERNAL_CATEGORIES = Object.values(EquipmentCategory) as string[];
@@ -35,38 +36,65 @@ export async function POST(
 
   // INTERNAL catalog
   if (push.systems.includes("INTERNAL") && INTERNAL_CATEGORIES.includes(push.category)) {
-    const sku = await prisma.equipmentSku.upsert({
-      where: {
-        category_brand_model: {
+    const parsedUnitSpec = push.unitSpec ? parseFloat(push.unitSpec) : null;
+    const unitSpecValue = parsedUnitSpec != null && !isNaN(parsedUnitSpec) ? parsedUnitSpec : null;
+
+    const commonFields = {
+      description: push.description || null,
+      unitSpec: unitSpecValue,
+      unitLabel: push.unitLabel || null,
+      sku: push.sku || null,
+      vendorName: push.vendorName || null,
+      vendorPartNumber: push.vendorPartNumber || null,
+      unitCost: push.unitCost,
+      sellPrice: push.sellPrice,
+      hardToProcure: push.hardToProcure,
+      length: push.length,
+      width: push.width,
+      weight: push.weight,
+    };
+
+    const skuRecord = await prisma.$transaction(async (tx) => {
+      // 1. Upsert EquipmentSku with all common fields
+      const sku = await tx.equipmentSku.upsert({
+        where: {
+          category_brand_model: {
+            category: push.category as EquipmentCategory,
+            brand: push.brand,
+            model: push.model,
+          },
+        },
+        update: { isActive: true, ...commonFields },
+        create: {
           category: push.category as EquipmentCategory,
           brand: push.brand,
           model: push.model,
+          ...commonFields,
         },
-      },
-      update: {
-        isActive: true,
-        description: push.description || undefined,
-        unitSpec: (() => {
-          if (!push.unitSpec) return undefined;
-          const parsed = parseFloat(push.unitSpec);
-          return isNaN(parsed) ? undefined : parsed;
-        })(),
-        unitLabel: push.unitLabel || undefined,
-      },
-      create: {
-        category: push.category as EquipmentCategory,
-        brand: push.brand,
-        model: push.model,
-        description: push.description || null,
-        unitSpec: (() => {
-          if (!push.unitSpec) return null;
-          const parsed = parseFloat(push.unitSpec);
-          return isNaN(parsed) ? null : parsed;
-        })(),
-        unitLabel: push.unitLabel,
-      },
+      });
+
+      // 2. Write category spec table from metadata (if present)
+      const metadata = push.metadata as Record<string, unknown> | null;
+      if (metadata && Object.keys(metadata).length > 0) {
+        const specTable = getSpecTableName(push.category);
+        if (specTable) {
+          // Dynamic upsert for the correct spec table
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const prismaModel = (tx as any)[specTable];
+          if (prismaModel?.upsert) {
+            await prismaModel.upsert({
+              where: { skuId: sku.id },
+              create: { skuId: sku.id, ...metadata },
+              update: metadata,
+            });
+          }
+        }
+      }
+
+      return sku;
     });
-    results.internalSkuId = sku.id;
+
+    results.internalSkuId = skuRecord.id;
   }
 
   // ZOHO — TODO: implement when Zoho item-create API is wired
