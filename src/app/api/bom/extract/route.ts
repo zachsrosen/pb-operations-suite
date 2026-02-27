@@ -85,7 +85,66 @@ Map each BOM row to these categories:
 3. **Metal roofs**: ATTACHMENT = "S-5! PROTEABRACKET ATTACHMENTS", rail = XR100 (not XR10), no RD STRUCTURAL SCREW row.
 4. **Powerwall-3 part number**: 1707000-XX-Y (found in PV-4 specifications table).
 5. **Gateway-3 part number**: 1841000-X1-Y (found in PV-4 or PV-2 callout).
-6. **flags** array: use "INFERRED" when value was inferred, "ASSUMED_BRAND" when brand was assumed, "VALIDATION_WARNING" when a cross-check failed.
+6. **Backup Switch part number**: 1624171-00-J (found in PV-4 callout or PV-2 BOM; used on simpler jobs without full Gateway-3 -- see active extraction rule below).
+7. **flags** array: use "INFERRED" when value was inferred, "ASSUMED_BRAND" when brand was assumed, "VALIDATION_WARNING" when a cross-check failed.
+
+## Critical Model/SKU Rules
+
+### BONDED SPLICE — Rail-Specific Model
+The PV-2 BOM table calls this "SPLICE KIT" or "BONDED SPLICE" generically. Always output the rail-specific model:
+- XR10 rail (asphalt shingle jobs) → model: "XR10-BOSS-01-M1", description: "IRONRIDGE XR10 BONDED SPLICE MILL"
+- XR100 rail (metal roof jobs) → model: "XR100-BOSS-01-M1", description: "IRONRIDGE XR100 BONDED SPLICE MILL"
+Check the RAIL row to determine XR10 vs XR100. Never output "SPLICE KIT" as the model.
+
+### 60A MAIN BREAKER ENCLOSURE → Two Separate BOM Items
+When PV-2 or PV-0 lists a "60A MAIN BREAKER ENCLOSURE", always output TWO items (not one):
+1. { "category": "ELECTRICAL_BOS", "brand": "", "model": "TL270RCU", "description": "LOAD CENTER, 70A, MAIN LUGS, 1PH, 65KA, 120/240VAC, 2/4 CIRCUIT", "qty": 1, "source": "PV-2" }
+2. { "category": "ELECTRICAL_BOS", "brand": "GE", "model": "THQL2160", "description": "60A 2-POLE GE CIRCUIT BREAKER", "qty": 1, "source": "PV-2" }
+Do NOT output a single "60A MAIN BREAKER ENCLOSURE" item — always split into these two.
+
+### AC DISCONNECT — 2-Wire vs 3-Wire
+Read the PV-4 SLD callout text for the AC disconnect:
+- "3-WIRE" in callout → model: "TGN3322R" (3-pole; used on service upgrade / tap jobs with neutral)
+- "2-WIRE" or no wire count → model: "DG222URB" (standard 2-pole, most common)
+
+### JUNCTION BOX — Always Substitute SOLOBOX COMP-D
+Regardless of what the planset shows for JUNCTION BOX (e.g., "EZ SOLAR JB-1.2"), always output the UNIRAC SOLOBOX COMP-D instead:
+{ "category": "ELECTRICAL_BOS", "brand": "UNIRAC", "model": "SBOXCOMP-D", "description": "UNIRAC SOLOBOX COMP-D JUNCTION BOX", "qty": 3, "source": "OPS_STANDARD" }
+This applies to every solar (PV module) job. Do NOT output the planset's J-box model.
+
+### IMO RAPID SHUTDOWN SWITCH — From PV-4 SLD Only
+The PV-2 BOM lists TESLA MCI-2 devices (module-level). Scan PV-4 SLD separately for "(N) RAPID SHUTDOWN SWITCH" — this is the control unit (initiator), NOT in PV-2:
+- If "(N) RAPID SHUTDOWN SWITCH" is in PV-4 SLD → add: { "category": "RAPID_SHUTDOWN", "brand": "IMO", "model": "IMO SI16-PEL64R-2", "description": "IMO RAPID SHUTDOWN DEVICE, SI16-PEL64R-2", "qty": 1, "source": "PV-4" }
+- If not present, omit. Always qty 1 regardless of module count.
+
+### TESLA BACKUP SWITCH — From PV-2 BOM or PV-4 SLD
+Some jobs use a Backup Switch instead of the full Backup Gateway-3 (simpler installs). Scan PV-2 BOM for a "BACKUP SWITCH" row (tag TBS) or scan PV-4 SLD for "(N) BACKUP SWITCH" callout:
+- If found → add: { "category": "MONITORING", "brand": "Tesla", "model": "1624171-00-J", "description": "TESLA BACKUP SWITCH", "qty": 1, "source": "PV-4" }
+- If not found, omit. A job will have either a Backup Gateway-3 OR a Backup Switch, not both.
+
+## Ops-Standard Additions
+These items MUST be added to every solar (PV module) BOM even if the planset does not mention them. Do NOT add to battery-only or EV-charger-only jobs.
+
+### Always Add (Every Solar Job with Roof-Mounted PV Modules)
+Always include ALL of the following items on every solar job:
+- { "category": "RACKING", "brand": "", "model": "SNOW DOG-BLK", "description": "ALPINE SNOW DOG", "qty": 10, "source": "OPS_STANDARD" }
+- { "category": "ELECTRICAL_BOS", "brand": "", "model": "M3317GBZ-SM", "description": "STRAIN RELIEF 3/4\" 5 HOLE", "qty": 5, "source": "OPS_STANDARD" }
+- { "category": "ELECTRICAL_BOS", "brand": "", "model": "S6466", "description": "CRITTER GUARD 6\" ROLL, BIRD PROOFING", "qty": 4, "unitLabel": "box", "source": "OPS_STANDARD" }
+- { "category": "ELECTRICAL_BOS", "brand": "Heyco", "model": "S6438", "description": "HEYCO SUNSCREENER CLIP, BIRD PROOFING", "qty": 4, "unitLabel": "box", "source": "OPS_STANDARD" }
+
+### Triggered by Production Meter
+When BOM includes any PRODUCTION METER row, also add:
+- { "category": "MONITORING", "brand": "", "model": "K8180", "description": "METER BYPASS JUMPERS", "qty": 1, "unitLabel": "pair", "source": "OPS_STANDARD" }
+- { "category": "MONITORING", "brand": "", "model": "43974", "description": "METER COVER", "qty": 1, "source": "OPS_STANDARD" }
+
+### Triggered by HUG Attachments (Asphalt Shingle / XR10 Jobs)
+When the job uses IronRidge HUG attachments (XR10 rail, not metal roof), add T-bolt bonding hardware with qty = same as the ATTACHMENT qty from PV-2 BOM:
+- { "category": "RACKING", "brand": "IronRidge", "model": "BHW-TB-03-A1", "description": "IRONRIDGE T-BOLT BONDING HARDWARE", "qty": [HUG attachment qty], "source": "OPS_STANDARD" }
+Do NOT add for metal roof (S-5! ProteaBracket) jobs.
+
+### Triggered by Tap / Service Upgrade
+When PV-4 shows 3-wire AC disconnect (TGN3322R) or PV-0 mentions "SERVICE UPGRADE" / "UTILITY TAP", add:
+- { "category": "ELECTRICAL_BOS", "brand": "", "model": "BIPC4/010S", "description": "INSULATION PIERCING CONNECTOR", "qty": 3, "source": "OPS_STANDARD" }
 
 ## Validation Cross-Checks
 
@@ -121,7 +180,7 @@ Return EXACTLY this structure:
       "qty": number,
       "unitSpec": string | null,
       "unitLabel": string | null,
-      "source": "PV-2" | "PV-4" | "PV-0",
+      "source": "PV-2" | "PV-4" | "PV-0" | "OPS_STANDARD",
       "flags": string[]
     }
   ],
@@ -134,11 +193,11 @@ Return EXACTLY this structure:
   "generatedAt": string
 }
 
-Return ONLY the JSON object. No markdown fences, no preamble.`;
+Return ONLY the JSON object. No markdown fences, no preamble.`
 
 // ── Route config ─────────────────────────────────────────────────────────────
 
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 // Disable Next.js body size limit — planset PDFs are typically 5–35MB and
 // would be rejected by the default 4MB cap before our code runs.
@@ -424,7 +483,9 @@ export async function POST(req: NextRequest) {
 
         // ── Stage 2: Upload to Anthropic Files API ─────────────────────────
         const sizeMb = (pdfBuffer.byteLength / 1024 / 1024).toFixed(1);
-        send({ type: "progress", step: "uploading", message: `Uploading to BOM Tool (${sizeMb} MB)…` });
+        const pageCountEarly = getPdfPageCount(pdfBuffer);
+        const pageLabel = pageCountEarly ? `, ${pageCountEarly}-page planset` : "";
+        send({ type: "progress", step: "uploading", message: `Uploading to BOM Tool (${sizeMb} MB${pageLabel})…` });
 
         try {
           const uploadedFile = await client.beta.files.upload({
@@ -440,8 +501,7 @@ export async function POST(req: NextRequest) {
         }
 
         // ── Stage 3: Extract with Claude ───────────────────────────────────
-        const pageCount = getPdfPageCount(pdfBuffer);
-        const pageStr = pageCount ? ` — reading ${pageCount}-page planset` : "";
+        const pageStr = pageCountEarly ? ` — reading ${pageCountEarly}-page planset` : "";
         send({ type: "progress", step: "extracting", message: `Extracting BOM${pageStr} (30–60 seconds)…` });
 
         let rawText = "";

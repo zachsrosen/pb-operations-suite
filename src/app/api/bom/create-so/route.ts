@@ -189,10 +189,16 @@ export async function POST(request: NextRequest) {
   // Build line items — only include items matched to an existing Zoho item_id.
   // Name-only fallback is intentionally avoided: unmatched items are skipped
   // so we never create phantom products in Zoho's item catalog.
+  //
+  // Process SEQUENTIALLY (not Promise.all) — findItemIdByName uses a shared
+  // in-memory item cache, so there's no throughput benefit to concurrency, and
+  // firing 30+ simultaneous requests hits Zoho's concurrent-request limit.
   let unmatchedCount = 0;
   const unmatchedItems: string[] = [];
   const matchedItems: Array<{ bomName: string; zohoName: string }> = [];
-  const resolvedItems = await Promise.all(bomItems.map(async (item) => {
+  const resolvedItems: ({ item_id: string; name: string; quantity: number; description: string } | null)[] = [];
+
+  for (const item of bomItems) {
     const name =
       item.model
         ? `${item.brand ? item.brand + " " : ""}${item.model}`
@@ -209,15 +215,15 @@ export async function POST(request: NextRequest) {
     if (!match) {
       unmatchedCount++;
       unmatchedItems.push(name); // record what we searched for so caller can diagnose
-      return null; // will be filtered out — do not create name-only lines
+      resolvedItems.push(null);
+      continue;
     }
 
     matchedItems.push({ bomName: name, zohoName: match.zohoName });
     const parsedQty = Math.round(Number(item.qty));
     const quantity = Number.isFinite(parsedQty) && parsedQty > 0 ? parsedQty : 1;
-
-    return { item_id: match.item_id, name, quantity, description: item.description };
-  }));
+    resolvedItems.push({ item_id: match.item_id, name, quantity, description: item.description });
+  }
 
   const lineItems = resolvedItems.filter((item): item is NonNullable<typeof item> => item !== null);
 

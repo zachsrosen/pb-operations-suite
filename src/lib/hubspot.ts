@@ -122,7 +122,7 @@ async function getDealPropertyDefinition(
 
 async function searchWithRetry(
   searchRequest: Parameters<typeof hubspotClient.crm.deals.searchApi.doSearch>[0],
-  maxRetries = 3
+  maxRetries = 5
 ) {
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
@@ -134,8 +134,13 @@ async function searchWithRetry(
       const statusCode = (error as { code?: number })?.code;
 
       if ((isRateLimit || statusCode === 429) && attempt < maxRetries - 1) {
-        const delay = Math.pow(2, attempt + 1) * 500; // 1s, 2s, 4s
-        console.log(`[hubspot] Rate limited on attempt ${attempt + 1}, retrying in ${delay}ms...`);
+        // Base delay: 1.1s, 2.2s, 4.4s, 8.8s — always > 1s to clear the SECONDLY window.
+        // Jitter (±400ms random) prevents synchronized retries from multiple
+        // concurrent Vercel instances all colliding again at the same time.
+        const base = Math.pow(2, attempt) * 1100;
+        const jitter = Math.random() * 400;
+        const delay = Math.round(base + jitter);
+        console.log(`[hubspot] Rate limited (attempt ${attempt + 1}/${maxRetries}), retrying in ${delay}ms...`);
         Sentry.addBreadcrumb({
           category: "hubspot",
           message: `Rate limited, retry ${attempt + 1}/${maxRetries}`,
@@ -955,7 +960,7 @@ export async function fetchAllProjects(options?: {
     after = response.paging?.next?.after;
     pageCount++;
 
-    if (after) await sleep(50);
+    if (after) await sleep(120); // ~8 req/sec — stay safely under the 10/sec SECONDLY limit
   } while (after);
 
   console.log(`[HubSpot] Phase 1 complete: ${allDealIds.length} IDs collected in ${pageCount} pages (HubSpot total: ${searchTotal})`);
