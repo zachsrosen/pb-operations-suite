@@ -1,0 +1,155 @@
+Concept,Internal DB,HubSpot,Zuper,Zoho,Systems Today,Push to HubSpot?,Push to Zuper?,Push to Zoho?,Include in Form?,Category-Specific?,Notes
+,,,,,,,,,,,
+=== IDENTITY ===,,,,,,,,,,,
+Product Name,brand + model (computed),name,Part Name,name,4,Yes,Yes,Yes,Yes,No,
+Brand / Manufacturer,brand,manufacturer (33-value enum),Brand,— (custom field?),3,Yes,Yes,?,Yes,No,HubSpot has controlled enum
+Model / Part Number,model,— (embedded in name),Part Number,part_number,3,Yes,Yes,Yes,Yes,No,Zuper Part Number = our model
+SKU,—,hs_sku,Part Number,sku,3,Yes,Yes,Yes,Yes,No,May be same as model in Zuper
+Description,description,description,Description (rich text),description,4,Yes,Yes,Yes,Yes,No,
+Product Category,category (15-value enum),product_category (15-value enum),Category (8 values today),— (custom field?),3,Yes,Yes,?,Yes,No,9 categories need adding to Zuper
+Specification,—,—,Specification (freeform),—,1,No,Yes,No,Yes,No,Zuper-only freeform spec field. Could auto-generate from category fields
+Type (Part/Product/Service),—,hs_product_type,Type (Part/Service),product_type,3,?,?,?,No,No,
+Status / Available,isActive,status (Active/Inactive),Available toggle,status,4,Yes,Yes,Yes,Yes,No,
+,,,,,,,,,,,
+=== PRICING ===,,,,,,,,,,,
+Unit Cost (COGS),unitCost,hs_cost_of_goods_sold,Unit Purchase Price/Unit Cost,purchase_rate,4,Yes,Yes,Yes,Yes,No,All 4 systems support this
+Sell Price,sellPrice,price,Unit Selling Price,rate,4,Yes,Yes,Yes,Yes,No,
+,,,,,,,,,,,
+=== INVENTORY ===,,,,,,,,,,,
+Unit of Measurement,—,—,Unit of Measurement,unit,2,No,Yes,Yes,?,No,
+Available Qty,—,—,Available Qty,stock_on_hand,2,No,?,?,No,No,Managed by inventory system not form
+Minimum Qty / Reorder Level,—,—,Minimum Qty,reorder_level,2,No,?,?,?,No,
+Track Quantity,—,—,Track Quantity (Yes/No),—,1,No,?,No,No,No,Zuper-only
+,,,,,,,,,,,
+=== VENDOR / SUPPLY CHAIN ===,,,,,,,,,,,
+Vendor Name,vendorName,—,—,vendor_name,2,No,No,Yes,Yes,No,
+Vendor Part Number,vendorPartNumber,—,—,—,1,No,No,No,Yes,No,Internal only
+Hard to Procure,—,hard_to_procure (Yes/No),—,—,1,Yes,No,No,Yes,No,HubSpot only
+,,,,,,,,,,,
+=== ZUPER-ONLY FLAGS ===,,,,,,,,,,,
+Is Billable,—,—,Is Billable (Yes/No),—,1,No,Yes,No,?,No,Default Yes?
+Consider for Profitability,—,—,Consider for Profitability (Yes/No),—,1,No,Yes,No,?,No,Default Yes?
+Prefix,—,—,Prefix,—,1,No,?,No,No,No,
+,,,,,,,,,,,
+=== DIMENSIONS / PHYSICAL ===,,,,,,,,,,,
+Length,—,length,— (custom field?),—,1,Yes,?,?,Yes,No,
+Width,—,width,— (custom field?),—,1,Yes,?,?,Yes,No,
+Weight,—,—,— (custom field?),—,0,?,?,?,Yes,No,Not in any system yet
+,,,,,,,,,,,
+=== IMAGES / ATTACHMENTS ===,,,,,,,,,,,
+Product Image,—,hs_images,Image (file upload),image_id,3,?,?,?,?,No,
+Manual / Datasheet,—,—,Manual (file upload),documents[],2,No,?,?,?,No,
+Attachments,—,—,Attachments,documents[],2,No,?,?,?,No,
+,,,,,,,,,,,
+=== MODULE FIELDS ===,,,,,,,,,,,
+DC Size (Wattage),unitSpec,dc_size,Specification or custom field,custom field,2,Yes,?,?,Yes,Yes — Module,
+Module Efficiency,—,— (custom property),— (custom field),— (custom field),0,Yes,?,?,Yes,Yes — Module,New everywhere
+Cell Type,—,— (custom property),— (custom field),— (custom field),0,Yes,?,?,Yes,Yes — Module,"Mono PERC / TOPCon / HJT"
+Voc (Open Circuit Voltage),—,— (custom property),— (custom field),— (custom field),0,Yes,?,?,Yes,Yes — Module,
+Isc (Short Circuit Current),—,— (custom property),— (custom field),— (custom field),0,Yes,?,?,Yes,Yes — Module,
+Vmp (Max Power Voltage),—,— (custom property),— (custom field),— (custom field),0,Yes,?,?,Yes,Yes — Module,
+Imp (Max Power Current),—,— (custom property),— (custom field),— (custom field),0,Yes,?,?,Yes,Yes — Module,
+Temp Coefficient (Pmax),—,— (custom property),— (custom field),— (custom field),0,Yes,?,?,Yes,Yes — Module,
+,,,,,,,,,,,
+=== INVERTER FIELDS ===,,,,,,,,,,,
+AC Output Size (kW),unitSpec,ac_size,Specification or custom field,— (custom field),2,Yes,?,?,Yes,Yes — Inverter,
+Max DC Input,—,— (custom property),— (custom field),— (custom field),0,Yes,?,?,Yes,Yes — Inverter,
+Phase,—,— (custom property),— (custom field),— (custom field),0,Yes,?,?,Yes,Yes — Inverter,Single / Three-phase
+Nominal AC Voltage,—,— (custom property),— (custom field),— (custom field),0,Yes,?,?,Yes,Yes — Inverter,240V / 208V / 480V
+MPPT Channels,—,— (custom property),— (custom field),— (custom field),0,Yes,?,?,Yes,Yes — Inverter,
+Max Input Voltage,—,— (custom property),— (custom field),— (custom field),0,Yes,?,?,Yes,Yes — Inverter,
+Inverter Type,—,— (custom property),— (custom field),— (custom field),0,Yes,?,?,Yes,Yes — Inverter,String / Micro / Hybrid / Central
+,,,,,,,,,,,
+=== BATTERY FIELDS (also Battery Expansion) ===,,,,,,,,,,,
+Capacity (kWh),unitSpec,size__kwh_,Specification or custom field,— (custom field),2,Yes,?,?,Yes,Yes — Battery + Battery Expansion,
+Energy Storage Capacity,—,energy_storage_capacity,— (custom field),— (custom field),1,Yes,?,?,Yes,Yes — Battery + Battery Expansion,
+Usable Capacity (kWh),—,— (custom property),— (custom field),— (custom field),0,Yes,?,?,Yes,Yes — Battery + Battery Expansion,After depth of discharge
+Continuous Power (kW),—,capacity__kw_,— (custom field),— (custom field),1,Yes,?,?,Yes,Yes — Battery + Battery Expansion,
+Peak Power (kW),—,— (custom property),— (custom field),— (custom field),0,Yes,?,?,Yes,Yes — Battery + Battery Expansion,
+Battery Chemistry,—,— (custom property),— (custom field),— (custom field),0,Yes,?,?,Yes,Yes — Battery + Battery Expansion,LFP / NMC
+Round-Trip Efficiency,—,— (custom property),— (custom field),— (custom field),0,Yes,?,?,Yes,Yes — Battery + Battery Expansion,Percentage
+Nominal Voltage,—,— (custom property),— (custom field),— (custom field),0,Yes,?,?,Yes,Yes — Battery + Battery Expansion,
+,,,,,,,,,,,
+=== EV CHARGER FIELDS ===,,,,,,,,,,,
+Charger Power (kW),unitSpec,capacity__kw_,Specification or custom field,— (custom field),2,Yes,?,?,Yes,Yes — EV Charger,
+Connector Type,—,— (custom property),— (custom field),— (custom field),0,Yes,?,?,Yes,Yes — EV Charger,J1772 / NACS / CCS
+Amperage,—,— (custom property),— (custom field),— (custom field),0,Yes,?,?,Yes,Yes — EV Charger,
+Voltage,—,— (custom property),— (custom field),— (custom field),0,Yes,?,?,Yes,Yes — EV Charger,
+Level,—,— (custom property),— (custom field),— (custom field),0,Yes,?,?,Yes,Yes — EV Charger,Level 1 / 2 / DC Fast
+WiFi / Smart Features,—,— (custom property),— (custom field),— (custom field),0,Yes,?,?,Yes,Yes — EV Charger,
+,,,,,,,,,,,
+=== MOUNTING HARDWARE FIELDS ===,,,,,,,,,,,
+Mount Type,—,— (custom property),— (custom field),— (custom field),0,Yes,?,?,Yes,Yes — Mounting Hardware,Roof / Ground / Carport / Flat
+Material,—,— (custom property),— (custom field),— (custom field),0,Yes,?,?,Yes,Yes — Mounting Hardware,Aluminum / Steel
+Tilt Range,—,— (custom property),— (custom field),— (custom field),0,Yes,?,?,Yes,Yes — Mounting Hardware,
+Wind Rating (mph),—,— (custom property),— (custom field),— (custom field),0,Yes,?,?,Yes,Yes — Mounting Hardware,
+Snow Load (psf),—,— (custom property),— (custom field),— (custom field),0,Yes,?,?,Yes,Yes — Mounting Hardware,
+Roof Attachment,—,— (custom property),— (custom field),— (custom field),0,Yes,?,?,Yes,Yes — Mounting Hardware,Comp shingle / Tile / Metal
+,,,,,,,,,,,
+=== ELECTRICAL HARDWARE FIELDS ===,,,,,,,,,,,
+Component Type,—,— (custom property),— (custom field),— (custom field),0,Yes,?,?,Yes,Yes — Electrical Hardware,Conduit / Wire / Disconnect / Breaker
+Gauge / Size,—,— (custom property),— (custom field),— (custom field),0,Yes,?,?,Yes,Yes — Electrical Hardware,AWG / conduit size / amps
+Voltage Rating,—,— (custom property),— (custom field),— (custom field),0,Yes,?,?,Yes,Yes — Electrical Hardware,
+Material,—,— (custom property),— (custom field),— (custom field),0,Yes,?,?,Yes,Yes — Electrical Hardware,Copper / Aluminum / PVC / EMT
+,,,,,,,,,,,
+=== RELAY DEVICE FIELDS ===,,,,,,,,,,,
+Device Type,—,— (custom property),— (custom field),— (custom field),0,Yes,?,?,Yes,Yes — Relay Device,Gateway / Meter / CT
+Connectivity,—,— (custom property),— (custom field),— (custom field),0,Yes,?,?,Yes,Yes — Relay Device,WiFi / Cellular / Ethernet
+Compatible Inverters,—,— (custom property),— (custom field),— (custom field),0,Yes,?,?,Yes,Yes — Relay Device,
+,,,,,,,,,,,
+=== CROSS-SYSTEM IDs (auto-managed) ===,,,,,,,,,,,
+Internal SKU ID,id,—,—,—,1,No,No,No,Auto,No,
+HubSpot Product ID,hubspotProductId,hs_object_id,HubSpot Product ID (column),—,3,Auto,Auto,No,Auto,No,
+Zuper Item UID,zuperItemId,—,ID,—,2,No,Auto,No,Auto,No,
+Zoho Item ID,zohoItemId,—,—,item_id,2,No,No,Auto,Auto,No,
+QBO Product ID,—,qbo_product_id,QBO Product ID (column),—,2,Auto,Auto,No,Auto,No,
+,,,,,,,,,,,
+=== HUBSPOT-ONLY ===,,,,,,,,,,,
+SLO,—,cc,—,—,1,No,No,No,No,No,
+DEN,—,den,—,—,1,No,No,No,No,No,
+DTC,—,dtc,—,—,1,No,No,No,No,No,
+PBLO,—,pblo,—,—,1,No,No,No,No,No,
+OS Name,—,os_name,—,—,1,No,No,No,No,No,OpenSolar name
+Permit Required,—,permit_required_for_install,—,—,1,No,No,No,No,No,
+Folder,—,hs_folder,—,—,1,No,No,No,No,No,
+Image URL,—,hs_images,—,—,1,No,No,No,No,No,
+Owner,—,hubspot_owner_id,—,—,1,No,No,No,No,No,Auto-set
+Ecomm Synced,—,ip__ecomm_bridge__ecomm_synced,—,—,1,No,No,No,No,No,
+Synced to NetSuite,—,synced_to_netsuite,—,—,1,No,No,No,No,No,
+Tax Category,—,hs_tax_category,—,—,1,No,No,No,No,No,
+Bundle Type,—,hs_bundle_type,—,—,1,No,No,No,No,No,
+Product Classification,—,hs_product_classification,—,—,1,No,No,No,No,No,Standalone/Variant/Bundle
+Pricing Model,—,hs_pricing_model,—,—,1,No,No,No,No,No,
+Billing Frequency,—,recurringbillingfrequency,—,—,1,No,No,No,No,No,
+Billing Period/Term,—,hs_recurring_billing_period,—,—,1,No,No,No,No,No,
+Rich Text Description,—,hs_rich_text_description,—,—,1,No,No,No,No,No,
+Line Item Description,—,line_item_description,—,—,1,No,No,No,No,No,
+,,,,,,,,,,,
+=== ZOHO-ONLY ===,,,,,,,,,,,
+Group ID / Name,—,—,—,group_id + group_name,1,No,No,No,No,No,
+Is Taxable,—,—,—,is_taxable,1,No,No,No,No,No,
+Tax ID / Name / %,—,—,—,tax_id + tax_name + tax_percentage,1,No,No,No,No,No,
+Purchase Account,—,—,—,purchase_account_id,1,No,No,No,No,No,
+Inventory Account,—,—,—,inventory_account_id,1,No,No,No,No,No,
+UPC,—,—,—,upc,1,No,No,No,No,No,
+EAN,—,—,—,ean,1,No,No,No,No,No,
+Purchase Description,—,—,—,purchase_description,1,No,No,No,No,No,
+Custom Fields,—,—,—,custom_fields[],1,No,No,—,No,No,Available for any custom data
+,,,,,,,,,,,
+=== CATEGORY MAPPING ACROSS SYSTEMS ===,,,,,,,,,,,
+"Category Name",Internal Enum,HubSpot Value,Zuper Category,Needs Adding to Zuper?,,,,,,
+Module,MODULE,Module,— (needs adding),Yes,,,,,,
+Battery,BATTERY,Battery,Battery,No,,,,,,
+Battery Expansion,BATTERY_EXPANSION,Battery Expansion,Battery Expansion,No,,,,,,
+Inverter,INVERTER,Inverter,Inverter,No,,,,,,
+Optimizer,OPTIMIZER,Optimizer,— (needs adding),Yes,,,,,,
+Gateway,GATEWAY,Gateway,— (needs adding),Yes,,,,,,
+D&R,D_AND_R,D&R,— (needs adding),Yes,,,,,,
+Service,SERVICE,Service,— (needs adding),Yes,,,,,,
+"Adder & Services",ADDER_SERVICES,Adder,— (needs adding),Yes,,,,,,
+EV Charger,EV_CHARGER,EV Charger,— (needs adding),Yes,,,,,,
+Tesla System Components,TESLA_SYSTEM_COMPONENTS,Tesla System Components,— (needs adding),Yes,,,,,,
+Project Milestones,PROJECT_MILESTONES,Project Milestones,— (needs adding),Yes,,,,,,
+Relay Device,RELAY_DEVICE,Relay Device,Relay Device,No,,,,,,
+Electrical Hardware,ELECTRICAL_HARDWARE,Electrical Hardware,"Electrical Hardwire (typo?)",No,,,,,,
+Mounting Hardware,MOUNTING_HARDWARE,Mounting Hardware,Mounting Hardware,No,,,,,,
