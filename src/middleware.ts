@@ -140,6 +140,13 @@ export default auth((req) => {
       return nextWithRequestId(requestId, req);
     }
 
+    // Allow machine-to-machine access via API_SECRET_TOKEN Bearer token
+    const apiSecretToken = process.env.API_SECRET_TOKEN;
+    const authHeader = req.headers.get("authorization");
+    if (apiSecretToken && authHeader === `Bearer ${apiSecretToken}`) {
+      return nextWithRequestId(requestId, req);
+    }
+
     // For other API routes, require authentication
     if (!isLoggedIn) {
       const response = NextResponse.json(

@@ -85,7 +85,7 @@ Map each BOM row to these categories:
 3. **Metal roofs**: ATTACHMENT = "S-5! PROTEABRACKET ATTACHMENTS", rail = XR100 (not XR10), no RD STRUCTURAL SCREW row.
 4. **Powerwall-3 part number**: 1707000-XX-Y (found in PV-4 specifications table).
 5. **Gateway-3 part number**: 1841000-X1-Y (found in PV-4 or PV-2 callout).
-6. **Backup Switch part number**: 1624171-00-J (found in PV-4 callout or PV-2 BOM; used on simpler jobs without full Gateway-3 -- see active extraction rule below).
+6. **Backup Switch part number**: 1624171-00-x (found in PV-4 callout or PV-2 BOM; used on simpler jobs without full Gateway-3 — see active extraction rule below).
 7. **flags** array: use "INFERRED" when value was inferred, "ASSUMED_BRAND" when brand was assumed, "VALIDATION_WARNING" when a cross-check failed.
 
 ## Critical Model/SKU Rules
@@ -107,6 +107,8 @@ Read the PV-4 SLD callout text for the AC disconnect:
 - "3-WIRE" in callout → model: "TGN3322R" (3-pole; used on service upgrade / tap jobs with neutral)
 - "2-WIRE" or no wire count → model: "DG222URB" (standard 2-pole, most common)
 
+**DG222URB is always 60A.** Its description must always be: "60A NON-FUSED, UTILITY PV AC DISCONNECT VISIBLE LOCKABLE LABELED DISCONNECT". Never use "200A" in the description even if the MSP or service panel is 200A — those are different components.
+
 ### JUNCTION BOX — Always Substitute SOLOBOX COMP-D
 Regardless of what the planset shows for JUNCTION BOX (e.g., "EZ SOLAR JB-1.2"), always output the UNIRAC SOLOBOX COMP-D instead:
 { "category": "ELECTRICAL_BOS", "brand": "UNIRAC", "model": "SBOXCOMP-D", "description": "UNIRAC SOLOBOX COMP-D JUNCTION BOX", "qty": 3, "source": "OPS_STANDARD" }
@@ -119,11 +121,40 @@ The PV-2 BOM lists TESLA MCI-2 devices (module-level). Scan PV-4 SLD separately 
 
 ### TESLA BACKUP SWITCH — From PV-2 BOM or PV-4 SLD
 Some jobs use a Backup Switch instead of the full Backup Gateway-3 (simpler installs). Scan PV-2 BOM for a "BACKUP SWITCH" row (tag TBS) or scan PV-4 SLD for "(N) BACKUP SWITCH" callout:
-- If found → add: { "category": "MONITORING", "brand": "Tesla", "model": "1624171-00-J", "description": "TESLA BACKUP SWITCH", "qty": 1, "source": "PV-4" }
+- If found → add: { "category": "MONITORING", "brand": "Tesla", "model": "1624171-00-x", "description": "TESLA BACKUP SWITCH", "qty": 1, "source": "PV-4" }
 - If not found, omit. A job will have either a Backup Gateway-3 OR a Backup Switch, not both.
 
+### TESLA REMOTE METER — From PV-2 BOM or PV-4 SLD
+Some battery-only jobs (no PV modules) include a Tesla Remote Meter for monitoring. Scan PV-2 BOM for a "REMOTE METER" row or scan PV-4 SLD for "(N) REMOTE METER" callout:
+- If found → add TWO items:
+  1. { "category": "MONITORING", "brand": "Tesla", "model": "2045796-xx-y", "description": "TESLA REMOTE METER ENERGY KIT", "qty": 1, "source": "PV-4" }
+  2. { "category": "MONITORING", "brand": "Tesla", "model": "P2045794-00-D", "description": "TESLA REMOTE METER HARDWIRE KIT", "qty": 1, "source": "PV-4" }
+- If not found, omit both.
+
+### ENPHASE MICRO-INVERTER JOBS — Additional Items
+When the job uses Enphase micro-inverters (IQ8 series), extract the following items:
+- **Q-Cable**: If the conductor schedule lists Q-CABLE or a 12 AWG DC cable with free air routing → add: { "category": "ELECTRICAL_BOS", "brand": "Enphase", "model": "Q-12-RAW-300", "description": "Q-CABLE, 12 AWG, 3 CONDUCTORS, FREE AIR", "qty": 1, "source": "PV-4" }
+- **PV Circuit Breaker**: Enphase jobs typically use a 40A 2-pole breaker (not 60A). If PV-4 shows a 40A breaker → add: { "category": "ELECTRICAL_BOS", "brand": "GE", "model": "THQL2140", "description": "40A 2-POLE PV BREAKER", "qty": 1, "source": "PV-4" }
+- **Portrait Q-Cable Adapter**: If planset or conductor schedule references Q-12-10-240, portrait cable, or portrait module orientation → add: { "category": "ELECTRICAL_BOS", "brand": "Enphase", "model": "Q-12-10-240", "description": "ENPHASE Q-CABLE PORTRAIT ADAPTER", "qty": 1, "source": "PV-4" }
+- **Q-Cable Sealing Plugs**: Always add on Enphase jobs → { "category": "ELECTRICAL_BOS", "brand": "Enphase", "model": "Q-SEAL-10", "description": "ENPHASE Q-SEAL SEALING PLUGS", "qty": 1, "source": "OPS_STANDARD" }
+- **Q-Cable Termination Caps**: Always add on Enphase jobs → { "category": "ELECTRICAL_BOS", "brand": "Enphase", "model": "Q-TERM-10", "description": "ENPHASE Q-TERM TERMINATION CAPS", "qty": 1, "source": "OPS_STANDARD" }
+- **Microinverter Mounting Clip**: Add 1 clip per IQ8 microinverter (qty = IQ8 count from PV-2 BOM) → { "category": "RACKING", "brand": "Enphase", "model": "BHW-MI-01-A1", "description": "ENPHASE MICROINVERTER MOUNTING CLIP", "qty": [IQ8 qty], "source": "OPS_STANDARD" }
+
+### CONDUCTOR SCHEDULE — Wire Model Naming
+**CRITICAL**: Every wire item MUST include the gauge in the model field. Never output a wire type alone without its AWG rating. The Zoho inventory lookup depends on exact gauge matching — a bare "THWN-2" without gauge will match the wrong inventory item.
+
+Always use standardized model names:
+- 10 AWG THHN or THWN-2 → model: "10 AWG THHN/THWN-2"
+- 6 AWG THWN-2 → model: "6 AWG THWN-2"
+- 8 AWG THWN-2 → model: "8 AWG THWN-2"
+- 3/0 AWG THWN-2 → model: "3/0 AWG THWN-2"
+- 10 AWG PV Wire (free air, DC at array) → model: "10 AWG PV-WIRE"
+
+Never output internal codes like "THHN-10AWG", "THWN2-6AWG", "THWN-2" (no gauge), or "PV-Wire10". Always use the format "{gauge} {wire type}".
+Example WRONG: "model": "THWN-2" — Example CORRECT: "model": "10 AWG THHN/THWN-2"
+
 ## Ops-Standard Additions
-These items MUST be added to every solar (PV module) BOM even if the planset does not mention them. Do NOT add to battery-only or EV-charger-only jobs.
+These items MUST be added to solar jobs with roof-mounted PV modules. Do NOT add to battery-only or storage-only jobs (no PV modules).
 
 ### Always Add (Every Solar Job with Roof-Mounted PV Modules)
 Always include ALL of the following items on every solar job:
@@ -137,10 +168,10 @@ When BOM includes any PRODUCTION METER row, also add:
 - { "category": "MONITORING", "brand": "", "model": "K8180", "description": "METER BYPASS JUMPERS", "qty": 1, "unitLabel": "pair", "source": "OPS_STANDARD" }
 - { "category": "MONITORING", "brand": "", "model": "43974", "description": "METER COVER", "qty": 1, "source": "OPS_STANDARD" }
 
-### Triggered by HUG Attachments (Asphalt Shingle / XR10 Jobs)
-When the job uses IronRidge HUG attachments (XR10 rail, not metal roof), add T-bolt bonding hardware with qty = same as the ATTACHMENT qty from PV-2 BOM:
+### Triggered by HUG Attachments (Asphalt Shingle / XR10 Jobs with PV Modules)
+When the job has PV modules and uses IronRidge HUG attachments (XR10 rail, not metal roof), add T-bolt bonding hardware with qty = same as the ATTACHMENT qty from PV-2 BOM:
 - { "category": "RACKING", "brand": "IronRidge", "model": "BHW-TB-03-A1", "description": "IRONRIDGE T-BOLT BONDING HARDWARE", "qty": [HUG attachment qty], "source": "OPS_STANDARD" }
-Do NOT add for metal roof (S-5! ProteaBracket) jobs.
+Do NOT add for battery-only jobs (no PV modules) or metal roof (S-5! ProteaBracket) jobs.
 
 ### Triggered by Tap / Service Upgrade
 When PV-4 shows 3-wire AC disconnect (TGN3322R) or PV-0 mentions "SERVICE UPGRADE" / "UTILITY TAP", add:
@@ -311,7 +342,30 @@ async function getDriveToken(request: NextRequest): Promise<{ token: string; tok
       }
     }
   } catch {
-    // fall through to service account
+    // fall through
+  }
+
+  // CLI/machine access: use stored OAuth refresh token if available
+  const envRefreshToken = process.env.GOOGLE_DRIVE_REFRESH_TOKEN;
+  if (envRefreshToken) {
+    const refreshed = await refreshUserToken(envRefreshToken);
+    if (refreshed) {
+      return { token: refreshed, tokenSource: "env_refresh_token" };
+    }
+  }
+
+  // Try service account with domain-wide delegation (impersonate admin for Drive access)
+  const impersonateEmail = process.env.GOOGLE_ADMIN_EMAIL ?? process.env.GMAIL_SENDER_EMAIL;
+  if (impersonateEmail) {
+    try {
+      const saTokenDwd = await getServiceAccountToken(
+        ["https://www.googleapis.com/auth/drive.readonly"],
+        impersonateEmail
+      );
+      return { token: saTokenDwd, tokenSource: "service_account_dwd" };
+    } catch {
+      // DWD not configured — fall through to plain SA
+    }
   }
 
   const saToken = await getServiceAccountToken(["https://www.googleapis.com/auth/drive.readonly"]);

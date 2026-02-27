@@ -197,8 +197,8 @@ const BOM_QUERY_OVERRIDES: ReadonlyArray<{ pattern: RegExp; sku: string }> = [
   // IMO Rapid Shutdown Device (SI16 series)
   { pattern: /\bimo\b|\bsi16\b/i,                         sku: "IMO SI16-PEL64R-2" },
 
-  // Tesla Backup Switch (1624171) — paired with PW3 but not in planset BOM
-  { pattern: /\bbackup\s+switch\b|\b1624171\b/i,          sku: "1624171-00-J" },
+  // Tesla Backup Switch (1624171-00-x) — paired with PW3 but not in planset BOM
+  { pattern: /\bbackup\s+switch\b|\b1624171\b/i,          sku: "1624171-00-x" },
 
   // 60A non-fused AC disconnect
   { pattern: /\b60a?\s+non.?fused\b/i,                   sku: "DG222URB" },
@@ -209,22 +209,29 @@ const BOM_QUERY_OVERRIDES: ReadonlyArray<{ pattern: RegExp; sku: string }> = [
   // 200A fused AC disconnect
   { pattern: /\b200a?\s+(utility\s+)?fused\b/i,          sku: "D224NRB" },
 
-  // Xcel Energy PV Production Meter → Milbank 200A Meter Housing w/ Bypass
-  { pattern: /xcel.*meter|pv\s+production\s+meter/i,     sku: "U4801XL5T9" },
+  // NOTE: Xcel meter override removed — wrong SKU (U9101RLTGKK).
+  // Extraction prompt already produces correct meter model; fuzzy match finds it.
+
+  // Generic PV production meter (non-Xcel; Milbank 200A housing we supply)
+  { pattern: /pv\s+production\s+meter|200a.?prod/i,      sku: "U4801XL5T9" },
 
   // 125A sub panel
   { pattern: /\b125a?\s+sub\s*panel\b/i,                 sku: "PAL2412" },
 
-  // IronRidge XR100 Bonded Splice — must come before the XR100 rail pattern below
-  { pattern: /\bxr100\s*(?:bonded\s*)?splice\b|\bxr-?100.*splice\b/i, sku: "XR100-BOSS-01-M1" },
+  // IronRidge XR100 Bonded Splice — must come before the XR100 rail pattern below.
+  // Matches both keyword-style ("XR100 BONDED SPLICE") AND direct model string ("XR100-BOSS-01-M1").
+  // Without the -boss pattern, the model string would fall through to the XR100 rail override below.
+  { pattern: /\bxr100\s*(?:bonded\s*)?splice\b|\bxr-?100.*splice\b|\bxr100-boss\b/i, sku: "XR100-BOSS-01-M1" },
 
   // IronRidge XR100 168" rail (metal/trapezoidal roof) — must come before XR10 pattern
   { pattern: /\bxr100\b|\bxr-100\b/i,                    sku: "XR-100-168A" },
 
-  // IronRidge XR10 Bonded Splice — must come before the XR10 rail pattern below
-  { pattern: /\bxr10\s*(?:bonded\s*)?splice\b|\bxr-?10.*splice\b/i,  sku: "XR10-BOSS-01-M1" },
+  // IronRidge XR10 Bonded Splice — must come before the XR10 rail pattern below.
+  // Matches both keyword-style ("XR10 BONDED SPLICE") AND direct model string ("XR10-BOSS-01-M1").
+  // Without the -boss pattern, "XR10" in the model string would match the rail override below.
+  { pattern: /\bxr10\s*(?:bonded\s*)?splice\b|\bxr-?10.*splice\b|\bxr10-boss\b/i, sku: "XR10-BOSS-01-M1" },
 
-  // IronRidge XR10 168" rail — any remaining XR10 query (no "splice" keyword) → rail
+  // IronRidge XR10 168" rail — any remaining XR10 query (no "splice"/"boss" keyword) → rail
   { pattern: /\bxr10\b|\bxr-10\b/i,                      sku: "XR-10-168M" },
 
   // IronRidge HUG attachment (Halo UltraGrip) — the word "hug" appears in the
@@ -256,26 +263,76 @@ const BOM_QUERY_OVERRIDES: ReadonlyArray<{ pattern: RegExp; sku: string }> = [
   // 60A 2-pole GE breaker — paired with TL270RCU load center, output as separate BOM item
   { pattern: /\bthql2160\b|\b60a?\s+2.?p(?:ole)?\s+(?:ge\s+)?(?:breaker|circuit\s*breaker)\b/i, sku: "THQL2160" },
 
+  // 40A 2-pole GE PV breaker — used on Enphase micro-inverter jobs (not the 60A Powerwall breaker)
+  { pattern: /\bthql2140\b|\b40a?\s+2.?p(?:ole)?\s+(?:ge\s+)?(?:pv\s+)?(?:breaker|circuit\s*breaker)\b/i, sku: "THQL2140" },
+
+  // Tesla Backup Gateway-3 (1841000-X1-Y model wildcard)
+  { pattern: /\b1841000\b/i,                             sku: "1841000-x1-y" },
+
+  // Tesla Remote Meter Energy Kit (2045796-xx-y) — used on storage-only battery jobs
+  // Note: a second item (P2045794-00-D Hardwire Kit) is also added by the extraction prompt;
+  // that item is matched by its exact model string so no separate override is needed.
+  { pattern: /tesla.*remote.*meter.*energy|remote.*meter.*energy|\b2045796\b/i, sku: "2045796-xx-y" },
+
+  // Tesla Remote Meter Hardwire Kit — paired with Energy Kit on some battery-only jobs
+  { pattern: /tesla.*remote.*meter.*hardwire|remote.*meter.*hardwire|\bP2045794\b/i, sku: "P2045794-00-D" },
+
+  // Tesla Remote Meter generic fallback (older plansets may not specify Energy vs Hardwire)
+  { pattern: /tesla.*remote.*meter|remote.*meter|\bP2060713\b/i, sku: "2045796-xx-y" },
+
+  // Powerwall 3 Expansion unit (1807000-20-B)
+  { pattern: /\b1807000\b|\bpowerwall.*expansion\b|\bexpansion.*unit\b/i, sku: "1807000-20-B" },
+
+  // Powerwall 3 Expansion Wall Mount Kit (1978069-00-x)
+  { pattern: /\b1978069\b|\bexpansion.*wall.*mount|expansion.*mount.*kit/i, sku: "1978069-00-x" },
+
+  // Tesla Expansion Harness — 2.0 M (1875157-20-y) and 0.5 M (1875157-05-y)
+  { pattern: /\b1875157-20\b|2\.0\s*m.*expansion.*harness|expansion.*harness.*2/i, sku: "1875157-20-y" },
+  { pattern: /\b1875157-05\b|0\.5\s*m.*expansion.*harness|expansion.*harness.*0\.5/i, sku: "1875157-05-y" },
+  { pattern: /\b1875157\b/i,                              sku: "1875157-20-y" },
+
+  // Enphase Q-Cable (300ft roll) — used on Enphase micro-inverter jobs
+  { pattern: /\bq.?cable\b|\bQ-12-RAW\b/i,              sku: "Q-12-RAW-300" },
+
+  // Enphase Q-Cable Portrait Adapter (Q-12-10-240) — needed when modules in portrait orientation
+  { pattern: /\bq-12-10-240\b|\bq.*portrait.*cable|portrait.*q.*cable/i, sku: "Q-12-10-240" },
+
+  // Enphase Q-SEAL-10 — waterproof sealing plugs for unused Q-Cable ports
+  { pattern: /\bq-?seal\b|\bq-?seal-?10\b/i,           sku: "Q-SEAL-10" },
+
+  // Enphase Q-TERM-10 — termination caps for Q-Cable branch circuit ends
+  { pattern: /\bq-?term\b|\bq-?term-?10\b/i,           sku: "Q-TERM-10" },
+
+  // Enphase BHW-MI-01-A1 microinverter mounting clip (also sold as 1275054)
+  { pattern: /\bbhw-mi\b|\b1275054\b|\bmicro.*inverter.*clip|inverter.*mounting.*clip/i, sku: "BHW-MI-01-A1" },
+
+  // 10 AWG THHN/THWN-2 wire — prefer the priced Zoho item (68731) over unpriced alternatives.
+  // Matches: "10 AWG THHN", "10 AWG THWN-2", "THHN 10 AWG", "THWN-2 10 AWG",
+  //          "10 AWG THHN/THWN-2" (standardized model field from extraction prompt).
+  // Also catches bare "THWN-2" or "THHN" without gauge only when qty context implies 10 AWG
+  // (model alone → override fires → if not in catalog → null, try description fallback).
+  { pattern: /\b10\s*awg\b.*\bthh?n|\bthh?n.*\b10\s*awg\b|\b10\s*awg\b.*\bthwn|\bthwn.*\b10\s*awg\b/i, sku: "68731" },
+
   // ── Ops-Standard Additions ─────────────────────────────────────────────────
   // Items always ordered regardless of planset content (critter guard, solobox,
   // meter accessories, tap hardware). The skill outputs these as explicit BOM
   // items so they land in the SO; overrides ensure the right Zoho SKU is used.
 
-  // Critter Guard 6" roll (always 4 boxes per job)
+  // Critter Guard 6" roll (qty varies by job size, solar jobs only)
   { pattern: /\bcritter\s+guard\b|\bs6466\b/i,              sku: "S6466" },
 
-  // Heyco SunScreener clip (always 4 boxes per job, paired with critter guard roll)
+  // Heyco SunScreener clip (qty varies by job size, paired with critter guard roll)
   { pattern: /\bheyco\b|\bsunscreener\b|\bs6438\b/i,        sku: "S6438" },
 
   // UNIRAC SOLOBOX COMP-D junction box — used on every job as standard J-box
   // (planset may show a different J-box; always substitute SBOXCOMP-D)
   { pattern: /\bsolobox\b|\bsboxcomp/i,                     sku: "SBOXCOMP-D" },
 
-  // Meter Bypass Jumpers — ordered with every production meter install (1 pair)
-  { pattern: /\bmeter\s+bypass\s+jumper|\bk8180\b|\b44341\b/i, sku: "K8180" },
+  // Meter Bypass Jumpers — ordered with every production meter install (1 pair).
+  // No hard SKU override: the Zoho catalog SKU may not be "K8180"; rely on fuzzy name matching.
+  // (If override returned null before, item was silently dropped — fuzzy match is strictly better.)
 
-  // Meter Cover — ordered with every production meter install (1 pcs)
-  { pattern: /\bmeter\s+cover\b|\b43974\b|\b6003\b/i,       sku: "43974" },
+  // Meter Cover — same reasoning: no hard SKU override, rely on fuzzy name matching.
 
   // Insulation Piercing Connector — required when job has a tap / service upgrade
   { pattern: /\binsulation\s+pierc|\bbipc4\b|\b010s\b/i,    sku: "BIPC4/010S" },
@@ -418,10 +475,10 @@ export class ZohoInventoryClient {
    *   3. Zoho item name contains the query (normalized)
    *   4. Query contains the Zoho item name (normalized, min 5 chars)
    *
-   * Returns { item_id, zohoName } so callers can verify the match,
+   * Returns { item_id, zohoName, zohoSku } so callers can verify the match,
    * or null if no match found.
    */
-  async findItemIdByName(query: string): Promise<{ item_id: string; zohoName: string } | null> {
+  async findItemIdByName(query: string): Promise<{ item_id: string; zohoName: string; zohoSku?: string } | null> {
     if (!query || query.trim().length < 2) return null;
     const items = await this.getItemsForMatching();
 
@@ -433,7 +490,7 @@ export class ZohoInventoryClient {
         const hit = items.find(i => i.sku && normalizeName(i.sku) === skuQ);
         // If override matches but SKU isn't in catalog, return null rather than
         // falling through to fuzzy matching (avoids substituting wrong product)
-        return hit ? { item_id: hit.item_id, zohoName: hit.name } : null;
+        return hit ? { item_id: hit.item_id, zohoName: hit.name, zohoSku: hit.sku } : null;
       }
     }
 
@@ -441,16 +498,16 @@ export class ZohoInventoryClient {
 
     // 1. Exact name match
     const exactName = items.find(i => normalizeName(i.name) === q);
-    if (exactName) return { item_id: exactName.item_id, zohoName: exactName.name };
+    if (exactName) return { item_id: exactName.item_id, zohoName: exactName.name, zohoSku: exactName.sku };
 
     // 2. Exact SKU match
     const exactSku = items.find(i => i.sku && normalizeName(i.sku) === q);
-    if (exactSku) return { item_id: exactSku.item_id, zohoName: exactSku.name };
+    if (exactSku) return { item_id: exactSku.item_id, zohoName: exactSku.name, zohoSku: exactSku.sku };
 
     // 3. Zoho SKU contains query (e.g. query "HIN-T440NF(BK)" → SKU "HYU HIN-T440NF(BK)")
     if (q.length >= 3) {
       const skuContains = items.find(i => i.sku && normalizeName(i.sku).includes(q));
-      if (skuContains) return { item_id: skuContains.item_id, zohoName: skuContains.name };
+      if (skuContains) return { item_id: skuContains.item_id, zohoName: skuContains.name, zohoSku: skuContains.sku };
     }
 
     // 4. Query contains Zoho SKU (only if SKU is substantive)
@@ -459,18 +516,18 @@ export class ZohoInventoryClient {
       const s = normalizeName(i.sku);
       return s.length >= 5 && q.includes(s);
     });
-    if (queryContainsSku) return { item_id: queryContainsSku.item_id, zohoName: queryContainsSku.name };
+    if (queryContainsSku) return { item_id: queryContainsSku.item_id, zohoName: queryContainsSku.name, zohoSku: queryContainsSku.sku };
 
     // 5. Zoho name contains query
     const nameContains = items.find(i => normalizeName(i.name).includes(q));
-    if (nameContains) return { item_id: nameContains.item_id, zohoName: nameContains.name };
+    if (nameContains) return { item_id: nameContains.item_id, zohoName: nameContains.name, zohoSku: nameContains.sku };
 
     // 6. Query contains Zoho name (only if Zoho name is substantive)
     const queryContains = items.find(i => {
       const n = normalizeName(i.name);
       return n.length >= 5 && q.includes(n);
     });
-    if (queryContains) return { item_id: queryContains.item_id, zohoName: queryContains.name };
+    if (queryContains) return { item_id: queryContains.item_id, zohoName: queryContains.name, zohoSku: queryContains.sku };
 
     return null;
   }
