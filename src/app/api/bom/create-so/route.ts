@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { zohoInventory } from "@/lib/zoho-inventory";
 import { logActivity, prisma } from "@/lib/db";
+import { postProcessSoItems, type SoLineItem, type BomProject, type BomItem } from "@/lib/bom-so-post-process";
 
 export const runtime = "nodejs";
 
@@ -174,17 +175,15 @@ export async function POST(request: NextRequest) {
 
   // 3. Build line items — look up zohoItemId per BOM item
   const bomData = snapshot.bomData as {
-    project?: { address?: string };
-    items?: Array<{
-      category: string;
-      brand?: string | null;
-      model?: string | null;
-      description: string;
-      qty: number | string;
-    }>;
+    project?: BomProject & { address?: string };
+    items?: BomItem[];
   };
 
   const bomItems = Array.isArray(bomData?.items) ? bomData.items : [];
+
+  // Feature flag — opt-in per environment (default off)
+  const enablePostProcess = process.env.ENABLE_SO_POST_PROCESS === "true";
+  const wantDebug = enablePostProcess && /^\s*true\s*$/i.test(request.headers.get("X-BOM-Debug") ?? "");
 
   // Build line items — only include items matched to an existing Zoho item_id.
   // Name-only fallback is intentionally avoided: unmatched items are skipped
@@ -196,7 +195,7 @@ export async function POST(request: NextRequest) {
   let unmatchedCount = 0;
   const unmatchedItems: string[] = [];
   const matchedItems: Array<{ bomName: string; zohoName: string }> = [];
-  const resolvedItems: ({ item_id: string; name: string; quantity: number; description: string } | null)[] = [];
+  const resolvedItems: (SoLineItem | null)[] = [];
 
   for (const item of bomItems) {
     const name =
@@ -206,7 +205,7 @@ export async function POST(request: NextRequest) {
 
     // Try model first, then full "brand model" name, then description
     const searchTerms = [item.model, name, item.description].filter((t): t is string => !!t && t.trim().length > 1);
-    let match: { item_id: string; zohoName: string } | null = null;
+    let match: { item_id: string; zohoName: string; zohoSku?: string } | null = null;
     for (const term of searchTerms) {
       match = await zohoInventory.findItemIdByName(term);
       if (match) break;
@@ -227,22 +226,56 @@ export async function POST(request: NextRequest) {
       continue;
     }
     matchedItems.push({ bomName: name, zohoName: match.zohoName });
-    resolvedItems.push({ item_id: match.item_id, name, quantity: parsedQty, description: item.description });
+    resolvedItems.push({
+      item_id: match.item_id,
+      name,
+      quantity: parsedQty,
+      description: item.description,
+      sku: match.zohoSku,
+      bomCategory: item.category,
+    });
   }
 
-  const lineItems = resolvedItems.filter((item): item is NonNullable<typeof item> => item !== null);
+  let lineItems = resolvedItems.filter((item): item is NonNullable<typeof item> => item !== null);
+
+  // 3b. Post-process line items (when enabled)
+  let postProcessExtras: Record<string, unknown> = {};
+  if (enablePostProcess) {
+    const originalLineItems = wantDebug ? lineItems.map(i => ({ ...i })) : undefined;
+    const ppResult = await postProcessSoItems(
+      lineItems,
+      bomData,
+      (query) => zohoInventory.findItemIdByName(query),
+    );
+    lineItems = ppResult.lineItems;
+    postProcessExtras = {
+      corrections: ppResult.corrections,
+      rulesVersion: ppResult.rulesVersion,
+      jobContext: ppResult.jobContext,
+      ...(wantDebug ? { originalLineItems, correctedLineItems: ppResult.lineItems } : {}),
+    };
+  }
 
   // 4. Create SO in Zoho
   const address = bomData?.project?.address ?? "";
+  const projMatch = snapshot.dealName.match(/PROJ-(\d+)/);
+  const soNumber = projMatch ? `SO-${projMatch[1]} (TEST)` : `SO-${dealId} (TEST)`;
   let soResult: { salesorder_id: string; salesorder_number: string };
   try {
     soResult = await zohoInventory.createSalesOrder({
       customer_id: customerId,
-      salesorder_number: `SO-${dealId} (TEST)`,
+      salesorder_number: soNumber,
       reference_number: snapshot.dealName.slice(0, 50),
       notes: `Generated from PB Ops BOM v${version}${address ? ` — ${address}` : ""}`,
       status: "draft",
-      line_items: lineItems,
+      // Strip internal-only keys (sku, bomCategory) before sending to Zoho —
+      // these are used by post-processing but are not part of Zoho's API contract.
+      line_items: lineItems.map(({ item_id, name, quantity, description }) => ({
+        ...(item_id ? { item_id } : {}),
+        name,
+        quantity,
+        ...(description ? { description } : {}),
+      })),
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Zoho API error";
@@ -312,6 +345,7 @@ export async function POST(request: NextRequest) {
     unmatchedCount,
     unmatchedItems,
     matchedItems,
+    ...postProcessExtras,
   });
 
   } catch (e) {
