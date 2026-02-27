@@ -162,6 +162,31 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "dealId, dealName, and bomData are required" }, { status: 400 });
   }
 
+  // ── BOM Post-Processor (feature-gated) ──────────────────────────────
+  const enableBomPostProcess = process.env.ENABLE_BOM_POST_PROCESS === "true";
+  let processedBomData: BomData & { suggestedAdditions?: BomItem[]; postProcess?: object } = bomData;
+
+  if (enableBomPostProcess && Array.isArray(bomData?.items)) {
+    try {
+      const { postProcessBomItems } = await import("@/lib/bom-post-process");
+      const result = postProcessBomItems(bomData.project, bomData.items);
+      processedBomData = {
+        ...bomData,
+        items: result.items as unknown as BomItem[],
+        suggestedAdditions: result.suggestedAdditions as unknown as BomItem[],
+        postProcess: {
+          rulesVersion: result.rulesVersion,
+          jobContext: result.jobContext,
+          corrections: result.corrections,
+          appliedAt: new Date().toISOString(),
+        },
+      };
+    } catch (e) {
+      // Fail-open: log error, save raw data unchanged
+      console.error("[bom/history] BOM post-process error:", e);
+    }
+  }
+
   try {
     // Find the current highest version for this deal
     const latest = await prisma.projectBomSnapshot.findFirst({
@@ -177,16 +202,20 @@ export async function POST(req: NextRequest) {
         dealId,
         dealName,
         version: nextVersion,
-        bomData: bomData as object,
+        bomData: processedBomData as object,
         sourceFile: sourceFile ?? null,
         blobUrl: blobUrl ?? null,
         savedBy: email,
       },
     });
 
-    // Sync inventory SKUs (same as /api/bom/save)
+    // Sync inventory SKUs — both extracted items and suggested additions
     let skuCreated = 0, skuUpdated = 0, skuSkipped = 0;
-    for (const item of bomData.items) {
+    const allItemsToSync: BomItem[] = [
+      ...processedBomData.items,
+      ...(processedBomData.suggestedAdditions ?? []),
+    ];
+    for (const item of allItemsToSync) {
       const inventoryCategory = INVENTORY_CATEGORIES[item.category];
       if (!inventoryCategory) { skuSkipped++; continue; }
       const brand = item.brand?.trim();
