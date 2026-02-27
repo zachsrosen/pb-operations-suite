@@ -912,3 +912,20 @@ model PendingCatalogPush {
   @@index([status])
   @@index([requestedBy])
 }
+
+// ===========================================
+// CATALOG AUDIT LOG
+// ===========================================
+
+model CatalogAuditLog {
+  id              String   @id @default(cuid())
+  action          String   // "SKU_DELETE" — constrained at app level
+  skuId           String   // original SKU id, preserved post-deletion
+  snapshot        Json     // full SKU + specs + stock at deletion time
+  deletedByUserId String   // User.id (stable)
+  deletedByEmail  String   // email at time of action
+  createdAt       DateTime @default(now())
+
+  @@index([skuId])
+  @@index([deletedByUserId])
+}

@@ -1,12 +1,13 @@
 // src/app/dashboards/catalog/page.tsx
 "use client";
 
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import Link from "next/link";
 import DashboardShell from "@/components/DashboardShell";
 import { useToast } from "@/contexts/ToastContext";
 import { useSession } from "next-auth/react";
 import { FORM_CATEGORIES } from "@/lib/catalog-fields";
+import DeleteSkuModal from "@/components/catalog/DeleteSkuModal";
 
 type Tab = "skus" | "sync" | "pending";
 
@@ -186,6 +187,15 @@ export default function CatalogPage() {
   const userRole = (session?.user as { role?: string } | undefined)?.role ?? "";
   const isAdmin = ADMIN_ROLES.includes(userRole);
 
+  const [deleteTarget, setDeleteTarget] = useState<{
+    sku: { id: string; category: string; brand: string; model: string };
+    warning?: string;
+    syncedSystems?: string[];
+    pendingCount?: number;
+    preflightDone: boolean;
+  } | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
   // Fetch SKUs
   const fetchSkus = useCallback(() => {
     setSkuLoading(true);
@@ -207,6 +217,69 @@ export default function CatalogPage() {
   }, [addToast]);
 
   useEffect(() => { fetchSkus(); }, [fetchSkus]);
+
+  // Abort controller ref for cancelling in-flight preflight requests
+  const deleteAbortRef = useRef<AbortController | null>(null);
+
+  // Step 1: Open modal immediately, then run preflight (never deletes)
+  const handleDeleteClick = useCallback(async (sku: { id: string; category: string; brand: string; model: string }) => {
+    // Cancel any prior in-flight preflight
+    deleteAbortRef.current?.abort();
+    const controller = new AbortController();
+    deleteAbortRef.current = controller;
+
+    setDeleteTarget({ sku, preflightDone: false });
+    try {
+      const res = await fetch(`/api/inventory/skus/${sku.id}`, {
+        method: "DELETE",
+        signal: controller.signal,
+      });
+      const data = await res.json();
+      if (controller.signal.aborted) return; // user cancelled
+      if (res.ok && data.preflight) {
+        setDeleteTarget({
+          sku,
+          warning: data.warning,
+          syncedSystems: data.syncedSystems,
+          pendingCount: data.pendingCount,
+          preflightDone: true,
+        });
+      } else {
+        addToast({ type: "error", title: data.error || "Failed to check SKU status" });
+        setDeleteTarget(null);
+      }
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
+      addToast({ type: "error", title: "Failed to check SKU status" });
+      setDeleteTarget(null);
+    }
+  }, [addToast]);
+
+  // Step 2: User confirmed in modal — send force=true
+  const handleForceDelete = useCallback(async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/inventory/skus/${deleteTarget.sku.id}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ force: true }),
+      });
+      const data = await res.json();
+      if (res.status === 200 && data.deleted) {
+        setSkus((prev) => prev.filter((s) => s.id !== deleteTarget.sku.id));
+        fetchSkus();
+        addToast({ type: "success", title: "SKU deleted" });
+        setDeleteTarget(null);
+        return;
+      }
+      addToast({ type: "error", title: data.error || "Delete failed" });
+    } catch {
+      addToast({ type: "error", title: "Delete failed" });
+    } finally {
+      setDeleting(false);
+    }
+  }, [deleteTarget, addToast, fetchSkus]);
 
   // Fetch pending count for badge (runs once)
   useEffect(() => {
@@ -716,6 +789,17 @@ export default function CatalogPage() {
                               >
                                 Full Edit
                               </Link>
+                              <button
+                                onClick={() => handleDeleteClick({
+                                  id: sku.id,
+                                  category: sku.category,
+                                  brand: sku.brand,
+                                  model: sku.model,
+                                })}
+                                className="text-red-400 hover:text-red-300"
+                              >
+                                Delete
+                              </button>
                             </div>
                           )}
                         </td>
@@ -1000,6 +1084,21 @@ export default function CatalogPage() {
             </div>
           )}
         </div>
+      )}
+      {deleteTarget && (
+        <DeleteSkuModal
+          sku={deleteTarget.sku}
+          warning={deleteTarget.warning}
+          syncedSystems={deleteTarget.syncedSystems}
+          pendingCount={deleteTarget.pendingCount}
+          preflightDone={deleteTarget.preflightDone}
+          onConfirm={handleForceDelete}
+          onCancel={() => {
+            deleteAbortRef.current?.abort();
+            setDeleteTarget(null);
+          }}
+          deleting={deleting}
+        />
       )}
     </DashboardShell>
   );
