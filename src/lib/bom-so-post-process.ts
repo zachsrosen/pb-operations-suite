@@ -57,12 +57,14 @@ export interface JobContext {
   roofType: "asphalt_shingle" | "standing_seam_metal" | "tile" | "trapezoidal_metal" | "unknown";
   isStandingSeamS5: boolean;
   hasExpansion: boolean;
+  isStackedExpansion: boolean;
   hasPowerwall: boolean;
   hasBackupSwitch: boolean;
   hasGateway3: boolean;
   hasRemoteMeter: boolean;
   hasProductionMeter: boolean;
   hasServiceTap: boolean;
+  serviceTapType: "fused_disconnect" | "breaker_enclosure" | null;
   hasEnphase: boolean;
   hasEvCharger: boolean;
   moduleCount: number;
@@ -148,6 +150,9 @@ export function detectJobContext(
 
   const hasPowerwall = items.some(i => /1707000/i.test(i.model ?? ""));
   const hasExpansion = items.some(i => /1807000/i.test(i.model ?? ""));
+  // Stacked expansion: multiple PW3 + expansion in same project (2+ battery units)
+  const isStackedExpansion = hasExpansion && hasPowerwall &&
+    items.filter(i => /1707000|1807000/i.test(i.model ?? "")).reduce((sum, i) => sum + (Number(i.qty) || 0), 0) > 2;
   const hasBackupSwitch = items.some(i =>
     /1624171/i.test(i.model ?? "") || /backup\s*switch/i.test(i.description));
   const hasGateway3 = items.some(i => /1841000/i.test(i.model ?? ""));
@@ -158,6 +163,12 @@ export function detectJobContext(
   const hasServiceTap = items.some(i =>
     /DG222NRB|TG3222R|TGN3322R/i.test(i.model ?? "") ||
     /service\s*tap|fusible/i.test(i.description));
+  const serviceTapType: JobContext["serviceTapType"] = items.some(i =>
+    /DG222NRB/i.test(i.model ?? "") || /fusible/i.test(i.description))
+    ? "fused_disconnect"
+    : items.some(i => /TG3222R|TGN3322R/i.test(i.model ?? "") || /breaker\s*enclosure/i.test(i.description))
+      ? "breaker_enclosure"
+      : null;
   const hasEnphase = items.some(i =>
     /enphase/i.test(i.brand ?? "") || /IQ8|Q-12-RAW/i.test(i.model ?? ""));
   const hasEvCharger = items.some(i =>
@@ -178,12 +189,14 @@ export function detectJobContext(
     roofType,
     isStandingSeamS5,
     hasExpansion,
+    isStackedExpansion,
     hasPowerwall,
     hasBackupSwitch,
     hasGateway3,
     hasRemoteMeter,
     hasProductionMeter,
     hasServiceTap,
+    serviceTapType,
     hasEnphase,
     hasEvCharger,
     moduleCount,
