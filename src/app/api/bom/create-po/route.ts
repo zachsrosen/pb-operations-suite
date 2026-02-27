@@ -239,7 +239,7 @@ export async function POST(request: NextRequest) {
   try {
     poResult = await zohoInventory.createPurchaseOrder({
       vendor_id: vendorId,
-      purchaseorder_number: `PO-${dealId}`,
+      purchaseorder_number: `PO-${dealId} (TEST)`,
       reference_number: snapshot.dealName.slice(0, 50),
       notes: `Generated from PB Ops BOM v${version}${address ? ` — ${address}` : ""}`,
       status: "draft",
