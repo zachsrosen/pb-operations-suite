@@ -1138,9 +1138,11 @@ export default function ConstructionSchedulerPage() {
     setTimeout(() => fetchProjects(), 1000);
   }, [fetchProjects, getTentativeRecordId, handleCancelTentative, projects, showToast, trackFeature]);
 
+  const selectedProjectManualDate = selectedProject ? manualSchedules[selectedProject.id] : undefined;
+
   const selectedProjectDetail = useMemo(() => {
     if (!selectedProject) return null;
-    const manualDate = manualSchedules[selectedProject.id] || null;
+    const manualDate = selectedProjectManualDate || null;
     const scheduledDate = manualDate || getEffectiveInstallStartDate(selectedProject);
     const scheduleSourceLabel = manualDate
       ? "Manual override"
@@ -1168,7 +1170,7 @@ export default function ConstructionSchedulerPage() {
       zuperRangeStart: normalizedZuperDates.startDate,
       zuperRangeEnd: normalizedZuperDates.endDate,
     };
-  }, [selectedProject, manualSchedules, getTentativeRecordId]);
+  }, [selectedProject, selectedProjectManualDate, getTentativeRecordId]);
 
   const openSelectedProjectScheduleModal = useCallback(() => {
     if (!selectedProject) return;

@@ -188,14 +188,14 @@ export function ConstructionProjectDetailPanel({
               <button
                 onClick={onConfirmTentative}
                 disabled={confirmingTentative}
-                className="flex-1 px-3 py-1.5 text-xs rounded-md bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50"
+                className="flex-1 px-3 py-1.5 text-xs rounded-md bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
               >
                 {confirmingTentative ? "Confirming..." : "Confirm & Sync"}
               </button>
               <button
                 onClick={onCancelTentative}
                 disabled={cancellingTentative}
-                className="flex-1 px-3 py-1.5 text-xs rounded-md bg-red-600/80 hover:bg-red-700 disabled:opacity-50"
+                className="flex-1 px-3 py-1.5 text-xs rounded-md bg-red-600/80 text-white hover:bg-red-700 disabled:opacity-50"
               >
                 {cancellingTentative ? "Cancelling..." : "Cancel Tentative"}
               </button>
