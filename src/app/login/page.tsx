@@ -5,9 +5,12 @@ import { signIn } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 
+const IS_DEV = process.env.NODE_ENV !== "production";
+
 function LoginForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [devEmail, setDevEmail] = useState("");
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") || "/";
   const errorParam = searchParams.get("error");
@@ -86,6 +89,42 @@ function LoginForm() {
       <p className="text-center text-muted text-xs mt-6">
         Only @photonbrothers.com accounts are allowed
       </p>
+
+      {IS_DEV && (
+        <div className="mt-6 pt-6 border-t border-t-border">
+          <p className="text-xs text-muted text-center mb-3">Dev Login (local only)</p>
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (!devEmail) return;
+              setLoading(true);
+              setError("");
+              try {
+                await signIn("dev-login", { email: devEmail, callbackUrl });
+              } catch {
+                setError("Dev sign-in failed.");
+                setLoading(false);
+              }
+            }}
+            className="flex gap-2"
+          >
+            <input
+              type="email"
+              placeholder="you@photonbrothers.com"
+              value={devEmail}
+              onChange={(e) => setDevEmail(e.target.value)}
+              className="flex-1 rounded-lg border border-t-border bg-surface-2 px-3 py-2 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-orange-500/50"
+            />
+            <button
+              type="submit"
+              disabled={loading || !devEmail}
+              className="rounded-lg bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-500 disabled:opacity-50 transition-colors"
+            >
+              Dev Sign In
+            </button>
+          </form>
+        </div>
+      )}
     </div>
   );
 }

@@ -8,7 +8,6 @@ import { useToast } from "@/contexts/ToastContext";
 import { useSession } from "next-auth/react";
 import BomHistoryDrawer from "@/components/BomHistoryDrawer";
 import type { BomSnapshot as BomSnapshotGlobal } from "@/lib/bom-history";
-import PushToSystemsModal, { type PushItem } from "@/components/PushToSystemsModal";
 // PDF upload uses chunked /api/bom/chunk — stays on our domain, no CORS issues
 
 /* ------------------------------------------------------------------ */
@@ -843,7 +842,6 @@ function BomDashboardInner() {
   const [compareB, setCompareB] = useState<BomSnapshot | null>(null);
   const [showDiff, setShowDiff] = useState(false);
   const [historyDrawerOpen, setHistoryDrawerOpen] = useState(false);
-  const [pushItem, setPushItem] = useState<PushItem | null>(null);
   const diffRows = compareA && compareB ? diffBoms(compareA.bomData.items, compareB.bomData.items) : [];
 
   // Product catalog comparison data
@@ -3050,15 +3048,17 @@ function BomDashboardInner() {
                                   <CatalogDot present={status?.[src]} loading={catalogLoading} />
                                   {!status?.[src] && !catalogLoading && (
                                     <button
-                                      onClick={() => setPushItem({
-                                        brand: item.brand ?? "",
-                                        model: item.model ?? "",
-                                        description: item.description,
-                                        category: item.category,
-                                        unitSpec: item.unitSpec,
-                                        unitLabel: item.unitLabel,
-                                        dealId: linkedProject?.hs_object_id,
-                                      })}
+                                      onClick={() => {
+                                        const params = new URLSearchParams();
+                                        if (item.brand) params.set("brand", item.brand);
+                                        if (item.model) params.set("model", item.model);
+                                        if (item.description) params.set("description", item.description);
+                                        if (item.category) params.set("category", item.category);
+                                        if (item.unitSpec != null) params.set("unitSpec", String(item.unitSpec));
+                                        if (item.unitLabel) params.set("unitLabel", item.unitLabel);
+                                        if (linkedProject?.hs_object_id) params.set("dealId", linkedProject.hs_object_id);
+                                        router.push(`/dashboards/catalog/new?${params.toString()}`);
+                                      }}
                                       className="absolute -top-1.5 -right-1.5 opacity-0 group-hover:opacity-100 transition-opacity text-[10px] leading-none font-semibold text-cyan-600 dark:text-cyan-400 hover:text-cyan-500 bg-surface border border-t-border rounded px-0.5"
                                       title="Add to missing catalog"
                                     >
@@ -3094,10 +3094,6 @@ function BomDashboardInner() {
           </>
         )}
       </div>
-      <PushToSystemsModal
-        item={pushItem}
-        onClose={() => setPushItem(null)}
-      />
       <BomHistoryDrawer
         open={historyDrawerOpen}
         onClose={() => setHistoryDrawerOpen(false)}

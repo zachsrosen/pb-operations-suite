@@ -1,5 +1,6 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
+import Credentials from "next-auth/providers/credentials";
 import type { JWT } from "next-auth/jwt";
 import { assertProductionEnvConfigured } from "@/lib/env";
 import { normalizeRole, type UserRole } from "@/lib/role-permissions";
@@ -79,6 +80,26 @@ async function syncRoleToToken(token: JWT): Promise<JWT> {
   }
 }
 
+// Dev-only credentials provider for local testing without Google OAuth
+const devProvider = process.env.NODE_ENV !== "production"
+  ? [
+      Credentials({
+        id: "dev-login",
+        name: "Dev Login",
+        credentials: {
+          email: { label: "Email", type: "email", placeholder: "you@photonbrothers.com" },
+        },
+        async authorize(credentials) {
+          const email = credentials?.email as string | undefined;
+          if (!email?.endsWith("@photonbrothers.com") && !email?.endsWith("@pb-contractor.com")) {
+            return null;
+          }
+          return { id: email, email, name: email.split("@")[0] };
+        },
+      }),
+    ]
+  : [];
+
 export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [
     Google({
@@ -96,6 +117,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         },
       },
     }),
+    ...devProvider,
   ],
   pages: {
     signIn: "/login",
