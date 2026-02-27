@@ -7,6 +7,13 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { LOCATION_TIMEZONES } from "@/lib/constants";
 import { generateOptimizedSchedule, type OptimizableProject, type ScoringPreset, type ExistingBooking, DEFAULT_LOCATION_CAPACITY } from "@/lib/schedule-optimizer";
+import {
+  addDaysYmd,
+  getBusinessDatesInSpan as getBusinessDatesInSpanShared,
+  getConstructionSpanDaysFromZuper,
+  isWeekendDateYmd,
+  normalizeZuperBoundaryDates as normalizeZuperBoundaryDatesShared,
+} from "@/lib/scheduling-utils";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -390,16 +397,11 @@ function getProjectId(fullName: string): string {
 }
 
 function isWeekend(dateStr: string): boolean {
-  const [year, month, day] = dateStr.split("-").map(Number);
-  const d = new Date(year, month - 1, day);
-  return d.getDay() === 0 || d.getDay() === 6;
+  return isWeekendDateYmd(dateStr);
 }
 
 function addDays(dateStr: string, days: number): string {
-  const [year, month, day] = dateStr.split("-").map(Number);
-  const d = new Date(year, month - 1, day);
-  d.setDate(d.getDate() + days);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return addDaysYmd(dateStr, days);
 }
 
 function addBusinessDays(dateStr: string, days: number): string {
@@ -422,86 +424,16 @@ function addBusinessDays(dateStr: string, days: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-function countBusinessDaysInclusive(startDate: string, endDate: string): number {
-  if (!startDate || !endDate) return 1;
-  if (endDate < startDate) return 1;
-  let cursor = startDate;
-  let count = 0;
-  while (cursor <= endDate) {
-    if (!isWeekend(cursor)) count += 1;
-    cursor = addDays(cursor, 1);
-  }
-  return Math.max(count, 1);
-}
-
-function isoToLocalPartsInTimezone(
-  iso: string,
-  timezone: string
-): { ymd: string; minutes: number } | null {
-  const parseZuperTimestamp = (value: string): Date | null => {
-    const trimmed = value.trim();
-    if (!trimmed) return null;
-    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-      const parsedDateOnly = new Date(`${trimmed}T00:00:00.000Z`);
-      return Number.isFinite(parsedDateOnly.getTime()) ? parsedDateOnly : null;
-    }
-    if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2})?$/.test(trimmed)) {
-      const normalized = `${trimmed.replace(" ", "T")}Z`;
-      const parsedNoTz = new Date(normalized);
-      return Number.isFinite(parsedNoTz.getTime()) ? parsedNoTz : null;
-    }
-    const parsed = new Date(trimmed);
-    return Number.isFinite(parsed.getTime()) ? parsed : null;
-  };
-
-  const d = parseZuperTimestamp(iso);
-  if (!d) return null;
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(d);
-  const year = parts.find((p) => p.type === "year")?.value;
-  const month = parts.find((p) => p.type === "month")?.value;
-  const day = parts.find((p) => p.type === "day")?.value;
-  const hour = parts.find((p) => p.type === "hour")?.value;
-  const minute = parts.find((p) => p.type === "minute")?.value;
-  if (!year || !month || !day || hour == null || minute == null) return null;
-  return {
-    ymd: `${year}-${month}-${day}`,
-    minutes: Number(hour) * 60 + Number(minute),
-  };
-}
-
-function fallbackYmdFromTimestamp(value?: string | null): string | undefined {
-  if (!value) return undefined;
-  const match = value.match(/\d{4}-\d{2}-\d{2}/);
-  return match?.[0];
-}
-
 function normalizeZuperBoundaryDates(
   startIso?: string | null,
   endIso?: string | null,
   location?: string | null
 ): { startDate?: string; endDate?: string } {
-  const tz = LOCATION_TIMEZONES[location || ""] || "America/Denver";
-  const startLocal = startIso ? isoToLocalPartsInTimezone(startIso, tz) : null;
-  const endLocal = endIso ? isoToLocalPartsInTimezone(endIso, tz) : null;
-
-  const startDate = startIso ? (startLocal?.ymd || fallbackYmdFromTimestamp(startIso)) : undefined;
-  let endDate = endIso ? (endLocal?.ymd || fallbackYmdFromTimestamp(endIso)) : undefined;
-
-  // Use actual Zuper local boundary dates directly.
-  // Guard malformed data where end is earlier than start.
-  if (startDate && endDate && endDate < startDate) {
-    endDate = startDate;
-  }
-
-  return { startDate, endDate };
+  return normalizeZuperBoundaryDatesShared({
+    startIso,
+    endIso,
+    timezone: LOCATION_TIMEZONES[location || ""] || "America/Denver",
+  });
 }
 
 function getNextWorkday(dateStr: string): string {
@@ -518,14 +450,7 @@ function toDateStr(d: Date): string {
 }
 
 function getBusinessDatesInSpan(startDate: string, totalDays: number): string[] {
-  const days = Math.max(1, Math.ceil(totalDays));
-  const dates: string[] = [];
-  let cursor = startDate;
-  while (dates.length < days) {
-    if (!isWeekend(cursor)) dates.push(cursor);
-    cursor = addDays(cursor, 1);
-  }
-  return dates;
+  return getBusinessDatesInSpanShared(startDate, totalDays);
 }
 
 function hasBlockedDateConflict(blockedDates: Set<string> | undefined, startDate: string, totalDays: number): boolean {
@@ -1013,18 +938,12 @@ export default function SchedulerPage() {
 
   const getEffectiveConstructionDays = useCallback((project: SchedulerProject): number | undefined => {
     if (project.zuperJobCategory !== "construction") return undefined;
-    if (project.zuperScheduledStart && project.zuperScheduledEnd) {
-      const { startDate, endDate } = normalizeZuperBoundaryDates(
-        project.zuperScheduledStart,
-        project.zuperScheduledEnd,
-        project.location
-      );
-      if (startDate && endDate) {
-        return countBusinessDaysInclusive(startDate, endDate);
-      }
-    }
-    if (project.zuperScheduledDays && project.zuperScheduledDays > 0) return project.zuperScheduledDays;
-    return undefined;
+    return getConstructionSpanDaysFromZuper({
+      startIso: project.zuperScheduledStart,
+      endIso: project.zuperScheduledEnd,
+      scheduledDays: project.zuperScheduledDays,
+      timezone: LOCATION_TIMEZONES[project.location || ""] || "America/Denver",
+    });
   }, []);
 
   /** Build a list of existing crew bookings from Zuper jobs, manual schedules,

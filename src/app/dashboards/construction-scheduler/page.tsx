@@ -7,6 +7,13 @@ import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 import { LOCATION_TIMEZONES } from "@/lib/constants";
+import { DEFAULT_LOCATION_CAPACITY } from "@/lib/schedule-optimizer";
+import {
+  getBusinessDatesInSpan,
+  getConstructionSpanDaysFromZuper,
+  isWeekendDateYmd,
+  normalizeZuperBoundaryDates,
+} from "@/lib/scheduling-utils";
 
 /* ------------------------------------------------------------------ */
 /*  Construction Director Assignments                                   */
@@ -72,7 +79,14 @@ interface ConstructionProject {
   zuperScheduledDays?: number;
   zuperScheduledStart?: string;
   zuperScheduledEnd?: string;
+  zuperAssignedTo?: string[];
   tentativeRecordId?: string;
+}
+
+interface ZuperAssignee {
+  name: string;
+  userUid: string;
+  teamUid: string;
 }
 
 interface PendingSchedule {
@@ -125,6 +139,9 @@ const MONTH_NAMES = [
 
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const PROJECTS_QUERY_KEY = ["scheduler", "construction-projects"] as const;
+const DEFAULT_CONSTRUCTION_ASSIGNEES: Record<string, ZuperAssignee[]> = Object.fromEntries(
+  Object.entries(CONSTRUCTION_DIRECTORS).map(([location, director]) => [location, [{ ...director }]])
+) as Record<string, ZuperAssignee[]>;
 
 // Status values discovered dynamically from actual project data
 
@@ -161,95 +178,25 @@ function getProjectId(fullName: string): string {
   return fullName.split(" | ")[0];
 }
 
+function normalizeLocation(location?: string | null): string {
+  const value = (location || "").trim();
+  if (!value) return "Unknown";
+  if (value === "DTC") return "Centennial";
+  return value;
+}
+
 function isWeekend(dateStr: string): boolean {
-  const [year, month, day] = dateStr.split("-").map(Number);
-  const d = new Date(year, month - 1, day);
-  return d.getDay() === 0 || d.getDay() === 6;
+  return isWeekendDateYmd(dateStr);
 }
 
-function addDays(dateStr: string, days: number): string {
-  const [year, month, day] = dateStr.split("-").map(Number);
-  const d = new Date(year, month - 1, day);
-  d.setDate(d.getDate() + days);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-function countBusinessDaysInclusive(startDate: string, endDate: string): number {
-  if (!startDate || !endDate) return 1;
-  if (endDate < startDate) return 1;
-  let cursor = startDate;
-  let count = 0;
-  while (cursor <= endDate) {
-    if (!isWeekend(cursor)) count += 1;
-    cursor = addDays(cursor, 1);
-  }
-  return Math.max(count, 1);
-}
-
-function isoToLocalPartsInTimezone(
-  iso: string,
-  timezone: string
-): { ymd: string; minutes: number } | null {
-  const trimmed = iso.trim();
-  if (!trimmed) return null;
-  const normalized = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2})?$/.test(trimmed)
-    ? `${trimmed.replace(" ", "T")}Z`
-    : trimmed;
-  const parsed = /^\d{4}-\d{2}-\d{2}$/.test(trimmed)
-    ? new Date(`${trimmed}T00:00:00.000Z`)
-    : new Date(normalized);
-  if (!Number.isFinite(parsed.getTime())) return null;
-
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(parsed);
-  const year = parts.find((p) => p.type === "year")?.value;
-  const month = parts.find((p) => p.type === "month")?.value;
-  const day = parts.find((p) => p.type === "day")?.value;
-  const hour = parts.find((p) => p.type === "hour")?.value;
-  const minute = parts.find((p) => p.type === "minute")?.value;
-  if (!year || !month || !day || hour == null || minute == null) return null;
-  return {
-    ymd: `${year}-${month}-${day}`,
-    minutes: Number(hour) * 60 + Number(minute),
-  };
-}
-
-function fallbackYmdFromTimestamp(value?: string | null): string | undefined {
-  if (!value) return undefined;
-  const match = value.match(/\d{4}-\d{2}-\d{2}/);
-  return match?.[0];
-}
-
-function normalizeZuperBoundaryDates(
-  startIso?: string | null,
-  endIso?: string | null,
-  location?: string | null
-): { startDate?: string; endDate?: string } {
-  const tz = LOCATION_TIMEZONES[location || ""] || "America/Denver";
-  const startLocal = startIso ? isoToLocalPartsInTimezone(startIso, tz) : null;
-  const endLocal = endIso ? isoToLocalPartsInTimezone(endIso, tz) : null;
-
-  const startDate = startIso ? (startLocal?.ymd || fallbackYmdFromTimestamp(startIso)) : undefined;
-  let endDate = endIso ? (endLocal?.ymd || fallbackYmdFromTimestamp(endIso)) : undefined;
-
-  // If end boundary is same/earlier local clock time on a later day, treat it as
-  // exclusive and move inclusive boundary back one day.
-  if (startDate && endDate && endDate > startDate && startLocal && endLocal && endLocal.minutes <= startLocal.minutes) {
-    endDate = addDays(endDate, -1);
-  }
-
-  if (startDate && endDate && endDate < startDate) {
-    endDate = startDate;
-  }
-
-  return { startDate, endDate };
+function dedupeAssignees(assignees: ZuperAssignee[]): ZuperAssignee[] {
+  const seen = new Set<string>();
+  return assignees.filter((assignee) => {
+    const key = `${assignee.userUid}|${assignee.name.toLowerCase()}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function toDateStr(d: Date): string {
@@ -266,7 +213,7 @@ function isPastDate(dateStr: string): boolean {
 
 // Check if an install is overdue: scheduled in the past but not completed
 function isInstallOverdue(project: ConstructionProject, manualScheduleDate?: string): boolean {
-  const schedDate = manualScheduleDate || project.scheduleDate;
+  const schedDate = manualScheduleDate || getEffectiveInstallStartDate(project);
   if (!schedDate) return false;
   if (project.completionDate) return false;
   if (project.installStatus.toLowerCase().includes("complete")) return false;
@@ -274,21 +221,28 @@ function isInstallOverdue(project: ConstructionProject, manualScheduleDate?: str
 }
 
 function getEffectiveInstallDays(project: ConstructionProject): number {
-  if (project.zuperScheduledStart && project.zuperScheduledEnd) {
-    const { startDate, endDate } = normalizeZuperBoundaryDates(
-      project.zuperScheduledStart,
-      project.zuperScheduledEnd,
-      project.location
-    );
-    if (startDate && endDate) {
-      return countBusinessDaysInclusive(startDate, endDate);
-    }
-  }
-  const zuperDays = Number(project.zuperScheduledDays);
-  if (Number.isFinite(zuperDays) && zuperDays > 0) {
-    return Math.max(1, Math.ceil(zuperDays));
-  }
+  const fromZuper = getConstructionSpanDaysFromZuper({
+    startIso: project.zuperScheduledStart,
+    endIso: project.zuperScheduledEnd,
+    scheduledDays: project.zuperScheduledDays,
+    timezone: LOCATION_TIMEZONES[project.location || ""] || "America/Denver",
+  });
+  if (typeof fromZuper === "number") return fromZuper;
   return Math.max(1, Math.ceil(project.installDays || 2));
+}
+
+function getEffectiveInstallStartDate(project: ConstructionProject): string | null {
+  if (project.zuperScheduledStart) {
+    const boundaries = normalizeZuperBoundaryDates({
+      startIso: project.zuperScheduledStart,
+      endIso: project.zuperScheduledEnd,
+      timezone: LOCATION_TIMEZONES[project.location || ""] || "America/Denver",
+    });
+    if (boundaries.startDate) return boundaries.startDate;
+    const isoDate = project.zuperScheduledStart.split("T")[0];
+    if (isoDate) return isoDate;
+  }
+  return project.scheduleDate || null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -360,12 +314,17 @@ export default function ConstructionSchedulerPage() {
 
   /* ---- modals ---- */
   const [scheduleModal, setScheduleModal] = useState<PendingSchedule | null>(null);
+  const [selectedAssigneeNames, setSelectedAssigneeNames] = useState<string[]>([]);
 
   /* ---- Zuper integration ---- */
   const [zuperConfigured, setZuperConfigured] = useState(false);
   const [zuperWebBaseUrl, setZuperWebBaseUrl] = useState("https://web.zuperpro.com");
   const [syncToZuper, setSyncToZuper] = useState(true);
   const [syncingToZuper, setSyncingToZuper] = useState(false);
+  const [liveConstructionAssigneesByLocation, setLiveConstructionAssigneesByLocation] = useState<
+    Record<string, ZuperAssignee[]>
+  >({});
+  const [loadingConstructionAssignees, setLoadingConstructionAssignees] = useState(false);
 
   /* ---- Availability ---- */
   const [availabilityByDate, setAvailabilityByDate] = useState<Record<string, DayAvailability>>({});
@@ -412,6 +371,9 @@ export default function ConstructionSchedulerPage() {
                 const scheduledDays = Number(zuperJob.scheduledDays);
                 if (Number.isFinite(scheduledDays) && scheduledDays > 0) {
                   project.zuperScheduledDays = scheduledDays;
+                }
+                if (Array.isArray(zuperJob.assignedTo)) {
+                  project.zuperAssignedTo = zuperJob.assignedTo;
                 }
               }
             }
@@ -546,6 +508,111 @@ export default function ConstructionSchedulerPage() {
     }
   }, [selectedProject, zuperConfigured, currentMonth, currentYear, fetchAvailability, showAvailability]);
 
+  const availableConstructionAssignees = useMemo(() => {
+    if (!scheduleModal) return [] as ZuperAssignee[];
+    const location = scheduleModal.project.location;
+    const live = liveConstructionAssigneesByLocation[location];
+    if (live && live.length > 0) return live;
+    return DEFAULT_CONSTRUCTION_ASSIGNEES[location] || [];
+  }, [scheduleModal, liveConstructionAssigneesByLocation]);
+
+  useEffect(() => {
+    if (!scheduleModal) {
+      setLoadingConstructionAssignees(false);
+      return;
+    }
+    const location = scheduleModal.project.location;
+    const director = CONSTRUCTION_DIRECTORS[location];
+    const teamUid = director?.teamUid;
+    if (!teamUid) return;
+    if (Object.prototype.hasOwnProperty.call(liveConstructionAssigneesByLocation, location)) return;
+
+    let cancelled = false;
+    setLoadingConstructionAssignees(true);
+
+    fetch(`/api/zuper/teams/${encodeURIComponent(teamUid)}/users`)
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`Failed to fetch team users (${res.status})`);
+        return res.json() as Promise<{
+          users?: Array<{
+            userUid?: string;
+            firstName?: string;
+            lastName?: string;
+          }>;
+        }>;
+      })
+      .then((data) => {
+        if (cancelled) return;
+        const teamUsers = (data.users || [])
+          .map((user) => {
+            const userUid = String(user.userUid || "").trim();
+            const name = `${String(user.firstName || "").trim()} ${String(user.lastName || "").trim()}`.trim();
+            if (!userUid || !name) return null;
+            return { name, userUid, teamUid };
+          })
+          .filter((user): user is ZuperAssignee => !!user);
+
+        const fallback = DEFAULT_CONSTRUCTION_ASSIGNEES[location] || [];
+        const next = teamUsers.length > 0 ? teamUsers : fallback;
+        setLiveConstructionAssigneesByLocation((prev) => ({
+          ...prev,
+          [location]: dedupeAssignees(next),
+        }));
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.warn(`[Construction Scheduler] Failed to load live assignees for ${location}:`, error);
+        setLiveConstructionAssigneesByLocation((prev) => ({
+          ...prev,
+          [location]: DEFAULT_CONSTRUCTION_ASSIGNEES[location] || [],
+        }));
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingConstructionAssignees(false);
+      });
+
+    return () => {
+      cancelled = true;
+      setLoadingConstructionAssignees(false);
+    };
+  }, [scheduleModal, liveConstructionAssigneesByLocation]);
+
+  useEffect(() => {
+    if (!scheduleModal) {
+      setSelectedAssigneeNames([]);
+      return;
+    }
+
+    const availableNames = new Set(availableConstructionAssignees.map((assignee) => assignee.name));
+    if (availableNames.size === 0) {
+      setSelectedAssigneeNames([]);
+      return;
+    }
+
+    const priorSelections = selectedAssigneeNames.filter((name) => availableNames.has(name));
+    if (priorSelections.length > 0) {
+      if (priorSelections.length !== selectedAssigneeNames.length) {
+        setSelectedAssigneeNames(priorSelections);
+      }
+      return;
+    }
+
+    const projectAssigned = (scheduleModal.project.zuperAssignedTo || []).filter((name) => availableNames.has(name));
+    if (projectAssigned.length > 0) {
+      setSelectedAssigneeNames(projectAssigned);
+      return;
+    }
+
+    const defaultDirectorName = CONSTRUCTION_DIRECTORS[scheduleModal.project.location]?.name;
+    if (defaultDirectorName && availableNames.has(defaultDirectorName)) {
+      setSelectedAssigneeNames([defaultDirectorName]);
+      return;
+    }
+
+    const fallbackFirst = availableConstructionAssignees[0]?.name;
+    setSelectedAssigneeNames(fallbackFirst ? [fallbackFirst] : []);
+  }, [scheduleModal, availableConstructionAssignees, selectedAssigneeNames]);
+
   /* ================================================================ */
   /*  Toast                                                            */
   /* ================================================================ */
@@ -601,8 +668,8 @@ export default function ConstructionSchedulerPage() {
     if (sortBy === "amount") filtered.sort((a, b) => b.amount - a.amount);
     else if (sortBy === "date") {
       filtered.sort((a, b) => {
-        const dateA = a.scheduleDate || manualSchedules[a.id] || "z";
-        const dateB = b.scheduleDate || manualSchedules[b.id] || "z";
+        const dateA = manualSchedules[a.id] || getEffectiveInstallStartDate(a) || "z";
+        const dateB = manualSchedules[b.id] || getEffectiveInstallStartDate(b) || "z";
         return dateA.localeCompare(dateB);
       });
     } else if (sortBy === "status") {
@@ -613,7 +680,7 @@ export default function ConstructionSchedulerPage() {
 
   const unscheduledProjects = useMemo(() => {
     return filteredProjects.filter(p =>
-      !p.scheduleDate &&
+      !getEffectiveInstallStartDate(p) &&
       !manualSchedules[p.id] &&
       !p.completionDate &&
       p.installStatus !== "Completed"
@@ -623,10 +690,10 @@ export default function ConstructionSchedulerPage() {
   const stats = useMemo(() => {
     const total = projects.length;
     const needsScheduling = projects.filter(p =>
-      !p.scheduleDate && !manualSchedules[p.id] && !p.completionDate
+      !getEffectiveInstallStartDate(p) && !manualSchedules[p.id] && !p.completionDate
     ).length;
     const scheduled = projects.filter(p =>
-      (p.scheduleDate || manualSchedules[p.id]) && !p.completionDate
+      (manualSchedules[p.id] || getEffectiveInstallStartDate(p)) && !p.completionDate
     ).length;
     const completed = projects.filter(p => p.completionDate).length;
     const overdue = projects.filter(p => isInstallOverdue(p, manualSchedules[p.id])).length;
@@ -634,6 +701,43 @@ export default function ConstructionSchedulerPage() {
 
     return { total, needsScheduling, scheduled, completed, overdue, totalValue };
   }, [projects, manualSchedules]);
+
+  const buildExistingBookings = useCallback(
+    (excludeProjectId?: string): Array<{ location: string; startDate: string; days: number }> => {
+      const bookings: Array<{ location: string; startDate: string; days: number }> = [];
+      for (const project of projects) {
+        if (excludeProjectId && project.id === excludeProjectId) continue;
+        const startDate = manualSchedules[project.id] || getEffectiveInstallStartDate(project);
+        if (!startDate) continue;
+        bookings.push({
+          location: normalizeLocation(project.location),
+          startDate,
+          days: getEffectiveInstallDays(project),
+        });
+      }
+      return bookings;
+    },
+    [projects, manualSchedules]
+  );
+
+  const capacityConflictDates = useMemo(() => {
+    if (!scheduleModal) return [] as string[];
+    const location = normalizeLocation(scheduleModal.project.location);
+    const capacity = DEFAULT_LOCATION_CAPACITY[location] ?? 1;
+    const dayCounts: Record<string, number> = {};
+    for (const booking of buildExistingBookings(scheduleModal.project.id)) {
+      if (normalizeLocation(booking.location) !== location) continue;
+      const span = getBusinessDatesInSpan(booking.startDate, booking.days);
+      for (const day of span) {
+        dayCounts[day] = (dayCounts[day] || 0) + 1;
+      }
+    }
+
+    const proposedSpan = getBusinessDatesInSpan(scheduleModal.date, getEffectiveInstallDays(scheduleModal.project));
+    return proposedSpan.filter((day) => (dayCounts[day] || 0) >= capacity);
+  }, [scheduleModal, buildExistingBookings]);
+
+  const locationHasCapacity = capacityConflictDates.length === 0;
 
   /* ================================================================ */
   /*  Calendar data                                                    */
@@ -668,7 +772,7 @@ export default function ConstructionSchedulerPage() {
   const eventsForDate = useCallback((dateStr: string): (ConstructionProject & { dayNum: number; totalDays: number })[] => {
     const results: (ConstructionProject & { dayNum: number; totalDays: number })[] = [];
     filteredProjects.forEach(p => {
-      const schedDate = manualSchedules[p.id] || p.scheduleDate;
+      const schedDate = manualSchedules[p.id] || getEffectiveInstallStartDate(p);
       if (!schedDate) return;
       const businessDays = getEffectiveInstallDays(p);
       const startDate = new Date(schedDate + "T12:00:00");
@@ -727,6 +831,21 @@ export default function ConstructionSchedulerPage() {
   const confirmSchedule = useCallback(async () => {
     if (!scheduleModal) return;
     const { project, date } = scheduleModal;
+    if (!locationHasCapacity) {
+      showToast("Location is at capacity for one or more days in this install span", "warning");
+      return;
+    }
+
+    const selectedAssignees = availableConstructionAssignees.filter((assignee) =>
+      selectedAssigneeNames.includes(assignee.name)
+    );
+    if (selectedAssignees.length === 0) {
+      showToast("Select at least one construction assignee", "warning");
+      return;
+    }
+    const selectedAssigneeNamesCsv = selectedAssignees.map((a) => a.name).join(", ");
+    const selectedAssigneeUidCsv = selectedAssignees.map((a) => a.userUid).join(",");
+    const selectedTeamUid = selectedAssignees[0]?.teamUid;
 
     trackFeature("install-scheduled", "Installation scheduled", {
       scheduler: "construction",
@@ -743,6 +862,8 @@ export default function ConstructionSchedulerPage() {
       [project.id]: date,
     }));
     const scheduleTimezone = LOCATION_TIMEZONES[project.location] || "America/Denver";
+    const director = CONSTRUCTION_DIRECTORS[project.location];
+    const assigneeSummary = selectedAssigneeNamesCsv || director?.name || "Unassigned";
 
     if (syncToZuper) {
       if (!zuperConfigured) {
@@ -753,8 +874,6 @@ export default function ConstructionSchedulerPage() {
       } else {
       setSyncingToZuper(true);
       try {
-        // Auto-assign location director
-        const director = CONSTRUCTION_DIRECTORS[project.location];
         const response = await fetch("/api/zuper/jobs/schedule", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -774,10 +893,12 @@ export default function ConstructionSchedulerPage() {
               type: "installation",
               date: date,
               days: getEffectiveInstallDays(project),
-              crew: director?.userUid,
-              teamUid: director?.teamUid,
+              crew: selectedAssigneeUidCsv || director?.userUid,
+              userUid: selectedAssigneeUidCsv || director?.userUid,
+              assignedUser: selectedAssigneeNamesCsv || director?.name,
+              teamUid: selectedTeamUid || director?.teamUid,
               timezone: scheduleTimezone,
-              notes: `Scheduled via Construction Schedule${director ? ` — Director: ${director.name}` : ""}`,
+              notes: `Scheduled via Construction Schedule — Assignees: ${assigneeSummary}`,
             },
             rescheduleOnly: true,
           }),
@@ -815,7 +936,6 @@ export default function ConstructionSchedulerPage() {
       }
     } else {
       try {
-        const director = CONSTRUCTION_DIRECTORS[project.location];
         const response = await fetch("/api/zuper/jobs/schedule/tentative", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -831,12 +951,12 @@ export default function ConstructionSchedulerPage() {
               type: "installation",
               date,
               days: getEffectiveInstallDays(project),
-              crew: director?.userUid,
-              userUid: director?.userUid,
-              teamUid: director?.teamUid,
-              assignedUser: director?.name,
+              crew: selectedAssigneeUidCsv || director?.userUid,
+              userUid: selectedAssigneeUidCsv || director?.userUid,
+              teamUid: selectedTeamUid || director?.teamUid,
+              assignedUser: selectedAssigneeNamesCsv || director?.name,
               timezone: scheduleTimezone,
-              notes: `Tentatively scheduled via Construction Scheduler${director ? ` — Director: ${director.name}` : ""}`,
+              notes: `Tentatively scheduled via Construction Scheduler — Assignees: ${assigneeSummary}`,
             },
           }),
         });
@@ -860,7 +980,7 @@ export default function ConstructionSchedulerPage() {
     }
 
     setScheduleModal(null);
-  }, [scheduleModal, zuperConfigured, syncToZuper, showToast, trackFeature]);
+  }, [scheduleModal, locationHasCapacity, availableConstructionAssignees, selectedAssigneeNames, zuperConfigured, syncToZuper, showToast, trackFeature]);
 
   const handleConfirmTentative = useCallback(async (projectId: string) => {
     const recordId = getTentativeRecordId(projectId);
@@ -1448,7 +1568,7 @@ export default function ConstructionSchedulerPage() {
                               }}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setScheduleModal({ project: ev, date: manualSchedules[ev.id] || ev.scheduleDate || dateStr });
+                                setScheduleModal({ project: ev, date: manualSchedules[ev.id] || getEffectiveInstallStartDate(ev) || dateStr });
                               }}
                               className={`text-xs p-1 rounded truncate cursor-grab active:cursor-grabbing ${
                                 overdue
@@ -1513,7 +1633,7 @@ export default function ConstructionSchedulerPage() {
                     </thead>
                     <tbody className="divide-y divide-t-border">
                       {filteredProjects.map((project) => {
-                        const schedDate = manualSchedules[project.id] || project.scheduleDate;
+                        const schedDate = manualSchedules[project.id] || getEffectiveInstallStartDate(project);
                         const overdue = isInstallOverdue(project, manualSchedules[project.id]);
                         return (
                           <tr key={project.id} className={`hover:bg-surface/50 ${overdue ? "bg-red-500/5" : ""}`}>
@@ -1667,6 +1787,41 @@ export default function ConstructionSchedulerPage() {
               </div>
 
               <div>
+                <span className="text-xs text-muted">Assignees</span>
+                <div className="mt-1 rounded-lg border border-t-border bg-surface-2 p-2 max-h-28 overflow-y-auto space-y-1">
+                  {loadingConstructionAssignees && (
+                    <p className="text-[0.72rem] text-muted">Loading team members...</p>
+                  )}
+                  {availableConstructionAssignees.map((assignee) => {
+                    const checked = selectedAssigneeNames.includes(assignee.name);
+                    return (
+                      <label key={assignee.userUid} className="flex items-center gap-2 text-sm cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => {
+                            setSelectedAssigneeNames((prev) => {
+                              if (!e.target.checked) return prev.filter((name) => name !== assignee.name);
+                              if (prev.includes(assignee.name)) return prev;
+                              return [...prev, assignee.name];
+                            });
+                          }}
+                          className="w-3.5 h-3.5 rounded border-t-border bg-surface text-emerald-500 focus:ring-emerald-500"
+                        />
+                        <span className={checked ? "text-foreground" : "text-muted"}>{assignee.name}</span>
+                      </label>
+                    );
+                  })}
+                  {!loadingConstructionAssignees && availableConstructionAssignees.length === 0 && (
+                    <p className="text-[0.72rem] text-amber-400">No assignees available for this location</p>
+                  )}
+                </div>
+                <p className="text-[0.72rem] text-muted mt-1">
+                  Selected: {selectedAssigneeNames.length > 0 ? selectedAssigneeNames.join(", ") : "None"}
+                </p>
+              </div>
+
+              <div>
                 <span className="text-xs text-muted">Amount</span>
                 <p className="text-sm font-mono text-orange-400">{formatCurrency(scheduleModal.project.amount)}</p>
               </div>
@@ -1728,8 +1883,23 @@ export default function ConstructionSchedulerPage() {
               </div>
             )}
 
+            {!locationHasCapacity && (
+              <div className="mb-4 p-3 rounded-lg border border-red-500/40 bg-red-500/10">
+                <p className="text-sm text-red-300 font-medium">Capacity conflict</p>
+                <p className="text-xs text-red-200/80 mt-1">
+                  This schedule overlaps days that are already at location capacity.
+                </p>
+                {capacityConflictDates.length > 0 && (
+                  <p className="text-xs text-red-200/80 mt-1">
+                    Blocked days: {capacityConflictDates.slice(0, 3).map((d) => formatShortDate(d)).join(", ")}
+                    {capacityConflictDates.length > 3 ? "..." : ""}
+                  </p>
+                )}
+              </div>
+            )}
+
             <div className="flex justify-end gap-2">
-              {scheduleModal.project.scheduleDate && !(tentativeRecordIds[scheduleModal.project.id] || scheduleModal.project.tentativeRecordId) && (
+              {(getEffectiveInstallStartDate(scheduleModal.project) || manualSchedules[scheduleModal.project.id]) && !(tentativeRecordIds[scheduleModal.project.id] || scheduleModal.project.tentativeRecordId) && (
                 <button
                   onClick={() => {
                     const projectId = scheduleModal.project.id;
@@ -1749,7 +1919,7 @@ export default function ConstructionSchedulerPage() {
               </button>
               <button
                 onClick={confirmSchedule}
-                disabled={syncingToZuper}
+                disabled={syncingToZuper || !locationHasCapacity || selectedAssigneeNames.length === 0}
                 className="px-4 py-2 text-sm bg-emerald-600 hover:bg-emerald-700 rounded-lg font-medium disabled:opacity-50"
               >
                 {syncingToZuper ? "Syncing..." : "Confirm Schedule"}
