@@ -342,7 +342,30 @@ async function getDriveToken(request: NextRequest): Promise<{ token: string; tok
       }
     }
   } catch {
-    // fall through to service account
+    // fall through
+  }
+
+  // CLI/machine access: use stored OAuth refresh token if available
+  const envRefreshToken = process.env.GOOGLE_DRIVE_REFRESH_TOKEN;
+  if (envRefreshToken) {
+    const refreshed = await refreshUserToken(envRefreshToken);
+    if (refreshed) {
+      return { token: refreshed, tokenSource: "env_refresh_token" };
+    }
+  }
+
+  // Try service account with domain-wide delegation (impersonate admin for Drive access)
+  const impersonateEmail = process.env.GOOGLE_ADMIN_EMAIL ?? process.env.GMAIL_SENDER_EMAIL;
+  if (impersonateEmail) {
+    try {
+      const saTokenDwd = await getServiceAccountToken(
+        ["https://www.googleapis.com/auth/drive.readonly"],
+        impersonateEmail
+      );
+      return { token: saTokenDwd, tokenSource: "service_account_dwd" };
+    } catch {
+      // DWD not configured — fall through to plain SA
+    }
   }
 
   const saToken = await getServiceAccountToken(["https://www.googleapis.com/auth/drive.readonly"]);
