@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import DashboardShell from "@/components/DashboardShell";
 import CategoryFields from "@/components/catalog/CategoryFields";
@@ -206,22 +206,36 @@ export default function CatalogSkuEditPage() {
     }
   }
 
+  const deleteAbortRef = useRef<AbortController | null>(null);
+  const [preflightDone, setPreflightDone] = useState(false);
+
   const handleDeleteClick = async () => {
+    deleteAbortRef.current?.abort();
+    const controller = new AbortController();
+    deleteAbortRef.current = controller;
+
     setShowDeleteModal(true);
+    setPreflightDone(false);
     try {
-      const res = await fetch(`/api/inventory/skus/${skuId}`, { method: "DELETE" });
+      const res = await fetch(`/api/inventory/skus/${skuId}`, {
+        method: "DELETE",
+        signal: controller.signal,
+      });
       const data = await res.json();
+      if (controller.signal.aborted) return;
       if (res.ok && data.preflight) {
         setDeleteTarget({
           warning: data.warning,
           syncedSystems: data.syncedSystems,
           pendingCount: data.pendingCount,
         });
+        setPreflightDone(true);
       } else {
         addToast({ type: "error", title: data.error || "Failed to check SKU status" });
         setShowDeleteModal(false);
       }
-    } catch {
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
       addToast({ type: "error", title: "Failed to check SKU status" });
       setShowDeleteModal(false);
     }
@@ -479,8 +493,12 @@ export default function CatalogSkuEditPage() {
           warning={deleteTarget?.warning}
           syncedSystems={deleteTarget?.syncedSystems}
           pendingCount={deleteTarget?.pendingCount}
+          preflightDone={preflightDone}
           onConfirm={handleForceDelete}
-          onCancel={() => setShowDeleteModal(false)}
+          onCancel={() => {
+            deleteAbortRef.current?.abort();
+            setShowDeleteModal(false);
+          }}
           deleting={deleting}
         />
       )}

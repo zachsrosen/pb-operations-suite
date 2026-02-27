@@ -7,6 +7,7 @@ interface DeleteSkuModalProps {
   warning?: string;
   syncedSystems?: string[];
   pendingCount?: number;
+  preflightDone: boolean;
   onConfirm: () => void;
   onCancel: () => void;
   deleting: boolean;
@@ -17,6 +18,7 @@ export default function DeleteSkuModal({
   warning,
   syncedSystems,
   pendingCount,
+  preflightDone,
   onConfirm,
   onCancel,
   deleting,
@@ -36,6 +38,13 @@ export default function DeleteSkuModal({
             <span className="text-foreground font-medium">{sku.model}</span>
           </div>
         </div>
+
+        {!preflightDone && (
+          <div className="flex items-center gap-2 text-sm text-muted mb-3">
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-cyan-500 border-t-transparent" />
+            Checking SKU status…
+          </div>
+        )}
 
         {syncedSystems && syncedSystems.length > 0 && (
           <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 p-3 mb-3 text-sm text-amber-400">
@@ -84,7 +93,7 @@ export default function DeleteSkuModal({
           </button>
           <button
             onClick={onConfirm}
-            disabled={!matches || deleting}
+            disabled={!matches || deleting || !preflightDone}
             className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {deleting ? "Deleting..." : "Delete permanently"}

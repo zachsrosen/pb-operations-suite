@@ -1,7 +1,7 @@
 // src/app/dashboards/catalog/page.tsx
 "use client";
 
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import Link from "next/link";
 import DashboardShell from "@/components/DashboardShell";
 import { useToast } from "@/contexts/ToastContext";
@@ -218,12 +218,24 @@ export default function CatalogPage() {
 
   useEffect(() => { fetchSkus(); }, [fetchSkus]);
 
+  // Abort controller ref for cancelling in-flight preflight requests
+  const deleteAbortRef = useRef<AbortController | null>(null);
+
   // Step 1: Open modal immediately, then run preflight (never deletes)
   const handleDeleteClick = useCallback(async (sku: { id: string; category: string; brand: string; model: string }) => {
+    // Cancel any prior in-flight preflight
+    deleteAbortRef.current?.abort();
+    const controller = new AbortController();
+    deleteAbortRef.current = controller;
+
     setDeleteTarget({ sku, preflightDone: false });
     try {
-      const res = await fetch(`/api/inventory/skus/${sku.id}`, { method: "DELETE" });
+      const res = await fetch(`/api/inventory/skus/${sku.id}`, {
+        method: "DELETE",
+        signal: controller.signal,
+      });
       const data = await res.json();
+      if (controller.signal.aborted) return; // user cancelled
       if (res.ok && data.preflight) {
         setDeleteTarget({
           sku,
@@ -236,7 +248,8 @@ export default function CatalogPage() {
         addToast({ type: "error", title: data.error || "Failed to check SKU status" });
         setDeleteTarget(null);
       }
-    } catch {
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
       addToast({ type: "error", title: "Failed to check SKU status" });
       setDeleteTarget(null);
     }
@@ -1078,8 +1091,12 @@ export default function CatalogPage() {
           warning={deleteTarget.warning}
           syncedSystems={deleteTarget.syncedSystems}
           pendingCount={deleteTarget.pendingCount}
+          preflightDone={deleteTarget.preflightDone}
           onConfirm={handleForceDelete}
-          onCancel={() => setDeleteTarget(null)}
+          onCancel={() => {
+            deleteAbortRef.current?.abort();
+            setDeleteTarget(null);
+          }}
           deleting={deleting}
         />
       )}
