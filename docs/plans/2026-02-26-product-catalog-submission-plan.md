@@ -1,4 +1,4 @@
-# Product Catalog Submission Redesign — Implementation Plan
+# Product Catalog Submission Redesign — Implementation Plan (Revised)
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
@@ -11,77 +11,110 @@
 **Design doc:** `docs/plans/2026-02-26-product-catalog-submission-design.md`
 **Property mapping:** `docs/product-property-mapping-simple.csv`
 
+**Revision notes:** This plan was revised to address 4 critical findings from code review:
+1. **Keep internal `EquipmentCategory` enum unchanged** — no renames. Add new values only. Use a mapping layer for display labels and cross-system category names.
+2. **Expand `PendingCatalogPush`** with all common form fields (sku, vendorName, vendorPartNumber, unitCost, sellPrice, hardToProcure, length, width, weight, metadata) so nothing is lost between submission and approval.
+3. **Fix sku column consistency** — add `sku` to both `PendingCatalogPush` and `EquipmentSku` in the same migration.
+4. **Approval route uses `$transaction`** to atomically write EquipmentSku + spec table + status update. Persists ALL common fields, not just description/unitSpec/unitLabel.
+5. **Use Next.js `useRouter` for navigation** instead of `window.location.href`.
+
 ---
 
-## Task 1: Prisma Schema — Update EquipmentCategory Enum
+## Task 1: Prisma Schema — Additive Enum Expansion + New Fields
+
+**Why:** We need 7 new category values and new columns on EquipmentSku and PendingCatalogPush. We do NOT rename any existing enum values — RACKING, ELECTRICAL_BOS, MONITORING, RAPID_SHUTDOWN stay as-is. The mapping layer (Task 3) handles display labels and cross-system name translation.
 
 **Files:**
-- Modify: `prisma/schema.prisma:571-580`
+- Modify: `prisma/schema.prisma:571-580` — add 7 new enum values
+- Modify: `prisma/schema.prisma:596-626` — add fields to EquipmentSku
+- Modify: `prisma/schema.prisma:772-798` — add fields to PendingCatalogPush
 
-**Step 1: Update the enum**
+**Step 1: Add 7 new values to EquipmentCategory enum**
 
-Replace the `EquipmentCategory` enum at line 571 with the 15 HubSpot-aligned values:
+At `prisma/schema.prisma:571`, update the enum to:
 
 ```prisma
 enum EquipmentCategory {
   MODULE
-  BATTERY
-  BATTERY_EXPANSION
   INVERTER
+  BATTERY
+  EV_CHARGER
+  RAPID_SHUTDOWN
+  RACKING
+  ELECTRICAL_BOS
+  MONITORING
+  // New categories (added Feb 2026)
+  BATTERY_EXPANSION
   OPTIMIZER
   GATEWAY
   D_AND_R
   SERVICE
   ADDER_SERVICES
-  EV_CHARGER
   TESLA_SYSTEM_COMPONENTS
   PROJECT_MILESTONES
-  RELAY_DEVICE
-  ELECTRICAL_HARDWARE
-  MOUNTING_HARDWARE
 }
 ```
 
-**Step 2: Create migration**
+Note: RELAY_DEVICE is NOT added — existing MONITORING enum covers that concept. ELECTRICAL_HARDWARE is NOT added — existing ELECTRICAL_BOS covers it. MOUNTING_HARDWARE is NOT added — existing RACKING covers it. The mapping layer (Task 3) provides the user-facing display labels.
 
-Run: `npx prisma migrate dev --name rename-equipment-categories`
+**Step 2: Add fields to EquipmentSku**
 
-This will fail if there are existing rows using old enum values. You'll need a manual SQL migration step:
+After `sellPrice Float?` (line 607), add:
 
-```sql
--- In the migration SQL file, add BEFORE the enum change:
-UPDATE "EquipmentSku" SET category = 'MOUNTING_HARDWARE' WHERE category = 'RACKING';
-UPDATE "EquipmentSku" SET category = 'ELECTRICAL_HARDWARE' WHERE category = 'ELECTRICAL_BOS';
-UPDATE "EquipmentSku" SET category = 'RELAY_DEVICE' WHERE category = 'MONITORING';
--- RAPID_SHUTDOWN rows: decide where they go (D_AND_R?)
-UPDATE "EquipmentSku" SET category = 'D_AND_R' WHERE category = 'RAPID_SHUTDOWN';
+```prisma
+  sku         String?           // Cross-system product code
+  hardToProcure Boolean         @default(false)
+  length      Float?            // Physical dimension
+  width       Float?
+  weight      Float?
 ```
 
-**Step 3: Update all code references to old enum values**
+**Step 3: Add fields to PendingCatalogPush**
 
-Search for: `RACKING`, `ELECTRICAL_BOS`, `MONITORING`, `RAPID_SHUTDOWN` in TypeScript files and update.
+After `unitLabel String?` (line 781), add:
 
-Key files to check:
-- `src/components/PushToSystemsModal.tsx:29-38` — CATEGORIES array
-- `src/app/api/catalog/push-requests/[id]/approve/route.ts` — uses `EquipmentCategory`
-- `src/app/dashboards/catalog/page.tsx` — category display logic
+```prisma
+  sku              String?
+  vendorName       String?
+  vendorPartNumber String?
+  unitCost         Float?
+  sellPrice        Float?
+  hardToProcure    Boolean   @default(false)
+  length           Float?
+  width            Float?
+  weight           Float?
+  metadata         Json?     // Category-specific spec fields (stored until approval)
+```
 
-Run: `npx prisma generate` to regenerate client.
-
-**Step 4: Commit**
+**Step 4: Create migration**
 
 ```bash
-git add prisma/ src/
-git commit -m "feat(schema): align EquipmentCategory enum with HubSpot's 15 product categories"
+npx prisma migrate dev --name add-catalog-categories-and-fields
+npx prisma generate
+```
+
+**Step 5: Verify build**
+
+```bash
+npx next build
+```
+
+Expected: Build passes. No existing code references new enum values yet, so no breakage.
+
+**Step 6: Commit**
+
+```bash
+git add prisma/
+git commit -m "feat(schema): add 7 equipment categories, sku/dimension fields on EquipmentSku, expand PendingCatalogPush"
 ```
 
 ---
 
-## Task 2: Prisma Schema — Add Per-Category Spec Tables
+## Task 2: Prisma Schema — Per-Category Spec Tables
 
 **Files:**
-- Modify: `prisma/schema.prisma` (after EquipmentSku model, ~line 626)
-- Modify: `prisma/schema.prisma` EquipmentSku model — add relation fields
+- Modify: `prisma/schema.prisma` — add 7 spec models after EquipmentSku
+- Modify: `prisma/schema.prisma` — add relation fields to EquipmentSku
 
 **Step 1: Add spec tables to schema**
 
@@ -175,48 +208,48 @@ model RelayDeviceSpec {
 
 **Step 2: Add relation fields to EquipmentSku**
 
-Add these lines inside the `EquipmentSku` model (after `stockLevels` relation at line 617):
+Add inside the `EquipmentSku` model (after `stockLevels` relation):
 
 ```prisma
-  moduleSpec            ModuleSpec?
-  inverterSpec          InverterSpec?
-  batterySpec           BatterySpec?
-  evChargerSpec         EvChargerSpec?
-  mountingHardwareSpec  MountingHardwareSpec?
+  moduleSpec             ModuleSpec?
+  inverterSpec           InverterSpec?
+  batterySpec            BatterySpec?
+  evChargerSpec          EvChargerSpec?
+  mountingHardwareSpec   MountingHardwareSpec?
   electricalHardwareSpec ElectricalHardwareSpec?
-  relayDeviceSpec       RelayDeviceSpec?
+  relayDeviceSpec        RelayDeviceSpec?
 ```
 
-**Step 3: Add `sku` field and `metadata` to PendingCatalogPush**
-
-In `EquipmentSku` model (after `model` field, line 600): add `sku String?`
-
-In `PendingCatalogPush` model (after `unitLabel` field, ~line 781): add `metadata Json?`
-
-**Step 4: Run migration**
+**Step 3: Run migration**
 
 ```bash
 npx prisma migrate dev --name add-category-spec-tables
 npx prisma generate
 ```
 
+**Step 4: Verify build**
+
+```bash
+npx next build
+```
+
 **Step 5: Commit**
 
 ```bash
 git add prisma/
-git commit -m "feat(schema): add per-category spec tables and metadata column"
+git commit -m "feat(schema): add per-category spec tables with 1:1 EquipmentSku relations"
 ```
 
 ---
 
-## Task 3: Category Field Config
+## Task 3: Category Field Config + Mapping Layer
+
+**Why:** This is the mapping layer that translates between internal enum values (RACKING, ELECTRICAL_BOS, MONITORING) and user-facing display labels (Mounting Hardware, Electrical Hardware, Relay Device) and cross-system names (HubSpot, Zuper, Zoho).
 
 **Files:**
 - Create: `src/lib/catalog-fields.ts`
 
 **Step 1: Create the config file**
-
-This file defines the field schema for each category. It drives both the form UI and the push logic.
 
 ```typescript
 // src/lib/catalog-fields.ts
@@ -236,14 +269,34 @@ export interface FieldDef {
 }
 
 export interface CategoryConfig {
+  /** User-facing display label */
   label: string;
+  /** Internal Prisma EquipmentCategory enum value */
   enumValue: string;
+  /** HubSpot product_category enum value */
   hubspotValue: string;
-  zuperCategory?: string;      // Zuper category name (if exists)
-  specTable?: string;          // Prisma relation name e.g. "moduleSpec"
+  /** Zuper Parts category name (undefined if category needs adding to Zuper) */
+  zuperCategory?: string;
+  /** Prisma relation name on EquipmentSku, e.g. "moduleSpec" */
+  specTable?: string;
+  /** Category-specific fields (empty for categories with no specs) */
   fields: FieldDef[];
 }
 
+/**
+ * Master category config.
+ *
+ * IMPORTANT: Keys are the internal EquipmentCategory enum values.
+ * Some internal enum values differ from display labels:
+ *   RACKING         → "Mounting Hardware"
+ *   ELECTRICAL_BOS  → "Electrical Hardware"
+ *   MONITORING      → "Relay Device"
+ *   RAPID_SHUTDOWN  → "Optimizer" (historically RSD; now re-labeled)
+ *
+ * The mapping layer lets us keep the DB enum stable while showing
+ * HubSpot-aligned labels in the UI and pushing the right category
+ * names to each external system.
+ */
 export const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
   MODULE: {
     label: "Module",
@@ -300,7 +353,7 @@ export const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
     hubspotValue: "Battery Expansion",
     zuperCategory: "Battery Expansion",
     specTable: "batterySpec",
-    fields: [], // Same fields as BATTERY — reference BATTERY.fields at runtime
+    fields: [], // Populated at bottom — shares Battery's fields
   },
   EV_CHARGER: {
     label: "EV Charger",
@@ -316,9 +369,10 @@ export const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
       { key: "smartFeatures", label: "WiFi / Smart Features", type: "toggle" },
     ],
   },
-  MOUNTING_HARDWARE: {
+  // --- Legacy enum values with updated display labels ---
+  RACKING: {
     label: "Mounting Hardware",
-    enumValue: "MOUNTING_HARDWARE",
+    enumValue: "RACKING",
     hubspotValue: "Mounting Hardware",
     zuperCategory: "Mounting Hardware",
     specTable: "mountingHardwareSpec",
@@ -331,11 +385,11 @@ export const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
       { key: "roofAttachment", label: "Roof Attachment", type: "dropdown", options: ["Comp Shingle", "Tile", "Metal", "S-Tile"] },
     ],
   },
-  ELECTRICAL_HARDWARE: {
+  ELECTRICAL_BOS: {
     label: "Electrical Hardware",
-    enumValue: "ELECTRICAL_HARDWARE",
+    enumValue: "ELECTRICAL_BOS",
     hubspotValue: "Electrical Hardware",
-    zuperCategory: "Electrical Hardwire",
+    zuperCategory: "Electrical Hardwire", // Zuper has a typo — "Hardwire" not "Hardware"
     specTable: "electricalHardwareSpec",
     fields: [
       { key: "componentType", label: "Component Type", type: "dropdown", options: ["Conduit", "Wire", "Disconnect", "Breaker", "Combiner"] },
@@ -344,9 +398,9 @@ export const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
       { key: "material", label: "Material", type: "dropdown", options: ["Copper", "Aluminum", "PVC", "EMT"] },
     ],
   },
-  RELAY_DEVICE: {
+  MONITORING: {
     label: "Relay Device",
-    enumValue: "RELAY_DEVICE",
+    enumValue: "MONITORING",
     hubspotValue: "Relay Device",
     zuperCategory: "Relay Device",
     specTable: "relayDeviceSpec",
@@ -356,18 +410,82 @@ export const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
       { key: "compatibleInverters", label: "Compatible Inverters", type: "text" },
     ],
   },
-  // Categories with no spec fields — common fields only
-  OPTIMIZER: { label: "Optimizer", enumValue: "OPTIMIZER", hubspotValue: "Optimizer", fields: [] },
-  GATEWAY: { label: "Gateway", enumValue: "GATEWAY", hubspotValue: "Gateway", fields: [] },
-  D_AND_R: { label: "D&R", enumValue: "D_AND_R", hubspotValue: "D&R", fields: [] },
-  SERVICE: { label: "Service", enumValue: "SERVICE", hubspotValue: "Service", fields: [] },
-  ADDER_SERVICES: { label: "Adder & Services", enumValue: "ADDER_SERVICES", hubspotValue: "Adder", fields: [] },
-  TESLA_SYSTEM_COMPONENTS: { label: "Tesla System Components", enumValue: "TESLA_SYSTEM_COMPONENTS", hubspotValue: "Tesla System Components", fields: [] },
-  PROJECT_MILESTONES: { label: "Project Milestones", enumValue: "PROJECT_MILESTONES", hubspotValue: "Project Milestones", fields: [] },
+  RAPID_SHUTDOWN: {
+    label: "Optimizer",
+    enumValue: "RAPID_SHUTDOWN",
+    hubspotValue: "Optimizer",
+    fields: [],
+  },
+  // --- New categories (no legacy enum baggage) ---
+  OPTIMIZER: {
+    label: "Optimizer",
+    enumValue: "OPTIMIZER",
+    hubspotValue: "Optimizer",
+    fields: [],
+  },
+  GATEWAY: {
+    label: "Gateway",
+    enumValue: "GATEWAY",
+    hubspotValue: "Gateway",
+    fields: [],
+  },
+  D_AND_R: {
+    label: "D&R",
+    enumValue: "D_AND_R",
+    hubspotValue: "D&R",
+    fields: [],
+  },
+  SERVICE: {
+    label: "Service",
+    enumValue: "SERVICE",
+    hubspotValue: "Service",
+    fields: [],
+  },
+  ADDER_SERVICES: {
+    label: "Adder & Services",
+    enumValue: "ADDER_SERVICES",
+    hubspotValue: "Adder",
+    fields: [],
+  },
+  TESLA_SYSTEM_COMPONENTS: {
+    label: "Tesla System Components",
+    enumValue: "TESLA_SYSTEM_COMPONENTS",
+    hubspotValue: "Tesla System Components",
+    fields: [],
+  },
+  PROJECT_MILESTONES: {
+    label: "Project Milestones",
+    enumValue: "PROJECT_MILESTONES",
+    hubspotValue: "Project Milestones",
+    fields: [],
+  },
 };
 
 // Battery Expansion shares Battery's fields
 CATEGORY_CONFIGS.BATTERY_EXPANSION.fields = CATEGORY_CONFIGS.BATTERY.fields;
+
+/**
+ * Categories to show in the "Add Product" form.
+ * Uses display labels, ordered for the UI.
+ * Excludes RAPID_SHUTDOWN (legacy alias for Optimizer) to avoid duplication.
+ */
+export const FORM_CATEGORIES = [
+  "MODULE",
+  "BATTERY",
+  "BATTERY_EXPANSION",
+  "INVERTER",
+  "EV_CHARGER",
+  "RACKING",          // displays as "Mounting Hardware"
+  "ELECTRICAL_BOS",   // displays as "Electrical Hardware"
+  "MONITORING",       // displays as "Relay Device"
+  "OPTIMIZER",
+  "GATEWAY",
+  "D_AND_R",
+  "SERVICE",
+  "ADDER_SERVICES",
+  "TESLA_SYSTEM_COMPONENTS",
+  "PROJECT_MILESTONES",
+] as const;
 
 // HubSpot manufacturer enum (source of truth for Brand dropdown)
 export const MANUFACTURERS = [
@@ -378,12 +496,27 @@ export const MANUFACTURERS = [
   "SONBT", "Sunpower", "Tesla", "Trim-Lock", "Tygo", "URE", "Wallbox",
 ] as const;
 
-// Helper to get fields for a category (handles Battery Expansion sharing)
+/** Get the display label for a category enum value */
+export function getCategoryLabel(enumValue: string): string {
+  return CATEGORY_CONFIGS[enumValue]?.label ?? enumValue;
+}
+
+/** Get the internal enum value from a display label (reverse lookup) */
+export function getEnumFromLabel(label: string): string | undefined {
+  return Object.values(CATEGORY_CONFIGS).find((c) => c.label === label)?.enumValue;
+}
+
+/** Get fields for a category (handles Battery Expansion sharing) */
 export function getCategoryFields(category: string): FieldDef[] {
   return CATEGORY_CONFIGS[category]?.fields ?? [];
 }
 
-// Helper to generate Zuper Specification string from spec data
+/** Get the spec table relation name for a category */
+export function getSpecTableName(category: string): string | undefined {
+  return CATEGORY_CONFIGS[category]?.specTable;
+}
+
+/** Generate Zuper Specification string from spec data */
 export function generateZuperSpecification(category: string, specData: Record<string, unknown>): string {
   const parts: string[] = [];
   switch (category) {
@@ -417,77 +550,154 @@ export function generateZuperSpecification(category: string, specData: Record<st
 
 ```bash
 git add src/lib/catalog-fields.ts
-git commit -m "feat: add category field config for product catalog form"
+git commit -m "feat: add category field config with mapping layer (enum→display→HubSpot→Zuper)"
 ```
 
 ---
 
-## Task 4: API Route — Update Push Request to Accept Metadata
+## Task 4: API Route — Update Push Request to Accept All Fields
 
 **Files:**
 - Modify: `src/app/api/catalog/push-requests/route.ts`
 
-**Step 1: Update POST handler to accept metadata**
+**Step 1: Update POST handler**
 
-The `POST` handler at line 10 currently accepts: brand, model, description, category, unitSpec, unitLabel, systems, dealId.
+The POST handler currently accepts: brand, model, description, category, unitSpec, unitLabel, systems, dealId.
 
-Add `metadata` (optional JSON) and `sku` (optional string) to the accepted fields. Store them on the `PendingCatalogPush` record.
+Update body destructuring (~line 21) to:
 
-Update the body destructuring (~line 18) to include:
 ```typescript
-const { brand, model, description, category, unitSpec, unitLabel, sku, metadata, systems, dealId } = body;
+const {
+  brand, model, description, category, unitSpec, unitLabel,
+  sku, vendorName, vendorPartNumber, unitCost, sellPrice,
+  hardToProcure, length, width, weight, metadata,
+  systems, dealId,
+} = body as Record<string, unknown>;
 ```
 
-Update the `prisma.pendingCatalogPush.create` call to include:
+Update `prisma.pendingCatalogPush.create` data (~line 37) to:
+
 ```typescript
-sku: sku?.trim() || undefined,
-metadata: metadata || undefined,
+data: {
+  brand: String(brand).trim(),
+  model: String(model).trim(),
+  description: String(description).trim(),
+  category: String(category).trim(),
+  unitSpec: unitSpec ? String(unitSpec).trim() : null,
+  unitLabel: unitLabel ? String(unitLabel).trim() : null,
+  sku: sku ? String(sku).trim() : null,
+  vendorName: vendorName ? String(vendorName).trim() : null,
+  vendorPartNumber: vendorPartNumber ? String(vendorPartNumber).trim() : null,
+  unitCost: unitCost != null ? Number(unitCost) || null : null,
+  sellPrice: sellPrice != null ? Number(sellPrice) || null : null,
+  hardToProcure: hardToProcure === true,
+  length: length != null ? Number(length) || null : null,
+  width: width != null ? Number(width) || null : null,
+  weight: weight != null ? Number(weight) || null : null,
+  metadata: metadata || undefined,
+  systems: systems as string[],
+  requestedBy: authResult.email,
+  dealId: dealId ? String(dealId) : null,
+},
 ```
 
 **Step 2: Commit**
 
 ```bash
 git add src/app/api/catalog/push-requests/route.ts
-git commit -m "feat(api): accept metadata and sku on catalog push requests"
+git commit -m "feat(api): accept all common fields + metadata on catalog push requests"
 ```
 
 ---
 
-## Task 5: API Route — Update Approval to Write Spec Tables
+## Task 5: API Route — Rewrite Approval with Transaction + Full Field Persistence
+
+**Why:** The current approval route only writes description, unitSpec, unitLabel to EquipmentSku. It ignores sku, vendorName, vendorPartNumber, unitCost, sellPrice, hardToProcure, length, width, weight. It also doesn't write spec tables or use a transaction.
 
 **Files:**
 - Modify: `src/app/api/catalog/push-requests/[id]/approve/route.ts`
 
-**Step 1: Update approval handler**
+**Step 1: Rewrite the INTERNAL catalog block**
 
-After the `EquipmentSku` upsert (~line 60), add spec table creation based on category and metadata:
+Replace the existing EquipmentSku upsert (lines 37-70) with a `$transaction` that:
+1. Upserts EquipmentSku with ALL common fields
+2. Upserts the category spec table from metadata (if applicable)
+3. Updates PendingCatalogPush status
 
 ```typescript
-// After EquipmentSku upsert, write category spec if metadata exists
-const metadata = push.metadata as Record<string, unknown> | null;
-if (metadata && skuRecord) {
-  const specData = metadata;
-  switch (push.category) {
-    case "MODULE":
-      await prisma.moduleSpec.upsert({
-        where: { skuId: skuRecord.id },
-        create: { skuId: skuRecord.id, ...specData },
-        update: specData,
-      });
-      break;
-    case "INVERTER":
-      await prisma.inverterSpec.upsert({ ... });
-      break;
-    // ... etc for each category with a spec table
-  }
+// INTERNAL catalog
+if (push.systems.includes("INTERNAL") && INTERNAL_CATEGORIES.includes(push.category)) {
+  const parsedUnitSpec = push.unitSpec ? parseFloat(push.unitSpec) : null;
+  const unitSpecValue = parsedUnitSpec != null && !isNaN(parsedUnitSpec) ? parsedUnitSpec : null;
+
+  const commonFields = {
+    description: push.description || null,
+    unitSpec: unitSpecValue,
+    unitLabel: push.unitLabel || null,
+    sku: push.sku || null,
+    vendorName: push.vendorName || null,
+    vendorPartNumber: push.vendorPartNumber || null,
+    unitCost: push.unitCost,
+    sellPrice: push.sellPrice,
+    hardToProcure: push.hardToProcure,
+    length: push.length,
+    width: push.width,
+    weight: push.weight,
+  };
+
+  const skuRecord = await prisma.$transaction(async (tx) => {
+    // 1. Upsert EquipmentSku
+    const sku = await tx.equipmentSku.upsert({
+      where: {
+        category_brand_model: {
+          category: push.category as EquipmentCategory,
+          brand: push.brand,
+          model: push.model,
+        },
+      },
+      update: { isActive: true, ...commonFields },
+      create: {
+        category: push.category as EquipmentCategory,
+        brand: push.brand,
+        model: push.model,
+        ...commonFields,
+      },
+    });
+
+    // 2. Write category spec table from metadata
+    const metadata = push.metadata as Record<string, unknown> | null;
+    if (metadata) {
+      const specTable = getSpecTableName(push.category);
+      if (specTable) {
+        // Dynamic upsert for the correct spec table
+        const prismaModel = tx[specTable as keyof typeof tx] as any;
+        if (prismaModel?.upsert) {
+          await prismaModel.upsert({
+            where: { skuId: sku.id },
+            create: { skuId: sku.id, ...metadata },
+            update: metadata,
+          });
+        }
+      }
+    }
+
+    return sku;
+  });
+
+  results.internalSkuId = skuRecord.id;
 }
+```
+
+Add import at top of file:
+```typescript
+import { getSpecTableName } from "@/lib/catalog-fields";
 ```
 
 **Step 2: Commit**
 
 ```bash
 git add src/app/api/catalog/push-requests/[id]/approve/route.ts
-git commit -m "feat(api): write category spec tables on catalog push approval"
+git commit -m "feat(api): approval uses $transaction, persists all common fields + spec tables"
 ```
 
 ---
@@ -499,17 +709,32 @@ git commit -m "feat(api): write category spec tables on catalog push approval"
 
 **Step 1: Create the page**
 
-Full-page form wrapped in `<DashboardShell>`. Uses `CATEGORY_CONFIGS` and `MANUFACTURERS` from `src/lib/catalog-fields.ts`.
+Full-page form wrapped in `<DashboardShell>`. Uses `CATEGORY_CONFIGS`, `FORM_CATEGORIES`, `MANUFACTURERS`, `getCategoryLabel` from `src/lib/catalog-fields.ts`.
 
 Sections:
-1. Category selector — card-style buttons, one per category
-2. Product Identity — Brand (searchable dropdown), Model, SKU, Description, Vendor Name, Vendor Part Number
-3. Category Specs — dynamic `<CategoryFields>` component (Task 7)
-4. Pricing & Details — Unit Cost, Sell Price, Hard to Procure, Length, Width, Weight
-5. Push to Systems — checkboxes for Internal, HubSpot, Zuper, Zoho
-6. Footer — Cancel + Submit for Approval
+1. **Category Selector** — card-style buttons using `FORM_CATEGORIES`, displaying `getCategoryLabel(enumValue)` for each
+2. **Product Identity** — Brand (searchable dropdown from Task 8), Model/Part#, SKU, Description, Vendor Name, Vendor Part#
+3. **Category Specs** — dynamic `<CategoryFields>` component (Task 7)
+4. **Pricing & Details** — Unit Cost, Sell Price, Hard to Procure toggle, Length, Width, Weight
+5. **Push to Systems** — checkboxes: Internal, HubSpot, Zuper, Zoho
+6. **Footer** — Cancel + Submit for Approval
 
-Support `?category=MODULE&brand=Tesla&model=...&description=...` query params for BOM prefill.
+Support `?category=MODULE&brand=Tesla&model=...&description=...` query params for BOM prefill. Read params with `useSearchParams()`.
+
+On submit, POST to `/api/catalog/push-requests` with:
+```typescript
+{
+  brand, model, description,
+  category: selectedCategory,  // internal enum value e.g. "RACKING"
+  unitSpec, unitLabel,
+  sku, vendorName, vendorPartNumber,
+  unitCost, sellPrice, hardToProcure,
+  length, width, weight,
+  metadata: specValues,  // { wattage: 410, cellType: "Mono PERC", ... }
+  systems: Array.from(selectedSystems),
+  dealId,
+}
+```
 
 Use theme tokens: `bg-surface`, `bg-surface-2`, `text-foreground`, `text-muted`, `border-t-border`, `shadow-card`. Follow `DashboardShell` pattern with `accentColor="cyan"`.
 
@@ -544,7 +769,13 @@ interface Props {
 }
 ```
 
-Uses `getCategoryFields(category)` to get the field list. Renders nothing if `fields` is empty (categories without specs).
+Uses `getCategoryFields(category)` to get the field list. Renders nothing if `fields` is empty.
+
+Use theme tokens for inputs:
+```
+w-full rounded-lg border border-t-border bg-surface-2 px-3 py-2 text-sm text-foreground
+placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-cyan-500/50
+```
 
 **Step 2: Commit**
 
@@ -576,6 +807,8 @@ interface Props {
 }
 ```
 
+Keyboard accessible: arrow keys to navigate, Enter to select, Escape to close.
+
 **Step 2: Commit**
 
 ```bash
@@ -585,42 +818,52 @@ git commit -m "feat: add searchable brand dropdown with HubSpot manufacturer enu
 
 ---
 
-## Task 9: Wire Up BOM Page to New Route
+## Task 9: Wire Up BOM + Catalog Pages to New Route
+
+**Why:** Replace PushToSystemsModal usage with navigation to the new full-page form. Use `useRouter().push()` instead of `window.location.href` for client-side navigation.
 
 **Files:**
 - Modify: `src/app/dashboards/bom/page.tsx:3109-3112` — replace PushToSystemsModal usage
 - Modify: `src/app/dashboards/catalog/page.tsx:967-970` — replace PushToSystemsModal usage
 
-**Step 1: Replace modal with navigation**
+**Step 1: Replace modal with router navigation**
 
-In both files, replace the `<PushToSystemsModal>` render with a function that navigates to the new page:
+In both files, replace the `<PushToSystemsModal>` render with:
 
 ```typescript
+import { useRouter } from "next/navigation";
+
+// Inside the component:
+const router = useRouter();
+
 function handlePushToSystems(item: PushItem) {
-  const params = new URLSearchParams({
-    brand: item.brand,
-    model: item.model,
-    description: item.description,
-    category: item.category,
-    ...(item.unitSpec != null && { unitSpec: String(item.unitSpec) }),
-    ...(item.unitLabel && { unitLabel: item.unitLabel }),
-    ...(item.dealId && { dealId: item.dealId }),
-  });
-  window.location.href = `/dashboards/catalog/new?${params}`;
+  const params = new URLSearchParams();
+  if (item.brand) params.set("brand", item.brand);
+  if (item.model) params.set("model", item.model);
+  if (item.description) params.set("description", item.description);
+  if (item.category) params.set("category", item.category);
+  if (item.unitSpec != null) params.set("unitSpec", String(item.unitSpec));
+  if (item.unitLabel) params.set("unitLabel", item.unitLabel);
+  if (item.dealId) params.set("dealId", item.dealId);
+  router.push(`/dashboards/catalog/new?${params.toString()}`);
 }
 ```
 
-Remove the `PushToSystemsModal` import and any related state (`pushItem`, `newProductItem`, `setPushItem`, `setNewProductItem`).
+Remove the `PushToSystemsModal` import and any related state.
 
 **Step 2: Verify PushToSystemsModal has no other consumers**
 
-If no other files import it, the component file can be deleted or deprecated.
+```bash
+grep -r "PushToSystemsModal" src/ --include="*.tsx" --include="*.ts"
+```
+
+If no other files import it, mark the component as deprecated with a comment.
 
 **Step 3: Commit**
 
 ```bash
 git add src/app/dashboards/bom/page.tsx src/app/dashboards/catalog/page.tsx
-git commit -m "feat: replace PushToSystemsModal with navigation to /dashboards/catalog/new"
+git commit -m "feat: replace PushToSystemsModal with router.push to /dashboards/catalog/new"
 ```
 
 ---
@@ -657,7 +900,7 @@ export interface ZohoInventoryItem {
 
 **Step 2: Update comparison route**
 
-In `fetchZohoProducts()` (~line 729 of comparison route), replace `const price = null;` with:
+In `fetchZohoProducts()`, replace `const price = null;` with:
 
 ```typescript
 const price = typeof item.rate === "number" ? item.rate : null;
@@ -675,37 +918,96 @@ git commit -m "feat: wire Zoho rate, purchase_rate, vendor, part_number, unit fi
 ## Task 11: Tests
 
 **Files:**
-- Modify: `src/__tests__/api/catalog-push-requests.test.ts`
+- Modify or create: `src/__tests__/api/catalog-push-requests.test.ts`
 - Create: `src/__tests__/lib/catalog-fields.test.ts`
+- Create: `src/__tests__/api/catalog-push-approve.test.ts`
 
-**Step 1: Update existing push request tests**
+**Step 1: Add catalog-fields unit tests**
 
-Add test cases for:
-- POST with `metadata` field (JSON spec data)
-- POST with `sku` field
-- Verify metadata is stored on the created record
+```typescript
+// src/__tests__/lib/catalog-fields.test.ts
+import {
+  getCategoryFields, getCategoryLabel, getEnumFromLabel,
+  generateZuperSpecification, MANUFACTURERS, FORM_CATEGORIES,
+  CATEGORY_CONFIGS,
+} from "@/lib/catalog-fields";
 
-**Step 2: Add catalog-fields tests**
+describe("catalog-fields", () => {
+  test("getCategoryFields('MODULE') returns 8 fields", () => {
+    expect(getCategoryFields("MODULE")).toHaveLength(8);
+  });
 
-Test:
-- `getCategoryFields("MODULE")` returns 8 fields
-- `getCategoryFields("BATTERY_EXPANSION")` returns Battery's fields
-- `getCategoryFields("OPTIMIZER")` returns empty array
-- `generateZuperSpecification("MODULE", { wattage: 410, cellType: "Mono PERC" })` returns "410W Mono PERC"
-- `generateZuperSpecification("BATTERY", { capacityKwh: 13.5, chemistry: "LFP" })` returns "13.5kWh LFP"
-- `MANUFACTURERS` array has 33 entries
+  test("getCategoryFields('BATTERY_EXPANSION') returns Battery's 8 fields", () => {
+    expect(getCategoryFields("BATTERY_EXPANSION")).toHaveLength(8);
+    expect(getCategoryFields("BATTERY_EXPANSION")).toBe(getCategoryFields("BATTERY"));
+  });
 
-**Step 3: Run tests**
+  test("getCategoryFields('OPTIMIZER') returns empty array", () => {
+    expect(getCategoryFields("OPTIMIZER")).toEqual([]);
+  });
+
+  test("getCategoryLabel maps legacy enums to display labels", () => {
+    expect(getCategoryLabel("RACKING")).toBe("Mounting Hardware");
+    expect(getCategoryLabel("ELECTRICAL_BOS")).toBe("Electrical Hardware");
+    expect(getCategoryLabel("MONITORING")).toBe("Relay Device");
+    expect(getCategoryLabel("MODULE")).toBe("Module");
+  });
+
+  test("getEnumFromLabel reverse-maps display labels to enum values", () => {
+    expect(getEnumFromLabel("Mounting Hardware")).toBe("RACKING");
+    expect(getEnumFromLabel("Electrical Hardware")).toBe("ELECTRICAL_BOS");
+    expect(getEnumFromLabel("Relay Device")).toBe("MONITORING");
+  });
+
+  test("generateZuperSpecification produces correct strings", () => {
+    expect(generateZuperSpecification("MODULE", { wattage: 410, cellType: "Mono PERC" })).toBe("410W Mono PERC");
+    expect(generateZuperSpecification("BATTERY", { capacityKwh: 13.5, chemistry: "LFP" })).toBe("13.5kWh LFP");
+    expect(generateZuperSpecification("INVERTER", { acOutputKw: 7.6, phase: "Single", inverterType: "String" })).toBe("7.6kW Single String");
+    expect(generateZuperSpecification("EV_CHARGER", { powerKw: 11.5, level: "Level 2", connectorType: "NACS" })).toBe("11.5kW Level 2 NACS");
+  });
+
+  test("MANUFACTURERS has 31 entries", () => {
+    expect(MANUFACTURERS).toHaveLength(31);
+  });
+
+  test("FORM_CATEGORIES excludes RAPID_SHUTDOWN", () => {
+    expect(FORM_CATEGORIES).not.toContain("RAPID_SHUTDOWN");
+    expect(FORM_CATEGORIES).toHaveLength(15);
+  });
+
+  test("all FORM_CATEGORIES have a config entry", () => {
+    for (const cat of FORM_CATEGORIES) {
+      expect(CATEGORY_CONFIGS[cat]).toBeDefined();
+    }
+  });
+});
+```
+
+**Step 2: Add push-request tests (new fields)**
+
+Test that POST to `/api/catalog/push-requests` accepts and stores:
+- `sku`, `vendorName`, `vendorPartNumber`, `unitCost`, `sellPrice`
+- `hardToProcure`, `length`, `width`, `weight`
+- `metadata` as JSON
+
+**Step 3: Add approval route tests**
+
+Test that approval:
+- Persists all common fields to EquipmentSku (not just description/unitSpec/unitLabel)
+- Writes spec table from metadata for MODULE category
+- Uses transaction (if approval fails partway, no partial writes)
+
+**Step 4: Run tests**
 
 ```bash
 npm run test
 ```
 
-**Step 4: Commit**
+**Step 5: Commit**
 
 ```bash
 git add src/__tests__/
-git commit -m "test: add catalog field config and push request metadata tests"
+git commit -m "test: add catalog field config, push request, and approval route tests"
 ```
 
 ---
@@ -729,10 +1031,11 @@ npm run lint
 **Step 3: Manual smoke test**
 
 1. Navigate to `/dashboards/catalog/new`
-2. Select each category — verify correct fields appear
-3. Fill in Module form, submit for approval
-4. Check Catalog dashboard pending tab — verify metadata is visible
-5. Navigate from BOM unmatched row "Add to Systems" — verify redirect with prefill
+2. Select each category — verify correct fields appear and display labels are right (RACKING shows "Mounting Hardware", etc.)
+3. Fill in Module form with all fields, submit for approval
+4. Check Catalog dashboard pending tab — verify all fields are visible (including sku, vendor, pricing, dimensions, metadata)
+5. Approve the pending push — verify EquipmentSku has all common fields AND ModuleSpec has spec data
+6. Navigate from BOM unmatched row "Add to Systems" — verify router.push with prefill works
 
 **Step 4: Final commit**
 
