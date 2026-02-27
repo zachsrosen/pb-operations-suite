@@ -6,7 +6,7 @@
  *   Downloads the planset PDF, uploads it to the Anthropic Files API (bypassing
  *   the inline base64 request-size limit), then calls Claude (claude-opus-4-5)
  *   with a file_id reference and the full planset-bom extraction prompt.
- *   Returns structured BOM JSON ready to load into the BOM dashboard.
+ *   Returns structured BOM JSON as SSE stream events.
  *
  * Body (application/json):
  *   { blobUrl: "https://..." }          ← Vercel Blob upload
@@ -14,11 +14,10 @@
  *
  * Auth required: design/ops roles
  *
- * Large-PDF note:
- *   Inline base64 document blocks are limited to ~20MB by Anthropic's API.
- *   The Files API pre-uploads the PDF as a separate request so the messages
- *   call only sends a lightweight { type: "file", file_id } reference.
- *   This handles plansets up to 500MB (Anthropic's Files API limit).
+ * SSE Events:
+ *   { type: "progress", step: string, message: string }
+ *   { type: "result", bom: object }
+ *   { type: "error", error: string }
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -86,7 +85,54 @@ Map each BOM row to these categories:
 3. **Metal roofs**: ATTACHMENT = "S-5! PROTEABRACKET ATTACHMENTS", rail = XR100 (not XR10), no RD STRUCTURAL SCREW row.
 4. **Powerwall-3 part number**: 1707000-XX-Y (found in PV-4 specifications table).
 5. **Gateway-3 part number**: 1841000-X1-Y (found in PV-4 or PV-2 callout).
-6. **flags** array: use "INFERRED" when value was inferred, "ASSUMED_BRAND" when brand was assumed, "VALIDATION_WARNING" when a cross-check failed.
+6. **Backup Switch part number**: 1624171-00-J (found in PV-4 callout; used on simpler jobs without full gateway).
+7. **flags** array: use "INFERRED" when value was inferred, "ASSUMED_BRAND" when brand was assumed, "VALIDATION_WARNING" when a cross-check failed.
+
+## Critical Model/SKU Rules
+
+### BONDED SPLICE — Rail-Specific Model
+The PV-2 BOM table calls this "SPLICE KIT" or "BONDED SPLICE" generically. Always output the rail-specific model:
+- XR10 rail (asphalt shingle jobs) → model: "XR10-BOSS-01-M1", description: "IRONRIDGE XR10 BONDED SPLICE MILL"
+- XR100 rail (metal roof jobs) → model: "XR100-BOSS-01-M1", description: "IRONRIDGE XR100 BONDED SPLICE MILL"
+Check the RAIL row to determine XR10 vs XR100. Never output "SPLICE KIT" as the model.
+
+### 60A MAIN BREAKER ENCLOSURE → Two Separate BOM Items
+When PV-2 or PV-0 lists a "60A MAIN BREAKER ENCLOSURE", always output TWO items (not one):
+1. { "category": "ELECTRICAL_BOS", "brand": "", "model": "TL270RCU", "description": "LOAD CENTER, 70A, MAIN LUGS, 1PH, 65KA, 120/240VAC, 2/4 CIRCUIT", "qty": 1, "source": "PV-2" }
+2. { "category": "ELECTRICAL_BOS", "brand": "GE", "model": "THQL2160", "description": "60A 2-POLE GE CIRCUIT BREAKER", "qty": 1, "source": "PV-2" }
+Do NOT output a single "60A MAIN BREAKER ENCLOSURE" item — always split into these two.
+
+### AC DISCONNECT — 2-Wire vs 3-Wire
+Read the PV-4 SLD callout text for the AC disconnect:
+- "3-WIRE" in callout → model: "TGN3322R" (3-pole; used on service upgrade / tap jobs with neutral)
+- "2-WIRE" or no wire count → model: "DG222URB" (standard 2-pole, most common)
+
+### JUNCTION BOX — Always Substitute SOLOBOX COMP-D
+Regardless of what the planset shows for JUNCTION BOX (e.g., "EZ SOLAR JB-1.2"), always output the UNIRAC SOLOBOX COMP-D instead:
+{ "category": "ELECTRICAL_BOS", "brand": "UNIRAC", "model": "SBOXCOMP-D", "description": "UNIRAC SOLOBOX COMP-D JUNCTION BOX", "qty": 3, "source": "OPS_STANDARD" }
+This applies to every solar (PV module) job. Do NOT output the planset's J-box model.
+
+### IMO RAPID SHUTDOWN SWITCH — From PV-4 SLD Only
+The PV-2 BOM lists TESLA MCI-2 devices (module-level). Scan PV-4 SLD separately for "(N) RAPID SHUTDOWN SWITCH" — this is the control unit (initiator), NOT in PV-2:
+- If "(N) RAPID SHUTDOWN SWITCH" is in PV-4 SLD → add: { "category": "RAPID_SHUTDOWN", "brand": "IMO", "model": "IMO SI16-PEL64R-2", "description": "IMO RAPID SHUTDOWN DEVICE, SI16-PEL64R-2", "qty": 1, "source": "PV-4" }
+- If not present, omit. Always qty 1 regardless of module count.
+
+## Ops-Standard Additions
+These items MUST be added to every solar (PV module) BOM even if the planset does not mention them. Do NOT add to battery-only or EV-charger-only jobs.
+
+### Always Add (Every Solar Job with Roof-Mounted PV Modules)
+Always include these two critter guard items:
+- { "category": "ELECTRICAL_BOS", "brand": "", "model": "S6466", "description": "CRITTER GUARD 6\" ROLL, BIRD PROOFING", "qty": 4, "unitLabel": "box", "source": "OPS_STANDARD" }
+- { "category": "ELECTRICAL_BOS", "brand": "Heyco", "model": "S6438", "description": "HEYCO SUNSCREENER CLIP, BIRD PROOFING", "qty": 4, "unitLabel": "box", "source": "OPS_STANDARD" }
+
+### Triggered by Production Meter
+When BOM includes any PRODUCTION METER row, also add:
+- { "category": "MONITORING", "brand": "", "model": "K8180", "description": "METER BYPASS JUMPERS", "qty": 1, "unitLabel": "pair", "source": "OPS_STANDARD" }
+- { "category": "MONITORING", "brand": "", "model": "43974", "description": "METER COVER", "qty": 1, "source": "OPS_STANDARD" }
+
+### Triggered by Tap / Service Upgrade
+When PV-4 shows 3-wire AC disconnect (TGN3322R) or PV-0 mentions "SERVICE UPGRADE" / "UTILITY TAP", add:
+- { "category": "ELECTRICAL_BOS", "brand": "", "model": "BIPC4/010S", "description": "INSULATION PIERCING CONNECTOR", "qty": 3, "source": "OPS_STANDARD" }
 
 ## Validation Cross-Checks
 
@@ -122,7 +168,7 @@ Return EXACTLY this structure:
       "qty": number,
       "unitSpec": string | null,
       "unitLabel": string | null,
-      "source": "PV-2" | "PV-4" | "PV-0",
+      "source": "PV-2" | "PV-4" | "PV-0" | "OPS_STANDARD",
       "flags": string[]
     }
   ],
@@ -135,7 +181,7 @@ Return EXACTLY this structure:
   "generatedAt": string
 }
 
-Return ONLY the JSON object. No markdown fences, no preamble.`;
+Return ONLY the JSON object. No markdown fences, no preamble.`
 
 // ── Route config ─────────────────────────────────────────────────────────────
 
@@ -172,6 +218,17 @@ function isRetryableClaudeError(message: string): boolean {
     normalized.includes("temporarily unavailable") ||
     normalized.includes("internal server error")
   );
+}
+
+function getPdfPageCount(buffer: Buffer): number | null {
+  try {
+    // Quick heuristic: count /Type /Page (not /Pages) entries in raw PDF bytes
+    const text = buffer.toString("latin1");
+    const matches = text.match(/\/Type\s*\/Page[^s]/g);
+    return matches ? matches.length : null;
+  } catch {
+    return null;
+  }
 }
 
 async function refreshUserToken(refreshToken: string): Promise<string | null> {
@@ -251,13 +308,39 @@ async function getDriveToken(request: NextRequest): Promise<{ token: string; tok
 
 export async function POST(req: NextRequest) {
   const startedAt = Date.now();
-  // Auth check
+
+  // ── Auth ──────────────────────────────────────────────────────────────────
   const authResult = await requireApiAuth();
   if (authResult instanceof NextResponse) return authResult;
   const { role } = authResult;
 
-  let sourceType: "blob" | "drive_url" | "drive_file" | "unknown" = "unknown";
-  let sourceRef: string | null = null;
+  if (!ALLOWED_ROLES.has(role)) {
+    return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
+  }
+
+  // ── API key ────────────────────────────────────────────────────────────────
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    return NextResponse.json({ error: "ANTHROPIC_API_KEY is not configured" }, { status: 503 });
+  }
+
+  // ── Body ───────────────────────────────────────────────────────────────────
+  let body: { blobUrl?: string; driveUrl?: string; fileId?: string };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  if (!body.blobUrl && !body.driveUrl && !body.fileId) {
+    return NextResponse.json({ error: "blobUrl, driveUrl, or fileId is required" }, { status: 400 });
+  }
+
+  // ── Setup ──────────────────────────────────────────────────────────────────
+  const sourceType: "blob" | "drive_url" | "drive_file" | "unknown" =
+    body.fileId ? "drive_file" : body.blobUrl ? "blob" : body.driveUrl ? "drive_url" : "unknown";
+  const sourceRef: string | null = body.fileId ?? body.blobUrl ?? body.driveUrl ?? null;
+
   const logExtract = async (
     outcome: "started" | "succeeded" | "failed",
     details: Record<string, unknown>,
@@ -276,13 +359,7 @@ export async function POST(req: NextRequest) {
       entityType: "bom",
       entityId: sourceRef || undefined,
       entityName: "extract",
-      metadata: {
-        event: "bom_extract",
-        outcome,
-        sourceType,
-        sourceRef,
-        ...details,
-      },
+      metadata: { event: "bom_extract", outcome, sourceType, sourceRef, ...details },
       ipAddress: authResult.ip,
       userAgent: authResult.userAgent,
       requestPath: "/api/bom/extract",
@@ -292,302 +369,279 @@ export async function POST(req: NextRequest) {
     });
   };
 
-  if (!ALLOWED_ROLES.has(role)) {
-    await logExtract("failed", { reason: "insufficient_permissions", role }, 403);
-    return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
-  }
-
-  // Check Anthropic key
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    await logExtract("failed", { reason: "anthropic_key_missing" }, 503);
-    return NextResponse.json({ error: "ANTHROPIC_API_KEY is not configured" }, { status: 503 });
-  }
-
-  // 500MB — Anthropic Files API limit (much larger than the old inline limit)
-  const MAX_SIZE = 500 * 1024 * 1024;
-
-  let filename = "planset.pdf";
-
-  // All paths go through JSON body now:
-  //   { blobUrl: "https://..." }          ← Vercel Blob upload
-  //   { driveUrl: "...", fileId: "..." }  ← Google Drive link (fileId preferred)
-  let body: { blobUrl?: string; driveUrl?: string; fileId?: string };
-  try {
-    body = await req.json();
-  } catch {
-    await logExtract("failed", { reason: "invalid_json_body" }, 400);
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
-  }
-
-  if (!body.blobUrl && !body.driveUrl && !body.fileId) {
-    await logExtract("failed", { reason: "missing_source_input" }, 400);
-    return NextResponse.json({ error: "blobUrl, driveUrl, or fileId is required" }, { status: 400 });
-  }
-
-  sourceType = body.fileId ? "drive_file" : body.blobUrl ? "blob" : body.driveUrl ? "drive_url" : "unknown";
-  sourceRef = body.fileId ?? body.blobUrl ?? body.driveUrl ?? null;
-  await logExtract("started", { hasBlobUrl: !!body.blobUrl, hasDriveUrl: !!body.driveUrl, hasFileId: !!body.fileId }, 200);
-
-  let fetchRes: Response;
-  try {
-    if (body.fileId) {
-      const { token, tokenSource } = await getDriveToken(req);
-      const driveMediaUrl =
-        `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(body.fileId)}` +
-        `?alt=media&supportsAllDrives=true&acknowledgeAbuse=true`;
-
-      fetchRes = await fetch(driveMediaUrl, {
-        redirect: "follow",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (!fetchRes.ok) {
-        const driveErr = await fetchRes.json().catch(() => ({})) as { error?: { message?: string } };
-        const msg = driveErr.error?.message ?? `HTTP ${fetchRes.status}`;
-        await logExtract("failed", { reason: "drive_download_failed", error: msg }, 400);
-        return NextResponse.json(
-          { error: `Failed to download Drive file (${msg})`, debug: { tokenSource } },
-          { status: 400 }
-        );
-      }
-    } else {
-      const sourceUrl = body.blobUrl ?? body.driveUrl;
-      if (!sourceUrl) {
-        await logExtract("failed", { reason: "missing_source_url" }, 400);
-        return NextResponse.json({ error: "blobUrl or driveUrl is required" }, { status: 400 });
-      }
-
-      // Blob URLs require the token header — the store is private-access only.
-      const fetchHeaders: Record<string, string> = {};
-      if (body.blobUrl && process.env.BLOB_READ_WRITE_TOKEN) {
-        fetchHeaders["authorization"] = `Bearer ${process.env.BLOB_READ_WRITE_TOKEN}`;
-      }
-
-      fetchRes = await fetch(sourceUrl, { redirect: "follow", headers: fetchHeaders });
-      if (!fetchRes.ok) {
-        await logExtract("failed", { reason: "source_fetch_failed", sourceUrl, status: fetchRes.status }, 400);
-        return NextResponse.json(
-          {
-            error: body.blobUrl
-              ? `Failed to read uploaded file (HTTP ${fetchRes.status})`
-              : `Failed to download from Drive (HTTP ${fetchRes.status}). Make sure the file is shared publicly.`,
-          },
-          { status: 400 }
-        );
-      }
-    }
-  } catch (e) {
-    await logExtract("failed", { reason: "source_fetch_exception", error: e instanceof Error ? e.message : String(e) }, 400);
-    return NextResponse.json(
-      { error: `Fetch failed: ${e instanceof Error ? e.message : String(e)}` },
-      { status: 400 }
-    );
-  }
-
-  const fetchContentType = fetchRes.headers.get("content-type") ?? "";
-  if (!fetchContentType.includes("pdf") && !fetchContentType.includes("octet-stream")) {
-    // Google Drive may redirect to a confirmation page for large files
-    if (!body.blobUrl && !body.fileId) {
-      await logExtract("failed", { reason: "drive_not_pdf", contentType: fetchContentType }, 400);
-      return NextResponse.json(
-        { error: "Drive URL did not return a PDF. The file may require confirmation — try downloading it and using Upload PDF instead." },
-        { status: 400 }
-      );
-    }
-  }
-
-  const arrayBuffer = await fetchRes.arrayBuffer();
-  if (arrayBuffer.byteLength > MAX_SIZE) {
-    await logExtract("failed", { reason: "pdf_too_large", sizeBytes: arrayBuffer.byteLength }, 400);
-    return NextResponse.json({ error: "PDF exceeds 500MB limit" }, { status: 400 });
-  }
-
-  filename = body.blobUrl
-    ? (body.blobUrl.split("/").pop() ?? "planset.pdf")
-    : `drive-${body.fileId ?? "planset"}.pdf`;
-
-  const pdfBuffer = Buffer.from(arrayBuffer);
-
-  // ── Upload PDF to Anthropic Files API ──────────────────────────────────────
-  // Using the Files API avoids base64-encoding the entire PDF inline in the
-  // messages request body, which would exceed Anthropic's ~20MB request limit
-  // for the 28–34MB plansets we commonly see.
   const client = new Anthropic({ apiKey });
+  const MAX_SIZE = 500 * 1024 * 1024;
+  const INLINE_LIMIT = 45 * 1024 * 1024;
 
-  let fileId: string;
-  try {
-    const uploadedFile = await client.beta.files.upload({
-      file: new File([pdfBuffer], filename, { type: "application/pdf" }),
-    });
-    fileId = uploadedFile.id;
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : "File upload failed";
-    console.error("[bom/extract] Files API upload error:", msg);
-    await logExtract("failed", { reason: "anthropic_files_upload_failed", error: msg, filename }, 502);
-    return NextResponse.json({ error: `PDF upload failed: ${msg}` }, { status: 502 });
-  }
-
-  // ── Call Claude with the uploaded file (Files API) ─────────────────────────
-  let rawText = "";
-  const INLINE_LIMIT = 45 * 1024 * 1024; // 45MB — covers typical large plansets
-
-  try {
-    let message: Awaited<ReturnType<typeof client.beta.messages.create>> | null = null;
-    let lastErr: unknown = null;
-
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      try {
-        message = await client.beta.messages.create({
-          model: "claude-opus-4-5",
-          max_tokens: 8000,
-          system: SYSTEM_PROMPT,
-          messages: [
-            {
-              role: "user",
-              content: [
-                {
-                  type: "document",
-                  source: {
-                    type: "file",
-                    file_id: fileId,
-                  },
-                },
-                {
-                  type: "text",
-                  text: "Extract the complete Bill of Materials from this Photon Brothers planset PDF. Return only the JSON object.",
-                },
-              ],
-            },
-          ],
-          betas: ["files-api-2025-04-14"],
-        });
-        break;
-      } catch (err) {
-        lastErr = err;
-        const attemptMsg = err instanceof Error ? err.message : String(err);
-        if (attempt < 2 && isRetryableClaudeError(attemptMsg)) {
-          await sleep(500);
-          continue;
+  // ── Stream ─────────────────────────────────────────────────────────────────
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (data: object) => {
+        try {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+        } catch {
+          // controller already closed (client disconnected)
         }
-      }
-    }
+      };
 
-    if (!message) {
-      throw lastErr instanceof Error ? lastErr : new Error(String(lastErr ?? "Extraction failed"));
-    }
+      let anthropicFileId: string | undefined;
 
-    const textBlock = message.content.find((b) => b.type === "text");
-    rawText = textBlock && textBlock.type === "text" ? textBlock.text : "";
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : "Extraction failed";
-    console.error("[bom/extract] Anthropic Files API error:", msg);
-
-    // PDF processing errors mean Claude received the file but couldn't parse it.
-    // Other errors (timeouts, overload, etc.) should not be mislabeled as password issues.
-    // Fallback: try base64 inline for PDFs under the inline size limit.
-    const isProcessingError = isPdfProcessingErrorMessage(msg);
-
-    if (isProcessingError && pdfBuffer.byteLength < INLINE_LIMIT) {
-      console.log("[bom/extract] Falling back to base64 inline (file is", pdfBuffer.byteLength, "bytes)");
       try {
-        const base64Data = pdfBuffer.toString("base64");
-        const fallbackMessage = await client.messages.create({
-          model: "claude-opus-4-5",
-          max_tokens: 8000,
-          system: SYSTEM_PROMPT,
-          messages: [
-            {
-              role: "user",
-              content: [
-                {
-                  type: "document",
-                  source: {
-                    type: "base64",
-                    media_type: "application/pdf",
-                    data: base64Data,
-                  },
-                } as { type: "document"; source: { type: "base64"; media_type: "application/pdf"; data: string } },
-                {
-                  type: "text",
-                  text: "Extract the complete Bill of Materials from this Photon Brothers planset PDF. Return only the JSON object.",
-                },
-              ],
-            },
-          ],
-        });
-        const textBlock = fallbackMessage.content.find((b) => b.type === "text");
-        rawText = textBlock && textBlock.type === "text" ? textBlock.text : "";
-      } catch (fallbackErr) {
-        const fallbackMsg = fallbackErr instanceof Error ? fallbackErr.message : "Unknown error";
-        console.error("[bom/extract] Base64 fallback also failed:", fallbackMsg);
-        if (!isPdfProcessingErrorMessage(fallbackMsg)) {
-          await logExtract("failed", { reason: "anthropic_fallback_failed", error: fallbackMsg }, 502);
-          return NextResponse.json({ error: `Extraction failed: ${fallbackMsg}` }, { status: 502 });
-        }
-        await logExtract("failed", { reason: "pdf_processing_error", error: fallbackMsg, fallback: true }, 422);
-        return NextResponse.json(
-          {
-            error:
-              "PDF could not be processed. The file may be password-protected, encrypted, or corrupt. Try re-saving or flattening the PDF and uploading again.",
-          },
-          { status: 422 }
+        await logExtract(
+          "started",
+          { hasBlobUrl: !!body.blobUrl, hasDriveUrl: !!body.driveUrl, hasFileId: !!body.fileId },
+          200
         );
+
+        // ── Stage 1: Download PDF ──────────────────────────────────────────
+        const downloadMsg = body.fileId
+          ? "Downloading PDF from Google Drive…"
+          : body.blobUrl
+            ? "Fetching uploaded PDF…"
+            : "Downloading PDF…";
+        send({ type: "progress", step: "downloading", message: downloadMsg });
+
+        let fetchRes: Response;
+        try {
+          if (body.fileId) {
+            const { token, tokenSource } = await getDriveToken(req);
+            const driveMediaUrl =
+              `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(body.fileId)}` +
+              `?alt=media&supportsAllDrives=true&acknowledgeAbuse=true`;
+
+            fetchRes = await fetch(driveMediaUrl, {
+              redirect: "follow",
+              headers: { Authorization: `Bearer ${token}` },
+            });
+
+            if (!fetchRes.ok) {
+              const driveErr = await fetchRes.json().catch(() => ({})) as { error?: { message?: string } };
+              const msg = driveErr.error?.message ?? `HTTP ${fetchRes.status}`;
+              await logExtract("failed", { reason: "drive_download_failed", error: msg }, 400);
+              send({ type: "error", error: `Failed to download Drive file (${msg})` });
+              return;
+            }
+            void tokenSource; // used for logging in original, keep reference
+          } else {
+            const sourceUrl = body.blobUrl ?? body.driveUrl!;
+            const fetchHeaders: Record<string, string> = {};
+            if (body.blobUrl && process.env.BLOB_READ_WRITE_TOKEN) {
+              fetchHeaders["authorization"] = `Bearer ${process.env.BLOB_READ_WRITE_TOKEN}`;
+            }
+            fetchRes = await fetch(sourceUrl, { redirect: "follow", headers: fetchHeaders });
+            if (!fetchRes.ok) {
+              await logExtract("failed", { reason: "source_fetch_failed", sourceUrl, status: fetchRes.status }, 400);
+              send({
+                type: "error",
+                error: body.blobUrl
+                  ? `Failed to read uploaded file (HTTP ${fetchRes.status})`
+                  : `Failed to download from Drive (HTTP ${fetchRes.status}). Make sure the file is shared publicly.`,
+              });
+              return;
+            }
+          }
+        } catch (e) {
+          await logExtract("failed", { reason: "source_fetch_exception", error: e instanceof Error ? e.message : String(e) }, 400);
+          send({ type: "error", error: `Fetch failed: ${e instanceof Error ? e.message : String(e)}` });
+          return;
+        }
+
+        const fetchContentType = fetchRes.headers.get("content-type") ?? "";
+        if (!fetchContentType.includes("pdf") && !fetchContentType.includes("octet-stream")) {
+          if (!body.blobUrl && !body.fileId) {
+            await logExtract("failed", { reason: "drive_not_pdf", contentType: fetchContentType }, 400);
+            send({ type: "error", error: "Drive URL did not return a PDF. The file may require confirmation — try downloading it and using Upload PDF instead." });
+            return;
+          }
+        }
+
+        const arrayBuffer = await fetchRes.arrayBuffer();
+        if (arrayBuffer.byteLength > MAX_SIZE) {
+          await logExtract("failed", { reason: "pdf_too_large", sizeBytes: arrayBuffer.byteLength }, 400);
+          send({ type: "error", error: "PDF exceeds 500MB limit" });
+          return;
+        }
+
+        const filename = body.blobUrl
+          ? (body.blobUrl.split("/").pop() ?? "planset.pdf")
+          : `drive-${body.fileId ?? "planset"}.pdf`;
+
+        const pdfBuffer = Buffer.from(arrayBuffer);
+
+        // ── Stage 2: Upload to Anthropic Files API ─────────────────────────
+        const sizeMb = (pdfBuffer.byteLength / 1024 / 1024).toFixed(1);
+        send({ type: "progress", step: "uploading", message: `Uploading to BOM Tool (${sizeMb} MB)…` });
+
+        try {
+          const uploadedFile = await client.beta.files.upload({
+            file: new File([pdfBuffer], filename, { type: "application/pdf" }),
+          });
+          anthropicFileId = uploadedFile.id;
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : "File upload failed";
+          console.error("[bom/extract] Files API upload error:", msg);
+          await logExtract("failed", { reason: "anthropic_files_upload_failed", error: msg, filename }, 502);
+          send({ type: "error", error: `PDF upload failed: ${msg}` });
+          return;
+        }
+
+        // ── Stage 3: Extract with Claude ───────────────────────────────────
+        const pageCount = getPdfPageCount(pdfBuffer);
+        const pageStr = pageCount ? ` — reading ${pageCount}-page planset` : "";
+        send({ type: "progress", step: "extracting", message: `Extracting BOM${pageStr} (30–60 seconds)…` });
+
+        let rawText = "";
+        try {
+          let message: Awaited<ReturnType<typeof client.beta.messages.create>> | null = null;
+          let lastErr: unknown = null;
+
+          for (let attempt = 1; attempt <= 2; attempt++) {
+            try {
+              message = await client.beta.messages.create({
+                model: "claude-opus-4-5",
+                max_tokens: 8000,
+                system: SYSTEM_PROMPT,
+                messages: [
+                  {
+                    role: "user",
+                    content: [
+                      {
+                        type: "document",
+                        source: { type: "file", file_id: anthropicFileId },
+                      },
+                      {
+                        type: "text",
+                        text: "Extract the complete Bill of Materials from this Photon Brothers planset PDF. Return only the JSON object.",
+                      },
+                    ],
+                  },
+                ],
+                betas: ["files-api-2025-04-14"],
+              });
+              break;
+            } catch (err) {
+              lastErr = err;
+              const attemptMsg = err instanceof Error ? err.message : String(err);
+              if (attempt < 2 && isRetryableClaudeError(attemptMsg)) {
+                await sleep(500);
+                continue;
+              }
+            }
+          }
+
+          if (!message) {
+            throw lastErr instanceof Error ? lastErr : new Error(String(lastErr ?? "Extraction failed"));
+          }
+
+          const textBlock = message.content.find((b) => b.type === "text");
+          rawText = textBlock && textBlock.type === "text" ? textBlock.text : "";
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : "Extraction failed";
+          console.error("[bom/extract] Anthropic Files API error:", msg);
+
+          const isProcessingError = isPdfProcessingErrorMessage(msg);
+
+          if (isProcessingError && pdfBuffer.byteLength < INLINE_LIMIT) {
+            console.log("[bom/extract] Falling back to base64 inline (file is", pdfBuffer.byteLength, "bytes)");
+            try {
+              const base64Data = pdfBuffer.toString("base64");
+              const fallbackMessage = await client.messages.create({
+                model: "claude-opus-4-5",
+                max_tokens: 8000,
+                system: SYSTEM_PROMPT,
+                messages: [
+                  {
+                    role: "user",
+                    content: [
+                      {
+                        type: "document",
+                        source: { type: "base64", media_type: "application/pdf", data: base64Data },
+                      } as { type: "document"; source: { type: "base64"; media_type: "application/pdf"; data: string } },
+                      {
+                        type: "text",
+                        text: "Extract the complete Bill of Materials from this Photon Brothers planset PDF. Return only the JSON object.",
+                      },
+                    ],
+                  },
+                ],
+              });
+              const textBlock = fallbackMessage.content.find((b) => b.type === "text");
+              rawText = textBlock && textBlock.type === "text" ? textBlock.text : "";
+            } catch (fallbackErr) {
+              const fallbackMsg = fallbackErr instanceof Error ? fallbackErr.message : "Unknown error";
+              console.error("[bom/extract] Base64 fallback also failed:", fallbackMsg);
+              await logExtract("failed", { reason: "pdf_processing_error", error: fallbackMsg, fallback: true }, 422);
+              send({
+                type: "error",
+                error: isPdfProcessingErrorMessage(fallbackMsg)
+                  ? "PDF could not be processed. The file may be password-protected, encrypted, or corrupt. Try re-saving or flattening the PDF and uploading again."
+                  : `Extraction failed: ${fallbackMsg}`,
+              });
+              return;
+            }
+          } else if (isProcessingError) {
+            await logExtract("failed", { reason: "pdf_processing_error", error: msg }, 422);
+            send({
+              type: "error",
+              error: `PDF could not be processed — the file may be password-protected, encrypted, or corrupt (${Math.round(pdfBuffer.byteLength / 1024 / 1024)}MB). Try re-saving or flattening the PDF and uploading again.`,
+            });
+            return;
+          } else {
+            await logExtract("failed", { reason: "anthropic_extract_failed", error: msg }, 502);
+            send({ type: "error", error: `Extraction failed: ${msg}` });
+            return;
+          }
+        }
+
+        // ── Parse result ───────────────────────────────────────────────────
+        let bomJson: Record<string, unknown>;
+        try {
+          const cleaned = rawText
+            .replace(/^```(?:json)?\s*/i, "")
+            .replace(/\s*```\s*$/, "")
+            .trim();
+          bomJson = JSON.parse(cleaned);
+        } catch {
+          console.error("[bom/extract] JSON parse failed. Raw:", rawText.slice(0, 500));
+          await logExtract("failed", { reason: "invalid_json_response", rawPreview: rawText.slice(0, 500) }, 422);
+          send({ type: "error", error: "Model returned invalid JSON. Try again or paste JSON manually." });
+          return;
+        }
+
+        bomJson.generatedAt = new Date().toISOString();
+        bomJson._extractedFrom = filename;
+
+        const bomItems = (bomJson as { items?: unknown[] }).items;
+        await logExtract(
+          "succeeded",
+          { filename, sizeBytes: pdfBuffer.byteLength, itemCount: Array.isArray(bomItems) ? bomItems.length : null },
+          200
+        );
+
+        send({ type: "result", bom: bomJson });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Internal server error";
+        console.error("[bom/extract] Unhandled stream error:", msg, e);
+        await logExtract("failed", { reason: "unhandled_exception", error: msg }, 500).catch(() => {});
+        send({ type: "error", error: msg });
+      } finally {
+        if (anthropicFileId) {
+          await client.beta.files.delete(anthropicFileId).catch((e) => {
+            console.warn("[bom/extract] Failed to delete uploaded file:", anthropicFileId, e);
+          });
+        }
+        controller.close();
       }
-    } else if (isProcessingError) {
-      await logExtract("failed", { reason: "pdf_processing_error", error: msg }, 422);
-      return NextResponse.json(
-        {
-          error: `PDF could not be processed — the file may be password-protected, encrypted, or corrupt (${Math.round(pdfBuffer.byteLength / 1024 / 1024)}MB). Try re-saving or flattening the PDF and uploading again.`,
-        },
-        { status: 422 }
-      );
-    } else {
-      await logExtract("failed", { reason: "anthropic_extract_failed", error: msg }, 502);
-      return NextResponse.json({ error: `Extraction failed: ${msg}` }, { status: 502 });
-    }
-  } finally {
-    // Always delete the uploaded file — we don't need persistent storage
-    await client.beta.files.delete(fileId).catch((e) => {
-      console.warn("[bom/extract] Failed to delete uploaded file:", fileId, e);
-    });
-  }
-
-  // Parse JSON from response (strip any accidental markdown fences)
-  let bomJson: unknown;
-  try {
-    const cleaned = rawText
-      .replace(/^```(?:json)?\s*/i, "")
-      .replace(/\s*```\s*$/, "")
-      .trim();
-    bomJson = JSON.parse(cleaned);
-  } catch {
-    console.error("[bom/extract] JSON parse failed. Raw:", rawText.slice(0, 500));
-    await logExtract("failed", { reason: "invalid_json_response", rawPreview: rawText.slice(0, 500) }, 422);
-    return NextResponse.json(
-      {
-        error: "Model returned invalid JSON. Try again or paste JSON manually.",
-        raw: rawText.slice(0, 2000),
-      },
-      { status: 422 }
-    );
-  }
-
-  // Stamp extraction metadata
-  const bom = bomJson as Record<string, unknown>;
-  bom.generatedAt = new Date().toISOString();
-  bom._extractedFrom = filename;
-
-  const bomItems = (bom as { items?: unknown[] }).items;
-  await logExtract(
-    "succeeded",
-    {
-      filename,
-      sizeBytes: pdfBuffer.byteLength,
-      itemCount: Array.isArray(bomItems) ? bomItems.length : null,
     },
-    200
-  );
+  });
 
-  return NextResponse.json(bom);
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      "Connection": "keep-alive",
+      "X-Accel-Buffering": "no",
+    },
+  });
 }
