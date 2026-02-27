@@ -69,6 +69,7 @@ interface ConstructionProject {
   hubspotUrl: string;
   zuperJobUid?: string;
   zuperJobStatus?: string;
+  zuperScheduledDays?: number;
   tentativeRecordId?: string;
 }
 
@@ -121,6 +122,7 @@ const MONTH_NAMES = [
 ];
 
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const PROJECTS_QUERY_KEY = ["scheduler", "construction-projects"] as const;
 
 // Status values discovered dynamically from actual project data
 
@@ -184,6 +186,14 @@ function isInstallOverdue(project: ConstructionProject, manualScheduleDate?: str
   return isPastDate(schedDate);
 }
 
+function getEffectiveInstallDays(project: ConstructionProject): number {
+  const zuperDays = Number(project.zuperScheduledDays);
+  if (Number.isFinite(zuperDays) && zuperDays > 0) {
+    return Math.max(1, Math.ceil(zuperDays));
+  }
+  return Math.max(1, Math.ceil(project.installDays || 2));
+}
+
 /* ------------------------------------------------------------------ */
 /*  Transform API data                                                 */
 /* ------------------------------------------------------------------ */
@@ -224,6 +234,7 @@ export default function ConstructionSchedulerPage() {
   const [projects, setProjects] = useState<ConstructionProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [manualRefreshing, setManualRefreshing] = useState(false);
 
   /* ---- view / nav ---- */
   const [currentView, setCurrentView] = useState<"calendar" | "list">("calendar");
@@ -274,8 +285,9 @@ export default function ConstructionSchedulerPage() {
 
   const queryClient = useQueryClient();
 
-  const fetchProjectsQueryFn = useCallback(async () => {
-    const response = await fetch("/api/projects?context=scheduling&fields=id,name,address,city,state,pbLocation,amount,projectType,stage,url,constructionScheduleDate,constructionStatus,constructionCompleteDate,closeDate,equipment,installCrew,projectNumber,daysForInstallers,expectedDaysForInstall");
+  const fetchProjectsData = useCallback(async (forceRefresh = false) => {
+    const projectsUrl = `/api/projects?context=scheduling&fields=id,name,address,city,state,pbLocation,amount,projectType,stage,url,constructionScheduleDate,constructionStatus,constructionCompleteDate,closeDate,equipment,installCrew,projectNumber,daysForInstallers,expectedDaysForInstall${forceRefresh ? "&refresh=true" : ""}`;
+    const response = await fetch(projectsUrl, forceRefresh ? { cache: "no-store" } : undefined);
     if (!response.ok) throw new Error("Failed to fetch projects");
     const data = await response.json();
     const transformed = data.projects
@@ -298,6 +310,10 @@ export default function ConstructionSchedulerPage() {
               if (zuperJob) {
                 project.zuperJobUid = zuperJob.jobUid;
                 project.zuperJobStatus = zuperJob.status;
+                const scheduledDays = Number(zuperJob.scheduledDays);
+                if (Number.isFinite(scheduledDays) && scheduledDays > 0) {
+                  project.zuperScheduledDays = scheduledDays;
+                }
               }
             }
           }
@@ -332,8 +348,10 @@ export default function ConstructionSchedulerPage() {
     return { transformed, restoredSchedules, restoredTentatives };
   }, []);
 
+  const fetchProjectsQueryFn = useCallback(() => fetchProjectsData(false), [fetchProjectsData]);
+
   const projectsQuery = useQuery({
-    queryKey: ["scheduler", "construction-projects"],
+    queryKey: PROJECTS_QUERY_KEY,
     queryFn: fetchProjectsQueryFn,
     refetchInterval: 5 * 60 * 1000,
   });
@@ -358,7 +376,7 @@ export default function ConstructionSchedulerPage() {
   }, [projectsQuery.data, projectsQuery.error]);
 
   const fetchProjects = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: ["scheduler", "construction-projects"] });
+    queryClient.invalidateQueries({ queryKey: PROJECTS_QUERY_KEY });
   }, [queryClient]);
 
   // Check Zuper configuration status
@@ -438,6 +456,24 @@ export default function ConstructionSchedulerPage() {
     setToast({ message, type });
     toastTimer.current = setTimeout(() => setToast(null), 3000);
   }, []);
+
+  const handleManualRefresh = useCallback(async () => {
+    if (manualRefreshing) return;
+    setManualRefreshing(true);
+    try {
+      await queryClient.fetchQuery({
+        queryKey: PROJECTS_QUERY_KEY,
+        queryFn: () => fetchProjectsData(true),
+        staleTime: 0,
+      });
+      showToast("Refreshed latest schedule data");
+    } catch (refreshErr) {
+      console.error("Failed to force refresh construction schedule:", refreshErr);
+      showToast("Refresh failed", "warning");
+    } finally {
+      setManualRefreshing(false);
+    }
+  }, [manualRefreshing, queryClient, showToast, fetchProjectsData]);
 
   /* ================================================================ */
   /*  Derived data                                                     */
@@ -535,7 +571,7 @@ export default function ConstructionSchedulerPage() {
     filteredProjects.forEach(p => {
       const schedDate = manualSchedules[p.id] || p.scheduleDate;
       if (!schedDate) return;
-      const businessDays = Math.ceil(p.installDays || 2);
+      const businessDays = getEffectiveInstallDays(p);
       const startDate = new Date(schedDate + "T12:00:00");
       let bDayCount = 0;
       let calOffset = 0;
@@ -598,7 +634,7 @@ export default function ConstructionSchedulerPage() {
       projectId: project.id,
       projectName: project.name,
       date,
-      installDays: project.installDays || 2,
+      installDays: getEffectiveInstallDays(project),
       syncToZuper,
       isReschedule: !!project.zuperJobUid,
     });
@@ -638,7 +674,7 @@ export default function ConstructionSchedulerPage() {
             schedule: {
               type: "installation",
               date: date,
-              days: project.installDays || 2,
+              days: getEffectiveInstallDays(project),
               crew: director?.userUid,
               teamUid: director?.teamUid,
               timezone: scheduleTimezone,
@@ -695,7 +731,7 @@ export default function ConstructionSchedulerPage() {
             schedule: {
               type: "installation",
               date,
-              days: project.installDays || 2,
+              days: getEffectiveInstallDays(project),
               crew: director?.userUid,
               userUid: director?.userUid,
               teamUid: director?.teamUid,
@@ -991,8 +1027,14 @@ export default function ConstructionSchedulerPage() {
 
               <ThemeToggle />
 
-              <button aria-label="Refresh" onClick={fetchProjects} className="p-2 hover:bg-surface-2 rounded-lg">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <button
+                aria-label="Refresh"
+                title={manualRefreshing ? "Refreshing..." : "Refresh data"}
+                onClick={handleManualRefresh}
+                disabled={manualRefreshing}
+                className="p-2 hover:bg-surface-2 rounded-lg disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                <svg className={`w-4 h-4 ${manualRefreshing ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
               </button>
@@ -1400,7 +1442,7 @@ export default function ConstructionSchedulerPage() {
                               {schedDate ? formatShortDate(schedDate) : "—"}
                             </td>
                             <td className="px-4 py-3 text-center text-sm text-muted">
-                              {project.installDays}d
+                              {getEffectiveInstallDays(project)}d
                             </td>
                             <td className="px-4 py-3 text-right font-mono text-sm text-orange-400">
                               {formatCurrency(project.amount)}
@@ -1521,7 +1563,7 @@ export default function ConstructionSchedulerPage() {
                 </div>
                 <div>
                   <span className="text-xs text-muted">Install Days</span>
-                  <p className="text-sm font-medium">{scheduleModal.project.installDays}d</p>
+                  <p className="text-sm font-medium">{getEffectiveInstallDays(scheduleModal.project)}d</p>
                 </div>
               </div>
 
