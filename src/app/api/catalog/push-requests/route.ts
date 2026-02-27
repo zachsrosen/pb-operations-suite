@@ -18,7 +18,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { brand, model, description, category, unitSpec, unitLabel, systems, dealId } = body as Record<string, unknown>;
+  const {
+    brand, model, description, category, unitSpec, unitLabel,
+    sku, vendorName, vendorPartNumber, unitCost, sellPrice,
+    hardToProcure, length, width, weight, metadata,
+    systems, dealId,
+  } = body as Record<string, unknown>;
 
   if (!brand || !model || !description || !category) {
     return NextResponse.json({ error: "brand, model, description, category are required" }, { status: 400 });
@@ -42,6 +47,16 @@ export async function POST(request: NextRequest) {
       category: String(category).trim(),
       unitSpec: unitSpec ? String(unitSpec).trim() : null,
       unitLabel: unitLabel ? String(unitLabel).trim() : null,
+      sku: sku ? String(sku).trim() : null,
+      vendorName: vendorName ? String(vendorName).trim() : null,
+      vendorPartNumber: vendorPartNumber ? String(vendorPartNumber).trim() : null,
+      unitCost: unitCost != null ? Number(unitCost) || null : null,
+      sellPrice: sellPrice != null ? Number(sellPrice) || null : null,
+      hardToProcure: hardToProcure === true,
+      length: length != null ? Number(length) || null : null,
+      width: width != null ? Number(width) || null : null,
+      weight: weight != null ? Number(weight) || null : null,
+      metadata: metadata || undefined,
       systems: systems,
       requestedBy: authResult.email,
       dealId: dealId ? String(dealId) : null,
