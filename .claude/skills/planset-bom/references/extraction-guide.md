@@ -345,11 +345,48 @@ Category: `ELECTRICAL_BOS`. Amp rating from description. Parker (PROJ-8860) incl
 
 ---
 
+## AC Disconnect SKU — 2-Wire vs 3-Wire
+
+The AC disconnect SKU depends on whether the circuit is 2-wire or 3-wire. Check the PV-4 SLD callout text for the AC disconnect:
+
+| PV-4 SLD Description | SKU | Notes |
+|----------------------|-----|-------|
+| `60A NON-FUSED ... 1-PHASE, **2-WIRE**` or no wire count | `DG222URB` | Most common — 2-pole knife blade |
+| `60A NON-FUSED ... 1-PHASE, **3-WIRE**` | `TGN3322R` | 3-pole — used on service upgrade jobs with neutral |
+
+**Rule:** Always read the AC disconnect callout on the PV-4 SLD (not just the PV-2 BOM description). If "3-WIRE" appears in the disconnect callout, use `TGN3322R`. Default to `DG222URB` if ambiguous or no wire count stated.
+
+**Why this matters:** Service upgrade jobs (where the PW3 is tied in upstream of the main panel) wire the disconnect with hot-hot-neutral (3-wire). The TGN3322R disconnects all three conductors. The DG222URB only disconnects 2.
+
+---
+
+## Rapid Shutdown Switch (IMO) — PV-4 SLD Callout
+
+The PV-2 BOM table lists `RAPID SHUTDOWN | N | TESLA MCI-2 ...` for the module-level shutdown devices. However, the **control unit** that triggers those MCI-2s (the Rapid Shutdown Switch / initiator) is **NOT a separate row in the PV-2 BOM table** — it is shown in the PV-4 SLD as a callout with a comm wire running to the MCI-2 string devices.
+
+**When you see `(N) RAPID SHUTDOWN SWITCH` in the PV-4 SLD** (typically shown with a `16/2 COMM WIRE` label), add to BOM:
+
+```json
+{ "category": "RAPID_SHUTDOWN", "brand": "IMO", "model": "IMO SI16-PEL64R-2",
+  "description": "IMO RAPID SHUTDOWN DEVICE, SI16-PEL64R-2", "qty": 1, "source": "PV-4" }
+```
+
+**Extraction rule:**
+1. Scan PV-4 SLD for the text `RAPID SHUTDOWN SWITCH` (with or without "(N)")
+2. If found → add 1× `IMO SI16-PEL64R-2` to BOM
+3. If NOT found (some jobs use a different initiator already in the panel) → omit
+
+This item is always 1 per job regardless of module count.
+
+---
+
 ## Items NOT in BOM Table (but extractable from planset)
 
 | Item | Source Sheet | Notes |
 |------|-------------|-------|
 | Wire gauges + conduit sizes | PV-4 conductor table | Add to BOM as ELECTRICAL_BOS items |
+| **Rapid Shutdown Switch (IMO)** | **PV-4 SLD callout** | **"(N) RAPID SHUTDOWN SWITCH" + 16/2 comm wire → 1× IMO SI16-PEL64R-2** |
+| **AC disconnect wire config** | **PV-4 SLD callout** | **"3-WIRE" → TGN3322R; default → DG222URB** |
 | Module electrical specs (Vmp, Imp, Voc, Isc) | PV-4 module spec table | Add to module row as additional fields |
 | Battery model number (part #) | PV-4 (e.g., 1707000-XX-Y) | Add to battery row |
 | Gateway model number | PV-4 (e.g., 1841000-X1-Y) | Add to monitoring row |
