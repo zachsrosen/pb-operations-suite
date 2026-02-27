@@ -2,10 +2,10 @@
 "use client";
 
 import { useEffect, useState, useMemo, useCallback } from "react";
+import Link from "next/link";
 import DashboardShell from "@/components/DashboardShell";
 import { useToast } from "@/contexts/ToastContext";
 import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
 
 type Tab = "skus" | "sync" | "pending";
 
@@ -165,7 +165,6 @@ function SyncDot({ label, ok }: { label: string; ok: boolean }) {
 export default function CatalogPage() {
   const { data: session } = useSession();
   const { addToast } = useToast();
-  const router = useRouter();
   const [tab, setTab] = useState<Tab>("skus");
   const [skus, setSkus] = useState<Sku[]>([]);
   const [skuLoading, setSkuLoading] = useState(true);
@@ -482,12 +481,12 @@ export default function CatalogPage() {
           </button>
         ))}
         <div className="ml-auto pb-px">
-          <button
-            onClick={() => router.push("/dashboards/catalog/new")}
+          <Link
+            href="/dashboards/catalog/new"
             className="px-4 py-1.5 rounded-lg bg-cyan-600 text-white text-sm font-medium hover:bg-cyan-700 transition-colors flex items-center gap-1.5"
           >
             + Submit New Product
-          </button>
+          </Link>
         </div>
       </div>
 
