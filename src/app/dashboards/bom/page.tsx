@@ -1264,21 +1264,6 @@ function BomDashboardInner() {
   }, []);
 
   /* ---- Safe fetch helper — handles non-JSON error responses ---- */
-  const safeFetchBom = useCallback(async (res: Response): Promise<BomData> => {
-    const text = await res.text();
-    let data: Record<string, unknown>;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      // Server returned HTML (e.g. "Request Entity Too Large", Vercel timeout)
-      if (res.status === 413) throw new Error("PDF is too large — try a smaller file.");
-      if (res.status === 504) throw new Error("Extraction timed out. Try again.");
-      throw new Error(`Server error ${res.status}: ${text.slice(0, 120)}`);
-    }
-    if (!res.ok) throw new Error((data.error as string) || `Server error ${res.status}`);
-    return data as unknown as BomData;
-  }, []);
-
   /* ---- Extract from PDF upload ---- */
   // Chunks the PDF into 1MB slices (→ ~1.4MB base64 JSON each, safely under
   // Vercel's 4.5MB serverless body limit) and POSTs each to /api/bom/chunk.
@@ -1339,18 +1324,15 @@ function BomDashboardInner() {
 
       if (!blobUrl) throw new Error("Upload completed but no blob URL returned — try again");
 
-      setUploadProgress("Extracting BOM with BOM Tool — this takes 30–60 seconds…");
-      const res = await fetch("/api/bom/extract", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ blobUrl }),
-      });
-      const data = await safeFetchBom(res);
-      loadBomData(data, true, projectAtExtractStart);
+      const data = await fetchExtractStream(
+        { blobUrl },
+        (msg) => setUploadProgress(msg)
+      );
+      loadBomData(data as unknown as BomData, true, projectAtExtractStart);
       addToast({ type: "success", title: `BOM extracted from ${uploadFile.name}` });
       // Auto-save snapshot if a project was linked at extract time
       if (projectAtExtractStart) {
-        await saveSnapshot(data, uploadFile.name, blobUrl, projectAtExtractStart);
+        await saveSnapshot(data as unknown as BomData, uploadFile.name, blobUrl, projectAtExtractStart);
       }
     } catch (e) {
       setImportError(e instanceof Error ? e.message : "Upload failed");
@@ -1358,7 +1340,7 @@ function BomDashboardInner() {
       setExtracting(false);
       setUploadProgress("");
     }
-  }, [uploadFile, loadBomData, safeFetchBom, addToast, linkedProject, saveSnapshot]);
+  }, [uploadFile, loadBomData, addToast, linkedProject, saveSnapshot]);
 
   /* ---- Extract from Google Drive URL ---- */
   const handleExtractDrive = useCallback(async () => {
@@ -1378,48 +1360,49 @@ function BomDashboardInner() {
 
     setExtracting(true);
     setImportError(null);
+    setUploadProgress("");
     try {
-      // Fetch the PDF via a server-side proxy to avoid CORS issues
-      const proxyRes = await fetch("/api/bom/extract", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ driveUrl: downloadUrl, fileId }),
-      });
-      const data = await safeFetchBom(proxyRes);
-      loadBomData(data, true, projectAtExtractStart);
+      const data = await fetchExtractStream(
+        { driveUrl: downloadUrl, fileId },
+        (msg) => setUploadProgress(msg)
+      );
+      loadBomData(data as unknown as BomData, true, projectAtExtractStart);
       addToast({ type: "success", title: "BOM extracted from Google Drive" });
       if (projectAtExtractStart) {
-        await saveSnapshot(data, driveUrl, undefined, projectAtExtractStart);
+        await saveSnapshot(data as unknown as BomData, driveUrl, undefined, projectAtExtractStart);
       }
     } catch (e) {
       setImportError(e instanceof Error ? e.message : "Drive extraction failed");
     } finally {
       setExtracting(false);
+      setUploadProgress("");
     }
-  }, [driveUrl, loadBomData, safeFetchBom, addToast, linkedProject, saveSnapshot]);
+  }, [driveUrl, loadBomData, addToast, linkedProject, saveSnapshot]);
 
   /* ---- Extract from a Drive file ID directly (from design files picker) ---- */
   const handleExtractDriveFile = useCallback(async (file: DriveFile) => {
     const projectAtExtractStart = linkedProject;
     setExtractingDriveFileId(file.id);
+    setExtracting(true);
+    setUploadProgress("");
     setImportError(null);
     const downloadUrl = `https://drive.google.com/uc?export=download&id=${file.id}`;
     try {
-      const proxyRes = await fetch("/api/bom/extract", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ driveUrl: downloadUrl, fileId: file.id }),
-      });
-      const data = await safeFetchBom(proxyRes);
-      loadBomData(data, true, projectAtExtractStart);
+      const data = await fetchExtractStream(
+        { driveUrl: downloadUrl, fileId: file.id },
+        (msg) => setUploadProgress(msg)
+      );
+      loadBomData(data as unknown as BomData, true, projectAtExtractStart);
       addToast({ type: "success", title: `BOM extracted from ${file.name}` });
-      if (projectAtExtractStart) await saveSnapshot(data, file.name, downloadUrl, projectAtExtractStart);
+      if (projectAtExtractStart) await saveSnapshot(data as unknown as BomData, file.name, downloadUrl, projectAtExtractStart);
     } catch (e) {
       addToast({ type: "error", title: e instanceof Error ? e.message : "Extraction failed" });
     } finally {
       setExtractingDriveFileId(null);
+      setExtracting(false);
+      setUploadProgress("");
     }
-  }, [safeFetchBom, loadBomData, addToast, linkedProject, saveSnapshot]);
+  }, [loadBomData, addToast, linkedProject, saveSnapshot]);
 
   /* ---- Paste JSON import ---- */
   const handleImport = useCallback(() => {
@@ -2165,7 +2148,7 @@ function BomDashboardInner() {
                   </button>
                   {extracting && (
                     <p className="text-xs text-muted animate-pulse">
-                      Downloading from Drive then extracting with BOM Tool — allow 30–60 seconds.
+                      {uploadProgress || "Downloading from Drive then extracting with BOM Tool — allow 30–60 seconds."}
                     </p>
                   )}
                 </div>
@@ -2242,6 +2225,11 @@ function BomDashboardInner() {
                       </button>
                     </div>
                   ))}
+                  {extractingDriveFileId && uploadProgress && (
+                    <p className="text-xs text-muted animate-pulse text-center pt-1">
+                      {uploadProgress}
+                    </p>
+                  )}
                 </div>
               )}
             </div>
@@ -3280,6 +3268,63 @@ function CatalogDot({ present, loading }: { present?: boolean; loading?: boolean
   ) : (
     <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-400" title="Not in catalog" />
   );
+}
+
+/** Read SSE progress events from /api/bom/extract and return the final BOM. */
+async function fetchExtractStream(
+  body: { blobUrl?: string; driveUrl?: string; fileId?: string },
+  onProgress: (msg: string) => void
+): Promise<Record<string, unknown>> {
+  const res = await fetch("/api/bom/extract", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  // Pre-stream HTTP errors (auth 401/403, bad request 400, etc.)
+  if (!res.ok || !res.body) {
+    const text = await res.text().catch(() => "");
+    let data: Record<string, unknown> = {};
+    try { data = JSON.parse(text); } catch { /* not JSON */ }
+    if (res.status === 413) throw new Error("PDF is too large — try a smaller file.");
+    if (res.status === 504) throw new Error("Extraction timed out. Try again.");
+    throw new Error((data.error as string) || `Server error ${res.status}`);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split("\n\n");
+    buffer = parts.pop() ?? "";
+
+    for (const part of parts) {
+      const line = part.split("\n").find((l) => l.startsWith("data: "));
+      if (!line) continue;
+
+      let event: { type: string; message?: string; bom?: Record<string, unknown>; error?: string };
+      try {
+        event = JSON.parse(line.slice(6));
+      } catch {
+        continue; // malformed SSE line — skip
+      }
+
+      if (event.type === "progress" && event.message) {
+        onProgress(event.message);
+      } else if (event.type === "result" && event.bom) {
+        return event.bom;
+      } else if (event.type === "error") {
+        throw new Error(event.error || "Extraction failed");
+      }
+    }
+  }
+
+  throw new Error("Stream ended without result");
 }
 
 export default function BomDashboard() {
