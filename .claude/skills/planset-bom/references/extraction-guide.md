@@ -415,13 +415,15 @@ This item is always 1 per job regardless of module count.
 
 ## Ops-Standard Additions
 
-These items are **always ordered on every job** (or triggered by a specific planset condition) regardless of whether the planset mentions them. Add them to the BOM output so they appear in the generated SO.
+These items are ordered on every **solar (PV module) job** (or triggered by a specific planset condition) regardless of whether the planset mentions them. Add them to the BOM output so they appear in the generated SO.
 
-### Always Add (Every Job)
+> **Solar-only condition:** The always-add items below (critter guard, solobox) apply **only when the planset includes roof-mounted PV modules**. Do **not** add them for battery-only, EV-charger-only, or other non-solar installs.
+
+### Always Add (Solar Jobs Only)
 
 #### Critter Guard — Two Products
 
-Every job gets critter guard bird proofing. Always output **two separate BOM items**:
+Every solar job gets critter guard bird proofing. Always output **two separate BOM items**:
 
 ```json
 { "category": "ELECTRICAL_BOS", "brand": "", "model": "S6466",
@@ -430,18 +432,18 @@ Every job gets critter guard bird proofing. Always output **two separate BOM ite
   "description": "HEYCO SUNSCREENER CLIP, BIRD PROOFING", "qty": 4, "unitLabel": "box", "source": "OPS_STANDARD" }
 ```
 
-**Rule:** Even if the planset says nothing about critter guard, output both items. Qty is always 4 boxes each.
+**Rule:** If the planset has PV modules, output both items even if the planset doesn't mention critter guard. Qty is always 4 boxes each. Skip for battery-only or EV-only jobs.
 
 #### UNIRAC SOLOBOX COMP-D (Standard Junction Box)
 
-Every job uses the **UNIRAC SOLOBOX COMP-D** as the roof junction box — regardless of what the planset shows (plansets sometimes specify a different J-box model). Always output:
+Every solar job uses the **UNIRAC SOLOBOX COMP-D** as the roof junction box — regardless of what the planset shows (plansets sometimes specify a different J-box model). Always output:
 
 ```json
 { "category": "ELECTRICAL_BOS", "brand": "UNIRAC", "model": "SBOXCOMP-D",
   "description": "UNIRAC SOLOBOX COMP-D JUNCTION BOX", "qty": 3, "source": "OPS_STANDARD" }
 ```
 
-**Rule:** If the PV-2 BOM table lists `JUNCTION BOX`, replace it with the SOLOBOX COMP-D entry above. Do not include the planset's J-box model — always substitute SBOXCOMP-D.
+**Rule:** If the PV-2 BOM table lists `JUNCTION BOX`, replace it with the SOLOBOX COMP-D entry above. Do not include the planset's J-box model — always substitute SBOXCOMP-D. Only applies when PV modules are present.
 
 ---
 
