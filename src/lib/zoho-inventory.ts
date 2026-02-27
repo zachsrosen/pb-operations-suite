@@ -134,6 +134,10 @@ interface ItemCacheEntry {
 }
 let _itemCache: ItemCacheEntry | null = null;
 const ITEM_CACHE_TTL_MS = 60 * 60 * 1000; // 60 min
+// Inflight coalescing — prevents concurrent cold-cache calls from each
+// triggering a separate listItems() fetch (which would burst Zoho's concurrent
+// request limit). All callers share the same in-flight promise.
+let _itemCacheInflight: Promise<ZohoInventoryItem[]> | null = null;
 
 function normalizeName(s: string): string {
   return s.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
@@ -356,14 +360,23 @@ export class ZohoInventoryClient {
     return items;
   }
 
-  /** Load all Zoho items into a module-level cache (60 min TTL). */
+  /** Load all Zoho items into a module-level cache (60 min TTL).
+   *  Coalesces concurrent callers so only one listItems() request is in flight
+   *  at a time — prevents bursting Zoho's concurrent-request limit on cold start. */
   async getItemsForMatching(): Promise<ZohoInventoryItem[]> {
     if (_itemCache && Date.now() < _itemCache.expiresAt) return _itemCache.items;
-    const allItems = await this.listItems();
-    // Only match against active items — inactive items cannot be added to SOs/POs
-    const items = allItems.filter(i => !i.status || i.status === "active");
-    _itemCache = { items, expiresAt: Date.now() + ITEM_CACHE_TTL_MS };
-    return items;
+    // If a fetch is already in flight, piggyback on it instead of starting a second one
+    if (_itemCacheInflight) return _itemCacheInflight;
+    _itemCacheInflight = this.listItems()
+      .then((allItems) => {
+        const items = allItems.filter(i => !i.status || i.status === "active");
+        _itemCache = { items, expiresAt: Date.now() + ITEM_CACHE_TTL_MS };
+        return items;
+      })
+      .finally(() => {
+        _itemCacheInflight = null;
+      });
+    return _itemCacheInflight;
   }
 
   /**
