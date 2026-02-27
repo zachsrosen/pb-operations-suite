@@ -345,6 +345,39 @@ Category: `ELECTRICAL_BOS`. Amp rating from description. Parker (PROJ-8860) incl
 
 ---
 
+## Main Breaker Enclosure → Two BOM Items
+
+When the PV-2 BOM table (or PV-0 cover sheet) lists a **60A MAIN BREAKER ENCLOSURE**, this implies two separate physical products that must be ordered:
+
+1. **The enclosure (load center)** — `TL270RCU`: 70A Main Lugs, 1PH, 65kA, 120/240VAC, 2/4 Circuit
+2. **The breaker** — `THQL2160`: 60A 2-Pole GE circuit breaker that populates the enclosure
+
+**Rule:** Always output TWO BOM items when you see "60A MAIN BREAKER ENCLOSURE":
+
+```json
+{ "category": "ELECTRICAL_BOS", "brand": "", "model": "TL270RCU",
+  "description": "LOAD CENTER, 70A, MAIN LUGS, 1PH, 65KA, 120/240VAC, 2/4 CIRCUIT", "qty": 1 }
+{ "category": "ELECTRICAL_BOS", "brand": "GE", "model": "THQL2160",
+  "description": "60A 2-POLE GE CIRCUIT BREAKER", "qty": 1 }
+```
+
+The planset only shows one line item but ops always orders both. The breaker is never listed separately in the planset — outputting it here ensures it makes it into the SO.
+
+---
+
+## BONDED SPLICE — Use Rail-Specific Model
+
+The PV-2 BOM table always labels the splice as "SPLICE KIT" or "BONDED SPLICE" generically. When outputting this item, include the rail system in the description so the correct SKU is matched:
+
+| Rail System | Output `model` | Output `description` |
+|-------------|----------------|----------------------|
+| XR10 (asphalt shingle) | `XR10-BOSS-01-M1` | `IRONRIDGE XR10 BONDED SPLICE MILL` |
+| XR100 (metal/trapezoidal) | `XR100-BOSS-01-M1` | `IRONRIDGE XR100 BONDED SPLICE MILL` |
+
+**Rule:** Check the RAIL row in PV-2 BOM to determine rail type (XR10 or XR100), then set the splice model accordingly. Never output "SPLICE KIT" as the model — it will match the wrong Zoho product.
+
+---
+
 ## AC Disconnect SKU — 2-Wire vs 3-Wire
 
 The AC disconnect SKU depends on whether the circuit is 2-wire or 3-wire. Check the PV-4 SLD callout text for the AC disconnect:
@@ -377,6 +410,68 @@ The PV-2 BOM table lists `RAPID SHUTDOWN | N | TESLA MCI-2 ...` for the module-l
 3. If NOT found (some jobs use a different initiator already in the panel) → omit
 
 This item is always 1 per job regardless of module count.
+
+---
+
+## Ops-Standard Additions
+
+These items are ordered on every **solar (PV module) job** (or triggered by a specific planset condition) regardless of whether the planset mentions them. Add them to the BOM output so they appear in the generated SO.
+
+> **Solar-only condition:** The always-add items below (critter guard, solobox) apply **only when the planset includes roof-mounted PV modules**. Do **not** add them for battery-only, EV-charger-only, or other non-solar installs.
+
+### Always Add (Solar Jobs Only)
+
+#### Critter Guard — Two Products
+
+Every solar job gets critter guard bird proofing. Always output **two separate BOM items**:
+
+```json
+{ "category": "ELECTRICAL_BOS", "brand": "", "model": "S6466",
+  "description": "CRITTER GUARD 6\" ROLL, BIRD PROOFING", "qty": 4, "unitLabel": "box", "source": "OPS_STANDARD" }
+{ "category": "ELECTRICAL_BOS", "brand": "Heyco", "model": "S6438",
+  "description": "HEYCO SUNSCREENER CLIP, BIRD PROOFING", "qty": 4, "unitLabel": "box", "source": "OPS_STANDARD" }
+```
+
+**Rule:** If the planset has PV modules, output both items even if the planset doesn't mention critter guard. Qty is always 4 boxes each. Skip for battery-only or EV-only jobs.
+
+#### UNIRAC SOLOBOX COMP-D (Standard Junction Box)
+
+Every solar job uses the **UNIRAC SOLOBOX COMP-D** as the roof junction box — regardless of what the planset shows (plansets sometimes specify a different J-box model). Always output:
+
+```json
+{ "category": "ELECTRICAL_BOS", "brand": "UNIRAC", "model": "SBOXCOMP-D",
+  "description": "UNIRAC SOLOBOX COMP-D JUNCTION BOX", "qty": 3, "source": "OPS_STANDARD" }
+```
+
+**Rule:** If the PV-2 BOM table lists `JUNCTION BOX`, replace it with the SOLOBOX COMP-D entry above. Do not include the planset's J-box model — always substitute SBOXCOMP-D. Only applies when PV modules are present.
+
+---
+
+### Triggered by Production Meter
+
+When the job has a **XCEL ENERGY PV PRODUCTION METER** (or any production meter install), always add these two accessories alongside the meter:
+
+```json
+{ "category": "MONITORING", "brand": "", "model": "K8180",
+  "description": "METER BYPASS JUMPERS", "qty": 1, "unitLabel": "pair", "source": "OPS_STANDARD" }
+{ "category": "MONITORING", "brand": "", "model": "43974",
+  "description": "METER COVER", "qty": 1, "source": "OPS_STANDARD" }
+```
+
+**Rule:** Whenever you output a production meter BOM item (e.g., `U4801XL5T9`), also output the two meter accessories above. They ship with every meter install.
+
+---
+
+### Triggered by Tap / Service Upgrade
+
+When the job includes a **tap** or **service upgrade** (look for "SERVICE UPGRADE", "METER SOCKET TAP", "UTILITY TAP", or any 3-wire disconnect on PV-4), add:
+
+```json
+{ "category": "ELECTRICAL_BOS", "brand": "", "model": "BIPC4/010S",
+  "description": "INSULATION PIERCING CONNECTOR", "qty": 3, "source": "OPS_STANDARD" }
+```
+
+**Rule:** If PV-4 shows a 3-wire AC disconnect (`TGN3322R`) or the cover sheet mentions "SERVICE UPGRADE" / "UTILITY TAP", include 3× IPC connectors. These pierce the utility conductors for the tap connection.
 
 ---
 
