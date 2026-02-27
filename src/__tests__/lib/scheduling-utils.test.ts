@@ -1,4 +1,6 @@
 import {
+  addBusinessDaysYmd,
+  addDaysYmd,
   countBusinessDaysInclusive,
   getBusinessDatesInSpan,
   getConstructionSpanDaysFromZuper,
@@ -16,11 +18,22 @@ describe("scheduling-utils", () => {
   it("counts business days inclusively", () => {
     expect(countBusinessDaysInclusive("2026-03-05", "2026-03-06")).toBe(2);
     expect(countBusinessDaysInclusive("2026-03-06", "2026-03-09")).toBe(2);
+    expect(countBusinessDaysInclusive("2026-03-10", "2026-03-05")).toBe(1);
+  });
+
+  it("adds days and business days with weekend handling", () => {
+    expect(addDaysYmd("2026-03-31", 1)).toBe("2026-04-01");
+    expect(addBusinessDaysYmd("2026-03-07", 0)).toBe("2026-03-09");
+    expect(addBusinessDaysYmd("2026-03-06", 1)).toBe("2026-03-09");
   });
 
   it("expands install spans into business dates", () => {
     expect(getBusinessDatesInSpan("2026-03-06", 3)).toEqual([
       "2026-03-06",
+      "2026-03-09",
+      "2026-03-10",
+    ]);
+    expect(getBusinessDatesInSpan("2026-03-07", 2)).toEqual([
       "2026-03-09",
       "2026-03-10",
     ]);
@@ -34,6 +47,24 @@ describe("scheduling-utils", () => {
         timezone: "UTC",
       })
     ).toEqual({ startDate: "2026-03-05", endDate: "2026-03-06" });
+  });
+
+  it("normalizes malformed and inverted boundary inputs safely", () => {
+    expect(
+      normalizeZuperBoundaryDates({
+        startIso: "bad 2026-03-10 data",
+        endIso: "2026-03-12T10:00:00Z",
+        timezone: "UTC",
+      })
+    ).toEqual({ startDate: "2026-03-10", endDate: "2026-03-12" });
+
+    expect(
+      normalizeZuperBoundaryDates({
+        startIso: "2026-03-12T10:00:00Z",
+        endIso: "2026-03-10T08:00:00Z",
+        timezone: "UTC",
+      })
+    ).toEqual({ startDate: "2026-03-12", endDate: "2026-03-12" });
   });
 
   it("derives install span from zuper boundaries before fallback days", () => {
@@ -54,5 +85,15 @@ describe("scheduling-utils", () => {
         timezone: "UTC",
       })
     ).toBe(3);
+  });
+
+  it("returns undefined when no parseable boundaries or fallback days exist", () => {
+    expect(
+      getConstructionSpanDaysFromZuper({
+        startIso: "not-a-date",
+        endIso: "still-not-a-date",
+        timezone: "UTC",
+      })
+    ).toBeUndefined();
   });
 });

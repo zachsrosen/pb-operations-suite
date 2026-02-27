@@ -8,6 +8,7 @@ import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { LOCATION_TIMEZONES } from "@/lib/constants";
 import { generateOptimizedSchedule, type OptimizableProject, type ScoringPreset, type ExistingBooking, DEFAULT_LOCATION_CAPACITY } from "@/lib/schedule-optimizer";
 import {
+  addBusinessDaysYmd,
   addDaysYmd,
   getBusinessDatesInSpan as getBusinessDatesInSpanShared,
   getConstructionSpanDaysFromZuper,
@@ -404,26 +405,6 @@ function addDays(dateStr: string, days: number): string {
   return addDaysYmd(dateStr, days);
 }
 
-function addBusinessDays(dateStr: string, days: number): string {
-  const [year, month, day] = dateStr.split("-").map(Number);
-  const d = new Date(year, month - 1, day);
-  // First, move to a weekday if starting on a weekend
-  while (d.getDay() === 0 || d.getDay() === 6) {
-    d.setDate(d.getDate() + 1);
-  }
-  let remaining = Math.ceil(days);
-  if (remaining <= 0) {
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  }
-  while (remaining > 0) {
-    d.setDate(d.getDate() + 1);
-    if (d.getDay() !== 0 && d.getDay() !== 6) {
-      remaining--;
-    }
-  }
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
 function normalizeZuperBoundaryDates(
   startIso?: string | null,
   endIso?: string | null,
@@ -437,12 +418,7 @@ function normalizeZuperBoundaryDates(
 }
 
 function getNextWorkday(dateStr: string): string {
-  const [year, month, day] = dateStr.split("-").map(Number);
-  const d = new Date(year, month - 1, day);
-  while (d.getDay() === 0 || d.getDay() === 6) {
-    d.setDate(d.getDate() + 1);
-  }
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return addBusinessDaysYmd(dateStr, 0);
 }
 
 function toDateStr(d: Date): string {

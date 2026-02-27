@@ -192,11 +192,20 @@ function isWeekend(dateStr: string): boolean {
 function dedupeAssignees(assignees: ZuperAssignee[]): ZuperAssignee[] {
   const seen = new Set<string>();
   return assignees.filter((assignee) => {
-    const key = `${assignee.userUid}|${assignee.name.toLowerCase()}`;
+    const key = assignee.userUid.trim();
+    if (!key) return false;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
+}
+
+function arraysEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
 }
 
 function toDateStr(d: Date): string {
@@ -516,6 +525,21 @@ export default function ConstructionSchedulerPage() {
     return DEFAULT_CONSTRUCTION_ASSIGNEES[location] || [];
   }, [scheduleModal, liveConstructionAssigneesByLocation]);
 
+  const defaultSelectedAssigneeNames = useMemo(() => {
+    if (!scheduleModal) return [] as string[];
+    const availableNames = new Set(availableConstructionAssignees.map((assignee) => assignee.name));
+    if (availableNames.size === 0) return [] as string[];
+
+    const projectAssigned = (scheduleModal.project.zuperAssignedTo || []).filter((name) => availableNames.has(name));
+    if (projectAssigned.length > 0) return projectAssigned;
+
+    const defaultDirectorName = CONSTRUCTION_DIRECTORS[scheduleModal.project.location]?.name;
+    if (defaultDirectorName && availableNames.has(defaultDirectorName)) return [defaultDirectorName];
+
+    const fallbackFirst = availableConstructionAssignees[0]?.name;
+    return fallbackFirst ? [fallbackFirst] : [];
+  }, [scheduleModal, availableConstructionAssignees]);
+
   useEffect(() => {
     if (!scheduleModal) {
       setLoadingConstructionAssignees(false);
@@ -579,39 +603,22 @@ export default function ConstructionSchedulerPage() {
 
   useEffect(() => {
     if (!scheduleModal) {
-      setSelectedAssigneeNames([]);
+      setSelectedAssigneeNames((prev) => (prev.length === 0 ? prev : []));
       return;
     }
 
     const availableNames = new Set(availableConstructionAssignees.map((assignee) => assignee.name));
     if (availableNames.size === 0) {
-      setSelectedAssigneeNames([]);
+      setSelectedAssigneeNames((prev) => (prev.length === 0 ? prev : []));
       return;
     }
 
-    const priorSelections = selectedAssigneeNames.filter((name) => availableNames.has(name));
-    if (priorSelections.length > 0) {
-      if (priorSelections.length !== selectedAssigneeNames.length) {
-        setSelectedAssigneeNames(priorSelections);
-      }
-      return;
-    }
-
-    const projectAssigned = (scheduleModal.project.zuperAssignedTo || []).filter((name) => availableNames.has(name));
-    if (projectAssigned.length > 0) {
-      setSelectedAssigneeNames(projectAssigned);
-      return;
-    }
-
-    const defaultDirectorName = CONSTRUCTION_DIRECTORS[scheduleModal.project.location]?.name;
-    if (defaultDirectorName && availableNames.has(defaultDirectorName)) {
-      setSelectedAssigneeNames([defaultDirectorName]);
-      return;
-    }
-
-    const fallbackFirst = availableConstructionAssignees[0]?.name;
-    setSelectedAssigneeNames(fallbackFirst ? [fallbackFirst] : []);
-  }, [scheduleModal, availableConstructionAssignees, selectedAssigneeNames]);
+    setSelectedAssigneeNames((prev) => {
+      const retained = prev.filter((name) => availableNames.has(name));
+      const next = retained.length > 0 ? retained : defaultSelectedAssigneeNames;
+      return arraysEqual(prev, next) ? prev : next;
+    });
+  }, [scheduleModal, availableConstructionAssignees, defaultSelectedAssigneeNames]);
 
   /* ================================================================ */
   /*  Toast                                                            */

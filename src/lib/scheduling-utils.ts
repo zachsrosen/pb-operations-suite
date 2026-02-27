@@ -11,6 +11,26 @@ export function addDaysYmd(dateStr: string, days: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+export function addBusinessDaysYmd(dateStr: string, days: number): string {
+  const [year, month, day] = dateStr.split("-").map(Number);
+  const d = new Date(year, month - 1, day);
+  // First, move to a weekday if starting on a weekend.
+  while (d.getDay() === 0 || d.getDay() === 6) {
+    d.setDate(d.getDate() + 1);
+  }
+  let remaining = Math.ceil(days);
+  if (remaining <= 0) {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+  while (remaining > 0) {
+    d.setDate(d.getDate() + 1);
+    if (d.getDay() !== 0 && d.getDay() !== 6) {
+      remaining--;
+    }
+  }
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 export function countBusinessDaysInclusive(startDate: string, endDate: string): number {
   if (!startDate || !endDate) return 1;
   if (endDate < startDate) return 1;
@@ -62,9 +82,6 @@ function isoToLocalPartsInTimezone(
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
   }).formatToParts(parsed);
 
   const year = parts.find((p) => p.type === "year")?.value;
