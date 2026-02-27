@@ -111,6 +111,10 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // ── Main handler — wrapped so unhandled throws (Zoho item lookup, Prisma, etc.)
+  // return a structured 500 instead of Next.js's generic empty response.
+  try {
+
   // 1. Load the BOM snapshot
   const snapshot = await prisma.projectBomSnapshot.findFirst({
     where: { dealId: String(dealId), version },
@@ -298,4 +302,25 @@ export async function POST(request: NextRequest) {
     unmatchedItems,
     matchedItems,
   });
+
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Internal server error";
+    console.error("[bom/create-so] Unhandled error:", message, e);
+    await logActivity({
+      type: "API_ERROR",
+      description: `BOM create-so unhandled error: ${message}`,
+      userEmail: authResult.email,
+      userName: authResult.name,
+      entityType: "bom",
+      entityName: "create_so",
+      metadata: { event: "bom_create_so", outcome: "failed", reason: "unhandled_exception", error: message },
+      ipAddress: authResult.ip,
+      userAgent: authResult.userAgent,
+      requestPath: "/api/bom/create-so",
+      requestMethod: "POST",
+      responseStatus: 500,
+      durationMs: Date.now() - startedAt,
+    }).catch(() => {});
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }
