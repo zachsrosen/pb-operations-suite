@@ -139,6 +139,62 @@ function normalizeName(s: string): string {
   return s.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
 }
 
+/**
+ * Static overrides that map known BOM query patterns directly to specific
+ * Zoho SKUs, checked BEFORE fuzzy name matching.
+ *
+ * Purpose: prevent false positives on common items where the fuzzy logic
+ * would match the wrong Zoho product (e.g. XR10 rail → splice connector,
+ * or HUG attachment → RD structural screw).
+ *
+ * Rules are checked in order; first matching pattern wins. If the mapped
+ * SKU is not found in the active item catalog, the override returns null
+ * rather than falling through to fuzzy matching (avoids substituting a
+ * wrong product for a known-but-uncataloged item).
+ */
+const BOM_QUERY_OVERRIDES: ReadonlyArray<{ pattern: RegExp; sku: string }> = [
+  // Powerwall 3 — wildcard model (1707000-XX-Y) → exact catalog SKU
+  { pattern: /\b1707000\b/i,                              sku: "1707000-21-K" },
+
+  // MCI-2 (all variants, standard or High Current) → always use High Current item
+  { pattern: /\bmci-?2\b/i,                               sku: "1879359-15-B" },
+
+  // 60A non-fused AC disconnect
+  { pattern: /\b60a?\s+non.?fused\b/i,                   sku: "DG222URB" },
+
+  // 200A non-fused AC disconnect (utility service upgrade, Burnham-style)
+  { pattern: /\b200a?\s+non.?fused\b/i,                  sku: "TGN3324R" },
+
+  // 200A fused AC disconnect
+  { pattern: /\b200a?\s+(utility\s+)?fused\b/i,          sku: "D224NRB" },
+
+  // Xcel Energy PV Production Meter → Milbank 200A Meter Housing w/ Bypass
+  { pattern: /xcel.*meter|pv\s+production\s+meter/i,     sku: "U4801XL5T9" },
+
+  // 125A sub panel
+  { pattern: /\b125a?\s+sub\s*panel\b/i,                 sku: "PAL2412" },
+
+  // IronRidge XR10 168" rail — any XR10 query routes to the rail, not the splice
+  // (Bonded Splice searches never include "XR10" as a search term)
+  { pattern: /\bxr10\b/i,                                sku: "XR-10-168M" },
+
+  // IronRidge HUG attachment (Halo UltraGrip) — the word "hug" appears in the
+  // RD structural screw name "(HUG Screws)" causing false positives without this
+  { pattern: /\bhug\b/i,                                 sku: "2101151" },
+
+  // IronRidge XR10 Bonded Splice
+  { pattern: /\bbonded\s+splice\b/i,                     sku: "XR10-BOSS-01-M1" },
+
+  // IronRidge Mid Clamp → UFO mid clamp (current IronRidge mid-clamp product)
+  { pattern: /\bmid\s+clamp\b/i,                         sku: "UFO-CL-01-A1" },
+
+  // IronRidge End Clamp → UFO end clamp
+  { pattern: /\bend\s+clamp\b/i,                         sku: "UFO-END-01-B1" },
+
+  // Grounding lug — prefer IronRidge XR-specific lug over generic ballast lug
+  { pattern: /\bgrounding\s+lug\b/i,                     sku: "XR-LUG-03-A1" },
+];
+
 function isBlank(value: string | undefined | null): boolean {
   return !value || value.trim().length === 0;
 }
@@ -272,8 +328,21 @@ export class ZohoInventoryClient {
    */
   async findItemIdByName(query: string): Promise<{ item_id: string; zohoName: string } | null> {
     if (!query || query.trim().length < 2) return null;
-    const q = normalizeName(query);
     const items = await this.getItemsForMatching();
+
+    // 0. Static overrides — checked first to prevent false positives on known BOM patterns
+    //    (e.g. XR10 → rail not splice, HUG → attachment not screw, 1707000 → Powerwall 3)
+    for (const override of BOM_QUERY_OVERRIDES) {
+      if (override.pattern.test(query)) {
+        const skuQ = normalizeName(override.sku);
+        const hit = items.find(i => i.sku && normalizeName(i.sku) === skuQ);
+        // If override matches but SKU isn't in catalog, return null rather than
+        // falling through to fuzzy matching (avoids substituting wrong product)
+        return hit ? { item_id: hit.item_id, zohoName: hit.name } : null;
+      }
+    }
+
+    const q = normalizeName(query);
 
     // 1. Exact name match
     const exactName = items.find(i => normalizeName(i.name) === q);
