@@ -230,6 +230,35 @@ export function getSpecTableName(category: string): string | undefined {
   return CATEGORY_CONFIGS[category]?.specTable;
 }
 
+export function getHubspotCategoryValue(category: string): string | undefined {
+  return CATEGORY_CONFIGS[category]?.hubspotValue;
+}
+
+export function getHubspotPropertiesFromMetadata(
+  category: string,
+  metadata: Record<string, unknown> | null | undefined
+): Record<string, string | number | boolean> {
+  if (!metadata || typeof metadata !== "object") return {};
+
+  const mapped: Record<string, string | number | boolean> = {};
+  const fields = getCategoryFields(category);
+  for (const field of fields) {
+    const propertyName = field.hubspotProperty;
+    if (!propertyName) continue;
+
+    const value = metadata[field.key];
+    if (value === null || value === undefined || value === "") continue;
+
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      mapped[propertyName] = value;
+      continue;
+    }
+    mapped[propertyName] = String(value);
+  }
+
+  return mapped;
+}
+
 export function generateZuperSpecification(category: string, specData: Record<string, unknown>): string {
   const parts: string[] = [];
   switch (category) {

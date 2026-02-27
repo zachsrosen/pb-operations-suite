@@ -17,6 +17,22 @@ jest.mock("@/lib/catalog-fields", () => ({
     };
     return map[cat];
   }),
+  getHubspotCategoryValue: jest.fn((cat: string) => {
+    const map: Record<string, string> = {
+      MODULE: "Module",
+      INVERTER: "Inverter",
+      BATTERY: "Battery",
+      BATTERY_EXPANSION: "Battery Expansion",
+    };
+    return map[cat];
+  }),
+  getHubspotPropertiesFromMetadata: jest.fn(() => ({})),
+}));
+
+// ── HubSpot adapter ────────────────────────────────────────────────────────────
+const mockCreateOrUpdateHubSpotProduct = jest.fn();
+jest.mock("@/lib/hubspot", () => ({
+  createOrUpdateHubSpotProduct: (...args: unknown[]) => mockCreateOrUpdateHubSpotProduct(...args),
 }));
 
 // ── Prisma ────────────────────────────────────────────────────────────────────
@@ -24,6 +40,8 @@ const mockFindUnique = jest.fn();
 const mockUpsert = jest.fn();
 const mockUpdate = jest.fn();
 const mockSpecUpsert = jest.fn();
+const mockPendingPushUpdate = jest.fn();
+const mockEquipmentUpdate = jest.fn();
 
 // $transaction receives a callback; we execute it with a fake tx client
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -42,6 +60,10 @@ jest.mock("@/lib/db", () => ({
   prisma: {
     pendingCatalogPush: {
       findUnique: (...args: unknown[]) => mockFindUnique(...args),
+      update: (...args: unknown[]) => mockPendingPushUpdate(...args),
+    },
+    equipmentSku: {
+      update: (...args: unknown[]) => mockEquipmentUpdate(...args),
     },
     $transaction: mockTransaction,
   },
@@ -109,7 +131,27 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockRequireApiAuth.mockResolvedValue({ email: "admin@photonbrothers.com", role: "ADMIN" });
   mockUpsert.mockResolvedValue({ id: "sku_1" });
-  mockUpdate.mockResolvedValue({ id: "push_1", status: "APPROVED" });
+  mockUpdate.mockResolvedValue({
+    id: "push_1",
+    status: "APPROVED",
+    internalSkuId: "sku_1",
+    zohoItemId: null,
+    hubspotProductId: null,
+    zuperItemId: null,
+  });
+  mockPendingPushUpdate.mockResolvedValue({
+    id: "push_1",
+    status: "APPROVED",
+    internalSkuId: "sku_1",
+    zohoItemId: null,
+    hubspotProductId: "hs_prod_1",
+    zuperItemId: null,
+  });
+  mockEquipmentUpdate.mockResolvedValue({ id: "sku_1" });
+  mockCreateOrUpdateHubSpotProduct.mockResolvedValue({
+    hubspotProductId: "hs_prod_1",
+    created: true,
+  });
 });
 
 // ── Auth & Guard tests ───────────────────────────────────────────────────────
@@ -362,6 +404,69 @@ describe("POST /api/catalog/push-requests/[id]/approve", () => {
         expect.any(String)
       );
       consoleSpy.mockRestore();
+    });
+  });
+
+  describe("HubSpot push integration", () => {
+    it("pushes to HubSpot and persists returned product IDs", async () => {
+      mockFindUnique.mockResolvedValue(makePush({ systems: ["INTERNAL", "HUBSPOT"] }));
+
+      const res = await POST(new NextRequest("http://localhost"), makeParams());
+      const data = await res.json();
+
+      expect(mockCreateOrUpdateHubSpotProduct).toHaveBeenCalledWith(
+        expect.objectContaining({
+          brand: "REC",
+          model: "REC-400AA",
+          sku: "REC400",
+          productCategory: "Module",
+          unitCost: 120,
+          sellPrice: 180,
+        })
+      );
+      expect(mockPendingPushUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "push_1" },
+          data: { hubspotProductId: "hs_prod_1" },
+        })
+      );
+      expect(mockEquipmentUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "sku_1" },
+          data: { hubspotProductId: "hs_prod_1" },
+        })
+      );
+
+      expect(data.push.hubspotProductId).toBe("hs_prod_1");
+      expect(data.outcomes.HUBSPOT.status).toBe("success");
+      expect(data.outcomes.HUBSPOT.externalId).toBe("hs_prod_1");
+      expect(data.summary).toEqual({
+        selected: 2,
+        success: 2,
+        failed: 0,
+        skipped: 0,
+        notImplemented: 0,
+      });
+    });
+
+    it("reports failed HubSpot outcome when adapter throws", async () => {
+      mockFindUnique.mockResolvedValue(makePush({ systems: ["INTERNAL", "HUBSPOT"] }));
+      mockCreateOrUpdateHubSpotProduct.mockRejectedValue(new Error("HubSpot unavailable"));
+
+      const res = await POST(new NextRequest("http://localhost"), makeParams());
+      const data = await res.json();
+
+      expect(mockPendingPushUpdate).not.toHaveBeenCalled();
+      expect(mockEquipmentUpdate).not.toHaveBeenCalled();
+      expect(data.outcomes.HUBSPOT.status).toBe("failed");
+      expect(data.outcomes.HUBSPOT.message).toMatch(/hubspot unavailable/i);
+      expect(data.summary).toEqual({
+        selected: 2,
+        success: 1,
+        failed: 1,
+        skipped: 0,
+        notImplemented: 0,
+      });
     });
   });
 

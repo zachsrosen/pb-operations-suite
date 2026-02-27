@@ -3,7 +3,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireApiAuth } from "@/lib/api-auth";
 import { EquipmentCategory } from "@/generated/prisma/enums";
-import { getSpecTableName } from "@/lib/catalog-fields";
+import {
+  getHubspotCategoryValue,
+  getHubspotPropertiesFromMetadata,
+  getSpecTableName,
+} from "@/lib/catalog-fields";
+import { createOrUpdateHubSpotProduct } from "@/lib/hubspot";
 
 const ADMIN_ROLES = ["ADMIN", "OWNER", "MANAGER"];
 const INTERNAL_CATEGORIES = Object.values(EquipmentCategory) as string[];
@@ -63,7 +68,7 @@ export async function POST(
 
   // Single transaction: internal catalog writes + status update are atomic.
   // If any step fails, neither the SKU nor the status change persists.
-  const updated = await prisma.$transaction(async (tx) => {
+  let responsePush = await prisma.$transaction(async (tx) => {
     const results: Record<string, string | null> = {
       internalSkuId: null,
       zohoItemId: null,
@@ -150,18 +155,69 @@ export async function POST(
     });
   });
 
+  if (push.systems.includes("HUBSPOT")) {
+    try {
+      const metadata =
+        push.metadata && typeof push.metadata === "object"
+          ? (push.metadata as Record<string, unknown>)
+          : null;
+      const mappedMetadataProps = getHubspotPropertiesFromMetadata(push.category, metadata);
+      const hubspotResult = await createOrUpdateHubSpotProduct({
+        brand: push.brand,
+        model: push.model,
+        description: push.description,
+        sku: push.sku || push.model,
+        productCategory: getHubspotCategoryValue(push.category) || push.category,
+        sellPrice: push.sellPrice,
+        unitCost: push.unitCost,
+        hardToProcure: push.hardToProcure,
+        length: push.length,
+        width: push.width,
+        additionalProperties: mappedMetadataProps,
+      });
+
+      const followUpWrites: Array<Promise<unknown>> = [
+        prisma.pendingCatalogPush
+          .update({
+            where: { id },
+            data: { hubspotProductId: hubspotResult.hubspotProductId },
+          })
+          .then((row) => {
+            responsePush = row;
+          }),
+      ];
+      if (responsePush.internalSkuId) {
+        followUpWrites.push(
+          prisma.equipmentSku.update({
+            where: { id: responsePush.internalSkuId },
+            data: { hubspotProductId: hubspotResult.hubspotProductId },
+          })
+        );
+      }
+      await Promise.all(followUpWrites);
+
+      outcomes.HUBSPOT = {
+        status: "success",
+        externalId: hubspotResult.hubspotProductId,
+        message: hubspotResult.created
+          ? "Created HubSpot product."
+          : "Updated existing HubSpot product.",
+      };
+    } catch (error) {
+      outcomes.HUBSPOT = {
+        status: "failed",
+        message:
+          error instanceof Error
+            ? error.message
+            : "HubSpot product push failed.",
+      };
+    }
+  }
   if (push.systems.includes("ZOHO")) {
     console.log("[catalog/approve] ZOHO push not yet implemented for:", push.model);
     outcomes.ZOHO = {
       status: "not_implemented",
       message: "Zoho product push is not implemented yet.",
-    };
-  }
-  if (push.systems.includes("HUBSPOT")) {
-    console.log("[catalog/approve] HUBSPOT push not yet implemented for:", push.model);
-    outcomes.HUBSPOT = {
-      status: "not_implemented",
-      message: "HubSpot product push is not implemented yet.",
     };
   }
   if (push.systems.includes("ZUPER")) {
@@ -173,7 +229,7 @@ export async function POST(
   }
 
   return NextResponse.json({
-    push: updated,
+    push: responsePush,
     outcomes,
     summary: makeSummary(outcomes),
   });
