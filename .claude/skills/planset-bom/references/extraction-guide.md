@@ -413,6 +413,66 @@ This item is always 1 per job regardless of module count.
 
 ---
 
+## Ops-Standard Additions
+
+These items are **always ordered on every job** (or triggered by a specific planset condition) regardless of whether the planset mentions them. Add them to the BOM output so they appear in the generated SO.
+
+### Always Add (Every Job)
+
+#### Critter Guard — Two Products
+
+Every job gets critter guard bird proofing. Always output **two separate BOM items**:
+
+```json
+{ "category": "ELECTRICAL_BOS", "brand": "", "model": "S6466",
+  "description": "CRITTER GUARD 6\" ROLL, BIRD PROOFING", "qty": 4, "unitLabel": "box", "source": "OPS_STANDARD" }
+{ "category": "ELECTRICAL_BOS", "brand": "Heyco", "model": "S6438",
+  "description": "HEYCO SUNSCREENER CLIP, BIRD PROOFING", "qty": 4, "unitLabel": "box", "source": "OPS_STANDARD" }
+```
+
+**Rule:** Even if the planset says nothing about critter guard, output both items. Qty is always 4 boxes each.
+
+#### UNIRAC SOLOBOX COMP-D (Standard Junction Box)
+
+Every job uses the **UNIRAC SOLOBOX COMP-D** as the roof junction box — regardless of what the planset shows (plansets sometimes specify a different J-box model). Always output:
+
+```json
+{ "category": "ELECTRICAL_BOS", "brand": "UNIRAC", "model": "SBOXCOMP-D",
+  "description": "UNIRAC SOLOBOX COMP-D JUNCTION BOX", "qty": 3, "source": "OPS_STANDARD" }
+```
+
+**Rule:** If the PV-2 BOM table lists `JUNCTION BOX`, replace it with the SOLOBOX COMP-D entry above. Do not include the planset's J-box model — always substitute SBOXCOMP-D.
+
+---
+
+### Triggered by Production Meter
+
+When the job has a **XCEL ENERGY PV PRODUCTION METER** (or any production meter install), always add these two accessories alongside the meter:
+
+```json
+{ "category": "MONITORING", "brand": "", "model": "K8180",
+  "description": "METER BYPASS JUMPERS", "qty": 1, "unitLabel": "pair", "source": "OPS_STANDARD" }
+{ "category": "MONITORING", "brand": "", "model": "43974",
+  "description": "METER COVER", "qty": 1, "source": "OPS_STANDARD" }
+```
+
+**Rule:** Whenever you output a production meter BOM item (e.g., `U4801XL5T9`), also output the two meter accessories above. They ship with every meter install.
+
+---
+
+### Triggered by Tap / Service Upgrade
+
+When the job includes a **tap** or **service upgrade** (look for "SERVICE UPGRADE", "METER SOCKET TAP", "UTILITY TAP", or any 3-wire disconnect on PV-4), add:
+
+```json
+{ "category": "ELECTRICAL_BOS", "brand": "", "model": "BIPC4/010S",
+  "description": "INSULATION PIERCING CONNECTOR", "qty": 3, "source": "OPS_STANDARD" }
+```
+
+**Rule:** If PV-4 shows a 3-wire AC disconnect (`TGN3322R`) or the cover sheet mentions "SERVICE UPGRADE" / "UTILITY TAP", include 3× IPC connectors. These pierce the utility conductors for the tap connection.
+
+---
+
 ## Items NOT in BOM Table (but extractable from planset)
 
 | Item | Source Sheet | Notes |

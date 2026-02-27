@@ -220,6 +220,30 @@ const BOM_QUERY_OVERRIDES: ReadonlyArray<{ pattern: RegExp; sku: string }> = [
 
   // 60A 2-pole GE breaker — paired with TL270RCU load center, output as separate BOM item
   { pattern: /\bthql2160\b|\b60a?\s+2.?p(?:ole)?\s+(?:ge\s+)?(?:breaker|circuit\s*breaker)\b/i, sku: "THQL2160" },
+
+  // ── Ops-Standard Additions ─────────────────────────────────────────────────
+  // Items always ordered regardless of planset content (critter guard, solobox,
+  // meter accessories, tap hardware). The skill outputs these as explicit BOM
+  // items so they land in the SO; overrides ensure the right Zoho SKU is used.
+
+  // Critter Guard 6" roll (always 4 boxes per job)
+  { pattern: /\bcritter\s+guard\b|\bs6466\b/i,              sku: "S6466" },
+
+  // Heyco SunScreener clip (always 4 boxes per job, paired with critter guard roll)
+  { pattern: /\bheyco\b|\bsunscreener\b|\bs6438\b/i,        sku: "S6438" },
+
+  // UNIRAC SOLOBOX COMP-D junction box — used on every job as standard J-box
+  // (planset may show a different J-box; always substitute SBOXCOMP-D)
+  { pattern: /\bsolobox\b|\bsboxcomp/i,                     sku: "SBOXCOMP-D" },
+
+  // Meter Bypass Jumpers — ordered with every production meter install (1 pair)
+  { pattern: /\bmeter\s+bypass\s+jumper|\bk8180\b|\b44341\b/i, sku: "K8180" },
+
+  // Meter Cover — ordered with every production meter install (1 pcs)
+  { pattern: /\bmeter\s+cover\b|\b43974\b|\b6003\b/i,       sku: "43974" },
+
+  // Insulation Piercing Connector — required when job has a tap / service upgrade
+  { pattern: /\binsulation\s+pierc|\bbipc4\b|\b010s\b/i,    sku: "BIPC4/010S" },
 ];
 
 function isBlank(value: string | undefined | null): boolean {
