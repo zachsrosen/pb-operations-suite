@@ -125,15 +125,13 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   },
   callbacks: {
     async signIn({ user }) {
+      // Reject sign-in if email is missing
+      if (!user.email) return false;
+
       // Verify email is from allowed domain(s)
-      if (user.email) {
-        const domains = ALLOWED_DOMAINS.split(",").map((d) => d.trim().toLowerCase());
-        const emailDomain = user.email.split("@")[1]?.toLowerCase();
-        if (!domains.includes(emailDomain)) {
-          return false; // Reject sign-in
-        }
-      }
-      return true;
+      const domains = ALLOWED_DOMAINS.split(",").map((d) => d.trim().toLowerCase());
+      const emailDomain = user.email.split("@")[1]?.toLowerCase();
+      return !!emailDomain && domains.includes(emailDomain);
     },
     async session({ session, token }) {
       // Add user info to session

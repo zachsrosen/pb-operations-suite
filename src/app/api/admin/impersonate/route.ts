@@ -143,12 +143,12 @@ export async function DELETE() {
   }
   const normalizedRole = normalizeRole(user.role as UserRole);
 
-  // Allow any user with impersonatingUserId set to clear it
-  const isCurrentlyImpersonating = !!user.impersonatingUserId;
-
-  if (!isCurrentlyImpersonating && user.role !== "ADMIN") {
+  // Only admins can manage impersonation state
+  if (user.role !== "ADMIN") {
     return NextResponse.json({ error: "Admin access required" }, { status: 403 });
   }
+
+  const isCurrentlyImpersonating = !!user.impersonatingUserId;
 
   if (!isCurrentlyImpersonating) {
     return withRoleAndImpersonationCookies(

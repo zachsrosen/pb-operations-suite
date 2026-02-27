@@ -110,6 +110,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/permitting-interconnection",
       "/api/projects",
       "/api/bom",
+      "/api/catalog",
       "/api/products",
       "/api/service",
       "/api/zuper",
@@ -148,6 +149,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/dnr",
       "/api/projects",
       "/api/bom",
+      "/api/catalog",
       "/api/products",
       "/api/service",
       "/api/zuper",
@@ -199,6 +201,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/permitting-interconnection",
       "/api/projects",
       "/api/bom",
+      "/api/catalog",
       "/api/products",
       "/api/service",
       "/api/zuper",
@@ -258,6 +261,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/permitting-interconnection",
       "/api/projects",
       "/api/bom",
+      "/api/catalog",
       "/api/products",
       "/api/service",
       "/api/zuper",
@@ -303,6 +307,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/dnr",
       "/api/projects",
       "/api/bom",
+      "/api/catalog",
       "/api/products",
       "/api/service",
       "/api/zuper",
@@ -465,9 +470,9 @@ export function canAccessRoute(role: UserRole, route: string): boolean {
   // Roles with "*" can access all routes
   if (permissions.allowedRoutes.includes("*")) return true;
 
-  // Check specific routes
+  // Check specific routes (segment-boundary matching to prevent /api/catalog matching /api/catalogue)
   return permissions.allowedRoutes.some(allowed =>
-    allowed === "/" ? route === "/" : route.startsWith(allowed)
+    allowed === "/" ? route === "/" : (route === allowed || route.startsWith(`${allowed}/`))
   );
 }
 

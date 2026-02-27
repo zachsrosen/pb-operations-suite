@@ -161,8 +161,10 @@ export function postProcessBomItems(
 ): BomPostProcessResult {
   const corrections: BomCorrection[] = [];
 
-  // Deep clone items to avoid mutating caller's array
-  const result: BomItem[] = JSON.parse(JSON.stringify(items));
+  // Deep clone items to avoid mutating caller's array (structuredClone preferred; JSON fallback for jsdom test env)
+  const result: BomItem[] = typeof structuredClone === "function"
+    ? structuredClone(items)
+    : JSON.parse(JSON.stringify(items));
 
   // ── Rule 1: Category Standardization ────────────────────────────────────
 
