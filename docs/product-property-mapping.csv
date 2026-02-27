@@ -1,0 +1,142 @@
+Concept,Internal DB Field,Internal DB Type,HubSpot Property,HubSpot Type,Zuper Field,Zuper Type,Zoho Field,Zoho Type,Notes,Include in Form?,Category-Specific?
+,,,,,,,,,,,,
+=== IDENTITY ===,,,,,,,,,,,,
+Product Name,— (brand + model),—,name,string,name,string,name,string,HubSpot uses combined name; internal splits brand/model,Yes,No
+Brand / Manufacturer,brand,String,manufacturer,enum (33 values),—,—,—,—,HubSpot has controlled enum: Tesla Enphase SolarEdge REC Silfab etc.,Yes,No
+Model / Part Number,model,String,— (part of name),—,—,—,part_number,string,Internal primary identifier within a brand,Yes,No
+SKU,— (not on EquipmentSku),—,hs_sku,string,sku,string,sku,string,Unique product code across all systems,Yes,No
+Description,description,String?,description,string,description,string,description,string,Plain text product description,Yes,No
+Rich Text Description,—,—,hs_rich_text_description,string,—,—,—,—,HTML-formatted description in HubSpot only,No,No
+Line Item Description,—,—,line_item_description,string,—,—,purchase_description,string,Description shown on invoices/POs,No,No
+Product Category,category,EquipmentCategory enum,product_category,enum (15 values),—,—,—,—,"HubSpot: Module Battery Inverter Optimizer Gateway EV Charger etc. Internal has 8 categories currently",Yes,No
+Product Classification,—,—,hs_product_classification,enum,—,—,—,—,HubSpot: Standalone / Variant / Bundle,No,No
+Product Type,—,—,hs_product_type,enum,—,—,product_type,string,HubSpot: Inventory/Non-Inventory/Service. Zoho: goods/service,No,No
+Item Type,—,—,—,—,—,—,item_type,string,Zoho: inventory / sales / purchases / sales_and_purchases,No,No
+Status,isActive,Boolean,status,enum (Active/Inactive),status,string,status,string,Active/Inactive flag across all systems,Yes,No
+,,,,,,,,,,,,
+=== PRICING ===,,,,,,,,,,,,
+Unit Cost (COGS),unitCost,Float?,hs_cost_of_goods_sold,number,—,—,purchase_rate,double,What we pay for it,Yes,No
+Sell Price,sellPrice,Float?,price,number,unit_price,number,rate,double,What we charge for it,Yes,No
+Pricing Model,—,—,hs_pricing_model,enum,—,—,—,—,HubSpot: flat or tiered pricing,No,No
+Billing Frequency,—,—,recurringbillingfrequency,enum,—,—,—,—,HubSpot: for recurring billing products,No,No
+Billing Period/Term,—,—,hs_recurring_billing_period,string,—,—,—,—,HubSpot: recurring billing duration,No,No
+,,,,,,,,,,,,
+=== VENDOR / SUPPLY CHAIN ===,,,,,,,,,,,,
+Vendor Name,vendorName,String?,—,—,—,—,vendor_name,string,Preferred vendor/supplier,Yes,No
+Vendor Part Number,vendorPartNumber,String?,—,—,—,—,—,—,Vendor's own part number,Yes,No
+Vendor ID,—,—,—,—,—,—,vendor_id,long,Zoho vendor contact reference,No,No
+Hard to Procure,—,—,hard_to_procure,enum (Yes/No),—,—,—,—,Supply chain difficulty flag,Yes,No
+,,,,,,,,,,,,
+=== SOLAR-SPECIFIC: MODULE ===,,,,,,,,,,,,
+DC Size (Wattage),unitSpec (when MODULE),Float?,dc_size,number,—,—,—,—,Panel wattage e.g. 410W,Yes,Yes — MODULE
+Module Efficiency,—,—,—,—,—,—,—,—,Panel efficiency percentage,Yes,Yes — MODULE
+Cell Type,—,—,—,—,—,—,—,—,"Mono PERC / TOPCon / HJT / etc.",Yes,Yes — MODULE
+Voc (Open Circuit Voltage),—,—,—,—,—,—,—,—,Electrical spec,Yes,Yes — MODULE
+Isc (Short Circuit Current),—,—,—,—,—,—,—,—,Electrical spec,Yes,Yes — MODULE
+Vmp (Max Power Voltage),—,—,—,—,—,—,—,—,Electrical spec,Yes,Yes — MODULE
+Imp (Max Power Current),—,—,—,—,—,—,—,—,Electrical spec,Yes,Yes — MODULE
+Temp Coefficient (Pmax),—,—,—,—,—,—,—,—,% per degree C,Yes,Yes — MODULE
+,,,,,,,,,,,,
+=== SOLAR-SPECIFIC: INVERTER ===,,,,,,,,,,,,
+AC Output Size,unitSpec (when INVERTER),Float?,ac_size,number,—,—,—,—,Rated AC output in kW,Yes,Yes — INVERTER
+Max DC Input,—,—,—,—,—,—,—,—,Max DC input power,Yes,Yes — INVERTER
+Phase,—,—,—,—,—,—,—,—,Single-phase / Three-phase,Yes,Yes — INVERTER
+Nominal AC Voltage,—,—,—,—,—,—,—,—,240V / 208V etc.,Yes,Yes — INVERTER
+MPPT Channels,—,—,—,—,—,—,—,—,Number of MPPT inputs,Yes,Yes — INVERTER
+Max Input Voltage,—,—,—,—,—,—,—,—,Max DC input voltage per MPPT,Yes,Yes — INVERTER
+Inverter Type,—,—,—,—,—,—,—,—,String / Micro / Hybrid / Central,Yes,Yes — INVERTER
+,,,,,,,,,,,,
+=== SOLAR-SPECIFIC: BATTERY ===,,,,,,,,,,,,
+Capacity (kWh),unitSpec (when BATTERY),Float?,size__kwh_,number,—,—,—,—,Total energy capacity,Yes,Yes — BATTERY
+Energy Storage Capacity,—,—,energy_storage_capacity,number,—,—,—,—,HubSpot-specific storage field,Yes,Yes — BATTERY
+Usable Capacity (kWh),—,—,—,—,—,—,—,—,Usable energy after DoD,Yes,Yes — BATTERY
+Continuous Power (kW),—,—,capacity__kw_,number,—,—,—,—,Continuous discharge rate,Yes,Yes — BATTERY
+Peak Power (kW),—,—,—,—,—,—,—,—,Peak discharge rate,Yes,Yes — BATTERY
+Battery Chemistry,—,—,—,—,—,—,—,—,LFP / NMC / etc.,Yes,Yes — BATTERY
+Round-Trip Efficiency,—,—,—,—,—,—,—,—,Percentage,Yes,Yes — BATTERY
+Nominal Voltage,—,—,—,—,—,—,—,—,Battery system voltage,Yes,Yes — BATTERY
+,,,,,,,,,,,,
+=== SOLAR-SPECIFIC: EV CHARGER ===,,,,,,,,,,,,
+Charger Power (kW),unitSpec (when EV_CHARGER),Float?,capacity__kw_,number,—,—,—,—,Max charging power,Yes,Yes — EV_CHARGER
+Connector Type,—,—,—,—,—,—,—,—,J1772 / NACS / CCS / etc.,Yes,Yes — EV_CHARGER
+Amperage,—,—,—,—,—,—,—,—,Max current rating,Yes,Yes — EV_CHARGER
+Voltage,—,—,—,—,—,—,—,—,Input voltage requirement,Yes,Yes — EV_CHARGER
+Level,—,—,—,—,—,—,—,—,Level 1 / Level 2 / DC Fast,Yes,Yes — EV_CHARGER
+WiFi / Smart Features,—,—,—,—,—,—,—,—,Connectivity capabilities,Yes,Yes — EV_CHARGER
+,,,,,,,,,,,,
+=== SOLAR-SPECIFIC: RAPID SHUTDOWN ===,,,,,,,,,,,,
+Shutdown Type,—,—,—,—,—,—,—,—,Per-module / Per-string / MLPE,Yes,Yes — RAPID_SHUTDOWN
+Voltage Rating,—,—,—,—,—,—,—,—,Max system voltage,Yes,Yes — RAPID_SHUTDOWN
+Channels / Inputs,—,—,—,—,—,—,—,—,Number of module inputs,Yes,Yes — RAPID_SHUTDOWN
+Compatible Modules,—,—,—,—,—,—,—,—,Supported panel types/wattages,Yes,Yes — RAPID_SHUTDOWN
+,,,,,,,,,,,,
+=== SOLAR-SPECIFIC: RACKING ===,,,,,,,,,,,,
+Mount Type,—,—,—,—,—,—,—,—,Roof / Ground / Carport / Flat roof,Yes,Yes — RACKING
+Material,—,—,—,—,—,—,—,—,Aluminum / Steel / etc.,Yes,Yes — RACKING
+Tilt Range,—,—,—,—,—,—,—,—,Adjustable tilt degrees,Yes,Yes — RACKING
+Wind Rating (mph),—,—,—,—,—,—,—,—,Max wind speed rating,Yes,Yes — RACKING
+Snow Load (psf),—,—,—,—,—,—,—,—,Max snow load rating,Yes,Yes — RACKING
+Roof Attachment,—,—,—,—,—,—,—,—,"Comp shingle / Tile / Metal / S-tile / etc.",Yes,Yes — RACKING
+,,,,,,,,,,,,
+=== SOLAR-SPECIFIC: ELECTRICAL BOS ===,,,,,,,,,,,,
+BOS Type,—,—,—,—,—,—,—,—,"Conduit / Wire / Disconnect / Breaker / Combiner / etc.",Yes,Yes — ELECTRICAL_BOS
+Gauge / Size,—,—,—,—,—,—,—,—,"Wire gauge (AWG) / conduit size / breaker amps",Yes,Yes — ELECTRICAL_BOS
+Voltage Rating,—,—,—,—,—,—,—,—,Max voltage rating,Yes,Yes — ELECTRICAL_BOS
+Material,—,—,—,—,—,—,—,—,Copper / Aluminum / PVC / EMT / etc.,Yes,Yes — ELECTRICAL_BOS
+,,,,,,,,,,,,
+=== SOLAR-SPECIFIC: MONITORING ===,,,,,,,,,,,,
+Monitor Type,—,—,—,—,—,—,—,—,Gateway / Meter / CT / Consumption monitor,Yes,Yes — MONITORING
+Connectivity,—,—,—,—,—,—,—,—,WiFi / Cellular / Ethernet / Zigbee,Yes,Yes — MONITORING
+Compatible Inverters,—,—,—,—,—,—,—,—,Which inverter brands/models it works with,Yes,Yes — MONITORING
+,,,,,,,,,,,,
+=== DIMENSIONS / PHYSICAL ===,,,,,,,,,,,,
+Length,—,—,length,number,—,—,—,—,Product length,Yes,No
+Width,—,—,width,number,—,—,—,—,Product width,Yes,No
+Product Dimensions (freeform),—,—,product_dimensions,string,—,—,—,—,Freeform dimensions string,No,No
+Weight,—,—,—,—,—,—,—,—,Product weight,Yes,No
+,,,,,,,,,,,,
+=== BARCODES / IDENTIFIERS ===,,,,,,,,,,,,
+UPC,—,—,—,—,—,—,upc,long,12-digit Universal Product Code,No,No
+EAN,—,—,—,—,—,—,ean,long,European Article Number,No,No
+ISBN,—,—,—,—,—,—,isbn,string,ISBN (for books — unlikely needed),No,No
+,,,,,,,,,,,,
+=== CROSS-SYSTEM IDs ===,,,,,,,,,,,,
+Internal SKU ID,id,String (cuid),—,—,—,—,—,—,Primary key in EquipmentSku table,Auto,No
+HubSpot Product ID,hubspotProductId,String?,hs_object_id,long,—,—,—,—,HubSpot record ID,Auto,No
+Zuper Item UID,zuperItemId,String?,—,—,item_uid / product_uid,string,—,—,Zuper catalog item reference,Auto,No
+Zoho Item ID,zohoItemId,String?,—,—,—,—,item_id,long,Zoho Inventory item reference,Auto,No
+QBO Product ID,—,—,qbo_product_id,string,—,—,—,—,QuickBooks Online product reference,Auto,No
+,,,,,,,,,,,,
+=== HUBSPOT-ONLY (LOCATION CODES) ===,,,,,,,,,,,,
+SLO,—,—,cc,string,—,—,—,—,HubSpot custom: SLO code,No,No
+DEN,—,—,den,string,—,—,—,—,HubSpot custom: DEN code,No,No
+DTC,—,—,dtc,string,—,—,—,—,HubSpot custom: DTC code,No,No
+PBLO,—,—,pblo,string,—,—,—,—,HubSpot custom: PBLO code,No,No
+OS Name,—,—,os_name,string,—,—,—,—,HubSpot custom: OpenSolar name,No,No
+Permit Required,—,—,permit_required_for_install,enum (Yes/No),—,—,—,—,User said not needed in form,No,No
+,,,,,,,,,,,,
+=== HUBSPOT-ONLY (SYSTEM) ===,,,,,,,,,,,,
+HubSpot Folder,—,—,hs_folder,string,—,—,—,—,Product folder in HubSpot,No,No
+HubSpot Image URL,—,—,hs_images,string,—,—,—,—,Product image,No,No
+HubSpot Owner,—,—,hubspot_owner_id,string,—,—,—,—,Auto-set owner,No,No
+Ecomm Synced,—,—,ip__ecomm_bridge__ecomm_synced,boolean,—,—,—,—,Ecommerce sync flag,No,No
+Ecomm Image URL,—,—,ip__ecomm_bridge__image_url,string,—,—,—,—,Ecommerce image,No,No
+External Sync Source,—,—,ip__sync_extension__external_source_account_id,string,—,—,—,—,External sync reference,No,No
+Synced to NetSuite,—,—,synced_to_netsuite,string,—,—,—,—,NetSuite sync flag,No,No
+HubSpot Tax Category,—,—,hs_tax_category,string,—,—,—,—,Tax category for line items,No,No
+HubSpot Bundle Type,—,—,hs_bundle_type,string,—,—,—,—,Bundle type indicator,No,No
+,,,,,,,,,,,,
+=== ZOHO-ONLY ===,,,,,,,,,,,,
+Zoho Group ID,—,—,—,—,—,—,group_id,string,Item group reference,No,No
+Zoho Group Name,—,—,—,—,—,—,group_name,string,Item group name,No,No
+Zoho Unit of Measure,—,—,—,—,—,—,unit,string,UOM: pcs / box / each / etc.,No,No
+Zoho Is Taxable,—,—,—,—,—,—,is_taxable,boolean,Tax applicability flag,No,No
+Zoho Tax ID,—,—,—,—,—,—,tax_id,long,Associated tax rule,No,No
+Zoho Tax Name,—,—,—,—,—,—,tax_name,string,Tax rule name,No,No
+Zoho Tax Percentage,—,—,—,—,—,—,tax_percentage,double,Tax rate,No,No
+Zoho Reorder Level,—,—,—,—,—,—,reorder_level,double,Minimum stock threshold,No,No
+Zoho Purchase Account,—,—,—,—,—,—,purchase_account_id,long,Accounting: purchase account,No,No
+Zoho Inventory Account,—,—,—,—,—,—,inventory_account_id,long,Accounting: inventory account,No,No
+Zoho Image,—,—,—,—,—,—,image_id / image_name,long/string,Product image in Zoho,No,No
+Zoho HSN/SAC Code,—,—,—,—,—,—,hsn_or_sac,string,India tax classification,No,No
+Zoho Custom Fields,—,—,—,—,—,—,custom_fields[],array,Custom field values,No,No
