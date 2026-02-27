@@ -22,10 +22,10 @@
 
 ## Task 1: Prisma Schema — Additive Enum Expansion + New Fields
 
-**Why:** We need 7 new category values and new columns on EquipmentSku and PendingCatalogPush. We do NOT rename any existing enum values — RACKING, ELECTRICAL_BOS, MONITORING, RAPID_SHUTDOWN stay as-is. The mapping layer (Task 3) handles display labels and cross-system name translation.
+**Why:** We need 8 new category values and new columns on EquipmentSku and PendingCatalogPush. We do NOT rename any existing enum values — RACKING, ELECTRICAL_BOS, MONITORING, RAPID_SHUTDOWN stay as-is. The mapping layer (Task 3) handles display labels and cross-system name translation.
 
 **Files:**
-- Modify: `prisma/schema.prisma:571-580` — add 7 new enum values
+- Modify: `prisma/schema.prisma:571-580` — add 8 new enum values
 - Modify: `prisma/schema.prisma:596-626` — add fields to EquipmentSku
 - Modify: `prisma/schema.prisma:772-798` — add fields to PendingCatalogPush
 
@@ -105,7 +105,7 @@ Expected: Build passes. No existing code references new enum values yet, so no b
 
 ```bash
 git add prisma/
-git commit -m "feat(schema): add 7 equipment categories, sku/dimension fields on EquipmentSku, expand PendingCatalogPush"
+git commit -m "feat(schema): add 8 equipment categories, sku/dimension fields on EquipmentSku, expand PendingCatalogPush"
 ```
 
 ---
@@ -291,7 +291,7 @@ export interface CategoryConfig {
  *   RACKING         → "Mounting Hardware"
  *   ELECTRICAL_BOS  → "Electrical Hardware"
  *   MONITORING      → "Relay Device"
- *   RAPID_SHUTDOWN  → "Optimizer" (historically RSD; now re-labeled)
+ *   RAPID_SHUTDOWN  → "Rapid Shutdown" (kept as-is; distinct from OPTIMIZER)
  *
  * The mapping layer lets us keep the DB enum stable while showing
  * HubSpot-aligned labels in the UI and pushing the right category
@@ -411,9 +411,9 @@ export const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
     ],
   },
   RAPID_SHUTDOWN: {
-    label: "Optimizer",
+    label: "Rapid Shutdown",
     enumValue: "RAPID_SHUTDOWN",
-    hubspotValue: "Optimizer",
+    hubspotValue: "Rapid Shutdown",  // Note: no matching HubSpot category yet — may need adding
     fields: [],
   },
   // --- New categories (no legacy enum baggage) ---
@@ -467,7 +467,7 @@ CATEGORY_CONFIGS.BATTERY_EXPANSION.fields = CATEGORY_CONFIGS.BATTERY.fields;
 /**
  * Categories to show in the "Add Product" form.
  * Uses display labels, ordered for the UI.
- * Excludes RAPID_SHUTDOWN (legacy alias for Optimizer) to avoid duplication.
+ * Includes RAPID_SHUTDOWN (distinct from OPTIMIZER — RSD devices like Tigo TS4-F).
  */
 export const FORM_CATEGORIES = [
   "MODULE",
@@ -475,6 +475,7 @@ export const FORM_CATEGORIES = [
   "BATTERY_EXPANSION",
   "INVERTER",
   "EV_CHARGER",
+  "RAPID_SHUTDOWN",   // displays as "Rapid Shutdown" (Tigo TS4-F, etc.)
   "RACKING",          // displays as "Mounting Hardware"
   "ELECTRICAL_BOS",   // displays as "Electrical Hardware"
   "MONITORING",       // displays as "Relay Device"
@@ -950,6 +951,7 @@ describe("catalog-fields", () => {
     expect(getCategoryLabel("RACKING")).toBe("Mounting Hardware");
     expect(getCategoryLabel("ELECTRICAL_BOS")).toBe("Electrical Hardware");
     expect(getCategoryLabel("MONITORING")).toBe("Relay Device");
+    expect(getCategoryLabel("RAPID_SHUTDOWN")).toBe("Rapid Shutdown");
     expect(getCategoryLabel("MODULE")).toBe("Module");
   });
 
@@ -957,6 +959,7 @@ describe("catalog-fields", () => {
     expect(getEnumFromLabel("Mounting Hardware")).toBe("RACKING");
     expect(getEnumFromLabel("Electrical Hardware")).toBe("ELECTRICAL_BOS");
     expect(getEnumFromLabel("Relay Device")).toBe("MONITORING");
+    expect(getEnumFromLabel("Rapid Shutdown")).toBe("RAPID_SHUTDOWN");
   });
 
   test("generateZuperSpecification produces correct strings", () => {
@@ -970,9 +973,9 @@ describe("catalog-fields", () => {
     expect(MANUFACTURERS).toHaveLength(31);
   });
 
-  test("FORM_CATEGORIES excludes RAPID_SHUTDOWN", () => {
-    expect(FORM_CATEGORIES).not.toContain("RAPID_SHUTDOWN");
-    expect(FORM_CATEGORIES).toHaveLength(15);
+  test("FORM_CATEGORIES includes all 16 categories", () => {
+    expect(FORM_CATEGORIES).toContain("RAPID_SHUTDOWN");
+    expect(FORM_CATEGORIES).toHaveLength(16);
   });
 
   test("all FORM_CATEGORIES have a config entry", () => {

@@ -1,7 +1,9 @@
 # Product Catalog Submission Redesign
 
 **Date:** 2026-02-26
-**Status:** Design — awaiting implementation plan
+**Status:** ⚠️ SUPERSEDED — The implementation plan has been revised. Where this design doc conflicts with the revised plan, **the plan takes precedence**. Key differences: enum is NOT renamed (mapping layer instead), PendingCatalogPush expanded with all common fields, RAPID_SHUTDOWN kept as "Rapid Shutdown" (not aliased to Optimizer).
+
+**Canonical source:** `docs/plans/2026-02-26-product-catalog-submission-plan.md`
 
 ## Problem
 
