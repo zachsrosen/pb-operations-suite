@@ -29,6 +29,17 @@ export interface AuthenticatedUser {
  * ```
  */
 export async function requireApiAuth(): Promise<AuthenticatedUser | NextResponse> {
+  // Allow machine-to-machine access via API_SECRET_TOKEN Bearer token
+  const apiSecretToken = process.env.API_SECRET_TOKEN;
+  if (apiSecretToken) {
+    const hdrsForToken = await headers();
+    const authHeader = hdrsForToken.get("authorization");
+    if (authHeader === `Bearer ${apiSecretToken}`) {
+      const ip = hdrsForToken.get("x-forwarded-for")?.split(",")[0]?.trim() || hdrsForToken.get("x-real-ip") || "unknown";
+      return { email: "api@system", role: "ADMIN", ip, userAgent: hdrsForToken.get("user-agent") || "api-client" };
+    }
+  }
+
   const session = await auth();
 
   if (!session?.user?.email) {
