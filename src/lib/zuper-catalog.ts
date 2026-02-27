@@ -126,7 +126,7 @@ function matchesIdentity(record: JsonRecord, identity: ZuperIdentity): boolean {
 
   if (nameNorm && recordName && normalizeName(recordName) === nameNorm) {
     if (!categoryNorm) return true;
-    if (!recordCategory) return true;
+    if (!recordCategory) return false;
     return normalizeName(recordCategory) === categoryNorm;
   }
 
@@ -241,7 +241,13 @@ async function findExistingZuperItemId(identity: ZuperIdentity): Promise<string 
   return null;
 }
 
-async function tryCreateWithPayload(payload: JsonRecord): Promise<{ id: string | null; errors: string[] }> {
+interface CreateAttemptResult {
+  id: string | null;
+  errors: string[];
+  successfulResponseWithoutId: boolean;
+}
+
+async function tryCreateWithPayload(payload: JsonRecord): Promise<CreateAttemptResult> {
   const attempts: Array<{ endpoint: string; body: JsonRecord }> = [
     { endpoint: "/items", body: { item: payload } },
     { endpoint: "/items", body: { items: [payload] } },
@@ -259,14 +265,17 @@ async function tryCreateWithPayload(payload: JsonRecord): Promise<{ id: string |
         body: JSON.stringify(attempt.body),
       });
       const id = extractZuperItemId(response);
-      if (id) return { id, errors };
+      if (id) return { id, errors, successfulResponseWithoutId: false };
       errors.push(`${attempt.endpoint}: success response missing item ID`);
+      // Stop after first 2xx/payload-success response to avoid duplicate creates
+      // across endpoint/body-shape fallbacks.
+      return { id: null, errors, successfulResponseWithoutId: true };
     } catch (error) {
       errors.push(`${attempt.endpoint}: ${getErrorMessage(error)}`);
     }
   }
 
-  return { id: null, errors };
+  return { id: null, errors, successfulResponseWithoutId: false };
 }
 
 export async function createOrUpdateZuperPart(
@@ -318,11 +327,29 @@ export async function createOrUpdateZuperPart(
   const optionalAttempt = await tryCreateWithPayload(optionalPayload);
   allErrors.push(...optionalAttempt.errors);
   if (optionalAttempt.id) return { zuperItemId: optionalAttempt.id, created: true };
+  if (optionalAttempt.successfulResponseWithoutId) {
+    const discoveredId = await findExistingZuperItemId(identity);
+    if (discoveredId) return { zuperItemId: discoveredId, created: true };
+    throw new Error(
+      `Failed to resolve created Zuper item ID after successful create response. Attempts: ${
+        allErrors.join(" | ") || "no successful endpoint"
+      }`
+    );
+  }
 
   if (hasOptional) {
     const coreAttempt = await tryCreateWithPayload(corePayload);
     allErrors.push(...coreAttempt.errors);
     if (coreAttempt.id) return { zuperItemId: coreAttempt.id, created: true };
+    if (coreAttempt.successfulResponseWithoutId) {
+      const discoveredId = await findExistingZuperItemId(identity);
+      if (discoveredId) return { zuperItemId: discoveredId, created: true };
+      throw new Error(
+        `Failed to resolve created Zuper item ID after successful create response. Attempts: ${
+          allErrors.join(" | ") || "no successful endpoint"
+        }`
+      );
+    }
   }
 
   // Some accounts succeed with sparse/non-standard responses; re-search once before failing.

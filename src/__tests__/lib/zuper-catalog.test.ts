@@ -100,6 +100,64 @@ describe("zuper-catalog", () => {
     expect(postCalls.length).toBeGreaterThanOrEqual(2);
   });
 
+  it("stops create fallbacks after first success-without-ID and resolves via re-search", async () => {
+    let postCount = 0;
+    mockFetch.mockImplementation(async (_input, init) => {
+      const method = String(init?.method || "GET").toUpperCase();
+      if (method === "GET") {
+        if (postCount === 0) return makeResponse({ type: "success", data: [] });
+        return makeResponse({
+          type: "success",
+          data: [{ item_uid: "zuper_created_research", sku: "REC400", name: "REC REC-400AA" }],
+        });
+      }
+
+      postCount += 1;
+      if (postCount === 1) {
+        return makeResponse({ type: "success", message: "created" });
+      }
+      return makeResponse({ type: "error", message: "unexpected extra create call" }, false, 500);
+    });
+
+    const result = await createOrUpdateZuperPart({
+      brand: "REC",
+      model: "REC-400AA",
+      sku: "REC400",
+      category: "Module",
+      sellPrice: 180,
+    });
+
+    expect(result).toEqual({ zuperItemId: "zuper_created_research", created: true });
+    expect(postCount).toBe(1);
+  });
+
+  it("does not name-match categoryless record when a category is required", async () => {
+    let postCount = 0;
+    mockFetch.mockImplementation(async (_input, init) => {
+      const method = String(init?.method || "GET").toUpperCase();
+      if (method === "GET") {
+        return makeResponse({
+          type: "success",
+          data: [{ item_uid: "zuper_name_only", name: "REC REC-400AA" }],
+        });
+      }
+      postCount += 1;
+      return makeResponse({
+        type: "success",
+        item: { item_uid: "zuper_created_category_guard" },
+      });
+    });
+
+    const result = await createOrUpdateZuperPart({
+      brand: "REC",
+      model: "REC-400AA",
+      category: "Module",
+    });
+
+    expect(result).toEqual({ zuperItemId: "zuper_created_category_guard", created: true });
+    expect(postCount).toBeGreaterThanOrEqual(1);
+  });
+
   it("throws when ZUPER_API_KEY is not configured", async () => {
     delete process.env.ZUPER_API_KEY;
 
