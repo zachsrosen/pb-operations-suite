@@ -214,7 +214,13 @@ function buildSearchEndpoints(query: string): string[] {
 }
 
 async function findExistingZuperItemId(identity: ZuperIdentity): Promise<string | null> {
-  const queries = [...new Set([identity.sku, identity.partNumber, identity.model, identity.name].filter(Boolean))];
+  const queries = [
+    ...new Set(
+      [identity.sku, identity.partNumber, identity.model, identity.name].filter(
+        (value): value is string => !!value
+      )
+    ),
+  ];
 
   for (const query of queries) {
     for (const endpoint of buildSearchEndpoints(query)) {
