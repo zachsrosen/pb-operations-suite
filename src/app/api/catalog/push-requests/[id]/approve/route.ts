@@ -4,12 +4,15 @@ import { prisma } from "@/lib/db";
 import { requireApiAuth } from "@/lib/api-auth";
 import { EquipmentCategory } from "@/generated/prisma/enums";
 import {
+  generateZuperSpecification,
   getHubspotCategoryValue,
   getHubspotPropertiesFromMetadata,
   getSpecTableName,
+  getZuperCategoryValue,
 } from "@/lib/catalog-fields";
 import { createOrUpdateHubSpotProduct } from "@/lib/hubspot";
 import { createOrUpdateZohoItem } from "@/lib/zoho-inventory";
+import { createOrUpdateZuperPart } from "@/lib/zuper-catalog";
 
 const ADMIN_ROLES = ["ADMIN", "OWNER", "MANAGER"];
 const INTERNAL_CATEGORIES = Object.values(EquipmentCategory) as string[];
@@ -255,15 +258,65 @@ export async function POST(
       };
     }
   }
+  let zuperPersistedPush: typeof approvedPush | null = null;
   if (push.systems.includes("ZUPER")) {
-    console.log("[catalog/approve] ZUPER push not yet implemented for:", push.model);
-    outcomes.ZUPER = {
-      status: "not_implemented",
-      message: "Zuper part push is not implemented yet.",
-    };
+    try {
+      const metadata =
+        push.metadata && typeof push.metadata === "object"
+          ? (push.metadata as Record<string, unknown>)
+          : null;
+      const specSummary =
+        metadata && Object.keys(metadata).length > 0
+          ? generateZuperSpecification(push.category, metadata)
+          : undefined;
+
+      const zuperResult = await createOrUpdateZuperPart({
+        brand: push.brand,
+        model: push.model,
+        description: push.description,
+        sku: push.sku || push.model,
+        unitLabel: push.unitLabel,
+        vendorName: push.vendorName,
+        vendorPartNumber: push.vendorPartNumber,
+        sellPrice: push.sellPrice,
+        unitCost: push.unitCost,
+        category: getZuperCategoryValue(push.category) || push.category,
+        specification: specSummary,
+      });
+
+      zuperPersistedPush = await prisma.$transaction(async (tx) => {
+        const pendingPush = await tx.pendingCatalogPush.update({
+          where: { id },
+          data: { zuperItemId: zuperResult.zuperItemId },
+        });
+        if (approvedPush.internalSkuId) {
+          await tx.equipmentSku.update({
+            where: { id: approvedPush.internalSkuId },
+            data: { zuperItemId: zuperResult.zuperItemId },
+          });
+        }
+        return pendingPush;
+      });
+
+      outcomes.ZUPER = {
+        status: "success",
+        externalId: zuperResult.zuperItemId,
+        message: zuperResult.created
+          ? "Created Zuper item."
+          : "Linked existing Zuper item.",
+      };
+    } catch (error) {
+      outcomes.ZUPER = {
+        status: "failed",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Zuper part push failed.",
+      };
+    }
   }
 
-  const responsePush = zohoPersistedPush ?? hubspotPersistedPush ?? approvedPush;
+  const responsePush = zuperPersistedPush ?? zohoPersistedPush ?? hubspotPersistedPush ?? approvedPush;
 
   return NextResponse.json({
     push: responsePush,

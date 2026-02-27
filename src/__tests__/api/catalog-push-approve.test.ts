@@ -26,6 +26,16 @@ jest.mock("@/lib/catalog-fields", () => ({
     };
     return map[cat];
   }),
+  getZuperCategoryValue: jest.fn((cat: string) => {
+    const map: Record<string, string> = {
+      MODULE: "Module",
+      INVERTER: "Inverter",
+      BATTERY: "Battery",
+      BATTERY_EXPANSION: "Battery Expansion",
+    };
+    return map[cat];
+  }),
+  generateZuperSpecification: jest.fn(() => "Spec Summary"),
   getHubspotPropertiesFromMetadata: jest.fn(() => ({})),
 }));
 
@@ -39,6 +49,12 @@ jest.mock("@/lib/hubspot", () => ({
 const mockCreateOrUpdateZohoItem = jest.fn();
 jest.mock("@/lib/zoho-inventory", () => ({
   createOrUpdateZohoItem: (...args: unknown[]) => mockCreateOrUpdateZohoItem(...args),
+}));
+
+// ── Zuper adapter ──────────────────────────────────────────────────────────────
+const mockCreateOrUpdateZuperPart = jest.fn();
+jest.mock("@/lib/zuper-catalog", () => ({
+  createOrUpdateZuperPart: (...args: unknown[]) => mockCreateOrUpdateZuperPart(...args),
 }));
 
 // ── Prisma ────────────────────────────────────────────────────────────────────
@@ -142,7 +158,7 @@ beforeEach(() => {
       internalSkuId: "sku_1",
       zohoItemId: typeof args?.data?.zohoItemId === "string" ? args.data.zohoItemId : null,
       hubspotProductId: typeof args?.data?.hubspotProductId === "string" ? args.data.hubspotProductId : null,
-      zuperItemId: null,
+      zuperItemId: typeof args?.data?.zuperItemId === "string" ? args.data.zuperItemId : null,
     })
   );
   mockEquipmentUpdate.mockResolvedValue({ id: "sku_1" });
@@ -152,6 +168,10 @@ beforeEach(() => {
   });
   mockCreateOrUpdateZohoItem.mockResolvedValue({
     zohoItemId: "zoho_item_1",
+    created: true,
+  });
+  mockCreateOrUpdateZuperPart.mockResolvedValue({
+    zuperItemId: "zuper_item_1",
     created: true,
   });
 });
@@ -412,6 +432,24 @@ describe("POST /api/catalog/push-requests/[id]/approve", () => {
         notImplemented: 0,
       });
     });
+
+    it("reports failed ZUPER outcome when adapter throws", async () => {
+      mockFindUnique.mockResolvedValue(makePush({ systems: ["INTERNAL", "ZUPER"] }));
+      mockCreateOrUpdateZuperPart.mockRejectedValue(new Error("Zuper unavailable"));
+
+      const res = await POST(new NextRequest("http://localhost"), makeParams());
+      const data = await res.json();
+
+      expect(data.outcomes.ZUPER.status).toBe("failed");
+      expect(data.outcomes.ZUPER.message).toMatch(/zuper unavailable/i);
+      expect(data.summary).toEqual({
+        selected: 2,
+        success: 1,
+        failed: 1,
+        skipped: 0,
+        notImplemented: 0,
+      });
+    });
   });
 
   describe("HubSpot push integration", () => {
@@ -512,6 +550,50 @@ describe("POST /api/catalog/push-requests/[id]/approve", () => {
       );
       expect(data.outcomes.ZOHO.status).toBe("success");
       expect(data.outcomes.ZOHO.externalId).toBe("zoho_item_1");
+      expect(data.summary).toEqual({
+        selected: 2,
+        success: 2,
+        failed: 0,
+        skipped: 0,
+        notImplemented: 0,
+      });
+    });
+  });
+
+  describe("ZUPER push integration", () => {
+    it("pushes to ZUPER and persists returned item IDs", async () => {
+      mockFindUnique.mockResolvedValue(
+        makePush({ systems: ["INTERNAL", "ZUPER"], metadata: { wattage: 400 } })
+      );
+
+      const res = await POST(new NextRequest("http://localhost"), makeParams());
+      const data = await res.json();
+
+      expect(mockCreateOrUpdateZuperPart).toHaveBeenCalledWith(
+        expect.objectContaining({
+          brand: "REC",
+          model: "REC-400AA",
+          sku: "REC400",
+          unitCost: 120,
+          sellPrice: 180,
+          category: "Module",
+          specification: "Spec Summary",
+        })
+      );
+      expect(mockUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "push_1" },
+          data: { zuperItemId: "zuper_item_1" },
+        })
+      );
+      expect(mockEquipmentUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "sku_1" },
+          data: { zuperItemId: "zuper_item_1" },
+        })
+      );
+      expect(data.outcomes.ZUPER.status).toBe("success");
+      expect(data.outcomes.ZUPER.externalId).toBe("zuper_item_1");
       expect(data.summary).toEqual({
         selected: 2,
         success: 2,

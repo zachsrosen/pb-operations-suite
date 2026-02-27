@@ -1,6 +1,6 @@
 import {
   getCategoryFields, getCategoryLabel, getEnumFromLabel,
-  getSpecTableName, getHubspotCategoryValue, getHubspotPropertiesFromMetadata, generateZuperSpecification,
+  getSpecTableName, getHubspotCategoryValue, getHubspotPropertiesFromMetadata, getZuperCategoryValue, generateZuperSpecification,
   MANUFACTURERS, FORM_CATEGORIES, CATEGORY_CONFIGS,
 } from "@/lib/catalog-fields";
 
@@ -119,6 +119,19 @@ describe("catalog-fields", () => {
       });
 
       expect(mapped).toEqual({});
+    });
+  });
+
+  describe("Zuper mapping helpers", () => {
+    test("getZuperCategoryValue maps known categories", () => {
+      expect(getZuperCategoryValue("RACKING")).toBe("Mounting Hardware");
+      expect(getZuperCategoryValue("ELECTRICAL_BOS")).toBe("Electrical Hardwire");
+      expect(getZuperCategoryValue("BATTERY")).toBe("Battery");
+    });
+
+    test("getZuperCategoryValue returns undefined when unmapped", () => {
+      expect(getZuperCategoryValue("MODULE")).toBeUndefined();
+      expect(getZuperCategoryValue("UNKNOWN")).toBeUndefined();
     });
   });
 

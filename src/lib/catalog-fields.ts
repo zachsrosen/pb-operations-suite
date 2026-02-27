@@ -234,6 +234,10 @@ export function getHubspotCategoryValue(category: string): string | undefined {
   return CATEGORY_CONFIGS[category]?.hubspotValue;
 }
 
+export function getZuperCategoryValue(category: string): string | undefined {
+  return CATEGORY_CONFIGS[category]?.zuperCategory;
+}
+
 export function getHubspotPropertiesFromMetadata(
   category: string,
   metadata: Record<string, unknown> | null | undefined
