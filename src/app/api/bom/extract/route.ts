@@ -107,6 +107,8 @@ Read the PV-4 SLD callout text for the AC disconnect:
 - "3-WIRE" in callout → model: "TGN3322R" (3-pole; used on service upgrade / tap jobs with neutral)
 - "2-WIRE" or no wire count → model: "DG222URB" (standard 2-pole, most common)
 
+**DG222URB is always 60A.** Its description must always be: "60A NON-FUSED, UTILITY PV AC DISCONNECT VISIBLE LOCKABLE LABELED DISCONNECT". Never use "200A" in the description even if the MSP or service panel is 200A — those are different components.
+
 ### JUNCTION BOX — Always Substitute SOLOBOX COMP-D
 Regardless of what the planset shows for JUNCTION BOX (e.g., "EZ SOLAR JB-1.2"), always output the UNIRAC SOLOBOX COMP-D instead:
 { "category": "ELECTRICAL_BOS", "brand": "UNIRAC", "model": "SBOXCOMP-D", "description": "UNIRAC SOLOBOX COMP-D JUNCTION BOX", "qty": 3, "source": "OPS_STANDARD" }
@@ -122,11 +124,30 @@ Some jobs use a Backup Switch instead of the full Backup Gateway-3 (simpler inst
 - If found → add: { "category": "MONITORING", "brand": "Tesla", "model": "1624171-00-J", "description": "TESLA BACKUP SWITCH", "qty": 1, "source": "PV-4" }
 - If not found, omit. A job will have either a Backup Gateway-3 OR a Backup Switch, not both.
 
-## Ops-Standard Additions
-These items MUST be added to every solar (PV module) BOM even if the planset does not mention them. Do NOT add to battery-only or EV-charger-only jobs.
+### TESLA REMOTE METER — From PV-2 BOM or PV-4 SLD
+Some battery-only jobs (no PV modules) include a Tesla Remote Meter for monitoring. Scan PV-2 BOM for a "REMOTE METER" row or scan PV-4 SLD for "(N) REMOTE METER" callout:
+- If found → add: { "category": "MONITORING", "brand": "Tesla", "model": "P2060713-00-B", "description": "TESLA REMOTE METER", "qty": 1, "source": "PV-4" }
+- If not found, omit.
 
-### Always Add (Every Solar Job with Roof-Mounted PV Modules)
-Always include ALL of the following items on every solar job:
+### ENPHASE MICRO-INVERTER JOBS — Additional Items
+When the job uses Enphase micro-inverters (IQ8 series), scan PV-4 conductor schedule for Q-Cable and the AC circuit breaker rating:
+- **Q-Cable**: If the conductor schedule lists Q-CABLE or a 12 AWG DC cable with free air routing → add: { "category": "ELECTRICAL_BOS", "brand": "Enphase", "model": "Q-12-RAW-300", "description": "Q-CABLE, 12 AWG, 3 CONDUCTORS, FREE AIR", "qty": 1, "source": "PV-4" }
+- **PV Circuit Breaker**: Enphase jobs typically use a 40A 2-pole breaker (not 60A). If PV-4 shows a 40A breaker → add: { "category": "ELECTRICAL_BOS", "brand": "GE", "model": "THQL2140", "description": "40A 2-POLE PV BREAKER", "qty": 1, "source": "PV-4" }
+
+### CONDUCTOR SCHEDULE — Wire Model Naming
+When extracting wire rows from the PV-4 conductor schedule, always use standardized model names:
+- 10 AWG THHN or THWN-2 → model: "10 AWG THHN/THWN-2"
+- 6 AWG THWN-2 → model: "6 AWG THWN-2"
+- 8 AWG THWN-2 → model: "8 AWG THWN-2"
+- 3/0 AWG THWN-2 → model: "3/0 AWG THWN-2"
+- 10 AWG PV Wire (free air, DC at array) → model: "10 AWG PV-WIRE"
+Never output internal codes like "THHN-10AWG", "THWN2-6AWG", or "PV-Wire10". Always use the format "{gauge} {wire type}".
+
+## Ops-Standard Additions
+These items MUST be added to every job even if the planset does not mention them. Add to all jobs including battery-only and storage-only installs.
+
+### Always Add (Every Job)
+Always include ALL of the following items on every job:
 - { "category": "RACKING", "brand": "", "model": "SNOW DOG-BLK", "description": "ALPINE SNOW DOG", "qty": 10, "source": "OPS_STANDARD" }
 - { "category": "ELECTRICAL_BOS", "brand": "", "model": "M3317GBZ-SM", "description": "STRAIN RELIEF 3/4\" 5 HOLE", "qty": 5, "source": "OPS_STANDARD" }
 - { "category": "ELECTRICAL_BOS", "brand": "", "model": "S6466", "description": "CRITTER GUARD 6\" ROLL, BIRD PROOFING", "qty": 4, "unitLabel": "box", "source": "OPS_STANDARD" }
@@ -137,10 +158,10 @@ When BOM includes any PRODUCTION METER row, also add:
 - { "category": "MONITORING", "brand": "", "model": "K8180", "description": "METER BYPASS JUMPERS", "qty": 1, "unitLabel": "pair", "source": "OPS_STANDARD" }
 - { "category": "MONITORING", "brand": "", "model": "43974", "description": "METER COVER", "qty": 1, "source": "OPS_STANDARD" }
 
-### Triggered by HUG Attachments (Asphalt Shingle / XR10 Jobs)
-When the job uses IronRidge HUG attachments (XR10 rail, not metal roof), add T-bolt bonding hardware with qty = same as the ATTACHMENT qty from PV-2 BOM:
+### Triggered by HUG Attachments (Asphalt Shingle / XR10 Jobs with PV Modules)
+When the job has PV modules and uses IronRidge HUG attachments (XR10 rail, not metal roof), add T-bolt bonding hardware with qty = same as the ATTACHMENT qty from PV-2 BOM:
 - { "category": "RACKING", "brand": "IronRidge", "model": "BHW-TB-03-A1", "description": "IRONRIDGE T-BOLT BONDING HARDWARE", "qty": [HUG attachment qty], "source": "OPS_STANDARD" }
-Do NOT add for metal roof (S-5! ProteaBracket) jobs.
+Do NOT add for battery-only jobs (no PV modules) or metal roof (S-5! ProteaBracket) jobs.
 
 ### Triggered by Tap / Service Upgrade
 When PV-4 shows 3-wire AC disconnect (TGN3322R) or PV-0 mentions "SERVICE UPGRADE" / "UTILITY TAP", add:

@@ -178,8 +178,11 @@ const BOM_QUERY_OVERRIDES: ReadonlyArray<{ pattern: RegExp; sku: string }> = [
   // 200A fused AC disconnect
   { pattern: /\b200a?\s+(utility\s+)?fused\b/i,          sku: "D224NRB" },
 
-  // Xcel Energy PV Production Meter → Milbank 200A Meter Housing w/ Bypass
-  { pattern: /xcel.*meter|pv\s+production\s+meter/i,     sku: "U4801XL5T9" },
+  // Xcel Energy branded meter (utility provides the meter on Xcel jobs)
+  { pattern: /xcel.*meter/i,                              sku: "U9101RLTGKK" },
+
+  // Generic PV production meter (non-Xcel; Milbank 200A housing we supply)
+  { pattern: /pv\s+production\s+meter|200a.?prod/i,      sku: "U4801XL5T9" },
 
   // 125A sub panel
   { pattern: /\b125a?\s+sub\s*panel\b/i,                 sku: "PAL2412" },
@@ -224,6 +227,21 @@ const BOM_QUERY_OVERRIDES: ReadonlyArray<{ pattern: RegExp; sku: string }> = [
 
   // 60A 2-pole GE breaker — paired with TL270RCU load center, output as separate BOM item
   { pattern: /\bthql2160\b|\b60a?\s+2.?p(?:ole)?\s+(?:ge\s+)?(?:breaker|circuit\s*breaker)\b/i, sku: "THQL2160" },
+
+  // 40A 2-pole GE PV breaker — used on Enphase micro-inverter jobs (not the 60A Powerwall breaker)
+  { pattern: /\bthql2140\b|\b40a?\s+2.?p(?:ole)?\s+(?:ge\s+)?(?:pv\s+)?(?:breaker|circuit\s*breaker)\b/i, sku: "THQL2140" },
+
+  // Tesla Backup Gateway-3 (1841000-X1-Y model wildcard)
+  { pattern: /\b1841000\b/i,                             sku: "1841000-x1-y" },
+
+  // Tesla Remote Meter — used on storage-only / simple battery jobs (no Backup Gateway)
+  { pattern: /tesla.*remote.*meter|remote.*meter|\bP2060713\b/i, sku: "P2060713-00-B" },
+
+  // Enphase Q-Cable — DC wiring harness used on Enphase micro-inverter jobs
+  { pattern: /\bq.?cable\b|\bQ-12-RAW\b/i,              sku: "Q-12-RAW-300" },
+
+  // 10 AWG THHN/THWN-2 wire — prefer the priced Zoho item (68731) over unpriced alternatives
+  { pattern: /\b10\s*awg\s*thh?n|\bthh?n.*10\s*awg\b/i, sku: "68731" },
 
   // ── Ops-Standard Additions ─────────────────────────────────────────────────
   // Items always ordered regardless of planset content (critter guard, solobox,
