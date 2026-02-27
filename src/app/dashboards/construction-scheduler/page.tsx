@@ -225,6 +225,29 @@ function getNextWorkdayFromToday(): string {
   return toDateStr(d);
 }
 
+function addCalendarDaysYmd(dateStr: string, days: number): string {
+  const d = new Date(dateStr + "T12:00:00");
+  d.setDate(d.getDate() + days);
+  return toDateStr(d);
+}
+
+function getWeekStartDateYmd(dateStr: string): string {
+  const d = new Date(dateStr + "T12:00:00");
+  const mondayBasedDow = (d.getDay() + 6) % 7;
+  d.setDate(d.getDate() - mondayBasedDow);
+  return toDateStr(d);
+}
+
+function getNextWeekdays(dateStr: string, count: number): string[] {
+  const days: string[] = [];
+  let cursor = dateStr;
+  while (days.length < count) {
+    if (!isWeekend(cursor)) days.push(cursor);
+    cursor = addCalendarDaysYmd(cursor, 1);
+  }
+  return days;
+}
+
 function isPastDate(dateStr: string): boolean {
   return dateStr < getTodayStr();
 }
@@ -306,9 +329,11 @@ export default function ConstructionSchedulerPage() {
   const [manualRefreshing, setManualRefreshing] = useState(false);
 
   /* ---- view / nav ---- */
-  const [currentView, setCurrentView] = useState<"calendar" | "list">("calendar");
+  const [currentView, setCurrentView] = useState<"calendar" | "week" | "gantt" | "list">("calendar");
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
   const [currentMonth, setCurrentMonth] = useState(new Date().getMonth());
+  const [weekStartDate, setWeekStartDate] = useState(() => getWeekStartDateYmd(getTodayStr()));
+  const [ganttStartDate, setGanttStartDate] = useState(() => getWeekStartDateYmd(getTodayStr()));
 
   /* ---- filters ---- */
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
@@ -785,6 +810,10 @@ export default function ConstructionSchedulerPage() {
     return days;
   }, [currentYear, currentMonth]);
 
+  const weekDays = useMemo(() => {
+    return Array.from({ length: 7 }, (_, idx) => addCalendarDaysYmd(weekStartDate, idx));
+  }, [weekStartDate]);
+
   const eventsForDate = useCallback((dateStr: string): (ConstructionProject & { dayNum: number; totalDays: number })[] => {
     const results: (ConstructionProject & { dayNum: number; totalDays: number })[] = [];
     filteredProjects.forEach(p => {
@@ -810,6 +839,43 @@ export default function ConstructionSchedulerPage() {
     });
     return results;
   }, [filteredProjects, manualSchedules]);
+
+  const ganttDays = useMemo(() => {
+    return getNextWeekdays(ganttStartDate, 20);
+  }, [ganttStartDate]);
+
+  const ganttRows = useMemo(() => {
+    return filteredProjects
+      .map((project) => {
+        const startDate = manualSchedules[project.id] || getEffectiveInstallStartDate(project);
+        if (!startDate) return null;
+        const span = getBusinessDatesInSpan(startDate, getEffectiveInstallDays(project));
+        const endDate = span[span.length - 1] || startDate;
+        const startIndex = ganttDays.indexOf(startDate);
+        const endIndex = ganttDays.indexOf(endDate);
+        const visibleStart = startIndex >= 0 ? startIndex : ganttDays.findIndex((d) => d > startDate);
+        const visibleEnd = endIndex >= 0 ? endIndex : (() => {
+          const idx = ganttDays.findIndex((d) => d > endDate);
+          return idx === -1 ? ganttDays.length - 1 : idx - 1;
+        })();
+        if (visibleStart === -1 || visibleStart >= ganttDays.length || visibleEnd < 0) return null;
+        return {
+          project,
+          startDate,
+          endDate,
+          visibleStart,
+          visibleEnd,
+        };
+      })
+      .filter((row): row is {
+        project: ConstructionProject;
+        startDate: string;
+        endDate: string;
+        visibleStart: number;
+        visibleEnd: number;
+      } => !!row)
+      .sort((a, b) => a.startDate.localeCompare(b.startDate));
+  }, [filteredProjects, manualSchedules, ganttDays]);
 
   /* ================================================================ */
   /*  Scheduling actions                                               */
@@ -1208,6 +1274,26 @@ export default function ConstructionSchedulerPage() {
   /* ================================================================ */
 
   const goToPrevMonth = () => {
+    if (currentView === "week") {
+      setWeekStartDate((prev) => {
+        const next = addCalendarDaysYmd(prev, -7);
+        const d = new Date(next + "T12:00:00");
+        setCurrentYear(d.getFullYear());
+        setCurrentMonth(d.getMonth());
+        return next;
+      });
+      return;
+    }
+    if (currentView === "gantt") {
+      setGanttStartDate((prev) => {
+        const next = addCalendarDaysYmd(prev, -14);
+        const d = new Date(next + "T12:00:00");
+        setCurrentYear(d.getFullYear());
+        setCurrentMonth(d.getMonth());
+        return next;
+      });
+      return;
+    }
     if (currentMonth === 0) {
       setCurrentMonth(11);
       setCurrentYear(currentYear - 1);
@@ -1217,6 +1303,26 @@ export default function ConstructionSchedulerPage() {
   };
 
   const goToNextMonth = () => {
+    if (currentView === "week") {
+      setWeekStartDate((prev) => {
+        const next = addCalendarDaysYmd(prev, 7);
+        const d = new Date(next + "T12:00:00");
+        setCurrentYear(d.getFullYear());
+        setCurrentMonth(d.getMonth());
+        return next;
+      });
+      return;
+    }
+    if (currentView === "gantt") {
+      setGanttStartDate((prev) => {
+        const next = addCalendarDaysYmd(prev, 14);
+        const d = new Date(next + "T12:00:00");
+        setCurrentYear(d.getFullYear());
+        setCurrentMonth(d.getMonth());
+        return next;
+      });
+      return;
+    }
     if (currentMonth === 11) {
       setCurrentMonth(0);
       setCurrentYear(currentYear + 1);
@@ -1227,8 +1333,11 @@ export default function ConstructionSchedulerPage() {
 
   const goToToday = () => {
     const now = new Date();
+    const todayYmd = toDateStr(now);
     setCurrentYear(now.getFullYear());
     setCurrentMonth(now.getMonth());
+    setWeekStartDate(getWeekStartDateYmd(todayYmd));
+    setGanttStartDate(getWeekStartDateYmd(todayYmd));
   };
 
   /* ================================================================ */
@@ -1313,7 +1422,23 @@ export default function ConstructionSchedulerPage() {
                     currentView === "calendar" ? "bg-emerald-600 text-white" : "text-muted hover:text-foreground"
                   }`}
                 >
-                  Calendar
+                  Month
+                </button>
+                <button
+                  onClick={() => setCurrentView("week")}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                    currentView === "week" ? "bg-emerald-600 text-white" : "text-muted hover:text-foreground"
+                  }`}
+                >
+                  Week
+                </button>
+                <button
+                  onClick={() => setCurrentView("gantt")}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                    currentView === "gantt" ? "bg-emerald-600 text-white" : "text-muted hover:text-foreground"
+                  }`}
+                >
+                  Gantt
                 </button>
                 <button
                   onClick={() => setCurrentView("list")}
@@ -1712,6 +1837,192 @@ export default function ConstructionSchedulerPage() {
                     );
                   })}
                 </div>
+              </div>
+            ) : currentView === "week" ? (
+              <div className="bg-surface border border-t-border rounded-xl overflow-hidden">
+                <div className="p-3 border-b border-t-border flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <button onClick={goToPrevMonth} className="p-1.5 hover:bg-surface-2 rounded">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                      </svg>
+                    </button>
+                    <span className="text-lg font-semibold min-w-[260px] text-center">
+                      Week of {formatShortDate(weekStartDate)} - {formatShortDate(addCalendarDaysYmd(weekStartDate, 6))}
+                    </span>
+                    <button onClick={goToNextMonth} className="p-1.5 hover:bg-surface-2 rounded">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </button>
+                  </div>
+                  <button onClick={goToToday} className="px-3 py-1 text-xs bg-surface-2 hover:bg-surface-2 rounded">
+                    Today
+                  </button>
+                </div>
+                <div className="grid grid-cols-7 border-b border-t-border">
+                  {weekDays.map((dateStr, idx) => (
+                    <div key={dateStr} className="p-2 text-center border-r border-t-border last:border-r-0">
+                      <div className="text-xs font-medium text-muted">{DAY_NAMES[idx]}</div>
+                      <div className={`text-xs mt-0.5 ${dateStr === todayStr ? "text-emerald-400 font-semibold" : "text-foreground/80"}`}>
+                        {formatShortDate(dateStr)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="grid grid-cols-7">
+                  {weekDays.map((dateStr) => {
+                    const weekend = isWeekend(dateStr);
+                    const isToday = dateStr === todayStr;
+                    const events = eventsForDate(dateStr);
+                    const dayAvailability = availabilityByDate[dateStr];
+                    const hasAvailability = dayAvailability?.hasAvailability && !dayAvailability?.isFullyBooked;
+                    const isFullyBooked = dayAvailability?.isFullyBooked;
+                    return (
+                      <div
+                        key={dateStr}
+                        onDragOver={handleDragOver}
+                        onDrop={() => handleDrop(dateStr)}
+                        onClick={() => handleDateClick(dateStr)}
+                        className={`min-h-[360px] p-2 border-r border-b border-t-border last:border-r-0 cursor-pointer transition-colors ${
+                          weekend ? "bg-surface/30" : ""
+                        } ${isToday ? "bg-emerald-900/20" : ""} ${
+                          selectedProject ? "hover:bg-emerald-900/10" : "hover:bg-skeleton"
+                        } ${
+                          showAvailability && hasAvailability && selectedProject
+                            ? "ring-2 ring-inset ring-emerald-500/30 bg-emerald-900/10"
+                            : ""
+                        } ${
+                          showAvailability && isFullyBooked && selectedProject && !weekend
+                            ? "ring-2 ring-inset ring-red-500/20 bg-red-900/5"
+                            : ""
+                        }`}
+                      >
+                        <div className="space-y-1">
+                          {events.map((ev) => {
+                            const overdue = isInstallOverdue(ev, manualSchedules[ev.id]);
+                            const isTentative =
+                              !!tentativeRecordIds[ev.id] || ev.installStatus.toLowerCase().includes("tentative");
+                            return (
+                              <div
+                                key={`${ev.id}-w${dateStr}-d${ev.dayNum}`}
+                                draggable
+                                onDragStart={(e) => {
+                                  e.stopPropagation();
+                                  handleDragStart(ev.id);
+                                }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setScheduleModal({
+                                    project: ev,
+                                    date: manualSchedules[ev.id] || getEffectiveInstallStartDate(ev) || dateStr,
+                                  });
+                                }}
+                                className={`text-xs p-1 rounded truncate cursor-grab active:cursor-grabbing ${
+                                  overdue
+                                    ? "bg-red-500/20 border border-red-500/40 text-red-300 hover:bg-red-500/30"
+                                    : isTentative
+                                      ? "bg-amber-500/20 border border-amber-500/40 text-amber-300 hover:bg-amber-500/30"
+                                      : "bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/30"
+                                }`}
+                              >
+                                {overdue && <span className="text-red-400 mr-0.5">⚠</span>}
+                                {!overdue && isTentative && <span className="text-amber-300 mr-0.5">TENT</span>}
+                                {ev.totalDays > 1 && <span className="font-semibold mr-0.5">D{ev.dayNum}</span>}
+                                {getCustomerName(ev.name)}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : currentView === "gantt" ? (
+              <div className="bg-surface border border-t-border rounded-xl overflow-hidden">
+                <div className="p-3 border-b border-t-border flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <button onClick={goToPrevMonth} className="p-1.5 hover:bg-surface-2 rounded">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                      </svg>
+                    </button>
+                    <span className="text-lg font-semibold min-w-[260px] text-center">
+                      Gantt {formatShortDate(ganttDays[0])} - {formatShortDate(ganttDays[ganttDays.length - 1])}
+                    </span>
+                    <button onClick={goToNextMonth} className="p-1.5 hover:bg-surface-2 rounded">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </button>
+                  </div>
+                  <button onClick={goToToday} className="px-3 py-1 text-xs bg-surface-2 hover:bg-surface-2 rounded">
+                    Today
+                  </button>
+                </div>
+                {ganttRows.length === 0 ? (
+                  <div className="p-6 text-sm text-muted text-center">No scheduled projects in this timeline window.</div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <div className="min-w-[1100px]">
+                      <div className="flex border-b border-t-border bg-surface/50">
+                        <div className="w-56 p-2 text-xs font-semibold text-muted uppercase tracking-wide border-r border-t-border">
+                          Project
+                        </div>
+                        <div
+                          className="flex-1 grid"
+                          style={{ gridTemplateColumns: `repeat(${ganttDays.length}, minmax(42px, 1fr))` }}
+                        >
+                          {ganttDays.map((day) => (
+                            <div key={`gantt-h-${day}`} className="p-1 text-[0.65rem] text-center text-muted border-r border-t-border last:border-r-0">
+                              {formatShortDate(day)}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      {ganttRows.map((row) => (
+                        <div key={`gantt-r-${row.project.id}`} className="flex border-b border-t-border hover:bg-surface/40">
+                          <div className="w-56 p-2 border-r border-t-border">
+                            <button
+                              onClick={() => setSelectedProject(row.project)}
+                              className="text-left w-full"
+                            >
+                              <div className="text-sm text-foreground truncate hover:text-emerald-300">
+                                {getCustomerName(row.project.name)}
+                              </div>
+                              <div className="text-[0.68rem] text-muted truncate">
+                                {formatShortDate(row.startDate)} - {formatShortDate(row.endDate)}
+                              </div>
+                            </button>
+                          </div>
+                          <div
+                            className="flex-1 grid relative"
+                            style={{ gridTemplateColumns: `repeat(${ganttDays.length}, minmax(42px, 1fr))` }}
+                          >
+                            {ganttDays.map((day) => (
+                              <div key={`gantt-c-${row.project.id}-${day}`} className="h-12 border-r border-t-border/60 last:border-r-0" />
+                            ))}
+                            <button
+                              onClick={() => {
+                                setSelectedProject(row.project);
+                                setScheduleModal({
+                                  project: row.project,
+                                  date: row.startDate,
+                                });
+                              }}
+                              className="z-10 mx-0.5 my-2 rounded bg-emerald-500/30 border border-emerald-500/40 hover:bg-emerald-500/45 text-[0.68rem] text-emerald-200 truncate px-1"
+                              style={{ gridColumn: `${row.visibleStart + 1} / ${row.visibleEnd + 2}` }}
+                              title={`${getCustomerName(row.project.name)} • ${formatShortDate(row.startDate)} - ${formatShortDate(row.endDate)}`}
+                            >
+                              {getCustomerName(row.project.name)}
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               /* List View */
