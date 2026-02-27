@@ -72,6 +72,22 @@ interface PushRequest {
   createdAt: string;
 }
 
+type ApproveOutcomeStatus = "success" | "failed" | "skipped" | "not_implemented";
+
+interface ApproveSummary {
+  selected: number;
+  success: number;
+  failed: number;
+  skipped: number;
+  notImplemented: number;
+}
+
+interface ApproveResponse {
+  error?: string;
+  summary?: ApproveSummary;
+  outcomes?: Record<string, { status: ApproveOutcomeStatus; message?: string; externalId?: string | null }>;
+}
+
 interface SkuEditDraft {
   id: string;
   category: string;
@@ -263,11 +279,33 @@ export default function CatalogPage() {
   async function handleApprove(id: string) {
     try {
       const res = await fetch(`/api/catalog/push-requests/${id}/approve`, { method: "POST" });
-      const data = await res.json() as { error?: string };
+      const data = await res.json() as ApproveResponse;
       if (!res.ok) throw new Error(data.error);
       setPendingPushes((prev) => prev.filter((p) => p.id !== id));
       setPendingCount((c) => Math.max(0, c - 1));
-      addToast({ type: "success", title: "Approved and pushed to selected systems" });
+
+      const summary = data.summary;
+      if (!summary) {
+        addToast({ type: "success", title: "Request approved" });
+      } else if (summary.success === summary.selected) {
+        addToast({
+          type: "success",
+          title: "Approved. All selected systems completed.",
+          message: `${summary.success}/${summary.selected} systems succeeded.`,
+        });
+      } else if (summary.success > 0) {
+        addToast({
+          type: "warning",
+          title: "Approved with partial execution",
+          message: `${summary.success}/${summary.selected} succeeded, ${summary.notImplemented} not implemented, ${summary.skipped} skipped, ${summary.failed} failed.`,
+        });
+      } else {
+        addToast({
+          type: "warning",
+          title: "Approved, but no selected systems completed",
+          message: `${summary.notImplemented} not implemented, ${summary.skipped} skipped, ${summary.failed} failed.`,
+        });
+      }
       fetchSkus();
     } catch (err: unknown) {
       addToast({ type: "error", title: err instanceof Error ? err.message : "Approval failed" });

@@ -17,6 +17,45 @@ jest.mock("@/lib/catalog-fields", () => ({
     };
     return map[cat];
   }),
+  getHubspotCategoryValue: jest.fn((cat: string) => {
+    const map: Record<string, string> = {
+      MODULE: "Module",
+      INVERTER: "Inverter",
+      BATTERY: "Battery",
+      BATTERY_EXPANSION: "Battery Expansion",
+    };
+    return map[cat];
+  }),
+  getZuperCategoryValue: jest.fn((cat: string) => {
+    const map: Record<string, string> = {
+      MODULE: "Module",
+      INVERTER: "Inverter",
+      BATTERY: "Battery",
+      BATTERY_EXPANSION: "Battery Expansion",
+    };
+    return map[cat];
+  }),
+  generateZuperSpecification: jest.fn(() => "Spec Summary"),
+  getHubspotPropertiesFromMetadata: jest.fn(() => ({})),
+  filterMetadataToSpecFields: jest.fn((_cat: string, meta: Record<string, unknown>) => meta),
+}));
+
+// ── HubSpot adapter ────────────────────────────────────────────────────────────
+const mockCreateOrUpdateHubSpotProduct = jest.fn();
+jest.mock("@/lib/hubspot", () => ({
+  createOrUpdateHubSpotProduct: (...args: unknown[]) => mockCreateOrUpdateHubSpotProduct(...args),
+}));
+
+// ── Zoho adapter ───────────────────────────────────────────────────────────────
+const mockCreateOrUpdateZohoItem = jest.fn();
+jest.mock("@/lib/zoho-inventory", () => ({
+  createOrUpdateZohoItem: (...args: unknown[]) => mockCreateOrUpdateZohoItem(...args),
+}));
+
+// ── Zuper adapter ──────────────────────────────────────────────────────────────
+const mockCreateOrUpdateZuperPart = jest.fn();
+jest.mock("@/lib/zuper-catalog", () => ({
+  createOrUpdateZuperPart: (...args: unknown[]) => mockCreateOrUpdateZuperPart(...args),
 }));
 
 // ── Prisma ────────────────────────────────────────────────────────────────────
@@ -24,12 +63,16 @@ const mockFindUnique = jest.fn();
 const mockUpsert = jest.fn();
 const mockUpdate = jest.fn();
 const mockSpecUpsert = jest.fn();
+const mockEquipmentUpdate = jest.fn();
 
 // $transaction receives a callback; we execute it with a fake tx client
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const mockTransaction = jest.fn(async (fn: any) => {
   const txClient = {
-    equipmentSku: { upsert: (...args: unknown[]) => mockUpsert(...args) },
+    equipmentSku: {
+      upsert: (...args: unknown[]) => mockUpsert(...args),
+      update: (...args: unknown[]) => mockEquipmentUpdate(...args),
+    },
     moduleSpec: { upsert: (...args: unknown[]) => mockSpecUpsert(...args) },
     inverterSpec: { upsert: (...args: unknown[]) => mockSpecUpsert(...args) },
     batterySpec: { upsert: (...args: unknown[]) => mockSpecUpsert(...args) },
@@ -109,7 +152,29 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockRequireApiAuth.mockResolvedValue({ email: "admin@photonbrothers.com", role: "ADMIN" });
   mockUpsert.mockResolvedValue({ id: "sku_1" });
-  mockUpdate.mockResolvedValue({ id: "push_1", status: "APPROVED" });
+  mockUpdate.mockImplementation((args: { data?: Record<string, unknown> }) =>
+    Promise.resolve({
+      id: "push_1",
+      status: "APPROVED",
+      internalSkuId: "sku_1",
+      zohoItemId: typeof args?.data?.zohoItemId === "string" ? args.data.zohoItemId : null,
+      hubspotProductId: typeof args?.data?.hubspotProductId === "string" ? args.data.hubspotProductId : null,
+      zuperItemId: typeof args?.data?.zuperItemId === "string" ? args.data.zuperItemId : null,
+    })
+  );
+  mockEquipmentUpdate.mockResolvedValue({ id: "sku_1" });
+  mockCreateOrUpdateHubSpotProduct.mockResolvedValue({
+    hubspotProductId: "hs_prod_1",
+    created: true,
+  });
+  mockCreateOrUpdateZohoItem.mockResolvedValue({
+    zohoItemId: "zoho_item_1",
+    created: true,
+  });
+  mockCreateOrUpdateZuperPart.mockResolvedValue({
+    zuperItemId: "zuper_item_1",
+    created: true,
+  });
 });
 
 // ── Auth & Guard tests ───────────────────────────────────────────────────────
@@ -325,12 +390,13 @@ describe("POST /api/catalog/push-requests/[id]/approve", () => {
     it("skips internal catalog when INTERNAL is not in systems", async () => {
       mockFindUnique.mockResolvedValue(makePush({ systems: ["ZOHO"] }));
 
-      await POST(new NextRequest("http://localhost"), makeParams());
+      const res = await POST(new NextRequest("http://localhost"), makeParams());
+      const data = await res.json();
 
       // No SKU upsert
       expect(mockUpsert).not.toHaveBeenCalled();
-      // Transaction still called for status update
-      expect(mockTransaction).toHaveBeenCalledTimes(1);
+      // Two transactions: approval + external ID persistence
+      expect(mockTransaction).toHaveBeenCalledTimes(2);
       // Status update with null internalSkuId
       expect(mockUpdate).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -340,26 +406,209 @@ describe("POST /api/catalog/push-requests/[id]/approve", () => {
           }),
         })
       );
+      expect(data.summary).toEqual({
+        selected: 1,
+        success: 1,
+        failed: 0,
+        skipped: 0,
+        notImplemented: 0,
+      });
+      expect(data.outcomes.ZOHO.status).toBe("success");
     });
 
-    it("logs ZOHO stub when ZOHO system selected", async () => {
-      const consoleSpy = jest.spyOn(console, "log").mockImplementation();
+    it("reports failed ZOHO outcome when adapter throws", async () => {
+      mockFindUnique.mockResolvedValue(makePush({ systems: ["INTERNAL", "ZOHO"] }));
+      mockCreateOrUpdateZohoItem.mockRejectedValue(new Error("Zoho unavailable"));
+
+      const res = await POST(new NextRequest("http://localhost"), makeParams());
+      const data = await res.json();
+
+      expect(data.outcomes.ZOHO.status).toBe("failed");
+      expect(data.outcomes.ZOHO.message).toMatch(/zoho unavailable/i);
+      expect(data.summary).toEqual({
+        selected: 2,
+        success: 1,
+        failed: 1,
+        skipped: 0,
+        notImplemented: 0,
+      });
+    });
+
+    it("reports failed ZUPER outcome when adapter throws", async () => {
+      mockFindUnique.mockResolvedValue(makePush({ systems: ["INTERNAL", "ZUPER"] }));
+      mockCreateOrUpdateZuperPart.mockRejectedValue(new Error("Zuper unavailable"));
+
+      const res = await POST(new NextRequest("http://localhost"), makeParams());
+      const data = await res.json();
+
+      expect(data.outcomes.ZUPER.status).toBe("failed");
+      expect(data.outcomes.ZUPER.message).toMatch(/zuper unavailable/i);
+      expect(data.summary).toEqual({
+        selected: 2,
+        success: 1,
+        failed: 1,
+        skipped: 0,
+        notImplemented: 0,
+      });
+    });
+  });
+
+  describe("HubSpot push integration", () => {
+    it("pushes to HubSpot and persists returned product IDs", async () => {
+      mockFindUnique.mockResolvedValue(makePush({ systems: ["INTERNAL", "HUBSPOT"] }));
+
+      const res = await POST(new NextRequest("http://localhost"), makeParams());
+      const data = await res.json();
+
+      expect(mockCreateOrUpdateHubSpotProduct).toHaveBeenCalledWith(
+        expect.objectContaining({
+          brand: "REC",
+          model: "REC-400AA",
+          sku: "REC400",
+          productCategory: "Module",
+          unitCost: 120,
+          sellPrice: 180,
+        })
+      );
+      expect(mockUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "push_1" },
+          data: { hubspotProductId: "hs_prod_1" },
+        })
+      );
+      expect(mockEquipmentUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "sku_1" },
+          data: { hubspotProductId: "hs_prod_1" },
+        })
+      );
+
+      expect(data.push.hubspotProductId).toBe("hs_prod_1");
+      expect(data.outcomes.HUBSPOT.status).toBe("success");
+      expect(data.outcomes.HUBSPOT.externalId).toBe("hs_prod_1");
+      expect(data.summary).toEqual({
+        selected: 2,
+        success: 2,
+        failed: 0,
+        skipped: 0,
+        notImplemented: 0,
+      });
+      expect(mockTransaction).toHaveBeenCalledTimes(2);
+    });
+
+    it("reports failed HubSpot outcome when adapter throws", async () => {
+      mockFindUnique.mockResolvedValue(makePush({ systems: ["INTERNAL", "HUBSPOT"] }));
+      mockCreateOrUpdateHubSpotProduct.mockRejectedValue(new Error("HubSpot unavailable"));
+
+      const res = await POST(new NextRequest("http://localhost"), makeParams());
+      const data = await res.json();
+
+      const hasHubSpotIdWrite = mockUpdate.mock.calls.some((call) => {
+        const arg = call[0] as { data?: Record<string, unknown> };
+        return arg?.data?.hubspotProductId === "hs_prod_1";
+      });
+      expect(hasHubSpotIdWrite).toBe(false);
+      expect(mockEquipmentUpdate).not.toHaveBeenCalled();
+      expect(data.outcomes.HUBSPOT.status).toBe("failed");
+      expect(data.outcomes.HUBSPOT.message).toMatch(/hubspot unavailable/i);
+      expect(data.summary).toEqual({
+        selected: 2,
+        success: 1,
+        failed: 1,
+        skipped: 0,
+        notImplemented: 0,
+      });
+    });
+  });
+
+  describe("ZOHO push integration", () => {
+    it("pushes to ZOHO and persists returned item IDs", async () => {
       mockFindUnique.mockResolvedValue(makePush({ systems: ["INTERNAL", "ZOHO"] }));
 
-      await POST(new NextRequest("http://localhost"), makeParams());
+      const res = await POST(new NextRequest("http://localhost"), makeParams());
+      const data = await res.json();
 
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining("ZOHO"),
-        expect.any(String)
+      expect(mockCreateOrUpdateZohoItem).toHaveBeenCalledWith(
+        expect.objectContaining({
+          brand: "REC",
+          model: "REC-400AA",
+          sku: "REC400",
+          unitCost: 120,
+          sellPrice: 180,
+        })
       );
-      consoleSpy.mockRestore();
+      expect(mockUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "push_1" },
+          data: { zohoItemId: "zoho_item_1" },
+        })
+      );
+      expect(mockEquipmentUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "sku_1" },
+          data: { zohoItemId: "zoho_item_1" },
+        })
+      );
+      expect(data.outcomes.ZOHO.status).toBe("success");
+      expect(data.outcomes.ZOHO.externalId).toBe("zoho_item_1");
+      expect(data.summary).toEqual({
+        selected: 2,
+        success: 2,
+        failed: 0,
+        skipped: 0,
+        notImplemented: 0,
+      });
+    });
+  });
+
+  describe("ZUPER push integration", () => {
+    it("pushes to ZUPER and persists returned item IDs", async () => {
+      mockFindUnique.mockResolvedValue(
+        makePush({ systems: ["INTERNAL", "ZUPER"], metadata: { wattage: 400 } })
+      );
+
+      const res = await POST(new NextRequest("http://localhost"), makeParams());
+      const data = await res.json();
+
+      expect(mockCreateOrUpdateZuperPart).toHaveBeenCalledWith(
+        expect.objectContaining({
+          brand: "REC",
+          model: "REC-400AA",
+          sku: "REC400",
+          unitCost: 120,
+          sellPrice: 180,
+          category: "Module",
+          specification: "Spec Summary",
+        })
+      );
+      expect(mockUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "push_1" },
+          data: { zuperItemId: "zuper_item_1" },
+        })
+      );
+      expect(mockEquipmentUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "sku_1" },
+          data: { zuperItemId: "zuper_item_1" },
+        })
+      );
+      expect(data.outcomes.ZUPER.status).toBe("success");
+      expect(data.outcomes.ZUPER.externalId).toBe("zuper_item_1");
+      expect(data.summary).toEqual({
+        selected: 2,
+        success: 2,
+        failed: 0,
+        skipped: 0,
+        notImplemented: 0,
+      });
     });
   });
 
   // ── Response shape ─────────────────────────────────────────────────────
 
   describe("response shape", () => {
-    it("returns 200 with updated push on success", async () => {
+    it("returns 200 with push, outcomes, and summary on success", async () => {
       mockFindUnique.mockResolvedValue(makePush());
       mockUpdate.mockResolvedValue({
         id: "push_1",
@@ -376,6 +625,14 @@ describe("POST /api/catalog/push-requests/[id]/approve", () => {
       const data = await res.json();
       expect(data.push.status).toBe("APPROVED");
       expect(data.push.internalSkuId).toBe("sku_1");
+      expect(data.outcomes.INTERNAL.status).toBe("success");
+      expect(data.summary).toEqual({
+        selected: 1,
+        success: 1,
+        failed: 0,
+        skipped: 0,
+        notImplemented: 0,
+      });
     });
   });
 });

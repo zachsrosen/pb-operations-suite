@@ -230,6 +230,54 @@ export function getSpecTableName(category: string): string | undefined {
   return CATEGORY_CONFIGS[category]?.specTable;
 }
 
+/** Filter metadata to only include keys defined in the category's field config. */
+export function filterMetadataToSpecFields(
+  category: string,
+  metadata: Record<string, unknown>
+): Record<string, unknown> {
+  const validKeys = new Set(getCategoryFields(category).map((f) => f.key));
+  const filtered: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(metadata)) {
+    if (validKeys.has(key) && value !== null && value !== undefined && value !== "") {
+      filtered[key] = value;
+    }
+  }
+  return filtered;
+}
+
+export function getHubspotCategoryValue(category: string): string | undefined {
+  return CATEGORY_CONFIGS[category]?.hubspotValue;
+}
+
+export function getZuperCategoryValue(category: string): string | undefined {
+  return CATEGORY_CONFIGS[category]?.zuperCategory;
+}
+
+export function getHubspotPropertiesFromMetadata(
+  category: string,
+  metadata: Record<string, unknown> | null | undefined
+): Record<string, string | number | boolean> {
+  if (!metadata || typeof metadata !== "object") return {};
+
+  const mapped: Record<string, string | number | boolean> = {};
+  const fields = getCategoryFields(category);
+  for (const field of fields) {
+    const propertyName = field.hubspotProperty;
+    if (!propertyName) continue;
+
+    const value = metadata[field.key];
+    if (value === null || value === undefined || value === "") continue;
+
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      mapped[propertyName] = value;
+      continue;
+    }
+    mapped[propertyName] = String(value);
+  }
+
+  return mapped;
+}
+
 export function generateZuperSpecification(category: string, specData: Record<string, unknown>): string {
   const parts: string[] = [];
   switch (category) {

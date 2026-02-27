@@ -1,0 +1,362 @@
+const DEFAULT_ZUPER_API_URL = "https://us-west-1c.zuperpro.com/api";
+
+type JsonRecord = Record<string, unknown>;
+
+const ITEM_ID_KEYS = ["item_uid", "item_id", "part_uid", "part_id", "uid", "id"] as const;
+
+export interface UpsertZuperPartInput {
+  brand: string;
+  model: string;
+  description?: string | null;
+  sku?: string | null;
+  unitLabel?: string | null;
+  vendorName?: string | null;
+  vendorPartNumber?: string | null;
+  sellPrice?: number | null;
+  unitCost?: number | null;
+  category?: string | null;
+  specification?: string | null;
+}
+
+export interface UpsertZuperPartResult {
+  zuperItemId: string;
+  created: boolean;
+}
+
+interface ZuperIdentity {
+  name: string;
+  sku?: string;
+  model?: string;
+  partNumber?: string;
+  category?: string;
+}
+
+function trimOrUndefined(value: unknown): string | undefined {
+  if (value == null) return undefined;
+  const trimmed = String(value).trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function normalizeName(value: unknown): string {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isRecord(value: unknown): value is JsonRecord {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error || "Unknown error");
+}
+
+function getRecordString(record: JsonRecord, keys: readonly string[]): string | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    const trimmed = trimOrUndefined(value);
+    if (trimmed) return trimmed;
+  }
+  return undefined;
+}
+
+function extractRecords(value: unknown, depth = 0): JsonRecord[] {
+  if (depth > 4 || value == null) return [];
+
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => extractRecords(item, depth + 1));
+  }
+
+  if (!isRecord(value)) return [];
+
+  const records: JsonRecord[] = [value];
+  const nestedKeys = ["data", "item", "items", "part", "parts", "result", "results", "records"] as const;
+  for (const key of nestedKeys) {
+    records.push(...extractRecords(value[key], depth + 1));
+  }
+  return records;
+}
+
+function extractZuperItemId(value: unknown): string | undefined {
+  const records = extractRecords(value);
+  for (const record of records) {
+    for (const key of ITEM_ID_KEYS) {
+      const id = trimOrUndefined(record[key]);
+      if (id) return id;
+    }
+  }
+  return undefined;
+}
+
+function matchesIdentity(record: JsonRecord, identity: ZuperIdentity): boolean {
+  const recordSku = getRecordString(record, [
+    "sku",
+    "item_sku",
+    "item_code",
+    "code",
+    "vendor_part_number",
+    "part_number",
+    "model",
+  ]);
+  const recordPart = getRecordString(record, ["part_number", "vendor_part_number", "model", "item_code"]);
+  const recordName = getRecordString(record, ["name", "item_name", "part_name", "title", "display_name"]);
+  const recordCategory = getRecordString(record, [
+    "category",
+    "category_name",
+    "item_category",
+    "part_category",
+    "type",
+  ]);
+
+  const skuNorm = normalizeName(identity.sku);
+  const modelNorm = normalizeName(identity.model);
+  const partNorm = normalizeName(identity.partNumber);
+  const nameNorm = normalizeName(identity.name);
+  const categoryNorm = normalizeName(identity.category);
+
+  if (skuNorm && recordSku && normalizeName(recordSku) === skuNorm) return true;
+  if (partNorm && recordPart && normalizeName(recordPart) === partNorm) return true;
+  if (modelNorm && recordPart && normalizeName(recordPart) === modelNorm) return true;
+
+  if (nameNorm && recordName && normalizeName(recordName) === nameNorm) {
+    if (!categoryNorm) return true;
+    if (!recordCategory) return false;
+    return normalizeName(recordCategory) === categoryNorm;
+  }
+
+  return false;
+}
+
+function getZuperApiConfig(): { apiKey: string; baseUrl: string } {
+  const apiKey = trimOrUndefined(process.env.ZUPER_API_KEY);
+  if (!apiKey) {
+    throw new Error("ZUPER_API_KEY is not configured");
+  }
+
+  const baseUrl = (trimOrUndefined(process.env.ZUPER_API_URL) || DEFAULT_ZUPER_API_URL).replace(/\/+$/, "");
+  return { apiKey, baseUrl };
+}
+
+async function requestZuper(
+  endpoint: string,
+  options: RequestInit = {},
+  timeoutMs = 30000
+): Promise<unknown> {
+  const { apiKey, baseUrl } = getZuperApiConfig();
+  const url = `${baseUrl}${endpoint.startsWith("/") ? endpoint : `/${endpoint}`}`;
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const headers = new Headers(options.headers || {});
+    headers.set("Content-Type", "application/json");
+    headers.set("x-api-key", apiKey);
+
+    const response = await fetch(url, {
+      ...options,
+      headers,
+      signal: controller.signal,
+      cache: "no-store",
+    });
+
+    const raw = await response.text();
+    let payload: unknown = null;
+    try {
+      payload = raw ? JSON.parse(raw) : null;
+    } catch {
+      payload = raw;
+    }
+
+    if (!response.ok) {
+      const message =
+        (isRecord(payload) && trimOrUndefined(payload.message)) ||
+        (isRecord(payload) && trimOrUndefined(payload.error)) ||
+        `HTTP ${response.status}`;
+      throw new Error(`Zuper API ${endpoint} failed: ${message}`);
+    }
+
+    if (isRecord(payload)) {
+      const payloadType = normalizeName(payload.type);
+      if (payloadType === "error" || payloadType === "failure" || payload.success === false) {
+        const message =
+          trimOrUndefined(payload.message) ||
+          trimOrUndefined(payload.error) ||
+          `Zuper API returned ${payload.type || "error"}`;
+        throw new Error(`Zuper API ${endpoint} failed: ${message}`);
+      }
+    }
+
+    return payload;
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(`Zuper API ${endpoint} timeout after ${timeoutMs}ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function buildSearchEndpoints(query: string): string[] {
+  const q = encodeURIComponent(query);
+  return [
+    `/items?search=${q}&count=100`,
+    `/items?query=${q}&count=100`,
+    `/parts?search=${q}&count=100`,
+    `/parts?query=${q}&count=100`,
+  ];
+}
+
+async function findExistingZuperItemId(identity: ZuperIdentity): Promise<string | null> {
+  const queries = [
+    ...new Set(
+      [identity.sku, identity.partNumber, identity.model, identity.name].filter(
+        (value): value is string => !!value
+      )
+    ),
+  ];
+
+  for (const query of queries) {
+    for (const endpoint of buildSearchEndpoints(query)) {
+      try {
+        const payload = await requestZuper(endpoint, { method: "GET" });
+        const records = extractRecords(payload);
+        for (const record of records) {
+          if (!matchesIdentity(record, identity)) continue;
+          const id = extractZuperItemId(record);
+          if (id) return id;
+        }
+      } catch {
+        // Ignore endpoint-specific search errors and continue fallbacks.
+      }
+    }
+  }
+
+  return null;
+}
+
+interface CreateAttemptResult {
+  id: string | null;
+  errors: string[];
+  successfulResponseWithoutId: boolean;
+}
+
+async function tryCreateWithPayload(payload: JsonRecord): Promise<CreateAttemptResult> {
+  const attempts: Array<{ endpoint: string; body: JsonRecord }> = [
+    { endpoint: "/items", body: { item: payload } },
+    { endpoint: "/items", body: { items: [payload] } },
+    { endpoint: "/items", body: payload },
+    { endpoint: "/parts", body: { part: payload } },
+    { endpoint: "/parts", body: { parts: [payload] } },
+    { endpoint: "/parts", body: payload },
+  ];
+
+  const errors: string[] = [];
+  for (const attempt of attempts) {
+    try {
+      const response = await requestZuper(attempt.endpoint, {
+        method: "POST",
+        body: JSON.stringify(attempt.body),
+      });
+      const id = extractZuperItemId(response);
+      if (id) return { id, errors, successfulResponseWithoutId: false };
+      errors.push(`${attempt.endpoint}: success response missing item ID`);
+      // Stop after first 2xx/payload-success response to avoid duplicate creates
+      // across endpoint/body-shape fallbacks.
+      return { id: null, errors, successfulResponseWithoutId: true };
+    } catch (error) {
+      errors.push(`${attempt.endpoint}: ${getErrorMessage(error)}`);
+    }
+  }
+
+  return { id: null, errors, successfulResponseWithoutId: false };
+}
+
+export async function createOrUpdateZuperPart(
+  input: UpsertZuperPartInput
+): Promise<UpsertZuperPartResult> {
+  const brand = trimOrUndefined(input.brand);
+  const model = trimOrUndefined(input.model);
+  const sku = trimOrUndefined(input.sku) || model;
+  const description = trimOrUndefined(input.description);
+  const partNumber = trimOrUndefined(input.vendorPartNumber) || model;
+  const unitLabel = trimOrUndefined(input.unitLabel);
+  const vendorName = trimOrUndefined(input.vendorName);
+  const category = trimOrUndefined(input.category);
+  const specification = trimOrUndefined(input.specification);
+
+  const name = `${brand || ""} ${model || ""}`.trim();
+  if (!name) throw new Error("Zuper item requires brand and model");
+
+  const identity: ZuperIdentity = { name, sku, model, partNumber, category };
+  const existingId = await findExistingZuperItemId(identity);
+  if (existingId) {
+    return { zuperItemId: existingId, created: false };
+  }
+
+  const mergedDescription = [description, specification].filter(Boolean).join(" | ");
+  const corePayload: JsonRecord = {
+    name,
+    ...(sku ? { sku } : {}),
+    ...(mergedDescription ? { description: mergedDescription } : {}),
+    ...(partNumber ? { part_number: partNumber } : {}),
+  };
+
+  const optionalPayload: JsonRecord = {
+    ...corePayload,
+    ...(category ? { category_name: category, category } : {}),
+    ...(vendorName ? { vendor_name: vendorName, vendor: vendorName } : {}),
+    ...(unitLabel ? { unit: unitLabel } : {}),
+    ...(isFiniteNumber(input.sellPrice)
+      ? { unit_price: input.sellPrice, price: input.sellPrice, rate: input.sellPrice }
+      : {}),
+    ...(isFiniteNumber(input.unitCost)
+      ? { cost_price: input.unitCost, purchase_rate: input.unitCost, cost: input.unitCost }
+      : {}),
+  };
+
+  const hasOptional = Object.keys(optionalPayload).length > Object.keys(corePayload).length;
+  const allErrors: string[] = [];
+
+  const optionalAttempt = await tryCreateWithPayload(optionalPayload);
+  allErrors.push(...optionalAttempt.errors);
+  if (optionalAttempt.id) return { zuperItemId: optionalAttempt.id, created: true };
+  if (optionalAttempt.successfulResponseWithoutId) {
+    const discoveredId = await findExistingZuperItemId(identity);
+    if (discoveredId) return { zuperItemId: discoveredId, created: true };
+    throw new Error(
+      `Failed to resolve created Zuper item ID after successful create response. Attempts: ${
+        allErrors.join(" | ") || "no successful endpoint"
+      }`
+    );
+  }
+
+  if (hasOptional) {
+    const coreAttempt = await tryCreateWithPayload(corePayload);
+    allErrors.push(...coreAttempt.errors);
+    if (coreAttempt.id) return { zuperItemId: coreAttempt.id, created: true };
+    if (coreAttempt.successfulResponseWithoutId) {
+      const discoveredId = await findExistingZuperItemId(identity);
+      if (discoveredId) return { zuperItemId: discoveredId, created: true };
+      throw new Error(
+        `Failed to resolve created Zuper item ID after successful create response. Attempts: ${
+          allErrors.join(" | ") || "no successful endpoint"
+        }`
+      );
+    }
+  }
+
+  // Some accounts succeed with sparse/non-standard responses; re-search once before failing.
+  const discoveredId = await findExistingZuperItemId(identity);
+  if (discoveredId) return { zuperItemId: discoveredId, created: true };
+
+  throw new Error(
+    `Failed to create Zuper item. Attempts: ${allErrors.join(" | ") || "no successful endpoint"}`
+  );
+}

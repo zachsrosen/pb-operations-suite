@@ -1,6 +1,6 @@
 import {
   getCategoryFields, getCategoryLabel, getEnumFromLabel,
-  getSpecTableName, generateZuperSpecification,
+  getSpecTableName, getHubspotCategoryValue, getHubspotPropertiesFromMetadata, getZuperCategoryValue, generateZuperSpecification,
   MANUFACTURERS, FORM_CATEGORIES, CATEGORY_CONFIGS,
 } from "@/lib/catalog-fields";
 
@@ -86,6 +86,52 @@ describe("catalog-fields", () => {
       expect(getSpecTableName("OPTIMIZER")).toBeUndefined();
       expect(getSpecTableName("GATEWAY")).toBeUndefined();
       expect(getSpecTableName("SERVICE")).toBeUndefined();
+    });
+  });
+
+  describe("HubSpot mapping helpers", () => {
+    test("getHubspotCategoryValue maps known categories", () => {
+      expect(getHubspotCategoryValue("RACKING")).toBe("Mounting Hardware");
+      expect(getHubspotCategoryValue("BATTERY_EXPANSION")).toBe("Battery Expansion");
+    });
+
+    test("getHubspotCategoryValue returns undefined for unknown category", () => {
+      expect(getHubspotCategoryValue("UNKNOWN")).toBeUndefined();
+    });
+
+    test("getHubspotPropertiesFromMetadata maps supported hubspotProperty fields only", () => {
+      const mapped = getHubspotPropertiesFromMetadata("BATTERY", {
+        capacityKwh: 13.5,
+        energyStorageCapacity: 13.5,
+        chemistry: "LFP", // no hubspotProperty on this field, should be ignored
+      });
+
+      expect(mapped).toEqual({
+        size__kwh_: 13.5,
+        energy_storage_capacity: 13.5,
+      });
+    });
+
+    test("getHubspotPropertiesFromMetadata ignores nullish/empty values", () => {
+      const mapped = getHubspotPropertiesFromMetadata("INVERTER", {
+        acOutputKw: "",
+        maxDcInput: 8, // no hubspotProperty on this field
+      });
+
+      expect(mapped).toEqual({});
+    });
+  });
+
+  describe("Zuper mapping helpers", () => {
+    test("getZuperCategoryValue maps known categories", () => {
+      expect(getZuperCategoryValue("RACKING")).toBe("Mounting Hardware");
+      expect(getZuperCategoryValue("ELECTRICAL_BOS")).toBe("Electrical Hardwire");
+      expect(getZuperCategoryValue("BATTERY")).toBe("Battery");
+    });
+
+    test("getZuperCategoryValue returns undefined when unmapped", () => {
+      expect(getZuperCategoryValue("MODULE")).toBeUndefined();
+      expect(getZuperCategoryValue("UNKNOWN")).toBeUndefined();
     });
   });
 

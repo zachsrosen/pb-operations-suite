@@ -421,6 +421,25 @@ export interface CreateDealLineItemResult {
   usedProductId: string | null;
 }
 
+export interface UpsertHubSpotProductInput {
+  brand: string;
+  model: string;
+  description?: string | null;
+  sku?: string | null;
+  productCategory?: string | null;
+  sellPrice?: number | null;
+  unitCost?: number | null;
+  hardToProcure?: boolean | null;
+  length?: number | null;
+  width?: number | null;
+  additionalProperties?: Record<string, string | number | boolean>;
+}
+
+export interface UpsertHubSpotProductResult {
+  hubspotProductId: string;
+  created: boolean;
+}
+
 // All properties we need from HubSpot deals
 const DEAL_PROPERTIES = [
   // Standard
@@ -1661,6 +1680,201 @@ export async function fetchLineItemsForDeal(dealId: string): Promise<LineItem[]>
   } catch (error) {
     console.error("Error fetching line items:", error);
     return [];
+  }
+}
+
+function trimOrNull(value: string | null | undefined): string | null {
+  const trimmed = String(value || "").trim();
+  return trimmed || null;
+}
+
+function toHubSpotPropertyValue(value: string | number | boolean): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number") return String(value);
+  return value ? "true" : "false";
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+async function searchHubSpotProductIdByFilters(
+  token: string,
+  filters: Array<{ propertyName: string; value: string }>
+): Promise<string | null> {
+  if (filters.length === 0) return null;
+
+  const response = await fetch("https://api.hubapi.com/crm/v3/objects/products/search", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      filterGroups: [
+        {
+          filters: filters.map((f) => ({
+            propertyName: f.propertyName,
+            operator: "EQ",
+            value: f.value,
+          })),
+        },
+      ],
+      properties: ["hs_sku", "name", "manufacturer", "product_category"],
+      limit: 1,
+    }),
+  });
+
+  const raw = await response.text();
+  let json: { results?: Array<{ id?: string }> } = {};
+  try {
+    json = raw ? (JSON.parse(raw) as { results?: Array<{ id?: string }> }) : {};
+  } catch {
+    json = {};
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to search HubSpot products (${response.status}): ${raw || "unknown error"}`
+    );
+  }
+
+  return String(json.results?.[0]?.id || "").trim() || null;
+}
+
+async function upsertHubSpotProductRecord(
+  token: string,
+  existingId: string | null,
+  properties: Record<string, string>
+): Promise<UpsertHubSpotProductResult> {
+  if (existingId) {
+    const updateResponse = await fetch(
+      `https://api.hubapi.com/crm/v3/objects/products/${encodeURIComponent(existingId)}`,
+      {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ properties }),
+      }
+    );
+
+    const updateRaw = await updateResponse.text();
+    let updateJson: { id?: string; message?: string } = {};
+    try {
+      updateJson = updateRaw ? (JSON.parse(updateRaw) as { id?: string; message?: string }) : {};
+    } catch {
+      updateJson = {};
+    }
+
+    if (!updateResponse.ok) {
+      throw new Error(
+        `Failed to update HubSpot product (${updateResponse.status}): ` +
+          `${updateJson.message || updateRaw || "unknown error"}`
+      );
+    }
+
+    return {
+      hubspotProductId: String(updateJson.id || existingId).trim() || existingId,
+      created: false,
+    };
+  }
+
+  const createResponse = await fetch("https://api.hubapi.com/crm/v3/objects/products", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ properties }),
+  });
+
+  const createRaw = await createResponse.text();
+  let createJson: { id?: string; message?: string } = {};
+  try {
+    createJson = createRaw ? (JSON.parse(createRaw) as { id?: string; message?: string }) : {};
+  } catch {
+    createJson = {};
+  }
+
+  if (!createResponse.ok || !createJson?.id) {
+    throw new Error(
+      `Failed to create HubSpot product (${createResponse.status}): ` +
+        `${createJson.message || createRaw || "unknown error"}`
+    );
+  }
+
+  return {
+    hubspotProductId: String(createJson.id).trim(),
+    created: true,
+  };
+}
+
+export async function createOrUpdateHubSpotProduct(
+  input: UpsertHubSpotProductInput
+): Promise<UpsertHubSpotProductResult> {
+  const token = process.env.HUBSPOT_ACCESS_TOKEN;
+  if (!token) throw new Error("HUBSPOT_ACCESS_TOKEN is not configured");
+
+  const brand = trimOrNull(input.brand);
+  const model = trimOrNull(input.model);
+  const sku = trimOrNull(input.sku) || model;
+  const description = trimOrNull(input.description);
+  const productCategory = trimOrNull(input.productCategory);
+  const name = `${brand || ""} ${model || ""}`.trim();
+
+  if (!name) throw new Error("HubSpot product requires brand and model");
+
+  let existingId: string | null = null;
+  if (sku) {
+    existingId = await searchHubSpotProductIdByFilters(token, [
+      { propertyName: "hs_sku", value: sku },
+    ]);
+  }
+
+  if (!existingId) {
+    const filters = [{ propertyName: "name", value: name }];
+    if (brand) filters.push({ propertyName: "manufacturer", value: brand });
+    if (productCategory) filters.push({ propertyName: "product_category", value: productCategory });
+    existingId = await searchHubSpotProductIdByFilters(token, filters);
+  }
+
+  const coreProperties: Record<string, string> = {
+    name,
+  };
+  if (sku) coreProperties.hs_sku = sku;
+  if (brand) coreProperties.manufacturer = brand;
+  if (description) coreProperties.description = description;
+  if (productCategory) coreProperties.product_category = productCategory;
+  if (isFiniteNumber(input.sellPrice)) coreProperties.price = String(input.sellPrice);
+  if (isFiniteNumber(input.unitCost)) coreProperties.hs_cost_of_goods_sold = String(input.unitCost);
+
+  const optionalProperties: Record<string, string> = {};
+  if (typeof input.hardToProcure === "boolean") {
+    optionalProperties.hard_to_procure = input.hardToProcure ? "true" : "false";
+  }
+  if (isFiniteNumber(input.length)) optionalProperties.length = String(input.length);
+  if (isFiniteNumber(input.width)) optionalProperties.width = String(input.width);
+  for (const [key, value] of Object.entries(input.additionalProperties || {})) {
+    optionalProperties[key] = toHubSpotPropertyValue(value);
+  }
+
+  const withOptional = { ...coreProperties, ...optionalProperties };
+  const hasOptional = Object.keys(optionalProperties).length > 0;
+
+  try {
+    return await upsertHubSpotProductRecord(token, existingId, withOptional);
+  } catch (error) {
+    const message = getErrorMessage(error);
+    if (!hasOptional || !message.includes("(400)")) {
+      throw error;
+    }
+
+    console.warn(
+      `[HubSpot] Retrying product upsert with core properties only after validation failure: ${message}`
+    );
+    return upsertHubSpotProductRecord(token, existingId, coreProperties);
   }
 }
 
