@@ -6,6 +6,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
+import { ConstructionProjectDetailPanel } from "@/components/scheduler/ConstructionProjectDetailPanel";
 import { LOCATION_TIMEZONES } from "@/lib/constants";
 import { DEFAULT_LOCATION_CAPACITY } from "@/lib/schedule-optimizer";
 import {
@@ -214,6 +215,14 @@ function toDateStr(d: Date): string {
 
 function getTodayStr(): string {
   return toDateStr(new Date());
+}
+
+function getNextWorkdayFromToday(): string {
+  const d = new Date();
+  while (d.getDay() === 0 || d.getDay() === 6) {
+    d.setDate(d.getDate() + 1);
+  }
+  return toDateStr(d);
 }
 
 function isPastDate(dateStr: string): boolean {
@@ -1129,6 +1138,69 @@ export default function ConstructionSchedulerPage() {
     setTimeout(() => fetchProjects(), 1000);
   }, [fetchProjects, getTentativeRecordId, handleCancelTentative, projects, showToast, trackFeature]);
 
+  const selectedProjectDetail = useMemo(() => {
+    if (!selectedProject) return null;
+    const manualDate = manualSchedules[selectedProject.id] || null;
+    const scheduledDate = manualDate || getEffectiveInstallStartDate(selectedProject);
+    const scheduleSourceLabel = manualDate
+      ? "Manual override"
+      : selectedProject.zuperScheduledStart
+        ? "Zuper"
+        : selectedProject.scheduleDate
+          ? "HubSpot"
+          : "Not scheduled";
+    const normalizedZuperDates = normalizeZuperBoundaryDates({
+      startIso: selectedProject.zuperScheduledStart,
+      endIso: selectedProject.zuperScheduledEnd,
+      timezone: LOCATION_TIMEZONES[selectedProject.location || ""] || "America/Denver",
+    });
+    const isTentative = Boolean(
+      getTentativeRecordId(selectedProject.id) ||
+      selectedProject.installStatus.toLowerCase().includes("tentative")
+    );
+
+    return {
+      scheduledDate,
+      scheduleSourceLabel,
+      isTentative,
+      isOverdue: isInstallOverdue(selectedProject, manualDate || undefined),
+      scheduleDurationDays: getEffectiveInstallDays(selectedProject),
+      zuperRangeStart: normalizedZuperDates.startDate,
+      zuperRangeEnd: normalizedZuperDates.endDate,
+    };
+  }, [selectedProject, manualSchedules, getTentativeRecordId]);
+
+  const openSelectedProjectScheduleModal = useCallback(() => {
+    if (!selectedProject) return;
+    const date =
+      manualSchedules[selectedProject.id] ||
+      getEffectiveInstallStartDate(selectedProject) ||
+      getNextWorkdayFromToday();
+    trackFeature("schedule-modal-open", "Opened install schedule modal via detail panel", {
+      scheduler: "construction",
+      projectId: selectedProject.id,
+      projectName: selectedProject.name,
+      date,
+      method: "detail-panel",
+    });
+    setScheduleModal({ project: selectedProject, date });
+  }, [selectedProject, manualSchedules, trackFeature]);
+
+  const handleUnscheduleSelectedProject = useCallback(() => {
+    if (!selectedProject) return;
+    cancelSchedule(selectedProject.id);
+  }, [selectedProject, cancelSchedule]);
+
+  const handleConfirmSelectedTentative = useCallback(() => {
+    if (!selectedProject) return;
+    handleConfirmTentative(selectedProject.id);
+  }, [selectedProject, handleConfirmTentative]);
+
+  const handleCancelSelectedTentative = useCallback(() => {
+    if (!selectedProject) return;
+    handleCancelTentative(selectedProject.id);
+  }, [selectedProject, handleCancelTentative]);
+
   /* ================================================================ */
   /*  Navigation                                                       */
   /* ================================================================ */
@@ -1448,6 +1520,27 @@ export default function ConstructionSchedulerPage() {
                 )}
               </div>
             </div>
+
+            {selectedProject && selectedProjectDetail && (
+              <ConstructionProjectDetailPanel
+                project={selectedProject}
+                scheduledDate={selectedProjectDetail.scheduledDate}
+                scheduleDurationDays={selectedProjectDetail.scheduleDurationDays}
+                scheduleSourceLabel={selectedProjectDetail.scheduleSourceLabel}
+                isOverdue={selectedProjectDetail.isOverdue}
+                isTentative={selectedProjectDetail.isTentative}
+                confirmingTentative={confirmingTentative}
+                cancellingTentative={cancellingTentative}
+                zuperWebBaseUrl={zuperWebBaseUrl}
+                zuperRangeStart={selectedProjectDetail.zuperRangeStart}
+                zuperRangeEnd={selectedProjectDetail.zuperRangeEnd}
+                onOpenSchedule={openSelectedProjectScheduleModal}
+                onClearSelection={() => setSelectedProject(null)}
+                onUnschedule={handleUnscheduleSelectedProject}
+                onConfirmTentative={handleConfirmSelectedTentative}
+                onCancelTentative={handleCancelSelectedTentative}
+              />
+            )}
           </div>
 
           {/* Main Area - Calendar or List */}
