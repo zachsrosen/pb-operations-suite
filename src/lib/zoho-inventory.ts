@@ -159,6 +159,12 @@ const BOM_QUERY_OVERRIDES: ReadonlyArray<{ pattern: RegExp; sku: string }> = [
   // MCI-2 (all variants, standard or High Current) → always use High Current item
   { pattern: /\bmci-?2\b/i,                               sku: "1879359-15-B" },
 
+  // IMO Rapid Shutdown Device (SI16 series)
+  { pattern: /\bimo\b|\bsi16\b/i,                         sku: "IMO SI16-PEL64R-2" },
+
+  // Tesla Backup Switch (1624171) — paired with PW3 but not in planset BOM
+  { pattern: /\bbackup\s+switch\b|\b1624171\b/i,          sku: "1624171-00-J" },
+
   // 60A non-fused AC disconnect
   { pattern: /\b60a?\s+non.?fused\b/i,                   sku: "DG222URB" },
 
@@ -174,19 +180,28 @@ const BOM_QUERY_OVERRIDES: ReadonlyArray<{ pattern: RegExp; sku: string }> = [
   // 125A sub panel
   { pattern: /\b125a?\s+sub\s*panel\b/i,                 sku: "PAL2412" },
 
-  // IronRidge XR10 168" rail — any XR10 query routes to the rail, not the splice
-  // (Bonded Splice searches never include "XR10" as a search term)
-  { pattern: /\bxr10\b/i,                                sku: "XR-10-168M" },
+  // IronRidge XR100 Bonded Splice — must come before the XR100 rail pattern below
+  { pattern: /\bxr100\s*(?:bonded\s*)?splice\b|\bxr-?100.*splice\b/i, sku: "XR100-BOSS-01-M1" },
+
+  // IronRidge XR100 168" rail (metal/trapezoidal roof) — must come before XR10 pattern
+  { pattern: /\bxr100\b|\bxr-100\b/i,                    sku: "XR-100-168A" },
+
+  // IronRidge XR10 Bonded Splice — must come before the XR10 rail pattern below
+  { pattern: /\bxr10\s*(?:bonded\s*)?splice\b|\bxr-?10.*splice\b/i,  sku: "XR10-BOSS-01-M1" },
+
+  // IronRidge XR10 168" rail — any remaining XR10 query (no "splice" keyword) → rail
+  { pattern: /\bxr10\b|\bxr-10\b/i,                      sku: "XR-10-168M" },
 
   // IronRidge HUG attachment (Halo UltraGrip) — the word "hug" appears in the
   // RD structural screw name "(HUG Screws)" causing false positives without this
   { pattern: /\bhug\b/i,                                 sku: "2101151" },
 
-  // IronRidge XR10 Bonded Splice
+  // IronRidge XR10 Bonded Splice (generic "bonded splice" query — default to XR10)
   { pattern: /\bbonded\s+splice\b/i,                     sku: "XR10-BOSS-01-M1" },
 
-  // IronRidge Mid Clamp → UFO mid clamp (current IronRidge mid-clamp product)
-  { pattern: /\bmid\s+clamp\b/i,                         sku: "UFO-CL-01-A1" },
+  // IronRidge Mid Clamp → UFO mid clamp Black (ops standard for asphalt/trapezoidal roofs)
+  // Note: standing seam (S-5-U system) uses A1/Mill — those jobs don't use "mid clamp" phrasing
+  { pattern: /\bmid\s+clamp\b/i,                         sku: "UFO-CL-01-B1" },
 
   // IronRidge End Clamp → UFO end clamp
   { pattern: /\bend\s+clamp\b/i,                         sku: "UFO-END-01-B1" },
