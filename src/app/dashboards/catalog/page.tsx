@@ -6,6 +6,7 @@ import Link from "next/link";
 import DashboardShell from "@/components/DashboardShell";
 import { useToast } from "@/contexts/ToastContext";
 import { useSession } from "next-auth/react";
+import { FORM_CATEGORIES } from "@/lib/catalog-fields";
 
 type Tab = "skus" | "sync" | "pending";
 
@@ -119,16 +120,7 @@ interface PushEditDraft {
 
 const ADMIN_ROLES = ["ADMIN", "OWNER", "MANAGER"];
 const SYSTEM_OPTIONS = ["INTERNAL", "ZOHO", "HUBSPOT", "ZUPER"] as const;
-const CATEGORIES = [
-  "MODULE",
-  "INVERTER",
-  "BATTERY",
-  "EV_CHARGER",
-  "RAPID_SHUTDOWN",
-  "RACKING",
-  "ELECTRICAL_BOS",
-  "MONITORING",
-] as const;
+const CATEGORIES = FORM_CATEGORIES;
 
 function money(value: number | null): string {
   if (value == null) return "—";
@@ -711,12 +703,20 @@ export default function CatalogPage() {
                               </button>
                             </div>
                           ) : (
-                            <button
-                              onClick={() => beginSkuEdit(sku)}
-                              className="text-cyan-400 hover:text-cyan-300"
-                            >
-                              Edit
-                            </button>
+                            <div className="inline-flex items-center gap-3">
+                              <button
+                                onClick={() => beginSkuEdit(sku)}
+                                className="text-cyan-400 hover:text-cyan-300"
+                              >
+                                Quick Edit
+                              </button>
+                              <Link
+                                href={`/dashboards/catalog/edit/${sku.id}`}
+                                className="text-cyan-400 hover:text-cyan-300"
+                              >
+                                Full Edit
+                              </Link>
+                            </div>
                           )}
                         </td>
                       )}

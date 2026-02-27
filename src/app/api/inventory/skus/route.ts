@@ -11,6 +11,12 @@ import { prisma } from "@/lib/db";
 import { requireApiAuth } from "@/lib/api-auth";
 import { tagSentryRequest } from "@/lib/sentry-request";
 import { EquipmentCategory } from "@/generated/prisma/enums";
+import {
+  CATEGORY_CONFIGS,
+  filterMetadataToSpecFields,
+  getCategoryFields,
+  getSpecTableName,
+} from "@/lib/catalog-fields";
 
 // Roles allowed to create/upsert SKUs
 const WRITE_ROLES = ["ADMIN", "OWNER", "PROJECT_MANAGER"];
@@ -18,13 +24,50 @@ const WRITE_ROLES = ["ADMIN", "OWNER", "PROJECT_MANAGER"];
 // Valid EquipmentCategory values for validation
 const VALID_CATEGORIES = Object.values(EquipmentCategory);
 
-type ParsedNumber = { provided: false } | { provided: true; value: number | null } | { provided: true; error: string };
-type ParsedBoolean = { provided: false } | { provided: true; value: boolean } | { provided: true; error: string };
+const SPEC_TABLES = Array.from(
+  new Set(
+    Object.values(CATEGORY_CONFIGS)
+      .map((cfg) => cfg.specTable)
+      .filter((table): table is string => Boolean(table))
+  )
+);
+
+const SKU_INCLUDE = {
+  stockLevels: {
+    select: { location: true, quantityOnHand: true },
+  },
+  moduleSpec: true,
+  inverterSpec: true,
+  batterySpec: true,
+  evChargerSpec: true,
+  mountingHardwareSpec: true,
+  electricalHardwareSpec: true,
+  relayDeviceSpec: true,
+} as const;
+
+type ParsedNumber =
+  | { provided: false }
+  | { provided: true; value: number | null }
+  | { provided: true; error: string };
+
+type ParsedBoolean =
+  | { provided: false }
+  | { provided: true; value: boolean }
+  | { provided: true; error: string };
+
+type ParsedMetadata =
+  | { provided: false }
+  | { provided: true; value: Record<string, unknown> | null }
+  | { provided: true; error: string };
 
 function isPrismaMissingColumnError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
   const code = (error as { code?: unknown }).code;
   return code === "P2022";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
 function parseOptionalNumber(input: Record<string, unknown>, key: string): ParsedNumber {
@@ -60,6 +103,61 @@ function parseOptionalBoolean(input: Record<string, unknown>, key: string): Pars
   return { provided: true, error: `${key} must be a boolean` };
 }
 
+function parseOptionalMetadata(
+  input: Record<string, unknown>,
+  category: string,
+  key = "metadata"
+): ParsedMetadata {
+  if (!(key in input)) return { provided: false };
+
+  const raw = input[key];
+  if (raw === null || raw === undefined) return { provided: true, value: null };
+  if (!isRecord(raw)) {
+    return { provided: true, error: `${key} must be an object` };
+  }
+
+  const filtered = filterMetadataToSpecFields(category, raw);
+  const normalized: Record<string, unknown> = {};
+
+  for (const field of getCategoryFields(category)) {
+    if (!(field.key in filtered)) continue;
+    const value = filtered[field.key];
+
+    if (field.type === "number") {
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed)) {
+        return { provided: true, error: `${field.key} must be a valid number` };
+      }
+      normalized[field.key] = parsed;
+      continue;
+    }
+
+    if (field.type === "toggle") {
+      if (typeof value === "boolean") {
+        normalized[field.key] = value;
+        continue;
+      }
+      if (typeof value === "string") {
+        const lower = value.trim().toLowerCase();
+        if (lower === "true") {
+          normalized[field.key] = true;
+          continue;
+        }
+        if (lower === "false") {
+          normalized[field.key] = false;
+          continue;
+        }
+      }
+      return { provided: true, error: `${field.key} must be a boolean` };
+    }
+
+    const text = String(value ?? "").trim();
+    if (text) normalized[field.key] = text;
+  }
+
+  return { provided: true, value: Object.keys(normalized).length > 0 ? normalized : null };
+}
+
 function buildSyncHealth(sku: {
   zohoItemId: string | null;
   hubspotProductId: string | null;
@@ -76,6 +174,70 @@ function buildSyncHealth(sku: {
     zuper,
     connectedCount,
     fullySynced: connectedCount === 3,
+  };
+}
+
+function specRecordToMetadata(record: unknown): Record<string, unknown> {
+  if (!isRecord(record)) return {};
+  const metadata: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(record)) {
+    if (key === "id" || key === "skuId") continue;
+    if (value === null || value === undefined || value === "") continue;
+    metadata[key] = value;
+  }
+  return metadata;
+}
+
+function buildSkuMetadata(category: string, sku: Record<string, unknown>): Record<string, unknown> {
+  const specTable = getSpecTableName(category);
+  if (!specTable) return {};
+  return specRecordToMetadata(sku[specTable]);
+}
+
+async function applySkuMetadata(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  tx: any,
+  skuId: string,
+  category: string,
+  metadata: Record<string, unknown> | null
+) {
+  const targetTable = getSpecTableName(category);
+  if (!targetTable) return;
+
+  for (const table of SPEC_TABLES) {
+    if (table === targetTable) continue;
+    const model = tx[table];
+    if (model?.deleteMany) {
+      await model.deleteMany({ where: { skuId } });
+    }
+  }
+
+  const model = tx[targetTable];
+  if (!model?.deleteMany || !model?.upsert) return;
+
+  if (!metadata || Object.keys(metadata).length === 0) {
+    await model.deleteMany({ where: { skuId } });
+    return;
+  }
+
+  await model.upsert({
+    where: { skuId },
+    create: { skuId, ...metadata },
+    update: metadata,
+  });
+}
+
+function enrichSku<T extends Record<string, unknown>>(sku: T) {
+  const category = String(sku.category || "");
+  const syncSource = sku as unknown as {
+    zohoItemId: string | null;
+    hubspotProductId: string | null;
+    zuperItemId: string | null;
+  };
+  return {
+    ...sku,
+    metadata: buildSkuMetadata(category, sku),
+    syncHealth: buildSyncHealth(syncSource),
   };
 }
 
@@ -126,37 +288,14 @@ export async function GET(request: NextRequest) {
       { model: "asc" as const },
     ];
 
-    let skus: Array<{
-      id: string;
-      category: EquipmentCategory;
-      brand: string;
-      model: string;
-      description: string | null;
-      vendorName: string | null;
-      vendorPartNumber: string | null;
-      unitSpec: number | null;
-      unitLabel: string | null;
-      unitCost: number | null;
-      sellPrice: number | null;
-      isActive: boolean;
-      zohoItemId: string | null;
-      hubspotProductId: string | null;
-      zuperItemId: string | null;
-      createdAt: Date;
-      updatedAt: Date;
-      stockLevels: { location: string; quantityOnHand: number }[];
-    }> = [];
+    let skus: Array<Record<string, unknown>> = [];
 
     try {
       skus = await prisma.equipmentSku.findMany({
         where,
-        include: {
-          stockLevels: {
-            select: { location: true, quantityOnHand: true },
-          },
-        },
+        include: SKU_INCLUDE,
         orderBy,
-      });
+      }) as unknown as Array<Record<string, unknown>>;
     } catch (error) {
       if (!isPrismaMissingColumnError(error)) throw error;
 
@@ -186,22 +325,25 @@ export async function GET(request: NextRequest) {
         orderBy,
       });
 
-      skus = legacySkus.map((sku) => ({
+      skus = legacySkus.map((sku: Record<string, unknown>) => ({
         ...sku,
         description: null,
         vendorName: null,
         vendorPartNumber: null,
         unitCost: null,
         sellPrice: null,
+        sku: null,
+        hardToProcure: false,
+        length: null,
+        width: null,
+        weight: null,
         hubspotProductId: null,
         zuperItemId: null,
+        metadata: {},
       }));
     }
 
-    const enriched = skus.map((sku) => ({
-      ...sku,
-      syncHealth: buildSyncHealth(sku),
-    }));
+    const enriched = skus.map((sku) => enrichSku(sku));
 
     const summary = {
       total: enriched.length,
@@ -228,8 +370,9 @@ export async function GET(request: NextRequest) {
  *
  * Body: {
  *   category, brand, model,
- *   description?, vendorName?, vendorPartNumber?,
+ *   description?, vendorName?, vendorPartNumber?, sku?,
  *   unitSpec?, unitLabel?, unitCost?, sellPrice?,
+ *   hardToProcure?, length?, width?, weight?, metadata?,
  *   zohoItemId?, hubspotProductId?, zuperItemId?
  * }
  *
@@ -303,63 +446,98 @@ export async function POST(request: NextRequest) {
     const unitSpecParsed = parseOptionalNumber(body, "unitSpec");
     const unitCostParsed = parseOptionalNumber(body, "unitCost");
     const sellPriceParsed = parseOptionalNumber(body, "sellPrice");
+    const lengthParsed = parseOptionalNumber(body, "length");
+    const widthParsed = parseOptionalNumber(body, "width");
+    const weightParsed = parseOptionalNumber(body, "weight");
 
     if ("error" in unitSpecParsed) return NextResponse.json({ error: unitSpecParsed.error }, { status: 400 });
     if ("error" in unitCostParsed) return NextResponse.json({ error: unitCostParsed.error }, { status: 400 });
     if ("error" in sellPriceParsed) return NextResponse.json({ error: sellPriceParsed.error }, { status: 400 });
+    if ("error" in lengthParsed) return NextResponse.json({ error: lengthParsed.error }, { status: 400 });
+    if ("error" in widthParsed) return NextResponse.json({ error: widthParsed.error }, { status: 400 });
+    if ("error" in weightParsed) return NextResponse.json({ error: weightParsed.error }, { status: 400 });
+
+    const hardToProcureParsed = parseOptionalBoolean(body, "hardToProcure");
+    if ("error" in hardToProcureParsed) return NextResponse.json({ error: hardToProcureParsed.error }, { status: 400 });
 
     const unitLabelParsed = parseOptionalString(body, "unitLabel");
     const descriptionParsed = parseOptionalString(body, "description");
+    const skuParsed = parseOptionalString(body, "sku");
     const vendorNameParsed = parseOptionalString(body, "vendorName");
     const vendorPartParsed = parseOptionalString(body, "vendorPartNumber");
     const zohoItemParsed = parseOptionalString(body, "zohoItemId");
     const hubspotProductParsed = parseOptionalString(body, "hubspotProductId");
     const zuperItemParsed = parseOptionalString(body, "zuperItemId");
+    const metadataParsed = parseOptionalMetadata(body, category as string);
+    if ("error" in metadataParsed) return NextResponse.json({ error: metadataParsed.error }, { status: 400 });
 
-    const sku = await prisma.equipmentSku.upsert({
-      where: {
-        category_brand_model: {
+    const upserted = await prisma.$transaction(async (
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      tx: any
+    ) => {
+      const skuRecord = await tx.equipmentSku.upsert({
+        where: {
+          category_brand_model: {
+            category: category as EquipmentCategory,
+            brand: trimmedBrand,
+            model: trimmedModel,
+          },
+        },
+        update: {
+          ...(unitSpecParsed.provided && { unitSpec: unitSpecParsed.value }),
+          ...(unitLabelParsed.provided && { unitLabel: unitLabelParsed.value }),
+          ...(descriptionParsed.provided && { description: descriptionParsed.value }),
+          ...(skuParsed.provided && { sku: skuParsed.value }),
+          ...(vendorNameParsed.provided && { vendorName: vendorNameParsed.value }),
+          ...(vendorPartParsed.provided && { vendorPartNumber: vendorPartParsed.value }),
+          ...(unitCostParsed.provided && { unitCost: unitCostParsed.value }),
+          ...(sellPriceParsed.provided && { sellPrice: sellPriceParsed.value }),
+          ...(hardToProcureParsed.provided && { hardToProcure: hardToProcureParsed.value }),
+          ...(lengthParsed.provided && { length: lengthParsed.value }),
+          ...(widthParsed.provided && { width: widthParsed.value }),
+          ...(weightParsed.provided && { weight: weightParsed.value }),
+          ...(zohoItemParsed.provided && { zohoItemId: zohoItemParsed.value }),
+          ...(hubspotProductParsed.provided && { hubspotProductId: hubspotProductParsed.value }),
+          ...(zuperItemParsed.provided && { zuperItemId: zuperItemParsed.value }),
+          isActive: true,
+        },
+        create: {
           category: category as EquipmentCategory,
           brand: trimmedBrand,
           model: trimmedModel,
+          unitSpec: unitSpecParsed.provided ? unitSpecParsed.value : null,
+          unitLabel: unitLabelParsed.provided ? unitLabelParsed.value : null,
+          description: descriptionParsed.provided ? descriptionParsed.value : null,
+          sku: skuParsed.provided ? skuParsed.value : null,
+          vendorName: vendorNameParsed.provided ? vendorNameParsed.value : null,
+          vendorPartNumber: vendorPartParsed.provided ? vendorPartParsed.value : null,
+          unitCost: unitCostParsed.provided ? unitCostParsed.value : null,
+          sellPrice: sellPriceParsed.provided ? sellPriceParsed.value : null,
+          hardToProcure: hardToProcureParsed.provided ? hardToProcureParsed.value : false,
+          length: lengthParsed.provided ? lengthParsed.value : null,
+          width: widthParsed.provided ? widthParsed.value : null,
+          weight: weightParsed.provided ? weightParsed.value : null,
+          zohoItemId: zohoItemParsed.provided ? zohoItemParsed.value : null,
+          hubspotProductId: hubspotProductParsed.provided ? hubspotProductParsed.value : null,
+          zuperItemId: zuperItemParsed.provided ? zuperItemParsed.value : null,
         },
-      },
-      update: {
-        ...(unitSpecParsed.provided && { unitSpec: unitSpecParsed.value }),
-        ...(unitLabelParsed.provided && { unitLabel: unitLabelParsed.value }),
-        ...(descriptionParsed.provided && { description: descriptionParsed.value }),
-        ...(vendorNameParsed.provided && { vendorName: vendorNameParsed.value }),
-        ...(vendorPartParsed.provided && { vendorPartNumber: vendorPartParsed.value }),
-        ...(unitCostParsed.provided && { unitCost: unitCostParsed.value }),
-        ...(sellPriceParsed.provided && { sellPrice: sellPriceParsed.value }),
-        ...(zohoItemParsed.provided && { zohoItemId: zohoItemParsed.value }),
-        ...(hubspotProductParsed.provided && { hubspotProductId: hubspotProductParsed.value }),
-        ...(zuperItemParsed.provided && { zuperItemId: zuperItemParsed.value }),
-        isActive: true,
-      },
-      create: {
-        category: category as EquipmentCategory,
-        brand: trimmedBrand,
-        model: trimmedModel,
-        unitSpec: unitSpecParsed.provided ? unitSpecParsed.value : null,
-        unitLabel: unitLabelParsed.provided ? unitLabelParsed.value : null,
-        description: descriptionParsed.provided ? descriptionParsed.value : null,
-        vendorName: vendorNameParsed.provided ? vendorNameParsed.value : null,
-        vendorPartNumber: vendorPartParsed.provided ? vendorPartParsed.value : null,
-        unitCost: unitCostParsed.provided ? unitCostParsed.value : null,
-        sellPrice: sellPriceParsed.provided ? sellPriceParsed.value : null,
-        zohoItemId: zohoItemParsed.provided ? zohoItemParsed.value : null,
-        hubspotProductId: hubspotProductParsed.provided ? hubspotProductParsed.value : null,
-        zuperItemId: zuperItemParsed.provided ? zuperItemParsed.value : null,
-      },
-      include: {
-        stockLevels: {
-          select: { location: true, quantityOnHand: true },
-        },
-      },
+      });
+
+      if (metadataParsed.provided) {
+        await applySkuMetadata(tx, skuRecord.id, category as string, metadataParsed.value);
+      }
+
+      return tx.equipmentSku.findUnique({
+        where: { id: skuRecord.id },
+        include: SKU_INCLUDE,
+      });
     });
 
-    return NextResponse.json({ sku: { ...sku, syncHealth: buildSyncHealth(sku) } }, { status: 201 });
+    if (!upserted) {
+      throw new Error("SKU upsert failed");
+    }
+
+    return NextResponse.json({ sku: enrichSku(upserted as unknown as Record<string, unknown>) }, { status: 201 });
   } catch (error) {
     if (isPrismaMissingColumnError(error)) {
       console.error("SKU upsert blocked by missing database columns:", error);
@@ -387,8 +565,9 @@ export async function POST(request: NextRequest) {
  * Body: {
  *   id: string,
  *   category?, brand?, model?,
- *   description?, vendorName?, vendorPartNumber?,
+ *   description?, vendorName?, vendorPartNumber?, sku?,
  *   unitSpec?, unitLabel?, unitCost?, sellPrice?,
+ *   hardToProcure?, length?, width?, weight?, metadata?,
  *   zohoItemId?, hubspotProductId?, zuperItemId?,
  *   isActive?
  * }
@@ -432,9 +611,17 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: "id is required" }, { status: 400 });
     }
 
+    const existing = await prisma.equipmentSku.findUnique({
+      where: { id },
+      select: { id: true, category: true },
+    });
+    if (!existing) {
+      return NextResponse.json({ error: "SKU not found" }, { status: 404 });
+    }
+
     const categoryProvided = "category" in body;
-    const category = categoryProvided ? String(body.category || "").trim() : "";
-    if (categoryProvided && !VALID_CATEGORIES.includes(category as EquipmentCategory)) {
+    const category = categoryProvided ? String(body.category || "").trim() : existing.category;
+    if (!VALID_CATEGORIES.includes(category as EquipmentCategory)) {
       return NextResponse.json(
         { error: `Invalid category. Must be one of: ${VALID_CATEGORIES.join(", ")}` },
         { status: 400 }
@@ -455,20 +642,32 @@ export async function PATCH(request: NextRequest) {
     const unitSpecParsed = parseOptionalNumber(body, "unitSpec");
     const unitCostParsed = parseOptionalNumber(body, "unitCost");
     const sellPriceParsed = parseOptionalNumber(body, "sellPrice");
+    const lengthParsed = parseOptionalNumber(body, "length");
+    const widthParsed = parseOptionalNumber(body, "width");
+    const weightParsed = parseOptionalNumber(body, "weight");
     if ("error" in unitSpecParsed) return NextResponse.json({ error: unitSpecParsed.error }, { status: 400 });
     if ("error" in unitCostParsed) return NextResponse.json({ error: unitCostParsed.error }, { status: 400 });
     if ("error" in sellPriceParsed) return NextResponse.json({ error: sellPriceParsed.error }, { status: 400 });
+    if ("error" in lengthParsed) return NextResponse.json({ error: lengthParsed.error }, { status: 400 });
+    if ("error" in widthParsed) return NextResponse.json({ error: widthParsed.error }, { status: 400 });
+    if ("error" in weightParsed) return NextResponse.json({ error: weightParsed.error }, { status: 400 });
 
     const isActiveParsed = parseOptionalBoolean(body, "isActive");
+    const hardToProcureParsed = parseOptionalBoolean(body, "hardToProcure");
     if ("error" in isActiveParsed) return NextResponse.json({ error: isActiveParsed.error }, { status: 400 });
+    if ("error" in hardToProcureParsed) return NextResponse.json({ error: hardToProcureParsed.error }, { status: 400 });
 
     const unitLabelParsed = parseOptionalString(body, "unitLabel");
     const descriptionParsed = parseOptionalString(body, "description");
+    const skuParsed = parseOptionalString(body, "sku");
     const vendorNameParsed = parseOptionalString(body, "vendorName");
     const vendorPartParsed = parseOptionalString(body, "vendorPartNumber");
     const zohoItemParsed = parseOptionalString(body, "zohoItemId");
     const hubspotProductParsed = parseOptionalString(body, "hubspotProductId");
     const zuperItemParsed = parseOptionalString(body, "zuperItemId");
+
+    const metadataParsed = parseOptionalMetadata(body, category as string);
+    if ("error" in metadataParsed) return NextResponse.json({ error: metadataParsed.error }, { status: 400 });
 
     const updateData: Record<string, unknown> = {
       ...(categoryProvided && { category: category as EquipmentCategory }),
@@ -477,31 +676,61 @@ export async function PATCH(request: NextRequest) {
       ...(unitSpecParsed.provided && { unitSpec: unitSpecParsed.value }),
       ...(unitLabelParsed.provided && { unitLabel: unitLabelParsed.value }),
       ...(descriptionParsed.provided && { description: descriptionParsed.value }),
+      ...(skuParsed.provided && { sku: skuParsed.value }),
       ...(vendorNameParsed.provided && { vendorName: vendorNameParsed.value }),
       ...(vendorPartParsed.provided && { vendorPartNumber: vendorPartParsed.value }),
       ...(unitCostParsed.provided && { unitCost: unitCostParsed.value }),
       ...(sellPriceParsed.provided && { sellPrice: sellPriceParsed.value }),
+      ...(hardToProcureParsed.provided && { hardToProcure: hardToProcureParsed.value }),
+      ...(lengthParsed.provided && { length: lengthParsed.value }),
+      ...(widthParsed.provided && { width: widthParsed.value }),
+      ...(weightParsed.provided && { weight: weightParsed.value }),
       ...(zohoItemParsed.provided && { zohoItemId: zohoItemParsed.value }),
       ...(hubspotProductParsed.provided && { hubspotProductId: hubspotProductParsed.value }),
       ...(zuperItemParsed.provided && { zuperItemId: zuperItemParsed.value }),
       ...(isActiveParsed.provided && { isActive: isActiveParsed.value }),
     };
 
-    if (Object.keys(updateData).length === 0) {
+    const categoryChanged = categoryProvided && category !== existing.category;
+    if (categoryChanged && !metadataParsed.provided) {
+      return NextResponse.json(
+        { error: "metadata is required when changing category to prevent accidental spec data loss" },
+        { status: 400 }
+      );
+    }
+
+    const metadataMutatesSpecs = metadataParsed.provided || categoryChanged;
+    if (Object.keys(updateData).length === 0 && !metadataMutatesSpecs) {
       return NextResponse.json({ error: "No fields provided to update" }, { status: 400 });
     }
 
-    const sku = await prisma.equipmentSku.update({
-      where: { id },
-      data: updateData,
-      include: {
-        stockLevels: {
-          select: { location: true, quantityOnHand: true },
-        },
-      },
+    const updated = await prisma.$transaction(async (
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      tx: any
+    ) => {
+      if (Object.keys(updateData).length > 0) {
+        await tx.equipmentSku.update({
+          where: { id },
+          data: updateData,
+        });
+      }
+
+      if (metadataMutatesSpecs) {
+        const metadataToApply = metadataParsed.provided ? metadataParsed.value : null;
+        await applySkuMetadata(tx, id, category as string, metadataToApply);
+      }
+
+      return tx.equipmentSku.findUnique({
+        where: { id },
+        include: SKU_INCLUDE,
+      });
     });
 
-    return NextResponse.json({ sku: { ...sku, syncHealth: buildSyncHealth(sku) } });
+    if (!updated) {
+      return NextResponse.json({ error: "SKU not found" }, { status: 404 });
+    }
+
+    return NextResponse.json({ sku: enrichSku(updated as unknown as Record<string, unknown>) });
   } catch (error) {
     if (isPrismaMissingColumnError(error)) {
       console.error("SKU patch blocked by missing database columns:", error);
