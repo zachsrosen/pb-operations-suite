@@ -173,6 +173,13 @@ export default function CatalogPage() {
   const [pendingCount, setPendingCount] = useState(0);
   const [categoryFilter, setCategoryFilter] = useState("");
   const [search, setSearch] = useState("");
+  const [activeFilter, setActiveFilter] = useState<"all" | "active" | "inactive">("all");
+  const [onlyUnsynced, setOnlyUnsynced] = useState(false);
+  const [missingPricingOnly, setMissingPricingOnly] = useState(false);
+  const [sortKey, setSortKey] = useState<"category" | "brand" | "model" | "unitCost" | "sellPrice" | "stock" | "margin">("category");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [selectedSkuIds, setSelectedSkuIds] = useState<string[]>([]);
+  const [bulkUpdating, setBulkUpdating] = useState(false);
   const [editingSkuId, setEditingSkuId] = useState<string | null>(null);
   const [skuEditDraft, setSkuEditDraft] = useState<SkuEditDraft | null>(null);
   const [savingSkuEdit, setSavingSkuEdit] = useState(false);
@@ -246,7 +253,7 @@ export default function CatalogPage() {
     if (tab === "pending") fetchPending();
   }, [tab, fetchPending]);
 
-  const filtered = useMemo(() => {
+  const baseFiltered = useMemo(() => {
     return skus.filter((s) => {
       if (categoryFilter && s.category !== categoryFilter) return false;
       if (search) {
@@ -262,10 +269,59 @@ export default function CatalogPage() {
     });
   }, [skus, categoryFilter, search]);
 
+  const filtered = useMemo(() => {
+    return baseFiltered.filter((s) => {
+      if (activeFilter === "active" && !s.isActive) return false;
+      if (activeFilter === "inactive" && s.isActive) return false;
+      if (missingPricingOnly && s.unitCost != null && s.sellPrice != null) return false;
+      if (onlyUnsynced && (s.syncHealth?.fullySynced ?? false)) return false;
+      return true;
+    });
+  }, [baseFiltered, activeFilter, missingPricingOnly, onlyUnsynced]);
+
+  const displayedSkus = useMemo(() => {
+    const rows = [...filtered];
+    const factor = sortDir === "asc" ? 1 : -1;
+    rows.sort((a, b) => {
+      if (sortKey === "category" || sortKey === "brand" || sortKey === "model") {
+        const av = String(a[sortKey] ?? "");
+        const bv = String(b[sortKey] ?? "");
+        return av.localeCompare(bv) * factor;
+      }
+      if (sortKey === "stock") {
+        const aStock = a.stockLevels.reduce((sum, l) => sum + l.quantityOnHand, 0);
+        const bStock = b.stockLevels.reduce((sum, l) => sum + l.quantityOnHand, 0);
+        return (aStock - bStock) * factor;
+      }
+      if (sortKey === "margin") {
+        const aMargin =
+          a.unitCost != null && a.sellPrice != null && a.sellPrice > 0
+            ? ((a.sellPrice - a.unitCost) / a.sellPrice) * 100
+            : -99999;
+        const bMargin =
+          b.unitCost != null && b.sellPrice != null && b.sellPrice > 0
+            ? ((b.sellPrice - b.unitCost) / b.sellPrice) * 100
+            : -99999;
+        return (aMargin - bMargin) * factor;
+      }
+      const aVal = a[sortKey] ?? -99999;
+      const bVal = b[sortKey] ?? -99999;
+      return (Number(aVal) - Number(bVal)) * factor;
+    });
+    return rows;
+  }, [filtered, sortKey, sortDir]);
+
+  const displayedIds = useMemo(() => displayedSkus.map((s) => s.id), [displayedSkus]);
+  const allDisplayedSelected = displayedIds.length > 0 && displayedIds.every((id) => selectedSkuIds.includes(id));
+
   const unsynced = useMemo(
     () => filtered.filter((sku) => !sku.syncHealth?.fullySynced),
     [filtered]
   );
+
+  useEffect(() => {
+    setSelectedSkuIds((prev) => prev.filter((id) => skus.some((s) => s.id === id)));
+  }, [skus]);
 
   async function handleApprove(id: string) {
     try {
@@ -377,6 +433,64 @@ export default function CatalogPage() {
       addToast({ type: "error", title: err instanceof Error ? err.message : "Failed to update SKU" });
     } finally {
       setSavingSkuEdit(false);
+    }
+  }
+
+  function toggleSelectSku(id: string) {
+    setSelectedSkuIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
+
+  function toggleSelectAllDisplayed() {
+    setSelectedSkuIds((prev) => {
+      if (allDisplayedSelected) {
+        return prev.filter((id) => !displayedIds.includes(id));
+      }
+      const next = new Set(prev);
+      for (const id of displayedIds) next.add(id);
+      return Array.from(next);
+    });
+  }
+
+  async function applyBulkActive(nextActive: boolean) {
+    if (selectedSkuIds.length === 0) return;
+    setBulkUpdating(true);
+    try {
+      const targets = [...selectedSkuIds];
+      const results = await Promise.allSettled(
+        targets.map(async (id) => {
+          const res = await fetch("/api/inventory/skus", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id, isActive: nextActive }),
+          });
+          const body = await res.json().catch(() => null) as { error?: string } | null;
+          if (!res.ok) throw new Error(body?.error || `Failed to update ${id}`);
+        })
+      );
+
+      const successCount = results.filter((r) => r.status === "fulfilled").length;
+      const failedIds = results
+        .map((r, idx) => ({ r, idx }))
+        .filter(({ r }) => r.status === "rejected")
+        .map(({ idx }) => targets[idx]);
+      const failedCount = failedIds.length;
+
+      if (successCount > 0) {
+        addToast({
+          type: failedCount > 0 ? "warning" : "success",
+          title: failedCount > 0 ? "Bulk update partially completed" : "Bulk update completed",
+          message: `${successCount} updated${failedCount > 0 ? `, ${failedCount} failed` : ""}.`,
+        });
+      } else {
+        addToast({ type: "error", title: "Bulk update failed" });
+      }
+
+      setSelectedSkuIds(failedIds);
+      fetchSkus();
+    } catch {
+      addToast({ type: "error", title: "Bulk update failed" });
+    } finally {
+      setBulkUpdating(false);
     }
   }
 
@@ -500,21 +614,117 @@ export default function CatalogPage() {
             className="rounded-lg border border-t-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-cyan-500/50 flex-1 min-w-48"
           />
           <span className="ml-auto text-xs text-muted self-center">
-            {filtered.length} of {skus.length} SKU{skus.length !== 1 ? "s" : ""}
+            {displayedSkus.length} of {skus.length} SKU{skus.length !== 1 ? "s" : ""}
           </span>
+          <div className="flex items-center gap-2">
+            <select
+              value={activeFilter}
+              onChange={(e) => setActiveFilter(e.target.value as "all" | "active" | "inactive")}
+              className="rounded-lg border border-t-border bg-surface px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
+            >
+              <option value="all">All Status</option>
+              <option value="active">Active Only</option>
+              <option value="inactive">Inactive Only</option>
+            </select>
+            <label className="inline-flex items-center gap-1 text-xs text-muted">
+              <input
+                type="checkbox"
+                checked={onlyUnsynced}
+                onChange={(e) => setOnlyUnsynced(e.target.checked)}
+              />
+              Unsynced only
+            </label>
+            <label className="inline-flex items-center gap-1 text-xs text-muted">
+              <input
+                type="checkbox"
+                checked={missingPricingOnly}
+                onChange={(e) => setMissingPricingOnly(e.target.checked)}
+              />
+              Missing pricing
+            </label>
+            <select
+              value={sortKey}
+              onChange={(e) => setSortKey(e.target.value as typeof sortKey)}
+              className="rounded-lg border border-t-border bg-surface px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
+            >
+              <option value="category">Sort: Category</option>
+              <option value="brand">Sort: Brand</option>
+              <option value="model">Sort: Model</option>
+              <option value="unitCost">Sort: Unit Cost</option>
+              <option value="sellPrice">Sort: Sell Price</option>
+              <option value="margin">Sort: Margin</option>
+              <option value="stock">Sort: Stock</option>
+            </select>
+            <button
+              onClick={() => setSortDir((prev) => (prev === "asc" ? "desc" : "asc"))}
+              className="rounded-lg border border-t-border bg-surface px-3 py-2 text-xs text-foreground hover:bg-surface-2"
+            >
+              {sortDir === "asc" ? "Asc" : "Desc"}
+            </button>
+            <button
+              onClick={() => {
+                setCategoryFilter("");
+                setSearch("");
+                setActiveFilter("all");
+                setOnlyUnsynced(false);
+                setMissingPricingOnly(false);
+                setSortKey("category");
+                setSortDir("asc");
+              }}
+              className="rounded-lg border border-t-border bg-surface px-3 py-2 text-xs text-muted hover:text-foreground hover:bg-surface-2"
+            >
+              Reset
+            </button>
+          </div>
         </div>
       )}
 
       {/* SKUs Tab */}
       {tab === "skus" && (
         <div className="space-y-4">
+          {isAdmin && selectedSkuIds.length > 0 && (
+            <div className="rounded-lg border border-t-border bg-surface-2 px-3 py-2 flex items-center gap-3">
+              <span className="text-xs text-muted">{selectedSkuIds.length} selected</span>
+              <button
+                onClick={() => applyBulkActive(true)}
+                disabled={bulkUpdating}
+                className="text-xs text-cyan-400 hover:text-cyan-300 disabled:opacity-50"
+              >
+                {bulkUpdating ? "Updating…" : "Set Active"}
+              </button>
+              <button
+                onClick={() => applyBulkActive(false)}
+                disabled={bulkUpdating}
+                className="text-xs text-orange-400 hover:text-orange-300 disabled:opacity-50"
+              >
+                {bulkUpdating ? "Updating…" : "Set Inactive"}
+              </button>
+              <button
+                onClick={() => setSelectedSkuIds([])}
+                disabled={bulkUpdating}
+                className="text-xs text-muted hover:text-foreground disabled:opacity-50"
+              >
+                Clear Selection
+              </button>
+            </div>
+          )}
           {skuLoading ? (
             <p className="text-sm text-muted animate-pulse py-8 text-center">Loading SKUs…</p>
           ) : (
             <div className="rounded-xl border border-t-border bg-surface shadow-card overflow-x-auto">
-              <table className="min-w-[1420px] w-full text-sm">
+              <table className="min-w-[1480px] w-full text-sm">
                 <thead>
                   <tr className="border-b border-t-border bg-surface-2 text-xs font-medium uppercase tracking-wide text-muted">
+                    {isAdmin && (
+                      <th className="px-4 py-2 text-left">
+                        <input
+                          type="checkbox"
+                          checked={allDisplayedSelected}
+                          onChange={toggleSelectAllDisplayed}
+                          aria-label="Select all displayed SKUs"
+                        />
+                      </th>
+                    )}
                     <th className="px-4 py-2 text-left">Category</th>
                     <th className="px-4 py-2 text-left">Brand</th>
                     <th className="px-4 py-2 text-left">Model / Description</th>
@@ -529,12 +739,22 @@ export default function CatalogPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.length === 0 ? (
+                  {displayedSkus.length === 0 ? (
                     <tr>
-                      <td colSpan={isAdmin ? 11 : 10} className="px-4 py-8 text-center text-sm text-muted">No SKUs found.</td>
+                      <td colSpan={isAdmin ? 12 : 10} className="px-4 py-8 text-center text-sm text-muted">No SKUs found.</td>
                     </tr>
-                  ) : filtered.map((sku) => (
+                  ) : displayedSkus.map((sku) => (
                     <tr key={sku.id} className="border-b border-t-border last:border-b-0 hover:bg-surface-2 transition-colors align-top">
+                      {isAdmin && (
+                        <td className="px-4 py-3 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={selectedSkuIds.includes(sku.id)}
+                            onChange={() => toggleSelectSku(sku.id)}
+                            aria-label={`Select ${sku.brand} ${sku.model}`}
+                          />
+                        </td>
+                      )}
                       <td className="px-4 py-3 text-xs text-muted font-medium">
                         {editingSkuId === sku.id && skuEditDraft ? (
                           <select
@@ -580,6 +800,9 @@ export default function CatalogPage() {
                         ) : (
                           <>
                             <div className="font-medium text-foreground">{sku.model}</div>
+                            {!sku.isActive && (
+                              <div className="text-[11px] text-orange-400 mt-0.5">Inactive</div>
+                            )}
                             {sku.description && (
                               <div className="text-xs text-muted mt-0.5">{sku.description}</div>
                             )}
