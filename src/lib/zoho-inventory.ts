@@ -32,6 +32,22 @@ export interface ZohoInventoryItem {
   unit?: string;                    // unit of measurement
 }
 
+export interface UpsertZohoItemInput {
+  brand: string;
+  model: string;
+  description?: string | null;
+  sku?: string | null;
+  unitLabel?: string | null;
+  vendorName?: string | null;
+  sellPrice?: number | null;
+  unitCost?: number | null;
+}
+
+export interface UpsertZohoItemResult {
+  zohoItemId: string;
+  created: boolean;
+}
+
 interface ZohoInventoryListItemsResponse {
   code?: number;
   message?: string;
@@ -40,6 +56,15 @@ interface ZohoInventoryListItemsResponse {
     page?: number;
     per_page?: number;
     has_more_page?: boolean;
+  };
+}
+
+interface ZohoCreateItemResponse {
+  code?: number;
+  message?: string;
+  item?: {
+    item_id?: string;
+    name?: string;
   };
 }
 
@@ -450,6 +475,84 @@ export class ZohoInventoryClient {
     return null;
   }
 
+  async createOrUpdateItem(input: UpsertZohoItemInput): Promise<UpsertZohoItemResult> {
+    const brand = trimOrUndefined(input.brand);
+    const model = trimOrUndefined(input.model);
+    const sku = trimOrUndefined(input.sku) || model;
+    const description = trimOrUndefined(input.description);
+    const unitLabel = trimOrUndefined(input.unitLabel);
+    const vendorName = trimOrUndefined(input.vendorName);
+
+    const name = `${brand || ""} ${model || ""}`.trim();
+    if (!name) {
+      throw new Error("Zoho item requires brand and model");
+    }
+
+    const items = await this.listItems();
+    const activeItems = items.filter((i) => !i.status || i.status === "active");
+
+    if (sku) {
+      const skuNorm = normalizeName(sku);
+      const bySku = activeItems.find((i) => i.sku && normalizeName(i.sku) === skuNorm);
+      if (bySku?.item_id) {
+        return { zohoItemId: bySku.item_id, created: false };
+      }
+    }
+
+    if (model) {
+      const partNorm = normalizeName(model);
+      const byPart = activeItems.find((i) => i.part_number && normalizeName(i.part_number) === partNorm);
+      if (byPart?.item_id) {
+        return { zohoItemId: byPart.item_id, created: false };
+      }
+    }
+
+    const nameNorm = normalizeName(name);
+    const byName = activeItems.find((i) => normalizeName(i.name) === nameNorm);
+    if (byName?.item_id) {
+      return { zohoItemId: byName.item_id, created: false };
+    }
+
+    const corePayload: Record<string, unknown> = {
+      name,
+      ...(sku ? { sku } : {}),
+      ...(description ? { description } : {}),
+      ...(model ? { part_number: model } : {}),
+    };
+
+    const optionalPayload: Record<string, unknown> = {
+      ...corePayload,
+      ...(typeof input.sellPrice === "number" && Number.isFinite(input.sellPrice)
+        ? { rate: input.sellPrice }
+        : {}),
+      ...(typeof input.unitCost === "number" && Number.isFinite(input.unitCost)
+        ? { purchase_rate: input.unitCost }
+        : {}),
+      ...(vendorName ? { vendor_name: vendorName } : {}),
+      ...(unitLabel ? { unit: unitLabel } : {}),
+    };
+
+    const hasOptionalFields = Object.keys(optionalPayload).length > Object.keys(corePayload).length;
+
+    let response: ZohoCreateItemResponse;
+    try {
+      response = await this.requestPost<ZohoCreateItemResponse>("/items", optionalPayload);
+    } catch (error) {
+      if (!hasOptionalFields) throw error;
+      response = await this.requestPost<ZohoCreateItemResponse>("/items", corePayload);
+    }
+
+    const createdId = trimOrUndefined(response.item?.item_id);
+    if (!createdId) {
+      throw new Error(response.message ?? "Zoho did not return an item ID");
+    }
+
+    // Bust matching cache so subsequent lookups can immediately see the new item.
+    _itemCache = null;
+
+    return { zohoItemId: createdId, created: true };
+  }
+
   async listVendors(): Promise<ZohoVendor[]> {
     return this.listContacts("vendor");
   }
@@ -740,3 +843,9 @@ export class ZohoInventoryClient {
 }
 
 export const zohoInventory = new ZohoInventoryClient();
+
+export async function createOrUpdateZohoItem(
+  input: UpsertZohoItemInput
+): Promise<UpsertZohoItemResult> {
+  return zohoInventory.createOrUpdateItem(input);
+}

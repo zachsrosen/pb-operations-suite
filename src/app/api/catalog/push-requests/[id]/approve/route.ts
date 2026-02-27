@@ -9,6 +9,7 @@ import {
   getSpecTableName,
 } from "@/lib/catalog-fields";
 import { createOrUpdateHubSpotProduct } from "@/lib/hubspot";
+import { createOrUpdateZohoItem } from "@/lib/zoho-inventory";
 
 const ADMIN_ROLES = ["ADMIN", "OWNER", "MANAGER"];
 const INTERNAL_CATEGORIES = Object.values(EquipmentCategory) as string[];
@@ -68,7 +69,7 @@ export async function POST(
 
   // Single transaction: internal catalog writes + status update are atomic.
   // If any step fails, neither the SKU nor the status change persists.
-  let responsePush = await prisma.$transaction(async (tx) => {
+  const approvedPush = await prisma.$transaction(async (tx) => {
     const results: Record<string, string | null> = {
       internalSkuId: null,
       zohoItemId: null,
@@ -155,6 +156,7 @@ export async function POST(
     });
   });
 
+  let hubspotPersistedPush: typeof approvedPush | null = null;
   if (push.systems.includes("HUBSPOT")) {
     try {
       const metadata =
@@ -176,25 +178,19 @@ export async function POST(
         additionalProperties: mappedMetadataProps,
       });
 
-      const followUpWrites: Array<Promise<unknown>> = [
-        prisma.pendingCatalogPush
-          .update({
-            where: { id },
+      hubspotPersistedPush = await prisma.$transaction(async (tx) => {
+        const pendingPush = await tx.pendingCatalogPush.update({
+          where: { id },
+          data: { hubspotProductId: hubspotResult.hubspotProductId },
+        });
+        if (approvedPush.internalSkuId) {
+          await tx.equipmentSku.update({
+            where: { id: approvedPush.internalSkuId },
             data: { hubspotProductId: hubspotResult.hubspotProductId },
-          })
-          .then((row) => {
-            responsePush = row;
-          }),
-      ];
-      if (responsePush.internalSkuId) {
-        followUpWrites.push(
-          prisma.equipmentSku.update({
-            where: { id: responsePush.internalSkuId },
-            data: { hubspotProductId: hubspotResult.hubspotProductId },
-          })
-        );
-      }
-      await Promise.all(followUpWrites);
+          });
+        }
+        return pendingPush;
+      });
 
       outcomes.HUBSPOT = {
         status: "success",
@@ -213,12 +209,51 @@ export async function POST(
       };
     }
   }
+
+  let zohoPersistedPush: typeof approvedPush | null = null;
   if (push.systems.includes("ZOHO")) {
-    console.log("[catalog/approve] ZOHO push not yet implemented for:", push.model);
-    outcomes.ZOHO = {
-      status: "not_implemented",
-      message: "Zoho product push is not implemented yet.",
-    };
+    try {
+      const zohoResult = await createOrUpdateZohoItem({
+        brand: push.brand,
+        model: push.model,
+        description: push.description,
+        sku: push.sku || push.model,
+        unitLabel: push.unitLabel,
+        vendorName: push.vendorName,
+        sellPrice: push.sellPrice,
+        unitCost: push.unitCost,
+      });
+
+      zohoPersistedPush = await prisma.$transaction(async (tx) => {
+        const pendingPush = await tx.pendingCatalogPush.update({
+          where: { id },
+          data: { zohoItemId: zohoResult.zohoItemId },
+        });
+        if (approvedPush.internalSkuId) {
+          await tx.equipmentSku.update({
+            where: { id: approvedPush.internalSkuId },
+            data: { zohoItemId: zohoResult.zohoItemId },
+          });
+        }
+        return pendingPush;
+      });
+
+      outcomes.ZOHO = {
+        status: "success",
+        externalId: zohoResult.zohoItemId,
+        message: zohoResult.created
+          ? "Created Zoho item."
+          : "Updated existing Zoho item.",
+      };
+    } catch (error) {
+      outcomes.ZOHO = {
+        status: "failed",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Zoho product push failed.",
+      };
+    }
   }
   if (push.systems.includes("ZUPER")) {
     console.log("[catalog/approve] ZUPER push not yet implemented for:", push.model);
@@ -227,6 +262,8 @@ export async function POST(
       message: "Zuper part push is not implemented yet.",
     };
   }
+
+  const responsePush = zohoPersistedPush ?? hubspotPersistedPush ?? approvedPush;
 
   return NextResponse.json({
     push: responsePush,
