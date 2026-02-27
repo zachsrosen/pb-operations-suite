@@ -577,6 +577,15 @@ enum EquipmentCategory {
   RACKING
   ELECTRICAL_BOS
   MONITORING
+  // New categories (added Feb 2026)
+  BATTERY_EXPANSION
+  OPTIMIZER
+  GATEWAY
+  D_AND_R
+  SERVICE
+  ADDER_SERVICES
+  TESLA_SYSTEM_COMPONENTS
+  PROJECT_MILESTONES
 }
 
 enum CatalogProductSource {
@@ -605,6 +614,11 @@ model EquipmentSku {
   unitLabel   String?           // "W", "kW AC", "kWh"
   unitCost    Float?
   sellPrice   Float?
+  sku         String?           // Cross-system product code
+  hardToProcure Boolean         @default(false)
+  length      Float?            // Physical dimension
+  width       Float?
+  weight      Float?
   isActive    Boolean           @default(true)
   hubspotProductId String?
   zuperItemId      String?
@@ -779,6 +793,16 @@ model PendingCatalogPush {
   category    String     // BOM category string (may not be EquipmentCategory enum)
   unitSpec    String?
   unitLabel   String?
+  sku              String?
+  vendorName       String?
+  vendorPartNumber String?
+  unitCost         Float?
+  sellPrice        Float?
+  hardToProcure    Boolean   @default(false)
+  length           Float?
+  width            Float?
+  weight           Float?
+  metadata         Json?     // Category-specific spec fields (stored until approval)
   // Which systems to push to
   systems     String[]   // ["INTERNAL", "ZOHO", "HUBSPOT", "ZUPER"]
   // Context
