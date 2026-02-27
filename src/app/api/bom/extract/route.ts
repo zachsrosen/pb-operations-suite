@@ -197,7 +197,7 @@ Return ONLY the JSON object. No markdown fences, no preamble.`
 
 // ── Route config ─────────────────────────────────────────────────────────────
 
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 // Disable Next.js body size limit — planset PDFs are typically 5–35MB and
 // would be rejected by the default 4MB cap before our code runs.
@@ -483,7 +483,9 @@ export async function POST(req: NextRequest) {
 
         // ── Stage 2: Upload to Anthropic Files API ─────────────────────────
         const sizeMb = (pdfBuffer.byteLength / 1024 / 1024).toFixed(1);
-        send({ type: "progress", step: "uploading", message: `Uploading to BOM Tool (${sizeMb} MB)…` });
+        const pageCountEarly = getPdfPageCount(pdfBuffer);
+        const pageLabel = pageCountEarly ? `, ${pageCountEarly}-page planset` : "";
+        send({ type: "progress", step: "uploading", message: `Uploading to BOM Tool (${sizeMb} MB${pageLabel})…` });
 
         try {
           const uploadedFile = await client.beta.files.upload({
@@ -499,8 +501,7 @@ export async function POST(req: NextRequest) {
         }
 
         // ── Stage 3: Extract with Claude ───────────────────────────────────
-        const pageCount = getPdfPageCount(pdfBuffer);
-        const pageStr = pageCount ? ` — reading ${pageCount}-page planset` : "";
+        const pageStr = pageCountEarly ? ` — reading ${pageCountEarly}-page planset` : "";
         send({ type: "progress", step: "extracting", message: `Extracting BOM${pageStr} (30–60 seconds)…` });
 
         let rawText = "";
