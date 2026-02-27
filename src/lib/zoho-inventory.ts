@@ -24,6 +24,12 @@ export interface ZohoInventoryItem {
   available_stock?: number | string;
   locations?: ZohoInventoryLocationStock[];
   warehouses?: ZohoInventoryLocationStock[];
+  rate?: number;                    // sell price
+  purchase_rate?: number;           // unit cost
+  part_number?: string;             // model/part number
+  vendor_id?: string;               // vendor reference
+  vendor_name?: string;             // vendor name
+  unit?: string;                    // unit of measurement
 }
 
 interface ZohoInventoryListItemsResponse {

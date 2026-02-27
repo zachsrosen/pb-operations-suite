@@ -727,7 +727,7 @@ async function fetchZohoProducts(): Promise<{ products: NormalizedProduct[]; err
       const sku = String(item.sku || "").trim() || null;
       const status = String(item.status || "").trim() || null;
       const description = String((item as ZohoInventoryItem & { description?: string }).description || "").trim() || null;
-      const price = null;
+      const price = typeof item.rate === "number" ? item.rate : null;
 
       return {
         source: "zoho",
