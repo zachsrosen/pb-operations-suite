@@ -237,11 +237,13 @@ export async function POST(request: NextRequest) {
 
   // 4. Create PO in Zoho
   const address = bomData?.project?.address ?? "";
+  const projMatch = snapshot.dealName.match(/PROJ-(\d+)/);
+  const poNumber = projMatch ? `PO-${projMatch[1]} (TEST)` : `PO-${dealId} (TEST)`;
   let poResult: { purchaseorder_id: string; purchaseorder_number: string };
   try {
     poResult = await zohoInventory.createPurchaseOrder({
       vendor_id: vendorId,
-      purchaseorder_number: `PO-${dealId} (TEST)`,
+      purchaseorder_number: poNumber,
       reference_number: snapshot.dealName.slice(0, 50),
       notes: `Generated from PB Ops BOM v${version}${address ? ` — ${address}` : ""}`,
       status: "draft",
