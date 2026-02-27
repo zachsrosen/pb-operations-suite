@@ -7,6 +7,32 @@ import { getSpecTableName } from "@/lib/catalog-fields";
 
 const ADMIN_ROLES = ["ADMIN", "OWNER", "MANAGER"];
 const INTERNAL_CATEGORIES = Object.values(EquipmentCategory) as string[];
+const VALID_SYSTEMS = ["INTERNAL", "ZOHO", "HUBSPOT", "ZUPER"] as const;
+
+type SystemName = typeof VALID_SYSTEMS[number];
+type SystemOutcomeStatus = "success" | "failed" | "skipped" | "not_implemented";
+
+interface SystemOutcome {
+  status: SystemOutcomeStatus;
+  message?: string;
+  externalId?: string | null;
+}
+
+function makeSummary(outcomes: Partial<Record<SystemName, SystemOutcome>>) {
+  const selected = Object.keys(outcomes).length;
+  const counts = Object.values(outcomes).reduce(
+    (acc, outcome) => {
+      if (outcome.status === "success") acc.success += 1;
+      if (outcome.status === "failed") acc.failed += 1;
+      if (outcome.status === "skipped") acc.skipped += 1;
+      if (outcome.status === "not_implemented") acc.notImplemented += 1;
+      return acc;
+    },
+    { success: 0, failed: 0, skipped: 0, notImplemented: 0 }
+  );
+
+  return { selected, ...counts };
+}
 
 export async function POST(
   _request: NextRequest,
@@ -27,16 +53,12 @@ export async function POST(
     return NextResponse.json({ error: `Already ${push.status.toLowerCase()}` }, { status: 409 });
   }
 
-  // External system stubs — fire-and-forget logging for now.
-  // When wired, these should return IDs that get stored in results.
-  if (push.systems.includes("ZOHO")) {
-    console.log("[catalog/approve] ZOHO push not yet implemented for:", push.model);
-  }
-  if (push.systems.includes("HUBSPOT")) {
-    console.log("[catalog/approve] HUBSPOT push not yet implemented for:", push.model);
-  }
-  if (push.systems.includes("ZUPER")) {
-    console.log("[catalog/approve] ZUPER push not yet implemented for:", push.model);
+  const selectedSystems = push.systems.filter((system): system is SystemName =>
+    (VALID_SYSTEMS as readonly string[]).includes(system)
+  );
+  const outcomes: Partial<Record<SystemName, SystemOutcome>> = {};
+  for (const system of selectedSystems) {
+    outcomes[system] = { status: "skipped", message: "Pending processing." };
   }
 
   // Single transaction: internal catalog writes + status update are atomic.
@@ -105,6 +127,16 @@ export async function POST(
       }
 
       results.internalSkuId = sku.id;
+      outcomes.INTERNAL = {
+        status: "success",
+        externalId: sku.id,
+        message: "Saved to internal catalog.",
+      };
+    } else if (push.systems.includes("INTERNAL")) {
+      outcomes.INTERNAL = {
+        status: "skipped",
+        message: `Category '${push.category}' is not supported by INTERNAL catalog.`,
+      };
     }
 
     // 3. Mark request approved (same transaction — atomic with writes above)
@@ -118,5 +150,31 @@ export async function POST(
     });
   });
 
-  return NextResponse.json({ push: updated });
+  if (push.systems.includes("ZOHO")) {
+    console.log("[catalog/approve] ZOHO push not yet implemented for:", push.model);
+    outcomes.ZOHO = {
+      status: "not_implemented",
+      message: "Zoho product push is not implemented yet.",
+    };
+  }
+  if (push.systems.includes("HUBSPOT")) {
+    console.log("[catalog/approve] HUBSPOT push not yet implemented for:", push.model);
+    outcomes.HUBSPOT = {
+      status: "not_implemented",
+      message: "HubSpot product push is not implemented yet.",
+    };
+  }
+  if (push.systems.includes("ZUPER")) {
+    console.log("[catalog/approve] ZUPER push not yet implemented for:", push.model);
+    outcomes.ZUPER = {
+      status: "not_implemented",
+      message: "Zuper part push is not implemented yet.",
+    };
+  }
+
+  return NextResponse.json({
+    push: updated,
+    outcomes,
+    summary: makeSummary(outcomes),
+  });
 }

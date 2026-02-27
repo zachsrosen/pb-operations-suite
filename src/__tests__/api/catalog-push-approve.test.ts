@@ -325,7 +325,8 @@ describe("POST /api/catalog/push-requests/[id]/approve", () => {
     it("skips internal catalog when INTERNAL is not in systems", async () => {
       mockFindUnique.mockResolvedValue(makePush({ systems: ["ZOHO"] }));
 
-      await POST(new NextRequest("http://localhost"), makeParams());
+      const res = await POST(new NextRequest("http://localhost"), makeParams());
+      const data = await res.json();
 
       // No SKU upsert
       expect(mockUpsert).not.toHaveBeenCalled();
@@ -340,6 +341,14 @@ describe("POST /api/catalog/push-requests/[id]/approve", () => {
           }),
         })
       );
+      expect(data.summary).toEqual({
+        selected: 1,
+        success: 0,
+        failed: 0,
+        skipped: 0,
+        notImplemented: 1,
+      });
+      expect(data.outcomes.ZOHO.status).toBe("not_implemented");
     });
 
     it("logs ZOHO stub when ZOHO system selected", async () => {
@@ -359,7 +368,7 @@ describe("POST /api/catalog/push-requests/[id]/approve", () => {
   // ── Response shape ─────────────────────────────────────────────────────
 
   describe("response shape", () => {
-    it("returns 200 with updated push on success", async () => {
+    it("returns 200 with push, outcomes, and summary on success", async () => {
       mockFindUnique.mockResolvedValue(makePush());
       mockUpdate.mockResolvedValue({
         id: "push_1",
@@ -376,6 +385,14 @@ describe("POST /api/catalog/push-requests/[id]/approve", () => {
       const data = await res.json();
       expect(data.push.status).toBe("APPROVED");
       expect(data.push.internalSkuId).toBe("sku_1");
+      expect(data.outcomes.INTERNAL.status).toBe("success");
+      expect(data.summary).toEqual({
+        selected: 1,
+        success: 1,
+        failed: 0,
+        skipped: 0,
+        notImplemented: 0,
+      });
     });
   });
 });
