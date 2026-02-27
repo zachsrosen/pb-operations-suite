@@ -207,7 +207,19 @@ const BOM_QUERY_OVERRIDES: ReadonlyArray<{ pattern: RegExp; sku: string }> = [
   { pattern: /\bend\s+clamp\b/i,                         sku: "UFO-END-01-B1" },
 
   // Grounding lug — prefer IronRidge XR-specific lug over generic ballast lug
-  { pattern: /\bgrounding\s+lug\b/i,                     sku: "XR-LUG-03-A1" },
+  // Matches both "GROUND LUG" (planset description) and "GROUNDING LUG"
+  { pattern: /\bground(?:ing)?\s+lug\b/i,                sku: "XR-LUG-03-A1" },
+
+  // Generic "SPLICE KIT" from PV-2 BOM table — default to XR10 splice.
+  // XR100 jobs: skill should output "XR100 SPLICE KIT" which is caught by the
+  // xr100 splice pattern above. This catches the XR10 job planset literal.
+  { pattern: /\bsplice\s+kit\b/i,                        sku: "XR10-BOSS-01-M1" },
+
+  // Main Breaker Enclosure (load center) — from "60A MAIN BREAKER ENCLOSURE" planset line
+  { pattern: /\bmain\s+breaker\s+enclosure\b|\btl270rcu\b/i, sku: "TL270RCU" },
+
+  // 60A 2-pole GE breaker — paired with TL270RCU load center, output as separate BOM item
+  { pattern: /\bthql2160\b|\b60a?\s+2.?p(?:ole)?\s+(?:ge\s+)?(?:breaker|circuit\s*breaker)\b/i, sku: "THQL2160" },
 ];
 
 function isBlank(value: string | undefined | null): boolean {

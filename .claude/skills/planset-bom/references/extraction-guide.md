@@ -345,6 +345,39 @@ Category: `ELECTRICAL_BOS`. Amp rating from description. Parker (PROJ-8860) incl
 
 ---
 
+## Main Breaker Enclosure → Two BOM Items
+
+When the PV-2 BOM table (or PV-0 cover sheet) lists a **60A MAIN BREAKER ENCLOSURE**, this implies two separate physical products that must be ordered:
+
+1. **The enclosure (load center)** — `TL270RCU`: 70A Main Lugs, 1PH, 65kA, 120/240VAC, 2/4 Circuit
+2. **The breaker** — `THQL2160`: 60A 2-Pole GE circuit breaker that populates the enclosure
+
+**Rule:** Always output TWO BOM items when you see "60A MAIN BREAKER ENCLOSURE":
+
+```json
+{ "category": "ELECTRICAL_BOS", "brand": "", "model": "TL270RCU",
+  "description": "LOAD CENTER, 70A, MAIN LUGS, 1PH, 65KA, 120/240VAC, 2/4 CIRCUIT", "qty": 1 }
+{ "category": "ELECTRICAL_BOS", "brand": "GE", "model": "THQL2160",
+  "description": "60A 2-POLE GE CIRCUIT BREAKER", "qty": 1 }
+```
+
+The planset only shows one line item but ops always orders both. The breaker is never listed separately in the planset — outputting it here ensures it makes it into the SO.
+
+---
+
+## BONDED SPLICE — Use Rail-Specific Model
+
+The PV-2 BOM table always labels the splice as "SPLICE KIT" or "BONDED SPLICE" generically. When outputting this item, include the rail system in the description so the correct SKU is matched:
+
+| Rail System | Output `model` | Output `description` |
+|-------------|----------------|----------------------|
+| XR10 (asphalt shingle) | `XR10-BOSS-01-M1` | `IRONRIDGE XR10 BONDED SPLICE MILL` |
+| XR100 (metal/trapezoidal) | `XR100-BOSS-01-M1` | `IRONRIDGE XR100 BONDED SPLICE MILL` |
+
+**Rule:** Check the RAIL row in PV-2 BOM to determine rail type (XR10 or XR100), then set the splice model accordingly. Never output "SPLICE KIT" as the model — it will match the wrong Zoho product.
+
+---
+
 ## AC Disconnect SKU — 2-Wire vs 3-Wire
 
 The AC disconnect SKU depends on whether the circuit is 2-wire or 3-wire. Check the PV-4 SLD callout text for the AC disconnect:
