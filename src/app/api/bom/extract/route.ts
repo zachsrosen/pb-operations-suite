@@ -121,13 +121,15 @@ The PV-2 BOM lists TESLA MCI-2 devices (module-level). Scan PV-4 SLD separately 
 
 ### TESLA BACKUP SWITCH — From PV-2 BOM or PV-4 SLD
 Some jobs use a Backup Switch instead of the full Backup Gateway-3 (simpler installs). Scan PV-2 BOM for a "BACKUP SWITCH" row (tag TBS) or scan PV-4 SLD for "(N) BACKUP SWITCH" callout:
-- If found → add: { "category": "MONITORING", "brand": "Tesla", "model": "1624171-00-J", "description": "TESLA BACKUP SWITCH", "qty": 1, "source": "PV-4" }
+- If found → add: { "category": "MONITORING", "brand": "Tesla", "model": "1624171-00-x", "description": "TESLA BACKUP SWITCH", "qty": 1, "source": "PV-4" }
 - If not found, omit. A job will have either a Backup Gateway-3 OR a Backup Switch, not both.
 
 ### TESLA REMOTE METER — From PV-2 BOM or PV-4 SLD
 Some battery-only jobs (no PV modules) include a Tesla Remote Meter for monitoring. Scan PV-2 BOM for a "REMOTE METER" row or scan PV-4 SLD for "(N) REMOTE METER" callout:
-- If found → add: { "category": "MONITORING", "brand": "Tesla", "model": "P2060713-00-B", "description": "TESLA REMOTE METER", "qty": 1, "source": "PV-4" }
-- If not found, omit.
+- If found → add TWO items:
+  1. { "category": "MONITORING", "brand": "Tesla", "model": "2045796-xx-y", "description": "TESLA REMOTE METER ENERGY KIT", "qty": 1, "source": "PV-4" }
+  2. { "category": "MONITORING", "brand": "Tesla", "model": "P2045794-00-D", "description": "TESLA REMOTE METER HARDWIRE KIT", "qty": 1, "source": "PV-4" }
+- If not found, omit both.
 
 ### ENPHASE MICRO-INVERTER JOBS — Additional Items
 When the job uses Enphase micro-inverters (IQ8 series), scan PV-4 conductor schedule for Q-Cable and the AC circuit breaker rating:
@@ -144,10 +146,10 @@ When extracting wire rows from the PV-4 conductor schedule, always use standardi
 Never output internal codes like "THHN-10AWG", "THWN2-6AWG", or "PV-Wire10". Always use the format "{gauge} {wire type}".
 
 ## Ops-Standard Additions
-These items MUST be added to every job even if the planset does not mention them. Add to all jobs including battery-only and storage-only installs.
+These items MUST be added to solar jobs with roof-mounted PV modules. Do NOT add to battery-only or storage-only jobs (no PV modules).
 
-### Always Add (Every Job)
-Always include ALL of the following items on every job:
+### Always Add (Every Solar Job with Roof-Mounted PV Modules)
+Always include ALL of the following items on every solar job:
 - { "category": "RACKING", "brand": "", "model": "SNOW DOG-BLK", "description": "ALPINE SNOW DOG", "qty": 10, "source": "OPS_STANDARD" }
 - { "category": "ELECTRICAL_BOS", "brand": "", "model": "M3317GBZ-SM", "description": "STRAIN RELIEF 3/4\" 5 HOLE", "qty": 5, "source": "OPS_STANDARD" }
 - { "category": "ELECTRICAL_BOS", "brand": "", "model": "S6466", "description": "CRITTER GUARD 6\" ROLL, BIRD PROOFING", "qty": 4, "unitLabel": "box", "source": "OPS_STANDARD" }

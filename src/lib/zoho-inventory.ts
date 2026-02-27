@@ -166,8 +166,8 @@ const BOM_QUERY_OVERRIDES: ReadonlyArray<{ pattern: RegExp; sku: string }> = [
   // IMO Rapid Shutdown Device (SI16 series)
   { pattern: /\bimo\b|\bsi16\b/i,                         sku: "IMO SI16-PEL64R-2" },
 
-  // Tesla Backup Switch (1624171) — paired with PW3 but not in planset BOM
-  { pattern: /\bbackup\s+switch\b|\b1624171\b/i,          sku: "1624171-00-J" },
+  // Tesla Backup Switch (1624171-00-x) — paired with PW3 but not in planset BOM
+  { pattern: /\bbackup\s+switch\b|\b1624171\b/i,          sku: "1624171-00-x" },
 
   // 60A non-fused AC disconnect
   { pattern: /\b60a?\s+non.?fused\b/i,                   sku: "DG222URB" },
@@ -234,8 +234,27 @@ const BOM_QUERY_OVERRIDES: ReadonlyArray<{ pattern: RegExp; sku: string }> = [
   // Tesla Backup Gateway-3 (1841000-X1-Y model wildcard)
   { pattern: /\b1841000\b/i,                             sku: "1841000-x1-y" },
 
-  // Tesla Remote Meter — used on storage-only / simple battery jobs (no Backup Gateway)
-  { pattern: /tesla.*remote.*meter|remote.*meter|\bP2060713\b/i, sku: "P2060713-00-B" },
+  // Tesla Remote Meter Energy Kit (2045796-xx-y) — used on storage-only battery jobs
+  // Note: a second item (P2045794-00-D Hardwire Kit) is also added by the extraction prompt;
+  // that item is matched by its exact model string so no separate override is needed.
+  { pattern: /tesla.*remote.*meter.*energy|remote.*meter.*energy|\b2045796\b/i, sku: "2045796-xx-y" },
+
+  // Tesla Remote Meter Hardwire Kit — paired with Energy Kit on some battery-only jobs
+  { pattern: /tesla.*remote.*meter.*hardwire|remote.*meter.*hardwire|\bP2045794\b/i, sku: "P2045794-00-D" },
+
+  // Tesla Remote Meter generic fallback (older plansets may not specify Energy vs Hardwire)
+  { pattern: /tesla.*remote.*meter|remote.*meter|\bP2060713\b/i, sku: "2045796-xx-y" },
+
+  // Powerwall 3 Expansion unit (1807000-20-B)
+  { pattern: /\b1807000\b|\bpowerwall.*expansion\b|\bexpansion.*unit\b/i, sku: "1807000-20-B" },
+
+  // Powerwall 3 Expansion Wall Mount Kit (1978069-00-x)
+  { pattern: /\b1978069\b|\bexpansion.*wall.*mount|expansion.*mount.*kit/i, sku: "1978069-00-x" },
+
+  // Tesla Expansion Harness — 2.0 M (1875157-20-y) and 0.5 M (1875157-05-y)
+  { pattern: /\b1875157-20\b|2\.0\s*m.*expansion.*harness|expansion.*harness.*2/i, sku: "1875157-20-y" },
+  { pattern: /\b1875157-05\b|0\.5\s*m.*expansion.*harness|expansion.*harness.*0\.5/i, sku: "1875157-05-y" },
+  { pattern: /\b1875157\b/i,                              sku: "1875157-20-y" },
 
   // Enphase Q-Cable — DC wiring harness used on Enphase micro-inverter jobs
   { pattern: /\bq.?cable\b|\bQ-12-RAW\b/i,              sku: "Q-12-RAW-300" },
@@ -248,10 +267,10 @@ const BOM_QUERY_OVERRIDES: ReadonlyArray<{ pattern: RegExp; sku: string }> = [
   // meter accessories, tap hardware). The skill outputs these as explicit BOM
   // items so they land in the SO; overrides ensure the right Zoho SKU is used.
 
-  // Critter Guard 6" roll (always 4 boxes per job)
+  // Critter Guard 6" roll (qty varies by job size, solar jobs only)
   { pattern: /\bcritter\s+guard\b|\bs6466\b/i,              sku: "S6466" },
 
-  // Heyco SunScreener clip (always 4 boxes per job, paired with critter guard roll)
+  // Heyco SunScreener clip (qty varies by job size, paired with critter guard roll)
   { pattern: /\bheyco\b|\bsunscreener\b|\bs6438\b/i,        sku: "S6438" },
 
   // UNIRAC SOLOBOX COMP-D junction box — used on every job as standard J-box
