@@ -9,11 +9,13 @@
 //   - First request: waits for full parallel load (~15s), then filters + returns
 //   - Warm instance: returns immediately from cache (filtered)
 //   - Cache expires after 60 min → next request reloads
+//   - Cache version bump forces reload when schema changes
 //
 // maxDuration = 60 ensures Vercel doesn't kill the function mid-load.
 //
-// GET /api/bom/zoho-customers?search=Smith  → filtered matches
-// GET /api/bom/zoho-customers               → [] (search required)
+// GET /api/bom/zoho-customers?search=Smith              → filtered matches by name
+// GET /api/bom/zoho-customers?hubspot_contact_id=12345  → exact match by HubSpot ID
+// GET /api/bom/zoho-customers                           → [] (search required)
 
 import { NextResponse, type NextRequest } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
@@ -24,16 +26,24 @@ export const maxDuration = 60;
 
 const CACHE_TTL_MS = 60 * 60 * 1000; // 60 minutes
 const BATCH_SIZE = 10; // pages fetched in parallel per round
+const CACHE_VERSION = 2; // bumped: added hubspot_record_id
+
+interface CachedCustomer {
+  contact_id: string;
+  contact_name: string;
+  hubspot_record_id: string | null;
+}
 
 interface CustomerCache {
-  customers: { contact_id: string; contact_name: string }[];
+  version: number;
+  customers: CachedCustomer[];
   expiresAt: number;
 }
 
 let cache: CustomerCache | null = null;
 
 async function loadAllCustomers(): Promise<void> {
-  const allCustomers: { contact_id: string; contact_name: string }[] = [];
+  const allCustomers: CachedCustomer[] = [];
   let page = 1;
   let exhausted = false;
 
@@ -43,12 +53,22 @@ async function loadAllCustomers(): Promise<void> {
       batch.map((p) =>
         zohoInventory
           .fetchCustomerPage(p)
-          .catch(() => ({ contacts: [], hasMore: false }))
+          .catch(() => ({ contacts: [] as any[], hasMore: false }))
       )
     );
 
     for (const { contacts, hasMore } of results) {
-      allCustomers.push(...contacts);
+      for (const c of contacts) {
+        const raw = c as Record<string, unknown>;
+        const hsId = typeof raw.cf_hubspot_record_id === "string"
+          ? raw.cf_hubspot_record_id.trim() || null
+          : null;
+        allCustomers.push({
+          contact_id: c.contact_id,
+          contact_name: c.contact_name,
+          hubspot_record_id: hsId,
+        });
+      }
       if (!hasMore) { exhausted = true; break; }
     }
 
@@ -56,8 +76,9 @@ async function loadAllCustomers(): Promise<void> {
     if (page > 200) break; // safety cap
   }
 
-  cache = { customers: allCustomers, expiresAt: Date.now() + CACHE_TTL_MS };
-  console.log(`[bom/zoho-customers] cached ${allCustomers.length} customers`);
+  cache = { version: CACHE_VERSION, customers: allCustomers, expiresAt: Date.now() + CACHE_TTL_MS };
+  const hsCount = allCustomers.filter((c) => c.hubspot_record_id).length;
+  console.log(`[bom/zoho-customers] cached ${allCustomers.length} customers (${hsCount} with HubSpot ID)`);
 }
 
 export async function GET(req: NextRequest) {
@@ -71,8 +92,8 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // Expire stale cache
-  if (cache && Date.now() >= cache.expiresAt) {
+  // Expire stale cache (TTL or schema version mismatch)
+  if (cache && (Date.now() >= cache.expiresAt || cache.version !== CACHE_VERSION)) {
     cache = null;
   }
 
