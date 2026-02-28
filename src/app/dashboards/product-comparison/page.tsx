@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { MultiSelectFilter, type FilterOption } from "@/components/ui/MultiSelectFilter";
+import { FORM_CATEGORIES, getCategoryLabel } from "@/lib/catalog-fields";
 
 type RowViewMode = "mismatches" | "matches" | "two-of-three" | "all";
 type MatchConfidence = "high" | "medium" | "low";
@@ -102,6 +103,34 @@ interface CreateSourceProductResponse {
   externalId: string;
   linkField: "hubspotProductId" | "zuperItemId" | "zohoItemId" | "quickbooksItemId";
   product: ComparableProduct;
+}
+
+interface InventorySkuResponse {
+  sku?: {
+    id: string;
+    brand: string;
+    model: string;
+    sku: string | null;
+    description: string | null;
+    sellPrice: number | null;
+    isActive: boolean;
+    hubspotProductId: string | null;
+    zuperItemId: string | null;
+    zohoItemId: string | null;
+    quickbooksItemId: string | null;
+  };
+  error?: string;
+}
+
+interface InternalCreateDraft {
+  open: boolean;
+  category: string;
+  brand: string;
+  model: string;
+  sku: string;
+  description: string;
+  sellPrice: string;
+  unitCost: string;
 }
 
 function formatSourceName(source: SourceName): string {
@@ -293,6 +322,40 @@ function cachedCatalogToComparableProduct(candidate: CachedCatalogProduct): Comp
   };
 }
 
+function splitBrandAndModel(name: string | null | undefined): { brand: string; model: string } {
+  const cleaned = String(name || "").trim();
+  if (!cleaned) return { brand: "", model: "" };
+  const [first, ...rest] = cleaned.split(/\s+/);
+  return {
+    brand: first || "",
+    model: rest.length > 0 ? rest.join(" ") : cleaned,
+  };
+}
+
+function chooseSeedProductForInternal(row: ComparisonRow): ComparableProduct | null {
+  return row.quickbooks || row.zoho || row.zuper || row.hubspot || row.opensolar || null;
+}
+
+function inferInternalCategory(row: ComparisonRow): string {
+  const seed = chooseSeedProductForInternal(row);
+  const text = `${seed?.name || ""} ${seed?.description || ""} ${seed?.status || ""}`.toLowerCase();
+  if (text.includes("battery")) return "BATTERY";
+  if (text.includes("inverter")) return "INVERTER";
+  if (text.includes("module") || text.includes("panel")) return "MODULE";
+  if (text.includes("charger") || text.includes("ev")) return "EV_CHARGER";
+  if (text.includes("gateway")) return "GATEWAY";
+  if (text.includes("service")) return "SERVICE";
+  if (text.includes("racking") || text.includes("rail") || text.includes("mount")) return "RACKING";
+  return "RACKING";
+}
+
+function parseNumericInput(value: string): number | null {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) return null;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 const MISSING_SOURCE_OPTIONS: FilterOption[] = [
   { value: "internal", label: "Missing in Internal" },
   { value: "hubspot", label: "Missing in HubSpot" },
@@ -345,6 +408,8 @@ export default function ProductComparisonPage() {
   const [confidenceFilters, setConfidenceFilters] = useState<MatchConfidence[]>([]);
   const [linkingKeys, setLinkingKeys] = useState<Record<string, boolean>>({});
   const [creatingKeys, setCreatingKeys] = useState<Record<string, boolean>>({});
+  const [creatingInternalKeys, setCreatingInternalKeys] = useState<Record<string, boolean>>({});
+  const [internalCreateByRow, setInternalCreateByRow] = useState<Record<string, InternalCreateDraft>>({});
   const [searchStateBySource, setSearchStateBySource] = useState<Record<string, SourceSearchState>>({});
   const [pinnedRowKeys, setPinnedRowKeys] = useState<Record<string, true>>({});
   const [actionFeedback, setActionFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
@@ -649,6 +714,159 @@ export default function ProductComparisonPage() {
       }
     },
     [applyLocalLinkUpdate]
+  );
+
+  const toggleInternalCreate = useCallback((row: DisplayRow) => {
+    setInternalCreateByRow((prev) => {
+      const existing = prev[row.key];
+      if (existing) {
+        return {
+          ...prev,
+          [row.key]: {
+            ...existing,
+            open: !existing.open,
+          },
+        };
+      }
+      const seed = chooseSeedProductForInternal(row);
+      const split = splitBrandAndModel(seed?.name);
+      return {
+        ...prev,
+        [row.key]: {
+          open: true,
+          category: inferInternalCategory(row),
+          brand: split.brand,
+          model: split.model,
+          sku: seed?.sku || "",
+          description: seed?.description || "",
+          sellPrice: typeof seed?.price === "number" ? String(seed.price) : "",
+          unitCost: "",
+        },
+      };
+    });
+  }, []);
+
+  const updateInternalCreateField = useCallback(
+    (rowKey: string, field: keyof Omit<InternalCreateDraft, "open">, value: string) => {
+      setInternalCreateByRow((prev) => {
+        const existing = prev[rowKey];
+        if (!existing) return prev;
+        return {
+          ...prev,
+          [rowKey]: {
+            ...existing,
+            [field]: value,
+          },
+        };
+      });
+    },
+    []
+  );
+
+  const createInternalFromRow = useCallback(
+    async (row: DisplayRow) => {
+      const draft = internalCreateByRow[row.key];
+      if (!draft) return;
+
+      const category = draft.category.trim();
+      const brand = draft.brand.trim();
+      const model = draft.model.trim();
+      if (!category || !brand || !model) {
+        setActionFeedback({
+          type: "error",
+          message: "Category, brand, and model are required to create an internal SKU.",
+        });
+        return;
+      }
+
+      setCreatingInternalKeys((prev) => ({ ...prev, [row.key]: true }));
+      setActionFeedback(null);
+
+      try {
+        const payload = {
+          category,
+          brand,
+          model,
+          sku: draft.sku.trim() || null,
+          description: draft.description.trim() || null,
+          sellPrice: parseNumericInput(draft.sellPrice),
+          unitCost: parseNumericInput(draft.unitCost),
+          hubspotProductId: row.hubspot?.id || null,
+          zuperItemId: row.zuper?.id || null,
+          zohoItemId: row.zoho?.id || null,
+          quickbooksItemId: row.quickbooks?.id || null,
+        };
+
+        const response = await fetch("/api/inventory/skus", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const result = (await response.json().catch(() => null)) as InventorySkuResponse | null;
+        if (!response.ok || !result?.sku) {
+          throw new Error(result?.error || `Failed to create internal SKU (${response.status})`);
+        }
+
+        const created = result.sku;
+        const internalProduct: ComparableProduct = {
+          id: created.id,
+          name: `${created.brand} ${created.model}`.trim() || null,
+          sku: created.sku,
+          price: typeof created.sellPrice === "number" ? created.sellPrice : null,
+          status: created.isActive ? "active" : "inactive",
+          description: created.description,
+          url: `/dashboards/catalog/edit/${encodeURIComponent(created.id)}`,
+          linkedExternalIds: {
+            hubspot: created.hubspotProductId || null,
+            zuper: created.zuperItemId || null,
+            zoho: created.zohoItemId || null,
+            quickbooks: created.quickbooksItemId || null,
+          },
+        };
+
+        setData((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            rows: prev.rows.map((candidateRow) => {
+              if (candidateRow.key !== row.key) return candidateRow;
+              const reasons = candidateRow.reasons.filter((reason) => reason !== "Missing in Internal");
+              return {
+                ...candidateRow,
+                internal: internalProduct,
+                reasons,
+                isMismatch: reasons.length > 0,
+              };
+            }),
+          };
+        });
+
+        setPinnedRowKeys((prev) => ({ ...prev, [row.key]: true }));
+        setInternalCreateByRow((prev) => ({
+          ...prev,
+          [row.key]: {
+            ...draft,
+            open: false,
+          },
+        }));
+        setActionFeedback({
+          type: "success",
+          message: "Created internal SKU and linked available source IDs. Saved to inventory.",
+        });
+      } catch (error) {
+        setActionFeedback({
+          type: "error",
+          message: error instanceof Error ? error.message : "Failed to create internal SKU",
+        });
+      } finally {
+        setCreatingInternalKeys((prev) => {
+          const next = { ...prev };
+          delete next[row.key];
+          return next;
+        });
+      }
+    },
+    [internalCreateByRow]
   );
 
   useEffect(() => {
@@ -1066,6 +1284,8 @@ export default function ProductComparisonPage() {
                       const searchResults = cardSearchState?.results ?? [];
                       const searchError = cardSearchState?.error ?? null;
                       const hasSourceProduct = Boolean(sourceProduct);
+                      const internalCreateDraft = source === "internal" ? internalCreateByRow[row.key] : null;
+                      const isCreatingInternal = source === "internal" ? Boolean(creatingInternalKeys[row.key]) : false;
                       const isLinkedToShownProduct =
                         supportsLinking && hasSourceProduct && Boolean(existingLinkId) && existingLinkId === sourceProduct!.id;
                       const canConfirmLink = hasInternal && supportsLinking && hasSourceProduct && !isLinkedToShownProduct;
@@ -1086,6 +1306,98 @@ export default function ProductComparisonPage() {
                             </span>
                           </div>
                           <ProductCell source={source} product={sourceProduct} />
+
+                          {source === "internal" && !hasSourceProduct && (
+                            <div className="mt-2 border-t border-t-border pt-2 space-y-2">
+                              <button
+                                type="button"
+                                onClick={() => toggleInternalCreate(row)}
+                                className="px-2 py-1 rounded border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 text-[11px] hover:bg-emerald-500/20"
+                              >
+                                {internalCreateDraft?.open ? "Hide internal create" : "Create internal SKU from this row"}
+                              </button>
+
+                              {internalCreateDraft?.open && (
+                                <div className="rounded border border-t-border bg-background/50 p-2 space-y-2">
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    <label className="text-[10px] text-muted uppercase tracking-wide">
+                                      Category
+                                      <select
+                                        value={internalCreateDraft.category}
+                                        onChange={(event) => updateInternalCreateField(row.key, "category", event.target.value)}
+                                        className="mt-1 w-full rounded border border-t-border bg-background px-2 py-1 text-[11px] text-foreground focus:outline-none focus:border-cyan-500/50"
+                                      >
+                                        {FORM_CATEGORIES.map((category) => (
+                                          <option key={category} value={category}>
+                                            {getCategoryLabel(category)}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </label>
+                                    <label className="text-[10px] text-muted uppercase tracking-wide">
+                                      SKU
+                                      <input
+                                        value={internalCreateDraft.sku}
+                                        onChange={(event) => updateInternalCreateField(row.key, "sku", event.target.value)}
+                                        className="mt-1 w-full rounded border border-t-border bg-background px-2 py-1 text-[11px] text-foreground focus:outline-none focus:border-cyan-500/50"
+                                      />
+                                    </label>
+                                    <label className="text-[10px] text-muted uppercase tracking-wide">
+                                      Brand
+                                      <input
+                                        value={internalCreateDraft.brand}
+                                        onChange={(event) => updateInternalCreateField(row.key, "brand", event.target.value)}
+                                        className="mt-1 w-full rounded border border-t-border bg-background px-2 py-1 text-[11px] text-foreground focus:outline-none focus:border-cyan-500/50"
+                                      />
+                                    </label>
+                                    <label className="text-[10px] text-muted uppercase tracking-wide">
+                                      Model
+                                      <input
+                                        value={internalCreateDraft.model}
+                                        onChange={(event) => updateInternalCreateField(row.key, "model", event.target.value)}
+                                        className="mt-1 w-full rounded border border-t-border bg-background px-2 py-1 text-[11px] text-foreground focus:outline-none focus:border-cyan-500/50"
+                                      />
+                                    </label>
+                                    <label className="text-[10px] text-muted uppercase tracking-wide">
+                                      Sell Price
+                                      <input
+                                        value={internalCreateDraft.sellPrice}
+                                        onChange={(event) => updateInternalCreateField(row.key, "sellPrice", event.target.value)}
+                                        placeholder="0.00"
+                                        className="mt-1 w-full rounded border border-t-border bg-background px-2 py-1 text-[11px] text-foreground focus:outline-none focus:border-cyan-500/50"
+                                      />
+                                    </label>
+                                    <label className="text-[10px] text-muted uppercase tracking-wide">
+                                      Unit Cost
+                                      <input
+                                        value={internalCreateDraft.unitCost}
+                                        onChange={(event) => updateInternalCreateField(row.key, "unitCost", event.target.value)}
+                                        placeholder="0.00"
+                                        className="mt-1 w-full rounded border border-t-border bg-background px-2 py-1 text-[11px] text-foreground focus:outline-none focus:border-cyan-500/50"
+                                      />
+                                    </label>
+                                  </div>
+                                  <label className="block text-[10px] text-muted uppercase tracking-wide">
+                                    Description
+                                    <textarea
+                                      value={internalCreateDraft.description}
+                                      onChange={(event) => updateInternalCreateField(row.key, "description", event.target.value)}
+                                      rows={2}
+                                      className="mt-1 w-full rounded border border-t-border bg-background px-2 py-1 text-[11px] text-foreground focus:outline-none focus:border-cyan-500/50"
+                                    />
+                                  </label>
+                                  <button
+                                    type="button"
+                                    onClick={() => createInternalFromRow(row)}
+                                    disabled={isCreatingInternal}
+                                    className="px-2 py-1 rounded border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 text-[11px] hover:bg-emerald-500/20 disabled:opacity-50"
+                                  >
+                                    {isCreatingInternal ? "Creating..." : "Create Internal + link all present source IDs"}
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )}
 
                           {source !== "internal" && (
                             <div className="mt-2 border-t border-t-border pt-2">
