@@ -10,7 +10,6 @@ type MatchConfidence = "high" | "medium" | "low";
 
 const ALL_SOURCES = ["hubspot", "zuper", "zoho", "opensolar", "quickbooks"] as const;
 type SourceName = (typeof ALL_SOURCES)[number];
-type RowProducts = Record<SourceName, ComparableProduct | null>;
 
 interface ComparableProduct {
   id: string;
@@ -29,11 +28,16 @@ interface PossibleMatch {
   signals: string[];
 }
 
-interface ComparisonRow extends RowProducts {
+interface ComparisonRow {
   key: string;
   reasons: string[];
   isMismatch: boolean;
   possibleMatches: PossibleMatch[];
+  hubspot: ComparableProduct | null;
+  zuper: ComparableProduct | null;
+  zoho: ComparableProduct | null;
+  opensolar: ComparableProduct | null;
+  quickbooks: ComparableProduct | null;
 }
 
 interface SourceHealth {
@@ -119,34 +123,24 @@ function sourceBadgeClass(source: SourceName): string {
 }
 
 function reasonBadgeClass(reason: string): string {
-  if (reason === "Missing in HubSpot") {
-    return "border-orange-500/40 bg-orange-500/10 text-orange-300";
-  }
-  if (reason === "Missing in Zuper") {
-    return "border-blue-500/40 bg-blue-500/10 text-blue-300";
-  }
-  if (reason === "Missing in Zoho") {
-    return "border-emerald-500/40 bg-emerald-500/10 text-emerald-300";
-  }
-  if (reason === "Missing in OpenSolar") {
-    return "border-teal-500/40 bg-teal-500/10 text-teal-300";
-  }
-  if (reason === "Missing in QuickBooks") {
-    return "border-sky-500/40 bg-sky-500/10 text-sky-300";
-  }
-  if (reason.includes("Duplicate")) {
-    return "border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-300";
-  }
-  if (reason.includes("Price mismatch")) {
-    return "border-yellow-500/40 bg-yellow-500/10 text-yellow-300";
-  }
-  if (reason.includes("SKU mismatch")) {
-    return "border-cyan-500/40 bg-cyan-500/10 text-cyan-300";
-  }
-  if (reason.includes("name mismatch")) {
-    return "border-violet-500/40 bg-violet-500/10 text-violet-300";
-  }
+  if (reason === "Missing in HubSpot") return "border-orange-500/40 bg-orange-500/10 text-orange-300";
+  if (reason === "Missing in Zuper") return "border-blue-500/40 bg-blue-500/10 text-blue-300";
+  if (reason === "Missing in Zoho") return "border-emerald-500/40 bg-emerald-500/10 text-emerald-300";
+  if (reason === "Missing in OpenSolar") return "border-teal-500/40 bg-teal-500/10 text-teal-300";
+  if (reason === "Missing in QuickBooks") return "border-sky-500/40 bg-sky-500/10 text-sky-300";
+  if (reason.includes("Duplicate")) return "border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-300";
+  if (reason.includes("Price mismatch")) return "border-yellow-500/40 bg-yellow-500/10 text-yellow-300";
+  if (reason.includes("SKU mismatch")) return "border-cyan-500/40 bg-cyan-500/10 text-cyan-300";
+  if (reason.includes("name mismatch")) return "border-violet-500/40 bg-violet-500/10 text-violet-300";
   return "border-red-500/30 bg-red-500/10 text-red-300";
+}
+
+function severityBadgeClass(severity: number): string {
+  if (severity >= 24) return "border-red-500/40 bg-red-500/10 text-red-300";
+  if (severity >= 14) return "border-orange-500/40 bg-orange-500/10 text-orange-300";
+  if (severity >= 7) return "border-amber-500/40 bg-amber-500/10 text-amber-300";
+  if (severity > 0) return "border-blue-500/40 bg-blue-500/10 text-blue-300";
+  return "border-green-500/40 bg-green-500/10 text-green-300";
 }
 
 function normalizeSearchText(value: string | null | undefined): string {
@@ -163,7 +157,6 @@ function computeRowSeverity(row: ComparisonRow): number {
     else if (reason.includes("name mismatch")) severity += 4;
     else severity += 3;
   }
-
   if (row.reasons.length > 0 && row.possibleMatches.length === 0) severity += 4;
   if (row.isMismatch && severity === 0) severity = 1;
   return severity;
@@ -187,10 +180,10 @@ function ProductCell({ source, product }: { source: SourceName; product: Compara
   }
 
   return (
-    <div className="space-y-1.5 min-w-[200px]">
-      <div className="text-sm font-medium text-foreground leading-tight">{product.name || "-"}</div>
+    <div className="space-y-1.5 min-w-0">
+      <div className="text-sm font-medium text-foreground leading-tight break-words">{product.name || "-"}</div>
       <div className="flex flex-wrap gap-1 text-[11px]">
-        <span className="px-1.5 py-0.5 rounded border border-t-border bg-background/70 text-muted">
+        <span className="px-1.5 py-0.5 rounded border border-t-border bg-background/70 text-muted break-all">
           SKU: {product.sku || "-"}
         </span>
         <span className="px-1.5 py-0.5 rounded border border-t-border bg-background/70 text-muted">
@@ -202,9 +195,7 @@ function ProductCell({ source, product }: { source: SourceName; product: Compara
           </span>
         )}
       </div>
-      {product.description && (
-        <div className="text-[11px] text-muted line-clamp-2">{product.description}</div>
-      )}
+      {product.description && <div className="text-[11px] text-muted line-clamp-2">{product.description}</div>}
       {product.url && (
         <a
           href={product.url}
@@ -249,11 +240,7 @@ const MISSING_REASON_PREFIX = "Missing in ";
 
 function isBundleInfoWarning(warning: string): boolean {
   const normalized = warning.trim().toLowerCase();
-  return (
-    normalized.includes("excluded") &&
-    normalized.includes("hubspot") &&
-    normalized.includes("product bundle")
-  );
+  return normalized.includes("excluded") && normalized.includes("hubspot") && normalized.includes("product bundle");
 }
 
 export default function ProductComparisonPage() {
@@ -277,9 +264,7 @@ export default function ProductComparisonPage() {
     try {
       setLoading(true);
       const response = await fetch("/api/products/comparison", { cache: "no-store" });
-      if (!response.ok) {
-        throw new Error(`Failed to fetch comparison data (${response.status})`);
-      }
+      if (!response.ok) throw new Error(`Failed to fetch comparison data (${response.status})`);
       const json = (await response.json()) as ProductComparisonResponse;
       setData(json);
       setError(null);
@@ -295,8 +280,7 @@ export default function ProductComparisonPage() {
       .then(async (response) => {
         if (!response.ok) throw new Error(`Auth check failed (${response.status})`);
         const authPayload = (await response.json()) as { role?: string };
-        const role = authPayload.role || "VIEWER";
-        const allowed = role === "ADMIN" || role === "OWNER";
+        const allowed = (authPayload.role || "VIEWER") === "ADMIN" || (authPayload.role || "VIEWER") === "OWNER";
         setAccessChecked(true);
         setIsAllowed(allowed);
         if (!allowed) {
@@ -339,9 +323,7 @@ export default function ProductComparisonPage() {
     for (const row of data.rows) {
       for (const reason of row.reasons) reasons.add(reason);
     }
-    return [...reasons]
-      .sort((a, b) => a.localeCompare(b))
-      .map((reason) => ({ value: reason, label: reason }));
+    return [...reasons].sort((a, b) => a.localeCompare(b)).map((reason) => ({ value: reason, label: reason }));
   }, [data]);
 
   const visibleWarnings = useMemo(() => {
@@ -357,35 +339,27 @@ export default function ProductComparisonPage() {
       const presentCount = configuredSources.filter((source) => Boolean(row[source])).length;
       const missingReasons = row.reasons.filter((reason) => reason.startsWith(MISSING_REASON_PREFIX));
       const nonMissingReasons = row.reasons.filter((reason) => !reason.startsWith(MISSING_REASON_PREFIX));
-      const isFullyMatched =
-        configuredSources.length > 0 &&
-        presentCount === configuredSources.length &&
-        row.reasons.length === 0;
+      const isFullyMatched = configuredSources.length > 0 && presentCount === configuredSources.length && row.reasons.length === 0;
       const isTwoOfThreeAligned =
         presentCount === 2 &&
         nonMissingReasons.length === 0 &&
         missingReasons.length === Math.max(configuredSources.length - 2, 1);
 
       const effectiveModes: RowViewMode[] = rowViewModes.length > 0 ? rowViewModes : ["all"];
-      const matchesAnySelectedMode = effectiveModes.some((mode) => {
+      const modeMatch = effectiveModes.some((mode) => {
         if (mode === "all") return true;
         if (mode === "mismatches") return row.isMismatch;
         if (mode === "matches") return isFullyMatched;
         return isTwoOfThreeAligned;
       });
-      if (!matchesAnySelectedMode) return false;
+      if (!modeMatch) return false;
 
       if (missingFilters.length > 0) {
-        const matchesMissingSource = missingFilters.some((source) => {
-          if (!configuredSources.includes(source)) return false;
-          return row[source] === null;
-        });
+        const matchesMissingSource = missingFilters.some((source) => configuredSources.includes(source) && row[source] === null);
         if (!matchesMissingSource) return false;
       }
 
-      if (reasonFilters.length > 0 && !reasonFilters.some((reason) => row.reasons.includes(reason))) {
-        return false;
-      }
+      if (reasonFilters.length > 0 && !reasonFilters.some((reason) => row.reasons.includes(reason))) return false;
 
       if (confidenceFilters.length > 0) {
         const bestScore = row.possibleMatches.reduce<number | null>((best, match) => {
@@ -420,11 +394,10 @@ export default function ProductComparisonPage() {
           if (typeof best !== "number") return match.score;
           return Math.max(best, match.score);
         }, null);
-        const missingCount = configuredSources.filter((source) => row[source] === null).length;
         return {
           ...row,
           severity: computeRowSeverity(row),
-          missingCount,
+          missingCount: configuredSources.filter((source) => row[source] === null).length,
           bestMatchScore,
           bestMatchConfidence: confidenceBucket(bestMatchScore),
         };
@@ -447,10 +420,7 @@ export default function ProductComparisonPage() {
       reasons: row.reasons.join(" | "),
       best_match_confidence: row.bestMatchConfidence || "",
       possible_matches: row.possibleMatches
-        .map(
-          (match) =>
-            `${formatSourceName(match.source)}:${match.product.name || "-"} (${formatPercent(match.score)})`
-        )
+        .map((match) => `${formatSourceName(match.source)}:${match.product.name || "-"} (${formatPercent(match.score)})`)
         .join(" | "),
       hubspot_name: row.hubspot?.name || "",
       hubspot_sku: row.hubspot?.sku || "",
@@ -478,7 +448,7 @@ export default function ProductComparisonPage() {
   const activeFilterCount =
     (search.trim() ? 1 : 0) +
     (rowViewModes.length === 1 && rowViewModes[0] === "mismatches" ? 0 : 1) +
-    (visibleSources.length && visibleSources.length !== ALL_SOURCES.length ? 1 : 0) +
+    (visibleSources.length !== ALL_SOURCES.length ? 1 : 0) +
     (missingFilters.length ? 1 : 0) +
     (reasonFilters.length ? 1 : 0) +
     (confidenceFilters.length ? 1 : 0);
@@ -503,17 +473,9 @@ export default function ProductComparisonPage() {
       breadcrumbs={[{ label: "Admin", href: "/suites/admin" }]}
       exportData={{ data: exportRows, filename: "product-catalog-comparison" }}
     >
-      {loading && (
-        <div className="bg-surface border border-t-border rounded-xl p-6 text-sm text-muted">
-          Loading product comparison data...
-        </div>
-      )}
+      {loading && <div className="bg-surface border border-t-border rounded-xl p-6 text-sm text-muted">Loading product comparison data...</div>}
 
-      {!loading && error && (
-        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-sm text-red-300">
-          {error}
-        </div>
-      )}
+      {!loading && error && <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-sm text-red-300">{error}</div>}
 
       {!loading && !error && data && (
         <div className="space-y-4">
@@ -556,9 +518,7 @@ export default function ProductComparisonPage() {
                   </span>
                 </div>
                 <div className="text-xs text-muted mt-2">Products fetched: {data.health[source].count}</div>
-                {data.health[source].error && (
-                  <div className="text-xs text-amber-300 mt-2">{data.health[source].error}</div>
-                )}
+                {data.health[source].error && <div className="text-xs text-amber-300 mt-2">{data.health[source].error}</div>}
               </div>
             ))}
           </div>
@@ -583,9 +543,7 @@ export default function ProductComparisonPage() {
                   placeholder="Search by name, SKU, key, reasons, or match signals"
                   className="w-full px-3 py-2 rounded-lg border border-t-border bg-background text-sm outline-none focus:border-cyan-500/50"
                 />
-                <div className="text-xs text-muted">
-                  Sorted by mismatch severity and confidence.
-                </div>
+                <div className="text-xs text-muted">Card layout optimized for no horizontal scrolling.</div>
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
@@ -644,135 +602,119 @@ export default function ProductComparisonPage() {
               </div>
             </div>
 
-            <div className="overflow-x-auto rounded-lg border border-t-border max-h-[72vh]">
-              <table className="w-full text-left text-xs">
-                <thead className="sticky top-0 z-10 bg-background/95 text-muted backdrop-blur-sm">
-                  <tr>
-                    <th className="px-3 py-2 w-12">#</th>
-                    <th className="px-3 py-2 min-w-[220px]">Comparison Key</th>
+            <div className="space-y-3 max-h-[72vh] overflow-y-auto pr-1">
+              {rows.map((row, index) => (
+                <article
+                  key={row.key}
+                  className={`rounded-lg border p-3 ${
+                    row.isMismatch
+                      ? "border-red-500/20 bg-red-500/5"
+                      : "border-green-500/20 bg-green-500/5"
+                  }`}
+                >
+                  <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="space-y-1 min-w-0">
+                      <div className="text-[11px] text-muted">Row {index + 1}</div>
+                      <div className="font-mono text-[11px] text-muted break-all">{row.key}</div>
+                      <div className="flex flex-wrap gap-1">
+                        <span className={`px-1.5 py-0.5 rounded border text-[10px] ${severityBadgeClass(row.severity)}`}>
+                          {severityLabel(row.severity)}
+                        </span>
+                        {row.bestMatchConfidence && (
+                          <span className={`px-1.5 py-0.5 rounded border text-[10px] ${confidenceBadgeClass(row.bestMatchConfidence)}`}>
+                            Best match {row.bestMatchConfidence}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-1 text-[11px]">
+                      <span className="px-1.5 py-0.5 rounded border border-t-border bg-background/70 text-muted">
+                        Missing: {row.missingCount}
+                      </span>
+                      <span className="px-1.5 py-0.5 rounded border border-t-border bg-background/70 text-muted">
+                        Suggestions: {row.possibleMatches.length}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
                     {displayedSources.map((source) => (
-                      <th key={`header-${source}`} className="px-3 py-2 min-w-[230px]">
-                        {formatSourceName(source)}
-                      </th>
-                    ))}
-                    <th className="px-3 py-2 min-w-[380px]">Findings and Suggestions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((row, index) => (
-                    <tr
-                      key={row.key}
-                      className={`border-t border-t-border align-top ${
-                        row.isMismatch ? "bg-red-500/5" : "bg-green-500/5"
-                      }`}
-                    >
-                      <td className="px-3 py-2 text-[11px] text-muted">{index + 1}</td>
-                      <td className="px-3 py-2">
-                        <div className="space-y-1">
-                          <div className="font-mono text-[11px] text-muted break-all">{row.key}</div>
-                          <span
-                            className={`inline-flex px-1.5 py-0.5 rounded border text-[10px] ${
-                              row.isMismatch
-                                ? "border-red-500/40 bg-red-500/10 text-red-300"
-                                : "border-green-500/40 bg-green-500/10 text-green-300"
-                            }`}
-                          >
-                            {severityLabel(row.severity)}
+                      <div key={`${row.key}-${source}`} className="rounded-md border border-t-border bg-background/40 p-2 min-w-0">
+                        <div className="mb-2">
+                          <span className={`inline-flex px-1.5 py-0.5 rounded border text-[10px] ${sourceBadgeClass(source)}`}>
+                            {formatSourceName(source)}
                           </span>
                         </div>
-                      </td>
+                        <ProductCell source={source} product={row[source]} />
+                      </div>
+                    ))}
+                  </div>
 
-                      {displayedSources.map((source) => (
-                        <td key={`${row.key}-${source}`} className="px-3 py-2">
-                          <ProductCell source={source} product={row[source]} />
-                        </td>
-                      ))}
+                  <div className="mt-3 border-t border-t-border pt-3 space-y-2">
+                    {row.reasons.length === 0 ? (
+                      <div className="text-sm font-medium text-green-400">Matched</div>
+                    ) : (
+                      <>
+                        <div className="flex flex-wrap gap-1">
+                          {row.reasons.map((reason) => (
+                            <span key={`${row.key}-${reason}`} className={`px-2 py-0.5 rounded border text-[11px] ${reasonBadgeClass(reason)}`}>
+                              {reason}
+                            </span>
+                          ))}
+                        </div>
 
-                      <td className="px-3 py-2">
-                        {row.reasons.length === 0 ? (
-                          <span className="text-green-400 font-medium">Matched</span>
-                        ) : (
-                          <div className="space-y-2">
-                            <div className="flex flex-wrap gap-1">
-                              {row.reasons.map((reason) => (
-                                <span
-                                  key={`${row.key}-${reason}`}
-                                  className={`px-2 py-0.5 rounded border ${reasonBadgeClass(reason)}`}
-                                >
-                                  {reason}
-                                </span>
-                              ))}
-                            </div>
-
-                            {row.possibleMatches.length > 0 ? (
-                              <div className="space-y-1.5 border-t border-t-border pt-2">
-                                <div className="text-[10px] uppercase tracking-wide text-muted">
-                                  Suggested matches ({row.possibleMatches.length})
-                                </div>
-                                {row.possibleMatches.slice(0, 6).map((match) => {
-                                  const bucket = confidenceBucket(match.score);
-                                  return (
-                                    <div
-                                      key={`${row.key}-${match.source}-${match.product.id}`}
-                                      className="rounded-md border border-t-border bg-background/60 p-2"
-                                    >
-                                      <div className="flex flex-wrap items-center gap-1.5">
-                                        <span className={`px-1.5 py-0.5 rounded border ${sourceBadgeClass(match.source)}`}>
-                                          {formatSourceName(match.source)}
-                                        </span>
-                                        <span className="text-foreground/90">{match.product.name || "-"}</span>
+                        {row.possibleMatches.length > 0 ? (
+                          <div className="space-y-1.5">
+                            <div className="text-[10px] uppercase tracking-wide text-muted">Suggested matches</div>
+                            {row.possibleMatches.slice(0, 6).map((match) => {
+                              const bucket = confidenceBucket(match.score);
+                              return (
+                                <div key={`${row.key}-${match.source}-${match.product.id}`} className="rounded-md border border-t-border bg-background/60 p-2">
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    <span className={`px-1.5 py-0.5 rounded border text-[10px] ${sourceBadgeClass(match.source)}`}>
+                                      {formatSourceName(match.source)}
+                                    </span>
+                                    <span className="text-sm text-foreground/90 break-words">{match.product.name || "-"}</span>
+                                    <span className={`px-1.5 py-0.5 rounded border text-[10px] ${confidenceBadgeClass(bucket)}`}>
+                                      {formatPercent(match.score)}
+                                    </span>
+                                    {match.product.sku && <span className="text-xs text-muted">SKU: {match.product.sku}</span>}
+                                    {match.product.url && (
+                                      <a href={match.product.url} target="_blank" rel="noreferrer" className="text-cyan-300 hover:text-cyan-200 underline underline-offset-2 text-xs">
+                                        Open
+                                      </a>
+                                    )}
+                                  </div>
+                                  {match.signals.length > 0 && (
+                                    <div className="mt-1 flex flex-wrap gap-1">
+                                      {match.signals.slice(0, 4).map((signal) => (
                                         <span
-                                          className={`px-1.5 py-0.5 rounded border ${confidenceBadgeClass(bucket)}`}
+                                          key={`${row.key}-${match.product.id}-${signal}`}
+                                          className="px-1.5 py-0.5 rounded border border-t-border bg-background text-[10px] text-muted"
                                         >
-                                          {formatPercent(match.score)}
+                                          {signal}
                                         </span>
-                                        {match.product.sku && (
-                                          <span className="text-muted">SKU: {match.product.sku}</span>
-                                        )}
-                                        {match.product.url && (
-                                          <a
-                                            href={match.product.url}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                            className="text-cyan-300 hover:text-cyan-200 underline underline-offset-2"
-                                          >
-                                            Open
-                                          </a>
-                                        )}
-                                      </div>
-                                      {match.signals.length > 0 && (
-                                        <div className="mt-1 flex flex-wrap gap-1">
-                                          {match.signals.slice(0, 4).map((signal) => (
-                                            <span
-                                              key={`${row.key}-${match.product.id}-${signal}`}
-                                              className="px-1.5 py-0.5 rounded border border-t-border bg-background text-[10px] text-muted"
-                                            >
-                                              {signal}
-                                            </span>
-                                          ))}
-                                        </div>
-                                      )}
+                                      ))}
                                     </div>
-                                  );
-                                })}
-                              </div>
-                            ) : (
-                              <div className="text-xs text-muted">No high-confidence suggestions available.</div>
-                            )}
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
+                        ) : (
+                          <div className="text-xs text-muted">No high-confidence suggestions available.</div>
                         )}
-                      </td>
-                    </tr>
-                  ))}
-                  {rows.length === 0 && (
-                    <tr>
-                      <td colSpan={displayedSources.length + 3} className="px-3 py-6 text-center text-muted">
-                        No rows match the current filters.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+                      </>
+                    )}
+                  </div>
+                </article>
+              ))}
+
+              {rows.length === 0 && (
+                <div className="rounded-lg border border-t-border bg-background/50 p-6 text-center text-muted">
+                  No rows match the current filters.
+                </div>
+              )}
             </div>
           </div>
         </div>
