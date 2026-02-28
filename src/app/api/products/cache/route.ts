@@ -20,12 +20,21 @@ const SOURCE_ENUM: Record<string, CatalogProductSource> = {
   hubspot: "HUBSPOT",
   zuper: "ZUPER",
   zoho: "ZOHO",
+  quickbooks: "QUICKBOOKS",
+  opensolar: "OPENSOLAR",
 };
 
-function sourceToApiValue(source: CatalogProductSource): "hubspot" | "zuper" | "zoho" {
-  if (source === "HUBSPOT") return "hubspot";
-  if (source === "ZUPER") return "zuper";
-  return "zoho";
+type SourceApiValue = "hubspot" | "zuper" | "zoho" | "quickbooks" | "opensolar";
+
+function sourceToApiValue(source: CatalogProductSource): SourceApiValue {
+  const map: Record<CatalogProductSource, SourceApiValue> = {
+    HUBSPOT: "hubspot",
+    ZUPER: "zuper",
+    ZOHO: "zoho",
+    QUICKBOOKS: "quickbooks",
+    OPENSOLAR: "opensolar",
+  };
+  return map[source];
 }
 
 export async function GET(request: NextRequest) {
@@ -49,7 +58,7 @@ export async function GET(request: NextRequest) {
   const limitRaw = Number(request.nextUrl.searchParams.get("limit") || 200);
   const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(Math.trunc(limitRaw), 1), 5000) : 200;
 
-  let sources: CatalogProductSource[] = ["HUBSPOT", "ZUPER", "ZOHO"];
+  let sources: CatalogProductSource[] = ["HUBSPOT", "ZUPER", "ZOHO", "QUICKBOOKS", "OPENSOLAR"];
   if (sourceParam) {
     const parsed = sourceParam
       .split(",")
@@ -58,7 +67,7 @@ export async function GET(request: NextRequest) {
       .map((s) => SOURCE_ENUM[s])
       .filter(Boolean);
     if (parsed.length === 0) {
-      return NextResponse.json({ error: "Invalid source. Use hubspot,zuper,zoho" }, { status: 400 });
+      return NextResponse.json({ error: "Invalid source. Use hubspot,zuper,zoho,quickbooks,opensolar" }, { status: 400 });
     }
     sources = [...new Set(parsed)];
   }
@@ -112,6 +121,8 @@ export async function GET(request: NextRequest) {
         hubspot: counts.hubspot || 0,
         zuper: counts.zuper || 0,
         zoho: counts.zoho || 0,
+        quickbooks: counts.quickbooks || 0,
+        opensolar: counts.opensolar || 0,
       },
     },
   });

@@ -17,13 +17,15 @@ const SOURCE_LABELS: Record<SourceName, string> = {
   quickbooks: "QuickBooks",
 };
 
-const CACHE_SOURCES = ["hubspot", "zuper", "zoho"] as const;
+const CACHE_SOURCES = ["hubspot", "zuper", "zoho", "quickbooks", "opensolar"] as const;
 type CacheSourceName = (typeof CACHE_SOURCES)[number];
 
 const CACHE_SOURCE_ENUM: Record<CacheSourceName, CatalogProductSource> = {
   hubspot: "HUBSPOT",
   zuper: "ZUPER",
   zoho: "ZOHO",
+  quickbooks: "QUICKBOOKS",
+  opensolar: "OPENSOLAR",
 };
 
 type RowProducts = Record<SourceName, ComparableProduct | null>;
@@ -1146,9 +1148,14 @@ function createGroupedProductBuckets(): Record<SourceName, NormalizedProduct[]> 
 }
 
 function sourceFromCacheEnum(source: CatalogProductSource): CacheSourceName {
-  if (source === "HUBSPOT") return "hubspot";
-  if (source === "ZUPER") return "zuper";
-  return "zoho";
+  const map: Record<CatalogProductSource, CacheSourceName> = {
+    HUBSPOT: "hubspot",
+    ZUPER: "zuper",
+    ZOHO: "zoho",
+    QUICKBOOKS: "quickbooks",
+    OPENSOLAR: "opensolar",
+  };
+  return map[source];
 }
 
 function normalizeForCache(source: CacheSourceName, product: NormalizedProduct): NormalizedProduct {
@@ -1357,7 +1364,7 @@ export async function GET() {
     fetchQuickBooksProducts(),
   ]);
 
-  const [hubspotCache, zuperCache, zohoCache] = await Promise.all([
+  const [hubspotCache, zuperCache, zohoCache, quickbooksCache, opensolarCache] = await Promise.all([
     hydrateSourceWithCache("hubspot", {
       products: hubspotResult.products,
       configured: hubspotResult.configured,
@@ -1372,6 +1379,16 @@ export async function GET() {
       products: zohoResult.products,
       configured: zohoResult.configured,
       error: zohoResult.error,
+    }),
+    hydrateSourceWithCache("quickbooks", {
+      products: quickbooksResult.products,
+      configured: quickbooksResult.configured,
+      error: quickbooksResult.error,
+    }),
+    hydrateSourceWithCache("opensolar", {
+      products: opensolarResult.products,
+      configured: opensolarResult.configured,
+      error: opensolarResult.error,
     }),
   ]);
 
@@ -1393,13 +1410,25 @@ export async function GET() {
     configured: zohoCache.result.configured,
     error: zohoCache.result.error,
   };
+  const effectiveQuickbooksResult = {
+    ...quickbooksResult,
+    products: quickbooksCache.result.products,
+    configured: quickbooksCache.result.configured,
+    error: quickbooksCache.result.error,
+  };
+  const effectiveOpensolarResult = {
+    ...opensolarResult,
+    products: opensolarCache.result.products,
+    configured: opensolarCache.result.configured,
+    error: opensolarCache.result.error,
+  };
 
   const sourceResults = {
     hubspot: effectiveHubspotResult,
     zuper: effectiveZuperResult,
     zoho: effectiveZohoResult,
-    opensolar: opensolarResult,
-    quickbooks: quickbooksResult,
+    opensolar: effectiveOpensolarResult,
+    quickbooks: effectiveQuickbooksResult,
   } as const;
   const comparisonSources = ALL_SOURCES.filter((source) => sourceResults[source].configured);
 
@@ -1407,16 +1436,16 @@ export async function GET() {
     ...effectiveHubspotResult.products,
     ...effectiveZuperResult.products,
     ...effectiveZohoResult.products,
-    ...opensolarResult.products,
-    ...quickbooksResult.products,
+    ...effectiveOpensolarResult.products,
+    ...effectiveQuickbooksResult.products,
   ];
   const rows = buildComparisonRows(allProducts, comparisonSources);
   const productsBySource: Record<SourceName, ComparableProduct[]> = {
     hubspot: effectiveHubspotResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
     zuper: effectiveZuperResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
     zoho: effectiveZohoResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
-    opensolar: opensolarResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
-    quickbooks: quickbooksResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
+    opensolar: effectiveOpensolarResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
+    quickbooks: effectiveQuickbooksResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
   };
   const initialRows = rows.map((row) => ({
     ...row,
@@ -1441,7 +1470,9 @@ export async function GET() {
     ...ALL_SOURCES
     .map((source) => sourceResults[source].error)
     .filter(Boolean) as string[],
-    ...[hubspotCache.warning, zuperCache.warning, zohoCache.warning].filter(Boolean) as string[],
+    ...[hubspotCache, zuperCache, zohoCache, quickbooksCache, opensolarCache]
+      .map((c) => c.warning)
+      .filter(Boolean) as string[],
   ];
 
   const payload: ProductComparisonResponse = {
@@ -1455,8 +1486,8 @@ export async function GET() {
         hubspot: effectiveHubspotResult.products.length,
         zuper: effectiveZuperResult.products.length,
         zoho: effectiveZohoResult.products.length,
-        opensolar: opensolarResult.products.length,
-        quickbooks: quickbooksResult.products.length,
+        opensolar: effectiveOpensolarResult.products.length,
+        quickbooks: effectiveQuickbooksResult.products.length,
       },
     },
     health: {
@@ -1476,14 +1507,14 @@ export async function GET() {
         error: effectiveZohoResult.error,
       },
       opensolar: {
-        configured: opensolarResult.configured,
-        count: opensolarResult.products.length,
-        error: opensolarResult.error,
+        configured: effectiveOpensolarResult.configured,
+        count: effectiveOpensolarResult.products.length,
+        error: effectiveOpensolarResult.error,
       },
       quickbooks: {
-        configured: quickbooksResult.configured,
-        count: quickbooksResult.products.length,
-        error: quickbooksResult.error,
+        configured: effectiveQuickbooksResult.configured,
+        count: effectiveQuickbooksResult.products.length,
+        error: effectiveQuickbooksResult.error,
       },
     },
     warnings,
