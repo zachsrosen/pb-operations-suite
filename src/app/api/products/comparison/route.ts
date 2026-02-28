@@ -376,6 +376,77 @@ const TOKEN_EQUIVALENTS: Record<string, string> = {
   photovoltaic: "pv",
 };
 
+const BRAND_EQUIVALENTS: Record<string, string> = {
+  se: "solaredge",
+  "solar-edge": "solaredge",
+  solaredge: "solaredge",
+  qcell: "qcells",
+  qcells: "qcells",
+  hanwha: "qcells",
+  hanwhaqcells: "qcells",
+  enph: "enphase",
+  enphase: "enphase",
+  teslaenergy: "tesla",
+};
+
+function normalizeBrandToken(token: string | null | undefined): string {
+  const cleaned = String(token || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
+  if (!cleaned) return "";
+  return BRAND_EQUIVALENTS[cleaned] || cleaned;
+}
+
+function extractBrandHint(value: string | null | undefined): string | null {
+  const normalized = normalizeText(value);
+  if (!normalized) return null;
+  const [firstToken] = normalized.split(" ").filter(Boolean);
+  const brand = normalizeBrandToken(firstToken);
+  return brand || null;
+}
+
+function extractModelTokens(value: string | null | undefined): Set<string> {
+  const direct = String(value || "").toUpperCase();
+  const tokens = new Set<string>();
+
+  const idLike = direct.match(/[A-Z]{1,8}\d[A-Z0-9-]{1,}/g) || [];
+  for (const token of idLike) {
+    const cleaned = token.replace(/[^A-Z0-9]+/g, "");
+    if (cleaned.length >= 4) tokens.add(cleaned);
+  }
+
+  const normalized = normalizeText(value)
+    .split(" ")
+    .map((token) => token.replace(/[^a-z0-9]+/g, ""))
+    .filter((token) => token.length >= 4 && /\d/.test(token))
+    .map((token) => token.toUpperCase());
+  for (const token of normalized) tokens.add(token);
+
+  return tokens;
+}
+
+function modelTokenOverlap(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  let overlap = 0;
+  for (const token of a) {
+    if (b.has(token)) overlap += 1;
+  }
+  return overlap;
+}
+
+function hasCloseModelToken(a: Set<string>, b: Set<string>): boolean {
+  if (a.size === 0 || b.size === 0) return false;
+  for (const left of a) {
+    for (const right of b) {
+      if (left === right) return true;
+      if (left.length < 5 || right.length < 5) continue;
+      if (left.includes(right) || right.includes(left)) return true;
+    }
+  }
+  return false;
+}
+
 function normalizeNameToken(token: string): string {
   const canonical = token.trim().toLowerCase();
   if (!canonical) return "";
@@ -430,6 +501,16 @@ function tokenSimilarity(a: Set<string>, b: Set<string>): number {
 function compareProducts(anchor: ComparableProduct, candidate: ComparableProduct): { score: number; signals: string[] } {
   const signals: string[] = [];
   let score = 0;
+  const anchorBrand = extractBrandHint(anchor.name);
+  const candidateBrand = extractBrandHint(candidate.name);
+  const anchorModelTokens = new Set<string>([
+    ...extractModelTokens(anchor.name),
+    ...extractModelTokens(anchor.sku),
+  ]);
+  const candidateModelTokens = new Set<string>([
+    ...extractModelTokens(candidate.name),
+    ...extractModelTokens(candidate.sku),
+  ]);
 
   const anchorIdentifiers = new Set([
     ...extractIdentifiers(anchor.sku),
@@ -463,6 +544,33 @@ function compareProducts(anchor: ComparableProduct, candidate: ComparableProduct
       score -= 0.15;
       signals.push("SKU differs");
     }
+  }
+
+  if (anchorBrand && candidateBrand) {
+    if (anchorBrand === candidateBrand) {
+      score += 0.16;
+      signals.push("Brand match");
+    } else if (sharedIdentifiers === 0 && anchorSku !== candidateSku) {
+      score -= 0.12;
+      signals.push("Brand differs");
+    }
+  }
+
+  const exactModelOverlap = modelTokenOverlap(anchorModelTokens, candidateModelTokens);
+  if (exactModelOverlap > 0) {
+    score += Math.min(0.36, 0.24 + exactModelOverlap * 0.06);
+    signals.push("Model token exact");
+  } else if (hasCloseModelToken(anchorModelTokens, candidateModelTokens)) {
+    score += 0.18;
+    signals.push("Model token close");
+  } else if (
+    anchorModelTokens.size > 0 &&
+    candidateModelTokens.size > 0 &&
+    sharedIdentifiers === 0 &&
+    anchorSku !== candidateSku
+  ) {
+    score -= 0.1;
+    signals.push("Model differs");
   }
 
   const normalizedAnchorName = normalizeText(anchor.name);
@@ -526,6 +634,10 @@ function quickProductFilter(anchorProducts: ComparableProduct[], candidate: Comp
   const candidateSku = normalizeSku(candidate.sku);
   const candidateTokens = tokenize(candidate.name);
   const candidateCanonicalName = canonicalNameKey(candidate.name);
+  const candidateModelTokens = new Set<string>([
+    ...extractModelTokens(candidate.name),
+    ...extractModelTokens(candidate.sku),
+  ]);
   const candidateIdentifiers = new Set([
     ...extractIdentifiers(candidate.sku),
     ...extractIdentifiers(candidate.name),
@@ -533,6 +645,10 @@ function quickProductFilter(anchorProducts: ComparableProduct[], candidate: Comp
 
   for (const anchor of anchorProducts) {
     const anchorSku = normalizeSku(anchor.sku);
+    const anchorModelTokens = new Set<string>([
+      ...extractModelTokens(anchor.name),
+      ...extractModelTokens(anchor.sku),
+    ]);
     if (anchorSku && candidateSku) {
       if (anchorSku === candidateSku) return true;
       if (
@@ -544,6 +660,9 @@ function quickProductFilter(anchorProducts: ComparableProduct[], candidate: Comp
       }
     }
 
+    if (modelTokenOverlap(anchorModelTokens, candidateModelTokens) > 0) return true;
+    if (hasCloseModelToken(anchorModelTokens, candidateModelTokens)) return true;
+
     if (candidateCanonicalName && candidateCanonicalName === canonicalNameKey(anchor.name)) return true;
 
     const overlap = tokenSimilarity(tokenize(anchor.name), candidateTokens);
@@ -553,7 +672,8 @@ function quickProductFilter(anchorProducts: ComparableProduct[], candidate: Comp
       ...extractIdentifiers(anchor.sku),
       ...extractIdentifiers(anchor.name),
     ]);
-    if (identifierOverlap(anchorIdentifiers, candidateIdentifiers) > 0) return true;
+    const identifierMatches = identifierOverlap(anchorIdentifiers, candidateIdentifiers);
+    if (identifierMatches > 0) return true;
 
     if (typeof anchor.price === "number" && typeof candidate.price === "number" && anchor.price > 0 && candidate.price > 0) {
       const diffRatio = Math.abs(anchor.price - candidate.price) / Math.max(anchor.price, candidate.price);
@@ -741,6 +861,7 @@ function buildPossibleMatches(
       const hasStrongSignal = [...signalSet].some((signal) =>
         signal === "SKU exact" ||
         signal === "Identifier match" ||
+        signal === "Model token exact" ||
         signal === "Name exact" ||
         signal === "Name canonical" ||
         signal === "Name very close"
@@ -1014,7 +1135,8 @@ function autoMergeRows(rows: ComparisonRow[], sources: SourceName[]): Comparison
   ): boolean => {
     const hasStrongSignal =
       match.signals.includes("SKU exact") ||
-      match.signals.includes("Identifier match");
+      match.signals.includes("Identifier match") ||
+      match.signals.includes("Model token exact");
     if (hasStrongSignal && match.score >= 0.78) return true;
 
     const secondBestScore = rankedMatches[1]?.score ?? 0;
@@ -1026,6 +1148,7 @@ function autoMergeRows(rows: ComparisonRow[], sources: SourceName[]): Comparison
     if (match.signals.includes("Name canonical") && match.score >= 0.64) return true;
     if (match.signals.includes("Name very close") && match.score >= 0.54) return true;
     if (match.signals.includes("Name similar") && match.score >= 0.66) return true;
+    if (match.signals.includes("Model token close") && match.score >= 0.72) return true;
 
     return false;
   };
