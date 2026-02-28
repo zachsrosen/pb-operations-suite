@@ -24,6 +24,8 @@ import { fetchPrimaryContactId } from "@/lib/hubspot";
 import {
   ensureCustomerCacheLoaded,
   findByHubSpotContactId,
+  findByEmail,
+  findByPhone,
   searchCustomersByName,
 } from "@/lib/zoho-customer-cache";
 import { sendPipelineNotification } from "@/lib/email";
@@ -70,18 +72,20 @@ function extractFolderId(input: string): string | null {
   return null;
 }
 
-/** Fetch a HubSpot contact's name for fallback customer matching. */
-async function fetchContactName(contactId: string): Promise<{
+/** Fetch a HubSpot contact's details for fallback customer matching. */
+async function fetchContactDetails(contactId: string): Promise<{
   fullName: string | null;
   lastName: string | null;
   company: string | null;
+  email: string | null;
+  phone: string | null;
 } | null> {
   const accessToken = process.env.HUBSPOT_ACCESS_TOKEN;
   if (!accessToken) return null;
 
   try {
     const res = await fetch(
-      `https://api.hubapi.com/crm/v3/objects/contacts/${encodeURIComponent(contactId)}?properties=firstname,lastname,company`,
+      `https://api.hubapi.com/crm/v3/objects/contacts/${encodeURIComponent(contactId)}?properties=firstname,lastname,company,email,phone,mobilephone`,
       {
         headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
         cache: "no-store",
@@ -89,12 +93,14 @@ async function fetchContactName(contactId: string): Promise<{
     );
     if (!res.ok) return null;
     const data = await res.json() as { properties: Record<string, string | null> };
-    const { firstname, lastname, company } = data.properties;
+    const { firstname, lastname, company, email, phone, mobilephone } = data.properties;
 
     return {
       fullName: [lastname, firstname].filter(Boolean).map(s => s!.trim()).join(", ") || null,
       lastName: lastname?.trim() || null,
       company: company?.trim() || null,
+      email: email?.trim().toLowerCase() || null,
+      phone: phone?.trim() || mobilephone?.trim() || null,
     };
   } catch {
     return null;
@@ -433,19 +439,43 @@ export async function runDesignCompletePipeline(
       }
     }
 
-    // --- Strategy 3: HubSpot contact name → Zoho name search ---
+    // --- Strategy 3: HubSpot contact email/phone/name → Zoho lookup ---
     if (!customerId && primaryContactId) {
-      const contactInfo = await fetchContactName(primaryContactId);
+      const contactInfo = await fetchContactDetails(primaryContactId);
       if (contactInfo) {
-        // Try last name first (most selective)
-        if (contactInfo.lastName) {
+        // 3a: Email match (very reliable — unique identifier)
+        if (!customerId && contactInfo.email) {
+          const emailMatch = findByEmail(contactInfo.email);
+          if (emailMatch) {
+            customerId = emailMatch.contact_id;
+            customerMatchMethod = "email";
+            console.log(`[bom-pipeline] Auto-matched via email ${contactInfo.email}: ${emailMatch.contact_name} (${customerId})`);
+          } else {
+            searchAttempts.push(`email "${contactInfo.email}" → no match`);
+          }
+        }
+
+        // 3b: Phone match (reliable — normalize digits)
+        if (!customerId && contactInfo.phone) {
+          const phoneMatch = findByPhone(contactInfo.phone);
+          if (phoneMatch) {
+            customerId = phoneMatch.contact_id;
+            customerMatchMethod = "phone";
+            console.log(`[bom-pipeline] Auto-matched via phone ${contactInfo.phone}: ${phoneMatch.contact_name} (${customerId})`);
+          } else {
+            searchAttempts.push(`phone "${contactInfo.phone}" → no match`);
+          }
+        }
+
+        // 3c: Last name → name search
+        if (!customerId && contactInfo.lastName) {
           tryNameSearch(contactInfo.lastName, contactInfo.fullName, "contact_lastname");
         }
-        // Try full name if last name alone was too ambiguous
+        // 3d: Full name → name search
         if (!customerId && contactInfo.fullName) {
           tryNameSearch(contactInfo.fullName, contactInfo.fullName, "contact_fullname");
         }
-        // Try company name as last resort
+        // 3e: Company name → name search
         if (!customerId && contactInfo.company) {
           tryNameSearch(contactInfo.company, contactInfo.company, "contact_company");
         }

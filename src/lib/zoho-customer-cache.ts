@@ -21,11 +21,13 @@ import { zohoInventory } from "@/lib/zoho-inventory";
 const CACHE_TTL_MS = 60 * 60 * 1000; // 60 minutes
 const BATCH_SIZE = 10; // pages fetched in parallel per round
 const PAGE_RETRY_ATTEMPTS = 3;
-const CACHE_VERSION = 4; // bumped: resilient pagination + expanded hubspot_record_id extraction
+const CACHE_VERSION = 5; // bumped: added email + phone for pipeline customer matching
 
 export interface CachedCustomer {
   contact_id: string;
   contact_name: string;
+  email: string | null;
+  phone: string | null;
   hubspot_record_id: string | null;
   hubspot_id_source: "direct" | "custom_field_hash" | "custom_fields" | "none";
 }
@@ -164,7 +166,7 @@ function extractHubspotRecordId(contact: Record<string, unknown>): {
 // Cache loading
 // ---------------------------------------------------------------------------
 
-async function fetchCustomerPageWithRetry(page: number): Promise<{ contacts: { contact_id: string; contact_name: string }[]; hasMore: boolean }> {
+async function fetchCustomerPageWithRetry(page: number): Promise<{ contacts: { contact_id: string; contact_name: string; email?: string; phone?: string; mobile?: string }[]; hasMore: boolean }> {
   let lastError: unknown = null;
 
   for (let attempt = 1; attempt <= PAGE_RETRY_ATTEMPTS; attempt += 1) {
@@ -198,9 +200,13 @@ async function loadAllCustomers(): Promise<void> {
       for (const c of contacts) {
         const raw = c as Record<string, unknown>;
         const extracted = extractHubspotRecordId(raw);
+        // Normalize phone: strip non-digits for matching
+        const rawPhone = (c.phone || c.mobile || "") as string;
         dedupedCustomers.set(c.contact_id, {
           contact_id: c.contact_id,
           contact_name: c.contact_name,
+          email: (c.email as string)?.trim().toLowerCase() || null,
+          phone: rawPhone ? normalizePhone(rawPhone) : null,
           hubspot_record_id: extracted.id,
           hubspot_id_source: extracted.source,
         });
@@ -218,6 +224,14 @@ async function loadAllCustomers(): Promise<void> {
   cache = { version: CACHE_VERSION, customers: allCustomers, expiresAt: Date.now() + CACHE_TTL_MS };
   const hsCount = allCustomers.filter((c) => c.hubspot_record_id).length;
   console.log(`[zoho-customer-cache] cached ${allCustomers.length} customers (${hsCount} with HubSpot ID)`);
+}
+
+/** Strip a phone string to just digits (last 10) for comparison. */
+function normalizePhone(raw: string): string | null {
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length < 7) return null;
+  // Use last 10 digits (drop country code)
+  return digits.slice(-10);
 }
 
 // ---------------------------------------------------------------------------
@@ -264,6 +278,21 @@ export function searchCustomersByName(query: string): CachedCustomer[] {
   return cache.customers.filter((c) =>
     c.contact_name.toLowerCase().includes(q)
   );
+}
+
+/** Find a customer by email address (case-insensitive). */
+export function findByEmail(email: string): CachedCustomer | null {
+  if (!cache || !email) return null;
+  const normalized = email.trim().toLowerCase();
+  return cache.customers.find((c) => c.email === normalized) ?? null;
+}
+
+/** Find a customer by phone number (digit-normalized). */
+export function findByPhone(phone: string): CachedCustomer | null {
+  if (!cache || !phone) return null;
+  const normalized = normalizePhone(phone);
+  if (!normalized) return null;
+  return cache.customers.find((c) => c.phone === normalized) ?? null;
 }
 
 /** Get cache stats for debug endpoint. */

@@ -90,6 +90,9 @@ export interface ZohoAddress {
 export interface ZohoVendor {
   contact_id: string;
   contact_name: string;
+  email?: string;
+  phone?: string;
+  mobile?: string;
   billing_address?: ZohoAddress;
   shipping_address?: ZohoAddress;
 }
