@@ -7,6 +7,12 @@ const VALID_SYSTEMS = ["INTERNAL", "ZOHO", "HUBSPOT", "ZUPER", "QUICKBOOKS"] as 
 const VALID_STATUSES = ["PENDING", "APPROVED", "REJECTED"] as const;
 type PushStatus = typeof VALID_STATUSES[number];
 
+function parseNullableNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 export async function POST(request: NextRequest) {
   if (!prisma) return NextResponse.json({ error: "Database not configured" }, { status: 503 });
 
@@ -21,7 +27,7 @@ export async function POST(request: NextRequest) {
   const {
     brand, model, description, category, unitSpec, unitLabel,
     sku, vendorName, vendorPartNumber, unitCost, sellPrice,
-    hardToProcure, length, width, weight, metadata,
+    hardToProcure, length, width, weight, metadata, quickbooksItemId,
     systems, dealId,
   } = body as Record<string, unknown>;
 
@@ -39,6 +45,20 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: `Invalid systems: ${invalidSystems.join(", ")}` }, { status: 400 });
   }
 
+  if (
+    quickbooksItemId !== undefined &&
+    quickbooksItemId !== null &&
+    typeof quickbooksItemId !== "string"
+  ) {
+    return NextResponse.json({ error: "quickbooksItemId must be a string or null" }, { status: 400 });
+  }
+
+  const normalizedQuickbooksItemId =
+    typeof quickbooksItemId === "string" && quickbooksItemId.trim()
+      ? quickbooksItemId.trim()
+      : null;
+  const includeQuickbooks = systems.includes("QUICKBOOKS");
+
   const push = await prisma.pendingCatalogPush.create({
     data: {
       brand: String(brand).trim(),
@@ -50,14 +70,15 @@ export async function POST(request: NextRequest) {
       sku: sku ? String(sku).trim() : null,
       vendorName: vendorName ? String(vendorName).trim() : null,
       vendorPartNumber: vendorPartNumber ? String(vendorPartNumber).trim() : null,
-      unitCost: unitCost != null ? Number(unitCost) || null : null,
-      sellPrice: sellPrice != null ? Number(sellPrice) || null : null,
+      unitCost: parseNullableNumber(unitCost),
+      sellPrice: parseNullableNumber(sellPrice),
       hardToProcure: hardToProcure === true,
-      length: length != null ? Number(length) || null : null,
-      width: width != null ? Number(width) || null : null,
-      weight: weight != null ? Number(weight) || null : null,
+      length: parseNullableNumber(length),
+      width: parseNullableNumber(width),
+      weight: parseNullableNumber(weight),
       metadata: metadata || undefined,
       systems: systems,
+      quickbooksItemId: includeQuickbooks ? normalizedQuickbooksItemId : null,
       requestedBy: authResult.email,
       dealId: dealId ? String(dealId) : null,
     },

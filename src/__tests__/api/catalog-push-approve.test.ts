@@ -61,6 +61,7 @@ jest.mock("@/lib/zuper-catalog", () => ({
 // ── Prisma ────────────────────────────────────────────────────────────────────
 const mockFindUnique = jest.fn();
 const mockCatalogFindMany = jest.fn();
+const mockCatalogFindUnique = jest.fn();
 const mockUpsert = jest.fn();
 const mockUpdate = jest.fn();
 const mockSpecUpsert = jest.fn();
@@ -89,6 +90,7 @@ jest.mock("@/lib/db", () => ({
     },
     catalogProduct: {
       findMany: (...args: unknown[]) => mockCatalogFindMany(...args),
+      findUnique: (...args: unknown[]) => mockCatalogFindUnique(...args),
     },
     $transaction: mockTransaction,
   },
@@ -142,6 +144,7 @@ function makePush(overrides: Record<string, unknown> = {}) {
     weight: 46,
     metadata: null,
     systems: ["INTERNAL"],
+    quickbooksItemId: null,
     ...overrides,
   };
 }
@@ -169,6 +172,7 @@ beforeEach(() => {
   );
   mockEquipmentUpdate.mockResolvedValue({ id: "sku_1" });
   mockCatalogFindMany.mockResolvedValue([]);
+  mockCatalogFindUnique.mockResolvedValue(null);
   mockCreateOrUpdateHubSpotProduct.mockResolvedValue({
     hubspotProductId: "hs_prod_1",
     created: true,
@@ -612,6 +616,38 @@ describe("POST /api/catalog/push-requests/[id]/approve", () => {
   });
 
   describe("QuickBooks link integration", () => {
+    it("uses explicit quickbooksItemId when provided on the push request", async () => {
+      mockFindUnique.mockResolvedValue(
+        makePush({
+          systems: ["INTERNAL", "QUICKBOOKS"],
+          quickbooksItemId: "qb_explicit_1",
+        })
+      );
+      mockCatalogFindUnique.mockResolvedValue({
+        externalId: "qb_explicit_1",
+        name: "Explicit match",
+      });
+
+      const res = await POST(new NextRequest("http://localhost"), makeParams());
+      const data = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(mockCatalogFindUnique).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            source_externalId: {
+              source: "QUICKBOOKS",
+              externalId: "qb_explicit_1",
+            },
+          },
+        })
+      );
+      expect(mockCatalogFindMany).not.toHaveBeenCalled();
+      expect(data.outcomes.QUICKBOOKS.status).toBe("success");
+      expect(data.outcomes.QUICKBOOKS.message).toMatch(/selected item/i);
+      expect(data.outcomes.QUICKBOOKS.externalId).toBe("qb_explicit_1");
+    });
+
     it("links QUICKBOOKS when a unique catalog match is found", async () => {
       mockFindUnique.mockResolvedValue(makePush({ systems: ["INTERNAL", "QUICKBOOKS"] }));
       mockCatalogFindMany.mockResolvedValue([

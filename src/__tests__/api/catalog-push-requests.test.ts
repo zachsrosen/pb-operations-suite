@@ -163,6 +163,52 @@ describe("POST /api/catalog/push-requests", () => {
     expect(res.status).toBe(201);
     expect(mockCreate).toHaveBeenCalledTimes(1);
   });
+
+  it("preserves explicit quickbooksItemId and zero numeric values", async () => {
+    mockCreate.mockResolvedValue({ id: "push_4", status: "PENDING" });
+
+    const req = makeRequest({
+      brand: "Tesla",
+      model: "Powerwall 3",
+      description: "Battery",
+      category: "BATTERY",
+      systems: ["INTERNAL", "QUICKBOOKS"],
+      quickbooksItemId: "1841000-x1-y",
+      unitCost: 0,
+      sellPrice: 0,
+      length: 0,
+      width: 0,
+      weight: 0,
+    });
+    const res = await postRequest(req);
+
+    expect(res.status).toBe(201);
+    const createArg = mockCreate.mock.calls.at(-1)?.[0] as { data: Record<string, unknown> };
+    expect(createArg.data.quickbooksItemId).toBe("1841000-x1-y");
+    expect(createArg.data.unitCost).toBe(0);
+    expect(createArg.data.sellPrice).toBe(0);
+    expect(createArg.data.length).toBe(0);
+    expect(createArg.data.width).toBe(0);
+    expect(createArg.data.weight).toBe(0);
+  });
+
+  it("clears quickbooksItemId when QUICKBOOKS is not selected", async () => {
+    mockCreate.mockResolvedValue({ id: "push_5", status: "PENDING" });
+
+    const req = makeRequest({
+      brand: "Tesla",
+      model: "Powerwall 3",
+      description: "Battery",
+      category: "BATTERY",
+      systems: ["INTERNAL"],
+      quickbooksItemId: "qb_should_be_ignored",
+    });
+    const res = await postRequest(req);
+
+    expect(res.status).toBe(201);
+    const createArg = mockCreate.mock.calls.at(-1)?.[0] as { data: Record<string, unknown> };
+    expect(createArg.data.quickbooksItemId).toBeNull();
+  });
 });
 
 // ── GET tests ─────────────────────────────────────────────────────────────────

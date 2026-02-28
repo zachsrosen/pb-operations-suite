@@ -29,7 +29,7 @@ interface SystemOutcome {
 }
 
 type QuickBooksMatchOutcome =
-  | { status: "matched"; externalId: string; name: string | null; strategy: "sku" | "name" }
+  | { status: "matched"; externalId: string; name: string | null; strategy: "explicit" | "sku" | "name" }
   | { status: "ambiguous"; strategy: "sku" | "name"; candidates: Array<{ externalId: string; name: string | null }> }
   | { status: "no_match"; reason: string };
 
@@ -64,8 +64,34 @@ async function resolveQuickBooksMatch(push: {
   description: string;
   sku: string | null;
   vendorPartNumber: string | null;
+  quickbooksItemId: string | null;
 }): Promise<QuickBooksMatchOutcome> {
   if (!prisma) return { status: "no_match", reason: "Database is not configured." };
+
+  const explicitQuickbooksItemId = String(push.quickbooksItemId || "").trim();
+  if (explicitQuickbooksItemId) {
+    const explicit = await prisma.catalogProduct.findUnique({
+      where: {
+        source_externalId: {
+          source: "QUICKBOOKS",
+          externalId: explicitQuickbooksItemId,
+        },
+      },
+      select: { externalId: true, name: true },
+    });
+    if (explicit) {
+      return {
+        status: "matched",
+        externalId: explicit.externalId,
+        name: explicit.name,
+        strategy: "explicit",
+      };
+    }
+    return {
+      status: "no_match",
+      reason: `Selected QuickBooks item '${explicitQuickbooksItemId}' was not found in cached catalog.`,
+    };
+  }
 
   const skuCandidates = compactUnique([
     normalizeSku(push.sku),
@@ -352,7 +378,9 @@ export async function POST(
         status: "success",
         externalId: quickbooksMatch.externalId,
         message:
-          quickbooksMatch.strategy === "sku"
+          quickbooksMatch.strategy === "explicit"
+            ? "Linked QuickBooks using selected item."
+            : quickbooksMatch.strategy === "sku"
             ? "Linked QuickBooks by SKU match."
             : "Linked QuickBooks by name match.",
       };

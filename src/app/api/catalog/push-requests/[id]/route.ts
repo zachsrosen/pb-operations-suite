@@ -5,6 +5,12 @@ import { requireApiAuth } from "@/lib/api-auth";
 const ADMIN_ROLES = ["ADMIN", "OWNER", "MANAGER"];
 const VALID_SYSTEMS = ["INTERNAL", "ZOHO", "HUBSPOT", "ZUPER", "QUICKBOOKS"] as const;
 
+function parseOptionalString(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  const trimmed = String(value).trim();
+  return trimmed || null;
+}
+
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -80,6 +86,22 @@ export async function PATCH(
       return NextResponse.json({ error: `Invalid systems: ${invalidSystems.join(", ")}` }, { status: 400 });
     }
     updateData.systems = systems;
+  }
+
+  if ("quickbooksItemId" in body) {
+    const value = body.quickbooksItemId;
+    if (value !== null && value !== undefined && typeof value !== "string") {
+      return NextResponse.json({ error: "quickbooksItemId must be a string or null" }, { status: 400 });
+    }
+    updateData.quickbooksItemId = parseOptionalString(value);
+  }
+
+  if (
+    "systems" in body &&
+    Array.isArray(updateData.systems) &&
+    !(updateData.systems as string[]).includes("QUICKBOOKS")
+  ) {
+    updateData.quickbooksItemId = null;
   }
 
   if (Object.keys(updateData).length === 0) {

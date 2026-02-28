@@ -20,6 +20,14 @@ const sectionTitleClasses = "text-lg font-semibold text-foreground mb-4";
 
 const SYSTEM_OPTIONS = ["INTERNAL", "HUBSPOT", "ZUPER", "ZOHO", "QUICKBOOKS"] as const;
 
+interface CachedQuickBooksProduct {
+  externalId: string;
+  name: string | null;
+  sku: string | null;
+  description: string | null;
+  price: number | null;
+}
+
 function NewProductForm() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -41,6 +49,11 @@ function NewProductForm() {
   const [weight, setWeight] = useState("");
   const [specValues, setSpecValues] = useState<Record<string, unknown>>({});
   const [systems, setSystems] = useState<Set<string>>(new Set(["INTERNAL"]));
+  const [quickbooksSearch, setQuickbooksSearch] = useState("");
+  const [quickbooksLoading, setQuickbooksLoading] = useState(false);
+  const [quickbooksError, setQuickbooksError] = useState<string | null>(null);
+  const [quickbooksResults, setQuickbooksResults] = useState<CachedQuickBooksProduct[]>([]);
+  const [selectedQuickbooksItemId, setSelectedQuickbooksItemId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -73,12 +86,75 @@ function NewProductForm() {
       const next = new Set(prev);
       if (next.has(sys)) {
         next.delete(sys);
+        if (sys === "QUICKBOOKS") {
+          setQuickbooksSearch("");
+          setQuickbooksResults([]);
+          setQuickbooksError(null);
+          setSelectedQuickbooksItemId(null);
+        }
       } else {
         next.add(sys);
+        if (sys === "QUICKBOOKS" && !quickbooksSearch.trim()) {
+          const seed = [sku, vendorPartNumber, `${brand} ${model}`, model]
+            .map((v) => String(v || "").trim())
+            .find(Boolean);
+          if (seed) setQuickbooksSearch(seed);
+        }
       }
       return next;
     });
   }
+
+  useEffect(() => {
+    if (!systems.has("QUICKBOOKS")) return;
+    const seeded = [sku, vendorPartNumber, `${brand} ${model}`, model]
+      .map((v) => String(v || "").trim())
+      .find(Boolean);
+    if (seeded && !quickbooksSearch.trim()) {
+      setQuickbooksSearch(seeded);
+    }
+  }, [systems, sku, vendorPartNumber, brand, model, quickbooksSearch]);
+
+  useEffect(() => {
+    if (!systems.has("QUICKBOOKS")) return;
+    const search = quickbooksSearch.trim();
+    if (!search) {
+      setQuickbooksResults([]);
+      setQuickbooksError(null);
+      return;
+    }
+
+    let cancelled = false;
+    const timeoutId = setTimeout(async () => {
+      setQuickbooksLoading(true);
+      setQuickbooksError(null);
+      try {
+        const res = await fetch(
+          `/api/products/cache?source=quickbooks&search=${encodeURIComponent(search)}&limit=12`,
+          { cache: "no-store" }
+        );
+        const payload = (await res.json().catch(() => null)) as
+          | { error?: string; products?: CachedQuickBooksProduct[] }
+          | null;
+        if (!res.ok) {
+          throw new Error(payload?.error || `QuickBooks search failed (${res.status})`);
+        }
+        if (cancelled) return;
+        setQuickbooksResults(Array.isArray(payload?.products) ? payload.products : []);
+      } catch (err) {
+        if (cancelled) return;
+        setQuickbooksResults([]);
+        setQuickbooksError(err instanceof Error ? err.message : "QuickBooks search failed");
+      } finally {
+        if (!cancelled) setQuickbooksLoading(false);
+      }
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
+  }, [systems, quickbooksSearch]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -104,6 +180,10 @@ function NewProductForm() {
         weight: weight ? parseFloat(weight) : null,
         metadata: Object.keys(specValues).length > 0 ? specValues : null,
         systems: Array.from(systems),
+        quickbooksItemId:
+          systems.has("QUICKBOOKS") && selectedQuickbooksItemId
+            ? selectedQuickbooksItemId
+            : null,
         dealId: searchParams.get("dealId") || null,
       };
 
@@ -405,6 +485,82 @@ function NewProductForm() {
               );
             })}
           </div>
+
+          {systems.has("QUICKBOOKS") && (
+            <div className="mt-4 space-y-2 rounded-lg border border-t-border bg-surface-2 p-3">
+              <div>
+                <label className={labelClasses}>QuickBooks Match (Optional, Recommended)</label>
+                <input
+                  type="text"
+                  value={quickbooksSearch}
+                  onChange={(e) => setQuickbooksSearch(e.target.value)}
+                  placeholder="Search QuickBooks by SKU, name, or item ID"
+                  className={inputClasses}
+                />
+              </div>
+              <div className="text-xs text-muted">
+                Select the exact QuickBooks item to avoid ambiguous auto-matching during approval.
+              </div>
+
+              {quickbooksLoading && (
+                <div className="text-xs text-muted">Searching QuickBooks cache...</div>
+              )}
+              {quickbooksError && (
+                <div className="text-xs text-red-400">{quickbooksError}</div>
+              )}
+
+              {!quickbooksLoading && !quickbooksError && quickbooksSearch.trim() && quickbooksResults.length === 0 && (
+                <div className="text-xs text-muted">No QuickBooks products found for this search.</div>
+              )}
+
+              {quickbooksResults.length > 0 && (
+                <div className="max-h-48 overflow-y-auto rounded border border-t-border">
+                  {quickbooksResults.map((product) => {
+                    const isSelected = selectedQuickbooksItemId === product.externalId;
+                    return (
+                      <button
+                        key={product.externalId}
+                        type="button"
+                        onClick={() => setSelectedQuickbooksItemId(product.externalId)}
+                        className={`flex w-full items-start justify-between gap-3 border-b border-t-border px-3 py-2 text-left last:border-b-0 ${
+                          isSelected ? "bg-cyan-500/10" : "hover:bg-surface"
+                        }`}
+                      >
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-medium text-foreground">
+                            {product.name || "Unnamed QuickBooks Product"}
+                          </div>
+                          <div className="truncate text-xs text-muted">
+                            SKU: {product.sku || "—"} · ID: {product.externalId}
+                          </div>
+                        </div>
+                        {isSelected && (
+                          <span className="rounded border border-cyan-500/40 bg-cyan-500/10 px-1.5 py-0.5 text-[11px] text-cyan-300">
+                            Selected
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <span className="text-muted">
+                  Selected QuickBooks ID: {selectedQuickbooksItemId || "Auto-match at approval"}
+                </span>
+                {selectedQuickbooksItemId && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedQuickbooksItemId(null)}
+                    className="rounded border border-t-border bg-surface px-2 py-1 text-muted hover:text-foreground"
+                  >
+                    Clear selection
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

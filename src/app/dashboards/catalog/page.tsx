@@ -90,6 +90,7 @@ interface PushRequest {
   unitSpec: string | null;
   unitLabel: string | null;
   systems: string[];
+  quickbooksItemId: string | null;
   requestedBy: string;
   dealId: string | null;
   createdAt: string;
@@ -139,6 +140,7 @@ interface PushEditDraft {
   unitSpec: string;
   unitLabel: string;
   systems: string[];
+  quickbooksItemId: string;
 }
 
 const ADMIN_ROLES = ["ADMIN", "OWNER", "MANAGER"];
@@ -434,6 +436,7 @@ export default function CatalogPage() {
       unitSpec: push.unitSpec ?? "",
       unitLabel: push.unitLabel ?? "",
       systems: [...push.systems],
+      quickbooksItemId: push.quickbooksItemId ?? "",
     });
   }
 
@@ -473,6 +476,10 @@ export default function CatalogPage() {
           unitSpec: pushEditDraft.unitSpec || null,
           unitLabel: pushEditDraft.unitLabel || null,
           systems: pushEditDraft.systems,
+          quickbooksItemId:
+            pushEditDraft.systems.includes("QUICKBOOKS")
+              ? pushEditDraft.quickbooksItemId || null
+              : null,
         }),
       });
       const data = await res.json() as { error?: string; push?: PushRequest };
@@ -1036,12 +1043,25 @@ export default function CatalogPage() {
                             placeholder="Unit"
                           />
                         </div>
+                        {pushEditDraft.systems.includes("QUICKBOOKS") && (
+                          <input
+                            value={pushEditDraft.quickbooksItemId}
+                            onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, quickbooksItemId: e.target.value } : prev)}
+                            className="w-full rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                            placeholder="QuickBooks Item ID (optional)"
+                          />
+                        )}
                       </div>
                     ) : (
                       <>
                         <div className="font-medium text-foreground truncate">{p.brand} — {p.model}</div>
                         <div className="text-xs text-muted truncate">{p.description}</div>
                         <div className="text-xs text-muted/60 mt-0.5">{p.category}</div>
+                        {p.quickbooksItemId && (
+                          <div className="text-xs text-cyan-300/90 mt-0.5">
+                            QuickBooks: {p.quickbooksItemId}
+                          </div>
+                        )}
                       </>
                     )}
                   </div>
