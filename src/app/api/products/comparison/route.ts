@@ -1268,7 +1268,19 @@ async function hydrateSourceWithCache(source: CacheSourceName, result: SourceFet
 
   try {
     if (result.products.length > 0) {
-      await saveProductsToCache(source, result.products);
+      // Never block the API response on cache writes; this endpoint is user-facing.
+      const cacheWriteTimeoutMs = parsePositiveIntEnv("PRODUCT_COMPARISON_CACHE_WRITE_TIMEOUT_MS", 1500);
+      void withTimeout(
+        saveProductsToCache(source, result.products),
+        cacheWriteTimeoutMs,
+        `${SOURCE_LABELS[source]} cache write`
+      ).catch((error) => {
+        console.warn(
+          "[products/comparison] cache write skipped for %s: %s",
+          source,
+          error instanceof Error ? error.message : "unknown error"
+        );
+      });
       return { result, warning: null };
     }
 
@@ -1423,39 +1435,69 @@ export async function GET() {
     error: opensolarCache.result.error,
   };
 
+  const productCapPerSource = parsePositiveIntEnv("PRODUCT_COMPARISON_MAX_PRODUCTS_PER_SOURCE", 2500);
+  const performanceWarnings: string[] = [];
+  const capProducts = <T extends SourceFetchResult>(source: SourceName, result: T): T => {
+    if (result.products.length <= productCapPerSource) return result;
+    performanceWarnings.push(
+      `${SOURCE_LABELS[source]} products capped at ${productCapPerSource} for performance (from ${result.products.length})`
+    );
+    return {
+      ...result,
+      products: result.products.slice(0, productCapPerSource),
+    };
+  };
+
+  const boundedHubspotResult = capProducts("hubspot", effectiveHubspotResult);
+  const boundedZuperResult = capProducts("zuper", effectiveZuperResult);
+  const boundedZohoResult = capProducts("zoho", effectiveZohoResult);
+  const boundedOpensolarResult = capProducts("opensolar", effectiveOpensolarResult);
+  const boundedQuickbooksResult = capProducts("quickbooks", effectiveQuickbooksResult);
+
   const sourceResults = {
-    hubspot: effectiveHubspotResult,
-    zuper: effectiveZuperResult,
-    zoho: effectiveZohoResult,
-    opensolar: effectiveOpensolarResult,
-    quickbooks: effectiveQuickbooksResult,
+    hubspot: boundedHubspotResult,
+    zuper: boundedZuperResult,
+    zoho: boundedZohoResult,
+    opensolar: boundedOpensolarResult,
+    quickbooks: boundedQuickbooksResult,
   } as const;
   const comparisonSources = ALL_SOURCES.filter((source) => sourceResults[source].configured);
 
   const allProducts = [
-    ...effectiveHubspotResult.products,
-    ...effectiveZuperResult.products,
-    ...effectiveZohoResult.products,
-    ...effectiveOpensolarResult.products,
-    ...effectiveQuickbooksResult.products,
+    ...boundedHubspotResult.products,
+    ...boundedZuperResult.products,
+    ...boundedZohoResult.products,
+    ...boundedOpensolarResult.products,
+    ...boundedQuickbooksResult.products,
   ];
   const rows = buildComparisonRows(allProducts, comparisonSources);
   const productsBySource: Record<SourceName, ComparableProduct[]> = {
-    hubspot: effectiveHubspotResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
-    zuper: effectiveZuperResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
-    zoho: effectiveZohoResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
-    opensolar: effectiveOpensolarResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
-    quickbooks: effectiveQuickbooksResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
+    hubspot: boundedHubspotResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
+    zuper: boundedZuperResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
+    zoho: boundedZohoResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
+    opensolar: boundedOpensolarResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
+    quickbooks: boundedQuickbooksResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
   };
-  const initialRows = rows.map((row) => ({
-    ...row,
-    possibleMatches: buildPossibleMatches(row, productsBySource, comparisonSources),
-  }));
-  const mergedRows = autoMergeRows(initialRows, comparisonSources);
-  const enrichedRows = mergedRows.map((row) => ({
-    ...row,
-    possibleMatches: buildPossibleMatches(row, productsBySource, comparisonSources),
-  }));
+  const matchingRowCap = parsePositiveIntEnv("PRODUCT_COMPARISON_MAX_ROWS_FOR_MATCHING", 1500);
+  const enrichedRows =
+    rows.length > matchingRowCap
+      ? (() => {
+          performanceWarnings.push(
+            `Possible-match scoring skipped for performance (rows=${rows.length}, cap=${matchingRowCap})`
+          );
+          return rows.map((row) => ({ ...row, possibleMatches: [] }));
+        })()
+      : (() => {
+          const initialRows = rows.map((row) => ({
+            ...row,
+            possibleMatches: buildPossibleMatches(row, productsBySource, comparisonSources),
+          }));
+          const mergedRows = autoMergeRows(initialRows, comparisonSources);
+          return mergedRows.map((row) => ({
+            ...row,
+            possibleMatches: buildPossibleMatches(row, productsBySource, comparisonSources),
+          }));
+        })();
 
   const mismatchRows = enrichedRows.filter((row) => row.isMismatch).length;
   const missingBySource = {
@@ -1473,6 +1515,7 @@ export async function GET() {
     ...[hubspotCache, zuperCache, zohoCache, quickbooksCache, opensolarCache]
       .map((c) => c.warning)
       .filter(Boolean) as string[],
+    ...performanceWarnings,
   ];
 
   const payload: ProductComparisonResponse = {
@@ -1483,38 +1526,38 @@ export async function GET() {
       fullyMatchedRows: enrichedRows.length - mismatchRows,
       missingBySource,
       sourceCounts: {
-        hubspot: effectiveHubspotResult.products.length,
-        zuper: effectiveZuperResult.products.length,
-        zoho: effectiveZohoResult.products.length,
-        opensolar: effectiveOpensolarResult.products.length,
-        quickbooks: effectiveQuickbooksResult.products.length,
+        hubspot: boundedHubspotResult.products.length,
+        zuper: boundedZuperResult.products.length,
+        zoho: boundedZohoResult.products.length,
+        opensolar: boundedOpensolarResult.products.length,
+        quickbooks: boundedQuickbooksResult.products.length,
       },
     },
     health: {
       hubspot: {
-        configured: effectiveHubspotResult.configured,
-        count: effectiveHubspotResult.products.length,
-        error: effectiveHubspotResult.error,
+        configured: boundedHubspotResult.configured,
+        count: boundedHubspotResult.products.length,
+        error: boundedHubspotResult.error,
       },
       zuper: {
-        configured: effectiveZuperResult.configured,
-        count: effectiveZuperResult.products.length,
-        error: effectiveZuperResult.error,
+        configured: boundedZuperResult.configured,
+        count: boundedZuperResult.products.length,
+        error: boundedZuperResult.error,
       },
       zoho: {
-        configured: effectiveZohoResult.configured,
-        count: effectiveZohoResult.products.length,
-        error: effectiveZohoResult.error,
+        configured: boundedZohoResult.configured,
+        count: boundedZohoResult.products.length,
+        error: boundedZohoResult.error,
       },
       opensolar: {
-        configured: effectiveOpensolarResult.configured,
-        count: effectiveOpensolarResult.products.length,
-        error: effectiveOpensolarResult.error,
+        configured: boundedOpensolarResult.configured,
+        count: boundedOpensolarResult.products.length,
+        error: boundedOpensolarResult.error,
       },
       quickbooks: {
-        configured: effectiveQuickbooksResult.configured,
-        count: effectiveQuickbooksResult.products.length,
-        error: effectiveQuickbooksResult.error,
+        configured: boundedQuickbooksResult.configured,
+        count: boundedQuickbooksResult.products.length,
+        error: boundedQuickbooksResult.error,
       },
     },
     warnings,
