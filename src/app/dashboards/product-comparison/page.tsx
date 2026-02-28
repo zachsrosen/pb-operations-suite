@@ -241,6 +241,101 @@ function normalizeSearchText(value: string | null | undefined): string {
   return String(value || "").toLowerCase().trim();
 }
 
+function normalizeComparableText(value: string | null | undefined): string {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeComparableSku(value: string | null | undefined): string {
+  return String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "");
+}
+
+function uniqueStrings(values: Array<string | null | undefined>): string[] {
+  const output: string[] = [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    const normalized = String(value || "").trim();
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    output.push(normalized);
+  }
+  return output;
+}
+
+function missingReasonForSource(source: SourceName): string {
+  return `Missing in ${formatSourceName(source)}`;
+}
+
+function configuredSourcesFromPayload(payload: ProductComparisonResponse): SourceName[] {
+  return ALL_SOURCES.filter((source) => payload.health[source]?.configured);
+}
+
+function evaluateDynamicReasons(row: ComparisonRow, configuredSources: SourceName[]): string[] {
+  const reasons: string[] = [];
+
+  for (const source of configuredSources) {
+    if (!row[source]) reasons.push(missingReasonForSource(source));
+  }
+
+  const present = configuredSources.map((source) => row[source]).filter(Boolean) as ComparableProduct[];
+  const names = new Set(present.map((product) => normalizeComparableText(product.name)).filter(Boolean));
+  const skus = new Set(present.map((product) => normalizeComparableSku(product.sku)).filter(Boolean));
+  const hasSharedSku = skus.size === 1 && skus.size > 0;
+
+  if (names.size > 1 && !hasSharedSku) reasons.push("Product name mismatch");
+  if (skus.size > 1) reasons.push("SKU mismatch");
+
+  const numericPrices = present
+    .map((product) => product.price)
+    .filter((price): price is number => typeof price === "number" && Number.isFinite(price))
+    .map((price) => Number(price.toFixed(2)));
+  if (numericPrices.length >= 2) {
+    const uniquePrices = new Set(numericPrices);
+    if (uniquePrices.size > 1) reasons.push("Price mismatch");
+  }
+
+  const internalProduct = row.internal;
+  const linkedExternalIds = internalProduct?.linkedExternalIds;
+  if (internalProduct && linkedExternalIds) {
+    for (const source of LINKABLE_SOURCES) {
+      if (!configuredSources.includes(source)) continue;
+      const linkedId = String(linkedExternalIds[source] || "").trim();
+      const externalProduct = row[source];
+      if (!externalProduct) {
+        if (linkedId) reasons.push(`Internal link mismatch for ${formatSourceName(source)}`);
+        continue;
+      }
+      if (!linkedId) {
+        reasons.push(`Internal link missing for ${formatSourceName(source)}`);
+        continue;
+      }
+      if (linkedId !== externalProduct.id) {
+        reasons.push(`Internal link mismatch for ${formatSourceName(source)}`);
+      }
+    }
+  }
+
+  return uniqueStrings(reasons);
+}
+
+function recomputeRowState(row: ComparisonRow, configuredSources: SourceName[]): ComparisonRow {
+  const duplicateReasons = row.reasons.filter((reason) => reason.startsWith("Duplicate "));
+  const nextReasons = uniqueStrings([...duplicateReasons, ...evaluateDynamicReasons(row, configuredSources)]);
+  return {
+    ...row,
+    reasons: nextReasons,
+    isMismatch: nextReasons.length > 0,
+    possibleMatches: nextReasons.length === 0 ? [] : row.possibleMatches,
+  };
+}
+
 function computeRowSeverity(row: ComparisonRow): number {
   let severity = 0;
   for (const reason of row.reasons) {
@@ -478,6 +573,9 @@ export default function ProductComparisonPage() {
   const [searchStateBySource, setSearchStateBySource] = useState<Record<string, SourceSearchState>>({});
   const [pinnedRowKeys, setPinnedRowKeys] = useState<Record<string, true>>({});
   const [actionFeedback, setActionFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [isBackgroundRefreshing, setIsBackgroundRefreshing] = useState(false);
+  const backgroundRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const backgroundRefreshInFlightRef = useRef(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -493,6 +591,38 @@ export default function ProductComparisonPage() {
       setLoading(false);
     }
   }, []);
+
+  const runBackgroundRefresh = useCallback(async () => {
+    if (backgroundRefreshInFlightRef.current) return;
+    backgroundRefreshInFlightRef.current = true;
+    setIsBackgroundRefreshing(true);
+
+    try {
+      const response = await fetch("/api/products/comparison", { cache: "no-store" });
+      if (!response.ok) return;
+      const json = (await response.json()) as ProductComparisonResponse;
+      setData(json);
+      setError(null);
+    } catch {
+      // Keep this silent to avoid interrupting active linking workflows.
+    } finally {
+      backgroundRefreshInFlightRef.current = false;
+      setIsBackgroundRefreshing(false);
+    }
+  }, []);
+
+  const scheduleBackgroundRefresh = useCallback(
+    (delayMs = 1200) => {
+      if (backgroundRefreshTimerRef.current) {
+        clearTimeout(backgroundRefreshTimerRef.current);
+      }
+      backgroundRefreshTimerRef.current = setTimeout(() => {
+        backgroundRefreshTimerRef.current = null;
+        void runBackgroundRefresh();
+      }, delayMs);
+    },
+    [runBackgroundRefresh]
+  );
 
   const toggleSourceSearch = useCallback((row: DisplayRow, source: LinkableSourceName) => {
     const key = sourceSearchKey(row.key, source);
@@ -640,12 +770,13 @@ export default function ProductComparisonPage() {
   ) => {
     setData((prev) => {
       if (!prev) return prev;
+      const configuredSources = configuredSourcesFromPayload(prev);
       const nextRows = prev.rows.map((candidateRow) => {
         if (candidateRow.key !== rowKey || !candidateRow.internal) return candidateRow;
         const shouldSetSourceProduct =
           Boolean(sourceProduct) &&
           (!candidateRow[source] || candidateRow[source]?.id === externalId);
-        return {
+        const nextRow: ComparisonRow = {
           ...candidateRow,
           ...(shouldSetSourceProduct ? { [source]: sourceProduct } : {}),
           internal: {
@@ -656,6 +787,7 @@ export default function ProductComparisonPage() {
             },
           },
         };
+        return recomputeRowState(nextRow, configuredSources);
       });
       return {
         ...prev,
@@ -699,14 +831,18 @@ export default function ProductComparisonPage() {
 
         const searchKey = sourceSearchKey(row.key, source);
         const candidate = searchStateBySource[searchKey]?.results.find((result) => result.externalId === externalId);
+        const suggestedMatch = row.possibleMatches.find(
+          (match) => match.source === source && match.product.id === externalId
+        );
         const sourceProduct =
           row[source]?.id === externalId
             ? row[source]
             : candidate
               ? cachedCatalogToComparableProduct(candidate)
-              : null;
+              : suggestedMatch?.product || null;
         applyLocalLinkUpdate(row.key, source, externalId, sourceProduct);
         setPinnedRowKeys((prev) => ({ ...prev, [row.key]: true }));
+        scheduleBackgroundRefresh();
         const syncedCount = Object.keys(patchBody).length - 1;
         setActionFeedback({
           type: "success",
@@ -725,7 +861,7 @@ export default function ProductComparisonPage() {
         });
       }
     },
-    [applyLocalLinkUpdate, searchStateBySource]
+    [applyLocalLinkUpdate, scheduleBackgroundRefresh, searchStateBySource]
   );
 
   const createMissingSourceProduct = useCallback(
@@ -759,6 +895,7 @@ export default function ProductComparisonPage() {
 
         applyLocalLinkUpdate(row.key, source, payload.externalId, payload.product || null);
         setPinnedRowKeys((prev) => ({ ...prev, [row.key]: true }));
+        scheduleBackgroundRefresh();
         setActionFeedback({
           type: "success",
           message: `${
@@ -778,7 +915,7 @@ export default function ProductComparisonPage() {
         });
       }
     },
-    [applyLocalLinkUpdate]
+    [applyLocalLinkUpdate, scheduleBackgroundRefresh]
   );
 
   const toggleInternalCreate = useCallback((row: DisplayRow) => {
@@ -891,22 +1028,22 @@ export default function ProductComparisonPage() {
 
         setData((prev) => {
           if (!prev) return prev;
+          const configuredSources = configuredSourcesFromPayload(prev);
           return {
             ...prev,
             rows: prev.rows.map((candidateRow) => {
               if (candidateRow.key !== row.key) return candidateRow;
-              const reasons = candidateRow.reasons.filter((reason) => reason !== "Missing in Internal");
-              return {
+              const nextRow: ComparisonRow = {
                 ...candidateRow,
                 internal: internalProduct,
-                reasons,
-                isMismatch: reasons.length > 0,
               };
+              return recomputeRowState(nextRow, configuredSources);
             }),
           };
         });
 
         setPinnedRowKeys((prev) => ({ ...prev, [row.key]: true }));
+        scheduleBackgroundRefresh();
         setInternalCreateByRow((prev) => ({
           ...prev,
           [row.key]: {
@@ -931,7 +1068,7 @@ export default function ProductComparisonPage() {
         });
       }
     },
-    [internalCreateByRow]
+    [internalCreateByRow, scheduleBackgroundRefresh]
   );
 
   const mergeDuplicateInternalIntoPrimary = useCallback(
@@ -965,26 +1102,24 @@ export default function ProductComparisonPage() {
 
         setData((prev) => {
           if (!prev) return prev;
+          const configuredSources = configuredSourcesFromPayload(prev);
           return {
             ...prev,
             rows: prev.rows.map((candidateRow) => {
               if (candidateRow.key !== row.key) return candidateRow;
               const nextDuplicates = (candidateRow.internalDuplicates || []).filter((entry) => entry.id !== sourceSkuId);
               const hasRemainingInternalDuplicates = nextDuplicates.length > 1;
-              const nextReasons = hasRemainingInternalDuplicates
-                ? candidateRow.reasons
-                : candidateRow.reasons.filter((reason) => !reason.startsWith("Duplicate Internal entries"));
-              return {
+              const nextRow: ComparisonRow = {
                 ...candidateRow,
                 ...(hasRemainingInternalDuplicates ? { internalDuplicates: nextDuplicates } : { internalDuplicates: undefined }),
-                reasons: nextReasons,
-                isMismatch: nextReasons.length > 0,
               };
+              return recomputeRowState(nextRow, configuredSources);
             }),
           };
         });
 
         setPinnedRowKeys((prev) => ({ ...prev, [row.key]: true }));
+        scheduleBackgroundRefresh();
         setActionFeedback({
           type: "success",
           message: "Merged duplicate internal SKU into the primary SKU. Row pinned for further linking work.",
@@ -1002,7 +1137,7 @@ export default function ProductComparisonPage() {
         });
       }
     },
-    []
+    [scheduleBackgroundRefresh]
   );
 
   useEffect(() => {
@@ -1036,6 +1171,15 @@ export default function ProductComparisonPage() {
     trackDashboardView("product-comparison", {});
     hasTrackedView.current = true;
   }, [isAllowed, trackDashboardView]);
+
+  useEffect(() => {
+    return () => {
+      if (backgroundRefreshTimerRef.current) {
+        clearTimeout(backgroundRefreshTimerRef.current);
+        backgroundRefreshTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const configuredSources = useMemo<SourceName[]>(() => {
     if (!data) return [...ALL_SOURCES];
@@ -1396,6 +1540,9 @@ export default function ProductComparisonPage() {
                 >
                   Refresh
                 </button>
+                {isBackgroundRefreshing && (
+                  <span className="text-[11px] text-cyan-300">Syncing in background...</span>
+                )}
               </div>
             </div>
 
