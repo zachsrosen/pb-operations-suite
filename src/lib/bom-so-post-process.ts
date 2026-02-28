@@ -14,7 +14,7 @@
 // ---------------------------------------------------------------------------
 // Rules version — bump on every rule change for audit traceability
 // ---------------------------------------------------------------------------
-export const RULES_VERSION = "2026-02-27-v1";
+export const RULES_VERSION = "2026-02-28-v3";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -317,6 +317,18 @@ export async function postProcessSoItems(
   if (ctx.jobType === "battery_only") {
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
+      if (matchesSku(item, /\b1841000\b|gateway-?3|backup\s*gateway/i)) {
+        corrections.push({ action: "item_removed", itemName: item.name, reason: "Gateway-3 not used on battery-only jobs" });
+        toRemove.add(i);
+      }
+      if (matchesSku(item, /\bac\s*disconnect\b|DG222URB|D224NRB|TGN3324R/i)) {
+        corrections.push({ action: "item_removed", itemName: item.name, reason: "AC disconnect not used on battery-only jobs" });
+        toRemove.add(i);
+      }
+      if (matchesSku(item, /THQL21100/i)) {
+        corrections.push({ action: "item_removed", itemName: item.name, reason: "THQL21100 breaker not used on battery-only jobs" });
+        toRemove.add(i);
+      }
       if (matchesSku(item, /TL270RCU/i)) {
         corrections.push({ action: "item_removed", itemName: item.name, reason: "TL270RCU load center not used on battery-only jobs" });
         toRemove.add(i);
