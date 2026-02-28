@@ -46,8 +46,8 @@ function canonicalizeSku(raw: string): string {
 }
 
 function resolveExternalId(product: z.infer<typeof ProductSchema>): string {
-  const sku = (product.sku || "").trim();
-  if (sku) return canonicalizeSku(sku);
+  const canonical = canonicalizeSku(product.sku || "");
+  if (canonical) return canonical;
   return buildFallbackExternalId(product);
 }
 
