@@ -102,9 +102,25 @@ async function fetchDealProperties(dealId: string): Promise<{
   return { dealName, designFolderUrl };
 }
 
+/** Get a Drive-scoped token, preferring domain-wide delegation (impersonation). */
+async function getDriveToken(): Promise<string> {
+  const impersonateEmail = process.env.GOOGLE_ADMIN_EMAIL ?? process.env.GMAIL_SENDER_EMAIL;
+  if (impersonateEmail) {
+    try {
+      return await getServiceAccountToken(
+        ["https://www.googleapis.com/auth/drive.readonly"],
+        impersonateEmail,
+      );
+    } catch {
+      // DWD not configured — fall through to plain SA
+    }
+  }
+  return getServiceAccountToken(["https://www.googleapis.com/auth/drive.readonly"]);
+}
+
 /** List PDF files in a Google Drive folder, sorted by modifiedTime descending. */
 async function listDrivePdfs(folderId: string): Promise<DrivePdfFile[]> {
-  const token = await getServiceAccountToken(["https://www.googleapis.com/auth/drive.readonly"]);
+  const token = await getDriveToken();
 
   const query = `'${folderId}' in parents and mimeType='application/pdf' and trashed=false`;
   const fields = "files(id,name,modifiedTime)";
@@ -148,7 +164,7 @@ function pickBestPlanset(files: DrivePdfFile[]): DrivePdfFile | null {
 
 /** Download a PDF from Google Drive as a Buffer. */
 async function downloadDrivePdf(fileId: string): Promise<{ buffer: Buffer; filename: string }> {
-  const token = await getServiceAccountToken(["https://www.googleapis.com/auth/drive.readonly"]);
+  const token = await getDriveToken();
 
   // Get file metadata for the filename
   const metaRes = await fetch(
