@@ -67,6 +67,11 @@ describe("POST /api/products/seed", () => {
     expect(res.status).toBe(400);
   });
 
+  it("rejects whitespace-only product names", async () => {
+    const res = await POST(makeRequest({ products: [{ name: "   " }] }));
+    expect(res.status).toBe(400);
+  });
+
   // ── Counting tests ────────────────────────────────────────────────────────
   it("seeds valid products and returns counts", async () => {
     const res = await POST(
@@ -89,7 +94,7 @@ describe("POST /api/products/seed", () => {
 
   it("counts updates when products already exist", async () => {
     mockFindMany.mockResolvedValue([
-      { source: "QUICKBOOKS", externalId: "PW3-001" },
+      { source: "QUICKBOOKS", externalId: "PW3001" },
     ]);
 
     const res = await POST(
@@ -124,7 +129,7 @@ describe("POST /api/products/seed", () => {
     expect(data.uniqueTotal).toBe(1);
     expect(data.inserted).toBe(1);
     expect(data.duplicates).toHaveLength(1);
-    expect(data.duplicates[0].externalId).toBe("PW3-001");
+    expect(data.duplicates[0].externalId).toBe("PW3001");
     expect(data.duplicates[0].occurrences).toBe(2);
     // Last occurrence wins
     expect(mockUpsert).toHaveBeenCalledTimes(1);
@@ -163,12 +168,30 @@ describe("POST /api/products/seed", () => {
     expect(call1.where.source_externalId.externalId).toBe(call2.where.source_externalId.externalId);
   });
 
+  it("canonicalizes SKU-based externalId (case + punctuation insensitive)", async () => {
+    const res = await POST(
+      makeRequest({
+        products: [
+          { name: "Widget A", sku: "pw3-001" },
+          { name: "Widget B", sku: "PW3 001" },
+        ],
+      })
+    );
+
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    // Both SKUs canonicalize to "PW3001", so they collide
+    expect(data.uniqueTotal).toBe(1);
+    expect(data.duplicates).toHaveLength(1);
+    expect(data.duplicates[0].externalId).toBe("PW3001");
+  });
+
   it("hardcodes source as QUICKBOOKS regardless of input", async () => {
     await POST(makeRequest({ products: [{ name: "Test Product", sku: "TP-1" }] }));
 
     expect(mockUpsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { source_externalId: { source: "QUICKBOOKS", externalId: "TP-1" } },
+        where: { source_externalId: { source: "QUICKBOOKS", externalId: "TP1" } },
       })
     );
   });

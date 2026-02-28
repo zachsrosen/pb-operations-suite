@@ -11,7 +11,7 @@ export const runtime = "nodejs";
 const ALLOWED_ROLES = new Set<UserRole>(["ADMIN", "OWNER"]);
 
 const ProductSchema = z.object({
-  name: z.string().min(1, "Product name is required"),
+  name: z.string().trim().min(1, "Product name is required"),
   sku: z.string().optional(),
   type: z.string().optional(),
   price: z.number().optional(),
@@ -41,9 +41,13 @@ function buildFallbackExternalId(product: z.infer<typeof ProductSchema>): string
   return `qb-${hash}`;
 }
 
+function canonicalizeSku(raw: string): string {
+  return raw.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "");
+}
+
 function resolveExternalId(product: z.infer<typeof ProductSchema>): string {
   const sku = (product.sku || "").trim();
-  if (sku) return sku;
+  if (sku) return canonicalizeSku(sku);
   return buildFallbackExternalId(product);
 }
 
