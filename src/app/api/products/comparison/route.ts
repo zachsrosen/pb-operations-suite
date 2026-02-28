@@ -4,7 +4,13 @@ import { getUserByEmail, prisma } from "@/lib/db";
 import { CatalogProductSource } from "@/generated/prisma/enums";
 import { normalizeRole, type UserRole } from "@/lib/role-permissions";
 import { zohoInventory, type ZohoInventoryItem } from "@/lib/zoho-inventory";
-import { getZuperWebBaseUrl } from "@/lib/external-links";
+import {
+  getHubSpotProductUrl,
+  getOpenSolarProductUrl,
+  getQuickBooksItemUrl,
+  getZohoItemUrl,
+  getZuperProductUrl,
+} from "@/lib/external-links";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -276,30 +282,23 @@ function missingReasonForSource(source: SourceName): string {
 }
 
 function buildHubSpotProductUrl(productId: string): string {
-  const portalId = (process.env.HUBSPOT_PORTAL_ID || "21710069").trim();
-  return `https://app.hubspot.com/contacts/${portalId}/record/0-7/${encodeURIComponent(productId)}`;
+  return getHubSpotProductUrl(productId);
 }
 
 function buildZuperProductUrl(productId: string): string {
-  const baseUrl = getZuperWebBaseUrl();
-  return `${baseUrl.replace(/\/$/, "")}/app/product/${encodeURIComponent(productId)}`;
+  return getZuperProductUrl(productId);
 }
 
 function buildZohoProductUrl(itemId: string): string {
-  const baseUrl = process.env.ZOHO_INVENTORY_WEB_URL || "https://inventory.zoho.com/app#/items";
-  return `${baseUrl.replace(/\/$/, "")}/${encodeURIComponent(itemId)}`;
+  return getZohoItemUrl(itemId);
 }
 
 function buildOpenSolarProductUrl(productId: string): string {
-  const baseUrl = process.env.OPENSOLAR_WEB_URL || "https://app.opensolar.com";
-  return `${baseUrl.replace(/\/$/, "")}/app/products/${encodeURIComponent(productId)}`;
+  return getOpenSolarProductUrl(productId);
 }
 
 function buildQuickBooksProductUrl(itemId: string): string | null {
-  const companyId = String(process.env.QUICKBOOKS_COMPANY_ID || "").trim();
-  if (!companyId) return null;
-  const baseUrl = process.env.QUICKBOOKS_WEB_URL || "https://app.qbo.intuit.com";
-  return `${baseUrl.replace(/\/$/, "")}/app/items?itemId=${encodeURIComponent(itemId)}&companyId=${encodeURIComponent(companyId)}`;
+  return getQuickBooksItemUrl(itemId);
 }
 
 function keyForProduct(sku: string | null, name: string | null, source: SourceName, id: string): string {
@@ -2022,6 +2021,16 @@ function createGroupedProductBuckets(): Record<SourceName, NormalizedProduct[]> 
   };
 }
 
+function fallbackUrlForCache(source: CacheSourceName, externalId: string): string | null {
+  const id = String(externalId || "").trim();
+  if (!id) return null;
+  if (source === "hubspot") return buildHubSpotProductUrl(id);
+  if (source === "zuper") return buildZuperProductUrl(id);
+  if (source === "zoho") return buildZohoProductUrl(id);
+  if (source === "opensolar") return buildOpenSolarProductUrl(id);
+  return buildQuickBooksProductUrl(id);
+}
+
 function sourceFromCacheEnum(source: CatalogProductSource): CacheSourceName {
   const map: Record<CatalogProductSource, CacheSourceName> = {
     HUBSPOT: "hubspot",
@@ -2037,6 +2046,7 @@ function normalizeForCache(source: CacheSourceName, product: NormalizedProduct):
   const id = String(product.id || "").trim();
   const name = product.name || null;
   const sku = product.sku || null;
+  const fallbackUrl = fallbackUrlForCache(source, id);
   return {
     source,
     id,
@@ -2045,7 +2055,7 @@ function normalizeForCache(source: CacheSourceName, product: NormalizedProduct):
     price: product.price ?? null,
     status: product.status ?? null,
     description: product.description ?? null,
-    url: product.url ?? null,
+    url: product.url ?? fallbackUrl,
     key: keyForProduct(sku, name, source, id),
     normalizedName: normalizeText(name),
   };
@@ -2119,6 +2129,7 @@ async function loadProductsFromCache(source: CacheSourceName): Promise<Normalize
 
   return rows.map((row) => {
     const normalizedSource = sourceFromCacheEnum(row.source);
+    const fallbackUrl = fallbackUrlForCache(normalizedSource, row.externalId);
     return {
       source: normalizedSource,
       id: row.externalId,
@@ -2127,7 +2138,7 @@ async function loadProductsFromCache(source: CacheSourceName): Promise<Normalize
       price: row.price,
       status: row.status,
       description: row.description,
-      url: row.url,
+      url: row.url || fallbackUrl,
       key: keyForProduct(row.sku, row.name, normalizedSource, row.externalId),
       normalizedName: normalizeText(row.name),
     };
@@ -2206,6 +2217,7 @@ async function backfillLinkedProductsFromCache(
     for (const row of cachedRows) {
       const id = String(row.externalId || "").trim();
       if (!id || existingIds.has(id)) continue;
+      const fallbackUrl = fallbackUrlForCache(source, id);
       hydratedProductsBySource[source].push({
         id,
         name: row.name,
@@ -2213,7 +2225,7 @@ async function backfillLinkedProductsFromCache(
         price: row.price,
         status: row.status,
         description: row.description,
-        url: row.url,
+        url: row.url || fallbackUrl,
       });
       existingIds.add(id);
       hydratedCount += 1;

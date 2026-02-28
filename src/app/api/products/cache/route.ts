@@ -3,6 +3,13 @@ import { requireApiAuth } from "@/lib/api-auth";
 import { getUserByEmail, prisma } from "@/lib/db";
 import { normalizeRole, type UserRole } from "@/lib/role-permissions";
 import { CatalogProductSource } from "@/generated/prisma/enums";
+import {
+  getHubSpotProductUrl,
+  getOpenSolarProductUrl,
+  getQuickBooksItemUrl,
+  getZohoItemUrl,
+  getZuperProductUrl,
+} from "@/lib/external-links";
 
 const ALLOWED_ROLES = new Set<UserRole>([
   "ADMIN",
@@ -35,6 +42,16 @@ function sourceToApiValue(source: CatalogProductSource): SourceApiValue {
     OPENSOLAR: "opensolar",
   };
   return map[source];
+}
+
+function fallbackUrlForSource(source: SourceApiValue, externalId: string): string | null {
+  const id = String(externalId || "").trim();
+  if (!id) return null;
+  if (source === "hubspot") return getHubSpotProductUrl(id);
+  if (source === "zuper") return getZuperProductUrl(id);
+  if (source === "zoho") return getZohoItemUrl(id);
+  if (source === "opensolar") return getOpenSolarProductUrl(id);
+  return getQuickBooksItemUrl(id);
 }
 
 export async function GET(request: NextRequest) {
@@ -100,15 +117,17 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     products: rows.map((row) => ({
-      id: row.id,
+      // Some cached rows (especially seeded imports) do not have a URL persisted.
+      // Provide deterministic source fallback URLs for better operator navigation.
       source: sourceToApiValue(row.source),
+      id: row.id,
       externalId: row.externalId,
       name: row.name,
       sku: row.sku,
       description: row.description,
       price: row.price,
       status: row.status,
-      url: row.url,
+      url: row.url || fallbackUrlForSource(sourceToApiValue(row.source), row.externalId),
       normalizedName: row.normalizedName,
       normalizedSku: row.normalizedSku,
       lastSyncedAt: row.lastSyncedAt,

@@ -14,7 +14,12 @@ import {
 import { createOrUpdateHubSpotProduct } from "@/lib/hubspot";
 import { createOrUpdateZohoItem } from "@/lib/zoho-inventory";
 import { createOrUpdateZuperPart } from "@/lib/zuper-catalog";
-import { getZuperWebBaseUrl } from "@/lib/external-links";
+import {
+  getHubSpotProductUrl,
+  getQuickBooksItemUrl,
+  getZohoItemUrl,
+  getZuperProductUrl,
+} from "@/lib/external-links";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -69,25 +74,19 @@ function parsePrice(value: unknown): number | null {
 }
 
 function buildHubSpotProductUrl(productId: string): string {
-  const portalId = (process.env.HUBSPOT_PORTAL_ID || "21710069").trim();
-  return `https://app.hubspot.com/contacts/${portalId}/record/0-7/${encodeURIComponent(productId)}`;
+  return getHubSpotProductUrl(productId);
 }
 
 function buildZuperProductUrl(productId: string): string {
-  const baseUrl = getZuperWebBaseUrl();
-  return `${baseUrl.replace(/\/$/, "")}/app/product/${encodeURIComponent(productId)}`;
+  return getZuperProductUrl(productId);
 }
 
 function buildZohoProductUrl(itemId: string): string {
-  const baseUrl = process.env.ZOHO_INVENTORY_WEB_URL || "https://inventory.zoho.com/app#/items";
-  return `${baseUrl.replace(/\/$/, "")}/${encodeURIComponent(itemId)}`;
+  return getZohoItemUrl(itemId);
 }
 
 function buildQuickBooksProductUrl(itemId: string): string | null {
-  const companyId = String(process.env.QUICKBOOKS_COMPANY_ID || "").trim();
-  if (!companyId) return null;
-  const baseUrl = process.env.QUICKBOOKS_WEB_URL || "https://app.qbo.intuit.com";
-  return `${baseUrl.replace(/\/$/, "")}/app/items?itemId=${encodeURIComponent(itemId)}&companyId=${encodeURIComponent(companyId)}`;
+  return getQuickBooksItemUrl(itemId);
 }
 
 function escapeQuickBooksQuery(value: string): string {
