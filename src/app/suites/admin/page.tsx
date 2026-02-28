@@ -60,14 +60,6 @@ const ADMIN_TOOLS: SuitePageCard[] = [
     section: "Admin Tools",
   },
   {
-    href: "/dashboards/product-comparison",
-    title: "Product Catalog Comparison",
-    description: "Compare HubSpot, Zuper, and Zoho product records to catch mismatches.",
-    tag: "CATALOG",
-    tagColor: "bg-amber-500/20 text-amber-300 border-amber-500/30",
-    section: "Admin Tools",
-  },
-  {
     href: "/dashboards/mobile",
     title: "Mobile Dashboard",
     description: "Touch-optimized view for field teams and fast project lookup.",

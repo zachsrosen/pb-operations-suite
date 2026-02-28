@@ -639,6 +639,145 @@ function buildPossibleMatches(
   return possibleMatches.sort((a, b) => b.score - a.score);
 }
 
+interface ExactMatchIndexEntry {
+  bySku: Map<string, ComparableProduct[]>;
+  byName: Map<string, ComparableProduct[]>;
+}
+
+function createExactMatchIndex(
+  productsBySource: Record<SourceName, ComparableProduct[]>
+): Record<SourceName, ExactMatchIndexEntry> {
+  const makeEntry = (): ExactMatchIndexEntry => ({
+    bySku: new Map<string, ComparableProduct[]>(),
+    byName: new Map<string, ComparableProduct[]>(),
+  });
+
+  const index: Record<SourceName, ExactMatchIndexEntry> = {
+    internal: makeEntry(),
+    hubspot: makeEntry(),
+    zuper: makeEntry(),
+    zoho: makeEntry(),
+    opensolar: makeEntry(),
+    quickbooks: makeEntry(),
+  };
+
+  for (const source of ALL_SOURCES) {
+    for (const product of productsBySource[source]) {
+      const id = String(product.id || "").trim();
+      if (!id) continue;
+
+      const skuKey = normalizeSku(product.sku);
+      if (skuKey) {
+        const existing = index[source].bySku.get(skuKey) || [];
+        if (!existing.some((candidate) => candidate.id === id)) {
+          existing.push(product);
+          index[source].bySku.set(skuKey, existing);
+        }
+      }
+
+      const nameKey = normalizeText(product.name);
+      if (nameKey) {
+        const existing = index[source].byName.get(nameKey) || [];
+        if (!existing.some((candidate) => candidate.id === id)) {
+          existing.push(product);
+          index[source].byName.set(nameKey, existing);
+        }
+      }
+    }
+  }
+
+  return index;
+}
+
+function buildFastPossibleMatches(
+  row: ComparisonRow,
+  exactMatchIndex: Record<SourceName, ExactMatchIndexEntry>,
+  sources: SourceName[]
+): PossibleMatch[] {
+  if (!row.isMismatch) return [];
+
+  const anchors = sources.map((source) => row[source]).filter(Boolean) as ComparableProduct[];
+  if (anchors.length === 0) return [];
+
+  const missingSources = sources.filter((source) => row[source] === null);
+  if (missingSources.length === 0) return [];
+
+  const anchorSkus = uniqueStrings(
+    anchors.map((product) => normalizeSku(product.sku)).filter(Boolean)
+  );
+  const anchorNames = uniqueStrings(
+    anchors.map((product) => normalizeText(product.name)).filter(Boolean)
+  );
+
+  const allMatches: PossibleMatch[] = [];
+  for (const source of missingSources) {
+    const candidates = new Map<string, { product: ComparableProduct; score: number; signals: Set<string> }>();
+
+    const upsertCandidate = (product: ComparableProduct, score: number, signal: string) => {
+      const id = String(product.id || "").trim();
+      if (!id) return;
+      const existing = candidates.get(id);
+      if (existing) {
+        existing.score = Math.max(existing.score, score);
+        existing.signals.add(signal);
+        return;
+      }
+      candidates.set(id, {
+        product,
+        score,
+        signals: new Set<string>([signal]),
+      });
+    };
+
+    for (const sku of anchorSkus) {
+      const skuMatches = exactMatchIndex[source].bySku.get(sku) || [];
+      for (const candidate of skuMatches) {
+        upsertCandidate(candidate, 0.94, "SKU exact");
+      }
+    }
+
+    for (const name of anchorNames) {
+      const nameMatches = exactMatchIndex[source].byName.get(name) || [];
+      for (const candidate of nameMatches) {
+        upsertCandidate(candidate, 0.84, "Name exact");
+      }
+    }
+
+    const ranked = [...candidates.values()]
+      .map((candidate) => {
+        const hasSku = candidate.signals.has("SKU exact");
+        const hasName = candidate.signals.has("Name exact");
+        const score =
+          hasSku && hasName
+            ? 0.98
+            : hasSku
+              ? Math.max(candidate.score, 0.94)
+              : Math.max(candidate.score, 0.84);
+        return {
+          product: candidate.product,
+          score,
+          signals: [...candidate.signals],
+        };
+      })
+      .sort((a, b) => {
+        if (a.score !== b.score) return b.score - a.score;
+        return (a.product.name || "").localeCompare(b.product.name || "");
+      })
+      .slice(0, 3);
+
+    for (const match of ranked) {
+      allMatches.push({
+        source,
+        product: match.product,
+        score: Number(match.score.toFixed(3)),
+        signals: match.signals,
+      });
+    }
+  }
+
+  return allMatches.sort((a, b) => b.score - a.score);
+}
+
 function evaluateRowReasons(row: RowProducts, sources: SourceName[]): string[] {
   const reasons: string[] = [];
 
@@ -2042,16 +2181,20 @@ export async function GET() {
     productsBySourceBase
   );
   const productsBySource = linkedCacheBackfill.productsBySource;
+  const exactMatchIndex = createExactMatchIndex(productsBySource);
   const productsBySourceId = createProductIdIndex(productsBySource);
   const matchingRowCap = parsePositiveIntEnv("PRODUCT_COMPARISON_MAX_ROWS_FOR_MATCHING", 1500);
   const enrichedRows =
     rows.length > matchingRowCap
       ? (() => {
           performanceWarnings.push(
-            `Possible-match scoring skipped for performance (rows=${rows.length}, cap=${matchingRowCap})`
+            `Full possible-match scoring skipped for performance (rows=${rows.length}, cap=${matchingRowCap}); using exact SKU/name suggestions`
           );
           const linkedRows = applyInternalLinksToRows(rows, productsBySourceId, comparisonSources);
-          return linkedRows.map((row) => ({ ...row, possibleMatches: [] }));
+          return linkedRows.map((row) => ({
+            ...row,
+            possibleMatches: buildFastPossibleMatches(row, exactMatchIndex, comparisonSources),
+          }));
         })()
       : (() => {
           const initialRows = rows.map((row) => ({

@@ -53,7 +53,7 @@ const SUITE_MAP: Record<string, { href: string; label: string }> = {
   // Admin Suite
   "/dashboards/zuper-status-comparison": { href: "/suites/admin", label: "Admin" },
   "/dashboards/zuper-compliance": { href: "/suites/admin", label: "Admin" },
-  "/dashboards/product-comparison": { href: "/suites/admin", label: "Admin" },
+  "/dashboards/product-comparison": { href: "/suites/operations", label: "Operations" },
   "/dashboards/mobile": { href: "/suites/admin", label: "Admin" },
 };
 

@@ -71,6 +71,14 @@ const LINKS: SuitePageCard[] = [
     tagColor: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
     section: "Inventory & Equipment",
   },
+  {
+    href: "/dashboards/product-comparison",
+    title: "Product Catalog Comparison",
+    description: "Match and link Internal, HubSpot, Zuper, Zoho, OpenSolar, and QuickBooks products.",
+    tag: "CATALOG",
+    tagColor: "bg-amber-500/20 text-amber-300 border-amber-500/30",
+    section: "Inventory & Equipment",
+  },
 ];
 
 export default async function OperationsSuitePage() {
