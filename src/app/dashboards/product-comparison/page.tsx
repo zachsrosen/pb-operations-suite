@@ -8,8 +8,16 @@ import { MultiSelectFilter, type FilterOption } from "@/components/ui/MultiSelec
 type RowViewMode = "mismatches" | "matches" | "two-of-three" | "all";
 type MatchConfidence = "high" | "medium" | "low";
 
-const ALL_SOURCES = ["hubspot", "zuper", "zoho", "opensolar", "quickbooks"] as const;
+const ALL_SOURCES = ["internal", "hubspot", "zuper", "zoho", "opensolar", "quickbooks"] as const;
 type SourceName = (typeof ALL_SOURCES)[number];
+const LINKABLE_SOURCES = ["hubspot", "zuper", "zoho", "quickbooks"] as const;
+type LinkableSourceName = (typeof LINKABLE_SOURCES)[number];
+const LINK_FIELD_BY_SOURCE: Record<LinkableSourceName, "hubspotProductId" | "zuperItemId" | "zohoItemId" | "quickbooksItemId"> = {
+  hubspot: "hubspotProductId",
+  zuper: "zuperItemId",
+  zoho: "zohoItemId",
+  quickbooks: "quickbooksItemId",
+};
 
 interface ComparableProduct {
   id: string;
@@ -19,6 +27,7 @@ interface ComparableProduct {
   status: string | null;
   description: string | null;
   url: string | null;
+  linkedExternalIds?: Partial<Record<LinkableSourceName, string | null>>;
 }
 
 interface PossibleMatch {
@@ -33,6 +42,7 @@ interface ComparisonRow {
   reasons: string[];
   isMismatch: boolean;
   possibleMatches: PossibleMatch[];
+  internal: ComparableProduct | null;
   hubspot: ComparableProduct | null;
   zuper: ComparableProduct | null;
   zoho: ComparableProduct | null;
@@ -68,6 +78,7 @@ interface DisplayRow extends ComparisonRow {
 }
 
 function formatSourceName(source: SourceName): string {
+  if (source === "internal") return "Internal";
   if (source === "hubspot") return "HubSpot";
   if (source === "zuper") return "Zuper";
   if (source === "zoho") return "Zoho";
@@ -115,6 +126,7 @@ function confidenceBadgeClass(bucket: MatchConfidence | null): string {
 }
 
 function sourceBadgeClass(source: SourceName): string {
+  if (source === "internal") return "bg-zinc-500/15 border-zinc-500/40 text-zinc-200";
   if (source === "hubspot") return "bg-orange-500/15 border-orange-500/40 text-orange-300";
   if (source === "zuper") return "bg-blue-500/15 border-blue-500/40 text-blue-300";
   if (source === "zoho") return "bg-emerald-500/15 border-emerald-500/40 text-emerald-300";
@@ -123,11 +135,14 @@ function sourceBadgeClass(source: SourceName): string {
 }
 
 function reasonBadgeClass(reason: string): string {
+  if (reason === "Missing in Internal") return "border-zinc-500/40 bg-zinc-500/10 text-zinc-300";
   if (reason === "Missing in HubSpot") return "border-orange-500/40 bg-orange-500/10 text-orange-300";
   if (reason === "Missing in Zuper") return "border-blue-500/40 bg-blue-500/10 text-blue-300";
   if (reason === "Missing in Zoho") return "border-emerald-500/40 bg-emerald-500/10 text-emerald-300";
   if (reason === "Missing in OpenSolar") return "border-teal-500/40 bg-teal-500/10 text-teal-300";
   if (reason === "Missing in QuickBooks") return "border-sky-500/40 bg-sky-500/10 text-sky-300";
+  if (reason.includes("Internal link missing")) return "border-amber-500/40 bg-amber-500/10 text-amber-300";
+  if (reason.includes("Internal link mismatch")) return "border-red-500/40 bg-red-500/10 text-red-300";
   if (reason.includes("Duplicate")) return "border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-300";
   if (reason.includes("Price mismatch")) return "border-yellow-500/40 bg-yellow-500/10 text-yellow-300";
   if (reason.includes("SKU mismatch")) return "border-cyan-500/40 bg-cyan-500/10 text-cyan-300";
@@ -151,6 +166,8 @@ function computeRowSeverity(row: ComparisonRow): number {
   let severity = 0;
   for (const reason of row.reasons) {
     if (reason.startsWith("Missing in")) severity += 10;
+    else if (reason.includes("Internal link missing")) severity += 9;
+    else if (reason.includes("Internal link mismatch")) severity += 11;
     else if (reason.includes("Duplicate")) severity += 8;
     else if (reason.includes("SKU mismatch")) severity += 6;
     else if (reason.includes("Price mismatch")) severity += 5;
@@ -210,7 +227,19 @@ function ProductCell({ source, product }: { source: SourceName; product: Compara
   );
 }
 
+function isLinkableSource(source: SourceName): source is LinkableSourceName {
+  return LINKABLE_SOURCES.includes(source as LinkableSourceName);
+}
+
+function getLinkedExternalId(product: ComparableProduct | null, source: LinkableSourceName): string | null {
+  if (!product?.linkedExternalIds) return null;
+  const value = product.linkedExternalIds[source];
+  const normalized = String(value || "").trim();
+  return normalized || null;
+}
+
 const MISSING_SOURCE_OPTIONS: FilterOption[] = [
+  { value: "internal", label: "Missing in Internal" },
   { value: "hubspot", label: "Missing in HubSpot" },
   { value: "zuper", label: "Missing in Zuper" },
   { value: "zoho", label: "Missing in Zoho" },
@@ -259,6 +288,8 @@ export default function ProductComparisonPage() {
   const [missingFilters, setMissingFilters] = useState<SourceName[]>([]);
   const [reasonFilters, setReasonFilters] = useState<string[]>([]);
   const [confidenceFilters, setConfidenceFilters] = useState<MatchConfidence[]>([]);
+  const [linkingKeys, setLinkingKeys] = useState<Record<string, boolean>>({});
+  const [actionFeedback, setActionFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -274,6 +305,48 @@ export default function ProductComparisonPage() {
       setLoading(false);
     }
   }, []);
+
+  const confirmSourceLink = useCallback(
+    async (internalSkuId: string, source: LinkableSourceName, externalId: string, rowKey: string) => {
+      const linkKey = `${rowKey}:${source}:${externalId}`;
+      setLinkingKeys((prev) => ({ ...prev, [linkKey]: true }));
+      setActionFeedback(null);
+      try {
+        const linkField = LINK_FIELD_BY_SOURCE[source];
+        const response = await fetch("/api/inventory/skus", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: internalSkuId,
+            [linkField]: externalId,
+          }),
+        });
+
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        if (!response.ok) {
+          throw new Error(payload?.error || `Failed to link ${formatSourceName(source)} (${response.status})`);
+        }
+
+        setActionFeedback({
+          type: "success",
+          message: `Linked Internal SKU to ${formatSourceName(source)} (${externalId}).`,
+        });
+        await fetchData();
+      } catch (error) {
+        setActionFeedback({
+          type: "error",
+          message: error instanceof Error ? error.message : "Failed to save link",
+        });
+      } finally {
+        setLinkingKeys((prev) => {
+          const next = { ...prev };
+          delete next[linkKey];
+          return next;
+        });
+      }
+    },
+    [fetchData]
+  );
 
   useEffect(() => {
     fetch("/api/auth/sync", { cache: "no-store" })
@@ -376,6 +449,7 @@ export default function ProductComparisonPage() {
         row.key,
         ...ALL_SOURCES.map((source) => row[source]?.name || ""),
         ...ALL_SOURCES.map((source) => row[source]?.sku || ""),
+        ...LINKABLE_SOURCES.map((source) => row.internal?.linkedExternalIds?.[source] || ""),
         ...row.reasons,
         ...row.possibleMatches.map((match) => match.product.name || ""),
         ...row.possibleMatches.map((match) => match.product.sku || ""),
@@ -422,6 +496,12 @@ export default function ProductComparisonPage() {
       possible_matches: row.possibleMatches
         .map((match) => `${formatSourceName(match.source)}:${match.product.name || "-"} (${formatPercent(match.score)})`)
         .join(" | "),
+      internal_name: row.internal?.name || "",
+      internal_sku: row.internal?.sku || "",
+      internal_hubspot_link: row.internal?.linkedExternalIds?.hubspot || "",
+      internal_zuper_link: row.internal?.linkedExternalIds?.zuper || "",
+      internal_zoho_link: row.internal?.linkedExternalIds?.zoho || "",
+      internal_quickbooks_link: row.internal?.linkedExternalIds?.quickbooks || "",
       hubspot_name: row.hubspot?.name || "",
       hubspot_sku: row.hubspot?.sku || "",
       hubspot_price: row.hubspot?.price ?? "",
@@ -467,7 +547,7 @@ export default function ProductComparisonPage() {
   return (
     <DashboardShell
       title="Product Catalog Comparison"
-      subtitle="Cross-check HubSpot, Zuper, Zoho, OpenSolar, and QuickBooks product data"
+      subtitle="Cross-check Internal, HubSpot, Zuper, Zoho, OpenSolar, and QuickBooks product data"
       accentColor="cyan"
       lastUpdated={lastUpdated}
       breadcrumbs={[{ label: "Admin", href: "/suites/admin" }]}
@@ -479,6 +559,18 @@ export default function ProductComparisonPage() {
 
       {!loading && !error && data && (
         <div className="space-y-4">
+          {actionFeedback && (
+            <div
+              className={`rounded-xl border p-3 text-sm ${
+                actionFeedback.type === "success"
+                  ? "border-green-500/30 bg-green-500/10 text-green-200"
+                  : "border-red-500/30 bg-red-500/10 text-red-200"
+              }`}
+            >
+              {actionFeedback.message}
+            </div>
+          )}
+
           <div className="grid grid-cols-2 xl:grid-cols-5 gap-3">
             <div className="bg-surface border border-t-border rounded-xl p-4">
               <div className="text-xs text-muted">Compared keys</div>
@@ -502,7 +594,7 @@ export default function ProductComparisonPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-3">
             {ALL_SOURCES.map((source) => (
               <div key={source} className="bg-surface border border-t-border rounded-xl p-4">
                 <div className="flex items-center justify-between">
@@ -638,16 +730,63 @@ export default function ProductComparisonPage() {
                   </div>
 
                   <div className="mt-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
-                    {displayedSources.map((source) => (
-                      <div key={`${row.key}-${source}`} className="rounded-md border border-t-border bg-background/40 p-2 min-w-0">
-                        <div className="mb-2">
-                          <span className={`inline-flex px-1.5 py-0.5 rounded border text-[10px] ${sourceBadgeClass(source)}`}>
-                            {formatSourceName(source)}
-                          </span>
+                    {displayedSources.map((source) => {
+                      const sourceProduct = row[source];
+                      const hasInternal = Boolean(row.internal);
+                      const supportsLinking = isLinkableSource(source);
+                      const existingLinkId = supportsLinking ? getLinkedExternalId(row.internal, source) : null;
+                      const hasSourceProduct = Boolean(sourceProduct);
+                      const isLinkedToShownProduct =
+                        supportsLinking && hasSourceProduct && Boolean(existingLinkId) && existingLinkId === sourceProduct!.id;
+                      const canConfirmLink = hasInternal && supportsLinking && hasSourceProduct && !isLinkedToShownProduct;
+                      const pendingLinkKey =
+                        canConfirmLink && sourceProduct
+                          ? `${row.key}:${source}:${sourceProduct.id}`
+                          : "";
+                      const isSavingLink = pendingLinkKey ? Boolean(linkingKeys[pendingLinkKey]) : false;
+
+                      return (
+                        <div key={`${row.key}-${source}`} className="rounded-md border border-t-border bg-background/40 p-2 min-w-0">
+                          <div className="mb-2">
+                            <span className={`inline-flex px-1.5 py-0.5 rounded border text-[10px] ${sourceBadgeClass(source)}`}>
+                              {formatSourceName(source)}
+                            </span>
+                          </div>
+                          <ProductCell source={source} product={sourceProduct} />
+
+                          {source !== "internal" && (
+                            <div className="mt-2 border-t border-t-border pt-2">
+                              {!hasInternal ? (
+                                <div className="text-[11px] text-amber-300">Add or match an Internal SKU to enable link confirmation.</div>
+                              ) : supportsLinking ? (
+                                <div className="space-y-1.5">
+                                  <div className="text-[11px] text-muted">
+                                    Current link: {existingLinkId || "—"}
+                                  </div>
+                                  {isLinkedToShownProduct ? (
+                                    <div className="inline-flex px-2 py-0.5 rounded border border-green-500/40 bg-green-500/10 text-[11px] text-green-300">
+                                      Linked to this product
+                                    </div>
+                                  ) : canConfirmLink && sourceProduct ? (
+                                    <button
+                                      onClick={() => confirmSourceLink(row.internal!.id, source, sourceProduct.id, row.key)}
+                                      disabled={isSavingLink}
+                                      className="px-2 py-1 rounded border border-cyan-500/40 bg-cyan-500/10 text-cyan-300 text-[11px] hover:bg-cyan-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                      {isSavingLink ? "Linking..." : "Confirm link to this product"}
+                                    </button>
+                                  ) : (
+                                    <div className="text-[11px] text-muted">No product available to link in this row.</div>
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="text-[11px] text-muted">OpenSolar linking is not stored on internal SKUs yet.</div>
+                              )}
+                            </div>
+                          )}
                         </div>
-                        <ProductCell source={source} product={row[source]} />
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
 
                   <div className="mt-3 border-t border-t-border pt-3 space-y-2">
@@ -668,6 +807,12 @@ export default function ProductComparisonPage() {
                             <div className="text-[10px] uppercase tracking-wide text-muted">Suggested matches</div>
                             {row.possibleMatches.slice(0, 6).map((match) => {
                               const bucket = confidenceBucket(match.score);
+                              const matchLinkSource = isLinkableSource(match.source) ? match.source : null;
+                              const existingLinkId = matchLinkSource ? getLinkedExternalId(row.internal, matchLinkSource) : null;
+                              const alreadyLinked = Boolean(matchLinkSource && existingLinkId === match.product.id);
+                              const canConfirmSuggestion = Boolean(row.internal && matchLinkSource && !alreadyLinked);
+                              const pendingSuggestionKey = `${row.key}:${match.source}:${match.product.id}`;
+                              const isSavingSuggestion = Boolean(linkingKeys[pendingSuggestionKey]);
                               return (
                                 <div key={`${row.key}-${match.source}-${match.product.id}`} className="rounded-md border border-t-border bg-background/60 p-2">
                                   <div className="flex flex-wrap items-center gap-1.5">
@@ -695,6 +840,36 @@ export default function ProductComparisonPage() {
                                           {signal}
                                         </span>
                                       ))}
+                                    </div>
+                                  )}
+                                  {row.internal && (
+                                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                                      {matchLinkSource ? (
+                                        alreadyLinked ? (
+                                          <span className="px-1.5 py-0.5 rounded border border-green-500/40 bg-green-500/10 text-[10px] text-green-300">
+                                            Already linked
+                                          </span>
+                                        ) : canConfirmSuggestion ? (
+                                          <button
+                                            onClick={() => confirmSourceLink(row.internal!.id, matchLinkSource, match.product.id, row.key)}
+                                            disabled={isSavingSuggestion}
+                                            className="px-2 py-1 rounded border border-cyan-500/40 bg-cyan-500/10 text-cyan-300 text-[11px] hover:bg-cyan-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                                          >
+                                            {isSavingSuggestion ? "Linking..." : "Confirm link"}
+                                          </button>
+                                        ) : (
+                                          <span className="text-[10px] text-muted">Link already aligned for this source.</span>
+                                        )
+                                      ) : (
+                                        <span className="text-[10px] text-muted">
+                                          This source does not have an internal link field yet.
+                                        </span>
+                                      )}
+                                      {matchLinkSource && (
+                                        <span className="text-[10px] text-muted">
+                                          Current link: {existingLinkId || "—"}
+                                        </span>
+                                      )}
                                     </div>
                                   )}
                                 </div>

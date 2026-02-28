@@ -9,10 +9,13 @@ import { getZuperWebBaseUrl } from "@/lib/external-links";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-const ALL_SOURCES = ["hubspot", "zuper", "zoho", "opensolar", "quickbooks"] as const;
+const ALL_SOURCES = ["internal", "hubspot", "zuper", "zoho", "opensolar", "quickbooks"] as const;
 type SourceName = (typeof ALL_SOURCES)[number];
+const LINKABLE_SOURCES = ["hubspot", "zuper", "zoho", "quickbooks"] as const;
+type LinkableSourceName = (typeof LINKABLE_SOURCES)[number];
 
 const SOURCE_LABELS: Record<SourceName, string> = {
+  internal: "Internal",
   hubspot: "HubSpot",
   zuper: "Zuper",
   zoho: "Zoho",
@@ -40,6 +43,7 @@ interface ComparableProduct {
   status: string | null;
   description: string | null;
   url: string | null;
+  linkedExternalIds?: Partial<Record<LinkableSourceName, string | null>>;
 }
 
 interface NormalizedProduct extends ComparableProduct {
@@ -115,6 +119,12 @@ function parsePositiveIntEnv(name: string, fallback: number): number {
 
 function asErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
+}
+
+function isPrismaMissingColumnError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const code = (error as { code?: unknown }).code;
+  return code === "P2022";
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
@@ -594,6 +604,27 @@ function evaluateRowReasons(row: RowProducts, sources: SourceName[]): string[] {
     if (uniquePrices.size > 1) reasons.push("Price mismatch");
   }
 
+  const internalProduct = row.internal;
+  const linkedExternalIds = internalProduct?.linkedExternalIds;
+  if (internalProduct && linkedExternalIds) {
+    for (const source of LINKABLE_SOURCES) {
+      if (!sources.includes(source)) continue;
+      const linkedId = String(linkedExternalIds[source] || "").trim();
+      const externalProduct = row[source];
+      if (!externalProduct) {
+        if (linkedId) reasons.push(`Internal link mismatch for ${SOURCE_LABELS[source]}`);
+        continue;
+      }
+      if (!linkedId) {
+        reasons.push(`Internal link missing for ${SOURCE_LABELS[source]}`);
+        continue;
+      }
+      if (linkedId !== externalProduct.id) {
+        reasons.push(`Internal link mismatch for ${SOURCE_LABELS[source]}`);
+      }
+    }
+  }
+
   return uniqueStrings(reasons);
 }
 
@@ -679,6 +710,7 @@ function autoMergeRows(rows: ComparisonRow[], sources: SourceName[]): Comparison
 
         const mergedRowBase: ComparisonRow = {
           key: mergedKey,
+          internal: base.internal || target.internal,
           hubspot: base.hubspot || target.hubspot,
           zuper: base.zuper || target.zuper,
           zoho: base.zoho || target.zoho,
@@ -1307,8 +1339,110 @@ async function fetchQuickBooksProducts(): Promise<{ products: NormalizedProduct[
   };
 }
 
+async function fetchInternalProducts(): Promise<{ products: NormalizedProduct[]; error: string | null; configured: boolean }> {
+  const db = prisma;
+  if (!db) {
+    return {
+      products: [],
+      error: "Database is not configured",
+      configured: false,
+    };
+  }
+
+  try {
+    let rows: Array<{
+      id: string;
+      brand: string;
+      model: string;
+      description: string | null;
+      sku: string | null;
+      vendorPartNumber: string | null;
+      isActive: boolean;
+      hubspotProductId: string | null;
+      zuperItemId: string | null;
+      zohoItemId: string | null;
+      quickbooksItemId: string | null;
+    }>;
+
+    try {
+      rows = await db.equipmentSku.findMany({
+        where: { isActive: true },
+        select: {
+          id: true,
+          brand: true,
+          model: true,
+          description: true,
+          sku: true,
+          vendorPartNumber: true,
+          isActive: true,
+          hubspotProductId: true,
+          zuperItemId: true,
+          zohoItemId: true,
+          quickbooksItemId: true,
+        },
+        orderBy: [{ updatedAt: "desc" }],
+        take: 10000,
+      });
+    } catch (error) {
+      if (!isPrismaMissingColumnError(error)) throw error;
+      const legacy = await db.equipmentSku.findMany({
+        where: { isActive: true },
+        select: {
+          id: true,
+          brand: true,
+          model: true,
+          description: true,
+          sku: true,
+          vendorPartNumber: true,
+          isActive: true,
+          hubspotProductId: true,
+          zuperItemId: true,
+          zohoItemId: true,
+        },
+        orderBy: [{ updatedAt: "desc" }],
+        take: 10000,
+      });
+      rows = legacy.map((row) => ({ ...row, quickbooksItemId: null }));
+    }
+
+    const products: NormalizedProduct[] = rows.map((row) => {
+      const combinedName = `${String(row.brand || "").trim()} ${String(row.model || "").trim()}`.trim() || null;
+      const internalSku = String(row.sku || row.vendorPartNumber || "").trim() || null;
+      const status = row.isActive ? "active" : "inactive";
+
+      return {
+        source: "internal",
+        id: row.id,
+        name: combinedName,
+        sku: internalSku,
+        price: null,
+        status,
+        description: String(row.description || "").trim() || null,
+        url: `/dashboards/catalog/edit/${encodeURIComponent(row.id)}`,
+        key: keyForProduct(internalSku, combinedName, "internal", row.id),
+        normalizedName: normalizeText(combinedName),
+        linkedExternalIds: {
+          hubspot: String(row.hubspotProductId || "").trim() || null,
+          zuper: String(row.zuperItemId || "").trim() || null,
+          zoho: String(row.zohoItemId || "").trim() || null,
+          quickbooks: String(row.quickbooksItemId || "").trim() || null,
+        },
+      };
+    });
+
+    return { products, error: null, configured: true };
+  } catch (error) {
+    return {
+      products: [],
+      error: error instanceof Error ? error.message : "Failed to fetch internal catalog",
+      configured: true,
+    };
+  }
+}
+
 function createGroupedProductBuckets(): Record<SourceName, NormalizedProduct[]> {
   return {
+    internal: [],
     hubspot: [],
     zuper: [],
     zoho: [],
@@ -1499,6 +1633,7 @@ function buildComparisonRows(products: NormalizedProduct[], sources: SourceName[
     }
 
     const primaryRow: RowProducts = {
+      internal: pickPrimary(group.internal),
       hubspot: pickPrimary(group.hubspot),
       zuper: pickPrimary(group.zuper),
       zoho: pickPrimary(group.zoho),
@@ -1539,7 +1674,12 @@ export async function GET() {
   }
 
   const sourceTimeoutMs = parsePositiveIntEnv("PRODUCT_COMPARISON_SOURCE_TIMEOUT_MS", 12000);
-  const [hubspotResult, zuperResult, zohoResult, opensolarResult, quickbooksResult] = await Promise.all([
+  const [internalResult, hubspotResult, zuperResult, zohoResult, opensolarResult, quickbooksResult] = await Promise.all([
+    withTimeout(fetchInternalProducts(), sourceTimeoutMs, "Internal catalog fetch").catch((error) => ({
+      products: [],
+      configured: Boolean(prisma),
+      error: asErrorMessage(error, "Internal catalog fetch timed out"),
+    })),
     withTimeout(fetchHubSpotProducts(), sourceTimeoutMs, "HubSpot catalog fetch").catch((error) => ({
       products: [],
       configured: Boolean(process.env.HUBSPOT_ACCESS_TOKEN),
@@ -1641,6 +1781,7 @@ export async function GET() {
     };
   };
 
+  const boundedInternalResult = capProducts("internal", internalResult);
   const boundedHubspotResult = capProducts("hubspot", effectiveHubspotResult);
   const boundedZuperResult = capProducts("zuper", effectiveZuperResult);
   const boundedZohoResult = capProducts("zoho", effectiveZohoResult);
@@ -1648,6 +1789,7 @@ export async function GET() {
   const boundedQuickbooksResult = capProducts("quickbooks", effectiveQuickbooksResult);
 
   const sourceResults = {
+    internal: boundedInternalResult,
     hubspot: boundedHubspotResult,
     zuper: boundedZuperResult,
     zoho: boundedZohoResult,
@@ -1657,6 +1799,7 @@ export async function GET() {
   const comparisonSources = ALL_SOURCES.filter((source) => sourceResults[source].configured);
 
   const allProducts = [
+    ...boundedInternalResult.products,
     ...boundedHubspotResult.products,
     ...boundedZuperResult.products,
     ...boundedZohoResult.products,
@@ -1665,6 +1808,7 @@ export async function GET() {
   ];
   const rows = buildComparisonRows(allProducts, comparisonSources);
   const productsBySource: Record<SourceName, ComparableProduct[]> = {
+    internal: boundedInternalResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
     hubspot: boundedHubspotResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
     zuper: boundedZuperResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
     zoho: boundedZohoResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
@@ -1694,6 +1838,7 @@ export async function GET() {
 
   const mismatchRows = enrichedRows.filter((row) => row.isMismatch).length;
   const missingBySource = {
+    internal: sourceResults.internal.configured ? enrichedRows.filter((row) => row.internal === null).length : 0,
     hubspot: sourceResults.hubspot.configured ? enrichedRows.filter((row) => row.hubspot === null).length : 0,
     zuper: sourceResults.zuper.configured ? enrichedRows.filter((row) => row.zuper === null).length : 0,
     zoho: sourceResults.zoho.configured ? enrichedRows.filter((row) => row.zoho === null).length : 0,
@@ -1719,6 +1864,7 @@ export async function GET() {
       fullyMatchedRows: enrichedRows.length - mismatchRows,
       missingBySource,
       sourceCounts: {
+        internal: boundedInternalResult.products.length,
         hubspot: boundedHubspotResult.products.length,
         zuper: boundedZuperResult.products.length,
         zoho: boundedZohoResult.products.length,
@@ -1727,6 +1873,11 @@ export async function GET() {
       },
     },
     health: {
+      internal: {
+        configured: boundedInternalResult.configured,
+        count: boundedInternalResult.products.length,
+        error: boundedInternalResult.error,
+      },
       hubspot: {
         configured: boundedHubspotResult.configured,
         count: boundedHubspotResult.products.length,

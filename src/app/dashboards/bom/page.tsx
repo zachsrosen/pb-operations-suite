@@ -178,6 +178,7 @@ interface DiffRow {
 
 // Display labels for catalog sources — extend as new sources are added to the comparison API
 const SOURCE_DISPLAY_LABELS: Record<string, string> = {
+  internal: "Internal",
   hubspot: "HubSpot",
   zuper: "Zuper",
   zoho: "Zoho",
@@ -187,6 +188,7 @@ const SOURCE_DISPLAY_LABELS: Record<string, string> = {
 
 // Short column headers for the BOM table
 const SOURCE_SHORT_LABELS: Record<string, string> = {
+  internal: "INT",
   hubspot: "HS",
   zuper: "ZU",
   zoho: "ZO",
