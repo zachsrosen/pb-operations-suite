@@ -73,7 +73,7 @@ interface ComparisonRow extends RowProducts {
   reasons: string[];
   isMismatch: boolean;
   possibleMatches: PossibleMatch[];
-  internalDuplicates?: Array<Pick<ComparableProduct, "id" | "name" | "sku">>;
+  internalDuplicates?: ComparableProduct[];
 }
 
 interface PossibleMatch {
@@ -2326,6 +2326,18 @@ function buildComparisonRows(products: NormalizedProduct[], sources: SourceName[
             id: product.id,
             name: product.name,
             sku: product.sku,
+            price: product.price,
+            status: product.status,
+            description: product.description,
+            url: product.url,
+            linkedExternalIds: product.linkedExternalIds
+              ? {
+                  hubspot: String(product.linkedExternalIds.hubspot || "").trim() || null,
+                  zuper: String(product.linkedExternalIds.zuper || "").trim() || null,
+                  zoho: String(product.linkedExternalIds.zoho || "").trim() || null,
+                  quickbooks: String(product.linkedExternalIds.quickbooks || "").trim() || null,
+                }
+              : undefined,
           }))
         : undefined;
 

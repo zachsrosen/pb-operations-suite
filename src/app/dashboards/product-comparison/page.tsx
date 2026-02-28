@@ -44,11 +44,7 @@ interface ComparisonRow {
   reasons: string[];
   isMismatch: boolean;
   possibleMatches: PossibleMatch[];
-  internalDuplicates?: Array<{
-    id: string;
-    name: string | null;
-    sku: string | null;
-  }>;
+  internalDuplicates?: ComparableProduct[];
   internal: ComparableProduct | null;
   hubspot: ComparableProduct | null;
   zuper: ComparableProduct | null;
@@ -416,6 +412,11 @@ function sourceSearchKey(rowKey: string, source: LinkableSourceName): string {
   return `${rowKey}:${source}`;
 }
 
+function displayLinkValue(value: string | null | undefined): string {
+  const normalized = String(value || "").trim();
+  return normalized || "—";
+}
+
 function defaultSourceSearchQuery(row: ComparisonRow, source: LinkableSourceName): string {
   const seed = [
     row[source]?.sku,
@@ -573,6 +574,11 @@ export default function ProductComparisonPage() {
   const [searchStateBySource, setSearchStateBySource] = useState<Record<string, SourceSearchState>>({});
   const [pinnedRowKeys, setPinnedRowKeys] = useState<Record<string, true>>({});
   const [actionFeedback, setActionFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [mergePreview, setMergePreview] = useState<{
+    row: DisplayRow;
+    sourceDuplicate: ComparableProduct;
+    targetPrimary: ComparableProduct;
+  } | null>(null);
   const [compactCards, setCompactCards] = useState(true);
   const [expandedRowKeys, setExpandedRowKeys] = useState<Record<string, true>>({});
   const [isBackgroundRefreshing, setIsBackgroundRefreshing] = useState(false);
@@ -1122,6 +1128,7 @@ export default function ProductComparisonPage() {
 
         setPinnedRowKeys((prev) => ({ ...prev, [row.key]: true }));
         scheduleBackgroundRefresh();
+        setMergePreview((prev) => (prev && prev.row.key === row.key && prev.sourceDuplicate.id === sourceSkuId ? null : prev));
         setActionFeedback({
           type: "success",
           message: "Merged duplicate internal SKU into the primary SKU. Row pinned for further linking work.",
@@ -1389,6 +1396,10 @@ export default function ProductComparisonPage() {
   }, []);
 
   const lastUpdated = formatDateTime(data?.lastUpdated || null);
+  const mergePreviewKey = mergePreview
+    ? `${mergePreview.row.key}:${mergePreview.sourceDuplicate.id}:${mergePreview.targetPrimary.id}`
+    : "";
+  const isMergePreviewSaving = mergePreviewKey ? Boolean(mergingKeys[mergePreviewKey]) : false;
 
   return (
     <DashboardShell
@@ -1414,6 +1425,140 @@ export default function ProductComparisonPage() {
               }`}
             >
               {actionFeedback.message}
+            </div>
+          )}
+
+          {mergePreview && (
+            <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-[1px] p-4 md:p-8">
+              <div className="mx-auto max-w-6xl rounded-xl border border-fuchsia-500/30 bg-surface shadow-2xl">
+                <div className="flex items-center justify-between border-b border-t-border px-4 py-3">
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-fuchsia-300">Merge Review</div>
+                    <div className="text-sm text-foreground">Compare primary vs duplicate before merging</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setMergePreview(null)}
+                    className="px-2 py-1 rounded border border-t-border bg-background text-xs text-muted hover:text-foreground"
+                  >
+                    Close
+                  </button>
+                </div>
+
+                <div className="p-4 space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="rounded-lg border border-green-500/30 bg-green-500/10 p-3 space-y-2">
+                      <div className="text-[11px] uppercase tracking-wide text-green-300">Primary (kept)</div>
+                      <div className="text-sm font-medium text-foreground break-words">{mergePreview.targetPrimary.name || "—"}</div>
+                      <div className="text-xs text-muted break-all">SKU: {mergePreview.targetPrimary.sku || "—"}</div>
+                      <a
+                        href={mergePreview.targetPrimary.url || `/dashboards/catalog/edit/${encodeURIComponent(mergePreview.targetPrimary.id)}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs text-cyan-300 hover:text-cyan-200 underline underline-offset-2"
+                      >
+                        Open primary in new tab
+                      </a>
+                    </div>
+                    <div className="rounded-lg border border-fuchsia-500/30 bg-fuchsia-500/10 p-3 space-y-2">
+                      <div className="text-[11px] uppercase tracking-wide text-fuchsia-200">Duplicate (merged in)</div>
+                      <div className="text-sm font-medium text-foreground break-words">{mergePreview.sourceDuplicate.name || "—"}</div>
+                      <div className="text-xs text-muted break-all">SKU: {mergePreview.sourceDuplicate.sku || "—"}</div>
+                      <a
+                        href={mergePreview.sourceDuplicate.url || `/dashboards/catalog/edit/${encodeURIComponent(mergePreview.sourceDuplicate.id)}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs text-cyan-300 hover:text-cyan-200 underline underline-offset-2"
+                      >
+                        Open duplicate in new tab
+                      </a>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-t-border overflow-hidden">
+                    <div className="grid grid-cols-[160px_1fr_1fr] bg-background/60 border-b border-t-border text-[11px] uppercase tracking-wide text-muted">
+                      <div className="px-3 py-2">Field</div>
+                      <div className="px-3 py-2">Primary value</div>
+                      <div className="px-3 py-2">Duplicate value</div>
+                    </div>
+                    {[
+                      {
+                        label: "Description",
+                        primary: mergePreview.targetPrimary.description || "—",
+                        duplicate: mergePreview.sourceDuplicate.description || "—",
+                      },
+                      {
+                        label: "Price",
+                        primary: formatCurrency(mergePreview.targetPrimary.price),
+                        duplicate: formatCurrency(mergePreview.sourceDuplicate.price),
+                      },
+                      {
+                        label: "Status",
+                        primary: mergePreview.targetPrimary.status || "—",
+                        duplicate: mergePreview.sourceDuplicate.status || "—",
+                      },
+                      {
+                        label: "HubSpot ID",
+                        primary: displayLinkValue(mergePreview.targetPrimary.linkedExternalIds?.hubspot),
+                        duplicate: displayLinkValue(mergePreview.sourceDuplicate.linkedExternalIds?.hubspot),
+                      },
+                      {
+                        label: "Zuper ID",
+                        primary: displayLinkValue(mergePreview.targetPrimary.linkedExternalIds?.zuper),
+                        duplicate: displayLinkValue(mergePreview.sourceDuplicate.linkedExternalIds?.zuper),
+                      },
+                      {
+                        label: "Zoho ID",
+                        primary: displayLinkValue(mergePreview.targetPrimary.linkedExternalIds?.zoho),
+                        duplicate: displayLinkValue(mergePreview.sourceDuplicate.linkedExternalIds?.zoho),
+                      },
+                      {
+                        label: "QuickBooks ID",
+                        primary: displayLinkValue(mergePreview.targetPrimary.linkedExternalIds?.quickbooks),
+                        duplicate: displayLinkValue(mergePreview.sourceDuplicate.linkedExternalIds?.quickbooks),
+                      },
+                    ].map((field) => {
+                      const differs = field.primary !== field.duplicate;
+                      return (
+                        <div
+                          key={`merge-preview-field-${field.label}`}
+                          className={`grid grid-cols-[160px_1fr_1fr] border-b border-t-border last:border-b-0 text-xs ${
+                            differs ? "bg-amber-500/5" : "bg-transparent"
+                          }`}
+                        >
+                          <div className="px-3 py-2 text-muted">{field.label}</div>
+                          <div className="px-3 py-2 break-all text-foreground">{field.primary}</div>
+                          <div className="px-3 py-2 break-all text-foreground">{field.duplicate}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">
+                    Merge behavior: the primary SKU is kept. Missing fields on primary are filled from duplicate. If both have values and conflict, primary wins.
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setMergePreview(null)}
+                      className="px-3 py-1.5 rounded border border-t-border bg-background text-xs text-muted hover:text-foreground"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await mergeDuplicateInternalIntoPrimary(mergePreview.row, mergePreview.sourceDuplicate.id);
+                      }}
+                      disabled={isMergePreviewSaving}
+                      className="px-3 py-1.5 rounded border border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-200 text-xs hover:bg-fuchsia-500/20 disabled:opacity-50"
+                    >
+                      {isMergePreviewSaving ? "Merging..." : "Merge duplicate into primary"}
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
@@ -1993,10 +2138,27 @@ export default function ProductComparisonPage() {
                                       <div className="mt-1.5 flex flex-wrap items-center gap-2">
                                         <a
                                           href={`/dashboards/catalog/edit/${encodeURIComponent(candidate.id)}`}
+                                          target="_blank"
+                                          rel="noreferrer"
                                           className="text-[10px] text-cyan-300 hover:text-cyan-200 underline underline-offset-2"
                                         >
                                           Open duplicate
                                         </a>
+                                        {row.internal && (
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              setMergePreview({
+                                                row,
+                                                sourceDuplicate: candidate,
+                                                targetPrimary: row.internal!,
+                                              })
+                                            }
+                                            className="px-2 py-0.5 rounded border border-amber-500/40 bg-amber-500/10 text-amber-200 text-[10px] hover:bg-amber-500/20"
+                                          >
+                                            Compare side-by-side
+                                          </button>
+                                        )}
                                         <button
                                           type="button"
                                           onClick={() => mergeDuplicateInternalIntoPrimary(row, candidate.id)}
