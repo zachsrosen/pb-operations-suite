@@ -6,6 +6,9 @@ import { normalizeRole, type UserRole } from "@/lib/role-permissions";
 import { zohoInventory, type ZohoInventoryItem } from "@/lib/zoho-inventory";
 import { getZuperWebBaseUrl } from "@/lib/external-links";
 
+export const runtime = "nodejs";
+export const maxDuration = 60;
+
 const ALL_SOURCES = ["hubspot", "zuper", "zoho", "opensolar", "quickbooks"] as const;
 type SourceName = (typeof ALL_SOURCES)[number];
 
@@ -103,6 +106,49 @@ interface HubSpotPropertyDefinitionResponse {
     name?: string;
     label?: string;
   }>;
+}
+
+function parsePositiveIntEnv(name: string, fallback: number): number {
+  const raw = Number(process.env[name]);
+  if (!Number.isFinite(raw) || raw <= 0) return fallback;
+  return Math.trunc(raw);
+}
+
+function asErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race<T>([
+      promise,
+      new Promise<T>((_, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
+async function fetchWithTimeout(
+  input: string,
+  init: RequestInit,
+  timeoutMs: number
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 function isAllowedRole(role: UserRole): boolean {
@@ -564,15 +610,20 @@ function autoMergeRows(rows: ComparisonRow[], sources: SourceName[]): Comparison
 }
 
 async function findHubSpotBundleTypePropertyName(token: string): Promise<string | null> {
+  const requestTimeoutMs = parsePositiveIntEnv("PRODUCT_COMPARISON_REQUEST_TIMEOUT_MS", 8000);
   try {
-    const response = await fetch("https://api.hubapi.com/crm/v3/properties/products?archived=false", {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
+    const response = await fetchWithTimeout(
+      "https://api.hubapi.com/crm/v3/properties/products?archived=false",
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        cache: "no-store",
       },
-      cache: "no-store",
-    });
+      requestTimeoutMs
+    );
     const rawText = await response.text();
     if (!response.ok) return null;
 
@@ -604,6 +655,7 @@ async function fetchHubSpotProducts(): Promise<{
   excludedBundles: number;
   bundleTypePropertyName: string | null;
 }> {
+  const requestTimeoutMs = parsePositiveIntEnv("PRODUCT_COMPARISON_REQUEST_TIMEOUT_MS", 8000);
   const token = process.env.HUBSPOT_ACCESS_TOKEN;
   if (!token) {
     return {
@@ -648,14 +700,18 @@ async function fetchHubSpotProducts(): Promise<{
       if (after) params.set("after", after);
 
       const url = `https://api.hubapi.com/crm/v3/objects/products?${params.toString()}`;
-      const response = await fetch(url, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
+      const response = await fetchWithTimeout(
+        url,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          cache: "no-store",
         },
-        cache: "no-store",
-      });
+        requestTimeoutMs
+      );
 
       const bodyText = await response.text();
       if (!response.ok) {
@@ -793,6 +849,7 @@ function parseZuperProduct(candidate: unknown): Omit<NormalizedProduct, "source"
 }
 
 async function fetchZuperProducts(): Promise<{ products: NormalizedProduct[]; error: string | null; configured: boolean }> {
+  const requestTimeoutMs = parsePositiveIntEnv("PRODUCT_COMPARISON_REQUEST_TIMEOUT_MS", 8000);
   const apiKey = process.env.ZUPER_API_KEY;
   if (!apiKey) {
     return { products: [], error: "ZUPER_API_KEY is not configured", configured: false };
@@ -824,14 +881,18 @@ async function fetchZuperProducts(): Promise<{ products: NormalizedProduct[]; er
         });
         const url = `${baseUrl}${endpoint}?${query.toString()}`;
 
-        const response = await fetch(url, {
-          method: "GET",
-          headers: {
-            "x-api-key": apiKey,
-            "Content-Type": "application/json",
+        const response = await fetchWithTimeout(
+          url,
+          {
+            method: "GET",
+            headers: {
+              "x-api-key": apiKey,
+              "Content-Type": "application/json",
+            },
+            cache: "no-store",
           },
-          cache: "no-store",
-        });
+          requestTimeoutMs
+        );
 
         if (response.status === 404 || response.status === 405) {
           lastError = `Endpoint not available: ${endpoint}`;
@@ -938,6 +999,7 @@ function parseOpenSolarProduct(candidate: unknown): Omit<NormalizedProduct, "sou
 }
 
 async function fetchOpenSolarProducts(): Promise<{ products: NormalizedProduct[]; error: string | null; configured: boolean }> {
+  const requestTimeoutMs = parsePositiveIntEnv("PRODUCT_COMPARISON_REQUEST_TIMEOUT_MS", 8000);
   const apiKey = process.env.OPENSOLAR_API_KEY || process.env.OPENSOLAR_ACCESS_TOKEN;
   if (!apiKey) {
     return { products: [], error: null, configured: false };
@@ -962,15 +1024,19 @@ async function fetchOpenSolarProducts(): Promise<{ products: NormalizedProduct[]
         });
         const url = `${baseUrl}${endpoint}?${query.toString()}`;
 
-        const response = await fetch(url, {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            "x-api-key": apiKey,
-            "Content-Type": "application/json",
+        const response = await fetchWithTimeout(
+          url,
+          {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              "x-api-key": apiKey,
+              "Content-Type": "application/json",
+            },
+            cache: "no-store",
           },
-          cache: "no-store",
-        });
+          requestTimeoutMs
+        );
 
         if (response.status === 404 || response.status === 405) {
           lastError = `Endpoint not available: ${endpoint}`;
@@ -1058,6 +1124,7 @@ function parseQuickBooksProduct(candidate: unknown): Omit<NormalizedProduct, "so
 }
 
 async function fetchQuickBooksProducts(): Promise<{ products: NormalizedProduct[]; error: string | null; configured: boolean }> {
+  const requestTimeoutMs = parsePositiveIntEnv("PRODUCT_COMPARISON_REQUEST_TIMEOUT_MS", 8000);
   const accessToken = process.env.QUICKBOOKS_ACCESS_TOKEN;
   const companyId = process.env.QUICKBOOKS_COMPANY_ID;
   if (!accessToken || !companyId) {
@@ -1076,15 +1143,19 @@ async function fetchQuickBooksProducts(): Promise<{ products: NormalizedProduct[
       const sql = `select * from Item startposition ${startPosition} maxresults ${pageSize}`;
       const url = `${baseUrl}/${companyId}/query?query=${encodeURIComponent(sql)}&minorversion=${encodeURIComponent(minorVersion)}`;
 
-      const response = await fetch(url, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          Accept: "application/json",
-          "Content-Type": "application/text",
+      const response = await fetchWithTimeout(
+        url,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            Accept: "application/json",
+            "Content-Type": "application/text",
+          },
+          cache: "no-store",
         },
-        cache: "no-store",
-      });
+        requestTimeoutMs
+      );
 
       const rawText = await response.text();
       if (!response.ok) {
@@ -1356,12 +1427,35 @@ export async function GET() {
     );
   }
 
+  const sourceTimeoutMs = parsePositiveIntEnv("PRODUCT_COMPARISON_SOURCE_TIMEOUT_MS", 12000);
   const [hubspotResult, zuperResult, zohoResult, opensolarResult, quickbooksResult] = await Promise.all([
-    fetchHubSpotProducts(),
-    fetchZuperProducts(),
-    fetchZohoProducts(),
-    fetchOpenSolarProducts(),
-    fetchQuickBooksProducts(),
+    withTimeout(fetchHubSpotProducts(), sourceTimeoutMs, "HubSpot catalog fetch").catch((error) => ({
+      products: [],
+      configured: Boolean(process.env.HUBSPOT_ACCESS_TOKEN),
+      error: asErrorMessage(error, "HubSpot catalog fetch timed out"),
+      excludedBundles: 0,
+      bundleTypePropertyName: null,
+    })),
+    withTimeout(fetchZuperProducts(), sourceTimeoutMs, "Zuper catalog fetch").catch((error) => ({
+      products: [],
+      configured: Boolean(process.env.ZUPER_API_KEY),
+      error: asErrorMessage(error, "Zuper catalog fetch timed out"),
+    })),
+    withTimeout(fetchZohoProducts(), sourceTimeoutMs, "Zoho catalog fetch").catch((error) => ({
+      products: [],
+      configured: zohoInventory.isConfigured(),
+      error: asErrorMessage(error, "Zoho catalog fetch timed out"),
+    })),
+    withTimeout(fetchOpenSolarProducts(), sourceTimeoutMs, "OpenSolar catalog fetch").catch((error) => ({
+      products: [],
+      configured: Boolean(process.env.OPENSOLAR_API_KEY || process.env.OPENSOLAR_ACCESS_TOKEN),
+      error: asErrorMessage(error, "OpenSolar catalog fetch timed out"),
+    })),
+    withTimeout(fetchQuickBooksProducts(), sourceTimeoutMs, "QuickBooks catalog fetch").catch((error) => ({
+      products: [],
+      configured: Boolean(process.env.QUICKBOOKS_ACCESS_TOKEN && process.env.QUICKBOOKS_COMPANY_ID),
+      error: asErrorMessage(error, "QuickBooks catalog fetch timed out"),
+    })),
   ]);
 
   const [hubspotCache, zuperCache, zohoCache, quickbooksCache, opensolarCache] = await Promise.all([
