@@ -592,6 +592,8 @@ enum CatalogProductSource {
   HUBSPOT
   ZUPER
   ZOHO
+  QUICKBOOKS
+  OPENSOLAR
 }
 
 enum TransactionType {
