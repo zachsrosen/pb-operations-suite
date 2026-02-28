@@ -60,6 +60,7 @@ jest.mock("@/lib/zuper-catalog", () => ({
 
 // ── Prisma ────────────────────────────────────────────────────────────────────
 const mockFindUnique = jest.fn();
+const mockCatalogFindMany = jest.fn();
 const mockUpsert = jest.fn();
 const mockUpdate = jest.fn();
 const mockSpecUpsert = jest.fn();
@@ -85,6 +86,9 @@ jest.mock("@/lib/db", () => ({
   prisma: {
     pendingCatalogPush: {
       findUnique: (...args: unknown[]) => mockFindUnique(...args),
+    },
+    catalogProduct: {
+      findMany: (...args: unknown[]) => mockCatalogFindMany(...args),
     },
     $transaction: mockTransaction,
   },
@@ -160,9 +164,11 @@ beforeEach(() => {
       zohoItemId: typeof args?.data?.zohoItemId === "string" ? args.data.zohoItemId : null,
       hubspotProductId: typeof args?.data?.hubspotProductId === "string" ? args.data.hubspotProductId : null,
       zuperItemId: typeof args?.data?.zuperItemId === "string" ? args.data.zuperItemId : null,
+      quickbooksItemId: typeof args?.data?.quickbooksItemId === "string" ? args.data.quickbooksItemId : null,
     })
   );
   mockEquipmentUpdate.mockResolvedValue({ id: "sku_1" });
+  mockCatalogFindMany.mockResolvedValue([]);
   mockCreateOrUpdateHubSpotProduct.mockResolvedValue({
     hubspotProductId: "hs_prod_1",
     created: true,
@@ -605,6 +611,46 @@ describe("POST /api/catalog/push-requests/[id]/approve", () => {
     });
   });
 
+  describe("QuickBooks link integration", () => {
+    it("links QUICKBOOKS when a unique catalog match is found", async () => {
+      mockFindUnique.mockResolvedValue(makePush({ systems: ["INTERNAL", "QUICKBOOKS"] }));
+      mockCatalogFindMany.mockResolvedValue([
+        {
+          externalId: "qb_item_1",
+          name: "REC 400",
+          normalizedSku: "REC400",
+          normalizedName: "rec 400",
+        },
+      ]);
+
+      const res = await POST(new NextRequest("http://localhost"), makeParams());
+      const data = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(mockCatalogFindMany).toHaveBeenCalledTimes(1);
+      expect(mockUpsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({ quickbooksItemId: "qb_item_1" }),
+          update: expect.objectContaining({ quickbooksItemId: "qb_item_1" }),
+        })
+      );
+      expect(data.outcomes.QUICKBOOKS.status).toBe("success");
+      expect(data.outcomes.QUICKBOOKS.externalId).toBe("qb_item_1");
+    });
+
+    it("reports failed QUICKBOOKS outcome when no catalog match is found", async () => {
+      mockFindUnique.mockResolvedValue(makePush({ systems: ["INTERNAL", "QUICKBOOKS"] }));
+      mockCatalogFindMany.mockResolvedValue([]);
+
+      const res = await POST(new NextRequest("http://localhost"), makeParams());
+      const data = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(data.outcomes.QUICKBOOKS.status).toBe("failed");
+      expect(data.outcomes.QUICKBOOKS.message).toMatch(/no quickbooks catalog product matched/i);
+    });
+  });
+
   // ── Response shape ─────────────────────────────────────────────────────
 
   describe("response shape", () => {
@@ -617,6 +663,7 @@ describe("POST /api/catalog/push-requests/[id]/approve", () => {
         zohoItemId: null,
         hubspotProductId: null,
         zuperItemId: null,
+        quickbooksItemId: null,
       });
 
       const res = await POST(new NextRequest("http://localhost"), makeParams());

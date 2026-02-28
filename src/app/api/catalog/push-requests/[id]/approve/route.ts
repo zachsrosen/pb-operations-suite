@@ -17,7 +17,7 @@ import { createOrUpdateZuperPart } from "@/lib/zuper-catalog";
 
 const ADMIN_ROLES = ["ADMIN", "OWNER", "MANAGER"];
 const INTERNAL_CATEGORIES = Object.values(EquipmentCategory) as string[];
-const VALID_SYSTEMS = ["INTERNAL", "ZOHO", "HUBSPOT", "ZUPER"] as const;
+const VALID_SYSTEMS = ["INTERNAL", "ZOHO", "HUBSPOT", "ZUPER", "QUICKBOOKS"] as const;
 
 type SystemName = typeof VALID_SYSTEMS[number];
 type SystemOutcomeStatus = "success" | "failed" | "skipped" | "not_implemented";
@@ -26,6 +26,119 @@ interface SystemOutcome {
   status: SystemOutcomeStatus;
   message?: string;
   externalId?: string | null;
+}
+
+type QuickBooksMatchOutcome =
+  | { status: "matched"; externalId: string; name: string | null; strategy: "sku" | "name" }
+  | { status: "ambiguous"; strategy: "sku" | "name"; candidates: Array<{ externalId: string; name: string | null }> }
+  | { status: "no_match"; reason: string };
+
+function normalizeText(value: string | null | undefined): string {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeSku(value: string | null | undefined): string {
+  return String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "");
+}
+
+function compactUnique(values: Array<string | null | undefined>): string[] {
+  const output = new Set<string>();
+  for (const value of values) {
+    const normalized = String(value || "").trim();
+    if (normalized) output.add(normalized);
+  }
+  return [...output];
+}
+
+async function resolveQuickBooksMatch(push: {
+  brand: string;
+  model: string;
+  description: string;
+  sku: string | null;
+  vendorPartNumber: string | null;
+}): Promise<QuickBooksMatchOutcome> {
+  if (!prisma) return { status: "no_match", reason: "Database is not configured." };
+
+  const skuCandidates = compactUnique([
+    normalizeSku(push.sku),
+    normalizeSku(push.vendorPartNumber),
+    normalizeSku(push.model),
+  ]);
+
+  const nameCandidates = compactUnique([
+    normalizeText(`${push.brand} ${push.model}`),
+    normalizeText(push.model),
+    normalizeText(push.description),
+  ]);
+
+  if (skuCandidates.length === 0 && nameCandidates.length === 0) {
+    return { status: "no_match", reason: "No searchable SKU or name values were provided." };
+  }
+
+  const quickbooksRows = await prisma.catalogProduct.findMany({
+    where: {
+      source: "QUICKBOOKS",
+      OR: [
+        ...(skuCandidates.length > 0 ? [{ normalizedSku: { in: skuCandidates } }] : []),
+        ...(nameCandidates.length > 0 ? [{ normalizedName: { in: nameCandidates } }] : []),
+      ],
+    },
+    select: {
+      externalId: true,
+      name: true,
+      normalizedSku: true,
+      normalizedName: true,
+    },
+    take: 50,
+  });
+
+  const skuMatches = quickbooksRows.filter(
+    (row) => row.normalizedSku && skuCandidates.includes(row.normalizedSku)
+  );
+  if (skuMatches.length === 1) {
+    return {
+      status: "matched",
+      externalId: skuMatches[0].externalId,
+      name: skuMatches[0].name,
+      strategy: "sku",
+    };
+  }
+  if (skuMatches.length > 1) {
+    return {
+      status: "ambiguous",
+      strategy: "sku",
+      candidates: skuMatches.map((row) => ({ externalId: row.externalId, name: row.name })),
+    };
+  }
+
+  const nameMatches = quickbooksRows.filter(
+    (row) => row.normalizedName && nameCandidates.includes(row.normalizedName)
+  );
+  if (nameMatches.length === 1) {
+    return {
+      status: "matched",
+      externalId: nameMatches[0].externalId,
+      name: nameMatches[0].name,
+      strategy: "name",
+    };
+  }
+  if (nameMatches.length > 1) {
+    return {
+      status: "ambiguous",
+      strategy: "name",
+      candidates: nameMatches.map((row) => ({ externalId: row.externalId, name: row.name })),
+    };
+  }
+
+  return { status: "no_match", reason: "No QuickBooks catalog product matched this request." };
 }
 
 function makeSummary(outcomes: Partial<Record<SystemName, SystemOutcome>>) {
@@ -71,6 +184,10 @@ export async function POST(
     outcomes[system] = { status: "skipped", message: "Pending processing." };
   }
 
+  const quickbooksMatch = push.systems.includes("QUICKBOOKS")
+    ? await resolveQuickBooksMatch(push)
+    : null;
+
   // Single transaction: internal catalog writes + status update are atomic.
   // If any step fails, neither the SKU nor the status change persists.
   const approvedPush = await prisma.$transaction(async (tx) => {
@@ -79,6 +196,10 @@ export async function POST(
       zohoItemId: null,
       hubspotProductId: null,
       zuperItemId: null,
+      quickbooksItemId:
+        quickbooksMatch?.status === "matched"
+          ? quickbooksMatch.externalId
+          : null,
     };
 
     // INTERNAL catalog
@@ -99,6 +220,9 @@ export async function POST(
         length: push.length,
         width: push.width,
         weight: push.weight,
+        ...(quickbooksMatch?.status === "matched"
+          ? { quickbooksItemId: quickbooksMatch.externalId }
+          : {}),
       };
 
       // 1. Upsert EquipmentSku with all common fields
@@ -213,6 +337,34 @@ export async function POST(
           error instanceof Error
             ? error.message
             : "HubSpot product push failed.",
+      };
+    }
+  }
+
+  if (push.systems.includes("QUICKBOOKS")) {
+    if (!quickbooksMatch) {
+      outcomes.QUICKBOOKS = {
+        status: "failed",
+        message: "QuickBooks matching was not executed.",
+      };
+    } else if (quickbooksMatch.status === "matched") {
+      outcomes.QUICKBOOKS = {
+        status: "success",
+        externalId: quickbooksMatch.externalId,
+        message:
+          quickbooksMatch.strategy === "sku"
+            ? "Linked QuickBooks by SKU match."
+            : "Linked QuickBooks by name match.",
+      };
+    } else if (quickbooksMatch.status === "ambiguous") {
+      outcomes.QUICKBOOKS = {
+        status: "failed",
+        message: `QuickBooks ${quickbooksMatch.strategy} match is ambiguous (${quickbooksMatch.candidates.length} candidates).`,
+      };
+    } else {
+      outcomes.QUICKBOOKS = {
+        status: "failed",
+        message: quickbooksMatch.reason,
       };
     }
   }

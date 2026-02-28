@@ -18,7 +18,7 @@ const cardClasses =
   "bg-surface rounded-xl border border-t-border p-6 shadow-card";
 const sectionTitleClasses = "text-lg font-semibold text-foreground mb-4";
 
-const SYSTEM_OPTIONS = ["INTERNAL", "HUBSPOT", "ZUPER", "ZOHO"] as const;
+const SYSTEM_OPTIONS = ["INTERNAL", "HUBSPOT", "ZUPER", "ZOHO", "QUICKBOOKS"] as const;
 
 function NewProductForm() {
   const searchParams = useSearchParams();
@@ -397,7 +397,9 @@ function NewProductForm() {
                         ? "HubSpot"
                         : sys === "ZUPER"
                           ? "Zuper"
-                          : "Zoho"}
+                          : sys === "ZOHO"
+                            ? "Zoho"
+                            : "QuickBooks"}
                   </span>
                 </label>
               );

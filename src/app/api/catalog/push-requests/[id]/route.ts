@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { requireApiAuth } from "@/lib/api-auth";
 
 const ADMIN_ROLES = ["ADMIN", "OWNER", "MANAGER"];
-const VALID_SYSTEMS = ["INTERNAL", "ZOHO", "HUBSPOT", "ZUPER"] as const;
+const VALID_SYSTEMS = ["INTERNAL", "ZOHO", "HUBSPOT", "ZUPER", "QUICKBOOKS"] as const;
 
 export async function PATCH(
   request: NextRequest,

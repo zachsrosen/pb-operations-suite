@@ -38,6 +38,7 @@ interface EditableSku {
   zohoItemId: string | null;
   hubspotProductId: string | null;
   zuperItemId: string | null;
+  quickbooksItemId: string | null;
   isActive: boolean;
   metadata?: Record<string, unknown>;
 }
@@ -79,6 +80,7 @@ export default function CatalogSkuEditPage() {
   const [zohoItemId, setZohoItemId] = useState("");
   const [hubspotProductId, setHubspotProductId] = useState("");
   const [zuperItemId, setZuperItemId] = useState("");
+  const [quickbooksItemId, setQuickbooksItemId] = useState("");
   const [isActive, setIsActive] = useState(true);
 
   useEffect(() => {
@@ -122,6 +124,7 @@ export default function CatalogSkuEditPage() {
         setZohoItemId(found.zohoItemId ?? "");
         setHubspotProductId(found.hubspotProductId ?? "");
         setZuperItemId(found.zuperItemId ?? "");
+        setQuickbooksItemId(found.quickbooksItemId ?? "");
         setIsActive(found.isActive);
       } catch (error) {
         if (!cancelled) {
@@ -172,6 +175,7 @@ export default function CatalogSkuEditPage() {
         zohoItemId: zohoItemId || null,
         hubspotProductId: hubspotProductId || null,
         zuperItemId: zuperItemId || null,
+        quickbooksItemId: quickbooksItemId || null,
         isActive,
       };
 
@@ -355,7 +359,7 @@ export default function CatalogSkuEditPage() {
           {category && (
             <div className={cardClasses}>
               <h2 className={sectionTitleClasses}>System IDs &amp; Status</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div>
                   <label className={labelClasses}>Zoho Item ID</label>
                   <input type="text" value={zohoItemId} onChange={(e) => setZohoItemId(e.target.value)} className={inputClasses} />
@@ -367,6 +371,10 @@ export default function CatalogSkuEditPage() {
                 <div>
                   <label className={labelClasses}>Zuper Item ID</label>
                   <input type="text" value={zuperItemId} onChange={(e) => setZuperItemId(e.target.value)} className={inputClasses} />
+                </div>
+                <div>
+                  <label className={labelClasses}>QuickBooks Item ID</label>
+                  <input type="text" value={quickbooksItemId} onChange={(e) => setQuickbooksItemId(e.target.value)} className={inputClasses} />
                 </div>
                 <div className="flex items-center gap-3">
                   <label className="text-sm font-medium text-muted">Active</label>

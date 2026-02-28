@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireApiAuth } from "@/lib/api-auth";
 
-const VALID_SYSTEMS = ["INTERNAL", "ZOHO", "HUBSPOT", "ZUPER"] as const;
+const VALID_SYSTEMS = ["INTERNAL", "ZOHO", "HUBSPOT", "ZUPER", "QUICKBOOKS"] as const;
 const VALID_STATUSES = ["PENDING", "APPROVED", "REJECTED"] as const;
 type PushStatus = typeof VALID_STATUSES[number];
 

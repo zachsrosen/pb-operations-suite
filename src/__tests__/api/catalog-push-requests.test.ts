@@ -156,7 +156,7 @@ describe("POST /api/catalog/push-requests", () => {
       model: "SE7600H",
       description: "Inverter",
       category: "INVERTER",
-      systems: ["INTERNAL", "ZOHO", "HUBSPOT", "ZUPER"],
+      systems: ["INTERNAL", "ZOHO", "HUBSPOT", "ZUPER", "QUICKBOOKS"],
     });
     const res = await postRequest(req);
 

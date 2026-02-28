@@ -11,6 +11,12 @@ import * as Sentry from "@sentry/nextjs";
 import { prisma } from "@/lib/db";
 import { requireApiAuth } from "@/lib/api-auth";
 
+function isPrismaMissingColumnError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const code = (error as { code?: unknown }).code;
+  return code === "P2022";
+}
+
 export async function GET() {
   try {
     const authResult = await requireApiAuth();
@@ -23,17 +29,45 @@ export async function GET() {
       );
     }
 
-    const skus = await prisma.equipmentSku.findMany({
-      where: { isActive: true },
-      select: {
-        category: true,
-        zohoItemId: true,
-        hubspotProductId: true,
-        zuperItemId: true,
-        unitCost: true,
-        sellPrice: true,
-      },
-    });
+    let skus: Array<{
+      category: string;
+      zohoItemId: string | null;
+      hubspotProductId: string | null;
+      zuperItemId: string | null;
+      quickbooksItemId: string | null;
+      unitCost: number | null;
+      sellPrice: number | null;
+    }> = [];
+
+    try {
+      skus = await prisma.equipmentSku.findMany({
+        where: { isActive: true },
+        select: {
+          category: true,
+          zohoItemId: true,
+          hubspotProductId: true,
+          zuperItemId: true,
+          quickbooksItemId: true,
+          unitCost: true,
+          sellPrice: true,
+        },
+      });
+    } catch (error) {
+      if (!isPrismaMissingColumnError(error)) throw error;
+      console.warn("[Inventory SKU Stats] Falling back to legacy query due to missing columns");
+      const legacy = await prisma.equipmentSku.findMany({
+        where: { isActive: true },
+        select: {
+          category: true,
+          zohoItemId: true,
+          hubspotProductId: true,
+          zuperItemId: true,
+          unitCost: true,
+          sellPrice: true,
+        },
+      });
+      skus = legacy.map((row) => ({ ...row, quickbooksItemId: null }));
+    }
 
     // Group by category
     const byCategory: Record<
@@ -44,6 +78,7 @@ export async function GET() {
         hasZoho: number;
         hasHubspot: number;
         hasZuper: number;
+        hasQuickbooks: number;
         withPricing: number;
       }
     > = {};
@@ -57,6 +92,7 @@ export async function GET() {
           hasZoho: 0,
           hasHubspot: 0,
           hasZuper: 0,
+          hasQuickbooks: 0,
           withPricing: 0,
         };
       }
@@ -66,11 +102,13 @@ export async function GET() {
       const hasZoho = Boolean(sku.zohoItemId);
       const hasHubspot = Boolean(sku.hubspotProductId);
       const hasZuper = Boolean(sku.zuperItemId);
+      const hasQuickbooks = Boolean(sku.quickbooksItemId);
 
       if (hasZoho) entry.hasZoho++;
       if (hasHubspot) entry.hasHubspot++;
       if (hasZuper) entry.hasZuper++;
-      if (hasZoho && hasHubspot && hasZuper) entry.fullySynced++;
+      if (hasQuickbooks) entry.hasQuickbooks++;
+      if (hasZoho && hasHubspot && hasZuper && hasQuickbooks) entry.fullySynced++;
       if (sku.unitCost != null && sku.sellPrice != null) entry.withPricing++;
     }
 
@@ -86,6 +124,7 @@ export async function GET() {
       missingZoho: skus.length - categories.reduce((s, c) => s + c.hasZoho, 0),
       missingHubspot: skus.length - categories.reduce((s, c) => s + c.hasHubspot, 0),
       missingZuper: skus.length - categories.reduce((s, c) => s + c.hasZuper, 0),
+      missingQuickbooks: skus.length - categories.reduce((s, c) => s + c.hasQuickbooks, 0),
       withPricing: categories.reduce((s, c) => s + c.withPricing, 0),
     };
 
