@@ -1690,6 +1690,101 @@ async function loadProductsFromCache(source: CacheSourceName): Promise<Normalize
   });
 }
 
+function collectInternalLinkedIds(
+  internalProducts: NormalizedProduct[]
+): Record<LinkableSourceName, Set<string>> {
+  const linkedBySource: Record<LinkableSourceName, Set<string>> = {
+    hubspot: new Set<string>(),
+    zuper: new Set<string>(),
+    zoho: new Set<string>(),
+    quickbooks: new Set<string>(),
+  };
+
+  for (const product of internalProducts) {
+    for (const source of LINKABLE_SOURCES) {
+      const linkedId = String(product.linkedExternalIds?.[source] || "").trim();
+      if (linkedId) linkedBySource[source].add(linkedId);
+    }
+  }
+
+  return linkedBySource;
+}
+
+async function backfillLinkedProductsFromCache(
+  internalProducts: NormalizedProduct[],
+  productsBySource: Record<SourceName, ComparableProduct[]>
+): Promise<{ productsBySource: Record<SourceName, ComparableProduct[]>; warnings: string[] }> {
+  const db = prisma;
+  if (!db || internalProducts.length === 0) {
+    return { productsBySource, warnings: [] };
+  }
+
+  const linkedBySource = collectInternalLinkedIds(internalProducts);
+  const hydratedProductsBySource: Record<SourceName, ComparableProduct[]> = {
+    internal: [...productsBySource.internal],
+    hubspot: [...productsBySource.hubspot],
+    zuper: [...productsBySource.zuper],
+    zoho: [...productsBySource.zoho],
+    opensolar: [...productsBySource.opensolar],
+    quickbooks: [...productsBySource.quickbooks],
+  };
+  const warnings: string[] = [];
+
+  for (const source of LINKABLE_SOURCES) {
+    const requestedIds = [...linkedBySource[source]];
+    if (!requestedIds.length) continue;
+
+    const existingIds = new Set(
+      hydratedProductsBySource[source]
+        .map((product) => String(product.id || "").trim())
+        .filter(Boolean)
+    );
+    const missingIds = requestedIds.filter((id) => !existingIds.has(id));
+    if (!missingIds.length) continue;
+
+    const cachedRows = await db.catalogProduct.findMany({
+      where: {
+        source: CACHE_SOURCE_ENUM[source],
+        externalId: { in: missingIds },
+      },
+      select: {
+        externalId: true,
+        name: true,
+        sku: true,
+        price: true,
+        status: true,
+        description: true,
+        url: true,
+      },
+    });
+
+    let hydratedCount = 0;
+    for (const row of cachedRows) {
+      const id = String(row.externalId || "").trim();
+      if (!id || existingIds.has(id)) continue;
+      hydratedProductsBySource[source].push({
+        id,
+        name: row.name,
+        sku: row.sku,
+        price: row.price,
+        status: row.status,
+        description: row.description,
+        url: row.url,
+      });
+      existingIds.add(id);
+      hydratedCount += 1;
+    }
+
+    if (hydratedCount > 0) {
+      warnings.push(
+        `${SOURCE_LABELS[source]} link hydration backfilled ${hydratedCount} linked product${hydratedCount === 1 ? "" : "s"} from cache`
+      );
+    }
+  }
+
+  return { productsBySource: hydratedProductsBySource, warnings };
+}
+
 async function hydrateSourceWithCache(source: CacheSourceName, result: SourceFetchResult): Promise<{
   result: SourceFetchResult;
   warning: string | null;
@@ -1934,7 +2029,7 @@ export async function GET() {
     ...boundedQuickbooksResult.products,
   ];
   const rows = buildComparisonRows(allProducts, comparisonSources);
-  const productsBySource: Record<SourceName, ComparableProduct[]> = {
+  const productsBySourceBase: Record<SourceName, ComparableProduct[]> = {
     internal: boundedInternalResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
     hubspot: boundedHubspotResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
     zuper: boundedZuperResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
@@ -1942,6 +2037,11 @@ export async function GET() {
     opensolar: boundedOpensolarResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
     quickbooks: boundedQuickbooksResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
   };
+  const linkedCacheBackfill = await backfillLinkedProductsFromCache(
+    boundedInternalResult.products,
+    productsBySourceBase
+  );
+  const productsBySource = linkedCacheBackfill.productsBySource;
   const productsBySourceId = createProductIdIndex(productsBySource);
   const matchingRowCap = parsePositiveIntEnv("PRODUCT_COMPARISON_MAX_ROWS_FOR_MATCHING", 1500);
   const enrichedRows =
@@ -1983,6 +2083,7 @@ export async function GET() {
     ...[hubspotCache, zuperCache, zohoCache, quickbooksCache, opensolarCache]
       .map((c) => c.warning)
       .filter(Boolean) as string[],
+    ...linkedCacheBackfill.warnings,
     ...performanceWarnings,
   ];
 
