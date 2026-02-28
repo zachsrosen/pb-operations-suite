@@ -68,6 +68,17 @@ interface ZohoCreateItemResponse {
   };
 }
 
+interface ZohoDeleteItemResponse {
+  code?: number;
+  message?: string;
+}
+
+export interface DeleteZohoItemResult {
+  status: "deleted" | "not_found" | "failed";
+  message: string;
+  httpStatus?: number;
+}
+
 export interface ZohoAddress {
   address?: string;
   city?: string;
@@ -410,6 +421,10 @@ function trimOrUndefined(value: string | undefined | null): string | undefined {
   return value!.trim();
 }
 
+function isNotFoundMessage(value: string): boolean {
+  return /not[\s_-]*found|does[\s_-]*not[\s_-]*exist|invalid.*item/i.test(value);
+}
+
 function buildUrl(base: string, path: string): string {
   return `${base.replace(/\/$/, "")}/${path.replace(/^\//, "")}`;
 }
@@ -671,6 +686,38 @@ export class ZohoInventoryClient {
     _itemCache = null;
 
     return { zohoItemId: createdId, created: true };
+  }
+
+  async deleteItem(itemId: string): Promise<DeleteZohoItemResult> {
+    const normalizedId = trimOrUndefined(itemId);
+    if (!normalizedId) {
+      return { status: "failed", message: "Zoho item ID is required." };
+    }
+
+    try {
+      const response = await this.requestDelete<ZohoDeleteItemResponse>(
+        `/items/${encodeURIComponent(normalizedId)}`
+      );
+      _itemCache = null;
+      const message = trimOrUndefined(response.message) || "Zoho item deleted.";
+      return { status: "deleted", message };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Zoho delete failed";
+      const statusMatch = /status:\s*(\d{3})/i.exec(message);
+      const httpStatus = statusMatch ? Number(statusMatch[1]) : undefined;
+      if ((httpStatus === 404 || isNotFoundMessage(message))) {
+        return {
+          status: "not_found",
+          message,
+          ...(typeof httpStatus === "number" ? { httpStatus } : {}),
+        };
+      }
+      return {
+        status: "failed",
+        message,
+        ...(typeof httpStatus === "number" ? { httpStatus } : {}),
+      };
+    }
   }
 
   async listVendors(): Promise<ZohoVendor[]> {
@@ -989,6 +1036,68 @@ export class ZohoInventoryClient {
     return json as unknown as T;
   }
 
+  private async requestDelete<T>(path: string): Promise<T> {
+    if (!this.organizationId) {
+      throw new Error("ZOHO_INVENTORY_ORG_ID is not configured");
+    }
+
+    const params = new URLSearchParams();
+    params.set("organization_id", this.organizationId);
+
+    const url = `${buildUrl(this.configuredBaseUrl, path)}?${params.toString()}`;
+
+    const doFetch = async (token: string) => {
+      return withTimeout(
+        fetch(url, {
+          method: "DELETE",
+          headers: {
+            Authorization: `Zoho-oauthtoken ${token}`,
+            "Content-Type": "application/json",
+          },
+          cache: "no-store",
+        }),
+        this.timeoutMs
+      );
+    };
+
+    let token = await this.getAccessToken();
+    let response = await doFetch(token);
+
+    if (response.status === 401 && this.canRefreshToken()) {
+      this.dynamicAccessToken = undefined;
+      this.dynamicTokenExpiresAtMs = 0;
+      token = await this.getAccessToken(true);
+      response = await doFetch(token);
+    }
+
+    const raw = await response.text();
+    let json: Record<string, unknown> = {};
+    try {
+      json = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+    } catch {
+      json = { message: raw };
+    }
+
+    if (!response.ok) {
+      const message =
+        typeof json.message === "string"
+          ? json.message
+          : `Zoho Inventory request failed (status: ${response.status})`;
+      throw new Error(`${message} (status: ${response.status})`);
+    }
+
+    const code = typeof json.code === "number" ? json.code : undefined;
+    if (code !== undefined && code !== 0) {
+      const message =
+        typeof json.message === "string"
+          ? json.message
+          : `Zoho Inventory API error (code ${code})`;
+      throw new Error(message);
+    }
+
+    return json as unknown as T;
+  }
+
   private canRefreshToken(): boolean {
     return !!(this.refreshToken && this.clientId && this.clientSecret);
   }
@@ -1065,4 +1174,10 @@ export async function createOrUpdateZohoItem(
   input: UpsertZohoItemInput
 ): Promise<UpsertZohoItemResult> {
   return zohoInventory.createOrUpdateItem(input);
+}
+
+export async function deleteZohoItem(
+  itemId: string
+): Promise<DeleteZohoItemResult> {
+  return zohoInventory.deleteItem(itemId);
 }
