@@ -69,6 +69,7 @@ interface ProjectResult {
   driveUrl?: string | null;
   openSolarUrl?: string | null;
   zuperUid?: string | null;
+  hubspotContactId?: string | null;
 }
 
 interface DriveFile {
@@ -658,9 +659,10 @@ interface CustomerSearchComboboxProps {
   valueName: string;       // display name of selected contact
   onChange: (id: string, name: string) => void;
   autoSearch?: string;     // initial search query for auto-match (e.g. project customer name)
+  onManualSelect?: () => void; // called when user explicitly picks from dropdown
 }
 
-function CustomerSearchCombobox({ value, valueName, onChange, autoSearch }: CustomerSearchComboboxProps) {
+function CustomerSearchCombobox({ value, valueName, onChange, autoSearch, onManualSelect }: CustomerSearchComboboxProps) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [results, setResults] = useState<{ contact_id: string; contact_name: string }[]>([]);
@@ -726,6 +728,7 @@ function CustomerSearchCombobox({ value, valueName, onChange, autoSearch }: Cust
 
   function handleSelect(id: string, name: string) {
     onChange(id, name);
+    onManualSelect?.();
     setQuery("");
     setOpen(false);
   }
@@ -743,7 +746,7 @@ function CustomerSearchCombobox({ value, valueName, onChange, autoSearch }: Cust
       {value && !open && (
         <button
           type="button"
-          onMouseDown={(e) => { e.preventDefault(); onChange("", ""); setQuery(""); setResults([]); }}
+          onMouseDown={(e) => { e.preventDefault(); onManualSelect?.(); onChange("", ""); setQuery(""); setResults([]); }}
           className="text-muted hover:text-foreground text-sm leading-none"
           title="Clear selection"
         >
@@ -835,6 +838,8 @@ function BomDashboardInner() {
   // Zoho SO state
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
   const [selectedCustomerName, setSelectedCustomerName] = useState<string>("");
+  const customerManuallySet = useRef(false);
+  const autoMatchAbortRef = useRef<AbortController | null>(null);
   const [zohoSoId, setZohoSoId] = useState<string | null>(null);
   const [creatingSo, setCreatingSo] = useState(false);
   // Diff / compare
@@ -912,7 +917,7 @@ function BomDashboardInner() {
     setDealLoading(true);
     fetch(`/api/projects/${encodeURIComponent(dealId)}`)
       .then((r) => r.ok ? r.json() : Promise.reject(r.status))
-      .then((data: { project: { id: number; name: string; address: string; designFolderUrl: string | null; driveUrl: string | null; openSolarUrl: string | null; zuperUid: string | null } }) => {
+      .then((data: { project: { id: number; name: string; address: string; designFolderUrl: string | null; driveUrl: string | null; openSolarUrl: string | null; zuperUid: string | null; hubspotContactId: string | null } }) => {
         const p = data.project;
         setLinkedProject({
           hs_object_id: String(p.id),
@@ -922,12 +927,57 @@ function BomDashboardInner() {
           driveUrl: p.driveUrl,
           openSolarUrl: p.openSolarUrl,
           zuperUid: p.zuperUid,
+          hubspotContactId: p.hubspotContactId ?? null,
         });
       })
       .catch(() => {/* silent — bad param, just ignore */})
       .finally(() => setDealLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
+
+  /* ---- Auto-match Zoho customer via HubSpot primary contact ---- */
+  // Reset manual override flag when the deal itself changes (not on
+  // hubspotContactId arriving from the full project refresh).
+  const prevDealIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const dealId = linkedProject?.hs_object_id ?? null;
+    if (dealId !== prevDealIdRef.current) {
+      prevDealIdRef.current = dealId;
+      customerManuallySet.current = false;
+    }
+  }, [linkedProject?.hs_object_id]);
+
+  // Fire auto-match when hubspotContactId becomes available.
+  // The optimistic project set has hubspotContactId=undefined, so this
+  // effect skips until the full /api/projects/:id response populates it.
+  useEffect(() => {
+    const hsContactId = linkedProject?.hubspotContactId;
+    if (!hsContactId) return;
+
+    // Abort any in-flight auto-match from a previous trigger
+    autoMatchAbortRef.current?.abort();
+    const controller = new AbortController();
+    autoMatchAbortRef.current = controller;
+
+    fetch(`/api/bom/zoho-customers?hubspot_contact_id=${encodeURIComponent(hsContactId)}`, {
+      signal: controller.signal,
+    })
+      .then((r) => r.ok ? r.json() : null)
+      .then((data: { customer: { contact_id: string; contact_name: string } | null } | null) => {
+        if (controller.signal.aborted) return;
+        if (!data?.customer) return;
+        if (customerManuallySet.current) return;
+        setSelectedCustomerId(data.customer.contact_id);
+        setSelectedCustomerName(data.customer.contact_name);
+      })
+      .catch((err: unknown) => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        // Silent — fall back to manual search
+      });
+
+    return () => { controller.abort(); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkedProject?.hubspotContactId]);
 
   /* ---- Load history when a project is linked ---- */
   useEffect(() => {
@@ -1086,6 +1136,7 @@ function BomDashboardInner() {
       setSelectedVendorId("");      // Clear stale vendor selection
       setSelectedCustomerId("");    // Clear stale customer selection
       setSelectedCustomerName("");  // Clear stale customer name
+      customerManuallySet.current = true; // Prevent auto-match from re-populating after save
       // Reload history list
       const histRes = await fetch(`/api/bom/history?dealId=${encodeURIComponent(targetProject.hs_object_id)}`);
       if (histRes.ok) {
@@ -2461,6 +2512,7 @@ function BomDashboardInner() {
                           value={selectedCustomerId}
                           valueName={selectedCustomerName}
                           onChange={(id, name) => { setSelectedCustomerId(id); setSelectedCustomerName(name); }}
+                          onManualSelect={() => { customerManuallySet.current = true; }}
                           autoSearch={linkedProject?.dealname}
                         />
                         <button

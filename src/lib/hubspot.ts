@@ -387,6 +387,7 @@ export interface Project {
   openSolarUrl: string | null;      // os_project_link or link_to_opensolar
   openSolarId: string | null;       // os_project_id
   zuperUid: string | null;          // zuper_site_survey_uid
+  hubspotContactId: string | null; // Primary associated contact ID (for Zoho customer auto-match)
 }
 
 export interface LineItem {
@@ -903,6 +904,7 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
     openSolarUrl: String(deal.os_project_link || deal.link_to_opensolar || "").trim() || null,
     openSolarId: String(deal.os_project_id || "").trim() || null,
     zuperUid: String(deal.zuper_site_survey_uid || "").trim() || null,
+    hubspotContactId: null, // populated by fetchProjectById after transform
   };
 }
 
@@ -1188,15 +1190,77 @@ export async function fetchAllProjects(options?: {
   return projects;
 }
 
+/**
+ * Fetch the primary associated contact ID for a deal using HubSpot v4 associations.
+ * Returns null if no primary contact exists or the call fails.
+ * Best-effort — never blocks deal loading.
+ */
+async function fetchPrimaryContactId(dealId: string): Promise<string | null> {
+  const accessToken = process.env.HUBSPOT_ACCESS_TOKEN;
+  if (!accessToken) return null;
+
+  try {
+    const response = await fetch(
+      `https://api.hubapi.com/crm/v4/objects/deals/${encodeURIComponent(dealId)}/associations/contacts`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        cache: "no-store",
+      }
+    );
+    if (!response.ok) {
+      console.warn(`[HubSpot] Failed to fetch contact associations for deal ${dealId}: ${response.status}`);
+      return null;
+    }
+    const data = await response.json() as {
+      results?: Array<{
+        toObjectId: number;
+        associationTypes: Array<{ label: string | null; typeId: number; category: string }>;
+      }>;
+    };
+
+    const results = data.results ?? [];
+    if (results.length === 0) return null;
+
+    // Find the contact with a "Primary" association label (case-insensitive)
+    for (const assoc of results) {
+      const isPrimary = assoc.associationTypes?.some(
+        (t) => t.label && t.label.toLowerCase() === "primary"
+      );
+      if (isPrimary) return String(assoc.toObjectId);
+    }
+
+    // No "Primary" label found — log available labels for debugging
+    const allLabels = results.flatMap(
+      (r) => r.associationTypes?.map((t) => t.label).filter(Boolean) ?? []
+    );
+    console.log(
+      `[HubSpot] Deal ${dealId}: no "Primary" contact label found. Labels: [${allLabels.map((l) => `"${l}"`).join(", ")}]`
+    );
+    return null;
+  } catch (e) {
+    console.warn(`[HubSpot] Error fetching primary contact for deal ${dealId}:`, e);
+    return null;
+  }
+}
+
 export async function fetchProjectById(id: string): Promise<Project | null> {
   const portalId = process.env.HUBSPOT_PORTAL_ID || "21710069";
 
   try {
-    const response = await hubspotClient.crm.deals.basicApi.getById(
-      id,
-      DEAL_PROPERTIES
-    );
-    return transformDealToProject(response.properties, portalId);
+    // Fetch deal + primary contact in parallel (contact lookup is best-effort, 5s timeout)
+    const [response, hubspotContactId] = await Promise.all([
+      hubspotClient.crm.deals.basicApi.getById(id, DEAL_PROPERTIES),
+      Promise.race([
+        fetchPrimaryContactId(id),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 5_000)),
+      ]),
+    ]);
+    const project = transformDealToProject(response.properties, portalId);
+    project.hubspotContactId = hubspotContactId;
+    return project;
   } catch {
     return null;
   }
