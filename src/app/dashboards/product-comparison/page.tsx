@@ -573,6 +573,8 @@ export default function ProductComparisonPage() {
   const [searchStateBySource, setSearchStateBySource] = useState<Record<string, SourceSearchState>>({});
   const [pinnedRowKeys, setPinnedRowKeys] = useState<Record<string, true>>({});
   const [actionFeedback, setActionFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [compactCards, setCompactCards] = useState(true);
+  const [expandedRowKeys, setExpandedRowKeys] = useState<Record<string, true>>({});
   const [isBackgroundRefreshing, setIsBackgroundRefreshing] = useState(false);
   const backgroundRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const backgroundRefreshInFlightRef = useRef(false);
@@ -1375,6 +1377,17 @@ export default function ProductComparisonPage() {
     setPinnedRowKeys({});
   };
 
+  const toggleRowExpanded = useCallback((rowKey: string) => {
+    setExpandedRowKeys((prev) => {
+      if (prev[rowKey]) {
+        const next = { ...prev };
+        delete next[rowKey];
+        return next;
+      }
+      return { ...prev, [rowKey]: true };
+    });
+  }, []);
+
   const lastUpdated = formatDateTime(data?.lastUpdated || null);
 
   return (
@@ -1521,6 +1534,16 @@ export default function ProductComparisonPage() {
                   accentColor="purple"
                 />
                 <button
+                  onClick={() => setCompactCards((prev) => !prev)}
+                  className={`px-3 py-1.5 rounded border text-xs transition-colors ${
+                    compactCards
+                      ? "border-cyan-500/40 bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/20"
+                      : "border-t-border bg-background text-muted hover:text-foreground"
+                  }`}
+                >
+                  Compact rows: {compactCards ? "On" : "Off"}
+                </button>
+                <button
                   onClick={clearFilters}
                   className="px-3 py-1.5 rounded border border-t-border bg-background text-xs text-muted hover:text-foreground transition-colors"
                 >
@@ -1547,15 +1570,17 @@ export default function ProductComparisonPage() {
             </div>
 
             <div className="space-y-3 max-h-[72vh] overflow-y-auto pr-1">
-              {rows.map((row, index) => (
-                <article
-                  key={row.key}
-                  className={`rounded-lg border p-3 ${
-                    row.isMismatch
-                      ? "border-red-500/20 bg-red-500/5"
-                      : "border-green-500/20 bg-green-500/5"
-                  }`}
-                >
+              {rows.map((row, index) => {
+                const isRowExpanded = !compactCards || Boolean(expandedRowKeys[row.key]);
+                return (
+                  <article
+                    key={row.key}
+                    className={`rounded-lg border p-3 ${
+                      row.isMismatch
+                        ? "border-red-500/20 bg-red-500/5"
+                        : "border-green-500/20 bg-green-500/5"
+                    }`}
+                  >
                   <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
                     <div className="space-y-1 min-w-0">
                       <div className="text-[11px] text-muted">Row {index + 1}</div>
@@ -1586,10 +1611,83 @@ export default function ProductComparisonPage() {
                       <span className="px-1.5 py-0.5 rounded border border-t-border bg-background/70 text-muted">
                         Suggestions: {row.possibleMatches.length}
                       </span>
+                      {compactCards && (
+                        <button
+                          type="button"
+                          onClick={() => toggleRowExpanded(row.key)}
+                          className="px-1.5 py-0.5 rounded border border-cyan-500/40 bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/20"
+                        >
+                          {isRowExpanded ? "Collapse row" : "Expand row"}
+                        </button>
+                      )}
                     </div>
                   </div>
 
-                  <div className="mt-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
+                  {compactCards && !isRowExpanded && (
+                    <div className="mt-3 space-y-2">
+                      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-1.5">
+                        {displayedSources.map((source) => {
+                          const sourceProduct = row[source];
+                          const isMissing = !sourceProduct;
+                          const supportsLinking = isLinkableSource(source);
+                          const existingLinkId = supportsLinking ? getLinkedExternalId(row.internal, source) : null;
+                          const linkMatchesCurrent = Boolean(sourceProduct && existingLinkId && existingLinkId === sourceProduct.id);
+                          const statusLabel = isMissing
+                            ? "Missing"
+                            : supportsLinking
+                              ? linkMatchesCurrent
+                                ? "Linked"
+                                : existingLinkId
+                                  ? "Link mismatch"
+                                  : "Unlinked"
+                              : "Present";
+                          const statusClass = isMissing
+                            ? "border-red-500/35 bg-red-500/10 text-red-300"
+                            : supportsLinking
+                              ? linkMatchesCurrent
+                                ? "border-green-500/35 bg-green-500/10 text-green-300"
+                                : existingLinkId
+                                  ? "border-amber-500/35 bg-amber-500/10 text-amber-300"
+                                  : "border-blue-500/35 bg-blue-500/10 text-blue-300"
+                              : "border-zinc-500/35 bg-zinc-500/10 text-zinc-300";
+                          return (
+                            <div
+                              key={`${row.key}:compact:${source}`}
+                              className="rounded border border-t-border bg-background/50 p-2 space-y-1 min-w-0"
+                            >
+                              <div className={`inline-flex px-1.5 py-0.5 rounded border text-[10px] ${sourceBadgeClass(source)}`}>
+                                {formatSourceName(source)}
+                              </div>
+                              <div className="text-[11px] text-foreground break-words line-clamp-1">
+                                {sourceProduct?.name || "—"}
+                              </div>
+                              <div className={`inline-flex px-1.5 py-0.5 rounded border text-[10px] ${statusClass}`}>
+                                {statusLabel}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {row.reasons.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {row.reasons.slice(0, 4).map((reason) => (
+                            <span key={`${row.key}:compact-reason:${reason}`} className={`px-1.5 py-0.5 rounded border text-[10px] ${reasonBadgeClass(reason)}`}>
+                              {reason}
+                            </span>
+                          ))}
+                          {row.reasons.length > 4 && (
+                            <span className="px-1.5 py-0.5 rounded border border-t-border bg-background/70 text-[10px] text-muted">
+                              +{row.reasons.length - 4} more
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {(!compactCards || isRowExpanded) && (
+                    <>
+                      <div className="mt-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
                     {displayedSources.map((source) => {
                       const sourceProduct = row[source];
                       const hasInternal = Boolean(row.internal);
@@ -1996,8 +2094,11 @@ export default function ProductComparisonPage() {
                       </>
                     )}
                   </div>
+                    </>
+                  )}
                 </article>
-              ))}
+                );
+              })}
 
               {rows.length === 0 && (
                 <div className="rounded-lg border border-t-border bg-background/50 p-6 text-center text-muted">
