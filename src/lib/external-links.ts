@@ -57,6 +57,11 @@ export function getZuperProductUrl(productId: string): string {
   return `${getZuperWebBaseUrl()}/app/product/${encodeURIComponent(productId)}`;
 }
 
+export function getZohoSalesOrderUrl(salesorderId: string): string {
+  const baseUrl = process.env.ZOHO_INVENTORY_WEB_URL || "https://inventory.zoho.com/app#";
+  return `${baseUrl.replace(/\/$/, "").replace(/#\/items$/, "#")}/salesorders/${encodeURIComponent(salesorderId)}`;
+}
+
 export function getZohoItemUrl(itemId: string): string {
   const template = (process.env.ZOHO_INVENTORY_ITEM_URL_TEMPLATE || "").trim();
   if (template) {

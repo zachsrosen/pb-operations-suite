@@ -11,7 +11,7 @@ import { ExecutiveLevelNotification } from "@/emails/ExecutiveLevelNotification"
 import { WeeklyChangelogSimple } from "@/emails/WeeklyChangelogSimple";
 import { OperationsOnlyUpdate } from "@/emails/OperationsOnlyUpdate";
 import { BacklogForecastingUpdate } from "@/emails/BacklogForecastingUpdate";
-import { getHubSpotDealUrl, getZuperJobUrl } from "@/lib/external-links";
+import { getHubSpotDealUrl, getZuperJobUrl, getZohoSalesOrderUrl } from "@/lib/external-links";
 import type { ComplianceDigest } from "@/lib/compliance-digest";
 import * as React from "react";
 
@@ -1718,9 +1718,14 @@ export async function sendPipelineNotification(params: {
   dealName: string;
   status: "succeeded" | "failed" | "partial";
   soNumber?: string;
+  soId?: string;
   failedStep?: string;
   errorMessage?: string;
   unmatchedCount?: number;
+  unmatchedItems?: string[];
+  customerMatchMethod?: string;
+  designFolderUrl?: string;
+  plansetFileName?: string;
   durationMs?: number;
 }): Promise<SendResult> {
   const recipients = process.env.DESIGN_COMPLETE_NOTIFY_EMAILS;
@@ -1736,41 +1741,92 @@ export async function sendPipelineNotification(params: {
 
   const isSuccess = params.status === "succeeded";
   const isPartial = params.status === "partial";
-  const emoji = isSuccess ? "✅" : isPartial ? "⚠️" : "❌";
+  const isFailed = params.status === "failed";
+
+  // ASCII-safe status indicators for subject line (avoids garbled emoji encoding)
+  const subjectTag = isSuccess ? "[OK]" : isPartial ? "[WARN]" : "[FAIL]";
   const statusLabel = isSuccess ? "Succeeded" : isPartial ? "Partial" : "Failed";
+  const statusColor = isSuccess ? "#16a34a" : isPartial ? "#d97706" : "#dc2626";
   const durationSec = params.durationMs ? `${(params.durationMs / 1000).toFixed(1)}s` : "N/A";
 
-  const subject = `${emoji} BOM Pipeline ${statusLabel}: ${params.dealName || params.dealId}`;
+  const subject = `${subjectTag} BOM Pipeline ${statusLabel}: ${params.dealName || params.dealId}`;
 
-  const lines = [
-    `<h2>${emoji} BOM Pipeline ${statusLabel}</h2>`,
-    `<p><strong>Deal:</strong> ${params.dealName || params.dealId}</p>`,
-    `<p><strong>Deal ID:</strong> ${params.dealId}</p>`,
+  // ── Build links ──
+  const hubspotDealUrl = getHubSpotDealUrl(params.dealId);
+  const zohoSoUrl = params.soId ? getZohoSalesOrderUrl(params.soId) : null;
+
+  // ── HTML email ──
+  const htmlParts: string[] = [
+    `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:600px;margin:0 auto">`,
+    `<h2 style="color:${statusColor};margin-bottom:4px">BOM Pipeline ${statusLabel}</h2>`,
+    `<p style="margin:2px 0"><strong>Deal:</strong> ${escapeHtml(params.dealName || params.dealId)}</p>`,
   ];
 
-  if (isSuccess || isPartial) {
-    if (params.soNumber) lines.push(`<p><strong>Sales Order:</strong> ${params.soNumber}</p>`);
-    if (params.unmatchedCount) lines.push(`<p><strong>Unmatched Items:</strong> ${params.unmatchedCount}</p>`);
+  // Links section
+  const linkItems: string[] = [];
+  linkItems.push(`<a href="${hubspotDealUrl}" style="color:#2563eb">HubSpot Deal</a>`);
+  if (zohoSoUrl && params.soNumber) {
+    linkItems.push(`<a href="${zohoSoUrl}" style="color:#2563eb">Zoho SO (${escapeHtml(params.soNumber)})</a>`);
+  }
+  if (params.designFolderUrl) {
+    linkItems.push(`<a href="${escapeHtml(params.designFolderUrl)}" style="color:#2563eb">Design Folder</a>`);
+  }
+  htmlParts.push(`<p style="margin:8px 0">${linkItems.join(" &nbsp;|&nbsp; ")}</p>`);
+
+  // SO + match info
+  if ((isSuccess || isPartial) && params.soNumber) {
+    htmlParts.push(`<p style="margin:2px 0"><strong>Sales Order:</strong> ${escapeHtml(params.soNumber)}</p>`);
+  }
+  if (params.customerMatchMethod) {
+    htmlParts.push(`<p style="margin:2px 0"><strong>Customer Matched Via:</strong> ${escapeHtml(params.customerMatchMethod)}</p>`);
+  }
+  if (params.plansetFileName) {
+    htmlParts.push(`<p style="margin:2px 0"><strong>Planset:</strong> ${escapeHtml(params.plansetFileName)}</p>`);
   }
 
-  if (!isSuccess) {
-    if (params.failedStep) lines.push(`<p><strong>Failed Step:</strong> ${params.failedStep}</p>`);
-    if (params.errorMessage) lines.push(`<p><strong>Error:</strong> ${params.errorMessage}</p>`);
+  // Unmatched items
+  if (params.unmatchedCount && params.unmatchedCount > 0) {
+    htmlParts.push(`<p style="margin:8px 0 2px"><strong>Unmatched Items (${params.unmatchedCount}):</strong></p>`);
+    if (params.unmatchedItems && params.unmatchedItems.length > 0) {
+      htmlParts.push(`<ul style="margin:2px 0;padding-left:20px">`);
+      for (const item of params.unmatchedItems) {
+        htmlParts.push(`<li style="color:#b91c1c">${escapeHtml(item)}</li>`);
+      }
+      htmlParts.push(`</ul>`);
+    }
   }
 
-  lines.push(`<p><strong>Duration:</strong> ${durationSec}</p>`);
-  lines.push(`<hr/><p style="color:#999;font-size:12px">Automated BOM Pipeline — PB Operations Suite</p>`);
+  // Failure details
+  if (isFailed || isPartial) {
+    if (params.failedStep) htmlParts.push(`<p style="margin:2px 0"><strong>Failed Step:</strong> ${escapeHtml(params.failedStep)}</p>`);
+    if (params.errorMessage) htmlParts.push(`<p style="margin:2px 0;color:#dc2626"><strong>Error:</strong> ${escapeHtml(params.errorMessage)}</p>`);
+  }
 
-  const html = lines.join("\n");
-  const text = [
+  htmlParts.push(`<p style="margin:8px 0 2px"><strong>Duration:</strong> ${durationSec}</p>`);
+  htmlParts.push(`<hr style="border:none;border-top:1px solid #e5e7eb;margin:12px 0"/>`);
+  htmlParts.push(`<p style="color:#9ca3af;font-size:12px;margin:0">Automated BOM Pipeline &mdash; PB Operations Suite</p>`);
+  htmlParts.push(`</div>`);
+
+  const html = htmlParts.join("\n");
+
+  // ── Plain text fallback ──
+  const textLines: (string | null)[] = [
     `BOM Pipeline ${statusLabel}: ${params.dealName || params.dealId}`,
-    `Deal ID: ${params.dealId}`,
+    ``,
+    `HubSpot Deal: ${hubspotDealUrl}`,
+    zohoSoUrl && params.soNumber ? `Zoho SO: ${params.soNumber} — ${zohoSoUrl}` : null,
+    params.designFolderUrl ? `Design Folder: ${params.designFolderUrl}` : null,
+    ``,
     params.soNumber ? `Sales Order: ${params.soNumber}` : null,
-    params.unmatchedCount ? `Unmatched Items: ${params.unmatchedCount}` : null,
+    params.customerMatchMethod ? `Customer Matched Via: ${params.customerMatchMethod}` : null,
+    params.plansetFileName ? `Planset: ${params.plansetFileName}` : null,
+    params.unmatchedCount ? `Unmatched Items (${params.unmatchedCount}): ${(params.unmatchedItems ?? []).join(", ")}` : null,
     params.failedStep ? `Failed Step: ${params.failedStep}` : null,
     params.errorMessage ? `Error: ${params.errorMessage}` : null,
     `Duration: ${durationSec}`,
-  ].filter(Boolean).join("\n");
+  ];
+
+  const text = textLines.filter((l) => l !== null).join("\n");
 
   return sendEmailMessage({
     to: toList[0],
@@ -1781,4 +1837,13 @@ export async function sendPipelineNotification(params: {
     debugFallbackTitle: `PIPELINE ${statusLabel.toUpperCase()} for ${params.dealName}`,
     debugFallbackBody: text,
   });
+}
+
+/** HTML-escape user-provided values to prevent XSS in email content. */
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }

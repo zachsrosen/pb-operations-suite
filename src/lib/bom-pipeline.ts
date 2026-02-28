@@ -274,6 +274,8 @@ export async function runDesignCompletePipeline(
   const startedAt = Date.now();
   let currentStep: BomPipelineStep = "FETCH_DEAL";
   let dealName = `Deal ${dealId}`;
+  let capturedDesignFolderUrl: string | undefined;
+  let capturedPlansetName: string | undefined;
 
   const fail = async (step: BomPipelineStep, error: string): Promise<PipelineResult> => {
     const durationMs = Date.now() - startedAt;
@@ -309,6 +311,8 @@ export async function runDesignCompletePipeline(
         status: "failed",
         failedStep: step,
         errorMessage: error.slice(0, 500),
+        designFolderUrl: capturedDesignFolderUrl,
+        plansetFileName: capturedPlansetName,
         durationMs,
       });
     } catch (notifyErr) {
@@ -329,6 +333,8 @@ export async function runDesignCompletePipeline(
 
     dealName = dealProps.dealName;
     await updateRun(runId, { dealName });
+
+    capturedDesignFolderUrl = dealProps.designFolderUrl ?? undefined;
 
     if (!dealProps.designFolderUrl) {
       return fail("FETCH_DEAL", "Deal has no design_documents folder URL");
@@ -352,6 +358,7 @@ export async function runDesignCompletePipeline(
       return fail("LIST_PDFS", "Could not select a planset PDF");
     }
 
+    capturedPlansetName = selectedFile.name;
     await updateRun(runId, { selectedPlanset: selectedFile.name });
     console.log(`[bom-pipeline] Selected planset: ${selectedFile.name} (${selectedFile.id})`);
 
@@ -569,6 +576,8 @@ export async function runDesignCompletePipeline(
           status: "partial",
           failedStep: "RESOLVE_CUSTOMER",
           errorMessage: `BOM extracted & saved (v${snapshotResult.version}), but Zoho customer could not be auto-matched. Manual SO creation needed. Searched: ${searchAttempts.join("; ")}`,
+          designFolderUrl: dealProps.designFolderUrl ?? undefined,
+          plansetFileName: selectedFile.name,
           durationMs,
         });
       } catch (notifyErr) {
@@ -652,7 +661,12 @@ export async function runDesignCompletePipeline(
         dealName,
         status: finalStatus,
         soNumber: soResult.salesorder_number ?? soResult.salesorder_id,
+        soId: soResult.salesorder_id,
         unmatchedCount: soResult.unmatchedCount,
+        unmatchedItems: soResult.unmatchedItems,
+        customerMatchMethod: customerMatchMethod !== "none" ? customerMatchMethod : undefined,
+        designFolderUrl: dealProps.designFolderUrl ?? undefined,
+        plansetFileName: selectedFile.name,
         durationMs,
       });
     } catch (notifyErr) {
