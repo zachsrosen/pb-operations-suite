@@ -24,6 +24,7 @@ import { fetchPrimaryContactId } from "@/lib/hubspot";
 import {
   ensureCustomerCacheLoaded,
   findByHubSpotContactId,
+  searchCustomersByName,
 } from "@/lib/zoho-customer-cache";
 import { sendPipelineNotification } from "@/lib/email";
 import { PIPELINE_ACTOR } from "@/lib/actor-context";
@@ -69,15 +70,53 @@ function extractFolderId(input: string): string | null {
   return null;
 }
 
+/** Fetch a HubSpot contact's name for fallback customer matching. */
+async function fetchContactName(contactId: string): Promise<{
+  fullName: string | null;
+  lastName: string | null;
+  company: string | null;
+} | null> {
+  const accessToken = process.env.HUBSPOT_ACCESS_TOKEN;
+  if (!accessToken) return null;
+
+  try {
+    const res = await fetch(
+      `https://api.hubapi.com/crm/v3/objects/contacts/${encodeURIComponent(contactId)}?properties=firstname,lastname,company`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+        cache: "no-store",
+      }
+    );
+    if (!res.ok) return null;
+    const data = await res.json() as { properties: Record<string, string | null> };
+    const { firstname, lastname, company } = data.properties;
+
+    return {
+      fullName: [lastname, firstname].filter(Boolean).map(s => s!.trim()).join(", ") || null,
+      lastName: lastname?.trim() || null,
+      company: company?.trim() || null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** Fetch HubSpot deal properties needed by the pipeline. */
 async function fetchDealProperties(dealId: string): Promise<{
   dealName: string;
   designFolderUrl: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
 }> {
   const accessToken = process.env.HUBSPOT_ACCESS_TOKEN;
   if (!accessToken) throw new Error("HUBSPOT_ACCESS_TOKEN not configured");
 
-  const properties = ["dealname", "design_documents", "design_document_folder_id", "all_document_parent_folder_id"];
+  const properties = [
+    "dealname",
+    "design_documents", "design_document_folder_id", "all_document_parent_folder_id",
+    "address_line_1", "city", "state", "postal_code",
+  ];
   const url = `https://api.hubapi.com/crm/v3/objects/deals/${encodeURIComponent(dealId)}?properties=${properties.join(",")}`;
 
   const res = await fetch(url, {
@@ -99,7 +138,13 @@ async function fetchDealProperties(dealId: string): Promise<{
   const designFolderUrl =
     String(p.design_documents || p.design_document_folder_id || p.all_document_parent_folder_id || "").trim() || null;
 
-  return { dealName, designFolderUrl };
+  return {
+    dealName,
+    designFolderUrl,
+    address: p.address_line_1?.trim() || null,
+    city: p.city?.trim() || null,
+    state: p.state?.trim() || null,
+  };
 }
 
 /** Get a Drive-scoped token, preferring domain-wide delegation (impersonation). */
@@ -336,27 +381,169 @@ export async function runDesignCompletePipeline(
     currentStep = "RESOLVE_CUSTOMER";
 
     let customerId: string | null = null;
+    let customerMatchMethod: string = "none";
+    const searchAttempts: string[] = [];
 
-    // Try HubSpot contact ID → Zoho customer mapping first
+    await ensureCustomerCacheLoaded();
+
+    // --- Strategy 1: HubSpot contact ID → Zoho customer mapping ---
     if (primaryContactId) {
-      await ensureCustomerCacheLoaded();
       const match = findByHubSpotContactId(primaryContactId);
       if (match) {
         customerId = match.contact_id;
-        console.log(`[bom-pipeline] Auto-matched Zoho customer: ${match.contact_name} (${customerId})`);
+        customerMatchMethod = "hubspot_contact_id";
+        console.log(`[bom-pipeline] Auto-matched Zoho customer via HubSpot ID: ${match.contact_name} (${customerId})`);
+      } else {
+        searchAttempts.push(`HubSpot ID ${primaryContactId} → no match`);
       }
     }
 
-    if (!customerId) {
-      return fail(
-        "RESOLVE_CUSTOMER",
-        primaryContactId
-          ? `No Zoho customer found for HubSpot contact ID ${primaryContactId}`
-          : "No primary contact associated with deal",
-      );
+    // Helper: try a name search and auto-select if exactly 1 match or exact-name match
+    const tryNameSearch = (query: string, fullName: string | null, label: string): boolean => {
+      if (customerId || query.length < 2) return false;
+      const matches = searchCustomersByName(query);
+      console.log(`[bom-pipeline] ${label} search "${query}" → ${matches.length} match(es)`);
+
+      if (matches.length === 1) {
+        customerId = matches[0].contact_id;
+        customerMatchMethod = `${label}_single`;
+        console.log(`[bom-pipeline] Auto-matched via ${label} (single): ${matches[0].contact_name} (${customerId})`);
+        return true;
+      }
+      if (matches.length > 1 && fullName) {
+        const exact = matches.find((c) => c.contact_name.toLowerCase() === fullName.toLowerCase());
+        if (exact) {
+          customerId = exact.contact_id;
+          customerMatchMethod = `${label}_exact`;
+          console.log(`[bom-pipeline] Auto-matched via ${label} (exact): ${exact.contact_name} (${customerId})`);
+          return true;
+        }
+      }
+      searchAttempts.push(`${label} "${query}" → ${matches.length} match(es), no unique`);
+      return false;
+    };
+
+    // --- Strategy 2: Deal name (after pipe) → Zoho name search ---
+    // Deal names: "PROJ-XXXX | LastName, FirstName" or "PROJ-XXXX | CompanyName"
+    if (!customerId && dealName) {
+      const afterPipe = dealName.includes("|") ? dealName.split("|")[1]?.trim() : null;
+      if (afterPipe) {
+        const shortQuery = afterPipe.split(/\s+/).slice(0, 2).join(" ");
+        tryNameSearch(shortQuery, afterPipe, "deal_name");
+      }
     }
 
-    await updateRun(runId, { zohoCustomerId: customerId });
+    // --- Strategy 3: HubSpot contact name → Zoho name search ---
+    if (!customerId && primaryContactId) {
+      const contactInfo = await fetchContactName(primaryContactId);
+      if (contactInfo) {
+        // Try last name first (most selective)
+        if (contactInfo.lastName) {
+          tryNameSearch(contactInfo.lastName, contactInfo.fullName, "contact_lastname");
+        }
+        // Try full name if last name alone was too ambiguous
+        if (!customerId && contactInfo.fullName) {
+          tryNameSearch(contactInfo.fullName, contactInfo.fullName, "contact_fullname");
+        }
+        // Try company name as last resort
+        if (!customerId && contactInfo.company) {
+          tryNameSearch(contactInfo.company, contactInfo.company, "contact_company");
+        }
+      }
+    }
+
+    // --- Strategy 4: Deal address → Zoho name search (address-based) ---
+    // Some Zoho customers are named by address or include address in name
+    if (!customerId && dealProps.address) {
+      // Try last name from deal + address city combo for disambiguation
+      const afterPipe = dealName.includes("|") ? dealName.split("|")[1]?.trim() : null;
+      const lastName = afterPipe?.split(/[,\s]+/)[0];
+      if (lastName && lastName.length >= 2) {
+        // Already tried in strategy 2 — skip if same query
+        // But try with just the bare last name (no comma/first name)
+        const matches = searchCustomersByName(lastName);
+        if (matches.length > 1 && dealProps.address) {
+          // Multiple matches for last name — try to disambiguate by address in customer name
+          const addressWord = dealProps.address.split(/\s+/)[0]; // First word of address (e.g. "1234")
+          if (addressWord && addressWord.length >= 3) {
+            const addressMatch = matches.find((c) =>
+              c.contact_name.toLowerCase().includes(addressWord.toLowerCase())
+            );
+            if (addressMatch) {
+              customerId = addressMatch.contact_id;
+              customerMatchMethod = "address_disambiguate";
+              console.log(`[bom-pipeline] Auto-matched via address disambiguation: ${addressMatch.contact_name} (${customerId})`);
+            } else {
+              searchAttempts.push(`address disambiguate "${lastName}" + "${addressWord}" → no match among ${matches.length}`);
+            }
+          }
+        }
+      }
+    }
+
+    // --- Graceful degradation: skip SO creation instead of failing ---
+    if (!customerId) {
+      console.warn(`[bom-pipeline] Could not resolve Zoho customer. Attempts: ${searchAttempts.join("; ")}`);
+
+      const durationMs = Date.now() - startedAt;
+      await updateRun(runId, {
+        status: "PARTIAL",
+        failedStep: "RESOLVE_CUSTOMER",
+        errorMessage: `Customer not found — BOM saved, SO skipped. Attempts: ${searchAttempts.join("; ")}`,
+        durationMs,
+        metadata: { customerMatchMethod: "none", searchAttempts },
+      });
+
+      await logActivity({
+        type: "BOM_PIPELINE_COMPLETED",
+        description: `BOM pipeline partial for deal ${dealId} — customer not found, SO skipped`,
+        userEmail: PIPELINE_ACTOR.email,
+        userName: PIPELINE_ACTOR.name,
+        entityType: "bom",
+        entityId: dealId,
+        entityName: "pipeline",
+        metadata: {
+          event: "bom_pipeline_partial",
+          dealId,
+          dealName,
+          status: "partial",
+          snapshotVersion: snapshotResult.version,
+          searchAttempts,
+        },
+        requestPath: PIPELINE_ACTOR.requestPath,
+        requestMethod: PIPELINE_ACTOR.requestMethod,
+        durationMs,
+      });
+
+      // Notify ops — they need to manually create the SO
+      try {
+        await sendPipelineNotification({
+          dealId,
+          dealName,
+          status: "partial",
+          failedStep: "RESOLVE_CUSTOMER",
+          errorMessage: `BOM extracted & saved (v${snapshotResult.version}), but Zoho customer could not be auto-matched. Manual SO creation needed. Searched: ${searchAttempts.join("; ")}`,
+          durationMs,
+        });
+      } catch (notifyErr) {
+        console.error("[bom-pipeline] Failed to send partial notification:", notifyErr);
+      }
+
+      return {
+        status: "partial" as const,
+        dealId,
+        dealName,
+        snapshotId: snapshotResult.id,
+        snapshotVersion: snapshotResult.version,
+        durationMs,
+        errorMessage: `Customer not found — BOM saved, SO skipped`,
+      };
+    }
+
+    await updateRun(runId, {
+      zohoCustomerId: customerId,
+      metadata: { customerMatchMethod, searchAttempts },
+    });
 
     // ── Step 6: Create draft Sales Order ──
     currentStep = "CREATE_SO";
