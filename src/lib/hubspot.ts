@@ -1250,10 +1250,13 @@ export async function fetchProjectById(id: string): Promise<Project | null> {
   const portalId = process.env.HUBSPOT_PORTAL_ID || "21710069";
 
   try {
-    // Fetch deal + primary contact in parallel (contact lookup is best-effort)
+    // Fetch deal + primary contact in parallel (contact lookup is best-effort, 5s timeout)
     const [response, hubspotContactId] = await Promise.all([
       hubspotClient.crm.deals.basicApi.getById(id, DEAL_PROPERTIES),
-      fetchPrimaryContactId(id),
+      Promise.race([
+        fetchPrimaryContactId(id),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 5_000)),
+      ]),
     ]);
     const project = transformDealToProject(response.properties, portalId);
     project.hubspotContactId = hubspotContactId;
