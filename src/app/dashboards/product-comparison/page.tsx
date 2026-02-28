@@ -77,6 +77,25 @@ interface DisplayRow extends ComparisonRow {
   bestMatchConfidence: MatchConfidence | null;
 }
 
+interface CachedCatalogProduct {
+  source: string;
+  externalId: string;
+  name: string | null;
+  sku: string | null;
+  description: string | null;
+  price: number | null;
+  status: string | null;
+  url: string | null;
+}
+
+interface SourceSearchState {
+  open: boolean;
+  query: string;
+  loading: boolean;
+  error: string | null;
+  results: CachedCatalogProduct[];
+}
+
 function formatSourceName(source: SourceName): string {
   if (source === "internal") return "Internal";
   if (source === "hubspot") return "HubSpot";
@@ -238,6 +257,22 @@ function getLinkedExternalId(product: ComparableProduct | null, source: Linkable
   return normalized || null;
 }
 
+function sourceSearchKey(rowKey: string, source: LinkableSourceName): string {
+  return `${rowKey}:${source}`;
+}
+
+function defaultSourceSearchQuery(row: ComparisonRow, source: LinkableSourceName): string {
+  const seed = [
+    row[source]?.sku,
+    row[source]?.name,
+    row.internal?.sku,
+    row.internal?.name,
+  ]
+    .map((value) => String(value || "").trim())
+    .find(Boolean);
+  return seed || "";
+}
+
 const MISSING_SOURCE_OPTIONS: FilterOption[] = [
   { value: "internal", label: "Missing in Internal" },
   { value: "hubspot", label: "Missing in HubSpot" },
@@ -289,6 +324,7 @@ export default function ProductComparisonPage() {
   const [reasonFilters, setReasonFilters] = useState<string[]>([]);
   const [confidenceFilters, setConfidenceFilters] = useState<MatchConfidence[]>([]);
   const [linkingKeys, setLinkingKeys] = useState<Record<string, boolean>>({});
+  const [searchStateBySource, setSearchStateBySource] = useState<Record<string, SourceSearchState>>({});
   const [actionFeedback, setActionFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   const fetchData = useCallback(async () => {
@@ -306,20 +342,170 @@ export default function ProductComparisonPage() {
     }
   }, []);
 
+  const toggleSourceSearch = useCallback((row: DisplayRow, source: LinkableSourceName) => {
+    const key = sourceSearchKey(row.key, source);
+    setSearchStateBySource((prev) => {
+      const existing = prev[key];
+      if (existing) {
+        return {
+          ...prev,
+          [key]: {
+            ...existing,
+            open: !existing.open,
+          },
+        };
+      }
+      return {
+        ...prev,
+        [key]: {
+          open: true,
+          query: defaultSourceSearchQuery(row, source),
+          loading: false,
+          error: null,
+          results: [],
+        },
+      };
+    });
+  }, []);
+
+  const updateSourceSearchQuery = useCallback((rowKey: string, source: LinkableSourceName, query: string) => {
+    const key = sourceSearchKey(rowKey, source);
+    setSearchStateBySource((prev) => {
+      const existing = prev[key] ?? {
+        open: true,
+        query: "",
+        loading: false,
+        error: null,
+        results: [],
+      };
+      return {
+        ...prev,
+        [key]: {
+          ...existing,
+          query,
+        },
+      };
+    });
+  }, []);
+
+  const runSourceSearch = useCallback(
+    async (row: DisplayRow, source: LinkableSourceName, queryInput?: string) => {
+      const key = sourceSearchKey(row.key, source);
+      const query = String(queryInput ?? searchStateBySource[key]?.query || "").trim();
+      if (!query) {
+        setSearchStateBySource((prev) => ({
+          ...prev,
+          [key]: {
+            ...(prev[key] ?? {
+              open: true,
+              query: "",
+              loading: false,
+              error: null,
+              results: [],
+            }),
+            error: "Enter a search term.",
+            loading: false,
+          },
+        }));
+        return;
+      }
+
+      setSearchStateBySource((prev) => ({
+        ...prev,
+        [key]: {
+          ...(prev[key] ?? {
+            open: true,
+            query,
+            loading: false,
+            error: null,
+            results: [],
+          }),
+          open: true,
+          query,
+          loading: true,
+          error: null,
+        },
+      }));
+
+      try {
+        const response = await fetch(
+          `/api/products/cache?source=${encodeURIComponent(source)}&search=${encodeURIComponent(query)}&limit=12`,
+          { cache: "no-store" }
+        );
+        const payload = (await response.json().catch(() => null)) as
+          | { error?: string; products?: CachedCatalogProduct[] }
+          | null;
+        if (!response.ok) {
+          throw new Error(payload?.error || `Failed to search ${formatSourceName(source)} (${response.status})`);
+        }
+        const products = Array.isArray(payload?.products) ? payload.products : [];
+
+        setSearchStateBySource((prev) => ({
+          ...prev,
+          [key]: {
+            ...(prev[key] ?? {
+              open: true,
+              query,
+              loading: false,
+              error: null,
+              results: [],
+            }),
+            open: true,
+            query,
+            loading: false,
+            error: null,
+            results: products,
+          },
+        }));
+      } catch (error) {
+        setSearchStateBySource((prev) => ({
+          ...prev,
+          [key]: {
+            ...(prev[key] ?? {
+              open: true,
+              query,
+              loading: false,
+              error: null,
+              results: [],
+            }),
+            open: true,
+            query,
+            loading: false,
+            results: [],
+            error: error instanceof Error ? error.message : "Catalog search failed",
+          },
+        }));
+      }
+    },
+    [searchStateBySource]
+  );
+
   const confirmSourceLink = useCallback(
-    async (internalSkuId: string, source: LinkableSourceName, externalId: string, rowKey: string) => {
-      const linkKey = `${rowKey}:${source}:${externalId}`;
+    async (row: DisplayRow, source: LinkableSourceName, externalId: string) => {
+      if (!row.internal?.id) {
+        setActionFeedback({ type: "error", message: "No internal SKU found for this row." });
+        return;
+      }
+
+      const linkKey = `${row.key}:${source}:${externalId}`;
       setLinkingKeys((prev) => ({ ...prev, [linkKey]: true }));
       setActionFeedback(null);
+
+      const patchBody: Record<string, string> = { id: row.internal.id };
+      for (const linkableSource of LINKABLE_SOURCES) {
+        const resolvedExternalId =
+          linkableSource === source
+            ? externalId
+            : row[linkableSource]?.id || getLinkedExternalId(row.internal, linkableSource);
+        if (!resolvedExternalId) continue;
+        patchBody[LINK_FIELD_BY_SOURCE[linkableSource]] = resolvedExternalId;
+      }
+
       try {
-        const linkField = LINK_FIELD_BY_SOURCE[source];
         const response = await fetch("/api/inventory/skus", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            id: internalSkuId,
-            [linkField]: externalId,
-          }),
+          body: JSON.stringify(patchBody),
         });
 
         const payload = (await response.json().catch(() => null)) as { error?: string } | null;
@@ -327,9 +513,10 @@ export default function ProductComparisonPage() {
           throw new Error(payload?.error || `Failed to link ${formatSourceName(source)} (${response.status})`);
         }
 
+        const syncedCount = Object.keys(patchBody).length - 1;
         setActionFeedback({
           type: "success",
-          message: `Linked Internal SKU to ${formatSourceName(source)} (${externalId}).`,
+          message: `Linked ${formatSourceName(source)} and synced ${syncedCount} catalog ID${syncedCount === 1 ? "" : "s"} to inventory.`,
         });
         await fetchData();
       } catch (error) {
@@ -735,6 +922,13 @@ export default function ProductComparisonPage() {
                       const hasInternal = Boolean(row.internal);
                       const supportsLinking = isLinkableSource(source);
                       const existingLinkId = supportsLinking ? getLinkedExternalId(row.internal, source) : null;
+                      const cardSearchKey = supportsLinking ? sourceSearchKey(row.key, source) : null;
+                      const cardSearchState = cardSearchKey ? searchStateBySource[cardSearchKey] : null;
+                      const isSearchOpen = Boolean(cardSearchState?.open);
+                      const isSearchLoading = Boolean(cardSearchState?.loading);
+                      const searchQuery = cardSearchState?.query ?? "";
+                      const searchResults = cardSearchState?.results ?? [];
+                      const searchError = cardSearchState?.error ?? null;
                       const hasSourceProduct = Boolean(sourceProduct);
                       const isLinkedToShownProduct =
                         supportsLinking && hasSourceProduct && Boolean(existingLinkId) && existingLinkId === sourceProduct!.id;
@@ -759,7 +953,7 @@ export default function ProductComparisonPage() {
                               {!hasInternal ? (
                                 <div className="text-[11px] text-amber-300">Add or match an Internal SKU to enable link confirmation.</div>
                               ) : supportsLinking ? (
-                                <div className="space-y-1.5">
+                                <div className="space-y-2">
                                   <div className="text-[11px] text-muted">
                                     Current link: {existingLinkId || "—"}
                                   </div>
@@ -769,7 +963,7 @@ export default function ProductComparisonPage() {
                                     </div>
                                   ) : canConfirmLink && sourceProduct ? (
                                     <button
-                                      onClick={() => confirmSourceLink(row.internal!.id, source, sourceProduct.id, row.key)}
+                                      onClick={() => confirmSourceLink(row, source, sourceProduct.id)}
                                       disabled={isSavingLink}
                                       className="px-2 py-1 rounded border border-cyan-500/40 bg-cyan-500/10 text-cyan-300 text-[11px] hover:bg-cyan-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
@@ -777,6 +971,91 @@ export default function ProductComparisonPage() {
                                     </button>
                                   ) : (
                                     <div className="text-[11px] text-muted">No product available to link in this row.</div>
+                                  )}
+
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleSourceSearch(row, source)}
+                                      className="px-2 py-1 rounded border border-t-border bg-background/70 text-[11px] text-cyan-300 hover:text-cyan-200"
+                                    >
+                                      {isSearchOpen ? "Hide catalog search" : `Find match in ${formatSourceName(source)}`}
+                                    </button>
+                                  </div>
+
+                                  {isSearchOpen && (
+                                    <div className="rounded border border-t-border bg-background/50 p-2 space-y-2">
+                                      <div className="flex gap-2">
+                                        <input
+                                          value={searchQuery}
+                                          onChange={(event) => updateSourceSearchQuery(row.key, source, event.target.value)}
+                                          placeholder={`Search ${formatSourceName(source)} by SKU, name, or ID`}
+                                          className="w-full rounded border border-t-border bg-background px-2 py-1 text-[11px] text-foreground focus:outline-none focus:border-cyan-500/50"
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={() => runSourceSearch(row, source, searchQuery)}
+                                          disabled={isSearchLoading}
+                                          className="px-2 py-1 rounded border border-cyan-500/40 bg-cyan-500/10 text-cyan-300 text-[11px] hover:bg-cyan-500/20 disabled:opacity-50"
+                                        >
+                                          {isSearchLoading ? "..." : "Search"}
+                                        </button>
+                                      </div>
+                                      {searchError && (
+                                        <div className="text-[11px] text-red-300">{searchError}</div>
+                                      )}
+                                      {!searchError && !isSearchLoading && searchResults.length === 0 && searchQuery.trim() && (
+                                        <div className="text-[11px] text-muted">No catalog products found for this query.</div>
+                                      )}
+                                      {searchResults.length > 0 && (
+                                        <div className="max-h-48 overflow-y-auto space-y-1">
+                                          {searchResults.map((candidate) => {
+                                            const candidateLinkKey = `${row.key}:${source}:${candidate.externalId}`;
+                                            const isCandidateSaving = Boolean(linkingKeys[candidateLinkKey]);
+                                            const isCandidateLinked = existingLinkId === candidate.externalId;
+                                            return (
+                                              <div
+                                                key={candidate.externalId}
+                                                className="rounded border border-t-border bg-background/70 p-2"
+                                              >
+                                                <div className="text-[11px] text-foreground break-words">
+                                                  {candidate.name || "Unnamed product"}
+                                                </div>
+                                                <div className="text-[10px] text-muted break-all">
+                                                  SKU: {candidate.sku || "—"} · ID: {candidate.externalId}
+                                                </div>
+                                                <div className="mt-1 flex flex-wrap items-center gap-2">
+                                                  {candidate.url && (
+                                                    <a
+                                                      href={candidate.url}
+                                                      target="_blank"
+                                                      rel="noreferrer"
+                                                      className="text-[10px] text-cyan-300 hover:text-cyan-200 underline underline-offset-2"
+                                                    >
+                                                      Open
+                                                    </a>
+                                                  )}
+                                                  {isCandidateLinked ? (
+                                                    <span className="px-1.5 py-0.5 rounded border border-green-500/40 bg-green-500/10 text-[10px] text-green-300">
+                                                      Linked
+                                                    </span>
+                                                  ) : (
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => confirmSourceLink(row, source, candidate.externalId)}
+                                                      disabled={isCandidateSaving}
+                                                      className="px-2 py-0.5 rounded border border-cyan-500/40 bg-cyan-500/10 text-cyan-300 text-[10px] hover:bg-cyan-500/20 disabled:opacity-50"
+                                                    >
+                                                      {isCandidateSaving ? "Linking..." : "Use this match"}
+                                                    </button>
+                                                  )}
+                                                </div>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+                                    </div>
                                   )}
                                 </div>
                               ) : (
@@ -851,7 +1130,7 @@ export default function ProductComparisonPage() {
                                           </span>
                                         ) : canConfirmSuggestion ? (
                                           <button
-                                            onClick={() => confirmSourceLink(row.internal!.id, matchLinkSource, match.product.id, row.key)}
+                                            onClick={() => confirmSourceLink(row, matchLinkSource, match.product.id)}
                                             disabled={isSavingSuggestion}
                                             className="px-2 py-1 rounded border border-cyan-500/40 bg-cyan-500/10 text-cyan-300 text-[11px] hover:bg-cyan-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
                                           >
