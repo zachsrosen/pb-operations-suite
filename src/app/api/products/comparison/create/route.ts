@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { prisma, getUserByEmail } from "@/lib/db";
+import { prisma, getUserByEmail, logActivity } from "@/lib/db";
 import { requireApiAuth } from "@/lib/api-auth";
 import { normalizeRole, type UserRole } from "@/lib/role-permissions";
 import { CatalogProductSource } from "@/generated/prisma/enums";
@@ -442,6 +442,29 @@ export async function POST(request: NextRequest) {
         url: responseUrl,
         lastSyncedAt: new Date(),
       },
+    });
+
+    await logActivity({
+      type: "FEATURE_USED",
+      description: `${created ? "Created" : "Linked existing"} ${source} product from comparison`,
+      userEmail: authResult.email,
+      userName: authResult.name,
+      entityType: "product_comparison",
+      entityId: internalSkuId,
+      entityName: name,
+      metadata: {
+        feature: "product_comparison",
+        action: "create_source_link",
+        source,
+        created,
+        internalSkuId,
+        externalId,
+      },
+      ipAddress: authResult.ip,
+      userAgent: authResult.userAgent,
+      requestPath: request.nextUrl.pathname,
+      requestMethod: request.method,
+      responseStatus: 200,
     });
 
     return NextResponse.json({

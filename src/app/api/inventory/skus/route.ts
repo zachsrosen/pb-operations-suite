@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import * as Sentry from "@sentry/nextjs";
-import { prisma } from "@/lib/db";
+import { prisma, logActivity } from "@/lib/db";
 import { requireApiAuth } from "@/lib/api-auth";
 import { tagSentryRequest } from "@/lib/sentry-request";
 import { EquipmentCategory } from "@/generated/prisma/enums";
@@ -23,6 +23,12 @@ const WRITE_ROLES = ["ADMIN", "OWNER", "PROJECT_MANAGER"];
 
 // Valid EquipmentCategory values for validation
 const VALID_CATEGORIES = Object.values(EquipmentCategory);
+const LINK_FIELD_CONFIG = [
+  { source: "hubspot", field: "hubspotProductId" },
+  { source: "zuper", field: "zuperItemId" },
+  { source: "zoho", field: "zohoItemId" },
+  { source: "quickbooks", field: "quickbooksItemId" },
+] as const;
 
 const SPEC_TABLES = Array.from(
   new Set(
@@ -68,6 +74,11 @@ function isPrismaMissingColumnError(error: unknown): boolean {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function normalizeLinkValue(value: unknown): string | null {
+  const normalized = String(value || "").trim();
+  return normalized || null;
 }
 
 function parseOptionalNumber(input: Record<string, unknown>, key: string): ParsedNumber {
@@ -631,6 +642,33 @@ export async function POST(request: NextRequest) {
       throw new Error("SKU upsert failed");
     }
 
+    const linkedSourcesOnUpsert = LINK_FIELD_CONFIG.flatMap(({ source, field }) => {
+      const value = normalizeLinkValue((upserted as Record<string, unknown>)[field]);
+      return value ? [{ source, externalId: value }] : [];
+    });
+    if (linkedSourcesOnUpsert.length > 0) {
+      await logActivity({
+        type: "FEATURE_USED",
+        description: "Created/upserted internal SKU with source links",
+        userEmail: authResult.email,
+        userName: authResult.name,
+        entityType: "product_comparison",
+        entityId: String((upserted as Record<string, unknown>).id || ""),
+        entityName: `${String((upserted as Record<string, unknown>).brand || "")} ${String((upserted as Record<string, unknown>).model || "")}`.trim(),
+        metadata: {
+          feature: "product_comparison",
+          action: "create_internal_with_links",
+          skuId: String((upserted as Record<string, unknown>).id || ""),
+          linkedSources: linkedSourcesOnUpsert,
+        },
+        ipAddress: authResult.ip,
+        userAgent: authResult.userAgent,
+        requestPath: request.nextUrl.pathname,
+        requestMethod: request.method,
+        responseStatus: 201,
+      });
+    }
+
     return NextResponse.json({ sku: enrichSku(upserted as unknown as Record<string, unknown>) }, { status: 201 });
   } catch (error) {
     if (isPrismaMissingColumnError(error)) {
@@ -707,7 +745,16 @@ export async function PATCH(request: NextRequest) {
 
     const existing = await prisma.equipmentSku.findUnique({
       where: { id },
-      select: { id: true, category: true },
+      select: {
+        id: true,
+        category: true,
+        brand: true,
+        model: true,
+        hubspotProductId: true,
+        zuperItemId: true,
+        zohoItemId: true,
+        quickbooksItemId: true,
+      },
     });
     if (!existing) {
       return NextResponse.json({ error: "SKU not found" }, { status: 404 });
@@ -763,6 +810,21 @@ export async function PATCH(request: NextRequest) {
 
     const metadataParsed = parseOptionalMetadata(body, category as string);
     if ("error" in metadataParsed) return NextResponse.json({ error: metadataParsed.error }, { status: 400 });
+
+    const parsedLinksBySource = {
+      hubspot: hubspotProductParsed,
+      zuper: zuperItemParsed,
+      zoho: zohoItemParsed,
+      quickbooks: quickbooksItemParsed,
+    } as const;
+    const requestedLinkChanges = LINK_FIELD_CONFIG.flatMap(({ source, field }) => {
+      const parsedLink = parsedLinksBySource[source];
+      if (!parsedLink.provided) return [];
+      const previousValue = normalizeLinkValue(existing[field]);
+      const nextValue = normalizeLinkValue(parsedLink.value);
+      if (previousValue === nextValue) return [];
+      return [{ source, field, from: previousValue, to: nextValue }];
+    });
 
     const updateData: Record<string, unknown> = {
       ...(categoryProvided && { category: category as EquipmentCategory }),
@@ -824,6 +886,30 @@ export async function PATCH(request: NextRequest) {
 
     if (!updated) {
       return NextResponse.json({ error: "SKU not found" }, { status: 404 });
+    }
+
+    if (requestedLinkChanges.length > 0) {
+      await logActivity({
+        type: "FEATURE_USED",
+        description: `Confirmed product links for ${requestedLinkChanges.map((change) => change.source).join(", ")}`,
+        userEmail: authResult.email,
+        userName: authResult.name,
+        entityType: "product_comparison",
+        entityId: id,
+        entityName: `${existing.brand} ${existing.model}`.trim() || id,
+        metadata: {
+          feature: "product_comparison",
+          action: "confirm_link",
+          skuId: id,
+          changes: requestedLinkChanges,
+          changedSources: requestedLinkChanges.map((change) => change.source),
+        },
+        ipAddress: authResult.ip,
+        userAgent: authResult.userAgent,
+        requestPath: request.nextUrl.pathname,
+        requestMethod: request.method,
+        responseStatus: 200,
+      });
     }
 
     return NextResponse.json({ sku: enrichSku(updated as unknown as Record<string, unknown>) });

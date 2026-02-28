@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireApiAuth } from "@/lib/api-auth";
-import { prisma } from "@/lib/db";
+import { prisma, logActivity } from "@/lib/db";
 
 const WRITE_ROLES = new Set(["ADMIN", "OWNER", "PROJECT_MANAGER"]);
 
@@ -250,6 +250,30 @@ export async function POST(request: NextRequest) {
       mergedSpecTables,
       target: targetAfter,
     };
+  });
+
+  await logActivity({
+    type: "FEATURE_USED",
+    description: "Merged duplicate internal SKUs",
+    userEmail: authResult.email,
+    userName: authResult.name,
+    entityType: "product_comparison",
+    entityId: targetSkuId,
+    entityName: mergeResult.target ? `${mergeResult.target.brand} ${mergeResult.target.model}`.trim() : targetSkuId,
+    metadata: {
+      feature: "product_comparison",
+      action: "merge_internal",
+      sourceSkuId,
+      targetSkuId,
+      conflicts,
+      mergedStockLocations: mergeResult.mergedStockLocations,
+      mergedSpecTables: mergeResult.mergedSpecTables,
+    },
+    ipAddress: authResult.ip,
+    userAgent: authResult.userAgent,
+    requestPath: request.nextUrl.pathname,
+    requestMethod: request.method,
+    responseStatus: 200,
   });
 
   return NextResponse.json({
