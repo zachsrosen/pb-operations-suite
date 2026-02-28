@@ -2,7 +2,16 @@ const DEFAULT_ZUPER_API_URL = "https://us-west-1c.zuperpro.com/api";
 
 type JsonRecord = Record<string, unknown>;
 
-const ITEM_ID_KEYS = ["item_uid", "item_id", "part_uid", "part_id", "uid", "id"] as const;
+const ITEM_ID_KEYS = [
+  "item_uid",
+  "item_id",
+  "part_uid",
+  "part_id",
+  "product_uid",
+  "product_id",
+  "uid",
+  "id",
+] as const;
 const DEFAULT_CATALOG_ENDPOINTS = [
   "/items",
   "/parts",
@@ -109,7 +118,20 @@ function extractRecords(value: unknown, depth = 0): JsonRecord[] {
   if (!isRecord(value)) return [];
 
   const records: JsonRecord[] = [value];
-  const nestedKeys = ["data", "item", "items", "part", "parts", "result", "results", "records"] as const;
+  const nestedKeys = [
+    "data",
+    "item",
+    "items",
+    "part",
+    "parts",
+    "product",
+    "products",
+    "product_data",
+    "product_category",
+    "result",
+    "results",
+    "records",
+  ] as const;
   for (const key of nestedKeys) {
     records.push(...extractRecords(value[key], depth + 1));
   }
@@ -133,15 +155,17 @@ function matchesIdentity(record: JsonRecord, identity: ZuperIdentity): boolean {
     "item_sku",
     "item_code",
     "code",
+    "product_id",
     "vendor_part_number",
     "part_number",
     "model",
   ]);
-  const recordPart = getRecordString(record, ["part_number", "vendor_part_number", "model", "item_code"]);
-  const recordName = getRecordString(record, ["name", "item_name", "part_name", "title", "display_name"]);
+  const recordPart = getRecordString(record, ["part_number", "vendor_part_number", "model", "item_code", "product_id"]);
+  const recordName = getRecordString(record, ["name", "item_name", "part_name", "product_name", "title", "display_name"]);
   const recordCategory = getRecordString(record, [
     "category",
     "category_name",
+    "product_category_name",
     "item_category",
     "part_category",
     "type",
@@ -303,7 +327,21 @@ function getCreateBodyVariants(endpoint: string, payload: JsonRecord): CreateBod
       { label: "raw", body: payload },
     ];
   }
-  if (path.includes("/products") || path.endsWith("/product")) {
+  if (path.endsWith("/product")) {
+    const productName = trimOrUndefined(payload.product_name) || trimOrUndefined(payload.name);
+    const productId = trimOrUndefined(payload.product_id) || trimOrUndefined(payload.sku) || trimOrUndefined(payload.part_number);
+    const productPayload: JsonRecord = {
+      ...payload,
+      ...(productName ? { product_name: productName } : {}),
+      ...(productId ? { product_id: productId } : {}),
+    };
+    return [
+      { label: "product", body: { product: productPayload } },
+      { label: "product_data", body: { product_data: productPayload } },
+      { label: "raw_product", body: productPayload },
+    ];
+  }
+  if (path.includes("/products")) {
     return [
       { label: "product", body: { product: payload } },
       { label: "products[]", body: { products: [payload] } },
