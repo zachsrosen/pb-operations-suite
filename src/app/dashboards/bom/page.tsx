@@ -936,54 +936,48 @@ function BomDashboardInner() {
   }, [searchParams]);
 
   /* ---- Auto-match Zoho customer via HubSpot primary contact ---- */
-  // Stored in a ref so the effect body reads the latest value without
-  // re-firing when the optimistic → full project refresh fills it in.
-  const hubspotContactIdRef = useRef<string | null>(null);
-  hubspotContactIdRef.current = linkedProject?.hubspotContactId ?? null;
-
+  // Reset manual override flag when the deal itself changes (not on
+  // hubspotContactId arriving from the full project refresh).
+  const prevDealIdRef = useRef<string | null>(null);
   useEffect(() => {
-    // Reset manual flag on deal change
-    customerManuallySet.current = false;
-
-    // Abort any in-flight auto-match from previous deal
-    autoMatchAbortRef.current?.abort();
-    autoMatchAbortRef.current = null;
-
-    const dealId = linkedProject?.hs_object_id;
-    if (!dealId) return;
-
-    // Short delay lets the full project refresh populate hubspotContactId
-    // before we read it, avoiding a wasted no-op fetch on the optimistic set.
-    const timer = setTimeout(() => {
-      const hsContactId = hubspotContactIdRef.current;
-      if (!hsContactId) return;
-
-      const controller = new AbortController();
-      autoMatchAbortRef.current = controller;
-
-      fetch(`/api/bom/zoho-customers?hubspot_contact_id=${encodeURIComponent(hsContactId)}`, {
-        signal: controller.signal,
-      })
-        .then((r) => r.ok ? r.json() : null)
-        .then((data: { customer: { contact_id: string; contact_name: string } | null } | null) => {
-          if (controller.signal.aborted) return;
-          if (!data?.customer) return;
-          if (customerManuallySet.current) return;
-          setSelectedCustomerId(data.customer.contact_id);
-          setSelectedCustomerName(data.customer.contact_name);
-        })
-        .catch((err: unknown) => {
-          if (err instanceof DOMException && err.name === "AbortError") return;
-          // Silent — fall back to manual search
-        });
-    }, 150);
-
-    return () => {
-      clearTimeout(timer);
-      autoMatchAbortRef.current?.abort();
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    const dealId = linkedProject?.hs_object_id ?? null;
+    if (dealId !== prevDealIdRef.current) {
+      prevDealIdRef.current = dealId;
+      customerManuallySet.current = false;
+    }
   }, [linkedProject?.hs_object_id]);
+
+  // Fire auto-match when hubspotContactId becomes available.
+  // The optimistic project set has hubspotContactId=undefined, so this
+  // effect skips until the full /api/projects/:id response populates it.
+  useEffect(() => {
+    const hsContactId = linkedProject?.hubspotContactId;
+    if (!hsContactId) return;
+
+    // Abort any in-flight auto-match from a previous trigger
+    autoMatchAbortRef.current?.abort();
+    const controller = new AbortController();
+    autoMatchAbortRef.current = controller;
+
+    fetch(`/api/bom/zoho-customers?hubspot_contact_id=${encodeURIComponent(hsContactId)}`, {
+      signal: controller.signal,
+    })
+      .then((r) => r.ok ? r.json() : null)
+      .then((data: { customer: { contact_id: string; contact_name: string } | null } | null) => {
+        if (controller.signal.aborted) return;
+        if (!data?.customer) return;
+        if (customerManuallySet.current) return;
+        setSelectedCustomerId(data.customer.contact_id);
+        setSelectedCustomerName(data.customer.contact_name);
+      })
+      .catch((err: unknown) => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        // Silent — fall back to manual search
+      });
+
+    return () => { controller.abort(); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkedProject?.hubspotContactId]);
 
   /* ---- Load history when a project is linked ---- */
   useEffect(() => {
