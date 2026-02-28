@@ -590,139 +590,190 @@ export default function CatalogPage() {
           {skuLoading ? (
             <p className="text-sm text-muted animate-pulse py-8 text-center">Loading SKUs…</p>
           ) : (
-            <div className="rounded-xl border border-t-border bg-surface shadow-card overflow-x-auto">
-              <table className="min-w-[1420px] w-full text-sm">
-                <thead>
-                  <tr className="border-b border-t-border bg-surface-2 text-xs font-medium uppercase tracking-wide text-muted">
-                    <th className="px-4 py-2 text-left">Category</th>
-                    <th className="px-4 py-2 text-left">Brand</th>
-                    <th className="px-4 py-2 text-left">Model / Description</th>
-                    <th className="px-4 py-2 text-left">Vendor Part</th>
-                    <th className="px-4 py-2 text-left">Unit</th>
-                    <th className="px-4 py-2 text-right">Unit Cost</th>
-                    <th className="px-4 py-2 text-right">Sell Price</th>
-                    <th className="px-4 py-2 text-right">Margin</th>
-                    <th className="px-4 py-2 text-left">Sync Status</th>
-                    <th className="px-4 py-2 text-right">Stock</th>
-                    {isAdmin && <th className="px-4 py-2 text-right">Actions</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.length === 0 ? (
-                    <tr>
-                      <td colSpan={isAdmin ? 11 : 10} className="px-4 py-8 text-center text-sm text-muted">No SKUs found.</td>
-                    </tr>
-                  ) : filtered.map((sku) => (
-                    <tr key={sku.id} className="border-b border-t-border last:border-b-0 hover:bg-surface-2 transition-colors align-top">
-                      <td className="px-4 py-3 text-xs text-muted font-medium">
-                        {editingSkuId === sku.id && skuEditDraft ? (
-                          <select
-                            value={skuEditDraft.category}
-                            onChange={(e) => setSkuEditDraft((prev) => prev ? { ...prev, category: e.target.value } : prev)}
-                            className="w-full rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
-                          >
-                            {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-                          </select>
-                        ) : sku.category}
-                      </td>
-                      <td className="px-4 py-3 font-medium text-foreground">
-                        {editingSkuId === sku.id && skuEditDraft ? (
-                          <input
-                            value={skuEditDraft.brand}
-                            onChange={(e) => setSkuEditDraft((prev) => prev ? { ...prev, brand: e.target.value } : prev)}
-                            className="w-full rounded border border-t-border bg-surface px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
-                          />
-                        ) : sku.brand}
-                      </td>
-                      <td className="px-4 py-3 min-w-[280px]">
-                        {editingSkuId === sku.id && skuEditDraft ? (
-                          <div className="space-y-1.5">
+            <div className="space-y-3">
+              {filtered.length === 0 ? (
+                <div className="rounded-xl border border-t-border bg-surface shadow-card px-4 py-8 text-center text-sm text-muted">
+                  No SKUs found.
+                </div>
+              ) : filtered.map((sku) => {
+                const editing = editingSkuId === sku.id && Boolean(skuEditDraft);
+                const totalStock = sku.stockLevels.reduce((sum, l) => sum + l.quantityOnHand, 0);
+                const effectiveUnitCost = editing && skuEditDraft ? parseNumberOrNull(skuEditDraft.unitCost) : sku.unitCost;
+                const effectiveSellPrice = editing && skuEditDraft ? parseNumberOrNull(skuEditDraft.sellPrice) : sku.sellPrice;
+
+                return (
+                  <article key={sku.id} className="rounded-xl border border-t-border bg-surface shadow-card p-4">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {editing && skuEditDraft ? (
+                            <select
+                              value={skuEditDraft.category}
+                              onChange={(e) => setSkuEditDraft((prev) => prev ? { ...prev, category: e.target.value } : prev)}
+                              className="rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                            >
+                              {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                          ) : (
+                            <span className="inline-flex items-center rounded-md bg-surface-2 px-2 py-0.5 text-xs font-medium text-muted">
+                              {sku.category}
+                            </span>
+                          )}
+                          <span className={`text-xs ${sku.isActive ? "text-green-400" : "text-red-300"}`}>
+                            {sku.isActive ? "Active" : "Inactive"}
+                          </span>
+                        </div>
+
+                        {editing && skuEditDraft ? (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            <input
+                              value={skuEditDraft.brand}
+                              onChange={(e) => setSkuEditDraft((prev) => prev ? { ...prev, brand: e.target.value } : prev)}
+                              className="rounded border border-t-border bg-surface px-2 py-1.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                              placeholder="Brand"
+                            />
                             <input
                               value={skuEditDraft.model}
                               onChange={(e) => setSkuEditDraft((prev) => prev ? { ...prev, model: e.target.value } : prev)}
-                              className="w-full rounded border border-t-border bg-surface px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                              className="rounded border border-t-border bg-surface px-2 py-1.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
                               placeholder="Model"
                             />
                             <input
                               value={skuEditDraft.description}
                               onChange={(e) => setSkuEditDraft((prev) => prev ? { ...prev, description: e.target.value } : prev)}
-                              className="w-full rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                              className="md:col-span-2 rounded border border-t-border bg-surface px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
                               placeholder="Description"
                             />
                             <input
                               value={skuEditDraft.vendorName}
                               onChange={(e) => setSkuEditDraft((prev) => prev ? { ...prev, vendorName: e.target.value } : prev)}
-                              className="w-full rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                              className="rounded border border-t-border bg-surface px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
                               placeholder="Vendor Name"
+                            />
+                            <input
+                              value={skuEditDraft.vendorPartNumber}
+                              onChange={(e) => setSkuEditDraft((prev) => prev ? { ...prev, vendorPartNumber: e.target.value } : prev)}
+                              className="rounded border border-t-border bg-surface px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                              placeholder="Vendor Part Number"
                             />
                           </div>
                         ) : (
                           <>
-                            <div className="font-medium text-foreground">{sku.model}</div>
+                            <div className="text-base font-semibold text-foreground break-words">
+                              {sku.brand} - {sku.model}
+                            </div>
                             {sku.description && (
-                              <div className="text-xs text-muted mt-0.5">{sku.description}</div>
+                              <div className="text-sm text-muted break-words">{sku.description}</div>
                             )}
                             {sku.vendorName && (
-                              <div className="text-xs text-muted/70 mt-0.5">Vendor: {sku.vendorName}</div>
+                              <div className="text-xs text-muted/70">Vendor: {sku.vendorName}</div>
                             )}
                           </>
                         )}
-                      </td>
-                      <td className="px-4 py-3 text-xs text-muted">
-                        {editingSkuId === sku.id && skuEditDraft ? (
-                          <input
-                            value={skuEditDraft.vendorPartNumber}
-                            onChange={(e) => setSkuEditDraft((prev) => prev ? { ...prev, vendorPartNumber: e.target.value } : prev)}
-                            className="w-full rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
-                          />
-                        ) : (sku.vendorPartNumber || "—")}
-                      </td>
-                      <td className="px-4 py-3 text-xs text-muted">
-                        {editingSkuId === sku.id && skuEditDraft ? (
+                      </div>
+
+                      {isAdmin && (
+                        <div className="flex items-center gap-3 text-xs">
+                          {editing ? (
+                            <>
+                              <button
+                                onClick={saveSkuEdit}
+                                disabled={savingSkuEdit}
+                                className="text-cyan-400 hover:text-cyan-300 disabled:opacity-50"
+                              >
+                                {savingSkuEdit ? "Saving…" : "Save"}
+                              </button>
+                              <button
+                                onClick={cancelSkuEdit}
+                                disabled={savingSkuEdit}
+                                className="text-muted hover:text-foreground"
+                              >
+                                Cancel
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                onClick={() => beginSkuEdit(sku)}
+                                className="text-cyan-400 hover:text-cyan-300"
+                              >
+                                Quick Edit
+                              </button>
+                              <Link
+                                href={`/dashboards/catalog/edit/${sku.id}`}
+                                className="text-cyan-400 hover:text-cyan-300"
+                              >
+                                Full Edit
+                              </Link>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 text-xs">
+                      <div className="rounded-lg border border-t-border bg-surface-2 p-3 space-y-1.5">
+                        <div className="text-muted uppercase tracking-wide">Unit</div>
+                        {editing && skuEditDraft ? (
                           <div className="flex gap-1.5">
                             <input
                               value={skuEditDraft.unitSpec}
                               onChange={(e) => setSkuEditDraft((prev) => prev ? { ...prev, unitSpec: e.target.value } : prev)}
-                              className="w-20 rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                              className="w-24 rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
                               placeholder="Spec"
                             />
                             <input
                               value={skuEditDraft.unitLabel}
                               onChange={(e) => setSkuEditDraft((prev) => prev ? { ...prev, unitLabel: e.target.value } : prev)}
-                              className="w-16 rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                              className="w-20 rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
                               placeholder="Unit"
                             />
                           </div>
                         ) : (
-                          sku.unitSpec != null ? `${sku.unitSpec}${sku.unitLabel ? ` ${sku.unitLabel}` : ""}` : "—"
+                          <div className="text-foreground">
+                            {sku.unitSpec != null ? `${sku.unitSpec}${sku.unitLabel ? ` ${sku.unitLabel}` : ""}` : "—"}
+                          </div>
                         )}
-                      </td>
-                      <td className="px-4 py-3 text-right text-xs text-muted">
-                        {editingSkuId === sku.id && skuEditDraft ? (
-                          <input
-                            value={skuEditDraft.unitCost}
-                            onChange={(e) => setSkuEditDraft((prev) => prev ? { ...prev, unitCost: e.target.value } : prev)}
-                            className="w-24 rounded border border-t-border bg-surface px-2 py-1 text-right text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
-                            placeholder="0.00"
-                          />
-                        ) : money(sku.unitCost)}
-                      </td>
-                      <td className="px-4 py-3 text-right text-xs text-muted">
-                        {editingSkuId === sku.id && skuEditDraft ? (
-                          <input
-                            value={skuEditDraft.sellPrice}
-                            onChange={(e) => setSkuEditDraft((prev) => prev ? { ...prev, sellPrice: e.target.value } : prev)}
-                            className="w-24 rounded border border-t-border bg-surface px-2 py-1 text-right text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
-                            placeholder="0.00"
-                          />
-                        ) : money(sku.sellPrice)}
-                      </td>
-                      <td className="px-4 py-3 text-right text-xs text-muted">{marginPercent(
-                        editingSkuId === sku.id && skuEditDraft ? parseNumberOrNull(skuEditDraft.unitCost) : sku.unitCost,
-                        editingSkuId === sku.id && skuEditDraft ? parseNumberOrNull(skuEditDraft.sellPrice) : sku.sellPrice
-                      )}</td>
-                      <td className="px-4 py-3 text-xs">
-                        {editingSkuId === sku.id && skuEditDraft ? (
+                      </div>
+
+                      <div className="rounded-lg border border-t-border bg-surface-2 p-3 space-y-1.5">
+                        <div className="text-muted uppercase tracking-wide">Pricing</div>
+                        {editing && skuEditDraft ? (
+                          <div className="space-y-1.5">
+                            <input
+                              value={skuEditDraft.unitCost}
+                              onChange={(e) => setSkuEditDraft((prev) => prev ? { ...prev, unitCost: e.target.value } : prev)}
+                              className="w-full rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                              placeholder="Unit Cost"
+                            />
+                            <input
+                              value={skuEditDraft.sellPrice}
+                              onChange={(e) => setSkuEditDraft((prev) => prev ? { ...prev, sellPrice: e.target.value } : prev)}
+                              className="w-full rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                              placeholder="Sell Price"
+                            />
+                          </div>
+                        ) : (
+                          <div className="space-y-1 text-foreground">
+                            <div>Cost: {money(sku.unitCost)}</div>
+                            <div>Sell: {money(sku.sellPrice)}</div>
+                            <div className="text-muted">Margin: {marginPercent(sku.unitCost, sku.sellPrice)}</div>
+                          </div>
+                        )}
+                        {editing && (
+                          <div className="text-muted">Margin: {marginPercent(effectiveUnitCost, effectiveSellPrice)}</div>
+                        )}
+                      </div>
+
+                      <div className="rounded-lg border border-t-border bg-surface-2 p-3 space-y-1.5">
+                        <div className="text-muted uppercase tracking-wide">Inventory</div>
+                        <div className="text-foreground">Stock: {totalStock}</div>
+                        <div className="text-muted">Vendor Part: {editing && skuEditDraft ? skuEditDraft.vendorPartNumber || "—" : sku.vendorPartNumber || "—"}</div>
+                      </div>
+
+                      <div className="rounded-lg border border-t-border bg-surface-2 p-3 space-y-1.5">
+                        <div className="text-muted uppercase tracking-wide">Sync</div>
+                        {editing && skuEditDraft ? (
                           <div className="space-y-1">
                             <input
                               value={skuEditDraft.zohoItemId}
@@ -758,58 +809,26 @@ export default function CatalogPage() {
                             </label>
                           </div>
                         ) : (
-                          <div className="flex items-center gap-3">
-                            <SyncDot label="Zoho" ok={sku.syncHealth?.zoho ?? Boolean(sku.zohoItemId)} />
-                            <SyncDot label="HS" ok={sku.syncHealth?.hubspot ?? Boolean(sku.hubspotProductId)} />
-                            <SyncDot label="Zu" ok={sku.syncHealth?.zuper ?? Boolean(sku.zuperItemId)} />
-                            <SyncDot label="QB" ok={sku.syncHealth?.quickbooks ?? Boolean(sku.quickbooksItemId)} />
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-3">
+                              <SyncDot label="Zoho" ok={sku.syncHealth?.zoho ?? Boolean(sku.zohoItemId)} />
+                              <SyncDot label="HS" ok={sku.syncHealth?.hubspot ?? Boolean(sku.hubspotProductId)} />
+                              <SyncDot label="Zu" ok={sku.syncHealth?.zuper ?? Boolean(sku.zuperItemId)} />
+                              <SyncDot label="QB" ok={sku.syncHealth?.quickbooks ?? Boolean(sku.quickbooksItemId)} />
+                            </div>
+                            <div className="text-[11px] text-muted">
+                              Zoho: {sku.zohoItemId || "—"} · HS: {sku.hubspotProductId || "—"}
+                            </div>
+                            <div className="text-[11px] text-muted">
+                              Zu: {sku.zuperItemId || "—"} · QB: {sku.quickbooksItemId || "—"}
+                            </div>
                           </div>
                         )}
-                      </td>
-                      <td className="px-4 py-3 text-right text-xs text-muted">
-                        {sku.stockLevels.reduce((sum, l) => sum + l.quantityOnHand, 0)}
-                      </td>
-                      {isAdmin && (
-                        <td className="px-4 py-3 text-right text-xs">
-                          {editingSkuId === sku.id ? (
-                            <div className="inline-flex items-center gap-2">
-                              <button
-                                onClick={saveSkuEdit}
-                                disabled={savingSkuEdit}
-                                className="text-cyan-400 hover:text-cyan-300 disabled:opacity-50"
-                              >
-                                {savingSkuEdit ? "Saving…" : "Save"}
-                              </button>
-                              <button
-                                onClick={cancelSkuEdit}
-                                disabled={savingSkuEdit}
-                                className="text-muted hover:text-foreground"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          ) : (
-                            <div className="inline-flex items-center gap-3">
-                              <button
-                                onClick={() => beginSkuEdit(sku)}
-                                className="text-cyan-400 hover:text-cyan-300"
-                              >
-                                Quick Edit
-                              </button>
-                              <Link
-                                href={`/dashboards/catalog/edit/${sku.id}`}
-                                className="text-cyan-400 hover:text-cyan-300"
-                              >
-                                Full Edit
-                              </Link>
-                            </div>
-                          )}
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
             </div>
           )}
         </div>
