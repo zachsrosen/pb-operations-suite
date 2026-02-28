@@ -1136,6 +1136,7 @@ function BomDashboardInner() {
       setSelectedVendorId("");      // Clear stale vendor selection
       setSelectedCustomerId("");    // Clear stale customer selection
       setSelectedCustomerName("");  // Clear stale customer name
+      customerManuallySet.current = true; // Prevent auto-match from re-populating after save
       // Reload history list
       const histRes = await fetch(`/api/bom/history?dealId=${encodeURIComponent(targetProject.hs_object_id)}`);
       if (histRes.ok) {
