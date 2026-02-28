@@ -740,6 +740,74 @@ function autoMergeRows(rows: ComparisonRow[], sources: SourceName[]): Comparison
   return working.filter((_, index) => !removed.has(index));
 }
 
+function createProductIdIndex(
+  productsBySource: Record<SourceName, ComparableProduct[]>
+): Record<SourceName, Map<string, ComparableProduct>> {
+  const index = {
+    internal: new Map<string, ComparableProduct>(),
+    hubspot: new Map<string, ComparableProduct>(),
+    zuper: new Map<string, ComparableProduct>(),
+    zoho: new Map<string, ComparableProduct>(),
+    opensolar: new Map<string, ComparableProduct>(),
+    quickbooks: new Map<string, ComparableProduct>(),
+  } as Record<SourceName, Map<string, ComparableProduct>>;
+
+  for (const source of ALL_SOURCES) {
+    for (const product of productsBySource[source]) {
+      const id = String(product.id || "").trim();
+      if (!id) continue;
+      if (!index[source].has(id)) {
+        index[source].set(id, product);
+      }
+    }
+  }
+
+  return index;
+}
+
+function applyInternalLinksToRows(
+  rows: ComparisonRow[],
+  productsById: Record<SourceName, Map<string, ComparableProduct>>,
+  sources: SourceName[]
+): ComparisonRow[] {
+  return rows.map((row) => {
+    const links = row.internal?.linkedExternalIds;
+    if (!links) return row;
+
+    const nextRow: ComparisonRow = {
+      ...row,
+    };
+    let changed = false;
+
+    for (const source of LINKABLE_SOURCES) {
+      if (!sources.includes(source)) continue;
+
+      const linkedId = String(links[source] || "").trim();
+      if (!linkedId) continue;
+
+      const linkedProduct = productsById[source].get(linkedId);
+      if (!linkedProduct) continue;
+
+      if (!nextRow[source] || nextRow[source]!.id !== linkedId) {
+        nextRow[source] = linkedProduct;
+        changed = true;
+      }
+    }
+
+    if (!changed) return row;
+
+    const duplicateReasons = row.reasons.filter((reason) => reason.startsWith("Duplicate "));
+    const recalculatedReasons = evaluateRowReasons(nextRow, sources);
+    const reasons = uniqueStrings([...duplicateReasons, ...recalculatedReasons]);
+
+    return {
+      ...nextRow,
+      reasons,
+      isMismatch: reasons.length > 0,
+    };
+  });
+}
+
 async function findHubSpotBundleTypePropertyName(token: string): Promise<string | null> {
   const requestTimeoutMs = parsePositiveIntEnv("PRODUCT_COMPARISON_REQUEST_TIMEOUT_MS", 8000);
   try {
@@ -1815,6 +1883,7 @@ export async function GET() {
     opensolar: boundedOpensolarResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
     quickbooks: boundedQuickbooksResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
   };
+  const productsBySourceId = createProductIdIndex(productsBySource);
   const matchingRowCap = parsePositiveIntEnv("PRODUCT_COMPARISON_MAX_ROWS_FOR_MATCHING", 1500);
   const enrichedRows =
     rows.length > matchingRowCap
@@ -1822,7 +1891,8 @@ export async function GET() {
           performanceWarnings.push(
             `Possible-match scoring skipped for performance (rows=${rows.length}, cap=${matchingRowCap})`
           );
-          return rows.map((row) => ({ ...row, possibleMatches: [] }));
+          const linkedRows = applyInternalLinksToRows(rows, productsBySourceId, comparisonSources);
+          return linkedRows.map((row) => ({ ...row, possibleMatches: [] }));
         })()
       : (() => {
           const initialRows = rows.map((row) => ({
@@ -1830,7 +1900,8 @@ export async function GET() {
             possibleMatches: buildPossibleMatches(row, productsBySource, comparisonSources),
           }));
           const mergedRows = autoMergeRows(initialRows, comparisonSources);
-          return mergedRows.map((row) => ({
+          const linkedRows = applyInternalLinksToRows(mergedRows, productsBySourceId, comparisonSources);
+          return linkedRows.map((row) => ({
             ...row,
             possibleMatches: buildPossibleMatches(row, productsBySource, comparisonSources),
           }));
