@@ -391,7 +391,7 @@ export default function ProductComparisonPage() {
   const runSourceSearch = useCallback(
     async (row: DisplayRow, source: LinkableSourceName, queryInput?: string) => {
       const key = sourceSearchKey(row.key, source);
-      const query = String(queryInput ?? searchStateBySource[key]?.query || "").trim();
+      const query = String(queryInput ?? (searchStateBySource[key]?.query || "")).trim();
       if (!query) {
         setSearchStateBySource((prev) => ({
           ...prev,
