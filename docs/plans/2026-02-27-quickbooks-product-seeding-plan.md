@@ -60,8 +60,10 @@ Expected: 2 matches (one per enum value).
 
 **Step 4: Commit**
 
+Note: `src/generated/prisma` is gitignored — only commit schema + migration.
+
 ```bash
-git add prisma/schema.prisma prisma/migrations/ src/generated/
+git add prisma/schema.prisma prisma/migrations/
 git commit -m "feat: add QUICKBOOKS and OPENSOLAR to CatalogProductSource enum"
 ```
 
@@ -426,15 +428,15 @@ Create `src/__tests__/api/products-seed.test.ts`:
 // src/__tests__/api/products-seed.test.ts
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
+const mockRequireApiAuth = jest.fn().mockResolvedValue({ email: "admin@photonbrothers.com", role: "ADMIN" });
 jest.mock("@/lib/api-auth", () => ({
-  requireApiAuth: jest.fn().mockResolvedValue({ email: "api@system", role: "ADMIN" }),
+  requireApiAuth: (...args: unknown[]) => mockRequireApiAuth(...args),
 }));
 
-// ── Prisma ────────────────────────────────────────────────────────────────────
-const mockFindMany = jest.fn();
-const mockUpsert = jest.fn();
-
+// ── DB ───────────────────────────────────────────────────────────────────────
+const mockGetUserByEmail = jest.fn().mockResolvedValue({ role: "ADMIN" });
 jest.mock("@/lib/db", () => ({
+  getUserByEmail: (...args: unknown[]) => mockGetUserByEmail(...args),
   prisma: {
     catalogProduct: {
       findMany: (...args: unknown[]) => mockFindMany(...args),
@@ -442,6 +444,9 @@ jest.mock("@/lib/db", () => ({
     },
   },
 }));
+
+const mockFindMany = jest.fn();
+const mockUpsert = jest.fn();
 
 // ── Route under test ──────────────────────────────────────────────────────────
 import { NextRequest } from "next/server";
@@ -458,11 +463,27 @@ function makeRequest(body: unknown) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockRequireApiAuth.mockResolvedValue({ email: "admin@photonbrothers.com", role: "ADMIN" });
+  mockGetUserByEmail.mockResolvedValue({ role: "ADMIN" });
   mockFindMany.mockResolvedValue([]);
   mockUpsert.mockResolvedValue({ id: "cat_1" });
 });
 
 describe("POST /api/products/seed", () => {
+  // ── Auth tests ────────────────────────────────────────────────────────────
+  it("rejects non-admin/owner roles with 403", async () => {
+    mockGetUserByEmail.mockResolvedValue({ role: "VIEWER" });
+    const res = await POST(makeRequest({ products: [{ name: "Test" }] }));
+    expect(res.status).toBe(403);
+  });
+
+  it("allows OWNER role", async () => {
+    mockGetUserByEmail.mockResolvedValue({ role: "OWNER" });
+    const res = await POST(makeRequest({ products: [{ name: "Test", sku: "T-1" }] }));
+    expect(res.status).toBe(200);
+  });
+
+  // ── Validation tests ──────────────────────────────────────────────────────
   it("rejects empty products array", async () => {
     const res = await POST(makeRequest({ products: [] }));
     expect(res.status).toBe(400);
@@ -473,10 +494,8 @@ describe("POST /api/products/seed", () => {
     expect(res.status).toBe(400);
   });
 
+  // ── Counting tests ────────────────────────────────────────────────────────
   it("seeds valid products and returns counts", async () => {
-    mockFindMany.mockResolvedValue([]); // no existing products
-    mockUpsert.mockResolvedValue({ id: "cat_1" });
-
     const res = await POST(
       makeRequest({
         products: [
@@ -492,13 +511,13 @@ describe("POST /api/products/seed", () => {
     expect(data.updated).toBe(0);
     expect(data.skipped).toBe(0);
     expect(data.total).toBe(2);
+    expect(data.uniqueTotal).toBe(2);
   });
 
   it("counts updates when products already exist", async () => {
     mockFindMany.mockResolvedValue([
       { source: "QUICKBOOKS", externalId: "PW3-001" },
     ]);
-    mockUpsert.mockResolvedValue({ id: "cat_1" });
 
     const res = await POST(
       makeRequest({
@@ -515,17 +534,39 @@ describe("POST /api/products/seed", () => {
     expect(data.updated).toBe(1);
   });
 
-  it("generates deterministic externalId when no SKU", async () => {
-    mockFindMany.mockResolvedValue([]);
-    mockUpsert.mockResolvedValue({ id: "cat_1" });
+  // ── Deduplication tests ───────────────────────────────────────────────────
+  it("deduplicates by externalId and reports collisions", async () => {
+    const res = await POST(
+      makeRequest({
+        products: [
+          { name: "Powerwall 3", sku: "PW3-001", price: 8500 },
+          { name: "Powerwall 3 Updated", sku: "PW3-001", price: 9000 },
+        ],
+      })
+    );
 
-    // Seed same product twice — should produce same externalId
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.total).toBe(2);
+    expect(data.uniqueTotal).toBe(1);
+    expect(data.inserted).toBe(1);
+    expect(data.duplicates).toHaveLength(1);
+    expect(data.duplicates[0].externalId).toBe("PW3-001");
+    expect(data.duplicates[0].occurrences).toBe(2);
+    // Last occurrence wins
+    expect(mockUpsert).toHaveBeenCalledTimes(1);
+  });
+
+  // ── Deterministic ID tests ────────────────────────────────────────────────
+  it("generates deterministic externalId when no SKU", async () => {
     await POST(makeRequest({ products: [{ name: "Labor - Install", price: 150, type: "Service" }] }));
     const firstCall = mockUpsert.mock.calls[0][0];
 
     jest.clearAllMocks();
     mockFindMany.mockResolvedValue([]);
     mockUpsert.mockResolvedValue({ id: "cat_2" });
+    mockGetUserByEmail.mockResolvedValue({ role: "ADMIN" });
+    mockRequireApiAuth.mockResolvedValue({ email: "admin@photonbrothers.com", role: "ADMIN" });
 
     await POST(makeRequest({ products: [{ name: "Labor - Install", price: 150, type: "Service" }] }));
     const secondCall = mockUpsert.mock.calls[0][0];
@@ -534,15 +575,14 @@ describe("POST /api/products/seed", () => {
   });
 
   it("generates same externalId regardless of whitespace/case", async () => {
-    mockFindMany.mockResolvedValue([]);
-    mockUpsert.mockResolvedValue({ id: "cat_1" });
-
     await POST(makeRequest({ products: [{ name: "  Labor - Install  ", price: 150.0, type: "  Service  " }] }));
     const call1 = mockUpsert.mock.calls[0][0];
 
     jest.clearAllMocks();
     mockFindMany.mockResolvedValue([]);
     mockUpsert.mockResolvedValue({ id: "cat_2" });
+    mockGetUserByEmail.mockResolvedValue({ role: "ADMIN" });
+    mockRequireApiAuth.mockResolvedValue({ email: "admin@photonbrothers.com", role: "ADMIN" });
 
     await POST(makeRequest({ products: [{ name: "labor - install", price: 150, type: "service" }] }));
     const call2 = mockUpsert.mock.calls[0][0];
@@ -551,9 +591,6 @@ describe("POST /api/products/seed", () => {
   });
 
   it("hardcodes source as QUICKBOOKS regardless of input", async () => {
-    mockFindMany.mockResolvedValue([]);
-    mockUpsert.mockResolvedValue({ id: "cat_1" });
-
     await POST(makeRequest({ products: [{ name: "Test Product", sku: "TP-1" }] }));
 
     expect(mockUpsert).toHaveBeenCalledWith(
@@ -580,9 +617,13 @@ Create `src/app/api/products/seed/route.ts`:
 ```typescript
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
-import { prisma } from "@/lib/db";
+import { getUserByEmail, prisma } from "@/lib/db";
+import { normalizeRole, type UserRole } from "@/lib/role-permissions";
 import { createHash } from "crypto";
 import { z } from "zod";
+
+// ── Auth: ADMIN or OWNER only (or API_SECRET_TOKEN for machine clients) ──────
+const ALLOWED_ROLES = new Set<UserRole>(["ADMIN", "OWNER"]);
 
 const ProductSchema = z.object({
   name: z.string().min(1, "Product name is required"),
@@ -644,6 +685,13 @@ export async function POST(request: NextRequest) {
   const authResult = await requireApiAuth();
   if (authResult instanceof NextResponse) return authResult;
 
+  // Role gate: only ADMIN/OWNER (API_SECRET_TOKEN gets role=ADMIN from api-auth.ts)
+  const dbUser = await getUserByEmail(authResult.email);
+  const role = normalizeRole((dbUser?.role ?? authResult.role) as UserRole);
+  if (!ALLOWED_ROLES.has(role)) {
+    return NextResponse.json({ error: "Admin or owner access required" }, { status: 403 });
+  }
+
   if (!prisma) {
     return NextResponse.json({ error: "Database not configured" }, { status: 503 });
   }
@@ -670,17 +718,32 @@ export async function POST(request: NextRequest) {
   let skipped = 0;
   const errors: string[] = [];
 
-  for (let i = 0; i < products.length; i += BATCH_SIZE) {
-    const chunk = products.slice(i, i + BATCH_SIZE);
+  // Deduplicate by externalId within the payload (last occurrence wins).
+  // Report collisions so the user can clean up the source data.
+  const duplicates: Array<{ name: string; externalId: string; occurrences: number }> = [];
+  const deduped = new Map<string, z.infer<typeof ProductSchema>>();
+  const idCounts = new Map<string, number>();
 
-    // Resolve externalIds for this chunk
-    const resolved = chunk.map((p) => ({
-      product: p,
-      externalId: resolveExternalId(p),
-    }));
+  for (const product of products) {
+    const externalId = resolveExternalId(product);
+    deduped.set(externalId, product); // last wins
+    idCounts.set(externalId, (idCounts.get(externalId) || 0) + 1);
+  }
+
+  for (const [externalId, count] of idCounts) {
+    if (count > 1) {
+      const product = deduped.get(externalId)!;
+      duplicates.push({ name: product.name, externalId, occurrences: count });
+    }
+  }
+
+  const uniqueProducts = [...deduped.entries()];
+
+  for (let i = 0; i < uniqueProducts.length; i += BATCH_SIZE) {
+    const chunk = uniqueProducts.slice(i, i + BATCH_SIZE);
 
     // Pre-check which externalIds already exist
-    const externalIds = resolved.map((r) => r.externalId);
+    const externalIds = chunk.map(([id]) => id);
     const existing = await prisma.catalogProduct.findMany({
       where: {
         source: SOURCE,
@@ -691,7 +754,7 @@ export async function POST(request: NextRequest) {
     const existingSet = new Set(existing.map((e) => e.externalId));
 
     // Upsert each product
-    const upsertPromises = resolved.map(async ({ product, externalId }) => {
+    const upsertPromises = chunk.map(async ([externalId, product]) => {
       try {
         const name = product.name.trim();
         const sku = (product.sku || "").trim() || null;
@@ -741,9 +804,11 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({
     source: "quickbooks",
     total: products.length,
+    uniqueTotal: uniqueProducts.length,
     inserted,
     updated,
     skipped,
+    duplicates: duplicates.length > 0 ? duplicates : undefined,
     errors: errors.length > 0 ? errors : undefined,
   });
 }
@@ -833,6 +898,16 @@ function parseArgs() {
   return { filePath: resolve(filePath), apiUrl: apiUrl.replace(/\/$/, ""), token };
 }
 
+/** Strip $, commas, whitespace from price strings before parsing. */
+function parsePrice(raw: unknown): number | undefined {
+  if (raw == null) return undefined;
+  if (typeof raw === "number") return Number.isNaN(raw) ? undefined : raw;
+  const cleaned = String(raw).replace(/[$,\s]/g, "").trim();
+  if (!cleaned) return undefined;
+  const num = Number(cleaned);
+  return Number.isNaN(num) ? undefined : num;
+}
+
 function parseXls(filePath: string): QBProduct[] {
   const workbook = XLSX.readFile(filePath);
   const sheetName = workbook.SheetNames[0];
@@ -861,7 +936,7 @@ function parseXls(filePath: string): QBProduct[] {
     const sku = String(row["SKU"] || row["Sku"] || "").trim() || undefined;
     const type = String(row["Type"] || "").trim() || undefined;
     const priceRaw = row["Sales Price/Rate"] ?? row["Sales Price"] ?? row["Rate"];
-    const price = priceRaw != null ? Number(priceRaw) : undefined;
+    const price = parsePrice(priceRaw);
     const description = String(
       row["Sales Description"] || row["Description"] || ""
     ).trim() || undefined;
@@ -870,7 +945,7 @@ function parseXls(filePath: string): QBProduct[] {
       name,
       sku,
       type,
-      price: price != null && !Number.isNaN(price) ? price : undefined,
+      price,
       description,
     });
   }
@@ -902,12 +977,19 @@ async function seedProducts(products: QBProduct[], apiUrl: string, token: string
 
   const result = await res.json();
   console.log("\n=== Seed Results ===");
-  console.log(`  Total:    ${result.total}`);
-  console.log(`  Inserted: ${result.inserted}`);
-  console.log(`  Updated:  ${result.updated}`);
-  console.log(`  Skipped:  ${result.skipped}`);
+  console.log(`  Total:      ${result.total}`);
+  console.log(`  Unique:     ${result.uniqueTotal}`);
+  console.log(`  Inserted:   ${result.inserted}`);
+  console.log(`  Updated:    ${result.updated}`);
+  console.log(`  Skipped:    ${result.skipped}`);
+  if (result.duplicates?.length) {
+    console.log(`\n  ⚠ Duplicate externalIds (${result.duplicates.length}):`);
+    for (const dup of result.duplicates) {
+      console.log(`    - "${dup.name}" (${dup.externalId}) appeared ${dup.occurrences}x`);
+    }
+  }
   if (result.errors?.length) {
-    console.log(`  Errors:`);
+    console.log(`\n  ✗ Errors:`);
     for (const err of result.errors) {
       console.log(`    - ${err}`);
     }
@@ -964,26 +1046,26 @@ git commit -m "feat: add CLI script to parse QuickBooks XLS and seed via API"
 **Step 1: Run the full test suite**
 
 ```bash
-npm run test -- --no-coverage 2>&1 | tail -20
+npm run test -- --no-coverage
 ```
 
-Expected: All tests pass, including the new `products-seed.test.ts`.
+Expected: All tests pass, including the new `products-seed.test.ts`. Check exit code is 0.
 
 **Step 2: Run the build**
 
 ```bash
-npm run build 2>&1 | tail -20
+npm run build
 ```
 
-Expected: Build succeeds. The new seed route and updated comparison/cache routes compile without errors.
+Expected: Build succeeds with exit code 0. The new seed route and updated comparison/cache routes compile without errors.
 
 **Step 3: Run lint**
 
 ```bash
-npm run lint 2>&1 | tail -10
+npm run lint
 ```
 
-Expected: No lint errors.
+Expected: No lint errors, exit code 0.
 
 **Step 4: Commit any fixes if needed, then final summary commit**
 
