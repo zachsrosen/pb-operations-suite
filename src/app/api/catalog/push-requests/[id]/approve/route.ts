@@ -248,7 +248,9 @@ export async function POST(
         weight: push.weight,
         ...(quickbooksMatch?.status === "matched"
           ? { quickbooksItemId: quickbooksMatch.externalId }
-          : {}),
+          : push.systems.includes("QUICKBOOKS")
+            ? { quickbooksItemId: null }
+            : {}),
       };
 
       // 1. Upsert EquipmentSku with all common fields

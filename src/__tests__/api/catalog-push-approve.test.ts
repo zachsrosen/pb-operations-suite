@@ -682,6 +682,12 @@ describe("POST /api/catalog/push-requests/[id]/approve", () => {
       const data = await res.json();
 
       expect(res.status).toBe(200);
+      expect(mockUpsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          update: expect.objectContaining({ quickbooksItemId: null }),
+          create: expect.objectContaining({ quickbooksItemId: null }),
+        })
+      );
       expect(data.outcomes.QUICKBOOKS.status).toBe("failed");
       expect(data.outcomes.QUICKBOOKS.message).toMatch(/no quickbooks catalog product matched/i);
     });
