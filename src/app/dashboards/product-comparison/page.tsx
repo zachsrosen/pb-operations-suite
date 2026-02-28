@@ -96,6 +96,14 @@ interface SourceSearchState {
   results: CachedCatalogProduct[];
 }
 
+interface CreateSourceProductResponse {
+  source: LinkableSourceName;
+  created: boolean;
+  externalId: string;
+  linkField: "hubspotProductId" | "zuperItemId" | "zohoItemId" | "quickbooksItemId";
+  product: ComparableProduct;
+}
+
 function formatSourceName(source: SourceName): string {
   if (source === "internal") return "Internal";
   if (source === "hubspot") return "HubSpot";
@@ -273,6 +281,18 @@ function defaultSourceSearchQuery(row: ComparisonRow, source: LinkableSourceName
   return seed || "";
 }
 
+function cachedCatalogToComparableProduct(candidate: CachedCatalogProduct): ComparableProduct {
+  return {
+    id: candidate.externalId,
+    name: candidate.name,
+    sku: candidate.sku,
+    price: candidate.price,
+    status: candidate.status,
+    description: candidate.description,
+    url: candidate.url,
+  };
+}
+
 const MISSING_SOURCE_OPTIONS: FilterOption[] = [
   { value: "internal", label: "Missing in Internal" },
   { value: "hubspot", label: "Missing in HubSpot" },
@@ -324,6 +344,7 @@ export default function ProductComparisonPage() {
   const [reasonFilters, setReasonFilters] = useState<string[]>([]);
   const [confidenceFilters, setConfidenceFilters] = useState<MatchConfidence[]>([]);
   const [linkingKeys, setLinkingKeys] = useState<Record<string, boolean>>({});
+  const [creatingKeys, setCreatingKeys] = useState<Record<string, boolean>>({});
   const [searchStateBySource, setSearchStateBySource] = useState<Record<string, SourceSearchState>>({});
   const [pinnedRowKeys, setPinnedRowKeys] = useState<Record<string, true>>({});
   const [actionFeedback, setActionFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
@@ -481,13 +502,22 @@ export default function ProductComparisonPage() {
     [searchStateBySource]
   );
 
-  const applyLocalLinkUpdate = useCallback((rowKey: string, source: LinkableSourceName, externalId: string) => {
+  const applyLocalLinkUpdate = useCallback((
+    rowKey: string,
+    source: LinkableSourceName,
+    externalId: string,
+    sourceProduct: ComparableProduct | null
+  ) => {
     setData((prev) => {
       if (!prev) return prev;
       const nextRows = prev.rows.map((candidateRow) => {
         if (candidateRow.key !== rowKey || !candidateRow.internal) return candidateRow;
+        const shouldSetSourceProduct =
+          Boolean(sourceProduct) &&
+          (!candidateRow[source] || candidateRow[source]?.id === externalId);
         return {
           ...candidateRow,
+          ...(shouldSetSourceProduct ? { [source]: sourceProduct } : {}),
           internal: {
             ...candidateRow.internal,
             linkedExternalIds: {
@@ -537,7 +567,15 @@ export default function ProductComparisonPage() {
           throw new Error(payload?.error || `Failed to link ${formatSourceName(source)} (${response.status})`);
         }
 
-        applyLocalLinkUpdate(row.key, source, externalId);
+        const searchKey = sourceSearchKey(row.key, source);
+        const candidate = searchStateBySource[searchKey]?.results.find((result) => result.externalId === externalId);
+        const sourceProduct =
+          row[source]?.id === externalId
+            ? row[source]
+            : candidate
+              ? cachedCatalogToComparableProduct(candidate)
+              : null;
+        applyLocalLinkUpdate(row.key, source, externalId, sourceProduct);
         setPinnedRowKeys((prev) => ({ ...prev, [row.key]: true }));
         const syncedCount = Object.keys(patchBody).length - 1;
         setActionFeedback({
@@ -553,6 +591,59 @@ export default function ProductComparisonPage() {
         setLinkingKeys((prev) => {
           const next = { ...prev };
           delete next[linkKey];
+          return next;
+        });
+      }
+    },
+    [applyLocalLinkUpdate, searchStateBySource]
+  );
+
+  const createMissingSourceProduct = useCallback(
+    async (row: DisplayRow, source: LinkableSourceName) => {
+      if (!row.internal?.id) {
+        setActionFeedback({ type: "error", message: "No internal SKU found for this row." });
+        return;
+      }
+
+      const createKey = `${row.key}:${source}:create`;
+      setCreatingKeys((prev) => ({ ...prev, [createKey]: true }));
+      setActionFeedback(null);
+
+      try {
+        const response = await fetch("/api/products/comparison/create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            internalSkuId: row.internal.id,
+            source,
+          }),
+        });
+
+        const payload = (await response.json().catch(() => null)) as
+          | { error?: string }
+          | CreateSourceProductResponse
+          | null;
+        if (!response.ok || !payload || !("externalId" in payload)) {
+          throw new Error(payload && "error" in payload && payload.error ? payload.error : `Failed to create ${formatSourceName(source)} item (${response.status})`);
+        }
+
+        applyLocalLinkUpdate(row.key, source, payload.externalId, payload.product || null);
+        setPinnedRowKeys((prev) => ({ ...prev, [row.key]: true }));
+        setActionFeedback({
+          type: "success",
+          message: `${
+            payload.created ? "Created" : "Found existing"
+          } ${formatSourceName(source)} product and linked it to inventory.`,
+        });
+      } catch (error) {
+        setActionFeedback({
+          type: "error",
+          message: error instanceof Error ? error.message : `Failed to create ${formatSourceName(source)} product`,
+        });
+      } finally {
+        setCreatingKeys((prev) => {
+          const next = { ...prev };
+          delete next[createKey];
           return next;
         });
       }
@@ -978,11 +1069,14 @@ export default function ProductComparisonPage() {
                       const isLinkedToShownProduct =
                         supportsLinking && hasSourceProduct && Boolean(existingLinkId) && existingLinkId === sourceProduct!.id;
                       const canConfirmLink = hasInternal && supportsLinking && hasSourceProduct && !isLinkedToShownProduct;
+                      const canCreateMissingSource = hasInternal && supportsLinking && !hasSourceProduct && !existingLinkId;
                       const pendingLinkKey =
                         canConfirmLink && sourceProduct
                           ? `${row.key}:${source}:${sourceProduct.id}`
                           : "";
                       const isSavingLink = pendingLinkKey ? Boolean(linkingKeys[pendingLinkKey]) : false;
+                      const createKey = supportsLinking ? `${row.key}:${source}:create` : "";
+                      const isCreatingSource = createKey ? Boolean(creatingKeys[createKey]) : false;
 
                       return (
                         <div key={`${row.key}-${source}`} className="rounded-md border border-t-border bg-background/40 p-2 min-w-0">
@@ -1002,6 +1096,9 @@ export default function ProductComparisonPage() {
                                   <div className="text-[11px] text-muted">
                                     Current link: {existingLinkId || "—"}
                                   </div>
+                                  {existingLinkId && (
+                                    <div className="text-[11px] text-green-300">Saved to inventory.</div>
+                                  )}
                                   {isLinkedToShownProduct ? (
                                     <div className="inline-flex px-2 py-0.5 rounded border border-green-500/40 bg-green-500/10 text-[11px] text-green-300">
                                       Linked to this product
@@ -1014,6 +1111,18 @@ export default function ProductComparisonPage() {
                                     >
                                       {isSavingLink ? "Linking..." : "Confirm link to this product"}
                                     </button>
+                                  ) : canCreateMissingSource ? (
+                                    <div className="space-y-1.5">
+                                      <div className="text-[11px] text-muted">No product available to link in this row.</div>
+                                      <button
+                                        type="button"
+                                        onClick={() => createMissingSourceProduct(row, source)}
+                                        disabled={isCreatingSource}
+                                        className="px-2 py-1 rounded border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 text-[11px] hover:bg-emerald-500/20 disabled:opacity-50"
+                                      >
+                                        {isCreatingSource ? "Creating..." : `Create in ${formatSourceName(source)} + link`}
+                                      </button>
+                                    </div>
                                   ) : (
                                     <div className="text-[11px] text-muted">No product available to link in this row.</div>
                                   )}
