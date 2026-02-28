@@ -191,6 +191,56 @@ function uniqueStrings(values: string[]): string[] {
   return [...new Set(values)];
 }
 
+function countLinkedExternalIds(
+  links: Partial<Record<LinkableSourceName, string | null>> | undefined
+): number {
+  if (!links) return 0;
+  let count = 0;
+  for (const source of LINKABLE_SOURCES) {
+    if (String(links[source] || "").trim()) count += 1;
+  }
+  return count;
+}
+
+function aggregateInternalLinks(
+  products: NormalizedProduct[]
+): Partial<Record<LinkableSourceName, string | null>> {
+  const aggregated: Partial<Record<LinkableSourceName, string | null>> = {};
+  for (const source of LINKABLE_SOURCES) {
+    const ids = uniqueStrings(
+      products
+        .map((product) => String(product.linkedExternalIds?.[source] || "").trim())
+        .filter(Boolean)
+    );
+    if (ids.length === 1) {
+      aggregated[source] = ids[0];
+    }
+  }
+  return aggregated;
+}
+
+function pickPrimaryInternal(products: NormalizedProduct[]): ComparableProduct | null {
+  if (!products.length) return null;
+
+  const sorted = [...products].sort((a, b) => {
+    const linkDelta =
+      countLinkedExternalIds(b.linkedExternalIds) - countLinkedExternalIds(a.linkedExternalIds);
+    if (linkDelta !== 0) return linkDelta;
+    return a.id.localeCompare(b.id);
+  });
+
+  const primary = pickPrimary(sorted);
+  if (!primary) return null;
+
+  const aggregatedLinks = aggregateInternalLinks(products);
+  const mergedLinks: Partial<Record<LinkableSourceName, string | null>> = {
+    ...(primary.linkedExternalIds || {}),
+    ...aggregatedLinks,
+  };
+  primary.linkedExternalIds = mergedLinks;
+  return primary;
+}
+
 function missingReasonForSource(source: SourceName): string {
   return `Missing in ${SOURCE_LABELS[source]}`;
 }
@@ -233,6 +283,14 @@ function keyForProduct(sku: string | null, name: string | null, source: SourceNa
 function pickPrimary(products: NormalizedProduct[]): ComparableProduct | null {
   if (!products.length) return null;
   const first = products[0];
+  const linkedExternalIds = first.linkedExternalIds
+    ? {
+        hubspot: String(first.linkedExternalIds.hubspot || "").trim() || null,
+        zuper: String(first.linkedExternalIds.zuper || "").trim() || null,
+        zoho: String(first.linkedExternalIds.zoho || "").trim() || null,
+        quickbooks: String(first.linkedExternalIds.quickbooks || "").trim() || null,
+      }
+    : undefined;
   return {
     id: first.id,
     name: first.name,
@@ -241,6 +299,7 @@ function pickPrimary(products: NormalizedProduct[]): ComparableProduct | null {
     status: first.status,
     description: first.description,
     url: first.url,
+    ...(linkedExternalIds ? { linkedExternalIds } : {}),
   };
 }
 
@@ -1701,7 +1760,7 @@ function buildComparisonRows(products: NormalizedProduct[], sources: SourceName[
     }
 
     const primaryRow: RowProducts = {
-      internal: pickPrimary(group.internal),
+      internal: pickPrimaryInternal(group.internal),
       hubspot: pickPrimary(group.hubspot),
       zuper: pickPrimary(group.zuper),
       zoho: pickPrimary(group.zoho),
