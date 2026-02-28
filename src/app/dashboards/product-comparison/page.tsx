@@ -325,6 +325,7 @@ export default function ProductComparisonPage() {
   const [confidenceFilters, setConfidenceFilters] = useState<MatchConfidence[]>([]);
   const [linkingKeys, setLinkingKeys] = useState<Record<string, boolean>>({});
   const [searchStateBySource, setSearchStateBySource] = useState<Record<string, SourceSearchState>>({});
+  const [pinnedRowKeys, setPinnedRowKeys] = useState<Record<string, true>>({});
   const [actionFeedback, setActionFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   const fetchData = useCallback(async () => {
@@ -480,6 +481,29 @@ export default function ProductComparisonPage() {
     [searchStateBySource]
   );
 
+  const applyLocalLinkUpdate = useCallback((rowKey: string, source: LinkableSourceName, externalId: string) => {
+    setData((prev) => {
+      if (!prev) return prev;
+      const nextRows = prev.rows.map((candidateRow) => {
+        if (candidateRow.key !== rowKey || !candidateRow.internal) return candidateRow;
+        return {
+          ...candidateRow,
+          internal: {
+            ...candidateRow.internal,
+            linkedExternalIds: {
+              ...(candidateRow.internal.linkedExternalIds || {}),
+              [source]: externalId,
+            },
+          },
+        };
+      });
+      return {
+        ...prev,
+        rows: nextRows,
+      };
+    });
+  }, []);
+
   const confirmSourceLink = useCallback(
     async (row: DisplayRow, source: LinkableSourceName, externalId: string) => {
       if (!row.internal?.id) {
@@ -513,12 +537,13 @@ export default function ProductComparisonPage() {
           throw new Error(payload?.error || `Failed to link ${formatSourceName(source)} (${response.status})`);
         }
 
+        applyLocalLinkUpdate(row.key, source, externalId);
+        setPinnedRowKeys((prev) => ({ ...prev, [row.key]: true }));
         const syncedCount = Object.keys(patchBody).length - 1;
         setActionFeedback({
           type: "success",
-          message: `Linked ${formatSourceName(source)} and synced ${syncedCount} catalog ID${syncedCount === 1 ? "" : "s"} to inventory.`,
+          message: `Linked ${formatSourceName(source)} and synced ${syncedCount} catalog ID${syncedCount === 1 ? "" : "s"} to inventory. Row pinned so you can continue linking other systems.`,
         });
-        await fetchData();
       } catch (error) {
         setActionFeedback({
           type: "error",
@@ -532,7 +557,7 @@ export default function ProductComparisonPage() {
         });
       }
     },
-    [fetchData]
+    [applyLocalLinkUpdate]
   );
 
   useEffect(() => {
@@ -596,6 +621,7 @@ export default function ProductComparisonPage() {
     const searchTerm = normalizeSearchText(search);
 
     const filtered = data.rows.filter((row) => {
+      const isPinned = Boolean(pinnedRowKeys[row.key]);
       const presentCount = configuredSources.filter((source) => Boolean(row[source])).length;
       const missingReasons = row.reasons.filter((reason) => reason.startsWith(MISSING_REASON_PREFIX));
       const nonMissingReasons = row.reasons.filter((reason) => !reason.startsWith(MISSING_REASON_PREFIX));
@@ -605,29 +631,31 @@ export default function ProductComparisonPage() {
         nonMissingReasons.length === 0 &&
         missingReasons.length === Math.max(configuredSources.length - 2, 1);
 
-      const effectiveModes: RowViewMode[] = rowViewModes.length > 0 ? rowViewModes : ["all"];
-      const modeMatch = effectiveModes.some((mode) => {
-        if (mode === "all") return true;
-        if (mode === "mismatches") return row.isMismatch;
-        if (mode === "matches") return isFullyMatched;
-        return isTwoOfThreeAligned;
-      });
-      if (!modeMatch) return false;
+      if (!isPinned) {
+        const effectiveModes: RowViewMode[] = rowViewModes.length > 0 ? rowViewModes : ["all"];
+        const modeMatch = effectiveModes.some((mode) => {
+          if (mode === "all") return true;
+          if (mode === "mismatches") return row.isMismatch;
+          if (mode === "matches") return isFullyMatched;
+          return isTwoOfThreeAligned;
+        });
+        if (!modeMatch) return false;
 
-      if (missingFilters.length > 0) {
-        const matchesMissingSource = missingFilters.some((source) => configuredSources.includes(source) && row[source] === null);
-        if (!matchesMissingSource) return false;
-      }
+        if (missingFilters.length > 0) {
+          const matchesMissingSource = missingFilters.some((source) => configuredSources.includes(source) && row[source] === null);
+          if (!matchesMissingSource) return false;
+        }
 
-      if (reasonFilters.length > 0 && !reasonFilters.some((reason) => row.reasons.includes(reason))) return false;
+        if (reasonFilters.length > 0 && !reasonFilters.some((reason) => row.reasons.includes(reason))) return false;
 
-      if (confidenceFilters.length > 0) {
-        const bestScore = row.possibleMatches.reduce<number | null>((best, match) => {
-          if (typeof best !== "number") return match.score;
-          return Math.max(best, match.score);
-        }, null);
-        const bucket = confidenceBucket(bestScore);
-        if (!bucket || !confidenceFilters.includes(bucket)) return false;
+        if (confidenceFilters.length > 0) {
+          const bestScore = row.possibleMatches.reduce<number | null>((best, match) => {
+            if (typeof best !== "number") return match.score;
+            return Math.max(best, match.score);
+          }, null);
+          const bucket = confidenceBucket(bestScore);
+          if (!bucket || !confidenceFilters.includes(bucket)) return false;
+        }
       }
 
       if (!searchTerm) return true;
@@ -672,7 +700,7 @@ export default function ProductComparisonPage() {
         if (aScore !== bScore) return bScore - aScore;
         return a.key.localeCompare(b.key);
       });
-  }, [confidenceFilters, configuredSources, data, missingFilters, reasonFilters, rowViewModes, search]);
+  }, [confidenceFilters, configuredSources, data, missingFilters, pinnedRowKeys, reasonFilters, rowViewModes, search]);
 
   const exportRows = useMemo(() => {
     return rows.map((row) => ({
@@ -727,6 +755,10 @@ export default function ProductComparisonPage() {
     setMissingFilters([]);
     setReasonFilters([]);
     setConfidenceFilters([]);
+  };
+
+  const clearPinnedRows = () => {
+    setPinnedRowKeys({});
   };
 
   const lastUpdated = formatDateTime(data?.lastUpdated || null);
@@ -872,6 +904,14 @@ export default function ProductComparisonPage() {
                 >
                   Clear filters
                 </button>
+                {Object.keys(pinnedRowKeys).length > 0 && (
+                  <button
+                    onClick={clearPinnedRows}
+                    className="px-3 py-1.5 rounded border border-amber-500/40 bg-amber-500/10 text-amber-200 text-xs hover:bg-amber-500/20 transition-colors"
+                  >
+                    Clear pinned rows ({Object.keys(pinnedRowKeys).length})
+                  </button>
+                )}
                 <button
                   onClick={fetchData}
                   className="px-3 py-1.5 rounded border border-cyan-500/40 bg-cyan-500/10 text-cyan-300 text-xs hover:bg-cyan-500/20 transition-colors"
@@ -899,6 +939,11 @@ export default function ProductComparisonPage() {
                         <span className={`px-1.5 py-0.5 rounded border text-[10px] ${severityBadgeClass(row.severity)}`}>
                           {severityLabel(row.severity)}
                         </span>
+                        {pinnedRowKeys[row.key] && (
+                          <span className="px-1.5 py-0.5 rounded border text-[10px] border-amber-500/40 bg-amber-500/10 text-amber-200">
+                            Pinned for linking
+                          </span>
+                        )}
                         {row.bestMatchConfidence && (
                           <span className={`px-1.5 py-0.5 rounded border text-[10px] ${confidenceBadgeClass(row.bestMatchConfidence)}`}>
                             Best match {row.bestMatchConfidence}
