@@ -67,6 +67,7 @@ interface ComparisonRow extends RowProducts {
   reasons: string[];
   isMismatch: boolean;
   possibleMatches: PossibleMatch[];
+  internalDuplicates?: Array<Pick<ComparableProduct, "id" | "name" | "sku">>;
 }
 
 interface PossibleMatch {
@@ -80,6 +81,26 @@ type LinkFeedbackIndex = Record<
   LinkableSourceName,
   Record<LinkableSourceName, Map<string, Map<string, number>>>
 >;
+
+function mergeInternalDuplicates(
+  first: ComparisonRow["internalDuplicates"],
+  second: ComparisonRow["internalDuplicates"]
+): ComparisonRow["internalDuplicates"] {
+  const map = new Map<string, Pick<ComparableProduct, "id" | "name" | "sku">>();
+  for (const entry of [...(first || []), ...(second || [])]) {
+    const id = String(entry.id || "").trim();
+    if (!id) continue;
+    if (!map.has(id)) {
+      map.set(id, {
+        id,
+        name: entry.name || null,
+        sku: entry.sku || null,
+      });
+    }
+  }
+  if (map.size === 0) return undefined;
+  return [...map.values()];
+}
 
 interface ProductComparisonResponse {
   rows: ComparisonRow[];
@@ -1197,6 +1218,7 @@ function autoMergeRows(rows: ComparisonRow[], sources: SourceName[]): Comparison
           zoho: base.zoho || target.zoho,
           opensolar: base.opensolar || target.opensolar,
           quickbooks: base.quickbooks || target.quickbooks,
+          internalDuplicates: mergeInternalDuplicates(base.internalDuplicates, target.internalDuplicates),
           reasons: [],
           isMismatch: false,
           possibleMatches: [...base.possibleMatches, ...target.possibleMatches],
@@ -2286,10 +2308,19 @@ function buildComparisonRows(products: NormalizedProduct[], sources: SourceName[
     };
     reasons.push(...evaluateRowReasons(primaryRow, sources));
     const dedupedReasons = uniqueStrings(reasons);
+    const internalDuplicates =
+      group.internal.length > 1
+        ? group.internal.map((product) => ({
+            id: product.id,
+            name: product.name,
+            sku: product.sku,
+          }))
+        : undefined;
 
     rows.push({
       key,
       ...primaryRow,
+      ...(internalDuplicates ? { internalDuplicates } : {}),
       reasons: dedupedReasons,
       isMismatch: dedupedReasons.length > 0,
       possibleMatches: [],

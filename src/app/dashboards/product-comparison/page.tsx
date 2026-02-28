@@ -8,7 +8,7 @@ import { FORM_CATEGORIES, getCategoryLabel } from "@/lib/catalog-fields";
 
 type RowViewMode = "mismatches" | "matches" | "two-of-three" | "all";
 type MatchConfidence = "high" | "medium" | "low";
-type QueueFilter = "unlinked" | "resolved" | "no-internal" | "pinned";
+type QueueFilter = "unlinked" | "resolved" | "no-internal" | "duplicates" | "pinned";
 
 const ALL_SOURCES = ["internal", "hubspot", "zuper", "zoho", "opensolar", "quickbooks"] as const;
 type SourceName = (typeof ALL_SOURCES)[number];
@@ -44,6 +44,11 @@ interface ComparisonRow {
   reasons: string[];
   isMismatch: boolean;
   possibleMatches: PossibleMatch[];
+  internalDuplicates?: Array<{
+    id: string;
+    name: string | null;
+    sku: string | null;
+  }>;
   internal: ComparableProduct | null;
   hubspot: ComparableProduct | null;
   zuper: ComparableProduct | null;
@@ -220,6 +225,7 @@ function queueBadgeLabel(queueState: QueueFilter): string {
   if (queueState === "unlinked") return "Needs links";
   if (queueState === "resolved") return "Resolved";
   if (queueState === "no-internal") return "Missing internal";
+  if (queueState === "duplicates") return "Duplicate internal";
   return "Pinned";
 }
 
@@ -227,6 +233,7 @@ function queueBadgeClass(queueState: QueueFilter): string {
   if (queueState === "unlinked") return "border-orange-500/40 bg-orange-500/10 text-orange-200";
   if (queueState === "resolved") return "border-green-500/40 bg-green-500/10 text-green-300";
   if (queueState === "no-internal") return "border-zinc-500/40 bg-zinc-500/10 text-zinc-200";
+  if (queueState === "duplicates") return "border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-200";
   return "border-amber-500/40 bg-amber-500/10 text-amber-200";
 }
 
@@ -403,10 +410,11 @@ const QUEUE_FILTER_OPTIONS: FilterOption[] = [
   { value: "unlinked", label: "Needs links" },
   { value: "resolved", label: "Resolved links" },
   { value: "no-internal", label: "Missing internal" },
+  { value: "duplicates", label: "Duplicates" },
   { value: "pinned", label: "Pinned rows" },
 ];
 
-const DEFAULT_QUEUE_FILTERS: QueueFilter[] = ["unlinked", "no-internal", "pinned"];
+const DEFAULT_QUEUE_FILTERS: QueueFilter[] = ["unlinked", "no-internal", "duplicates", "pinned"];
 
 const MISSING_REASON_PREFIX = "Missing in ";
 
@@ -422,6 +430,9 @@ function deriveQueueStates(
 ): QueueFilter[] {
   const states: QueueFilter[] = [];
   if (pinned) states.push("pinned");
+  if (row.reasons.some((reason) => reason.startsWith("Duplicate Internal entries"))) {
+    states.push("duplicates");
+  }
 
   if (!row.internal) {
     states.push("no-internal");
@@ -461,6 +472,7 @@ export default function ProductComparisonPage() {
   const [confidenceFilters, setConfidenceFilters] = useState<MatchConfidence[]>([]);
   const [linkingKeys, setLinkingKeys] = useState<Record<string, boolean>>({});
   const [creatingKeys, setCreatingKeys] = useState<Record<string, boolean>>({});
+  const [mergingKeys, setMergingKeys] = useState<Record<string, boolean>>({});
   const [creatingInternalKeys, setCreatingInternalKeys] = useState<Record<string, boolean>>({});
   const [internalCreateByRow, setInternalCreateByRow] = useState<Record<string, InternalCreateDraft>>({});
   const [searchStateBySource, setSearchStateBySource] = useState<Record<string, SourceSearchState>>({});
@@ -922,6 +934,77 @@ export default function ProductComparisonPage() {
     [internalCreateByRow]
   );
 
+  const mergeDuplicateInternalIntoPrimary = useCallback(
+    async (row: DisplayRow, sourceSkuId: string) => {
+      if (!row.internal?.id) {
+        setActionFeedback({ type: "error", message: "Primary internal SKU is missing for this row." });
+        return;
+      }
+      if (!sourceSkuId || sourceSkuId === row.internal.id) {
+        setActionFeedback({ type: "error", message: "Invalid duplicate SKU selected for merge." });
+        return;
+      }
+
+      const mergeKey = `${row.key}:${sourceSkuId}:${row.internal.id}`;
+      setMergingKeys((prev) => ({ ...prev, [mergeKey]: true }));
+      setActionFeedback(null);
+
+      try {
+        const response = await fetch("/api/inventory/skus/merge", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sourceSkuId,
+            targetSkuId: row.internal.id,
+          }),
+        });
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        if (!response.ok) {
+          throw new Error(payload?.error || `Failed to merge duplicate internal SKU (${response.status})`);
+        }
+
+        setData((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            rows: prev.rows.map((candidateRow) => {
+              if (candidateRow.key !== row.key) return candidateRow;
+              const nextDuplicates = (candidateRow.internalDuplicates || []).filter((entry) => entry.id !== sourceSkuId);
+              const hasRemainingInternalDuplicates = nextDuplicates.length > 1;
+              const nextReasons = hasRemainingInternalDuplicates
+                ? candidateRow.reasons
+                : candidateRow.reasons.filter((reason) => !reason.startsWith("Duplicate Internal entries"));
+              return {
+                ...candidateRow,
+                ...(hasRemainingInternalDuplicates ? { internalDuplicates: nextDuplicates } : { internalDuplicates: undefined }),
+                reasons: nextReasons,
+                isMismatch: nextReasons.length > 0,
+              };
+            }),
+          };
+        });
+
+        setPinnedRowKeys((prev) => ({ ...prev, [row.key]: true }));
+        setActionFeedback({
+          type: "success",
+          message: "Merged duplicate internal SKU into the primary SKU. Row pinned for further linking work.",
+        });
+      } catch (error) {
+        setActionFeedback({
+          type: "error",
+          message: error instanceof Error ? error.message : "Failed to merge duplicate internal SKU",
+        });
+      } finally {
+        setMergingKeys((prev) => {
+          const next = { ...prev };
+          delete next[mergeKey];
+          return next;
+        });
+      }
+    },
+    []
+  );
+
   useEffect(() => {
     fetch("/api/auth/sync", { cache: "no-store" })
       .then(async (response) => {
@@ -1062,9 +1145,10 @@ export default function ProductComparisonPage() {
       .sort((a, b) => {
         const queuePriority = (candidate: DisplayRow): number => {
           if (candidate.queueStates.includes("pinned")) return 4;
-          if (candidate.queueStates.includes("unlinked")) return 3;
-          if (candidate.queueStates.includes("no-internal")) return 2;
-          if (candidate.queueStates.includes("resolved")) return 1;
+          if (candidate.queueStates.includes("duplicates")) return 3;
+          if (candidate.queueStates.includes("unlinked")) return 2;
+          if (candidate.queueStates.includes("no-internal")) return 1;
+          if (candidate.queueStates.includes("resolved")) return 0;
           return 0;
         };
         const queueDelta = queuePriority(b) - queuePriority(a);
@@ -1084,6 +1168,8 @@ export default function ProductComparisonPage() {
       key: row.key,
       severity: severityLabel(row.severity),
       queue_states: row.queueStates.join(" | "),
+      internal_duplicate_count: row.internalDuplicates?.length ?? 0,
+      internal_duplicate_ids: (row.internalDuplicates || []).map((entry) => entry.id).join(" | "),
       reasons: row.reasons.join(" | "),
       best_match_confidence: row.bestMatchConfidence || "",
       possible_matches: row.possibleMatches
@@ -1632,6 +1718,56 @@ export default function ProductComparisonPage() {
                             </span>
                           ))}
                         </div>
+
+                        {(() => {
+                          const primaryInternalId = row.internal?.id || null;
+                          if (!primaryInternalId) return null;
+                          const duplicateCandidates = (row.internalDuplicates || []).filter((entry) => entry.id !== primaryInternalId);
+                          if (duplicateCandidates.length === 0) return null;
+
+                          return (
+                            <div className="rounded-md border border-fuchsia-500/30 bg-fuchsia-500/10 p-2 space-y-2">
+                              <div className="text-[11px] text-fuchsia-200">
+                                Merge duplicate internal SKUs into this primary SKU to clean inventory links.
+                              </div>
+                              <div className="space-y-1.5">
+                                {duplicateCandidates.map((candidate) => {
+                                  const mergeKey = `${row.key}:${candidate.id}:${primaryInternalId}`;
+                                  const isMerging = Boolean(mergingKeys[mergeKey]);
+                                  return (
+                                    <div
+                                      key={`${row.key}:merge:${candidate.id}`}
+                                      className="rounded border border-fuchsia-500/20 bg-background/60 p-2"
+                                    >
+                                      <div className="text-[11px] text-foreground break-words">
+                                        {candidate.name || "Unnamed internal SKU"}
+                                      </div>
+                                      <div className="text-[10px] text-muted break-all">
+                                        SKU: {candidate.sku || "—"} · ID: {candidate.id}
+                                      </div>
+                                      <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                                        <a
+                                          href={`/dashboards/catalog/edit/${encodeURIComponent(candidate.id)}`}
+                                          className="text-[10px] text-cyan-300 hover:text-cyan-200 underline underline-offset-2"
+                                        >
+                                          Open duplicate
+                                        </a>
+                                        <button
+                                          type="button"
+                                          onClick={() => mergeDuplicateInternalIntoPrimary(row, candidate.id)}
+                                          disabled={isMerging}
+                                          className="px-2 py-0.5 rounded border border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-200 text-[10px] hover:bg-fuchsia-500/20 disabled:opacity-50"
+                                        >
+                                          {isMerging ? "Merging..." : "Merge into primary"}
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })()}
 
                         {row.possibleMatches.length > 0 ? (
                           <div className="space-y-1.5">
