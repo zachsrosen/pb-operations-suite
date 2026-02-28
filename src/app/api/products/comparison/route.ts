@@ -92,17 +92,65 @@ function mergeInternalDuplicates(
   first: ComparisonRow["internalDuplicates"],
   second: ComparisonRow["internalDuplicates"]
 ): ComparisonRow["internalDuplicates"] {
-  const map = new Map<string, Pick<ComparableProduct, "id" | "name" | "sku">>();
+  const map = new Map<string, ComparableProduct>();
   for (const entry of [...(first || []), ...(second || [])]) {
     const id = String(entry.id || "").trim();
     if (!id) continue;
-    if (!map.has(id)) {
-      map.set(id, {
-        id,
-        name: entry.name || null,
-        sku: entry.sku || null,
-      });
+    const normalizedEntry: ComparableProduct = {
+      id,
+      name: entry.name || null,
+      sku: entry.sku || null,
+      price: typeof entry.price === "number" && Number.isFinite(entry.price) ? entry.price : null,
+      status: entry.status || null,
+      description: entry.description || null,
+      url: entry.url || null,
+      linkedExternalIds: entry.linkedExternalIds
+        ? {
+            hubspot: String(entry.linkedExternalIds.hubspot || "").trim() || null,
+            zuper: String(entry.linkedExternalIds.zuper || "").trim() || null,
+            zoho: String(entry.linkedExternalIds.zoho || "").trim() || null,
+            quickbooks: String(entry.linkedExternalIds.quickbooks || "").trim() || null,
+          }
+        : undefined,
+    };
+
+    const existing = map.get(id);
+    if (!existing) {
+      map.set(id, normalizedEntry);
+      continue;
     }
+
+    const mergedLinks = existing.linkedExternalIds || normalizedEntry.linkedExternalIds
+      ? {
+          hubspot:
+            String(existing.linkedExternalIds?.hubspot || "").trim() ||
+            String(normalizedEntry.linkedExternalIds?.hubspot || "").trim() ||
+            null,
+          zuper:
+            String(existing.linkedExternalIds?.zuper || "").trim() ||
+            String(normalizedEntry.linkedExternalIds?.zuper || "").trim() ||
+            null,
+          zoho:
+            String(existing.linkedExternalIds?.zoho || "").trim() ||
+            String(normalizedEntry.linkedExternalIds?.zoho || "").trim() ||
+            null,
+          quickbooks:
+            String(existing.linkedExternalIds?.quickbooks || "").trim() ||
+            String(normalizedEntry.linkedExternalIds?.quickbooks || "").trim() ||
+            null,
+        }
+      : undefined;
+
+    map.set(id, {
+      id,
+      name: existing.name || normalizedEntry.name,
+      sku: existing.sku || normalizedEntry.sku,
+      price: existing.price ?? normalizedEntry.price,
+      status: existing.status || normalizedEntry.status,
+      description: existing.description || normalizedEntry.description,
+      url: existing.url || normalizedEntry.url,
+      ...(mergedLinks ? { linkedExternalIds: mergedLinks } : {}),
+    });
   }
   if (map.size === 0) return undefined;
   return [...map.values()];
