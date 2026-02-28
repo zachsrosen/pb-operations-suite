@@ -144,6 +144,58 @@ interface ZohoSalesOrderCreateResponse {
   };
 }
 
+export interface ZohoSalesOrderRecord {
+  salesorder_id: string;
+  salesorder_number: string;
+  reference_number?: string;
+  date?: string;
+  status?: string;
+  customer_name?: string;
+  total?: number;
+  delivery_method?: string;
+  notes?: string;
+  line_items: Array<{
+    line_item_id?: string;
+    item_id?: string;
+    name?: string;
+    sku?: string;
+    quantity?: number;
+    rate?: number;
+    amount?: number;
+    description?: string;
+  }>;
+}
+
+interface ZohoSalesOrderGetResponse {
+  code?: number;
+  message?: string;
+  salesorder?: ZohoSalesOrderRecord;
+}
+
+interface ZohoSalesOrderListResponse {
+  code?: number;
+  message?: string;
+  salesorders?: ZohoSalesOrderRecord[];
+  page_context?: {
+    page?: number;
+    per_page?: number;
+    has_more_page?: boolean;
+  };
+}
+
+export interface ListSalesOrdersOptions {
+  page?: number;
+  perPage?: number;
+  sortColumn?: string;
+  sortOrder?: "A" | "D";
+  search?: string;
+}
+
+export interface ListSalesOrdersResult {
+  salesorders: ZohoSalesOrderRecord[];
+  hasMore: boolean;
+}
+
 interface ZohoTokenRefreshResponse {
   access_token?: string;
   expires_in?: number;
@@ -172,6 +224,17 @@ let _itemCacheInflight: Promise<ZohoInventoryItem[]> | null = null;
 
 function normalizeName(s: string): string {
   return s.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function normalizeSalesOrderLookup(value: string): string {
+  return value.trim().replace(/\s+/g, " ").replace(/_/g, "-");
+}
+
+function canonicalSalesOrderNumber(value: string | undefined | null): string {
+  return String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "");
 }
 
 /**
@@ -634,7 +697,8 @@ export class ZohoInventoryClient {
   }
 
   // Kept for backwards-compat; use fetchCustomerPage for cache loading.
-  async searchCustomers(query: string): Promise<ZohoVendor[]> {
+  async searchCustomers(_query: string): Promise<ZohoVendor[]> {
+    void _query;
     const { contacts } = await this.fetchCustomerPage(1);
     return contacts;
   }
@@ -680,6 +744,102 @@ export class ZohoInventoryClient {
     return {
       salesorder_id: so.salesorder_id,
       salesorder_number: so.salesorder_number,
+    };
+  }
+
+  async getSalesOrder(soNumber: string): Promise<ZohoSalesOrderRecord> {
+    const lookup = normalizeSalesOrderLookup(soNumber);
+    if (!lookup) {
+      throw new Error("Sales order number is required");
+    }
+
+    const firstAttempt = await this.listSalesOrders({
+      page: 1,
+      perPage: 200,
+      search: lookup,
+      sortColumn: "created_time",
+      sortOrder: "D",
+    });
+
+    const expected = canonicalSalesOrderNumber(lookup);
+    const directMatch =
+      firstAttempt.salesorders.find(
+        (so) => canonicalSalesOrderNumber(so.salesorder_number) === expected
+      ) ||
+      firstAttempt.salesorders.find(
+        (so) => canonicalSalesOrderNumber(so.reference_number) === expected
+      ) ||
+      firstAttempt.salesorders[0];
+
+    // If lookup was normalized from underscores to hyphens and we got no hit, retry raw.
+    let selected = directMatch;
+    if (!selected && lookup !== soNumber.trim()) {
+      const rawAttempt = await this.listSalesOrders({
+        page: 1,
+        perPage: 200,
+        search: soNumber.trim(),
+        sortColumn: "created_time",
+        sortOrder: "D",
+      });
+      selected =
+        rawAttempt.salesorders.find(
+          (so) => canonicalSalesOrderNumber(so.salesorder_number) === expected
+        ) || rawAttempt.salesorders[0];
+    }
+
+    if (!selected?.salesorder_id) {
+      throw new Error(`Sales order ${lookup} not found`);
+    }
+
+    const detail = await this.request<ZohoSalesOrderGetResponse>(
+      `/salesorders/${encodeURIComponent(selected.salesorder_id)}`
+    );
+    if (detail.salesorder) return detail.salesorder;
+
+    return {
+      ...selected,
+      line_items: Array.isArray(selected.line_items) ? selected.line_items : [],
+    };
+  }
+
+  async searchSalesOrders(
+    query: string,
+    options: { page?: number; perPage?: number } = {}
+  ): Promise<ListSalesOrdersResult> {
+    return this.listSalesOrders({
+      page: options.page,
+      perPage: options.perPage,
+      search: query,
+      sortColumn: "created_time",
+      sortOrder: "D",
+    });
+  }
+
+  async listSalesOrders(
+    options: ListSalesOrdersOptions = {}
+  ): Promise<ListSalesOrdersResult> {
+    const page = Number.isFinite(options.page) && (options.page || 0) > 0
+      ? Number(options.page)
+      : 1;
+    const perPage = Number.isFinite(options.perPage) && (options.perPage || 0) > 0
+      ? Math.min(Number(options.perPage), 200)
+      : 200;
+    const sortColumn = options.sortColumn || "created_time";
+    const sortOrder = options.sortOrder || "D";
+    const search = trimOrUndefined(options.search);
+    const normalizedSearch = search ? normalizeSalesOrderLookup(search) : undefined;
+
+    const response = await this.request<ZohoSalesOrderListResponse>("/salesorders", {
+      page,
+      per_page: perPage,
+      sort_column: sortColumn,
+      sort_order: sortOrder,
+      ...(normalizedSearch ? { search_text: normalizedSearch } : {}),
+    });
+
+    return {
+      salesorders: Array.isArray(response.salesorders) ? response.salesorders : [],
+      hasMore: !!response.page_context?.has_more_page,
     };
   }
 
