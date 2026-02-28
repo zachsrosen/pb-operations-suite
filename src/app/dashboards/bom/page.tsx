@@ -746,7 +746,7 @@ function CustomerSearchCombobox({ value, valueName, onChange, autoSearch, onManu
       {value && !open && (
         <button
           type="button"
-          onMouseDown={(e) => { e.preventDefault(); onChange("", ""); setQuery(""); setResults([]); }}
+          onMouseDown={(e) => { e.preventDefault(); onManualSelect?.(); onChange("", ""); setQuery(""); setResults([]); }}
           className="text-muted hover:text-foreground text-sm leading-none"
           title="Clear selection"
         >
