@@ -1,20 +1,26 @@
-import { createHmac, timingSafeEqual } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { getUserByEmail, logActivity, prisma } from "@/lib/db";
 import { type CleanupAdapterResult, type CleanupSource, runCleanupAdapter } from "@/lib/product-cleanup-adapters";
+import {
+  isProductCleanupEnabled,
+  validateProductCleanupConfirmationToken,
+  type ProductCleanupActions,
+} from "@/lib/product-cleanup-confirmation";
 import { type CleanupSkuRecord, runInternalCleanupEngine } from "@/lib/product-cleanup-engine";
 import {
-  PRODUCT_CLEANUP_CONFIRM_TTL_MS,
   PRODUCT_CLEANUP_MAX_BATCH,
   dedupeSkuIds,
   productCleanupRequestSchema,
-  type ProductCleanupRequest,
 } from "@/lib/schemas/product-cleanup";
 import { normalizeRole, type UserRole } from "@/lib/role-permissions";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
+
+function trim(value: unknown): string {
+  return String(value || "").trim();
+}
 
 const ALLOWED_ROLES = new Set<UserRole>(["ADMIN", "OWNER"]);
 
@@ -28,7 +34,6 @@ const EXTERNAL_FIELD_BY_SOURCE: Record<
   quickbooks: "quickbooksItemId",
 };
 
-type RequestActions = ProductCleanupRequest["actions"];
 type ResultStatus = "succeeded" | "partial" | "failed";
 
 interface CleanupResultRow {
@@ -39,117 +44,6 @@ interface CleanupResultRow {
   externalBySource: Partial<Record<CleanupSource, CleanupAdapterResult>>;
   internal: Awaited<ReturnType<typeof runInternalCleanupEngine>>["internal"];
   cache: Awaited<ReturnType<typeof runInternalCleanupEngine>>["cache"];
-}
-
-interface ConfirmationInput {
-  internalSkuIds: string[];
-  actions: RequestActions;
-  issuedAt: number;
-}
-
-function trim(value: unknown): string {
-  return String(value || "").trim();
-}
-
-function isCleanupEnabled(): boolean {
-  return trim(process.env.PRODUCT_CLEANUP_ENABLED).toLowerCase() === "true";
-}
-
-function getCleanupConfirmationSecret(): string | null {
-  const candidates = [
-    process.env.PRODUCT_CLEANUP_CONFIRM_SECRET,
-    process.env.AUTH_TOKEN_SECRET,
-    process.env.NEXTAUTH_SECRET,
-    process.env.AUTH_SECRET,
-    process.env.API_SECRET_TOKEN,
-  ];
-  for (const candidate of candidates) {
-    const normalized = trim(candidate);
-    if (normalized) return normalized;
-  }
-  return null;
-}
-
-function toCanonicalConfirmationPayload(input: ConfirmationInput): string {
-  const normalizedSkuIds = [...new Set(input.internalSkuIds.map((id) => trim(id)).filter(Boolean))].sort();
-  const normalizedActions = {
-    internal: input.actions.internal,
-    links: input.actions.links,
-    external: input.actions.external,
-    sources: [...input.actions.sources],
-    deleteCachedProducts: Boolean(input.actions.deleteCachedProducts),
-  } as const;
-
-  return JSON.stringify({
-    internalSkuIds: normalizedSkuIds,
-    actions: normalizedActions,
-    issuedAt: Math.trunc(input.issuedAt),
-  });
-}
-
-function secureEquals(a: string, b: string): boolean {
-  if (!a || !b) return false;
-  if (a.length !== b.length) return false;
-  try {
-    return timingSafeEqual(Buffer.from(a), Buffer.from(b));
-  } catch {
-    return false;
-  }
-}
-
-export function createProductCleanupConfirmationToken(
-  input: ConfirmationInput,
-  secretOverride?: string
-): string {
-  const secret = trim(secretOverride) || getCleanupConfirmationSecret();
-  if (!secret) {
-    throw new Error(
-      "Cleanup confirmation secret not configured. Set PRODUCT_CLEANUP_CONFIRM_SECRET, AUTH_TOKEN_SECRET, NEXTAUTH_SECRET, AUTH_SECRET, or API_SECRET_TOKEN."
-    );
-  }
-  return createHmac("sha256", secret).update(toCanonicalConfirmationPayload(input)).digest("hex");
-}
-
-function validateConfirmationToken(input: {
-  token: string;
-  issuedAt: number;
-  internalSkuIds: string[];
-  actions: RequestActions;
-}): { ok: true } | { ok: false; error: string } {
-  const now = Date.now();
-  const issuedAt = Math.trunc(input.issuedAt);
-  const maxSkewMs = 60_000;
-
-  if (issuedAt > now + maxSkewMs) {
-    return { ok: false, error: "Confirmation token issuedAt is in the future." };
-  }
-
-  if (now - issuedAt > PRODUCT_CLEANUP_CONFIRM_TTL_MS) {
-    return {
-      ok: false,
-      error: "Confirmation token expired. Please confirm again and retry.",
-    };
-  }
-
-  let expectedToken = "";
-  try {
-    expectedToken = createProductCleanupConfirmationToken({
-      internalSkuIds: input.internalSkuIds,
-      actions: input.actions,
-      issuedAt,
-    });
-  } catch (error) {
-    return {
-      ok: false,
-      error: error instanceof Error ? error.message : "Cleanup confirmation secret is missing.",
-    };
-  }
-
-  if (!secureEquals(trim(input.token), expectedToken)) {
-    return { ok: false, error: "Invalid confirmation token." };
-  }
-
-  return { ok: true };
 }
 
 function skippedRowDefaults(message: string) {
@@ -197,7 +91,7 @@ function summarize(results: CleanupResultRow[]) {
 }
 
 export async function POST(request: NextRequest) {
-  if (!isCleanupEnabled()) {
+  if (!isProductCleanupEnabled()) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
@@ -240,11 +134,11 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const confirmationCheck = validateConfirmationToken({
+  const confirmationCheck = validateProductCleanupConfirmationToken({
     token: payload.confirmation.token,
     issuedAt: payload.confirmation.issuedAt,
     internalSkuIds,
-    actions: payload.actions,
+    actions: payload.actions as ProductCleanupActions,
   });
 
   if (!confirmationCheck.ok) {

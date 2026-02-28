@@ -30,10 +30,8 @@ jest.mock("@/lib/product-cleanup-adapters", () => ({
 }));
 
 import { NextRequest } from "next/server";
-import {
-  POST,
-  createProductCleanupConfirmationToken,
-} from "@/app/api/products/cleanup/route";
+import { POST } from "@/app/api/products/cleanup/route";
+import { createProductCleanupConfirmationToken } from "@/lib/product-cleanup-confirmation";
 
 function makeRequest(body: unknown) {
   return new NextRequest("http://localhost/api/products/cleanup", {

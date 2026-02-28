@@ -136,6 +136,62 @@ interface InternalCreateDraft {
   unitCost: string;
 }
 
+type CleanupScope = "duplicates" | "pinned" | "visible";
+
+interface CleanupActionsInput {
+  internal: "none" | "deactivate";
+  links: "none" | "unlink_selected";
+  external: "none" | "delete_selected";
+  sources: LinkableSourceName[];
+  deleteCachedProducts: boolean;
+}
+
+interface CleanupConfirmationResponse {
+  token: string;
+  issuedAt: number;
+  expiresAt: number;
+}
+
+interface CleanupApiExternalResult {
+  source: LinkableSourceName;
+  externalId: string;
+  status: "deleted" | "archived" | "not_found" | "failed" | "skipped";
+  message: string;
+  httpStatus?: number;
+}
+
+interface CleanupApiResult {
+  internalSkuId: string;
+  status: "succeeded" | "partial" | "failed";
+  message: string;
+  links: {
+    status: "skipped" | "planned" | "updated" | "partial";
+    message: string;
+    changedFields: string[];
+  };
+  externalBySource: Partial<Record<LinkableSourceName, CleanupApiExternalResult>>;
+  internal: {
+    status: "skipped" | "planned" | "updated" | "partial";
+    message: string;
+  };
+  cache: {
+    status: "skipped" | "planned" | "updated" | "partial";
+    message: string;
+    removedCount: number;
+  };
+}
+
+interface CleanupApiResponse {
+  dryRun: boolean;
+  summary: {
+    total: number;
+    succeeded: number;
+    partial: number;
+    failed: number;
+  };
+  results: CleanupApiResult[];
+}
+
 function formatSourceName(source: SourceName): string {
   if (source === "internal") return "Internal";
   if (source === "hubspot") return "HubSpot";
@@ -511,6 +567,13 @@ const QUEUE_FILTER_OPTIONS: FilterOption[] = [
 ];
 
 const DEFAULT_QUEUE_FILTERS: QueueFilter[] = ["unlinked", "no-internal", "duplicates", "pinned"];
+const CLEANUP_SCOPE_OPTIONS: Array<{ value: CleanupScope; label: string; description: string }> = [
+  { value: "duplicates", label: "Visible duplicates", description: "Only rows in the duplicate queue with an internal SKU." },
+  { value: "pinned", label: "Pinned rows", description: "Rows you pinned while linking/matching." },
+  { value: "visible", label: "All visible rows", description: "All currently visible rows with an internal SKU." },
+];
+const CLEANUP_CONFIRM_TEXT = "CLEANUP";
+const CLEANUP_MAX_BATCH = 50;
 
 const MISSING_REASON_PREFIX = "Missing in ";
 
@@ -579,6 +642,21 @@ export default function ProductComparisonPage() {
     sourceDuplicate: ComparableProduct;
     targetPrimary: ComparableProduct;
   } | null>(null);
+  const [cleanupFeatureEnabled, setCleanupFeatureEnabled] = useState(false);
+  const [cleanupModalOpen, setCleanupModalOpen] = useState(false);
+  const [cleanupScope, setCleanupScope] = useState<CleanupScope>("duplicates");
+  const [cleanupActions, setCleanupActions] = useState<CleanupActionsInput>({
+    internal: "none",
+    links: "unlink_selected",
+    external: "none",
+    sources: [],
+    deleteCachedProducts: false,
+  });
+  const [cleanupDryRun, setCleanupDryRun] = useState(false);
+  const [cleanupConfirmInput, setCleanupConfirmInput] = useState("");
+  const [cleanupRunning, setCleanupRunning] = useState(false);
+  const [cleanupProgress, setCleanupProgress] = useState<{ completed: number; total: number } | null>(null);
+  const [cleanupBatchResponses, setCleanupBatchResponses] = useState<CleanupApiResponse[]>([]);
   const [compactCards, setCompactCards] = useState(true);
   const [expandedRowKeys, setExpandedRowKeys] = useState<Record<string, true>>({});
   const [isBackgroundRefreshing, setIsBackgroundRefreshing] = useState(false);
@@ -1176,6 +1254,28 @@ export default function ProductComparisonPage() {
   }, [accessChecked, isAllowed, fetchData]);
 
   useEffect(() => {
+    if (!accessChecked || !isAllowed) return;
+    let cancelled = false;
+
+    fetch("/api/products/cleanup/confirm", {
+      method: "GET",
+      cache: "no-store",
+    })
+      .then((response) => {
+        if (cancelled) return;
+        setCleanupFeatureEnabled(response.ok);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setCleanupFeatureEnabled(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [accessChecked, isAllowed]);
+
+  useEffect(() => {
     if (!isAllowed || hasTrackedView.current) return;
     trackDashboardView("product-comparison", {});
     hasTrackedView.current = true;
@@ -1316,6 +1416,223 @@ export default function ProductComparisonPage() {
       });
   }, [confidenceFilters, configuredSources, data, missingFilters, pinnedRowKeys, queueFilters, reasonFilters, rowViewModes, search]);
 
+  const cleanupCandidateRows = useMemo<DisplayRow[]>(() => {
+    if (cleanupScope === "duplicates") {
+      return rows.filter((row) => row.queueStates.includes("duplicates") && Boolean(row.internal?.id));
+    }
+    if (cleanupScope === "pinned") {
+      return rows.filter((row) => Boolean(pinnedRowKeys[row.key]) && Boolean(row.internal?.id));
+    }
+    return rows.filter((row) => Boolean(row.internal?.id));
+  }, [cleanupScope, pinnedRowKeys, rows]);
+
+  const cleanupSkuIds = useMemo<string[]>(() => {
+    const ids = cleanupCandidateRows
+      .map((row) => row.internal?.id || "")
+      .filter(Boolean);
+    return [...new Set(ids)];
+  }, [cleanupCandidateRows]);
+
+  const cleanupScopeLabel = useMemo<string>(() => {
+    const match = CLEANUP_SCOPE_OPTIONS.find((option) => option.value === cleanupScope);
+    return match?.label || "Selected rows";
+  }, [cleanupScope]);
+
+  const applyCleanupResultsToLocalData = useCallback(
+    (results: CleanupApiResult[], actions: CleanupActionsInput) => {
+      if (results.length === 0) return;
+      const bySkuId = new Map<string, CleanupApiResult>(results.map((result) => [result.internalSkuId, result]));
+      setData((prev) => {
+        if (!prev) return prev;
+        const configured = configuredSourcesFromPayload(prev);
+        return {
+          ...prev,
+          rows: prev.rows.map((row) => {
+            const internalId = row.internal?.id;
+            if (!internalId) return row;
+            const cleanupResult = bySkuId.get(internalId);
+            if (!cleanupResult) return row;
+
+            let nextRow: ComparisonRow = row;
+            if (row.internal) {
+              const nextLinks = { ...(row.internal.linkedExternalIds || {}) };
+              if (actions.links === "unlink_selected") {
+                for (const source of actions.sources) {
+                  nextLinks[source] = null;
+                }
+              }
+
+              nextRow = {
+                ...nextRow,
+                internal: {
+                  ...row.internal,
+                  status:
+                    actions.internal === "deactivate" &&
+                    (cleanupResult.internal.status === "updated" || cleanupResult.internal.status === "partial")
+                      ? "inactive"
+                      : row.internal.status,
+                  linkedExternalIds: nextLinks,
+                },
+              };
+            }
+
+            if (actions.external === "delete_selected") {
+              for (const source of actions.sources) {
+                const outcome = cleanupResult.externalBySource[source];
+                if (!outcome) continue;
+                if (outcome.status === "deleted" || outcome.status === "not_found") {
+                  nextRow = {
+                    ...nextRow,
+                    [source]: null,
+                  };
+                }
+              }
+            }
+
+            return recomputeRowState(nextRow, configured);
+          }),
+        };
+      });
+    },
+    []
+  );
+
+  const runCleanupForScope = useCallback(async () => {
+    if (cleanupRunning) return;
+    if (cleanupSkuIds.length === 0) {
+      setActionFeedback({
+        type: "error",
+        message: "No internal SKUs are available for this cleanup scope.",
+      });
+      return;
+    }
+    if (cleanupActions.external === "delete_selected" && cleanupActions.sources.length === 0) {
+      setActionFeedback({
+        type: "error",
+        message: "Select at least one external source when external cleanup is enabled.",
+      });
+      return;
+    }
+    if (cleanupConfirmInput.trim().toUpperCase() !== CLEANUP_CONFIRM_TEXT) {
+      setActionFeedback({
+        type: "error",
+        message: `Type ${CLEANUP_CONFIRM_TEXT} to confirm this cleanup batch.`,
+      });
+      return;
+    }
+
+    const chunks: string[][] = [];
+    for (let i = 0; i < cleanupSkuIds.length; i += CLEANUP_MAX_BATCH) {
+      chunks.push(cleanupSkuIds.slice(i, i + CLEANUP_MAX_BATCH));
+    }
+
+    setCleanupRunning(true);
+    setCleanupProgress({ completed: 0, total: chunks.length });
+    setCleanupBatchResponses([]);
+    setActionFeedback(null);
+
+    const summary = {
+      total: 0,
+      succeeded: 0,
+      partial: 0,
+      failed: 0,
+    };
+
+    try {
+      for (let index = 0; index < chunks.length; index += 1) {
+        const chunk = chunks[index];
+
+        const confirmationResponse = await fetch("/api/products/cleanup/confirm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            internalSkuIds: chunk,
+            actions: cleanupActions,
+          }),
+        });
+
+        const confirmationPayload = (await confirmationResponse.json().catch(() => null)) as
+          | ({ error?: string } & Partial<CleanupConfirmationResponse>)
+          | null;
+        if (!confirmationResponse.ok || !confirmationPayload?.token || typeof confirmationPayload.issuedAt !== "number") {
+          throw new Error(
+            confirmationPayload?.error ||
+              `Failed to create cleanup confirmation token (${confirmationResponse.status}).`
+          );
+        }
+
+        const cleanupResponse = await fetch("/api/products/cleanup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            internalSkuIds: chunk,
+            actions: cleanupActions,
+            dryRun: cleanupDryRun,
+            confirmation: {
+              token: confirmationPayload.token,
+              issuedAt: confirmationPayload.issuedAt,
+            },
+          }),
+        });
+
+        const payload = (await cleanupResponse.json().catch(() => null)) as
+          | ({ error?: string } & Partial<CleanupApiResponse>)
+          | null;
+        if (!cleanupResponse.ok || !payload || !payload.summary || !Array.isArray(payload.results)) {
+          throw new Error(payload?.error || `Cleanup batch failed (${cleanupResponse.status}).`);
+        }
+
+        const typedPayload = payload as CleanupApiResponse;
+        setCleanupBatchResponses((prev) => [...prev, typedPayload]);
+        summary.total += typedPayload.summary.total;
+        summary.succeeded += typedPayload.summary.succeeded;
+        summary.partial += typedPayload.summary.partial;
+        summary.failed += typedPayload.summary.failed;
+
+        if (!cleanupDryRun) {
+          applyCleanupResultsToLocalData(typedPayload.results, cleanupActions);
+        }
+
+        setCleanupProgress({ completed: index + 1, total: chunks.length });
+      }
+
+      if (!cleanupDryRun) {
+        scheduleBackgroundRefresh(400);
+      }
+
+      setPinnedRowKeys((prev) => {
+        const next = { ...prev };
+        for (const row of cleanupCandidateRows) {
+          next[row.key] = true;
+        }
+        return next;
+      });
+
+      setActionFeedback({
+        type: summary.failed > 0 ? "error" : "success",
+        message: `${cleanupDryRun ? "Dry-run complete" : "Cleanup complete"} for ${summary.total} SKU${summary.total === 1 ? "" : "s"} (${summary.succeeded} succeeded, ${summary.partial} partial, ${summary.failed} failed).`,
+      });
+      setCleanupConfirmInput("");
+    } catch (error) {
+      setActionFeedback({
+        type: "error",
+        message: error instanceof Error ? error.message : "Cleanup batch failed.",
+      });
+    } finally {
+      setCleanupRunning(false);
+      setCleanupProgress(null);
+    }
+  }, [
+    applyCleanupResultsToLocalData,
+    cleanupActions,
+    cleanupCandidateRows,
+    cleanupConfirmInput,
+    cleanupDryRun,
+    cleanupRunning,
+    cleanupSkuIds,
+    scheduleBackgroundRefresh,
+  ]);
+
   const exportRows = useMemo(() => {
     return rows.map((row) => ({
       key: row.key,
@@ -1400,6 +1717,21 @@ export default function ProductComparisonPage() {
     ? `${mergePreview.row.key}:${mergePreview.sourceDuplicate.id}:${mergePreview.targetPrimary.id}`
     : "";
   const isMergePreviewSaving = mergePreviewKey ? Boolean(mergingKeys[mergePreviewKey]) : false;
+  const cleanupBatchSummary = cleanupBatchResponses.reduce(
+    (acc, batch) => {
+      acc.total += batch.summary.total;
+      acc.succeeded += batch.summary.succeeded;
+      acc.partial += batch.summary.partial;
+      acc.failed += batch.summary.failed;
+      return acc;
+    },
+    { total: 0, succeeded: 0, partial: 0, failed: 0 }
+  );
+  const cleanupCanRun =
+    cleanupSkuIds.length > 0 &&
+    (cleanupActions.external !== "delete_selected" || cleanupActions.sources.length > 0) &&
+    cleanupConfirmInput.trim().toUpperCase() === CLEANUP_CONFIRM_TEXT &&
+    !cleanupRunning;
 
   return (
     <DashboardShell
@@ -1562,6 +1894,210 @@ export default function ProductComparisonPage() {
             </div>
           )}
 
+          {cleanupModalOpen && cleanupFeatureEnabled && (
+            <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-[1px] p-4 md:p-8">
+              <div className="mx-auto max-w-4xl rounded-xl border border-amber-500/30 bg-surface shadow-2xl">
+                <div className="flex items-center justify-between border-b border-t-border px-4 py-3">
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-amber-300">Batch Cleanup</div>
+                    <div className="text-sm text-foreground">
+                      {cleanupDryRun ? "Preview" : "Execute"} cleanup actions on inventory-linked rows
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (cleanupRunning) return;
+                      setCleanupModalOpen(false);
+                    }}
+                    className="px-2 py-1 rounded border border-t-border bg-background text-xs text-muted hover:text-foreground disabled:opacity-50"
+                    disabled={cleanupRunning}
+                  >
+                    Close
+                  </button>
+                </div>
+
+                <div className="p-4 space-y-4">
+                  <div className="rounded-lg border border-t-border bg-background/40 p-3 space-y-2">
+                    <div className="text-xs uppercase tracking-wide text-muted">Scope</div>
+                    <div className="grid gap-2 md:grid-cols-3">
+                      {CLEANUP_SCOPE_OPTIONS.map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => setCleanupScope(option.value)}
+                          className={`rounded border px-2 py-2 text-left ${
+                            cleanupScope === option.value
+                              ? "border-cyan-500/40 bg-cyan-500/10"
+                              : "border-t-border bg-background/60"
+                          }`}
+                        >
+                          <div className="text-xs font-medium text-foreground">{option.label}</div>
+                          <div className="text-[11px] text-muted">{option.description}</div>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="text-xs text-muted">
+                      {cleanupScopeLabel}: {cleanupSkuIds.length} internal SKU{cleanupSkuIds.length === 1 ? "" : "s"} selected.
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-t-border bg-background/40 p-3 space-y-3">
+                    <div className="text-xs uppercase tracking-wide text-muted">Actions</div>
+                    <div className="grid gap-2 md:grid-cols-2">
+                      <label className="flex items-center gap-2 text-xs text-foreground">
+                        <input
+                          type="checkbox"
+                          checked={cleanupActions.links === "unlink_selected"}
+                          onChange={(event) =>
+                            setCleanupActions((prev) => ({
+                              ...prev,
+                              links: event.target.checked ? "unlink_selected" : "none",
+                            }))
+                          }
+                        />
+                        Unlink selected source IDs on internal SKU
+                      </label>
+                      <label className="flex items-center gap-2 text-xs text-foreground">
+                        <input
+                          type="checkbox"
+                          checked={cleanupActions.internal === "deactivate"}
+                          onChange={(event) =>
+                            setCleanupActions((prev) => ({
+                              ...prev,
+                              internal: event.target.checked ? "deactivate" : "none",
+                            }))
+                          }
+                        />
+                        Deactivate internal SKU
+                      </label>
+                      <label className="flex items-center gap-2 text-xs text-foreground md:col-span-2">
+                        <input
+                          type="checkbox"
+                          checked={cleanupActions.external === "delete_selected"}
+                          onChange={(event) =>
+                            setCleanupActions((prev) => ({
+                              ...prev,
+                              external: event.target.checked ? "delete_selected" : "none",
+                              deleteCachedProducts: event.target.checked ? prev.deleteCachedProducts : false,
+                            }))
+                          }
+                        />
+                        Run external cleanup for selected sources (HubSpot/Zuper/Zoho delete/archive, QuickBooks archive)
+                      </label>
+                    </div>
+
+                    <div className="grid gap-2 md:grid-cols-4">
+                      {LINKABLE_SOURCES.map((source) => (
+                        <label key={`cleanup-source-${source}`} className="flex items-center gap-2 text-xs text-foreground">
+                          <input
+                            type="checkbox"
+                            checked={cleanupActions.sources.includes(source)}
+                            disabled={cleanupActions.external !== "delete_selected"}
+                            onChange={(event) =>
+                              setCleanupActions((prev) => {
+                                const nextSources = event.target.checked
+                                  ? [...new Set([...prev.sources, source])]
+                                  : prev.sources.filter((candidate) => candidate !== source);
+                                return { ...prev, sources: nextSources };
+                              })
+                            }
+                          />
+                          {formatSourceName(source)}
+                        </label>
+                      ))}
+                    </div>
+
+                    <div className="grid gap-2 md:grid-cols-2">
+                      <label className="flex items-center gap-2 text-xs text-foreground">
+                        <input
+                          type="checkbox"
+                          checked={cleanupActions.deleteCachedProducts}
+                          disabled={cleanupActions.external !== "delete_selected"}
+                          onChange={(event) =>
+                            setCleanupActions((prev) => ({
+                              ...prev,
+                              deleteCachedProducts: event.target.checked,
+                            }))
+                          }
+                        />
+                        Delete matching cached catalog rows when external cleanup succeeds
+                      </label>
+                      <label className="flex items-center gap-2 text-xs text-foreground">
+                        <input
+                          type="checkbox"
+                          checked={cleanupDryRun}
+                          onChange={(event) => setCleanupDryRun(event.target.checked)}
+                        />
+                        Dry-run only (no writes)
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 space-y-2">
+                    <div className="text-xs text-amber-100">
+                      Type <span className="font-semibold">{CLEANUP_CONFIRM_TEXT}</span> to confirm this batch.
+                    </div>
+                    <input
+                      value={cleanupConfirmInput}
+                      onChange={(event) => setCleanupConfirmInput(event.target.value)}
+                      placeholder={CLEANUP_CONFIRM_TEXT}
+                      className="w-full rounded border border-amber-500/30 bg-background px-2 py-1 text-xs text-foreground focus:outline-none focus:border-amber-400/60"
+                      disabled={cleanupRunning}
+                    />
+                    {cleanupProgress && (
+                      <div className="text-xs text-amber-200">
+                        Running batch {cleanupProgress.completed} / {cleanupProgress.total}
+                      </div>
+                    )}
+                  </div>
+
+                  {cleanupBatchResponses.length > 0 && (
+                    <div className="rounded-lg border border-t-border bg-background/40 p-3 space-y-2">
+                      <div className="text-xs uppercase tracking-wide text-muted">Latest run summary</div>
+                      <div className="text-xs text-foreground">
+                        Total {cleanupBatchSummary.total} · Succeeded {cleanupBatchSummary.succeeded} · Partial{" "}
+                        {cleanupBatchSummary.partial} · Failed {cleanupBatchSummary.failed}
+                      </div>
+                      <div className="max-h-36 overflow-y-auto space-y-1">
+                        {cleanupBatchResponses.flatMap((batch) => batch.results).slice(0, 24).map((result) => (
+                          <div
+                            key={`cleanup-result-${result.internalSkuId}-${result.status}`}
+                            className="rounded border border-t-border bg-background/70 px-2 py-1 text-[11px] text-muted"
+                          >
+                            {result.internalSkuId}: {result.status} ({result.message})
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (cleanupRunning) return;
+                        setCleanupModalOpen(false);
+                      }}
+                      disabled={cleanupRunning}
+                      className="px-3 py-1.5 rounded border border-t-border bg-background text-xs text-muted hover:text-foreground disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void runCleanupForScope()}
+                      disabled={!cleanupCanRun}
+                      className="px-3 py-1.5 rounded border border-amber-500/40 bg-amber-500/10 text-amber-200 text-xs hover:bg-amber-500/20 disabled:opacity-50"
+                    >
+                      {cleanupRunning ? "Running..." : cleanupDryRun ? "Run dry-run" : "Run cleanup"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-2 xl:grid-cols-5 gap-3">
             <div className="bg-surface border border-t-border rounded-xl p-4">
               <div className="text-xs text-muted">Compared keys</div>
@@ -1688,6 +2224,28 @@ export default function ProductComparisonPage() {
                 >
                   Compact rows: {compactCards ? "On" : "Off"}
                 </button>
+                {cleanupFeatureEnabled && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCleanupScope("duplicates");
+                      setCleanupActions({
+                        internal: "none",
+                        links: "unlink_selected",
+                        external: "none",
+                        sources: [],
+                        deleteCachedProducts: false,
+                      });
+                      setCleanupDryRun(false);
+                      setCleanupConfirmInput("");
+                      setCleanupBatchResponses([]);
+                      setCleanupModalOpen(true);
+                    }}
+                    className="px-3 py-1.5 rounded border border-amber-500/40 bg-amber-500/10 text-amber-200 text-xs hover:bg-amber-500/20 transition-colors"
+                  >
+                    Batch cleanup
+                  </button>
+                )}
                 <button
                   onClick={clearFilters}
                   className="px-3 py-1.5 rounded border border-t-border bg-background text-xs text-muted hover:text-foreground transition-colors"
