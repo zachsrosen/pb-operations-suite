@@ -23,6 +23,10 @@ const SOURCE_LABELS: Record<SourceName, string> = {
   quickbooks: "QuickBooks",
 };
 
+function isLinkableSource(source: SourceName): source is LinkableSourceName {
+  return LINKABLE_SOURCES.includes(source as LinkableSourceName);
+}
+
 type CacheSourceName = "hubspot" | "zuper" | "zoho" | "quickbooks" | "opensolar";
 
 const CACHE_SOURCE_ENUM: Record<CacheSourceName, CatalogProductSource> = {
@@ -71,6 +75,11 @@ interface PossibleMatch {
   score: number;
   signals: string[];
 }
+
+type LinkFeedbackIndex = Record<
+  LinkableSourceName,
+  Record<LinkableSourceName, Map<string, Map<string, number>>>
+>;
 
 interface ProductComparisonResponse {
   rows: ComparisonRow[];
@@ -555,9 +564,136 @@ function quickProductFilter(anchorProducts: ComparableProduct[], candidate: Comp
   return false;
 }
 
+function createEmptyLinkFeedbackIndex(): LinkFeedbackIndex {
+  const makeTargetMap = (): Record<LinkableSourceName, Map<string, Map<string, number>>> => ({
+    hubspot: new Map<string, Map<string, number>>(),
+    zuper: new Map<string, Map<string, number>>(),
+    zoho: new Map<string, Map<string, number>>(),
+    quickbooks: new Map<string, Map<string, number>>(),
+  });
+
+  return {
+    hubspot: makeTargetMap(),
+    zuper: makeTargetMap(),
+    zoho: makeTargetMap(),
+    quickbooks: makeTargetMap(),
+  };
+}
+
+function buildLinkFeedbackIndex(internalProducts: ComparableProduct[]): LinkFeedbackIndex {
+  const index = createEmptyLinkFeedbackIndex();
+
+  for (const product of internalProducts) {
+    const links = product.linkedExternalIds;
+    if (!links) continue;
+
+    for (const targetSource of LINKABLE_SOURCES) {
+      const targetId = String(links[targetSource] || "").trim();
+      if (!targetId) continue;
+
+      for (const anchorSource of LINKABLE_SOURCES) {
+        if (anchorSource === targetSource) continue;
+        const anchorId = String(links[anchorSource] || "").trim();
+        if (!anchorId) continue;
+
+        const anchorToTarget = index[targetSource][anchorSource];
+        const targetCounts = anchorToTarget.get(anchorId) || new Map<string, number>();
+        targetCounts.set(targetId, (targetCounts.get(targetId) || 0) + 1);
+        anchorToTarget.set(anchorId, targetCounts);
+      }
+    }
+  }
+
+  return index;
+}
+
+interface RankedCandidate {
+  product: ComparableProduct;
+  score: number;
+  signals: string[];
+}
+
+function addOrUpdateCandidate(
+  byProductId: Map<string, RankedCandidate>,
+  candidate: RankedCandidate
+): void {
+  const id = String(candidate.product.id || "").trim();
+  if (!id) return;
+
+  const existing = byProductId.get(id);
+  if (!existing) {
+    byProductId.set(id, {
+      product: candidate.product,
+      score: candidate.score,
+      signals: uniqueStrings(candidate.signals),
+    });
+    return;
+  }
+
+  existing.score = Math.max(existing.score, candidate.score);
+  existing.signals = uniqueStrings([...existing.signals, ...candidate.signals]);
+}
+
+function buildFeedbackCandidatesForSource(
+  row: ComparisonRow,
+  targetSource: LinkableSourceName,
+  feedbackIndex: LinkFeedbackIndex,
+  productsById: Record<SourceName, Map<string, ComparableProduct>>,
+  sources: SourceName[]
+): RankedCandidate[] {
+  const evidence = new Map<string, { anchors: Set<LinkableSourceName>; count: number }>();
+
+  for (const anchorSource of LINKABLE_SOURCES) {
+    if (anchorSource === targetSource) continue;
+    if (!sources.includes(anchorSource)) continue;
+    const anchorProduct = row[anchorSource];
+    if (!anchorProduct?.id) continue;
+
+    const anchorMap = feedbackIndex[targetSource][anchorSource].get(anchorProduct.id);
+    if (!anchorMap) continue;
+
+    for (const [targetId, count] of anchorMap.entries()) {
+      const existing = evidence.get(targetId) || { anchors: new Set<LinkableSourceName>(), count: 0 };
+      existing.anchors.add(anchorSource);
+      existing.count += count;
+      evidence.set(targetId, existing);
+    }
+  }
+
+  const ranked: RankedCandidate[] = [];
+  for (const [targetId, detail] of evidence.entries()) {
+    const product = productsById[targetSource].get(targetId);
+    if (!product) continue;
+
+    const anchorEvidence = [...detail.anchors].map((source) => SOURCE_LABELS[source]).sort();
+    const signals = [
+      anchorEvidence.length > 1 ? "Confirmed cross-source link history" : "Confirmed link history",
+      ...anchorEvidence.map((sourceLabel) => `Seen with ${sourceLabel}`),
+      detail.count > 1 ? `Seen ${detail.count}x` : "Seen 1x",
+    ];
+    const confidenceBoost = Math.min(0.03, detail.count * 0.01);
+    const score = Number((Math.min(0.99, 0.92 + confidenceBoost + (anchorEvidence.length > 1 ? 0.03 : 0))).toFixed(3));
+
+    ranked.push({
+      product,
+      score,
+      signals,
+    });
+  }
+
+  return ranked
+    .sort((a, b) => {
+      if (a.score !== b.score) return b.score - a.score;
+      return (a.product.name || "").localeCompare(b.product.name || "");
+    })
+    .slice(0, 3);
+}
+
 function buildPossibleMatches(
   row: ComparisonRow,
   productsBySource: Record<SourceName, ComparableProduct[]>,
+  productsById: Record<SourceName, Map<string, ComparableProduct>>,
+  feedbackIndex: LinkFeedbackIndex,
   sources: SourceName[]
 ): PossibleMatch[] {
   if (!row.isMismatch) return [];
@@ -573,7 +709,7 @@ function buildPossibleMatches(
   const possibleMatches: PossibleMatch[] = [];
 
   for (const source of missingSources) {
-    const candidates: Array<{ product: ComparableProduct; score: number; signals: string[] }> = [];
+    const candidateById = new Map<string, RankedCandidate>();
     for (const candidate of productsBySource[source]) {
       if (!quickProductFilter(anchors, candidate)) continue;
 
@@ -616,11 +752,24 @@ function buildPossibleMatches(
           ...[...signalSet].filter((signal) => !signal.startsWith("SKU differs")),
           ...(supportingAnchors > 1 ? [`Consensus ${supportingAnchors}/${anchors.length}`] : []),
         ]).slice(0, 4);
-        candidates.push({ product: candidate, score: combinedScore, signals });
+        addOrUpdateCandidate(candidateById, { product: candidate, score: combinedScore, signals });
       }
     }
 
-    candidates
+    if (isLinkableSource(source)) {
+      const feedbackCandidates = buildFeedbackCandidatesForSource(
+        row,
+        source,
+        feedbackIndex,
+        productsById,
+        sources
+      );
+      for (const feedbackCandidate of feedbackCandidates) {
+        addOrUpdateCandidate(candidateById, feedbackCandidate);
+      }
+    }
+
+    [...candidateById.values()]
       .sort((a, b) => {
         if (a.score !== b.score) return b.score - a.score;
         return (a.product.name || "").localeCompare(b.product.name || "");
@@ -692,6 +841,8 @@ function createExactMatchIndex(
 function buildFastPossibleMatches(
   row: ComparisonRow,
   exactMatchIndex: Record<SourceName, ExactMatchIndexEntry>,
+  productsById: Record<SourceName, Map<string, ComparableProduct>>,
+  feedbackIndex: LinkFeedbackIndex,
   sources: SourceName[]
 ): PossibleMatch[] {
   if (!row.isMismatch) return [];
@@ -711,44 +862,53 @@ function buildFastPossibleMatches(
 
   const allMatches: PossibleMatch[] = [];
   for (const source of missingSources) {
-    const candidates = new Map<string, { product: ComparableProduct; score: number; signals: Set<string> }>();
-
-    const upsertCandidate = (product: ComparableProduct, score: number, signal: string) => {
-      const id = String(product.id || "").trim();
-      if (!id) return;
-      const existing = candidates.get(id);
-      if (existing) {
-        existing.score = Math.max(existing.score, score);
-        existing.signals.add(signal);
-        return;
-      }
-      candidates.set(id, {
-        product,
-        score,
-        signals: new Set<string>([signal]),
-      });
-    };
+    const candidateById = new Map<string, RankedCandidate>();
 
     for (const sku of anchorSkus) {
       const skuMatches = exactMatchIndex[source].bySku.get(sku) || [];
       for (const candidate of skuMatches) {
-        upsertCandidate(candidate, 0.94, "SKU exact");
+        addOrUpdateCandidate(candidateById, {
+          product: candidate,
+          score: 0.94,
+          signals: ["SKU exact"],
+        });
       }
     }
 
     for (const name of anchorNames) {
       const nameMatches = exactMatchIndex[source].byName.get(name) || [];
       for (const candidate of nameMatches) {
-        upsertCandidate(candidate, 0.84, "Name exact");
+        addOrUpdateCandidate(candidateById, {
+          product: candidate,
+          score: 0.84,
+          signals: ["Name exact"],
+        });
       }
     }
 
-    const ranked = [...candidates.values()]
+    if (isLinkableSource(source)) {
+      const feedbackCandidates = buildFeedbackCandidatesForSource(
+        row,
+        source,
+        feedbackIndex,
+        productsById,
+        sources
+      );
+      for (const feedbackCandidate of feedbackCandidates) {
+        addOrUpdateCandidate(candidateById, feedbackCandidate);
+      }
+    }
+
+    const ranked = [...candidateById.values()]
       .map((candidate) => {
-        const hasSku = candidate.signals.has("SKU exact");
-        const hasName = candidate.signals.has("Name exact");
+        const signalSet = new Set(candidate.signals);
+        const hasSku = signalSet.has("SKU exact");
+        const hasName = signalSet.has("Name exact");
+        const hasFeedback = signalSet.has("Confirmed link history") || signalSet.has("Confirmed cross-source link history");
         const score =
-          hasSku && hasName
+          hasFeedback
+            ? Math.max(candidate.score, 0.95)
+            : hasSku && hasName
             ? 0.98
             : hasSku
               ? Math.max(candidate.score, 0.94)
@@ -756,7 +916,7 @@ function buildFastPossibleMatches(
         return {
           product: candidate.product,
           score,
-          signals: [...candidate.signals],
+          signals: candidate.signals,
         };
       })
       .sort((a, b) => {
@@ -2183,6 +2343,7 @@ export async function GET() {
   const productsBySource = linkedCacheBackfill.productsBySource;
   const exactMatchIndex = createExactMatchIndex(productsBySource);
   const productsBySourceId = createProductIdIndex(productsBySource);
+  const linkFeedbackIndex = buildLinkFeedbackIndex(productsBySource.internal);
   const matchingRowCap = parsePositiveIntEnv("PRODUCT_COMPARISON_MAX_ROWS_FOR_MATCHING", 1500);
   const enrichedRows =
     rows.length > matchingRowCap
@@ -2193,19 +2354,37 @@ export async function GET() {
           const linkedRows = applyInternalLinksToRows(rows, productsBySourceId, comparisonSources);
           return linkedRows.map((row) => ({
             ...row,
-            possibleMatches: buildFastPossibleMatches(row, exactMatchIndex, comparisonSources),
+            possibleMatches: buildFastPossibleMatches(
+              row,
+              exactMatchIndex,
+              productsBySourceId,
+              linkFeedbackIndex,
+              comparisonSources
+            ),
           }));
         })()
       : (() => {
           const initialRows = rows.map((row) => ({
             ...row,
-            possibleMatches: buildPossibleMatches(row, productsBySource, comparisonSources),
+            possibleMatches: buildPossibleMatches(
+              row,
+              productsBySource,
+              productsBySourceId,
+              linkFeedbackIndex,
+              comparisonSources
+            ),
           }));
           const mergedRows = autoMergeRows(initialRows, comparisonSources);
           const linkedRows = applyInternalLinksToRows(mergedRows, productsBySourceId, comparisonSources);
           return linkedRows.map((row) => ({
             ...row,
-            possibleMatches: buildPossibleMatches(row, productsBySource, comparisonSources),
+            possibleMatches: buildPossibleMatches(
+              row,
+              productsBySource,
+              productsBySourceId,
+              linkFeedbackIndex,
+              comparisonSources
+            ),
           }));
         })();
 

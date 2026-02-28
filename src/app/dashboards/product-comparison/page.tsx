@@ -8,6 +8,7 @@ import { FORM_CATEGORIES, getCategoryLabel } from "@/lib/catalog-fields";
 
 type RowViewMode = "mismatches" | "matches" | "two-of-three" | "all";
 type MatchConfidence = "high" | "medium" | "low";
+type QueueFilter = "unlinked" | "resolved" | "no-internal" | "pinned";
 
 const ALL_SOURCES = ["internal", "hubspot", "zuper", "zoho", "opensolar", "quickbooks"] as const;
 type SourceName = (typeof ALL_SOURCES)[number];
@@ -76,6 +77,7 @@ interface DisplayRow extends ComparisonRow {
   missingCount: number;
   bestMatchScore: number | null;
   bestMatchConfidence: MatchConfidence | null;
+  queueStates: QueueFilter[];
 }
 
 interface CachedCatalogProduct {
@@ -212,6 +214,20 @@ function severityBadgeClass(severity: number): string {
   if (severity >= 7) return "border-amber-500/40 bg-amber-500/10 text-amber-300";
   if (severity > 0) return "border-blue-500/40 bg-blue-500/10 text-blue-300";
   return "border-green-500/40 bg-green-500/10 text-green-300";
+}
+
+function queueBadgeLabel(queueState: QueueFilter): string {
+  if (queueState === "unlinked") return "Needs links";
+  if (queueState === "resolved") return "Resolved";
+  if (queueState === "no-internal") return "Missing internal";
+  return "Pinned";
+}
+
+function queueBadgeClass(queueState: QueueFilter): string {
+  if (queueState === "unlinked") return "border-orange-500/40 bg-orange-500/10 text-orange-200";
+  if (queueState === "resolved") return "border-green-500/40 bg-green-500/10 text-green-300";
+  if (queueState === "no-internal") return "border-zinc-500/40 bg-zinc-500/10 text-zinc-200";
+  return "border-amber-500/40 bg-amber-500/10 text-amber-200";
 }
 
 function normalizeSearchText(value: string | null | undefined): string {
@@ -383,11 +399,47 @@ const MATCH_CONFIDENCE_OPTIONS: FilterOption[] = [
   { value: "low", label: "Low confidence" },
 ];
 
+const QUEUE_FILTER_OPTIONS: FilterOption[] = [
+  { value: "unlinked", label: "Needs links" },
+  { value: "resolved", label: "Resolved links" },
+  { value: "no-internal", label: "Missing internal" },
+  { value: "pinned", label: "Pinned rows" },
+];
+
+const DEFAULT_QUEUE_FILTERS: QueueFilter[] = ["unlinked", "no-internal", "pinned"];
+
 const MISSING_REASON_PREFIX = "Missing in ";
 
 function isBundleInfoWarning(warning: string): boolean {
   const normalized = warning.trim().toLowerCase();
   return normalized.includes("excluded") && normalized.includes("hubspot") && normalized.includes("product bundle");
+}
+
+function deriveQueueStates(
+  row: ComparisonRow,
+  configuredSources: SourceName[],
+  pinned: boolean
+): QueueFilter[] {
+  const states: QueueFilter[] = [];
+  if (pinned) states.push("pinned");
+
+  if (!row.internal) {
+    states.push("no-internal");
+    return states;
+  }
+
+  const configuredLinkableSources = configuredSources.filter(isLinkableSource);
+  const hasMissingConfiguredSource = configuredLinkableSources.some((source) => row[source] === null);
+  const hasLinkMismatchReason = row.reasons.some((reason) => reason.includes("Internal link mismatch for "));
+  const hasLinkMissingReason = row.reasons.some((reason) => reason.includes("Internal link missing for "));
+
+  if (hasMissingConfiguredSource || hasLinkMismatchReason || hasLinkMissingReason) {
+    states.push("unlinked");
+  } else {
+    states.push("resolved");
+  }
+
+  return states;
 }
 
 export default function ProductComparisonPage() {
@@ -403,6 +455,7 @@ export default function ProductComparisonPage() {
   const [search, setSearch] = useState("");
   const [rowViewModes, setRowViewModes] = useState<RowViewMode[]>(["mismatches"]);
   const [visibleSources, setVisibleSources] = useState<SourceName[]>([...ALL_SOURCES]);
+  const [queueFilters, setQueueFilters] = useState<QueueFilter[]>([...DEFAULT_QUEUE_FILTERS]);
   const [missingFilters, setMissingFilters] = useState<SourceName[]>([]);
   const [reasonFilters, setReasonFilters] = useState<string[]>([]);
   const [confidenceFilters, setConfidenceFilters] = useState<MatchConfidence[]>([]);
@@ -931,6 +984,7 @@ export default function ProductComparisonPage() {
 
     const filtered = data.rows.filter((row) => {
       const isPinned = Boolean(pinnedRowKeys[row.key]);
+      const queueStates = deriveQueueStates(row, configuredSources, isPinned);
       const presentCount = configuredSources.filter((source) => Boolean(row[source])).length;
       const missingReasons = row.reasons.filter((reason) => reason.startsWith(MISSING_REASON_PREFIX));
       const nonMissingReasons = row.reasons.filter((reason) => !reason.startsWith(MISSING_REASON_PREFIX));
@@ -939,6 +993,10 @@ export default function ProductComparisonPage() {
         presentCount === 2 &&
         nonMissingReasons.length === 0 &&
         missingReasons.length === Math.max(configuredSources.length - 2, 1);
+
+      if (queueFilters.length > 0 && !queueFilters.some((queueFilter) => queueStates.includes(queueFilter))) {
+        return false;
+      }
 
       if (!isPinned) {
         const effectiveModes: RowViewMode[] = rowViewModes.length > 0 ? rowViewModes : ["all"];
@@ -998,9 +1056,19 @@ export default function ProductComparisonPage() {
           missingCount: configuredSources.filter((source) => row[source] === null).length,
           bestMatchScore,
           bestMatchConfidence: confidenceBucket(bestMatchScore),
+          queueStates: deriveQueueStates(row, configuredSources, Boolean(pinnedRowKeys[row.key])),
         };
       })
       .sort((a, b) => {
+        const queuePriority = (candidate: DisplayRow): number => {
+          if (candidate.queueStates.includes("pinned")) return 4;
+          if (candidate.queueStates.includes("unlinked")) return 3;
+          if (candidate.queueStates.includes("no-internal")) return 2;
+          if (candidate.queueStates.includes("resolved")) return 1;
+          return 0;
+        };
+        const queueDelta = queuePriority(b) - queuePriority(a);
+        if (queueDelta !== 0) return queueDelta;
         if (a.isMismatch !== b.isMismatch) return a.isMismatch ? -1 : 1;
         if (a.severity !== b.severity) return b.severity - a.severity;
         if (a.missingCount !== b.missingCount) return b.missingCount - a.missingCount;
@@ -1009,12 +1077,13 @@ export default function ProductComparisonPage() {
         if (aScore !== bScore) return bScore - aScore;
         return a.key.localeCompare(b.key);
       });
-  }, [confidenceFilters, configuredSources, data, missingFilters, pinnedRowKeys, reasonFilters, rowViewModes, search]);
+  }, [confidenceFilters, configuredSources, data, missingFilters, pinnedRowKeys, queueFilters, reasonFilters, rowViewModes, search]);
 
   const exportRows = useMemo(() => {
     return rows.map((row) => ({
       key: row.key,
       severity: severityLabel(row.severity),
+      queue_states: row.queueStates.join(" | "),
       reasons: row.reasons.join(" | "),
       best_match_confidence: row.bestMatchConfidence || "",
       possible_matches: row.possibleMatches
@@ -1049,10 +1118,15 @@ export default function ProductComparisonPage() {
     }));
   }, [rows]);
 
+  const hasDefaultQueueFilters =
+    queueFilters.length === DEFAULT_QUEUE_FILTERS.length &&
+    DEFAULT_QUEUE_FILTERS.every((value) => queueFilters.includes(value));
+
   const activeFilterCount =
     (search.trim() ? 1 : 0) +
     (rowViewModes.length === 1 && rowViewModes[0] === "mismatches" ? 0 : 1) +
     (visibleSources.length !== ALL_SOURCES.length ? 1 : 0) +
+    (hasDefaultQueueFilters ? 0 : 1) +
     (missingFilters.length ? 1 : 0) +
     (reasonFilters.length ? 1 : 0) +
     (confidenceFilters.length ? 1 : 0);
@@ -1061,6 +1135,7 @@ export default function ProductComparisonPage() {
     setSearch("");
     setRowViewModes(["mismatches"]);
     setVisibleSources([...ALL_SOURCES]);
+    setQueueFilters([...DEFAULT_QUEUE_FILTERS]);
     setMissingFilters([]);
     setReasonFilters([]);
     setConfidenceFilters([]);
@@ -1184,6 +1259,14 @@ export default function ProductComparisonPage() {
                   accentColor="blue"
                 />
                 <MultiSelectFilter
+                  label="Queue"
+                  options={QUEUE_FILTER_OPTIONS}
+                  selected={queueFilters}
+                  onChange={(selected) => setQueueFilters(selected as QueueFilter[])}
+                  placeholder="All queue states"
+                  accentColor="cyan"
+                />
+                <MultiSelectFilter
                   label="Missing"
                   options={MISSING_SOURCE_OPTIONS}
                   selected={missingFilters}
@@ -1248,11 +1331,14 @@ export default function ProductComparisonPage() {
                         <span className={`px-1.5 py-0.5 rounded border text-[10px] ${severityBadgeClass(row.severity)}`}>
                           {severityLabel(row.severity)}
                         </span>
-                        {pinnedRowKeys[row.key] && (
-                          <span className="px-1.5 py-0.5 rounded border text-[10px] border-amber-500/40 bg-amber-500/10 text-amber-200">
-                            Pinned for linking
+                        {row.queueStates.map((queueState) => (
+                          <span
+                            key={`${row.key}:${queueState}`}
+                            className={`px-1.5 py-0.5 rounded border text-[10px] ${queueBadgeClass(queueState)}`}
+                          >
+                            {queueBadgeLabel(queueState)}
                           </span>
-                        )}
+                        ))}
                         {row.bestMatchConfidence && (
                           <span className={`px-1.5 py-0.5 rounded border text-[10px] ${confidenceBadgeClass(row.bestMatchConfidence)}`}>
                             Best match {row.bestMatchConfidence}
