@@ -34,7 +34,8 @@ export async function requireApiAuth(): Promise<AuthenticatedUser | NextResponse
   if (apiSecretToken) {
     const hdrsForToken = await headers();
     const authHeader = hdrsForToken.get("authorization");
-    if (authHeader === `Bearer ${apiSecretToken}`) {
+    const tokenAuthenticatedByMiddleware = hdrsForToken.get("x-api-token-authenticated") === "1";
+    if (tokenAuthenticatedByMiddleware && authHeader === `Bearer ${apiSecretToken}`) {
       const ip = hdrsForToken.get("x-forwarded-for")?.split(",")[0]?.trim() || hdrsForToken.get("x-real-ip") || "unknown";
       return { email: "api@system", role: "ADMIN", ip, userAgent: hdrsForToken.get("user-agent") || "api-client" };
     }

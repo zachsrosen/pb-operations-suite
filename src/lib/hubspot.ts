@@ -1224,12 +1224,18 @@ async function fetchPrimaryContactId(dealId: string): Promise<string | null> {
     const results = data.results ?? [];
     if (results.length === 0) return null;
 
-    // Find the contact with a "Primary" association label (case-insensitive)
+    // Find the contact with a "Primary" association label (case-insensitive).
+    // Some portals use labels like "Primary Contact", so allow substring match.
     for (const assoc of results) {
       const isPrimary = assoc.associationTypes?.some(
-        (t) => t.label && t.label.toLowerCase() === "primary"
+        (t) => t.label && t.label.toLowerCase().includes("primary")
       );
       if (isPrimary) return String(assoc.toObjectId);
+    }
+
+    // Common fallback: if exactly one associated contact exists, use it.
+    if (results.length === 1) {
+      return String(results[0].toObjectId);
     }
 
     // No "Primary" label found — log available labels for debugging

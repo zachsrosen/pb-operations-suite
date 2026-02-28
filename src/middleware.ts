@@ -11,6 +11,13 @@ import {
 // Routes that are always accessible (login, auth callbacks)
 const ALWAYS_ALLOWED = ["/login", "/api/auth", "/maintenance"];
 const PUBLIC_API_ROUTES = ["/api/deployment", "/api/updates/notify", "/api/sentry-canary"];
+const MACHINE_TOKEN_ALLOWED_ROUTES = ["/api/bom", "/api/products/seed"] as const;
+
+function isMachineTokenAllowedRoute(pathname: string): boolean {
+  return MACHINE_TOKEN_ALLOWED_ROUTES.some((allowed) =>
+    pathname === allowed || pathname.startsWith(`${allowed}/`)
+  );
+}
 
 // Generate a short request ID for correlation across logs
 function generateRequestId(): string {
@@ -62,9 +69,18 @@ function addSecurityHeaders(requestId: string, response: NextResponse): NextResp
  * Create a NextResponse.next() that forwards the request ID in request headers.
  * Route handlers can then read x-request-id for Sentry correlation.
  */
-function nextWithRequestId(requestId: string, request: NextRequest): NextResponse {
+function nextWithRequestId(
+  requestId: string,
+  request: NextRequest,
+  forwardedHeaders?: Record<string, string>
+): NextResponse {
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-request-id", requestId);
+  if (forwardedHeaders) {
+    for (const [key, value] of Object.entries(forwardedHeaders)) {
+      requestHeaders.set(key, value);
+    }
+  }
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   addSecurityHeaders(requestId, response);
   return response;
@@ -144,7 +160,14 @@ export default auth((req) => {
     const apiSecretToken = process.env.API_SECRET_TOKEN;
     const authHeader = req.headers.get("authorization");
     if (apiSecretToken && authHeader === `Bearer ${apiSecretToken}`) {
-      return nextWithRequestId(requestId, req);
+      if (!isMachineTokenAllowedRoute(pathname)) {
+        const response = NextResponse.json(
+          { error: "Forbidden - API token is not allowed for this route" },
+          { status: 403 }
+        );
+        return addSecurityHeaders(requestId, response);
+      }
+      return nextWithRequestId(requestId, req, { "x-api-token-authenticated": "1" });
     }
 
     // For other API routes, require authentication

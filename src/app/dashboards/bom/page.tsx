@@ -667,27 +667,29 @@ function CustomerSearchCombobox({ value, valueName, onChange, autoSearch, onManu
   const [open, setOpen] = useState(false);
   const [results, setResults] = useState<{ contact_id: string; contact_name: string }[]>([]);
   const [loading, setLoading] = useState(false);
-  const [autoSearched, setAutoSearched] = useState(false);
+  const autoSearchedRef = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Route now waits synchronously for the full cache load — no retry needed
-  const fetchCustomers = useCallback((search: string, onDone: (contacts: { contact_id: string; contact_name: string }[]) => void) => {
-    setLoading(true);
-    fetch(`/api/bom/zoho-customers?search=${encodeURIComponent(search)}`)
-      .then((r) => r.json())
-      .then((data: { customers: { contact_id: string; contact_name: string }[] }) => onDone(data.customers ?? []))
-      .catch(() => onDone([]))
-      .finally(() => setLoading(false));
+  // Route now waits synchronously for the full cache load — no retry needed.
+  // Keep this helper side-effect free so effects can call it safely.
+  const fetchCustomers = useCallback(async (search: string): Promise<{ contact_id: string; contact_name: string }[]> => {
+    try {
+      const response = await fetch(`/api/bom/zoho-customers?search=${encodeURIComponent(search)}`);
+      const data = await response.json() as { customers?: { contact_id: string; contact_name: string }[] };
+      return data.customers ?? [];
+    } catch {
+      return [];
+    }
   }, []);
 
   // Auto-search on mount using the first two words of the dealname
   useEffect(() => {
-    if (autoSearch && !value && !autoSearched) {
-      setAutoSearched(true);
+    if (autoSearch && !value && !autoSearchedRef.current) {
+      autoSearchedRef.current = true;
       const shortQuery = autoSearch.trim().split(/\s+/).slice(0, 2).join(" ");
       if (!shortQuery) return;
-      fetchCustomers(shortQuery, (matches) => {
+      void fetchCustomers(shortQuery).then((matches) => {
         setResults(matches);
         if (matches.length === 1) {
           onChange(matches[0].contact_id, matches[0].contact_name);
@@ -700,7 +702,7 @@ function CustomerSearchCombobox({ value, valueName, onChange, autoSearch, onManu
         }
       });
     }
-  }, [autoSearch, value, autoSearched, onChange, fetchCustomers]);
+  }, [autoSearch, value, onChange, fetchCustomers]);
 
   useEffect(() => () => { if (debounceRef.current) clearTimeout(debounceRef.current); }, []);
 
@@ -711,7 +713,10 @@ function CustomerSearchCombobox({ value, valueName, onChange, autoSearch, onManu
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (!q.trim()) { setResults([]); return; }
     debounceRef.current = setTimeout(() => {
-      fetchCustomers(q, (contacts) => setResults(contacts));
+      setLoading(true);
+      void fetchCustomers(q)
+        .then((contacts) => setResults(contacts))
+        .finally(() => setLoading(false));
     }, 350);
   }
 
@@ -840,6 +845,7 @@ function BomDashboardInner() {
   const [selectedCustomerName, setSelectedCustomerName] = useState<string>("");
   const customerManuallySet = useRef(false);
   const autoMatchAbortRef = useRef<AbortController | null>(null);
+  const projectHydrateAbortRef = useRef<AbortController | null>(null);
   const [zohoSoId, setZohoSoId] = useState<string | null>(null);
   const [creatingSo, setCreatingSo] = useState(false);
   // Diff / compare
@@ -867,6 +873,75 @@ function BomDashboardInner() {
   const [driveFilesLoading, setDriveFilesLoading] = useState(false);
   const [driveFilesError, setDriveFilesError] = useState<string | null>(null);
   const [extractingDriveFileId, setExtractingDriveFileId] = useState<string | null>(null);
+
+  const runCustomerAutoMatch = useCallback((hubspotContactId: string) => {
+    const normalizedId = hubspotContactId.trim();
+    if (!normalizedId) return;
+
+    autoMatchAbortRef.current?.abort();
+    const controller = new AbortController();
+    autoMatchAbortRef.current = controller;
+
+    fetch(`/api/bom/zoho-customers?hubspot_contact_id=${encodeURIComponent(normalizedId)}`, {
+      signal: controller.signal,
+    })
+      .then((r) => r.ok ? r.json() : null)
+      .then((data: { customer: { contact_id: string; contact_name: string } | null } | null) => {
+        if (controller.signal.aborted) return;
+        if (!data?.customer) return;
+        if (customerManuallySet.current) return;
+        setSelectedCustomerId(data.customer.contact_id);
+        setSelectedCustomerName(data.customer.contact_name);
+      })
+      .catch((err: unknown) => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        // Silent — fall back to manual search
+      });
+  }, []);
+
+  const hydrateProjectDetails = useCallback(async (dealId: string): Promise<void> => {
+    const normalizedDealId = dealId.trim();
+    if (!normalizedDealId) return;
+
+    projectHydrateAbortRef.current?.abort();
+    const controller = new AbortController();
+    projectHydrateAbortRef.current = controller;
+
+    const response = await fetch(`/api/projects/${encodeURIComponent(normalizedDealId)}`, {
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`Failed to load project (${response.status})`);
+
+    const data = await response.json() as {
+      project: {
+        id: number;
+        name: string;
+        address: string;
+        designFolderUrl: string | null;
+        driveUrl: string | null;
+        openSolarUrl: string | null;
+        zuperUid: string | null;
+        hubspotContactId: string | null;
+      };
+    };
+
+    if (controller.signal.aborted) return;
+
+    const p = data.project;
+    setLinkedProject((prev) => {
+      return {
+        ...(prev ?? {}),
+        hs_object_id: String(p.id),
+        dealname: p.name,
+        address: p.address,
+        designFolderUrl: p.designFolderUrl,
+        driveUrl: p.driveUrl,
+        openSolarUrl: p.openSolarUrl,
+        zuperUid: p.zuperUid,
+        hubspotContactId: p.hubspotContactId ?? null,
+      };
+    });
+  }, []);
 
   /* ---- Fetch catalog when BOM is loaded ---- */
   useEffect(() => {
@@ -910,30 +985,11 @@ function BomDashboardInner() {
   useEffect(() => {
     const dealId = searchParams.get("deal");
     if (!dealId) return;
-    // Always fetch fresh from HubSpot — the search-results cache may have
-    // stale data (e.g. designFolderUrl: null) if the deal was updated recently.
-    // The optimistic setLinkedProject() in dropdown click handlers prevents any
-    // UI flash while this fetch is in flight.
     setDealLoading(true);
-    fetch(`/api/projects/${encodeURIComponent(dealId)}`)
-      .then((r) => r.ok ? r.json() : Promise.reject(r.status))
-      .then((data: { project: { id: number; name: string; address: string; designFolderUrl: string | null; driveUrl: string | null; openSolarUrl: string | null; zuperUid: string | null; hubspotContactId: string | null } }) => {
-        const p = data.project;
-        setLinkedProject({
-          hs_object_id: String(p.id),
-          dealname: p.name,
-          address: p.address,
-          designFolderUrl: p.designFolderUrl,
-          driveUrl: p.driveUrl,
-          openSolarUrl: p.openSolarUrl,
-          zuperUid: p.zuperUid,
-          hubspotContactId: p.hubspotContactId ?? null,
-        });
-      })
+    hydrateProjectDetails(dealId)
       .catch(() => {/* silent — bad param, just ignore */})
       .finally(() => setDealLoading(false));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams]);
+  }, [searchParams, hydrateProjectDetails]);
 
   /* ---- Auto-match Zoho customer via HubSpot primary contact ---- */
   // Reset manual override flag when the deal itself changes (not on
@@ -953,31 +1009,15 @@ function BomDashboardInner() {
   useEffect(() => {
     const hsContactId = linkedProject?.hubspotContactId;
     if (!hsContactId) return;
+    runCustomerAutoMatch(hsContactId);
+  }, [linkedProject?.hubspotContactId, runCustomerAutoMatch]);
 
-    // Abort any in-flight auto-match from a previous trigger
-    autoMatchAbortRef.current?.abort();
-    const controller = new AbortController();
-    autoMatchAbortRef.current = controller;
-
-    fetch(`/api/bom/zoho-customers?hubspot_contact_id=${encodeURIComponent(hsContactId)}`, {
-      signal: controller.signal,
-    })
-      .then((r) => r.ok ? r.json() : null)
-      .then((data: { customer: { contact_id: string; contact_name: string } | null } | null) => {
-        if (controller.signal.aborted) return;
-        if (!data?.customer) return;
-        if (customerManuallySet.current) return;
-        setSelectedCustomerId(data.customer.contact_id);
-        setSelectedCustomerName(data.customer.contact_name);
-      })
-      .catch((err: unknown) => {
-        if (err instanceof DOMException && err.name === "AbortError") return;
-        // Silent — fall back to manual search
-      });
-
-    return () => { controller.abort(); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [linkedProject?.hubspotContactId]);
+  useEffect(() => {
+    return () => {
+      autoMatchAbortRef.current?.abort();
+      projectHydrateAbortRef.current?.abort();
+    };
+  }, []);
 
   /* ---- Load history when a project is linked ---- */
   useEffect(() => {
@@ -1136,7 +1176,10 @@ function BomDashboardInner() {
       setSelectedVendorId("");      // Clear stale vendor selection
       setSelectedCustomerId("");    // Clear stale customer selection
       setSelectedCustomerName("");  // Clear stale customer name
-      customerManuallySet.current = true; // Prevent auto-match from re-populating after save
+      customerManuallySet.current = false;
+      if (targetProject.hubspotContactId) {
+        runCustomerAutoMatch(targetProject.hubspotContactId);
+      }
       // Reload history list
       const histRes = await fetch(`/api/bom/history?dealId=${encodeURIComponent(targetProject.hs_object_id)}`);
       if (histRes.ok) {
@@ -1183,7 +1226,7 @@ function BomDashboardInner() {
     } finally {
       setSaving(false);
     }
-  }, [linkedProject, addToast, session]);
+  }, [linkedProject, addToast, session, runCustomerAutoMatch]);
 
   /* ---- Create Zoho PO ---- */
   const createPo = useCallback(async () => {
@@ -1783,7 +1826,6 @@ function BomDashboardInner() {
     if (!items.length) return;
     const rows = items.map((item) => {
       const status = catalogStatus.get(item.id);
-      const pricing = pricingByItem.get(item.id);
       const catalogCols: Record<string, string> = {};
       for (const src of catalogSources) {
         catalogCols[`in_${src}`] = status?.[src] ? "yes" : "no";
@@ -1803,7 +1845,7 @@ function BomDashboardInner() {
     });
     const customer = bom?.project?.customer || "bom";
     exportToCSV(rows, `${customer.replace(/\s+/g, "_")}_BOM`);
-  }, [items, bom, catalogStatus, catalogSources, pricingByItem]);
+  }, [items, bom, catalogStatus, catalogSources]);
 
   /* ---- Copy Markdown ---- */
   const handleCopyMarkdown = useCallback(async () => {
@@ -2023,6 +2065,10 @@ function BomDashboardInner() {
                             // the URL effect fetches fresh data (which may update
                             // designFolderUrl from null → correct value).
                             setLinkedProject(p);
+                            setDealLoading(true);
+                            hydrateProjectDetails(p.hs_object_id)
+                              .catch(() => { /* silent */ })
+                              .finally(() => setDealLoading(false));
                             router.replace(`/dashboards/bom?deal=${encodeURIComponent(p.hs_object_id)}`);
                             setProjectSearch("");
                             setProjectResults([]);
