@@ -113,7 +113,8 @@ async function listDrivePdfs(folderId: string): Promise<DrivePdfFile[]> {
     `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}` +
     `&fields=${encodeURIComponent(fields)}` +
     `&orderBy=${encodeURIComponent(orderBy)}` +
-    `&pageSize=50`;
+    `&pageSize=50` +
+    `&supportsAllDrives=true&includeItemsFromAllDrives=true`;
 
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${token}` },
@@ -151,14 +152,14 @@ async function downloadDrivePdf(fileId: string): Promise<{ buffer: Buffer; filen
 
   // Get file metadata for the filename
   const metaRes = await fetch(
-    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?fields=name`,
+    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?fields=name&supportsAllDrives=true`,
     { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" },
   );
   const meta = metaRes.ok ? (await metaRes.json() as { name?: string }) : {};
   const filename = meta.name ?? `planset-${fileId}.pdf`;
 
   // Download content
-  const dlUrl = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`;
+  const dlUrl = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media&supportsAllDrives=true`;
   const dlRes = await fetch(dlUrl, {
     headers: { Authorization: `Bearer ${token}` },
     cache: "no-store",
