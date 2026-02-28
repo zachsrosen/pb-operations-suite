@@ -20,8 +20,7 @@ const SOURCE_LABELS: Record<SourceName, string> = {
   quickbooks: "QuickBooks",
 };
 
-const CACHE_SOURCES = ["hubspot", "zuper", "zoho", "quickbooks", "opensolar"] as const;
-type CacheSourceName = (typeof CACHE_SOURCES)[number];
+type CacheSourceName = "hubspot" | "zuper" | "zoho" | "quickbooks" | "opensolar";
 
 const CACHE_SOURCE_ENUM: Record<CacheSourceName, CatalogProductSource> = {
   hubspot: "HUBSPOT",
@@ -270,10 +269,55 @@ function getNestedArrayCandidate(payload: unknown): unknown[] | null {
   return null;
 }
 
+const TOKEN_STOPWORDS = new Set([
+  "and",
+  "for",
+  "the",
+  "with",
+  "kit",
+  "system",
+  "item",
+  "service",
+  "misc",
+  "miscellaneous",
+  "solar",
+]);
+
+const TOKEN_EQUIVALENTS: Record<string, string> = {
+  batt: "battery",
+  batteries: "battery",
+  backup: "battery",
+  gateway: "controller",
+  gateways: "controller",
+  module: "panel",
+  modules: "panel",
+  inv: "inverter",
+  inverters: "inverter",
+  microinverter: "inverter",
+  microinverters: "inverter",
+  photovoltaic: "pv",
+};
+
+function normalizeNameToken(token: string): string {
+  const canonical = token.trim().toLowerCase();
+  if (!canonical) return "";
+  return TOKEN_EQUIVALENTS[canonical] || canonical;
+}
+
 function tokenize(value: string | null | undefined): Set<string> {
   const normalized = normalizeText(value);
   if (!normalized) return new Set();
-  return new Set(normalized.split(" ").filter((token) => token.length >= 3));
+  const tokens = normalized
+    .split(" ")
+    .map((token) => normalizeNameToken(token))
+    .filter((token) => token.length >= 3 || /\d/.test(token))
+    .filter((token) => !TOKEN_STOPWORDS.has(token));
+  return new Set(tokens);
+}
+
+function canonicalNameKey(value: string | null | undefined): string {
+  const tokens = [...tokenize(value)].sort();
+  return tokens.join(" ");
 }
 
 function extractIdentifiers(value: string | null | undefined): Set<string> {
@@ -337,7 +381,23 @@ function compareProducts(anchor: ComparableProduct, candidate: ComparableProduct
     ) {
       score += 0.42;
       signals.push("SKU partial");
+    } else if (sharedIdentifiers === 0) {
+      score -= 0.15;
+      signals.push("SKU differs");
     }
+  }
+
+  const normalizedAnchorName = normalizeText(anchor.name);
+  const normalizedCandidateName = normalizeText(candidate.name);
+  const anchorCanonicalName = canonicalNameKey(anchor.name);
+  const candidateCanonicalName = canonicalNameKey(candidate.name);
+
+  if (normalizedAnchorName && normalizedAnchorName === normalizedCandidateName) {
+    score += 0.62;
+    signals.push("Name exact");
+  } else if (anchorCanonicalName && anchorCanonicalName === candidateCanonicalName) {
+    score += 0.52;
+    signals.push("Name canonical");
   }
 
   const nameSimilarity = tokenSimilarity(tokenize(anchor.name), tokenize(candidate.name));
@@ -372,15 +432,22 @@ function compareProducts(anchor: ComparableProduct, candidate: ComparableProduct
     } else if (diffRatio <= 0.2) {
       score += 0.05;
       signals.push("Price somewhat close");
+    } else if (diffRatio >= 0.75) {
+      score -= 0.2;
+      signals.push("Price far");
+    } else if (diffRatio >= 0.5) {
+      score -= 0.12;
+      signals.push("Price diverges");
     }
   }
 
-  return { score: Math.min(1, Number(score.toFixed(3))), signals };
+  return { score: Math.max(0, Math.min(1, Number(score.toFixed(3)))), signals };
 }
 
 function quickProductFilter(anchorProducts: ComparableProduct[], candidate: ComparableProduct): boolean {
   const candidateSku = normalizeSku(candidate.sku);
   const candidateTokens = tokenize(candidate.name);
+  const candidateCanonicalName = canonicalNameKey(candidate.name);
   const candidateIdentifiers = new Set([
     ...extractIdentifiers(candidate.sku),
     ...extractIdentifiers(candidate.name),
@@ -398,6 +465,8 @@ function quickProductFilter(anchorProducts: ComparableProduct[], candidate: Comp
         return true;
       }
     }
+
+    if (candidateCanonicalName && candidateCanonicalName === canonicalNameKey(anchor.name)) return true;
 
     const overlap = tokenSimilarity(tokenize(anchor.name), candidateTokens);
     if (overlap >= 0.2) return true;
@@ -430,7 +499,7 @@ function buildPossibleMatches(
   const missingSources = sources.filter((source) => row[source] === null);
   if (missingSources.length === 0) return [];
 
-  const threshold = 0.45;
+  const threshold = 0.5;
   const maxPerSource = 3;
   const possibleMatches: PossibleMatch[] = [];
 
@@ -440,18 +509,45 @@ function buildPossibleMatches(
       if (!quickProductFilter(anchors, candidate)) continue;
 
       let bestScore = 0;
-      let bestSignals: string[] = [];
+      let scoreSum = 0;
+      let supportingAnchors = 0;
+      const signalSet = new Set<string>();
 
       for (const anchor of anchors) {
         const result = compareProducts(anchor, candidate);
+        scoreSum += result.score;
+        if (result.score >= 0.45) supportingAnchors += 1;
         if (result.score > bestScore) {
           bestScore = result.score;
-          bestSignals = result.signals;
         }
+        for (const signal of result.signals) signalSet.add(signal);
       }
 
-      if (bestScore >= threshold) {
-        candidates.push({ product: candidate, score: bestScore, signals: bestSignals });
+      const averageScore = scoreSum / anchors.length;
+      const consensusBoost =
+        anchors.length > 1
+          ? Math.min(0.14, (supportingAnchors / anchors.length) * 0.14)
+          : 0;
+      const combinedScore = Math.min(
+        1,
+        Number((bestScore * 0.72 + averageScore * 0.28 + consensusBoost).toFixed(3))
+      );
+
+      const hasStrongSignal = [...signalSet].some((signal) =>
+        signal === "SKU exact" ||
+        signal === "Identifier match" ||
+        signal === "Name exact" ||
+        signal === "Name canonical" ||
+        signal === "Name very close"
+      );
+      if (!hasStrongSignal && combinedScore < 0.62) continue;
+
+      if (combinedScore >= threshold) {
+        const signals = uniqueStrings([
+          ...[...signalSet].filter((signal) => !signal.startsWith("SKU differs")),
+          ...(supportingAnchors > 1 ? [`Consensus ${supportingAnchors}/${anchors.length}`] : []),
+        ]).slice(0, 4);
+        candidates.push({ product: candidate, score: combinedScore, signals });
       }
     }
 
@@ -471,7 +567,7 @@ function buildPossibleMatches(
       });
   }
 
-  return possibleMatches;
+  return possibleMatches.sort((a, b) => b.score - a.score);
 }
 
 function evaluateRowReasons(row: RowProducts, sources: SourceName[]): string[] {
@@ -528,7 +624,8 @@ function autoMergeRows(rows: ComparisonRow[], sources: SourceName[]): Comparison
     rankedMatches: PossibleMatch[]
   ): boolean => {
     const hasStrongSignal =
-      match.signals.includes("SKU exact") || match.signals.includes("Identifier match");
+      match.signals.includes("SKU exact") ||
+      match.signals.includes("Identifier match");
     if (hasStrongSignal && match.score >= 0.78) return true;
 
     const secondBestScore = rankedMatches[1]?.score ?? 0;
@@ -536,6 +633,8 @@ function autoMergeRows(rows: ComparisonRow[], sources: SourceName[]): Comparison
     if (!hasClearLead) return false;
 
     // Allow merge on very strong name similarity when SKU/identifier is missing.
+    if (match.signals.includes("Name exact") && match.score >= 0.6) return true;
+    if (match.signals.includes("Name canonical") && match.score >= 0.64) return true;
     if (match.signals.includes("Name very close") && match.score >= 0.54) return true;
     if (match.signals.includes("Name similar") && match.score >= 0.66) return true;
 

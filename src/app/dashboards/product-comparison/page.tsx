@@ -6,6 +6,8 @@ import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { MultiSelectFilter, type FilterOption } from "@/components/ui/MultiSelectFilter";
 
 type RowViewMode = "mismatches" | "matches" | "two-of-three" | "all";
+type MatchConfidence = "high" | "medium" | "low";
+
 const ALL_SOURCES = ["hubspot", "zuper", "zoho", "opensolar", "quickbooks"] as const;
 type SourceName = (typeof ALL_SOURCES)[number];
 type RowProducts = Record<SourceName, ComparableProduct | null>;
@@ -54,6 +56,13 @@ interface ProductComparisonResponse {
   lastUpdated: string;
 }
 
+interface DisplayRow extends ComparisonRow {
+  severity: number;
+  missingCount: number;
+  bestMatchScore: number | null;
+  bestMatchConfidence: MatchConfidence | null;
+}
+
 function formatSourceName(source: SourceName): string {
   if (source === "hubspot") return "HubSpot";
   if (source === "zuper") return "Zuper";
@@ -83,29 +92,30 @@ function formatDateTime(dateString: string | null): string | null {
   });
 }
 
-function ProductCell({ source, product }: { source: SourceName; product: ComparableProduct | null }) {
-  if (!product) {
-    return <span className="text-xs text-red-500 dark:text-red-400">Missing</span>;
-  }
+function formatPercent(score: number): string {
+  return `${Math.round(score * 100)}%`;
+}
 
-  return (
-    <div className="space-y-1">
-      <div className="text-sm font-medium text-foreground">{product.name || "-"}</div>
-      <div className="text-xs text-muted">SKU: {product.sku || "-"}</div>
-      <div className="text-xs text-muted">Price: {formatCurrency(product.price)}</div>
-      <div className="text-xs text-muted">Status: {product.status || "-"}</div>
-      {product.url && (
-        <a
-          href={product.url}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex text-xs text-cyan-300 hover:text-cyan-200 underline underline-offset-2"
-        >
-          Open in {formatSourceName(source)}
-        </a>
-      )}
-    </div>
-  );
+function confidenceBucket(score: number | null): MatchConfidence | null {
+  if (typeof score !== "number") return null;
+  if (score >= 0.85) return "high";
+  if (score >= 0.7) return "medium";
+  return "low";
+}
+
+function confidenceBadgeClass(bucket: MatchConfidence | null): string {
+  if (bucket === "high") return "border-green-500/40 bg-green-500/10 text-green-300";
+  if (bucket === "medium") return "border-amber-500/40 bg-amber-500/10 text-amber-300";
+  if (bucket === "low") return "border-red-500/40 bg-red-500/10 text-red-300";
+  return "border-zinc-500/40 bg-zinc-500/10 text-zinc-300";
+}
+
+function sourceBadgeClass(source: SourceName): string {
+  if (source === "hubspot") return "bg-orange-500/15 border-orange-500/40 text-orange-300";
+  if (source === "zuper") return "bg-blue-500/15 border-blue-500/40 text-blue-300";
+  if (source === "zoho") return "bg-emerald-500/15 border-emerald-500/40 text-emerald-300";
+  if (source === "opensolar") return "bg-teal-500/15 border-teal-500/40 text-teal-300";
+  return "bg-sky-500/15 border-sky-500/40 text-sky-300";
 }
 
 function reasonBadgeClass(reason: string): string {
@@ -139,12 +149,74 @@ function reasonBadgeClass(reason: string): string {
   return "border-red-500/30 bg-red-500/10 text-red-300";
 }
 
-function sourceBadgeClass(source: SourceName): string {
-  if (source === "hubspot") return "bg-orange-500/15 border-orange-500/40 text-orange-300";
-  if (source === "zuper") return "bg-blue-500/15 border-blue-500/40 text-blue-300";
-  if (source === "zoho") return "bg-emerald-500/15 border-emerald-500/40 text-emerald-300";
-  if (source === "opensolar") return "bg-teal-500/15 border-teal-500/40 text-teal-300";
-  return "bg-sky-500/15 border-sky-500/40 text-sky-300";
+function normalizeSearchText(value: string | null | undefined): string {
+  return String(value || "").toLowerCase().trim();
+}
+
+function computeRowSeverity(row: ComparisonRow): number {
+  let severity = 0;
+  for (const reason of row.reasons) {
+    if (reason.startsWith("Missing in")) severity += 10;
+    else if (reason.includes("Duplicate")) severity += 8;
+    else if (reason.includes("SKU mismatch")) severity += 6;
+    else if (reason.includes("Price mismatch")) severity += 5;
+    else if (reason.includes("name mismatch")) severity += 4;
+    else severity += 3;
+  }
+
+  if (row.reasons.length > 0 && row.possibleMatches.length === 0) severity += 4;
+  if (row.isMismatch && severity === 0) severity = 1;
+  return severity;
+}
+
+function severityLabel(severity: number): string {
+  if (severity >= 24) return "Critical";
+  if (severity >= 14) return "High";
+  if (severity >= 7) return "Medium";
+  if (severity > 0) return "Low";
+  return "Clean";
+}
+
+function ProductCell({ source, product }: { source: SourceName; product: ComparableProduct | null }) {
+  if (!product) {
+    return (
+      <div className="rounded-md border border-red-500/25 bg-red-500/5 p-2">
+        <div className="text-[11px] font-medium text-red-300">Missing from {formatSourceName(source)}</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-1.5 min-w-[200px]">
+      <div className="text-sm font-medium text-foreground leading-tight">{product.name || "-"}</div>
+      <div className="flex flex-wrap gap-1 text-[11px]">
+        <span className="px-1.5 py-0.5 rounded border border-t-border bg-background/70 text-muted">
+          SKU: {product.sku || "-"}
+        </span>
+        <span className="px-1.5 py-0.5 rounded border border-t-border bg-background/70 text-muted">
+          {formatCurrency(product.price)}
+        </span>
+        {product.status && (
+          <span className="px-1.5 py-0.5 rounded border border-t-border bg-background/70 text-muted">
+            {product.status}
+          </span>
+        )}
+      </div>
+      {product.description && (
+        <div className="text-[11px] text-muted line-clamp-2">{product.description}</div>
+      )}
+      {product.url && (
+        <a
+          href={product.url}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex text-[11px] text-cyan-300 hover:text-cyan-200 underline underline-offset-2"
+        >
+          Open in {formatSourceName(source)}
+        </a>
+      )}
+    </div>
+  );
 }
 
 const MISSING_SOURCE_OPTIONS: FilterOption[] = [
@@ -163,8 +235,14 @@ const WEBSITE_VIEW_OPTIONS: FilterOption[] = ALL_SOURCES.map((source) => ({
 const VIEW_MODE_OPTIONS: FilterOption[] = [
   { value: "mismatches", label: "Mismatches" },
   { value: "matches", label: "Matches only" },
-  { value: "two-of-three", label: "2 of 3 only" },
+  { value: "two-of-three", label: "2 of N aligned" },
   { value: "all", label: "All rows" },
+];
+
+const MATCH_CONFIDENCE_OPTIONS: FilterOption[] = [
+  { value: "high", label: "High confidence" },
+  { value: "medium", label: "Medium confidence" },
+  { value: "low", label: "Low confidence" },
 ];
 
 const MISSING_REASON_PREFIX = "Missing in ";
@@ -187,11 +265,13 @@ export default function ProductComparisonPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<ProductComparisonResponse | null>(null);
+
   const [search, setSearch] = useState("");
   const [rowViewModes, setRowViewModes] = useState<RowViewMode[]>(["mismatches"]);
   const [visibleSources, setVisibleSources] = useState<SourceName[]>([...ALL_SOURCES]);
   const [missingFilters, setMissingFilters] = useState<SourceName[]>([]);
   const [reasonFilters, setReasonFilters] = useState<string[]>([]);
+  const [confidenceFilters, setConfidenceFilters] = useState<MatchConfidence[]>([]);
 
   const fetchData = useCallback(async () => {
     try {
@@ -243,6 +323,16 @@ export default function ProductComparisonPage() {
     hasTrackedView.current = true;
   }, [isAllowed, trackDashboardView]);
 
+  const configuredSources = useMemo<SourceName[]>(() => {
+    if (!data) return [...ALL_SOURCES];
+    return ALL_SOURCES.filter((source) => data.health[source]?.configured);
+  }, [data]);
+
+  const displayedSources = useMemo<SourceName[]>(() => {
+    const selected = visibleSources.length > 0 ? visibleSources : [...ALL_SOURCES];
+    return ALL_SOURCES.filter((source) => selected.includes(source));
+  }, [visibleSources]);
+
   const reasonFilterOptions = useMemo<FilterOption[]>(() => {
     if (!data) return [];
     const reasons = new Set<string>();
@@ -259,25 +349,18 @@ export default function ProductComparisonPage() {
     return data.warnings.filter((warning) => !isBundleInfoWarning(warning));
   }, [data]);
 
-  const configuredSources = useMemo<SourceName[]>(() => {
-    if (!data) return [...ALL_SOURCES];
-    return ALL_SOURCES.filter((source) => data.health[source]?.configured);
-  }, [data]);
-
-  const displayedSources = useMemo<SourceName[]>(() => {
-    const selected = visibleSources.length > 0 ? visibleSources : [...ALL_SOURCES];
-    return ALL_SOURCES.filter((source) => selected.includes(source));
-  }, [visibleSources]);
-
-  const rows = useMemo(() => {
+  const rows = useMemo<DisplayRow[]>(() => {
     if (!data) return [];
-    const searchTerm = search.trim().toLowerCase();
+    const searchTerm = normalizeSearchText(search);
 
-    return data.rows.filter((row) => {
+    const filtered = data.rows.filter((row) => {
       const presentCount = configuredSources.filter((source) => Boolean(row[source])).length;
       const missingReasons = row.reasons.filter((reason) => reason.startsWith(MISSING_REASON_PREFIX));
       const nonMissingReasons = row.reasons.filter((reason) => !reason.startsWith(MISSING_REASON_PREFIX));
-      const isFullyMatched = configuredSources.length > 0 && presentCount === configuredSources.length && row.reasons.length === 0;
+      const isFullyMatched =
+        configuredSources.length > 0 &&
+        presentCount === configuredSources.length &&
+        row.reasons.length === 0;
       const isTwoOfThreeAligned =
         presentCount === 2 &&
         nonMissingReasons.length === 0 &&
@@ -299,8 +382,18 @@ export default function ProductComparisonPage() {
         });
         if (!matchesMissingSource) return false;
       }
+
       if (reasonFilters.length > 0 && !reasonFilters.some((reason) => row.reasons.includes(reason))) {
         return false;
+      }
+
+      if (confidenceFilters.length > 0) {
+        const bestScore = row.possibleMatches.reduce<number | null>((best, match) => {
+          if (typeof best !== "number") return match.score;
+          return Math.max(best, match.score);
+        }, null);
+        const bucket = confidenceBucket(bestScore);
+        if (!bucket || !confidenceFilters.includes(bucket)) return false;
       }
 
       if (!searchTerm) return true;
@@ -312,6 +405,7 @@ export default function ProductComparisonPage() {
         ...row.reasons,
         ...row.possibleMatches.map((match) => match.product.name || ""),
         ...row.possibleMatches.map((match) => match.product.sku || ""),
+        ...row.possibleMatches.flatMap((match) => match.signals),
       ]
         .filter(Boolean)
         .join(" ")
@@ -319,16 +413,43 @@ export default function ProductComparisonPage() {
 
       return haystack.includes(searchTerm);
     });
-  }, [configuredSources, data, missingFilters, reasonFilters, rowViewModes, search]);
+
+    return filtered
+      .map((row) => {
+        const bestMatchScore = row.possibleMatches.reduce<number | null>((best, match) => {
+          if (typeof best !== "number") return match.score;
+          return Math.max(best, match.score);
+        }, null);
+        const missingCount = configuredSources.filter((source) => row[source] === null).length;
+        return {
+          ...row,
+          severity: computeRowSeverity(row),
+          missingCount,
+          bestMatchScore,
+          bestMatchConfidence: confidenceBucket(bestMatchScore),
+        };
+      })
+      .sort((a, b) => {
+        if (a.isMismatch !== b.isMismatch) return a.isMismatch ? -1 : 1;
+        if (a.severity !== b.severity) return b.severity - a.severity;
+        if (a.missingCount !== b.missingCount) return b.missingCount - a.missingCount;
+        const aScore = a.bestMatchScore ?? -1;
+        const bScore = b.bestMatchScore ?? -1;
+        if (aScore !== bScore) return bScore - aScore;
+        return a.key.localeCompare(b.key);
+      });
+  }, [confidenceFilters, configuredSources, data, missingFilters, reasonFilters, rowViewModes, search]);
 
   const exportRows = useMemo(() => {
     return rows.map((row) => ({
       key: row.key,
+      severity: severityLabel(row.severity),
       reasons: row.reasons.join(" | "),
+      best_match_confidence: row.bestMatchConfidence || "",
       possible_matches: row.possibleMatches
         .map(
           (match) =>
-            `${formatSourceName(match.source)}:${match.product.name || "-"} (${Math.round(match.score * 100)}%)`
+            `${formatSourceName(match.source)}:${match.product.name || "-"} (${formatPercent(match.score)})`
         )
         .join(" | "),
       hubspot_name: row.hubspot?.name || "",
@@ -353,6 +474,23 @@ export default function ProductComparisonPage() {
       quickbooks_url: row.quickbooks?.url || "",
     }));
   }, [rows]);
+
+  const activeFilterCount =
+    (search.trim() ? 1 : 0) +
+    (rowViewModes.length === 1 && rowViewModes[0] === "mismatches" ? 0 : 1) +
+    (visibleSources.length && visibleSources.length !== ALL_SOURCES.length ? 1 : 0) +
+    (missingFilters.length ? 1 : 0) +
+    (reasonFilters.length ? 1 : 0) +
+    (confidenceFilters.length ? 1 : 0);
+
+  const clearFilters = () => {
+    setSearch("");
+    setRowViewModes(["mismatches"]);
+    setVisibleSources([...ALL_SOURCES]);
+    setMissingFilters([]);
+    setReasonFilters([]);
+    setConfidenceFilters([]);
+  };
 
   const lastUpdated = formatDateTime(data?.lastUpdated || null);
 
@@ -379,7 +517,7 @@ export default function ProductComparisonPage() {
 
       {!loading && !error && data && (
         <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 xl:grid-cols-5 gap-3">
             <div className="bg-surface border border-t-border rounded-xl p-4">
               <div className="text-xs text-muted">Compared keys</div>
               <div className="text-2xl font-semibold mt-1">{data.summary.totalRows}</div>
@@ -395,6 +533,10 @@ export default function ProductComparisonPage() {
             <div className="bg-surface border border-t-border rounded-xl p-4">
               <div className="text-xs text-muted">Visible rows</div>
               <div className="text-2xl font-semibold mt-1">{rows.length}</div>
+            </div>
+            <div className="bg-surface border border-t-border rounded-xl p-4">
+              <div className="text-xs text-muted">Active filters</div>
+              <div className="text-2xl font-semibold mt-1">{activeFilterCount}</div>
             </div>
           </div>
 
@@ -413,9 +555,7 @@ export default function ProductComparisonPage() {
                     {data.health[source].configured ? "Configured" : "Not configured"}
                   </span>
                 </div>
-                <div className="text-xs text-muted mt-2">
-                  Products fetched: {data.health[source].count}
-                </div>
+                <div className="text-xs text-muted mt-2">Products fetched: {data.health[source].count}</div>
                 {data.health[source].error && (
                   <div className="text-xs text-amber-300 mt-2">{data.health[source].error}</div>
                 )}
@@ -435,13 +575,19 @@ export default function ProductComparisonPage() {
           )}
 
           <div className="bg-surface border border-t-border rounded-xl p-4 space-y-3">
-            <div className="flex flex-col lg:flex-row gap-3 lg:items-center lg:justify-between">
-              <input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search by name, SKU, key, or mismatch reason"
-                className="w-full lg:max-w-xl px-3 py-2 rounded-lg border border-t-border bg-background text-sm outline-none focus:border-cyan-500/50"
-              />
+            <div className="flex flex-col lg:flex-row gap-3 lg:items-start lg:justify-between">
+              <div className="w-full lg:max-w-xl space-y-2">
+                <input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search by name, SKU, key, reasons, or match signals"
+                  className="w-full px-3 py-2 rounded-lg border border-t-border bg-background text-sm outline-none focus:border-cyan-500/50"
+                />
+                <div className="text-xs text-muted">
+                  Sorted by mismatch severity and confidence.
+                </div>
+              </div>
+
               <div className="flex flex-wrap items-center gap-2">
                 <MultiSelectFilter
                   label="Websites"
@@ -468,6 +614,14 @@ export default function ProductComparisonPage() {
                   accentColor="orange"
                 />
                 <MultiSelectFilter
+                  label="Match confidence"
+                  options={MATCH_CONFIDENCE_OPTIONS}
+                  selected={confidenceFilters}
+                  onChange={(selected) => setConfidenceFilters(selected as MatchConfidence[])}
+                  placeholder="All confidence"
+                  accentColor="teal"
+                />
+                <MultiSelectFilter
                   label="Reasons"
                   options={reasonFilterOptions}
                   selected={reasonFilters}
@@ -475,6 +629,12 @@ export default function ProductComparisonPage() {
                   placeholder="All reasons"
                   accentColor="purple"
                 />
+                <button
+                  onClick={clearFilters}
+                  className="px-3 py-1.5 rounded border border-t-border bg-background text-xs text-muted hover:text-foreground transition-colors"
+                >
+                  Clear filters
+                </button>
                 <button
                   onClick={fetchData}
                   className="px-3 py-1.5 rounded border border-cyan-500/40 bg-cyan-500/10 text-cyan-300 text-xs hover:bg-cyan-500/20 transition-colors"
@@ -484,31 +644,53 @@ export default function ProductComparisonPage() {
               </div>
             </div>
 
-            <div className="overflow-x-auto rounded-lg border border-t-border">
+            <div className="overflow-x-auto rounded-lg border border-t-border max-h-[72vh]">
               <table className="w-full text-left text-xs">
-                <thead className="bg-background/80 text-muted">
+                <thead className="sticky top-0 z-10 bg-background/95 text-muted backdrop-blur-sm">
                   <tr>
-                    <th className="px-3 py-2">Key</th>
+                    <th className="px-3 py-2 w-12">#</th>
+                    <th className="px-3 py-2 min-w-[220px]">Comparison Key</th>
                     {displayedSources.map((source) => (
-                      <th key={`header-${source}`} className="px-3 py-2">
+                      <th key={`header-${source}`} className="px-3 py-2 min-w-[230px]">
                         {formatSourceName(source)}
                       </th>
                     ))}
-                    <th className="px-3 py-2">Mismatch Reasons</th>
+                    <th className="px-3 py-2 min-w-[380px]">Findings and Suggestions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((row) => (
-                    <tr key={row.key} className="border-t border-t-border align-top">
-                      <td className="px-3 py-2 font-mono text-[11px] text-muted">{row.key}</td>
+                  {rows.map((row, index) => (
+                    <tr
+                      key={row.key}
+                      className={`border-t border-t-border align-top ${
+                        row.isMismatch ? "bg-red-500/5" : "bg-green-500/5"
+                      }`}
+                    >
+                      <td className="px-3 py-2 text-[11px] text-muted">{index + 1}</td>
+                      <td className="px-3 py-2">
+                        <div className="space-y-1">
+                          <div className="font-mono text-[11px] text-muted break-all">{row.key}</div>
+                          <span
+                            className={`inline-flex px-1.5 py-0.5 rounded border text-[10px] ${
+                              row.isMismatch
+                                ? "border-red-500/40 bg-red-500/10 text-red-300"
+                                : "border-green-500/40 bg-green-500/10 text-green-300"
+                            }`}
+                          >
+                            {severityLabel(row.severity)}
+                          </span>
+                        </div>
+                      </td>
+
                       {displayedSources.map((source) => (
                         <td key={`${row.key}-${source}`} className="px-3 py-2">
                           <ProductCell source={source} product={row[source]} />
                         </td>
                       ))}
+
                       <td className="px-3 py-2">
                         {row.reasons.length === 0 ? (
-                          <span className="text-green-400">Matched</span>
+                          <span className="text-green-400 font-medium">Matched</span>
                         ) : (
                           <div className="space-y-2">
                             <div className="flex flex-wrap gap-1">
@@ -521,33 +703,61 @@ export default function ProductComparisonPage() {
                                 </span>
                               ))}
                             </div>
-                            {row.possibleMatches.length > 0 && (
-                              <div className="space-y-1">
-                                <div className="text-[10px] uppercase tracking-wide text-muted">Possible matches</div>
-                                {row.possibleMatches.map((match) => (
-                                  <div
-                                    key={`${row.key}-${match.source}-${match.product.id}`}
-                                    className="flex flex-wrap items-center gap-1 text-[11px] text-foreground/85"
-                                  >
-                                    <span className={`px-1.5 py-0.5 rounded border ${sourceBadgeClass(match.source)}`}>
-                                      {formatSourceName(match.source)}
-                                    </span>
-                                    <span>{match.product.name || "-"}</span>
-                                    <span className="text-muted">({Math.round(match.score * 100)}%)</span>
-                                    {match.product.sku && <span className="text-muted">SKU: {match.product.sku}</span>}
-                                    {match.product.url && (
-                                      <a
-                                        href={match.product.url}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="text-cyan-300 hover:text-cyan-200 underline underline-offset-2"
-                                      >
-                                        Open
-                                      </a>
-                                    )}
-                                  </div>
-                                ))}
+
+                            {row.possibleMatches.length > 0 ? (
+                              <div className="space-y-1.5 border-t border-t-border pt-2">
+                                <div className="text-[10px] uppercase tracking-wide text-muted">
+                                  Suggested matches ({row.possibleMatches.length})
+                                </div>
+                                {row.possibleMatches.slice(0, 6).map((match) => {
+                                  const bucket = confidenceBucket(match.score);
+                                  return (
+                                    <div
+                                      key={`${row.key}-${match.source}-${match.product.id}`}
+                                      className="rounded-md border border-t-border bg-background/60 p-2"
+                                    >
+                                      <div className="flex flex-wrap items-center gap-1.5">
+                                        <span className={`px-1.5 py-0.5 rounded border ${sourceBadgeClass(match.source)}`}>
+                                          {formatSourceName(match.source)}
+                                        </span>
+                                        <span className="text-foreground/90">{match.product.name || "-"}</span>
+                                        <span
+                                          className={`px-1.5 py-0.5 rounded border ${confidenceBadgeClass(bucket)}`}
+                                        >
+                                          {formatPercent(match.score)}
+                                        </span>
+                                        {match.product.sku && (
+                                          <span className="text-muted">SKU: {match.product.sku}</span>
+                                        )}
+                                        {match.product.url && (
+                                          <a
+                                            href={match.product.url}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="text-cyan-300 hover:text-cyan-200 underline underline-offset-2"
+                                          >
+                                            Open
+                                          </a>
+                                        )}
+                                      </div>
+                                      {match.signals.length > 0 && (
+                                        <div className="mt-1 flex flex-wrap gap-1">
+                                          {match.signals.slice(0, 4).map((signal) => (
+                                            <span
+                                              key={`${row.key}-${match.product.id}-${signal}`}
+                                              className="px-1.5 py-0.5 rounded border border-t-border bg-background text-[10px] text-muted"
+                                            >
+                                              {signal}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
                               </div>
+                            ) : (
+                              <div className="text-xs text-muted">No high-confidence suggestions available.</div>
                             )}
                           </div>
                         )}
@@ -556,7 +766,7 @@ export default function ProductComparisonPage() {
                   ))}
                   {rows.length === 0 && (
                     <tr>
-                      <td colSpan={displayedSources.length + 2} className="px-3 py-6 text-center text-muted">
+                      <td colSpan={displayedSources.length + 3} className="px-3 py-6 text-center text-muted">
                         No rows match the current filters.
                       </td>
                     </tr>
