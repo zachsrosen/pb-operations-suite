@@ -53,7 +53,7 @@ async function loadAllCustomers(): Promise<void> {
       batch.map((p) =>
         zohoInventory
           .fetchCustomerPage(p)
-          .catch(() => ({ contacts: [] as any[], hasMore: false }))
+          .catch(() => ({ contacts: [] as { contact_id: string; contact_name: string }[], hasMore: false }))
       )
     );
 
