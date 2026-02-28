@@ -430,12 +430,28 @@ export async function runDesignCompletePipeline(
     };
 
     // --- Strategy 2: Deal name (after pipe) → Zoho name search ---
-    // Deal names: "PROJ-XXXX | LastName, FirstName" or "PROJ-XXXX | CompanyName"
+    // Deal names: "PROJ-XXXX | LastName, FirstName | Address" or "PROJ-XXXX | CompanyName"
     if (!customerId && dealName) {
-      const afterPipe = dealName.includes("|") ? dealName.split("|")[1]?.trim() : null;
+      // Extract customer portion: second segment between pipes
+      const segments = dealName.split("|").map((s) => s.trim());
+      const afterPipe = segments.length >= 2 ? segments[1] : null;
       if (afterPipe) {
-        const shortQuery = afterPipe.split(/\s+/).slice(0, 2).join(" ");
-        tryNameSearch(shortQuery, afterPipe, "deal_name");
+        // 2a: Try full customer portion (e.g. "Morton, Yu")
+        tryNameSearch(afterPipe, afterPipe, "deal_name_full");
+
+        // 2b: Try without comma (e.g. "Morton Yu" — Zoho may store as "Yu Morton")
+        if (!customerId && afterPipe.includes(",")) {
+          const noComma = afterPipe.replace(/,/g, "").trim();
+          tryNameSearch(noComma, afterPipe, "deal_name_nocomma");
+        }
+
+        // 2c: Try just last name (first word before comma/space)
+        if (!customerId) {
+          const lastName = afterPipe.split(/[,\s]+/)[0];
+          if (lastName && lastName !== afterPipe) {
+            tryNameSearch(lastName, afterPipe, "deal_name_lastname");
+          }
+        }
       }
     }
 
