@@ -252,6 +252,9 @@ The API supports pre-configured filters for different dashboard needs:
 Your HubSpot Private App needs these scopes:
 - `crm.objects.deals.read`
 - `crm.objects.line_items.read`
+- `crm.objects.line_items.write`
+- `crm.objects.products.read`
+- `crm.objects.products.write`
 - `crm.schemas.deals.read`
 
 ### Pipeline

@@ -3,6 +3,15 @@ const DEFAULT_ZUPER_API_URL = "https://us-west-1c.zuperpro.com/api";
 type JsonRecord = Record<string, unknown>;
 
 const ITEM_ID_KEYS = ["item_uid", "item_id", "part_uid", "part_id", "uid", "id"] as const;
+const DEFAULT_CATALOG_ENDPOINTS = [
+  "/items",
+  "/parts",
+  "/inventory/items",
+  "/catalog/items",
+  "/catalog/products",
+  "/products",
+  "/product",
+] as const;
 
 export interface UpsertZuperPartInput {
   brand: string;
@@ -55,6 +64,30 @@ function isFiniteNumber(value: unknown): value is number {
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   return String(error || "Unknown error");
+}
+
+function isNotFoundError(error: unknown): boolean {
+  return /\bHTTP\s*404\b/i.test(getErrorMessage(error));
+}
+
+function getEndpointPath(endpoint: string): string {
+  const trimmed = String(endpoint || "").trim();
+  if (!trimmed) return "/";
+  const [path] = trimmed.split("?");
+  const normalized = path.startsWith("/") ? path : `/${path}`;
+  return normalized.replace(/\/+$/, "") || "/";
+}
+
+function getCatalogEndpoints(): string[] {
+  const configured = trimOrUndefined(process.env.ZUPER_CATALOG_ENDPOINTS);
+  const rawEndpoints = configured
+    ? configured.split(",").map((value) => value.trim()).filter(Boolean)
+    : [...DEFAULT_CATALOG_ENDPOINTS];
+  const normalized = rawEndpoints.map((endpoint) => {
+    const withLeadingSlash = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+    return withLeadingSlash.replace(/\/+$/, "") || "/";
+  });
+  return [...new Set(normalized)];
 }
 
 function getRecordString(record: JsonRecord, keys: readonly string[]): string | undefined {
@@ -205,12 +238,15 @@ async function requestZuper(
 
 function buildSearchEndpoints(query: string): string[] {
   const q = encodeURIComponent(query);
-  return [
-    `/items?search=${q}&count=100`,
-    `/items?query=${q}&count=100`,
-    `/parts?search=${q}&count=100`,
-    `/parts?query=${q}&count=100`,
-  ];
+  const endpointCandidates = getCatalogEndpoints();
+  const searchKeys = ["search", "query"] as const;
+  const endpoints: string[] = [];
+  for (const endpoint of endpointCandidates) {
+    for (const key of searchKeys) {
+      endpoints.push(`${endpoint}?${key}=${q}&count=100`);
+    }
+  }
+  return endpoints;
 }
 
 async function findExistingZuperItemId(identity: ZuperIdentity): Promise<string | null> {
@@ -221,9 +257,12 @@ async function findExistingZuperItemId(identity: ZuperIdentity): Promise<string 
       )
     ),
   ];
+  const unavailablePaths = new Set<string>();
 
   for (const query of queries) {
     for (const endpoint of buildSearchEndpoints(query)) {
+      const endpointPath = getEndpointPath(endpoint);
+      if (unavailablePaths.has(endpointPath)) continue;
       try {
         const payload = await requestZuper(endpoint, { method: "GET" });
         const records = extractRecords(payload);
@@ -232,7 +271,10 @@ async function findExistingZuperItemId(identity: ZuperIdentity): Promise<string 
           const id = extractZuperItemId(record);
           if (id) return id;
         }
-      } catch {
+      } catch (error) {
+        if (isNotFoundError(error)) {
+          unavailablePaths.add(endpointPath);
+        }
         // Ignore endpoint-specific search errors and continue fallbacks.
       }
     }
@@ -247,18 +289,52 @@ interface CreateAttemptResult {
   successfulResponseWithoutId: boolean;
 }
 
-async function tryCreateWithPayload(payload: JsonRecord): Promise<CreateAttemptResult> {
-  const attempts: Array<{ endpoint: string; body: JsonRecord }> = [
-    { endpoint: "/items", body: { item: payload } },
-    { endpoint: "/items", body: { items: [payload] } },
-    { endpoint: "/items", body: payload },
-    { endpoint: "/parts", body: { part: payload } },
-    { endpoint: "/parts", body: { parts: [payload] } },
-    { endpoint: "/parts", body: payload },
+interface CreateBodyVariant {
+  label: string;
+  body: JsonRecord;
+}
+
+function getCreateBodyVariants(endpoint: string, payload: JsonRecord): CreateBodyVariant[] {
+  const path = getEndpointPath(endpoint).toLowerCase();
+  if (path.includes("/parts")) {
+    return [
+      { label: "part", body: { part: payload } },
+      { label: "parts[]", body: { parts: [payload] } },
+      { label: "raw", body: payload },
+    ];
+  }
+  if (path.includes("/products") || path.endsWith("/product")) {
+    return [
+      { label: "product", body: { product: payload } },
+      { label: "products[]", body: { products: [payload] } },
+      { label: "item", body: { item: payload } },
+      { label: "raw", body: payload },
+    ];
+  }
+  return [
+    { label: "item", body: { item: payload } },
+    { label: "items[]", body: { items: [payload] } },
+    { label: "raw", body: payload },
   ];
+}
+
+async function tryCreateWithPayload(
+  payload: JsonRecord,
+  unavailableEndpoints: Set<string>
+): Promise<CreateAttemptResult> {
+  const attempts: Array<{ endpoint: string; body: JsonRecord; label: string }> = getCatalogEndpoints()
+    .flatMap((endpoint) =>
+      getCreateBodyVariants(endpoint, payload).map((variant) => ({
+        endpoint,
+        body: variant.body,
+        label: variant.label,
+      }))
+    );
 
   const errors: string[] = [];
   for (const attempt of attempts) {
+    const endpointPath = getEndpointPath(attempt.endpoint);
+    if (unavailableEndpoints.has(endpointPath)) continue;
     try {
       const response = await requestZuper(attempt.endpoint, {
         method: "POST",
@@ -266,12 +342,15 @@ async function tryCreateWithPayload(payload: JsonRecord): Promise<CreateAttemptR
       });
       const id = extractZuperItemId(response);
       if (id) return { id, errors, successfulResponseWithoutId: false };
-      errors.push(`${attempt.endpoint}: success response missing item ID`);
+      errors.push(`${attempt.endpoint} (${attempt.label}): success response missing item ID`);
       // Stop after first 2xx/payload-success response to avoid duplicate creates
       // across endpoint/body-shape fallbacks.
       return { id: null, errors, successfulResponseWithoutId: true };
     } catch (error) {
-      errors.push(`${attempt.endpoint}: ${getErrorMessage(error)}`);
+      if (isNotFoundError(error)) {
+        unavailableEndpoints.add(endpointPath);
+      }
+      errors.push(`${attempt.endpoint} (${attempt.label}): ${getErrorMessage(error)}`);
     }
   }
 
@@ -323,8 +402,9 @@ export async function createOrUpdateZuperPart(
 
   const hasOptional = Object.keys(optionalPayload).length > Object.keys(corePayload).length;
   const allErrors: string[] = [];
+  const unavailableCreateEndpoints = new Set<string>();
 
-  const optionalAttempt = await tryCreateWithPayload(optionalPayload);
+  const optionalAttempt = await tryCreateWithPayload(optionalPayload, unavailableCreateEndpoints);
   allErrors.push(...optionalAttempt.errors);
   if (optionalAttempt.id) return { zuperItemId: optionalAttempt.id, created: true };
   if (optionalAttempt.successfulResponseWithoutId) {
@@ -338,7 +418,7 @@ export async function createOrUpdateZuperPart(
   }
 
   if (hasOptional) {
-    const coreAttempt = await tryCreateWithPayload(corePayload);
+    const coreAttempt = await tryCreateWithPayload(corePayload, unavailableCreateEndpoints);
     allErrors.push(...coreAttempt.errors);
     if (coreAttempt.id) return { zuperItemId: coreAttempt.id, created: true };
     if (coreAttempt.successfulResponseWithoutId) {

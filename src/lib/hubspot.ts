@@ -1768,6 +1768,30 @@ function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
+const HUBSPOT_PRODUCT_SCOPE_HINT = [
+  "crm.objects.products.read",
+  "crm.objects.products.write",
+] as const;
+
+function isHubSpotScopeErrorMessage(message: string): boolean {
+  const normalized = String(message || "").toLowerCase();
+  return (
+    normalized.includes("required scopes") ||
+    normalized.includes("hasn't been granted") ||
+    normalized.includes("insufficient scope")
+  );
+}
+
+function formatHubSpotScopeError(baseMessage: string): string {
+  return `${baseMessage} Required HubSpot scopes for catalog product sync: ${HUBSPOT_PRODUCT_SCOPE_HINT.join(", ")}.`;
+}
+
+function isHubSpotReadScopeLookupError(error: unknown): boolean {
+  const message = getErrorMessage(error);
+  const status = getHubSpotErrorStatus(error);
+  return Boolean(status === 403 && isHubSpotScopeErrorMessage(message));
+}
+
 async function searchHubSpotProductIdByFilters(
   token: string,
   filters: Array<{ propertyName: string; value: string }>
@@ -1804,9 +1828,11 @@ async function searchHubSpotProductIdByFilters(
   }
 
   if (!response.ok) {
-    throw new Error(
-      `Failed to search HubSpot products (${response.status}): ${raw || "unknown error"}`
-    );
+    const baseMessage = `Failed to search HubSpot products (${response.status}): ${raw || "unknown error"}`;
+    if (response.status === 403 && isHubSpotScopeErrorMessage(raw)) {
+      throw new Error(formatHubSpotScopeError(baseMessage));
+    }
+    throw new Error(baseMessage);
   }
 
   return String(json.results?.[0]?.id || "").trim() || null;
@@ -1839,9 +1865,14 @@ async function upsertHubSpotProductRecord(
     }
 
     if (!updateResponse.ok) {
-      throw new Error(
+      const baseMessage =
         `Failed to update HubSpot product (${updateResponse.status}): ` +
-          `${updateJson.message || updateRaw || "unknown error"}`
+        `${updateJson.message || updateRaw || "unknown error"}`;
+      if (updateResponse.status === 403 && isHubSpotScopeErrorMessage(updateRaw)) {
+        throw new Error(formatHubSpotScopeError(baseMessage));
+      }
+      throw new Error(
+        baseMessage
       );
     }
 
@@ -1869,9 +1900,14 @@ async function upsertHubSpotProductRecord(
   }
 
   if (!createResponse.ok || !createJson?.id) {
-    throw new Error(
+    const baseMessage =
       `Failed to create HubSpot product (${createResponse.status}): ` +
-        `${createJson.message || createRaw || "unknown error"}`
+      `${createJson.message || createRaw || "unknown error"}`;
+    if (createResponse.status === 403 && isHubSpotScopeErrorMessage(createRaw)) {
+      throw new Error(formatHubSpotScopeError(baseMessage));
+    }
+    throw new Error(
+      baseMessage
     );
   }
 
@@ -1898,16 +1934,32 @@ export async function createOrUpdateHubSpotProduct(
 
   let existingId: string | null = null;
   if (sku) {
-    existingId = await searchHubSpotProductIdByFilters(token, [
-      { propertyName: "hs_sku", value: sku },
-    ]);
+    try {
+      existingId = await searchHubSpotProductIdByFilters(token, [
+        { propertyName: "hs_sku", value: sku },
+      ]);
+    } catch (error) {
+      if (!isHubSpotReadScopeLookupError(error)) throw error;
+      console.warn(
+        `[HubSpot] Product lookup skipped due to missing read scopes. Continuing with create flow: ${getErrorMessage(error)}`
+      );
+      existingId = null;
+    }
   }
 
   if (!existingId) {
     const filters = [{ propertyName: "name", value: name }];
     if (brand) filters.push({ propertyName: "manufacturer", value: brand });
     if (productCategory) filters.push({ propertyName: "product_category", value: productCategory });
-    existingId = await searchHubSpotProductIdByFilters(token, filters);
+    try {
+      existingId = await searchHubSpotProductIdByFilters(token, filters);
+    } catch (error) {
+      if (!isHubSpotReadScopeLookupError(error)) throw error;
+      console.warn(
+        `[HubSpot] Secondary product lookup skipped due to missing read scopes. Continuing with create flow: ${getErrorMessage(error)}`
+      );
+      existingId = null;
+    }
   }
 
   const coreProperties: Record<string, string> = {
