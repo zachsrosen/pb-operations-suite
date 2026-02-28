@@ -314,6 +314,8 @@ function enrichSku<T extends Record<string, unknown>>(sku: T) {
  * Query params:
  *   category - Filter by EquipmentCategory enum value
  *   active   - "true" (default) to show only active SKUs, "false" to include inactive
+ *   search   - optional text search across brand/model/sku/vendor part/description
+ *   limit    - optional max rows (default 500, max 5000)
  */
 export async function GET(request: NextRequest) {
   tagSentryRequest(request);
@@ -328,6 +330,11 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const categoryParam = searchParams.get("category");
     const activeParam = searchParams.get("active");
+    const searchParam = String(searchParams.get("search") || searchParams.get("q") || "").trim();
+    const limitRaw = Number(searchParams.get("limit") || 500);
+    const limit = Number.isFinite(limitRaw)
+      ? Math.min(Math.max(Math.trunc(limitRaw), 1), 5000)
+      : 500;
     const activeOnly = activeParam !== "false"; // default true
 
     // Validate category if provided
@@ -348,6 +355,15 @@ export async function GET(request: NextRequest) {
         category: categoryParam as EquipmentCategory,
       }),
       ...(activeOnly && { isActive: true }),
+      ...(searchParam && {
+        OR: [
+          { brand: { contains: searchParam, mode: "insensitive" as const } },
+          { model: { contains: searchParam, mode: "insensitive" as const } },
+          { sku: { contains: searchParam, mode: "insensitive" as const } },
+          { vendorPartNumber: { contains: searchParam, mode: "insensitive" as const } },
+          { description: { contains: searchParam, mode: "insensitive" as const } },
+        ],
+      }),
     };
     const orderBy = [
       { category: "asc" as const },
@@ -362,6 +378,7 @@ export async function GET(request: NextRequest) {
         where,
         include: SKU_INCLUDE,
         orderBy,
+        take: limit,
       }) as unknown as Array<Record<string, unknown>>;
     } catch (error) {
       if (!isPrismaMissingColumnError(error)) throw error;
@@ -390,6 +407,7 @@ export async function GET(request: NextRequest) {
           },
         },
         orderBy,
+        take: limit,
       });
 
       skus = legacySkus.map((sku: Record<string, unknown>) => ({

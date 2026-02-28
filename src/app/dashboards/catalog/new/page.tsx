@@ -9,7 +9,7 @@ import {
 import CategoryFields from "@/components/catalog/CategoryFields";
 import BrandDropdown from "@/components/catalog/BrandDropdown";
 import { useSearchParams, useRouter } from "next/navigation";
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, Suspense, useMemo } from "react";
 
 const inputClasses =
   "w-full rounded-lg border border-t-border bg-surface-2 px-3 py-2 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-cyan-500/50";
@@ -26,6 +26,21 @@ interface CachedQuickBooksProduct {
   sku: string | null;
   description: string | null;
   price: number | null;
+}
+
+interface ExistingSkuMatch {
+  id: string;
+  category: string;
+  brand: string;
+  model: string;
+  description: string | null;
+  sku: string | null;
+  vendorPartNumber: string | null;
+  isActive: boolean;
+  hubspotProductId: string | null;
+  zuperItemId: string | null;
+  zohoItemId: string | null;
+  quickbooksItemId: string | null;
 }
 
 function NewProductForm() {
@@ -54,6 +69,13 @@ function NewProductForm() {
   const [quickbooksError, setQuickbooksError] = useState<string | null>(null);
   const [quickbooksResults, setQuickbooksResults] = useState<CachedQuickBooksProduct[]>([]);
   const [selectedQuickbooksItemId, setSelectedQuickbooksItemId] = useState<string | null>(null);
+  const [existingMatchesLoading, setExistingMatchesLoading] = useState(false);
+  const [existingMatchesError, setExistingMatchesError] = useState<string | null>(null);
+  const [existingMatches, setExistingMatches] = useState<ExistingSkuMatch[]>([]);
+  const [mergeSourceSkuId, setMergeSourceSkuId] = useState("");
+  const [mergeTargetSkuId, setMergeTargetSkuId] = useState("");
+  const [mergeBusy, setMergeBusy] = useState(false);
+  const [mergeMessage, setMergeMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -155,6 +177,105 @@ function NewProductForm() {
       clearTimeout(timeoutId);
     };
   }, [systems, quickbooksSearch]);
+
+  const existingLookupQuery = useMemo(() => {
+    return [sku, vendorPartNumber, `${brand} ${model}`, model]
+      .map((value) => String(value || "").trim())
+      .find((value) => value.length >= 2) || "";
+  }, [brand, model, sku, vendorPartNumber]);
+
+  useEffect(() => {
+    const query = existingLookupQuery.trim();
+    if (!query) {
+      setExistingMatches([]);
+      setExistingMatchesError(null);
+      return;
+    }
+
+    let cancelled = false;
+    const timeoutId = setTimeout(async () => {
+      setExistingMatchesLoading(true);
+      setExistingMatchesError(null);
+      try {
+        const res = await fetch(
+          `/api/inventory/skus?search=${encodeURIComponent(query)}&limit=20`,
+          { cache: "no-store" }
+        );
+        const payload = (await res.json().catch(() => null)) as
+          | { error?: string; skus?: ExistingSkuMatch[] }
+          | null;
+        if (!res.ok) {
+          throw new Error(payload?.error || `Lookup failed (${res.status})`);
+        }
+        if (cancelled) return;
+        const matches = Array.isArray(payload?.skus) ? payload.skus : [];
+        setExistingMatches(matches);
+      } catch (lookupError) {
+        if (cancelled) return;
+        setExistingMatches([]);
+        setExistingMatchesError(lookupError instanceof Error ? lookupError.message : "Lookup failed");
+      } finally {
+        if (!cancelled) setExistingMatchesLoading(false);
+      }
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
+  }, [existingLookupQuery]);
+
+  useEffect(() => {
+    if (existingMatches.length < 2) {
+      setMergeSourceSkuId("");
+      setMergeTargetSkuId("");
+      return;
+    }
+    const ids = new Set(existingMatches.map((match) => match.id));
+    if (mergeSourceSkuId && !ids.has(mergeSourceSkuId)) setMergeSourceSkuId("");
+    if (mergeTargetSkuId && !ids.has(mergeTargetSkuId)) setMergeTargetSkuId("");
+  }, [existingMatches, mergeSourceSkuId, mergeTargetSkuId]);
+
+  async function handleMergeMatches() {
+    setError(null);
+    setMergeMessage(null);
+    if (!mergeSourceSkuId || !mergeTargetSkuId) {
+      setMergeMessage("Select both source and target SKUs to merge.");
+      return;
+    }
+    if (mergeSourceSkuId === mergeTargetSkuId) {
+      setMergeMessage("Source and target must be different SKUs.");
+      return;
+    }
+
+    setMergeBusy(true);
+    try {
+      const res = await fetch("/api/inventory/skus/merge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sourceSkuId: mergeSourceSkuId,
+          targetSkuId: mergeTargetSkuId,
+        }),
+      });
+      const payload = (await res.json().catch(() => null)) as
+        | { error?: string; conflicts?: string[] }
+        | null;
+      if (!res.ok) {
+        throw new Error(payload?.error || `Merge failed (${res.status})`);
+      }
+
+      const conflicts = Array.isArray(payload?.conflicts) ? payload.conflicts : [];
+      const conflictNote = conflicts.length > 0 ? ` Conflicts kept on target: ${conflicts.join("; ")}` : "";
+      setMergeMessage(`Merge complete.${conflictNote}`);
+      setExistingMatches((prev) => prev.filter((match) => match.id !== mergeSourceSkuId));
+      setMergeSourceSkuId("");
+    } catch (mergeError) {
+      setMergeMessage(mergeError instanceof Error ? mergeError.message : "Merge failed");
+    } finally {
+      setMergeBusy(false);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -326,6 +447,108 @@ function NewProductForm() {
               required
               className={inputClasses}
             />
+          </div>
+
+          <div className="mt-4 rounded-lg border border-t-border bg-surface-2 p-3 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-sm font-medium text-foreground">Existing Internal SKU Lookup</div>
+              {existingLookupQuery.trim() && (
+                <div className="text-xs text-muted">Query: {existingLookupQuery.trim()}</div>
+              )}
+            </div>
+
+            {existingMatchesLoading && (
+              <div className="text-xs text-muted">Searching existing internal SKUs...</div>
+            )}
+            {existingMatchesError && (
+              <div className="text-xs text-red-400">{existingMatchesError}</div>
+            )}
+            {!existingMatchesLoading && !existingMatchesError && existingLookupQuery.trim() && existingMatches.length === 0 && (
+              <div className="text-xs text-muted">No existing internal SKU matches found.</div>
+            )}
+
+            {existingMatches.length > 0 && (
+              <div className="space-y-2">
+                <div className="rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-xs text-amber-200">
+                  {existingMatches.length} existing SKU match{existingMatches.length === 1 ? "" : "es"} found. Review before submitting a new item.
+                </div>
+                <div className="max-h-56 overflow-y-auto rounded border border-t-border">
+                  {existingMatches.map((match) => (
+                    <div key={match.id} className="flex items-start justify-between gap-3 border-b border-t-border px-3 py-2 last:border-b-0">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium text-foreground">
+                          {match.brand} {match.model}
+                        </div>
+                        <div className="truncate text-xs text-muted">
+                          {getCategoryLabel(match.category)} · SKU: {match.sku || "—"} · Vendor Part: {match.vendorPartNumber || "—"}
+                        </div>
+                        <div className="truncate text-[11px] text-muted">
+                          HS: {match.hubspotProductId || "—"} · Zu: {match.zuperItemId || "—"} · Zoho: {match.zohoItemId || "—"} · QB: {match.quickbooksItemId || "—"}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => router.push(`/dashboards/catalog/edit/${encodeURIComponent(match.id)}`)}
+                        className="rounded border border-cyan-500/40 bg-cyan-500/10 px-2 py-1 text-xs text-cyan-300 hover:bg-cyan-500/20"
+                      >
+                        Open
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {existingMatches.length >= 2 && (
+              <div className="rounded border border-t-border bg-surface p-2.5 space-y-2">
+                <div className="text-xs font-medium text-foreground">Merge Existing Duplicates</div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <label className="text-[11px] text-muted">
+                    Source SKU (will be merged into target and removed)
+                    <select
+                      value={mergeSourceSkuId}
+                      onChange={(e) => setMergeSourceSkuId(e.target.value)}
+                      className="mt-1 w-full rounded border border-t-border bg-surface-2 px-2 py-1.5 text-xs text-foreground"
+                    >
+                      <option value="">Select source SKU</option>
+                      {existingMatches.map((match) => (
+                        <option key={match.id} value={match.id}>
+                          {match.brand} {match.model} ({match.id.slice(-6)})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="text-[11px] text-muted">
+                    Target SKU (kept)
+                    <select
+                      value={mergeTargetSkuId}
+                      onChange={(e) => setMergeTargetSkuId(e.target.value)}
+                      className="mt-1 w-full rounded border border-t-border bg-surface-2 px-2 py-1.5 text-xs text-foreground"
+                    >
+                      <option value="">Select target SKU</option>
+                      {existingMatches.map((match) => (
+                        <option key={match.id} value={match.id}>
+                          {match.brand} {match.model} ({match.id.slice(-6)})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleMergeMatches}
+                    disabled={mergeBusy || !mergeSourceSkuId || !mergeTargetSkuId || mergeSourceSkuId === mergeTargetSkuId}
+                    className="rounded border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-200 hover:bg-amber-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {mergeBusy ? "Merging..." : "Merge Source Into Target"}
+                  </button>
+                  {mergeMessage && (
+                    <div className="text-xs text-muted">{mergeMessage}</div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
