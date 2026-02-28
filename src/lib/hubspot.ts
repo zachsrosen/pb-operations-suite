@@ -1195,7 +1195,7 @@ export async function fetchAllProjects(options?: {
  * Returns null if no primary contact exists or the call fails.
  * Best-effort — never blocks deal loading.
  */
-async function fetchPrimaryContactId(dealId: string): Promise<string | null> {
+export async function fetchPrimaryContactId(dealId: string): Promise<string | null> {
   const accessToken = process.env.HUBSPOT_ACCESS_TOKEN;
   if (!accessToken) return null;
 
