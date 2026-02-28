@@ -108,6 +108,34 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // ── HubSpot contact ID lookup (auto-match) ──
+  const hubspotContactId = req.nextUrl.searchParams.get("hubspot_contact_id")?.trim() ?? "";
+  if (hubspotContactId) {
+    const matches = cache!.customers.filter(
+      (c) => c.hubspot_record_id && c.hubspot_record_id.trim() === hubspotContactId
+    );
+
+    if (matches.length === 0) {
+      return NextResponse.json({ customer: null });
+    }
+
+    if (matches.length > 1) {
+      // Deterministic: pick lowest contact_id
+      matches.sort((a, b) => a.contact_id.localeCompare(b.contact_id));
+      console.warn(
+        `[bom/zoho-customers] WARNING: ${matches.length} customers match hubspot_record_id ${hubspotContactId}: [${matches.map((c) => c.contact_id).join(", ")}]. Using ${matches[0].contact_id}.`
+      );
+    }
+
+    return NextResponse.json({
+      customer: {
+        contact_id: matches[0].contact_id,
+        contact_name: matches[0].contact_name,
+      },
+    });
+  }
+
+  // ── Name-based search (existing behavior) ──
   const search = req.nextUrl.searchParams.get("search")?.trim() ?? "";
   if (!search) {
     return NextResponse.json({ customers: [] });
