@@ -1708,3 +1708,77 @@ Ticket ID: ${params.reportId}
     ].join("\n"),
   });
 }
+
+// ==========================================================================
+// BOM Pipeline Notification
+// ==========================================================================
+
+export async function sendPipelineNotification(params: {
+  dealId: string;
+  dealName: string;
+  status: "succeeded" | "failed" | "partial";
+  soNumber?: string;
+  failedStep?: string;
+  errorMessage?: string;
+  unmatchedCount?: number;
+  durationMs?: number;
+}): Promise<SendResult> {
+  const recipients = process.env.DESIGN_COMPLETE_NOTIFY_EMAILS;
+  if (!recipients) {
+    console.warn("[email] No DESIGN_COMPLETE_NOTIFY_EMAILS configured — skipping pipeline notification");
+    return { success: true };
+  }
+
+  const toList = recipients.split(",").map((e) => e.trim()).filter(Boolean);
+  if (toList.length === 0) {
+    return { success: true };
+  }
+
+  const isSuccess = params.status === "succeeded";
+  const isPartial = params.status === "partial";
+  const emoji = isSuccess ? "✅" : isPartial ? "⚠️" : "❌";
+  const statusLabel = isSuccess ? "Succeeded" : isPartial ? "Partial" : "Failed";
+  const durationSec = params.durationMs ? `${(params.durationMs / 1000).toFixed(1)}s` : "N/A";
+
+  const subject = `${emoji} BOM Pipeline ${statusLabel}: ${params.dealName || params.dealId}`;
+
+  const lines = [
+    `<h2>${emoji} BOM Pipeline ${statusLabel}</h2>`,
+    `<p><strong>Deal:</strong> ${params.dealName || params.dealId}</p>`,
+    `<p><strong>Deal ID:</strong> ${params.dealId}</p>`,
+  ];
+
+  if (isSuccess || isPartial) {
+    if (params.soNumber) lines.push(`<p><strong>Sales Order:</strong> ${params.soNumber}</p>`);
+    if (params.unmatchedCount) lines.push(`<p><strong>Unmatched Items:</strong> ${params.unmatchedCount}</p>`);
+  }
+
+  if (!isSuccess) {
+    if (params.failedStep) lines.push(`<p><strong>Failed Step:</strong> ${params.failedStep}</p>`);
+    if (params.errorMessage) lines.push(`<p><strong>Error:</strong> ${params.errorMessage}</p>`);
+  }
+
+  lines.push(`<p><strong>Duration:</strong> ${durationSec}</p>`);
+  lines.push(`<hr/><p style="color:#999;font-size:12px">Automated BOM Pipeline — PB Operations Suite</p>`);
+
+  const html = lines.join("\n");
+  const text = [
+    `BOM Pipeline ${statusLabel}: ${params.dealName || params.dealId}`,
+    `Deal ID: ${params.dealId}`,
+    params.soNumber ? `Sales Order: ${params.soNumber}` : null,
+    params.unmatchedCount ? `Unmatched Items: ${params.unmatchedCount}` : null,
+    params.failedStep ? `Failed Step: ${params.failedStep}` : null,
+    params.errorMessage ? `Error: ${params.errorMessage}` : null,
+    `Duration: ${durationSec}`,
+  ].filter(Boolean).join("\n");
+
+  return sendEmailMessage({
+    to: toList[0],
+    bcc: toList.slice(1),
+    subject,
+    html,
+    text,
+    debugFallbackTitle: `PIPELINE ${statusLabel.toUpperCase()} for ${params.dealName}`,
+    debugFallbackBody: text,
+  });
+}

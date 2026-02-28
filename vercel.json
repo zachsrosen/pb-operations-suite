@@ -12,6 +12,9 @@
     },
     "src/app/api/bom/extract/route.ts": {
       "maxDuration": 120
+    },
+    "src/app/api/webhooks/hubspot/design-complete/route.ts": {
+      "maxDuration": 300
     }
   },
   "crons": [

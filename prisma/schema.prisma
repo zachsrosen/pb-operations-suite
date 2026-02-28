@@ -141,6 +141,11 @@ enum ActivityType {
   // Bug Reports
   BUG_REPORTED
   BUG_STATUS_CHANGED
+
+  // BOM Pipeline
+  BOM_PIPELINE_STARTED
+  BOM_PIPELINE_COMPLETED
+  BOM_PIPELINE_FAILED
 }
 
 model ActivityLog {
@@ -916,4 +921,58 @@ model PendingCatalogPush {
 
   @@index([status])
   @@index([requestedBy])
+}
+
+// ===========================================
+// BOM PIPELINE RUNS
+// ===========================================
+
+enum BomPipelineTrigger {
+  WEBHOOK_DESIGN_COMPLETE
+  MANUAL
+  CRON
+}
+
+enum BomPipelineStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+  PARTIAL
+}
+
+enum BomPipelineStep {
+  FETCH_DEAL
+  LIST_PDFS
+  EXTRACT_BOM
+  SAVE_SNAPSHOT
+  RESOLVE_CUSTOMER
+  CREATE_SO
+  NOTIFY
+}
+
+model BomPipelineRun {
+  id              String             @id @default(cuid())
+  dealId          String
+  dealName        String             @default("")
+  trigger         BomPipelineTrigger
+  status          BomPipelineStatus
+  failedStep      BomPipelineStep?
+  errorMessage    String?
+  selectedPlanset String?
+  snapshotId      String?
+  snapshotVersion Int?
+  zohoSoId        String?
+  zohoSoNumber    String?
+  zohoCustomerId  String?
+  unmatchedCount  Int?
+  durationMs      Int?
+  metadata        Json?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  @@index([dealId])
+  @@index([status])
+  @@index([createdAt])
+  // NOTE: partial unique index on (dealId) WHERE status='RUNNING'
+  // is added via raw SQL in the migration file (not expressible in Prisma schema)
 }
