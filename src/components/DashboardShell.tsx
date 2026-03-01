@@ -18,14 +18,18 @@ const SUITE_MAP: Record<string, { href: string; label: string }> = {
   "/dashboards/inventory": { href: "/suites/operations", label: "Operations" },
   "/dashboards/bom": { href: "/suites/operations", label: "Operations" },
   "/dashboards/bom/history": { href: "/suites/operations", label: "Operations" },
-  // Tech Ops Suite (formerly Department Suite)
-  "/dashboards/site-survey": { href: "/suites/department", label: "Tech Ops" },
-  "/dashboards/design": { href: "/suites/department", label: "Tech Ops" },
-  "/dashboards/permitting": { href: "/suites/department", label: "Tech Ops" },
-  "/dashboards/inspections": { href: "/suites/department", label: "Tech Ops" },
-  "/dashboards/interconnection": { href: "/suites/department", label: "Tech Ops" },
-  "/dashboards/construction": { href: "/suites/department", label: "Tech Ops" },
-  "/dashboards/incentives": { href: "/suites/department", label: "Tech Ops" },
+  "/dashboards/catalog": { href: "/suites/operations", label: "Operations" },
+  "/dashboards/catalog/new": { href: "/suites/operations", label: "Operations" },
+  // Field Execution (Operations Suite)
+  "/dashboards/site-survey": { href: "/suites/operations", label: "Operations" },
+  "/dashboards/construction": { href: "/suites/operations", label: "Operations" },
+  "/dashboards/inspections": { href: "/suites/operations", label: "Operations" },
+  // Legacy standalone dashboards → their new suite homes
+  "/dashboards/design": { href: "/suites/design-engineering", label: "D&E" },
+  "/dashboards/permitting": { href: "/suites/permitting-interconnection", label: "P&I" },
+  "/dashboards/interconnection": { href: "/suites/permitting-interconnection", label: "P&I" },
+  // Incentives (Intelligence Suite)
+  "/dashboards/incentives": { href: "/suites/intelligence", label: "Intelligence" },
   // Design & Engineering Suite
   "/dashboards/de-overview": { href: "/suites/design-engineering", label: "D&E" },
   "/dashboards/plan-review": { href: "/suites/design-engineering", label: "D&E" },
@@ -74,6 +78,18 @@ const SUITE_MAP: Record<string, { href: string; label: string }> = {
   "/dashboards/mobile": { href: "/suites/admin", label: "Admin" },
 };
 
+function getParentSuiteForPath(pathname: string): { href: string; label: string } | null {
+  const exact = SUITE_MAP[pathname];
+  if (exact) return exact;
+
+  // Fallback for dynamic nested routes (e.g. /dashboards/catalog/edit/:id).
+  const prefixMatch = Object.entries(SUITE_MAP)
+    .filter(([route]) => pathname.startsWith(`${route}/`))
+    .sort((a, b) => b[0].length - a[0].length)[0];
+
+  return prefixMatch?.[1] || null;
+}
+
 interface Breadcrumb {
   label: string;
   href?: string;
@@ -106,7 +122,7 @@ export default function DashboardShell({
   exportData,
 }: DashboardShellProps) {
   const pathname = usePathname();
-  const parentSuite = SUITE_MAP[pathname] || null;
+  const parentSuite = getParentSuiteForPath(pathname);
   const backHref = parentSuite?.href || "/";
 
   // Auto-generate breadcrumbs from suite mapping if not explicitly provided
