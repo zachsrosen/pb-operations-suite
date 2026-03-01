@@ -21,10 +21,16 @@ export const HOME_SUITES: HomeSuiteLink[] = [
     tag: "Operations",
   },
   {
-    href: "/suites/department",
-    title: "Department Suite",
-    description: "Department-level dashboards for execution teams.",
-    tag: "Department",
+    href: "/suites/design-engineering",
+    title: "Design & Engineering Suite",
+    description: "Design review, system analytics, and engineering reference tools.",
+    tag: "D&E",
+  },
+  {
+    href: "/suites/permitting-interconnection",
+    title: "Permitting & Interconnection Suite",
+    description: "Permit tracking, utility management, and SLA monitoring.",
+    tag: "P&I",
   },
   {
     href: "/suites/executive",

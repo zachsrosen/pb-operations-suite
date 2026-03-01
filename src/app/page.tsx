@@ -445,7 +445,6 @@ export default function Home() {
     if (userRole === "TECH_OPS") {
       const allowedTechOpsSuites = new Set([
         "/suites/operations",
-        "/suites/department",
         "/suites/design-engineering",
         "/suites/permitting-interconnection",
       ]);
@@ -454,7 +453,6 @@ export default function Home() {
     if (userRole === "PROJECT_MANAGER") {
       const allowedPmSuites = new Set([
         "/suites/operations",
-        "/suites/department",
         "/suites/design-engineering",
         "/suites/permitting-interconnection",
         "/suites/intelligence",

@@ -62,7 +62,7 @@ describe("canAccessRoute - new suite structure", () => {
 
   it("normalizes DESIGNER to TECH_OPS access", () => {
     expect(canAccessRoute("DESIGNER", "/")).toBe(true);
-    expect(canAccessRoute("DESIGNER", "/suites/department")).toBe(true);
+    expect(canAccessRoute("DESIGNER", "/suites/operations")).toBe(true);
   });
 
   // SALES gets sales pipeline
