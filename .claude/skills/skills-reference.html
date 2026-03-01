@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PB Operations Suite — Skills Reference</title>
+<style>
+  :root {
+    --orange: #f97316;
+    --orange-light: #fff7ed;
+    --orange-border: #fed7aa;
+    --green: #16a34a;
+    --green-light: #f0fdf4;
+    --green-border: #bbf7d0;
+    --blue: #2563eb;
+    --blue-light: #eff6ff;
+    --blue-border: #bfdbfe;
+    --yellow: #d97706;
+    --yellow-light: #fffbeb;
+    --yellow-border: #fde68a;
+    --gray-50: #f9fafb;
+    --gray-100: #f3f4f6;
+    --gray-200: #e5e7eb;
+    --gray-300: #d1d5db;
+    --gray-600: #4b5563;
+    --gray-700: #374151;
+    --gray-800: #1f2937;
+    --gray-900: #111827;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    color: var(--gray-800);
+    line-height: 1.6;
+    background: var(--gray-50);
+    padding: 2rem;
+  }
+
+  .container {
+    max-width: 900px;
+    margin: 0 auto;
+  }
+
+  h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--gray-900);
+    margin-bottom: 0.25rem;
+  }
+
+  .subtitle {
+    color: var(--gray-600);
+    font-size: 1rem;
+    margin-bottom: 2.5rem;
+  }
+
+  /* Pipeline diagram */
+  .pipeline-diagram {
+    background: white;
+    border: 1px solid var(--gray-200);
+    border-radius: 12px;
+    padding: 2rem;
+    margin-bottom: 2.5rem;
+    text-align: center;
+  }
+
+  .pipeline-diagram h2 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--gray-700);
+    margin-bottom: 1.5rem;
+  }
+
+  .pipeline-flow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+  }
+
+  .pipeline-node {
+    background: var(--orange-light);
+    border: 1.5px solid var(--orange-border);
+    border-radius: 8px;
+    padding: 0.5rem 1rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--gray-800);
+    white-space: nowrap;
+  }
+
+  .pipeline-arrow {
+    color: var(--gray-300);
+    font-size: 1.2rem;
+    font-weight: 700;
+  }
+
+  .pipeline-support {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+  }
+
+  .pipeline-support-node {
+    background: var(--yellow-light);
+    border: 1.5px solid var(--yellow-border);
+    border-radius: 8px;
+    padding: 0.4rem 0.8rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--gray-700);
+  }
+
+  .pipeline-support-label {
+    font-size: 0.75rem;
+    color: var(--gray-600);
+    font-style: italic;
+  }
+
+  /* Section headers */
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
+    margin-top: 2rem;
+  }
+
+  .section-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.025em;
+    text-transform: uppercase;
+  }
+
+  .badge-orange { background: var(--orange-light); color: var(--orange); border: 1px solid var(--orange-border); }
+  .badge-green { background: var(--green-light); color: var(--green); border: 1px solid var(--green-border); }
+  .badge-blue { background: var(--blue-light); color: var(--blue); border: 1px solid var(--blue-border); }
+
+  .section-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--gray-900);
+  }
+
+  /* Skill cards */
+  .skill-card {
+    background: white;
+    border: 1px solid var(--gray-200);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 1rem;
+    border-left: 4px solid var(--gray-300);
+  }
+
+  .skill-card.orange { border-left-color: var(--orange); }
+  .skill-card.green { border-left-color: var(--green); }
+  .skill-card.blue { border-left-color: var(--blue); }
+  .skill-card.yellow { border-left-color: var(--yellow); }
+
+  .skill-name {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--gray-900);
+    margin-bottom: 0.25rem;
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  }
+
+  .skill-tagline {
+    font-size: 0.95rem;
+    color: var(--gray-600);
+    font-style: italic;
+    margin-bottom: 1rem;
+  }
+
+  .skill-section-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--gray-600);
+    margin-bottom: 0.35rem;
+    margin-top: 1rem;
+  }
+
+  .skill-section-label:first-of-type { margin-top: 0; }
+
+  .trigger {
+    display: inline-block;
+    background: var(--gray-100);
+    border: 1px solid var(--gray-200);
+    border-radius: 6px;
+    padding: 0.2rem 0.5rem;
+    font-size: 0.8rem;
+    color: var(--gray-700);
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    margin-right: 0.35rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .steps {
+    list-style: none;
+    counter-reset: step;
+  }
+
+  .steps li {
+    counter-increment: step;
+    padding-left: 1.75rem;
+    position: relative;
+    font-size: 0.9rem;
+    color: var(--gray-700);
+    margin-bottom: 0.3rem;
+  }
+
+  .steps li::before {
+    content: counter(step);
+    position: absolute;
+    left: 0;
+    top: 0.1rem;
+    width: 1.25rem;
+    height: 1.25rem;
+    background: var(--gray-100);
+    border-radius: 50%;
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--gray-600);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    text-align: center;
+  }
+
+  .key-details {
+    list-style: disc;
+    padding-left: 1.25rem;
+  }
+
+  .key-details li {
+    font-size: 0.85rem;
+    color: var(--gray-600);
+    margin-bottom: 0.2rem;
+  }
+
+  .key-details li strong {
+    color: var(--gray-700);
+  }
+
+  /* Reference table */
+  .ref-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+    margin-top: 0.5rem;
+  }
+
+  .ref-table th {
+    text-align: left;
+    font-weight: 600;
+    color: var(--gray-600);
+    padding: 0.5rem 0.75rem;
+    border-bottom: 2px solid var(--gray-200);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .ref-table td {
+    padding: 0.4rem 0.75rem;
+    border-bottom: 1px solid var(--gray-100);
+    color: var(--gray-700);
+  }
+
+  .ref-table tr:last-child td { border-bottom: none; }
+
+  .ref-table td:first-child {
+    font-weight: 600;
+    color: var(--gray-800);
+    white-space: nowrap;
+  }
+
+  /* Dependency map */
+  .dep-map {
+    background: white;
+    border: 1px solid var(--gray-200);
+    border-radius: 12px;
+    padding: 1.5rem 2rem;
+    margin-top: 2.5rem;
+  }
+
+  .dep-map h2 {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--gray-900);
+    margin-bottom: 1rem;
+  }
+
+  .dep-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid var(--gray-100);
+  }
+
+  .dep-row:last-child { border-bottom: none; }
+
+  .dep-request {
+    flex: 0 0 240px;
+    font-size: 0.85rem;
+    color: var(--gray-700);
+    font-style: italic;
+  }
+
+  .dep-chain {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+  }
+
+  .dep-skill {
+    font-size: 0.8rem;
+    font-weight: 600;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    white-space: nowrap;
+  }
+
+  .dep-skill.bom { background: var(--orange-light); color: var(--orange); }
+  .dep-skill.ops { background: var(--green-light); color: var(--green); }
+  .dep-skill.dev { background: var(--blue-light); color: var(--blue); }
+  .dep-skill.ref { background: var(--yellow-light); color: var(--yellow); }
+
+  .dep-arrow {
+    color: var(--gray-300);
+    font-weight: 700;
+    font-size: 0.9rem;
+  }
+
+  /* Used-by tag */
+  .used-by {
+    margin-top: 0.75rem;
+    font-size: 0.8rem;
+    color: var(--gray-600);
+  }
+
+  .used-by strong { color: var(--gray-700); }
+
+  /* Print styles */
+  @media print {
+    body { background: white; padding: 1rem; }
+    .skill-card, .pipeline-diagram, .dep-map { break-inside: avoid; }
+  }
+
+  /* Footer */
+  .footer {
+    text-align: center;
+    margin-top: 3rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--gray-200);
+    font-size: 0.8rem;
+    color: var(--gray-600);
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <h1>PB Operations Suite</h1>
+  <p class="subtitle">Claude Code Skills Reference &mdash; 9 skills across BOM pipeline, operations, and DevOps</p>
+
+  <!-- Pipeline Diagram -->
+  <div class="pipeline-diagram">
+    <h2>BOM Pipeline Flow</h2>
+    <div class="pipeline-flow">
+      <span class="pipeline-node">find-design-plans</span>
+      <span class="pipeline-arrow">&rarr;</span>
+      <span class="pipeline-node">planset-bom</span>
+      <span class="pipeline-arrow">&rarr;</span>
+      <span class="pipeline-node">bom-to-so</span>
+      <span class="pipeline-arrow">&rarr;</span>
+      <span class="pipeline-node">bom-so-analysis</span>
+    </div>
+    <div class="pipeline-support">
+      <span class="pipeline-support-node">product-lookup</span>
+      <span class="pipeline-support-label">feeds specs &amp; qty rules into each stage</span>
+    </div>
+  </div>
+
+  <!-- BOM Pipeline Skills -->
+  <div class="section-header">
+    <span class="section-badge badge-orange">BOM Pipeline</span>
+    <span class="section-title">5 Skills</span>
+  </div>
+
+  <div class="skill-card orange">
+    <div class="skill-name">find-design-plans</div>
+    <div class="skill-tagline">Locate the stamped planset PDF for a given project.</div>
+
+    <div class="skill-section-label">Triggers</div>
+    <span class="trigger">"find the planset for PROJ-XXXX"</span>
+    <span class="trigger">"where are the design docs?"</span>
+
+    <div class="skill-section-label">What it does</div>
+    <ol class="steps">
+      <li>Looks up the HubSpot deal (<code>design_documents</code> or <code>all_document_parent_folder_id</code>)</li>
+      <li>Navigates the Google Drive folder structure to the Design folder</li>
+      <li>Lists PDFs via <code>/api/bom/drive-files</code> (breadth-first, depth 4)</li>
+      <li>Returns the file ID of the stamped planset</li>
+    </ol>
+
+    <div class="skill-section-label">Key Details</div>
+    <ul class="key-details">
+      <li>Uses the app's Drive endpoint, <strong>NOT</strong> the Google Drive MCP (which only supports Google Docs)</li>
+      <li>Requires a logged-in user session for auth</li>
+    </ul>
+  </div>
+
+  <div class="skill-card orange">
+    <div class="skill-name">planset-bom</div>
+    <div class="skill-tagline">Extract a complete Bill of Materials from a stamped planset PDF.</div>
+
+    <div class="skill-section-label">Triggers</div>
+    <span class="trigger">"read a planset"</span>
+    <span class="trigger">"generate a BOM"</span>
+    <span class="trigger">"extract equipment from plans"</span>
+
+    <div class="skill-section-label">What it does</div>
+    <ol class="steps">
+      <li>Reads the planset PDF sheet by sheet (PV-0 through PV-6)</li>
+      <li>Extracts project metadata (system size, module count, roof type, arrays)</li>
+      <li>Pulls the BOM table from PV-2 (primary equipment source)</li>
+      <li>Scans electrical diagrams on PV-4 for items not in the BOM table (IMO RSU, AC disconnect, wire)</li>
+      <li>Outputs structured data in CSV, Markdown, and JSON formats</li>
+    </ol>
+
+    <div class="skill-section-label">Key Details</div>
+    <ul class="key-details">
+      <li>IMO RSU switch is on PV-4 SLD, <strong>NOT</strong> in PV-2 BOM table</li>
+      <li>AC disconnect: 3-wire = TGN3322R (GE), 2-wire = DG222URB (Eaton)</li>
+      <li><code>model</code> field = part number, <code>description</code> = marketing name</li>
+      <li>Roof type from PV-0 DESIGN CRITERIA determines racking selection</li>
+      <li>Invokes <strong>product-lookup</strong> when qty rules depend on manufacturer specs</li>
+    </ul>
+  </div>
+
+  <div class="skill-card orange">
+    <div class="skill-name">bom-to-so</div>
+    <div class="skill-tagline">Convert a saved BOM snapshot into a Zoho Sales Order and compare against ops.</div>
+
+    <div class="skill-section-label">Triggers</div>
+    <span class="trigger">"create an SO"</span>
+    <span class="trigger">"compare auto vs ops SO"</span>
+    <span class="trigger">"post-processor rules"</span>
+
+    <div class="skill-section-label">What it does</div>
+    <ol class="steps">
+      <li>Resolves the Zoho customer (auto-match by HubSpot contact ID, fallback to name search)</li>
+      <li>Creates a draft SO in Zoho via <code>POST /api/bom/create-so</code></li>
+      <li>Runs the SO post-processor (SKU swaps, item removal, qty adjustments, missing item additions)</li>
+      <li>Fetches the ops-created SO from Zoho for comparison</li>
+      <li>Compares equipment line items (normalize, match by SKU/name, classify differences)</li>
+    </ol>
+
+    <div class="skill-section-label">Key Details</div>
+    <ul class="key-details">
+      <li>Two post-processors: BOM post-processor (at save, cosmetic) and SO post-processor (at create, mutates line items)</li>
+      <li>Idempotent &mdash; if snapshot already has a <code>zohoSoId</code>, returns the existing SO</li>
+      <li>Debug mode via <code>X-BOM-Debug: true</code> header</li>
+      <li>Invokes <strong>product-lookup</strong> for SKU variant selection</li>
+    </ul>
+  </div>
+
+  <div class="skill-card yellow">
+    <div class="skill-name">product-lookup</div>
+    <div class="skill-tagline">Look up solar equipment specs, installation quantities, sizing rules, and compatibility.</div>
+
+    <div class="skill-section-label">Triggers</div>
+    <span class="trigger">"how many snow dogs per array?"</span>
+    <span class="trigger">"XR10 vs XR100?"</span>
+    <span class="trigger">"clamp range for this module?"</span>
+
+    <div class="skill-section-label">What it does</div>
+    <ol class="steps">
+      <li>Checks curated manufacturer reference files (9 manufacturers covered)</li>
+      <li>Answers from reference data with source citations</li>
+      <li>Falls back to web search if product isn't documented</li>
+      <li>Flags gaps for future reference file additions</li>
+    </ol>
+
+    <div class="skill-section-label">Reference Coverage</div>
+    <table class="ref-table">
+      <thead><tr><th>Manufacturer</th><th>Products</th></tr></thead>
+      <tbody>
+        <tr><td>IronRidge</td><td>XR10/XR100 rails, HUG attachment, UFO/CAMO clamps, splices, ground lugs</td></tr>
+        <tr><td>Tesla</td><td>Powerwall 3, Gateway-3, MCI-2, expansion kit, backup switch, wall mount</td></tr>
+        <tr><td>Alpine</td><td>Snow Dog (BLK/CLR), qty rules, pitch limits</td></tr>
+        <tr><td>IMO</td><td>SI16-PEL64R-2 rapid shutdown switch</td></tr>
+        <tr><td>SEG Solar</td><td>SEG-440-BTD-BG module, frame dims, clamp range</td></tr>
+        <tr><td>Hyundai Solar</td><td>HiN-T440NF(BK) module, frame dims, clamp range</td></tr>
+        <tr><td>EZ Solar</td><td>JB-1.2 junction box</td></tr>
+        <tr><td>S-5!</td><td>ProteaBracket, standing seam clamps</td></tr>
+        <tr><td>Enphase</td><td>IQ8 series, trunk cable, Q relay</td></tr>
+      </tbody>
+    </table>
+
+    <div class="used-by"><strong>Used by:</strong> planset-bom (qty rules), bom-to-so (SKU selection), bom-so-analysis (validate ops quantities)</div>
+  </div>
+
+  <div class="skill-card orange">
+    <div class="skill-name">bom-so-analysis</div>
+    <div class="skill-tagline">Batch-compare auto-generated SOs against ops-created SOs to validate and improve post-processor rules.</div>
+
+    <div class="skill-section-label">Triggers</div>
+    <span class="trigger">"run the SO analysis"</span>
+    <span class="trigger">"compare auto vs ops SOs"</span>
+    <span class="trigger">"improve post-processor"</span>
+
+    <div class="skill-section-label">What it does</div>
+    <ol class="steps">
+      <li>Selects jobs (by PROJ number, warehouse, or "all with ops SOs")</li>
+      <li>For each job: fresh BOM extraction &rarr; auto SO creation &rarr; ops SO fetch &rarr; comparison</li>
+      <li>Classifies all jobs (job type, warehouse, equipment, racking)</li>
+      <li>Runs pattern analysis (item frequency, qty formulas, breaker patterns, missing items)</li>
+      <li>Proposes post-processor rule improvements with evidence</li>
+    </ol>
+
+    <div class="skill-section-label">Key Details</div>
+    <ul class="key-details">
+      <li><strong>Always</strong> runs fresh BOM extraction &mdash; never reuses old snapshots</li>
+      <li>Invokes <strong>find-design-plans</strong>, <strong>planset-bom</strong>, <strong>bom-to-so</strong>, and <strong>product-lookup</strong></li>
+      <li>Target: ~125 SOs across all warehouses</li>
+      <li>Outputs per-job comparison files + session-level dataset and analysis</li>
+    </ul>
+  </div>
+
+  <!-- Role-Based Skills -->
+  <div class="section-header">
+    <span class="section-badge badge-blue">Role-Based</span>
+    <span class="section-title">3 Skills — Task-Driven Workflow Automation</span>
+  </div>
+
+  <div class="skill-card blue">
+    <div class="skill-name">design-reviewer</div>
+    <div class="skill-tagline">Automate vendor planset review, revision management, and DA document generation.</div>
+
+    <div class="skill-section-label">Triggers</div>
+    <p class="trigger-text">"review this design", "check planset for PROJ-XXXX", "generate DA", "send revision request", "re-review this planset"</p>
+
+    <div class="skill-section-label">What it does</div>
+    <ul>
+      <li>Compliance check — AHJ codes (fire offsets, wind/snow, NEC), utility requirements</li>
+      <li>Equipment match — sold (HubSpot deal) vs designed (planset BOM)</li>
+      <li>Layout review assist — flags concerns for human review</li>
+      <li>Revision management — structured requests for vendor, delta reports on re-review</li>
+      <li>Design approval flow — PandaDoc DA creation (Phase 1b)</li>
+    </ul>
+
+    <div class="skill-section-label">Task Patterns</div>
+    <ul>
+      <li>Complete Initial Design Review, Complete Final Design Review For Stamping</li>
+      <li>Send Plans For DA Revisions #N, Retrieve DA Revisions #N</li>
+      <li>Upload Approved DA Document</li>
+    </ul>
+  </div>
+
+  <div class="skill-card blue">
+    <div class="skill-name">engineering-reviewer</div>
+    <div class="skill-tagline">Pre-PE-stamp electrical/structural validation and permit package prep.</div>
+
+    <div class="skill-section-label">Triggers</div>
+    <p class="trigger-text">"engineering review for PROJ-XXXX", "check the SLD", "prep for PE stamp", "prep permit package"</p>
+
+    <div class="skill-section-label">What it does</div>
+    <ul>
+      <li>Electrical validation — wire sizing, OCPD, 120% rule, rapid shutdown, string sizing, grounding</li>
+      <li>Structural validation — wind/snow loads vs racking, module mounting, roof attachment</li>
+      <li>Code compliance package — structured summary for PE reviewer</li>
+      <li>Permit package prep — verify all required documents exist in Drive</li>
+    </ul>
+
+    <div class="skill-section-label">Task Patterns</div>
+    <ul>
+      <li>Retrieve Plans for Stamping, Upload Stamped Plans &amp; PE Letter</li>
+      <li>Submit Permit To AHJ, Submit Interconnection Application To The Utility</li>
+    </ul>
+  </div>
+
+  <div class="skill-card blue">
+    <div class="skill-name">sales-advisor</div>
+    <div class="skill-tagline">Sales deal qualification, equipment validation, and handoff to ops.</div>
+
+    <div class="skill-section-label">Triggers</div>
+    <p class="trigger-text">"qualify this deal", "validate this system", "prep for handoff", "what's missing for ops"</p>
+
+    <div class="skill-section-label">What it does</div>
+    <ul>
+      <li>Qualify lead — AHJ/utility check, red flag scan</li>
+      <li>Validate sold system — equipment compatibility via product-lookup</li>
+      <li>Handoff checklist — verify fields, Drive folder, OpenSolar, Zoho customer, contract</li>
+      <li>Pricing review (stretch) — $/W sanity check</li>
+    </ul>
+
+    <div class="skill-section-label">Task Patterns</div>
+    <ul>
+      <li>Complete Contract and Deal Review, Confirm if launched into Hatch, Missing AHJ</li>
+    </ul>
+  </div>
+
+  <!-- Operations Skills -->
+  <div class="section-header">
+    <span class="section-badge badge-green">Operations</span>
+    <span class="section-title">2 Skills</span>
+  </div>
+
+  <div class="skill-card green">
+    <div class="skill-name">zuper-debug</div>
+    <div class="skill-tagline">Debug Zuper field service integration issues.</div>
+
+    <div class="skill-section-label">Triggers</div>
+    <span class="trigger">"Zuper API problem"</span>
+    <span class="trigger">"job sync issue"</span>
+    <span class="trigger">"scheduling mismatch"</span>
+
+    <div class="skill-section-label">What it does</div>
+    <ol class="steps">
+      <li>Identifies the scope (which API route, which Zuper entity)</li>
+      <li>Checks the route handler code for known gotchas</li>
+      <li>Queries live data via Zuper MCP tools or app API</li>
+      <li>Compares expected vs actual state</li>
+    </ol>
+
+    <div class="skill-section-label">Key Zuper Gotchas</div>
+    <ul class="key-details">
+      <li><code>assigned_to</code> can only be set at job <strong>CREATION</strong>, not updates</li>
+      <li>Custom fields: GET returns array, POST expects object</li>
+      <li>Status lives in <code>current_job_status</code>, not <code>status</code></li>
+      <li>Job categories have separate status workflows</li>
+    </ul>
+  </div>
+
+  <div class="skill-card green">
+    <div class="skill-name">new-dashboard</div>
+    <div class="skill-tagline">Scaffold a new dashboard page with DashboardShell, data fetching, and metric cards.</div>
+
+    <div class="skill-section-label">Triggers</div>
+    <span class="trigger">"create a new dashboard"</span>
+    <span class="trigger">"add a dashboard page"</span>
+
+    <div class="skill-section-label">What it does</div>
+    <ol class="steps">
+      <li>Parses dashboard name into slug and component name</li>
+      <li>Creates page file from template with DashboardShell wrapper</li>
+      <li>Sets up data fetching (HubSpot, Zuper, or custom API)</li>
+      <li>Wires up metric cards (StatCard, MiniStat, MetricCard, SummaryCard)</li>
+      <li>Adds navigation entry</li>
+    </ol>
+  </div>
+
+  <!-- DevOps Skills -->
+  <div class="section-header">
+    <span class="section-badge badge-blue">DevOps</span>
+    <span class="section-title">2 Skills</span>
+  </div>
+
+  <div class="skill-card blue">
+    <div class="skill-name">deploy</div>
+    <div class="skill-tagline">Run preflight checks, build, and deploy to Vercel.</div>
+
+    <div class="skill-section-label">Triggers</div>
+    <span class="trigger">"deploy"</span>
+    <span class="trigger">"push to production"</span>
+    <span class="trigger">"ship it"</span>
+
+    <div class="skill-section-label">What it does</div>
+    <ol class="steps">
+      <li>Checks for uncommitted changes</li>
+      <li>Runs preflight checks (<code>npm run preflight</code>)</li>
+      <li>Builds the project (<code>npm run build</code>)</li>
+      <li>Deploys to Vercel</li>
+      <li>Verifies the deployment</li>
+    </ol>
+  </div>
+
+  <div class="skill-card blue">
+    <div class="skill-name">release-notes</div>
+    <div class="skill-tagline">Generate release notes from git commits.</div>
+
+    <div class="skill-section-label">Triggers</div>
+    <span class="trigger">"write release notes"</span>
+    <span class="trigger">"what changed since last release?"</span>
+
+    <div class="skill-section-label">What it does</div>
+    <ol class="steps">
+      <li>Reads git log for the specified commit range</li>
+      <li>Groups commits by type (Features, Bug Fixes, Improvements, Infrastructure)</li>
+      <li>Generates formatted release notes</li>
+    </ol>
+  </div>
+
+  <!-- Dependency Map -->
+  <div class="dep-map">
+    <h2>Skill Dependency Map</h2>
+
+    <div class="dep-row">
+      <div class="dep-request">"Read planset for PROJ-8596"</div>
+      <div class="dep-chain">
+        <span class="dep-skill bom">find-design-plans</span>
+        <span class="dep-arrow">&rarr;</span>
+        <span class="dep-skill bom">planset-bom</span>
+        <span class="dep-arrow">&rarr;</span>
+        <span class="dep-skill ref">product-lookup</span>
+      </div>
+    </div>
+
+    <div class="dep-row">
+      <div class="dep-request">"Create SO from this BOM"</div>
+      <div class="dep-chain">
+        <span class="dep-skill bom">bom-to-so</span>
+        <span class="dep-arrow">&rarr;</span>
+        <span class="dep-skill ref">product-lookup</span>
+      </div>
+    </div>
+
+    <div class="dep-row">
+      <div class="dep-request">"Run batch SO analysis"</div>
+      <div class="dep-chain">
+        <span class="dep-skill bom">bom-so-analysis</span>
+        <span class="dep-arrow">&rarr;</span>
+        <span class="dep-skill bom">find-design-plans</span>
+        <span class="dep-arrow">+</span>
+        <span class="dep-skill bom">planset-bom</span>
+        <span class="dep-arrow">+</span>
+        <span class="dep-skill bom">bom-to-so</span>
+        <span class="dep-arrow">+</span>
+        <span class="dep-skill ref">product-lookup</span>
+      </div>
+    </div>
+
+    <div class="dep-row">
+      <div class="dep-request">"How many HUGs for 27 modules?"</div>
+      <div class="dep-chain">
+        <span class="dep-skill ref">product-lookup</span>
+      </div>
+    </div>
+
+    <div class="dep-row">
+      <div class="dep-request">"Zuper jobs not syncing"</div>
+      <div class="dep-chain">
+        <span class="dep-skill ops">zuper-debug</span>
+      </div>
+    </div>
+
+    <div class="dep-row">
+      <div class="dep-request">"Create a scheduling dashboard"</div>
+      <div class="dep-chain">
+        <span class="dep-skill ops">new-dashboard</span>
+      </div>
+    </div>
+
+    <div class="dep-row">
+      <div class="dep-request">"Deploy to production"</div>
+      <div class="dep-chain">
+        <span class="dep-skill dev">deploy</span>
+      </div>
+    </div>
+
+    <div class="dep-row">
+      <div class="dep-request">"What shipped this week?"</div>
+      <div class="dep-chain">
+        <span class="dep-skill dev">release-notes</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    PB Operations Suite &mdash; Skills Reference &mdash; Generated March 2026
+  </div>
+
+</div>
+</body>
+</html>

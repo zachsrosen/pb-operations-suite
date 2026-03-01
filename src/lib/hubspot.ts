@@ -2202,6 +2202,230 @@ export async function createDealLineItem(
   };
 }
 
+// ---------------------------------------------------------------------------
+// HubSpot Tasks
+// ---------------------------------------------------------------------------
+
+export type HubSpotTaskStatus =
+  | "NOT_STARTED"
+  | "IN_PROGRESS"
+  | "COMPLETED"
+  | "WAITING"
+  | "DEFERRED";
+
+export interface HubSpotTask {
+  id: string;
+  subject: string;
+  status: HubSpotTaskStatus;
+  type: string;
+  priority: string;
+  body: string | null;
+  dueDate: string | null;
+  ownerId: string | null;
+  isOpen: boolean;
+  completionDate: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+const TASK_PROPERTIES = [
+  "hs_task_subject",
+  "hs_task_status",
+  "hs_task_type",
+  "hs_task_priority",
+  "hs_task_body",
+  "hs_timestamp",
+  "hubspot_owner_id",
+  "hs_task_is_open",
+  "hs_task_completion_date",
+  "hs_createdate",
+  "hs_lastmodifieddate",
+];
+
+function mapTaskProperties(
+  id: string,
+  properties: Record<string, string | null>
+): HubSpotTask {
+  return {
+    id,
+    subject: properties.hs_task_subject || "",
+    status: (properties.hs_task_status || "NOT_STARTED") as HubSpotTaskStatus,
+    type: properties.hs_task_type || "",
+    priority: properties.hs_task_priority || "NONE",
+    body: properties.hs_task_body || null,
+    dueDate: properties.hs_timestamp || null,
+    ownerId: properties.hubspot_owner_id || null,
+    isOpen: properties.hs_task_is_open === "true",
+    completionDate: properties.hs_task_completion_date || null,
+    createdAt: properties.hs_createdate || null,
+    updatedAt: properties.hs_lastmodifieddate || null,
+  };
+}
+
+/**
+ * Fetch tasks associated with a deal.
+ * Optionally filter by status (e.g. "NOT_STARTED", "COMPLETED").
+ * By default returns only open tasks (hs_task_is_open = true).
+ */
+export async function fetchTasksForDeal(
+  dealId: string,
+  statusFilter?: HubSpotTaskStatus
+): Promise<HubSpotTask[]> {
+  try {
+    // Step 1: Get task IDs associated with the deal
+    const associationsResponse =
+      await hubspotClient.crm.associations.batchApi.read("deals", "tasks", {
+        inputs: [{ id: dealId }],
+      });
+
+    const associations = associationsResponse.results?.[0]?.to || [];
+    if (associations.length === 0) {
+      return [];
+    }
+
+    const taskIds = associations.map((a) => a.id);
+
+    // Step 2: Batch-fetch task details
+    const tasksResponse = await hubspotClient.crm.objects.batchApi.read(
+      "tasks",
+      {
+        inputs: taskIds.map((id) => ({ id })),
+        properties: TASK_PROPERTIES,
+        propertiesWithHistory: [],
+      }
+    );
+
+    let tasks = tasksResponse.results.map((item) =>
+      mapTaskProperties(
+        item.id,
+        item.properties as Record<string, string | null>
+      )
+    );
+
+    // Filter by status if requested
+    if (statusFilter) {
+      tasks = tasks.filter((t) => t.status === statusFilter);
+    }
+
+    // Sort by due date ascending (soonest first), nulls last
+    tasks.sort((a, b) => {
+      if (!a.dueDate && !b.dueDate) return 0;
+      if (!a.dueDate) return 1;
+      if (!b.dueDate) return -1;
+      return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+    });
+
+    return tasks;
+  } catch (error) {
+    console.error(
+      `[HubSpot] Failed to fetch tasks for deal ${dealId}:`,
+      error
+    );
+    Sentry.captureException(error, {
+      tags: { hubspot_operation: "fetchTasksForDeal" },
+      extra: { dealId, statusFilter },
+    });
+    throw error;
+  }
+}
+
+/**
+ * Mark a task as COMPLETED. Optionally append notes to the task body.
+ */
+export async function completeTask(
+  taskId: string,
+  notes?: string
+): Promise<HubSpotTask> {
+  try {
+    const properties: Record<string, string> = {
+      hs_task_status: "COMPLETED",
+    };
+
+    if (notes) {
+      // Fetch existing body to append notes
+      const existing = await hubspotClient.crm.objects.basicApi.getById(
+        "tasks",
+        taskId,
+        ["hs_task_body"]
+      );
+      const existingBody =
+        (existing.properties as Record<string, string | null>).hs_task_body ||
+        "";
+      const separator = existingBody ? "<br/><br/>" : "";
+      const timestamp = new Date().toISOString().split("T")[0];
+      properties.hs_task_body = `${existingBody}${separator}<strong>[Completed ${timestamp}]</strong> ${notes}`;
+    }
+
+    await hubspotClient.crm.objects.basicApi.update("tasks", taskId, {
+      properties,
+    });
+
+    // Re-fetch full properties for the return value
+    const updated = await hubspotClient.crm.objects.basicApi.getById(
+      "tasks",
+      taskId,
+      TASK_PROPERTIES
+    );
+
+    return mapTaskProperties(
+      updated.id,
+      updated.properties as Record<string, string | null>
+    );
+  } catch (error) {
+    console.error(`[HubSpot] Failed to complete task ${taskId}:`, error);
+    Sentry.captureException(error, {
+      tags: { hubspot_operation: "completeTask" },
+      extra: { taskId },
+    });
+    throw error;
+  }
+}
+
+/**
+ * Append notes to a task's body without changing its status.
+ */
+export async function addTaskNote(
+  taskId: string,
+  notes: string
+): Promise<HubSpotTask> {
+  try {
+    // Fetch existing body to append
+    const existing = await hubspotClient.crm.objects.basicApi.getById(
+      "tasks",
+      taskId,
+      ["hs_task_body"]
+    );
+    const existingBody =
+      (existing.properties as Record<string, string | null>).hs_task_body || "";
+    const separator = existingBody ? "<br/><br/>" : "";
+    const timestamp = new Date().toISOString().split("T")[0];
+    const updatedBody = `${existingBody}${separator}<strong>[Note ${timestamp}]</strong> ${notes}`;
+
+    await hubspotClient.crm.objects.basicApi.update("tasks", taskId, {
+      properties: { hs_task_body: updatedBody },
+    });
+
+    // Re-fetch full properties for the return value
+    const updated = await hubspotClient.crm.objects.basicApi.getById(
+      "tasks",
+      taskId,
+      TASK_PROPERTIES
+    );
+
+    return mapTaskProperties(
+      updated.id,
+      updated.properties as Record<string, string | null>
+    );
+  } catch (error) {
+    console.error(`[HubSpot] Failed to add note to task ${taskId}:`, error);
+    Sentry.captureException(error, {
+      tags: { hubspot_operation: "addTaskNote" },
+      extra: { taskId },
+    });
+    throw error;
+  }
+}
+
 export function calculateStats(projects: Project[]) {
   const activeProjects = projects.filter((p) => p.isActive);
   const totalValue = activeProjects.reduce((sum, p) => sum + p.amount, 0);
