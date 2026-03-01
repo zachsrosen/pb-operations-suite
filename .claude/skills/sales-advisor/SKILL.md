@@ -151,9 +151,22 @@ Sanity-check the sold price against expected equipment costs.
 
 | Task Subject Pattern | Handler | Notes |
 |---------------------|---------|-------|
-| `Complete Contract and Deal Review - *` | Step 3: Handoff Checklist | Full handoff verification |
-| `Confirm if launched into Hatch` | Step 1: Qualify Lead | Initial deal qualification |
-| `Missing AHJ - *` | Step 1: Qualify Lead (partial) | AHJ population needed |
+| `Complete Contract and Deal Review - {LOC}` | Step 3: Handoff Checklist | 23 open, full handoff verification |
+| `Confirm if launched into Hatch` | Step 1: Qualify Lead | 22 open, no location suffix, empty body |
+| `Missing AHJ - {LOC}` | Step 1: Qualify Lead (partial) | 40 open, AHJ population needed |
+
+## Task Body Patterns
+
+**Unlike design/engineering tasks, sales task bodies contain INSTRUCTIONS, not deal-specific data:**
+
+- **Complete Contract and Deal Review**: Lengthy instructional checklist for the PM (contract review steps, utility bill review, proposal review, customer contacts). The skill should NOT parse this body for data — instead, pull all deal-specific data from the deal properties and associated records.
+- **Confirm if launched into Hatch**: Empty body. Binary check task.
+- **Missing AHJ**: Simple instruction: "Please populate the AHJ for this job to support automation."
+
+**Key detail from the checklist body:**
+- Xcel and Black Hills utility bills are REQUIRED immediately; other utilities can proceed without
+- Payment type found on "Quotation" page of proposal (typically page 11)
+- Contact should have "Payor" label; loan applicants need "Payor" + "Loan Applicant" labels
 
 ## Integration Points
 
