@@ -7,71 +7,13 @@ import { formatMoney } from "@/lib/format";
 import { RawProject } from "@/lib/types";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
-
-// Permitting statuses indicating active/pending
-const PERMIT_ACTIVE_STATUSES = [
-  "Awaiting Utility Approval",
-  "Ready For Permitting",
-  "Submitted To Customer",
-  "Customer Signature Acquired",
-  "Waiting On Information",
-  "Submitted to AHJ",
-  "Resubmitted to AHJ",
-  "Pending SolarApp",
-  "Submit SolarApp to AHJ",
-];
-
-const PERMIT_REVISION_STATUSES = [
-  "Non-Design Related Rejection",
-  "Rejected",
-  "In Design For Revision",
-  "Returned from Design",
-  "As-Built Revision Needed",
-  "As-Built Revision In Progress",
-  "As-Built Ready To Resubmit",
-  "As-Built Revision Resubmitted",
-];
-
-// IC statuses indicating active
-const IC_ACTIVE_STATUSES = [
-  "Ready for Interconnection",
-  "Submitted To Customer",
-  "Ready To Submit - Pending Design",
-  "Signature Acquired By Customer",
-  "Submitted To Utility",
-  "Waiting On Information",
-  "Waiting on Utility Bill",
-  "Waiting on New Construction",
-  "In Review",
-];
-
-const IC_REVISION_STATUSES = [
-  "Non-Design Related Rejection",
-  "Rejected (New)",
-  "Rejected",
-  "In Design For Revisions",
-  "Revision Returned From Design",
-  "Resubmitted To Utility",
-];
-
-// PTO pipeline statuses
-const PTO_PIPELINE_STATUSES = [
-  "PTO Waiting on Interconnection Approval",
-  "Inspection Passed - Ready for Utility",
-  "Inspection Submitted to Utility",
-  "Resubmitted to Utility",
-  "Inspection Rejected By Utility",
-  "Ops Related PTO Rejection",
-  "Waiting On Information",
-  "Waiting on New Construction",
-  "Pending Truck Roll",
-  "Xcel Photos Ready to Submit",
-  "Xcel Photos Submitted",
-  "XCEL Photos Rejected",
-  "Xcel Photos Ready to Resubmit",
-  "Xcel Photos Resubmitted",
-  "Xcel Photos Approved",
-];
+import {
+  PERMIT_ACTIVE_STATUSES,
+  PERMIT_REVISION_STATUSES,
+  IC_ACTIVE_STATUSES,
+  IC_REVISION_STATUSES,
+  PTO_PIPELINE_STATUSES,
+} from "@/lib/pi-statuses";
 
 const PI_LINKS = [
   { href: "/dashboards/pi-metrics", label: "P&I Metrics", desc: "Permit, IC, and PTO KPIs" },

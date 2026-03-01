@@ -7,6 +7,7 @@ import { formatMoney } from "@/lib/format";
 import { RawProject } from "@/lib/types";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
+import { PERMIT_ACTIVE_STATUSES, PERMIT_REVISION_STATUSES } from "@/lib/pi-statuses";
 
 // ---- Types ----
 
@@ -14,30 +15,6 @@ interface AHJRecord {
   id: string;
   properties: Record<string, string | null>;
 }
-
-// Permitting statuses indicating active permits
-const PERMIT_ACTIVE_STATUSES = [
-  "Awaiting Utility Approval",
-  "Ready For Permitting",
-  "Submitted To Customer",
-  "Customer Signature Acquired",
-  "Waiting On Information",
-  "Submitted to AHJ",
-  "Resubmitted to AHJ",
-  "Pending SolarApp",
-  "Submit SolarApp to AHJ",
-];
-
-const PERMIT_REVISION_STATUSES = [
-  "Non-Design Related Rejection",
-  "Rejected",
-  "In Design For Revision",
-  "Returned from Design",
-  "As-Built Revision Needed",
-  "As-Built Revision In Progress",
-  "As-Built Ready To Resubmit",
-  "As-Built Revision Resubmitted",
-];
 
 type SortField = "name" | "dealCount" | "activePermits" | "rejectionRate" | "turnaround" | "revenue";
 type SortDir = "asc" | "desc";

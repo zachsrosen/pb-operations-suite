@@ -7,49 +7,12 @@ import { formatMoney } from "@/lib/format";
 import { RawProject } from "@/lib/types";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
-
-// Statuses where the ball is in our court — permitting
-const PERMIT_ACTION_STATUSES: Record<string, string> = {
-  "Ready For Permitting": "Submit to AHJ",
-  "Customer Signature Acquired": "Submit to AHJ",
-  "Non-Design Related Rejection": "Review rejection",
-  "Rejected": "Revise & resubmit",
-  "In Design For Revision": "Complete revision",
-  "Returned from Design": "Resubmit to AHJ",
-  "As-Built Revision Needed": "Start as-built revision",
-  "As-Built Revision In Progress": "Complete as-built",
-  "As-Built Ready To Resubmit": "Resubmit as-built",
-  "Pending SolarApp": "Submit SolarApp",
-  "Submit SolarApp to AHJ": "Submit SolarApp to AHJ",
-  "Resubmitted to AHJ": "Follow up with AHJ",
-};
-
-// Statuses where the ball is in our court — IC
-const IC_ACTION_STATUSES: Record<string, string> = {
-  "Ready for Interconnection": "Submit to utility",
-  "Signature Acquired By Customer": "Submit to utility",
-  "Non-Design Related Rejection": "Review rejection",
-  "Rejected (New)": "Review rejection",
-  "Rejected": "Revise & resubmit",
-  "In Design For Revisions": "Complete revision",
-  "Revision Returned From Design": "Resubmit to utility",
-  "Waiting On Information": "Provide information",
-  "Resubmitted To Utility": "Follow up with utility",
-};
-
-// PTO action statuses
-const PTO_ACTION_STATUSES: Record<string, string> = {
-  "Inspection Passed - Ready for Utility": "Submit PTO",
-  "Inspection Rejected By Utility": "Review rejection",
-  "Ops Related PTO Rejection": "Fix ops issue",
-  "Resubmitted to Utility": "Follow up",
-  "Xcel Photos Ready to Submit": "Submit photos",
-  "XCEL Photos Rejected": "Fix & resubmit photos",
-  "Xcel Photos Ready to Resubmit": "Resubmit photos",
-  "Pending Truck Roll": "Schedule truck roll",
-};
-
-const STALE_THRESHOLD_DAYS = 14;
+import {
+  PERMIT_ACTION_STATUSES,
+  IC_ACTION_STATUSES,
+  PTO_ACTION_STATUSES,
+  STALE_THRESHOLD_DAYS,
+} from "@/lib/pi-statuses";
 
 type ActionType = "permit" | "interconnection" | "pto" | "stale";
 type SortField = "name" | "type" | "daysInStatus" | "amount";

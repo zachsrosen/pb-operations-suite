@@ -7,6 +7,7 @@ import { formatMoney } from "@/lib/format";
 import { RawProject } from "@/lib/types";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
+import { IC_ACTIVE_STATUSES, IC_REVISION_STATUSES, PTO_PIPELINE_STATUSES } from "@/lib/pi-statuses";
 
 // ---- Types ----
 
@@ -14,47 +15,6 @@ interface UtilityRecord {
   id: string;
   properties: Record<string, string | null>;
 }
-
-// IC statuses indicating active applications
-const IC_ACTIVE_STATUSES = [
-  "Ready for Interconnection",
-  "Submitted To Customer",
-  "Ready To Submit - Pending Design",
-  "Signature Acquired By Customer",
-  "Submitted To Utility",
-  "Waiting On Information",
-  "Waiting on Utility Bill",
-  "Waiting on New Construction",
-  "In Review",
-];
-
-const IC_REVISION_STATUSES = [
-  "Non-Design Related Rejection",
-  "Rejected (New)",
-  "Rejected",
-  "In Design For Revisions",
-  "Revision Returned From Design",
-  "Resubmitted To Utility",
-];
-
-// PTO pipeline statuses
-const PTO_PIPELINE_STATUSES = [
-  "PTO Waiting on Interconnection Approval",
-  "Inspection Passed - Ready for Utility",
-  "Inspection Submitted to Utility",
-  "Resubmitted to Utility",
-  "Inspection Rejected By Utility",
-  "Ops Related PTO Rejection",
-  "Waiting On Information",
-  "Waiting on New Construction",
-  "Pending Truck Roll",
-  "Xcel Photos Ready to Submit",
-  "Xcel Photos Submitted",
-  "XCEL Photos Rejected",
-  "Xcel Photos Ready to Resubmit",
-  "Xcel Photos Resubmitted",
-  "Xcel Photos Approved",
-];
 
 type SortField = "name" | "dealCount" | "activeIC" | "ptoPipeline" | "icTurnaround" | "revenue";
 type SortDir = "asc" | "desc";
