@@ -41,10 +41,13 @@ function getResendClient(): Resend | null {
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
-const ALERT_FROM =
+const ALERT_FROM_RAW =
   process.env.ALERT_FROM_EMAIL ||
   process.env.RESEND_FROM_EMAIL ||
   "onboarding@resend.dev";
+const ALERT_FROM = ALERT_FROM_RAW.includes("<")
+  ? ALERT_FROM_RAW
+  : `PB Ops Audit <${ALERT_FROM_RAW}>`;
 const ADMIN_EMAILS = (process.env.AUDIT_ALERT_EMAILS || "")
   .split(",")
   .filter(Boolean);
@@ -108,12 +111,15 @@ export async function sendImmediateAlert(
   const html = buildImmediateAlertHtml(session, alertLevel);
 
   try {
-    await resend.emails.send({
+    const { error: sendError } = await resend.emails.send({
       from: ALERT_FROM,
       to: ADMIN_EMAILS,
       subject,
       html,
     });
+    if (sendError) {
+      throw new Error(`Resend API error: ${sendError.message}`);
+    }
   } catch (error) {
     // Send failed — clear timestamp so a retry can re-claim the gate
     const rollback = timestampField === "criticalAlertSentAt"
@@ -255,12 +261,15 @@ export async function sendDailyDigest(
   const html = buildDigestHtml(totalSessions, anomalySessions, envBreakdown);
 
   try {
-    await resend.emails.send({
+    const { error: sendError } = await resend.emails.send({
       from: ALERT_FROM,
       to: ADMIN_EMAILS,
       subject,
       html,
     });
+    if (sendError) {
+      throw new Error(`Resend API error: ${sendError.message}`);
+    }
   } catch (error) {
     // Send failed — rollback the lock so a future retry can re-claim
     await prisma.$executeRaw`
