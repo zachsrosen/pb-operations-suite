@@ -388,6 +388,9 @@ export interface Project {
   openSolarId: string | null;       // os_project_id
   zuperUid: string | null;          // zuper_site_survey_uid
   hubspotContactId: string | null; // Primary associated contact ID (for Zoho customer auto-match)
+
+  // Review flags
+  systemPerformanceReview: boolean;
 }
 
 export interface LineItem {
@@ -595,6 +598,9 @@ const DEAL_PROPERTIES = [
   "os_project_link",
   "os_project_id",
   "zuper_site_survey_uid",
+
+  // Review flags
+  "system_performance_review",
 ];
 
 const MS_PER_DAY = 86_400_000;
@@ -905,6 +911,9 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
     openSolarId: String(deal.os_project_id || "").trim() || null,
     zuperUid: String(deal.zuper_site_survey_uid || "").trim() || null,
     hubspotContactId: null, // populated by fetchProjectById after transform
+
+    // Review flags
+    systemPerformanceReview: String(deal.system_performance_review || "").toLowerCase() === "true",
   };
 }
 
