@@ -32,6 +32,27 @@ const LINKS: SuitePageCard[] = [
     section: "Scheduling",
   },
   {
+    href: "/dashboards/site-survey",
+    title: "Site Survey",
+    description: "Site survey scheduling, status tracking, and completion monitoring.",
+    tag: "SURVEY",
+    section: "Field Execution",
+  },
+  {
+    href: "/dashboards/construction",
+    title: "Construction",
+    description: "Construction status, scheduling, and progress tracking.",
+    tag: "CONSTRUCTION",
+    section: "Field Execution",
+  },
+  {
+    href: "/dashboards/inspections",
+    title: "Inspections",
+    description: "Inspection scheduling, status tracking, pass rates, and AHJ analysis.",
+    tag: "INSPECTIONS",
+    section: "Field Execution",
+  },
+  {
     href: "/dashboards/equipment-backlog",
     title: "Equipment Backlog",
     description: "Equipment forecasting by brand, model, and stage with location filtering.",
