@@ -9,17 +9,6 @@ import { RawProject } from "@/lib/types";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 
-// ---- Types ----
-
-interface ExtendedProject extends RawProject {
-  designStatus?: string;
-  layoutStatus?: string;
-  designCompletionDate?: string;
-  designApprovalDate?: string;
-  designLead?: string;
-  projectManager?: string;
-}
-
 // Active design pipeline statuses (pre-completion, pre-engineering)
 const ACTIVE_DESIGN_STATUSES = [
   "Ready for Design",
@@ -53,9 +42,9 @@ export default function DEMetricsPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
-  const { data: projects, loading, lastUpdated } = useProjectData<ExtendedProject[]>({
+  const { data: projects, loading, lastUpdated } = useProjectData<RawProject[]>({
     params: { context: "executive" },
-    transform: (raw: unknown) => (raw as { projects: ExtendedProject[] }).projects,
+    transform: (raw: unknown) => (raw as { projects: RawProject[] }).projects,
   });
   const safeProjects = projects ?? [];
 

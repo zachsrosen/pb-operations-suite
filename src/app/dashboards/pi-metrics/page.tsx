@@ -9,24 +9,13 @@ import { RawProject } from "@/lib/types";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 
-// ---- Types ----
-
-interface ExtendedProject extends RawProject {
-  permittingStatus?: string;
-  interconnectionStatus?: string;
-  interconnectionSubmitDate?: string;
-  interconnectionApprovalDate?: string;
-  ptoStatus?: string;
-  ptoSubmitDate?: string;
-}
-
 export default function PIMetricsPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
-  const { data: projects, loading, lastUpdated } = useProjectData<ExtendedProject[]>({
+  const { data: projects, loading, lastUpdated } = useProjectData<RawProject[]>({
     params: { context: "executive" },
-    transform: (raw: unknown) => (raw as { projects: ExtendedProject[] }).projects,
+    transform: (raw: unknown) => (raw as { projects: RawProject[] }).projects,
   });
   const safeProjects = projects ?? [];
 

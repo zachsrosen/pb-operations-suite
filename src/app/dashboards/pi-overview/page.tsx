@@ -8,19 +8,6 @@ import { RawProject } from "@/lib/types";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 
-// ---- Types ----
-
-interface ExtendedProject extends RawProject {
-  permittingStatus?: string;
-  interconnectionStatus?: string;
-  ptoStatus?: string;
-  ptoSubmitDate?: string;
-  interconnectionSubmitDate?: string;
-  interconnectionApprovalDate?: string;
-  permitLead?: string;
-  interconnectionsLead?: string;
-}
-
 // Permitting statuses indicating active/pending
 const PERMIT_ACTIVE_STATUSES = [
   "Awaiting Utility Approval",
@@ -98,9 +85,9 @@ export default function PIOverviewPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
-  const { data: projects, loading, lastUpdated } = useProjectData<ExtendedProject[]>({
+  const { data: projects, loading, lastUpdated } = useProjectData<RawProject[]>({
     params: { context: "executive" },
-    transform: (raw: unknown) => (raw as { projects: ExtendedProject[] }).projects,
+    transform: (raw: unknown) => (raw as { projects: RawProject[] }).projects,
   });
   const safeProjects = projects ?? [];
 

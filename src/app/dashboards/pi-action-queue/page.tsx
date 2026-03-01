@@ -8,19 +8,6 @@ import { RawProject } from "@/lib/types";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 
-// ---- Types ----
-
-interface ExtendedProject extends RawProject {
-  permittingStatus?: string;
-  interconnectionStatus?: string;
-  interconnectionSubmitDate?: string;
-  interconnectionApprovalDate?: string;
-  ptoStatus?: string;
-  ptoSubmitDate?: string;
-  permitLead?: string;
-  interconnectionsLead?: string;
-}
-
 // Statuses where the ball is in our court — permitting
 const PERMIT_ACTION_STATUSES: Record<string, string> = {
   "Ready For Permitting": "Submit to AHJ",
@@ -69,7 +56,7 @@ type SortField = "name" | "type" | "daysInStatus" | "amount";
 type SortDir = "asc" | "desc";
 
 interface ActionItem {
-  project: ExtendedProject;
+  project: RawProject;
   type: ActionType;
   status: string;
   action: string;
@@ -81,9 +68,9 @@ export default function PIActionQueuePage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
-  const { data: projects, loading, lastUpdated } = useProjectData<ExtendedProject[]>({
+  const { data: projects, loading, lastUpdated } = useProjectData<RawProject[]>({
     params: { context: "executive" },
-    transform: (raw: unknown) => (raw as { projects: ExtendedProject[] }).projects,
+    transform: (raw: unknown) => (raw as { projects: RawProject[] }).projects,
   });
   const safeProjects = projects ?? [];
 

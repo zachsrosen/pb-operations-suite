@@ -48,11 +48,6 @@ function getDisplayName(value: string | undefined): string {
   return DISPLAY_NAMES[key] || value;
 }
 
-interface ExtendedProject extends RawProject {
-  permittingStatus?: string;
-  finalInspectionStatus?: string;
-}
-
 // Inspection Status Groups
 const INSPECTION_STATUS_GROUPS: FilterGroup[] = [
   {
@@ -109,9 +104,9 @@ export default function InspectionsPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
-  const { data: projects, loading, error, refetch } = useProjectData<ExtendedProject[]>({
+  const { data: projects, loading, error, refetch } = useProjectData<RawProject[]>({
     params: { context: "executive" },
-    transform: (raw: unknown) => (raw as { projects: ExtendedProject[] }).projects,
+    transform: (raw: unknown) => (raw as { projects: RawProject[] }).projects,
   });
   const safeProjects = projects ?? [];
 
@@ -275,7 +270,7 @@ export default function InspectionsPage() {
   }, [safeProjects]);
 
   const existingInspectionStatuses = useMemo(() =>
-    new Set(safeProjects.map(p => (p as ExtendedProject).finalInspectionStatus).filter(Boolean)),
+    new Set(safeProjects.map(p => (p as RawProject).finalInspectionStatus).filter(Boolean)),
     [safeProjects]
   );
 

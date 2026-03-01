@@ -15,15 +15,6 @@ interface UtilityRecord {
   properties: Record<string, string | null>;
 }
 
-interface ExtendedProject extends RawProject {
-  interconnectionStatus?: string;
-  interconnectionSubmitDate?: string;
-  interconnectionApprovalDate?: string;
-  ptoStatus?: string;
-  ptoSubmitDate?: string;
-  interconnectionsLead?: string;
-}
-
 // IC statuses indicating active applications
 const IC_ACTIVE_STATUSES = [
   "Ready for Interconnection",
@@ -72,9 +63,9 @@ export default function UtilityTrackerPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
-  const { data: projects, loading: projectsLoading, lastUpdated } = useProjectData<ExtendedProject[]>({
+  const { data: projects, loading: projectsLoading, lastUpdated } = useProjectData<RawProject[]>({
     params: { context: "executive" },
-    transform: (raw: unknown) => (raw as { projects: ExtendedProject[] }).projects,
+    transform: (raw: unknown) => (raw as { projects: RawProject[] }).projects,
   });
   const safeProjects = projects ?? [];
 
@@ -115,7 +106,7 @@ export default function UtilityTrackerPage() {
 
   // Group projects by utility (case-insensitive)
   const projectsByUtility = useMemo(() => {
-    const map: Record<string, { display: string; projects: ExtendedProject[] }> = {};
+    const map: Record<string, { display: string; projects: RawProject[] }> = {};
     safeProjects.forEach((p) => {
       const util = p.utility?.trim();
       if (util) {

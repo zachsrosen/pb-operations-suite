@@ -9,7 +9,7 @@ import { MonthlyBarChart, aggregateMonthly } from "@/components/ui/MonthlyBarCha
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useDesignFilters } from "@/stores/dashboard-filters";
-import { ClippingAnalysis, analyzeClipping, FullEquipment, getSeasonalTSRF, DEFAULT_TSRF } from "@/lib/clipping";
+import { ClippingAnalysis, analyzeClipping, getSeasonalTSRF, DEFAULT_TSRF } from "@/lib/clipping";
 
 // Display name mappings for status values
 const DISPLAY_NAMES: Record<string, string> = {
@@ -48,17 +48,6 @@ function getDisplayName(value: string | undefined): string {
   const key = value.toLowerCase().replace(/[\s-]+/g, '_');
   return DISPLAY_NAMES[key] || value;
 }
-
-interface ExtendedProject extends RawProject {
-  designStatus?: string;
-  layoutStatus?: string; // This is Design Approval Status in HubSpot
-  designCompletionDate?: string;
-  designApprovalDate?: string;
-  tags?: string[];
-  equipment?: FullEquipment | RawProject["equipment"];
-}
-
-// Clipping engine imported from @/lib/clipping
 
 // Design Status Groups
 const DESIGN_STATUS_GROUPS: FilterGroup[] = [
@@ -219,9 +208,9 @@ export default function DesignEngineeringPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
-  const { data: projects, loading, error, refetch } = useProjectData<ExtendedProject[]>({
+  const { data: projects, loading, error, refetch } = useProjectData<RawProject[]>({
     params: { context: "executive" },
-    transform: (raw: unknown) => (raw as { projects: ExtendedProject[] }).projects,
+    transform: (raw: unknown) => (raw as { projects: RawProject[] }).projects,
   });
   const safeProjects = projects ?? [];
 
@@ -249,7 +238,7 @@ export default function DesignEngineeringPage() {
   }, [loading, safeProjects.length, trackDashboardView]);
 
   // Check if project is in design phase or has design data
-  const isInDesignPhase = useCallback((p: ExtendedProject) => {
+  const isInDesignPhase = useCallback((p: RawProject) => {
     return p.stage === 'Design & Engineering' ||
            p.stage === 'Site Survey' ||
            p.designStatus ||
@@ -383,12 +372,12 @@ export default function DesignEngineeringPage() {
 
   // Get design statuses that exist in the data (for showing in groups)
   const existingDesignStatuses = useMemo(() =>
-    new Set(safeProjects.map(p => (p as ExtendedProject).designStatus).filter(Boolean)),
+    new Set(safeProjects.map(p => (p as RawProject).designStatus).filter(Boolean)),
     [safeProjects]
   );
 
   const existingDesignApprovalStatuses = useMemo(() =>
-    new Set(safeProjects.map(p => (p as ExtendedProject).layoutStatus).filter(Boolean)),
+    new Set(safeProjects.map(p => (p as RawProject).layoutStatus).filter(Boolean)),
     [safeProjects]
   );
 

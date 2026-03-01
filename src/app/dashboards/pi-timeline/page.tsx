@@ -8,19 +8,6 @@ import { RawProject } from "@/lib/types";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 
-// ---- Types ----
-
-interface ExtendedProject extends RawProject {
-  permittingStatus?: string;
-  interconnectionStatus?: string;
-  interconnectionSubmitDate?: string;
-  interconnectionApprovalDate?: string;
-  ptoStatus?: string;
-  ptoSubmitDate?: string;
-  permitLead?: string;
-  interconnectionsLead?: string;
-}
-
 // ---- SLA Targets (days) ----
 const SLA_TARGETS = {
   permitIssueDays: 30,     // permit submission → issuance
@@ -41,7 +28,7 @@ function daysBetween(d1?: string, d2?: string): number | null {
 interface SLAResult {
   label: string;
   target: number;
-  items: { project: ExtendedProject; days: number }[];
+  items: { project: RawProject; days: number }[];
   onTime: number;
   late: number;
   avg: number;
@@ -52,9 +39,9 @@ export default function PITimelinePage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
-  const { data: projects, loading, lastUpdated } = useProjectData<ExtendedProject[]>({
+  const { data: projects, loading, lastUpdated } = useProjectData<RawProject[]>({
     params: { context: "executive" },
-    transform: (raw: unknown) => (raw as { projects: ExtendedProject[] }).projects,
+    transform: (raw: unknown) => (raw as { projects: RawProject[] }).projects,
   });
   const safeProjects = projects ?? [];
 
@@ -71,19 +58,19 @@ export default function PITimelinePage() {
     // Permit Issue SLA: permitSubmitDate → permitIssueDate
     const permitItems = safeProjects
       .map((p) => ({ project: p, days: daysBetween(p.permitSubmitDate, p.permitIssueDate) }))
-      .filter((x): x is { project: ExtendedProject; days: number } => x.days !== null);
+      .filter((x): x is { project: RawProject; days: number } => x.days !== null);
 
     // IC Approval SLA: interconnectionSubmitDate → interconnectionApprovalDate
     const icItems = safeProjects
       .map((p) => ({ project: p, days: daysBetween(p.interconnectionSubmitDate, p.interconnectionApprovalDate) }))
-      .filter((x): x is { project: ExtendedProject; days: number } => x.days !== null);
+      .filter((x): x is { project: RawProject; days: number } => x.days !== null);
 
     // PTO SLA: ptoSubmitDate → ptoGrantedDate
     const ptoItems = safeProjects
       .map((p) => ({ project: p, days: daysBetween(p.ptoSubmitDate, p.ptoGrantedDate) }))
-      .filter((x): x is { project: ExtendedProject; days: number } => x.days !== null);
+      .filter((x): x is { project: RawProject; days: number } => x.days !== null);
 
-    function buildResult(label: string, target: number, items: { project: ExtendedProject; days: number }[]): SLAResult {
+    function buildResult(label: string, target: number, items: { project: RawProject; days: number }[]): SLAResult {
       const onTime = items.filter((i) => i.days <= target).length;
       const late = items.length - onTime;
       const avg = items.length > 0 ? Math.round(items.reduce((s, i) => s + i.days, 0) / items.length) : 0;

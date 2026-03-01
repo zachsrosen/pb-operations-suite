@@ -9,12 +9,6 @@ import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useSiteSurveyFilters } from "@/stores/dashboard-filters";
 
-interface ExtendedProject extends RawProject {
-  siteSurveyStatus?: string;
-  siteSurveyScheduleDate?: string;
-  siteSurveyCompletionDate?: string;
-}
-
 // Site Survey Status Groups
 const SITE_SURVEY_STATUS_GROUPS: FilterGroup[] = [
   {
@@ -59,9 +53,9 @@ export default function SiteSurveyDashboardPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
-  const { data: rawProjects, loading, error, refetch } = useProjectData<ExtendedProject[]>({
+  const { data: rawProjects, loading, error, refetch } = useProjectData<RawProject[]>({
     params: { context: "executive" },
-    transform: (raw: unknown) => (raw as { projects: ExtendedProject[] }).projects,
+    transform: (raw: unknown) => (raw as { projects: RawProject[] }).projects,
   });
   const projects = rawProjects ?? [];
 
@@ -87,7 +81,7 @@ export default function SiteSurveyDashboardPage() {
   }, [loading, projects.length, trackDashboardView]);
 
   // Check if project is in site survey phase
-  const isInSiteSurveyPhase = useCallback((p: ExtendedProject) => {
+  const isInSiteSurveyPhase = useCallback((p: RawProject) => {
     return p.stage === 'Site Survey' ||
            p.siteSurveyStatus ||
            p.siteSurveyScheduleDate ||
@@ -188,7 +182,7 @@ export default function SiteSurveyDashboardPage() {
 
   // Get statuses that exist in the data
   const existingSiteSurveyStatuses = useMemo(() =>
-    new Set(projects.map(p => (p as ExtendedProject).siteSurveyStatus).filter(Boolean)),
+    new Set(projects.map(p => (p as RawProject).siteSurveyStatus).filter(Boolean)),
     [projects]
   );
 

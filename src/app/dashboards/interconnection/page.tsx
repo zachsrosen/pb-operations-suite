@@ -29,14 +29,6 @@ function getDisplayName(value: string | undefined): string {
   return DISPLAY_NAMES[value] || value;
 }
 
-interface ExtendedProject extends RawProject {
-  interconnectionStatus?: string;
-  interconnectionSubmitDate?: string;
-  interconnectionApprovalDate?: string;
-  ptoStatus?: string;
-  ptoSubmitDate?: string;
-}
-
 // Interconnection Status Groups
 const IC_STATUS_GROUPS: FilterGroup[] = [
   {
@@ -161,9 +153,9 @@ export default function InterconnectionPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
-  const { data: projects, loading, error, refetch } = useProjectData<ExtendedProject[]>({
+  const { data: projects, loading, error, refetch } = useProjectData<RawProject[]>({
     params: { context: "executive" },
-    transform: (raw: unknown) => (raw as { projects: ExtendedProject[] }).projects,
+    transform: (raw: unknown) => (raw as { projects: RawProject[] }).projects,
   });
   const safeProjects = projects ?? [];
 
@@ -186,14 +178,14 @@ export default function InterconnectionPage() {
   }, [loading, safeProjects.length, trackDashboardView]);
 
   // Status helper functions
-  const isIcPending = useCallback((p: ExtendedProject) => {
+  const isIcPending = useCallback((p: RawProject) => {
     const status = (p.interconnectionStatus || '').toLowerCase();
     if (status && ['submitted', 'in review', 'pending', 'in progress', 'under review'].some(s => status.includes(s))) return true;
     if (!status && p.interconnectionSubmitDate && !p.interconnectionApprovalDate) return true;
     return false;
   }, []);
 
-  const isIcApproved = useCallback((p: ExtendedProject) => {
+  const isIcApproved = useCallback((p: RawProject) => {
     const status = (p.interconnectionStatus || '').toLowerCase();
     if (status && ['approved', 'complete', 'granted', 'received'].some(s => status.includes(s))) return true;
     if (!status && p.interconnectionApprovalDate) return true;
@@ -354,12 +346,12 @@ export default function InterconnectionPage() {
 
   // Get statuses that exist in the data
   const existingIcStatuses = useMemo(() =>
-    new Set(safeProjects.map(p => (p as ExtendedProject).interconnectionStatus).filter(Boolean)),
+    new Set(safeProjects.map(p => (p as RawProject).interconnectionStatus).filter(Boolean)),
     [safeProjects]
   );
 
   const existingPtoStatuses = useMemo(() =>
-    new Set(safeProjects.map(p => (p as ExtendedProject).ptoStatus).filter(Boolean)),
+    new Set(safeProjects.map(p => (p as RawProject).ptoStatus).filter(Boolean)),
     [safeProjects]
   );
 
@@ -597,8 +589,8 @@ export default function InterconnectionPage() {
             title="Approvals & PTO by Month"
             data={aggregateMonthly(
               stats.icApproved
-                .filter((p: ExtendedProject) => p.interconnectionApprovalDate)
-                .map((p: ExtendedProject) => ({ date: p.interconnectionApprovalDate, amount: p.amount })),
+                .filter((p: RawProject) => p.interconnectionApprovalDate)
+                .map((p: RawProject) => ({ date: p.interconnectionApprovalDate, amount: p.amount })),
               6,
             )}
             secondaryData={aggregateMonthly(

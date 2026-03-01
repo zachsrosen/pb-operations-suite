@@ -15,12 +15,6 @@ interface AHJRecord {
   properties: Record<string, string | null>;
 }
 
-interface ExtendedProject extends RawProject {
-  permittingStatus?: string;
-  permitLead?: string;
-  interconnectionsLead?: string;
-}
-
 // Permitting statuses indicating active permits
 const PERMIT_ACTIVE_STATUSES = [
   "Awaiting Utility Approval",
@@ -52,9 +46,9 @@ export default function AHJTrackerPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
-  const { data: projects, loading: projectsLoading, lastUpdated } = useProjectData<ExtendedProject[]>({
+  const { data: projects, loading: projectsLoading, lastUpdated } = useProjectData<RawProject[]>({
     params: { context: "executive" },
-    transform: (raw: unknown) => (raw as { projects: ExtendedProject[] }).projects,
+    transform: (raw: unknown) => (raw as { projects: RawProject[] }).projects,
   });
   const safeProjects = projects ?? [];
 
@@ -95,7 +89,7 @@ export default function AHJTrackerPage() {
 
   // Group projects by AHJ (case-insensitive)
   const projectsByAhj = useMemo(() => {
-    const map: Record<string, { display: string; projects: ExtendedProject[] }> = {};
+    const map: Record<string, { display: string; projects: RawProject[] }> = {};
     safeProjects.forEach((p) => {
       const ahj = p.ahj?.trim();
       if (ahj) {

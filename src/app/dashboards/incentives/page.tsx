@@ -62,14 +62,6 @@ function getDisplayName(value: string | undefined): string {
   return DISPLAY_NAMES[key] || value;
 }
 
-interface ExtendedProject extends RawProject {
-  threeceEvStatus?: string;
-  threeceBatteryStatus?: string;
-  sgipStatus?: string;
-  pbsrStatus?: string;
-  cpaStatus?: string;
-}
-
 interface ProgramStats {
   count: number;
   value: number;
@@ -77,9 +69,9 @@ interface ProgramStats {
 }
 
 export default function IncentivesPage() {
-  const { data: projects, loading, error, refetch } = useProjectData<ExtendedProject[]>({
+  const { data: projects, loading, error, refetch } = useProjectData<RawProject[]>({
     params: { context: "executive" },
-    transform: (raw: unknown) => (raw as { projects: ExtendedProject[] }).projects,
+    transform: (raw: unknown) => (raw as { projects: RawProject[] }).projects,
   });
 
   const [filterPrograms, setFilterPrograms] = useState<string[]>([]);
@@ -109,7 +101,7 @@ export default function IncentivesPage() {
     }
   }, [filterPrograms, filterLocations, filterStages, loading, trackFilter]);
 
-  const hasIncentive = useCallback((p: ExtendedProject) => {
+  const hasIncentive = useCallback((p: RawProject) => {
     return p.threeceEvStatus ||
            p.threeceBatteryStatus ||
            p.sgipStatus ||
@@ -117,7 +109,7 @@ export default function IncentivesPage() {
            p.cpaStatus;
   }, []);
 
-  const getProjectPrograms = useCallback((p: ExtendedProject): { name: string; status: string }[] => {
+  const getProjectPrograms = useCallback((p: RawProject): { name: string; status: string }[] => {
     const programs: { name: string; status: string }[] = [];
     if (p.threeceEvStatus) programs.push({ name: '3CE EV', status: p.threeceEvStatus });
     if (p.threeceBatteryStatus) programs.push({ name: '3CE Battery', status: p.threeceBatteryStatus });
