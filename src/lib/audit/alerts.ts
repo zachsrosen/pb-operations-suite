@@ -41,10 +41,11 @@ function getResendClient(): Resend | null {
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
-const ALERT_FROM_RAW =
+const ALERT_FROM_RAW = (
   process.env.ALERT_FROM_EMAIL ||
   process.env.RESEND_FROM_EMAIL ||
-  "onboarding@resend.dev";
+  "onboarding@resend.dev"
+).replace(/\\n/g, "").trim();
 const ALERT_FROM = ALERT_FROM_RAW.includes("<")
   ? ALERT_FROM_RAW
   : `PB Ops Audit <${ALERT_FROM_RAW}>`;
