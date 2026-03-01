@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { headers } from "next/headers";
 import { auth } from "@/auth";
-import { prisma, getUserByEmail, logActivity } from "@/lib/db";
+import { prisma, getUserByEmail } from "@/lib/db";
+import { logAdminActivity, extractRequestContext } from "@/lib/audit/admin-activity";
 
 /**
  * POST /api/admin/migrate
@@ -79,13 +81,19 @@ export async function POST() {
     errors.push(`Migration record: ${msg}`);
   }
 
-  // Log the action
-  await logActivity({
+  // Log the action through audit pipeline
+  const headersList = await headers();
+  const reqCtx = extractRequestContext(headersList);
+  await logAdminActivity({
     type: "SETTINGS_CHANGED",
     description: `Applied database migration: add_missing_user_roles (${results.length} operations, ${errors.length} errors)`,
     userId: currentUser.id,
     userEmail: currentUser.email,
+    userName: currentUser.name || undefined,
     metadata: { results, errors },
+    requestPath: "/api/admin/migrate",
+    requestMethod: "POST",
+    ...reqCtx,
   });
 
   return NextResponse.json({

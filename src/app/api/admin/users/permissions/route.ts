@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { headers } from "next/headers";
 import { auth } from "@/auth";
-import { prisma, getUserByEmail, logActivity } from "@/lib/db";
+import { prisma, getUserByEmail } from "@/lib/db";
+import { logAdminActivity, extractRequestContext } from "@/lib/audit/admin-activity";
 
 // Inline validation for permission update request
 interface UpdatePermissionsRequest {
@@ -132,12 +134,15 @@ export async function PUT(request: NextRequest) {
       },
     });
 
-    // Log the permission change
-    await logActivity({
+    // Log the permission change through audit pipeline (session + anomaly detection)
+    const headersList = await headers();
+    const reqCtx = extractRequestContext(headersList);
+    await logAdminActivity({
       type: "USER_PERMISSIONS_CHANGED",
       description: `Updated permissions for ${updatedUser.email}`,
       userId: currentUser.id,
       userEmail: currentUser.email,
+      userName: currentUser.name || undefined,
       entityType: "user",
       entityId: updatedUser.id,
       entityName: updatedUser.email,
@@ -154,6 +159,7 @@ export async function PUT(request: NextRequest) {
           allowedLocations: updatedUser.allowedLocations,
         },
       },
+      ...reqCtx,
     });
 
     return NextResponse.json({

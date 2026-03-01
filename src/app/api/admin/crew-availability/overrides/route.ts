@@ -9,6 +9,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { headers } from "next/headers";
 import { auth } from "@/auth";
 import {
   prisma,
@@ -16,8 +17,8 @@ import {
   getAvailabilityOverrides,
   upsertAvailabilityOverride,
   deleteAvailabilityOverride,
-  logActivity,
 } from "@/lib/db";
+import { logAdminActivity, extractRequestContext } from "@/lib/audit/admin-activity";
 
 async function verifyPermission() {
   const session = await auth();
@@ -105,13 +106,19 @@ export async function POST(request: NextRequest) {
       updatedBy: currentUser!.id,
     });
 
-    await logActivity({
+    const headersList = await headers();
+    const reqCtx = extractRequestContext(headersList);
+    await logAdminActivity({
       type: "SETTINGS_CHANGED",
       description: `Created ${type} override for ${date}`,
       userId: currentUser!.id,
       userEmail: currentUser!.email,
+      userName: currentUser!.name || undefined,
       entityType: "availability_override",
       entityId: record?.id,
+      requestPath: "/api/admin/crew-availability/overrides",
+      requestMethod: "POST",
+      ...reqCtx,
     });
 
     return NextResponse.json({ success: true, record });
@@ -139,13 +146,19 @@ export async function DELETE(request: NextRequest) {
 
     await deleteAvailabilityOverride(id);
 
-    await logActivity({
+    const headersList = await headers();
+    const reqCtx = extractRequestContext(headersList);
+    await logAdminActivity({
       type: "SETTINGS_CHANGED",
       description: `Deleted availability override ${id}`,
       userId: currentUser!.id,
       userEmail: currentUser!.email,
+      userName: currentUser!.name || undefined,
       entityType: "availability_override",
       entityId: id,
+      requestPath: "/api/admin/crew-availability/overrides",
+      requestMethod: "DELETE",
+      ...reqCtx,
     });
 
     return NextResponse.json({ success: true });

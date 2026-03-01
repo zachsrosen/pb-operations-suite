@@ -9,6 +9,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { headers } from "next/headers";
 import { auth } from "@/auth";
 import { LOCATION_TIMEZONES } from "@/lib/constants";
 import { sendAvailabilityConflictNotification } from "@/lib/email";
@@ -21,8 +22,8 @@ import {
   getAvailabilityOverrides,
   upsertAvailabilityOverride,
   deleteAvailabilityOverride,
-  logActivity,
 } from "@/lib/db";
+import { logAdminActivity, extractRequestContext } from "@/lib/audit/admin-activity";
 
 /**
  * Resolve the logged-in user's crew member profile (with impersonation support).
@@ -196,12 +197,19 @@ export async function POST(request: NextRequest) {
       ? `${date} ${startTime}-${endTime}${reason ? ` (${reason})` : ""}`
       : `${date}${reason ? ` (${reason})` : ""}`;
 
-    await logActivity({
-      type: "SETTINGS_CHANGED",
+    const headersList = await headers();
+    const reqCtx = extractRequestContext(headersList);
+    await logAdminActivity({
+      type: "AVAILABILITY_CHANGED",
       description: `${crewMember.name} ${overrideType === "custom" ? "added time block" : "blocked"} ${summary}`,
       userId,
+      userEmail: crewMember.email || "unknown",
+      userName: crewMember.name,
       entityType: "availability_override",
       entityId: record?.id,
+      requestPath: "/api/zuper/my-availability/overrides",
+      requestMethod: "POST",
+      ...reqCtx,
     });
 
     // Notify surveyor + deal owner(s) when an override conflicts with existing scheduled surveys
@@ -513,12 +521,19 @@ export async function DELETE(request: NextRequest) {
 
     await deleteAvailabilityOverride(id);
 
-    await logActivity({
-      type: "SETTINGS_CHANGED",
+    const headersList = await headers();
+    const reqCtx = extractRequestContext(headersList);
+    await logAdminActivity({
+      type: "AVAILABILITY_CHANGED",
       description: `${crewMember.name} unblocked ${existing.date}`,
       userId,
+      userEmail: crewMember.email || "unknown",
+      userName: crewMember.name,
       entityType: "availability_override",
       entityId: id,
+      requestPath: "/api/zuper/my-availability/overrides",
+      requestMethod: "DELETE",
+      ...reqCtx,
     });
 
     return NextResponse.json({ success: true });

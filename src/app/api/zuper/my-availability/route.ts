@@ -11,6 +11,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { headers } from "next/headers";
 import { auth } from "@/auth";
 import {
   prisma,
@@ -19,8 +20,8 @@ import {
   getCrewAvailabilities,
   upsertCrewAvailability,
   deleteCrewAvailability,
-  logActivity,
 } from "@/lib/db";
+import { logAdminActivity, extractRequestContext } from "@/lib/audit/admin-activity";
 
 /**
  * Resolve the logged-in user's crew member profile.
@@ -139,13 +140,19 @@ export async function POST(request: NextRequest) {
       updatedBy: userId,
     });
 
-    await logActivity({
-      type: "SETTINGS_CHANGED",
+    const headersList = await headers();
+    const reqCtx = extractRequestContext(headersList);
+    await logAdminActivity({
+      type: "AVAILABILITY_CHANGED",
       description: `${crewMember.name} added availability: ${location} ${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][dayOfWeek]} ${startTime}-${endTime}`,
       userId,
-      userEmail: crewMember.email || undefined,
+      userEmail: crewMember.email || "unknown",
+      userName: crewMember.name,
       entityType: "crew_availability",
       entityId: record?.id,
+      requestPath: "/api/zuper/my-availability",
+      requestMethod: "POST",
+      ...reqCtx,
     });
 
     return NextResponse.json({ success: true, record });
@@ -201,13 +208,19 @@ export async function PUT(request: NextRequest) {
       updatedBy: userId,
     });
 
-    await logActivity({
-      type: "SETTINGS_CHANGED",
+    const headersList = await headers();
+    const reqCtx = extractRequestContext(headersList);
+    await logAdminActivity({
+      type: "AVAILABILITY_CHANGED",
       description: `${crewMember.name} updated availability: ${location} ${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][dayOfWeek]} ${startTime}-${endTime}`,
       userId,
-      userEmail: crewMember.email || undefined,
+      userEmail: crewMember.email || "unknown",
+      userName: crewMember.name,
       entityType: "crew_availability",
       entityId: id,
+      requestPath: "/api/zuper/my-availability",
+      requestMethod: "PUT",
+      ...reqCtx,
     });
 
     return NextResponse.json({ success: true, record });
@@ -241,13 +254,19 @@ export async function DELETE(request: NextRequest) {
 
     await deleteCrewAvailability(id);
 
-    await logActivity({
-      type: "SETTINGS_CHANGED",
+    const headersList = await headers();
+    const reqCtx = extractRequestContext(headersList);
+    await logAdminActivity({
+      type: "AVAILABILITY_CHANGED",
       description: `${crewMember.name} deleted availability slot`,
       userId,
-      userEmail: crewMember.email || undefined,
+      userEmail: crewMember.email || "unknown",
+      userName: crewMember.name,
       entityType: "crew_availability",
       entityId: id,
+      requestPath: "/api/zuper/my-availability",
+      requestMethod: "DELETE",
+      ...reqCtx,
     });
 
     return NextResponse.json({ success: true });

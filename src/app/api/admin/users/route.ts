@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { headers } from "next/headers";
 import { auth } from "@/auth";
-import { prisma, getAllUsers, updateUserRole, UserRole, getUserByEmail, logActivity } from "@/lib/db";
+import { prisma, getAllUsers, updateUserRole, UserRole, getUserByEmail } from "@/lib/db";
 import { normalizeRole } from "@/lib/role-permissions";
+import { logAdminActivity, extractRequestContext } from "@/lib/audit/admin-activity";
 
 // Inline validation for role update request
 interface UpdateUserRoleRequest {
@@ -104,12 +106,15 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // Log the role change
-    await logActivity({
+    // Log the role change through audit pipeline (session + anomaly detection)
+    const headersList = await headers();
+    const reqCtx = extractRequestContext(headersList);
+    await logAdminActivity({
       type: "USER_ROLE_CHANGED",
       description: `Changed ${updatedUser.email} role from ${oldRole} to ${role}`,
       userId: currentUser.id,
       userEmail: currentUser.email,
+      userName: currentUser.name || undefined,
       entityType: "user",
       entityId: updatedUser.id,
       entityName: updatedUser.email,
@@ -119,6 +124,7 @@ export async function PUT(request: NextRequest) {
         oldRole,
         newRole: role,
       },
+      ...reqCtx,
     });
 
     return NextResponse.json({ user: updatedUser });

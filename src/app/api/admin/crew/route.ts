@@ -17,8 +17,8 @@ import {
   getActiveCrewMembers,
   upsertCrewMember,
   getCrewMemberByName,
-  logActivity,
 } from "@/lib/db";
+import { logAdminActivity } from "@/lib/audit/admin-activity";
 import { zuper } from "@/lib/zuper";
 
 // Zuper Team UIDs by location
@@ -327,7 +327,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Log the seed operation
-      await logActivity({
+      await logAdminActivity({
         type: "SETTINGS_CHANGED",
         description: `Crew configuration updated`,
         userEmail: authResult.email,
@@ -335,6 +335,8 @@ export async function POST(request: NextRequest) {
         entityType: "crew",
         ipAddress: authResult.ip,
         userAgent: authResult.userAgent,
+        requestPath: "/api/admin/crew",
+        requestMethod: "POST",
       });
 
       return NextResponse.json({
@@ -462,7 +464,7 @@ export async function POST(request: NextRequest) {
       const usersCreated = results.filter(r => r.userCreated).length;
 
       // Log the seed-teams operation
-      await logActivity({
+      await logAdminActivity({
         type: "SETTINGS_CHANGED",
         description: `Crew configuration updated`,
         userEmail: authResult.email,
@@ -470,6 +472,8 @@ export async function POST(request: NextRequest) {
         entityType: "crew",
         ipAddress: authResult.ip,
         userAgent: authResult.userAgent,
+        requestPath: "/api/admin/crew",
+        requestMethod: "POST",
       });
 
       return NextResponse.json({
@@ -532,8 +536,8 @@ export async function POST(request: NextRequest) {
       maxDailyJobs: body.maxDailyJobs,
     });
 
-    // Log the crew member update
-    await logActivity({
+    // Log the crew member update through audit pipeline
+    await logAdminActivity({
       type: "SETTINGS_CHANGED",
       description: `Crew configuration updated`,
       userEmail: authResult.email,
@@ -541,6 +545,8 @@ export async function POST(request: NextRequest) {
       entityType: "crew",
       ipAddress: authResult.ip,
       userAgent: authResult.userAgent,
+      requestPath: "/api/admin/crew",
+      requestMethod: "POST",
     });
 
     return NextResponse.json({

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { headers } from "next/headers";
 import { auth } from "@/auth";
-import { prisma, getOrCreateUser, getUserByEmail, logActivity } from "@/lib/db";
+import { prisma, getOrCreateUser, getUserByEmail } from "@/lib/db";
+import { logAdminActivity, extractRequestContext } from "@/lib/audit/admin-activity";
 
 /**
  * POST /api/admin/sync-workspace
@@ -141,12 +143,15 @@ export async function POST() {
       }
     }
 
-    // Log the sync activity
-    await logActivity({
+    // Log the sync activity through audit pipeline
+    const headersList = await headers();
+    const reqCtx = extractRequestContext(headersList);
+    await logAdminActivity({
       type: "USER_CREATED",
       description: `Google Workspace sync: ${results.created} created, ${results.updated} updated, ${results.skipped} skipped`,
       userId: currentUser.id,
       userEmail: currentUser.email,
+      userName: currentUser.name || undefined,
       entityType: "workspace_sync",
       metadata: {
         domain: workspaceDomain,
@@ -156,6 +161,9 @@ export async function POST() {
         skipped: results.skipped,
         errors: results.errors.length,
       },
+      requestPath: "/api/admin/sync-workspace",
+      requestMethod: "POST",
+      ...reqCtx,
     });
 
     return NextResponse.json({
