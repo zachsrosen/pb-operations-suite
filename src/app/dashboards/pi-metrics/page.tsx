@@ -1,13 +1,15 @@
 "use client";
 
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { MetricCard } from "@/components/ui/MetricCard";
+import { MultiSelectFilter, FilterOption } from "@/components/ui/MultiSelectFilter";
 import { MonthlyBarChart, aggregateMonthly } from "@/components/ui/MonthlyBarChart";
 import { formatMoney } from "@/lib/format";
 import { RawProject } from "@/lib/types";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
+import { usePIMetricsFilters } from "@/stores/dashboard-filters";
 
 export default function PIMetricsPage() {
   const { trackDashboardView } = useActivityTracking();
@@ -26,38 +28,69 @@ export default function PIMetricsPage() {
     }
   }, [loading, safeProjects.length, trackDashboardView]);
 
-  const [locationFilter, setLocationFilter] = useState<string>("all");
-  const [leadFilter, setLeadFilter] = useState<string>("all");
-  const [stageFilter, setStageFilter] = useState<string>("all");
+  // ---- Persisted multi-select filters ----
+  const { filters: persistedFilters, setFilters: setPersisted, clearFilters } = usePIMetricsFilters();
 
-  const locations = useMemo(() => {
+  const setFilterLocations = useCallback(
+    (locations: string[]) => setPersisted({ ...persistedFilters, locations }),
+    [persistedFilters, setPersisted]
+  );
+  const setFilterLeads = useCallback(
+    (leads: string[]) => setPersisted({ ...persistedFilters, leads }),
+    [persistedFilters, setPersisted]
+  );
+  const setFilterStages = useCallback(
+    (stages: string[]) => setPersisted({ ...persistedFilters, stages }),
+    [persistedFilters, setPersisted]
+  );
+
+  const hasActiveFilters =
+    persistedFilters.locations.length > 0 ||
+    persistedFilters.leads.length > 0 ||
+    persistedFilters.stages.length > 0;
+
+  // ---- Build FilterOption[] lists ----
+  const locationOptions: FilterOption[] = useMemo(() => {
     const locs = new Set<string>();
     safeProjects.forEach((p) => { if (p.pbLocation) locs.add(p.pbLocation); });
-    return Array.from(locs).sort();
+    return Array.from(locs).sort().map((loc) => ({ value: loc, label: loc }));
   }, [safeProjects]);
 
-  const leads = useMemo(() => {
+  const leadOptions: FilterOption[] = useMemo(() => {
     const names = new Set<string>();
     safeProjects.forEach((p) => {
-      if (p.permitLead) names.add(p.permitLead);
-      if (p.interconnectionsLead) names.add(p.interconnectionsLead);
+      const pl = p.permitLead || "Unknown";
+      const il = p.interconnectionsLead || "Unknown";
+      names.add(pl);
+      names.add(il);
     });
-    return Array.from(names).sort();
+    return Array.from(names).sort().map((name) => ({ value: name, label: name }));
   }, [safeProjects]);
 
-  const stages = useMemo(() => {
+  const stageOptions: FilterOption[] = useMemo(() => {
     const s = new Set<string>();
     safeProjects.forEach((p) => { if (p.stage) s.add(p.stage); });
-    return Array.from(s).sort();
+    return Array.from(s).sort().map((stage) => ({ value: stage, label: stage }));
   }, [safeProjects]);
 
+  // ---- Filtered projects ----
   const filteredProjects = useMemo(() => {
     let result = safeProjects;
-    if (locationFilter !== "all") result = result.filter((p) => p.pbLocation === locationFilter);
-    if (leadFilter !== "all") result = result.filter((p) => p.permitLead === leadFilter || p.interconnectionsLead === leadFilter);
-    if (stageFilter !== "all") result = result.filter((p) => p.stage === stageFilter);
+    if (persistedFilters.locations.length > 0) {
+      result = result.filter((p) => persistedFilters.locations.includes(p.pbLocation || ""));
+    }
+    if (persistedFilters.leads.length > 0) {
+      result = result.filter(
+        (p) =>
+          persistedFilters.leads.includes(p.permitLead || "Unknown") ||
+          persistedFilters.leads.includes(p.interconnectionsLead || "Unknown")
+      );
+    }
+    if (persistedFilters.stages.length > 0) {
+      result = result.filter((p) => persistedFilters.stages.includes(p.stage || ""));
+    }
     return result;
-  }, [safeProjects, locationFilter, leadFilter, stageFilter]);
+  }, [safeProjects, persistedFilters]);
 
   // ---- Permit Metrics ----
   const permitMetrics = useMemo(() => {
@@ -163,6 +196,8 @@ export default function PIMetricsPage() {
         ptoSubmitDate: p.ptoSubmitDate || "",
         ptoGrantedDate: p.ptoGrantedDate || "",
         location: p.pbLocation || "",
+        permitLead: p.permitLead || "Unknown",
+        interconnectionsLead: p.interconnectionsLead || "Unknown",
         ahj: p.ahj || "",
         utility: p.utility || "",
         amount: p.amount || 0,
@@ -178,8 +213,44 @@ export default function PIMetricsPage() {
       exportData={{ data: exportRows, filename: "pi-metrics.csv" }}
       fullWidth
     >
+      {/* Filters */}
+      <div className="flex items-center gap-3 flex-wrap mb-6">
+        <MultiSelectFilter
+          label="Location"
+          options={locationOptions}
+          selected={persistedFilters.locations}
+          onChange={setFilterLocations}
+          placeholder="All Locations"
+          accentColor="cyan"
+        />
+        <MultiSelectFilter
+          label="Lead"
+          options={leadOptions}
+          selected={persistedFilters.leads}
+          onChange={setFilterLeads}
+          placeholder="All Leads"
+          accentColor="cyan"
+        />
+        <MultiSelectFilter
+          label="Stage"
+          options={stageOptions}
+          selected={persistedFilters.stages}
+          onChange={setFilterStages}
+          placeholder="All Stages"
+          accentColor="cyan"
+        />
+        {hasActiveFilters && (
+          <button
+            onClick={clearFilters}
+            className="text-xs text-muted hover:text-foreground px-3 py-2 border border-t-border rounded-lg hover:border-muted transition-colors"
+          >
+            Clear All
+          </button>
+        )}
+      </div>
+
       {/* Permits Section */}
-      <div>
+      <div className="mb-6">
         <h2 className="text-lg font-semibold text-foreground mb-3">Permits</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 stagger-grid">
           <MetricCard
@@ -206,7 +277,7 @@ export default function PIMetricsPage() {
       </div>
 
       {/* IC Section */}
-      <div>
+      <div className="mb-6">
         <h2 className="text-lg font-semibold text-foreground mb-3">Interconnection</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 stagger-grid">
           <MetricCard
@@ -233,7 +304,7 @@ export default function PIMetricsPage() {
       </div>
 
       {/* PTO Section */}
-      <div>
+      <div className="mb-6">
         <h2 className="text-lg font-semibold text-foreground mb-3">Permission to Operate</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 stagger-grid">
           <MetricCard
@@ -260,7 +331,7 @@ export default function PIMetricsPage() {
       </div>
 
       {/* Monthly Trends */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
         <MonthlyBarChart
           title="Permits Issued (6 months)"
           data={permitIssueTrend}
@@ -284,24 +355,8 @@ export default function PIMetricsPage() {
         />
       </div>
 
-      {/* Filters */}
-      <div className="flex gap-2 flex-wrap items-center">
-        <select value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)} className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground">
-          <option value="all">All Locations</option>
-          {locations.map((loc) => <option key={loc} value={loc}>{loc}</option>)}
-        </select>
-        <select value={leadFilter} onChange={(e) => setLeadFilter(e.target.value)} className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground">
-          <option value="all">All Leads</option>
-          {leads.map((name) => <option key={name} value={name}>{name}</option>)}
-        </select>
-        <select value={stageFilter} onChange={(e) => setStageFilter(e.target.value)} className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground">
-          <option value="all">All Stages</option>
-          {stages.map((s) => <option key={s} value={s}>{s}</option>)}
-        </select>
-      </div>
-
       {/* Revenue by Permitting Status */}
-      <div className="bg-surface border border-t-border rounded-xl p-6 shadow-card">
+      <div className="bg-surface border border-t-border rounded-xl p-6 shadow-card mb-6">
         <h2 className="text-lg font-semibold text-foreground mb-4">Revenue by Permitting Status</h2>
         {loading ? (
           <div className="space-y-3">

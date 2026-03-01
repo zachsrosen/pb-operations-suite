@@ -289,6 +289,9 @@ export interface Project {
   // Design
   designCompletionDate: string | null;
   designApprovalDate: string | null;
+  designDraftDate: string | null;
+  designApprovalSentDate: string | null;
+  designStartDate: string | null;
   designStatus: string | null;
   layoutStatus: string | null;
 
@@ -363,6 +366,7 @@ export interface Project {
   designLead: string;
   permitLead: string;
   interconnectionsLead: string;
+  preconstructionLead: string;
 
   // QC Time Metrics (pre-calculated by HubSpot, in days)
   siteSurveyTurnaroundTime: number | null;
@@ -488,6 +492,9 @@ const DEAL_PROPERTIES = [
   // Design dates & status
   "design_completion_date",
   "layout_approval_date", // design approval
+  "design_draft_completion_date", // planset upload date
+  "design_approval_sent_date", // sent to customer for approval
+  "design_start_date", // design work started
   "design_status",
   "layout_status", // design approval status
 
@@ -573,6 +580,7 @@ const DEAL_PROPERTIES = [
   "design",
   "permit_tech",
   "interconnections_tech",
+  "rtb_lead",
 
   // QC Time Metrics (pre-calculated by HubSpot, in days)
   "site_survey_turnaround_time",
@@ -807,6 +815,9 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
     // Design
     designCompletionDate: parseDate(deal.design_completion_date),
     designApprovalDate: parseDate(deal.layout_approval_date),
+    designDraftDate: parseDate(deal.design_draft_completion_date),
+    designApprovalSentDate: parseDate(deal.design_approval_sent_date),
+    designStartDate: parseDate(deal.design_start_date),
     designStatus: deal.design_status ? String(deal.design_status) : null,
     layoutStatus: deal.layout_status ? String(deal.layout_status) : null,
 
@@ -896,6 +907,11 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
     })(),
     interconnectionsLead: (() => {
       const raw = String(deal.interconnections_tech || "");
+      if (!raw) return "";
+      return ownerMap?.[raw] || surveyorMap?.[raw] || raw;
+    })(),
+    preconstructionLead: (() => {
+      const raw = String(deal.rtb_lead || "");
       if (!raw) return "";
       return ownerMap?.[raw] || surveyorMap?.[raw] || raw;
     })(),

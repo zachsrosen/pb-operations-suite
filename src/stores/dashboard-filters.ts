@@ -186,3 +186,72 @@ export function useSiteSurveyFilters() {
       useDashboardFilters.getState().clearFilters("site-survey"),
   };
 }
+
+// ===== P&I Suite filters (6 dashboards) =====
+
+export interface PISubFilters {
+  locations: string[];
+  leads: string[];
+  stages: string[];
+}
+
+const defaultPISubFilters: PISubFilters = {
+  locations: [],
+  leads: [],
+  stages: [],
+};
+
+function createPIFilterHook(key: string) {
+  return function usePISubFilters() {
+    const raw = useDashboardFilters(
+      (s) => s.filters[key]
+    ) as PISubFilters | undefined;
+    const setFilters = useDashboardFilters((s) => s.setFilters);
+    return {
+      filters: raw ?? defaultPISubFilters,
+      setFilters: (f: PISubFilters) => setFilters(key, f),
+      clearFilters: () =>
+        useDashboardFilters.getState().clearFilters(key),
+    };
+  };
+}
+
+export const usePIOverviewFilters = createPIFilterHook("pi-overview");
+export const usePIMetricsFilters = createPIFilterHook("pi-metrics");
+export const usePITimelineFilters = createPIFilterHook("pi-timeline");
+export const usePIActionQueueFilters = createPIFilterHook("pi-action-queue");
+export const useAHJTrackerFilters = createPIFilterHook("ahj-tracker");
+export const useUtilityTrackerFilters = createPIFilterHook("utility-tracker");
+
+// ===== D&E Suite filters (5 dashboards) =====
+
+export interface DESubFilters {
+  locations: string[];
+  owners: string[];
+}
+
+const defaultDESubFilters: DESubFilters = {
+  locations: [],
+  owners: [],
+};
+
+function createDEFilterHook(key: string) {
+  return function useDESubFilters() {
+    const raw = useDashboardFilters(
+      (s) => s.filters[key]
+    ) as DESubFilters | undefined;
+    const setFilters = useDashboardFilters((s) => s.setFilters);
+    return {
+      filters: raw ?? defaultDESubFilters,
+      setFilters: (f: DESubFilters) => setFilters(key, f),
+      clearFilters: () =>
+        useDashboardFilters.getState().clearFilters(key),
+    };
+  };
+}
+
+export const useDEOverviewFilters = createDEFilterHook("de-overview");
+export const useDEMetricsFilters = createDEFilterHook("de-metrics");
+export const usePlanReviewFilters = createDEFilterHook("plan-review");
+export const usePendingApprovalFilters = createDEFilterHook("pending-approval");
+export const useDesignRevisionsFilters = createDEFilterHook("design-revisions");

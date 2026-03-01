@@ -1,13 +1,15 @@
 "use client";
 
-import { useMemo, useRef, useEffect } from "react";
+import { useMemo, useRef, useEffect, useState, useCallback } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { MetricCard } from "@/components/ui/MetricCard";
 import { MonthlyBarChart, aggregateMonthly } from "@/components/ui/MonthlyBarChart";
+import { MultiSelectFilter, FilterOption } from "@/components/ui/MultiSelectFilter";
 import { formatMoney } from "@/lib/format";
 import { RawProject } from "@/lib/types";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
+import { useDEMetricsFilters } from "@/stores/dashboard-filters";
 
 // Active design pipeline statuses (pre-completion, pre-engineering)
 const ACTIVE_DESIGN_STATUSES = [
@@ -38,6 +40,15 @@ const REVISION_STATUSES = [
   "As-Built Revision Completed",
 ];
 
+// ---- Sort helpers ----
+type SortKey = "designer" | "count" | "revenue";
+type SortDir = "asc" | "desc";
+
+function sortIndicator(active: boolean, dir: SortDir) {
+  if (!active) return " \u21C5";
+  return dir === "asc" ? " \u2191" : " \u2193";
+}
+
 export default function DEMetricsPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
@@ -55,23 +66,94 @@ export default function DEMetricsPage() {
     }
   }, [loading, safeProjects.length, trackDashboardView]);
 
-  // Filter to projects with any design data
-  const designProjects = useMemo(
-    () => safeProjects.filter(
-      (p) =>
-        p.stage === "Design & Engineering" ||
-        p.designStatus ||
-        p.designCompletionDate ||
-        p.designApprovalDate
-    ),
+  // ---- Filter state ----
+  const { filters: persistedFilters, setFilters: setPersisted, clearFilters } = useDEMetricsFilters();
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // ---- Sort state for designer table ----
+  const [sortKey, setSortKey] = useState<SortKey>("count");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+
+  const handleSort = useCallback((key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("desc");
+    }
+  }, [sortKey]);
+
+  // ---- Build filter option lists ----
+  const locationOptions: FilterOption[] = useMemo(
+    () =>
+      [...new Set(safeProjects.map((p) => p.pbLocation || ""))]
+        .filter(Boolean)
+        .sort()
+        .map((loc) => ({ value: loc, label: loc })),
     [safeProjects]
   );
 
-  // ---- Approval Metrics ----
+  const ownerOptions: FilterOption[] = useMemo(
+    () =>
+      [...new Set(safeProjects.map((p) => p.designLead || "Unknown"))]
+        .sort()
+        .map((o) => ({ value: o, label: o })),
+    [safeProjects]
+  );
+
+  const hasActiveFilters =
+    persistedFilters.locations.length > 0 ||
+    persistedFilters.owners.length > 0 ||
+    searchQuery.length > 0;
+
+  // Filter to projects with any design data (cohort filter — includes designApprovalSentDate)
+  const designProjects = useMemo(
+    () =>
+      safeProjects.filter((p) => {
+        // Cohort inclusion: must have at least one design-related attribute
+        const inCohort =
+          p.stage === "Design & Engineering" ||
+          p.designStatus ||
+          p.designCompletionDate ||
+          p.designApprovalDate ||
+          p.designApprovalSentDate;
+
+        if (!inCohort) return false;
+
+        // Apply persisted filters
+        if (
+          persistedFilters.locations.length > 0 &&
+          !persistedFilters.locations.includes(p.pbLocation || "")
+        )
+          return false;
+        if (
+          persistedFilters.owners.length > 0 &&
+          !persistedFilters.owners.includes(p.designLead || "Unknown")
+        )
+          return false;
+
+        // Apply search
+        if (searchQuery) {
+          const q = searchQuery.toLowerCase();
+          const haystack = [p.name, p.designLead, p.pbLocation, p.designStatus]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase();
+          if (!haystack.includes(q)) return false;
+        }
+
+        return true;
+      }),
+    [safeProjects, persistedFilters, searchQuery]
+  );
+
+  // ---- Approval Metrics (FIXED: use designApprovalSentDate for "Sent") ----
   const approvalMetrics = useMemo(() => {
-    const sent = designProjects.filter((p) => p.designCompletionDate);
+    const sent = designProjects.filter((p) => p.designApprovalSentDate);
     const approved = designProjects.filter((p) => p.designApprovalDate);
-    const pending = designProjects.filter((p) => p.designCompletionDate && !p.designApprovalDate);
+    const pending = designProjects.filter(
+      (p) => p.designApprovalSentDate && !p.designApprovalDate
+    );
 
     return {
       sent: { count: sent.length, revenue: sent.reduce((s, p) => s + (p.amount || 0), 0) },
@@ -137,28 +219,36 @@ export default function DEMetricsPage() {
     [designProjects]
   );
 
-  // ---- Designer productivity ----
+  // ---- Designer productivity (sorted) ----
   const designerStats = useMemo(() => {
     const byDesigner: Record<string, { count: number; revenue: number }> = {};
     designProjects.forEach((p) => {
-      const designer = p.designLead || p.projectManager || "Unassigned";
+      const designer = p.designLead || "Unknown";
       if (!byDesigner[designer]) byDesigner[designer] = { count: 0, revenue: 0 };
       byDesigner[designer].count += 1;
       byDesigner[designer].revenue += p.amount || 0;
     });
-    return Object.entries(byDesigner)
-      .sort((a, b) => b[1].count - a[1].count)
-      .slice(0, 10);
-  }, [designProjects]);
+    const entries = Object.entries(byDesigner);
+
+    entries.sort((a, b) => {
+      const mul = sortDir === "asc" ? 1 : -1;
+      if (sortKey === "designer") return mul * a[0].localeCompare(b[0]);
+      if (sortKey === "count") return mul * (a[1].count - b[1].count);
+      return mul * (a[1].revenue - b[1].revenue);
+    });
+
+    return entries.slice(0, 10);
+  }, [designProjects, sortKey, sortDir]);
 
   // ---- Export ----
   const exportRows = useMemo(
     () => designProjects.map((p) => ({
       name: p.name,
-      designLead: p.designLead || p.projectManager || "",
+      designLead: p.designLead || "",
       stage: p.stage,
       designStatus: p.designStatus || "",
       designCompletionDate: p.designCompletionDate || "",
+      designApprovalSentDate: p.designApprovalSentDate || "",
       designApprovalDate: p.designApprovalDate || "",
       location: p.pbLocation || "",
       amount: p.amount || 0,
@@ -174,26 +264,62 @@ export default function DEMetricsPage() {
       exportData={{ data: exportRows, filename: "de-metrics.csv" }}
       fullWidth
     >
+      {/* Filter Row */}
+      <div className="flex flex-wrap items-center gap-3 mb-6">
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search by PROJ #, name..."
+          className="px-3 py-2 bg-surface-2 border border-t-border rounded-lg text-sm max-w-xs focus:outline-none focus:border-muted focus:ring-1 focus:ring-muted"
+        />
+        <MultiSelectFilter
+          label="Location"
+          options={locationOptions}
+          selected={persistedFilters.locations}
+          onChange={(v) => setPersisted({ ...persistedFilters, locations: v })}
+          accentColor="indigo"
+        />
+        <MultiSelectFilter
+          label="Designer"
+          options={ownerOptions}
+          selected={persistedFilters.owners}
+          onChange={(v) => setPersisted({ ...persistedFilters, owners: v })}
+          accentColor="indigo"
+        />
+        {hasActiveFilters && (
+          <button
+            onClick={() => {
+              clearFilters();
+              setSearchQuery("");
+            }}
+            className="text-xs px-2 py-1 text-red-400 hover:text-red-300"
+          >
+            Clear All
+          </button>
+        )}
+      </div>
+
       {/* Design Approvals Section */}
-      <div>
+      <div className="mb-6">
         <h2 className="text-lg font-semibold text-foreground mb-3">Design Approvals</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 stagger-grid">
           <MetricCard
             label="Sent for Approval"
-            value={loading ? "—" : String(approvalMetrics.sent.count)}
+            value={loading ? "\u2014" : String(approvalMetrics.sent.count)}
             sub={loading ? undefined : formatMoney(approvalMetrics.sent.revenue)}
             border="border-l-4 border-l-blue-500"
           />
           <MetricCard
             label="Approved"
-            value={loading ? "—" : String(approvalMetrics.approved.count)}
+            value={loading ? "\u2014" : String(approvalMetrics.approved.count)}
             sub={loading ? undefined : formatMoney(approvalMetrics.approved.revenue)}
             border="border-l-4 border-l-emerald-500"
             valueColor="text-emerald-400"
           />
           <MetricCard
             label="Pending Approval"
-            value={loading ? "—" : String(approvalMetrics.pending.count)}
+            value={loading ? "\u2014" : String(approvalMetrics.pending.count)}
             sub={loading ? undefined : formatMoney(approvalMetrics.pending.revenue)}
             border="border-l-4 border-l-yellow-500"
             valueColor={approvalMetrics.pending.count > 10 ? "text-yellow-400" : undefined}
@@ -202,31 +328,31 @@ export default function DEMetricsPage() {
       </div>
 
       {/* Designs Section */}
-      <div>
+      <div className="mb-6">
         <h2 className="text-lg font-semibold text-foreground mb-3">Design Pipeline</h2>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 stagger-grid">
           <MetricCard
             label="Active Design Pipeline"
-            value={loading ? "—" : String(designMetrics.active.count)}
+            value={loading ? "\u2014" : String(designMetrics.active.count)}
             sub={loading ? undefined : formatMoney(designMetrics.active.revenue)}
             border="border-l-4 border-l-slate-500"
           />
           <MetricCard
             label="In Engineering"
-            value={loading ? "—" : String(designMetrics.inEngineering.count)}
+            value={loading ? "\u2014" : String(designMetrics.inEngineering.count)}
             sub={loading ? undefined : formatMoney(designMetrics.inEngineering.revenue)}
             border="border-l-4 border-l-cyan-500"
           />
           <MetricCard
             label="Design Complete"
-            value={loading ? "—" : String(designMetrics.completed.count)}
+            value={loading ? "\u2014" : String(designMetrics.completed.count)}
             sub={loading ? undefined : formatMoney(designMetrics.completed.revenue)}
             border="border-l-4 border-l-emerald-500"
             valueColor="text-emerald-400"
           />
           <MetricCard
             label="In Revision"
-            value={loading ? "—" : String(designMetrics.inRevision.count)}
+            value={loading ? "\u2014" : String(designMetrics.inRevision.count)}
             sub={loading ? undefined : formatMoney(designMetrics.inRevision.revenue)}
             border="border-l-4 border-l-orange-500"
             valueColor={designMetrics.inRevision.count > 5 ? "text-orange-400" : undefined}
@@ -235,7 +361,7 @@ export default function DEMetricsPage() {
       </div>
 
       {/* Monthly Trends */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
         <MonthlyBarChart
           title="Design Completions (6 months)"
           data={completionTrend}
@@ -253,7 +379,7 @@ export default function DEMetricsPage() {
       </div>
 
       {/* Deal Counts by Design Status */}
-      <div className="bg-surface border border-t-border rounded-xl p-6 shadow-card">
+      <div className="bg-surface border border-t-border rounded-xl p-6 shadow-card mb-6">
         <h2 className="text-lg font-semibold text-foreground mb-4">Projects by Design Status</h2>
         {loading ? (
           <div className="space-y-3">
@@ -286,7 +412,7 @@ export default function DEMetricsPage() {
       </div>
 
       {/* Designer / Lead Productivity */}
-      <div className="bg-surface border border-t-border rounded-xl p-6 shadow-card">
+      <div className="bg-surface border border-t-border rounded-xl p-6 shadow-card mb-6">
         <h2 className="text-lg font-semibold text-foreground mb-4">Projects by Design Lead</h2>
         {loading ? (
           <div className="space-y-3">
@@ -301,9 +427,24 @@ export default function DEMetricsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-t-border text-left text-muted">
-                  <th className="pb-2 pr-4">Design Lead / PM</th>
-                  <th className="pb-2 pr-4 text-right">Projects</th>
-                  <th className="pb-2 text-right">Revenue</th>
+                  <th
+                    className="pb-2 pr-4 cursor-pointer hover:text-foreground"
+                    onClick={() => handleSort("designer")}
+                  >
+                    Design Lead{sortIndicator(sortKey === "designer", sortDir)}
+                  </th>
+                  <th
+                    className="pb-2 pr-4 text-right cursor-pointer hover:text-foreground"
+                    onClick={() => handleSort("count")}
+                  >
+                    Projects{sortIndicator(sortKey === "count", sortDir)}
+                  </th>
+                  <th
+                    className="pb-2 text-right cursor-pointer hover:text-foreground"
+                    onClick={() => handleSort("revenue")}
+                  >
+                    Revenue{sortIndicator(sortKey === "revenue", sortDir)}
+                  </th>
                 </tr>
               </thead>
               <tbody>

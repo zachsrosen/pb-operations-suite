@@ -3,10 +3,12 @@
 import { useState, useMemo, useCallback, useRef, useEffect, Fragment } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { StatCard } from "@/components/ui/MetricCard";
+import { MultiSelectFilter, FilterOption } from "@/components/ui/MultiSelectFilter";
 import { formatMoney } from "@/lib/format";
 import { RawProject } from "@/lib/types";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
+import { useUtilityTrackerFilters } from "@/stores/dashboard-filters";
 import { IC_ACTIVE_STATUSES, IC_REVISION_STATUSES, PTO_PIPELINE_STATUSES } from "@/lib/pi-statuses";
 
 // ---- Types ----
@@ -17,6 +19,7 @@ interface UtilityRecord {
 }
 
 type SortField = "name" | "dealCount" | "activeIC" | "ptoPipeline" | "icTurnaround" | "revenue";
+type DrillSortField = "name" | "stage" | "icStatus" | "ptoStatus" | "lead" | "days" | "amount";
 type SortDir = "asc" | "desc";
 
 export default function UtilityTrackerPage() {
@@ -62,45 +65,53 @@ export default function UtilityTrackerPage() {
 
   const [sortField, setSortField] = useState<SortField>("dealCount");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [drillSortField, setDrillSortField] = useState<DrillSortField | null>(null);
+  const [drillSortDir, setDrillSortDir] = useState<SortDir>("asc");
   const [expandedUtility, setExpandedUtility] = useState<string | null>(null);
-  const [locationFilter, setLocationFilter] = useState<string>("all");
-  const [leadFilter, setLeadFilter] = useState<string>("all");
-  const [stageFilter, setStageFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
 
-  const locations = useMemo(() => {
+  // Persisted multi-select filters
+  const { filters: persistedFilters, setFilters: setPersisted, clearFilters } = useUtilityTrackerFilters();
+
+  const locationOptions: FilterOption[] = useMemo(() => {
     const locs = new Set<string>();
     safeProjects.forEach((p) => { if (p.pbLocation) locs.add(p.pbLocation); });
-    return Array.from(locs).sort();
+    return Array.from(locs).sort().map((loc) => ({ value: loc, label: loc }));
   }, [safeProjects]);
 
-  const leads = useMemo(() => {
+  const leadOptions: FilterOption[] = useMemo(() => {
     const names = new Set<string>();
     safeProjects.forEach((p) => {
       if (p.interconnectionsLead) names.add(p.interconnectionsLead);
     });
-    return Array.from(names).sort();
+    return Array.from(names).sort().map((name) => ({ value: name, label: name }));
   }, [safeProjects]);
 
-  const stages = useMemo(() => {
+  const stageOptions: FilterOption[] = useMemo(() => {
     const s = new Set<string>();
     safeProjects.forEach((p) => { if (p.stage) s.add(p.stage); });
-    return Array.from(s).sort();
+    return Array.from(s).sort().map((stage) => ({ value: stage, label: stage }));
   }, [safeProjects]);
 
+  const hasActiveFilters = persistedFilters.locations.length > 0 ||
+    persistedFilters.leads.length > 0 ||
+    persistedFilters.stages.length > 0 ||
+    searchQuery.trim().length > 0;
+
   const filteredProjects = useMemo(() => {
-    let result = safeProjects;
-    if (locationFilter !== "all") result = result.filter((p) => p.pbLocation === locationFilter);
-    if (leadFilter !== "all") result = result.filter((p) => p.interconnectionsLead === leadFilter);
-    if (stageFilter !== "all") result = result.filter((p) => p.stage === stageFilter);
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter((p) =>
-        (p.name?.toLowerCase().includes(q) || p.utility?.toLowerCase().includes(q) || p.stage?.toLowerCase().includes(q) || p.pbLocation?.toLowerCase().includes(q) || p.interconnectionsLead?.toLowerCase().includes(q))
-      );
+    const result: RawProject[] = [];
+    for (const p of safeProjects) {
+      if (persistedFilters.locations.length > 0 && !persistedFilters.locations.includes(p.pbLocation || "")) continue;
+      if (persistedFilters.leads.length > 0 && !persistedFilters.leads.includes(p.interconnectionsLead || "")) continue;
+      if (persistedFilters.stages.length > 0 && !persistedFilters.stages.includes(p.stage || "")) continue;
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        if (!(p.name?.toLowerCase().includes(q) || p.utility?.toLowerCase().includes(q) || p.stage?.toLowerCase().includes(q) || p.pbLocation?.toLowerCase().includes(q) || p.interconnectionsLead?.toLowerCase().includes(q))) continue;
+      }
+      result.push(p);
     }
     return result;
-  }, [safeProjects, locationFilter, leadFilter, stageFilter, searchQuery]);
+  }, [safeProjects, persistedFilters, searchQuery]);
 
   // Group projects by utility (case-insensitive)
   const projectsByUtility = useMemo(() => {
@@ -208,6 +219,38 @@ export default function UtilityTrackerPage() {
     [sortField]
   );
 
+  const handleDrillSort = useCallback(
+    (field: DrillSortField) => {
+      if (drillSortField === field) setDrillSortDir((d) => (d === "asc" ? "desc" : "asc"));
+      else { setDrillSortField(field); setDrillSortDir("asc"); }
+    },
+    [drillSortField]
+  );
+
+  const drillSortIndicator = useCallback((field: DrillSortField) => {
+    if (drillSortField !== field) return " \u21C5";
+    return drillSortDir === "asc" ? " \u2191" : " \u2193";
+  }, [drillSortField, drillSortDir]);
+
+  const sortDeals = useCallback((deals: RawProject[]) => {
+    if (!drillSortField) return deals;
+    const sorted = [...deals];
+    sorted.sort((a, b) => {
+      let cmp = 0;
+      switch (drillSortField) {
+        case "name": cmp = (a.name || "").localeCompare(b.name || ""); break;
+        case "stage": cmp = (a.stage || "").localeCompare(b.stage || ""); break;
+        case "icStatus": cmp = (a.interconnectionStatus || "").localeCompare(b.interconnectionStatus || ""); break;
+        case "ptoStatus": cmp = (a.ptoStatus || "").localeCompare(b.ptoStatus || ""); break;
+        case "lead": cmp = (a.interconnectionsLead || "").localeCompare(b.interconnectionsLead || ""); break;
+        case "days": cmp = (a.daysSinceStageMovement ?? 0) - (b.daysSinceStageMovement ?? 0); break;
+        case "amount": cmp = (a.amount || 0) - (b.amount || 0); break;
+      }
+      return drillSortDir === "asc" ? cmp : -cmp;
+    });
+    return sorted;
+  }, [drillSortField, drillSortDir]);
+
   // Hero stats
   const stats = useMemo(() => {
     const utilitiesWithDeals = rowsWithDeals.length;
@@ -249,7 +292,7 @@ export default function UtilityTrackerPage() {
       fullWidth
     >
       {/* Hero Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 stagger-grid">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 stagger-grid mb-6">
         <StatCard
           label="Utilities with Deals"
           value={loading ? null : stats.utilitiesWithDeals}
@@ -273,7 +316,7 @@ export default function UtilityTrackerPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex gap-2 flex-wrap items-center">
+      <div className="flex gap-2 flex-wrap items-center mb-6">
         <input
           type="text"
           placeholder="Search utility, project, or status..."
@@ -281,18 +324,35 @@ export default function UtilityTrackerPage() {
           onChange={(e) => setSearchQuery(e.target.value)}
           className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground placeholder:text-muted w-full max-w-xs"
         />
-        <select value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)} className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground">
-          <option value="all">All Locations</option>
-          {locations.map((loc) => <option key={loc} value={loc}>{loc}</option>)}
-        </select>
-        <select value={leadFilter} onChange={(e) => setLeadFilter(e.target.value)} className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground">
-          <option value="all">All Leads</option>
-          {leads.map((name) => <option key={name} value={name}>{name}</option>)}
-        </select>
-        <select value={stageFilter} onChange={(e) => setStageFilter(e.target.value)} className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground">
-          <option value="all">All Stages</option>
-          {stages.map((s) => <option key={s} value={s}>{s}</option>)}
-        </select>
+        <MultiSelectFilter
+          label="Location"
+          options={locationOptions}
+          selected={persistedFilters.locations}
+          onChange={(v) => setPersisted({ ...persistedFilters, locations: v })}
+          accentColor="cyan"
+        />
+        <MultiSelectFilter
+          label="Lead"
+          options={leadOptions}
+          selected={persistedFilters.leads}
+          onChange={(v) => setPersisted({ ...persistedFilters, leads: v })}
+          accentColor="cyan"
+        />
+        <MultiSelectFilter
+          label="Stage"
+          options={stageOptions}
+          selected={persistedFilters.stages}
+          onChange={(v) => setPersisted({ ...persistedFilters, stages: v })}
+          accentColor="cyan"
+        />
+        {hasActiveFilters && (
+          <button
+            onClick={() => { clearFilters(); setSearchQuery(""); }}
+            className="px-3 py-2 rounded-lg text-sm text-muted hover:text-foreground hover:bg-surface-2 transition-colors"
+          >
+            Clear All
+          </button>
+        )}
       </div>
 
       {/* Utility Table */}
@@ -378,17 +438,31 @@ export default function UtilityTrackerPage() {
                               <table className="w-full text-sm">
                                 <thead>
                                   <tr className="text-left text-muted text-xs">
-                                    <th className="pb-2 pr-4">Project</th>
-                                    <th className="pb-2 pr-4">Stage</th>
-                                    <th className="pb-2 pr-4">IC Status</th>
-                                    <th className="pb-2 pr-4">PTO Status</th>
-                                    <th className="pb-2 pr-4">Lead</th>
-                                    <th className="pb-2 pr-4 text-right">Days in Stage</th>
-                                    <th className="pb-2 text-right">Amount</th>
+                                    <th className="pb-2 pr-4 cursor-pointer hover:text-foreground" onClick={() => handleDrillSort("name")}>
+                                      Project{drillSortIndicator("name")}
+                                    </th>
+                                    <th className="pb-2 pr-4 cursor-pointer hover:text-foreground" onClick={() => handleDrillSort("stage")}>
+                                      Stage{drillSortIndicator("stage")}
+                                    </th>
+                                    <th className="pb-2 pr-4 cursor-pointer hover:text-foreground" onClick={() => handleDrillSort("icStatus")}>
+                                      IC Status{drillSortIndicator("icStatus")}
+                                    </th>
+                                    <th className="pb-2 pr-4 cursor-pointer hover:text-foreground" onClick={() => handleDrillSort("ptoStatus")}>
+                                      PTO Status{drillSortIndicator("ptoStatus")}
+                                    </th>
+                                    <th className="pb-2 pr-4 cursor-pointer hover:text-foreground" onClick={() => handleDrillSort("lead")}>
+                                      Lead{drillSortIndicator("lead")}
+                                    </th>
+                                    <th className="pb-2 pr-4 text-right cursor-pointer hover:text-foreground" onClick={() => handleDrillSort("days")}>
+                                      Days in Stage{drillSortIndicator("days")}
+                                    </th>
+                                    <th className="pb-2 text-right cursor-pointer hover:text-foreground" onClick={() => handleDrillSort("amount")}>
+                                      Amount{drillSortIndicator("amount")}
+                                    </th>
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {row.deals.map((p) => (
+                                  {sortDeals(row.deals).map((p) => (
                                     <tr key={p.id} className="border-t border-t-border/20">
                                       <td className="py-2 pr-4">
                                         {p.url ? (
@@ -402,7 +476,7 @@ export default function UtilityTrackerPage() {
                                       <td className="py-2 pr-4 text-muted">{p.stage}</td>
                                       <td className="py-2 pr-4 text-muted text-xs">{p.interconnectionStatus || "—"}</td>
                                       <td className="py-2 pr-4 text-muted text-xs">{p.ptoStatus || "—"}</td>
-                                      <td className="py-2 pr-4 text-muted">{p.interconnectionsLead || "—"}</td>
+                                      <td className="py-2 pr-4 text-muted">{p.interconnectionsLead || "Unknown"}</td>
                                       <td className="py-2 pr-4 text-right">
                                         <span className={`font-semibold ${(p.daysSinceStageMovement ?? 0) > 21 ? "text-red-400" : (p.daysSinceStageMovement ?? 0) > 14 ? "text-yellow-400" : "text-foreground"}`}>
                                           {p.daysSinceStageMovement ?? 0}d

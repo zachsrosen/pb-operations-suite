@@ -1,12 +1,14 @@
 "use client";
 
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { StatCard } from "@/components/ui/MetricCard";
+import { MultiSelectFilter, FilterOption } from "@/components/ui/MultiSelectFilter";
 import { formatMoney } from "@/lib/format";
 import { RawProject } from "@/lib/types";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
+import { usePITimelineFilters } from "@/stores/dashboard-filters";
 
 // ---- SLA Targets (days) ----
 const SLA_TARGETS = {
@@ -35,6 +37,10 @@ interface SLAResult {
   pctOnTime: number;
 }
 
+// ---- Sort types ----
+type SortField = "name" | "permit" | "ic" | "pto" | "ptoDate" | "amount" | null;
+type SortDirection = "asc" | "desc";
+
 export default function PITimelinePage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
@@ -52,38 +58,63 @@ export default function PITimelinePage() {
     }
   }, [loading, safeProjects.length, trackDashboardView]);
 
-  const [locationFilter, setLocationFilter] = useState<string>("all");
-  const [leadFilter, setLeadFilter] = useState<string>("all");
-  const [stageFilter, setStageFilter] = useState<string>("all");
+  // Persisted multi-select filters
+  const { filters: persistedFilters, setFilters: setPersisted, clearFilters } = usePITimelineFilters();
 
-  const locations = useMemo(() => {
+  // Sort state for PTO completions table
+  const [sortField, setSortField] = useState<SortField>(null);
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+
+  const handleSort = useCallback((field: SortField) => {
+    if (sortField === field) {
+      setSortDirection((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortField(field);
+      setSortDirection("asc");
+    }
+  }, [sortField]);
+
+  const sortIndicator = useCallback((field: SortField) => {
+    if (sortField !== field) return " ⇅";
+    return sortDirection === "asc" ? " ↑" : " ↓";
+  }, [sortField, sortDirection]);
+
+  // Build filter option lists
+  const locationOptions: FilterOption[] = useMemo(() => {
     const locs = new Set<string>();
     safeProjects.forEach((p) => { if (p.pbLocation) locs.add(p.pbLocation); });
-    return Array.from(locs).sort();
+    return Array.from(locs).sort().map((loc) => ({ value: loc, label: loc }));
   }, [safeProjects]);
 
-  const leads = useMemo(() => {
+  const leadOptions: FilterOption[] = useMemo(() => {
     const names = new Set<string>();
     safeProjects.forEach((p) => {
       if (p.permitLead) names.add(p.permitLead);
       if (p.interconnectionsLead) names.add(p.interconnectionsLead);
     });
-    return Array.from(names).sort();
+    return Array.from(names).sort().map((name) => ({ value: name, label: name }));
   }, [safeProjects]);
 
-  const stages = useMemo(() => {
+  const stageOptions: FilterOption[] = useMemo(() => {
     const s = new Set<string>();
     safeProjects.forEach((p) => { if (p.stage) s.add(p.stage); });
-    return Array.from(s).sort();
+    return Array.from(s).sort().map((stage) => ({ value: stage, label: stage }));
   }, [safeProjects]);
 
+  const hasActiveFilters = persistedFilters.locations.length > 0 ||
+    persistedFilters.leads.length > 0 ||
+    persistedFilters.stages.length > 0;
+
   const filteredProjects = useMemo(() => {
-    let result = safeProjects;
-    if (locationFilter !== "all") result = result.filter((p) => p.pbLocation === locationFilter);
-    if (leadFilter !== "all") result = result.filter((p) => p.permitLead === leadFilter || p.interconnectionsLead === leadFilter);
-    if (stageFilter !== "all") result = result.filter((p) => p.stage === stageFilter);
+    const result: RawProject[] = [];
+    for (const p of safeProjects) {
+      if (persistedFilters.locations.length > 0 && !persistedFilters.locations.includes(p.pbLocation || "")) continue;
+      if (persistedFilters.leads.length > 0 && !persistedFilters.leads.includes(p.permitLead || "Unknown") && !persistedFilters.leads.includes(p.interconnectionsLead || "Unknown")) continue;
+      if (persistedFilters.stages.length > 0 && !persistedFilters.stages.includes(p.stage || "")) continue;
+      result.push(p);
+    }
     return result;
-  }, [safeProjects, locationFilter, leadFilter, stageFilter]);
+  }, [safeProjects, persistedFilters]);
 
   // ---- SLA Calculations ----
 
@@ -168,7 +199,7 @@ export default function PITimelinePage() {
 
   // ---- Recent PTO Completions Timeline ----
   const recentCompletions = useMemo(() => {
-    return filteredProjects
+    const items = filteredProjects
       .filter((p) => p.ptoGrantedDate)
       .sort((a, b) => (b.ptoGrantedDate || "").localeCompare(a.ptoGrantedDate || ""))
       .slice(0, 20)
@@ -178,7 +209,34 @@ export default function PITimelinePage() {
         const ptoDays = daysBetween(p.ptoSubmitDate, p.ptoGrantedDate);
         return { project: p, permitDays, icDays, ptoDays };
       });
-  }, [filteredProjects]);
+
+    if (!sortField) return items;
+
+    return [...items].sort((a, b) => {
+      let cmp = 0;
+      switch (sortField) {
+        case "name":
+          cmp = (a.project.name || "").localeCompare(b.project.name || "");
+          break;
+        case "permit":
+          cmp = (a.permitDays ?? 9999) - (b.permitDays ?? 9999);
+          break;
+        case "ic":
+          cmp = (a.icDays ?? 9999) - (b.icDays ?? 9999);
+          break;
+        case "pto":
+          cmp = (a.ptoDays ?? 9999) - (b.ptoDays ?? 9999);
+          break;
+        case "ptoDate":
+          cmp = (a.project.ptoGrantedDate || "").localeCompare(b.project.ptoGrantedDate || "");
+          break;
+        case "amount":
+          cmp = (a.project.amount || 0) - (b.project.amount || 0);
+          break;
+      }
+      return sortDirection === "desc" ? -cmp : cmp;
+    });
+  }, [filteredProjects, sortField, sortDirection]);
 
   // ---- Export ----
   const exportRows = useMemo(
@@ -188,6 +246,8 @@ export default function PITimelinePage() {
         name: p.name,
         ahj: p.ahj || "",
         utility: p.utility || "",
+        permitLead: p.permitLead || "Unknown",
+        icLead: p.interconnectionsLead || "Unknown",
         permitSubmitDate: p.permitSubmitDate || "",
         permitIssueDate: p.permitIssueDate || "",
         permitDays: daysBetween(p.permitSubmitDate, p.permitIssueDate) ?? "",
@@ -217,7 +277,7 @@ export default function PITimelinePage() {
       fullWidth
     >
       {/* SLA Summary Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 stagger-grid">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 stagger-grid mb-6">
         {slaResults.map((sla) => (
           <StatCard
             key={sla.label}
@@ -229,7 +289,7 @@ export default function PITimelinePage() {
       </div>
 
       {/* SLA Detail Cards */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
         {slaResults.map((sla) => (
           <div key={sla.label} className="bg-surface border border-t-border rounded-xl p-6 shadow-card">
             <h3 className="text-sm font-semibold text-foreground mb-3">{sla.label}</h3>
@@ -287,7 +347,7 @@ export default function PITimelinePage() {
       </div>
 
       {/* AHJ & Utility Turnaround Comparison */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
         {/* AHJ Comparison */}
         <div className="bg-surface border border-t-border rounded-xl p-6 shadow-card">
           <h2 className="text-lg font-semibold text-foreground mb-4">AHJ Permit Turnaround</h2>
@@ -356,23 +416,40 @@ export default function PITimelinePage() {
       </div>
 
       {/* Filters */}
-      <div className="flex gap-2 flex-wrap items-center">
-        <select value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)} className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground">
-          <option value="all">All Locations</option>
-          {locations.map((loc) => <option key={loc} value={loc}>{loc}</option>)}
-        </select>
-        <select value={leadFilter} onChange={(e) => setLeadFilter(e.target.value)} className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground">
-          <option value="all">All Leads</option>
-          {leads.map((name) => <option key={name} value={name}>{name}</option>)}
-        </select>
-        <select value={stageFilter} onChange={(e) => setStageFilter(e.target.value)} className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground">
-          <option value="all">All Stages</option>
-          {stages.map((s) => <option key={s} value={s}>{s}</option>)}
-        </select>
+      <div className="flex gap-2 flex-wrap items-center mb-6">
+        <MultiSelectFilter
+          label="Location"
+          options={locationOptions}
+          selected={persistedFilters.locations}
+          onChange={(v) => setPersisted({ ...persistedFilters, locations: v })}
+          accentColor="cyan"
+        />
+        <MultiSelectFilter
+          label="Lead"
+          options={leadOptions}
+          selected={persistedFilters.leads}
+          onChange={(v) => setPersisted({ ...persistedFilters, leads: v })}
+          accentColor="cyan"
+        />
+        <MultiSelectFilter
+          label="Stage"
+          options={stageOptions}
+          selected={persistedFilters.stages}
+          onChange={(v) => setPersisted({ ...persistedFilters, stages: v })}
+          accentColor="cyan"
+        />
+        {hasActiveFilters && (
+          <button
+            onClick={clearFilters}
+            className="px-3 py-2 rounded-lg text-sm text-muted hover:text-foreground hover:bg-surface-2 transition-colors"
+          >
+            Clear All
+          </button>
+        )}
       </div>
 
       {/* Recent PTO Completions */}
-      <div className="bg-surface border border-t-border rounded-xl p-6 shadow-card">
+      <div className="bg-surface border border-t-border rounded-xl p-6 shadow-card mb-6">
         <h2 className="text-lg font-semibold text-foreground mb-4">Recent PTO Completions</h2>
         {loading ? (
           <div className="space-y-3">
@@ -387,12 +464,42 @@ export default function PITimelinePage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-t-border text-left text-muted">
-                  <th className="pb-2 pr-4">Project</th>
-                  <th className="pb-2 pr-4 text-center">Permit</th>
-                  <th className="pb-2 pr-4 text-center">IC</th>
-                  <th className="pb-2 pr-4 text-center">PTO</th>
-                  <th className="pb-2 pr-4">PTO Granted</th>
-                  <th className="pb-2 text-right">Amount</th>
+                  <th
+                    className="pb-2 pr-4 cursor-pointer hover:text-foreground"
+                    onClick={() => handleSort("name")}
+                  >
+                    Project{sortIndicator("name")}
+                  </th>
+                  <th
+                    className="pb-2 pr-4 text-center cursor-pointer hover:text-foreground"
+                    onClick={() => handleSort("permit")}
+                  >
+                    Permit{sortIndicator("permit")}
+                  </th>
+                  <th
+                    className="pb-2 pr-4 text-center cursor-pointer hover:text-foreground"
+                    onClick={() => handleSort("ic")}
+                  >
+                    IC{sortIndicator("ic")}
+                  </th>
+                  <th
+                    className="pb-2 pr-4 text-center cursor-pointer hover:text-foreground"
+                    onClick={() => handleSort("pto")}
+                  >
+                    PTO{sortIndicator("pto")}
+                  </th>
+                  <th
+                    className="pb-2 pr-4 cursor-pointer hover:text-foreground"
+                    onClick={() => handleSort("ptoDate")}
+                  >
+                    PTO Granted{sortIndicator("ptoDate")}
+                  </th>
+                  <th
+                    className="pb-2 text-right cursor-pointer hover:text-foreground"
+                    onClick={() => handleSort("amount")}
+                  >
+                    Amount{sortIndicator("amount")}
+                  </th>
                 </tr>
               </thead>
               <tbody>

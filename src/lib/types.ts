@@ -51,6 +51,9 @@ export interface RawProject {
   layoutStatus?: string;
   designCompletionDate?: string;
   designApprovalDate?: string;
+  designDraftDate?: string;
+  designApprovalSentDate?: string;
+  designStartDate?: string;
   designSupportUser?: string;
   systemPerformanceReview?: boolean;
   tags?: string[];
@@ -95,6 +98,7 @@ export interface RawProject {
   designLead?: string;
   permitLead?: string;
   interconnectionsLead?: string;
+  preconstructionLead?: string;
 }
 
 export interface TransformedProject {

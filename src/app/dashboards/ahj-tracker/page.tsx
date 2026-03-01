@@ -3,10 +3,12 @@
 import { useState, useMemo, useCallback, useRef, useEffect, Fragment } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { StatCard } from "@/components/ui/MetricCard";
+import { MultiSelectFilter, FilterOption } from "@/components/ui/MultiSelectFilter";
 import { formatMoney } from "@/lib/format";
 import { RawProject } from "@/lib/types";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
+import { useAHJTrackerFilters } from "@/stores/dashboard-filters";
 import { PERMIT_ACTIVE_STATUSES, PERMIT_REVISION_STATUSES } from "@/lib/pi-statuses";
 
 // ---- Types ----
@@ -18,6 +20,8 @@ interface AHJRecord {
 
 type SortField = "name" | "dealCount" | "activePermits" | "rejectionRate" | "turnaround" | "revenue";
 type SortDir = "asc" | "desc";
+
+type DrillSortField = "name" | "stage" | "permitStatus" | "lead" | "daysInStage" | "amount";
 
 export default function AHJTrackerPage() {
   const { trackDashboardView } = useActivityTracking();
@@ -63,36 +67,39 @@ export default function AHJTrackerPage() {
   const [sortField, setSortField] = useState<SortField>("dealCount");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [expandedAhj, setExpandedAhj] = useState<string | null>(null);
-  const [locationFilter, setLocationFilter] = useState<string>("all");
-  const [leadFilter, setLeadFilter] = useState<string>("all");
-  const [stageFilter, setStageFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
 
-  const locations = useMemo(() => {
+  // Drill-down sort state
+  const [drillSortField, setDrillSortField] = useState<DrillSortField>("daysInStage");
+  const [drillSortDir, setDrillSortDir] = useState<SortDir>("desc");
+
+  const { filters: persistedFilters, setFilters: setPersisted, clearFilters } = useAHJTrackerFilters();
+
+  const locationOptions: FilterOption[] = useMemo(() => {
     const locs = new Set<string>();
     safeProjects.forEach((p) => { if (p.pbLocation) locs.add(p.pbLocation); });
-    return Array.from(locs).sort();
+    return Array.from(locs).sort().map(loc => ({ value: loc, label: loc }));
   }, [safeProjects]);
 
-  const leads = useMemo(() => {
+  const leadOptions: FilterOption[] = useMemo(() => {
     const names = new Set<string>();
     safeProjects.forEach((p) => {
       if (p.permitLead) names.add(p.permitLead);
     });
-    return Array.from(names).sort();
+    return Array.from(names).sort().map(name => ({ value: name, label: name }));
   }, [safeProjects]);
 
-  const stages = useMemo(() => {
+  const stageOptions: FilterOption[] = useMemo(() => {
     const s = new Set<string>();
     safeProjects.forEach((p) => { if (p.stage) s.add(p.stage); });
-    return Array.from(s).sort();
+    return Array.from(s).sort().map(stage => ({ value: stage, label: stage }));
   }, [safeProjects]);
 
   const filteredProjects = useMemo(() => {
     let result = safeProjects;
-    if (locationFilter !== "all") result = result.filter((p) => p.pbLocation === locationFilter);
-    if (leadFilter !== "all") result = result.filter((p) => p.permitLead === leadFilter);
-    if (stageFilter !== "all") result = result.filter((p) => p.stage === stageFilter);
+    if (persistedFilters.locations.length > 0) result = result.filter((p) => persistedFilters.locations.includes(p.pbLocation || ""));
+    if (persistedFilters.leads.length > 0) result = result.filter((p) => persistedFilters.leads.includes(p.permitLead || ""));
+    if (persistedFilters.stages.length > 0) result = result.filter((p) => persistedFilters.stages.includes(p.stage || ""));
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       result = result.filter((p) =>
@@ -100,7 +107,7 @@ export default function AHJTrackerPage() {
       );
     }
     return result;
-  }, [safeProjects, locationFilter, leadFilter, stageFilter, searchQuery]);
+  }, [safeProjects, persistedFilters, searchQuery]);
 
   // Group projects by AHJ (case-insensitive) — filtered for both stats and table
   const projectsByAhj = useMemo(() => {
@@ -205,6 +212,31 @@ export default function AHJTrackerPage() {
     [sortField]
   );
 
+  const handleDrillSort = useCallback(
+    (field: DrillSortField) => {
+      if (drillSortField === field) setDrillSortDir((d) => (d === "asc" ? "desc" : "asc"));
+      else { setDrillSortField(field); setDrillSortDir("desc"); }
+    },
+    [drillSortField]
+  );
+
+  const sortDrillDeals = useCallback((deals: RawProject[]) => {
+    const sorted = [...deals];
+    sorted.sort((a, b) => {
+      let cmp = 0;
+      switch (drillSortField) {
+        case "name": cmp = (a.name || "").localeCompare(b.name || ""); break;
+        case "stage": cmp = (a.stage || "").localeCompare(b.stage || ""); break;
+        case "permitStatus": cmp = (a.permittingStatus || "").localeCompare(b.permittingStatus || ""); break;
+        case "lead": cmp = (a.permitLead || "Unknown").localeCompare(b.permitLead || "Unknown"); break;
+        case "daysInStage": cmp = (a.daysSinceStageMovement ?? 0) - (b.daysSinceStageMovement ?? 0); break;
+        case "amount": cmp = (a.amount || 0) - (b.amount || 0); break;
+      }
+      return drillSortDir === "asc" ? cmp : -cmp;
+    });
+    return sorted;
+  }, [drillSortField, drillSortDir]);
+
   // Hero stats
   const stats = useMemo(() => {
     const ahjsWithDeals = rowsWithDeals.length;
@@ -240,6 +272,11 @@ export default function AHJTrackerPage() {
   const sortIndicator = (field: SortField) =>
     sortField === field ? (sortDir === "asc" ? " ↑" : " ↓") : " ⇅";
 
+  const drillSortIndicator = (field: DrillSortField) =>
+    drillSortField === field ? (drillSortDir === "asc" ? " ↑" : " ↓") : " ⇅";
+
+  const hasActiveFilters = persistedFilters.locations.length > 0 || persistedFilters.leads.length > 0 || persistedFilters.stages.length > 0 || searchQuery.trim().length > 0;
+
   return (
     <DashboardShell
       title="AHJ Tracker"
@@ -249,7 +286,7 @@ export default function AHJTrackerPage() {
       fullWidth
     >
       {/* Hero Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 stagger-grid">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 stagger-grid mb-6">
         <StatCard
           label="AHJs with Deals"
           value={loading ? null : stats.ahjsWithDeals}
@@ -273,7 +310,7 @@ export default function AHJTrackerPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex gap-2 flex-wrap items-center">
+      <div className="flex gap-2 flex-wrap items-center mb-6">
         <input
           type="text"
           placeholder="Search AHJ name, project, or status..."
@@ -281,22 +318,39 @@ export default function AHJTrackerPage() {
           onChange={(e) => setSearchQuery(e.target.value)}
           className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground placeholder:text-muted w-full max-w-xs"
         />
-        <select value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)} className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground">
-          <option value="all">All Locations</option>
-          {locations.map((loc) => <option key={loc} value={loc}>{loc}</option>)}
-        </select>
-        <select value={leadFilter} onChange={(e) => setLeadFilter(e.target.value)} className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground">
-          <option value="all">All Leads</option>
-          {leads.map((name) => <option key={name} value={name}>{name}</option>)}
-        </select>
-        <select value={stageFilter} onChange={(e) => setStageFilter(e.target.value)} className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground">
-          <option value="all">All Stages</option>
-          {stages.map((s) => <option key={s} value={s}>{s}</option>)}
-        </select>
+        <MultiSelectFilter
+          label="Location"
+          options={locationOptions}
+          selected={persistedFilters.locations}
+          onChange={(v) => setPersisted({ ...persistedFilters, locations: v })}
+          accentColor="cyan"
+        />
+        <MultiSelectFilter
+          label="Lead"
+          options={leadOptions}
+          selected={persistedFilters.leads}
+          onChange={(v) => setPersisted({ ...persistedFilters, leads: v })}
+          accentColor="cyan"
+        />
+        <MultiSelectFilter
+          label="Stage"
+          options={stageOptions}
+          selected={persistedFilters.stages}
+          onChange={(v) => setPersisted({ ...persistedFilters, stages: v })}
+          accentColor="cyan"
+        />
+        {hasActiveFilters && (
+          <button
+            onClick={() => { clearFilters(); setSearchQuery(""); }}
+            className="text-xs px-2 py-1 text-red-400 hover:text-red-300"
+          >
+            Clear All
+          </button>
+        )}
       </div>
 
       {/* AHJ Table */}
-      <div className="bg-surface border border-t-border rounded-xl shadow-card overflow-hidden">
+      <div className="bg-surface border border-t-border rounded-xl shadow-card overflow-hidden mb-6">
         {loading ? (
           <div className="p-6 space-y-3">
             {Array.from({ length: 8 }).map((_, i) => (
@@ -375,16 +429,28 @@ export default function AHJTrackerPage() {
                             <table className="w-full text-sm">
                               <thead>
                                 <tr className="text-left text-muted text-xs">
-                                  <th className="pb-2 pr-4">Project</th>
-                                  <th className="pb-2 pr-4">Stage</th>
-                                  <th className="pb-2 pr-4">Permit Status</th>
-                                  <th className="pb-2 pr-4">Lead</th>
-                                  <th className="pb-2 pr-4 text-right">Days in Stage</th>
-                                  <th className="pb-2 text-right">Amount</th>
+                                  <th className="pb-2 pr-4 cursor-pointer hover:text-foreground" onClick={() => handleDrillSort("name")}>
+                                    Project{drillSortIndicator("name")}
+                                  </th>
+                                  <th className="pb-2 pr-4 cursor-pointer hover:text-foreground" onClick={() => handleDrillSort("stage")}>
+                                    Stage{drillSortIndicator("stage")}
+                                  </th>
+                                  <th className="pb-2 pr-4 cursor-pointer hover:text-foreground" onClick={() => handleDrillSort("permitStatus")}>
+                                    Permit Status{drillSortIndicator("permitStatus")}
+                                  </th>
+                                  <th className="pb-2 pr-4 cursor-pointer hover:text-foreground" onClick={() => handleDrillSort("lead")}>
+                                    Lead{drillSortIndicator("lead")}
+                                  </th>
+                                  <th className="pb-2 pr-4 text-right cursor-pointer hover:text-foreground" onClick={() => handleDrillSort("daysInStage")}>
+                                    Days in Stage{drillSortIndicator("daysInStage")}
+                                  </th>
+                                  <th className="pb-2 text-right cursor-pointer hover:text-foreground" onClick={() => handleDrillSort("amount")}>
+                                    Amount{drillSortIndicator("amount")}
+                                  </th>
                                 </tr>
                               </thead>
                               <tbody>
-                                {row.deals.map((p) => (
+                                {sortDrillDeals(row.deals).map((p) => (
                                   <tr key={p.id} className="border-t border-t-border/20">
                                     <td className="py-2 pr-4">
                                       {p.url ? (
@@ -397,7 +463,7 @@ export default function AHJTrackerPage() {
                                     </td>
                                     <td className="py-2 pr-4 text-muted">{p.stage}</td>
                                     <td className="py-2 pr-4 text-muted text-xs">{p.permittingStatus || "—"}</td>
-                                    <td className="py-2 pr-4 text-muted">{p.permitLead || "—"}</td>
+                                    <td className="py-2 pr-4 text-muted">{p.permitLead || "Unknown"}</td>
                                     <td className="py-2 pr-4 text-right">
                                       <span className={`font-semibold ${(p.daysSinceStageMovement ?? 0) > 21 ? "text-red-400" : (p.daysSinceStageMovement ?? 0) > 14 ? "text-yellow-400" : "text-foreground"}`}>
                                         {p.daysSinceStageMovement ?? 0}d
@@ -422,4 +488,3 @@ export default function AHJTrackerPage() {
     </DashboardShell>
   );
 }
-
