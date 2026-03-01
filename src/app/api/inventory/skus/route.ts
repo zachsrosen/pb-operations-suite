@@ -10,6 +10,7 @@ import * as Sentry from "@sentry/nextjs";
 import { prisma, logActivity } from "@/lib/db";
 import { requireApiAuth } from "@/lib/api-auth";
 import { tagSentryRequest } from "@/lib/sentry-request";
+import { canonicalToken } from "@/lib/canonical";
 import { EquipmentCategory } from "@/generated/prisma/enums";
 import {
   CATEGORY_CONFIGS,
@@ -189,13 +190,6 @@ function buildSyncHealth(sku: {
     connectedCount,
     fullySynced: connectedCount === 4,
   };
-}
-
-function canonicalToken(value: unknown): string {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "");
 }
 
 interface DuplicateGroupEntry {

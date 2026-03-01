@@ -61,8 +61,8 @@ export default async function DepartmentSuitePage() {
   return (
     <SuitePageShell
       currentSuiteHref="/suites/department"
-      title="Department Suite"
-      subtitle="Department-level dashboards grouped in one place."
+      title="Tech Ops Suite"
+      subtitle="Execution dashboards for field operations teams."
       cards={LINKS}
       role={user.role}
       hoverBorderClass="hover:border-orange-500/50"

@@ -137,14 +137,7 @@ const PROTOTYPES: SuitePageCard[] = [
     tagColor: "bg-pink-500/20 text-pink-400 border-pink-500/30",
     section: "Prototypes",
   },
-  {
-    href: "/prototypes/solar-surveyor",
-    title: "Solar Surveyor v11",
-    description: "Next-generation solar site surveyor tool prototype.",
-    tag: "PROTOTYPE",
-    tagColor: "bg-pink-500/20 text-pink-400 border-pink-500/30",
-    section: "Prototypes",
-  },
+  // Solar Surveyor moved to D&E Suite: /dashboards/solar-surveyor
 ];
 
 const API_SHORTCUTS: SuitePageCard[] = [

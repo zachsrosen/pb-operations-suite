@@ -9,6 +9,7 @@ import { MonthlyBarChart, aggregateMonthly } from "@/components/ui/MonthlyBarCha
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useDesignFilters } from "@/stores/dashboard-filters";
+import { ClippingAnalysis, analyzeClipping, FullEquipment, getSeasonalTSRF, DEFAULT_TSRF } from "@/lib/clipping";
 
 // Display name mappings for status values
 const DISPLAY_NAMES: Record<string, string> = {
@@ -48,15 +49,6 @@ function getDisplayName(value: string | undefined): string {
   return DISPLAY_NAMES[key] || value;
 }
 
-interface FullEquipment {
-  modules: { brand: string; model: string; count: number; wattage: number };
-  inverter: { brand: string; model: string; count: number; sizeKwac: number };
-  battery: { brand: string; model: string; count: number; sizeKwh: number; expansionCount: number };
-  evCount: number;
-  systemSizeKwdc: number;
-  systemSizeKwac: number;
-}
-
 interface ExtendedProject extends RawProject {
   designStatus?: string;
   layoutStatus?: string; // This is Design Approval Status in HubSpot
@@ -66,103 +58,7 @@ interface ExtendedProject extends RawProject {
   equipment?: FullEquipment | RawProject["equipment"];
 }
 
-// ============== CLIPPING DETECTION ENGINE ==============
-// Seasonal TSRF decomposition: when shade data is unavailable (EVTD-only designs),
-// the annual-average TSRF suppresses summer peaks. This decomposes TSRF into a
-// seasonal curve so we can estimate true summer peak DC/AC ratio and flag clipping.
-
-interface ClippingAnalysis {
-  projectName: string;
-  projectId: string;
-  projectUrl?: string;
-  panelCount: number;
-  panelWattage: number;
-  dcCapacityKw: number;
-  inverterCount: number;
-  acCapacityKw: number;
-  nameplateDcAcRatio: number;
-  estimatedSummerDcAcRatio: number;
-  estimatedSummerTsrf: number;
-  avgTsrf: number;
-  batteryCount: number;
-  batteryKwh: number;
-  riskLevel: "none" | "low" | "moderate" | "high";
-  stage: string;
-  designStatus?: string;
-}
-
-const DEFAULT_TSRF = 0.84; // Default annual avg TSRF when not known (typical residential)
-const SHADE_SWING_FACTOR = 0.65; // Fraction of shade loss recovered in summer
-
-function getSeasonalTSRF(annualTsrf: number): number {
-  if (annualTsrf >= 1.0) return annualTsrf;
-  const B = SHADE_SWING_FACTOR * (1.0 - annualTsrf);
-  const correctedBase = annualTsrf - 0.15 * B;
-  // Summer solstice (day 172): sin((172-80)/365 * 2*PI) ≈ 1.0
-  return Math.min(1.0, correctedBase + B);
-}
-
-function analyzeClipping(project: ExtendedProject): ClippingAnalysis | null {
-  const eq = project.equipment as FullEquipment | undefined;
-  if (!eq) return null;
-
-  const panelCount = eq.modules?.count || 0;
-  const panelWattage = eq.modules?.wattage || 0;
-  const inverterCount = eq.inverter?.count || 0;
-  const inverterSizeKwac = eq.inverter?.sizeKwac || 0;
-
-  // Need both DC and AC data to analyze
-  const dcCapacityKw = eq.systemSizeKwdc || (panelCount * panelWattage / 1000);
-  const acCapacityKw = eq.systemSizeKwac || (inverterCount * inverterSizeKwac);
-
-  if (dcCapacityKw <= 0 || acCapacityKw <= 0) return null;
-
-  const nameplateDcAcRatio = dcCapacityKw / acCapacityKw;
-  const avgTsrf = DEFAULT_TSRF; // No per-project TSRF from HubSpot; use typical residential
-  const summerTsrf = getSeasonalTSRF(avgTsrf);
-  const estimatedSummerDcAcRatio = (dcCapacityKw * summerTsrf) / acCapacityKw;
-
-  const batteryCount = eq.battery?.count || 0;
-  const batteryKwh = batteryCount * (eq.battery?.sizeKwh || 0);
-
-  // Risk classification
-  let riskLevel: ClippingAnalysis["riskLevel"] = "none";
-  if (nameplateDcAcRatio > 1.5) {
-    riskLevel = "high";
-  } else if (estimatedSummerDcAcRatio > 1.15 || nameplateDcAcRatio > 1.3) {
-    riskLevel = "moderate";
-  } else if (estimatedSummerDcAcRatio > 1.0 || nameplateDcAcRatio > 1.15) {
-    riskLevel = "low";
-  }
-
-  // Battery can absorb some DC excess — reduce risk if battery present
-  if (riskLevel !== "none" && batteryKwh > 0) {
-    // DC-coupled battery (e.g., PW3) can absorb ~5kW DC excess
-    // If battery present and ratio is only slightly over, downgrade risk
-    if (riskLevel === "low") riskLevel = "none";
-    else if (riskLevel === "moderate" && nameplateDcAcRatio < 1.4) riskLevel = "low";
-  }
-
-  return {
-    projectName: project.name,
-    projectId: project.id,
-    projectUrl: project.url,
-    panelCount,
-    panelWattage,
-    dcCapacityKw,
-    inverterCount,
-    acCapacityKw,
-    nameplateDcAcRatio,
-    estimatedSummerDcAcRatio,
-    estimatedSummerTsrf: summerTsrf,
-    avgTsrf,
-    batteryCount,
-    batteryKwh,
-    riskLevel,
-    stage: project.stage,
-    designStatus: project.designStatus,
-  };
-}
+// Clipping engine imported from @/lib/clipping
 
 // Design Status Groups
 const DESIGN_STATUS_GROUPS: FilterGroup[] = [

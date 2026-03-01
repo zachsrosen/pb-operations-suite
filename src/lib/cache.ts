@@ -259,4 +259,6 @@ export const CACHE_KEYS = {
   DEALS: (pipeline: string) => `deals:${pipeline}`,
   STATS: "stats",
   PIPELINES: "pipelines",
+  AHJS_ALL: "ahjs:all",
+  UTILITIES_ALL: "utilities:all",
 } as const;

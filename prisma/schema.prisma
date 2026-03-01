@@ -729,6 +729,10 @@ model EquipmentSku {
   zohoItemId  String?           // Zoho Inventory item_id for PO line item matching
   quickbooksItemId String?      // QuickBooks CatalogProduct externalId link
 
+  canonicalBrand  String?
+  canonicalModel  String?
+  canonicalKey    String?
+
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
 
@@ -751,6 +755,8 @@ model EquipmentSku {
   @@index([zuperItemId])
   @@index([zohoItemId])
   @@index([quickbooksItemId])
+  @@index([canonicalKey])
+  @@index([canonicalBrand, canonicalModel])
 }
 
 model ModuleSpec {
@@ -979,6 +985,7 @@ enum PushStatus {
   PENDING
   APPROVED
   REJECTED
+  EXPIRED
 }
 
 model PendingCatalogPush {
@@ -1013,11 +1020,21 @@ model PendingCatalogPush {
   hubspotProductId String?
   zuperItemId      String?
   quickbooksItemId String?
+  // Catalog rebuild additions
+  canonicalKey      String?
+  source            String?
+  candidateSkuIds   String[]
+  reviewReason      String?
+  expiresAt         DateTime?
+
   createdAt   DateTime   @default(now())
   resolvedAt  DateTime?
 
   @@index([status])
   @@index([requestedBy])
+  @@index([canonicalKey, status])
+  @@index([source])
+  @@index([expiresAt])
 }
 
 // ===========================================
@@ -1074,4 +1091,50 @@ model BomPipelineRun {
   @@index([createdAt])
   // NOTE: partial unique index on (dealId) WHERE status='RUNNING'
   // is added via raw SQL in the migration file (not expressible in Prisma schema)
+}
+
+// ===========================================
+// CATALOG REBUILD — MATCH GROUPS
+// ===========================================
+
+enum MatchConfidence {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum MatchDecisionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  MERGED
+}
+
+model CatalogMatchGroup {
+  id              String               @id @default(cuid())
+  matchGroupKey   String               @unique
+  confidence      MatchConfidence
+  canonicalBrand  String?
+  canonicalModel  String?
+  category        String?
+  score           Float
+  memberSources   Json
+  fieldProvenance Json?
+  needsReview     Boolean              @default(false)
+  reviewReason    String?
+
+  decision        MatchDecisionStatus  @default(PENDING)
+  decidedBy       String?
+  decidedAt       DateTime?
+  decisionNote    String?
+
+  internalSkuId   String?
+  linkedAt        DateTime?
+
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  @@index([confidence])
+  @@index([decision])
+  @@index([needsReview])
 }

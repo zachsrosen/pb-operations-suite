@@ -54,9 +54,9 @@ const ROLE_DESCRIPTIONS: Record<string, string> = {
   ADMIN: "Full access, can manage users",
   OWNER: "Executive access like Admin, but cannot manage users",
   OPERATIONS_MANAGER: "Crew oversight, scheduling, availability management",
-  PROJECT_MANAGER: "Can access Operations Suite and Department Suite",
+  PROJECT_MANAGER: "Can access Operations, Tech Ops, D&E, and P&I Suites",
   OPERATIONS: "Only access to Operations Suite",
-  TECH_OPS: "Only access to Department Suite",
+  TECH_OPS: "Access to Tech Ops, D&E, and P&I Suites",
   SALES: "Only access to Site Survey Schedule",
   VIEWER: "Unassigned — no dashboard access until role is set",
 };

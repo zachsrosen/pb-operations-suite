@@ -2,7 +2,7 @@ import * as Sentry from "@sentry/nextjs";
 import { Client } from "@hubspot/api-client";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
 
-const hubspotClient = new Client({
+export const hubspotClient = new Client({
   accessToken: process.env.HUBSPOT_ACCESS_TOKEN,
 });
 
