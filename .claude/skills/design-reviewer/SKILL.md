@@ -40,16 +40,16 @@ Before starting a design review, gather:
    ```
    GET /api/ahj?dealId=<dealId>
    ```
-   Extract: nec_edition, ibc_edition, ifc_edition, design_wind_speed, design_snow_load,
-   fire_setback_ridge, fire_setback_eave, fire_setback_valley, fire_setback_hip,
-   fire_pathway_width, stamping_requirements, pe_stamp_type
+   Extract: nec_code, ibc_code, ifc_code, design_wind_speed, design_snow_load,
+   fire_offsets_required (boolean), fire_code_notes (text — contains setback specifics),
+   fire_inspection_required, stamping_requirements
 
 3. Fetch utility requirements:
    ```
    GET /api/utility?dealId=<dealId>
    ```
-   Extract: ac_disconnect_required, is_production_meter_required,
-   backup_switch_allowed, interconnection_type, design_rules
+   Extract: ac_disconnect_required_ (note trailing underscore), is_production_meter_required_,
+   backup_switch_allowed_, submission_type (interconnection method), design_notes
 
 4. Fetch open HubSpot tasks for this deal:
    ```
@@ -64,8 +64,8 @@ Before starting a design review, gather:
    - `AHJ:` — jurisdiction name (verify matches API data)
    - `Utility:` — utility company name (verify matches API data)
    - `Sales Notes:` — free text from salesperson
-   - `Interconnection Status:` — current status
-   - `DA Rejection Reason:` — why DA was rejected (for revision tasks)
+   - `Interconnection Status:` — current status (optional — not present on initial review tasks)
+   - `DA Rejection Reason:` — why DA was rejected (revision tasks only)
 
 6. Locate and read the planset:
    - Use the Drive link from the task body, OR
@@ -77,23 +77,22 @@ Before starting a design review, gather:
 Compare the planset against AHJ and utility requirements:
 
 **AHJ Compliance:**
-- [ ] Setback distances meet AHJ minimums (fire_setback_ridge, fire_setback_eave, fire_setback_valley, fire_setback_hip)
-- [ ] Fire pathways comply with IFC requirements (fire_pathway_width)
+- [ ] Fire offsets: if fire_offsets_required = true, check fire_code_notes for specific setback distances (ridge, eave, valley, hip, pathway width) and verify planset complies
 - [ ] Wind speed rating of racking meets AHJ design_wind_speed
   - Invoke product-lookup: check IronRidge XR10/XR100 load tables for the installed racking
 - [ ] Snow load rating of racking meets AHJ design_snow_load
   - Invoke product-lookup: check racking snow load ratings
-- [ ] Rapid shutdown compliant with NEC 690.12 (check nec_edition from AHJ)
+- [ ] Rapid shutdown compliant with NEC 690.12 (check nec_code from AHJ)
   - For Tesla systems: MCI-2 rapid shutdown transmitter per module
   - For Enphase systems: module-level shutdown built into microinverter
   - For other inverters: check for compliant MLPE
-- [ ] Stamping requirements noted for engineering handoff (pe_stamp_type, stamping_requirements)
+- [ ] Stamping requirements noted for engineering handoff (stamping_requirements)
 
 **Utility Compliance:**
-- [ ] AC disconnect present if ac_disconnect_required = true
-- [ ] Production meter present if is_production_meter_required = true
-- [ ] Backup switch configuration matches utility rules
-- [ ] Interconnection type matches utility requirements
+- [ ] AC disconnect present if ac_disconnect_required_ = true
+- [ ] Production meter present if is_production_meter_required_ = true
+- [ ] Backup switch configuration matches utility rules (backup_switch_allowed_)
+- [ ] Interconnection submission type matches utility requirements (submission_type)
 
 **Output:** Compliance report with PASS/FAIL per item and code references.
 If ALL items pass, complete the relevant compliance task via:
@@ -117,6 +116,8 @@ Compare what was SOLD (HubSpot deal) vs what was DESIGNED (planset BOM):
 | Battery count | deal.battery_count | BOM qty | |
 | Expansion kit count | deal.battery_expansion_count | BOM expansion | |
 | EV charger | deal.ev_count | BOM EV charger | |
+
+**Note:** Inverter fields may be null on the deal (e.g., Tesla battery systems where Gateway-3 is implicit). If inverter_brand is null, check the planset BOM for what was designed and verify it's appropriate for the battery system.
 
 For each equipment item, invoke **product-lookup** to verify compatibility:
 - Module frame thickness fits racking clamp range (UFO mid clamp or CAMO end clamp)
