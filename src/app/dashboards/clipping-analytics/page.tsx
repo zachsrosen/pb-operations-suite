@@ -3,10 +3,12 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { MiniStat } from "@/components/ui/MetricCard";
+import { MultiSelectFilter, FilterOption } from "@/components/ui/MultiSelectFilter";
 import { MonthlyBarChart, aggregateMonthly } from "@/components/ui/MonthlyBarChart";
 import { RawProject } from "@/lib/types";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
+import { useClippingAnalyticsFilters } from "@/stores/dashboard-filters";
 import {
   ClippingAnalysis,
   analyzeClipping,
@@ -37,12 +39,41 @@ export default function ClippingAnalyticsPage() {
   const [togglingIds, setTogglingIds] = useState<Set<string>>(new Set());
   const [localOverrides, setLocalOverrides] = useState<Record<string, boolean>>({});
 
+  // ---- Filter state ----
+  const { filters: persistedFilters, setFilters: setPersisted, clearFilters } = useClippingAnalyticsFilters();
+
   useEffect(() => {
     if (!loading && !hasTrackedView.current) {
       hasTrackedView.current = true;
       trackDashboardView("clipping-analytics", { projectCount: safeProjects.length });
     }
   }, [loading, safeProjects.length, trackDashboardView]);
+
+  // ---- Filter option lists (built from full project set) ----
+  const stageOptions: FilterOption[] = useMemo(
+    () => [...new Set(safeProjects.map((p) => p.stage || ""))].filter(Boolean).sort().map((s) => ({ value: s, label: s })),
+    [safeProjects]
+  );
+  const locationOptions: FilterOption[] = useMemo(
+    () => [...new Set(safeProjects.map((p) => p.pbLocation || ""))].filter(Boolean).sort().map((s) => ({ value: s, label: s })),
+    [safeProjects]
+  );
+
+  const hasActiveFilters =
+    persistedFilters.locations.length > 0 ||
+    persistedFilters.stages.length > 0;
+
+  // ---- Filtered projects ----
+  const filteredProjects = useMemo(() => {
+    let list = safeProjects;
+    if (persistedFilters.locations.length > 0) {
+      list = list.filter((p) => persistedFilters.locations.includes(p.pbLocation || ""));
+    }
+    if (persistedFilters.stages.length > 0) {
+      list = list.filter((p) => persistedFilters.stages.includes(p.stage || ""));
+    }
+    return list;
+  }, [safeProjects, persistedFilters]);
 
   const handleTogglePerformanceReview = useCallback(
     async (project: RawProject) => {
@@ -73,9 +104,9 @@ export default function ClippingAnalyticsPage() {
     [localOverrides]
   );
 
-  // Clipping analysis across all projects with equipment data
+  // Clipping analysis across filtered projects with equipment data
   const clippingAnalyses = useMemo(() => {
-    const analyses = safeProjects
+    const analyses = filteredProjects
       .map((p) => analyzeClipping(p))
       .filter((a): a is ClippingAnalysis => a !== null);
 
@@ -86,12 +117,12 @@ export default function ClippingAnalyticsPage() {
     const withBattery = atRisk.filter((a) => a.batteryKwh > 0);
 
     return { all: analyses, atRisk, high, moderate, low, withBattery };
-  }, [safeProjects]);
+  }, [filteredProjects]);
 
   // Historical trend: flagged projects by month (closeDate)
   const flaggedTrend = useMemo(
     () => aggregateMonthly(
-      safeProjects
+      filteredProjects
         .filter((p) => {
           const flagged = localOverrides[p.id] ?? p.systemPerformanceReview;
           return flagged && p.closeDate;
@@ -99,7 +130,7 @@ export default function ClippingAnalyticsPage() {
         .map((p) => ({ date: p.closeDate!, amount: p.amount || 0 })),
       6
     ),
-    [safeProjects, localOverrides]
+    [filteredProjects, localOverrides]
   );
 
   // Equipment performance aggregations
@@ -154,8 +185,11 @@ export default function ClippingAnalyticsPage() {
 
   // Export
   const exportRows = useMemo(
-    () => clippingAnalyses.all.map((a) => ({
+    () => clippingAnalyses.all.map((a) => {
+      const proj = filteredProjects.find((p) => p.id === a.projectId);
+      return {
       project: a.projectName,
+      location: proj?.pbLocation || "",
       stage: a.stage,
       designStatus: a.designStatus || "",
       panelCount: a.panelCount,
@@ -167,8 +201,9 @@ export default function ClippingAnalyticsPage() {
       batteryKwh: a.batteryKwh.toFixed(0),
       riskLevel: a.riskLevel,
       inverterModel: a.inverterModel,
-    })),
-    [clippingAnalyses]
+    };
+    }),
+    [clippingAnalyses, filteredProjects]
   );
 
   return (
@@ -179,6 +214,32 @@ export default function ClippingAnalyticsPage() {
       exportData={{ data: exportRows, filename: "clipping-analytics.csv" }}
       fullWidth
     >
+      {/* Filter Row */}
+      <div className="mb-6 flex flex-wrap items-center gap-3">
+        <MultiSelectFilter
+          label="Location"
+          options={locationOptions}
+          selected={persistedFilters.locations}
+          onChange={(v) => setPersisted({ ...persistedFilters, locations: v })}
+          accentColor="indigo"
+        />
+        <MultiSelectFilter
+          label="Deal Stage"
+          options={stageOptions}
+          selected={persistedFilters.stages}
+          onChange={(v) => setPersisted({ ...persistedFilters, stages: v })}
+          accentColor="indigo"
+        />
+        {hasActiveFilters && (
+          <button
+            onClick={() => clearFilters()}
+            className="px-3 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg transition-colors"
+          >
+            Clear All
+          </button>
+        )}
+      </div>
+
       {/* Summary Stats */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 stagger-grid">
         <MiniStat label="Analyzed" value={loading ? null : clippingAnalyses.all.length} />
@@ -223,6 +284,7 @@ export default function ClippingAnalyticsPage() {
               <thead>
                 <tr className="border-b border-t-border text-left text-muted bg-surface-2/50">
                   <th className="p-3">Project</th>
+                  <th className="p-3">Deal Stage</th>
                   <th className="p-3">Equipment</th>
                   <th className="p-3 text-center">DC kW</th>
                   <th className="p-3 text-center">AC kW</th>
@@ -253,8 +315,8 @@ export default function ClippingAnalyticsPage() {
                           >
                             {analysis.projectName.split("|")[0].trim()}
                           </a>
-                          <div className="text-xs text-muted">{analysis.stage}</div>
                         </td>
+                        <td className="p-3 text-muted text-xs">{analysis.stage || "\u2014"}</td>
                         <td className="p-3 text-xs text-muted">
                           {analysis.panelCount}× {analysis.panelWattage}W
                           <div>{analysis.inverterCount}× inv</div>
