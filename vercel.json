@@ -15,6 +15,9 @@
     },
     "src/app/api/webhooks/hubspot/design-complete/route.ts": {
       "maxDuration": 300
+    },
+    "src/app/api/zuper/jobs/schedule/confirm/route.ts": {
+      "maxDuration": 300
     }
   },
   "crons": [

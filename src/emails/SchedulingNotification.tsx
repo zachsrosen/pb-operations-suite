@@ -16,9 +16,11 @@ export interface SchedulingNotificationProps {
   timeSlot: string; // Pre-formatted: "8:00 AM - 9:00 AM" | "Full day"
   notes?: string;
   installDetailLines?: string[]; // Pre-built lines from email.ts
+  bomDetailLines?: string[]; // BOM snapshot summary lines (additive to installDetailLines)
   hubSpotDealUrl?: string;
   zuperJobUrl?: string;
   googleCalendarEventUrl?: string;
+  zohoSoUrl?: string;
 }
 
 export function SchedulingNotification({
@@ -34,12 +36,15 @@ export function SchedulingNotification({
   timeSlot,
   notes,
   installDetailLines,
+  bomDetailLines,
   hubSpotDealUrl,
   zuperJobUrl,
   googleCalendarEventUrl,
+  zohoSoUrl,
 }: SchedulingNotificationProps) {
   const hasInstallDetails = installDetailLines && installDetailLines.length > 0;
-  const hasLinks = !!hubSpotDealUrl || !!zuperJobUrl || !!googleCalendarEventUrl;
+  const hasBomDetails = bomDetailLines && bomDetailLines.length > 0;
+  const hasLinks = !!hubSpotDealUrl || !!zuperJobUrl || !!googleCalendarEventUrl || !!zohoSoUrl;
   const stakeholder =
     appointmentType === "survey" && dealOwnerName
       ? { icon: "🧑‍💼", label: "Deal owner", value: dealOwnerName }
@@ -80,6 +85,16 @@ export function SchedulingNotification({
           </Section>
         )}
 
+        {/* BOM / Sales Order block */}
+        {hasBomDetails && (
+          <Section style={detailBlock}>
+            <Text style={detailBlockLabel}>📦 Planset BOM / Sales Order</Text>
+            <Text style={detailBlockText}>
+              {bomDetailLines!.join("\n")}
+            </Text>
+          </Section>
+        )}
+
         {/* Notes block */}
         {notes && (
           <Section style={detailBlock}>
@@ -109,6 +124,13 @@ export function SchedulingNotification({
               <Text style={detailBlockText}>
                 <Link href={googleCalendarEventUrl} style={link}>
                   Open Google Calendar Event
+                </Link>
+              </Text>
+            )}
+            {zohoSoUrl && (
+              <Text style={detailBlockText}>
+                <Link href={zohoSoUrl} style={link}>
+                  Open Zoho Sales Order
                 </Link>
               </Text>
             )}

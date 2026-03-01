@@ -570,6 +570,13 @@ interface SendSchedulingNotificationParams {
     installNotes?: string;
     equipmentSummary?: string;
   };
+  bomEnrichment?: {
+    bomSummaryLines: string[];
+    zohoSoUrl?: string;
+    zohoSoNumber?: string;
+    snapshotVersion?: number;
+    pdfAttachment?: { filename: string; content: Buffer };
+  };
 }
 
 export async function sendSchedulingNotification(
@@ -620,6 +627,18 @@ export async function sendSchedulingNotification(
     installDetailLines.push(`Install Notes: ${installDetails.installNotes}`);
   }
 
+  // Build BOM / Sales Order detail lines (additive to install details)
+  const bomDetailLines: string[] = [];
+  if (params.bomEnrichment) {
+    if (params.bomEnrichment.snapshotVersion) {
+      bomDetailLines.push(`BOM Version: v${params.bomEnrichment.snapshotVersion}`);
+    }
+    if (params.bomEnrichment.zohoSoNumber) {
+      bomDetailLines.push(`Sales Order: ${params.bomEnrichment.zohoSoNumber}`);
+    }
+    bomDetailLines.push(...params.bomEnrichment.bomSummaryLines);
+  }
+
   const html = await render(
     React.createElement(SchedulingNotification, {
       crewMemberName: params.crewMemberName,
@@ -635,11 +654,23 @@ export async function sendSchedulingNotification(
       timeSlot,
       notes: cleanedNotes,
       installDetailLines: installDetailLines.length > 0 ? installDetailLines : undefined,
+      bomDetailLines: bomDetailLines.length > 0 ? bomDetailLines : undefined,
       hubSpotDealUrl,
       zuperJobUrl: zuperJobUrl || undefined,
       googleCalendarEventUrl: params.googleCalendarEventUrl || undefined,
+      zohoSoUrl: params.bomEnrichment?.zohoSoUrl,
     })
   );
+
+  // Build PDF attachment array if BOM enrichment includes one
+  const attachments: MimeAttachment[] = [];
+  if (params.bomEnrichment?.pdfAttachment) {
+    attachments.push({
+      filename: params.bomEnrichment.pdfAttachment.filename,
+      content: params.bomEnrichment.pdfAttachment.content,
+      contentType: "application/pdf",
+    });
+  }
 
   return sendEmailMessage({
     to: params.to,
@@ -659,10 +690,12 @@ Time: ${timeSlot}
 Scheduled by: ${params.scheduledByName}
 ${stakeholderTextLine}
 ${installDetailLines.length > 0 ? `\nInstall Details:\n${installDetailLines.join("\n")}` : ""}
+${bomDetailLines.length > 0 ? `\nPlanset BOM / Sales Order:\n${bomDetailLines.join("\n")}` : ""}
 ${cleanedNotes ? `\nNotes: ${cleanedNotes}` : ""}
 HubSpot Deal: ${hubSpotDealUrl}
 ${zuperJobUrl ? `Zuper Job: ${zuperJobUrl}` : ""}
 ${params.googleCalendarEventUrl ? `Google Calendar Event: ${params.googleCalendarEventUrl}` : ""}
+${params.bomEnrichment?.zohoSoUrl ? `Zoho Sales Order: ${params.bomEnrichment.zohoSoUrl}` : ""}
 
 Please check your Zuper app for complete details.
 
@@ -679,12 +712,15 @@ Please check your Zuper app for complete details.
       `Date: ${formattedDate}`,
       `Time: ${timeSlot}`,
       `Install Details: ${installDetailLines.length > 0 ? installDetailLines.join(" | ") : "None"}`,
+      `BOM / SO: ${bomDetailLines.length > 0 ? bomDetailLines.join(" | ") : "None"}`,
       `Notes: ${cleanedNotes || "None"}`,
       `HubSpot Deal: ${hubSpotDealUrl}`,
       `Zuper Job: ${zuperJobUrl || "None"}`,
       `Google Calendar Event: ${params.googleCalendarEventUrl || "None"}`,
+      `Zoho SO: ${params.bomEnrichment?.zohoSoUrl || "None"}`,
       `BCC: ${bccRecipients.join(", ") || "None"}`,
     ].join("\n"),
+    attachments: attachments.length > 0 ? attachments : undefined,
   });
 }
 
