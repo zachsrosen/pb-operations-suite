@@ -70,21 +70,25 @@ export async function runAnomalyChecks(
     triggered.push(sensitiveCheck);
   }
 
-  if (triggered.length === 0) return [];
+  // Persist anomaly events (if any rules triggered)
+  if (triggered.length > 0) {
+    await prisma.auditAnomalyEvent.createMany({
+      data: triggered.map((r: AnomalyRuleResult) => ({
+        sessionId: ctx.session.id,
+        rule: r.rule,
+        riskScore: r.riskScore,
+        evidence: r.evidence,
+      })),
+    });
+  }
 
-  // Persist anomaly events
-  await prisma.auditAnomalyEvent.createMany({
-    data: triggered.map((r: AnomalyRuleResult) => ({
-      sessionId: ctx.session.id,
-      rule: r.rule,
-      riskScore: r.riskScore,
-      evidence: r.evidence,
-    })),
-  });
-
-  // Escalate session risk (risk only goes UP, never down)
+  // Escalate session risk (risk only goes UP, never down).
+  // Include both anomaly rule scores AND the current activity's intrinsic risk,
+  // so a CRITICAL action (e.g. USER_DELETED) escalates even without anomaly triggers.
   const maxTriggeredScore = Math.max(
-    ...triggered.map((r: AnomalyRuleResult) => r.riskScore)
+    ctx.activityRiskScore,
+    ...triggered.map((r: AnomalyRuleResult) => r.riskScore),
+    0 // fallback when triggered is empty
   );
   const newRiskScore = Math.max(ctx.session.riskScore, maxTriggeredScore);
 

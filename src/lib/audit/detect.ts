@@ -93,8 +93,8 @@ const VALID_CLIENT_TYPES = new Set<ClientType>([
 export function detectClientType(ctx: ClientTypeContext): ClientType {
   // Priority 1: Explicit X-Client-Type header (only trusted with valid session)
   if (ctx.xClientType && ctx.hasValidSession) {
-    const upper = ctx.xClientType.toUpperCase() as ClientType;
-    if (VALID_CLIENT_TYPES.has(upper)) return upper;
+    const normalized = ctx.xClientType.toUpperCase().replace(/-/g, "_") as ClientType;
+    if (VALID_CLIENT_TYPES.has(normalized)) return normalized;
   }
 
   const ua = ctx.userAgent ?? "";

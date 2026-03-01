@@ -49,8 +49,8 @@ const ADMIN_EMAILS = (process.env.AUDIT_ALERT_EMAILS || "")
 
 const DASHBOARD_URL =
   process.env.NEXTAUTH_URL
-    ? `${process.env.NEXTAUTH_URL}/dashboards/audit`
-    : "https://ops.photonbrothers.com/dashboards/audit";
+    ? `${process.env.NEXTAUTH_URL}/admin/audit`
+    : "https://ops.photonbrothers.com/admin/audit";
 
 // ---------------------------------------------------------------------------
 // Immediate alert (Two-Gate Dedup -- Amendment A5)
@@ -89,22 +89,37 @@ export async function sendImmediateAlert(
 
   if (!alertLevel || !timestampField) return;
 
-  // Mark sent BEFORE sending (prevent double-fire on concurrent requests)
-  await prisma.auditSession.update({
-    where: { id: session.id },
-    data: { [timestampField]: new Date() },
-  });
+  // Atomic optimistic lock: only proceed if timestamp is still NULL.
+  // Prevents double-send on concurrent requests. On send failure, we
+  // clear the timestamp so a future retry can re-claim the gate.
+  const lockResult: number = timestampField === "criticalAlertSentAt"
+    ? await prisma.$executeRaw`
+        UPDATE "AuditSession" SET "criticalAlertSentAt" = NOW()
+        WHERE id = ${session.id} AND "criticalAlertSentAt" IS NULL`
+    : await prisma.$executeRaw`
+        UPDATE "AuditSession" SET "immediateAlertSentAt" = NOW()
+        WHERE id = ${session.id} AND "immediateAlertSentAt" IS NULL`;
+
+  if (lockResult === 0) return; // Another request already claimed this gate
 
   const subject = `[${alertLevel}] Audit Alert: ${session.userEmail || "Unknown User"} — ${session.environment}`;
-
   const html = buildImmediateAlertHtml(session, alertLevel);
 
-  await resend.emails.send({
-    from: ALERT_FROM,
-    to: ADMIN_EMAILS,
-    subject,
-    html,
-  });
+  try {
+    await resend.emails.send({
+      from: ALERT_FROM,
+      to: ADMIN_EMAILS,
+      subject,
+      html,
+    });
+  } catch (error) {
+    // Send failed — clear timestamp so a retry can re-claim the gate
+    const rollback = timestampField === "criticalAlertSentAt"
+      ? prisma.$executeRaw`UPDATE "AuditSession" SET "criticalAlertSentAt" = NULL WHERE id = ${session.id}`
+      : prisma.$executeRaw`UPDATE "AuditSession" SET "immediateAlertSentAt" = NULL WHERE id = ${session.id}`;
+    await rollback.catch(() => {}); // Best-effort
+    throw error;
+  }
 }
 
 function buildImmediateAlertHtml(

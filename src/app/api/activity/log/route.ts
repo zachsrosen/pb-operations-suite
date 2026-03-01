@@ -12,8 +12,9 @@ import {
   prisma,
   getUserByEmail,
 } from "@/lib/db";
-import { getOrCreateAuditSession } from "@/lib/audit/session";
+import { getOrCreateAuditSession, runSessionAnomalyChecks } from "@/lib/audit/session";
 import { getActivityRiskLevel } from "@/lib/audit/detect";
+import type { AuditSessionLike } from "@/lib/audit/session";
 
 function getActionActivityType(action: string): string {
   switch (action) {
@@ -63,6 +64,7 @@ export async function POST(request: NextRequest) {
     // Resolve audit session
     const xClientType = headersList.get("x-client-type");
     let auditSessionId: string | undefined;
+    let auditSessionData: AuditSessionLike | null = null;
     let activityRiskLevel: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL" = "LOW";
     let activityRiskScore = 1;
 
@@ -79,6 +81,7 @@ export async function POST(request: NextRequest) {
         fingerprintVersion: body?.deviceFingerprint ? 1 : null,
       }, prisma);
       auditSessionId = auditResult.sessionId || undefined;
+      auditSessionData = auditResult.sessionData ?? null;
     } catch (e) {
       console.error("Audit session resolution failed:", e);
     }
@@ -243,6 +246,14 @@ export async function POST(request: NextRequest) {
           { error: `Unknown action: ${action}` },
           { status: 400 }
         );
+    }
+
+    // Amendment A4: Run anomaly checks on EVERY activity (both new and reused sessions).
+    // Fire-and-forget — don't block the response.
+    if (auditSessionData && prisma) {
+      runSessionAnomalyChecks(auditSessionData, activityRiskScore, prisma).catch(
+        (e: unknown) => console.error("Anomaly check failed:", e)
+      );
     }
 
     return NextResponse.json({ success: true });

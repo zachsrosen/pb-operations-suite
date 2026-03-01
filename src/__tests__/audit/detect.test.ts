@@ -123,6 +123,16 @@ describe("detectClientType", () => {
     ).toBe("CLAUDE_CODE");
   });
 
+  it("normalizes hyphenated X-Client-Type to underscore form", () => {
+    expect(
+      detectClientType({
+        userAgent: "custom-agent/1.0",
+        xClientType: "claude-code",
+        hasValidSession: true,
+      })
+    ).toBe("CLAUDE_CODE");
+  });
+
   it("ignores X-Client-Type header without valid session", () => {
     expect(
       detectClientType({
