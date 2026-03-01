@@ -6,6 +6,7 @@
  */
 
 import { detectEnvironment, detectClientType, isPrivateIP } from "./detect";
+import { runAnomalyChecks } from "./anomaly-runner";
 
 // ---------------------------------------------------------------------------
 // Local type aliases (mirror Prisma enums)
@@ -19,12 +20,27 @@ type ClientType =
 type ConfidenceLevel = "HIGH" | "MEDIUM" | "LOW";
 
 // ---------------------------------------------------------------------------
+// Shared session shape for anomaly runner (no Prisma import)
+// ---------------------------------------------------------------------------
+export interface AuditSessionLike {
+  id: string;
+  userId: string | null;
+  userEmail: string | null;
+  clientType: string;
+  environment: string;
+  ipAddress: string;
+  deviceFingerprint: string | null;
+  riskScore: number;
+  anomalyReasons: string[];
+}
+
+// ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 export const SESSION_INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
 // ---------------------------------------------------------------------------
-// hashCode — DJB2 string hash returning a 32-bit integer
+// hashCode -- DJB2 string hash returning a 32-bit integer
 // ---------------------------------------------------------------------------
 export function hashCode(str: string): number {
   let hash = 5381;
@@ -36,7 +52,7 @@ export function hashCode(str: string): number {
 }
 
 // ---------------------------------------------------------------------------
-// resolveSessionMatch — pure function
+// resolveSessionMatch -- pure function
 // ---------------------------------------------------------------------------
 interface SessionCandidate {
   id: string;
@@ -73,7 +89,7 @@ export function resolveSessionMatch(
 }
 
 // ---------------------------------------------------------------------------
-// computeConfidence — pure function
+// computeConfidence -- pure function
 // ---------------------------------------------------------------------------
 interface ConfidenceContext {
   clientType: string;
@@ -107,7 +123,7 @@ export function computeConfidence(ctx: ConfidenceContext): ConfidenceLevel {
 }
 
 // ---------------------------------------------------------------------------
-// getOrCreateAuditSession — race-safe DB transaction
+// getOrCreateAuditSession -- race-safe DB transaction
 // ---------------------------------------------------------------------------
 export interface GetOrCreateSessionInput {
   userEmail: string | null;
@@ -124,6 +140,8 @@ export interface GetOrCreateSessionInput {
 interface SessionResult {
   sessionId: string;
   isNew: boolean;
+  // Session data for anomaly context (null if prisma unavailable)
+  sessionData: AuditSessionLike | null;
 }
 
 // Minimal Prisma-like type so we don't need the generated client
@@ -138,7 +156,14 @@ type PrismaLike = {
 type PrismaTransactionClient = {
   $executeRaw: (template: TemplateStringsArray, ...values: unknown[]) => Promise<number>;
   auditSession: {
-    findFirst: (args: Record<string, unknown>) => Promise<SessionCandidate | null>;
+    findFirst: (args: Record<string, unknown>) => Promise<(SessionCandidate & {
+      userId?: string | null;
+      userEmail?: string | null;
+      environment?: string;
+      deviceFingerprint?: string | null;
+      riskScore?: number;
+      anomalyReasons?: string[];
+    }) | null>;
     update: (args: Record<string, unknown>) => Promise<unknown>;
     create: (args: Record<string, unknown>) => Promise<{ id: string }>;
   };
@@ -151,7 +176,7 @@ export async function getOrCreateAuditSession(
 ): Promise<SessionResult> {
   // Guard: no prisma client
   if (!prisma) {
-    return { sessionId: "", isNew: false };
+    return { sessionId: "", isNew: false, sessionData: null };
   }
 
   const clientType: ClientType = detectClientType({
@@ -198,17 +223,26 @@ export async function getOrCreateAuditSession(
       whereClause.userAgent = input.userAgent;
     }
 
+    // Select fields needed for both match resolution and anomaly context
+    const sessionSelect = {
+      id: true,
+      clientType: true,
+      ipAddress: true,
+      endedAt: true,
+      lastActiveAt: true,
+      userId: true,
+      userEmail: true,
+      environment: true,
+      deviceFingerprint: true,
+      riskScore: true,
+      anomalyReasons: true,
+    };
+
     // Look for existing open session
     const existing = await tx.auditSession.findFirst({
       where: whereClause,
       orderBy: { lastActiveAt: "desc" },
-      select: {
-        id: true,
-        clientType: true,
-        ipAddress: true,
-        endedAt: true,
-        lastActiveAt: true,
-      },
+      select: sessionSelect,
     });
 
     if (existing) {
@@ -223,7 +257,20 @@ export async function getOrCreateAuditSession(
           where: { id: existing.id },
           data: { lastActiveAt: now },
         });
-        return { sessionId: existing.id, isNew: false };
+
+        const sessionData: AuditSessionLike = {
+          id: existing.id,
+          userId: existing.userId ?? null,
+          userEmail: existing.userEmail ?? null,
+          clientType: existing.clientType,
+          environment: existing.environment ?? environment,
+          ipAddress: existing.ipAddress,
+          deviceFingerprint: existing.deviceFingerprint ?? null,
+          riskScore: existing.riskScore ?? 0,
+          anomalyReasons: existing.anomalyReasons ?? [],
+        };
+
+        return { sessionId: existing.id, isNew: false, sessionData };
       }
 
       // Close the old session
@@ -252,6 +299,92 @@ export async function getOrCreateAuditSession(
       },
     });
 
-    return { sessionId: created.id, isNew: true };
+    const sessionData: AuditSessionLike = {
+      id: created.id,
+      userId: input.userId,
+      userEmail: input.userEmail,
+      clientType,
+      environment,
+      ipAddress: input.ipAddress,
+      deviceFingerprint: input.deviceFingerprint ?? null,
+      riskScore: 0,
+      anomalyReasons: [],
+    };
+
+    return { sessionId: created.id, isNew: true, sessionData };
   });
+}
+
+// ---------------------------------------------------------------------------
+// runSessionAnomalyChecks -- called after session resolution
+// ---------------------------------------------------------------------------
+
+/**
+ * Run anomaly checks for the current activity on the given session.
+ * Called after getOrCreateAuditSession, non-blocking.
+ */
+export async function runSessionAnomalyChecks(
+  session: AuditSessionLike,
+  activityRiskScore: number,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  prisma: any
+): Promise<void> {
+  if (!prisma) return;
+
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
+
+  // Build identity-based where for history queries
+  const identityWhere: Record<string, unknown> = {};
+  if (session.userId) {
+    identityWhere.userId = session.userId;
+  } else if (session.userEmail) {
+    identityWhere.userEmail = session.userEmail;
+  } else {
+    identityWhere.ipAddress = session.ipAddress;
+    // For anonymous: can't check device/IP history meaningfully
+    return;
+  }
+
+  const [fingerprintHistory, ipHistory, recentMutatingCount] =
+    await Promise.all([
+      session.deviceFingerprint
+        ? prisma.auditSession.count({
+            where: {
+              ...identityWhere,
+              deviceFingerprint: session.deviceFingerprint,
+              id: { not: session.id },
+              startedAt: { gte: thirtyDaysAgo },
+            },
+          })
+        : Promise.resolve(0),
+
+      prisma.auditSession.count({
+        where: {
+          ...identityWhere,
+          ipAddress: session.ipAddress,
+          id: { not: session.id },
+          startedAt: { gte: thirtyDaysAgo },
+        },
+      }),
+
+      prisma.activityLog.count({
+        where: {
+          auditSessionId: session.id,
+          createdAt: { gte: fiveMinAgo },
+          riskScore: { gte: 2 },
+        },
+      }),
+    ]);
+
+  await runAnomalyChecks(
+    {
+      session,
+      activityRiskScore,
+      mutatingActionCountLast5Min: recentMutatingCount,
+      fingerprintKnown: fingerprintHistory > 0,
+      ipKnown: ipHistory > 0,
+    },
+    prisma
+  );
 }
