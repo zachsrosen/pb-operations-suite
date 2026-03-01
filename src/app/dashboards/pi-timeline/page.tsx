@@ -89,17 +89,17 @@ export default function PITimelinePage() {
 
   const slaResults = useMemo((): SLAResult[] => {
     // Permit Issue SLA: permitSubmitDate → permitIssueDate
-    const permitItems = safeProjects
+    const permitItems = filteredProjects
       .map((p) => ({ project: p, days: daysBetween(p.permitSubmitDate, p.permitIssueDate) }))
       .filter((x): x is { project: RawProject; days: number } => x.days !== null);
 
     // IC Approval SLA: interconnectionSubmitDate → interconnectionApprovalDate
-    const icItems = safeProjects
+    const icItems = filteredProjects
       .map((p) => ({ project: p, days: daysBetween(p.interconnectionSubmitDate, p.interconnectionApprovalDate) }))
       .filter((x): x is { project: RawProject; days: number } => x.days !== null);
 
     // PTO SLA: ptoSubmitDate → ptoGrantedDate
-    const ptoItems = safeProjects
+    const ptoItems = filteredProjects
       .map((p) => ({ project: p, days: daysBetween(p.ptoSubmitDate, p.ptoGrantedDate) }))
       .filter((x): x is { project: RawProject; days: number } => x.days !== null);
 
@@ -116,12 +116,12 @@ export default function PITimelinePage() {
       buildResult("IC Approval", SLA_TARGETS.icApprovalDays, icItems),
       buildResult("PTO Granted", SLA_TARGETS.ptoDays, ptoItems),
     ];
-  }, [safeProjects]);
+  }, [filteredProjects]);
 
   // ---- AHJ Turnaround Comparison ----
   const ahjTurnarounds = useMemo(() => {
     const map: Record<string, { display: string; turnarounds: number[] }> = {};
-    safeProjects.forEach((p) => {
+    filteredProjects.forEach((p) => {
       const ahj = p.ahj?.trim();
       if (!ahj) return;
       const days = daysBetween(p.permitSubmitDate, p.permitIssueDate);
@@ -140,12 +140,12 @@ export default function PITimelinePage() {
       .filter((r) => r.count >= 2)
       .sort((a, b) => b.count - a.count)
       .slice(0, 15);
-  }, [safeProjects]);
+  }, [filteredProjects]);
 
   // ---- Utility IC Turnaround Comparison ----
   const utilityTurnarounds = useMemo(() => {
     const map: Record<string, { display: string; turnarounds: number[] }> = {};
-    safeProjects.forEach((p) => {
+    filteredProjects.forEach((p) => {
       const util = p.utility?.trim();
       if (!util) return;
       const days = daysBetween(p.interconnectionSubmitDate, p.interconnectionApprovalDate);
@@ -164,7 +164,7 @@ export default function PITimelinePage() {
       .filter((r) => r.count >= 2)
       .sort((a, b) => b.count - a.count)
       .slice(0, 15);
-  }, [safeProjects]);
+  }, [filteredProjects]);
 
   // ---- Recent PTO Completions Timeline ----
   const recentCompletions = useMemo(() => {

@@ -133,18 +133,18 @@ export default function PIOverviewPage() {
 
   // Hero metrics
   const heroMetrics = useMemo(() => {
-    const permitsPending = safeProjects.filter(
+    const permitsPending = filteredProjects.filter(
       (p) => p.permittingStatus && [...PERMIT_ACTIVE_STATUSES, ...PERMIT_REVISION_STATUSES].includes(p.permittingStatus)
     );
-    const icActive = safeProjects.filter(
+    const icActive = filteredProjects.filter(
       (p) => p.interconnectionStatus && [...IC_ACTIVE_STATUSES, ...IC_REVISION_STATUSES].includes(p.interconnectionStatus)
     );
-    const ptoPipeline = safeProjects.filter(
+    const ptoPipeline = filteredProjects.filter(
       (p) => p.ptoStatus && PTO_PIPELINE_STATUSES.includes(p.ptoStatus)
     );
 
     // Avg permit turnaround (submit → issue)
-    const turnarounds = safeProjects
+    const turnarounds = filteredProjects
       .filter((p) => p.permitSubmitDate && p.permitIssueDate)
       .map((p) => {
         const d1 = new Date(p.permitSubmitDate! + "T12:00:00");
@@ -162,12 +162,12 @@ export default function PIOverviewPage() {
       ptoPipeline: ptoPipeline.length,
       avgTurnaround,
     };
-  }, [safeProjects]);
+  }, [filteredProjects]);
 
   // Status distributions
   const permitBreakdown = useMemo(() => {
     const counts: Record<string, number> = {};
-    safeProjects.forEach((p) => {
+    filteredProjects.forEach((p) => {
       if (p.permittingStatus) {
         counts[p.permittingStatus] = (counts[p.permittingStatus] || 0) + 1;
       }
@@ -177,11 +177,11 @@ export default function PIOverviewPage() {
       .sort((a, b) => b[1] - a[1])
       .slice(0, 10)
       .map(([status, count]) => ({ status, count, pct: (count / max) * 100 }));
-  }, [safeProjects]);
+  }, [filteredProjects]);
 
   const icBreakdown = useMemo(() => {
     const counts: Record<string, number> = {};
-    safeProjects.forEach((p) => {
+    filteredProjects.forEach((p) => {
       if (p.interconnectionStatus) {
         counts[p.interconnectionStatus] = (counts[p.interconnectionStatus] || 0) + 1;
       }
@@ -191,7 +191,7 @@ export default function PIOverviewPage() {
       .sort((a, b) => b[1] - a[1])
       .slice(0, 10)
       .map(([status, count]) => ({ status, count, pct: (count / max) * 100 }));
-  }, [safeProjects]);
+  }, [filteredProjects]);
 
   // Stale projects (most days in current P&I stage)
   const staleProjects = useMemo(() => {

@@ -61,72 +61,72 @@ export default function PIMetricsPage() {
 
   // ---- Permit Metrics ----
   const permitMetrics = useMemo(() => {
-    const submitted = safeProjects.filter((p) => p.permitSubmitDate);
-    const issued = safeProjects.filter((p) => p.permitIssueDate);
-    const pending = safeProjects.filter((p) => p.permitSubmitDate && !p.permitIssueDate);
+    const submitted = filteredProjects.filter((p) => p.permitSubmitDate);
+    const issued = filteredProjects.filter((p) => p.permitIssueDate);
+    const pending = filteredProjects.filter((p) => p.permitSubmitDate && !p.permitIssueDate);
 
     return {
       submitted: { count: submitted.length, revenue: submitted.reduce((s, p) => s + (p.amount || 0), 0) },
       issued: { count: issued.length, revenue: issued.reduce((s, p) => s + (p.amount || 0), 0) },
       pending: { count: pending.length, revenue: pending.reduce((s, p) => s + (p.amount || 0), 0) },
     };
-  }, [safeProjects]);
+  }, [filteredProjects]);
 
   // ---- IC Metrics ----
   const icMetrics = useMemo(() => {
-    const submitted = safeProjects.filter((p) => p.interconnectionSubmitDate);
-    const approved = safeProjects.filter((p) => p.interconnectionApprovalDate);
-    const pending = safeProjects.filter((p) => p.interconnectionSubmitDate && !p.interconnectionApprovalDate);
+    const submitted = filteredProjects.filter((p) => p.interconnectionSubmitDate);
+    const approved = filteredProjects.filter((p) => p.interconnectionApprovalDate);
+    const pending = filteredProjects.filter((p) => p.interconnectionSubmitDate && !p.interconnectionApprovalDate);
 
     return {
       submitted: { count: submitted.length, revenue: submitted.reduce((s, p) => s + (p.amount || 0), 0) },
       approved: { count: approved.length, revenue: approved.reduce((s, p) => s + (p.amount || 0), 0) },
       pending: { count: pending.length, revenue: pending.reduce((s, p) => s + (p.amount || 0), 0) },
     };
-  }, [safeProjects]);
+  }, [filteredProjects]);
 
   // ---- PTO Metrics ----
   const ptoMetrics = useMemo(() => {
-    const submitted = safeProjects.filter((p) => p.ptoSubmitDate);
-    const granted = safeProjects.filter((p) => p.ptoGrantedDate);
-    const pending = safeProjects.filter((p) => p.ptoSubmitDate && !p.ptoGrantedDate);
+    const submitted = filteredProjects.filter((p) => p.ptoSubmitDate);
+    const granted = filteredProjects.filter((p) => p.ptoGrantedDate);
+    const pending = filteredProjects.filter((p) => p.ptoSubmitDate && !p.ptoGrantedDate);
 
     return {
       submitted: { count: submitted.length, revenue: submitted.reduce((s, p) => s + (p.amount || 0), 0) },
       granted: { count: granted.length, revenue: granted.reduce((s, p) => s + (p.amount || 0), 0) },
       pending: { count: pending.length, revenue: pending.reduce((s, p) => s + (p.amount || 0), 0) },
     };
-  }, [safeProjects]);
+  }, [filteredProjects]);
 
   // ---- Monthly Trends ----
   const permitIssueTrend = useMemo(
     () => aggregateMonthly(
-      safeProjects
+      filteredProjects
         .filter((p) => p.permitIssueDate)
         .map((p) => ({ date: p.permitIssueDate!, amount: p.amount || 0 })),
       6
     ),
-    [safeProjects]
+    [filteredProjects]
   );
 
   const icApprovalTrend = useMemo(
     () => aggregateMonthly(
-      safeProjects
+      filteredProjects
         .filter((p) => p.interconnectionApprovalDate)
         .map((p) => ({ date: p.interconnectionApprovalDate!, amount: p.amount || 0 })),
       6
     ),
-    [safeProjects]
+    [filteredProjects]
   );
 
   const ptoGrantedTrend = useMemo(
     () => aggregateMonthly(
-      safeProjects
+      filteredProjects
         .filter((p) => p.ptoGrantedDate)
         .map((p) => ({ date: p.ptoGrantedDate!, amount: p.amount || 0 })),
       6
     ),
-    [safeProjects]
+    [filteredProjects]
   );
 
   // ---- Status Breakdown ----
