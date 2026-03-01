@@ -179,7 +179,7 @@ export async function getOrCreateAuditSession(
     const lockKey = hashCode(
       `audit_session_${identityKey}_${clientType}_${input.ipAddress}`
     );
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${lockKey})`;
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${BigInt(lockKey)})`;
 
     // Build WHERE clause based on identity
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -243,7 +243,7 @@ export async function getOrCreateAuditSession(
         userAgent: input.userAgent,
         clientType,
         environment,
-        confidenceLevel: confidence,
+        confidence,
         deviceFingerprint: input.deviceFingerprint ?? null,
         fingerprintVersion: input.fingerprintVersion ?? null,
         startedAt: now,

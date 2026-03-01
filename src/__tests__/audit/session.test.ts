@@ -99,6 +99,16 @@ describe("computeConfidence", () => {
     ).toBe("MEDIUM");
   });
 
+  it("returns MEDIUM for CODEX", () => {
+    expect(
+      computeConfidence({
+        clientType: "CODEX",
+        hasFingerprint: false,
+        ipAddress: "8.8.8.8",
+      })
+    ).toBe("MEDIUM");
+  });
+
   it("returns LOW for API_CLIENT", () => {
     expect(
       computeConfidence({
@@ -138,5 +148,16 @@ describe("hashCode", () => {
 
   it("returns a number", () => {
     expect(typeof hashCode("test")).toBe("number");
+  });
+
+  it("returns a 32-bit signed integer (may be negative)", () => {
+    const h = hashCode("audit_session_anon_12345_BROWSER_1.2.3.4");
+    expect(Number.isInteger(h)).toBe(true);
+    expect(h).toBeGreaterThanOrEqual(-(2 ** 31));
+    expect(h).toBeLessThanOrEqual(2 ** 31 - 1);
+  });
+
+  it("returns seed value 5381 for empty string", () => {
+    expect(hashCode("")).toBe(5381);
   });
 });
