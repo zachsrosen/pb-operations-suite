@@ -9,7 +9,24 @@ import {
   logFilterChange,
   logDataExport,
   ActivityType,
+  prisma,
+  getUserByEmail,
 } from "@/lib/db";
+import { getOrCreateAuditSession } from "@/lib/audit/session";
+import { getActivityRiskLevel } from "@/lib/audit/detect";
+
+function getActionActivityType(action: string): string {
+  switch (action) {
+    case "page_view": return "DASHBOARD_VIEWED";
+    case "dashboard_view": return "DASHBOARD_VIEWED";
+    case "project_view": return "PROJECT_VIEWED";
+    case "search": return "PROJECT_SEARCHED";
+    case "filter": return "DASHBOARD_FILTERED";
+    case "export": return "DATA_EXPORTED";
+    case "feature_used": return "FEATURE_USED";
+    default: return "FEATURE_USED";
+  }
+}
 
 /**
  * POST /api/activity/log
@@ -30,6 +47,10 @@ export async function POST(request: NextRequest) {
     const userEmail = session?.user?.email || undefined;
     const userName = session?.user?.name || undefined;
 
+    // Resolve userId for audit (Amendment A3)
+    const currentUser = userEmail ? await getUserByEmail(userEmail) : null;
+    const userId = currentUser?.id || null;
+
     let body;
     try {
       body = await request.json();
@@ -38,6 +59,35 @@ export async function POST(request: NextRequest) {
     }
 
     const { action, ...data } = body;
+
+    // Resolve audit session
+    const xClientType = headersList.get("x-client-type");
+    let auditSessionId: string | undefined;
+    let activityRiskLevel: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL" = "LOW";
+    let activityRiskScore = 1;
+
+    try {
+      const auditResult = await getOrCreateAuditSession({
+        userEmail: userEmail || null,
+        userName: userName || null,
+        userId,
+        ipAddress,
+        userAgent: userAgent || null,
+        xClientType,
+        hasValidSession: !!session?.user?.email,
+        deviceFingerprint: body?.deviceFingerprint || null,
+        fingerprintVersion: body?.deviceFingerprint ? 1 : null,
+      }, prisma);
+      auditSessionId = auditResult.sessionId || undefined;
+    } catch (e) {
+      console.error("Audit session resolution failed:", e);
+    }
+
+    // Compute risk level
+    const mappedType = action === "custom" ? data.type : getActionActivityType(action);
+    const risk = getActivityRiskLevel(mappedType || "FEATURE_USED");
+    activityRiskLevel = risk.riskLevel as typeof activityRiskLevel;
+    activityRiskScore = risk.riskScore;
 
     // Handle different action types
     switch (action) {
@@ -57,6 +107,9 @@ export async function POST(request: NextRequest) {
           ipAddress,
           userAgent,
           sessionId: data.sessionId,
+          auditSessionId,
+          riskLevel: activityRiskLevel,
+          riskScore: activityRiskScore,
         });
         break;
 
@@ -71,6 +124,9 @@ export async function POST(request: NextRequest) {
           ipAddress,
           userAgent,
           sessionId: data.sessionId,
+          auditSessionId,
+          riskLevel: activityRiskLevel,
+          riskScore: activityRiskScore,
         });
         break;
 
@@ -84,6 +140,9 @@ export async function POST(request: NextRequest) {
           ipAddress,
           userAgent,
           sessionId: data.sessionId,
+          auditSessionId,
+          riskLevel: activityRiskLevel,
+          riskScore: activityRiskScore,
         });
         break;
 
@@ -97,6 +156,9 @@ export async function POST(request: NextRequest) {
           ipAddress,
           userAgent,
           sessionId: data.sessionId,
+          auditSessionId,
+          riskLevel: activityRiskLevel,
+          riskScore: activityRiskScore,
         });
         break;
 
@@ -107,6 +169,9 @@ export async function POST(request: NextRequest) {
           userEmail,
           userName,
           sessionId: data.sessionId,
+          auditSessionId,
+          riskLevel: activityRiskLevel,
+          riskScore: activityRiskScore,
         });
         break;
 
@@ -120,6 +185,9 @@ export async function POST(request: NextRequest) {
           filters: data.filters,
           ipAddress,
           userAgent,
+          auditSessionId,
+          riskLevel: activityRiskLevel,
+          riskScore: activityRiskScore,
         });
         break;
 
@@ -136,6 +204,9 @@ export async function POST(request: NextRequest) {
           ipAddress,
           userAgent,
           sessionId: data.sessionId,
+          auditSessionId,
+          riskLevel: activityRiskLevel,
+          riskScore: activityRiskScore,
         });
         break;
 
@@ -161,6 +232,9 @@ export async function POST(request: NextRequest) {
           userAgent,
           requestPath: data.requestPath,
           sessionId: data.sessionId,
+          auditSessionId,
+          riskLevel: activityRiskLevel,
+          riskScore: activityRiskScore,
         });
         break;
 
