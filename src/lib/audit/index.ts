@@ -33,3 +33,6 @@ export {
   checkSensitiveFromNewContext,
   checkImpossibleTravel,
 } from "./anomaly-rules";
+
+export { sendImmediateAlert, sendDailyDigest } from "./alerts";
+export type { AlertableSession } from "./alerts";

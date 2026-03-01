@@ -175,12 +175,10 @@ interface DigestResult {
  */
 export async function sendDailyDigest(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  prisma?: any
+  prisma: any
 ): Promise<DigestResult> {
-  // Allow prisma to be passed or fall back to dynamic import
   if (!prisma) {
-    const { default: db } = await import("@/lib/prisma");
-    prisma = db;
+    return { sent: false, reason: "no database client" };
   }
 
   if (ADMIN_EMAILS.length === 0) {
