@@ -55,9 +55,18 @@ function extractVpn(product: HarvestedProduct): string | null {
   const payload = product.rawPayload;
   if (!payload || typeof payload !== "object") return null;
   for (const field of VPN_FIELDS) {
+    // Check top-level
     const val = payload[field];
-    if (val && typeof val === "string" && val.trim()) {
-      return val.trim();
+    if (val != null && String(val).trim().length > 0) {
+      return String(val).trim();
+    }
+    // Check nested properties (e.g. HubSpot rawPayload.properties.hs_sku)
+    const props = payload["properties"];
+    if (props && typeof props === "object" && !Array.isArray(props)) {
+      const nested = (props as Record<string, unknown>)[field];
+      if (nested != null && String(nested).trim().length > 0) {
+        return String(nested).trim();
+      }
     }
   }
   return null;
@@ -215,61 +224,143 @@ export function crossMatch(clusters: DedupeCluster[]): MatchGroup[] {
     components.get(root)!.push(i);
   }
 
-  // Build MatchGroups
+  // Build MatchGroups with source-uniqueness enforcement.
+  // A valid match group has at most one cluster per source.
+  // If a connected component has duplicate sources, we split: keep the
+  // best-connected cluster per source and eject the rest as singletons.
   const groups: MatchGroup[] = [];
 
   for (const indices of components.values()) {
     const componentClusters = indices.map((i) => clusters[i]);
 
-    // Find max edge score in this component
-    let maxScore = 0;
-    for (let ii = 0; ii < indices.length; ii++) {
-      for (let jj = ii + 1; jj < indices.length; jj++) {
-        const a = indices[ii];
-        const b = indices[jj];
-        const key = a < b ? `${a}|${b}` : `${b}|${a}`;
-        const s = edgeScores.get(key) ?? 0;
-        if (s > maxScore) maxScore = s;
-      }
+    // Check for duplicate sources in this component
+    const sourceMap = new Map<string, number[]>(); // source -> list of component-local indices
+    for (let ci = 0; ci < componentClusters.length; ci++) {
+      const src = componentClusters[ci].representative.source;
+      if (!sourceMap.has(src)) sourceMap.set(src, []);
+      sourceMap.get(src)!.push(ci);
     }
 
-    // Confidence level
-    let confidence: ConfidenceLevel;
-    if (indices.length === 1) {
-      confidence = "LOW";
-    } else if (maxScore >= 80) {
-      confidence = "HIGH";
-    } else if (maxScore >= 50) {
-      confidence = "MEDIUM";
-    } else {
-      confidence = "LOW";
-    }
-
-    // Canonical fields from first cluster's representative
-    const rep = componentClusters[0].representative;
-
-    const memberSources = componentClusters.flatMap((c) =>
-      c.members.map((m) => ({
-        source: m.source,
-        externalId: m.externalId,
-        rawName: m.rawName,
-      }))
+    const hasDuplicateSources = Array.from(sourceMap.values()).some(
+      (arr) => arr.length > 1,
     );
 
-    groups.push({
-      matchGroupKey: buildMatchGroupKey(componentClusters),
-      confidence,
-      score: maxScore,
-      canonicalBrand: rep.rawBrand,
-      canonicalModel: rep.rawModel,
-      category: rep.category,
-      memberClusters: componentClusters,
-      memberSources,
-    });
+    let finalClusters: DedupeCluster[];
+    const ejected: DedupeCluster[] = [];
+
+    if (hasDuplicateSources) {
+      // For each source with duplicates, keep the one with the highest
+      // total edge score to others in the component; eject the rest.
+      const kept = new Set<number>();
+
+      for (const [, localIndices] of sourceMap) {
+        if (localIndices.length === 1) {
+          kept.add(localIndices[0]);
+        } else {
+          // Score each candidate by sum of edge scores to other component members
+          let bestIdx = localIndices[0];
+          let bestTotal = -1;
+          for (const ci of localIndices) {
+            const globalI = indices[ci];
+            let total = 0;
+            for (let oi = 0; oi < indices.length; oi++) {
+              if (oi === ci) continue;
+              const globalJ = indices[oi];
+              const a = Math.min(globalI, globalJ);
+              const b = Math.max(globalI, globalJ);
+              total += edgeScores.get(`${a}|${b}`) ?? 0;
+            }
+            if (total > bestTotal) {
+              bestTotal = total;
+              bestIdx = ci;
+            }
+          }
+          kept.add(bestIdx);
+          for (const ci of localIndices) {
+            if (ci !== bestIdx) ejected.push(componentClusters[ci]);
+          }
+        }
+      }
+
+      finalClusters = Array.from(kept)
+        .sort((a, b) => a - b)
+        .map((ci) => componentClusters[ci]);
+    } else {
+      finalClusters = componentClusters;
+    }
+
+    // Build the main group from finalClusters
+    groups.push(buildGroup(finalClusters, indices, edgeScores, clusters));
+
+    // Ejected clusters become singleton LOW-confidence groups
+    for (const ec of ejected) {
+      groups.push(buildGroup([ec], [], new Map(), clusters));
+    }
   }
 
   // Sort by score descending
   groups.sort((a, b) => b.score - a.score);
 
   return groups;
+}
+
+// ---------------------------------------------------------------------------
+// Helper: build a MatchGroup from a set of clusters
+// ---------------------------------------------------------------------------
+
+function buildGroup(
+  groupClusters: DedupeCluster[],
+  originalIndices: number[],
+  edgeScores: Map<string, number>,
+  allClusters: DedupeCluster[],
+): MatchGroup {
+  // Find max edge score among members of this group
+  let maxScore = 0;
+  if (groupClusters.length > 1) {
+    // Get global indices for each cluster in this group
+    const globalIndices = groupClusters.map((gc) =>
+      allClusters.indexOf(gc),
+    );
+    for (let ii = 0; ii < globalIndices.length; ii++) {
+      for (let jj = ii + 1; jj < globalIndices.length; jj++) {
+        const a = Math.min(globalIndices[ii], globalIndices[jj]);
+        const b = Math.max(globalIndices[ii], globalIndices[jj]);
+        const s = edgeScores.get(`${a}|${b}`) ?? 0;
+        if (s > maxScore) maxScore = s;
+      }
+    }
+  }
+
+  // Confidence level
+  let confidence: ConfidenceLevel;
+  if (groupClusters.length === 1) {
+    confidence = "LOW";
+  } else if (maxScore >= 80) {
+    confidence = "HIGH";
+  } else if (maxScore >= 50) {
+    confidence = "MEDIUM";
+  } else {
+    confidence = "LOW";
+  }
+
+  const rep = groupClusters[0].representative;
+
+  const memberSources = groupClusters.flatMap((c) =>
+    c.members.map((m) => ({
+      source: m.source,
+      externalId: m.externalId,
+      rawName: m.rawName,
+    }))
+  );
+
+  return {
+    matchGroupKey: buildMatchGroupKey(groupClusters),
+    confidence,
+    score: maxScore,
+    canonicalBrand: rep.rawBrand,
+    canonicalModel: rep.rawModel,
+    category: rep.category,
+    memberClusters: groupClusters,
+    memberSources,
+  };
 }

@@ -178,4 +178,32 @@ describe("dedupeProducts", () => {
     // Should not crash, should produce 2 separate singletons
     expect(clusters).toHaveLength(2);
   });
+
+  it("does NOT merge products that share only a name (no brand/model)", () => {
+    // This verifies the over-merge fix: name-only matching is excluded
+    // from automatic union to prevent generic names from collapsing
+    // unrelated products.
+    const products = [
+      makeProduct({
+        externalId: "g1",
+        rawName: "Conduit Box",
+        rawBrand: null,
+        rawModel: null,
+        category: "BOS",
+      }),
+      makeProduct({
+        externalId: "g2",
+        rawName: "Conduit Box",
+        rawBrand: null,
+        rawModel: null,
+        category: "ELECTRICAL",
+      }),
+    ];
+
+    const clusters = dedupeProducts(products);
+
+    // Even though they have the exact same name, they should NOT merge
+    // because name-only is not a union key
+    expect(clusters).toHaveLength(2);
+  });
 });

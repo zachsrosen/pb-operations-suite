@@ -29,6 +29,9 @@ jest.mock("@/lib/db", () => ({
         },
       ]),
     },
+    catalogProduct: {
+      findMany: jest.fn().mockResolvedValue([]),
+    },
   },
 }));
 
@@ -61,30 +64,30 @@ describe("harvestInternal", () => {
 // ---------------------------------------------------------------------------
 
 describe("harvestQuickBooks", () => {
-  it("returns empty when no SKUs have quickbooksItemId", async () => {
-    // The default mock has quickbooksItemId: null, so the where filter
-    // should cause findMany to be called but the result still maps.
-    // We need to override the mock for this specific test.
+  it("returns empty when no CatalogProduct rows exist for QUICKBOOKS", async () => {
     const db = await import("@/lib/db");
-    (db.prisma!.equipmentSku.findMany as jest.Mock).mockResolvedValueOnce([]);
+    (db.prisma!.catalogProduct.findMany as jest.Mock).mockResolvedValueOnce([]);
 
     const products = await harvestQuickBooks();
     expect(products).toHaveLength(0);
   });
 
-  it("maps SKUs with quickbooksItemId correctly", async () => {
+  it("maps CatalogProduct rows with source QUICKBOOKS correctly", async () => {
     const db = await import("@/lib/db");
-    (db.prisma!.equipmentSku.findMany as jest.Mock).mockResolvedValueOnce([
+    (db.prisma!.catalogProduct.findMany as jest.Mock).mockResolvedValueOnce([
       {
-        id: "sku_2",
-        category: "INVERTER",
-        brand: "Enphase",
-        model: "IQ8M-72-2-US",
+        id: "cp_1",
+        source: "QUICKBOOKS",
+        externalId: "qb_99",
+        name: "Enphase IQ8M-72-2-US",
+        sku: "IQ8M",
+        normalizedName: "enphaseiq8m722us",
+        normalizedSku: "iq8m",
         description: "Microinverter",
-        vendorPartNumber: "IQ8M",
-        quickbooksItemId: "qb_99",
-        sellPrice: 200,
-        isActive: true,
+        price: 200,
+        status: "active",
+        url: null,
+        lastSyncedAt: new Date(),
       },
     ]);
 
@@ -92,7 +95,10 @@ describe("harvestQuickBooks", () => {
     expect(products).toHaveLength(1);
     expect(products[0].source).toBe("quickbooks");
     expect(products[0].externalId).toBe("qb_99");
+    // splitName("Enphase IQ8M-72-2-US") -> brand: "Enphase", model: "IQ8M-72-2-US"
     expect(products[0].rawBrand).toBe("Enphase");
+    expect(products[0].rawModel).toBe("IQ8M-72-2-US");
+    expect(products[0].price).toBe(200);
   });
 });
 
