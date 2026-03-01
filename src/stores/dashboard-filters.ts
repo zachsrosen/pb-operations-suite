@@ -229,11 +229,13 @@ export const usePIRevisionsFilters = createPIFilterHook("pi-revisions");
 export interface DESubFilters {
   locations: string[];
   owners: string[];
+  stages: string[];
 }
 
 const defaultDESubFilters: DESubFilters = {
   locations: [],
   owners: [],
+  stages: [],
 };
 
 function createDEFilterHook(key: string) {

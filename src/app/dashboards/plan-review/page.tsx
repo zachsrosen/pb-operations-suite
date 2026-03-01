@@ -36,6 +36,7 @@ type SortField =
   | "dcAcRatio"
   | "ahj"
   | "location"
+  | "stage"
   | "designDraftDate"
   | "designComplete"
   | "daDate"
@@ -117,9 +118,15 @@ export default function PlanReviewPage() {
     return owners.sort().map((o) => ({ value: o, label: o }));
   }, [reviewProjects]);
 
+  const stageOptions: FilterOption[] = useMemo(() => {
+    const stages = [...new Set(reviewProjects.map((p) => p.stage || ""))].filter(Boolean);
+    return stages.sort().map((s) => ({ value: s, label: s }));
+  }, [reviewProjects]);
+
   const hasActiveFilters =
     persistedFilters.locations.length > 0 ||
     persistedFilters.owners.length > 0 ||
+    persistedFilters.stages.length > 0 ||
     searchQuery.length > 0;
 
   // Enrich with computed fields
@@ -132,14 +139,14 @@ export default function PlanReviewPage() {
       const daysWaiting = p.daysSinceStageMovement ?? 0;
 
       const reviewType = p.designStatus === "Ready For Review"
-        ? "Initial"
-        : p.designStatus === "Final Review/Stamping"
-        ? "Final"
-        : "DA Approved";
+        ? "Initial Design Review"
+        : p.designStatus === "DA Approved"
+        ? "Final Design Review"
+        : "Pending Engineering";
 
       const eqSummary = eq
-        ? `${eq.modules?.count || 0}× ${eq.modules?.wattage || 0}W, ${eq.inverter?.count || 0}× inv`
-        : "—";
+        ? `${eq.modules?.count || 0}\u00d7 ${eq.modules?.wattage || 0}W, ${eq.inverter?.count || 0}\u00d7 inv`
+        : "\u2014";
 
       return { ...p, dcAcRatio, daysWaiting, reviewType, eqSummary };
     });
@@ -154,6 +161,10 @@ export default function PlanReviewPage() {
       }
       // Owner filter
       if (persistedFilters.owners.length > 0 && !persistedFilters.owners.includes(p.designLead || "Unknown")) {
+        return false;
+      }
+      // Stage filter
+      if (persistedFilters.stages.length > 0 && !persistedFilters.stages.includes(p.stage || "")) {
         return false;
       }
       // Search filter
@@ -179,6 +190,7 @@ export default function PlanReviewPage() {
         case "dcAcRatio": cmp = a.dcAcRatio - b.dcAcRatio; break;
         case "ahj": cmp = (a.ahj || "").localeCompare(b.ahj || ""); break;
         case "location": cmp = (a.pbLocation || "").localeCompare(b.pbLocation || ""); break;
+        case "stage": cmp = (a.stage || "").localeCompare(b.stage || ""); break;
         case "designDraftDate": cmp = (a.designDraftDate || "").localeCompare(b.designDraftDate || ""); break;
         case "designComplete": cmp = (a.designCompletionDate || "").localeCompare(b.designCompletionDate || ""); break;
         case "daDate": cmp = (a.designApprovalDate || "").localeCompare(b.designApprovalDate || ""); break;
@@ -199,12 +211,12 @@ export default function PlanReviewPage() {
 
   // Stats (computed from filtered set)
   const stats = useMemo(() => {
-    const initial = filteredProjects.filter((p) => p.reviewType === "Initial").length;
-    const final = filteredProjects.filter((p) => p.reviewType === "Final" || p.reviewType === "DA Approved").length;
+    const initial = filteredProjects.filter((p) => p.reviewType === "Initial Design Review").length;
+    const finalEng = filteredProjects.filter((p) => p.reviewType === "Final Design Review" || p.reviewType === "Pending Engineering").length;
     const avgDays = filteredProjects.length > 0
       ? Math.round(filteredProjects.reduce((s, p) => s + p.daysWaiting, 0) / filteredProjects.length)
       : 0;
-    return { initial, final, avgDays };
+    return { initial, final: finalEng, avgDays };
   }, [filteredProjects]);
 
   // Export
@@ -219,6 +231,7 @@ export default function PlanReviewPage() {
       equipment: p.eqSummary,
       tags: (p.tags || []).join(", "),
       ahj: p.ahj || "",
+      stage: p.stage || "",
       location: p.pbLocation || "",
       designDraftDate: p.designDraftDate || "",
       amount: p.amount || 0,
@@ -230,7 +243,7 @@ export default function PlanReviewPage() {
   );
 
   const sortIndicator = (field: SortField) =>
-    sortField === field ? (sortDir === "asc" ? " ↑" : " ↓") : " ⇅";
+    sortField === field ? (sortDir === "asc" ? " \u2191" : " \u2193") : " \u21C5";
 
   return (
     <DashboardShell
@@ -242,8 +255,8 @@ export default function PlanReviewPage() {
     >
       {/* Summary Stats */}
       <div className="grid grid-cols-3 gap-4 stagger-grid mb-6">
-        <MiniStat label="Initial Review" value={loading ? null : stats.initial} />
-        <MiniStat label="Final / DA Review" value={loading ? null : stats.final} />
+        <MiniStat label="Initial Design Review" value={loading ? null : stats.initial} />
+        <MiniStat label="Final / Engineering" value={loading ? null : stats.final} />
         <MiniStat label="Avg Days Waiting" value={loading ? null : `${stats.avgDays}d`} alert={stats.avgDays > 14} />
       </div>
 
@@ -295,6 +308,14 @@ export default function PlanReviewPage() {
           accentColor="indigo"
         />
 
+        <MultiSelectFilter
+          label="Deal Stage"
+          options={stageOptions}
+          selected={persistedFilters.stages}
+          onChange={(v) => setPersisted({ ...persistedFilters, stages: v })}
+          accentColor="indigo"
+        />
+
         {hasActiveFilters && (
           <button
             onClick={() => { clearFilters(); setSearchQuery(""); }}
@@ -342,6 +363,9 @@ export default function PlanReviewPage() {
                   <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("ahj")}>
                     AHJ{sortIndicator("ahj")}
                   </th>
+                  <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("stage")}>
+                    Deal Stage{sortIndicator("stage")}
+                  </th>
                   <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("designDraftDate")}>
                     Draft Date{sortIndicator("designDraftDate")}
                   </th>
@@ -375,9 +399,11 @@ export default function PlanReviewPage() {
                       <td className="p-3 text-muted">{p.designLead || "Unknown"}</td>
                       <td className="p-3">
                         <span className={`inline-block px-2 py-0.5 text-xs font-medium rounded-full ${
-                          p.reviewType === "Initial"
+                          p.reviewType === "Initial Design Review"
                             ? "bg-yellow-500/20 text-yellow-400 border border-yellow-500/30"
-                            : "bg-indigo-500/20 text-indigo-400 border border-indigo-500/30"
+                            : p.reviewType === "Final Design Review"
+                            ? "bg-indigo-500/20 text-indigo-400 border border-indigo-500/30"
+                            : "bg-cyan-500/20 text-cyan-400 border border-cyan-500/30"
                         }`}>
                           {p.reviewType}
                         </span>
@@ -388,7 +414,7 @@ export default function PlanReviewPage() {
                         </span>
                       </td>
                       <td className="p-3 text-right font-mono text-foreground">
-                        {p.dcAcRatio > 0 ? p.dcAcRatio.toFixed(2) : "—"}
+                        {p.dcAcRatio > 0 ? p.dcAcRatio.toFixed(2) : "\u2014"}
                       </td>
                       <td className="p-3 text-muted text-xs">{p.eqSummary}</td>
                       <td className="p-3">
@@ -400,10 +426,11 @@ export default function PlanReviewPage() {
                               </span>
                             ))}
                           </div>
-                        ) : "—"}
+                        ) : "\u2014"}
                       </td>
-                      <td className="p-3 text-muted">{p.ahj || "—"}</td>
-                      <td className="p-3 text-muted">{p.designDraftDate || "—"}</td>
+                      <td className="p-3 text-muted">{p.ahj || "\u2014"}</td>
+                      <td className="p-3 text-muted">{p.stage || "\u2014"}</td>
+                      <td className="p-3 text-muted">{p.designDraftDate || "\u2014"}</td>
                       <td className="p-3 text-muted">{formatDate(p.designCompletionDate)}</td>
                       <td className="p-3 text-muted">{formatDate(p.designApprovalDate)}</td>
                       <td className="p-3 text-right text-foreground">{formatMoney(p.amount || 0)}</td>
