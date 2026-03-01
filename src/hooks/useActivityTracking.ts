@@ -14,6 +14,38 @@ const getSessionId = () => {
   return sessionId;
 };
 
+/**
+ * Generate a device fingerprint from browser properties.
+ * Not crypto-grade — used for session dedup and anomaly detection.
+ * Cached for the page lifetime to avoid recalculating on every request.
+ */
+let cachedFingerprint: string | null | undefined;
+
+function getDeviceFingerprint(): string | null {
+  if (typeof window === "undefined") return null;
+  if (cachedFingerprint !== undefined) return cachedFingerprint;
+
+  try {
+    const components = [
+      navigator.userAgent,
+      Intl.DateTimeFormat().resolvedOptions().timeZone,
+      `${screen.width}x${screen.height}`,
+      `${screen.colorDepth}`,
+      navigator.language,
+    ].join("|");
+
+    // DJB2 hash (same algo as server-side hashCode)
+    let hash = 5381;
+    for (let i = 0; i < components.length; i++) {
+      hash = ((hash << 5) + hash + components.charCodeAt(i)) | 0;
+    }
+    cachedFingerprint = `fp_v1_${Math.abs(hash).toString(36)}`;
+  } catch {
+    cachedFingerprint = null;
+  }
+  return cachedFingerprint;
+}
+
 interface ActivityTracker {
   trackPageView: (path: string, title?: string, source?: string) => void;
   trackDashboardView: (dashboard: string, options?: {
@@ -60,6 +92,7 @@ export function useActivityTracking(): ActivityTracker {
         body: JSON.stringify({
           action,
           sessionId: sessionId.current,
+          deviceFingerprint: getDeviceFingerprint(),
           ...data,
         }),
       });

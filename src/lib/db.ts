@@ -158,6 +158,9 @@ export async function logActivity(data: {
   responseStatus?: number;
   durationMs?: number;
   sessionId?: string;
+  auditSessionId?: string;
+  riskLevel?: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+  riskScore?: number;
 }) {
   if (!prisma) return null;
 
@@ -181,6 +184,9 @@ export async function logActivity(data: {
         responseStatus: data.responseStatus,
         durationMs: data.durationMs,
         sessionId: data.sessionId,
+        auditSessionId: data.auditSessionId,
+        riskLevel: data.riskLevel || "LOW",
+        riskScore: data.riskScore || 1,
       },
     });
   } catch (error) {
@@ -202,6 +208,9 @@ export async function logDashboardView(data: {
   ipAddress?: string;
   userAgent?: string;
   sessionId?: string;
+  auditSessionId?: string;
+  riskLevel?: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+  riskScore?: number;
 }) {
   return logActivity({
     type: "DASHBOARD_VIEWED",
@@ -219,6 +228,9 @@ export async function logDashboardView(data: {
     ipAddress: data.ipAddress,
     userAgent: data.userAgent,
     sessionId: data.sessionId,
+    auditSessionId: data.auditSessionId,
+    riskLevel: data.riskLevel,
+    riskScore: data.riskScore,
   });
 }
 
@@ -234,6 +246,9 @@ export async function logProjectView(data: {
   ipAddress?: string;
   userAgent?: string;
   sessionId?: string;
+  auditSessionId?: string;
+  riskLevel?: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+  riskScore?: number;
 }) {
   return logActivity({
     type: "PROJECT_VIEWED",
@@ -247,6 +262,9 @@ export async function logProjectView(data: {
     ipAddress: data.ipAddress,
     userAgent: data.userAgent,
     sessionId: data.sessionId,
+    auditSessionId: data.auditSessionId,
+    riskLevel: data.riskLevel,
+    riskScore: data.riskScore,
   });
 }
 
@@ -262,6 +280,9 @@ export async function logSearch(data: {
   ipAddress?: string;
   userAgent?: string;
   sessionId?: string;
+  auditSessionId?: string;
+  riskLevel?: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+  riskScore?: number;
 }) {
   return logActivity({
     type: "PROJECT_SEARCHED",
@@ -278,6 +299,9 @@ export async function logSearch(data: {
     ipAddress: data.ipAddress,
     userAgent: data.userAgent,
     sessionId: data.sessionId,
+    auditSessionId: data.auditSessionId,
+    riskLevel: data.riskLevel,
+    riskScore: data.riskScore,
   });
 }
 
@@ -290,6 +314,9 @@ export async function logFilterChange(data: {
   userEmail?: string;
   userName?: string;
   sessionId?: string;
+  auditSessionId?: string;
+  riskLevel?: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+  riskScore?: number;
 }) {
   return logActivity({
     type: "DASHBOARD_FILTERED",
@@ -301,6 +328,9 @@ export async function logFilterChange(data: {
     entityName: data.dashboard,
     metadata: { filters: data.filters },
     sessionId: data.sessionId,
+    auditSessionId: data.auditSessionId,
+    riskLevel: data.riskLevel,
+    riskScore: data.riskScore,
   });
 }
 
@@ -349,6 +379,9 @@ export async function logDataExport(data: {
   filters?: Record<string, unknown>;
   ipAddress?: string;
   userAgent?: string;
+  auditSessionId?: string;
+  riskLevel?: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+  riskScore?: number;
 }) {
   return logActivity({
     type: "DATA_EXPORTED",
@@ -365,6 +398,9 @@ export async function logDataExport(data: {
     },
     ipAddress: data.ipAddress,
     userAgent: data.userAgent,
+    auditSessionId: data.auditSessionId,
+    riskLevel: data.riskLevel,
+    riskScore: data.riskScore,
   });
 }
 

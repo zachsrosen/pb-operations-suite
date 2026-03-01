@@ -58,6 +58,7 @@ model User {
 
   // Relations
   activities    ActivityLog[]
+  auditSessions AuditSession[]
 
   @@index([email])
   @@index([role])
@@ -148,6 +149,33 @@ enum ActivityType {
   BOM_PIPELINE_FAILED
 }
 
+enum ClientType {
+  BROWSER
+  CLAUDE_CODE
+  CODEX
+  API_CLIENT
+  UNKNOWN
+}
+
+enum Environment {
+  LOCAL
+  PREVIEW
+  PRODUCTION
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum ConfidenceLevel {
+  HIGH
+  MEDIUM
+  LOW
+}
+
 model ActivityLog {
   id          String       @id @default(cuid())
   type        ActivityType
@@ -188,6 +216,13 @@ model ActivityLog {
   // Timestamp
   createdAt   DateTime     @default(now())
 
+  // Audit session link
+  auditSessionId  String?
+  auditSession    AuditSession? @relation(fields: [auditSessionId], references: [id], onDelete: SetNull)
+  // Per-action risk
+  riskLevel       RiskLevel     @default(LOW)
+  riskScore       Int           @default(1)
+
   @@index([userId])
   @@index([userEmail])
   @@index([type])
@@ -195,7 +230,69 @@ model ActivityLog {
   @@index([pbLocation])
   @@index([createdAt])
   @@index([sessionId])
+  @@index([auditSessionId, createdAt])
 }
+
+// ===========================================
+// AUDIT SESSION & ANOMALY TRACKING
+// ===========================================
+
+model AuditSession {
+  id                   String          @id @default(cuid())
+  userId               String?
+  user                 User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userEmail            String?
+  userName             String?
+  clientType           ClientType      @default(UNKNOWN)
+  environment          Environment     @default(LOCAL)
+  deviceFingerprint    String?
+  fingerprintVersion   Int?
+  ipAddress            String
+  userAgent            String?
+  startedAt            DateTime        @default(now())
+  lastActiveAt         DateTime        @default(now())
+  endedAt              DateTime?
+  riskLevel            RiskLevel       @default(LOW)
+  riskScore            Int             @default(1)
+  anomalyReasons       String[]        @default([])
+  confidence           ConfidenceLevel @default(MEDIUM)
+  immediateAlertSentAt DateTime?
+  criticalAlertSentAt  DateTime?
+  metadata             Json?
+  activities           ActivityLog[]
+  anomalyEvents        AuditAnomalyEvent[]
+
+  @@index([userId, lastActiveAt])
+  @@index([startedAt])
+  @@index([riskLevel])
+  @@index([environment])
+  @@index([userId, clientType, ipAddress, endedAt])
+}
+
+model AuditAnomalyEvent {
+  id              String        @id @default(cuid())
+  sessionId       String
+  session         AuditSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  rule            String
+  riskScore       Int
+  evidence        Json
+  acknowledgedAt  DateTime?
+  acknowledgedBy  String?
+  acknowledgeNote String?
+  createdAt       DateTime      @default(now())
+
+  @@index([sessionId])
+  @@index([rule, createdAt])
+  @@index([acknowledgedAt])
+}
+
+model SystemConfig {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
 
 // ===========================================
 // BOOKED SLOTS (Persistent storage)
