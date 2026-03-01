@@ -10,7 +10,7 @@ import * as Sentry from "@sentry/nextjs";
 import { prisma, logActivity } from "@/lib/db";
 import { requireApiAuth } from "@/lib/api-auth";
 import { tagSentryRequest } from "@/lib/sentry-request";
-import { canonicalToken } from "@/lib/canonical";
+import { canonicalToken, buildCanonicalKey } from "@/lib/canonical";
 import { EquipmentCategory } from "@/generated/prisma/enums";
 import {
   CATEGORY_CONFIGS,
@@ -597,12 +597,18 @@ export async function POST(request: NextRequest) {
           ...(hubspotProductParsed.provided && { hubspotProductId: hubspotProductParsed.value }),
           ...(zuperItemParsed.provided && { zuperItemId: zuperItemParsed.value }),
           ...(quickbooksItemParsed.provided && { quickbooksItemId: quickbooksItemParsed.value }),
+          canonicalBrand: canonicalToken(trimmedBrand),
+          canonicalModel: canonicalToken(trimmedModel),
+          canonicalKey: buildCanonicalKey(category as string, trimmedBrand, trimmedModel),
           isActive: true,
         },
         create: {
           category: category as EquipmentCategory,
           brand: trimmedBrand,
           model: trimmedModel,
+          canonicalBrand: canonicalToken(trimmedBrand),
+          canonicalModel: canonicalToken(trimmedModel),
+          canonicalKey: buildCanonicalKey(category as string, trimmedBrand, trimmedModel),
           unitSpec: unitSpecParsed.provided ? unitSpecParsed.value : null,
           unitLabel: unitLabelParsed.provided ? unitLabelParsed.value : null,
           description: descriptionParsed.provided ? descriptionParsed.value : null,
@@ -820,10 +826,21 @@ export async function PATCH(request: NextRequest) {
       return [{ source, field, from: previousValue, to: nextValue }];
     });
 
+    // Recompute canonical columns when any identity field changes
+    const identityChanged = categoryProvided || brandProvided || modelProvided;
+    const effectiveBrand = brandProvided ? brand : existing.brand;
+    const effectiveModel = modelProvided ? model : existing.model;
+    const effectiveCategory = categoryProvided ? (category as string) : existing.category;
+
     const updateData: Record<string, unknown> = {
       ...(categoryProvided && { category: category as EquipmentCategory }),
       ...(brandProvided && { brand }),
       ...(modelProvided && { model }),
+      ...(identityChanged && {
+        canonicalBrand: canonicalToken(effectiveBrand),
+        canonicalModel: canonicalToken(effectiveModel),
+        canonicalKey: buildCanonicalKey(effectiveCategory, effectiveBrand, effectiveModel),
+      }),
       ...(unitSpecParsed.provided && { unitSpec: unitSpecParsed.value }),
       ...(unitLabelParsed.provided && { unitLabel: unitLabelParsed.value }),
       ...(descriptionParsed.provided && { description: descriptionParsed.value }),
