@@ -13,6 +13,7 @@ import {
   checkImpossibleTravel,
   type AnomalyRuleResult,
 } from "./anomaly-rules";
+import { sendImmediateAlert } from "./alerts";
 
 // Minimal session shape (no Prisma import)
 export interface AuditSessionLike {
@@ -100,6 +101,18 @@ export async function runAnomalyChecks(
         anomalyReasons: [...new Set(newReasons)],
       },
     });
+  }
+
+  // Check for alert even if no NEW escalation (session may already be HIGH/CRITICAL)
+  if (newRiskScore >= 3 || ctx.session.riskScore >= 3) {
+    const updatedSession = await prisma.auditSession.findUnique({
+      where: { id: ctx.session.id },
+    });
+    if (updatedSession) {
+      sendImmediateAlert(updatedSession, prisma).catch((e: unknown) =>
+        console.error("Alert email failed:", e)
+      );
+    }
   }
 
   return triggered;
