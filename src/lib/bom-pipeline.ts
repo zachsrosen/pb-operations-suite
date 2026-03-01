@@ -31,6 +31,9 @@ import {
 import { sendPipelineNotification } from "@/lib/email";
 import { PIPELINE_ACTOR } from "@/lib/actor-context";
 import type { BomPipelineStep } from "@/generated/prisma/enums";
+import { renderToBuffer } from "@react-pdf/renderer";
+import { BomPdfDocument } from "@/components/BomPdfDocument";
+import React from "react";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -276,6 +279,7 @@ export async function runDesignCompletePipeline(
   let dealName = `Deal ${dealId}`;
   let capturedDesignFolderUrl: string | undefined;
   let capturedPlansetName: string | undefined;
+  let bomPdfBuffer: Buffer | undefined;
 
   const fail = async (step: BomPipelineStep, error: string): Promise<PipelineResult> => {
     const durationMs = Date.now() - startedAt;
@@ -305,6 +309,7 @@ export async function runDesignCompletePipeline(
 
     // Send failure notification (best-effort)
     try {
+      const safeName = (dealName || "BOM").replace(/[^a-z0-9_-]/gi, "_");
       await sendPipelineNotification({
         dealId,
         dealName,
@@ -314,6 +319,7 @@ export async function runDesignCompletePipeline(
         designFolderUrl: capturedDesignFolderUrl,
         plansetFileName: capturedPlansetName,
         durationMs,
+        ...(bomPdfBuffer ? { pdfAttachment: { filename: `BOM-${safeName}.pdf`, content: bomPdfBuffer } } : {}),
       });
     } catch (notifyErr) {
       console.error("[bom-pipeline] Failed to send failure notification:", notifyErr);
@@ -389,6 +395,28 @@ export async function runDesignCompletePipeline(
     });
 
     console.log(`[bom-pipeline] Saved snapshot v${snapshotResult.version} (${snapshotResult.id})`);
+
+    // ── Generate BOM PDF for email attachment (best-effort, non-blocking) ──
+    try {
+      const generatedAt = new Date().toLocaleDateString("en-US", {
+        year: "numeric", month: "short", day: "numeric",
+      });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const pdfElement = React.createElement(BomPdfDocument, {
+        bom: extractResult.bom as Parameters<typeof BomPdfDocument>[0]["bom"],
+        dealName,
+        version: snapshotResult.version,
+        generatedBy: "BOM Pipeline",
+        generatedAt,
+      }) as React.ReactElement<any>;
+
+      const rawBuffer = await renderToBuffer(pdfElement);
+      bomPdfBuffer = Buffer.from(rawBuffer);
+      console.log(`[bom-pipeline] Generated BOM PDF (${bomPdfBuffer.length} bytes)`);
+    } catch (pdfErr) {
+      console.warn("[bom-pipeline] BOM PDF generation failed (non-fatal):", pdfErr);
+      // Continue pipeline — PDF is optional
+    }
 
     // ── Step 5: Resolve Zoho customer ──
     currentStep = "RESOLVE_CUSTOMER";
@@ -570,6 +598,8 @@ export async function runDesignCompletePipeline(
 
       // Notify ops — they need to manually create the SO
       try {
+        const safeName = (dealName || "BOM").replace(/[^a-z0-9_-]/gi, "_");
+        const pdfFilename = `BOM-${safeName}-v${snapshotResult.version}.pdf`;
         await sendPipelineNotification({
           dealId,
           dealName,
@@ -579,6 +609,7 @@ export async function runDesignCompletePipeline(
           designFolderUrl: dealProps.designFolderUrl ?? undefined,
           plansetFileName: selectedFile.name,
           durationMs,
+          ...(bomPdfBuffer ? { pdfAttachment: { filename: pdfFilename, content: bomPdfBuffer } } : {}),
         });
       } catch (notifyErr) {
         console.error("[bom-pipeline] Failed to send partial notification:", notifyErr);
@@ -656,6 +687,8 @@ export async function runDesignCompletePipeline(
 
     // Send success/partial notification
     try {
+      const safeName = (dealName || "BOM").replace(/[^a-z0-9_-]/gi, "_");
+      const pdfFilename = `BOM-${safeName}-v${snapshotResult.version}.pdf`;
       await sendPipelineNotification({
         dealId,
         dealName,
@@ -668,6 +701,7 @@ export async function runDesignCompletePipeline(
         designFolderUrl: dealProps.designFolderUrl ?? undefined,
         plansetFileName: selectedFile.name,
         durationMs,
+        ...(bomPdfBuffer ? { pdfAttachment: { filename: pdfFilename, content: bomPdfBuffer } } : {}),
       });
     } catch (notifyErr) {
       console.error("[bom-pipeline] Failed to send success notification:", notifyErr);

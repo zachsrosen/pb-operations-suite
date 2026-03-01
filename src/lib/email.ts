@@ -170,6 +170,12 @@ async function getServiceAccountToken(
   return tokenResponse.json();
 }
 
+interface MimeAttachment {
+  filename: string;
+  content: Buffer;
+  contentType: string;
+}
+
 function buildRawMimeMessage(params: {
   from: string;
   to: string;
@@ -177,6 +183,7 @@ function buildRawMimeMessage(params: {
   subject: string;
   text: string;
   html: string;
+  attachments?: MimeAttachment[];
 }): string {
   const safeFrom = params.from.replace(/[\r\n]+/g, " ").trim();
   const safeTo = params.to.replace(/[\r\n]+/g, " ").trim();
@@ -184,7 +191,54 @@ function buildRawMimeMessage(params: {
     .map((email) => email.replace(/[\r\n]+/g, " ").trim())
     .filter(Boolean);
   const safeSubject = params.subject.replace(/[\r\n]+/g, " ").trim();
-  const boundary = `pb_ops_${crypto.randomUUID().replace(/-/g, "")}`;
+
+  const altBoundary = `pb_alt_${crypto.randomUUID().replace(/-/g, "")}`;
+  const hasAttachments = params.attachments && params.attachments.length > 0;
+
+  if (!hasAttachments) {
+    // Simple multipart/alternative (text + HTML)
+    const mime = [
+      `From: ${safeFrom}`,
+      `To: ${safeTo}`,
+      ...(safeBcc.length > 0 ? [`Bcc: ${safeBcc.join(", ")}`] : []),
+      `Subject: ${safeSubject}`,
+      "MIME-Version: 1.0",
+      `Content-Type: multipart/alternative; boundary="${altBoundary}"`,
+      "",
+      `--${altBoundary}`,
+      "Content-Type: text/plain; charset=UTF-8",
+      "Content-Transfer-Encoding: 8bit",
+      "",
+      params.text,
+      "",
+      `--${altBoundary}`,
+      "Content-Type: text/html; charset=UTF-8",
+      "Content-Transfer-Encoding: 8bit",
+      "",
+      params.html,
+      "",
+      `--${altBoundary}--`,
+      "",
+    ].join("\r\n");
+    return base64UrlEncode(mime);
+  }
+
+  // With attachments: multipart/mixed wrapping multipart/alternative + attachment parts
+  const mixedBoundary = `pb_mix_${crypto.randomUUID().replace(/-/g, "")}`;
+
+  const attachmentParts: string[] = [];
+  for (const att of params.attachments!) {
+    const safeFilename = att.filename.replace(/["\r\n]/g, "_");
+    attachmentParts.push(
+      `--${mixedBoundary}`,
+      `Content-Type: ${att.contentType}; name="${safeFilename}"`,
+      "Content-Transfer-Encoding: base64",
+      `Content-Disposition: attachment; filename="${safeFilename}"`,
+      "",
+      att.content.toString("base64").replace(/(.{76})/g, "$1\r\n"),
+      "",
+    );
+  }
 
   const mime = [
     `From: ${safeFrom}`,
@@ -192,21 +246,27 @@ function buildRawMimeMessage(params: {
     ...(safeBcc.length > 0 ? [`Bcc: ${safeBcc.join(", ")}`] : []),
     `Subject: ${safeSubject}`,
     "MIME-Version: 1.0",
-    `Content-Type: multipart/alternative; boundary="${boundary}"`,
+    `Content-Type: multipart/mixed; boundary="${mixedBoundary}"`,
     "",
-    `--${boundary}`,
+    `--${mixedBoundary}`,
+    `Content-Type: multipart/alternative; boundary="${altBoundary}"`,
+    "",
+    `--${altBoundary}`,
     "Content-Type: text/plain; charset=UTF-8",
     "Content-Transfer-Encoding: 8bit",
     "",
     params.text,
     "",
-    `--${boundary}`,
+    `--${altBoundary}`,
     "Content-Type: text/html; charset=UTF-8",
     "Content-Transfer-Encoding: 8bit",
     "",
     params.html,
     "",
-    `--${boundary}--`,
+    `--${altBoundary}--`,
+    "",
+    ...attachmentParts,
+    `--${mixedBoundary}--`,
     "",
   ].join("\r\n");
 
@@ -220,6 +280,7 @@ async function trySendWithGoogleWorkspace(params: {
   html: string;
   text: string;
   from: string;
+  attachments?: MimeAttachment[];
 }): Promise<SendAttemptResult> {
   if (!isTruthy(process.env.GOOGLE_WORKSPACE_EMAIL_ENABLED)) {
     return { attempted: false, success: false };
@@ -258,7 +319,15 @@ async function trySendWithGoogleWorkspace(params: {
       };
     }
 
-    const raw = buildRawMimeMessage(params);
+    const raw = buildRawMimeMessage({
+      from: params.from,
+      to: params.to,
+      bcc: params.bcc,
+      subject: params.subject,
+      text: params.text,
+      html: params.html,
+      attachments: params.attachments,
+    });
     const sendResponse = await fetch(
       `https://gmail.googleapis.com/gmail/v1/users/${encodeURIComponent(senderEmail)}/messages/send`,
       {
@@ -308,6 +377,7 @@ async function sendEmailMessage(params: {
   text: string;
   debugFallbackTitle: string;
   debugFallbackBody: string;
+  attachments?: MimeAttachment[];
 }): Promise<SendResult> {
   const normalizedTo = parseEmailAddress(params.to);
   const requestedBcc = (params.bcc || [])
@@ -341,6 +411,7 @@ async function sendEmailMessage(params: {
     html: params.html,
     text: params.text,
     from,
+    attachments: params.attachments,
   });
 
   if (googleResult.success) {
@@ -359,6 +430,12 @@ async function sendEmailMessage(params: {
       : from;
 
     try {
+      const resendAttachments = params.attachments?.map((att) => ({
+        filename: att.filename,
+        content: att.content,
+        content_type: att.contentType,
+      }));
+
       const { error } = await resend.emails.send({
         from: resendFrom,
         to: [primaryTo],
@@ -366,6 +443,9 @@ async function sendEmailMessage(params: {
         subject: params.subject,
         html: params.html,
         text: params.text,
+        ...(resendAttachments && resendAttachments.length > 0
+          ? { attachments: resendAttachments }
+          : {}),
       });
 
       if (error) {
@@ -1727,6 +1807,7 @@ export async function sendPipelineNotification(params: {
   designFolderUrl?: string;
   plansetFileName?: string;
   durationMs?: number;
+  pdfAttachment?: { filename: string; content: Buffer };
 }): Promise<SendResult> {
   const recipients = process.env.DESIGN_COMPLETE_NOTIFY_EMAILS;
   if (!recipients) {
@@ -1828,6 +1909,15 @@ export async function sendPipelineNotification(params: {
 
   const text = textLines.filter((l) => l !== null).join("\n");
 
+  const attachments: MimeAttachment[] = [];
+  if (params.pdfAttachment) {
+    attachments.push({
+      filename: params.pdfAttachment.filename,
+      content: params.pdfAttachment.content,
+      contentType: "application/pdf",
+    });
+  }
+
   return sendEmailMessage({
     to: toList[0],
     bcc: toList.slice(1),
@@ -1836,14 +1926,6 @@ export async function sendPipelineNotification(params: {
     text,
     debugFallbackTitle: `PIPELINE ${statusLabel.toUpperCase()} for ${params.dealName}`,
     debugFallbackBody: text,
+    ...(attachments.length > 0 ? { attachments } : {}),
   });
-}
-
-/** HTML-escape user-provided values to prevent XSS in email content. */
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }
