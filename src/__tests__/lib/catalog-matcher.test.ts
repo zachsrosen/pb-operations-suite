@@ -128,4 +128,62 @@ describe("crossMatch", () => {
     expect(groups1[0].matchGroupKey).toBe(groups2[0].matchGroupKey);
     expect(groups1[0].matchGroupKey).toHaveLength(16);
   });
+
+  it("enforces one-per-source: ejects duplicate sources from a match group", () => {
+    // Two zoho clusters that both match a hubspot cluster
+    const clusters = [
+      makeCluster({ source: "zoho", externalId: "z1", brand: "Tesla", model: "Powerwall 3", category: "BATTERY", vpn: "PW3-US" }),
+      makeCluster({ source: "zoho", externalId: "z2", brand: "Tesla", model: "Powerwall 3", category: "BATTERY", vpn: "PW3-US" }),
+      makeCluster({ source: "hubspot", externalId: "h1", brand: "Tesla", model: "Powerwall 3", category: "BATTERY", vpn: "PW3-US" }),
+    ];
+
+    const groups = crossMatch(clusters);
+
+    // Should NOT produce a single group with 3 members (2 zoho + 1 hubspot).
+    // Instead: one group with 1 zoho + 1 hubspot, and the other zoho ejected as singleton.
+    const multiMember = groups.filter((g) => g.memberClusters.length > 1);
+    const singletons = groups.filter((g) => g.memberClusters.length === 1);
+
+    expect(multiMember).toHaveLength(1);
+    expect(singletons).toHaveLength(1);
+
+    // The multi-member group should have exactly one zoho and one hubspot
+    const sources = multiMember[0].memberClusters.map((c) => c.representative.source);
+    expect(sources.filter((s) => s === "zoho")).toHaveLength(1);
+    expect(sources.filter((s) => s === "hubspot")).toHaveLength(1);
+
+    // The singleton should be zoho
+    expect(singletons[0].memberClusters[0].representative.source).toBe("zoho");
+    expect(singletons[0].confidence).toBe("LOW");
+  });
+
+  it("extracts VPN from nested rawPayload.properties (HubSpot format)", () => {
+    // HubSpot stores hs_sku under rawPayload.properties.hs_sku
+    const hubspotCluster = makeCluster({
+      source: "hubspot",
+      externalId: "h1",
+      brand: "Tesla",
+      model: "Powerwall 3",
+      category: "BATTERY",
+    });
+    // Override rawPayload to use nested HubSpot format
+    hubspotCluster.representative.rawPayload = {
+      id: "h1",
+      properties: { hs_sku: "PW3-US", name: "Tesla Powerwall 3" },
+    };
+
+    const zohoCluster = makeCluster({
+      source: "zoho",
+      externalId: "z1",
+      brand: "Tesla",
+      model: "Powerwall 3",
+      category: "BATTERY",
+      vpn: "PW3-US",
+    });
+
+    // Score should include the VPN match (25 points)
+    const score = scorePair(hubspotCluster.representative, zohoCluster.representative);
+    // brand+model (40) + name (20) + category (10) + VPN (25) = 95
+    expect(score).toBeGreaterThanOrEqual(90);
+  });
 });

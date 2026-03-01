@@ -247,31 +247,31 @@ export async function harvestZuper(): Promise<HarvestedProduct[]> {
 }
 
 // ---------------------------------------------------------------------------
-// Adapter: QuickBooks (internal SKUs with quickbooksItemId)
+// Adapter: QuickBooks (from CatalogProduct cache, not linked SKUs)
 // ---------------------------------------------------------------------------
 
 export async function harvestQuickBooks(): Promise<HarvestedProduct[]> {
   const { prisma } = await import("@/lib/db");
   if (!prisma) return [];
 
-  const skus = await prisma.equipmentSku.findMany({
-    where: {
-      isActive: true,
-      quickbooksItemId: { not: null },
-    },
+  const items = await prisma.catalogProduct.findMany({
+    where: { source: "QUICKBOOKS" },
   });
 
-  return skus.map((sku) => ({
-    source: "quickbooks" as const,
-    externalId: sku.quickbooksItemId!,
-    rawName: `${sku.brand} ${sku.model}`,
-    rawBrand: sku.brand,
-    rawModel: sku.model,
-    category: sku.category,
-    price: sku.sellPrice,
-    description: sku.description,
-    rawPayload: JSON.parse(JSON.stringify(sku)) as Record<string, unknown>,
-  }));
+  return items.map((item) => {
+    const { brand, model } = splitName(item.name ?? "");
+    return {
+      source: "quickbooks" as const,
+      externalId: item.externalId,
+      rawName: item.name ?? "",
+      rawBrand: brand,
+      rawModel: model,
+      category: null, // CatalogProduct doesn't have structured category
+      price: item.price ?? null,
+      description: item.description ?? null,
+      rawPayload: JSON.parse(JSON.stringify(item)) as Record<string, unknown>,
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------

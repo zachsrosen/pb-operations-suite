@@ -101,11 +101,17 @@ function extractVpn(rawPayload: Record<string, unknown>): string | null {
 }
 
 /**
- * Extract all deduplication keys for a product (key chain, priority order):
+ * Extract deduplication keys for a product (key chain, priority order).
+ *
+ * Only STRONG keys participate in automatic union-find merging:
  * 1. canonical key: category|brand|model (via buildCanonicalKey)
- * 2. cross-category fallback: brand|model
- * 3. broadest fallback: canonicalToken(name)
- * 4. vendor part number exact match (prefixed with "vpn:")
+ * 2. cross-category fallback: brand|model (both non-empty)
+ * 3. vendor part number exact match (prefixed with "vpn:")
+ *
+ * Name-only matching is intentionally excluded from merge keys because
+ * generic names (e.g. "Conduit Box") cause unrelated products to collapse
+ * via transitive union. Name similarity is used as a scoring signal in the
+ * cross-source matcher instead.
  *
  * Returns [key, level] pairs where level indicates which tier matched.
  */
@@ -127,17 +133,15 @@ function extractKeys(
     keys.push({ key: `${cb}|${cm}`, level: 1 });
   }
 
-  // Level 2: broadest fallback (name only)
-  const cn = canonicalToken(p.rawName);
-  if (cn) {
-    keys.push({ key: `name:${cn}`, level: 2 });
-  }
-
-  // Level 3: vendor part number
+  // Level 2: vendor part number
   const vpn = extractVpn(p.rawPayload);
   if (vpn) {
-    keys.push({ key: `vpn:${vpn}`, level: 3 });
+    keys.push({ key: `vpn:${vpn}`, level: 2 });
   }
+
+  // NOTE: Name-only key (`name:canonicalToken(rawName)`) was intentionally
+  // removed to prevent over-merge. Generic product names cause transitive
+  // clustering of unrelated items.
 
   return keys;
 }
@@ -239,8 +243,7 @@ export function dedupeProducts(products: HarvestedProduct[]): DedupeCluster[] {
       if (inCluster.length >= 2) {
         // Determine level from key format
         let level: number;
-        if (key.startsWith("vpn:")) level = 3;
-        else if (key.startsWith("name:")) level = 2;
+        if (key.startsWith("vpn:")) level = 2;
         else if (key.includes("|") && key.split("|").length === 3) level = 0;
         else level = 1;
         if (level < bestLevel) bestLevel = level;
