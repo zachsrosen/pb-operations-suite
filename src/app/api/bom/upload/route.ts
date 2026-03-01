@@ -106,7 +106,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   try {
     const blob = await put(`bom-uploads/${filename}`, req.body, {
-      access: "public",
+      access: "private",
       contentType: "application/pdf",
       addRandomSuffix: true,
       token: process.env.BLOB_READ_WRITE_TOKEN,
