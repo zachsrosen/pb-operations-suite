@@ -15,7 +15,21 @@ export {
   resolveSessionMatch,
   computeConfidence,
   hashCode,
+  runSessionAnomalyChecks,
   SESSION_INACTIVITY_TIMEOUT_MS,
 } from "./session";
 
-export type { GetOrCreateSessionInput } from "./session";
+export type { GetOrCreateSessionInput, AuditSessionLike } from "./session";
+
+export { runAnomalyChecks } from "./anomaly-runner";
+export type { AnomalyContext } from "./anomaly-runner";
+export type { AnomalyRuleResult } from "./anomaly-rules";
+export {
+  checkOffHours,
+  checkRapidActions,
+  checkUnknownClientOnProd,
+  checkNewDevice,
+  checkNewIP,
+  checkSensitiveFromNewContext,
+  checkImpossibleTravel,
+} from "./anomaly-rules";
