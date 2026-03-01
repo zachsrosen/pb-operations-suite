@@ -13,7 +13,7 @@
 import { prisma } from "@/lib/db";
 import { getZohoSalesOrderUrl } from "@/lib/external-links";
 import { BomPdfDocument } from "@/components/BomPdfDocument";
-import { renderToBuffer } from "@react-pdf/renderer";
+import { renderToBuffer, type DocumentProps } from "@react-pdf/renderer";
 import React from "react";
 
 // ---------------------------------------------------------------------------
@@ -179,7 +179,7 @@ export async function getBomEmailEnrichment(
         version: snapshot.version,
         generatedBy: "BOM Pipeline",
         generatedAt,
-      }) as React.ReactElement;
+      }) as unknown as React.ReactElement<DocumentProps>;
 
       const rawBuffer = await Promise.race([
         renderToBuffer(pdfElement),
