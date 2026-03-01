@@ -23,7 +23,7 @@ interface FullEquipment {
 
 function isDesignRevisionStatus(designStatus: string): boolean {
   const s = designStatus.toLowerCase();
-  return s.includes("revision") || s.includes("as-built");
+  return s.includes("revision");
 }
 
 function isDesignRevisionQueueStatus(designStatus: string): boolean {
