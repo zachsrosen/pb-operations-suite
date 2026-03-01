@@ -15,12 +15,6 @@ export const SUITE_NAV_ENTRIES: SuiteNavEntry[] = [
     description: "Scheduling, timeline, inventory, and equipment operations.",
   },
   {
-    href: "/suites/department",
-    title: "Tech Ops Suite",
-    shortLabel: "Tech Ops",
-    description: "Execution dashboards for field operations teams.",
-  },
-  {
     href: "/suites/design-engineering",
     title: "Design & Engineering Suite",
     shortLabel: "D&E",
@@ -61,7 +55,6 @@ export const SUITE_NAV_ENTRIES: SuiteNavEntry[] = [
 const SUITE_SWITCHER_ALLOWLIST: Record<UserRole, string[]> = {
   ADMIN: [
     "/suites/operations",
-    "/suites/department",
     "/suites/design-engineering",
     "/suites/permitting-interconnection",
     "/suites/intelligence",
@@ -71,20 +64,19 @@ const SUITE_SWITCHER_ALLOWLIST: Record<UserRole, string[]> = {
   ],
   OWNER: [
     "/suites/operations",
-    "/suites/department",
     "/suites/design-engineering",
     "/suites/permitting-interconnection",
     "/suites/intelligence",
     "/suites/service",
     "/suites/executive",
   ],
-  MANAGER: ["/suites/operations", "/suites/department", "/suites/design-engineering", "/suites/permitting-interconnection", "/suites/intelligence", "/suites/service"],
-  PROJECT_MANAGER: ["/suites/operations", "/suites/department", "/suites/design-engineering", "/suites/permitting-interconnection", "/suites/intelligence", "/suites/service"],
+  MANAGER: ["/suites/operations", "/suites/design-engineering", "/suites/permitting-interconnection", "/suites/intelligence", "/suites/service"],
+  PROJECT_MANAGER: ["/suites/operations", "/suites/design-engineering", "/suites/permitting-interconnection", "/suites/intelligence", "/suites/service"],
   OPERATIONS: ["/suites/operations", "/suites/service"],
   OPERATIONS_MANAGER: ["/suites/operations", "/suites/intelligence", "/suites/service"],
-  TECH_OPS: ["/suites/department", "/suites/design-engineering", "/suites/permitting-interconnection"],
-  DESIGNER: ["/suites/department", "/suites/design-engineering", "/suites/permitting-interconnection"],
-  PERMITTING: ["/suites/department", "/suites/design-engineering", "/suites/permitting-interconnection"],
+  TECH_OPS: ["/suites/operations", "/suites/design-engineering", "/suites/permitting-interconnection"],
+  DESIGNER: ["/suites/operations", "/suites/design-engineering", "/suites/permitting-interconnection"],
+  PERMITTING: ["/suites/operations", "/suites/design-engineering", "/suites/permitting-interconnection"],
   SALES: [],
   VIEWER: [],
 };
