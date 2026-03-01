@@ -63,7 +63,8 @@ export function analyzeClipping(project: {
   designStatus?: string;
   closeDate?: string;
   amount?: number;
-  equipment?: FullEquipment | { modules?: { count: number; wattage: number }; inverter?: { count: number } };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  equipment?: Record<string, any>;
 }): ClippingAnalysis | null {
   const eq = project.equipment as FullEquipment | undefined;
   if (!eq) return null;
