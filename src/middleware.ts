@@ -10,7 +10,14 @@ import {
 
 // Routes that are always accessible (login, auth callbacks)
 const ALWAYS_ALLOWED = ["/login", "/api/auth", "/maintenance"];
-const PUBLIC_API_ROUTES = ["/api/deployment", "/api/updates/notify", "/api/sentry-canary", "/api/webhooks/hubspot/design-complete"];
+const PUBLIC_API_ROUTES = [
+  "/api/deployment",
+  "/api/updates/notify",
+  "/api/sentry-canary",
+  "/api/webhooks/hubspot/design-complete",
+  "/api/cron/audit-digest",
+  "/api/cron/audit-retention",
+];
 const MACHINE_TOKEN_ALLOWED_ROUTES = ["/api/bom", "/api/products/seed"] as const;
 
 function isMachineTokenAllowedRoute(pathname: string): boolean {
