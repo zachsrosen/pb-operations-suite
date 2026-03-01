@@ -262,3 +262,28 @@ export const useDEMetricsFilters = createDEFilterHook("de-metrics");
 export const usePlanReviewFilters = createDEFilterHook("plan-review");
 export const usePendingApprovalFilters = createDEFilterHook("pending-approval");
 export const useDesignRevisionsFilters = createDEFilterHook("design-revisions");
+
+// ===== Clipping Analytics filters =====
+
+export interface ClippingAnalyticsFilters {
+  locations: string[];
+  stages: string[];
+}
+
+const defaultClippingAnalyticsFilters: ClippingAnalyticsFilters = {
+  locations: [],
+  stages: [],
+};
+
+export function useClippingAnalyticsFilters() {
+  const raw = useDashboardFilters(
+    (s) => s.filters["clipping-analytics"]
+  ) as ClippingAnalyticsFilters | undefined;
+  const setFilters = useDashboardFilters((s) => s.setFilters);
+  return {
+    filters: raw ?? defaultClippingAnalyticsFilters,
+    setFilters: (f: ClippingAnalyticsFilters) => setFilters("clipping-analytics", f),
+    clearFilters: () =>
+      useDashboardFilters.getState().clearFilters("clipping-analytics"),
+  };
+}

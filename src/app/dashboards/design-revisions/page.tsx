@@ -55,7 +55,7 @@ function getRevisionQueueState(designStatus: string): "Needed" | "In Progress" |
   return "Completed";
 }
 
-type SortField = "name" | "designLead" | "location" | "category" | "designStatus" | "daysInRevision" | "totalRevisions" | "designComplete" | "amount";
+type SortField = "name" | "designLead" | "location" | "stage" | "category" | "designStatus" | "daysInRevision" | "totalRevisions" | "designComplete" | "amount";
 type SortDir = "asc" | "desc";
 
 export default function DesignRevisionsPage() {
@@ -124,6 +124,10 @@ export default function DesignRevisionsPage() {
     () => [...new Set(revisionScopeProjects.map((p) => p.designLead || "Unknown"))].sort().map((o) => ({ value: o, label: o })),
     [revisionScopeProjects]
   );
+  const stageOptions: FilterOption[] = useMemo(
+    () => [...new Set(revisionScopeProjects.map((p) => p.stage || ""))].filter(Boolean).sort().map((s) => ({ value: s, label: s })),
+    [revisionScopeProjects]
+  );
   const revisionTypeOptions: FilterOption[] = useMemo(
     () =>
       [...new Set(revisionScopeProjects.map((p) => p.revisionCategory))]
@@ -141,6 +145,7 @@ export default function DesignRevisionsPage() {
 
   const hasActiveFilters =
     persistedFilters.locations.length > 0 ||
+    persistedFilters.stages.length > 0 ||
     persistedFilters.owners.length > 0 ||
     revisionTypes.length > 0 ||
     queueStates.length > 0 ||
@@ -152,6 +157,9 @@ export default function DesignRevisionsPage() {
 
     if (persistedFilters.locations.length > 0) {
       list = list.filter((p) => persistedFilters.locations.includes(p.pbLocation || ""));
+    }
+    if (persistedFilters.stages.length > 0) {
+      list = list.filter((p) => persistedFilters.stages.includes(p.stage || ""));
     }
     if (persistedFilters.owners.length > 0) {
       list = list.filter((p) => persistedFilters.owners.includes(p.designLead || "Unknown"));
@@ -193,6 +201,7 @@ export default function DesignRevisionsPage() {
         case "name": cmp = a.name.localeCompare(b.name); break;
         case "designLead": cmp = (a.designLead || "Unknown").localeCompare(b.designLead || "Unknown"); break;
         case "location": cmp = (a.pbLocation || "").localeCompare(b.pbLocation || ""); break;
+        case "stage": cmp = (a.stage || "").localeCompare(b.stage || ""); break;
         case "category": cmp = a.revisionCategory.localeCompare(b.revisionCategory); break;
         case "designStatus": cmp = (a.designStatus || "").localeCompare(b.designStatus || ""); break;
         case "daysInRevision": cmp = a.daysInRevision - b.daysInRevision; break;
@@ -235,6 +244,7 @@ export default function DesignRevisionsPage() {
       name: p.name,
       designLead: p.designLead || "Unknown",
       location: p.pbLocation || "",
+      stage: p.stage || "",
       ahj: p.ahj || "",
       designStatus: p.designStatus || "",
       revisionCategory: p.revisionCategory,
@@ -303,6 +313,13 @@ export default function DesignRevisionsPage() {
           options={locationOptions}
           selected={persistedFilters.locations}
           onChange={(v) => setPersisted({ ...persistedFilters, locations: v })}
+          accentColor="indigo"
+        />
+        <MultiSelectFilter
+          label="Deal Stage"
+          options={stageOptions}
+          selected={persistedFilters.stages}
+          onChange={(v) => setPersisted({ ...persistedFilters, stages: v })}
           accentColor="indigo"
         />
         <MultiSelectFilter
@@ -402,6 +419,9 @@ export default function DesignRevisionsPage() {
                   <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("location")}>
                     Location / AHJ{sortIndicator("location")}
                   </th>
+                  <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("stage")}>
+                    Deal Stage{sortIndicator("stage")}
+                  </th>
                   <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("category")}>
                     Category{sortIndicator("category")}
                   </th>
@@ -440,6 +460,7 @@ export default function DesignRevisionsPage() {
                       <div className="text-muted">{p.pbLocation || "—"}</div>
                       {p.ahj && <div className="text-xs text-muted/70">{p.ahj}</div>}
                     </td>
+                    <td className="p-3 text-muted text-xs">{p.stage || "\u2014"}</td>
                     <td className="p-3">
                       <span className={`inline-block px-2 py-0.5 text-xs font-medium rounded-full border ${CATEGORY_COLORS[p.revisionCategory] || CATEGORY_COLORS.Other}`}>
                         {p.revisionCategory}
