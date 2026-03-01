@@ -105,7 +105,28 @@ export const MultiSelectFilter = memo(function MultiSelectFilter({
     blue: "bg-blue-500/20 text-blue-400 border-blue-500/50",
     green: "bg-green-500/20 text-green-400 border-green-500/50",
     purple: "bg-purple-500/20 text-purple-400 border-purple-500/50",
+    cyan: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
   };
+
+  // Checkbox accent classes derived from accentColor
+  const cbChecked: Record<string, string> = {
+    indigo: "bg-indigo-500 border-indigo-500",
+    orange: "bg-orange-500 border-orange-500",
+    blue: "bg-blue-500 border-blue-500",
+    green: "bg-green-500 border-green-500",
+    purple: "bg-purple-500 border-purple-500",
+    cyan: "bg-cyan-500 border-cyan-500",
+  };
+  const cbPartial: Record<string, string> = {
+    indigo: "bg-indigo-500/50 border-indigo-500",
+    orange: "bg-orange-500/50 border-orange-500",
+    blue: "bg-blue-500/50 border-blue-500",
+    green: "bg-green-500/50 border-green-500",
+    purple: "bg-purple-500/50 border-purple-500",
+    cyan: "bg-cyan-500/50 border-cyan-500",
+  };
+  const checked = cbChecked[accentColor] || cbChecked.indigo;
+  const partial = cbPartial[accentColor] || cbPartial.indigo;
 
   return (
     <div ref={containerRef} className="relative">
@@ -187,8 +208,8 @@ export const MultiSelectFilter = memo(function MultiSelectFilter({
                       className="flex items-center gap-2 w-full px-2 py-1.5 text-left text-xs font-semibold text-muted uppercase tracking-wider hover:bg-surface-2 rounded"
                     >
                       <span className={`w-3 h-3 border rounded-sm flex items-center justify-center ${
-                        allSelected ? "bg-indigo-500 border-indigo-500" :
-                        someSelected ? "bg-indigo-500/50 border-indigo-500" : "border-muted"
+                        allSelected ? checked :
+                        someSelected ? partial : "border-muted"
                       }`}>
                         {(allSelected || someSelected) && (
                           <svg className="w-2 h-2 text-white" fill="currentColor" viewBox="0 0 20 20">
@@ -214,8 +235,8 @@ export const MultiSelectFilter = memo(function MultiSelectFilter({
                             className="flex items-center gap-2 w-full px-2 py-1 text-left text-xs text-muted hover:bg-surface-2 rounded"
                           >
                             <span className={`w-2.5 h-2.5 border rounded-sm flex items-center justify-center ${
-                              subAllSelected ? "bg-indigo-500 border-indigo-500" :
-                              subSomeSelected ? "bg-indigo-500/50 border-indigo-500" : "border-muted"
+                              subAllSelected ? checked :
+                              subSomeSelected ? partial : "border-muted"
                             }`}>
                               {(subAllSelected || subSomeSelected) && (
                                 <svg className="w-1.5 h-1.5 text-white" fill="currentColor" viewBox="0 0 20 20">
@@ -233,7 +254,7 @@ export const MultiSelectFilter = memo(function MultiSelectFilter({
                               className="flex items-center gap-2 w-full px-2 py-1 ml-3 text-left text-sm text-foreground/80 hover:bg-surface-2 rounded"
                             >
                               <span className={`w-3 h-3 border rounded flex items-center justify-center ${
-                                selected.includes(option.value) ? "bg-indigo-500 border-indigo-500" : "border-muted"
+                                selected.includes(option.value) ? checked : "border-muted"
                               }`}>
                                 {selected.includes(option.value) && (
                                   <svg className="w-2 h-2 text-white" fill="currentColor" viewBox="0 0 20 20">
@@ -256,7 +277,7 @@ export const MultiSelectFilter = memo(function MultiSelectFilter({
                         className="flex items-center gap-2 w-full px-2 py-1 ml-3 text-left text-sm text-foreground/80 hover:bg-surface-2 rounded"
                       >
                         <span className={`w-3 h-3 border rounded flex items-center justify-center ${
-                          selected.includes(option.value) ? "bg-indigo-500 border-indigo-500" : "border-muted"
+                          selected.includes(option.value) ? checked : "border-muted"
                         }`}>
                           {selected.includes(option.value) && (
                             <svg className="w-2 h-2 text-white" fill="currentColor" viewBox="0 0 20 20">
@@ -279,7 +300,7 @@ export const MultiSelectFilter = memo(function MultiSelectFilter({
                   className="flex items-center gap-2 w-full px-2 py-1.5 text-left text-sm text-foreground/80 hover:bg-surface-2 rounded"
                 >
                   <span className={`w-3 h-3 border rounded flex items-center justify-center ${
-                    selected.includes(option.value) ? "bg-indigo-500 border-indigo-500" : "border-muted"
+                    selected.includes(option.value) ? checked : "border-muted"
                   }`}>
                     {selected.includes(option.value) && (
                       <svg className="w-2 h-2 text-white" fill="currentColor" viewBox="0 0 20 20">

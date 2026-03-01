@@ -13,7 +13,7 @@
 import { prisma, logActivity } from "@/lib/db";
 import { EquipmentCategory } from "@/generated/prisma/enums";
 import type { ActorContext } from "@/lib/actor-context";
-import { buildCanonicalKey } from "@/lib/canonical";
+import { buildCanonicalKey, canonicalToken } from "@/lib/canonical";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -273,16 +273,20 @@ async function syncWithDirectInsert(
   for (let i = 0; i < validItems.length; i += BATCH_SIZE) {
     const batch = validItems.slice(i, i + BATCH_SIZE);
 
-    // Build parameterized VALUES list: each row has 7 params
-    // (id, category, brand, model, description, unitSpec, unitLabel)
+    // Build parameterized VALUES list: each row has 10 params
+    // (id, category, brand, model, description, unitSpec, unitLabel,
+    //  canonicalBrand, canonicalModel, canonicalKey)
     // plus SQL literals for isActive/createdAt/updatedAt.
     const values: unknown[] = [];
     const placeholders: string[] = [];
     for (let j = 0; j < batch.length; j++) {
       const item = batch[j];
-      const offset = j * 7;
+      const offset = j * 10;
+      const cb = canonicalToken(item.brand);
+      const cm = canonicalToken(item.model);
+      const ck = buildCanonicalKey(item.category, item.brand, item.model);
       placeholders.push(
-        `($${offset + 1}, $${offset + 2}::"EquipmentCategory", $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}::double precision, $${offset + 7}, true, NOW(), NOW())`
+        `($${offset + 1}, $${offset + 2}::"EquipmentCategory", $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}::double precision, $${offset + 7}, $${offset + 8}, $${offset + 9}, $${offset + 10}, true, NOW(), NOW())`
       );
       values.push(
         crypto.randomUUID(),  // id
@@ -292,18 +296,24 @@ async function syncWithDirectInsert(
         item.description,     // description
         item.unitSpec,         // unitSpec
         item.unitLabel,        // unitLabel
+        cb || null,            // canonicalBrand
+        cm || null,            // canonicalModel
+        ck,                    // canonicalKey
       );
     }
 
     const rows = await prisma!.$queryRawUnsafe<Array<{ xmax: string }>>(
-      `INSERT INTO "EquipmentSku" ("id", "category", "brand", "model", "description", "unitSpec", "unitLabel", "isActive", "createdAt", "updatedAt")
+      `INSERT INTO "EquipmentSku" ("id", "category", "brand", "model", "description", "unitSpec", "unitLabel", "canonicalBrand", "canonicalModel", "canonicalKey", "isActive", "createdAt", "updatedAt")
        VALUES ${placeholders.join(", ")}
        ON CONFLICT ("category", "brand", "model") DO UPDATE SET
-         "description" = COALESCE(NULLIF(EXCLUDED."description", ''), "EquipmentSku"."description"),
-         "unitSpec"    = COALESCE(EXCLUDED."unitSpec", "EquipmentSku"."unitSpec"),
-         "unitLabel"   = COALESCE(EXCLUDED."unitLabel", "EquipmentSku"."unitLabel"),
-         "isActive"    = true,
-         "updatedAt"   = NOW()
+         "description"    = COALESCE(NULLIF(EXCLUDED."description", ''), "EquipmentSku"."description"),
+         "unitSpec"       = COALESCE(EXCLUDED."unitSpec", "EquipmentSku"."unitSpec"),
+         "unitLabel"      = COALESCE(EXCLUDED."unitLabel", "EquipmentSku"."unitLabel"),
+         "canonicalBrand" = COALESCE(EXCLUDED."canonicalBrand", "EquipmentSku"."canonicalBrand"),
+         "canonicalModel" = COALESCE(EXCLUDED."canonicalModel", "EquipmentSku"."canonicalModel"),
+         "canonicalKey"   = COALESCE(EXCLUDED."canonicalKey", "EquipmentSku"."canonicalKey"),
+         "isActive"       = true,
+         "updatedAt"      = NOW()
        RETURNING xmax::text`,
       ...values
     );

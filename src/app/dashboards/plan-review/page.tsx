@@ -3,10 +3,12 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { MiniStat } from "@/components/ui/MetricCard";
+import { MultiSelectFilter, FilterOption } from "@/components/ui/MultiSelectFilter";
 import { formatMoney, formatDate } from "@/lib/format";
 import { RawProject } from "@/lib/types";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
+import { usePlanReviewFilters } from "@/stores/dashboard-filters";
 
 // ---- Types ----
 
@@ -26,7 +28,18 @@ const REVIEW_STATUSES = [
   "DA Approved",
 ];
 
-type SortField = "name" | "reviewType" | "daysWaiting" | "dcAcRatio" | "amount";
+type SortField =
+  | "name"
+  | "owner"
+  | "reviewType"
+  | "daysWaiting"
+  | "dcAcRatio"
+  | "ahj"
+  | "location"
+  | "designDraftDate"
+  | "designComplete"
+  | "daDate"
+  | "amount";
 type SortDir = "asc" | "desc";
 
 export default function PlanReviewPage() {
@@ -45,6 +58,10 @@ export default function PlanReviewPage() {
 
   const [sortField, setSortField] = useState<SortField>("daysWaiting");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+
+  // Filter state
+  const { filters: persistedFilters, setFilters: setPersisted, clearFilters } = usePlanReviewFilters();
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     if (!loading && !hasTrackedView.current) {
@@ -89,6 +106,22 @@ export default function PlanReviewPage() {
     );
   }, [safeProjects]);
 
+  // Build filter option lists from review projects
+  const locationOptions: FilterOption[] = useMemo(() => {
+    const locs = [...new Set(reviewProjects.map((p) => p.pbLocation).filter(Boolean))] as string[];
+    return locs.sort().map((l) => ({ value: l, label: l }));
+  }, [reviewProjects]);
+
+  const ownerOptions: FilterOption[] = useMemo(() => {
+    const owners = [...new Set(reviewProjects.map((p) => p.designLead || "Unknown"))] as string[];
+    return owners.sort().map((o) => ({ value: o, label: o }));
+  }, [reviewProjects]);
+
+  const hasActiveFilters =
+    persistedFilters.locations.length > 0 ||
+    persistedFilters.owners.length > 0 ||
+    searchQuery.length > 0;
+
   // Enrich with computed fields
   const enrichedProjects = useMemo(() => {
     return reviewProjects.map((p) => {
@@ -112,22 +145,49 @@ export default function PlanReviewPage() {
     });
   }, [reviewProjects]);
 
+  // Filter
+  const filteredProjects = useMemo(() => {
+    return enrichedProjects.filter((p) => {
+      // Location filter
+      if (persistedFilters.locations.length > 0 && !persistedFilters.locations.includes(p.pbLocation || "")) {
+        return false;
+      }
+      // Owner filter
+      if (persistedFilters.owners.length > 0 && !persistedFilters.owners.includes(p.designLead || "Unknown")) {
+        return false;
+      }
+      // Search filter
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        const searchable = [p.name, p.designLead, p.ahj, p.pbLocation].filter(Boolean).join(" ").toLowerCase();
+        if (!searchable.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [enrichedProjects, persistedFilters, searchQuery]);
+
   // Sort
   const sortedProjects = useMemo(() => {
-    const sorted = [...enrichedProjects];
+    const sorted = [...filteredProjects];
     sorted.sort((a, b) => {
       let cmp = 0;
       switch (sortField) {
         case "name": cmp = a.name.localeCompare(b.name); break;
+        case "owner": cmp = (a.designLead || "Unknown").localeCompare(b.designLead || "Unknown"); break;
         case "reviewType": cmp = a.reviewType.localeCompare(b.reviewType); break;
         case "daysWaiting": cmp = a.daysWaiting - b.daysWaiting; break;
         case "dcAcRatio": cmp = a.dcAcRatio - b.dcAcRatio; break;
+        case "ahj": cmp = (a.ahj || "").localeCompare(b.ahj || ""); break;
+        case "location": cmp = (a.pbLocation || "").localeCompare(b.pbLocation || ""); break;
+        case "designDraftDate": cmp = (a.designDraftDate || "").localeCompare(b.designDraftDate || ""); break;
+        case "designComplete": cmp = (a.designCompletionDate || "").localeCompare(b.designCompletionDate || ""); break;
+        case "daDate": cmp = (a.designApprovalDate || "").localeCompare(b.designApprovalDate || ""); break;
         case "amount": cmp = (a.amount || 0) - (b.amount || 0); break;
       }
       return sortDir === "asc" ? cmp : -cmp;
     });
     return sorted;
-  }, [enrichedProjects, sortField, sortDir]);
+  }, [filteredProjects, sortField, sortDir]);
 
   const handleSort = useCallback(
     (field: SortField) => {
@@ -137,21 +197,21 @@ export default function PlanReviewPage() {
     [sortField]
   );
 
-  // Stats
+  // Stats (computed from filtered set)
   const stats = useMemo(() => {
-    const initial = enrichedProjects.filter((p) => p.reviewType === "Initial").length;
-    const final = enrichedProjects.filter((p) => p.reviewType === "Final" || p.reviewType === "DA Approved").length;
-    const avgDays = enrichedProjects.length > 0
-      ? Math.round(enrichedProjects.reduce((s, p) => s + p.daysWaiting, 0) / enrichedProjects.length)
+    const initial = filteredProjects.filter((p) => p.reviewType === "Initial").length;
+    const final = filteredProjects.filter((p) => p.reviewType === "Final" || p.reviewType === "DA Approved").length;
+    const avgDays = filteredProjects.length > 0
+      ? Math.round(filteredProjects.reduce((s, p) => s + p.daysWaiting, 0) / filteredProjects.length)
       : 0;
     return { initial, final, avgDays };
-  }, [enrichedProjects]);
+  }, [filteredProjects]);
 
   // Export
   const exportRows = useMemo(
     () => sortedProjects.map((p) => ({
       name: p.name,
-      designer: p.designSupportUser || p.projectManager || "",
+      designLead: p.designLead || "Unknown",
       reviewType: p.reviewType,
       designStatus: p.designStatus || "",
       daysWaiting: p.daysWaiting,
@@ -160,6 +220,7 @@ export default function PlanReviewPage() {
       tags: (p.tags || []).join(", "),
       ahj: p.ahj || "",
       location: p.pbLocation || "",
+      designDraftDate: p.designDraftDate || "",
       amount: p.amount || 0,
       designCompletionDate: p.designCompletionDate || "",
       designApprovalDate: p.designApprovalDate || "",
@@ -180,14 +241,72 @@ export default function PlanReviewPage() {
       fullWidth
     >
       {/* Summary Stats */}
-      <div className="grid grid-cols-3 gap-4 stagger-grid">
+      <div className="grid grid-cols-3 gap-4 stagger-grid mb-6">
         <MiniStat label="Initial Review" value={loading ? null : stats.initial} />
         <MiniStat label="Final / DA Review" value={loading ? null : stats.final} />
         <MiniStat label="Avg Days Waiting" value={loading ? null : `${stats.avgDays}d`} alert={stats.avgDays > 14} />
       </div>
 
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-3 mb-6">
+        {/* Search */}
+        <div className="relative flex-1 max-w-md">
+          <svg
+            className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search by PROJ #, name, or AHJ..."
+            className="w-full pl-10 pr-8 py-2 bg-surface-2 border border-t-border rounded-lg text-sm focus:outline-none focus:border-muted focus:ring-1 focus:ring-muted"
+          />
+          {searchQuery && (
+            <button
+              aria-label="Clear search"
+              onClick={() => setSearchQuery("")}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-foreground"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+        </div>
+
+        <MultiSelectFilter
+          label="Location"
+          options={locationOptions}
+          selected={persistedFilters.locations}
+          onChange={(v) => setPersisted({ ...persistedFilters, locations: v })}
+          accentColor="indigo"
+        />
+
+        <MultiSelectFilter
+          label="Lead"
+          options={ownerOptions}
+          selected={persistedFilters.owners}
+          onChange={(v) => setPersisted({ ...persistedFilters, owners: v })}
+          accentColor="indigo"
+        />
+
+        {hasActiveFilters && (
+          <button
+            onClick={() => { clearFilters(); setSearchQuery(""); }}
+            className="text-xs px-3 py-2 text-muted hover:text-foreground border border-t-border rounded-lg hover:bg-surface-2 transition-colors"
+          >
+            Clear All
+          </button>
+        )}
+      </div>
+
       {/* Table */}
-      <div className="bg-surface border border-t-border rounded-xl shadow-card overflow-hidden">
+      <div className="bg-surface border border-t-border rounded-xl shadow-card overflow-hidden mb-6">
         {loading ? (
           <div className="p-6 space-y-3">
             {Array.from({ length: 8 }).map((_, i) => (
@@ -195,7 +314,9 @@ export default function PlanReviewPage() {
             ))}
           </div>
         ) : sortedProjects.length === 0 ? (
-          <div className="p-8 text-center text-muted">No projects currently in plan review.</div>
+          <div className="p-8 text-center text-muted">
+            {hasActiveFilters ? "No projects match the current filters." : "No projects currently in plan review."}
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -204,7 +325,9 @@ export default function PlanReviewPage() {
                   <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("name")}>
                     Project{sortIndicator("name")}
                   </th>
-                  <th className="p-3">Designer / PM</th>
+                  <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("owner")}>
+                    Design Lead{sortIndicator("owner")}
+                  </th>
                   <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("reviewType")}>
                     Review Type{sortIndicator("reviewType")}
                   </th>
@@ -216,9 +339,18 @@ export default function PlanReviewPage() {
                   </th>
                   <th className="p-3">Equipment</th>
                   <th className="p-3">Tags</th>
-                  <th className="p-3">AHJ</th>
-                  <th className="p-3">Design Complete</th>
-                  <th className="p-3">DA Date</th>
+                  <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("ahj")}>
+                    AHJ{sortIndicator("ahj")}
+                  </th>
+                  <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("designDraftDate")}>
+                    Draft Date{sortIndicator("designDraftDate")}
+                  </th>
+                  <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("designComplete")}>
+                    Design Complete{sortIndicator("designComplete")}
+                  </th>
+                  <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("daDate")}>
+                    DA Date{sortIndicator("daDate")}
+                  </th>
                   <th className="p-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("amount")}>
                     Amount{sortIndicator("amount")}
                   </th>
@@ -240,7 +372,7 @@ export default function PlanReviewPage() {
                           <span className="text-foreground">{p.name}</span>
                         )}
                       </td>
-                      <td className="p-3 text-muted">{p.designSupportUser || p.projectManager || "—"}</td>
+                      <td className="p-3 text-muted">{p.designLead || "Unknown"}</td>
                       <td className="p-3">
                         <span className={`inline-block px-2 py-0.5 text-xs font-medium rounded-full ${
                           p.reviewType === "Initial"
@@ -271,6 +403,7 @@ export default function PlanReviewPage() {
                         ) : "—"}
                       </td>
                       <td className="p-3 text-muted">{p.ahj || "—"}</td>
+                      <td className="p-3 text-muted">{p.designDraftDate || "—"}</td>
                       <td className="p-3 text-muted">{formatDate(p.designCompletionDate)}</td>
                       <td className="p-3 text-muted">{formatDate(p.designApprovalDate)}</td>
                       <td className="p-3 text-right text-foreground">{formatMoney(p.amount || 0)}</td>

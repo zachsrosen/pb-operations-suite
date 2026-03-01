@@ -3,10 +3,12 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { MiniStat } from "@/components/ui/MetricCard";
+import { MultiSelectFilter, FilterOption } from "@/components/ui/MultiSelectFilter";
 import { formatMoney, formatDate } from "@/lib/format";
 import { RawProject } from "@/lib/types";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
+import { useDesignRevisionsFilters } from "@/stores/dashboard-filters";
 
 // ---- Types ----
 
@@ -56,7 +58,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   Other: "bg-zinc-500/20 text-zinc-400 border-zinc-500/30",
 };
 
-type SortField = "name" | "category" | "daysInRevision" | "amount";
+type SortField = "name" | "designLead" | "location" | "category" | "designStatus" | "daysInRevision" | "designComplete" | "amount";
 type SortDir = "asc" | "desc";
 
 export default function DesignRevisionsPage() {
@@ -71,6 +73,10 @@ export default function DesignRevisionsPage() {
 
   const [sortField, setSortField] = useState<SortField>("daysInRevision");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+
+  // ---- Filter state ----
+  const { filters: persistedFilters, setFilters: setPersisted, clearFilters } = useDesignRevisionsFilters();
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     if (!loading && !hasTrackedView.current) {
@@ -97,21 +103,61 @@ export default function DesignRevisionsPage() {
       });
   }, [safeProjects]);
 
+  // ---- Filter option lists ----
+  const locationOptions: FilterOption[] = useMemo(
+    () => [...new Set(revisionProjects.map((p) => p.pbLocation || ""))].filter(Boolean).sort().map((loc) => ({ value: loc, label: loc })),
+    [revisionProjects]
+  );
+  const ownerOptions: FilterOption[] = useMemo(
+    () => [...new Set(revisionProjects.map((p) => p.designLead || "Unknown"))].sort().map((o) => ({ value: o, label: o })),
+    [revisionProjects]
+  );
+
+  const hasActiveFilters = persistedFilters.locations.length > 0 || persistedFilters.owners.length > 0 || searchQuery.length > 0;
+
+  // ---- Filtered projects ----
+  const filteredProjects = useMemo(() => {
+    let list = revisionProjects;
+
+    if (persistedFilters.locations.length > 0) {
+      list = list.filter((p) => persistedFilters.locations.includes(p.pbLocation || ""));
+    }
+    if (persistedFilters.owners.length > 0) {
+      list = list.filter((p) => persistedFilters.owners.includes(p.designLead || "Unknown"));
+    }
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      list = list.filter(
+        (p) =>
+          (p.name || "").toLowerCase().includes(q) ||
+          (p.designStatus || "").toLowerCase().includes(q) ||
+          (p.designLead || "").toLowerCase().includes(q) ||
+          (p.ahj || "").toLowerCase().includes(q)
+      );
+    }
+
+    return list;
+  }, [revisionProjects, persistedFilters, searchQuery]);
+
   // Sort
   const sortedProjects = useMemo(() => {
-    const sorted = [...revisionProjects];
+    const sorted = [...filteredProjects];
     sorted.sort((a, b) => {
       let cmp = 0;
       switch (sortField) {
         case "name": cmp = a.name.localeCompare(b.name); break;
+        case "designLead": cmp = (a.designLead || "Unknown").localeCompare(b.designLead || "Unknown"); break;
+        case "location": cmp = (a.pbLocation || "").localeCompare(b.pbLocation || ""); break;
         case "category": cmp = a.revisionCategory.localeCompare(b.revisionCategory); break;
+        case "designStatus": cmp = (a.designStatus || "").localeCompare(b.designStatus || ""); break;
         case "daysInRevision": cmp = a.daysInRevision - b.daysInRevision; break;
+        case "designComplete": cmp = (a.designCompletionDate || "").localeCompare(b.designCompletionDate || ""); break;
         case "amount": cmp = (a.amount || 0) - (b.amount || 0); break;
       }
       return sortDir === "asc" ? cmp : -cmp;
     });
     return sorted;
-  }, [revisionProjects, sortField, sortDir]);
+  }, [filteredProjects, sortField, sortDir]);
 
   const handleSort = useCallback(
     (field: SortField) => {
@@ -123,22 +169,22 @@ export default function DesignRevisionsPage() {
 
   // Stats
   const stats = useMemo(() => {
-    const total = revisionProjects.length;
+    const total = filteredProjects.length;
     const byCategory: Record<string, number> = {};
-    revisionProjects.forEach((p) => {
+    filteredProjects.forEach((p) => {
       byCategory[p.revisionCategory] = (byCategory[p.revisionCategory] || 0) + 1;
     });
-    const days = revisionProjects.map((p) => p.daysInRevision);
+    const days = filteredProjects.map((p) => p.daysInRevision);
     const avgDays = days.length > 0 ? Math.round(days.reduce((a, b) => a + b, 0) / days.length) : 0;
     const longestWait = days.length > 0 ? Math.max(...days) : 0;
     return { total, byCategory, avgDays, longestWait };
-  }, [revisionProjects]);
+  }, [filteredProjects]);
 
   // Export
   const exportRows = useMemo(
     () => sortedProjects.map((p) => ({
       name: p.name,
-      designLead: p.designLead || p.projectManager || "",
+      designLead: p.designLead || "Unknown",
       location: p.pbLocation || "",
       ahj: p.ahj || "",
       designStatus: p.designStatus || "",
@@ -152,7 +198,7 @@ export default function DesignRevisionsPage() {
   );
 
   const sortIndicator = (field: SortField) =>
-    sortField === field ? (sortDir === "asc" ? " ↑" : " ↓") : " ⇅";
+    sortField === field ? (sortDir === "asc" ? " \u2191" : " \u2193") : " \u21C5";
 
   return (
     <DashboardShell
@@ -162,21 +208,82 @@ export default function DesignRevisionsPage() {
       exportData={{ data: exportRows, filename: "design-revisions.csv" }}
       fullWidth
     >
+      {/* Filter Row */}
+      <div className="mb-6 flex flex-wrap items-center gap-3">
+        <div className="relative flex-1 max-w-md">
+          <svg
+            className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+            />
+          </svg>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search by PROJ #, name, or AHJ..."
+            className="w-full pl-10 pr-8 py-2 bg-surface-2 border border-t-border rounded-lg text-sm focus:outline-none focus:border-muted focus:ring-1 focus:ring-muted"
+          />
+          {searchQuery && (
+            <button
+              aria-label="Clear search"
+              onClick={() => setSearchQuery("")}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-foreground"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+        </div>
+
+        <MultiSelectFilter
+          label="Location"
+          options={locationOptions}
+          selected={persistedFilters.locations}
+          onChange={(v) => setPersisted({ ...persistedFilters, locations: v })}
+          accentColor="indigo"
+        />
+        <MultiSelectFilter
+          label="Design Lead"
+          options={ownerOptions}
+          selected={persistedFilters.owners}
+          onChange={(v) => setPersisted({ ...persistedFilters, owners: v })}
+          accentColor="indigo"
+        />
+
+        {hasActiveFilters && (
+          <button
+            onClick={() => { clearFilters(); setSearchQuery(""); }}
+            className="px-3 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg transition-colors"
+          >
+            Clear All
+          </button>
+        )}
+      </div>
+
       {/* Summary Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 stagger-grid">
+      <div className="mb-6 grid grid-cols-2 md:grid-cols-4 gap-4 stagger-grid">
         <MiniStat label="Total in Revision" value={loading ? null : stats.total} />
         <MiniStat label="Avg Days in Revision" value={loading ? null : `${stats.avgDays}d`} alert={stats.avgDays > 14} />
         <MiniStat label="Longest Wait" value={loading ? null : `${stats.longestWait}d`} alert={stats.longestWait > 21} />
         <MiniStat
           label="DA Revisions"
           value={loading ? null : stats.byCategory["DA"] || 0}
-          subtitle={`Permit: ${stats.byCategory["Permit"] || 0} · Utility: ${stats.byCategory["Utility"] || 0}`}
+          subtitle={`Permit: ${stats.byCategory["Permit"] || 0} \u00B7 Utility: ${stats.byCategory["Utility"] || 0}`}
         />
       </div>
 
       {/* Category breakdown */}
-      {!loading && revisionProjects.length > 0 && (
-        <div className="bg-surface border border-t-border rounded-xl p-6 shadow-card">
+      {!loading && filteredProjects.length > 0 && (
+        <div className="mb-6 bg-surface border border-t-border rounded-xl p-6 shadow-card">
           <h2 className="text-lg font-semibold text-foreground mb-4">Revisions by Category</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {Object.entries(stats.byCategory)
@@ -195,7 +302,7 @@ export default function DesignRevisionsPage() {
       )}
 
       {/* Table */}
-      <div className="bg-surface border border-t-border rounded-xl shadow-card overflow-hidden">
+      <div className="mb-6 bg-surface border border-t-border rounded-xl shadow-card overflow-hidden">
         {loading ? (
           <div className="p-6 space-y-3">
             {Array.from({ length: 6 }).map((_, i) => (
@@ -212,17 +319,25 @@ export default function DesignRevisionsPage() {
                   <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("name")}>
                     Project{sortIndicator("name")}
                   </th>
-                  <th className="p-3">Design Lead / PM</th>
-                  <th className="p-3">Location / AHJ</th>
+                  <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("designLead")}>
+                    Design Lead{sortIndicator("designLead")}
+                  </th>
+                  <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("location")}>
+                    Location / AHJ{sortIndicator("location")}
+                  </th>
                   <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("category")}>
                     Category{sortIndicator("category")}
                   </th>
-                  <th className="p-3">Design Status</th>
+                  <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("designStatus")}>
+                    Design Status{sortIndicator("designStatus")}
+                  </th>
                   <th className="p-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("daysInRevision")}>
                     Days in Revision{sortIndicator("daysInRevision")}
                   </th>
                   <th className="p-3">Equipment</th>
-                  <th className="p-3">Design Complete</th>
+                  <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("designComplete")}>
+                    Design Complete{sortIndicator("designComplete")}
+                  </th>
                   <th className="p-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("amount")}>
                     Amount{sortIndicator("amount")}
                   </th>
@@ -240,7 +355,7 @@ export default function DesignRevisionsPage() {
                         <span className="text-foreground">{p.name}</span>
                       )}
                     </td>
-                    <td className="p-3 text-muted">{p.designLead || p.projectManager || "—"}</td>
+                    <td className="p-3 text-muted">{p.designLead || "Unknown"}</td>
                     <td className="p-3">
                       <div className="text-muted">{p.pbLocation || "—"}</div>
                       {p.ahj && <div className="text-xs text-muted/70">{p.ahj}</div>}
@@ -268,7 +383,7 @@ export default function DesignRevisionsPage() {
       </div>
 
       {/* Note about revision tracking */}
-      <div className="bg-surface/50 border border-t-border rounded-lg p-4">
+      <div className="mb-6 bg-surface/50 border border-t-border rounded-lg p-4">
         <p className="text-xs text-muted">
           <span className="font-medium text-foreground">Note:</span> Revision count tracking is not currently available — HubSpot stores only the current design status.
           Projects that cycle through multiple revisions will show only their current status and time in that status.
