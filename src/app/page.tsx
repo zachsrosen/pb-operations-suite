@@ -62,10 +62,26 @@ const SUITE_LINKS: SuiteLinkData[] = [
   },
   {
     href: "/suites/department",
-    title: "Department Suite",
-    description: "Department-level dashboards for downstream execution teams.",
-    tag: "DEPARTMENTS",
+    title: "Tech Ops Suite",
+    description: "Execution dashboards for field operations teams.",
+    tag: "TECH OPS",
     tagColor: "green",
+    visibility: "all",
+  },
+  {
+    href: "/suites/design-engineering",
+    title: "Design & Engineering Suite",
+    description: "Design review, clipping analytics, AHJ requirements, and engineering tools.",
+    tag: "D&E",
+    tagColor: "purple",
+    visibility: "all",
+  },
+  {
+    href: "/suites/permitting-interconnection",
+    title: "Permitting & Interconnection Suite",
+    description: "Permit tracking, utility management, action queues, and SLA monitoring.",
+    tag: "P&I",
+    tagColor: "cyan",
     visibility: "all",
   },
   {
@@ -438,6 +454,8 @@ export default function Home() {
       const allowedTechOpsSuites = new Set([
         "/suites/operations",
         "/suites/department",
+        "/suites/design-engineering",
+        "/suites/permitting-interconnection",
       ]);
       return SUITE_LINKS.filter((suite) => allowedTechOpsSuites.has(suite.href));
     }
@@ -445,6 +463,8 @@ export default function Home() {
       const allowedPmSuites = new Set([
         "/suites/operations",
         "/suites/department",
+        "/suites/design-engineering",
+        "/suites/permitting-interconnection",
         "/suites/intelligence",
       ]);
       return SUITE_LINKS.filter((suite) => allowedPmSuites.has(suite.href));
@@ -497,7 +517,7 @@ export default function Home() {
                 backgroundImage: "linear-gradient(90deg, #f49b04 0%, #ad6605 100%)",
               }}
             >
-              PB Operations Suite
+              PB Tech Ops Suite
             </h1>
           </div>
           <div className="flex items-center gap-3">
