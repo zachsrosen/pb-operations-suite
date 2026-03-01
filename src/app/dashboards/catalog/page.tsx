@@ -219,6 +219,14 @@ export default function CatalogPage() {
   const [pushEditDraft, setPushEditDraft] = useState<PushEditDraft | null>(null);
   const [savingPushEdit, setSavingPushEdit] = useState(false);
 
+  const [cleanupEnabled, setCleanupEnabled] = useState(false);
+  const [cleanupSkuId, setCleanupSkuId] = useState<string | null>(null);
+  const [cleanupRunning, setCleanupRunning] = useState(false);
+  const [cleanupAction, setCleanupAction] = useState<"unlink" | "deactivate">("unlink");
+  const [cleanupSources, setCleanupSources] = useState<string[]>([]);
+  const [cleanupExternal, setCleanupExternal] = useState(false);
+  const [cleanupConfirmInput, setCleanupConfirmInput] = useState("");
+
   const [categoryStats, setCategoryStats] = useState<CategorySyncStat[]>([]);
   const [categoryStatsLoading, setCategoryStatsLoading] = useState(false);
 
@@ -250,6 +258,14 @@ export default function CatalogPage() {
   }, [addToast]);
 
   useEffect(() => { fetchSkus(); }, [fetchSkus]);
+
+  // Check cleanup feature flag
+  useEffect(() => {
+    if (!isAdmin) return;
+    fetch("/api/products/cleanup/confirm", { method: "GET", cache: "no-store" })
+      .then((r) => setCleanupEnabled(r.ok))
+      .catch(() => setCleanupEnabled(false));
+  }, [isAdmin]);
 
   // Fetch pending count for badge (runs once)
   useEffect(() => {
@@ -494,6 +510,99 @@ export default function CatalogPage() {
     }
   }
 
+  // ── Single-item cleanup ──
+  const cleanupSku = useMemo(
+    () => (cleanupSkuId ? skus.find((s) => s.id === cleanupSkuId) ?? null : null),
+    [cleanupSkuId, skus]
+  );
+
+  const CLEANUP_CONFIRM_TEXT = "CLEANUP";
+  const CLEANUP_LINKABLE_SOURCES = ["hubspot", "zuper", "zoho", "quickbooks"] as const;
+
+  function openCleanupModal(skuId: string) {
+    setCleanupSkuId(skuId);
+    setCleanupAction("unlink");
+    setCleanupSources([]);
+    setCleanupExternal(false);
+    setCleanupConfirmInput("");
+  }
+
+  function closeCleanupModal() {
+    if (cleanupRunning) return;
+    setCleanupSkuId(null);
+    setCleanupConfirmInput("");
+  }
+
+  async function runSingleCleanup() {
+    if (cleanupRunning || !cleanupSkuId) return;
+    if (cleanupConfirmInput.trim().toUpperCase() !== CLEANUP_CONFIRM_TEXT) {
+      addToast({ type: "error", title: `Type ${CLEANUP_CONFIRM_TEXT} to confirm.` });
+      return;
+    }
+
+    const actions = {
+      internal: cleanupAction === "deactivate" ? "deactivate" : "none",
+      links: cleanupAction === "unlink" ? "unlink_selected" : "none",
+      external: cleanupExternal ? "delete_selected" : "none",
+      sources: cleanupExternal ? cleanupSources : [],
+      deleteCachedProducts: cleanupExternal,
+    };
+
+    setCleanupRunning(true);
+    try {
+      // Step 1: Get confirmation token
+      const confirmRes = await fetch("/api/products/cleanup/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ internalSkuIds: [cleanupSkuId], actions }),
+      });
+      const confirmData = (await confirmRes.json().catch(() => null)) as {
+        token?: string;
+        issuedAt?: number;
+        error?: string;
+      } | null;
+      if (!confirmRes.ok || !confirmData?.token || typeof confirmData.issuedAt !== "number") {
+        throw new Error(confirmData?.error || "Failed to create confirmation token.");
+      }
+
+      // Step 2: Execute cleanup
+      const cleanupRes = await fetch("/api/products/cleanup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          internalSkuIds: [cleanupSkuId],
+          actions,
+          dryRun: false,
+          confirmation: { token: confirmData.token, issuedAt: confirmData.issuedAt },
+        }),
+      });
+      const result = (await cleanupRes.json().catch(() => null)) as {
+        summary?: { total: number; succeeded: number; partial: number; failed: number };
+        results?: Array<{ internalSkuId: string; status: string; message: string }>;
+        error?: string;
+      } | null;
+      if (!cleanupRes.ok || !result?.summary) {
+        throw new Error(result?.error || "Cleanup request failed.");
+      }
+
+      const firstResult = result.results?.[0];
+      if (firstResult?.status === "failed") {
+        addToast({ type: "error", title: "Cleanup failed", message: firstResult.message });
+      } else if (firstResult?.status === "partial") {
+        addToast({ type: "warning", title: "Cleanup partial", message: firstResult.message });
+      } else {
+        addToast({ type: "success", title: "Cleanup completed" });
+      }
+
+      fetchSkus();
+      closeCleanupModal();
+    } catch (err: unknown) {
+      addToast({ type: "error", title: err instanceof Error ? err.message : "Cleanup failed" });
+    } finally {
+      setCleanupRunning(false);
+    }
+  }
+
   async function handleAutoLinkQuickBooks() {
     setLinkingQuickBooks(true);
     try {
@@ -705,6 +814,14 @@ export default function CatalogPage() {
                               >
                                 Full Edit
                               </Link>
+                              {cleanupEnabled && (
+                                <button
+                                  onClick={() => openCleanupModal(sku.id)}
+                                  className="text-amber-400 hover:text-amber-300"
+                                >
+                                  Cleanup
+                                </button>
+                              )}
                             </>
                           )}
                         </div>
@@ -1163,6 +1280,144 @@ export default function CatalogPage() {
               ))}
             </div>
           )}
+        </div>
+      )}
+      {/* Single-item cleanup modal */}
+      {cleanupSkuId && cleanupSku && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="w-full max-w-lg rounded-xl border border-t-border bg-surface shadow-card-lg overflow-hidden">
+            <div className="flex items-center justify-between border-b border-t-border px-4 py-3">
+              <div>
+                <div className="text-xs uppercase tracking-wide text-amber-400">SKU Cleanup</div>
+                <div className="text-sm text-foreground truncate">
+                  {cleanupSku.brand} — {cleanupSku.model}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={closeCleanupModal}
+                disabled={cleanupRunning}
+                className="px-2 py-1 rounded border border-t-border bg-background text-xs text-muted hover:text-foreground disabled:opacity-50"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4">
+              {/* Internal action */}
+              <div className="rounded-lg border border-t-border bg-background/40 p-3 space-y-2">
+                <div className="text-xs uppercase tracking-wide text-muted">Internal action</div>
+                <div className="flex gap-3">
+                  <label className="flex items-center gap-2 text-xs text-foreground">
+                    <input
+                      type="radio"
+                      name="cleanup-action"
+                      checked={cleanupAction === "unlink"}
+                      onChange={() => setCleanupAction("unlink")}
+                    />
+                    Unlink source IDs
+                  </label>
+                  <label className="flex items-center gap-2 text-xs text-foreground">
+                    <input
+                      type="radio"
+                      name="cleanup-action"
+                      checked={cleanupAction === "deactivate"}
+                      onChange={() => setCleanupAction("deactivate")}
+                    />
+                    Deactivate SKU
+                  </label>
+                </div>
+              </div>
+
+              {/* External cleanup */}
+              <div className="rounded-lg border border-t-border bg-background/40 p-3 space-y-2">
+                <label className="flex items-center gap-2 text-xs text-foreground">
+                  <input
+                    type="checkbox"
+                    checked={cleanupExternal}
+                    onChange={(e) => {
+                      setCleanupExternal(e.target.checked);
+                      if (!e.target.checked) setCleanupSources([]);
+                    }}
+                  />
+                  Run external cleanup (archive/delete in source systems)
+                </label>
+                {cleanupExternal && (
+                  <div className="grid grid-cols-2 gap-2 mt-2">
+                    {CLEANUP_LINKABLE_SOURCES.map((source) => {
+                      const sourceField = {
+                        hubspot: "hubspotProductId",
+                        zuper: "zuperItemId",
+                        zoho: "zohoItemId",
+                        quickbooks: "quickbooksItemId",
+                      } as const;
+                      const hasLink = Boolean(cleanupSku[sourceField[source]]);
+                      const sourceLabel = source === "hubspot" ? "HubSpot" : source === "quickbooks" ? "QuickBooks" : source.charAt(0).toUpperCase() + source.slice(1);
+                      return (
+                        <label key={source} className={`flex items-center gap-2 text-xs ${hasLink ? "text-foreground" : "text-muted/60"}`}>
+                          <input
+                            type="checkbox"
+                            checked={cleanupSources.includes(source)}
+                            disabled={!hasLink}
+                            onChange={(e) => {
+                              setCleanupSources((prev) =>
+                                e.target.checked
+                                  ? [...new Set([...prev, source])]
+                                  : prev.filter((s) => s !== source)
+                              );
+                            }}
+                          />
+                          {sourceLabel} {hasLink ? "" : "(not linked)"}
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Sync IDs info */}
+              <div className="rounded-lg border border-t-border bg-background/40 p-3 text-[11px] text-muted space-y-0.5">
+                <div>Zoho: {cleanupSku.zohoItemId || "—"}</div>
+                <div>HubSpot: {cleanupSku.hubspotProductId || "—"}</div>
+                <div>Zuper: {cleanupSku.zuperItemId || "—"}</div>
+                <div>QuickBooks: {cleanupSku.quickbooksItemId || "—"}</div>
+              </div>
+
+              {/* Confirmation */}
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 space-y-2">
+                <div className="text-xs text-amber-200">
+                  Type <span className="font-semibold">{CLEANUP_CONFIRM_TEXT}</span> to confirm.
+                </div>
+                <input
+                  value={cleanupConfirmInput}
+                  onChange={(e) => setCleanupConfirmInput(e.target.value)}
+                  placeholder={CLEANUP_CONFIRM_TEXT}
+                  className="w-full rounded border border-amber-500/30 bg-background px-2 py-1 text-xs text-foreground focus:outline-none focus:border-amber-400/60"
+                  disabled={cleanupRunning}
+                />
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={closeCleanupModal}
+                  disabled={cleanupRunning}
+                  className="px-3 py-1.5 rounded border border-t-border bg-background text-xs text-muted hover:text-foreground disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void runSingleCleanup()}
+                  disabled={cleanupRunning || cleanupConfirmInput.trim().toUpperCase() !== CLEANUP_CONFIRM_TEXT}
+                  className="px-3 py-1.5 rounded border border-amber-500/40 bg-amber-500/10 text-amber-200 text-xs hover:bg-amber-500/20 disabled:opacity-50"
+                >
+                  {cleanupRunning ? "Running…" : "Run cleanup"}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </DashboardShell>
