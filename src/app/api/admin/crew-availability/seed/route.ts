@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { headers } from "next/headers";
 import { auth } from "@/auth";
-import { prisma, getUserByEmail, logActivity } from "@/lib/db";
+import { prisma, getUserByEmail } from "@/lib/db";
+import { logAdminActivity, extractRequestContext } from "@/lib/audit/admin-activity";
 
 /**
  * Hardcoded crew schedules to seed into the database.
@@ -181,12 +183,18 @@ export async function POST() {
       }
     }
 
-    await logActivity({
+    const headersList = await headers();
+    const reqCtx = extractRequestContext(headersList);
+    await logAdminActivity({
       type: "SETTINGS_CHANGED",
       description: `Seeded crew availability: ${created} created, ${skipped} skipped`,
       userId: currentUser.id,
       userEmail: currentUser.email,
+      userName: currentUser.name || undefined,
       entityType: "crew_availability",
+      requestPath: "/api/admin/crew-availability/seed",
+      requestMethod: "POST",
+      ...reqCtx,
     });
 
     return NextResponse.json({

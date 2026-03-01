@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { headers } from "next/headers";
 import { auth } from "@/auth";
-import { prisma, getUserByEmail, logActivity, upsertCrewMember } from "@/lib/db";
+import { prisma, getUserByEmail, upsertCrewMember } from "@/lib/db";
+import { logAdminActivity, extractRequestContext } from "@/lib/audit/admin-activity";
 import { zuper } from "@/lib/zuper";
 import type { ZuperUserFull, ZuperTeamDetail } from "@/lib/zuper";
 
@@ -169,11 +171,13 @@ export async function POST() {
       }
     }
 
-    // Log the sync activity
-    await logActivity({
+    // Log the sync activity through audit pipeline
+    const headersList = await headers();
+    const reqCtx = extractRequestContext(headersList);
+    await logAdminActivity({
       type: "SETTINGS_CHANGED",
       description: `Synced ${zuperUsers.length} users from Zuper (${results.usersCreated} created, ${results.usersUpdated} updated, ${results.crewCreated} crew created, ${results.crewUpdated} crew updated)`,
-      userEmail: session.user.email,
+      userEmail: session.user.email!,
       userName: session.user.name || undefined,
       entityType: "zuper_sync",
       metadata: {
@@ -186,6 +190,9 @@ export async function POST() {
         crewUpdated: results.crewUpdated,
         errorCount: results.errors.length,
       },
+      requestPath: "/api/admin/sync-zuper",
+      requestMethod: "POST",
+      ...reqCtx,
     });
 
     return NextResponse.json({

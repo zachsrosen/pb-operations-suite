@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { headers } from "next/headers";
 import { auth } from "@/auth";
-import { prisma, getUserByEmail, getCrewAvailabilities, upsertCrewAvailability, deleteCrewAvailability, logActivity } from "@/lib/db";
+import { prisma, getUserByEmail, getCrewAvailabilities, upsertCrewAvailability, deleteCrewAvailability } from "@/lib/db";
+import { logAdminActivity, extractRequestContext } from "@/lib/audit/admin-activity";
 
 /**
  * GET /api/admin/crew-availability
@@ -99,11 +101,17 @@ export async function POST(request: NextRequest) {
       updatedBy: currentUser.id,
     });
 
-    await logActivity({
+    const headersList = await headers();
+    const reqCtx = extractRequestContext(headersList);
+    await logAdminActivity({
+      ...reqCtx,
+      requestPath: "/api/admin/crew-availability",
+      requestMethod: "POST",
       type: "SETTINGS_CHANGED",
       description: `Created crew availability slot: ${location} ${dayOfWeek} ${startTime}-${endTime}`,
       userId: currentUser.id,
       userEmail: currentUser.email,
+      userName: currentUser.name || undefined,
       entityType: "crew_availability",
       entityId: record?.id,
     });
@@ -167,11 +175,17 @@ export async function PUT(request: NextRequest) {
       updatedBy: currentUser.id,
     });
 
-    await logActivity({
+    const headersList = await headers();
+    const reqCtx = extractRequestContext(headersList);
+    await logAdminActivity({
+      ...reqCtx,
+      requestPath: "/api/admin/crew-availability",
+      requestMethod: "PUT",
       type: "SETTINGS_CHANGED",
       description: `Updated crew availability slot: ${location} ${dayOfWeek} ${startTime}-${endTime}`,
       userId: currentUser.id,
       userEmail: currentUser.email,
+      userName: currentUser.name || undefined,
       entityType: "crew_availability",
       entityId: id,
     });
@@ -213,11 +227,17 @@ export async function DELETE(request: NextRequest) {
 
     await deleteCrewAvailability(id);
 
-    await logActivity({
+    const headersList = await headers();
+    const reqCtx = extractRequestContext(headersList);
+    await logAdminActivity({
+      ...reqCtx,
+      requestPath: "/api/admin/crew-availability",
+      requestMethod: "DELETE",
       type: "SETTINGS_CHANGED",
       description: `Deleted crew availability slot`,
       userId: currentUser.id,
       userEmail: currentUser.email,
+      userName: currentUser.name || undefined,
       entityType: "crew_availability",
       entityId: id,
     });
