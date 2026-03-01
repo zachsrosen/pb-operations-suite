@@ -2356,11 +2356,9 @@ export async function completeTask(
       properties.hs_task_body = `${existingBody}${separator}<strong>[Completed ${timestamp}]</strong> ${notes}`;
     }
 
-    const response = await hubspotClient.crm.objects.basicApi.update(
-      "tasks",
-      taskId,
-      { properties }
-    );
+    await hubspotClient.crm.objects.basicApi.update("tasks", taskId, {
+      properties,
+    });
 
     // Re-fetch full properties for the return value
     const updated = await hubspotClient.crm.objects.basicApi.getById(
