@@ -1,0 +1,344 @@
+"use client";
+
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import DashboardShell from "@/components/DashboardShell";
+import { MiniStat } from "@/components/ui/MetricCard";
+import { formatMoney } from "@/lib/format";
+import { RawProject } from "@/lib/types";
+import { useProjectData } from "@/hooks/useProjectData";
+import { useActivityTracking } from "@/hooks/useActivityTracking";
+
+// ---- Types ----
+
+interface ExtendedProject extends RawProject {
+  permittingStatus?: string;
+  interconnectionStatus?: string;
+  interconnectionSubmitDate?: string;
+  interconnectionApprovalDate?: string;
+  ptoStatus?: string;
+  ptoSubmitDate?: string;
+  permitLead?: string;
+  interconnectionsLead?: string;
+}
+
+// Statuses where the ball is in our court — permitting
+const PERMIT_ACTION_STATUSES: Record<string, string> = {
+  "Ready For Permitting": "Submit to AHJ",
+  "Customer Signature Acquired": "Submit to AHJ",
+  "Non-Design Related Rejection": "Review rejection",
+  "Rejected": "Revise & resubmit",
+  "In Design For Revision": "Complete revision",
+  "Returned from Design": "Resubmit to AHJ",
+  "As-Built Revision Needed": "Start as-built revision",
+  "As-Built Revision In Progress": "Complete as-built",
+  "As-Built Ready To Resubmit": "Resubmit as-built",
+  "Pending SolarApp": "Submit SolarApp",
+  "Submit SolarApp to AHJ": "Submit SolarApp to AHJ",
+  "Resubmitted to AHJ": "Follow up with AHJ",
+};
+
+// Statuses where the ball is in our court — IC
+const IC_ACTION_STATUSES: Record<string, string> = {
+  "Ready for Interconnection": "Submit to utility",
+  "Signature Acquired By Customer": "Submit to utility",
+  "Non-Design Related Rejection": "Review rejection",
+  "Rejected (New)": "Review rejection",
+  "Rejected": "Revise & resubmit",
+  "In Design For Revisions": "Complete revision",
+  "Revision Returned From Design": "Resubmit to utility",
+  "Waiting On Information": "Provide information",
+  "Resubmitted To Utility": "Follow up with utility",
+};
+
+// PTO action statuses
+const PTO_ACTION_STATUSES: Record<string, string> = {
+  "Inspection Passed - Ready for Utility": "Submit PTO",
+  "Inspection Rejected By Utility": "Review rejection",
+  "Ops Related PTO Rejection": "Fix ops issue",
+  "Resubmitted to Utility": "Follow up",
+  "Xcel Photos Ready to Submit": "Submit photos",
+  "XCEL Photos Rejected": "Fix & resubmit photos",
+  "Xcel Photos Ready to Resubmit": "Resubmit photos",
+  "Pending Truck Roll": "Schedule truck roll",
+};
+
+const STALE_THRESHOLD_DAYS = 14;
+
+type ActionType = "permit" | "interconnection" | "pto" | "stale";
+type SortField = "name" | "type" | "daysInStatus" | "amount";
+type SortDir = "asc" | "desc";
+
+interface ActionItem {
+  project: ExtendedProject;
+  type: ActionType;
+  status: string;
+  action: string;
+  daysInStatus: number;
+  isStale: boolean;
+}
+
+export default function PIActionQueuePage() {
+  const { trackDashboardView } = useActivityTracking();
+  const hasTrackedView = useRef(false);
+
+  const { data: projects, loading, lastUpdated } = useProjectData<ExtendedProject[]>({
+    params: { context: "executive" },
+    transform: (raw: unknown) => (raw as { projects: ExtendedProject[] }).projects,
+  });
+  const safeProjects = projects ?? [];
+
+  const [sortField, setSortField] = useState<SortField>("daysInStatus");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [filterType, setFilterType] = useState<ActionType | "all">("all");
+
+  useEffect(() => {
+    if (!loading && !hasTrackedView.current) {
+      hasTrackedView.current = true;
+      trackDashboardView("pi-action-queue", { projectCount: safeProjects.length });
+    }
+  }, [loading, safeProjects.length, trackDashboardView]);
+
+  // Build action items
+  const actionItems = useMemo(() => {
+    const items: ActionItem[] = [];
+    const seen = new Set<string>(); // avoid duplicates per project
+
+    safeProjects.forEach((p) => {
+      const days = p.daysSinceStageMovement ?? 0;
+
+      // Permit actions
+      if (p.permittingStatus && PERMIT_ACTION_STATUSES[p.permittingStatus]) {
+        items.push({
+          project: p,
+          type: "permit",
+          status: p.permittingStatus,
+          action: PERMIT_ACTION_STATUSES[p.permittingStatus],
+          daysInStatus: days,
+          isStale: days > STALE_THRESHOLD_DAYS,
+        });
+        seen.add(p.id);
+      }
+
+      // IC actions
+      if (p.interconnectionStatus && IC_ACTION_STATUSES[p.interconnectionStatus]) {
+        items.push({
+          project: p,
+          type: "interconnection",
+          status: p.interconnectionStatus,
+          action: IC_ACTION_STATUSES[p.interconnectionStatus],
+          daysInStatus: days,
+          isStale: days > STALE_THRESHOLD_DAYS,
+        });
+        seen.add(p.id);
+      }
+
+      // PTO actions
+      if (p.ptoStatus && PTO_ACTION_STATUSES[p.ptoStatus]) {
+        items.push({
+          project: p,
+          type: "pto",
+          status: p.ptoStatus,
+          action: PTO_ACTION_STATUSES[p.ptoStatus],
+          daysInStatus: days,
+          isStale: days > STALE_THRESHOLD_DAYS,
+        });
+        seen.add(p.id);
+      }
+
+      // Stale detection — P&I stage projects not already captured
+      if (
+        !seen.has(p.id) &&
+        days > STALE_THRESHOLD_DAYS &&
+        (p.stage === "Permitting" || p.stage === "Interconnection" || p.stage === "Permission To Operate")
+      ) {
+        const statusLabel = p.permittingStatus || p.interconnectionStatus || p.ptoStatus || p.stage;
+        items.push({
+          project: p,
+          type: "stale",
+          status: statusLabel,
+          action: "Follow up — stale",
+          daysInStatus: days,
+          isStale: true,
+        });
+      }
+    });
+
+    return items;
+  }, [safeProjects]);
+
+  // Filter
+  const filteredItems = useMemo(() => {
+    if (filterType === "all") return actionItems;
+    return actionItems.filter((i) => i.type === filterType);
+  }, [actionItems, filterType]);
+
+  // Sort
+  const sortedItems = useMemo(() => {
+    const sorted = [...filteredItems];
+    sorted.sort((a, b) => {
+      let cmp = 0;
+      switch (sortField) {
+        case "name": cmp = a.project.name.localeCompare(b.project.name); break;
+        case "type": cmp = a.type.localeCompare(b.type); break;
+        case "daysInStatus": cmp = a.daysInStatus - b.daysInStatus; break;
+        case "amount": cmp = (a.project.amount || 0) - (b.project.amount || 0); break;
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+    return sorted;
+  }, [filteredItems, sortField, sortDir]);
+
+  const handleSort = useCallback(
+    (field: SortField) => {
+      if (sortField === field) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+      else { setSortField(field); setSortDir("desc"); }
+    },
+    [sortField]
+  );
+
+  // Stats
+  const stats = useMemo(() => {
+    const byType: Record<string, number> = {};
+    let staleCount = 0;
+    actionItems.forEach((i) => {
+      byType[i.type] = (byType[i.type] || 0) + 1;
+      if (i.isStale) staleCount++;
+    });
+    return { total: actionItems.length, byType, staleCount };
+  }, [actionItems]);
+
+  // Export
+  const exportRows = useMemo(
+    () => sortedItems.map((i) => ({
+      name: i.project.name,
+      type: i.type,
+      status: i.status,
+      action: i.action,
+      daysInStatus: i.daysInStatus,
+      isStale: i.isStale ? "Yes" : "No",
+      lead: i.project.permitLead || i.project.interconnectionsLead || "",
+      location: i.project.pbLocation || "",
+      ahj: i.project.ahj || "",
+      utility: i.project.utility || "",
+      amount: i.project.amount || 0,
+    })),
+    [sortedItems]
+  );
+
+  const sortIndicator = (field: SortField) =>
+    sortField === field ? (sortDir === "asc" ? " ↑" : " ↓") : " ⇅";
+
+  const TYPE_COLORS: Record<string, string> = {
+    permit: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
+    interconnection: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+    pto: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
+    stale: "bg-red-500/20 text-red-400 border-red-500/30",
+  };
+
+  return (
+    <DashboardShell
+      title="Action Queue"
+      accentColor="cyan"
+      lastUpdated={lastUpdated}
+      exportData={{ data: exportRows, filename: "pi-action-queue.csv" }}
+      fullWidth
+    >
+      {/* Summary Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 stagger-grid">
+        <MiniStat label="Total Actions" value={loading ? null : stats.total} />
+        <MiniStat label="Permit Actions" value={loading ? null : stats.byType.permit || 0} />
+        <MiniStat label="IC Actions" value={loading ? null : stats.byType.interconnection || 0} />
+        <MiniStat label="PTO Actions" value={loading ? null : stats.byType.pto || 0} />
+        <MiniStat label="Stale (>14d)" value={loading ? null : stats.staleCount} alert={stats.staleCount > 10} />
+      </div>
+
+      {/* Filter tabs */}
+      <div className="flex gap-2 flex-wrap">
+        {(["all", "permit", "interconnection", "pto", "stale"] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => setFilterType(t)}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              filterType === t
+                ? "bg-cyan-500/20 text-cyan-400 border border-cyan-500/30"
+                : "bg-surface-2/50 text-muted border border-t-border hover:text-foreground"
+            }`}
+          >
+            {t === "all" ? "All" : t === "interconnection" ? "IC" : t.charAt(0).toUpperCase() + t.slice(1)}
+            {t !== "all" && ` (${t === "stale" ? stats.staleCount : stats.byType[t] || 0})`}
+          </button>
+        ))}
+      </div>
+
+      {/* Table */}
+      <div className="bg-surface border border-t-border rounded-xl shadow-card overflow-hidden">
+        {loading ? (
+          <div className="p-6 space-y-3">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="h-10 bg-skeleton rounded animate-pulse" />
+            ))}
+          </div>
+        ) : sortedItems.length === 0 ? (
+          <div className="p-8 text-center text-muted">No action items found.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-t-border text-left text-muted bg-surface-2/50">
+                  <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("name")}>
+                    Project{sortIndicator("name")}
+                  </th>
+                  <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("type")}>
+                    Type{sortIndicator("type")}
+                  </th>
+                  <th className="p-3">Status</th>
+                  <th className="p-3">Action Needed</th>
+                  <th className="p-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("daysInStatus")}>
+                    Days{sortIndicator("daysInStatus")}
+                  </th>
+                  <th className="p-3">Lead</th>
+                  <th className="p-3">Location</th>
+                  <th className="p-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("amount")}>
+                    Amount{sortIndicator("amount")}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedItems.map((item, idx) => (
+                  <tr key={`${item.project.id}-${item.type}-${idx}`} className="border-b border-t-border/50 hover:bg-surface-2/50">
+                    <td className="p-3">
+                      {item.project.url ? (
+                        <a href={item.project.url} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:text-cyan-300 hover:underline">
+                          {item.project.name}
+                        </a>
+                      ) : (
+                        <span className="text-foreground">{item.project.name}</span>
+                      )}
+                    </td>
+                    <td className="p-3">
+                      <span className={`inline-block px-2 py-0.5 text-xs font-medium rounded-full border ${TYPE_COLORS[item.type]}`}>
+                        {item.type === "interconnection" ? "IC" : item.type.charAt(0).toUpperCase() + item.type.slice(1)}
+                      </span>
+                    </td>
+                    <td className="p-3 text-muted text-xs">{item.status}</td>
+                    <td className="p-3">
+                      <span className="text-sm font-medium text-foreground">{item.action}</span>
+                    </td>
+                    <td className="p-3 text-right">
+                      <span className={`font-semibold ${item.daysInStatus > 21 ? "text-red-400" : item.daysInStatus > STALE_THRESHOLD_DAYS ? "text-yellow-400" : "text-foreground"}`}>
+                        {item.daysInStatus}d
+                      </span>
+                    </td>
+                    <td className="p-3 text-muted">{item.project.permitLead || item.project.interconnectionsLead || "—"}</td>
+                    <td className="p-3 text-muted text-xs">{item.project.pbLocation || "—"}</td>
+                    <td className="p-3 text-right text-foreground">{formatMoney(item.project.amount || 0)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </DashboardShell>
+  );
+}
