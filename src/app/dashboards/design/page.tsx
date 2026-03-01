@@ -9,7 +9,7 @@ import { MonthlyBarChart, aggregateMonthly } from "@/components/ui/MonthlyBarCha
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useDesignFilters } from "@/stores/dashboard-filters";
-import { ClippingAnalysis, analyzeClipping, FullEquipment } from "@/lib/clipping";
+import { ClippingAnalysis, analyzeClipping, FullEquipment, getSeasonalTSRF, DEFAULT_TSRF } from "@/lib/clipping";
 
 // Display name mappings for status values
 const DISPLAY_NAMES: Record<string, string> = {
