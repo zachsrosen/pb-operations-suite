@@ -20,10 +20,14 @@ interface ExtendedProject extends RawProject {
   projectManager?: string;
 }
 
-// Status groupings for metrics
-const DRAFT_STATUSES = [
+// Active design pipeline statuses (pre-completion, pre-engineering)
+const ACTIVE_DESIGN_STATUSES = [
   "Ready for Design",
   "In Progress",
+  "Ready For Review",
+  "Final Review/Stamping",
+  "Draft Complete - Waiting on Approvals",
+  "DA Approved",
 ];
 
 const IN_ENGINEERING_STATUSES = [
@@ -89,13 +93,13 @@ export default function DEMetricsPage() {
 
   // ---- Design Status Metrics ----
   const designMetrics = useMemo(() => {
-    const drafted = designProjects.filter((p) => p.designStatus && DRAFT_STATUSES.includes(p.designStatus));
+    const active = designProjects.filter((p) => p.designStatus && ACTIVE_DESIGN_STATUSES.includes(p.designStatus));
     const inEngineering = designProjects.filter((p) => p.designStatus && IN_ENGINEERING_STATUSES.includes(p.designStatus));
     const completed = designProjects.filter((p) => p.designCompletionDate);
     const inRevision = designProjects.filter((p) => p.designStatus && REVISION_STATUSES.includes(p.designStatus));
 
     return {
-      drafted: { count: drafted.length, revenue: drafted.reduce((s, p) => s + (p.amount || 0), 0) },
+      active: { count: active.length, revenue: active.reduce((s, p) => s + (p.amount || 0), 0) },
       inEngineering: { count: inEngineering.length, revenue: inEngineering.reduce((s, p) => s + (p.amount || 0), 0) },
       completed: { count: completed.length, revenue: completed.reduce((s, p) => s + (p.amount || 0), 0) },
       inRevision: { count: inRevision.length, revenue: inRevision.reduce((s, p) => s + (p.amount || 0), 0) },
@@ -213,9 +217,9 @@ export default function DEMetricsPage() {
         <h2 className="text-lg font-semibold text-foreground mb-3">Design Pipeline</h2>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 stagger-grid">
           <MetricCard
-            label="In Draft / Design"
-            value={loading ? "—" : String(designMetrics.drafted.count)}
-            sub={loading ? undefined : formatMoney(designMetrics.drafted.revenue)}
+            label="Active Design Pipeline"
+            value={loading ? "—" : String(designMetrics.active.count)}
+            sub={loading ? undefined : formatMoney(designMetrics.active.revenue)}
             border="border-l-4 border-l-slate-500"
           />
           <MetricCard
