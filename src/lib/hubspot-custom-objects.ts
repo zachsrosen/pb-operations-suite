@@ -243,22 +243,30 @@ export async function fetchAllAHJs(): Promise<AHJRecord[]> {
 
 /**
  * Fetch AHJ records associated with a specific deal.
+ * Paginates the association lookup to handle any cardinality.
  */
 export async function fetchAHJsForDeal(
   dealId: string
 ): Promise<AHJRecord[]> {
-  const associations = await withRetry(() =>
-    hubspotClient.crm.associations.v4.basicApi.getPage(
-      "deals",
-      dealId,
-      AHJ_OBJECT_TYPE,
-      undefined, // limit — defaults to 500
-    )
-  );
+  const ahjIds: string[] = [];
+  let after: string | undefined;
 
-  if (!associations.results.length) return [];
+  do {
+    const associations = await withRetry(() =>
+      hubspotClient.crm.associations.v4.basicApi.getPage(
+        "deals",
+        dealId,
+        AHJ_OBJECT_TYPE,
+        after,   // pagination cursor
+        undefined, // limit — defaults to 500
+      )
+    );
+    ahjIds.push(...associations.results.map((a) => a.toObjectId.toString()));
+    after = associations.paging?.next?.after;
+  } while (after);
 
-  const ahjIds = associations.results.map((a) => a.toObjectId.toString());
+  if (!ahjIds.length) return [];
+
   const props: string[] = [...AHJ_PROPERTIES];
 
   const response = await withRetry(() =>
@@ -312,22 +320,30 @@ export async function fetchAllUtilities(): Promise<UtilityRecord[]> {
 
 /**
  * Fetch Utility records associated with a specific deal.
+ * Paginates the association lookup to handle any cardinality.
  */
 export async function fetchUtilitiesForDeal(
   dealId: string
 ): Promise<UtilityRecord[]> {
-  const associations = await withRetry(() =>
-    hubspotClient.crm.associations.v4.basicApi.getPage(
-      "deals",
-      dealId,
-      UTILITY_OBJECT_TYPE,
-      undefined, // limit — defaults to 500
-    )
-  );
+  const utilityIds: string[] = [];
+  let after: string | undefined;
 
-  if (!associations.results.length) return [];
+  do {
+    const associations = await withRetry(() =>
+      hubspotClient.crm.associations.v4.basicApi.getPage(
+        "deals",
+        dealId,
+        UTILITY_OBJECT_TYPE,
+        after,   // pagination cursor
+        undefined, // limit — defaults to 500
+      )
+    );
+    utilityIds.push(...associations.results.map((a) => a.toObjectId.toString()));
+    after = associations.paging?.next?.after;
+  } while (after);
 
-  const utilityIds = associations.results.map((a) => a.toObjectId.toString());
+  if (!utilityIds.length) return [];
+
   const props: string[] = [...UTILITY_PROPERTIES];
 
   const response = await withRetry(() =>
