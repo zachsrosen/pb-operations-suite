@@ -188,7 +188,7 @@ export default function PIOverviewPage() {
           cmp = (a.stage || "").localeCompare(b.stage || "");
           break;
         case "lead":
-          cmp = (a.permitLead || "Unknown").localeCompare(b.permitLead || "Unknown");
+          cmp = (a.permitLead || a.interconnectionsLead || "Unknown").localeCompare(b.permitLead || b.interconnectionsLead || "Unknown");
           break;
         case "days":
           cmp = (a.daysSinceStageMovement ?? 0) - (b.daysSinceStageMovement ?? 0);
@@ -389,7 +389,7 @@ export default function PIOverviewPage() {
                       )}
                     </td>
                     <td className="py-2 pr-4 text-muted">{p.stage}</td>
-                    <td className="py-2 pr-4 text-muted">{p.permitLead || "Unknown"}</td>
+                    <td className="py-2 pr-4 text-muted">{p.permitLead || p.interconnectionsLead || "Unknown"}</td>
                     <td className="py-2 pr-4 text-muted text-xs">{p.ahj || p.utility || "\u2014"}</td>
                     <td className="py-2 pr-4 text-right">
                       <span className={`font-semibold ${(p.daysSinceStageMovement ?? 0) > 21 ? "text-red-400" : (p.daysSinceStageMovement ?? 0) > 10 ? "text-yellow-400" : "text-foreground"}`}>
