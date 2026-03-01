@@ -61,14 +61,6 @@ const SUITE_LINKS: SuiteLinkData[] = [
     visibility: "all",
   },
   {
-    href: "/suites/department",
-    title: "Tech Ops Suite",
-    description: "Execution dashboards for field operations teams.",
-    tag: "TECH OPS",
-    tagColor: "green",
-    visibility: "all",
-  },
-  {
     href: "/suites/design-engineering",
     title: "Design & Engineering Suite",
     description: "Design review, clipping analytics, AHJ requirements, and engineering tools.",
