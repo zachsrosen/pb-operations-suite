@@ -191,6 +191,87 @@ interface DigestResult {
   reason?: string;
 }
 
+interface LockdownShadowStats {
+  shadowRuns: number;
+  evaluated: number;
+  exactMatches: number;
+  ambiguous: number;
+  unmatched: number;
+  wouldQueue: number;
+}
+
+interface ShadowPayload {
+  evaluated: number;
+  exactMatches: number;
+  ambiguous: number;
+  unmatched: number;
+  wouldQueue: number;
+}
+
+function toFiniteNumber(value: unknown): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function extractShadowPayload(metadata: unknown): ShadowPayload | null {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return null;
+  }
+
+  const record = metadata as Record<string, unknown>;
+  const candidate = (
+    record.shadow ??
+    record.skuShadow
+  ) as Record<string, unknown> | undefined;
+
+  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+    return null;
+  }
+
+  const evaluated = toFiniteNumber(candidate.evaluated);
+  const exactMatches = toFiniteNumber(candidate.exactMatches);
+  const ambiguous = toFiniteNumber(candidate.ambiguous);
+  const unmatched = toFiniteNumber(candidate.unmatched);
+  const wouldQueue = toFiniteNumber(candidate.wouldQueue);
+
+  // Treat empty payloads as absent to avoid noisy zero rows in digest.
+  if (
+    evaluated === 0 &&
+    exactMatches === 0 &&
+    ambiguous === 0 &&
+    unmatched === 0 &&
+    wouldQueue === 0
+  ) {
+    return null;
+  }
+
+  return { evaluated, exactMatches, ambiguous, unmatched, wouldQueue };
+}
+
+function aggregateLockdownShadowStats(metadataRows: unknown[]): LockdownShadowStats {
+  const totals: LockdownShadowStats = {
+    shadowRuns: 0,
+    evaluated: 0,
+    exactMatches: 0,
+    ambiguous: 0,
+    unmatched: 0,
+    wouldQueue: 0,
+  };
+
+  for (const metadata of metadataRows) {
+    const payload = extractShadowPayload(metadata);
+    if (!payload) continue;
+    totals.shadowRuns += 1;
+    totals.evaluated += payload.evaluated;
+    totals.exactMatches += payload.exactMatches;
+    totals.ambiguous += payload.ambiguous;
+    totals.unmatched += payload.unmatched;
+    totals.wouldQueue += payload.wouldQueue;
+  }
+
+  return totals;
+}
+
 /**
  * Send a daily digest email summarizing the last 24 hours of audit activity.
  *
@@ -258,8 +339,26 @@ export async function sendDailyDigest(
       _count: { id: true },
     });
 
-  const subject = `Audit Digest: ${totalSessions} sessions, ${anomalySessions} anomalies (last 24h)`;
-  const html = buildDigestHtml(totalSessions, anomalySessions, envBreakdown);
+  const skuSyncLogs: Array<{ metadata: unknown }> = await prisma.activityLog.findMany({
+    where: {
+      createdAt: { gte: since },
+      type: "INVENTORY_SKU_SYNCED",
+      metadata: { not: null },
+    },
+    select: { metadata: true },
+  });
+  const shadowStats = aggregateLockdownShadowStats(
+    skuSyncLogs.map((row) => row.metadata)
+  );
+
+  const queueRate =
+    shadowStats.evaluated > 0
+      ? Math.round((shadowStats.wouldQueue / shadowStats.evaluated) * 100)
+      : null;
+  const subject = queueRate != null
+    ? `Audit Digest: ${totalSessions} sessions, ${anomalySessions} anomalies · Lockdown would-queue ${queueRate}% (24h)`
+    : `Audit Digest: ${totalSessions} sessions, ${anomalySessions} anomalies (last 24h)`;
+  const html = buildDigestHtml(totalSessions, anomalySessions, envBreakdown, shadowStats);
 
   try {
     const { error: sendError } = await resend.emails.send({
@@ -287,8 +386,14 @@ export async function sendDailyDigest(
 function buildDigestHtml(
   totalSessions: number,
   anomalySessions: number,
-  envBreakdown: Array<{ environment: string; _count: { id: number } }>
+  envBreakdown: Array<{ environment: string; _count: { id: number } }>,
+  shadowStats: LockdownShadowStats
 ): string {
+  const queueRate =
+    shadowStats.evaluated > 0
+      ? Math.round((shadowStats.wouldQueue / shadowStats.evaluated) * 100)
+      : null;
+
   const envRows = envBreakdown
     .map(
       (e) => `
@@ -327,6 +432,46 @@ function buildDigestHtml(
           ${envRows}
         </table>`
           : ""
+      }
+      ${
+        shadowStats.shadowRuns > 0
+          ? `
+        <h3 style="margin: 16px 0 8px 0; color: #374151; font-size: 14px;">Catalog Lockdown Shadow (BOM Save)</h3>
+        <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+          <tr style="border-bottom: 1px solid #e5e7eb;">
+            <td style="padding: 8px 12px; font-weight: 600; color: #374151; width: 220px;">Shadow Runs</td>
+            <td style="padding: 8px 12px; color: #111827; text-align: right;">${shadowStats.shadowRuns}</td>
+          </tr>
+          <tr style="border-bottom: 1px solid #e5e7eb;">
+            <td style="padding: 8px 12px; font-weight: 600; color: #374151;">Evaluated Items</td>
+            <td style="padding: 8px 12px; color: #111827; text-align: right;">${shadowStats.evaluated}</td>
+          </tr>
+          <tr style="border-bottom: 1px solid #e5e7eb;">
+            <td style="padding: 8px 12px; font-weight: 600; color: #374151;">Exact Matches</td>
+            <td style="padding: 8px 12px; color: #111827; text-align: right;">${shadowStats.exactMatches}</td>
+          </tr>
+          <tr style="border-bottom: 1px solid #e5e7eb;">
+            <td style="padding: 8px 12px; font-weight: 600; color: #374151;">Ambiguous</td>
+            <td style="padding: 8px 12px; color: #111827; text-align: right;">${shadowStats.ambiguous}</td>
+          </tr>
+          <tr style="border-bottom: 1px solid #e5e7eb;">
+            <td style="padding: 8px 12px; font-weight: 600; color: #374151;">Unmatched</td>
+            <td style="padding: 8px 12px; color: #111827; text-align: right;">${shadowStats.unmatched}</td>
+          </tr>
+          <tr>
+            <td style="padding: 8px 12px; font-weight: 600; color: #374151;">Would Queue</td>
+            <td style="padding: 8px 12px; color: ${queueRate != null && queueRate > 0 ? "#d97706" : "#111827"}; font-weight: 700; text-align: right;">
+              ${shadowStats.wouldQueue}${queueRate != null ? ` (${queueRate}%)` : ""}
+            </td>
+          </tr>
+        </table>`
+          : `
+        <h3 style="margin: 16px 0 8px 0; color: #374151; font-size: 14px;">Catalog Lockdown Shadow (BOM Save)</h3>
+        <p style="margin: 0; color: #6b7280; font-size: 13px;">
+          No shadow telemetry found in the last 24 hours. Run a BOM save while
+          <code style="background:#f3f4f6;padding:1px 4px;border-radius:4px;">CATALOG_LOCKDOWN_MODE=shadow</code>
+          to populate this section.
+        </p>`
       }
       <div style="margin-top: 20px;">
         <a href="${DASHBOARD_URL}" style="display: inline-block; padding: 10px 20px; background: #3b82f6; color: #fff; text-decoration: none; border-radius: 6px; font-weight: 600;">View Audit Dashboard</a>

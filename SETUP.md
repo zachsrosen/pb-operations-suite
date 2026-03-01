@@ -168,6 +168,8 @@ Thanks.
    - `DEPLOYMENT_WEBHOOK_SECRET` - Secret required by `/api/deployment` in production
    - `API_SECRET_TOKEN` - (Optional) Token for external API access
    - `SITE_PASSWORD` - (Optional) Legacy password gate
+   - `CRON_SECRET` - Required for protected cron endpoints
+   - `AUDIT_ALERT_EMAILS` - Comma-separated recipients for daily audit digest emails (now includes catalog lockdown shadow telemetry)
    - Optional integration creds for product comparison / Zoho transactions:
      - `ZOHO_INVENTORY_ORG_ID`, `ZOHO_INVENTORY_CLIENT_ID`, `ZOHO_INVENTORY_CLIENT_SECRET`, `ZOHO_INVENTORY_REFRESH_TOKEN`
      - `OPENSOLAR_API_KEY`
