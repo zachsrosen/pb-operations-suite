@@ -28,6 +28,10 @@
     {
       "path": "/api/cron/audit-digest",
       "schedule": "0 14 * * *"
+    },
+    {
+      "path": "/api/cron/audit-retention",
+      "schedule": "0 5 * * 0"
     }
   ],
   "rewrites": [
