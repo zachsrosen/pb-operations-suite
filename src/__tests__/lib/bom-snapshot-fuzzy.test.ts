@@ -3,18 +3,26 @@
  *
  * When CATALOG_LOCKDOWN_ENABLED=true:
  * - Exact canonical match -> use existing SKU
- * - No match -> create PendingCatalogPush
- * - Ambiguous -> create PendingCatalogPush with candidateSkuIds
+ * - No match -> create PendingCatalogPush (idempotent)
+ * - Ambiguous -> create PendingCatalogPush with candidateSkuIds (idempotent)
+ * - Duplicate items in one BOM -> idempotent (no unique constraint violation)
+ * - `created` is always 0 (lockdown never creates SKUs); `pending` tracks pushes
  */
 
 const mockFindMany = jest.fn();
-const mockCreate = jest.fn().mockResolvedValue({ id: "pending_1" });
+const mockPendingCreate = jest.fn().mockResolvedValue({ id: "pending_1" });
+const mockPendingFindFirst = jest.fn();
+const mockPendingUpdate = jest.fn().mockResolvedValue({ id: "pending_1" });
 const mockQueryRawUnsafe = jest.fn().mockResolvedValue([]);
 
 jest.mock("@/lib/db", () => ({
   prisma: {
     equipmentSku: { findMany: mockFindMany },
-    pendingCatalogPush: { create: mockCreate },
+    pendingCatalogPush: {
+      create: mockPendingCreate,
+      findFirst: mockPendingFindFirst,
+      update: mockPendingUpdate,
+    },
     $queryRawUnsafe: mockQueryRawUnsafe,
   },
   logActivity: jest.fn(),
@@ -28,6 +36,8 @@ describe("syncEquipmentSkus with lockdown", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     process.env.CATALOG_LOCKDOWN_ENABLED = "true";
+    // Default: no existing pending records
+    mockPendingFindFirst.mockResolvedValue(null);
   });
 
   afterAll(() => {
@@ -59,10 +69,11 @@ describe("syncEquipmentSkus with lockdown", () => {
     ];
 
     const result = await syncEquipmentSkus(items);
-    // Should not create a pending push
-    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockPendingCreate).not.toHaveBeenCalled();
     expect(result.skipped).toBe(0);
     expect(result.updated).toBe(1);
+    expect(result.created).toBe(0);
+    expect(result.pending).toBe(0);
   });
 
   it("creates PendingCatalogPush when no match found", async () => {
@@ -80,7 +91,7 @@ describe("syncEquipmentSkus with lockdown", () => {
     ];
 
     const result = await syncEquipmentSkus(items);
-    expect(mockCreate).toHaveBeenCalledWith(
+    expect(mockPendingCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
           brand: "NewBrand",
@@ -91,7 +102,8 @@ describe("syncEquipmentSkus with lockdown", () => {
         }),
       })
     );
-    expect(result.created).toBe(1);
+    expect(result.created).toBe(0);
+    expect(result.pending).toBe(1);
   });
 
   it("creates PendingCatalogPush with candidateSkuIds for ambiguous match", async () => {
@@ -112,7 +124,7 @@ describe("syncEquipmentSkus with lockdown", () => {
     ];
 
     const result = await syncEquipmentSkus(items);
-    expect(mockCreate).toHaveBeenCalledWith(
+    expect(mockPendingCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
           reviewReason: "ambiguous_bom_match",
@@ -120,7 +132,8 @@ describe("syncEquipmentSkus with lockdown", () => {
         }),
       })
     );
-    expect(result.created).toBe(1);
+    expect(result.created).toBe(0);
+    expect(result.pending).toBe(1);
   });
 
   it("skips items with missing brand/model", async () => {
@@ -145,7 +158,7 @@ describe("syncEquipmentSkus with lockdown", () => {
     const result = await syncEquipmentSkus(items);
     expect(result.skipped).toBe(2);
     expect(mockFindMany).not.toHaveBeenCalled();
-    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockPendingCreate).not.toHaveBeenCalled();
   });
 
   it("skips items with non-inventory categories", async () => {
@@ -163,5 +176,121 @@ describe("syncEquipmentSkus with lockdown", () => {
     const result = await syncEquipmentSkus(items);
     expect(result.skipped).toBe(1);
     expect(mockFindMany).not.toHaveBeenCalled();
+  });
+
+  it("updates existing pending record instead of creating duplicate (P1 fix)", async () => {
+    // First call: no SKU match
+    mockFindMany.mockResolvedValue([]);
+    // Existing PENDING record for same canonical key
+    mockPendingFindFirst.mockResolvedValue({
+      id: "existing_pending_1",
+      candidateSkuIds: ["old_candidate"],
+    });
+
+    const { syncEquipmentSkus } = await import("@/lib/bom-snapshot");
+    const items: BomItem[] = [
+      {
+        category: "MODULE",
+        brand: "NewBrand",
+        model: "NewModel",
+        description: "test",
+        qty: 1,
+      },
+    ];
+
+    const result = await syncEquipmentSkus(items);
+
+    // Should NOT create — should update the existing pending record
+    expect(mockPendingCreate).not.toHaveBeenCalled();
+    expect(mockPendingUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "existing_pending_1" },
+        data: expect.objectContaining({
+          candidateSkuIds: ["old_candidate"], // merged (old + new empty = old)
+          reviewReason: "no_match",
+        }),
+      })
+    );
+    expect(result.pending).toBe(1);
+    expect(result.created).toBe(0);
+  });
+
+  it("handles duplicate items in one BOM without throwing (P1 regression)", async () => {
+    // No SKU matches for either occurrence
+    mockFindMany.mockResolvedValue([]);
+
+    // First call: no existing pending. Second call: the one we just created.
+    mockPendingFindFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: "pending_just_created",
+        candidateSkuIds: [],
+      });
+
+    const { syncEquipmentSkus } = await import("@/lib/bom-snapshot");
+    const items: BomItem[] = [
+      {
+        category: "MODULE",
+        brand: "Acme",
+        model: "Panel 100",
+        description: "first occurrence",
+        qty: 10,
+      },
+      {
+        category: "MODULE",
+        brand: "Acme",
+        model: "Panel 100",
+        description: "duplicate",
+        qty: 10,
+      },
+    ];
+
+    // Should not throw despite same canonical key appearing twice
+    const result = await syncEquipmentSkus(items);
+
+    // First item: create (no existing pending)
+    expect(mockPendingCreate).toHaveBeenCalledTimes(1);
+    // Second item: update (found the one we just created)
+    expect(mockPendingUpdate).toHaveBeenCalledTimes(1);
+    expect(result.pending).toBe(2);
+    expect(result.created).toBe(0);
+  });
+
+  it("merges candidate IDs from ambiguous match into existing pending record", async () => {
+    // Two SKU matches (ambiguous)
+    mockFindMany.mockResolvedValue([
+      { id: "sku_a", canonicalKey: "MODULE|acme|panel100" },
+      { id: "sku_b", canonicalKey: "MODULE|acme|panel100" },
+    ]);
+    // Existing pending with one old candidate
+    mockPendingFindFirst.mockResolvedValue({
+      id: "existing_pending_2",
+      candidateSkuIds: ["sku_old"],
+    });
+
+    const { syncEquipmentSkus } = await import("@/lib/bom-snapshot");
+    const items: BomItem[] = [
+      {
+        category: "MODULE",
+        brand: "Acme",
+        model: "Panel 100",
+        description: "ambiguous reprocess",
+        qty: 1,
+      },
+    ];
+
+    await syncEquipmentSkus(items);
+
+    expect(mockPendingCreate).not.toHaveBeenCalled();
+    expect(mockPendingUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "existing_pending_2" },
+        data: expect.objectContaining({
+          // Union of old + new candidates, deduplicated
+          candidateSkuIds: expect.arrayContaining(["sku_old", "sku_a", "sku_b"]),
+          reviewReason: "ambiguous_bom_match",
+        }),
+      })
+    );
   });
 });

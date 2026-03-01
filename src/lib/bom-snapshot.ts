@@ -86,6 +86,8 @@ export interface SkuSyncResult {
   created: number;
   updated: number;
   skipped: number;
+  /** Pending catalog pushes created/updated (lockdown mode only, 0 otherwise) */
+  pending: number;
 }
 
 /** Check whether catalog lockdown mode is enabled via env var. */
@@ -143,7 +145,7 @@ export async function syncEquipmentSkus(items: BomItem[]): Promise<SkuSyncResult
 
   const skipped = items.length - validItems.length;
   if (validItems.length === 0) {
-    return { created: 0, updated: 0, skipped };
+    return { created: 0, updated: 0, skipped, pending: 0 };
   }
 
   // ----- Lockdown path: fuzzy match against canonical keys -----
@@ -216,7 +218,7 @@ async function syncWithDirectInsert(
     }
   }
 
-  return { created, updated, skipped: initialSkipped };
+  return { created, updated, skipped: initialSkipped, pending: 0 };
 }
 
 // ---------------------------------------------------------------------------
@@ -228,7 +230,7 @@ async function syncWithFuzzyMatch(
   initialSkipped: number
 ): Promise<SkuSyncResult> {
   let updated = 0;
-  let created = 0; // pending pushes created
+  let pending = 0;
   let skipped = initialSkipped;
 
   for (const item of validItems) {
@@ -250,8 +252,38 @@ async function syncWithFuzzyMatch(
       continue;
     }
 
-    if (matches.length > 1) {
-      // Ambiguous — create pending push with candidate IDs
+    // Determine review reason and candidate IDs
+    const reviewReason = matches.length > 1 ? "ambiguous_bom_match" : "no_match";
+    const candidateSkuIds = matches.map((m) => m.id);
+
+    // Idempotent: check for an existing PENDING record with the same canonical key.
+    // The partial unique index enforces one PENDING per canonicalKey, so we must
+    // find-then-create/update instead of blind create to avoid constraint violations
+    // when the same product appears twice in a BOM or when reprocessing.
+    const existingPending = await prisma!.pendingCatalogPush.findFirst({
+      where: { canonicalKey: ck, status: "PENDING" },
+      select: { id: true, candidateSkuIds: true },
+    });
+
+    if (existingPending) {
+      // Merge candidate IDs (union of old + new) and refresh expiry
+      const mergedIds = Array.from(
+        new Set([
+          ...(Array.isArray(existingPending.candidateSkuIds)
+            ? (existingPending.candidateSkuIds as string[])
+            : []),
+          ...candidateSkuIds,
+        ])
+      );
+      await prisma!.pendingCatalogPush.update({
+        where: { id: existingPending.id },
+        data: {
+          candidateSkuIds: mergedIds,
+          reviewReason,
+          expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
+        },
+      });
+    } else {
       await prisma!.pendingCatalogPush.create({
         data: {
           brand: item.brand,
@@ -262,35 +294,17 @@ async function syncWithFuzzyMatch(
           requestedBy: "bom_extraction",
           source: "bom_extraction",
           canonicalKey: ck,
-          candidateSkuIds: matches.map((m) => m.id),
-          reviewReason: "ambiguous_bom_match",
+          candidateSkuIds,
+          reviewReason,
           expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
         },
       });
-      created++;
-      continue;
     }
-
-    // Zero matches — create pending push
-    await prisma!.pendingCatalogPush.create({
-      data: {
-        brand: item.brand,
-        model: item.model,
-        description: item.description || "",
-        category: item.category,
-        systems: ["INTERNAL"],
-        requestedBy: "bom_extraction",
-        source: "bom_extraction",
-        canonicalKey: ck,
-        candidateSkuIds: [],
-        reviewReason: "no_match",
-        expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
-      },
-    });
-    created++;
+    pending++;
   }
 
-  return { created, updated, skipped };
+  // Lockdown path never creates SKUs directly — created is always 0
+  return { created: 0, updated, skipped, pending };
 }
 
 // ---------------------------------------------------------------------------
@@ -404,7 +418,7 @@ export async function saveBomSnapshot(params: {
       ...processedBomData.items,
       ...(processedBomData.suggestedAdditions ?? []),
     ];
-    const { created: skuCreated, updated: skuUpdated, skipped: skuSkipped } =
+    const { created: skuCreated, updated: skuUpdated, skipped: skuSkipped, pending: skuPending } =
       await syncEquipmentSkus(allItemsToSync);
 
     await logSnapshot("succeeded", {
@@ -415,6 +429,7 @@ export async function saveBomSnapshot(params: {
       skuCreated,
       skuUpdated,
       skuSkipped,
+      skuPending,
     });
 
     return { id: snapshot.id, version: snapshot.version, createdAt: snapshot.createdAt };
