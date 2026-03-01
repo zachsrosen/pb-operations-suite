@@ -89,6 +89,7 @@ export default function AHJTrackerPage() {
   const [locationFilter, setLocationFilter] = useState<string>("all");
   const [leadFilter, setLeadFilter] = useState<string>("all");
   const [stageFilter, setStageFilter] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState("");
 
   const locations = useMemo(() => {
     const locs = new Set<string>();
@@ -115,10 +116,16 @@ export default function AHJTrackerPage() {
     if (locationFilter !== "all") result = result.filter((p) => p.pbLocation === locationFilter);
     if (leadFilter !== "all") result = result.filter((p) => p.permitLead === leadFilter);
     if (stageFilter !== "all") result = result.filter((p) => p.stage === stageFilter);
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter((p) =>
+        (p.name?.toLowerCase().includes(q) || p.ahj?.toLowerCase().includes(q) || p.stage?.toLowerCase().includes(q) || p.pbLocation?.toLowerCase().includes(q) || p.permitLead?.toLowerCase().includes(q))
+      );
+    }
     return result;
-  }, [safeProjects, locationFilter, leadFilter, stageFilter]);
+  }, [safeProjects, locationFilter, leadFilter, stageFilter, searchQuery]);
 
-  // Group projects by AHJ (case-insensitive)
+  // Group projects by AHJ (case-insensitive) — filtered for both stats and table
   const projectsByAhj = useMemo(() => {
     const map: Record<string, { display: string; projects: RawProject[] }> = {};
     filteredProjects.forEach((p) => {
@@ -192,7 +199,7 @@ export default function AHJTrackerPage() {
     });
   }, [projectsByAhj, ahjByKey]);
 
-  // Only rows with deals for the table
+  // Only rows with deals
   const rowsWithDeals = useMemo(() => ahjRows.filter((r) => r.dealCount > 0), [ahjRows]);
 
   // Sort
@@ -290,6 +297,13 @@ export default function AHJTrackerPage() {
 
       {/* Filters */}
       <div className="flex gap-2 flex-wrap items-center">
+        <input
+          type="text"
+          placeholder="Search AHJ name, project, or status..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground placeholder:text-muted w-full max-w-xs"
+        />
         <select value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)} className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground">
           <option value="all">All Locations</option>
           {locations.map((loc) => <option key={loc} value={loc}>{loc}</option>)}

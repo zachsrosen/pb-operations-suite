@@ -106,6 +106,7 @@ export default function UtilityTrackerPage() {
   const [locationFilter, setLocationFilter] = useState<string>("all");
   const [leadFilter, setLeadFilter] = useState<string>("all");
   const [stageFilter, setStageFilter] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState("");
 
   const locations = useMemo(() => {
     const locs = new Set<string>();
@@ -132,8 +133,14 @@ export default function UtilityTrackerPage() {
     if (locationFilter !== "all") result = result.filter((p) => p.pbLocation === locationFilter);
     if (leadFilter !== "all") result = result.filter((p) => p.interconnectionsLead === leadFilter);
     if (stageFilter !== "all") result = result.filter((p) => p.stage === stageFilter);
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter((p) =>
+        (p.name?.toLowerCase().includes(q) || p.utility?.toLowerCase().includes(q) || p.stage?.toLowerCase().includes(q) || p.pbLocation?.toLowerCase().includes(q) || p.interconnectionsLead?.toLowerCase().includes(q))
+      );
+    }
     return result;
-  }, [safeProjects, locationFilter, leadFilter, stageFilter]);
+  }, [safeProjects, locationFilter, leadFilter, stageFilter, searchQuery]);
 
   // Group projects by utility (case-insensitive)
   const projectsByUtility = useMemo(() => {
@@ -307,6 +314,13 @@ export default function UtilityTrackerPage() {
 
       {/* Filters */}
       <div className="flex gap-2 flex-wrap items-center">
+        <input
+          type="text"
+          placeholder="Search utility, project, or status..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground placeholder:text-muted w-full max-w-xs"
+        />
         <select value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)} className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground">
           <option value="all">All Locations</option>
           {locations.map((loc) => <option key={loc} value={loc}>{loc}</option>)}
