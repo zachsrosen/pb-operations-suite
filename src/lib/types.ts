@@ -54,6 +54,11 @@ export interface RawProject {
   designDraftDate?: string;
   designApprovalSentDate?: string;
   designStartDate?: string;
+  daRevisionCounter?: number;
+  asBuiltRevisionCounter?: number;
+  permitRevisionCounter?: number;
+  interconnectionRevisionCounter?: number;
+  totalRevisionCount?: number;
   designSupportUser?: string;
   systemPerformanceReview?: boolean;
   tags?: string[];

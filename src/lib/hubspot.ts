@@ -292,6 +292,11 @@ export interface Project {
   designDraftDate: string | null;
   designApprovalSentDate: string | null;
   designStartDate: string | null;
+  daRevisionCounter: number | null;
+  asBuiltRevisionCounter: number | null;
+  permitRevisionCounter: number | null;
+  interconnectionRevisionCounter: number | null;
+  totalRevisionCount: number | null;
   designStatus: string | null;
   layoutStatus: string | null;
 
@@ -495,6 +500,11 @@ const DEAL_PROPERTIES = [
   "design_draft_completion_date", // planset upload date
   "design_approval_sent_date", // sent to customer for approval
   "design_start_date", // design work started
+  "da_revision_counter",
+  "as_built_revision_counter",
+  "permit_revision_counter",
+  "interconnection_revision_counter",
+  "total_revision_count",
   "design_status",
   "layout_status", // design approval status
 
@@ -651,6 +661,14 @@ function parseDate(value: unknown): string | null {
     }
   }
   return str;
+}
+
+function parseNullableNumber(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  const str = String(value).trim();
+  if (!str) return null;
+  const parsed = Number(str);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function parseTags(tagsValue: unknown): string[] {
@@ -818,6 +836,11 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
     designDraftDate: parseDate(deal.design_draft_completion_date),
     designApprovalSentDate: parseDate(deal.design_approval_sent_date),
     designStartDate: parseDate(deal.design_start_date),
+    daRevisionCounter: parseNullableNumber(deal.da_revision_counter),
+    asBuiltRevisionCounter: parseNullableNumber(deal.as_built_revision_counter),
+    permitRevisionCounter: parseNullableNumber(deal.permit_revision_counter),
+    interconnectionRevisionCounter: parseNullableNumber(deal.interconnection_revision_counter),
+    totalRevisionCount: parseNullableNumber(deal.total_revision_count),
     designStatus: deal.design_status ? String(deal.design_status) : null,
     layoutStatus: deal.layout_status ? String(deal.layout_status) : null,
 

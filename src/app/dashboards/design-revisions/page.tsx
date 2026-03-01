@@ -21,25 +21,31 @@ interface FullEquipment {
   systemSizeKwac: number;
 }
 
-// Revision-related design statuses (active, not archived)
-const REVISION_STATUSES = [
+// Queue statuses: items that still need active revision work
+const REVISION_QUEUE_STATUSES = [
   // DA Revisions
   "Revision Needed - DA Rejected",
   "DA Revision In Progress",
-  "DA Revision Completed",
   // Permit/AHJ Revisions
   "Revision Needed - Rejected by AHJ",
   "Permit Revision In Progress",
-  "Permit Revision Completed",
   // Utility Revisions
   "Revision Needed - Rejected by Utility",
   "Utility Revision In Progress",
-  "Utility Revision Completed",
   // As-Built Revisions
   "Revision Needed - As-Built",
   "As-Built Revision In Progress",
+];
+
+// Completed statuses: useful for rollup stats but not part of active queue
+const REVISION_COMPLETED_STATUSES = [
+  "DA Revision Completed",
+  "Permit Revision Completed",
+  "Utility Revision Completed",
   "As-Built Revision Completed",
 ];
+
+const REVISION_STATUSES = [...REVISION_QUEUE_STATUSES, ...REVISION_COMPLETED_STATUSES];
 
 // Map statuses to a revision category for grouping / badges
 function getRevisionCategory(designStatus: string): string {
@@ -58,7 +64,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   Other: "bg-zinc-500/20 text-zinc-400 border-zinc-500/30",
 };
 
-type SortField = "name" | "designLead" | "location" | "category" | "designStatus" | "daysInRevision" | "designComplete" | "amount";
+type SortField = "name" | "designLead" | "location" | "category" | "designStatus" | "daysInRevision" | "totalRevisions" | "designComplete" | "amount";
 type SortDir = "asc" | "desc";
 
 export default function DesignRevisionsPage() {
@@ -76,6 +82,7 @@ export default function DesignRevisionsPage() {
 
   // ---- Filter state ----
   const { filters: persistedFilters, setFilters: setPersisted, clearFilters } = useDesignRevisionsFilters();
+  const [revisionTypes, setRevisionTypes] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
@@ -85,8 +92,8 @@ export default function DesignRevisionsPage() {
     }
   }, [loading, safeProjects.length, trackDashboardView]);
 
-  // Filter to projects in revision statuses
-  const revisionProjects = useMemo(() => {
+  // Include queue + completed statuses for aggregate stats
+  const revisionScopeProjects = useMemo(() => {
     return safeProjects
       .filter((p) => p.designStatus && REVISION_STATUSES.includes(p.designStatus))
       .map((p) => {
@@ -94,36 +101,62 @@ export default function DesignRevisionsPage() {
         const eqSummary = eq
           ? `${eq.modules?.count || 0}× ${eq.modules?.wattage || 0}W, ${eq.inverter?.count || 0}× inv`
           : "—";
+        const daRevisionCount = p.daRevisionCounter ?? 0;
+        const asBuiltRevisionCount = p.asBuiltRevisionCounter ?? 0;
+        const permitRevisionCount = p.permitRevisionCounter ?? 0;
+        const interconnectionRevisionCount = p.interconnectionRevisionCounter ?? 0;
+        const totalRevisionCount =
+          p.totalRevisionCount ??
+          (daRevisionCount + asBuiltRevisionCount + permitRevisionCount + interconnectionRevisionCount);
         return {
           ...p,
           daysInRevision: p.daysSinceStageMovement ?? 0,
           revisionCategory: getRevisionCategory(p.designStatus!),
           eqSummary,
+          daRevisionCount,
+          asBuiltRevisionCount,
+          permitRevisionCount,
+          interconnectionRevisionCount,
+          totalRevisionCount,
         };
       });
   }, [safeProjects]);
 
   // ---- Filter option lists ----
   const locationOptions: FilterOption[] = useMemo(
-    () => [...new Set(revisionProjects.map((p) => p.pbLocation || ""))].filter(Boolean).sort().map((loc) => ({ value: loc, label: loc })),
-    [revisionProjects]
+    () => [...new Set(revisionScopeProjects.map((p) => p.pbLocation || ""))].filter(Boolean).sort().map((loc) => ({ value: loc, label: loc })),
+    [revisionScopeProjects]
   );
   const ownerOptions: FilterOption[] = useMemo(
-    () => [...new Set(revisionProjects.map((p) => p.designLead || "Unknown"))].sort().map((o) => ({ value: o, label: o })),
-    [revisionProjects]
+    () => [...new Set(revisionScopeProjects.map((p) => p.designLead || "Unknown"))].sort().map((o) => ({ value: o, label: o })),
+    [revisionScopeProjects]
+  );
+  const revisionTypeOptions: FilterOption[] = useMemo(
+    () =>
+      [...new Set(revisionScopeProjects.map((p) => p.revisionCategory))]
+        .sort()
+        .map((category) => ({ value: category, label: category })),
+    [revisionScopeProjects]
   );
 
-  const hasActiveFilters = persistedFilters.locations.length > 0 || persistedFilters.owners.length > 0 || searchQuery.length > 0;
+  const hasActiveFilters =
+    persistedFilters.locations.length > 0 ||
+    persistedFilters.owners.length > 0 ||
+    revisionTypes.length > 0 ||
+    searchQuery.length > 0;
 
-  // ---- Filtered projects ----
-  const filteredProjects = useMemo(() => {
-    let list = revisionProjects;
+  // ---- Filtered projects for stats context (queue + completed) ----
+  const filteredScopeProjects = useMemo(() => {
+    let list = revisionScopeProjects;
 
     if (persistedFilters.locations.length > 0) {
       list = list.filter((p) => persistedFilters.locations.includes(p.pbLocation || ""));
     }
     if (persistedFilters.owners.length > 0) {
       list = list.filter((p) => persistedFilters.owners.includes(p.designLead || "Unknown"));
+    }
+    if (revisionTypes.length > 0) {
+      list = list.filter((p) => revisionTypes.includes(p.revisionCategory));
     }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -137,11 +170,17 @@ export default function DesignRevisionsPage() {
     }
 
     return list;
-  }, [revisionProjects, persistedFilters, searchQuery]);
+  }, [revisionScopeProjects, persistedFilters, revisionTypes, searchQuery]);
+
+  // Active queue list (exclude completed statuses from table)
+  const filteredQueueProjects = useMemo(
+    () => filteredScopeProjects.filter((p) => REVISION_QUEUE_STATUSES.includes(p.designStatus || "")),
+    [filteredScopeProjects]
+  );
 
   // Sort
   const sortedProjects = useMemo(() => {
-    const sorted = [...filteredProjects];
+    const sorted = [...filteredQueueProjects];
     sorted.sort((a, b) => {
       let cmp = 0;
       switch (sortField) {
@@ -151,13 +190,14 @@ export default function DesignRevisionsPage() {
         case "category": cmp = a.revisionCategory.localeCompare(b.revisionCategory); break;
         case "designStatus": cmp = (a.designStatus || "").localeCompare(b.designStatus || ""); break;
         case "daysInRevision": cmp = a.daysInRevision - b.daysInRevision; break;
+        case "totalRevisions": cmp = a.totalRevisionCount - b.totalRevisionCount; break;
         case "designComplete": cmp = (a.designCompletionDate || "").localeCompare(b.designCompletionDate || ""); break;
         case "amount": cmp = (a.amount || 0) - (b.amount || 0); break;
       }
       return sortDir === "asc" ? cmp : -cmp;
     });
     return sorted;
-  }, [filteredProjects, sortField, sortDir]);
+  }, [filteredQueueProjects, sortField, sortDir]);
 
   const handleSort = useCallback(
     (field: SortField) => {
@@ -169,16 +209,19 @@ export default function DesignRevisionsPage() {
 
   // Stats
   const stats = useMemo(() => {
-    const total = filteredProjects.length;
+    const queueTotal = filteredQueueProjects.length;
+    const completedTotal = filteredScopeProjects.length - filteredQueueProjects.length;
     const byCategory: Record<string, number> = {};
-    filteredProjects.forEach((p) => {
+    filteredQueueProjects.forEach((p) => {
       byCategory[p.revisionCategory] = (byCategory[p.revisionCategory] || 0) + 1;
     });
-    const days = filteredProjects.map((p) => p.daysInRevision);
+    const days = filteredQueueProjects.map((p) => p.daysInRevision);
     const avgDays = days.length > 0 ? Math.round(days.reduce((a, b) => a + b, 0) / days.length) : 0;
     const longestWait = days.length > 0 ? Math.max(...days) : 0;
-    return { total, byCategory, avgDays, longestWait };
-  }, [filteredProjects]);
+    const totalRevisionEvents = filteredScopeProjects.reduce((sum, p) => sum + p.totalRevisionCount, 0);
+    const avgRevisionsPerProject = filteredScopeProjects.length > 0 ? Math.round((totalRevisionEvents / filteredScopeProjects.length) * 10) / 10 : 0;
+    return { queueTotal, completedTotal, byCategory, avgDays, longestWait, totalRevisionEvents, avgRevisionsPerProject };
+  }, [filteredQueueProjects, filteredScopeProjects]);
 
   // Export
   const exportRows = useMemo(
@@ -190,6 +233,11 @@ export default function DesignRevisionsPage() {
       designStatus: p.designStatus || "",
       revisionCategory: p.revisionCategory,
       daysInRevision: p.daysInRevision,
+      daRevisionCounter: p.daRevisionCount,
+      asBuiltRevisionCounter: p.asBuiltRevisionCount,
+      permitRevisionCounter: p.permitRevisionCount,
+      interconnectionRevisionCounter: p.interconnectionRevisionCount,
+      totalRevisionCount: p.totalRevisionCount,
       equipment: p.eqSummary,
       designCompletionDate: p.designCompletionDate || "",
       amount: p.amount || 0,
@@ -258,10 +306,21 @@ export default function DesignRevisionsPage() {
           onChange={(v) => setPersisted({ ...persistedFilters, owners: v })}
           accentColor="indigo"
         />
+        <MultiSelectFilter
+          label="Revision Type"
+          options={revisionTypeOptions}
+          selected={revisionTypes}
+          onChange={setRevisionTypes}
+          accentColor="indigo"
+        />
 
         {hasActiveFilters && (
           <button
-            onClick={() => { clearFilters(); setSearchQuery(""); }}
+            onClick={() => {
+              clearFilters();
+              setRevisionTypes([]);
+              setSearchQuery("");
+            }}
             className="px-3 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg transition-colors"
           >
             Clear All
@@ -271,18 +330,22 @@ export default function DesignRevisionsPage() {
 
       {/* Summary Stats */}
       <div className="mb-6 grid grid-cols-2 md:grid-cols-4 gap-4 stagger-grid">
-        <MiniStat label="Total in Revision" value={loading ? null : stats.total} />
+        <MiniStat
+          label="In Revision Queue"
+          value={loading ? null : stats.queueTotal}
+          subtitle={`Completed: ${stats.completedTotal}`}
+        />
         <MiniStat label="Avg Days in Revision" value={loading ? null : `${stats.avgDays}d`} alert={stats.avgDays > 14} />
         <MiniStat label="Longest Wait" value={loading ? null : `${stats.longestWait}d`} alert={stats.longestWait > 21} />
         <MiniStat
-          label="DA Revisions"
-          value={loading ? null : stats.byCategory["DA"] || 0}
-          subtitle={`Permit: ${stats.byCategory["Permit"] || 0} \u00B7 Utility: ${stats.byCategory["Utility"] || 0}`}
+          label="Revision Events Logged"
+          value={loading ? null : stats.totalRevisionEvents}
+          subtitle={`Avg ${stats.avgRevisionsPerProject}/project`}
         />
       </div>
 
       {/* Category breakdown */}
-      {!loading && filteredProjects.length > 0 && (
+      {!loading && filteredQueueProjects.length > 0 && (
         <div className="mb-6 bg-surface border border-t-border rounded-xl p-6 shadow-card">
           <h2 className="text-lg font-semibold text-foreground mb-4">Revisions by Category</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -310,7 +373,7 @@ export default function DesignRevisionsPage() {
             ))}
           </div>
         ) : sortedProjects.length === 0 ? (
-          <div className="p-8 text-center text-muted">No projects currently in design revision.</div>
+          <div className="p-8 text-center text-muted">No projects currently in the active revision queue.</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -333,6 +396,9 @@ export default function DesignRevisionsPage() {
                   </th>
                   <th className="p-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("daysInRevision")}>
                     Days in Revision{sortIndicator("daysInRevision")}
+                  </th>
+                  <th className="p-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("totalRevisions")}>
+                    Revisions{sortIndicator("totalRevisions")}
                   </th>
                   <th className="p-3">Equipment</th>
                   <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("designComplete")}>
@@ -371,6 +437,7 @@ export default function DesignRevisionsPage() {
                         {p.daysInRevision}d
                       </span>
                     </td>
+                    <td className="p-3 text-right text-foreground">{p.totalRevisionCount}</td>
                     <td className="p-3 text-muted text-xs">{p.eqSummary}</td>
                     <td className="p-3 text-muted">{formatDate(p.designCompletionDate)}</td>
                     <td className="p-3 text-right text-foreground">{formatMoney(p.amount || 0)}</td>
@@ -385,9 +452,8 @@ export default function DesignRevisionsPage() {
       {/* Note about revision tracking */}
       <div className="mb-6 bg-surface/50 border border-t-border rounded-lg p-4">
         <p className="text-xs text-muted">
-          <span className="font-medium text-foreground">Note:</span> Revision count tracking is not currently available — HubSpot stores only the current design status.
-          Projects that cycle through multiple revisions will show only their current status and time in that status.
-          Future enhancement: track revision history via HubSpot property change events.
+          <span className="font-medium text-foreground">Note:</span> Revision counts are sourced from HubSpot counter properties
+          (DA, As-Built, Permit, Interconnection, and Total). Blank counters are treated as 0.
         </p>
       </div>
     </DashboardShell>
