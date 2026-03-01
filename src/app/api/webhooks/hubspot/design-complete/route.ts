@@ -27,7 +27,7 @@ import { validateHubSpotWebhook } from "@/lib/hubspot-webhook-auth";
 import { runDesignCompletePipeline } from "@/lib/bom-pipeline";
 import { acquirePipelineLock, DuplicateRunError } from "@/lib/bom-pipeline-lock";
 import { PIPELINE_ACTOR } from "@/lib/actor-context";
-import type { BomPipelineTrigger } from "@/generated/prisma";
+import type { BomPipelineTrigger } from "@/generated/prisma/enums";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -227,4 +227,3 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({ status: "ok", triggered });
 }
-

@@ -10,7 +10,7 @@
  */
 
 import { prisma } from "@/lib/db";
-import type { BomPipelineTrigger } from "@/generated/prisma";
+import type { BomPipelineTrigger } from "@/generated/prisma/enums";
 
 // ---------------------------------------------------------------------------
 // Constants
