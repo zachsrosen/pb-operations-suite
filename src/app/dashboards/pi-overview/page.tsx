@@ -10,16 +10,17 @@ import { useProjectData } from "@/hooks/useProjectData";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { usePIOverviewFilters } from "@/stores/dashboard-filters";
 import {
-  PERMIT_ACTIVE_STATUSES,
-  PERMIT_REVISION_STATUSES,
-  IC_ACTIVE_STATUSES,
-  IC_REVISION_STATUSES,
-  PTO_PIPELINE_STATUSES,
+  isPermitActiveStatus,
+  isICActiveStatus,
+  isPTOPipelineStatus,
+  getPermitStatusDisplayName,
+  getICStatusDisplayName,
 } from "@/lib/pi-statuses";
 
 const PI_LINKS = [
   { href: "/dashboards/pi-metrics", label: "P&I Metrics", desc: "Permit, IC, and PTO KPIs" },
   { href: "/dashboards/pi-action-queue", label: "Action Queue", desc: "Projects needing action" },
+  { href: "/dashboards/pi-revisions", label: "P&I Revisions", desc: "Ready-to-resubmit and resubmitted queue" },
   { href: "/dashboards/ahj-tracker", label: "AHJ Tracker", desc: "Per-AHJ permit analytics" },
   { href: "/dashboards/utility-tracker", label: "Utility Tracker", desc: "Per-utility IC analytics" },
   { href: "/dashboards/pi-timeline", label: "Timeline & SLA", desc: "SLA targets & turnaround" },
@@ -106,13 +107,13 @@ export default function PIOverviewPage() {
   // Hero metrics
   const heroMetrics = useMemo(() => {
     const permitsPending = filteredProjects.filter(
-      (p) => p.permittingStatus && [...PERMIT_ACTIVE_STATUSES, ...PERMIT_REVISION_STATUSES].includes(p.permittingStatus)
+      (p) => isPermitActiveStatus(p.permittingStatus)
     );
     const icActive = filteredProjects.filter(
-      (p) => p.interconnectionStatus && [...IC_ACTIVE_STATUSES, ...IC_REVISION_STATUSES].includes(p.interconnectionStatus)
+      (p) => isICActiveStatus(p.interconnectionStatus)
     );
     const ptoPipeline = filteredProjects.filter(
-      (p) => p.ptoStatus && PTO_PIPELINE_STATUSES.includes(p.ptoStatus)
+      (p) => isPTOPipelineStatus(p.ptoStatus)
     );
 
     // Avg permit turnaround (submit -> issue)
@@ -141,7 +142,8 @@ export default function PIOverviewPage() {
     const counts: Record<string, number> = {};
     filteredProjects.forEach((p) => {
       if (p.permittingStatus) {
-        counts[p.permittingStatus] = (counts[p.permittingStatus] || 0) + 1;
+        const label = getPermitStatusDisplayName(p.permittingStatus);
+        counts[label] = (counts[label] || 0) + 1;
       }
     });
     const max = Math.max(1, ...Object.values(counts));
@@ -155,7 +157,8 @@ export default function PIOverviewPage() {
     const counts: Record<string, number> = {};
     filteredProjects.forEach((p) => {
       if (p.interconnectionStatus) {
-        counts[p.interconnectionStatus] = (counts[p.interconnectionStatus] || 0) + 1;
+        const label = getICStatusDisplayName(p.interconnectionStatus);
+        counts[label] = (counts[label] || 0) + 1;
       }
     });
     const max = Math.max(1, ...Object.values(counts));

@@ -222,6 +222,7 @@ export const usePITimelineFilters = createPIFilterHook("pi-timeline");
 export const usePIActionQueueFilters = createPIFilterHook("pi-action-queue");
 export const useAHJTrackerFilters = createPIFilterHook("ahj-tracker");
 export const useUtilityTrackerFilters = createPIFilterHook("utility-tracker");
+export const usePIRevisionsFilters = createPIFilterHook("pi-revisions");
 
 // ===== D&E Suite filters (5 dashboards) =====
 

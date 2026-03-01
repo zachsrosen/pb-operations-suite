@@ -10,6 +10,7 @@ import { RawProject } from "@/lib/types";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { usePIMetricsFilters } from "@/stores/dashboard-filters";
+import { getPermitStatusDisplayName } from "@/lib/pi-statuses";
 
 export default function PIMetricsPage() {
   const { trackDashboardView } = useActivityTracking();
@@ -167,9 +168,10 @@ export default function PIMetricsPage() {
     const counts: Record<string, { count: number; revenue: number }> = {};
     filteredProjects.forEach((p) => {
       if (p.permittingStatus) {
-        if (!counts[p.permittingStatus]) counts[p.permittingStatus] = { count: 0, revenue: 0 };
-        counts[p.permittingStatus].count += 1;
-        counts[p.permittingStatus].revenue += p.amount || 0;
+        const label = getPermitStatusDisplayName(p.permittingStatus);
+        if (!counts[label]) counts[label] = { count: 0, revenue: 0 };
+        counts[label].count += 1;
+        counts[label].revenue += p.amount || 0;
       }
     });
     const max = Math.max(1, ...Object.values(counts).map((c) => c.count));

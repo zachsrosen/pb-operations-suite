@@ -40,6 +40,7 @@ const DASHBOARD_LINKS = [
   { name: "Design & Engineering", path: "/dashboards/design", description: "Track design progress and approvals" },
   { name: "Permitting & Inspections", path: "/dashboards/permitting", description: "Permit status and inspection tracking" },
   { name: "Interconnection & PTO", path: "/dashboards/interconnection", description: "Utility interconnection and PTO status" },
+  { name: "P&I Revisions", path: "/dashboards/pi-revisions", description: "Ready-to-resubmit and resubmitted permit/IC revisions" },
   { name: "Incentives", path: "/dashboards/incentives", description: "Rebate and incentive tracking" },
   // Other Pipelines
   { name: "Sales Pipeline", path: "/dashboards/sales", description: "Active deals and proposals" },

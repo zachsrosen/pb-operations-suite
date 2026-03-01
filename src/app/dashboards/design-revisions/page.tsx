@@ -21,31 +21,15 @@ interface FullEquipment {
   systemSizeKwac: number;
 }
 
-// Queue statuses: items that still need active revision work
-const REVISION_QUEUE_STATUSES = [
-  // DA Revisions
-  "Revision Needed - DA Rejected",
-  "DA Revision In Progress",
-  // Permit/AHJ Revisions
-  "Revision Needed - Rejected by AHJ",
-  "Permit Revision In Progress",
-  // Utility Revisions
-  "Revision Needed - Rejected by Utility",
-  "Utility Revision In Progress",
-  // As-Built Revisions
-  "Revision Needed - As-Built",
-  "As-Built Revision In Progress",
-];
+function isDesignRevisionStatus(designStatus: string): boolean {
+  const s = designStatus.toLowerCase();
+  return s.includes("revision") || s.includes("as-built");
+}
 
-// Completed statuses: useful for rollup stats but not part of active queue
-const REVISION_COMPLETED_STATUSES = [
-  "DA Revision Completed",
-  "Permit Revision Completed",
-  "Utility Revision Completed",
-  "As-Built Revision Completed",
-];
-
-const REVISION_STATUSES = [...REVISION_QUEUE_STATUSES, ...REVISION_COMPLETED_STATUSES];
+function isDesignRevisionQueueStatus(designStatus: string): boolean {
+  const s = designStatus.toLowerCase();
+  return s.includes("needed") || s.includes("in progress");
+}
 
 // Map statuses to a revision category for grouping / badges
 function getRevisionCategory(designStatus: string): string {
@@ -63,6 +47,13 @@ const CATEGORY_COLORS: Record<string, string> = {
   "As-Built": "bg-indigo-500/20 text-indigo-400 border-indigo-500/30",
   Other: "bg-zinc-500/20 text-zinc-400 border-zinc-500/30",
 };
+
+function getRevisionQueueState(designStatus: string): "Needed" | "In Progress" | "Completed" {
+  const s = designStatus.toLowerCase();
+  if (s.includes("in progress")) return "In Progress";
+  if (s.includes("needed")) return "Needed";
+  return "Completed";
+}
 
 type SortField = "name" | "designLead" | "location" | "category" | "designStatus" | "daysInRevision" | "totalRevisions" | "designComplete" | "amount";
 type SortDir = "asc" | "desc";
@@ -83,6 +74,7 @@ export default function DesignRevisionsPage() {
   // ---- Filter state ----
   const { filters: persistedFilters, setFilters: setPersisted, clearFilters } = useDesignRevisionsFilters();
   const [revisionTypes, setRevisionTypes] = useState<string[]>([]);
+  const [queueStates, setQueueStates] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
@@ -95,7 +87,7 @@ export default function DesignRevisionsPage() {
   // Include queue + completed statuses for aggregate stats
   const revisionScopeProjects = useMemo(() => {
     return safeProjects
-      .filter((p) => p.designStatus && REVISION_STATUSES.includes(p.designStatus))
+      .filter((p) => p.designStatus && isDesignRevisionStatus(p.designStatus))
       .map((p) => {
         const eq = p.equipment as FullEquipment | undefined;
         const eqSummary = eq
@@ -112,6 +104,7 @@ export default function DesignRevisionsPage() {
           ...p,
           daysInRevision: p.daysSinceStageMovement ?? 0,
           revisionCategory: getRevisionCategory(p.designStatus!),
+          queueState: getRevisionQueueState(p.designStatus!),
           eqSummary,
           daRevisionCount,
           asBuiltRevisionCount,
@@ -138,11 +131,19 @@ export default function DesignRevisionsPage() {
         .map((category) => ({ value: category, label: category })),
     [revisionScopeProjects]
   );
+  const queueStateOptions: FilterOption[] = useMemo(
+    () => [
+      { value: "Needed", label: "Needed" },
+      { value: "In Progress", label: "In Progress" },
+    ],
+    []
+  );
 
   const hasActiveFilters =
     persistedFilters.locations.length > 0 ||
     persistedFilters.owners.length > 0 ||
     revisionTypes.length > 0 ||
+    queueStates.length > 0 ||
     searchQuery.length > 0;
 
   // ---- Filtered projects for stats context (queue + completed) ----
@@ -173,9 +174,14 @@ export default function DesignRevisionsPage() {
   }, [revisionScopeProjects, persistedFilters, revisionTypes, searchQuery]);
 
   // Active queue list (exclude completed statuses from table)
-  const filteredQueueProjects = useMemo(
-    () => filteredScopeProjects.filter((p) => REVISION_QUEUE_STATUSES.includes(p.designStatus || "")),
-    [filteredScopeProjects]
+  const filteredQueueProjects = useMemo(() => {
+    let list = filteredScopeProjects.filter((p) => isDesignRevisionQueueStatus(p.designStatus || ""));
+    if (queueStates.length > 0) {
+      list = list.filter((p) => queueStates.includes(p.queueState));
+    }
+    return list;
+  },
+    [filteredScopeProjects, queueStates]
   );
 
   // Sort
@@ -313,12 +319,20 @@ export default function DesignRevisionsPage() {
           onChange={setRevisionTypes}
           accentColor="indigo"
         />
+        <MultiSelectFilter
+          label="Queue State"
+          options={queueStateOptions}
+          selected={queueStates}
+          onChange={setQueueStates}
+          accentColor="indigo"
+        />
 
         {hasActiveFilters && (
           <button
             onClick={() => {
               clearFilters();
               setRevisionTypes([]);
+              setQueueStates([]);
               setSearchQuery("");
             }}
             className="px-3 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg transition-colors"

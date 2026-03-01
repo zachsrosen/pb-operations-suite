@@ -25,6 +25,13 @@ const LINKS: SuitePageCard[] = [
     section: "Pipeline",
   },
   {
+    href: "/dashboards/pi-revisions",
+    title: "P&I Revisions",
+    description: "Revision queue for ready-to-resubmit and resubmitted permit/IC jobs.",
+    tag: "REVISIONS",
+    section: "Pipeline",
+  },
+  {
     href: "/dashboards/ahj-tracker",
     title: "AHJ Tracker",
     description: "Per-AHJ turnaround times, rejection rates, volume, and trending analytics.",

@@ -9,7 +9,7 @@ import { RawProject } from "@/lib/types";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { useAHJTrackerFilters } from "@/stores/dashboard-filters";
-import { PERMIT_ACTIVE_STATUSES, PERMIT_REVISION_STATUSES } from "@/lib/pi-statuses";
+import { isPermitActiveStatus, isPermitRevisionStatus, getPermitStatusDisplayName } from "@/lib/pi-statuses";
 
 // ---- Types ----
 
@@ -148,10 +148,10 @@ export default function AHJTrackerPage() {
       const name = recordEntry?.display || dealEntry?.display || key;
 
       const activePermits = deals.filter(
-        (p) => p.permittingStatus && [...PERMIT_ACTIVE_STATUSES, ...PERMIT_REVISION_STATUSES].includes(p.permittingStatus)
+        (p) => isPermitActiveStatus(p.permittingStatus)
       ).length;
       const inRevision = deals.filter(
-        (p) => p.permittingStatus && PERMIT_REVISION_STATUSES.includes(p.permittingStatus)
+        (p) => isPermitRevisionStatus(p.permittingStatus)
       ).length;
       const revenue = deals.reduce((s, p) => s + (p.amount || 0), 0);
 
@@ -462,7 +462,7 @@ export default function AHJTrackerPage() {
                                       )}
                                     </td>
                                     <td className="py-2 pr-4 text-muted">{p.stage}</td>
-                                    <td className="py-2 pr-4 text-muted text-xs">{p.permittingStatus || "—"}</td>
+                                    <td className="py-2 pr-4 text-muted text-xs">{getPermitStatusDisplayName(p.permittingStatus) || "—"}</td>
                                     <td className="py-2 pr-4 text-muted">{p.permitLead || "Unknown"}</td>
                                     <td className="py-2 pr-4 text-right">
                                       <span className={`font-semibold ${(p.daysSinceStageMovement ?? 0) > 21 ? "text-red-400" : (p.daysSinceStageMovement ?? 0) > 14 ? "text-yellow-400" : "text-foreground"}`}>

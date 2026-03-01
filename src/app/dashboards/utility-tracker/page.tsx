@@ -9,7 +9,12 @@ import { RawProject } from "@/lib/types";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { useUtilityTrackerFilters } from "@/stores/dashboard-filters";
-import { IC_ACTIVE_STATUSES, IC_REVISION_STATUSES, PTO_PIPELINE_STATUSES } from "@/lib/pi-statuses";
+import {
+  isICActiveStatus,
+  isPTOPipelineStatus,
+  getICStatusDisplayName,
+  getPTOStatusDisplayName,
+} from "@/lib/pi-statuses";
 
 // ---- Types ----
 
@@ -152,10 +157,10 @@ export default function UtilityTrackerPage() {
       const name = recordEntry?.display || dealEntry?.display || key;
 
       const activeIC = deals.filter(
-        (p) => p.interconnectionStatus && [...IC_ACTIVE_STATUSES, ...IC_REVISION_STATUSES].includes(p.interconnectionStatus)
+        (p) => isICActiveStatus(p.interconnectionStatus)
       ).length;
       const ptoPipeline = deals.filter(
-        (p) => p.ptoStatus && PTO_PIPELINE_STATUSES.includes(p.ptoStatus)
+        (p) => isPTOPipelineStatus(p.ptoStatus)
       ).length;
       const revenue = deals.reduce((s, p) => s + (p.amount || 0), 0);
 
@@ -474,8 +479,8 @@ export default function UtilityTrackerPage() {
                                         )}
                                       </td>
                                       <td className="py-2 pr-4 text-muted">{p.stage}</td>
-                                      <td className="py-2 pr-4 text-muted text-xs">{p.interconnectionStatus || "—"}</td>
-                                      <td className="py-2 pr-4 text-muted text-xs">{p.ptoStatus || "—"}</td>
+                                      <td className="py-2 pr-4 text-muted text-xs">{getICStatusDisplayName(p.interconnectionStatus) || "—"}</td>
+                                      <td className="py-2 pr-4 text-muted text-xs">{getPTOStatusDisplayName(p.ptoStatus) || "—"}</td>
                                       <td className="py-2 pr-4 text-muted">{p.interconnectionsLead || "Unknown"}</td>
                                       <td className="py-2 pr-4 text-right">
                                         <span className={`font-semibold ${(p.daysSinceStageMovement ?? 0) > 21 ? "text-red-400" : (p.daysSinceStageMovement ?? 0) > 14 ? "text-yellow-400" : "text-foreground"}`}>

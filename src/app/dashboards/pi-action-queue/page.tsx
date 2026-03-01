@@ -10,9 +10,12 @@ import { useProjectData } from "@/hooks/useProjectData";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { usePIActionQueueFilters } from "@/stores/dashboard-filters";
 import {
-  PERMIT_ACTION_STATUSES,
-  IC_ACTION_STATUSES,
-  PTO_ACTION_STATUSES,
+  getPermitAction,
+  getICAction,
+  getPTOAction,
+  getPermitStatusDisplayName,
+  getICStatusDisplayName,
+  getPTOStatusDisplayName,
   STALE_THRESHOLD_DAYS,
 } from "@/lib/pi-statuses";
 
@@ -108,12 +111,13 @@ export default function PIActionQueuePage() {
       const days = p.daysSinceStageMovement ?? 0;
 
       // Permit actions
-      if (p.permittingStatus && PERMIT_ACTION_STATUSES[p.permittingStatus]) {
+      const permitAction = getPermitAction(p.permittingStatus);
+      if (p.permittingStatus && permitAction) {
         items.push({
           project: p,
           type: "permit",
-          status: p.permittingStatus,
-          action: PERMIT_ACTION_STATUSES[p.permittingStatus],
+          status: getPermitStatusDisplayName(p.permittingStatus),
+          action: permitAction,
           daysInStatus: days,
           isStale: days > STALE_THRESHOLD_DAYS,
         });
@@ -121,12 +125,13 @@ export default function PIActionQueuePage() {
       }
 
       // IC actions
-      if (p.interconnectionStatus && IC_ACTION_STATUSES[p.interconnectionStatus]) {
+      const icAction = getICAction(p.interconnectionStatus);
+      if (p.interconnectionStatus && icAction) {
         items.push({
           project: p,
           type: "interconnection",
-          status: p.interconnectionStatus,
-          action: IC_ACTION_STATUSES[p.interconnectionStatus],
+          status: getICStatusDisplayName(p.interconnectionStatus),
+          action: icAction,
           daysInStatus: days,
           isStale: days > STALE_THRESHOLD_DAYS,
         });
@@ -134,12 +139,13 @@ export default function PIActionQueuePage() {
       }
 
       // PTO actions
-      if (p.ptoStatus && PTO_ACTION_STATUSES[p.ptoStatus]) {
+      const ptoAction = getPTOAction(p.ptoStatus);
+      if (p.ptoStatus && ptoAction) {
         items.push({
           project: p,
           type: "pto",
-          status: p.ptoStatus,
-          action: PTO_ACTION_STATUSES[p.ptoStatus],
+          status: getPTOStatusDisplayName(p.ptoStatus),
+          action: ptoAction,
           daysInStatus: days,
           isStale: days > STALE_THRESHOLD_DAYS,
         });

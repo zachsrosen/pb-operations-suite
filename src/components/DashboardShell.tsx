@@ -45,6 +45,7 @@ const SUITE_MAP: Record<string, { href: string; label: string }> = {
   "/dashboards/pi-overview": { href: "/suites/permitting-interconnection", label: "P&I" },
   "/dashboards/pi-metrics": { href: "/suites/permitting-interconnection", label: "P&I" },
   "/dashboards/pi-action-queue": { href: "/suites/permitting-interconnection", label: "P&I" },
+  "/dashboards/pi-revisions": { href: "/suites/permitting-interconnection", label: "P&I" },
   "/dashboards/ahj-tracker": { href: "/suites/permitting-interconnection", label: "P&I" },
   "/dashboards/utility-tracker": { href: "/suites/permitting-interconnection", label: "P&I" },
   "/dashboards/pi-timeline": { href: "/suites/permitting-interconnection", label: "P&I" },
