@@ -51,7 +51,7 @@ function getGroupStyle(group: InternalPrototypeGroup) {
     };
   }
 
-  if (group === "department" || group === "documentation") {
+  if (group === "field_execution" || group === "documentation") {
     return {
       background:
         "radial-gradient(circle at 10% 4%, rgba(22, 163, 74, 0.14), transparent 36%), radial-gradient(circle at 89% 7%, rgba(250, 204, 21, 0.14), transparent 35%), linear-gradient(162deg, #f8fbfc 0%, #ecf4f3 50%, #f8f2e9 100%)",
@@ -96,7 +96,7 @@ function getFocusLines(group: InternalPrototypeGroup) {
   if (group === "executive") {
     return ["KPI clarity first", "Risk-driven routing", "Decision prompts in context"];
   }
-  if (group === "department") {
+  if (group === "field_execution") {
     return ["Phase handoff visibility", "Team ownership clarity", "Downstream bottleneck focus"];
   }
   if (group === "documentation") {
