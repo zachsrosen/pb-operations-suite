@@ -178,7 +178,7 @@ export default function PIOverviewPage() {
     return safeProjects
       .filter(
         (p) =>
-          (p.stage === "Permitting" || p.stage === "Permission To Operate" || p.stage === "Interconnection") &&
+          (p.stage === "Permitting & Interconnection" || p.stage === "Permission To Operate") &&
           (p.daysSinceStageMovement ?? 0) > 0
       )
       .sort((a, b) => (b.daysSinceStageMovement ?? 0) - (a.daysSinceStageMovement ?? 0))

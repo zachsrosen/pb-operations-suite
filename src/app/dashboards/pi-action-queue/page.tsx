@@ -149,7 +149,7 @@ export default function PIActionQueuePage() {
       if (
         !seen.has(p.id) &&
         days > STALE_THRESHOLD_DAYS &&
-        (p.stage === "Permitting" || p.stage === "Interconnection" || p.stage === "Permission To Operate")
+        (p.stage === "Permitting & Interconnection" || p.stage === "Permission To Operate")
       ) {
         const statusLabel = p.permittingStatus || p.interconnectionStatus || p.ptoStatus || p.stage;
         items.push({
@@ -196,15 +196,17 @@ export default function PIActionQueuePage() {
     [sortField]
   );
 
-  // Stats
+  // Stats — unique project counts for total and stale; action-item counts for type tabs
   const stats = useMemo(() => {
     const byType: Record<string, number> = {};
-    let staleCount = 0;
+    const uniqueProjects = new Set<string>();
+    const staleProjects = new Set<string>();
     actionItems.forEach((i) => {
       byType[i.type] = (byType[i.type] || 0) + 1;
-      if (i.isStale) staleCount++;
+      uniqueProjects.add(i.project.id);
+      if (i.isStale) staleProjects.add(i.project.id);
     });
-    return { total: actionItems.length, byType, staleCount };
+    return { total: uniqueProjects.size, byType, staleCount: staleProjects.size };
   }, [actionItems]);
 
   // Export
