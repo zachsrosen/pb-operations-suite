@@ -79,48 +79,52 @@ export default function AHJRequirementsPage() {
   useEffect(() => {
     if (!loading && !hasTrackedView.current) {
       hasTrackedView.current = true;
-      trackDashboardView("ahj-requirements", { projectCount: safeProjects.length, ahjCount: ahjs.length });
+      trackDashboardView("ahj-requirements", { projectCount: safeProjects.length });
     }
-  }, [loading, safeProjects.length, ahjs.length, trackDashboardView]);
+  }, [loading, safeProjects.length, trackDashboardView]);
 
   // Sort state
   const [sortField, setSortField] = useState<SortField>("dealCount");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [expandedAhj, setExpandedAhj] = useState<string | null>(null);
 
-  // Group projects by AHJ name
+  // Group projects by AHJ name (case-insensitive key, preserve display name)
   const projectsByAhj = useMemo(() => {
-    const map: Record<string, ExtendedProject[]> = {};
+    const map: Record<string, { display: string; projects: ExtendedProject[] }> = {};
     safeProjects.forEach((p) => {
       const ahj = p.ahj?.trim();
       if (ahj) {
-        if (!map[ahj]) map[ahj] = [];
-        map[ahj].push(p);
+        const key = ahj.toLowerCase();
+        if (!map[key]) map[key] = { display: ahj, projects: [] };
+        map[key].projects.push(p);
       }
     });
     return map;
   }, [safeProjects]);
 
-  // Build AHJ name → custom object record map
-  const ahjByName = useMemo(() => {
-    const map: Record<string, AHJRecord> = {};
+  // Build AHJ name → custom object record map (case-insensitive key)
+  const ahjByKey = useMemo(() => {
+    const map: Record<string, { display: string; record: AHJRecord }> = {};
     ahjs.forEach((a) => {
       const name = a.properties.record_name?.trim();
-      if (name) map[name] = a;
+      if (name) map[name.toLowerCase()] = { display: name, record: a };
     });
     return map;
   }, [ahjs]);
 
   // Merged AHJ rows: combine deal-level stats with custom object properties
   const ahjRows = useMemo(() => {
-    const allAhjNames = new Set([
+    const allKeys = new Set([
       ...Object.keys(projectsByAhj),
-      ...Object.keys(ahjByName),
+      ...Object.keys(ahjByKey),
     ]);
 
-    return Array.from(allAhjNames).map((name) => {
-      const deals = projectsByAhj[name] || [];
-      const record = ahjByName[name];
+    return Array.from(allKeys).map((key) => {
+      const dealEntry = projectsByAhj[key];
+      const recordEntry = ahjByKey[key];
+      const deals = dealEntry?.projects || [];
+      const record = recordEntry?.record;
+      const name = recordEntry?.display || dealEntry?.display || key;
       const inRevision = deals.filter(
         (p) => p.designStatus && REVISION_STATUSES.includes(p.designStatus)
       ).length;
@@ -148,7 +152,7 @@ export default function AHJRequirementsPage() {
         portalLink: record?.properties.portal_link || null,
       };
     });
-  }, [projectsByAhj, ahjByName]);
+  }, [projectsByAhj, ahjByKey]);
 
   // Sort
   const sortedRows = useMemo(() => {

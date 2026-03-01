@@ -63,51 +63,53 @@ export default function UtilityDesignRequirementsPage() {
   useEffect(() => {
     if (!loading && !hasTrackedView.current) {
       hasTrackedView.current = true;
-      trackDashboardView("utility-design-requirements", { projectCount: safeProjects.length, utilityCount: utilities.length });
+      trackDashboardView("utility-design-requirements", { projectCount: safeProjects.length });
     }
-  }, [loading, safeProjects.length, utilities.length, trackDashboardView]);
+  }, [loading, safeProjects.length, trackDashboardView]);
 
   // Sort state
   const [sortField, setSortField] = useState<SortField>("dealCount");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [expandedUtility, setExpandedUtility] = useState<string | null>(null);
 
-  // Group projects by utility name
+  // Group projects by utility name (case-insensitive key, preserve display name)
   const projectsByUtility = useMemo(() => {
-    const map: Record<string, ExtendedProject[]> = {};
+    const map: Record<string, { display: string; projects: ExtendedProject[] }> = {};
     safeProjects.forEach((p) => {
       const util = p.utility?.trim();
       if (util) {
-        if (!map[util]) map[util] = [];
-        map[util].push(p);
+        const key = util.toLowerCase();
+        if (!map[key]) map[key] = { display: util, projects: [] };
+        map[key].projects.push(p);
       }
     });
     return map;
   }, [safeProjects]);
 
-  // Build Utility name → custom object record map
-  // Try both record_name and utility_company_name for matching
-  const utilityByName = useMemo(() => {
-    const map: Record<string, UtilityRecord> = {};
+  // Build Utility name → custom object record map (case-insensitive key)
+  // Key by record_name (canonical); fall back to utility_company_name only when record_name is absent
+  const utilityByKey = useMemo(() => {
+    const map: Record<string, { display: string; record: UtilityRecord }> = {};
     utilities.forEach((u) => {
-      const name = u.properties.record_name?.trim();
-      const companyName = u.properties.utility_company_name?.trim();
-      if (name) map[name] = u;
-      if (companyName && companyName !== name) map[companyName] = u;
+      const name = (u.properties.record_name ?? u.properties.utility_company_name)?.trim();
+      if (name) map[name.toLowerCase()] = { display: name, record: u };
     });
     return map;
   }, [utilities]);
 
   // Merged utility rows
   const utilityRows = useMemo(() => {
-    const allNames = new Set([
+    const allKeys = new Set([
       ...Object.keys(projectsByUtility),
-      ...Object.keys(utilityByName),
+      ...Object.keys(utilityByKey),
     ]);
 
-    return Array.from(allNames).map((name) => {
-      const deals = projectsByUtility[name] || [];
-      const record = utilityByName[name];
+    return Array.from(allKeys).map((key) => {
+      const dealEntry = projectsByUtility[key];
+      const recordEntry = utilityByKey[key];
+      const deals = dealEntry?.projects || [];
+      const record = recordEntry?.record;
+      const name = recordEntry?.display || dealEntry?.display || key;
       const revenue = deals.reduce((s, p) => s + (p.amount || 0), 0);
 
       return {
@@ -132,7 +134,7 @@ export default function UtilityDesignRequirementsPage() {
         portalLink: record?.properties.portal_link || null,
       };
     });
-  }, [projectsByUtility, utilityByName]);
+  }, [projectsByUtility, utilityByKey]);
 
   // Sort
   const sortedRows = useMemo(() => {
