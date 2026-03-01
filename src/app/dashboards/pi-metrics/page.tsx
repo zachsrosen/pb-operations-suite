@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { MetricCard } from "@/components/ui/MetricCard";
 import { MonthlyBarChart, aggregateMonthly } from "@/components/ui/MonthlyBarChart";
@@ -25,6 +25,39 @@ export default function PIMetricsPage() {
       trackDashboardView("pi-metrics", { projectCount: safeProjects.length });
     }
   }, [loading, safeProjects.length, trackDashboardView]);
+
+  const [locationFilter, setLocationFilter] = useState<string>("all");
+  const [leadFilter, setLeadFilter] = useState<string>("all");
+  const [stageFilter, setStageFilter] = useState<string>("all");
+
+  const locations = useMemo(() => {
+    const locs = new Set<string>();
+    safeProjects.forEach((p) => { if (p.pbLocation) locs.add(p.pbLocation); });
+    return Array.from(locs).sort();
+  }, [safeProjects]);
+
+  const leads = useMemo(() => {
+    const names = new Set<string>();
+    safeProjects.forEach((p) => {
+      if (p.permitLead) names.add(p.permitLead);
+      if (p.interconnectionsLead) names.add(p.interconnectionsLead);
+    });
+    return Array.from(names).sort();
+  }, [safeProjects]);
+
+  const stages = useMemo(() => {
+    const s = new Set<string>();
+    safeProjects.forEach((p) => { if (p.stage) s.add(p.stage); });
+    return Array.from(s).sort();
+  }, [safeProjects]);
+
+  const filteredProjects = useMemo(() => {
+    let result = safeProjects;
+    if (locationFilter !== "all") result = result.filter((p) => p.pbLocation === locationFilter);
+    if (leadFilter !== "all") result = result.filter((p) => p.permitLead === leadFilter || p.interconnectionsLead === leadFilter);
+    if (stageFilter !== "all") result = result.filter((p) => p.stage === stageFilter);
+    return result;
+  }, [safeProjects, locationFilter, leadFilter, stageFilter]);
 
   // ---- Permit Metrics ----
   const permitMetrics = useMemo(() => {
@@ -99,7 +132,7 @@ export default function PIMetricsPage() {
   // ---- Status Breakdown ----
   const permitStatusBreakdown = useMemo(() => {
     const counts: Record<string, { count: number; revenue: number }> = {};
-    safeProjects.forEach((p) => {
+    filteredProjects.forEach((p) => {
       if (p.permittingStatus) {
         if (!counts[p.permittingStatus]) counts[p.permittingStatus] = { count: 0, revenue: 0 };
         counts[p.permittingStatus].count += 1;
@@ -111,11 +144,11 @@ export default function PIMetricsPage() {
       .sort((a, b) => b[1].count - a[1].count)
       .slice(0, 12)
       .map(([status, data]) => ({ status, ...data, pct: (data.count / max) * 100 }));
-  }, [safeProjects]);
+  }, [filteredProjects]);
 
   // ---- Export ----
   const exportRows = useMemo(
-    () => safeProjects
+    () => filteredProjects
       .filter((p) => p.permittingStatus || p.interconnectionStatus || p.ptoStatus || p.permitSubmitDate)
       .map((p) => ({
         name: p.name,
@@ -134,7 +167,7 @@ export default function PIMetricsPage() {
         utility: p.utility || "",
         amount: p.amount || 0,
       })),
-    [safeProjects]
+    [filteredProjects]
   );
 
   return (
@@ -249,6 +282,22 @@ export default function PIMetricsPage() {
           accentColor="emerald"
           primaryLabel="granted"
         />
+      </div>
+
+      {/* Filters */}
+      <div className="flex gap-2 flex-wrap items-center">
+        <select value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)} className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground">
+          <option value="all">All Locations</option>
+          {locations.map((loc) => <option key={loc} value={loc}>{loc}</option>)}
+        </select>
+        <select value={leadFilter} onChange={(e) => setLeadFilter(e.target.value)} className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground">
+          <option value="all">All Leads</option>
+          {leads.map((name) => <option key={name} value={name}>{name}</option>)}
+        </select>
+        <select value={stageFilter} onChange={(e) => setStageFilter(e.target.value)} className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground">
+          <option value="all">All Stages</option>
+          {stages.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
       </div>
 
       {/* Revenue by Permitting Status */}

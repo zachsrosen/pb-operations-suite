@@ -77,6 +77,9 @@ export default function PIActionQueuePage() {
   const [sortField, setSortField] = useState<SortField>("daysInStatus");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [filterType, setFilterType] = useState<ActionType | "all">("all");
+  const [locationFilter, setLocationFilter] = useState<string>("all");
+  const [leadFilter, setLeadFilter] = useState<string>("all");
+  const [stageFilter, setStageFilter] = useState<string>("all");
 
   useEffect(() => {
     if (!loading && !hasTrackedView.current) {
@@ -85,12 +88,42 @@ export default function PIActionQueuePage() {
     }
   }, [loading, safeProjects.length, trackDashboardView]);
 
+  const locations = useMemo(() => {
+    const locs = new Set<string>();
+    safeProjects.forEach((p) => { if (p.pbLocation) locs.add(p.pbLocation); });
+    return Array.from(locs).sort();
+  }, [safeProjects]);
+
+  const leads = useMemo(() => {
+    const names = new Set<string>();
+    safeProjects.forEach((p) => {
+      if (p.permitLead) names.add(p.permitLead);
+      if (p.interconnectionsLead) names.add(p.interconnectionsLead);
+      if (p.projectManager) names.add(p.projectManager);
+    });
+    return Array.from(names).sort();
+  }, [safeProjects]);
+
+  const stages = useMemo(() => {
+    const s = new Set<string>();
+    safeProjects.forEach((p) => { if (p.stage) s.add(p.stage); });
+    return Array.from(s).sort();
+  }, [safeProjects]);
+
+  const filteredProjects = useMemo(() => {
+    let result = safeProjects;
+    if (locationFilter !== "all") result = result.filter((p) => p.pbLocation === locationFilter);
+    if (leadFilter !== "all") result = result.filter((p) => p.permitLead === leadFilter || p.interconnectionsLead === leadFilter || p.projectManager === leadFilter);
+    if (stageFilter !== "all") result = result.filter((p) => p.stage === stageFilter);
+    return result;
+  }, [safeProjects, locationFilter, leadFilter, stageFilter]);
+
   // Build action items
   const actionItems = useMemo(() => {
     const items: ActionItem[] = [];
     const seen = new Set<string>(); // avoid duplicates per project
 
-    safeProjects.forEach((p) => {
+    filteredProjects.forEach((p) => {
       const days = p.daysSinceStageMovement ?? 0;
 
       // Permit actions
@@ -151,7 +184,7 @@ export default function PIActionQueuePage() {
     });
 
     return items;
-  }, [safeProjects]);
+  }, [filteredProjects]);
 
   // Filter — stale tab shows all items where isStale is true (any type), not just type === "stale"
   const filteredItems = useMemo(() => {
@@ -240,6 +273,22 @@ export default function PIActionQueuePage() {
         <MiniStat label="IC Actions" value={loading ? null : stats.byType.interconnection || 0} />
         <MiniStat label="PTO Actions" value={loading ? null : stats.byType.pto || 0} />
         <MiniStat label="Stale (>14d)" value={loading ? null : stats.staleCount} alert={stats.staleCount > 10} />
+      </div>
+
+      {/* Location / Lead / Stage Filters */}
+      <div className="flex gap-2 flex-wrap items-center">
+        <select value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)} className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground">
+          <option value="all">All Locations</option>
+          {locations.map((loc) => <option key={loc} value={loc}>{loc}</option>)}
+        </select>
+        <select value={leadFilter} onChange={(e) => setLeadFilter(e.target.value)} className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground">
+          <option value="all">All Leads</option>
+          {leads.map((name) => <option key={name} value={name}>{name}</option>)}
+        </select>
+        <select value={stageFilter} onChange={(e) => setStageFilter(e.target.value)} className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground">
+          <option value="all">All Stages</option>
+          {stages.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
       </div>
 
       {/* Filter tabs */}
