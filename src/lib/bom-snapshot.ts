@@ -222,6 +222,99 @@ async function syncWithDirectInsert(
 }
 
 // ---------------------------------------------------------------------------
+// Lockdown helpers
+// ---------------------------------------------------------------------------
+
+/** Merge two candidateSkuIds arrays into a deduplicated union. */
+function mergeCandidateIds(
+  existing: unknown,
+  incoming: string[]
+): string[] {
+  const prev = Array.isArray(existing) ? (existing as string[]) : [];
+  return Array.from(new Set([...prev, ...incoming]));
+}
+
+/**
+ * Create-or-update a PendingCatalogPush record idempotently.
+ *
+ * If `existing` is provided we update it (merge candidateSkuIds, refresh expiry).
+ * Otherwise we create a new record, catching the P2002 unique-constraint race
+ * (two concurrent requests both passed findFirst before either created) by
+ * falling back to an update.
+ */
+async function upsertPendingPush(
+  existing: { id: string; candidateSkuIds: unknown } | null,
+  data: {
+    brand: string;
+    model: string;
+    description: string;
+    category: string;
+    canonicalKey: string;
+    candidateSkuIds: string[];
+    reviewReason: string;
+  }
+): Promise<void> {
+  const expiry = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
+
+  if (existing) {
+    await prisma!.pendingCatalogPush.update({
+      where: { id: existing.id },
+      data: {
+        candidateSkuIds: mergeCandidateIds(
+          existing.candidateSkuIds,
+          data.candidateSkuIds
+        ),
+        reviewReason: data.reviewReason,
+        expiresAt: expiry,
+      },
+    });
+    return;
+  }
+
+  try {
+    await prisma!.pendingCatalogPush.create({
+      data: {
+        brand: data.brand,
+        model: data.model,
+        description: data.description,
+        category: data.category,
+        systems: ["INTERNAL"],
+        requestedBy: "bom_extraction",
+        source: "bom_extraction",
+        canonicalKey: data.canonicalKey,
+        candidateSkuIds: data.candidateSkuIds,
+        reviewReason: data.reviewReason,
+        expiresAt: expiry,
+      },
+    });
+  } catch (err: unknown) {
+    // P2002 = unique constraint violation — another concurrent request won the
+    // race between our findFirst and this create. Fall back to update.
+    if ((err as { code?: string }).code === "P2002") {
+      const conflict = await prisma!.pendingCatalogPush.findFirst({
+        where: { canonicalKey: data.canonicalKey, status: "PENDING" },
+        select: { id: true, candidateSkuIds: true },
+      });
+      if (conflict) {
+        await prisma!.pendingCatalogPush.update({
+          where: { id: conflict.id },
+          data: {
+            candidateSkuIds: mergeCandidateIds(
+              conflict.candidateSkuIds,
+              data.candidateSkuIds
+            ),
+            reviewReason: data.reviewReason,
+            expiresAt: expiry,
+          },
+        });
+        return;
+      }
+    }
+    throw err;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Lockdown path: fuzzy match against canonical keys
 // ---------------------------------------------------------------------------
 
@@ -265,41 +358,15 @@ async function syncWithFuzzyMatch(
       select: { id: true, candidateSkuIds: true },
     });
 
-    if (existingPending) {
-      // Merge candidate IDs (union of old + new) and refresh expiry
-      const mergedIds = Array.from(
-        new Set([
-          ...(Array.isArray(existingPending.candidateSkuIds)
-            ? (existingPending.candidateSkuIds as string[])
-            : []),
-          ...candidateSkuIds,
-        ])
-      );
-      await prisma!.pendingCatalogPush.update({
-        where: { id: existingPending.id },
-        data: {
-          candidateSkuIds: mergedIds,
-          reviewReason,
-          expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
-        },
-      });
-    } else {
-      await prisma!.pendingCatalogPush.create({
-        data: {
-          brand: item.brand,
-          model: item.model,
-          description: item.description || "",
-          category: item.category,
-          systems: ["INTERNAL"],
-          requestedBy: "bom_extraction",
-          source: "bom_extraction",
-          canonicalKey: ck,
-          candidateSkuIds,
-          reviewReason,
-          expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
-        },
-      });
-    }
+    await upsertPendingPush(existingPending, {
+      brand: item.brand,
+      model: item.model,
+      description: item.description || "",
+      category: item.category,
+      canonicalKey: ck,
+      candidateSkuIds,
+      reviewReason,
+    });
     pending++;
   }
 

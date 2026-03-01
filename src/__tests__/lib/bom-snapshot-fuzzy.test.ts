@@ -293,4 +293,43 @@ describe("syncEquipmentSkus with lockdown", () => {
       })
     );
   });
+
+  it("recovers from P2002 race condition via retry-as-update", async () => {
+    mockFindMany.mockResolvedValue([]); // no SKU match
+    mockPendingFindFirst
+      // First check: nothing pending (both concurrent requests see this)
+      .mockResolvedValueOnce(null)
+      // Retry after P2002: now the other request's record exists
+      .mockResolvedValueOnce({
+        id: "race_winner_pending",
+        candidateSkuIds: [],
+      });
+
+    // Simulate P2002 unique constraint violation on create
+    const p2002 = Object.assign(new Error("Unique constraint"), { code: "P2002" });
+    mockPendingCreate.mockRejectedValueOnce(p2002);
+
+    const { syncEquipmentSkus } = await import("@/lib/bom-snapshot");
+    const items: BomItem[] = [
+      {
+        category: "MODULE",
+        brand: "RaceBrand",
+        model: "RaceModel",
+        description: "concurrent",
+        qty: 1,
+      },
+    ];
+
+    // Should not throw — P2002 is caught and retried as update
+    const result = await syncEquipmentSkus(items);
+
+    expect(mockPendingCreate).toHaveBeenCalledTimes(1); // attempted create
+    expect(mockPendingUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "race_winner_pending" },
+      })
+    );
+    expect(result.pending).toBe(1);
+    expect(result.created).toBe(0);
+  });
 });
