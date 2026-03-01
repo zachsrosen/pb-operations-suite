@@ -929,6 +929,8 @@ model PendingCatalogPush {
 
 enum BomPipelineTrigger {
   WEBHOOK_DESIGN_COMPLETE
+  WEBHOOK_READY_TO_BUILD
+  WEBHOOK_INSTALL_SCHEDULED
   MANUAL
   CRON
 }

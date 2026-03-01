@@ -1,9 +1,13 @@
 /**
- * HubSpot Design-Complete Webhook
+ * HubSpot Deal Stage Change Webhook — BOM Pipeline Trigger
  *
  * POST /api/webhooks/hubspot/design-complete
  *
- * Triggered by a HubSpot workflow when a deal leaves "Design & Engineering".
+ * Triggered by HubSpot workflows when a deal changes stage. Supports multiple
+ * trigger points via PIPELINE_STAGE_CONFIG env var:
+ *   - design_complete → WEBHOOK_DESIGN_COMPLETE (original trigger)
+ *   - ready_to_build  → WEBHOOK_READY_TO_BUILD  (unconditional re-run)
+ *
  * Validates the HubSpot webhook signature, deduplicates against in-flight
  * pipeline runs, then runs the full BOM pipeline in the background via
  * waitUntil() (respond 200 immediately so HubSpot doesn't retry).
@@ -13,7 +17,7 @@
  *
  * Dedupe: A partial unique index on BomPipelineRun(dealId) WHERE status='RUNNING'
  * ensures at most one concurrent run per deal. Stale locks (>10 min) are
- * auto-recovered before inserting a new RUNNING row.
+ * auto-recovered via the shared acquirePipelineLock() in bom-pipeline-lock.ts.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -21,7 +25,9 @@ import { waitUntil } from "@vercel/functions";
 import { prisma, logActivity } from "@/lib/db";
 import { validateHubSpotWebhook } from "@/lib/hubspot-webhook-auth";
 import { runDesignCompletePipeline } from "@/lib/bom-pipeline";
+import { acquirePipelineLock, DuplicateRunError } from "@/lib/bom-pipeline-lock";
 import { PIPELINE_ACTOR } from "@/lib/actor-context";
+import type { BomPipelineTrigger } from "@/generated/prisma";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -30,15 +36,70 @@ export const maxDuration = 300;
 // Config
 // ---------------------------------------------------------------------------
 
-/** Stale lock threshold: 10 minutes (pipeline maxDuration is 300s). */
-const STALE_LOCK_THRESHOLD_MS = 10 * 60 * 1000;
+/** Valid trigger type labels → Prisma enum values. */
+const VALID_TRIGGER_TYPES: Record<string, BomPipelineTrigger> = {
+  design_complete: "WEBHOOK_DESIGN_COMPLETE",
+  ready_to_build: "WEBHOOK_READY_TO_BUILD",
+} as const;
 
-/** Allowed target stage IDs (read at request time so env changes take effect). */
-function getAllowedTargetStages(): string[] {
-  return (process.env.DESIGN_COMPLETE_TARGET_STAGES ?? "")
+/**
+ * Parse PIPELINE_STAGE_CONFIG into a Map<stageId, BomPipelineTrigger>.
+ *
+ * Format: "stageId1:design_complete,stageId2:ready_to_build"
+ *
+ * Fallback (two levels):
+ * 1. If PIPELINE_STAGE_CONFIG is unset/empty → use DESIGN_COMPLETE_TARGET_STAGES
+ *    with all entries mapped to WEBHOOK_DESIGN_COMPLETE (backward compat).
+ * 2. If PIPELINE_STAGE_CONFIG is set but ALL entries are malformed (parsed map
+ *    is empty) → also fall back to DESIGN_COMPLETE_TARGET_STAGES with a
+ *    high-signal warning.
+ */
+function getStageConfig(): Map<string, BomPipelineTrigger> {
+  const rawConfig = (process.env.PIPELINE_STAGE_CONFIG ?? "").trim();
+
+  if (rawConfig) {
+    const map = new Map<string, BomPipelineTrigger>();
+    const entries = rawConfig.split(",").map((s) => s.trim()).filter(Boolean);
+
+    for (const entry of entries) {
+      const parts = entry.split(":");
+      if (parts.length !== 2) {
+        console.warn(`[design-complete] Malformed PIPELINE_STAGE_CONFIG entry (skipping): "${entry}"`);
+        continue;
+      }
+      const [stageId, typeLabel] = parts.map((p) => p.trim());
+      const trigger = VALID_TRIGGER_TYPES[typeLabel];
+      if (!trigger) {
+        console.warn(`[design-complete] Unknown trigger type in PIPELINE_STAGE_CONFIG (skipping): "${typeLabel}" in entry "${entry}"`);
+        continue;
+      }
+      map.set(stageId, trigger);
+    }
+
+    if (map.size > 0) {
+      console.log(`[design-complete] Stage config resolved: ${[...map.entries()].map(([k, v]) => `${k}→${v}`).join(", ")}`);
+      return map;
+    }
+
+    // All entries were malformed — fall through to legacy fallback with error
+    console.error(`[design-complete] PIPELINE_STAGE_CONFIG is set but all entries are malformed — falling back to DESIGN_COMPLETE_TARGET_STAGES`);
+  }
+
+  // Legacy fallback: DESIGN_COMPLETE_TARGET_STAGES → all mapped to WEBHOOK_DESIGN_COMPLETE
+  const legacyStages = (process.env.DESIGN_COMPLETE_TARGET_STAGES ?? "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
+
+  if (legacyStages.length > 0 && !rawConfig) {
+    console.warn(`[design-complete] Using deprecated DESIGN_COMPLETE_TARGET_STAGES — migrate to PIPELINE_STAGE_CONFIG`);
+  }
+
+  const map = new Map<string, BomPipelineTrigger>();
+  for (const stageId of legacyStages) {
+    map.set(stageId, "WEBHOOK_DESIGN_COMPLETE");
+  }
+  return map;
 }
 
 // ---------------------------------------------------------------------------
@@ -99,24 +160,29 @@ export async function POST(req: NextRequest) {
 
   // ── 5. Process each event ──
   const triggered: string[] = [];
+  const stageConfig = getStageConfig();
+
+  // Guard: if no stages are configured, skip all events (safe default)
+  if (stageConfig.size === 0) {
+    console.warn("[design-complete] No stage config found — skipping all events");
+    return NextResponse.json({ status: "ok", triggered: [] });
+  }
 
   for (const event of events) {
     // Guard: only deal property changes on dealstage
     if (event.subscriptionType !== "deal.propertyChange") continue;
     if (event.propertyName !== "dealstage") continue;
 
-    // Guard: check target stage allowlist (if configured)
-    const allowedStages = getAllowedTargetStages();
-    if (allowedStages.length > 0) {
-      if (!event.propertyValue || !allowedStages.includes(event.propertyValue)) continue;
-    }
+    // Guard: check stage→trigger mapping
+    if (!event.propertyValue || !stageConfig.has(event.propertyValue)) continue;
 
     const dealId = String(event.objectId);
+    const trigger: BomPipelineTrigger = stageConfig.get(event.propertyValue)!;
 
     // ── 6. Dedupe: stale lock recovery + insert RUNNING row ──
     let runId: string;
     try {
-      runId = await acquirePipelineLock(dealId);
+      runId = await acquirePipelineLock(dealId, trigger);
     } catch (e) {
       if (e instanceof DuplicateRunError) {
         console.log(`[design-complete] Skipping duplicate run for deal ${dealId}`);
@@ -140,7 +206,7 @@ export async function POST(req: NextRequest) {
           event: "bom_pipeline_started",
           dealId,
           eventId: event.eventId,
-          trigger: "WEBHOOK_DESIGN_COMPLETE",
+          trigger,
         },
         requestPath: "/api/webhooks/hubspot/design-complete",
         requestMethod: "POST",
@@ -162,66 +228,3 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ status: "ok", triggered });
 }
 
-// ---------------------------------------------------------------------------
-// Dedupe lock
-// ---------------------------------------------------------------------------
-
-class DuplicateRunError extends Error {
-  constructor(dealId: string) {
-    super(`Pipeline already running for deal ${dealId}`);
-    this.name = "DuplicateRunError";
-  }
-}
-
-/**
- * Acquire a pipeline lock for a deal.
- *
- * 1. Check for stale RUNNING rows (>10 min old) and flip them to FAILED.
- * 2. Insert a new RUNNING row — if the partial unique index rejects it,
- *    another run is genuinely in-flight → throw DuplicateRunError.
- *
- * Uses a transaction to make stale recovery + insert atomic.
- */
-async function acquirePipelineLock(dealId: string): Promise<string> {
-  if (!prisma) throw new Error("Database not configured");
-
-  return prisma.$transaction(async (tx) => {
-    // 1. Recover stale locks
-    const staleThreshold = new Date(Date.now() - STALE_LOCK_THRESHOLD_MS);
-    await tx.bomPipelineRun.updateMany({
-      where: {
-        dealId,
-        status: "RUNNING",
-        createdAt: { lt: staleThreshold },
-      },
-      data: {
-        status: "FAILED",
-        errorMessage: "Timed out (stale lock recovery)",
-      },
-    });
-
-    // 2. Insert new RUNNING row
-    try {
-      const run = await tx.bomPipelineRun.create({
-        data: {
-          dealId,
-          dealName: "",
-          trigger: "WEBHOOK_DESIGN_COMPLETE",
-          status: "RUNNING",
-        },
-      });
-      return run.id;
-    } catch (e: unknown) {
-      // Prisma unique constraint violation → P2002
-      if (
-        typeof e === "object" &&
-        e !== null &&
-        "code" in e &&
-        (e as { code: string }).code === "P2002"
-      ) {
-        throw new DuplicateRunError(dealId);
-      }
-      throw e;
-    }
-  });
-}

@@ -20,6 +20,10 @@ import { getInstallNotificationDetails } from "@/lib/scheduling-email-details";
 import { getInstallCalendarTimezone, resolveInstallCalendarLocation } from "@/lib/install-calendar-location";
 import { getSalesSurveyLeadTimeError, resolveEffectiveRoleFromRequest } from "@/lib/scheduling-policy";
 import { getGoogleCalendarEventUrl } from "@/lib/external-links";
+import { waitUntil } from "@vercel/functions";
+import { runDesignCompletePipeline } from "@/lib/bom-pipeline";
+import { acquirePipelineLock, DuplicateRunError } from "@/lib/bom-pipeline-lock";
+import { checkBomSnapshotExists, getBomEmailEnrichment, type BomEmailEnrichment } from "@/lib/bom-email-enrichment";
 
 function getConstructionScheduleBoundaryProperties(): { start: string | null; end: string | null } {
   const start = process.env.HUBSPOT_CONSTRUCTION_START_DATE_PROPERTY?.trim() || null;
@@ -854,7 +858,54 @@ export async function POST(request: NextRequest) {
           }
         }
 
+        // ── Async fallback: trigger BOM pipeline if no snapshot exists ──
+        // Runs entirely inside waitUntil — zero sync DB work on request path.
+        // Independent of email delivery (fires even without recipientEmail).
+        if (
+          scheduleType === "installation" &&
+          process.env.INSTALL_SCHEDULED_PIPELINE_FALLBACK_ENABLED === "true"
+        ) {
+          const fallbackDealId = record.projectId;
+          const fallbackDealName = customerName;
+          waitUntil((async () => {
+            try {
+              const hasSnapshot = await checkBomSnapshotExists(fallbackDealId);
+              if (hasSnapshot) return; // Snapshot exists, no fallback needed
+
+              console.log(`[Zuper Confirm] No BOM snapshot for ${fallbackDealId} — triggering fallback pipeline`);
+              const runId = await acquirePipelineLock(
+                fallbackDealId,
+                "WEBHOOK_INSTALL_SCHEDULED",
+                fallbackDealName,
+              );
+              await runDesignCompletePipeline(runId, fallbackDealId);
+            } catch (err) {
+              if (err instanceof DuplicateRunError) {
+                console.log(`[Zuper Confirm] Pipeline already running for deal ${fallbackDealId}`);
+              } else {
+                console.error(`[Zuper Confirm] Fallback pipeline error:`, err);
+              }
+            }
+          })());
+        }
+
         if (recipientEmail) {
+          // ── BOM enrichment for install emails (sync — needed to build email content) ──
+          let bomEnrichment: BomEmailEnrichment | null = null;
+          if (scheduleType === "installation") {
+            try {
+              const enrichmentResult = await getBomEmailEnrichment(record.projectId, customerName);
+              if (enrichmentResult.status === "success") {
+                bomEnrichment = enrichmentResult.enrichment;
+              } else if (enrichmentResult.status === "error") {
+                console.warn("[Zuper Confirm] BOM enrichment failed (non-fatal):", enrichmentResult.error);
+              }
+              // "no_snapshot" → bomEnrichment stays null, email sends without BOM section
+            } catch (enrichErr) {
+              console.warn("[Zuper Confirm] BOM enrichment unexpected error (non-fatal):", enrichErr);
+            }
+          }
+
           let googleCalendarEventUrl: string | undefined;
           if (scheduleType === "survey") {
             googleCalendarEventUrl =
@@ -897,6 +948,7 @@ export async function POST(request: NextRequest) {
             googleCalendarEventUrl,
             notes: record.notes || undefined,
             installDetails,
+            bomEnrichment: bomEnrichment || undefined,
           });
 
           if (scheduleType === "survey") {

@@ -120,6 +120,7 @@ describe("POST /api/webhooks/hubspot/design-complete", () => {
     process.env.HUBSPOT_WEBHOOK_SECRET = TEST_SECRET;
     process.env.DESIGN_COMPLETE_AUTO_ENABLED = "true";
     process.env.DESIGN_COMPLETE_TARGET_STAGES = "";
+    delete process.env.PIPELINE_STAGE_CONFIG;
 
     // Default: create succeeds
     mockCreate.mockResolvedValue({ id: "run_abc123" });
@@ -292,5 +293,63 @@ describe("POST /api/webhooks/hubspot/design-complete", () => {
     const json = await res.json();
     expect(json.triggered).toEqual(["111:started", "222:started"]);
     expect(mockWaitUntil).toHaveBeenCalledTimes(2);
+  });
+
+  // ── PIPELINE_STAGE_CONFIG ──
+
+  it("uses PIPELINE_STAGE_CONFIG when set (overrides DESIGN_COMPLETE_TARGET_STAGES)", async () => {
+    process.env.PIPELINE_STAGE_CONFIG = "stage-a:design_complete,stage-b:ready_to_build";
+    process.env.DESIGN_COMPLETE_TARGET_STAGES = "stage-a,old-stage"; // should be ignored
+
+    const body = JSON.stringify(makeWebhookPayload({ propertyValue: "stage-b" }));
+    const req = makeSignedRequest(body);
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.triggered).toContain("12345:started");
+
+    // Verify the trigger type was READY_TO_BUILD
+    expect(mockCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        trigger: "WEBHOOK_READY_TO_BUILD",
+      }),
+    });
+  });
+
+  it("falls back to DESIGN_COMPLETE_TARGET_STAGES when PIPELINE_STAGE_CONFIG is unset", async () => {
+    delete process.env.PIPELINE_STAGE_CONFIG;
+    process.env.DESIGN_COMPLETE_TARGET_STAGES = "fallback-stage";
+
+    const body = JSON.stringify(makeWebhookPayload({ propertyValue: "fallback-stage" }));
+    const req = makeSignedRequest(body);
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.triggered).toContain("12345:started");
+  });
+
+  it("skips malformed entries in PIPELINE_STAGE_CONFIG", async () => {
+    // "bad-entry" has no colon separator — should be skipped
+    // "stage-ok:design_complete" is valid — should work
+    process.env.PIPELINE_STAGE_CONFIG = "bad-entry,stage-ok:design_complete,also:invalid_type";
+
+    const body = JSON.stringify(makeWebhookPayload({ propertyValue: "stage-ok" }));
+    const req = makeSignedRequest(body);
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.triggered).toContain("12345:started");
+  });
+
+  it("returns empty triggered when PIPELINE_STAGE_CONFIG is empty string", async () => {
+    process.env.PIPELINE_STAGE_CONFIG = "";
+    delete process.env.DESIGN_COMPLETE_TARGET_STAGES;
+
+    const body = JSON.stringify(makeWebhookPayload());
+    const req = makeSignedRequest(body);
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.triggered).toEqual([]);
   });
 });
