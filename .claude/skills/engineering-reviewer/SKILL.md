@@ -203,9 +203,32 @@ PATCH /api/tasks { taskId, action: "complete", notes: "<permit readiness checkli
 
 | Task Subject Pattern | Handler | Notes |
 |---------------------|---------|-------|
-| `Retrieve Plans for Stamping - *` | Steps 1-3: Full engineering review | Post-design-approval |
-| `Submit Permit To AHJ - *` | Step 4: Permit package prep | Ready for AHJ submission |
-| `Submit Interconnection Application To The Utility - *` | Step 4: Utility submission prep | Ready for utility submission |
+| `Retrieve Plans for Stamping - {LOC}` | Steps 1-3: Full engineering review | Post-design-approval, fast turnaround (298 historical, 0 open) |
+| `Upload Stamped Plans & PE Letter - {LOC}` | Post-PE: Verify stamped plans uploaded | PE firm uploads stamped work to Drive |
+| `Submit Permit To AHJ - {LOC}` | Step 4: Permit package prep | Ready for AHJ submission |
+| `Submit Interconnection Application To The Utility - {LOC}` | Step 4: Utility submission prep | Ready for utility submission (44 open) |
+| `Follow Up On Supplemental Review - {LOC}` | N/A (manual follow-up) | Interconnection in supplemental review |
+
+## Task Body Parsing
+
+**Permit submission tasks (`Submit Permit To AHJ`):**
+- `Design:` — Google Drive folder URL
+- `AHJ:` — jurisdiction name (e.g., "Lakewood", "Boulder County")
+- `Submission Method:` — "Portal", "Email", etc.
+- `Link to Application:` — AHJ portal URL
+- `Login:` / `Password:` — SENSITIVE portal credentials (never expose)
+
+**Interconnection tasks (`Submit Interconnection Application To The Utility`):**
+- `Sales Documents:` — Google Drive folder URL
+- `Design Documents:` — Google Drive folder URL
+- `Utility Company:` — utility name (e.g., "Xcel Energy")
+- `Submission Type:` — "Portal", etc.
+- `Portal Link:` — utility portal URL
+- `Login:` / `Password:` — SENSITIVE portal credentials (never expose)
+
+**Upload stamped plans tasks:**
+- Body contains Google Drive folder URL for upload destination
+- Contact person for questions (typically the PE coordinator)
 
 ## Integration Points
 
@@ -226,3 +249,6 @@ PATCH /api/tasks { taskId, action: "complete", notes: "<permit readiness checkli
 2. **Task bodies contain sensitive data** — portal logins/passwords for AHJ and utility portals. Never expose these in skill output.
 3. **NEC edition matters** — always check which NEC edition the AHJ uses (nec_code). NEC 2017, 2020, and 2023 have different rapid shutdown requirements.
 4. **This skill feeds into design-reviewer** — the design-reviewer calls engineering-reviewer for structural/electrical input during revision management.
+5. **Retrieve Plans for Stamping completes fast** — 298 historical tasks, all completed. If not found as open, check if design is still in "Submitted To Engineering" status.
+6. **Interconnection tasks have TWO Drive links** — Sales Documents AND Design Documents (unlike design tasks which only have one).
+7. **Location suffix convention** — task subjects end with `- ZRS`, `- WMS`, etc. Strip these when matching patterns.
