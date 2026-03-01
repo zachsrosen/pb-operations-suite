@@ -123,6 +123,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/pi-overview",
       "/dashboards/pi-metrics",
       "/dashboards/pi-action-queue",
+      "/dashboards/pi-revisions",
       "/dashboards/ahj-tracker",
       "/dashboards/utility-tracker",
       "/dashboards/pi-timeline",
@@ -294,6 +295,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/pi-overview",
       "/dashboards/pi-metrics",
       "/dashboards/pi-action-queue",
+      "/dashboards/pi-revisions",
       "/dashboards/ahj-tracker",
       "/dashboards/utility-tracker",
       "/dashboards/pi-timeline",
@@ -360,6 +362,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/pi-overview",
       "/dashboards/pi-metrics",
       "/dashboards/pi-action-queue",
+      "/dashboards/pi-revisions",
       "/dashboards/ahj-tracker",
       "/dashboards/utility-tracker",
       "/dashboards/pi-timeline",
@@ -413,6 +416,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/pi-overview",
       "/dashboards/pi-metrics",
       "/dashboards/pi-action-queue",
+      "/dashboards/pi-revisions",
       "/dashboards/ahj-tracker",
       "/dashboards/utility-tracker",
       "/dashboards/pi-timeline",
@@ -460,6 +464,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/pi-overview",
       "/dashboards/pi-metrics",
       "/dashboards/pi-action-queue",
+      "/dashboards/pi-revisions",
       "/dashboards/ahj-tracker",
       "/dashboards/utility-tracker",
       "/dashboards/pi-timeline",
@@ -553,7 +558,6 @@ export const ADMIN_ONLY_ROUTES: string[] = [
   "/dashboards/zuper-compliance",
   "/dashboards/product-comparison",
   "/dashboards/mobile",
-  "/dashboards/pi-revisions",
 ];
 
 
