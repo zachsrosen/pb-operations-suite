@@ -212,6 +212,12 @@ export async function sendDailyDigest(
     create: { key: "lastDigestSentAt", value: new Date(0).toISOString() },
   });
 
+  // Capture the previous value so we can rollback on send failure.
+  const configRow = await prisma.systemConfig.findUnique({
+    where: { key: "lastDigestSentAt" },
+  });
+  const previousValue: string = configRow?.value ?? new Date(0).toISOString();
+
   // Atomic lock -- only one instance can send per 20-hour window
   const twentyHoursAgo = new Date(Date.now() - 20 * 60 * 60 * 1000);
   const lockAcquired = await prisma.$executeRaw`
@@ -246,12 +252,22 @@ export async function sendDailyDigest(
   const subject = `Audit Digest: ${totalSessions} sessions, ${anomalySessions} anomalies (last 24h)`;
   const html = buildDigestHtml(totalSessions, anomalySessions, envBreakdown);
 
-  await resend.emails.send({
-    from: ALERT_FROM,
-    to: ADMIN_EMAILS,
-    subject,
-    html,
-  });
+  try {
+    await resend.emails.send({
+      from: ALERT_FROM,
+      to: ADMIN_EMAILS,
+      subject,
+      html,
+    });
+  } catch (error) {
+    // Send failed — rollback the lock so a future retry can re-claim
+    await prisma.$executeRaw`
+      UPDATE "SystemConfig"
+      SET value = ${previousValue}, "updatedAt" = NOW()
+      WHERE key = 'lastDigestSentAt'
+    `.catch(() => {}); // Best-effort rollback
+    throw error;
+  }
 
   return { sent: true };
 }
