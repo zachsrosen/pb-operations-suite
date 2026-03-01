@@ -544,7 +544,11 @@ export default function CatalogPage() {
       internal: cleanupAction === "deactivate" ? "deactivate" : "none",
       links: cleanupAction === "unlink" ? "unlink_selected" : "none",
       external: cleanupExternal ? "delete_selected" : "none",
-      sources: cleanupExternal ? cleanupSources : [],
+      sources: cleanupExternal
+        ? cleanupSources
+        : cleanupAction === "unlink"
+          ? [...CLEANUP_LINKABLE_SOURCES]
+          : [],
       deleteCachedProducts: cleanupExternal,
     };
 
@@ -595,6 +599,8 @@ export default function CatalogPage() {
       }
 
       fetchSkus();
+      // Reset cleanupRunning before closing so closeCleanupModal() doesn't early-return
+      setCleanupRunning(false);
       closeCleanupModal();
     } catch (err: unknown) {
       addToast({ type: "error", title: err instanceof Error ? err.message : "Cleanup failed" });
