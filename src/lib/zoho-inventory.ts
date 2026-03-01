@@ -446,6 +446,37 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   }) as Promise<T>;
 }
 
+// ---------------------------------------------------------------------------
+// Rate-limit retry helpers
+// ---------------------------------------------------------------------------
+
+const RATE_LIMIT_MAX_RETRIES = 3;
+const RATE_LIMIT_BASE_DELAY_MS = 1000;
+const RATE_LIMIT_MAX_DELAY_MS = 10_000;
+
+/** Messages Zoho returns for concurrent-request throttling (not just HTTP 429) */
+const RATE_LIMIT_MESSAGES = [
+  "maximum number of in process requests",
+  "rate limit exceeded",
+  "too many requests",
+];
+
+function isRateLimitError(status: number, message: string): boolean {
+  if (status === 429 || status === 503) return true;
+  const lower = message.toLowerCase();
+  return RATE_LIMIT_MESSAGES.some((m) => lower.includes(m));
+}
+
+function rateLimitDelay(attempt: number): number {
+  const base = Math.min(RATE_LIMIT_BASE_DELAY_MS * 2 ** attempt, RATE_LIMIT_MAX_DELAY_MS);
+  const jitter = base * 0.3 * Math.random(); // 0-30% jitter
+  return base + jitter;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export class ZohoInventoryClient {
   private readonly organizationId: string | undefined;
   private readonly configuredBaseUrl: string;
@@ -910,6 +941,75 @@ export class ZohoInventoryClient {
     };
   }
 
+  /**
+   * Shared response handler: parse JSON, check for errors, retry on rate limits.
+   * Returns the parsed JSON body or throws.
+   */
+  private async handleResponse<T>(
+    doFetch: (token: string) => Promise<Response>,
+    attempt = 0,
+  ): Promise<T> {
+    let token = await this.getAccessToken();
+    let response = await doFetch(token);
+
+    // 401 → refresh token and retry once
+    if (response.status === 401 && this.canRefreshToken()) {
+      this.dynamicAccessToken = undefined;
+      this.dynamicTokenExpiresAtMs = 0;
+      token = await this.getAccessToken(true);
+      response = await doFetch(token);
+    }
+
+    const raw = await response.text();
+    let json: Record<string, unknown> = {};
+    try {
+      json = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+    } catch {
+      json = { message: raw };
+    }
+
+    const message =
+      typeof json.message === "string"
+        ? json.message
+        : `Zoho Inventory request failed (${response.status})`;
+
+    // Rate-limit retry with exponential backoff + jitter
+    if (isRateLimitError(response.status, message) && attempt < RATE_LIMIT_MAX_RETRIES) {
+      const delay = rateLimitDelay(attempt);
+      console.warn(
+        `[zoho] Rate limited (attempt ${attempt + 1}/${RATE_LIMIT_MAX_RETRIES}), retrying in ${Math.round(delay)}ms`
+      );
+      await sleep(delay);
+      return this.handleResponse<T>(doFetch, attempt + 1);
+    }
+
+    if (!response.ok) {
+      throw new Error(`${message} (status: ${response.status})`);
+    }
+
+    const code = typeof json.code === "number" ? json.code : undefined;
+    if (code !== undefined && code !== 0) {
+      const apiMessage =
+        typeof json.message === "string"
+          ? json.message
+          : `Zoho Inventory API error (code ${code})`;
+
+      // Also retry on rate-limit API-level errors (code != 0 but message matches)
+      if (isRateLimitError(0, apiMessage) && attempt < RATE_LIMIT_MAX_RETRIES) {
+        const delay = rateLimitDelay(attempt);
+        console.warn(
+          `[zoho] Rate limited via API code (attempt ${attempt + 1}/${RATE_LIMIT_MAX_RETRIES}), retrying in ${Math.round(delay)}ms`
+        );
+        await sleep(delay);
+        return this.handleResponse<T>(doFetch, attempt + 1);
+      }
+
+      throw new Error(apiMessage);
+    }
+
+    return json as unknown as T;
+  }
+
   private async request<T>(path: string, query: Record<string, string | number | undefined> = {}): Promise<T> {
     if (!this.organizationId) {
       throw new Error("ZOHO_INVENTORY_ORG_ID is not configured");
@@ -938,42 +1038,7 @@ export class ZohoInventoryClient {
       );
     };
 
-    let token = await this.getAccessToken();
-    let response = await doFetch(token);
-
-    if (response.status === 401 && this.canRefreshToken()) {
-      this.dynamicAccessToken = undefined;
-      this.dynamicTokenExpiresAtMs = 0;
-      token = await this.getAccessToken(true);
-      response = await doFetch(token);
-    }
-
-    const raw = await response.text();
-    let json: Record<string, unknown> = {};
-
-    try {
-      json = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
-    } catch {
-      // Keep raw body as fallback detail.
-      json = { message: raw };
-    }
-
-    if (!response.ok) {
-      const message = typeof json.message === "string"
-        ? json.message
-        : `Zoho Inventory request failed (${response.status})`;
-      throw new Error(message);
-    }
-
-    const code = typeof json.code === "number" ? json.code : undefined;
-    if (code !== undefined && code !== 0) {
-      const message = typeof json.message === "string"
-        ? json.message
-        : `Zoho Inventory API error (code ${code})`;
-      throw new Error(message);
-    }
-
-    return json as unknown as T;
+    return this.handleResponse<T>(doFetch);
   }
 
   private async requestPost<T>(path: string, body: unknown): Promise<T> {
@@ -1001,42 +1066,7 @@ export class ZohoInventoryClient {
       );
     };
 
-    let token = await this.getAccessToken();
-    let response = await doFetch(token);
-
-    if (response.status === 401 && this.canRefreshToken()) {
-      this.dynamicAccessToken = undefined;
-      this.dynamicTokenExpiresAtMs = 0;
-      token = await this.getAccessToken(true);
-      response = await doFetch(token);
-    }
-
-    const raw = await response.text();
-    let json: Record<string, unknown> = {};
-    try {
-      json = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
-    } catch {
-      json = { message: raw };
-    }
-
-    if (!response.ok) {
-      const message =
-        typeof json.message === "string"
-          ? json.message
-          : `Zoho Inventory request failed (${response.status})`;
-      throw new Error(message);
-    }
-
-    const code = typeof json.code === "number" ? json.code : undefined;
-    if (code !== undefined && code !== 0) {
-      const message =
-        typeof json.message === "string"
-          ? json.message
-          : `Zoho Inventory API error (code ${code})`;
-      throw new Error(message);
-    }
-
-    return json as unknown as T;
+    return this.handleResponse<T>(doFetch);
   }
 
   private async requestDelete<T>(path: string): Promise<T> {
@@ -1063,42 +1093,7 @@ export class ZohoInventoryClient {
       );
     };
 
-    let token = await this.getAccessToken();
-    let response = await doFetch(token);
-
-    if (response.status === 401 && this.canRefreshToken()) {
-      this.dynamicAccessToken = undefined;
-      this.dynamicTokenExpiresAtMs = 0;
-      token = await this.getAccessToken(true);
-      response = await doFetch(token);
-    }
-
-    const raw = await response.text();
-    let json: Record<string, unknown> = {};
-    try {
-      json = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
-    } catch {
-      json = { message: raw };
-    }
-
-    if (!response.ok) {
-      const message =
-        typeof json.message === "string"
-          ? json.message
-          : `Zoho Inventory request failed (status: ${response.status})`;
-      throw new Error(`${message} (status: ${response.status})`);
-    }
-
-    const code = typeof json.code === "number" ? json.code : undefined;
-    if (code !== undefined && code !== 0) {
-      const message =
-        typeof json.message === "string"
-          ? json.message
-          : `Zoho Inventory API error (code ${code})`;
-      throw new Error(message);
-    }
-
-    return json as unknown as T;
+    return this.handleResponse<T>(doFetch);
   }
 
   private canRefreshToken(): boolean {

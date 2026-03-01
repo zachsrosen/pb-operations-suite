@@ -11,54 +11,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, logActivity } from "@/lib/db";
 import { requireApiAuth } from "@/lib/api-auth";
-import { EquipmentCategory } from "@/generated/prisma/enums";
-
-// Only these categories map to the EquipmentCategory enum
-const INVENTORY_CATEGORIES: Record<string, EquipmentCategory> = {
-  MODULE: "MODULE",
-  INVERTER: "INVERTER",
-  BATTERY: "BATTERY",
-  EV_CHARGER: "EV_CHARGER",
-  RAPID_SHUTDOWN: "RAPID_SHUTDOWN",
-  RACKING: "RACKING",
-  ELECTRICAL_BOS: "ELECTRICAL_BOS",
-  MONITORING: "MONITORING",
-};
-
-interface BomItem {
-  category: string;
-  brand: string | null;
-  model: string | null;
-  description: string;
-  aiFeedbackNotes?: string | null;
-  qty: number | string;
-  unitSpec?: number | string | null;
-  unitLabel?: string | null;
-  source?: string;
-  flags?: string[];
-}
-
-interface BomData {
-  project: {
-    customer?: string;
-    address?: string;
-    aiFeedbackOverall?: string;
-    systemSizeKwdc?: number;
-    systemSizeKwac?: number;
-    moduleCount?: number;
-    plansetRev?: string;
-    stampDate?: string;
-    utility?: string;
-    ahj?: string;
-  };
-  items: BomItem[];
-  validation?: {
-    moduleCountMatch?: boolean | null;
-    batteryCapacityMatch?: boolean | null;
-    ocpdMatch?: boolean | null;
-    warnings?: string[];
-  };
-}
+import { syncEquipmentSkus } from "@/lib/bom-snapshot";
+import type { BomData } from "@/lib/bom-snapshot";
 
 export async function POST(request: NextRequest) {
   if (!prisma) {
@@ -119,58 +73,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    let created = 0;
-    let updated = 0;
-    let skipped = 0;
-
-    for (const item of bom.items) {
-      const inventoryCategory = INVENTORY_CATEGORIES[item.category];
-      if (!inventoryCategory) {
-        skipped++;
-        continue;
-      }
-
-      const brand = item.brand?.trim();
-      const model = item.model?.trim();
-      const description = item.description?.trim();
-      if (!brand || !model) {
-        skipped++;
-        continue;
-      }
-
-      const unitSpec = item.unitSpec != null ? Number(item.unitSpec) : null;
-      const unitLabel = item.unitLabel || null;
-
-      const result = await prisma.equipmentSku.upsert({
-        where: {
-          category_brand_model: {
-            category: inventoryCategory,
-            brand,
-            model,
-          },
-        },
-        update: {
-          description: description || undefined,
-          unitSpec: unitSpec ?? undefined,
-          unitLabel: unitLabel ?? undefined,
-          isActive: true,
-        },
-        create: {
-          category: inventoryCategory,
-          brand,
-          model,
-          description: description || null,
-          unitSpec,
-          unitLabel,
-        },
-      });
-
-      if (result.createdAt.getTime() === result.updatedAt.getTime()) {
-        created++;
-      } else {
-        updated++;
-      }
-    }
+    const { created, updated, skipped } = await syncEquipmentSkus(bom.items);
 
     await logSave(
       "succeeded",

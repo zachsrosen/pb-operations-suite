@@ -78,6 +78,107 @@ const INVENTORY_CATEGORIES: Record<string, EquipmentCategory> = {
 };
 
 // ---------------------------------------------------------------------------
+// Shared SKU sync (used by both /api/bom/save and saveBomSnapshot)
+// ---------------------------------------------------------------------------
+
+export interface SkuSyncResult {
+  created: number;
+  updated: number;
+  skipped: number;
+}
+
+/**
+ * Batch-upsert BOM items into the EquipmentSku table using a single
+ * INSERT ... ON CONFLICT per batch (eliminates N+1 query pattern).
+ *
+ * Uses Postgres xmax system column to distinguish inserts (xmax=0) from
+ * updates (xmax>0) without an extra SELECT.
+ */
+export async function syncEquipmentSkus(items: BomItem[]): Promise<SkuSyncResult> {
+  if (!prisma) {
+    throw new Error("Database not configured");
+  }
+
+  const validItems = items
+    .map((item) => {
+      const inventoryCategory = INVENTORY_CATEGORIES[item.category];
+      if (!inventoryCategory) return null;
+      const brand = item.brand?.trim();
+      const model = item.model?.trim();
+      if (!brand || !model) return null;
+      return {
+        category: inventoryCategory,
+        brand,
+        model,
+        description: item.description?.trim() || null,
+        unitSpec: item.unitSpec != null ? Number(item.unitSpec) : null,
+        unitLabel: item.unitLabel ?? null,
+      };
+    })
+    .filter((v): v is NonNullable<typeof v> => v !== null);
+
+  const skipped = items.length - validItems.length;
+  if (validItems.length === 0) {
+    return { created: 0, updated: 0, skipped };
+  }
+
+  let created = 0;
+  let updated = 0;
+
+  // Batch in groups of 50 — one SQL statement per batch
+  const BATCH_SIZE = 50;
+  for (let i = 0; i < validItems.length; i += BATCH_SIZE) {
+    const batch = validItems.slice(i, i + BATCH_SIZE);
+
+    // Build parameterized VALUES list: each row has 7 params
+    // (id, category, brand, model, description, unitSpec, unitLabel)
+    // plus SQL literals for isActive/createdAt/updatedAt.
+    const values: unknown[] = [];
+    const placeholders: string[] = [];
+    for (let j = 0; j < batch.length; j++) {
+      const item = batch[j];
+      const offset = j * 7;
+      placeholders.push(
+        `($${offset + 1}, $${offset + 2}::"EquipmentCategory", $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}::double precision, $${offset + 7}, true, NOW(), NOW())`
+      );
+      values.push(
+        crypto.randomUUID(),  // id
+        item.category,        // category (enum cast)
+        item.brand,           // brand
+        item.model,           // model
+        item.description,     // description
+        item.unitSpec,         // unitSpec
+        item.unitLabel,        // unitLabel
+      );
+    }
+
+    const rows = await prisma.$queryRawUnsafe<Array<{ xmax: string }>>(
+      `INSERT INTO "EquipmentSku" ("id", "category", "brand", "model", "description", "unitSpec", "unitLabel", "isActive", "createdAt", "updatedAt")
+       VALUES ${placeholders.join(", ")}
+       ON CONFLICT ("category", "brand", "model") DO UPDATE SET
+         "description" = COALESCE(NULLIF(EXCLUDED."description", ''), "EquipmentSku"."description"),
+         "unitSpec"    = COALESCE(EXCLUDED."unitSpec", "EquipmentSku"."unitSpec"),
+         "unitLabel"   = COALESCE(EXCLUDED."unitLabel", "EquipmentSku"."unitLabel"),
+         "isActive"    = true,
+         "updatedAt"   = NOW()
+       RETURNING xmax::text`,
+      ...values
+    );
+
+    for (const row of rows) {
+      // xmax = 0 means the row was inserted; xmax > 0 means it was updated
+      if (row.xmax === "0") {
+        created++;
+      } else {
+        updated++;
+      }
+    }
+  }
+
+  return { created, updated, skipped };
+}
+
+// ---------------------------------------------------------------------------
 // Core function
 // ---------------------------------------------------------------------------
 
@@ -184,39 +285,12 @@ export async function saveBomSnapshot(params: {
     });
 
     // Sync inventory SKUs — both extracted items and suggested additions
-    let skuCreated = 0, skuUpdated = 0, skuSkipped = 0;
     const allItemsToSync: BomItem[] = [
       ...processedBomData.items,
       ...(processedBomData.suggestedAdditions ?? []),
     ];
-    for (const item of allItemsToSync) {
-      const inventoryCategory = INVENTORY_CATEGORIES[item.category];
-      if (!inventoryCategory) { skuSkipped++; continue; }
-      const brand = item.brand?.trim();
-      const model = item.model?.trim();
-      const description = item.description?.trim();
-      if (!brand || !model) { skuSkipped++; continue; }
-
-      const unitSpec = item.unitSpec != null ? Number(item.unitSpec) : null;
-      const result = await prisma.equipmentSku.upsert({
-        where: { category_brand_model: { category: inventoryCategory, brand, model } },
-        update: {
-          description: description || undefined,
-          unitSpec: unitSpec ?? undefined,
-          unitLabel: item.unitLabel ?? undefined,
-          isActive: true,
-        },
-        create: {
-          category: inventoryCategory,
-          brand,
-          model,
-          description: description || null,
-          unitSpec,
-          unitLabel: item.unitLabel ?? null,
-        },
-      });
-      if (result.createdAt.getTime() === result.updatedAt.getTime()) skuCreated++; else skuUpdated++;
-    }
+    const { created: skuCreated, updated: skuUpdated, skipped: skuSkipped } =
+      await syncEquipmentSkus(allItemsToSync);
 
     await logSnapshot("succeeded", {
       dealId,
