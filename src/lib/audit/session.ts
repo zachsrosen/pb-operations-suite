@@ -145,14 +145,12 @@ interface SessionResult {
 }
 
 // Minimal Prisma-like type so we don't need the generated client
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type PrismaLike = {
   $transaction: (
     fn: (tx: PrismaTransactionClient) => Promise<SessionResult>
   ) => Promise<SessionResult>;
 };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type PrismaTransactionClient = {
   $executeRaw: (template: TemplateStringsArray, ...values: unknown[]) => Promise<number>;
   auditSession: {
