@@ -13,6 +13,7 @@
 import { prisma, logActivity } from "@/lib/db";
 import { EquipmentCategory } from "@/generated/prisma/enums";
 import type { ActorContext } from "@/lib/actor-context";
+import { buildCanonicalKey } from "@/lib/canonical";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -87,9 +88,32 @@ export interface SkuSyncResult {
   skipped: number;
 }
 
+/** Check whether catalog lockdown mode is enabled via env var. */
+function isLockdownEnabled(): boolean {
+  return (
+    String(process.env.CATALOG_LOCKDOWN_ENABLED || "")
+      .trim()
+      .toLowerCase() === "true"
+  );
+}
+
+/** Validated item shape after filtering in syncEquipmentSkus. */
+interface ValidSkuItem {
+  category: string;
+  brand: string;
+  model: string;
+  description: string | null;
+  unitSpec: number | null;
+  unitLabel: string | null;
+}
+
 /**
  * Batch-upsert BOM items into the EquipmentSku table using a single
  * INSERT ... ON CONFLICT per batch (eliminates N+1 query pattern).
+ *
+ * When CATALOG_LOCKDOWN_ENABLED=true, instead of direct INSERT ON CONFLICT,
+ * fuzzy-matches against canonical keys and creates PendingCatalogPush records
+ * for unmatched or ambiguous items.
  *
  * Uses Postgres xmax system column to distinguish inserts (xmax=0) from
  * updates (xmax>0) without an extra SELECT.
@@ -122,6 +146,23 @@ export async function syncEquipmentSkus(items: BomItem[]): Promise<SkuSyncResult
     return { created: 0, updated: 0, skipped };
   }
 
+  // ----- Lockdown path: fuzzy match against canonical keys -----
+  if (isLockdownEnabled()) {
+    return syncWithFuzzyMatch(validItems, skipped);
+  }
+
+  // ----- Legacy path: direct INSERT ON CONFLICT -----
+  return syncWithDirectInsert(validItems, skipped);
+}
+
+// ---------------------------------------------------------------------------
+// Legacy path: direct INSERT ON CONFLICT
+// ---------------------------------------------------------------------------
+
+async function syncWithDirectInsert(
+  validItems: ValidSkuItem[],
+  initialSkipped: number
+): Promise<SkuSyncResult> {
   let created = 0;
   let updated = 0;
 
@@ -152,7 +193,7 @@ export async function syncEquipmentSkus(items: BomItem[]): Promise<SkuSyncResult
       );
     }
 
-    const rows = await prisma.$queryRawUnsafe<Array<{ xmax: string }>>(
+    const rows = await prisma!.$queryRawUnsafe<Array<{ xmax: string }>>(
       `INSERT INTO "EquipmentSku" ("id", "category", "brand", "model", "description", "unitSpec", "unitLabel", "isActive", "createdAt", "updatedAt")
        VALUES ${placeholders.join(", ")}
        ON CONFLICT ("category", "brand", "model") DO UPDATE SET
@@ -173,6 +214,80 @@ export async function syncEquipmentSkus(items: BomItem[]): Promise<SkuSyncResult
         updated++;
       }
     }
+  }
+
+  return { created, updated, skipped: initialSkipped };
+}
+
+// ---------------------------------------------------------------------------
+// Lockdown path: fuzzy match against canonical keys
+// ---------------------------------------------------------------------------
+
+async function syncWithFuzzyMatch(
+  validItems: ValidSkuItem[],
+  initialSkipped: number
+): Promise<SkuSyncResult> {
+  let updated = 0;
+  let created = 0; // pending pushes created
+  let skipped = initialSkipped;
+
+  for (const item of validItems) {
+    const ck = buildCanonicalKey(item.category, item.brand, item.model);
+    if (!ck) {
+      skipped++;
+      continue;
+    }
+
+    // Query for existing SKUs matching this canonical key
+    const matches = await prisma!.equipmentSku.findMany({
+      where: { canonicalKey: ck, isActive: true },
+      select: { id: true, canonicalKey: true },
+    });
+
+    if (matches.length === 1) {
+      // Exact match — use existing SKU, no insert needed
+      updated++;
+      continue;
+    }
+
+    if (matches.length > 1) {
+      // Ambiguous — create pending push with candidate IDs
+      await prisma!.pendingCatalogPush.create({
+        data: {
+          brand: item.brand,
+          model: item.model,
+          description: item.description || "",
+          category: item.category,
+          systems: ["INTERNAL"],
+          requestedBy: "bom_extraction",
+          source: "bom_extraction",
+          canonicalKey: ck,
+          candidateSkuIds: matches.map((m) => m.id),
+          reviewReason: "ambiguous_bom_match",
+          expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
+        },
+      });
+      created++;
+      continue;
+    }
+
+    // Zero matches — create pending push
+    await prisma!.pendingCatalogPush.create({
+      data: {
+        brand: item.brand,
+        model: item.model,
+        description: item.description || "",
+        category: item.category,
+        systems: ["INTERNAL"],
+        requestedBy: "bom_extraction",
+        source: "bom_extraction",
+        canonicalKey: ck,
+        candidateSkuIds: [],
+        reviewReason: "no_match",
+        expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
+      },
+    });
+    created++;
   }
 
   return { created, updated, skipped };
