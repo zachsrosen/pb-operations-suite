@@ -1,6 +1,6 @@
 export type InternalPrototypeGroup =
   | "operations"
-  | "department"
+  | "field_execution"
   | "executive"
   | "service"
   | "additional_pipeline"
@@ -20,7 +20,7 @@ export interface InternalPagePrototype {
 
 export const INTERNAL_GROUP_LABELS: Record<InternalPrototypeGroup, string> = {
   operations: "Operations Suite",
-  department: "Department Suite",
+  field_execution: "Field Execution",
   executive: "Executive Suite",
   service: "Service Suite",
   additional_pipeline: "Additional Pipeline Suite",
@@ -32,7 +32,7 @@ export const INTERNAL_GROUP_LABELS: Record<InternalPrototypeGroup, string> = {
 
 export const INTERNAL_GROUP_ORDER: InternalPrototypeGroup[] = [
   "operations",
-  "department",
+  "field_execution",
   "executive",
   "service",
   "additional_pipeline",
@@ -112,56 +112,56 @@ export const INTERNAL_PAGE_PROTOTYPES: InternalPagePrototype[] = [
     targetHref: "/dashboards/site-survey",
     title: "Site Survey",
     description: "Site survey scheduling, status tracking, and completion monitoring.",
-    group: "department",
-    tags: ["survey", "department"],
+    group: "field_execution",
+    tags: ["survey", "field_execution"],
   },
   {
     slug: "design",
     targetHref: "/dashboards/design",
     title: "Design & Engineering",
     description: "Track design progress, engineering approvals, and plan sets.",
-    group: "department",
-    tags: ["design", "department"],
+    group: "field_execution",
+    tags: ["design", "field_execution"],
   },
   {
     slug: "permitting",
     targetHref: "/dashboards/permitting",
     title: "Permitting",
     description: "Permit status tracking, submission dates, and approval monitoring.",
-    group: "department",
-    tags: ["permitting", "department"],
+    group: "field_execution",
+    tags: ["permitting", "field_execution"],
   },
   {
     slug: "inspections",
     targetHref: "/dashboards/inspections",
     title: "Inspections",
     description: "Inspection scheduling, status tracking, pass rates, and AHJ analysis.",
-    group: "department",
-    tags: ["inspection", "department"],
+    group: "field_execution",
+    tags: ["inspection", "field_execution"],
   },
   {
     slug: "interconnection",
     targetHref: "/dashboards/interconnection",
     title: "Interconnection",
     description: "Utility interconnection applications, approvals, and meter installations.",
-    group: "department",
-    tags: ["utility", "department"],
+    group: "field_execution",
+    tags: ["utility", "field_execution"],
   },
   {
     slug: "construction",
     targetHref: "/dashboards/construction",
     title: "Construction",
     description: "Construction status, scheduling, and progress tracking.",
-    group: "department",
-    tags: ["construction", "department"],
+    group: "field_execution",
+    tags: ["construction", "field_execution"],
   },
   {
     slug: "incentives",
     targetHref: "/dashboards/incentives",
     title: "Incentives",
     description: "Rebate and incentive program tracking and application status.",
-    group: "department",
-    tags: ["incentives", "department"],
+    group: "field_execution",
+    tags: ["incentives", "field_execution"],
   },
   {
     slug: "revenue",
