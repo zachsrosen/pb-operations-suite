@@ -56,6 +56,7 @@ interface ExtendedProject extends RawProject {
   designApprovalDate?: string;
   tags?: string[];
   equipment?: FullEquipment | RawProject["equipment"];
+  systemPerformanceReview?: boolean;
 }
 
 // Clipping engine imported from @/lib/clipping
@@ -225,6 +226,10 @@ export default function DesignEngineeringPage() {
   });
   const safeProjects = projects ?? [];
 
+  // System Performance Review toggle state
+  const [togglingIds, setTogglingIds] = useState<Set<string>>(new Set());
+  const [localOverrides, setLocalOverrides] = useState<Record<string, boolean>>({});
+
   // Persisted multi-select filters (survive navigation)
   const { filters, setFilters, clearFilters: clearStore } = useDesignFilters();
   const filterLocations = filters.locations;
@@ -247,6 +252,35 @@ export default function DesignEngineeringPage() {
       });
     }
   }, [loading, safeProjects.length, trackDashboardView]);
+
+  const handleTogglePerformanceReview = useCallback(
+    async (project: ExtendedProject) => {
+      const current = localOverrides[project.id] ?? project.systemPerformanceReview ?? false;
+      const newValue = !current;
+      setTogglingIds((prev) => new Set(prev).add(project.id));
+      try {
+        const res = await fetch(`/api/projects/${project.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            properties: { system_performance_review: newValue ? "true" : "false" },
+          }),
+        });
+        if (res.ok) {
+          setLocalOverrides((prev) => ({ ...prev, [project.id]: newValue }));
+        }
+      } catch (err) {
+        console.error("Failed to update system performance review:", err);
+      } finally {
+        setTogglingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(project.id);
+          return next;
+        });
+      }
+    },
+    [localOverrides]
+  );
 
   // Check if project is in design phase or has design data
   const isInDesignPhase = useCallback((p: ExtendedProject) => {
@@ -770,6 +804,7 @@ export default function DesignEngineeringPage() {
                       <th className="px-3 py-2 text-center text-xs font-medium text-muted uppercase">Summer DC/AC</th>
                       <th className="px-3 py-2 text-center text-xs font-medium text-muted uppercase">Battery</th>
                       <th className="px-3 py-2 text-center text-xs font-medium text-muted uppercase">Risk</th>
+                      <th className="px-3 py-2 text-center text-xs font-medium text-muted uppercase">Flag for Review</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-t-border/50">
@@ -835,6 +870,36 @@ export default function DesignEngineeringPage() {
                               <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${riskColors[analysis.riskLevel]}`}>
                                 {analysis.riskLevel}
                               </span>
+                            </td>
+                            <td className="px-3 py-2 text-center">
+                              {(() => {
+                                const project = safeProjects.find(p => p.id === analysis.projectId);
+                                if (!project) return <span className="text-muted/70 text-xs">-</span>;
+                                const toggling = togglingIds.has(project.id);
+                                const value = localOverrides[project.id] ?? (project as ExtendedProject).systemPerformanceReview ?? false;
+                                return (
+                                  <button
+                                    onClick={() => handleTogglePerformanceReview(project as ExtendedProject)}
+                                    disabled={toggling}
+                                    title={value ? "Flagged for production/clipping review" : "Flag this system for production/clipping review"}
+                                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-all ${
+                                      toggling
+                                        ? "opacity-50 cursor-wait"
+                                        : value
+                                          ? "bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 border border-amber-500/30"
+                                          : "bg-surface-2 text-muted hover:bg-surface-2/80 hover:text-foreground"
+                                    }`}
+                                  >
+                                    {toggling ? (
+                                      <span className="inline-block w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                    ) : value ? (
+                                      <>{"\u26A0"} Review</>
+                                    ) : (
+                                      "Flag"
+                                    )}
+                                  </button>
+                                );
+                              })()}
                             </td>
                           </tr>
                         );
