@@ -166,9 +166,10 @@ export default function PIActionQueuePage() {
     return items;
   }, [safeProjects]);
 
-  // Filter
+  // Filter — stale tab shows all items where isStale is true (any type), not just type === "stale"
   const filteredItems = useMemo(() => {
     if (filterType === "all") return actionItems;
+    if (filterType === "stale") return actionItems.filter((i) => i.isStale);
     return actionItems.filter((i) => i.type === filterType);
   }, [actionItems, filterType]);
 
