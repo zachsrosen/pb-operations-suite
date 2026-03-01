@@ -19,16 +19,6 @@ interface FullEquipment {
   systemSizeKwac: number;
 }
 
-interface ExtendedProject extends RawProject {
-  designStatus?: string;
-  layoutStatus?: string;
-  designCompletionDate?: string;
-  designApprovalDate?: string;
-  projectManager?: string;
-  designLead?: string;
-  equipment?: FullEquipment | RawProject["equipment"];
-}
-
 // Revision-related design statuses (active, not archived)
 const REVISION_STATUSES = [
   // DA Revisions
@@ -73,9 +63,9 @@ export default function DesignRevisionsPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
-  const { data: projects, loading, lastUpdated } = useProjectData<ExtendedProject[]>({
+  const { data: projects, loading, lastUpdated } = useProjectData<RawProject[]>({
     params: { context: "executive" },
-    transform: (raw: unknown) => (raw as { projects: ExtendedProject[] }).projects,
+    transform: (raw: unknown) => (raw as { projects: RawProject[] }).projects,
   });
   const safeProjects = projects ?? [];
 

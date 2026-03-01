@@ -61,14 +61,6 @@ const SUITE_LINKS: SuiteLinkData[] = [
     visibility: "all",
   },
   {
-    href: "/suites/department",
-    title: "Tech Ops Suite",
-    description: "Execution dashboards for field operations teams.",
-    tag: "TECH OPS",
-    tagColor: "green",
-    visibility: "all",
-  },
-  {
     href: "/suites/design-engineering",
     title: "Design & Engineering Suite",
     description: "Design review, clipping analytics, AHJ requirements, and engineering tools.",
@@ -453,7 +445,6 @@ export default function Home() {
     if (userRole === "TECH_OPS") {
       const allowedTechOpsSuites = new Set([
         "/suites/operations",
-        "/suites/department",
         "/suites/design-engineering",
         "/suites/permitting-interconnection",
       ]);
@@ -462,7 +453,6 @@ export default function Home() {
     if (userRole === "PROJECT_MANAGER") {
       const allowedPmSuites = new Set([
         "/suites/operations",
-        "/suites/department",
         "/suites/design-engineering",
         "/suites/permitting-interconnection",
         "/suites/intelligence",

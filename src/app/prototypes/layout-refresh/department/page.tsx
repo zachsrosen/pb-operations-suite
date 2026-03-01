@@ -87,15 +87,15 @@ export default function DepartmentLayoutPrototypePage() {
             Workflow Atlas Layout
           </h1>
           <p className="mt-4 max-w-3xl text-sm text-slate-600 sm:text-base">
-            A process-driven replacement for <span className="text-emerald-700">/suites/department</span>.
+            A process-driven replacement for the former Tech Ops Suite <span className="text-emerald-700">(dissolved)</span>.
             Dashboards are grouped by execution phase to clarify handoffs between teams.
           </p>
           <div className="mt-6 flex flex-wrap gap-2 text-xs">
             <Link href="/prototypes/layout-refresh" className="rounded-full border border-slate-900/20 px-3 py-1.5 text-slate-700 hover:border-slate-900/40 hover:text-slate-900">
               Back to Prototype Hub
             </Link>
-            <Link href="/suites/department" className="rounded-full border border-emerald-700/25 bg-emerald-700/10 px-3 py-1.5 text-emerald-700 hover:bg-emerald-700/20">
-              Current View
+            <Link href="/suites/operations" className="rounded-full border border-emerald-700/25 bg-emerald-700/10 px-3 py-1.5 text-emerald-700 hover:bg-emerald-700/20">
+              Operations Suite
             </Link>
           </div>
         </header>

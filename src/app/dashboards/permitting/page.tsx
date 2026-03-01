@@ -24,11 +24,6 @@ function getDisplayName(value: string | undefined): string {
   return DISPLAY_NAMES[value] || value;
 }
 
-interface ExtendedProject extends RawProject {
-  permittingStatus?: string;
-  finalInspectionStatus?: string;
-}
-
 // Permitting Status Groups — values are HubSpot internal enum values, labels are display names
 const PERMITTING_STATUS_GROUPS: FilterGroup[] = [
   {
@@ -90,9 +85,9 @@ export default function PermittingPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
-  const { data: projects, loading, error, refetch, lastUpdated } = useProjectData<ExtendedProject[]>({
+  const { data: projects, loading, error, refetch, lastUpdated } = useProjectData<RawProject[]>({
     params: { context: "executive" },
-    transform: (raw: unknown) => (raw as { projects: ExtendedProject[] }).projects,
+    transform: (raw: unknown) => (raw as { projects: RawProject[] }).projects,
   });
   const safeProjects = projects ?? [];
 
@@ -114,14 +109,14 @@ export default function PermittingPage() {
   }, [loading, safeProjects.length, trackDashboardView]);
 
   // Status helper functions
-  const isPermitPending = useCallback((p: ExtendedProject) => {
+  const isPermitPending = useCallback((p: RawProject) => {
     const status = (p.permittingStatus || '').toLowerCase();
     if (status && ['submitted', 'in review', 'pending', 'in progress', 'under review'].some(s => status.includes(s))) return true;
     if (!status && p.permitSubmitDate && !p.permitIssueDate) return true;
     return false;
   }, []);
 
-  const isPermitIssued = useCallback((p: ExtendedProject) => {
+  const isPermitIssued = useCallback((p: RawProject) => {
     const status = (p.permittingStatus || '').toLowerCase();
     if (status && ['issued', 'approved', 'complete', 'received'].some(s => status.includes(s))) return true;
     if (!status && p.permitIssueDate) return true;
@@ -258,7 +253,7 @@ export default function PermittingPage() {
 
   // Get statuses that exist in the data
   const existingPermitStatuses = useMemo(() =>
-    new Set(safeProjects.map(p => (p as ExtendedProject).permittingStatus).filter(Boolean)),
+    new Set(safeProjects.map(p => (p as RawProject).permittingStatus).filter(Boolean)),
     [safeProjects]
   );
 

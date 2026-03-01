@@ -51,7 +51,7 @@ export const APP_PAGE_ROUTES = [
   "/maintenance",
   "/prototypes/layout-refresh",
   "/prototypes/layout-refresh/[prototype]",
-  "/prototypes/layout-refresh/department",
+
   "/prototypes/layout-refresh/executive",
   "/prototypes/layout-refresh/internal",
   "/prototypes/layout-refresh/internal/[slug]",
@@ -61,7 +61,6 @@ export const APP_PAGE_ROUTES = [
   "/roadmap",
   "/sop",
   "/suites/admin",
-  "/suites/department",
   "/suites/executive",
   "/suites/intelligence",
   "/suites/operations",

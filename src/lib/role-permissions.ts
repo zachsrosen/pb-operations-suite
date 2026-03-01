@@ -72,7 +72,6 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     allowedRoutes: [
       "/",
       "/suites/operations",
-      "/suites/department",
       "/suites/design-engineering",
       "/suites/permitting-interconnection",
       "/suites/service",
@@ -244,7 +243,6 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     allowedRoutes: [
       "/",
       "/suites/operations",
-      "/suites/department",
       "/suites/design-engineering",
       "/suites/permitting-interconnection",
       "/suites/service",
@@ -324,7 +322,6 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
   TECH_OPS: {
     allowedRoutes: [
       "/",
-      "/suites/department",
       "/suites/design-engineering",
       "/suites/permitting-interconnection",
       "/suites/operations",
@@ -392,7 +389,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     // Legacy role: normalized to TECH_OPS at runtime
     allowedRoutes: [
       "/",
-      "/suites/department",
+      "/suites/operations",
       "/suites/design-engineering",
       "/suites/permitting-interconnection",
       "/dashboards/site-survey",
@@ -439,7 +436,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     // Legacy role: normalized to TECH_OPS at runtime
     allowedRoutes: [
       "/",
-      "/suites/department",
+      "/suites/operations",
       "/suites/design-engineering",
       "/suites/permitting-interconnection",
       "/dashboards/site-survey",

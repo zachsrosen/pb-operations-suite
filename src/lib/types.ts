@@ -45,6 +45,56 @@ export interface RawProject {
     battery?: { count?: number; expansionCount?: number; brand?: string };
     evCount?: number;
   };
+
+  // Design & Engineering
+  designStatus?: string;
+  layoutStatus?: string;
+  designCompletionDate?: string;
+  designApprovalDate?: string;
+  designSupportUser?: string;
+  systemPerformanceReview?: boolean;
+  tags?: string[];
+
+  // Permitting
+  permittingStatus?: string;
+
+  // Interconnection
+  interconnectionStatus?: string;
+  interconnectionSubmitDate?: string;
+  interconnectionApprovalDate?: string;
+
+  // PTO
+  ptoStatus?: string;
+  ptoSubmitDate?: string;
+
+  // Site Survey
+  siteSurveyStatus?: string;
+  siteSurveyCompletionDate?: string;
+
+  // Construction
+  constructionStatus?: string;
+  readyToBuildDate?: string;
+
+  // Inspection
+  finalInspectionStatus?: string;
+
+  // Incentive Programs
+  threeceEvStatus?: string;
+  threeceBatteryStatus?: string;
+  sgipStatus?: string;
+  pbsrStatus?: string;
+  cpaStatus?: string;
+
+  // Team
+  projectManager?: string;
+  operationsManager?: string;
+  dealOwner?: string;
+  siteSurveyor?: string;
+
+  // Department leads (resolved from HubSpot enumeration properties via owner map)
+  designLead?: string;
+  permitLead?: string;
+  interconnectionsLead?: string;
 }
 
 export interface TransformedProject {

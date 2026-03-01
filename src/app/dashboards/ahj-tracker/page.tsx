@@ -7,6 +7,7 @@ import { formatMoney } from "@/lib/format";
 import { RawProject } from "@/lib/types";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
+import { PERMIT_ACTIVE_STATUSES, PERMIT_REVISION_STATUSES } from "@/lib/pi-statuses";
 
 // ---- Types ----
 
@@ -15,36 +16,6 @@ interface AHJRecord {
   properties: Record<string, string | null>;
 }
 
-interface ExtendedProject extends RawProject {
-  permittingStatus?: string;
-  permitLead?: string;
-  interconnectionsLead?: string;
-}
-
-// Permitting statuses indicating active permits
-const PERMIT_ACTIVE_STATUSES = [
-  "Awaiting Utility Approval",
-  "Ready For Permitting",
-  "Submitted To Customer",
-  "Customer Signature Acquired",
-  "Waiting On Information",
-  "Submitted to AHJ",
-  "Resubmitted to AHJ",
-  "Pending SolarApp",
-  "Submit SolarApp to AHJ",
-];
-
-const PERMIT_REVISION_STATUSES = [
-  "Non-Design Related Rejection",
-  "Rejected",
-  "In Design For Revision",
-  "Returned from Design",
-  "As-Built Revision Needed",
-  "As-Built Revision In Progress",
-  "As-Built Ready To Resubmit",
-  "As-Built Revision Resubmitted",
-];
-
 type SortField = "name" | "dealCount" | "activePermits" | "rejectionRate" | "turnaround" | "revenue";
 type SortDir = "asc" | "desc";
 
@@ -52,9 +23,9 @@ export default function AHJTrackerPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
-  const { data: projects, loading: projectsLoading, lastUpdated } = useProjectData<ExtendedProject[]>({
+  const { data: projects, loading: projectsLoading, lastUpdated } = useProjectData<RawProject[]>({
     params: { context: "executive" },
-    transform: (raw: unknown) => (raw as { projects: ExtendedProject[] }).projects,
+    transform: (raw: unknown) => (raw as { projects: RawProject[] }).projects,
   });
   const safeProjects = projects ?? [];
 
@@ -92,11 +63,49 @@ export default function AHJTrackerPage() {
   const [sortField, setSortField] = useState<SortField>("dealCount");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [expandedAhj, setExpandedAhj] = useState<string | null>(null);
+  const [locationFilter, setLocationFilter] = useState<string>("all");
+  const [leadFilter, setLeadFilter] = useState<string>("all");
+  const [stageFilter, setStageFilter] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState("");
 
-  // Group projects by AHJ (case-insensitive)
-  const projectsByAhj = useMemo(() => {
-    const map: Record<string, { display: string; projects: ExtendedProject[] }> = {};
+  const locations = useMemo(() => {
+    const locs = new Set<string>();
+    safeProjects.forEach((p) => { if (p.pbLocation) locs.add(p.pbLocation); });
+    return Array.from(locs).sort();
+  }, [safeProjects]);
+
+  const leads = useMemo(() => {
+    const names = new Set<string>();
     safeProjects.forEach((p) => {
+      if (p.permitLead) names.add(p.permitLead);
+    });
+    return Array.from(names).sort();
+  }, [safeProjects]);
+
+  const stages = useMemo(() => {
+    const s = new Set<string>();
+    safeProjects.forEach((p) => { if (p.stage) s.add(p.stage); });
+    return Array.from(s).sort();
+  }, [safeProjects]);
+
+  const filteredProjects = useMemo(() => {
+    let result = safeProjects;
+    if (locationFilter !== "all") result = result.filter((p) => p.pbLocation === locationFilter);
+    if (leadFilter !== "all") result = result.filter((p) => p.permitLead === leadFilter);
+    if (stageFilter !== "all") result = result.filter((p) => p.stage === stageFilter);
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter((p) =>
+        (p.name?.toLowerCase().includes(q) || p.ahj?.toLowerCase().includes(q) || p.stage?.toLowerCase().includes(q) || p.pbLocation?.toLowerCase().includes(q) || p.permitLead?.toLowerCase().includes(q))
+      );
+    }
+    return result;
+  }, [safeProjects, locationFilter, leadFilter, stageFilter, searchQuery]);
+
+  // Group projects by AHJ (case-insensitive) — filtered for both stats and table
+  const projectsByAhj = useMemo(() => {
+    const map: Record<string, { display: string; projects: RawProject[] }> = {};
+    filteredProjects.forEach((p) => {
       const ahj = p.ahj?.trim();
       if (ahj) {
         const key = ahj.toLowerCase();
@@ -105,7 +114,7 @@ export default function AHJTrackerPage() {
       }
     });
     return map;
-  }, [safeProjects]);
+  }, [filteredProjects]);
 
   // AHJ custom object records by name
   const ahjByKey = useMemo(() => {
@@ -167,7 +176,7 @@ export default function AHJTrackerPage() {
     });
   }, [projectsByAhj, ahjByKey]);
 
-  // Only rows with deals for the table
+  // Only rows with deals
   const rowsWithDeals = useMemo(() => ahjRows.filter((r) => r.dealCount > 0), [ahjRows]);
 
   // Sort
@@ -261,6 +270,29 @@ export default function AHJTrackerPage() {
           value={loading ? null : stats.avgTurnaround > 0 ? `${stats.avgTurnaround}d` : "—"}
           color="purple"
         />
+      </div>
+
+      {/* Filters */}
+      <div className="flex gap-2 flex-wrap items-center">
+        <input
+          type="text"
+          placeholder="Search AHJ name, project, or status..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground placeholder:text-muted w-full max-w-xs"
+        />
+        <select value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)} className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground">
+          <option value="all">All Locations</option>
+          {locations.map((loc) => <option key={loc} value={loc}>{loc}</option>)}
+        </select>
+        <select value={leadFilter} onChange={(e) => setLeadFilter(e.target.value)} className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground">
+          <option value="all">All Leads</option>
+          {leads.map((name) => <option key={name} value={name}>{name}</option>)}
+        </select>
+        <select value={stageFilter} onChange={(e) => setStageFilter(e.target.value)} className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground">
+          <option value="all">All Stages</option>
+          {stages.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
       </div>
 
       {/* AHJ Table */}

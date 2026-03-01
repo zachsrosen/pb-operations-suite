@@ -15,13 +15,6 @@ interface UtilityRecord {
   properties: Record<string, string | null>;
 }
 
-interface ExtendedProject extends RawProject {
-  designStatus?: string;
-  designLead?: string;
-  projectManager?: string;
-  interconnectionsLead?: string;
-}
-
 type SortField = "name" | "dealCount" | "revenue" | "interconnectionTurnaround" | "rejectionCount";
 type SortDir = "asc" | "desc";
 
@@ -30,9 +23,9 @@ export default function UtilityDesignRequirementsPage() {
   const hasTrackedView = useRef(false);
 
   // Fetch project data
-  const { data: projects, loading: projectsLoading, lastUpdated } = useProjectData<ExtendedProject[]>({
+  const { data: projects, loading: projectsLoading, lastUpdated } = useProjectData<RawProject[]>({
     params: { context: "executive" },
-    transform: (raw: unknown) => (raw as { projects: ExtendedProject[] }).projects,
+    transform: (raw: unknown) => (raw as { projects: RawProject[] }).projects,
   });
   const safeProjects = projects ?? [];
 
@@ -74,7 +67,7 @@ export default function UtilityDesignRequirementsPage() {
 
   // Group projects by utility name (case-insensitive key, preserve display name)
   const projectsByUtility = useMemo(() => {
-    const map: Record<string, { display: string; projects: ExtendedProject[] }> = {};
+    const map: Record<string, { display: string; projects: RawProject[] }> = {};
     safeProjects.forEach((p) => {
       const util = p.utility?.trim();
       if (util) {

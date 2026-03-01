@@ -7,6 +7,7 @@ import { formatMoney } from "@/lib/format";
 import { RawProject } from "@/lib/types";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
+import { IC_ACTIVE_STATUSES, IC_REVISION_STATUSES, PTO_PIPELINE_STATUSES } from "@/lib/pi-statuses";
 
 // ---- Types ----
 
@@ -15,56 +16,6 @@ interface UtilityRecord {
   properties: Record<string, string | null>;
 }
 
-interface ExtendedProject extends RawProject {
-  interconnectionStatus?: string;
-  interconnectionSubmitDate?: string;
-  interconnectionApprovalDate?: string;
-  ptoStatus?: string;
-  ptoSubmitDate?: string;
-  interconnectionsLead?: string;
-}
-
-// IC statuses indicating active applications
-const IC_ACTIVE_STATUSES = [
-  "Ready for Interconnection",
-  "Submitted To Customer",
-  "Ready To Submit - Pending Design",
-  "Signature Acquired By Customer",
-  "Submitted To Utility",
-  "Waiting On Information",
-  "Waiting on Utility Bill",
-  "Waiting on New Construction",
-  "In Review",
-];
-
-const IC_REVISION_STATUSES = [
-  "Non-Design Related Rejection",
-  "Rejected (New)",
-  "Rejected",
-  "In Design For Revisions",
-  "Revision Returned From Design",
-  "Resubmitted To Utility",
-];
-
-// PTO pipeline statuses
-const PTO_PIPELINE_STATUSES = [
-  "PTO Waiting on Interconnection Approval",
-  "Inspection Passed - Ready for Utility",
-  "Inspection Submitted to Utility",
-  "Resubmitted to Utility",
-  "Inspection Rejected By Utility",
-  "Ops Related PTO Rejection",
-  "Waiting On Information",
-  "Waiting on New Construction",
-  "Pending Truck Roll",
-  "Xcel Photos Ready to Submit",
-  "Xcel Photos Submitted",
-  "XCEL Photos Rejected",
-  "Xcel Photos Ready to Resubmit",
-  "Xcel Photos Resubmitted",
-  "Xcel Photos Approved",
-];
-
 type SortField = "name" | "dealCount" | "activeIC" | "ptoPipeline" | "icTurnaround" | "revenue";
 type SortDir = "asc" | "desc";
 
@@ -72,9 +23,9 @@ export default function UtilityTrackerPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
-  const { data: projects, loading: projectsLoading, lastUpdated } = useProjectData<ExtendedProject[]>({
+  const { data: projects, loading: projectsLoading, lastUpdated } = useProjectData<RawProject[]>({
     params: { context: "executive" },
-    transform: (raw: unknown) => (raw as { projects: ExtendedProject[] }).projects,
+    transform: (raw: unknown) => (raw as { projects: RawProject[] }).projects,
   });
   const safeProjects = projects ?? [];
 
@@ -112,11 +63,49 @@ export default function UtilityTrackerPage() {
   const [sortField, setSortField] = useState<SortField>("dealCount");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [expandedUtility, setExpandedUtility] = useState<string | null>(null);
+  const [locationFilter, setLocationFilter] = useState<string>("all");
+  const [leadFilter, setLeadFilter] = useState<string>("all");
+  const [stageFilter, setStageFilter] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const locations = useMemo(() => {
+    const locs = new Set<string>();
+    safeProjects.forEach((p) => { if (p.pbLocation) locs.add(p.pbLocation); });
+    return Array.from(locs).sort();
+  }, [safeProjects]);
+
+  const leads = useMemo(() => {
+    const names = new Set<string>();
+    safeProjects.forEach((p) => {
+      if (p.interconnectionsLead) names.add(p.interconnectionsLead);
+    });
+    return Array.from(names).sort();
+  }, [safeProjects]);
+
+  const stages = useMemo(() => {
+    const s = new Set<string>();
+    safeProjects.forEach((p) => { if (p.stage) s.add(p.stage); });
+    return Array.from(s).sort();
+  }, [safeProjects]);
+
+  const filteredProjects = useMemo(() => {
+    let result = safeProjects;
+    if (locationFilter !== "all") result = result.filter((p) => p.pbLocation === locationFilter);
+    if (leadFilter !== "all") result = result.filter((p) => p.interconnectionsLead === leadFilter);
+    if (stageFilter !== "all") result = result.filter((p) => p.stage === stageFilter);
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter((p) =>
+        (p.name?.toLowerCase().includes(q) || p.utility?.toLowerCase().includes(q) || p.stage?.toLowerCase().includes(q) || p.pbLocation?.toLowerCase().includes(q) || p.interconnectionsLead?.toLowerCase().includes(q))
+      );
+    }
+    return result;
+  }, [safeProjects, locationFilter, leadFilter, stageFilter, searchQuery]);
 
   // Group projects by utility (case-insensitive)
   const projectsByUtility = useMemo(() => {
-    const map: Record<string, { display: string; projects: ExtendedProject[] }> = {};
-    safeProjects.forEach((p) => {
+    const map: Record<string, { display: string; projects: RawProject[] }> = {};
+    filteredProjects.forEach((p) => {
       const util = p.utility?.trim();
       if (util) {
         const key = util.toLowerCase();
@@ -125,7 +114,7 @@ export default function UtilityTrackerPage() {
       }
     });
     return map;
-  }, [safeProjects]);
+  }, [filteredProjects]);
 
   // Utility custom object records by name
   const utilityByKey = useMemo(() => {
@@ -281,6 +270,29 @@ export default function UtilityTrackerPage() {
           value={loading ? null : stats.avgTurnaround > 0 ? `${stats.avgTurnaround}d` : "—"}
           color="purple"
         />
+      </div>
+
+      {/* Filters */}
+      <div className="flex gap-2 flex-wrap items-center">
+        <input
+          type="text"
+          placeholder="Search utility, project, or status..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground placeholder:text-muted w-full max-w-xs"
+        />
+        <select value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)} className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground">
+          <option value="all">All Locations</option>
+          {locations.map((loc) => <option key={loc} value={loc}>{loc}</option>)}
+        </select>
+        <select value={leadFilter} onChange={(e) => setLeadFilter(e.target.value)} className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground">
+          <option value="all">All Leads</option>
+          {leads.map((name) => <option key={name} value={name}>{name}</option>)}
+        </select>
+        <select value={stageFilter} onChange={(e) => setStageFilter(e.target.value)} className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground">
+          <option value="all">All Stages</option>
+          {stages.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
       </div>
 
       {/* Utility Table */}

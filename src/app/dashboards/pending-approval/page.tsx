@@ -8,16 +8,6 @@ import { RawProject } from "@/lib/types";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 
-// ---- Types ----
-
-interface ExtendedProject extends RawProject {
-  designStatus?: string;
-  layoutStatus?: string;
-  designCompletionDate?: string;
-  designApprovalDate?: string;
-  projectManager?: string;
-}
-
 // Design Approval (layout) statuses that indicate "pending" — NOT approved/rejected/revision
 const PENDING_APPROVAL_STATUSES = [
   "Sent For Approval",
@@ -38,9 +28,9 @@ export default function PendingApprovalPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
-  const { data: projects, loading, lastUpdated } = useProjectData<ExtendedProject[]>({
+  const { data: projects, loading, lastUpdated } = useProjectData<RawProject[]>({
     params: { context: "executive" },
-    transform: (raw: unknown) => (raw as { projects: ExtendedProject[] }).projects,
+    transform: (raw: unknown) => (raw as { projects: RawProject[] }).projects,
   });
   const safeProjects = projects ?? [];
 

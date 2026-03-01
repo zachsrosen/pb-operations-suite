@@ -15,13 +15,6 @@ interface AHJRecord {
   properties: Record<string, string | null>;
 }
 
-interface ExtendedProject extends RawProject {
-  designStatus?: string;
-  designLead?: string;
-  projectManager?: string;
-  permitLead?: string;
-}
-
 // Revision / rejection statuses for computing rejection rate
 const REVISION_STATUSES = [
   "Revision Needed - DA Rejected",
@@ -46,9 +39,9 @@ export default function AHJRequirementsPage() {
   const hasTrackedView = useRef(false);
 
   // Fetch project data
-  const { data: projects, loading: projectsLoading, lastUpdated } = useProjectData<ExtendedProject[]>({
+  const { data: projects, loading: projectsLoading, lastUpdated } = useProjectData<RawProject[]>({
     params: { context: "executive" },
-    transform: (raw: unknown) => (raw as { projects: ExtendedProject[] }).projects,
+    transform: (raw: unknown) => (raw as { projects: RawProject[] }).projects,
   });
   const safeProjects = projects ?? [];
 
@@ -90,7 +83,7 @@ export default function AHJRequirementsPage() {
 
   // Group projects by AHJ name (case-insensitive key, preserve display name)
   const projectsByAhj = useMemo(() => {
-    const map: Record<string, { display: string; projects: ExtendedProject[] }> = {};
+    const map: Record<string, { display: string; projects: RawProject[] }> = {};
     safeProjects.forEach((p) => {
       const ahj = p.ahj?.trim();
       if (ahj) {

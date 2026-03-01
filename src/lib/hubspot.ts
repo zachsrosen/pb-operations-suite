@@ -359,6 +359,11 @@ export interface Project {
   dealOwner: string;
   siteSurveyor: string;
 
+  // Department leads (resolved via owner map)
+  designLead: string;
+  permitLead: string;
+  interconnectionsLead: string;
+
   // QC Time Metrics (pre-calculated by HubSpot, in days)
   siteSurveyTurnaroundTime: number | null;
   timeDAReadyToSent: number | null;
@@ -563,6 +568,11 @@ const DEAL_PROPERTIES = [
   "operations_manager",
   "hubspot_owner_id",
   "site_surveyor",
+
+  // Department leads
+  "design",
+  "permit_tech",
+  "interconnections_tech",
 
   // QC Time Metrics (pre-calculated by HubSpot, in days)
   "site_survey_turnaround_time",
@@ -873,6 +883,23 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
       return surveyorMap?.[raw] || raw;
     })(),
 
+    // Department leads — enumeration properties, resolve through owner map
+    designLead: (() => {
+      const raw = String(deal.design || "");
+      if (!raw) return "";
+      return ownerMap?.[raw] || surveyorMap?.[raw] || raw;
+    })(),
+    permitLead: (() => {
+      const raw = String(deal.permit_tech || "");
+      if (!raw) return "";
+      return ownerMap?.[raw] || surveyorMap?.[raw] || raw;
+    })(),
+    interconnectionsLead: (() => {
+      const raw = String(deal.interconnections_tech || "");
+      if (!raw) return "";
+      return ownerMap?.[raw] || surveyorMap?.[raw] || raw;
+    })(),
+
     // QC Time Metrics (HubSpot stores in milliseconds, convert to days)
     siteSurveyTurnaroundTime: msToDays(deal.site_survey_turnaround_time),
     timeDAReadyToSent: msToDays(deal.time_between_da_ready_and_da_sent),
@@ -1074,6 +1101,13 @@ export async function fetchAllProjects(options?: {
     surveyorPropResult,
     surveyorPropArchivedResult,
     ownersApiResult,
+    // Lead property definitions (active + archived)
+    designPropResult,
+    designPropArchivedResult,
+    permitPropResult,
+    permitPropArchivedResult,
+    icPropResult,
+    icPropArchivedResult,
   ] = await Promise.allSettled([
     // Source 1: Property definition options for hubspot_owner_id (active + archived)
     getDealPropertyDefinition("hubspot_owner_id"),
@@ -1083,6 +1117,13 @@ export async function fetchAllProjects(options?: {
     getDealPropertyDefinition("site_surveyor", true),
     // Source 3: Owners API (first page — covers most cases when scoped)
     ownersApiPromise,
+    // Source 4: Lead property definitions (active + archived)
+    getDealPropertyDefinition("design"),
+    getDealPropertyDefinition("design", true),
+    getDealPropertyDefinition("permit_tech"),
+    getDealPropertyDefinition("permit_tech", true),
+    getDealPropertyDefinition("interconnections_tech"),
+    getDealPropertyDefinition("interconnections_tech", true),
   ]);
 
   // Process Source 1: hubspot_owner_id property options (active + archived)
@@ -1116,6 +1157,25 @@ export async function fetchAllProjects(options?: {
     );
   }
   console.log(`[HubSpot] After surveyor prop: ${Object.keys(ownerMap).length} total mappings`);
+
+  // Process Source 4: Lead property definitions (active + archived)
+  for (const [label, result, archivedResult] of [
+    ["design", designPropResult, designPropArchivedResult],
+    ["permit_tech", permitPropResult, permitPropArchivedResult],
+    ["interconnections_tech", icPropResult, icPropArchivedResult],
+  ] as const) {
+    if (result.status === "fulfilled") {
+      addPropertyOptionsToOwnerMap(result.value?.options || []);
+    } else {
+      console.warn(`[HubSpot] Failed to fetch ${label} property:`, result.reason?.message || result.reason);
+    }
+    if (archivedResult.status === "fulfilled") {
+      addPropertyOptionsToOwnerMap(archivedResult.value?.options || []);
+    } else {
+      console.warn(`[HubSpot] Failed to fetch archived ${label} property:`, archivedResult.reason?.message || archivedResult.reason);
+    }
+  }
+  console.log(`[HubSpot] After lead props: ${Object.keys(ownerMap).length} total mappings`);
 
   // Process Source 3: Owners API (paginated — fills gaps)
   if (ownersApiResult.status === "fulfilled") {

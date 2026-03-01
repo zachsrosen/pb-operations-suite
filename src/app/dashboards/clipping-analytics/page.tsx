@@ -9,21 +9,10 @@ import { useProjectData } from "@/hooks/useProjectData";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import {
   ClippingAnalysis,
-  FullEquipment,
   analyzeClipping,
   getSeasonalTSRF,
   DEFAULT_TSRF,
 } from "@/lib/clipping";
-
-interface ExtendedProject extends RawProject {
-  designStatus?: string;
-  layoutStatus?: string;
-  designCompletionDate?: string;
-  designApprovalDate?: string;
-  tags?: string[];
-  equipment?: FullEquipment | RawProject["equipment"];
-  systemPerformanceReview?: boolean;
-}
 
 // ============== COMPONENT ==============
 
@@ -38,9 +27,9 @@ export default function ClippingAnalyticsPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
-  const { data: projects, loading, lastUpdated } = useProjectData<ExtendedProject[]>({
+  const { data: projects, loading, lastUpdated } = useProjectData<RawProject[]>({
     params: { context: "executive" },
-    transform: (raw: unknown) => (raw as { projects: ExtendedProject[] }).projects,
+    transform: (raw: unknown) => (raw as { projects: RawProject[] }).projects,
   });
   const safeProjects = projects ?? [];
 
@@ -56,7 +45,7 @@ export default function ClippingAnalyticsPage() {
   }, [loading, safeProjects.length, trackDashboardView]);
 
   const handleTogglePerformanceReview = useCallback(
-    async (project: ExtendedProject) => {
+    async (project: RawProject) => {
       const current = localOverrides[project.id] ?? project.systemPerformanceReview ?? false;
       const newValue = !current;
       setTogglingIds((prev) => new Set(prev).add(project.id));

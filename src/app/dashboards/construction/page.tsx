@@ -9,13 +9,6 @@ import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useConstructionFilters } from "@/stores/dashboard-filters";
 
-interface ExtendedProject extends RawProject {
-  constructionStatus?: string;
-  constructionScheduleDate?: string;
-  constructionCompleteDate?: string;
-  readyToBuildDate?: string;
-}
-
 // Construction Status Groups
 const CONSTRUCTION_STATUS_GROUPS: FilterGroup[] = [
   {
@@ -61,9 +54,9 @@ export default function ConstructionDashboardPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
-  const { data: projects, loading, error, refetch, lastUpdated } = useProjectData<ExtendedProject[]>({
+  const { data: projects, loading, error, refetch, lastUpdated } = useProjectData<RawProject[]>({
     params: { context: "executive" },
-    transform: (raw: unknown) => (raw as { projects: ExtendedProject[] }).projects,
+    transform: (raw: unknown) => (raw as { projects: RawProject[] }).projects,
   });
   const safeProjects = projects ?? [];
 
@@ -89,7 +82,7 @@ export default function ConstructionDashboardPage() {
   }, [loading, safeProjects.length, trackDashboardView]);
 
   // Check if project is in construction phase
-  const isInConstructionPhase = useCallback((p: ExtendedProject) => {
+  const isInConstructionPhase = useCallback((p: RawProject) => {
     return p.stage === 'Construction' ||
            p.stage === 'Ready To Build' ||
            p.stage === 'RTB - Blocked' ||
@@ -186,7 +179,7 @@ export default function ConstructionDashboardPage() {
 
   // Get construction statuses that exist in the data
   const existingConstructionStatuses = useMemo(() =>
-    new Set(safeProjects.map(p => (p as ExtendedProject).constructionStatus).filter(Boolean)),
+    new Set(safeProjects.map(p => (p as RawProject).constructionStatus).filter(Boolean)),
     [safeProjects]
   );
 

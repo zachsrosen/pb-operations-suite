@@ -9,26 +9,6 @@ import { useProjectData } from "@/hooks/useProjectData";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import Link from "next/link";
 
-// ---- Types ----
-
-interface FullEquipment {
-  modules: { brand: string; model: string; count: number; wattage: number };
-  inverter: { brand: string; model: string; count: number; sizeKwac: number };
-  battery: { brand: string; model: string; count: number; sizeKwh: number; expansionCount: number };
-  evCount: number;
-  systemSizeKwdc: number;
-  systemSizeKwac: number;
-}
-
-interface ExtendedProject extends RawProject {
-  designStatus?: string;
-  layoutStatus?: string;
-  designCompletionDate?: string;
-  designApprovalDate?: string;
-  systemPerformanceReview?: boolean;
-  equipment?: FullEquipment | RawProject["equipment"];
-}
-
 // Design status funnel order
 const STATUS_FUNNEL = [
   { key: "Ready for Design", label: "Ready for Design", color: "bg-slate-500" },
@@ -60,9 +40,9 @@ export default function DEOverviewPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
-  const { data: projects, loading, lastUpdated } = useProjectData<ExtendedProject[]>({
+  const { data: projects, loading, lastUpdated } = useProjectData<RawProject[]>({
     params: { context: "executive" },
-    transform: (raw: unknown) => (raw as { projects: ExtendedProject[] }).projects,
+    transform: (raw: unknown) => (raw as { projects: RawProject[] }).projects,
   });
   const safeProjects = projects ?? [];
 

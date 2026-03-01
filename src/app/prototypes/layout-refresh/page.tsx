@@ -20,7 +20,7 @@ const PROTOTYPES = [
   {
     href: "/prototypes/layout-refresh/department",
     title: "Department: Workflow Atlas",
-    replaces: "/suites/department",
+    replaces: "(former Tech Ops Suite — dissolved)",
     description:
       "Process-oriented board that groups dashboards by pipeline phase instead of a flat list.",
     accent: "from-emerald-400/30 via-teal-400/15 to-transparent",

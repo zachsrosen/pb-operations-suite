@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { MetricCard } from "@/components/ui/MetricCard";
 import { MonthlyBarChart, aggregateMonthly } from "@/components/ui/MonthlyBarChart";
@@ -9,24 +9,13 @@ import { RawProject } from "@/lib/types";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 
-// ---- Types ----
-
-interface ExtendedProject extends RawProject {
-  permittingStatus?: string;
-  interconnectionStatus?: string;
-  interconnectionSubmitDate?: string;
-  interconnectionApprovalDate?: string;
-  ptoStatus?: string;
-  ptoSubmitDate?: string;
-}
-
 export default function PIMetricsPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
-  const { data: projects, loading, lastUpdated } = useProjectData<ExtendedProject[]>({
+  const { data: projects, loading, lastUpdated } = useProjectData<RawProject[]>({
     params: { context: "executive" },
-    transform: (raw: unknown) => (raw as { projects: ExtendedProject[] }).projects,
+    transform: (raw: unknown) => (raw as { projects: RawProject[] }).projects,
   });
   const safeProjects = projects ?? [];
 
@@ -37,80 +26,113 @@ export default function PIMetricsPage() {
     }
   }, [loading, safeProjects.length, trackDashboardView]);
 
+  const [locationFilter, setLocationFilter] = useState<string>("all");
+  const [leadFilter, setLeadFilter] = useState<string>("all");
+  const [stageFilter, setStageFilter] = useState<string>("all");
+
+  const locations = useMemo(() => {
+    const locs = new Set<string>();
+    safeProjects.forEach((p) => { if (p.pbLocation) locs.add(p.pbLocation); });
+    return Array.from(locs).sort();
+  }, [safeProjects]);
+
+  const leads = useMemo(() => {
+    const names = new Set<string>();
+    safeProjects.forEach((p) => {
+      if (p.permitLead) names.add(p.permitLead);
+      if (p.interconnectionsLead) names.add(p.interconnectionsLead);
+    });
+    return Array.from(names).sort();
+  }, [safeProjects]);
+
+  const stages = useMemo(() => {
+    const s = new Set<string>();
+    safeProjects.forEach((p) => { if (p.stage) s.add(p.stage); });
+    return Array.from(s).sort();
+  }, [safeProjects]);
+
+  const filteredProjects = useMemo(() => {
+    let result = safeProjects;
+    if (locationFilter !== "all") result = result.filter((p) => p.pbLocation === locationFilter);
+    if (leadFilter !== "all") result = result.filter((p) => p.permitLead === leadFilter || p.interconnectionsLead === leadFilter);
+    if (stageFilter !== "all") result = result.filter((p) => p.stage === stageFilter);
+    return result;
+  }, [safeProjects, locationFilter, leadFilter, stageFilter]);
+
   // ---- Permit Metrics ----
   const permitMetrics = useMemo(() => {
-    const submitted = safeProjects.filter((p) => p.permitSubmitDate);
-    const issued = safeProjects.filter((p) => p.permitIssueDate);
-    const pending = safeProjects.filter((p) => p.permitSubmitDate && !p.permitIssueDate);
+    const submitted = filteredProjects.filter((p) => p.permitSubmitDate);
+    const issued = filteredProjects.filter((p) => p.permitIssueDate);
+    const pending = filteredProjects.filter((p) => p.permitSubmitDate && !p.permitIssueDate);
 
     return {
       submitted: { count: submitted.length, revenue: submitted.reduce((s, p) => s + (p.amount || 0), 0) },
       issued: { count: issued.length, revenue: issued.reduce((s, p) => s + (p.amount || 0), 0) },
       pending: { count: pending.length, revenue: pending.reduce((s, p) => s + (p.amount || 0), 0) },
     };
-  }, [safeProjects]);
+  }, [filteredProjects]);
 
   // ---- IC Metrics ----
   const icMetrics = useMemo(() => {
-    const submitted = safeProjects.filter((p) => p.interconnectionSubmitDate);
-    const approved = safeProjects.filter((p) => p.interconnectionApprovalDate);
-    const pending = safeProjects.filter((p) => p.interconnectionSubmitDate && !p.interconnectionApprovalDate);
+    const submitted = filteredProjects.filter((p) => p.interconnectionSubmitDate);
+    const approved = filteredProjects.filter((p) => p.interconnectionApprovalDate);
+    const pending = filteredProjects.filter((p) => p.interconnectionSubmitDate && !p.interconnectionApprovalDate);
 
     return {
       submitted: { count: submitted.length, revenue: submitted.reduce((s, p) => s + (p.amount || 0), 0) },
       approved: { count: approved.length, revenue: approved.reduce((s, p) => s + (p.amount || 0), 0) },
       pending: { count: pending.length, revenue: pending.reduce((s, p) => s + (p.amount || 0), 0) },
     };
-  }, [safeProjects]);
+  }, [filteredProjects]);
 
   // ---- PTO Metrics ----
   const ptoMetrics = useMemo(() => {
-    const submitted = safeProjects.filter((p) => p.ptoSubmitDate);
-    const granted = safeProjects.filter((p) => p.ptoGrantedDate);
-    const pending = safeProjects.filter((p) => p.ptoSubmitDate && !p.ptoGrantedDate);
+    const submitted = filteredProjects.filter((p) => p.ptoSubmitDate);
+    const granted = filteredProjects.filter((p) => p.ptoGrantedDate);
+    const pending = filteredProjects.filter((p) => p.ptoSubmitDate && !p.ptoGrantedDate);
 
     return {
       submitted: { count: submitted.length, revenue: submitted.reduce((s, p) => s + (p.amount || 0), 0) },
       granted: { count: granted.length, revenue: granted.reduce((s, p) => s + (p.amount || 0), 0) },
       pending: { count: pending.length, revenue: pending.reduce((s, p) => s + (p.amount || 0), 0) },
     };
-  }, [safeProjects]);
+  }, [filteredProjects]);
 
   // ---- Monthly Trends ----
   const permitIssueTrend = useMemo(
     () => aggregateMonthly(
-      safeProjects
+      filteredProjects
         .filter((p) => p.permitIssueDate)
         .map((p) => ({ date: p.permitIssueDate!, amount: p.amount || 0 })),
       6
     ),
-    [safeProjects]
+    [filteredProjects]
   );
 
   const icApprovalTrend = useMemo(
     () => aggregateMonthly(
-      safeProjects
+      filteredProjects
         .filter((p) => p.interconnectionApprovalDate)
         .map((p) => ({ date: p.interconnectionApprovalDate!, amount: p.amount || 0 })),
       6
     ),
-    [safeProjects]
+    [filteredProjects]
   );
 
   const ptoGrantedTrend = useMemo(
     () => aggregateMonthly(
-      safeProjects
+      filteredProjects
         .filter((p) => p.ptoGrantedDate)
         .map((p) => ({ date: p.ptoGrantedDate!, amount: p.amount || 0 })),
       6
     ),
-    [safeProjects]
+    [filteredProjects]
   );
 
   // ---- Status Breakdown ----
   const permitStatusBreakdown = useMemo(() => {
     const counts: Record<string, { count: number; revenue: number }> = {};
-    safeProjects.forEach((p) => {
+    filteredProjects.forEach((p) => {
       if (p.permittingStatus) {
         if (!counts[p.permittingStatus]) counts[p.permittingStatus] = { count: 0, revenue: 0 };
         counts[p.permittingStatus].count += 1;
@@ -122,11 +144,11 @@ export default function PIMetricsPage() {
       .sort((a, b) => b[1].count - a[1].count)
       .slice(0, 12)
       .map(([status, data]) => ({ status, ...data, pct: (data.count / max) * 100 }));
-  }, [safeProjects]);
+  }, [filteredProjects]);
 
   // ---- Export ----
   const exportRows = useMemo(
-    () => safeProjects
+    () => filteredProjects
       .filter((p) => p.permittingStatus || p.interconnectionStatus || p.ptoStatus || p.permitSubmitDate)
       .map((p) => ({
         name: p.name,
@@ -145,7 +167,7 @@ export default function PIMetricsPage() {
         utility: p.utility || "",
         amount: p.amount || 0,
       })),
-    [safeProjects]
+    [filteredProjects]
   );
 
   return (
@@ -260,6 +282,22 @@ export default function PIMetricsPage() {
           accentColor="emerald"
           primaryLabel="granted"
         />
+      </div>
+
+      {/* Filters */}
+      <div className="flex gap-2 flex-wrap items-center">
+        <select value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)} className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground">
+          <option value="all">All Locations</option>
+          {locations.map((loc) => <option key={loc} value={loc}>{loc}</option>)}
+        </select>
+        <select value={leadFilter} onChange={(e) => setLeadFilter(e.target.value)} className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground">
+          <option value="all">All Leads</option>
+          {leads.map((name) => <option key={name} value={name}>{name}</option>)}
+        </select>
+        <select value={stageFilter} onChange={(e) => setStageFilter(e.target.value)} className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground">
+          <option value="all">All Stages</option>
+          {stages.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
       </div>
 
       {/* Revenue by Permitting Status */}

@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const { created, updated, skipped } = await syncEquipmentSkus(bom.items);
+    const { created, updated, skipped, pending, shadow } = await syncEquipmentSkus(bom.items);
 
     await logSave(
       "succeeded",
@@ -81,6 +81,8 @@ export async function POST(request: NextRequest) {
         created,
         updated,
         skipped,
+        pending,
+        ...(shadow ? { shadow } : {}),
         customer: bom.project?.customer,
         address: bom.project?.address,
         plansetRev: bom.project?.plansetRev,
@@ -88,7 +90,7 @@ export async function POST(request: NextRequest) {
       200
     );
 
-    return NextResponse.json({ created, updated, skipped });
+    return NextResponse.json({ created, updated, skipped, pending, ...(shadow ? { shadow } : {}) });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await logSave("failed", { reason: "sku_sync_failed", error: message }, 500);

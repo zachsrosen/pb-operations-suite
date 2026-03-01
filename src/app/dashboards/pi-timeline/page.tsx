@@ -1,25 +1,12 @@
 "use client";
 
-import { useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { StatCard } from "@/components/ui/MetricCard";
 import { formatMoney } from "@/lib/format";
 import { RawProject } from "@/lib/types";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
-
-// ---- Types ----
-
-interface ExtendedProject extends RawProject {
-  permittingStatus?: string;
-  interconnectionStatus?: string;
-  interconnectionSubmitDate?: string;
-  interconnectionApprovalDate?: string;
-  ptoStatus?: string;
-  ptoSubmitDate?: string;
-  permitLead?: string;
-  interconnectionsLead?: string;
-}
 
 // ---- SLA Targets (days) ----
 const SLA_TARGETS = {
@@ -41,7 +28,7 @@ function daysBetween(d1?: string, d2?: string): number | null {
 interface SLAResult {
   label: string;
   target: number;
-  items: { project: ExtendedProject; days: number }[];
+  items: { project: RawProject; days: number }[];
   onTime: number;
   late: number;
   avg: number;
@@ -52,9 +39,9 @@ export default function PITimelinePage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
-  const { data: projects, loading, lastUpdated } = useProjectData<ExtendedProject[]>({
+  const { data: projects, loading, lastUpdated } = useProjectData<RawProject[]>({
     params: { context: "executive" },
-    transform: (raw: unknown) => (raw as { projects: ExtendedProject[] }).projects,
+    transform: (raw: unknown) => (raw as { projects: RawProject[] }).projects,
   });
   const safeProjects = projects ?? [];
 
@@ -65,25 +52,58 @@ export default function PITimelinePage() {
     }
   }, [loading, safeProjects.length, trackDashboardView]);
 
+  const [locationFilter, setLocationFilter] = useState<string>("all");
+  const [leadFilter, setLeadFilter] = useState<string>("all");
+  const [stageFilter, setStageFilter] = useState<string>("all");
+
+  const locations = useMemo(() => {
+    const locs = new Set<string>();
+    safeProjects.forEach((p) => { if (p.pbLocation) locs.add(p.pbLocation); });
+    return Array.from(locs).sort();
+  }, [safeProjects]);
+
+  const leads = useMemo(() => {
+    const names = new Set<string>();
+    safeProjects.forEach((p) => {
+      if (p.permitLead) names.add(p.permitLead);
+      if (p.interconnectionsLead) names.add(p.interconnectionsLead);
+    });
+    return Array.from(names).sort();
+  }, [safeProjects]);
+
+  const stages = useMemo(() => {
+    const s = new Set<string>();
+    safeProjects.forEach((p) => { if (p.stage) s.add(p.stage); });
+    return Array.from(s).sort();
+  }, [safeProjects]);
+
+  const filteredProjects = useMemo(() => {
+    let result = safeProjects;
+    if (locationFilter !== "all") result = result.filter((p) => p.pbLocation === locationFilter);
+    if (leadFilter !== "all") result = result.filter((p) => p.permitLead === leadFilter || p.interconnectionsLead === leadFilter);
+    if (stageFilter !== "all") result = result.filter((p) => p.stage === stageFilter);
+    return result;
+  }, [safeProjects, locationFilter, leadFilter, stageFilter]);
+
   // ---- SLA Calculations ----
 
   const slaResults = useMemo((): SLAResult[] => {
     // Permit Issue SLA: permitSubmitDate → permitIssueDate
-    const permitItems = safeProjects
+    const permitItems = filteredProjects
       .map((p) => ({ project: p, days: daysBetween(p.permitSubmitDate, p.permitIssueDate) }))
-      .filter((x): x is { project: ExtendedProject; days: number } => x.days !== null);
+      .filter((x): x is { project: RawProject; days: number } => x.days !== null);
 
     // IC Approval SLA: interconnectionSubmitDate → interconnectionApprovalDate
-    const icItems = safeProjects
+    const icItems = filteredProjects
       .map((p) => ({ project: p, days: daysBetween(p.interconnectionSubmitDate, p.interconnectionApprovalDate) }))
-      .filter((x): x is { project: ExtendedProject; days: number } => x.days !== null);
+      .filter((x): x is { project: RawProject; days: number } => x.days !== null);
 
     // PTO SLA: ptoSubmitDate → ptoGrantedDate
-    const ptoItems = safeProjects
+    const ptoItems = filteredProjects
       .map((p) => ({ project: p, days: daysBetween(p.ptoSubmitDate, p.ptoGrantedDate) }))
-      .filter((x): x is { project: ExtendedProject; days: number } => x.days !== null);
+      .filter((x): x is { project: RawProject; days: number } => x.days !== null);
 
-    function buildResult(label: string, target: number, items: { project: ExtendedProject; days: number }[]): SLAResult {
+    function buildResult(label: string, target: number, items: { project: RawProject; days: number }[]): SLAResult {
       const onTime = items.filter((i) => i.days <= target).length;
       const late = items.length - onTime;
       const avg = items.length > 0 ? Math.round(items.reduce((s, i) => s + i.days, 0) / items.length) : 0;
@@ -96,12 +116,12 @@ export default function PITimelinePage() {
       buildResult("IC Approval", SLA_TARGETS.icApprovalDays, icItems),
       buildResult("PTO Granted", SLA_TARGETS.ptoDays, ptoItems),
     ];
-  }, [safeProjects]);
+  }, [filteredProjects]);
 
   // ---- AHJ Turnaround Comparison ----
   const ahjTurnarounds = useMemo(() => {
     const map: Record<string, { display: string; turnarounds: number[] }> = {};
-    safeProjects.forEach((p) => {
+    filteredProjects.forEach((p) => {
       const ahj = p.ahj?.trim();
       if (!ahj) return;
       const days = daysBetween(p.permitSubmitDate, p.permitIssueDate);
@@ -120,12 +140,12 @@ export default function PITimelinePage() {
       .filter((r) => r.count >= 2)
       .sort((a, b) => b.count - a.count)
       .slice(0, 15);
-  }, [safeProjects]);
+  }, [filteredProjects]);
 
   // ---- Utility IC Turnaround Comparison ----
   const utilityTurnarounds = useMemo(() => {
     const map: Record<string, { display: string; turnarounds: number[] }> = {};
-    safeProjects.forEach((p) => {
+    filteredProjects.forEach((p) => {
       const util = p.utility?.trim();
       if (!util) return;
       const days = daysBetween(p.interconnectionSubmitDate, p.interconnectionApprovalDate);
@@ -144,11 +164,11 @@ export default function PITimelinePage() {
       .filter((r) => r.count >= 2)
       .sort((a, b) => b.count - a.count)
       .slice(0, 15);
-  }, [safeProjects]);
+  }, [filteredProjects]);
 
   // ---- Recent PTO Completions Timeline ----
   const recentCompletions = useMemo(() => {
-    return safeProjects
+    return filteredProjects
       .filter((p) => p.ptoGrantedDate)
       .sort((a, b) => (b.ptoGrantedDate || "").localeCompare(a.ptoGrantedDate || ""))
       .slice(0, 20)
@@ -158,11 +178,11 @@ export default function PITimelinePage() {
         const ptoDays = daysBetween(p.ptoSubmitDate, p.ptoGrantedDate);
         return { project: p, permitDays, icDays, ptoDays };
       });
-  }, [safeProjects]);
+  }, [filteredProjects]);
 
   // ---- Export ----
   const exportRows = useMemo(
-    () => safeProjects
+    () => filteredProjects
       .filter((p) => p.permitSubmitDate || p.interconnectionSubmitDate || p.ptoSubmitDate)
       .map((p) => ({
         name: p.name,
@@ -179,7 +199,7 @@ export default function PITimelinePage() {
         ptoDays: daysBetween(p.ptoSubmitDate, p.ptoGrantedDate) ?? "",
         amount: p.amount || 0,
       })),
-    [safeProjects]
+    [filteredProjects]
   );
 
   function slaColor(days: number, target: number): string {
@@ -333,6 +353,22 @@ export default function PITimelinePage() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Filters */}
+      <div className="flex gap-2 flex-wrap items-center">
+        <select value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)} className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground">
+          <option value="all">All Locations</option>
+          {locations.map((loc) => <option key={loc} value={loc}>{loc}</option>)}
+        </select>
+        <select value={leadFilter} onChange={(e) => setLeadFilter(e.target.value)} className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground">
+          <option value="all">All Leads</option>
+          {leads.map((name) => <option key={name} value={name}>{name}</option>)}
+        </select>
+        <select value={stageFilter} onChange={(e) => setStageFilter(e.target.value)} className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground">
+          <option value="all">All Stages</option>
+          {stages.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
       </div>
 
       {/* Recent PTO Completions */}

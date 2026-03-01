@@ -19,18 +19,6 @@ interface FullEquipment {
   systemSizeKwac: number;
 }
 
-interface ExtendedProject extends RawProject {
-  designStatus?: string;
-  layoutStatus?: string;
-  designCompletionDate?: string;
-  designApprovalDate?: string;
-  designSupportUser?: string;
-  projectManager?: string;
-  tags?: string[];
-  systemPerformanceReview?: boolean;
-  equipment?: FullEquipment | RawProject["equipment"];
-}
-
 // Statuses that indicate "in review"
 const REVIEW_STATUSES = [
   "Ready For Review",
@@ -45,9 +33,9 @@ export default function PlanReviewPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
-  const { data: projects, loading, lastUpdated } = useProjectData<ExtendedProject[]>({
+  const { data: projects, loading, lastUpdated } = useProjectData<RawProject[]>({
     params: { context: "executive" },
-    transform: (raw: unknown) => (raw as { projects: ExtendedProject[] }).projects,
+    transform: (raw: unknown) => (raw as { projects: RawProject[] }).projects,
   });
   const safeProjects = projects ?? [];
 
@@ -66,7 +54,7 @@ export default function PlanReviewPage() {
   }, [loading, safeProjects.length, trackDashboardView]);
 
   const handleTogglePerformanceReview = useCallback(
-    async (project: ExtendedProject) => {
+    async (project: RawProject) => {
       const current = localOverrides[project.id] ?? project.systemPerformanceReview ?? false;
       const newValue = !current;
       setTogglingIds((prev) => new Set(prev).add(project.id));

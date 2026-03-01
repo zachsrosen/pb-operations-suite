@@ -45,6 +45,20 @@ const LINKS: SuitePageCard[] = [
     tag: "SLA",
     section: "Analytics",
   },
+  {
+    href: "/dashboards/permitting",
+    title: "Permitting (Legacy)",
+    description: "Original permit status tracking, submission dates, and approval monitoring.",
+    tag: "LEGACY",
+    section: "Legacy Dashboards",
+  },
+  {
+    href: "/dashboards/interconnection",
+    title: "Interconnection (Legacy)",
+    description: "Original utility interconnection applications, approvals, and meter installations.",
+    tag: "LEGACY",
+    section: "Legacy Dashboards",
+  },
 ];
 
 export default async function PermittingInterconnectionSuitePage() {

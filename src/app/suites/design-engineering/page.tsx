@@ -67,6 +67,13 @@ const LINKS: SuitePageCard[] = [
     tagColor: "bg-pink-500/20 text-pink-400 border-pink-500/30",
     section: "Tools",
   },
+  {
+    href: "/dashboards/design",
+    title: "Design & Engineering (Legacy)",
+    description: "Original design progress tracking, engineering approvals, and plan sets.",
+    tag: "LEGACY",
+    section: "Legacy Dashboards",
+  },
 ];
 
 export default async function DesignEngineeringSuitePage() {

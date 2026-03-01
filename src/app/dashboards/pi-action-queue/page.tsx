@@ -7,69 +7,19 @@ import { formatMoney } from "@/lib/format";
 import { RawProject } from "@/lib/types";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
-
-// ---- Types ----
-
-interface ExtendedProject extends RawProject {
-  permittingStatus?: string;
-  interconnectionStatus?: string;
-  interconnectionSubmitDate?: string;
-  interconnectionApprovalDate?: string;
-  ptoStatus?: string;
-  ptoSubmitDate?: string;
-  permitLead?: string;
-  interconnectionsLead?: string;
-}
-
-// Statuses where the ball is in our court — permitting
-const PERMIT_ACTION_STATUSES: Record<string, string> = {
-  "Ready For Permitting": "Submit to AHJ",
-  "Customer Signature Acquired": "Submit to AHJ",
-  "Non-Design Related Rejection": "Review rejection",
-  "Rejected": "Revise & resubmit",
-  "In Design For Revision": "Complete revision",
-  "Returned from Design": "Resubmit to AHJ",
-  "As-Built Revision Needed": "Start as-built revision",
-  "As-Built Revision In Progress": "Complete as-built",
-  "As-Built Ready To Resubmit": "Resubmit as-built",
-  "Pending SolarApp": "Submit SolarApp",
-  "Submit SolarApp to AHJ": "Submit SolarApp to AHJ",
-  "Resubmitted to AHJ": "Follow up with AHJ",
-};
-
-// Statuses where the ball is in our court — IC
-const IC_ACTION_STATUSES: Record<string, string> = {
-  "Ready for Interconnection": "Submit to utility",
-  "Signature Acquired By Customer": "Submit to utility",
-  "Non-Design Related Rejection": "Review rejection",
-  "Rejected (New)": "Review rejection",
-  "Rejected": "Revise & resubmit",
-  "In Design For Revisions": "Complete revision",
-  "Revision Returned From Design": "Resubmit to utility",
-  "Waiting On Information": "Provide information",
-  "Resubmitted To Utility": "Follow up with utility",
-};
-
-// PTO action statuses
-const PTO_ACTION_STATUSES: Record<string, string> = {
-  "Inspection Passed - Ready for Utility": "Submit PTO",
-  "Inspection Rejected By Utility": "Review rejection",
-  "Ops Related PTO Rejection": "Fix ops issue",
-  "Resubmitted to Utility": "Follow up",
-  "Xcel Photos Ready to Submit": "Submit photos",
-  "XCEL Photos Rejected": "Fix & resubmit photos",
-  "Xcel Photos Ready to Resubmit": "Resubmit photos",
-  "Pending Truck Roll": "Schedule truck roll",
-};
-
-const STALE_THRESHOLD_DAYS = 14;
+import {
+  PERMIT_ACTION_STATUSES,
+  IC_ACTION_STATUSES,
+  PTO_ACTION_STATUSES,
+  STALE_THRESHOLD_DAYS,
+} from "@/lib/pi-statuses";
 
 type ActionType = "permit" | "interconnection" | "pto" | "stale";
 type SortField = "name" | "type" | "daysInStatus" | "amount";
 type SortDir = "asc" | "desc";
 
 interface ActionItem {
-  project: ExtendedProject;
+  project: RawProject;
   type: ActionType;
   status: string;
   action: string;
@@ -81,15 +31,19 @@ export default function PIActionQueuePage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
-  const { data: projects, loading, lastUpdated } = useProjectData<ExtendedProject[]>({
+  const { data: projects, loading, lastUpdated } = useProjectData<RawProject[]>({
     params: { context: "executive" },
-    transform: (raw: unknown) => (raw as { projects: ExtendedProject[] }).projects,
+    transform: (raw: unknown) => (raw as { projects: RawProject[] }).projects,
   });
   const safeProjects = projects ?? [];
 
   const [sortField, setSortField] = useState<SortField>("daysInStatus");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [filterType, setFilterType] = useState<ActionType | "all">("all");
+  const [locationFilter, setLocationFilter] = useState<string>("all");
+  const [leadFilter, setLeadFilter] = useState<string>("all");
+  const [stageFilter, setStageFilter] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     if (!loading && !hasTrackedView.current) {
@@ -98,12 +52,48 @@ export default function PIActionQueuePage() {
     }
   }, [loading, safeProjects.length, trackDashboardView]);
 
+  const locations = useMemo(() => {
+    const locs = new Set<string>();
+    safeProjects.forEach((p) => { if (p.pbLocation) locs.add(p.pbLocation); });
+    return Array.from(locs).sort();
+  }, [safeProjects]);
+
+  const leads = useMemo(() => {
+    const names = new Set<string>();
+    safeProjects.forEach((p) => {
+      if (p.permitLead) names.add(p.permitLead);
+      if (p.interconnectionsLead) names.add(p.interconnectionsLead);
+      if (p.projectManager) names.add(p.projectManager);
+    });
+    return Array.from(names).sort();
+  }, [safeProjects]);
+
+  const stages = useMemo(() => {
+    const s = new Set<string>();
+    safeProjects.forEach((p) => { if (p.stage) s.add(p.stage); });
+    return Array.from(s).sort();
+  }, [safeProjects]);
+
+  const filteredProjects = useMemo(() => {
+    let result = safeProjects;
+    if (locationFilter !== "all") result = result.filter((p) => p.pbLocation === locationFilter);
+    if (leadFilter !== "all") result = result.filter((p) => p.permitLead === leadFilter || p.interconnectionsLead === leadFilter || p.projectManager === leadFilter);
+    if (stageFilter !== "all") result = result.filter((p) => p.stage === stageFilter);
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter((p) =>
+        (p.name?.toLowerCase().includes(q) || p.stage?.toLowerCase().includes(q) || p.pbLocation?.toLowerCase().includes(q) || p.permitLead?.toLowerCase().includes(q) || p.interconnectionsLead?.toLowerCase().includes(q) || p.projectManager?.toLowerCase().includes(q))
+      );
+    }
+    return result;
+  }, [safeProjects, locationFilter, leadFilter, stageFilter, searchQuery]);
+
   // Build action items
   const actionItems = useMemo(() => {
     const items: ActionItem[] = [];
     const seen = new Set<string>(); // avoid duplicates per project
 
-    safeProjects.forEach((p) => {
+    filteredProjects.forEach((p) => {
       const days = p.daysSinceStageMovement ?? 0;
 
       // Permit actions
@@ -164,7 +154,7 @@ export default function PIActionQueuePage() {
     });
 
     return items;
-  }, [safeProjects]);
+  }, [filteredProjects]);
 
   // Filter — stale tab shows all items where isStale is true (any type), not just type === "stale"
   const filteredItems = useMemo(() => {
@@ -253,6 +243,29 @@ export default function PIActionQueuePage() {
         <MiniStat label="IC Actions" value={loading ? null : stats.byType.interconnection || 0} />
         <MiniStat label="PTO Actions" value={loading ? null : stats.byType.pto || 0} />
         <MiniStat label="Stale (>14d)" value={loading ? null : stats.staleCount} alert={stats.staleCount > 10} />
+      </div>
+
+      {/* Location / Lead / Stage Filters */}
+      <div className="flex gap-2 flex-wrap items-center">
+        <input
+          type="text"
+          placeholder="Search project, status, or lead..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground placeholder:text-muted w-full max-w-xs"
+        />
+        <select value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)} className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground">
+          <option value="all">All Locations</option>
+          {locations.map((loc) => <option key={loc} value={loc}>{loc}</option>)}
+        </select>
+        <select value={leadFilter} onChange={(e) => setLeadFilter(e.target.value)} className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground">
+          <option value="all">All Leads</option>
+          {leads.map((name) => <option key={name} value={name}>{name}</option>)}
+        </select>
+        <select value={stageFilter} onChange={(e) => setStageFilter(e.target.value)} className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground">
+          <option value="all">All Stages</option>
+          {stages.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
       </div>
 
       {/* Filter tabs */}

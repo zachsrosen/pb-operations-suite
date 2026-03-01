@@ -1,90 +1,19 @@
 "use client";
 
-import { useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { StatCard } from "@/components/ui/MetricCard";
 import { formatMoney } from "@/lib/format";
 import { RawProject } from "@/lib/types";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
-
-// ---- Types ----
-
-interface ExtendedProject extends RawProject {
-  permittingStatus?: string;
-  interconnectionStatus?: string;
-  ptoStatus?: string;
-  ptoSubmitDate?: string;
-  interconnectionSubmitDate?: string;
-  interconnectionApprovalDate?: string;
-  permitLead?: string;
-  interconnectionsLead?: string;
-}
-
-// Permitting statuses indicating active/pending
-const PERMIT_ACTIVE_STATUSES = [
-  "Awaiting Utility Approval",
-  "Ready For Permitting",
-  "Submitted To Customer",
-  "Customer Signature Acquired",
-  "Waiting On Information",
-  "Submitted to AHJ",
-  "Resubmitted to AHJ",
-  "Pending SolarApp",
-  "Submit SolarApp to AHJ",
-];
-
-const PERMIT_REVISION_STATUSES = [
-  "Non-Design Related Rejection",
-  "Rejected",
-  "In Design For Revision",
-  "Returned from Design",
-  "As-Built Revision Needed",
-  "As-Built Revision In Progress",
-  "As-Built Ready To Resubmit",
-  "As-Built Revision Resubmitted",
-];
-
-// IC statuses indicating active
-const IC_ACTIVE_STATUSES = [
-  "Ready for Interconnection",
-  "Submitted To Customer",
-  "Ready To Submit - Pending Design",
-  "Signature Acquired By Customer",
-  "Submitted To Utility",
-  "Waiting On Information",
-  "Waiting on Utility Bill",
-  "Waiting on New Construction",
-  "In Review",
-];
-
-const IC_REVISION_STATUSES = [
-  "Non-Design Related Rejection",
-  "Rejected (New)",
-  "Rejected",
-  "In Design For Revisions",
-  "Revision Returned From Design",
-  "Resubmitted To Utility",
-];
-
-// PTO pipeline statuses
-const PTO_PIPELINE_STATUSES = [
-  "PTO Waiting on Interconnection Approval",
-  "Inspection Passed - Ready for Utility",
-  "Inspection Submitted to Utility",
-  "Resubmitted to Utility",
-  "Inspection Rejected By Utility",
-  "Ops Related PTO Rejection",
-  "Waiting On Information",
-  "Waiting on New Construction",
-  "Pending Truck Roll",
-  "Xcel Photos Ready to Submit",
-  "Xcel Photos Submitted",
-  "XCEL Photos Rejected",
-  "Xcel Photos Ready to Resubmit",
-  "Xcel Photos Resubmitted",
-  "Xcel Photos Approved",
-];
+import {
+  PERMIT_ACTIVE_STATUSES,
+  PERMIT_REVISION_STATUSES,
+  IC_ACTIVE_STATUSES,
+  IC_REVISION_STATUSES,
+  PTO_PIPELINE_STATUSES,
+} from "@/lib/pi-statuses";
 
 const PI_LINKS = [
   { href: "/dashboards/pi-metrics", label: "P&I Metrics", desc: "Permit, IC, and PTO KPIs" },
@@ -98,9 +27,9 @@ export default function PIOverviewPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
-  const { data: projects, loading, lastUpdated } = useProjectData<ExtendedProject[]>({
+  const { data: projects, loading, lastUpdated } = useProjectData<RawProject[]>({
     params: { context: "executive" },
-    transform: (raw: unknown) => (raw as { projects: ExtendedProject[] }).projects,
+    transform: (raw: unknown) => (raw as { projects: RawProject[] }).projects,
   });
   const safeProjects = projects ?? [];
 
@@ -111,20 +40,53 @@ export default function PIOverviewPage() {
     }
   }, [loading, safeProjects.length, trackDashboardView]);
 
+  const [locationFilter, setLocationFilter] = useState<string>("all");
+  const [leadFilter, setLeadFilter] = useState<string>("all");
+  const [stageFilter, setStageFilter] = useState<string>("all");
+
+  const locations = useMemo(() => {
+    const locs = new Set<string>();
+    safeProjects.forEach((p) => { if (p.pbLocation) locs.add(p.pbLocation); });
+    return Array.from(locs).sort();
+  }, [safeProjects]);
+
+  const leads = useMemo(() => {
+    const names = new Set<string>();
+    safeProjects.forEach((p) => {
+      if (p.permitLead) names.add(p.permitLead);
+      if (p.interconnectionsLead) names.add(p.interconnectionsLead);
+    });
+    return Array.from(names).sort();
+  }, [safeProjects]);
+
+  const stages = useMemo(() => {
+    const s = new Set<string>();
+    safeProjects.forEach((p) => { if (p.stage) s.add(p.stage); });
+    return Array.from(s).sort();
+  }, [safeProjects]);
+
+  const filteredProjects = useMemo(() => {
+    let result = safeProjects;
+    if (locationFilter !== "all") result = result.filter((p) => p.pbLocation === locationFilter);
+    if (leadFilter !== "all") result = result.filter((p) => p.permitLead === leadFilter || p.interconnectionsLead === leadFilter);
+    if (stageFilter !== "all") result = result.filter((p) => p.stage === stageFilter);
+    return result;
+  }, [safeProjects, locationFilter, leadFilter, stageFilter]);
+
   // Hero metrics
   const heroMetrics = useMemo(() => {
-    const permitsPending = safeProjects.filter(
+    const permitsPending = filteredProjects.filter(
       (p) => p.permittingStatus && [...PERMIT_ACTIVE_STATUSES, ...PERMIT_REVISION_STATUSES].includes(p.permittingStatus)
     );
-    const icActive = safeProjects.filter(
+    const icActive = filteredProjects.filter(
       (p) => p.interconnectionStatus && [...IC_ACTIVE_STATUSES, ...IC_REVISION_STATUSES].includes(p.interconnectionStatus)
     );
-    const ptoPipeline = safeProjects.filter(
+    const ptoPipeline = filteredProjects.filter(
       (p) => p.ptoStatus && PTO_PIPELINE_STATUSES.includes(p.ptoStatus)
     );
 
     // Avg permit turnaround (submit → issue)
-    const turnarounds = safeProjects
+    const turnarounds = filteredProjects
       .filter((p) => p.permitSubmitDate && p.permitIssueDate)
       .map((p) => {
         const d1 = new Date(p.permitSubmitDate! + "T12:00:00");
@@ -142,12 +104,12 @@ export default function PIOverviewPage() {
       ptoPipeline: ptoPipeline.length,
       avgTurnaround,
     };
-  }, [safeProjects]);
+  }, [filteredProjects]);
 
   // Status distributions
   const permitBreakdown = useMemo(() => {
     const counts: Record<string, number> = {};
-    safeProjects.forEach((p) => {
+    filteredProjects.forEach((p) => {
       if (p.permittingStatus) {
         counts[p.permittingStatus] = (counts[p.permittingStatus] || 0) + 1;
       }
@@ -157,11 +119,11 @@ export default function PIOverviewPage() {
       .sort((a, b) => b[1] - a[1])
       .slice(0, 10)
       .map(([status, count]) => ({ status, count, pct: (count / max) * 100 }));
-  }, [safeProjects]);
+  }, [filteredProjects]);
 
   const icBreakdown = useMemo(() => {
     const counts: Record<string, number> = {};
-    safeProjects.forEach((p) => {
+    filteredProjects.forEach((p) => {
       if (p.interconnectionStatus) {
         counts[p.interconnectionStatus] = (counts[p.interconnectionStatus] || 0) + 1;
       }
@@ -171,11 +133,11 @@ export default function PIOverviewPage() {
       .sort((a, b) => b[1] - a[1])
       .slice(0, 10)
       .map(([status, count]) => ({ status, count, pct: (count / max) * 100 }));
-  }, [safeProjects]);
+  }, [filteredProjects]);
 
   // Stale projects (most days in current P&I stage)
   const staleProjects = useMemo(() => {
-    return safeProjects
+    return filteredProjects
       .filter(
         (p) =>
           (p.stage === "Permitting & Interconnection" || p.stage === "Permission To Operate") &&
@@ -183,7 +145,7 @@ export default function PIOverviewPage() {
       )
       .sort((a, b) => (b.daysSinceStageMovement ?? 0) - (a.daysSinceStageMovement ?? 0))
       .slice(0, 10);
-  }, [safeProjects]);
+  }, [filteredProjects]);
 
   return (
     <DashboardShell
@@ -276,6 +238,22 @@ export default function PIOverviewPage() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Filters */}
+      <div className="flex gap-2 flex-wrap items-center">
+        <select value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)} className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground">
+          <option value="all">All Locations</option>
+          {locations.map((loc) => <option key={loc} value={loc}>{loc}</option>)}
+        </select>
+        <select value={leadFilter} onChange={(e) => setLeadFilter(e.target.value)} className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground">
+          <option value="all">All Leads</option>
+          {leads.map((name) => <option key={name} value={name}>{name}</option>)}
+        </select>
+        <select value={stageFilter} onChange={(e) => setStageFilter(e.target.value)} className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground">
+          <option value="all">All Stages</option>
+          {stages.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
       </div>
 
       {/* Stale Projects */}
