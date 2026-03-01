@@ -23,7 +23,7 @@ const PENDING_APPROVAL_STATUSES = [
   "Draft Created",
 ];
 
-type SortField = "name" | "layoutStatus" | "daysWaiting" | "amount" | "owner" | "location" | "designStatus" | "designComplete" | "daSent";
+type SortField = "name" | "layoutStatus" | "daysWaiting" | "amount" | "owner" | "location" | "designStatus" | "designComplete" | "daSent" | "siteSurveyor" | "designLead" | "stage";
 type SortDir = "asc" | "desc";
 
 export default function PendingApprovalPage() {
@@ -71,7 +71,22 @@ export default function PendingApprovalPage() {
     return owners.sort().map((o) => ({ value: o, label: o }));
   }, [pendingProjects]);
 
-  const hasActiveFilters = persistedFilters.locations.length > 0 || persistedFilters.owners.length > 0 || searchQuery.length > 0;
+  const surveyorOptions: FilterOption[] = useMemo(() => {
+    const surveyors = [...new Set(pendingProjects.map((p) => p.siteSurveyor || "Unknown"))];
+    return surveyors.sort().map((s) => ({ value: s, label: s }));
+  }, [pendingProjects]);
+
+  const designLeadOptions: FilterOption[] = useMemo(() => {
+    const leads = [...new Set(pendingProjects.map((p) => p.designLead || "Unknown"))];
+    return leads.sort().map((s) => ({ value: s, label: s }));
+  }, [pendingProjects]);
+
+  const stageOptions: FilterOption[] = useMemo(() => {
+    const stages = [...new Set(pendingProjects.map((p) => p.stage || ""))].filter(Boolean);
+    return stages.sort().map((s) => ({ value: s, label: s }));
+  }, [pendingProjects]);
+
+  const hasActiveFilters = persistedFilters.locations.length > 0 || persistedFilters.owners.length > 0 || persistedFilters.stages.length > 0 || persistedFilters.surveyors.length > 0 || persistedFilters.designLeads.length > 0 || searchQuery.length > 0;
 
   // Filtered projects
   const filteredProjects = useMemo(() => {
@@ -82,6 +97,15 @@ export default function PendingApprovalPage() {
     }
     if (persistedFilters.owners.length > 0) {
       result = result.filter((p) => persistedFilters.owners.includes(p.projectManager || "Unknown"));
+    }
+    if (persistedFilters.stages.length > 0) {
+      result = result.filter((p) => persistedFilters.stages.includes(p.stage || ""));
+    }
+    if (persistedFilters.surveyors.length > 0) {
+      result = result.filter((p) => persistedFilters.surveyors.includes(p.siteSurveyor || "Unknown"));
+    }
+    if (persistedFilters.designLeads.length > 0) {
+      result = result.filter((p) => persistedFilters.designLeads.includes(p.designLead || "Unknown"));
     }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -112,6 +136,9 @@ export default function PendingApprovalPage() {
         case "designComplete": cmp = (a.designCompletionDate || "").localeCompare(b.designCompletionDate || ""); break;
         case "daSent": cmp = (a.designApprovalSentDate || "").localeCompare(b.designApprovalSentDate || ""); break;
         case "amount": cmp = (a.amount || 0) - (b.amount || 0); break;
+        case "siteSurveyor": cmp = (a.siteSurveyor || "Unknown").localeCompare(b.siteSurveyor || "Unknown"); break;
+        case "designLead": cmp = (a.designLead || "Unknown").localeCompare(b.designLead || "Unknown"); break;
+        case "stage": cmp = (a.stage || "").localeCompare(b.stage || ""); break;
       }
       return sortDir === "asc" ? cmp : -cmp;
     });
@@ -140,7 +167,10 @@ export default function PendingApprovalPage() {
     () => sortedProjects.map((p) => ({
       name: p.name,
       pm: p.projectManager || "Unknown",
+      siteSurveyor: p.siteSurveyor || "",
+      designLead: p.designLead || "",
       location: p.pbLocation || "",
+      stage: p.stage || "",
       layoutStatus: p.layoutStatus || "",
       designStatus: p.designStatus || "",
       daysWaiting: p.daysWaiting,
@@ -215,6 +245,27 @@ export default function PendingApprovalPage() {
           onChange={(owners) => setPersisted({ ...persistedFilters, owners })}
           accentColor="indigo"
         />
+        <MultiSelectFilter
+          label="Deal Stage"
+          options={stageOptions}
+          selected={persistedFilters.stages}
+          onChange={(stages) => setPersisted({ ...persistedFilters, stages })}
+          accentColor="indigo"
+        />
+        <MultiSelectFilter
+          label="Site Surveyor"
+          options={surveyorOptions}
+          selected={persistedFilters.surveyors}
+          onChange={(surveyors) => setPersisted({ ...persistedFilters, surveyors })}
+          accentColor="indigo"
+        />
+        <MultiSelectFilter
+          label="Design Lead"
+          options={designLeadOptions}
+          selected={persistedFilters.designLeads}
+          onChange={(designLeads) => setPersisted({ ...persistedFilters, designLeads })}
+          accentColor="indigo"
+        />
 
         {hasActiveFilters && (
           <button
@@ -251,8 +302,17 @@ export default function PendingApprovalPage() {
                   <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("owner")}>
                     PM{sortIndicator("owner")}
                   </th>
+                  <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("siteSurveyor")}>
+                    Site Surveyor{sortIndicator("siteSurveyor")}
+                  </th>
+                  <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("designLead")}>
+                    Design Lead{sortIndicator("designLead")}
+                  </th>
                   <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("location")}>
                     Location{sortIndicator("location")}
+                  </th>
+                  <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("stage")}>
+                    Deal Stage{sortIndicator("stage")}
                   </th>
                   <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("layoutStatus")}>
                     DA Status{sortIndicator("layoutStatus")}
@@ -287,7 +347,10 @@ export default function PendingApprovalPage() {
                       )}
                     </td>
                     <td className="p-3 text-muted">{p.projectManager || "Unknown"}</td>
+                    <td className="p-3 text-muted">{p.siteSurveyor || "—"}</td>
+                    <td className="p-3 text-muted">{p.designLead || "—"}</td>
                     <td className="p-3 text-muted">{p.pbLocation || "—"}</td>
+                    <td className="p-3 text-muted">{p.stage || "—"}</td>
                     <td className="p-3">
                       <span className="inline-block px-2 py-0.5 text-xs font-medium rounded-full bg-yellow-500/20 text-yellow-400 border border-yellow-500/30">
                         {p.layoutStatus}

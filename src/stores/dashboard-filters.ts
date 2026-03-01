@@ -230,12 +230,16 @@ export interface DESubFilters {
   locations: string[];
   owners: string[];
   stages: string[];
+  surveyors: string[];
+  designLeads: string[];
 }
 
 const defaultDESubFilters: DESubFilters = {
   locations: [],
   owners: [],
   stages: [],
+  surveyors: [],
+  designLeads: [],
 };
 
 function createDEFilterHook(key: string) {
