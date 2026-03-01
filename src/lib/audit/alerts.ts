@@ -42,7 +42,9 @@ function getResendClient(): Resend | null {
 // Config
 // ---------------------------------------------------------------------------
 const ALERT_FROM =
-  process.env.ALERT_FROM_EMAIL || "alerts@photonbrothers.com";
+  process.env.ALERT_FROM_EMAIL ||
+  process.env.RESEND_FROM_EMAIL ||
+  "onboarding@resend.dev";
 const ADMIN_EMAILS = (process.env.AUDIT_ALERT_EMAILS || "")
   .split(",")
   .filter(Boolean);
