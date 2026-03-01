@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import DashboardShell from "@/components/DashboardShell";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { MultiSelectFilter, type FilterOption } from "@/components/ui/MultiSelectFilter";
@@ -1741,6 +1742,14 @@ export default function ProductComparisonPage() {
       lastUpdated={lastUpdated}
       breadcrumbs={[{ label: "Operations", href: "/suites/operations" }]}
       exportData={{ data: exportRows, filename: "product-catalog-comparison" }}
+      headerRight={
+        <Link
+          href="/dashboards/catalog/review"
+          className="hidden sm:inline-flex px-2.5 py-1.5 rounded border border-cyan-500/40 bg-cyan-500/10 text-cyan-300 text-xs hover:bg-cyan-500/20"
+        >
+          Match review queue
+        </Link>
+      }
     >
       {loading && <div className="bg-surface border border-t-border rounded-xl p-6 text-sm text-muted">Loading product comparison data...</div>}
 

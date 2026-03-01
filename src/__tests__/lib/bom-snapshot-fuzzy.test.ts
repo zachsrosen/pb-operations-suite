@@ -11,6 +11,7 @@
 
 const mockFindMany = jest.fn();
 const mockPendingCreate = jest.fn().mockResolvedValue({ id: "pending_1" });
+const mockPendingFindMany = jest.fn().mockResolvedValue([]);
 const mockPendingFindFirst = jest.fn();
 const mockPendingUpdate = jest.fn().mockResolvedValue({ id: "pending_1" });
 const mockQueryRawUnsafe = jest.fn().mockResolvedValue([]);
@@ -20,6 +21,7 @@ jest.mock("@/lib/db", () => ({
     equipmentSku: { findMany: mockFindMany },
     pendingCatalogPush: {
       create: mockPendingCreate,
+      findMany: mockPendingFindMany,
       findFirst: mockPendingFindFirst,
       update: mockPendingUpdate,
     },
@@ -32,11 +34,16 @@ import type { BomItem } from "@/lib/bom-snapshot";
 
 describe("syncEquipmentSkus with lockdown", () => {
   const originalEnv = process.env.CATALOG_LOCKDOWN_ENABLED;
+  const originalModeEnv = process.env.CATALOG_LOCKDOWN_MODE;
+  const originalCategoryEnv = process.env.CATALOG_LOCKDOWN_CATEGORIES;
 
   beforeEach(() => {
     jest.clearAllMocks();
     process.env.CATALOG_LOCKDOWN_ENABLED = "true";
-    // Default: no existing pending records
+    delete process.env.CATALOG_LOCKDOWN_MODE;
+    delete process.env.CATALOG_LOCKDOWN_CATEGORIES;
+    mockPendingFindMany.mockResolvedValue([]);
+    // Default: no conflict retry lookup needed
     mockPendingFindFirst.mockResolvedValue(null);
   });
 
@@ -45,6 +52,16 @@ describe("syncEquipmentSkus with lockdown", () => {
       process.env.CATALOG_LOCKDOWN_ENABLED = originalEnv;
     } else {
       delete process.env.CATALOG_LOCKDOWN_ENABLED;
+    }
+    if (originalModeEnv !== undefined) {
+      process.env.CATALOG_LOCKDOWN_MODE = originalModeEnv;
+    } else {
+      delete process.env.CATALOG_LOCKDOWN_MODE;
+    }
+    if (originalCategoryEnv !== undefined) {
+      process.env.CATALOG_LOCKDOWN_CATEGORIES = originalCategoryEnv;
+    } else {
+      delete process.env.CATALOG_LOCKDOWN_CATEGORIES;
     }
   });
 
@@ -181,11 +198,13 @@ describe("syncEquipmentSkus with lockdown", () => {
   it("updates existing pending record instead of creating duplicate (P1 fix)", async () => {
     // First call: no SKU match
     mockFindMany.mockResolvedValue([]);
-    // Existing PENDING record for same canonical key
-    mockPendingFindFirst.mockResolvedValue({
-      id: "existing_pending_1",
-      candidateSkuIds: ["old_candidate"],
-    });
+    mockPendingFindMany.mockResolvedValue([
+      {
+        id: "existing_pending_1",
+        canonicalKey: "MODULE|newbrand|newmodel",
+        candidateSkuIds: ["old_candidate"],
+      },
+    ]);
 
     const { syncEquipmentSkus } = await import("@/lib/bom-snapshot");
     const items: BomItem[] = [
@@ -219,14 +238,6 @@ describe("syncEquipmentSkus with lockdown", () => {
     // No SKU matches for either occurrence
     mockFindMany.mockResolvedValue([]);
 
-    // First call: no existing pending. Second call: the one we just created.
-    mockPendingFindFirst
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({
-        id: "pending_just_created",
-        candidateSkuIds: [],
-      });
-
     const { syncEquipmentSkus } = await import("@/lib/bom-snapshot");
     const items: BomItem[] = [
       {
@@ -250,7 +261,7 @@ describe("syncEquipmentSkus with lockdown", () => {
 
     // First item: create (no existing pending)
     expect(mockPendingCreate).toHaveBeenCalledTimes(1);
-    // Second item: update (found the one we just created)
+    // Second item: update (uses in-memory map after first create)
     expect(mockPendingUpdate).toHaveBeenCalledTimes(1);
     expect(result.pending).toBe(2);
     expect(result.created).toBe(0);
@@ -262,11 +273,13 @@ describe("syncEquipmentSkus with lockdown", () => {
       { id: "sku_a", canonicalKey: "MODULE|acme|panel100" },
       { id: "sku_b", canonicalKey: "MODULE|acme|panel100" },
     ]);
-    // Existing pending with one old candidate
-    mockPendingFindFirst.mockResolvedValue({
-      id: "existing_pending_2",
-      candidateSkuIds: ["sku_old"],
-    });
+    mockPendingFindMany.mockResolvedValue([
+      {
+        id: "existing_pending_2",
+        canonicalKey: "MODULE|acme|panel100",
+        candidateSkuIds: ["sku_old"],
+      },
+    ]);
 
     const { syncEquipmentSkus } = await import("@/lib/bom-snapshot");
     const items: BomItem[] = [
@@ -296,9 +309,8 @@ describe("syncEquipmentSkus with lockdown", () => {
 
   it("recovers from P2002 race condition via retry-as-update", async () => {
     mockFindMany.mockResolvedValue([]); // no SKU match
+    mockPendingFindMany.mockResolvedValue([]);
     mockPendingFindFirst
-      // First check: nothing pending (both concurrent requests see this)
-      .mockResolvedValueOnce(null)
       // Retry after P2002: now the other request's record exists
       .mockResolvedValueOnce({
         id: "race_winner_pending",
@@ -331,5 +343,71 @@ describe("syncEquipmentSkus with lockdown", () => {
     );
     expect(result.pending).toBe(1);
     expect(result.created).toBe(0);
+  });
+
+  it("runs shadow mode without creating pending records", async () => {
+    process.env.CATALOG_LOCKDOWN_MODE = "shadow";
+    mockFindMany.mockResolvedValue([]);
+    mockQueryRawUnsafe.mockResolvedValueOnce([{ xmax: "0" }]);
+
+    const { syncEquipmentSkus } = await import("@/lib/bom-snapshot");
+    const items: BomItem[] = [
+      {
+        category: "MODULE",
+        brand: "ShadowBrand",
+        model: "ShadowModel",
+        description: "shadow test",
+        qty: 1,
+      },
+    ];
+
+    const result = await syncEquipmentSkus(items);
+
+    expect(mockQueryRawUnsafe).toHaveBeenCalledTimes(1);
+    expect(mockPendingCreate).not.toHaveBeenCalled();
+    expect(result.created).toBe(1);
+    expect(result.pending).toBe(0);
+    expect(result.shadow).toMatchObject({
+      evaluated: 1,
+      unmatched: 1,
+      wouldQueue: 1,
+    });
+  });
+
+  it("enforces lockdown only for configured categories", async () => {
+    process.env.CATALOG_LOCKDOWN_MODE = "enforced";
+    process.env.CATALOG_LOCKDOWN_CATEGORIES = "BATTERY";
+    mockFindMany.mockResolvedValue([]);
+    mockQueryRawUnsafe.mockResolvedValueOnce([{ xmax: "0" }]);
+
+    const { syncEquipmentSkus } = await import("@/lib/bom-snapshot");
+    const items: BomItem[] = [
+      {
+        category: "MODULE",
+        brand: "LegacyBrand",
+        model: "LegacyModel",
+        description: "module follows direct path",
+        qty: 1,
+      },
+      {
+        category: "BATTERY",
+        brand: "LockBrand",
+        model: "LockModel",
+        description: "battery follows lockdown path",
+        qty: 1,
+      },
+    ];
+
+    const result = await syncEquipmentSkus(items);
+
+    expect(mockQueryRawUnsafe).toHaveBeenCalledTimes(1);
+    expect(mockPendingCreate).toHaveBeenCalledTimes(1);
+    expect(mockPendingCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ category: "BATTERY" }),
+      })
+    );
+    expect(result.created).toBe(1);
+    expect(result.pending).toBe(1);
   });
 });

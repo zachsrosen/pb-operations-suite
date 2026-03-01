@@ -88,15 +88,83 @@ export interface SkuSyncResult {
   skipped: number;
   /** Pending catalog pushes created/updated (lockdown mode only, 0 otherwise) */
   pending: number;
+  /** Read-only rollout telemetry when lockdown runs in shadow mode. */
+  shadow?: {
+    evaluated: number;
+    exactMatches: number;
+    ambiguous: number;
+    unmatched: number;
+    wouldQueue: number;
+  };
 }
 
-/** Check whether catalog lockdown mode is enabled via env var. */
-function isLockdownEnabled(): boolean {
-  return (
+type CatalogLockdownMode = "off" | "shadow" | "enforced";
+
+interface LockdownConfig {
+  mode: CatalogLockdownMode;
+  categories: Set<EquipmentCategory> | null;
+  pendingTtlDays: number;
+}
+
+const DEFAULT_PENDING_PUSH_TTL_DAYS = 90;
+
+function parseLockdownMode(): CatalogLockdownMode {
+  const rawMode = String(process.env.CATALOG_LOCKDOWN_MODE || "")
+    .trim()
+    .toLowerCase();
+
+  if (rawMode === "off" || rawMode === "shadow" || rawMode === "enforced") {
+    return rawMode;
+  }
+
+  const legacyEnabled =
     String(process.env.CATALOG_LOCKDOWN_ENABLED || "")
       .trim()
-      .toLowerCase() === "true"
-  );
+      .toLowerCase() === "true";
+  return legacyEnabled ? "enforced" : "off";
+}
+
+function parseLockdownCategories(): Set<EquipmentCategory> | null {
+  const raw = String(process.env.CATALOG_LOCKDOWN_CATEGORIES || "").trim();
+  if (!raw) return null;
+
+  const allowed = new Set<EquipmentCategory>();
+  for (const entry of raw.split(",")) {
+    const candidate = entry.trim().toUpperCase();
+    if ((Object.values(EquipmentCategory) as string[]).includes(candidate)) {
+      allowed.add(candidate as EquipmentCategory);
+    }
+  }
+
+  if (allowed.size === 0) {
+    console.warn(
+      "[bom-snapshot] CATALOG_LOCKDOWN_CATEGORIES provided but no valid categories were parsed; lockdown category scope is empty."
+    );
+  }
+
+  return allowed;
+}
+
+function parsePendingTtlDays(): number {
+  const raw = Number(process.env.CATALOG_PENDING_TTL_DAYS);
+  if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_PENDING_PUSH_TTL_DAYS;
+  return Math.min(Math.floor(raw), 3650);
+}
+
+function getLockdownConfig(): LockdownConfig {
+  return {
+    mode: parseLockdownMode(),
+    categories: parseLockdownCategories(),
+    pendingTtlDays: parsePendingTtlDays(),
+  };
+}
+
+function appliesToLockdownCategory(
+  item: ValidSkuItem,
+  categories: Set<EquipmentCategory> | null
+): boolean {
+  if (!categories) return true;
+  return categories.has(item.category as EquipmentCategory);
 }
 
 /** Validated item shape after filtering in syncEquipmentSkus. */
@@ -113,9 +181,9 @@ interface ValidSkuItem {
  * Batch-upsert BOM items into the EquipmentSku table using a single
  * INSERT ... ON CONFLICT per batch (eliminates N+1 query pattern).
  *
- * When CATALOG_LOCKDOWN_ENABLED=true, instead of direct INSERT ON CONFLICT,
- * fuzzy-matches against canonical keys and creates PendingCatalogPush records
- * for unmatched or ambiguous items.
+ * When lockdown mode is active (`CATALOG_LOCKDOWN_MODE=shadow|enforced` or
+ * legacy `CATALOG_LOCKDOWN_ENABLED=true`), can fuzzy-match against canonical
+ * keys and create PendingCatalogPush records for unmatched/ambiguous items.
  *
  * Uses Postgres xmax system column to distinguish inserts (xmax=0) from
  * updates (xmax>0) without an extra SELECT.
@@ -148,13 +216,45 @@ export async function syncEquipmentSkus(items: BomItem[]): Promise<SkuSyncResult
     return { created: 0, updated: 0, skipped, pending: 0 };
   }
 
-  // ----- Lockdown path: fuzzy match against canonical keys -----
-  if (isLockdownEnabled()) {
-    return syncWithFuzzyMatch(validItems, skipped);
+  const lockdown = getLockdownConfig();
+
+  // ----- Legacy mode: direct INSERT ON CONFLICT for all categories -----
+  if (lockdown.mode === "off") {
+    return syncWithDirectInsert(validItems, skipped);
   }
 
-  // ----- Legacy path: direct INSERT ON CONFLICT -----
-  return syncWithDirectInsert(validItems, skipped);
+  const lockdownItems = validItems.filter((item) =>
+    appliesToLockdownCategory(item, lockdown.categories)
+  );
+  const legacyItems = validItems.filter(
+    (item) => !appliesToLockdownCategory(item, lockdown.categories)
+  );
+
+  // ----- Shadow mode: evaluate fuzzy matching but keep writes on legacy path -----
+  if (lockdown.mode === "shadow") {
+    const directResult = await syncWithDirectInsert(validItems, skipped);
+    const shadow = lockdownItems.length
+      ? await simulateFuzzyMatch(lockdownItems)
+      : { evaluated: 0, exactMatches: 0, ambiguous: 0, unmatched: 0, wouldQueue: 0 };
+    return { ...directResult, shadow };
+  }
+
+  // ----- Enforced mode: fuzzy for configured categories, direct insert otherwise -----
+  const [fuzzyResult, directResult] = await Promise.all([
+    lockdownItems.length
+      ? syncWithFuzzyMatch(lockdownItems, 0, lockdown.pendingTtlDays)
+      : Promise.resolve({ created: 0, updated: 0, skipped: 0, pending: 0 } as SkuSyncResult),
+    legacyItems.length
+      ? syncWithDirectInsert(legacyItems, 0)
+      : Promise.resolve({ created: 0, updated: 0, skipped: 0, pending: 0 } as SkuSyncResult),
+  ]);
+
+  return {
+    created: fuzzyResult.created + directResult.created,
+    updated: fuzzyResult.updated + directResult.updated,
+    skipped: skipped + fuzzyResult.skipped + directResult.skipped,
+    pending: fuzzyResult.pending + directResult.pending,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -252,27 +352,35 @@ async function upsertPendingPush(
     canonicalKey: string;
     candidateSkuIds: string[];
     reviewReason: string;
-  }
-): Promise<void> {
-  const expiry = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
+  },
+  pendingTtlDays: number
+): Promise<{ id: string; candidateSkuIds: string[] }> {
+  const expiry = new Date(Date.now() + pendingTtlDays * 24 * 60 * 60 * 1000);
 
   if (existing) {
-    await prisma!.pendingCatalogPush.update({
+    const candidateSkuIds = mergeCandidateIds(
+      existing.candidateSkuIds,
+      data.candidateSkuIds
+    );
+    const updated = await prisma!.pendingCatalogPush.update({
       where: { id: existing.id },
       data: {
-        candidateSkuIds: mergeCandidateIds(
-          existing.candidateSkuIds,
-          data.candidateSkuIds
-        ),
+        candidateSkuIds,
         reviewReason: data.reviewReason,
         expiresAt: expiry,
       },
+      select: { id: true, candidateSkuIds: true },
     });
-    return;
+    return {
+      id: updated.id,
+      candidateSkuIds: Array.isArray(updated.candidateSkuIds)
+        ? (updated.candidateSkuIds as string[])
+        : [],
+    };
   }
 
   try {
-    await prisma!.pendingCatalogPush.create({
+    const created = await prisma!.pendingCatalogPush.create({
       data: {
         brand: data.brand,
         model: data.model,
@@ -286,7 +394,14 @@ async function upsertPendingPush(
         reviewReason: data.reviewReason,
         expiresAt: expiry,
       },
+      select: { id: true, candidateSkuIds: true },
     });
+    return {
+      id: created.id,
+      candidateSkuIds: Array.isArray(created.candidateSkuIds)
+        ? (created.candidateSkuIds as string[])
+        : [],
+    };
   } catch (err: unknown) {
     // P2002 = unique constraint violation — another concurrent request won the
     // race between our findFirst and this create. Fall back to update.
@@ -296,18 +411,25 @@ async function upsertPendingPush(
         select: { id: true, candidateSkuIds: true },
       });
       if (conflict) {
-        await prisma!.pendingCatalogPush.update({
+        const candidateSkuIds = mergeCandidateIds(
+          conflict.candidateSkuIds,
+          data.candidateSkuIds
+        );
+        const updated = await prisma!.pendingCatalogPush.update({
           where: { id: conflict.id },
           data: {
-            candidateSkuIds: mergeCandidateIds(
-              conflict.candidateSkuIds,
-              data.candidateSkuIds
-            ),
+            candidateSkuIds,
             reviewReason: data.reviewReason,
             expiresAt: expiry,
           },
+          select: { id: true, candidateSkuIds: true },
         });
-        return;
+        return {
+          id: updated.id,
+          candidateSkuIds: Array.isArray(updated.candidateSkuIds)
+            ? (updated.candidateSkuIds as string[])
+            : [],
+        };
       }
     }
     throw err;
@@ -320,58 +442,143 @@ async function upsertPendingPush(
 
 async function syncWithFuzzyMatch(
   validItems: ValidSkuItem[],
-  initialSkipped: number
+  initialSkipped: number,
+  pendingTtlDays: number
 ): Promise<SkuSyncResult> {
   let updated = 0;
   let pending = 0;
   let skipped = initialSkipped;
 
+  const keyedItems: Array<{ item: ValidSkuItem; canonicalKey: string }> = [];
   for (const item of validItems) {
     const ck = buildCanonicalKey(item.category, item.brand, item.model);
     if (!ck) {
       skipped++;
       continue;
     }
+    keyedItems.push({ item, canonicalKey: ck });
+  }
 
-    // Query for existing SKUs matching this canonical key
-    const matches = await prisma!.equipmentSku.findMany({
-      where: { canonicalKey: ck, isActive: true },
+  if (keyedItems.length === 0) {
+    return { created: 0, updated, skipped, pending };
+  }
+
+  const uniqueCanonicalKeys = Array.from(
+    new Set(keyedItems.map((entry) => entry.canonicalKey))
+  );
+
+  const [skuMatches, pendingRows] = await Promise.all([
+    prisma!.equipmentSku.findMany({
+      where: { canonicalKey: { in: uniqueCanonicalKeys }, isActive: true },
       select: { id: true, canonicalKey: true },
-    });
+    }),
+    prisma!.pendingCatalogPush.findMany({
+      where: { canonicalKey: { in: uniqueCanonicalKeys }, status: "PENDING" },
+      select: { id: true, canonicalKey: true, candidateSkuIds: true },
+    }),
+  ]);
 
-    if (matches.length === 1) {
+  const matchesByCanonicalKey = new Map<string, string[]>();
+  for (const row of skuMatches) {
+    if (!row.canonicalKey) continue;
+    const existing = matchesByCanonicalKey.get(row.canonicalKey) || [];
+    existing.push(row.id);
+    matchesByCanonicalKey.set(row.canonicalKey, existing);
+  }
+
+  const pendingByCanonicalKey = new Map<
+    string,
+    { id: string; candidateSkuIds: string[] }
+  >();
+  for (const row of pendingRows) {
+    if (!row.canonicalKey) continue;
+    pendingByCanonicalKey.set(row.canonicalKey, {
+      id: row.id,
+      candidateSkuIds: Array.isArray(row.candidateSkuIds)
+        ? (row.candidateSkuIds as string[])
+        : [],
+    });
+  }
+
+  for (const entry of keyedItems) {
+    const { item, canonicalKey } = entry;
+    const matchIds = matchesByCanonicalKey.get(canonicalKey) || [];
+
+    if (matchIds.length === 1) {
       // Exact match — use existing SKU, no insert needed
       updated++;
       continue;
     }
 
     // Determine review reason and candidate IDs
-    const reviewReason = matches.length > 1 ? "ambiguous_bom_match" : "no_match";
-    const candidateSkuIds = matches.map((m) => m.id);
-
-    // Idempotent: check for an existing PENDING record with the same canonical key.
-    // The partial unique index enforces one PENDING per canonicalKey, so we must
-    // find-then-create/update instead of blind create to avoid constraint violations
-    // when the same product appears twice in a BOM or when reprocessing.
-    const existingPending = await prisma!.pendingCatalogPush.findFirst({
-      where: { canonicalKey: ck, status: "PENDING" },
-      select: { id: true, candidateSkuIds: true },
-    });
-
-    await upsertPendingPush(existingPending, {
-      brand: item.brand,
-      model: item.model,
-      description: item.description || "",
-      category: item.category,
-      canonicalKey: ck,
-      candidateSkuIds,
-      reviewReason,
-    });
+    const reviewReason = matchIds.length > 1 ? "ambiguous_bom_match" : "no_match";
+    const refreshedPending = await upsertPendingPush(
+      pendingByCanonicalKey.get(canonicalKey) || null,
+      {
+        brand: item.brand,
+        model: item.model,
+        description: item.description || "",
+        category: item.category,
+        canonicalKey,
+        candidateSkuIds: matchIds,
+        reviewReason,
+      },
+      pendingTtlDays
+    );
+    pendingByCanonicalKey.set(canonicalKey, refreshedPending);
     pending++;
   }
 
   // Lockdown path never creates SKUs directly — created is always 0
   return { created: 0, updated, skipped, pending };
+}
+
+async function simulateFuzzyMatch(
+  validItems: ValidSkuItem[]
+): Promise<NonNullable<SkuSyncResult["shadow"]>> {
+  const keyedItems = validItems
+    .map((item) => ({
+      canonicalKey: buildCanonicalKey(item.category, item.brand, item.model),
+    }))
+    .filter((entry): entry is { canonicalKey: string } => Boolean(entry.canonicalKey));
+
+  if (keyedItems.length === 0) {
+    return { evaluated: 0, exactMatches: 0, ambiguous: 0, unmatched: 0, wouldQueue: 0 };
+  }
+
+  const uniqueCanonicalKeys = Array.from(new Set(keyedItems.map((entry) => entry.canonicalKey)));
+  const skuMatches = await prisma!.equipmentSku.findMany({
+    where: { canonicalKey: { in: uniqueCanonicalKeys }, isActive: true },
+    select: { id: true, canonicalKey: true },
+  });
+
+  const countsByCanonicalKey = new Map<string, number>();
+  for (const row of skuMatches) {
+    if (!row.canonicalKey) continue;
+    countsByCanonicalKey.set(
+      row.canonicalKey,
+      (countsByCanonicalKey.get(row.canonicalKey) || 0) + 1
+    );
+  }
+
+  let exactMatches = 0;
+  let ambiguous = 0;
+  let unmatched = 0;
+
+  for (const entry of keyedItems) {
+    const count = countsByCanonicalKey.get(entry.canonicalKey) || 0;
+    if (count === 1) exactMatches++;
+    else if (count > 1) ambiguous++;
+    else unmatched++;
+  }
+
+  return {
+    evaluated: keyedItems.length,
+    exactMatches,
+    ambiguous,
+    unmatched,
+    wouldQueue: ambiguous + unmatched,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -485,8 +692,13 @@ export async function saveBomSnapshot(params: {
       ...processedBomData.items,
       ...(processedBomData.suggestedAdditions ?? []),
     ];
-    const { created: skuCreated, updated: skuUpdated, skipped: skuSkipped, pending: skuPending } =
-      await syncEquipmentSkus(allItemsToSync);
+    const {
+      created: skuCreated,
+      updated: skuUpdated,
+      skipped: skuSkipped,
+      pending: skuPending,
+      shadow: skuShadow,
+    } = await syncEquipmentSkus(allItemsToSync);
 
     await logSnapshot("succeeded", {
       dealId,
@@ -497,6 +709,7 @@ export async function saveBomSnapshot(params: {
       skuUpdated,
       skuSkipped,
       skuPending,
+      ...(skuShadow ? { skuShadow } : {}),
     });
 
     return { id: snapshot.id, version: snapshot.version, createdAt: snapshot.createdAt };

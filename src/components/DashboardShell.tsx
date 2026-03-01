@@ -18,6 +18,7 @@ const SUITE_MAP: Record<string, { href: string; label: string }> = {
   "/dashboards/inventory": { href: "/suites/operations", label: "Operations" },
   "/dashboards/bom": { href: "/suites/operations", label: "Operations" },
   "/dashboards/bom/history": { href: "/suites/operations", label: "Operations" },
+  "/dashboards/catalog/review": { href: "/suites/operations", label: "Operations" },
   "/dashboards/catalog": { href: "/suites/operations", label: "Operations" },
   "/dashboards/catalog/new": { href: "/suites/operations", label: "Operations" },
   // Field Execution (Operations Suite)

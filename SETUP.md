@@ -172,6 +172,10 @@ Thanks.
      - `ZOHO_INVENTORY_ORG_ID`, `ZOHO_INVENTORY_CLIENT_ID`, `ZOHO_INVENTORY_CLIENT_SECRET`, `ZOHO_INVENTORY_REFRESH_TOKEN`
      - `OPENSOLAR_API_KEY`
      - `QUICKBOOKS_COMPANY_ID`, `QUICKBOOKS_ACCESS_TOKEN`
+   - Optional catalog-lockdown rollout controls:
+     - `CATALOG_LOCKDOWN_MODE` = `off` | `shadow` | `enforced` (legacy `CATALOG_LOCKDOWN_ENABLED=true` maps to `enforced`)
+     - `CATALOG_LOCKDOWN_CATEGORIES` = comma-separated category allowlist (e.g. `BATTERY,MODULE`)
+     - `CATALOG_PENDING_TTL_DAYS` = pending review TTL (default `90`)
 
 ### Option 2: GitHub Integration
 
