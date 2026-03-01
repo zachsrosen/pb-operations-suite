@@ -984,7 +984,7 @@ export class ZohoInventoryClient {
     }
 
     if (!response.ok) {
-      throw new Error(message);
+      throw new Error(`${message} (status: ${response.status})`);
     }
 
     const code = typeof json.code === "number" ? json.code : undefined;
