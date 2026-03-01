@@ -99,6 +99,14 @@ const LINKS: SuitePageCard[] = [
     tagColor: "bg-teal-500/20 text-teal-400 border-teal-500/30",
     section: "Department Analytics",
   },
+  {
+    href: "/dashboards/incentives",
+    title: "Incentives",
+    description: "Rebate and incentive program tracking and application status.",
+    tag: "INCENTIVES",
+    tagColor: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+    section: "Department Analytics",
+  },
 ];
 
 export default async function IntelligenceSuitePage() {
