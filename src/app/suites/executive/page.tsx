@@ -59,6 +59,14 @@ const LINKS: SuitePageCard[] = [
     tagColor: "bg-red-500/20 text-red-400 border-red-500/30",
     section: "Field Performance",
   },
+  {
+    href: "/dashboards/forecast-accuracy",
+    title: "Forecast Accuracy",
+    description: "How well the forecasting model predicts reality across milestones and segments.",
+    tag: "META",
+    tagColor: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
+    section: "Meta",
+  },
 ];
 
 export default async function ExecutiveSuitePage() {

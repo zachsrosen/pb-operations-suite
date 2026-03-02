@@ -33,7 +33,7 @@ export const MILESTONE_CHAIN = [
 export type MilestoneKey = (typeof MILESTONE_CHAIN)[number];
 
 /** Maps MilestoneKey → Project date field name */
-const MILESTONE_DATE_FIELD: Record<MilestoneKey, keyof Project> = {
+export const MILESTONE_DATE_FIELD: Record<MilestoneKey, keyof Project> = {
   close: "closeDate",
   designComplete: "designCompletionDate",
   permitSubmit: "permitSubmitDate",
