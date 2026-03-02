@@ -38,7 +38,7 @@ const SUB_DASHBOARDS = [
   { href: "/dashboards/utility-design-requirements", title: "Utility Requirements", tag: "UTILITY" },
 ];
 
-type SortKey = "name" | "designStatus" | "designLead" | "pbLocation" | "amount" | "daysStale" | "designDraftDate" | "designApprovalSentDate";
+type SortKey = "name" | "designStatus" | "layoutStatus" | "stage" | "designLead" | "pbLocation" | "amount" | "daysStale" | "designDraftDate" | "designApprovalSentDate";
 type SortDir = "asc" | "desc";
 
 export default function DEOverviewPage() {
@@ -81,12 +81,7 @@ export default function DEOverviewPage() {
   }, [sortKey, sortDir]);
 
   const designProjects = useMemo(
-    () => safeProjects.filter(
-      (p) =>
-        p.stage === "Design & Engineering" ||
-        p.designStatus ||
-        p.designCompletionDate
-    ),
+    () => safeProjects.filter((p) => p.stage === "Design & Engineering"),
     [safeProjects]
   );
 
@@ -394,6 +389,12 @@ export default function DEOverviewPage() {
                   <th className="pb-2 pr-4 cursor-pointer hover:text-foreground" onClick={() => handleSort("designStatus")}>
                     Design Status{sortIndicator("designStatus")}
                   </th>
+                  <th className="pb-2 pr-4 cursor-pointer hover:text-foreground" onClick={() => handleSort("layoutStatus")}>
+                    DA Status{sortIndicator("layoutStatus")}
+                  </th>
+                  <th className="pb-2 pr-4 cursor-pointer hover:text-foreground" onClick={() => handleSort("stage")}>
+                    Deal Stage{sortIndicator("stage")}
+                  </th>
                   <th className="pb-2 pr-4 cursor-pointer hover:text-foreground" onClick={() => handleSort("designLead")}>
                     Design Lead{sortIndicator("designLead")}
                   </th>
@@ -427,6 +428,8 @@ export default function DEOverviewPage() {
                       )}
                     </td>
                     <td className="py-2 pr-4 text-muted">{p.designStatus || "\u2014"}</td>
+                    <td className="py-2 pr-4 text-muted">{p.layoutStatus || "\u2014"}</td>
+                    <td className="py-2 pr-4 text-muted">{p.stage || "\u2014"}</td>
                     <td className="py-2 pr-4 text-muted">{p.designLead || "Unknown"}</td>
                     <td className="py-2 pr-4 text-muted">{p.pbLocation || "\u2014"}</td>
                     <td className="py-2 pr-4 text-muted">{p.designDraftDate || "\u2014"}</td>

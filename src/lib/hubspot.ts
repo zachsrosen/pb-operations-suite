@@ -943,7 +943,11 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
     equipment,
 
     // Team
-    projectManager: String(deal.project_manager || ""),
+    projectManager: (() => {
+      const raw = String(deal.project_manager || "");
+      if (!raw) return "";
+      return ownerMap?.[raw] || raw;
+    })(),
     operationsManager: String(deal.operations_manager || ""),
     dealOwner: ownerMap?.[String(deal.hubspot_owner_id || "")] || "",
     siteSurveyor: (() => {
