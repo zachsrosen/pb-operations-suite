@@ -9,21 +9,18 @@ import { formatMoney } from "@/lib/format";
 import { RawProject } from "@/lib/types";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
-import { usePIRevisionsFilters } from "@/stores/dashboard-filters";
+import { usePIICRevisionsFilters } from "@/stores/dashboard-filters";
 import {
   STALE_THRESHOLD_DAYS,
-  getPermitStatusDisplayName,
   getICStatusDisplayName,
 } from "@/lib/pi-statuses";
 
-type PipelineType = "Permit" | "Interconnection";
 type QueueState = "Ready to Resubmit" | "Resubmitted (Pending Approval)";
-type SortField = "name" | "pipeline" | "queueState" | "status" | "days" | "lead" | "pm" | "location" | "amount";
+type SortField = "name" | "queueState" | "status" | "days" | "lead" | "pm" | "location" | "amount";
 type SortDir = "asc" | "desc";
 
 interface RevisionItem {
   project: RawProject;
-  pipeline: PipelineType;
   queueState: QueueState;
   status: string;
   statusLabel: string;
@@ -43,7 +40,7 @@ function getRevisionQueueState(status: string): QueueState | null {
   return null;
 }
 
-export default function PIRevisionsPage() {
+export default function PIICRevisionsPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
@@ -53,9 +50,8 @@ export default function PIRevisionsPage() {
   });
   const safeProjects = projects ?? [];
 
-  const { filters: persistedFilters, setFilters: setPersisted, clearFilters } = usePIRevisionsFilters();
+  const { filters: persistedFilters, setFilters: setPersisted, clearFilters } = usePIICRevisionsFilters();
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedPipelines, setSelectedPipelines] = useState<PipelineType[]>([]);
   const [selectedQueueStates, setSelectedQueueStates] = useState<QueueState[]>([]);
   const [sortField, setSortField] = useState<SortField>("days");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
@@ -63,7 +59,7 @@ export default function PIRevisionsPage() {
   useEffect(() => {
     if (!loading && !hasTrackedView.current) {
       hasTrackedView.current = true;
-      trackDashboardView("pi-revisions", { projectCount: safeProjects.length });
+      trackDashboardView("pi-ic-revisions", { projectCount: safeProjects.length });
     }
   }, [loading, safeProjects.length, trackDashboardView]);
 
@@ -73,31 +69,11 @@ export default function PIRevisionsPage() {
     return Array.from(locs).sort().map((loc) => ({ value: loc, label: loc }));
   }, [safeProjects]);
 
-  const permitLeadOptions: FilterOption[] = useMemo(() => {
-    const names = new Set<string>();
-    safeProjects.forEach((p) => { names.add(p.permitLead || "Unknown"); });
-    return Array.from(names).sort().map((name) => ({ value: name, label: name }));
-  }, [safeProjects]);
-
   const icLeadOptions: FilterOption[] = useMemo(() => {
     const names = new Set<string>();
     safeProjects.forEach((p) => { names.add(p.interconnectionsLead || "Unknown"); });
     return Array.from(names).sort().map((name) => ({ value: name, label: name }));
   }, [safeProjects]);
-
-  const stageOptions: FilterOption[] = useMemo(() => {
-    const stages = new Set<string>();
-    safeProjects.forEach((p) => { if (p.stage) stages.add(p.stage); });
-    return Array.from(stages).sort().map((stage) => ({ value: stage, label: stage }));
-  }, [safeProjects]);
-
-  const pipelineOptions: FilterOption[] = useMemo(
-    () => [
-      { value: "Permit", label: "Permit" },
-      { value: "Interconnection", label: "Interconnection" },
-    ],
-    []
-  );
 
   const queueStateOptions: FilterOption[] = useMemo(
     () => [
@@ -109,10 +85,7 @@ export default function PIRevisionsPage() {
 
   const hasActiveFilters =
     persistedFilters.locations.length > 0 ||
-    persistedFilters.permitLeads.length > 0 ||
     persistedFilters.icLeads.length > 0 ||
-    persistedFilters.stages.length > 0 ||
-    selectedPipelines.length > 0 ||
     selectedQueueStates.length > 0 ||
     searchQuery.trim().length > 0;
 
@@ -120,17 +93,13 @@ export default function PIRevisionsPage() {
     const result: RawProject[] = [];
     for (const p of safeProjects) {
       if (persistedFilters.locations.length > 0 && !persistedFilters.locations.includes(p.pbLocation || "")) continue;
-      if (persistedFilters.permitLeads.length > 0 && !persistedFilters.permitLeads.includes(p.permitLead || "Unknown")) continue;
       if (persistedFilters.icLeads.length > 0 && !persistedFilters.icLeads.includes(p.interconnectionsLead || "Unknown")) continue;
-      if (persistedFilters.stages.length > 0 && !persistedFilters.stages.includes(p.stage || "")) continue;
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         if (
           !p.name?.toLowerCase().includes(q) &&
           !p.pbLocation?.toLowerCase().includes(q) &&
-          !p.permittingStatus?.toLowerCase().includes(q) &&
           !p.interconnectionStatus?.toLowerCase().includes(q) &&
-          !p.permitLead?.toLowerCase().includes(q) &&
           !p.interconnectionsLead?.toLowerCase().includes(q)
         ) continue;
       }
@@ -144,31 +113,12 @@ export default function PIRevisionsPage() {
 
     filteredProjects.forEach((p) => {
       const daysInStatus = p.daysSinceStageMovement ?? 0;
-
-      const permitStatus = p.permittingStatus || "";
-      if (permitStatus) {
-        const permitQueueState = getRevisionQueueState(permitStatus);
-        if (permitQueueState) {
-          items.push({
-            project: p,
-            pipeline: "Permit",
-            queueState: permitQueueState,
-            status: permitStatus,
-            statusLabel: getPermitStatusDisplayName(permitStatus),
-            lead: p.permitLead || "Unknown",
-            daysInStatus,
-            isStale: daysInStatus > STALE_THRESHOLD_DAYS,
-          });
-        }
-      }
-
       const icStatus = p.interconnectionStatus || "";
       if (icStatus) {
         const icQueueState = getRevisionQueueState(icStatus);
         if (icQueueState) {
           items.push({
             project: p,
-            pipeline: "Interconnection",
             queueState: icQueueState,
             status: icStatus,
             statusLabel: getICStatusDisplayName(icStatus),
@@ -181,15 +131,12 @@ export default function PIRevisionsPage() {
     });
 
     let filtered = items;
-    if (selectedPipelines.length > 0) {
-      filtered = filtered.filter((item) => selectedPipelines.includes(item.pipeline));
-    }
     if (selectedQueueStates.length > 0) {
       filtered = filtered.filter((item) => selectedQueueStates.includes(item.queueState));
     }
 
     return filtered;
-  }, [filteredProjects, selectedPipelines, selectedQueueStates]);
+  }, [filteredProjects, selectedQueueStates]);
 
   const sortedItems = useMemo(() => {
     const sorted = [...revisionItems];
@@ -197,7 +144,6 @@ export default function PIRevisionsPage() {
       let cmp = 0;
       switch (sortField) {
         case "name": cmp = (a.project.name || "").localeCompare(b.project.name || ""); break;
-        case "pipeline": cmp = a.pipeline.localeCompare(b.pipeline); break;
         case "queueState": cmp = a.queueState.localeCompare(b.queueState); break;
         case "status": cmp = a.statusLabel.localeCompare(b.statusLabel); break;
         case "days": cmp = a.daysInStatus - b.daysInStatus; break;
@@ -227,30 +173,21 @@ export default function PIRevisionsPage() {
   const stats = useMemo(() => {
     const readyCount = revisionItems.filter((item) => item.queueState === "Ready to Resubmit").length;
     const resubmittedCount = revisionItems.filter((item) => item.queueState === "Resubmitted (Pending Approval)").length;
-    const uniqueProjects = new Set(revisionItems.map((item) => item.project.id)).size;
     const staleCount = revisionItems.filter((item) => item.isStale).length;
-    return {
-      total: revisionItems.length,
-      readyCount,
-      resubmittedCount,
-      uniqueProjects,
-      staleCount,
-    };
+    return { total: revisionItems.length, readyCount, resubmittedCount, staleCount };
   }, [revisionItems]);
 
   const exportRows = useMemo(
     () => sortedItems.map((item) => ({
       name: item.project.name,
-      pipeline: item.pipeline,
       queueState: item.queueState,
       status: item.statusLabel,
       statusRaw: item.status,
       daysInStatus: item.daysInStatus,
       stale: item.isStale ? "Yes" : "No",
-      lead: item.lead,
+      icLead: item.lead,
       projectManager: item.project.projectManager || "Unknown",
       location: item.project.pbLocation || "",
-      ahj: item.project.ahj || "",
       utility: item.project.utility || "",
       amount: item.project.amount || 0,
       stage: item.project.stage || "",
@@ -260,10 +197,10 @@ export default function PIRevisionsPage() {
 
   return (
     <DashboardShell
-      title="P&I Revisions"
+      title="IC Revisions"
       accentColor="cyan"
       lastUpdated={lastUpdated}
-      exportData={{ data: exportRows, filename: "pi-revisions.csv" }}
+      exportData={{ data: exportRows, filename: "pi-ic-revisions.csv" }}
       fullWidth
     >
       {/* Cross-nav */}
@@ -271,17 +208,16 @@ export default function PIRevisionsPage() {
         <span className="text-muted">View:</span>
         <Link href="/dashboards/pi-permit-revisions" className="text-cyan-400 hover:underline">Permit</Link>
         <span className="text-muted">|</span>
-        <Link href="/dashboards/pi-ic-revisions" className="text-cyan-400 hover:underline">IC</Link>
+        <span className="text-foreground font-medium">IC</span>
         <span className="text-muted">|</span>
-        <span className="text-foreground font-medium">All Pipelines</span>
+        <Link href="/dashboards/pi-revisions" className="text-cyan-400 hover:underline">All Pipelines</Link>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 stagger-grid mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 stagger-grid mb-6">
         <MiniStat label="Queue Items" value={loading ? null : stats.total} />
         <MiniStat label="Ready to Resubmit" value={loading ? null : stats.readyCount} />
         <MiniStat label="Resubmitted Pending" value={loading ? null : stats.resubmittedCount} />
-        <MiniStat label="Unique Projects" value={loading ? null : stats.uniqueProjects} />
-        <MiniStat label={`Stale (>${STALE_THRESHOLD_DAYS}d)`} value={loading ? null : stats.staleCount} alert={stats.staleCount > 10} />
+        <MiniStat label={`Stale (>${STALE_THRESHOLD_DAYS}d)`} value={loading ? null : stats.staleCount} alert={stats.staleCount > 5} />
       </div>
 
       <div className="flex gap-2 flex-wrap items-center mb-6">
@@ -300,31 +236,10 @@ export default function PIRevisionsPage() {
           accentColor="cyan"
         />
         <MultiSelectFilter
-          label="Permit Lead"
-          options={permitLeadOptions}
-          selected={persistedFilters.permitLeads}
-          onChange={(v) => setPersisted({ ...persistedFilters, permitLeads: v })}
-          accentColor="cyan"
-        />
-        <MultiSelectFilter
           label="IC Lead"
           options={icLeadOptions}
           selected={persistedFilters.icLeads}
           onChange={(v) => setPersisted({ ...persistedFilters, icLeads: v })}
-          accentColor="cyan"
-        />
-        <MultiSelectFilter
-          label="Stage"
-          options={stageOptions}
-          selected={persistedFilters.stages}
-          onChange={(v) => setPersisted({ ...persistedFilters, stages: v })}
-          accentColor="cyan"
-        />
-        <MultiSelectFilter
-          label="Pipeline"
-          options={pipelineOptions}
-          selected={selectedPipelines}
-          onChange={(v) => setSelectedPipelines(v as PipelineType[])}
           accentColor="cyan"
         />
         <MultiSelectFilter
@@ -338,7 +253,6 @@ export default function PIRevisionsPage() {
           <button
             onClick={() => {
               clearFilters();
-              setSelectedPipelines([]);
               setSelectedQueueStates([]);
               setSearchQuery("");
             }}
@@ -357,7 +271,7 @@ export default function PIRevisionsPage() {
             ))}
           </div>
         ) : sortedItems.length === 0 ? (
-          <div className="p-8 text-center text-muted">No revision queue items found for current filters.</div>
+          <div className="p-8 text-center text-muted">No IC revision items found.</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -365,9 +279,6 @@ export default function PIRevisionsPage() {
                 <tr className="border-b border-t-border text-left text-muted bg-surface-2/50">
                   <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("name")}>
                     Project{sortIndicator("name")}
-                  </th>
-                  <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("pipeline")}>
-                    Pipeline{sortIndicator("pipeline")}
                   </th>
                   <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("queueState")}>
                     Queue State{sortIndicator("queueState")}
@@ -379,7 +290,7 @@ export default function PIRevisionsPage() {
                     Days{sortIndicator("days")}
                   </th>
                   <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("lead")}>
-                    Lead{sortIndicator("lead")}
+                    IC Lead{sortIndicator("lead")}
                   </th>
                   <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("pm")}>
                     PM{sortIndicator("pm")}
@@ -394,7 +305,7 @@ export default function PIRevisionsPage() {
               </thead>
               <tbody>
                 {sortedItems.map((item, idx) => (
-                  <tr key={`${item.project.id}-${item.pipeline}-${idx}`} className="border-b border-t-border/50 hover:bg-surface-2/50">
+                  <tr key={`${item.project.id}-${idx}`} className="border-b border-t-border/50 hover:bg-surface-2/50">
                     <td className="p-3">
                       {item.project.url ? (
                         <a href={item.project.url} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:text-cyan-300 hover:underline">
@@ -404,7 +315,6 @@ export default function PIRevisionsPage() {
                         <span className="text-foreground">{item.project.name}</span>
                       )}
                     </td>
-                    <td className="p-3 text-muted text-xs">{item.pipeline}</td>
                     <td className="p-3">
                       <span
                         className={`inline-block px-2 py-0.5 text-xs font-medium rounded-full border ${

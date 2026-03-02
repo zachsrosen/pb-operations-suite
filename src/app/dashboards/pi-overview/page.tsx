@@ -13,20 +13,24 @@ import {
   isPermitActiveStatus,
   isICActiveStatus,
   isPTOPipelineStatus,
+  isPermitCompletedStatus,
+  isICCompletedStatus,
   getPermitStatusDisplayName,
   getICStatusDisplayName,
 } from "@/lib/pi-statuses";
 
 const PI_LINKS = [
   { href: "/dashboards/pi-metrics", label: "P&I Metrics", desc: "Permit, IC, and PTO KPIs" },
-  { href: "/dashboards/pi-action-queue", label: "Action Queue", desc: "Projects needing action" },
-  { href: "/dashboards/pi-revisions", label: "P&I Revisions", desc: "Ready-to-resubmit and resubmitted queue" },
+  { href: "/dashboards/pi-permit-action-queue", label: "Permit Actions", desc: "Permit items needing action" },
+  { href: "/dashboards/pi-ic-action-queue", label: "IC & PTO Actions", desc: "IC/PTO items needing action" },
+  { href: "/dashboards/pi-permit-revisions", label: "Permit Revisions", desc: "Permit ready-to-resubmit queue" },
+  { href: "/dashboards/pi-ic-revisions", label: "IC Revisions", desc: "IC ready-to-resubmit queue" },
   { href: "/dashboards/ahj-tracker", label: "AHJ Tracker", desc: "Per-AHJ permit analytics" },
   { href: "/dashboards/utility-tracker", label: "Utility Tracker", desc: "Per-utility IC analytics" },
   { href: "/dashboards/pi-timeline", label: "Timeline & SLA", desc: "SLA targets & turnaround" },
 ];
 
-type SortField = "name" | "stage" | "lead" | "days" | "amount" | null;
+type SortField = "name" | "stage" | "permitLead" | "icLead" | "days" | "amount" | null;
 type SortDirection = "asc" | "desc";
 
 export default function PIOverviewPage() {
@@ -52,6 +56,9 @@ export default function PIOverviewPage() {
   // Sort state for stale projects table
   const [sortField, setSortField] = useState<SortField>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+  // Outlier sort state
+  const [outlierSortField, setOutlierSortField] = useState<SortField>(null);
+  const [outlierSortDirection, setOutlierSortDirection] = useState<SortDirection>("asc");
 
   const handleSort = useCallback((field: SortField) => {
     if (sortField === field) {
@@ -67,6 +74,20 @@ export default function PIOverviewPage() {
     return sortDirection === "asc" ? " \u2191" : " \u2193";
   }, [sortField, sortDirection]);
 
+  const handleOutlierSort = useCallback((field: SortField) => {
+    if (outlierSortField === field) {
+      setOutlierSortDirection((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setOutlierSortField(field);
+      setOutlierSortDirection("asc");
+    }
+  }, [outlierSortField]);
+
+  const outlierSortIndicator = useCallback((field: SortField) => {
+    if (outlierSortField !== field) return " \u21C5";
+    return outlierSortDirection === "asc" ? " \u2191" : " \u2193";
+  }, [outlierSortField, outlierSortDirection]);
+
   // Build filter option lists
   const locationOptions: FilterOption[] = useMemo(() => {
     const locs = new Set<string>();
@@ -74,12 +95,15 @@ export default function PIOverviewPage() {
     return Array.from(locs).sort().map((loc) => ({ value: loc, label: loc }));
   }, [safeProjects]);
 
-  const leadOptions: FilterOption[] = useMemo(() => {
+  const permitLeadOptions: FilterOption[] = useMemo(() => {
     const names = new Set<string>();
-    safeProjects.forEach((p) => {
-      if (p.permitLead) names.add(p.permitLead);
-      if (p.interconnectionsLead) names.add(p.interconnectionsLead);
-    });
+    safeProjects.forEach((p) => { names.add(p.permitLead || "Unknown"); });
+    return Array.from(names).sort().map((name) => ({ value: name, label: name }));
+  }, [safeProjects]);
+
+  const icLeadOptions: FilterOption[] = useMemo(() => {
+    const names = new Set<string>();
+    safeProjects.forEach((p) => { names.add(p.interconnectionsLead || "Unknown"); });
     return Array.from(names).sort().map((name) => ({ value: name, label: name }));
   }, [safeProjects]);
 
@@ -90,19 +114,65 @@ export default function PIOverviewPage() {
   }, [safeProjects]);
 
   const hasActiveFilters = persistedFilters.locations.length > 0 ||
-    persistedFilters.leads.length > 0 ||
+    persistedFilters.permitLeads.length > 0 ||
+    persistedFilters.icLeads.length > 0 ||
     persistedFilters.stages.length > 0;
+
+  // Scope to P&I stage, then apply user filters
+  const piProjects = useMemo(() => {
+    return safeProjects.filter((p) => p.stage === "Permitting & Interconnection");
+  }, [safeProjects]);
 
   const filteredProjects = useMemo(() => {
     const result: RawProject[] = [];
-    for (const p of safeProjects) {
+    for (const p of piProjects) {
       if (persistedFilters.locations.length > 0 && !persistedFilters.locations.includes(p.pbLocation || "")) continue;
-      if (persistedFilters.leads.length > 0 && !persistedFilters.leads.includes(p.permitLead || "Unknown") && !persistedFilters.leads.includes(p.interconnectionsLead || "Unknown")) continue;
+      if (persistedFilters.permitLeads.length > 0 && !persistedFilters.permitLeads.includes(p.permitLead || "Unknown")) continue;
+      if (persistedFilters.icLeads.length > 0 && !persistedFilters.icLeads.includes(p.interconnectionsLead || "Unknown")) continue;
       if (persistedFilters.stages.length > 0 && !persistedFilters.stages.includes(p.stage || "")) continue;
       result.push(p);
     }
     return result;
-  }, [safeProjects, persistedFilters]);
+  }, [piProjects, persistedFilters]);
+
+  // Outliers: NOT in P&I stage but have active permit or IC status
+  const outlierProjects = useMemo(() => {
+    const base = safeProjects.filter((p) => {
+      if (p.stage === "Permitting & Interconnection") return false;
+      const hasActivePermit = p.permittingStatus && isPermitActiveStatus(p.permittingStatus) && !isPermitCompletedStatus(p.permittingStatus);
+      const hasActiveIC = p.interconnectionStatus && isICActiveStatus(p.interconnectionStatus) && !isICCompletedStatus(p.interconnectionStatus);
+      return hasActivePermit || hasActiveIC;
+    });
+
+    // Apply location filter to outliers too
+    let result = base;
+    if (persistedFilters.locations.length > 0) {
+      result = result.filter((p) => persistedFilters.locations.includes(p.pbLocation || ""));
+    }
+
+    result.sort((a, b) => (b.amount || 0) - (a.amount || 0));
+
+    if (!outlierSortField) return result;
+
+    return [...result].sort((a, b) => {
+      let cmp = 0;
+      switch (outlierSortField) {
+        case "name":
+          cmp = (a.name || "").localeCompare(b.name || "");
+          break;
+        case "stage":
+          cmp = (a.stage || "").localeCompare(b.stage || "");
+          break;
+        case "permitLead":
+          cmp = (a.permitLead || "Unknown").localeCompare(b.permitLead || "Unknown");
+          break;
+        case "amount":
+          cmp = (a.amount || 0) - (b.amount || 0);
+          break;
+      }
+      return outlierSortDirection === "desc" ? -cmp : cmp;
+    });
+  }, [safeProjects, persistedFilters.locations, outlierSortField, outlierSortDirection]);
 
   // Hero metrics
   const heroMetrics = useMemo(() => {
@@ -149,7 +219,7 @@ export default function PIOverviewPage() {
     const max = Math.max(1, ...Object.values(counts));
     return Object.entries(counts)
       .sort((a, b) => b[1] - a[1])
-      .slice(0, 10)
+      .slice(0, 12)
       .map(([status, count]) => ({ status, count, pct: (count / max) * 100 }));
   }, [filteredProjects]);
 
@@ -164,18 +234,14 @@ export default function PIOverviewPage() {
     const max = Math.max(1, ...Object.values(counts));
     return Object.entries(counts)
       .sort((a, b) => b[1] - a[1])
-      .slice(0, 10)
+      .slice(0, 12)
       .map(([status, count]) => ({ status, count, pct: (count / max) * 100 }));
   }, [filteredProjects]);
 
   // Stale projects (most days in current P&I stage)
   const staleProjects = useMemo(() => {
     const base = filteredProjects
-      .filter(
-        (p) =>
-          (p.stage === "Permitting & Interconnection" || p.stage === "Permission To Operate") &&
-          (p.daysSinceStageMovement ?? 0) > 0
-      )
+      .filter((p) => (p.daysSinceStageMovement ?? 0) > 0)
       .sort((a, b) => (b.daysSinceStageMovement ?? 0) - (a.daysSinceStageMovement ?? 0))
       .slice(0, 10);
 
@@ -190,8 +256,11 @@ export default function PIOverviewPage() {
         case "stage":
           cmp = (a.stage || "").localeCompare(b.stage || "");
           break;
-        case "lead":
-          cmp = (a.permitLead || a.interconnectionsLead || "Unknown").localeCompare(b.permitLead || b.interconnectionsLead || "Unknown");
+        case "permitLead":
+          cmp = (a.permitLead || "Unknown").localeCompare(b.permitLead || "Unknown");
+          break;
+        case "icLead":
+          cmp = (a.interconnectionsLead || "Unknown").localeCompare(b.interconnectionsLead || "Unknown");
           break;
         case "days":
           cmp = (a.daysSinceStageMovement ?? 0) - (b.daysSinceStageMovement ?? 0);
@@ -210,6 +279,51 @@ export default function PIOverviewPage() {
       accentColor="cyan"
       lastUpdated={lastUpdated}
     >
+      {/* Filters */}
+      <div className="flex gap-2 flex-wrap items-center mb-6">
+        <MultiSelectFilter
+          label="Location"
+          options={locationOptions}
+          selected={persistedFilters.locations}
+          onChange={(v) => setPersisted({ ...persistedFilters, locations: v })}
+          accentColor="cyan"
+        />
+        <MultiSelectFilter
+          label="Permit Lead"
+          options={permitLeadOptions}
+          selected={persistedFilters.permitLeads}
+          onChange={(v) => setPersisted({ ...persistedFilters, permitLeads: v })}
+          accentColor="cyan"
+        />
+        <MultiSelectFilter
+          label="IC Lead"
+          options={icLeadOptions}
+          selected={persistedFilters.icLeads}
+          onChange={(v) => setPersisted({ ...persistedFilters, icLeads: v })}
+          accentColor="cyan"
+        />
+        <MultiSelectFilter
+          label="Stage"
+          options={stageOptions}
+          selected={persistedFilters.stages}
+          onChange={(v) => setPersisted({ ...persistedFilters, stages: v })}
+          accentColor="cyan"
+        />
+        {hasActiveFilters && (
+          <button
+            onClick={clearFilters}
+            className="px-3 py-2 rounded-lg text-sm text-muted hover:text-foreground hover:bg-surface-2 transition-colors"
+          >
+            Clear All
+          </button>
+        )}
+        {!loading && (
+          <span className="text-xs text-muted ml-auto">
+            {filteredProjects.length} P&I projects{outlierProjects.length > 0 ? ` · ${outlierProjects.length} outliers` : ""}
+          </span>
+        )}
+      </div>
+
       {/* Hero Metrics */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 stagger-grid mb-6">
         <StatCard
@@ -234,7 +348,7 @@ export default function PIOverviewPage() {
         />
       </div>
 
-      {/* Status Distributions */}
+      {/* Status Distributions — side by side */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
         {/* Permitting */}
         <div className="bg-surface border border-t-border rounded-xl p-6 shadow-card">
@@ -297,39 +411,6 @@ export default function PIOverviewPage() {
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="flex gap-2 flex-wrap items-center mb-6">
-        <MultiSelectFilter
-          label="Location"
-          options={locationOptions}
-          selected={persistedFilters.locations}
-          onChange={(v) => setPersisted({ ...persistedFilters, locations: v })}
-          accentColor="cyan"
-        />
-        <MultiSelectFilter
-          label="Lead"
-          options={leadOptions}
-          selected={persistedFilters.leads}
-          onChange={(v) => setPersisted({ ...persistedFilters, leads: v })}
-          accentColor="cyan"
-        />
-        <MultiSelectFilter
-          label="Stage"
-          options={stageOptions}
-          selected={persistedFilters.stages}
-          onChange={(v) => setPersisted({ ...persistedFilters, stages: v })}
-          accentColor="cyan"
-        />
-        {hasActiveFilters && (
-          <button
-            onClick={clearFilters}
-            className="px-3 py-2 rounded-lg text-sm text-muted hover:text-foreground hover:bg-surface-2 transition-colors"
-          >
-            Clear All
-          </button>
-        )}
-      </div>
-
       {/* Stale Projects */}
       <div className="bg-surface border border-t-border rounded-xl p-6 shadow-card mb-6">
         <h2 className="text-lg font-semibold text-foreground mb-4">Top 10 Stale P&I Projects</h2>
@@ -346,35 +427,20 @@ export default function PIOverviewPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-t-border text-left text-muted">
-                  <th
-                    className="pb-2 pr-4 cursor-pointer hover:text-foreground"
-                    onClick={() => handleSort("name")}
-                  >
+                  <th className="pb-2 pr-4 cursor-pointer hover:text-foreground" onClick={() => handleSort("name")}>
                     Project{sortIndicator("name")}
                   </th>
-                  <th
-                    className="pb-2 pr-4 cursor-pointer hover:text-foreground"
-                    onClick={() => handleSort("stage")}
-                  >
-                    Stage{sortIndicator("stage")}
+                  <th className="pb-2 pr-4 cursor-pointer hover:text-foreground" onClick={() => handleSort("permitLead")}>
+                    Permit Lead{sortIndicator("permitLead")}
                   </th>
-                  <th
-                    className="pb-2 pr-4 cursor-pointer hover:text-foreground"
-                    onClick={() => handleSort("lead")}
-                  >
-                    P&I Lead{sortIndicator("lead")}
+                  <th className="pb-2 pr-4 cursor-pointer hover:text-foreground" onClick={() => handleSort("icLead")}>
+                    IC Lead{sortIndicator("icLead")}
                   </th>
                   <th className="pb-2 pr-4">AHJ / Utility</th>
-                  <th
-                    className="pb-2 pr-4 text-right cursor-pointer hover:text-foreground"
-                    onClick={() => handleSort("days")}
-                  >
+                  <th className="pb-2 pr-4 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("days")}>
                     Days in Stage{sortIndicator("days")}
                   </th>
-                  <th
-                    className="pb-2 text-right cursor-pointer hover:text-foreground"
-                    onClick={() => handleSort("amount")}
-                  >
+                  <th className="pb-2 text-right cursor-pointer hover:text-foreground" onClick={() => handleSort("amount")}>
                     Amount{sortIndicator("amount")}
                   </th>
                 </tr>
@@ -391,8 +457,8 @@ export default function PIOverviewPage() {
                         <span className="text-foreground">{p.name}</span>
                       )}
                     </td>
-                    <td className="py-2 pr-4 text-muted">{p.stage}</td>
-                    <td className="py-2 pr-4 text-muted">{p.permitLead || p.interconnectionsLead || "Unknown"}</td>
+                    <td className="py-2 pr-4 text-muted">{p.permitLead || "Unknown"}</td>
+                    <td className="py-2 pr-4 text-muted">{p.interconnectionsLead || "Unknown"}</td>
                     <td className="py-2 pr-4 text-muted text-xs">{p.ahj || p.utility || "\u2014"}</td>
                     <td className="py-2 pr-4 text-right">
                       <span className={`font-semibold ${(p.daysSinceStageMovement ?? 0) > 21 ? "text-red-400" : (p.daysSinceStageMovement ?? 0) > 10 ? "text-yellow-400" : "text-foreground"}`}>
@@ -407,6 +473,71 @@ export default function PIOverviewPage() {
           </div>
         )}
       </div>
+
+      {/* Outliers — projects NOT in P&I stage with active permit/IC */}
+      {!loading && outlierProjects.length > 0 && (
+        <div className="bg-surface border border-t-border rounded-xl p-6 shadow-card mb-6">
+          <h2 className="text-lg font-semibold text-foreground mb-1">Outliers</h2>
+          <p className="text-xs text-muted mb-4">Projects outside P&I stage with active permit or interconnection status</p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-t-border text-left text-muted">
+                  <th className="pb-2 pr-4 cursor-pointer hover:text-foreground" onClick={() => handleOutlierSort("name")}>
+                    Project{outlierSortIndicator("name")}
+                  </th>
+                  <th className="pb-2 pr-4 cursor-pointer hover:text-foreground" onClick={() => handleOutlierSort("stage")}>
+                    Stage{outlierSortIndicator("stage")}
+                  </th>
+                  <th className="pb-2 pr-4">Permit Status</th>
+                  <th className="pb-2 pr-4">IC Status</th>
+                  <th className="pb-2 pr-4 cursor-pointer hover:text-foreground" onClick={() => handleOutlierSort("permitLead")}>
+                    Permit Lead{outlierSortIndicator("permitLead")}
+                  </th>
+                  <th className="pb-2 text-right cursor-pointer hover:text-foreground" onClick={() => handleOutlierSort("amount")}>
+                    Amount{outlierSortIndicator("amount")}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {outlierProjects.slice(0, 15).map((p) => (
+                  <tr key={p.id} className="border-b border-t-border/50">
+                    <td className="py-2 pr-4">
+                      {p.url ? (
+                        <a href={p.url} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:text-cyan-300 hover:underline">
+                          {p.name}
+                        </a>
+                      ) : (
+                        <span className="text-foreground">{p.name}</span>
+                      )}
+                    </td>
+                    <td className="py-2 pr-4 text-muted text-xs">{p.stage}</td>
+                    <td className="py-2 pr-4">
+                      {p.permittingStatus ? (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-400">
+                          {getPermitStatusDisplayName(p.permittingStatus)}
+                        </span>
+                      ) : <span className="text-muted">—</span>}
+                    </td>
+                    <td className="py-2 pr-4">
+                      {p.interconnectionStatus ? (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-400">
+                          {getICStatusDisplayName(p.interconnectionStatus)}
+                        </span>
+                      ) : <span className="text-muted">—</span>}
+                    </td>
+                    <td className="py-2 pr-4 text-muted">{p.permitLead || "Unknown"}</td>
+                    <td className="py-2 text-right text-foreground">{formatMoney(p.amount || 0)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {outlierProjects.length > 15 && (
+            <p className="text-xs text-muted mt-3">Showing 15 of {outlierProjects.length} outliers</p>
+          )}
+        </div>
+      )}
 
       {/* Quick Links */}
       <div className="mb-6">

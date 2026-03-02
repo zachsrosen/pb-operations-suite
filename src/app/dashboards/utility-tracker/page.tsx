@@ -99,7 +99,7 @@ export default function UtilityTrackerPage() {
   }, [safeProjects]);
 
   const hasActiveFilters = persistedFilters.locations.length > 0 ||
-    persistedFilters.leads.length > 0 ||
+    persistedFilters.icLeads.length > 0 ||
     persistedFilters.stages.length > 0 ||
     searchQuery.trim().length > 0;
 
@@ -107,7 +107,7 @@ export default function UtilityTrackerPage() {
     const result: RawProject[] = [];
     for (const p of safeProjects) {
       if (persistedFilters.locations.length > 0 && !persistedFilters.locations.includes(p.pbLocation || "")) continue;
-      if (persistedFilters.leads.length > 0 && !persistedFilters.leads.includes(p.interconnectionsLead || "")) continue;
+      if (persistedFilters.icLeads.length > 0 && !persistedFilters.icLeads.includes(p.interconnectionsLead || "")) continue;
       if (persistedFilters.stages.length > 0 && !persistedFilters.stages.includes(p.stage || "")) continue;
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
@@ -338,10 +338,10 @@ export default function UtilityTrackerPage() {
           accentColor="cyan"
         />
         <MultiSelectFilter
-          label="Lead"
+          label="IC Lead"
           options={leadOptions}
-          selected={persistedFilters.leads}
-          onChange={(v) => setPersisted({ ...persistedFilters, leads: v })}
+          selected={persistedFilters.icLeads}
+          onChange={(v) => setPersisted({ ...persistedFilters, icLeads: v })}
           accentColor="cyan"
         />
         <MultiSelectFilter

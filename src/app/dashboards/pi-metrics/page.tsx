@@ -12,6 +12,9 @@ import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { usePIMetricsFilters } from "@/stores/dashboard-filters";
 import { getPermitStatusDisplayName } from "@/lib/pi-statuses";
 
+const TIME_PRESETS = [30, 60, 90, 180, 365] as const;
+type TimePreset = (typeof TIME_PRESETS)[number];
+
 export default function PIMetricsPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
@@ -29,25 +32,48 @@ export default function PIMetricsPage() {
     }
   }, [loading, safeProjects.length, trackDashboardView]);
 
+  // ---- Time window ----
+  const [timePreset, setTimePreset] = useState<TimePreset | "custom">(90);
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
+
+  const isInWindow = useCallback(
+    (dateStr: string | null | undefined): boolean => {
+      if (!dateStr) return false;
+      const d = new Date(dateStr + "T12:00:00");
+      if (isNaN(d.getTime())) return false;
+
+      if (timePreset === "custom") {
+        if (!customFrom && !customTo) return true;
+        const from = customFrom ? new Date(customFrom + "T00:00:00") : new Date(0);
+        const to = customTo ? new Date(customTo + "T23:59:59") : new Date();
+        return d >= from && d <= to;
+      }
+
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - timePreset);
+      return d >= cutoff;
+    },
+    [timePreset, customFrom, customTo]
+  );
+
+  const timeWindowLabel = useMemo(() => {
+    if (timePreset === "custom") {
+      if (!customFrom && !customTo) return "All time";
+      if (customFrom && customTo) return `${customFrom} → ${customTo}`;
+      if (customFrom) return `From ${customFrom}`;
+      return `Until ${customTo}`;
+    }
+    return timePreset === 365 ? "Last 1 year" : `Last ${timePreset} days`;
+  }, [timePreset, customFrom, customTo]);
+
   // ---- Persisted multi-select filters ----
   const { filters: persistedFilters, setFilters: setPersisted, clearFilters } = usePIMetricsFilters();
 
-  const setFilterLocations = useCallback(
-    (locations: string[]) => setPersisted({ ...persistedFilters, locations }),
-    [persistedFilters, setPersisted]
-  );
-  const setFilterLeads = useCallback(
-    (leads: string[]) => setPersisted({ ...persistedFilters, leads }),
-    [persistedFilters, setPersisted]
-  );
-  const setFilterStages = useCallback(
-    (stages: string[]) => setPersisted({ ...persistedFilters, stages }),
-    [persistedFilters, setPersisted]
-  );
-
   const hasActiveFilters =
     persistedFilters.locations.length > 0 ||
-    persistedFilters.leads.length > 0 ||
+    persistedFilters.permitLeads.length > 0 ||
+    persistedFilters.icLeads.length > 0 ||
     persistedFilters.stages.length > 0;
 
   // ---- Build FilterOption[] lists ----
@@ -57,14 +83,15 @@ export default function PIMetricsPage() {
     return Array.from(locs).sort().map((loc) => ({ value: loc, label: loc }));
   }, [safeProjects]);
 
-  const leadOptions: FilterOption[] = useMemo(() => {
+  const permitLeadOptions: FilterOption[] = useMemo(() => {
     const names = new Set<string>();
-    safeProjects.forEach((p) => {
-      const pl = p.permitLead || "Unknown";
-      const il = p.interconnectionsLead || "Unknown";
-      names.add(pl);
-      names.add(il);
-    });
+    safeProjects.forEach((p) => { names.add(p.permitLead || "Unknown"); });
+    return Array.from(names).sort().map((name) => ({ value: name, label: name }));
+  }, [safeProjects]);
+
+  const icLeadOptions: FilterOption[] = useMemo(() => {
+    const names = new Set<string>();
+    safeProjects.forEach((p) => { names.add(p.interconnectionsLead || "Unknown"); });
     return Array.from(names).sort().map((name) => ({ value: name, label: name }));
   }, [safeProjects]);
 
@@ -80,12 +107,11 @@ export default function PIMetricsPage() {
     if (persistedFilters.locations.length > 0) {
       result = result.filter((p) => persistedFilters.locations.includes(p.pbLocation || ""));
     }
-    if (persistedFilters.leads.length > 0) {
-      result = result.filter(
-        (p) =>
-          persistedFilters.leads.includes(p.permitLead || "Unknown") ||
-          persistedFilters.leads.includes(p.interconnectionsLead || "Unknown")
-      );
+    if (persistedFilters.permitLeads.length > 0) {
+      result = result.filter((p) => persistedFilters.permitLeads.includes(p.permitLead || "Unknown"));
+    }
+    if (persistedFilters.icLeads.length > 0) {
+      result = result.filter((p) => persistedFilters.icLeads.includes(p.interconnectionsLead || "Unknown"));
     }
     if (persistedFilters.stages.length > 0) {
       result = result.filter((p) => persistedFilters.stages.includes(p.stage || ""));
@@ -93,10 +119,10 @@ export default function PIMetricsPage() {
     return result;
   }, [safeProjects, persistedFilters]);
 
-  // ---- Permit Metrics ----
+  // ---- Permit Metrics (windowed) ----
   const permitMetrics = useMemo(() => {
-    const submitted = filteredProjects.filter((p) => p.permitSubmitDate);
-    const issued = filteredProjects.filter((p) => p.permitIssueDate);
+    const submitted = filteredProjects.filter((p) => isInWindow(p.permitSubmitDate));
+    const issued = filteredProjects.filter((p) => isInWindow(p.permitIssueDate));
     const pending = filteredProjects.filter((p) => p.permitSubmitDate && !p.permitIssueDate);
 
     return {
@@ -104,12 +130,12 @@ export default function PIMetricsPage() {
       issued: { count: issued.length, revenue: issued.reduce((s, p) => s + (p.amount || 0), 0) },
       pending: { count: pending.length, revenue: pending.reduce((s, p) => s + (p.amount || 0), 0) },
     };
-  }, [filteredProjects]);
+  }, [filteredProjects, isInWindow]);
 
-  // ---- IC Metrics ----
+  // ---- IC Metrics (windowed) ----
   const icMetrics = useMemo(() => {
-    const submitted = filteredProjects.filter((p) => p.interconnectionSubmitDate);
-    const approved = filteredProjects.filter((p) => p.interconnectionApprovalDate);
+    const submitted = filteredProjects.filter((p) => isInWindow(p.interconnectionSubmitDate));
+    const approved = filteredProjects.filter((p) => isInWindow(p.interconnectionApprovalDate));
     const pending = filteredProjects.filter((p) => p.interconnectionSubmitDate && !p.interconnectionApprovalDate);
 
     return {
@@ -117,12 +143,12 @@ export default function PIMetricsPage() {
       approved: { count: approved.length, revenue: approved.reduce((s, p) => s + (p.amount || 0), 0) },
       pending: { count: pending.length, revenue: pending.reduce((s, p) => s + (p.amount || 0), 0) },
     };
-  }, [filteredProjects]);
+  }, [filteredProjects, isInWindow]);
 
-  // ---- PTO Metrics ----
+  // ---- PTO Metrics (windowed) ----
   const ptoMetrics = useMemo(() => {
-    const submitted = filteredProjects.filter((p) => p.ptoSubmitDate);
-    const granted = filteredProjects.filter((p) => p.ptoGrantedDate);
+    const submitted = filteredProjects.filter((p) => isInWindow(p.ptoSubmitDate));
+    const granted = filteredProjects.filter((p) => isInWindow(p.ptoGrantedDate));
     const pending = filteredProjects.filter((p) => p.ptoSubmitDate && !p.ptoGrantedDate);
 
     return {
@@ -130,15 +156,15 @@ export default function PIMetricsPage() {
       granted: { count: granted.length, revenue: granted.reduce((s, p) => s + (p.amount || 0), 0) },
       pending: { count: pending.length, revenue: pending.reduce((s, p) => s + (p.amount || 0), 0) },
     };
-  }, [filteredProjects]);
+  }, [filteredProjects, isInWindow]);
 
-  // ---- Monthly Trends ----
+  // ---- Monthly Trends (12 months) ----
   const permitIssueTrend = useMemo(
     () => aggregateMonthly(
       filteredProjects
         .filter((p) => p.permitIssueDate)
         .map((p) => ({ date: p.permitIssueDate!, amount: p.amount || 0 })),
-      6
+      12
     ),
     [filteredProjects]
   );
@@ -148,7 +174,7 @@ export default function PIMetricsPage() {
       filteredProjects
         .filter((p) => p.interconnectionApprovalDate)
         .map((p) => ({ date: p.interconnectionApprovalDate!, amount: p.amount || 0 })),
-      6
+      12
     ),
     [filteredProjects]
   );
@@ -158,7 +184,7 @@ export default function PIMetricsPage() {
       filteredProjects
         .filter((p) => p.ptoGrantedDate)
         .map((p) => ({ date: p.ptoGrantedDate!, amount: p.amount || 0 })),
-      6
+      12
     ),
     [filteredProjects]
   );
@@ -216,28 +242,36 @@ export default function PIMetricsPage() {
       fullWidth
     >
       {/* Filters */}
-      <div className="flex items-center gap-3 flex-wrap mb-6">
+      <div className="flex items-center gap-3 flex-wrap mb-4">
         <MultiSelectFilter
           label="Location"
           options={locationOptions}
           selected={persistedFilters.locations}
-          onChange={setFilterLocations}
+          onChange={(v) => setPersisted({ ...persistedFilters, locations: v })}
           placeholder="All Locations"
           accentColor="cyan"
         />
         <MultiSelectFilter
-          label="Lead"
-          options={leadOptions}
-          selected={persistedFilters.leads}
-          onChange={setFilterLeads}
-          placeholder="All Leads"
+          label="Permit Lead"
+          options={permitLeadOptions}
+          selected={persistedFilters.permitLeads}
+          onChange={(v) => setPersisted({ ...persistedFilters, permitLeads: v })}
+          placeholder="All Permit Leads"
+          accentColor="cyan"
+        />
+        <MultiSelectFilter
+          label="IC Lead"
+          options={icLeadOptions}
+          selected={persistedFilters.icLeads}
+          onChange={(v) => setPersisted({ ...persistedFilters, icLeads: v })}
+          placeholder="All IC Leads"
           accentColor="cyan"
         />
         <MultiSelectFilter
           label="Stage"
           options={stageOptions}
           selected={persistedFilters.stages}
-          onChange={setFilterStages}
+          onChange={(v) => setPersisted({ ...persistedFilters, stages: v })}
           placeholder="All Stages"
           accentColor="cyan"
         />
@@ -249,6 +283,52 @@ export default function PIMetricsPage() {
             Clear All
           </button>
         )}
+      </div>
+
+      {/* Time Window Toggle */}
+      <div className="flex items-center gap-2 flex-wrap mb-6">
+        <span className="text-xs text-muted mr-1">Time window:</span>
+        {TIME_PRESETS.map((d) => (
+          <button
+            key={d}
+            onClick={() => setTimePreset(d)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+              timePreset === d
+                ? "bg-cyan-500/20 text-cyan-400 border border-cyan-500/30"
+                : "bg-surface-2 text-muted hover:text-foreground border border-transparent"
+            }`}
+          >
+            {d === 365 ? "1y" : `${d}d`}
+          </button>
+        ))}
+        <button
+          onClick={() => setTimePreset("custom")}
+          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+            timePreset === "custom"
+              ? "bg-cyan-500/20 text-cyan-400 border border-cyan-500/30"
+              : "bg-surface-2 text-muted hover:text-foreground border border-transparent"
+          }`}
+        >
+          Custom
+        </button>
+        {timePreset === "custom" && (
+          <>
+            <input
+              type="date"
+              value={customFrom}
+              onChange={(e) => setCustomFrom(e.target.value)}
+              className="px-2 py-1.5 rounded-lg text-xs bg-surface-2 text-foreground border border-t-border"
+            />
+            <span className="text-xs text-muted">→</span>
+            <input
+              type="date"
+              value={customTo}
+              onChange={(e) => setCustomTo(e.target.value)}
+              className="px-2 py-1.5 rounded-lg text-xs bg-surface-2 text-foreground border border-t-border"
+            />
+          </>
+        )}
+        <span className="text-xs text-muted ml-auto">{timeWindowLabel}</span>
       </div>
 
       {/* Permits Section */}
@@ -335,23 +415,23 @@ export default function PIMetricsPage() {
       {/* Monthly Trends */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
         <MonthlyBarChart
-          title="Permits Issued (6 months)"
+          title="Permits Issued (12 months)"
           data={permitIssueTrend}
-          months={6}
+          months={12}
           accentColor="cyan"
           primaryLabel="issued"
         />
         <MonthlyBarChart
-          title="IC Approved (6 months)"
+          title="IC Approved (12 months)"
           data={icApprovalTrend}
-          months={6}
+          months={12}
           accentColor="blue"
           primaryLabel="approved"
         />
         <MonthlyBarChart
-          title="PTO Granted (6 months)"
+          title="PTO Granted (12 months)"
           data={ptoGrantedTrend}
-          months={6}
+          months={12}
           accentColor="emerald"
           primaryLabel="granted"
         />

@@ -41,6 +41,10 @@ const DASHBOARD_LINKS = [
   { name: "Permitting & Inspections", path: "/dashboards/permitting", description: "Permit status and inspection tracking" },
   { name: "Interconnection & PTO", path: "/dashboards/interconnection", description: "Utility interconnection and PTO status" },
   { name: "P&I Revisions", path: "/dashboards/pi-revisions", description: "Ready-to-resubmit and resubmitted permit/IC revisions" },
+  { name: "Permit Action Queue", path: "/dashboards/pi-permit-action-queue", description: "Permit-only action items and stale detection" },
+  { name: "IC & PTO Action Queue", path: "/dashboards/pi-ic-action-queue", description: "Interconnection and PTO action items" },
+  { name: "Permit Revisions", path: "/dashboards/pi-permit-revisions", description: "Permit revision queue: ready to resubmit and resubmitted" },
+  { name: "IC Revisions", path: "/dashboards/pi-ic-revisions", description: "Interconnection revision queue: ready to resubmit and resubmitted" },
   { name: "Incentives", path: "/dashboards/incentives", description: "Rebate and incentive tracking" },
   // Other Pipelines
   { name: "Sales Pipeline", path: "/dashboards/sales", description: "Active deals and proposals" },

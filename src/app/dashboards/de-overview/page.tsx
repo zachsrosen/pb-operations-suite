@@ -391,57 +391,58 @@ export default function DEOverviewPage() {
         />
       </div>
 
-      {/* Status Funnel */}
-      <div className="mb-6 bg-surface border border-t-border rounded-xl p-6 shadow-card">
-        <h2 className="text-lg font-semibold text-foreground mb-4">Design Status Funnel</h2>
-        <div className="space-y-3">
-          {funnelData.length === 0 ? (
-            <p className="text-sm text-muted italic">No design status data for current filters.</p>
-          ) : (
-            funnelData.map((s) => (
-              <div key={s.key} className="flex items-center gap-3">
-                <div className="w-44 text-sm text-muted truncate">{s.label}</div>
-                <div className="flex-1 h-7 bg-surface-2 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full ${s.color} rounded-full transition-all duration-500 flex items-center justify-end pr-2`}
-                    style={{ width: `${Math.max(s.pct, s.count > 0 ? 8 : 0)}%` }}
-                  >
-                    {s.count > 0 && (
-                      <span className="text-xs font-semibold text-white">{s.count}</span>
-                    )}
+      {/* Status Funnels — side by side */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+        {/* Design Status Funnel */}
+        <div className="bg-surface border border-t-border rounded-xl p-6 shadow-card">
+          <h2 className="text-lg font-semibold text-foreground mb-4">Design Status Funnel</h2>
+          <div className="space-y-3">
+            {funnelData.length === 0 ? (
+              <p className="text-sm text-muted italic">No design status data for current filters.</p>
+            ) : (
+              funnelData.map((s) => (
+                <div key={s.key} className="flex items-center gap-3">
+                  <div className="w-36 text-xs text-muted truncate" title={s.label}>{s.label}</div>
+                  <div className="flex-1 h-6 bg-surface-2 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full ${s.color} rounded-full transition-all duration-500 flex items-center justify-end pr-2`}
+                      style={{ width: `${Math.max(s.pct, s.count > 0 ? 8 : 0)}%` }}
+                    >
+                      {s.count > 0 && (
+                        <span className="text-xs font-semibold text-white">{s.count}</span>
+                      )}
+                    </div>
                   </div>
                 </div>
-                <div className="w-10 text-right text-sm font-medium text-foreground">{s.count}</div>
-              </div>
-            ))
-          )}
+              ))
+            )}
+          </div>
         </div>
-      </div>
 
-      {/* DA Status Funnel */}
-      <div className="mb-6 bg-surface border border-t-border rounded-xl p-6 shadow-card">
-        <h2 className="text-lg font-semibold text-foreground mb-4">DA Status Funnel</h2>
-        <div className="space-y-3">
-          {daFunnelData.length === 0 ? (
-            <p className="text-sm text-muted italic">No DA status data for current filters.</p>
-          ) : (
-            daFunnelData.map((s) => (
-              <div key={s.key} className="flex items-center gap-3">
-                <div className="w-44 text-sm text-muted truncate">{s.label}</div>
-                <div className="flex-1 h-7 bg-surface-2 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full ${s.color} rounded-full transition-all duration-500 flex items-center justify-end pr-2`}
-                    style={{ width: `${Math.max(s.pct, s.count > 0 ? 8 : 0)}%` }}
-                  >
-                    {s.count > 0 && (
-                      <span className="text-xs font-semibold text-white">{s.count}</span>
-                    )}
+        {/* DA Status Funnel */}
+        <div className="bg-surface border border-t-border rounded-xl p-6 shadow-card">
+          <h2 className="text-lg font-semibold text-foreground mb-4">DA Status Funnel</h2>
+          <div className="space-y-3">
+            {daFunnelData.length === 0 ? (
+              <p className="text-sm text-muted italic">No DA status data for current filters.</p>
+            ) : (
+              daFunnelData.map((s) => (
+                <div key={s.key} className="flex items-center gap-3">
+                  <div className="w-36 text-xs text-muted truncate" title={s.label}>{s.label}</div>
+                  <div className="flex-1 h-6 bg-surface-2 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full ${s.color} rounded-full transition-all duration-500 flex items-center justify-end pr-2`}
+                      style={{ width: `${Math.max(s.pct, s.count > 0 ? 8 : 0)}%` }}
+                    >
+                      {s.count > 0 && (
+                        <span className="text-xs font-semibold text-white">{s.count}</span>
+                      )}
+                    </div>
                   </div>
                 </div>
-                <div className="w-10 text-right text-sm font-medium text-foreground">{s.count}</div>
-              </div>
-            ))
-          )}
+              ))
+            )}
+          </div>
         </div>
       </div>
 

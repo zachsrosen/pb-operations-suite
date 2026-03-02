@@ -9,19 +9,19 @@ import { formatMoney } from "@/lib/format";
 import { RawProject } from "@/lib/types";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
-import { usePIActionQueueFilters } from "@/stores/dashboard-filters";
+import { usePIICActionQueueFilters } from "@/stores/dashboard-filters";
 import {
-  getPermitAction,
   getICAction,
   getPTOAction,
-  getPermitStatusDisplayName,
   getICStatusDisplayName,
   getPTOStatusDisplayName,
+  isICActiveStatus,
+  isPTOPipelineStatus,
   STALE_THRESHOLD_DAYS,
 } from "@/lib/pi-statuses";
 
-type ActionType = "permit" | "interconnection" | "pto" | "stale";
-type SortField = "name" | "type" | "status" | "action" | "daysInStatus" | "permitLead" | "icLead" | "pm" | "preconLead" | "location" | "amount";
+type ActionType = "interconnection" | "pto" | "stale";
+type SortField = "name" | "type" | "status" | "action" | "daysInStatus" | "icLead" | "pm" | "location" | "amount";
 type SortDir = "asc" | "desc";
 
 interface ActionItem {
@@ -33,7 +33,7 @@ interface ActionItem {
   isStale: boolean;
 }
 
-export default function PIActionQueuePage() {
+export default function PIICActionQueuePage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
@@ -48,12 +48,12 @@ export default function PIActionQueuePage() {
   const [filterType, setFilterType] = useState<ActionType | "all">("all");
   const [searchQuery, setSearchQuery] = useState("");
 
-  const { filters: persistedFilters, setFilters: setPersisted, clearFilters } = usePIActionQueueFilters();
+  const { filters: persistedFilters, setFilters: setPersisted, clearFilters } = usePIICActionQueueFilters();
 
   useEffect(() => {
     if (!loading && !hasTrackedView.current) {
       hasTrackedView.current = true;
-      trackDashboardView("pi-action-queue", { projectCount: safeProjects.length });
+      trackDashboardView("pi-ic-action-queue", { projectCount: safeProjects.length });
     }
   }, [loading, safeProjects.length, trackDashboardView]);
 
@@ -63,41 +63,25 @@ export default function PIActionQueuePage() {
     return Array.from(locs).sort().map(loc => ({ value: loc, label: loc }));
   }, [safeProjects]);
 
-  const permitLeadOptions: FilterOption[] = useMemo(() => {
-    const names = new Set<string>();
-    safeProjects.forEach((p) => { names.add(p.permitLead || "Unknown"); });
-    return Array.from(names).sort().map(name => ({ value: name, label: name }));
-  }, [safeProjects]);
-
   const icLeadOptions: FilterOption[] = useMemo(() => {
     const names = new Set<string>();
     safeProjects.forEach((p) => { names.add(p.interconnectionsLead || "Unknown"); });
     return Array.from(names).sort().map(name => ({ value: name, label: name }));
   }, [safeProjects]);
 
-  const stageOptions: FilterOption[] = useMemo(() => {
-    const s = new Set<string>();
-    safeProjects.forEach((p) => { if (p.stage) s.add(p.stage); });
-    return Array.from(s).sort().map(stage => ({ value: stage, label: stage }));
-  }, [safeProjects]);
-
   const filteredProjects = useMemo(() => {
     const result: RawProject[] = [];
     for (const p of safeProjects) {
       if (persistedFilters.locations.length > 0 && !persistedFilters.locations.includes(p.pbLocation || "")) continue;
-      if (persistedFilters.permitLeads.length > 0 && !persistedFilters.permitLeads.includes(p.permitLead || "Unknown")) continue;
       if (persistedFilters.icLeads.length > 0 && !persistedFilters.icLeads.includes(p.interconnectionsLead || "Unknown")) continue;
-      if (persistedFilters.stages.length > 0 && !persistedFilters.stages.includes(p.stage || "")) continue;
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         if (
           !p.name?.toLowerCase().includes(q) &&
-          !p.stage?.toLowerCase().includes(q) &&
           !p.pbLocation?.toLowerCase().includes(q) &&
-          !p.permitLead?.toLowerCase().includes(q) &&
           !p.interconnectionsLead?.toLowerCase().includes(q) &&
-          !p.projectManager?.toLowerCase().includes(q) &&
-          !p.preconstructionLead?.toLowerCase().includes(q)
+          !p.interconnectionStatus?.toLowerCase().includes(q) &&
+          !p.ptoStatus?.toLowerCase().includes(q)
         ) continue;
       }
       result.push(p);
@@ -105,27 +89,13 @@ export default function PIActionQueuePage() {
     return result;
   }, [safeProjects, persistedFilters, searchQuery]);
 
-  // Build action items
+  // Build IC + PTO action items
   const actionItems = useMemo(() => {
     const items: ActionItem[] = [];
-    const seen = new Set<string>(); // avoid duplicates per project
+    const seen = new Set<string>();
 
     filteredProjects.forEach((p) => {
       const days = p.daysSinceStageMovement ?? 0;
-
-      // Permit actions
-      const permitAction = getPermitAction(p.permittingStatus);
-      if (p.permittingStatus && permitAction) {
-        items.push({
-          project: p,
-          type: "permit",
-          status: getPermitStatusDisplayName(p.permittingStatus),
-          action: permitAction,
-          daysInStatus: days,
-          isStale: days > STALE_THRESHOLD_DAYS,
-        });
-        seen.add(p.id);
-      }
 
       // IC actions
       const icAction = getICAction(p.interconnectionStatus);
@@ -138,7 +108,7 @@ export default function PIActionQueuePage() {
           daysInStatus: days,
           isStale: days > STALE_THRESHOLD_DAYS,
         });
-        seen.add(p.id);
+        seen.add(p.id + "-ic");
       }
 
       // PTO actions
@@ -152,31 +122,38 @@ export default function PIActionQueuePage() {
           daysInStatus: days,
           isStale: days > STALE_THRESHOLD_DAYS,
         });
-        seen.add(p.id);
+        seen.add(p.id + "-pto");
       }
 
-      // Stale detection — P&I stage projects not already captured
-      if (
-        !seen.has(p.id) &&
-        days > STALE_THRESHOLD_DAYS &&
-        (p.stage === "Permitting & Interconnection" || p.stage === "Permission To Operate")
-      ) {
-        const statusLabel = p.permittingStatus || p.interconnectionStatus || p.ptoStatus || p.stage;
-        items.push({
-          project: p,
-          type: "stale",
-          status: statusLabel,
-          action: "Follow up — stale",
-          daysInStatus: days,
-          isStale: true,
-        });
+      // Stale detection — IC/PTO active projects not already captured
+      if (days > STALE_THRESHOLD_DAYS) {
+        if (!seen.has(p.id + "-ic") && p.interconnectionStatus && isICActiveStatus(p.interconnectionStatus)) {
+          items.push({
+            project: p,
+            type: "stale",
+            status: getICStatusDisplayName(p.interconnectionStatus),
+            action: "Follow up — stale IC",
+            daysInStatus: days,
+            isStale: true,
+          });
+        }
+        if (!seen.has(p.id + "-pto") && p.ptoStatus && isPTOPipelineStatus(p.ptoStatus)) {
+          items.push({
+            project: p,
+            type: "stale",
+            status: getPTOStatusDisplayName(p.ptoStatus),
+            action: "Follow up — stale PTO",
+            daysInStatus: days,
+            isStale: true,
+          });
+        }
       }
     });
 
     return items;
   }, [filteredProjects]);
 
-  // Filter — stale tab shows all items where isStale is true (any type), not just type === "stale"
+  // Filter by type tab
   const filteredItems = useMemo(() => {
     if (filterType === "all") return actionItems;
     if (filterType === "stale") return actionItems.filter((i) => i.isStale);
@@ -194,10 +171,8 @@ export default function PIActionQueuePage() {
         case "status": cmp = a.status.localeCompare(b.status); break;
         case "action": cmp = a.action.localeCompare(b.action); break;
         case "daysInStatus": cmp = a.daysInStatus - b.daysInStatus; break;
-        case "permitLead": cmp = (a.project.permitLead || "").localeCompare(b.project.permitLead || ""); break;
         case "icLead": cmp = (a.project.interconnectionsLead || "").localeCompare(b.project.interconnectionsLead || ""); break;
         case "pm": cmp = (a.project.projectManager || "").localeCompare(b.project.projectManager || ""); break;
-        case "preconLead": cmp = (a.project.preconstructionLead || "").localeCompare(b.project.preconstructionLead || ""); break;
         case "location": cmp = (a.project.pbLocation || "").localeCompare(b.project.pbLocation || ""); break;
         case "amount": cmp = (a.project.amount || 0) - (b.project.amount || 0); break;
       }
@@ -214,20 +189,16 @@ export default function PIActionQueuePage() {
     [sortField]
   );
 
-  // Stats — unique project counts for total and stale; action-item counts for type tabs
   const stats = useMemo(() => {
     const byType: Record<string, number> = {};
-    const uniqueProjects = new Set<string>();
-    const staleProjects = new Set<string>();
+    let staleCount = 0;
     actionItems.forEach((i) => {
       byType[i.type] = (byType[i.type] || 0) + 1;
-      uniqueProjects.add(i.project.id);
-      if (i.isStale) staleProjects.add(i.project.id);
+      if (i.isStale) staleCount++;
     });
-    return { total: uniqueProjects.size, byType, staleCount: staleProjects.size };
+    return { total: actionItems.length, byType, staleCount };
   }, [actionItems]);
 
-  // Export
   const exportRows = useMemo(
     () => sortedItems.map((i) => ({
       name: i.project.name,
@@ -236,12 +207,9 @@ export default function PIActionQueuePage() {
       action: i.action,
       daysInStatus: i.daysInStatus,
       isStale: i.isStale ? "Yes" : "No",
-      permitLead: i.project.permitLead || "",
       icLead: i.project.interconnectionsLead || "",
       projectManager: i.project.projectManager || "",
-      preconLead: i.project.preconstructionLead || "",
       location: i.project.pbLocation || "",
-      ahj: i.project.ahj || "",
       utility: i.project.utility || "",
       amount: i.project.amount || 0,
     })),
@@ -252,20 +220,19 @@ export default function PIActionQueuePage() {
     sortField === field ? (sortDir === "asc" ? " ↑" : " ↓") : " ⇅";
 
   const TYPE_COLORS: Record<string, string> = {
-    permit: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
     interconnection: "bg-blue-500/20 text-blue-400 border-blue-500/30",
     pto: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
     stale: "bg-red-500/20 text-red-400 border-red-500/30",
   };
 
-  const hasActiveFilters = persistedFilters.locations.length > 0 || persistedFilters.permitLeads.length > 0 || persistedFilters.icLeads.length > 0 || persistedFilters.stages.length > 0 || searchQuery.trim().length > 0;
+  const hasActiveFilters = persistedFilters.locations.length > 0 || persistedFilters.icLeads.length > 0 || searchQuery.trim().length > 0;
 
   return (
     <DashboardShell
-      title="Action Queue"
+      title="IC & PTO Action Queue"
       accentColor="cyan"
       lastUpdated={lastUpdated}
-      exportData={{ data: exportRows, filename: "pi-action-queue.csv" }}
+      exportData={{ data: exportRows, filename: "pi-ic-action-queue.csv" }}
       fullWidth
     >
       {/* Cross-nav */}
@@ -273,21 +240,20 @@ export default function PIActionQueuePage() {
         <span className="text-muted">View:</span>
         <Link href="/dashboards/pi-permit-action-queue" className="text-cyan-400 hover:underline">Permit</Link>
         <span className="text-muted">|</span>
-        <Link href="/dashboards/pi-ic-action-queue" className="text-cyan-400 hover:underline">IC & PTO</Link>
+        <span className="text-foreground font-medium">IC & PTO</span>
         <span className="text-muted">|</span>
-        <span className="text-foreground font-medium">All Pipelines</span>
+        <Link href="/dashboards/pi-action-queue" className="text-cyan-400 hover:underline">All Pipelines</Link>
       </div>
 
       {/* Summary Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 stagger-grid mb-6">
-        <MiniStat label="Total Actions" value={loading ? null : stats.total} />
-        <MiniStat label="Permit Actions" value={loading ? null : stats.byType.permit || 0} />
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 stagger-grid mb-6">
+        <MiniStat label="Total Items" value={loading ? null : stats.total} />
         <MiniStat label="IC Actions" value={loading ? null : stats.byType.interconnection || 0} />
         <MiniStat label="PTO Actions" value={loading ? null : stats.byType.pto || 0} />
-        <MiniStat label="Stale (>14d)" value={loading ? null : stats.staleCount} alert={stats.staleCount > 10} />
+        <MiniStat label={`Stale (>${STALE_THRESHOLD_DAYS}d)`} value={loading ? null : stats.staleCount} alert={stats.staleCount > 5} />
       </div>
 
-      {/* Location / Lead / Stage Filters */}
+      {/* Filters */}
       <div className="flex gap-2 flex-wrap items-center mb-6">
         <input
           type="text"
@@ -304,24 +270,10 @@ export default function PIActionQueuePage() {
           accentColor="cyan"
         />
         <MultiSelectFilter
-          label="Permit Lead"
-          options={permitLeadOptions}
-          selected={persistedFilters.permitLeads}
-          onChange={(v) => setPersisted({ ...persistedFilters, permitLeads: v })}
-          accentColor="cyan"
-        />
-        <MultiSelectFilter
           label="IC Lead"
           options={icLeadOptions}
           selected={persistedFilters.icLeads}
           onChange={(v) => setPersisted({ ...persistedFilters, icLeads: v })}
-          accentColor="cyan"
-        />
-        <MultiSelectFilter
-          label="Stage"
-          options={stageOptions}
-          selected={persistedFilters.stages}
-          onChange={(v) => setPersisted({ ...persistedFilters, stages: v })}
           accentColor="cyan"
         />
         {hasActiveFilters && (
@@ -334,9 +286,9 @@ export default function PIActionQueuePage() {
         )}
       </div>
 
-      {/* Filter tabs */}
+      {/* Type tabs */}
       <div className="flex gap-2 flex-wrap mb-6">
-        {(["all", "permit", "interconnection", "pto", "stale"] as const).map((t) => (
+        {(["all", "interconnection", "pto", "stale"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setFilterType(t)}
@@ -346,7 +298,7 @@ export default function PIActionQueuePage() {
                 : "bg-surface-2/50 text-muted border border-t-border hover:text-foreground"
             }`}
           >
-            {t === "all" ? "All" : t === "interconnection" ? "IC" : t.charAt(0).toUpperCase() + t.slice(1)}
+            {t === "all" ? "All" : t === "interconnection" ? "IC" : t === "pto" ? "PTO" : "Stale"}
             {t !== "all" && ` (${t === "stale" ? stats.staleCount : stats.byType[t] || 0})`}
           </button>
         ))}
@@ -361,7 +313,7 @@ export default function PIActionQueuePage() {
             ))}
           </div>
         ) : sortedItems.length === 0 ? (
-          <div className="p-8 text-center text-muted">No action items found.</div>
+          <div className="p-8 text-center text-muted">No IC or PTO action items found.</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -382,17 +334,11 @@ export default function PIActionQueuePage() {
                   <th className="p-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("daysInStatus")}>
                     Days{sortIndicator("daysInStatus")}
                   </th>
-                  <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("permitLead")}>
-                    Permit Lead{sortIndicator("permitLead")}
-                  </th>
                   <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("icLead")}>
                     IC Lead{sortIndicator("icLead")}
                   </th>
                   <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("pm")}>
                     PM{sortIndicator("pm")}
-                  </th>
-                  <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("preconLead")}>
-                    Precon Lead{sortIndicator("preconLead")}
                   </th>
                   <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("location")}>
                     Location{sortIndicator("location")}
@@ -416,7 +362,7 @@ export default function PIActionQueuePage() {
                     </td>
                     <td className="p-3">
                       <span className={`inline-block px-2 py-0.5 text-xs font-medium rounded-full border ${TYPE_COLORS[item.type]}`}>
-                        {item.type === "interconnection" ? "IC" : item.type.charAt(0).toUpperCase() + item.type.slice(1)}
+                        {item.type === "interconnection" ? "IC" : item.type === "pto" ? "PTO" : "Stale"}
                       </span>
                     </td>
                     <td className="p-3 text-muted text-xs">{item.status}</td>
@@ -428,10 +374,8 @@ export default function PIActionQueuePage() {
                         {item.daysInStatus}d
                       </span>
                     </td>
-                    <td className="p-3 text-muted text-xs">{item.project.permitLead || "Unknown"}</td>
                     <td className="p-3 text-muted text-xs">{item.project.interconnectionsLead || "Unknown"}</td>
                     <td className="p-3 text-muted text-xs">{item.project.projectManager || "Unknown"}</td>
-                    <td className="p-3 text-muted text-xs">{item.project.preconstructionLead || "Unknown"}</td>
                     <td className="p-3 text-muted text-xs">{item.project.pbLocation || "—"}</td>
                     <td className="p-3 text-right text-foreground">{formatMoney(item.project.amount || 0)}</td>
                   </tr>
