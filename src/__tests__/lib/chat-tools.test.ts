@@ -9,8 +9,6 @@ jest.mock("@/lib/checks/runner", () => ({
 }));
 
 jest.mock("@/lib/checks/design-review", () => ({}));
-jest.mock("@/lib/checks/engineering-review", () => ({}));
-jest.mock("@/lib/checks/sales-advisor", () => ({}));
 
 const mockGetById = jest.fn();
 const mockSearchWithRetry = jest.fn();
@@ -33,16 +31,31 @@ jest.mock("@/lib/hubspot", () => ({
   fetchAllProjects: (...args: unknown[]) => mockFetchAllProjects(...args),
 }));
 
-const mockProjectReviewCreate = jest.fn();
+const mockAcquireReviewLock = jest.fn();
+const mockCompleteReviewRun = jest.fn();
+const mockFailReviewRun = jest.fn();
+
+jest.mock("@/lib/review-lock", () => {
+  const { DuplicateReviewError } = jest.requireActual("@/lib/review-lock");
+  return {
+    acquireReviewLock: (...args: unknown[]) => mockAcquireReviewLock(...args),
+    completeReviewRun: (...args: unknown[]) => mockCompleteReviewRun(...args),
+    failReviewRun: (...args: unknown[]) => mockFailReviewRun(...args),
+    DuplicateReviewError,
+  };
+});
+
 jest.mock("@/lib/db", () => ({
   prisma: {
     projectReview: {
-      create: (...args: unknown[]) => mockProjectReviewCreate(...args),
+      findMany: jest.fn(),
+      findUnique: jest.fn(),
     },
   },
 }));
 
 import { createChatTools } from "@/lib/chat-tools";
+import { DuplicateReviewError } from "@/lib/review-lock";
 
 type ToolLike = {
   name: string;
@@ -61,13 +74,14 @@ describe("createChatTools", () => {
     jest.clearAllMocks();
   });
 
-  it("registers all six tools", () => {
+  it("registers all seven tools", () => {
     const tools = createChatTools({ email: "admin@test.com", role: "ADMIN" }) as unknown as ToolLike[];
     expect(tools.map((t) => t.name)).toEqual([
       "get_deal",
       "get_review_results",
       "search_deals",
       "run_review",
+      "get_review_status",
       "filter_deals_by_stage",
       "count_deals_by_stage",
     ]);
@@ -75,16 +89,18 @@ describe("createChatTools", () => {
 
   it("blocks run_review when caller role is not allowed for the requested skill", async () => {
     const runReview = getTool("run_review", "SALES");
-    const payload = await runReview.run({ dealId: "123", skill: "design-review" });
+    const payload = await runReview.run({ dealId: "123" });
     const parsed = JSON.parse(payload) as { error?: string };
 
     expect(parsed.error).toMatch(/insufficient permissions/i);
-    expect(mockRunChecks).not.toHaveBeenCalled();
-    expect(mockProjectReviewCreate).not.toHaveBeenCalled();
+    expect(mockAcquireReviewLock).not.toHaveBeenCalled();
   });
 
-  it("runs and persists review results via run_review", async () => {
+  it("starts async review and returns running status via run_review", async () => {
     const runReview = getTool("run_review", "ADMIN");
+    mockAcquireReviewLock.mockResolvedValue("review_1");
+
+    // Background worker mocks (fire-and-forget, but set up to avoid unhandled rejections)
     mockGetById.mockResolvedValue({
       properties: {
         dealname: "PROJ-7777 Test Project",
@@ -92,35 +108,41 @@ describe("createChatTools", () => {
       },
     });
     mockRunChecks.mockResolvedValue({
-      skill: "design-review",
-      dealId: "123",
-      findings: [{ check: "c1", severity: "warning", message: "warn" }],
+      findings: [],
       errorCount: 0,
-      warningCount: 1,
+      warningCount: 0,
       passed: true,
       durationMs: 12,
     });
-    mockProjectReviewCreate.mockResolvedValue({ id: "review_1" });
+    mockCompleteReviewRun.mockResolvedValue(undefined);
 
-    const payload = await runReview.run({ dealId: "123", skill: "design-review" });
-    const parsed = JSON.parse(payload) as { id: string; persisted: boolean };
+    const payload = await runReview.run({ dealId: "123" });
+    const parsed = JSON.parse(payload) as { status: string; reviewId: string; message: string };
 
-    expect(mockRunChecks).toHaveBeenCalledWith(
+    expect(parsed.status).toBe("running");
+    expect(parsed.reviewId).toBe("review_1");
+    expect(parsed.message).toContain("get_review_status");
+
+    // Lock was acquired with correct args
+    expect(mockAcquireReviewLock).toHaveBeenCalledWith(
+      "123",
       "design-review",
-      expect.objectContaining({ dealId: "123" })
+      "manual",
+      "admin@test.com",
     );
-    expect(mockProjectReviewCreate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          dealId: "123",
-          projectId: "PROJ-7777",
-          trigger: "manual",
-          triggeredBy: "admin@test.com",
-        }),
-      })
+  });
+
+  it("returns already_running status on DuplicateReviewError (attach flow)", async () => {
+    const runReview = getTool("run_review", "ADMIN");
+    mockAcquireReviewLock.mockRejectedValue(
+      new DuplicateReviewError("123", "design-review", "existing-review-xyz")
     );
-    expect(parsed.id).toBe("review_1");
-    expect(parsed.persisted).toBe(true);
+
+    const payload = await runReview.run({ dealId: "123" });
+    const parsed = JSON.parse(payload) as { status: string; reviewId: string };
+
+    expect(parsed.status).toBe("already_running");
+    expect(parsed.reviewId).toBe("existing-review-xyz");
   });
 
   it("filters deals by stage name using DEAL_STAGE_MAP", async () => {

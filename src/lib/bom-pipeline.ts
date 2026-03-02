@@ -25,6 +25,18 @@
 
 import { prisma, logActivity } from "@/lib/db";
 import { getServiceAccountToken } from "@/lib/google-auth";
+import {
+  type DrivePdfFile,
+  getDriveToken,
+  listDrivePdfs,
+  pickBestPlanset,
+  downloadDrivePdf,
+  extractFolderId,
+  NON_PLANSET_PATTERNS,
+} from "@/lib/drive-plansets";
+
+// Re-export for existing consumers (tests, etc.)
+export { type DrivePdfFile, getDriveToken, listDrivePdfs, pickBestPlanset, downloadDrivePdf, extractFolderId, NON_PLANSET_PATTERNS };
 import { extractBomFromPdf } from "@/lib/bom-extract";
 import { saveBomSnapshot, type BomData } from "@/lib/bom-snapshot";
 import { createSalesOrder } from "@/lib/bom-so-create";
@@ -138,6 +150,11 @@ const STEP_RETRY_POLICIES: Partial<Record<BomPipelineStep, StepRetryPolicy>> = {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getBomSnapshotUrl(dealId: string): string {
+  const base = (process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "https://www.pbtechops.com").replace(/\/$/, "");
+  return `${base}/dashboards/bom-tool?dealId=${encodeURIComponent(dealId)}`;
 }
 
 /** Check if an error matches the retryable patterns for a given step. */
@@ -372,27 +389,11 @@ export interface PipelineResult {
   durationMs: number;
 }
 
-interface DrivePdfFile {
-  id: string;
-  name: string;
-  modifiedTime: string;
-}
+// DrivePdfFile type is now in drive-plansets.ts
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/** Extract a Google Drive folder ID from a URL or bare ID. */
-function extractFolderId(input: string): string | null {
-  // Full URL: https://drive.google.com/drive/folders/FOLDER_ID?...
-  const urlMatch = input.match(/\/folders\/([a-zA-Z0-9_-]+)/);
-  if (urlMatch) return urlMatch[1];
-
-  // Bare alphanumeric ID (no slashes)
-  if (/^[a-zA-Z0-9_-]{10,}$/.test(input.trim())) return input.trim();
-
-  return null;
-}
 
 /** Fetch a HubSpot contact's details for fallback customer matching.
  *  Returns null for expected "not found" (404) or missing config.
@@ -485,127 +486,8 @@ async function fetchDealProperties(dealId: string): Promise<{
   };
 }
 
-/** Get a Drive-scoped token, preferring domain-wide delegation (impersonation). */
-async function getDriveToken(): Promise<string> {
-  const impersonateEmail = process.env.GOOGLE_ADMIN_EMAIL ?? process.env.GMAIL_SENDER_EMAIL;
-  if (impersonateEmail) {
-    try {
-      return await getServiceAccountToken(
-        ["https://www.googleapis.com/auth/drive.readonly"],
-        impersonateEmail,
-      );
-    } catch {
-      // DWD not configured — fall through to plain SA
-    }
-  }
-  return getServiceAccountToken(["https://www.googleapis.com/auth/drive.readonly"]);
-}
-
-/** List PDF files in a Google Drive folder, sorted by modifiedTime descending. */
-async function listDrivePdfs(folderId: string): Promise<DrivePdfFile[]> {
-  const token = await getDriveToken();
-
-  const query = `'${folderId}' in parents and mimeType='application/pdf' and trashed=false`;
-  const fields = "files(id,name,modifiedTime)";
-  const orderBy = "modifiedTime desc";
-  const url =
-    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}` +
-    `&fields=${encodeURIComponent(fields)}` +
-    `&orderBy=${encodeURIComponent(orderBy)}` +
-    `&pageSize=50` +
-    `&supportsAllDrives=true&includeItemsFromAllDrives=true`;
-
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: "no-store",
-  });
-
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`Drive API ${res.status}: ${body.slice(0, 200)}`);
-  }
-
-  const data = await res.json() as { files?: DrivePdfFile[] };
-  return data.files ?? [];
-}
-
-/**
- * Filename patterns that indicate a document is NOT a planset.
- * These are excluded before selection to avoid extracting from
- * cover letters, response letters, permit apps, etc.
- */
-const NON_PLANSET_PATTERNS = [
-  /response\s*letter/i,
-  /cover\s*letter/i,
-  /permit\s*app/i,
-  /revision\s*(response|letter|comment)/i,
-  /plan\s*check\s*(comment|response|correction)/i,
-  /inspection\s*report/i,
-  /approval\s*letter/i,
-  /^invoice/i,
-  /^receipt/i,
-  /^proposal/i,
-  /^contract/i,
-];
-
-/** Pick the best planset PDF from a list — prefer "stamped" or "planset" in name. */
-export function pickBestPlanset(files: DrivePdfFile[]): DrivePdfFile | null {
-  if (files.length === 0) return null;
-
-  // Filter out known non-planset documents
-  const candidates = files.filter(
-    (f) => !NON_PLANSET_PATTERNS.some((p) => p.test(f.name)),
-  );
-
-  // Prefer files with "stamped" in the name (case-insensitive)
-  const stamped = candidates.filter((f) => /stamped/i.test(f.name));
-  if (stamped.length > 0) return stamped[0]; // already sorted by modifiedTime desc
-
-  // Fallback to files with "planset" or "plan set" in the name
-  const planset = candidates.filter((f) => /plan\s*set/i.test(f.name));
-  if (planset.length > 0) return planset[0];
-
-  // Prefer files with PROJ-XXXX (project number) — design plans include project number + customer + date
-  const projNumbered = candidates.filter((f) => /PROJ-\d{4,}/i.test(f.name));
-  if (projNumbered.length > 0) return projNumbered[0];
-
-  // Last resort: newest PDF from candidates (if any survived filtering)
-  if (candidates.length > 0) return candidates[0];
-
-  // If ALL files were excluded, fall back to original list with a warning
-  console.warn(
-    `[bom-pipeline] All ${files.length} PDFs matched non-planset patterns — falling back to newest: ${files[0].name}`,
-  );
-  return files[0];
-}
-
-/** Download a PDF from Google Drive as a Buffer. */
-async function downloadDrivePdf(fileId: string): Promise<{ buffer: Buffer; filename: string }> {
-  const token = await getDriveToken();
-
-  // Get file metadata for the filename
-  const metaRes = await fetch(
-    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?fields=name&supportsAllDrives=true`,
-    { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" },
-  );
-  const meta = metaRes.ok ? (await metaRes.json() as { name?: string }) : {};
-  const filename = meta.name ?? `planset-${fileId}.pdf`;
-
-  // Download content
-  const dlUrl = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media&supportsAllDrives=true`;
-  const dlRes = await fetch(dlUrl, {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: "no-store",
-  });
-
-  if (!dlRes.ok) {
-    const body = await dlRes.text().catch(() => "");
-    throw new Error(`Drive download ${dlRes.status}: ${body.slice(0, 200)}`);
-  }
-
-  const arrayBuffer = await dlRes.arrayBuffer();
-  return { buffer: Buffer.from(arrayBuffer), filename };
-}
+// Drive helpers (getDriveToken, listDrivePdfs, pickBestPlanset, downloadDrivePdf,
+// NON_PLANSET_PATTERNS) are now in drive-plansets.ts — imported and re-exported above.
 
 // ---------------------------------------------------------------------------
 // Update helpers
@@ -807,6 +689,7 @@ export async function runDesignCompletePipeline(
         designFolderUrl: capturedDesignFolderUrl,
         plansetFileName: capturedPlansetName,
         pbLocation: capturedPbLocation,
+        snapshotUrl: getBomSnapshotUrl(dealId),
         durationMs,
         attempt: retryObs.attempt,
         retried: retryObs.retried,
@@ -1125,6 +1008,7 @@ export async function runDesignCompletePipeline(
           designFolderUrl: dealProps.designFolderUrl ?? undefined,
           plansetFileName: selectedFile.name,
           pbLocation: dealProps.pbLocation ?? undefined,
+          snapshotUrl: getBomSnapshotUrl(dealId),
           durationMs,
           ...(bomPdfBuffer ? { pdfAttachment: { filename: pdfFilename, content: bomPdfBuffer } } : {}),
         });
@@ -1222,6 +1106,7 @@ export async function runDesignCompletePipeline(
         designFolderUrl: dealProps.designFolderUrl ?? undefined,
         plansetFileName: selectedFile.name,
         pbLocation: dealProps.pbLocation ?? undefined,
+        snapshotUrl: getBomSnapshotUrl(dealId),
         durationMs,
         ...(bomPdfBuffer ? { pdfAttachment: { filename: pdfFilename, content: bomPdfBuffer } } : {}),
       });

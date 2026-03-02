@@ -9,16 +9,17 @@ import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
 import { z } from "zod";
 import { runChecks } from "@/lib/checks/runner";
-import { SKILL_ALLOWED_ROLES, type SkillName } from "@/lib/checks/types";
+import { SKILL_ALLOWED_ROLES } from "@/lib/checks/types";
+import type { SkillName } from "@/lib/checks/types";
+import {
+  acquireReviewLock,
+  touchReviewRun,
+  completeReviewRun,
+  failReviewRun,
+  DuplicateReviewError,
+} from "@/lib/review-lock";
+import { safeWaitUntil } from "@/lib/safe-wait-until";
 import "@/lib/checks/design-review";
-import "@/lib/checks/engineering-review";
-import "@/lib/checks/sales-advisor";
-
-const REVIEW_SKILLS = [
-  "design-review",
-  "engineering-review",
-  "sales-advisor",
-] as const satisfies ReadonlyArray<SkillName>;
 
 const REVIEW_DEAL_PROPERTIES = [
   "dealname",
@@ -34,6 +35,17 @@ const REVIEW_DEAL_PROPERTIES = [
   "pto_date",
   "hubspot_owner_id",
   "closedate",
+  // Phase 2: folder IDs for planset lookup + equipment for cross-reference
+  "design_documents",
+  "design_document_folder_id",
+  "all_document_parent_folder_id",
+  "system_size_kw",
+  "module_type",
+  "module_count",
+  "inverter_type",
+  "battery_type",
+  "battery_count",
+  "roof_type",
 ] as const;
 
 interface ChatToolContext {
@@ -74,15 +86,13 @@ export function createChatTools(context: ChatToolContext) {
   const getReviewResults = betaZodTool({
     name: "get_review_results",
     description:
-      "Get the latest review results for a deal, optionally filtered by skill",
+      "Get the latest completed review results for a deal, optionally filtered by skill",
     inputSchema: z.object({
       dealId: z.string().describe("HubSpot deal ID"),
       skill: z
         .string()
         .optional()
-        .describe(
-          "Optional: design-review, engineering-review, or sales-advisor"
-        ),
+        .describe("Optional: design-review"),
     }),
     run: async (input) => {
       const { prisma } = await import("@/lib/db");
@@ -90,6 +100,7 @@ export function createChatTools(context: ChatToolContext) {
       const reviews = await prisma.projectReview.findMany({
         where: {
           dealId: input.dealId,
+          status: "COMPLETED",
           ...(input.skill ? { skill: input.skill } : {}),
         },
         orderBy: { createdAt: "desc" },
@@ -123,13 +134,13 @@ export function createChatTools(context: ChatToolContext) {
   const runReview = betaZodTool({
     name: "run_review",
     description:
-      "Run a deterministic project review check and persist the result for the specified deal and skill",
+      "Start a design review for a deal. Returns immediately with a review ID. " +
+      "Use get_review_status to check progress. Takes ~5-30s to complete.",
     inputSchema: z.object({
       dealId: z.string().describe("HubSpot deal ID"),
-      skill: z.enum(REVIEW_SKILLS).describe("Review skill to run"),
     }),
     run: async (input) => {
-      const skill = input.skill as SkillName;
+      const skill: SkillName = "design-review";
       const allowedRoles = SKILL_ALLOWED_ROLES[skill];
       if (!allowedRoles.includes(context.role)) {
         return JSON.stringify({
@@ -139,47 +150,127 @@ export function createChatTools(context: ChatToolContext) {
         });
       }
 
-      const [{ hubspotClient }, { prisma }] = await Promise.all([
-        import("@/lib/hubspot"),
-        import("@/lib/db"),
-      ]);
-
-      const deal = await hubspotClient.crm.deals.basicApi.getById(
-        input.dealId,
-        [...REVIEW_DEAL_PROPERTIES]
-      );
-      const properties = deal.properties as Record<string, string | null>;
-      const result = await runChecks(skill, { dealId: input.dealId, properties });
-      const projectIdMatch = properties.dealname?.match(/PROJ-\d+/);
-      const projectId = projectIdMatch?.[0] ?? null;
-
-      if (!prisma) {
-        return JSON.stringify({
-          ...result,
-          persisted: false,
-          error: "Database not configured",
-        });
+      // Acquire lock — fire-and-forget pattern
+      let reviewId: string;
+      try {
+        reviewId = await acquireReviewLock(
+          input.dealId,
+          skill,
+          "manual",
+          context.email,
+        );
+      } catch (err) {
+        if (err instanceof DuplicateReviewError) {
+          // 409 attach flow — return existing run ID for polling
+          return JSON.stringify({
+            status: "already_running",
+            reviewId: err.existingReviewId,
+            message: `Design review already running for deal ${input.dealId}. Use get_review_status to check progress.`,
+          });
+        }
+        throw err;
       }
 
-      const review = await prisma.projectReview.create({
-        data: {
-          dealId: input.dealId,
-          projectId,
-          skill,
-          trigger: "manual",
-          triggeredBy: context.email,
-          findings: JSON.parse(JSON.stringify(result.findings)),
-          errorCount: result.errorCount,
-          warningCount: result.warningCount,
-          passed: result.passed,
-          durationMs: result.durationMs,
+      // Execute review in background — do NOT await
+      const reviewPromise = (async () => {
+        const start = Date.now();
+        try {
+          const { hubspotClient } = await import("@/lib/hubspot");
+          const deal = await hubspotClient.crm.deals.basicApi.getById(
+            input.dealId,
+            [...REVIEW_DEAL_PROPERTIES]
+          );
+          const properties = deal.properties as Record<string, string | null>;
+          const result = await runChecks(skill, { dealId: input.dealId, properties }, () => touchReviewRun(reviewId));
+          const projectIdMatch = properties.dealname?.match(/PROJ-\d+/);
+          const projectId = projectIdMatch?.[0] ?? null;
+
+          await completeReviewRun(reviewId, {
+            findings: result.findings,
+            errorCount: result.errorCount,
+            warningCount: result.warningCount,
+            passed: result.passed,
+            durationMs: Date.now() - start,
+            projectId,
+          });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "unknown error";
+          await failReviewRun(reviewId, msg).catch(() => {});
+        }
+      })();
+
+      // Anchor to Vercel runtime when available; falls back to fire-and-forget locally
+      safeWaitUntil(reviewPromise);
+
+      return JSON.stringify({
+        status: "running",
+        reviewId,
+        message: `Design review started (ID: ${reviewId}). It takes ~5-30s. Use get_review_status to check progress.`,
+      });
+    },
+  });
+
+  const getReviewStatus = betaZodTool({
+    name: "get_review_status",
+    description:
+      "Check the status of a running design review by its ID. " +
+      "Returns status (running/completed/failed) and findings when complete.",
+    inputSchema: z.object({
+      reviewId: z.string().describe("Review ID returned by run_review"),
+    }),
+    run: async (input) => {
+      const { prisma } = await import("@/lib/db");
+      if (!prisma) return JSON.stringify({ error: "Database not configured" });
+
+      const review = await prisma.projectReview.findUnique({
+        where: { id: input.reviewId },
+        select: {
+          id: true,
+          status: true,
+          findings: true,
+          errorCount: true,
+          warningCount: true,
+          passed: true,
+          durationMs: true,
+          error: true,
+          createdAt: true,
+          skill: true,
+          dealId: true,
         },
       });
 
+      if (!review) {
+        return JSON.stringify({ error: "Review not found" });
+      }
+
+      if (review.status === "RUNNING") {
+        return JSON.stringify({
+          id: review.id,
+          status: "running",
+          dealId: review.dealId,
+          startedAt: review.createdAt,
+        });
+      }
+
+      if (review.status === "FAILED") {
+        return JSON.stringify({
+          id: review.id,
+          status: "failed",
+          dealId: review.dealId,
+          error: review.error,
+        });
+      }
+
+      // COMPLETED
       return JSON.stringify({
         id: review.id,
-        ...result,
-        persisted: true,
+        status: "completed",
+        dealId: review.dealId,
+        findings: review.findings,
+        errorCount: review.errorCount,
+        warningCount: review.warningCount,
+        passed: review.passed,
+        durationMs: review.durationMs,
       });
     },
   });
@@ -268,6 +359,7 @@ export function createChatTools(context: ChatToolContext) {
     getReviewResults,
     searchDeals,
     runReview,
+    getReviewStatus,
     filterDealsByStage,
     countDealsByStage,
   ];

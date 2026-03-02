@@ -1916,6 +1916,8 @@ export async function sendPipelineNotification(params: {
   // Claude escalation
   claudeAnalysis?: { shouldRetry: boolean; reasoning: string };
   escalationTriggeredRunId?: string;
+  // BOM snapshot link
+  snapshotUrl?: string;
   // Location-based routing
   pbLocation?: string;
 }): Promise<SendResult> {
@@ -1960,6 +1962,9 @@ export async function sendPipelineNotification(params: {
   }
   if (params.designFolderUrl) {
     linkItems.push(`<a href="${escapeHtml(params.designFolderUrl)}" style="color:#2563eb">Design Folder</a>`);
+  }
+  if (params.snapshotUrl) {
+    linkItems.push(`<a href="${escapeHtml(params.snapshotUrl)}" style="color:#2563eb">BOM Snapshot</a>`);
   }
   htmlParts.push(`<p style="margin:8px 0">${linkItems.join(" &nbsp;|&nbsp; ")}</p>`);
 
@@ -2012,6 +2017,9 @@ export async function sendPipelineNotification(params: {
   }
 
   htmlParts.push(`<p style="margin:8px 0 2px"><strong>Duration:</strong> ${durationSec}</p>`);
+  if (params.snapshotUrl) {
+    htmlParts.push(`<p style="margin:8px 0;color:#6b7280;font-size:13px">See an error? Open the <a href="${escapeHtml(params.snapshotUrl)}" style="color:#2563eb">BOM Snapshot</a> and use the &ldquo;&#x2191; Submit to Claude&rdquo; button to report extraction issues.</p>`);
+  }
   htmlParts.push(`<hr style="border:none;border-top:1px solid #e5e7eb;margin:12px 0"/>`);
   htmlParts.push(`<p style="color:#9ca3af;font-size:12px;margin:0">Automated BOM Pipeline &mdash; PB Operations Suite</p>`);
   htmlParts.push(`</div>`);
@@ -2025,6 +2033,7 @@ export async function sendPipelineNotification(params: {
     `HubSpot Deal: ${hubspotDealUrl}`,
     zohoSoUrl && params.soNumber ? `Zoho SO: ${params.soNumber} — ${zohoSoUrl}` : null,
     params.designFolderUrl ? `Design Folder: ${params.designFolderUrl}` : null,
+    params.snapshotUrl ? `BOM Snapshot: ${params.snapshotUrl}` : null,
     ``,
     params.soNumber ? `Sales Order: ${params.soNumber}` : null,
     params.customerMatchMethod ? `Customer Matched Via: ${params.customerMatchMethod}` : null,

@@ -36,12 +36,10 @@ export interface ReviewResult {
   durationMs: number;
 }
 
-export type SkillName = "design-review" | "engineering-review" | "sales-advisor";
+export type SkillName = "design-review";
 
-export const VALID_SKILLS: SkillName[] = ["design-review", "engineering-review", "sales-advisor"];
+export const VALID_SKILLS: SkillName[] = ["design-review"];
 
 export const SKILL_ALLOWED_ROLES: Record<SkillName, string[]> = {
   "design-review": ["ADMIN", "OWNER", "MANAGER", "DESIGNER", "OPERATIONS_MANAGER", "PROJECT_MANAGER"],
-  "engineering-review": ["ADMIN", "OWNER", "MANAGER", "TECH_OPS", "OPERATIONS_MANAGER", "PROJECT_MANAGER"],
-  "sales-advisor": ["ADMIN", "OWNER", "MANAGER", "SALES"],
 };

@@ -1,16 +1,27 @@
 /**
  * Tests for POST /api/reviews/run
- * Validates auth, role authorization, input validation, and successful review execution.
+ * Validates auth, role authorization, input validation, and async review start.
+ *
+ * The route now uses acquireReviewLock() → immediate 200 → background execution.
+ * These tests validate the synchronous response path only; the background worker
+ * is tested separately via review-lock and runner unit tests.
  */
 
-const mockCreate = jest.fn();
+const mockAcquireReviewLock = jest.fn();
+
+jest.mock("@/lib/review-lock", () => {
+  const { DuplicateReviewError } = jest.requireActual("@/lib/review-lock");
+  return {
+    acquireReviewLock: (...args: unknown[]) => mockAcquireReviewLock(...args),
+    completeReviewRun: jest.fn().mockResolvedValue(undefined),
+    failReviewRun: jest.fn().mockResolvedValue(undefined),
+    touchReviewRun: jest.fn().mockResolvedValue(undefined),
+    DuplicateReviewError,
+  };
+});
 
 jest.mock("@/lib/db", () => ({
-  prisma: {
-    projectReview: {
-      create: (...args: unknown[]) => mockCreate(...args),
-    },
-  },
+  prisma: {},
 }));
 
 jest.mock("@/lib/api-auth", () => ({
@@ -21,12 +32,10 @@ jest.mock("@/lib/checks/runner", () => ({
   runChecks: jest.fn(),
 }));
 
-// Mock the side-effect check module imports so they don't try to register real checks
+// Mock side-effect check module import
 jest.mock("@/lib/checks/design-review", () => ({}));
-jest.mock("@/lib/checks/engineering-review", () => ({}));
-jest.mock("@/lib/checks/sales-advisor", () => ({}));
 
-// Mock the HubSpot client (dynamically imported in the route)
+// Mock the HubSpot client (dynamically imported in the background worker)
 const mockGetById = jest.fn();
 jest.mock("@/lib/hubspot", () => ({
   hubspotClient: {
@@ -42,7 +51,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { POST } from "@/app/api/reviews/run/route";
 import { requireApiAuth } from "@/lib/api-auth";
 import { runChecks } from "@/lib/checks/runner";
-// hubspotClient is already mocked above via jest.mock
+import { DuplicateReviewError } from "@/lib/review-lock";
 
 function makeRequest(body: Record<string, unknown>): NextRequest {
   return new NextRequest("http://localhost/api/reviews/run", {
@@ -96,7 +105,7 @@ describe("POST /api/reviews/run", () => {
     expect(body.error).toContain("skill must be one of");
   });
 
-  it("returns 200 with review result when everything is valid", async () => {
+  it("returns 200 with running status when lock acquired", async () => {
     (requireApiAuth as jest.Mock).mockResolvedValue({
       email: "admin@test.com",
       role: "ADMIN",
@@ -104,56 +113,53 @@ describe("POST /api/reviews/run", () => {
       userAgent: "jest",
     });
 
+    mockAcquireReviewLock.mockResolvedValue("review-abc");
+
+    // Background worker mocks (fire-and-forget — prevent unhandled rejections)
     mockGetById.mockResolvedValue({
-      properties: {
-        dealname: "PROJ-1234 Smith Residence",
-        dealstage: "qualifiedtobuy",
-        pipeline: "default",
-      },
+      properties: { dealname: "PROJ-1234 Smith", dealstage: "qualifiedtobuy" },
     });
-
-    const mockResult = {
-      skill: "design-review",
-      dealId: "123",
-      findings: [
-        { check: "test-check", severity: "warning", message: "Something off" },
-      ],
+    (runChecks as jest.Mock).mockResolvedValue({
+      findings: [],
       errorCount: 0,
-      warningCount: 1,
+      warningCount: 0,
       passed: true,
-      durationMs: 42,
-    };
-    (runChecks as jest.Mock).mockResolvedValue(mockResult);
-
-    mockCreate.mockResolvedValue({ id: "review-abc", ...mockResult });
+      durationMs: 10,
+    });
 
     const res = await POST(makeRequest({ dealId: "123", skill: "design-review" }));
     expect(res.status).toBe(200);
 
     const body = await res.json();
     expect(body.id).toBe("review-abc");
-    expect(body.passed).toBe(true);
-    expect(body.warningCount).toBe(1);
-    expect(body.findings).toHaveLength(1);
+    expect(body.status).toBe("running");
 
-    // Verify runChecks was called with correct args
-    expect(runChecks).toHaveBeenCalledWith("design-review", {
-      dealId: "123",
-      properties: expect.objectContaining({ dealname: "PROJ-1234 Smith Residence" }),
+    // Verify lock was acquired with correct args
+    expect(mockAcquireReviewLock).toHaveBeenCalledWith(
+      "123",
+      "design-review",
+      "manual",
+      "admin@test.com",
+    );
+  });
+
+  it("returns 409 when review is already running (attach flow)", async () => {
+    (requireApiAuth as jest.Mock).mockResolvedValue({
+      email: "admin@test.com",
+      role: "ADMIN",
+      ip: "127.0.0.1",
+      userAgent: "jest",
     });
 
-    // Verify prisma.projectReview.create was called with correct data
-    expect(mockCreate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          dealId: "123",
-          projectId: "PROJ-1234",
-          skill: "design-review",
-          trigger: "manual",
-          triggeredBy: "admin@test.com",
-          passed: true,
-        }),
-      })
+    mockAcquireReviewLock.mockRejectedValue(
+      new DuplicateReviewError("123", "design-review", "existing-review-xyz")
     );
+
+    const res = await POST(makeRequest({ dealId: "123", skill: "design-review" }));
+    expect(res.status).toBe(409);
+
+    const body = await res.json();
+    expect(body.status).toBe("already_running");
+    expect(body.existingReviewId).toBe("existing-review-xyz");
   });
 });
