@@ -1147,19 +1147,32 @@ model CatalogMatchGroup {
 // AI Assistant Layer
 // ============================================================
 
+enum ReviewRunStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
 model ProjectReview {
-  id           String   @id @default(cuid())
+  id           String          @id @default(cuid())
   dealId       String
   projectId    String?
   skill        String
   trigger      String
   triggeredBy  String?
   findings     Json
-  errorCount   Int      @default(0)
-  warningCount Int      @default(0)
-  passed       Boolean  @default(false)
+  errorCount   Int             @default(0)
+  warningCount Int             @default(0)
+  passed       Boolean         @default(false)
   durationMs   Int?
-  createdAt    DateTime @default(now())
+  status       ReviewRunStatus @default(COMPLETED)
+  error        String?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  // Partial unique index enforced via raw SQL migration:
+  // CREATE UNIQUE INDEX "ProjectReview_dealId_skill_running"
+  //   ON "ProjectReview" ("dealId", "skill") WHERE status = 'RUNNING';
 
   @@index([dealId, skill])
   @@index([createdAt])
