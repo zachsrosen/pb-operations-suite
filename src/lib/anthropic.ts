@@ -20,6 +20,6 @@ export function getAnthropicClient(): Anthropic {
 }
 
 export const CLAUDE_MODELS = {
-  haiku: "claude-haiku-4-20250414",
-  sonnet: "claude-sonnet-4-20250514",
+  haiku: "claude-haiku-4-5-20251001",
+  sonnet: "claude-sonnet-4-5-20250929",
 } as const;
