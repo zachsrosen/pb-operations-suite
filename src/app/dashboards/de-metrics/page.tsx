@@ -239,6 +239,7 @@ export default function DEMetricsPage() {
       sentCount: sentInWindow.length,
       approvedCount: approvedInWindow.length,
       approvalRate,
+      approvalRateN: sentAndApproved.length, // numerator: sent in window AND approved
       avgDesignTurnaround,
       designTurnaroundN: designTurnarounds.length,
       avgDATurnaround,
@@ -452,7 +453,7 @@ export default function DEMetricsPage() {
           <MetricCard
             label="Approval Rate"
             value={loading ? "\u2014" : `${windowedMetrics.approvalRate}%`}
-            sub={`Sent → approved (n=${windowedMetrics.sentCount})`}
+            sub={`${windowedMetrics.approvalRateN} of ${windowedMetrics.sentCount} sent in window`}
             border="border-l-4 border-l-indigo-500"
           />
         </div>
