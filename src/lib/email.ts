@@ -95,13 +95,22 @@ function getSchedulingNotificationBccRecipients(): string[] {
   return adminFallback ? [adminFallback] : [];
 }
 
-function dedupeEmails(emails: string[], exclude?: string): string[] {
+function dedupeEmails(emails: string[], exclude?: string | string[]): string[] {
   const seen = new Set<string>();
-  const excluded = (exclude || "").trim().toLowerCase();
+  const excluded = new Set<string>();
+  if (typeof exclude === "string") {
+    const normalized = exclude.trim().toLowerCase();
+    if (normalized) excluded.add(normalized);
+  } else if (Array.isArray(exclude)) {
+    for (const value of exclude) {
+      const normalized = value.trim().toLowerCase();
+      if (normalized) excluded.add(normalized);
+    }
+  }
   const result: string[] = [];
   for (const email of emails) {
     const normalized = email.trim().toLowerCase();
-    if (!normalized || normalized === excluded || seen.has(normalized)) continue;
+    if (!normalized || excluded.has(normalized) || seen.has(normalized)) continue;
     seen.add(normalized);
     result.push(email.trim());
   }
@@ -178,7 +187,7 @@ interface MimeAttachment {
 
 function buildRawMimeMessage(params: {
   from: string;
-  to: string;
+  to: string[];
   bcc?: string[];
   subject: string;
   text: string;
@@ -186,7 +195,9 @@ function buildRawMimeMessage(params: {
   attachments?: MimeAttachment[];
 }): string {
   const safeFrom = params.from.replace(/[\r\n]+/g, " ").trim();
-  const safeTo = params.to.replace(/[\r\n]+/g, " ").trim();
+  const safeTo = params.to
+    .map((email) => email.replace(/[\r\n]+/g, " ").trim())
+    .filter(Boolean);
   const safeBcc = (params.bcc || [])
     .map((email) => email.replace(/[\r\n]+/g, " ").trim())
     .filter(Boolean);
@@ -199,7 +210,7 @@ function buildRawMimeMessage(params: {
     // Simple multipart/alternative (text + HTML)
     const mime = [
       `From: ${safeFrom}`,
-      `To: ${safeTo}`,
+      `To: ${safeTo.join(", ")}`,
       ...(safeBcc.length > 0 ? [`Bcc: ${safeBcc.join(", ")}`] : []),
       `Subject: ${safeSubject}`,
       "MIME-Version: 1.0",
@@ -242,7 +253,7 @@ function buildRawMimeMessage(params: {
 
   const mime = [
     `From: ${safeFrom}`,
-    `To: ${safeTo}`,
+    `To: ${safeTo.join(", ")}`,
     ...(safeBcc.length > 0 ? [`Bcc: ${safeBcc.join(", ")}`] : []),
     `Subject: ${safeSubject}`,
     "MIME-Version: 1.0",
@@ -274,7 +285,7 @@ function buildRawMimeMessage(params: {
 }
 
 async function trySendWithGoogleWorkspace(params: {
-  to: string;
+  to: string[];
   bcc?: string[];
   subject: string;
   html: string;
@@ -349,7 +360,9 @@ async function trySendWithGoogleWorkspace(params: {
       };
     }
 
-    console.log(`[email] Sent via Google Workspace to ${params.to}`);
+    console.log(
+      `[email] Sent via Google Workspace to ${params.to.join(", ")}${params.bcc && params.bcc.length > 0 ? ` (bcc: ${params.bcc.join(",")})` : ""}`
+    );
     return { attempted: true, success: true };
   } catch (error) {
     return {
@@ -370,7 +383,7 @@ function logLocalFallback(title: string, content: string) {
 }
 
 async function sendEmailMessage(params: {
-  to?: string;
+  to?: string | string[];
   bcc?: string[];
   subject: string;
   html: string;
@@ -379,24 +392,26 @@ async function sendEmailMessage(params: {
   debugFallbackBody: string;
   attachments?: MimeAttachment[];
 }): Promise<SendResult> {
-  const normalizedTo = parseEmailAddress(params.to);
+  const normalizedTo = (Array.isArray(params.to) ? params.to : [params.to || ""])
+    .map((value) => parseEmailAddress(value))
+    .filter((value): value is string => !!value);
   const requestedBcc = (params.bcc || [])
     .map((email) => parseEmailAddress(email))
     .filter((email): email is string => !!email);
   const configuredBcc = parseEmailList(process.env.SCHEDULING_NOTIFICATION_BCC);
   let mergedBcc = dedupeEmails([...configuredBcc, ...requestedBcc]);
 
-  let primaryTo = normalizedTo || "";
-  if (!primaryTo && mergedBcc.length > 0) {
-    primaryTo = mergedBcc[0];
+  const primaryToList = [...normalizedTo];
+  if (primaryToList.length === 0 && mergedBcc.length > 0) {
+    primaryToList.push(mergedBcc[0]);
     mergedBcc = mergedBcc.slice(1);
   }
-  if (!primaryTo) {
+  if (primaryToList.length === 0) {
     return { success: false, error: "No valid recipient (to/bcc) for email send" };
   }
 
-  // Remove duplicates and never BCC the primary recipient.
-  const finalBcc = dedupeEmails(mergedBcc, primaryTo);
+  // Remove duplicates and never BCC primary recipients.
+  const finalBcc = dedupeEmails(mergedBcc, primaryToList);
 
   const senderEmail = getGoogleWorkspaceSenderEmail();
   const defaultFrom = senderEmail
@@ -405,7 +420,7 @@ async function sendEmailMessage(params: {
   const from = process.env.EMAIL_FROM || defaultFrom;
 
   const googleResult = await trySendWithGoogleWorkspace({
-    to: primaryTo,
+    to: primaryToList,
     bcc: finalBcc,
     subject: params.subject,
     html: params.html,
@@ -438,7 +453,7 @@ async function sendEmailMessage(params: {
 
       const { error } = await resend.emails.send({
         from: resendFrom,
-        to: [primaryTo],
+        to: primaryToList,
         ...(finalBcc.length > 0 ? { bcc: finalBcc } : {}),
         subject: params.subject,
         html: params.html,
@@ -452,7 +467,7 @@ async function sendEmailMessage(params: {
         return { success: false, error: error.message };
       }
 
-      console.log(`[email] Sent via Resend to ${primaryTo}${finalBcc.length > 0 ? ` (bcc: ${finalBcc.join(",")})` : ""}`);
+      console.log(`[email] Sent via Resend to ${primaryToList.join(", ")}${finalBcc.length > 0 ? ` (bcc: ${finalBcc.join(",")})` : ""}`);
       return { success: true };
     } catch (err) {
       return {
@@ -1829,6 +1844,56 @@ Ticket ID: ${params.reportId}
 // BOM Pipeline Notification
 // ==========================================================================
 
+/** Location director who receives pipeline emails for their region */
+const PIPELINE_LOCATION_DIRECTORS: Record<string, string[]> = {
+  Westminster:        ["joe@photonbrothers.com"],
+  Centennial:         ["drew@photonbrothers.com"],
+  "Colorado Springs": ["rolando@photonbrothers.com"],
+  "San Luis Obispo":  ["nick.scarpellino@photonbrothers.com"],
+  Camarillo:          ["nick.scarpellino@photonbrothers.com"],
+};
+
+/** Additional coordinators CC'd by region */
+const PIPELINE_LOCATION_COORDINATORS: Record<string, string[]> = {
+  Westminster:        ["brittany.miller@photonbrothers.com"],
+  Centennial:         ["brittany.miller@photonbrothers.com"],
+  "Colorado Springs": ["brittany.miller@photonbrothers.com"],
+  "San Luis Obispo":  ["kat@photonbrothers.com"],
+  Camarillo:          ["kat@photonbrothers.com"],
+};
+
+export function getPipelineLocationRecipients(pbLocation?: string): string[] {
+  if (!pbLocation) return [];
+  const directors = PIPELINE_LOCATION_DIRECTORS[pbLocation] ?? [];
+  const coordinators = PIPELINE_LOCATION_COORDINATORS[pbLocation] ?? [];
+  return [...directors, ...coordinators];
+}
+
+export function resolvePipelineRecipients(params: {
+  pbLocation?: string;
+  configuredRecipientsRaw?: string;
+}): { to: string[]; bcc: string[] } {
+  const configuredRecipients = parseEmailList(params.configuredRecipientsRaw);
+  const locationRecipients = dedupeEmails(
+    getPipelineLocationRecipients(params.pbLocation)
+  );
+
+  // Preferred behavior: location owners/coordinators are visible "To" recipients,
+  // while global configured recipients (typically ops/admin observers) are BCC'd.
+  if (locationRecipients.length > 0) {
+    return {
+      to: locationRecipients,
+      bcc: dedupeEmails(configuredRecipients, locationRecipients),
+    };
+  }
+
+  // Fallback when location is unknown: preserve legacy behavior.
+  return {
+    to: configuredRecipients.slice(0, 1),
+    bcc: configuredRecipients.slice(1),
+  };
+}
+
 export async function sendPipelineNotification(params: {
   dealId: string;
   dealName: string;
@@ -1844,15 +1909,23 @@ export async function sendPipelineNotification(params: {
   plansetFileName?: string;
   durationMs?: number;
   pdfAttachment?: { filename: string; content: Buffer };
+  // Retry observability
+  attempt?: number;
+  retried?: boolean;
+  retryReason?: string;
+  // Claude escalation
+  claudeAnalysis?: { shouldRetry: boolean; reasoning: string };
+  escalationTriggeredRunId?: string;
+  // Location-based routing
+  pbLocation?: string;
 }): Promise<SendResult> {
-  const recipients = process.env.DESIGN_COMPLETE_NOTIFY_EMAILS;
-  if (!recipients) {
-    console.warn("[email] No DESIGN_COMPLETE_NOTIFY_EMAILS configured — skipping pipeline notification");
-    return { success: true };
-  }
+  const recipients = resolvePipelineRecipients({
+    pbLocation: params.pbLocation,
+    configuredRecipientsRaw: process.env.DESIGN_COMPLETE_NOTIFY_EMAILS,
+  });
 
-  const toList = recipients.split(",").map((e) => e.trim()).filter(Boolean);
-  if (toList.length === 0) {
+  if (recipients.to.length === 0 && recipients.bcc.length === 0) {
+    console.warn("[email] No recipients resolved for pipeline notification — skipping");
     return { success: true };
   }
 
@@ -1919,6 +1992,25 @@ export async function sendPipelineNotification(params: {
     if (params.errorMessage) htmlParts.push(`<p style="margin:2px 0;color:#dc2626"><strong>Error:</strong> ${escapeHtml(params.errorMessage)}</p>`);
   }
 
+  // Retry observability
+  if (params.retried) {
+    htmlParts.push(`<p style="margin:2px 0;color:#2563eb"><strong>&#x1F504; Auto-Retried:</strong> attempt ${params.attempt ?? "?"} &mdash; ${escapeHtml(params.retryReason ?? "transient error")}</p>`);
+  }
+
+  // Claude AI escalation analysis
+  if (params.claudeAnalysis) {
+    const aiDecision = params.claudeAnalysis.shouldRetry ? "Retried" : "Not retried";
+    const aiBorderColor = params.claudeAnalysis.shouldRetry ? "#2563eb" : "#d97706";
+    htmlParts.push(`<div style="margin:10px 0;padding:10px 14px;border-left:4px solid ${aiBorderColor};background:#f8fafc;border-radius:4px">`);
+    htmlParts.push(`<p style="margin:0 0 4px;font-weight:600">&#x1F916; AI Analysis</p>`);
+    htmlParts.push(`<p style="margin:0 0 2px"><strong>Decision:</strong> ${aiDecision}</p>`);
+    htmlParts.push(`<p style="margin:0;color:#4b5563">${escapeHtml(params.claudeAnalysis.reasoning)}</p>`);
+    if (params.escalationTriggeredRunId) {
+      htmlParts.push(`<p style="margin:4px 0 0;font-size:12px;color:#9ca3af">Retry run: ${escapeHtml(params.escalationTriggeredRunId)}</p>`);
+    }
+    htmlParts.push(`</div>`);
+  }
+
   htmlParts.push(`<p style="margin:8px 0 2px"><strong>Duration:</strong> ${durationSec}</p>`);
   htmlParts.push(`<hr style="border:none;border-top:1px solid #e5e7eb;margin:12px 0"/>`);
   htmlParts.push(`<p style="color:#9ca3af;font-size:12px;margin:0">Automated BOM Pipeline &mdash; PB Operations Suite</p>`);
@@ -1940,6 +2032,9 @@ export async function sendPipelineNotification(params: {
     params.unmatchedCount ? `Unmatched Items (${params.unmatchedCount}): ${(params.unmatchedItems ?? []).join(", ")}` : null,
     params.failedStep ? `Failed Step: ${params.failedStep}` : null,
     params.errorMessage ? `Error: ${params.errorMessage}` : null,
+    params.retried ? `Auto-Retried: attempt ${params.attempt ?? "?"} — ${params.retryReason ?? "transient error"}` : null,
+    params.claudeAnalysis ? `\nAI Analysis\nDecision: ${params.claudeAnalysis.shouldRetry ? "Retried" : "Not retried"}\nReasoning: ${params.claudeAnalysis.reasoning}` : null,
+    params.escalationTriggeredRunId ? `Retry run: ${params.escalationTriggeredRunId}` : null,
     `Duration: ${durationSec}`,
   ];
 
@@ -1955,8 +2050,8 @@ export async function sendPipelineNotification(params: {
   }
 
   return sendEmailMessage({
-    to: toList[0],
-    bcc: toList.slice(1),
+    to: recipients.to,
+    bcc: recipients.bcc,
     subject,
     html,
     text,

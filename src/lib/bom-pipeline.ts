@@ -10,9 +10,17 @@
  *   6. Create draft Sales Order in Zoho Inventory
  *   7. Log result + notify ops
  *
- * Called by the webhook endpoint after dedupe. Each step is sequential;
- * failure at any step updates the BomPipelineRun record and sends a
- * notification, then stops.
+ * Retry strategy (two layers):
+ *   Layer 1 — Built-in step retry: each step wrapped in withRetry() that
+ *     retries once after a delay for known transient errors (API 500/502/503,
+ *     rate limits, network timeouts).
+ *   Layer 2 — Claude escalation: if auto-retry is exhausted and
+ *     PIPELINE_AI_ESCALATION_ENABLED is set, calls Claude Sonnet to analyze
+ *     the error and decide whether a fresh pipeline run is warranted.
+ *
+ * Feature flags:
+ *   PIPELINE_AUTO_RETRY_ENABLED  — enable Layer 1 (default: true)
+ *   PIPELINE_AI_ESCALATION_ENABLED — enable Layer 2 (default: false)
  */
 
 import { prisma, logActivity } from "@/lib/db";
@@ -30,10 +38,321 @@ import {
 } from "@/lib/zoho-customer-cache";
 import { sendPipelineNotification } from "@/lib/email";
 import { PIPELINE_ACTOR } from "@/lib/actor-context";
+import { getAnthropicClient, CLAUDE_MODELS } from "@/lib/anthropic";
+import { acquirePipelineLock, DuplicateRunError } from "@/lib/bom-pipeline-lock";
 import type { BomPipelineStep } from "@/generated/prisma/enums";
 import { renderToBuffer } from "@react-pdf/renderer";
 import { BomPdfDocument } from "@/components/BomPdfDocument";
 import React from "react";
+
+// ---------------------------------------------------------------------------
+// Retry Configuration
+// ---------------------------------------------------------------------------
+
+const AUTO_RETRY_ENABLED =
+  (process.env.PIPELINE_AUTO_RETRY_ENABLED ?? "true").toLowerCase() !== "false";
+
+const AI_ESCALATION_ENABLED =
+  process.env.PIPELINE_AI_ESCALATION_ENABLED === "true";
+
+/** Per-step retry policy. Steps not listed here are not retried. */
+interface StepRetryPolicy {
+  maxAttempts: number;   // total attempts (1 = no retry, 2 = one retry)
+  baseDelayMs: number;   // delay before retry
+  jitterMs: number;      // random jitter added to delay (0–jitterMs)
+  retryableStatuses: number[];
+  retryablePatterns: RegExp[];
+}
+
+const DEFAULT_RETRYABLE_STATUSES = [500, 502, 503, 429, 529];
+const DEFAULT_RETRYABLE_PATTERNS = [
+  /ECONNRESET/i,
+  /ETIMEDOUT/i,
+  /fetch failed/i,
+  /network/i,
+  /socket hang up/i,
+  /rate.?limit/i,
+  /overloaded/i,
+  /too many requests/i,
+  /internal server error/i,
+  /service unavailable/i,
+  /bad gateway/i,
+];
+
+const STEP_RETRY_POLICIES: Partial<Record<BomPipelineStep, StepRetryPolicy>> = {
+  FETCH_DEAL: {
+    maxAttempts: 2,
+    baseDelayMs: 3_000,
+    jitterMs: 1_000,
+    retryableStatuses: DEFAULT_RETRYABLE_STATUSES,
+    retryablePatterns: DEFAULT_RETRYABLE_PATTERNS,
+  },
+  LIST_PDFS: {
+    maxAttempts: 2,
+    baseDelayMs: 3_000,
+    jitterMs: 1_000,
+    retryableStatuses: DEFAULT_RETRYABLE_STATUSES,
+    retryablePatterns: DEFAULT_RETRYABLE_PATTERNS,
+  },
+  EXTRACT_BOM: {
+    maxAttempts: 2,
+    baseDelayMs: 5_000,
+    jitterMs: 2_000,
+    retryableStatuses: DEFAULT_RETRYABLE_STATUSES,
+    retryablePatterns: [
+      ...DEFAULT_RETRYABLE_PATTERNS,
+      /api_error/i,
+    ],
+  },
+  SAVE_SNAPSHOT: {
+    maxAttempts: 2,
+    baseDelayMs: 2_000,
+    jitterMs: 500,
+    retryableStatuses: DEFAULT_RETRYABLE_STATUSES,
+    retryablePatterns: [
+      /ECONNRESET/i,
+      /connection.*closed/i,
+      /Can't reach database/i,
+      /connection.*timed out/i,
+    ],
+  },
+  RESOLVE_CUSTOMER: {
+    maxAttempts: 2,
+    baseDelayMs: 2_000,
+    jitterMs: 500,
+    retryableStatuses: DEFAULT_RETRYABLE_STATUSES,
+    retryablePatterns: DEFAULT_RETRYABLE_PATTERNS,
+  },
+  CREATE_SO: {
+    maxAttempts: 2,
+    baseDelayMs: 3_000,
+    jitterMs: 1_000,
+    retryableStatuses: DEFAULT_RETRYABLE_STATUSES,
+    retryablePatterns: DEFAULT_RETRYABLE_PATTERNS,
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Retry Helpers
+// ---------------------------------------------------------------------------
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Check if an error matches the retryable patterns for a given step. */
+export function isRetryableError(
+  err: unknown,
+  policy: StepRetryPolicy,
+): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+
+  // Check HTTP status codes embedded in error messages (e.g., "HubSpot API 502: ...")
+  for (const status of policy.retryableStatuses) {
+    if (message.includes(String(status))) return true;
+  }
+
+  // Check regex patterns
+  for (const pattern of policy.retryablePatterns) {
+    if (pattern.test(message)) return true;
+  }
+
+  return false;
+}
+
+/**
+ * Execute a step function with optional retry.
+ *
+ * Returns { result, attempt, retried, retryReason? } so callers can log
+ * observability fields.
+ */
+/** Mutable retry observation updated by withRetry — even on failure */
+export interface RetryObservation {
+  attempt: number;
+  retried: boolean;
+  retryReason?: string;
+}
+
+export async function withRetry<T>(
+  stepName: BomPipelineStep,
+  fn: () => Promise<T>,
+  obs?: RetryObservation,
+): Promise<{ result: T; attempt: number; retried: boolean; retryReason?: string }> {
+  const policy = AUTO_RETRY_ENABLED ? STEP_RETRY_POLICIES[stepName] : undefined;
+
+  const setObs = (a: number, r: boolean, reason?: string) => {
+    if (obs) { obs.attempt = a; obs.retried = r; obs.retryReason = reason; }
+  };
+
+  try {
+    const result = await fn();
+    setObs(1, false);
+    return { result, attempt: 1, retried: false };
+  } catch (firstErr) {
+    // No retry policy or not retryable — update obs and rethrow
+    if (!policy || policy.maxAttempts < 2 || !isRetryableError(firstErr, policy)) {
+      setObs(1, false);
+      throw firstErr;
+    }
+
+    const retryReason = firstErr instanceof Error ? firstErr.message : String(firstErr);
+    const delay = policy.baseDelayMs + Math.floor(Math.random() * policy.jitterMs);
+    console.warn(
+      `[bom-pipeline] ${stepName} failed (attempt 1/${policy.maxAttempts}), retrying in ${delay}ms: ${retryReason.slice(0, 200)}`,
+    );
+
+    await sleep(delay);
+
+    try {
+      // Second attempt
+      const result = await fn();
+      console.log(`[bom-pipeline] ${stepName} succeeded on retry (attempt 2/${policy.maxAttempts})`);
+      setObs(2, true, retryReason.slice(0, 500));
+      return { result, attempt: 2, retried: true, retryReason: retryReason.slice(0, 500) };
+    } catch (secondErr) {
+      // Both attempts failed — update obs with retry context before rethrowing
+      setObs(2, true, retryReason.slice(0, 500));
+      throw secondErr;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Claude Escalation (Layer 2)
+// ---------------------------------------------------------------------------
+
+/** 30-minute cooldown — prevent escalation loops. */
+const ESCALATION_COOLDOWN_MS = 30 * 60 * 1000;
+
+/** Max time to wait for Claude's analysis response. */
+const ESCALATION_TIMEOUT_MS = 15_000;
+
+export interface EscalationResult {
+  shouldRetry: boolean;
+  reasoning: string;
+}
+
+/**
+ * Ask Claude Sonnet to analyze a pipeline failure and decide whether to retry.
+ *
+ * Returns null if escalation is disabled, on cooldown, or if the API call fails.
+ * Safe fallback: never retries on error.
+ */
+export async function escalateToClaudeAnalysis(params: {
+  dealId: string;
+  dealName: string;
+  failedStep: BomPipelineStep;
+  errorMessage: string;
+  runId: string;
+  attempt: number;
+}): Promise<EscalationResult | null> {
+  if (!AI_ESCALATION_ENABLED) return null;
+
+  // Cooldown check — prevent retry loops
+  if (prisma) {
+    try {
+      const recentRetry = await prisma.bomPipelineRun.findFirst({
+        where: {
+          dealId: params.dealId,
+          createdAt: { gte: new Date(Date.now() - ESCALATION_COOLDOWN_MS) },
+          metadata: { path: ["claudeEscalation", "shouldRetry"], equals: true },
+        },
+        select: { id: true },
+      });
+      if (recentRetry) {
+        console.log(`[bom-pipeline] Skipping escalation — cooldown active (recent retry: ${recentRetry.id})`);
+        return null;
+      }
+    } catch (e) {
+      console.warn("[bom-pipeline] Cooldown check failed, proceeding with escalation:", e);
+    }
+  }
+
+  try {
+    const client = getAnthropicClient();
+
+    const systemPrompt = `You are an operations reliability analyst for a solar company's BOM (Bill of Materials) pipeline.
+
+Your job: analyze pipeline failures and decide if an automatic retry is warranted.
+
+Context:
+- All pipeline steps are idempotent — safe to re-run from scratch
+- Cost of retry is low (~$0.10 for BOM extraction)
+- Cost of NOT retrying is high (human must investigate and manually trigger)
+- Err on the side of retrying — false retry is cheap
+
+Known transient errors (SHOULD retry):
+- Anthropic API: 500, 502, 503, 529, "overloaded", "internal server error", rate limits
+- Google Drive: 500, 503, rate limits, "fetch failed"
+- Zoho API: 500, 503, rate limits
+- Network: ECONNRESET, ETIMEDOUT, "socket hang up", DNS failures
+- Database: connection timeouts, "Can't reach database"
+
+Known permanent errors (should NOT retry):
+- Missing data: "no design_documents folder", "no PDF files", "no BOM data"
+- Auth failures: 401, 403, "unauthorized", "forbidden"
+- Validation errors: schema mismatches, constraint violations
+- Business logic: "customer not found" (this is handled as PARTIAL, not FAILED)
+
+Respond with ONLY valid JSON: {"shouldRetry": true/false, "reasoning": "brief explanation"}`;
+
+    const userMessage = `Pipeline failure analysis:
+- Deal: ${params.dealName} (${params.dealId})
+- Failed Step: ${params.failedStep}
+- Attempt: ${params.attempt} (after ${params.attempt - 1} auto-retry)
+- Error: ${params.errorMessage.slice(0, 1000)}
+
+Should this pipeline be automatically retried?`;
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), ESCALATION_TIMEOUT_MS);
+
+    let response;
+    try {
+      response = await client.messages.create(
+        {
+          model: CLAUDE_MODELS.haiku, // fast + cheap for classification
+          max_tokens: 200,
+          system: systemPrompt,
+          messages: [{ role: "user", content: userMessage }],
+        },
+        { signal: controller.signal },
+      );
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    // Parse response with strict validation
+    const text = response.content
+      .filter((block) => block.type === "text")
+      .map((block) => ("text" in block ? block.text : ""))
+      .join("");
+
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      console.error("[bom-pipeline] Escalation response not JSON:", text.slice(0, 300));
+      return null; // Safe fallback: don't retry
+    }
+
+    const parsed = JSON.parse(jsonMatch[0]);
+
+    // Validate schema
+    if (typeof parsed.shouldRetry !== "boolean" || typeof parsed.reasoning !== "string") {
+      console.error("[bom-pipeline] Escalation response invalid schema:", parsed);
+      return null; // Safe fallback: don't retry
+    }
+
+    return {
+      shouldRetry: parsed.shouldRetry,
+      reasoning: String(parsed.reasoning).slice(0, 500),
+    };
+  } catch (err) {
+    // Any failure in escalation → safe fallback (don't retry)
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[bom-pipeline] Escalation failed (safe fallback: no retry): ${msg}`);
+    return null;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -75,8 +394,10 @@ function extractFolderId(input: string): string | null {
   return null;
 }
 
-/** Fetch a HubSpot contact's details for fallback customer matching. */
-async function fetchContactDetails(contactId: string): Promise<{
+/** Fetch a HubSpot contact's details for fallback customer matching.
+ *  Returns null for expected "not found" (404) or missing config.
+ *  Throws on transient errors (5xx, rate limits) so withRetry can handle them. */
+export async function fetchContactDetails(contactId: string): Promise<{
   fullName: string | null;
   lastName: string | null;
   company: string | null;
@@ -86,28 +407,33 @@ async function fetchContactDetails(contactId: string): Promise<{
   const accessToken = process.env.HUBSPOT_ACCESS_TOKEN;
   if (!accessToken) return null;
 
-  try {
-    const res = await fetch(
-      `https://api.hubapi.com/crm/v3/objects/contacts/${encodeURIComponent(contactId)}?properties=firstname,lastname,company,email,phone,mobilephone`,
-      {
-        headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-        cache: "no-store",
-      }
-    );
-    if (!res.ok) return null;
-    const data = await res.json() as { properties: Record<string, string | null> };
-    const { firstname, lastname, company, email, phone, mobilephone } = data.properties;
+  const res = await fetch(
+    `https://api.hubapi.com/crm/v3/objects/contacts/${encodeURIComponent(contactId)}?properties=firstname,lastname,company,email,phone,mobilephone`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+      cache: "no-store",
+    }
+  );
 
-    return {
-      fullName: [lastname, firstname].filter(Boolean).map(s => s!.trim()).join(", ") || null,
-      lastName: lastname?.trim() || null,
-      company: company?.trim() || null,
-      email: email?.trim().toLowerCase() || null,
-      phone: phone?.trim() || mobilephone?.trim() || null,
-    };
-  } catch {
-    return null;
+  // 404 / 400 = contact doesn't exist — not retryable, return null
+  if (res.status === 404 || res.status === 400) return null;
+
+  // 5xx / 429 = transient — let it throw so withRetry can handle
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`HubSpot contact API ${res.status}: ${body.slice(0, 200)}`);
   }
+
+  const data = await res.json() as { properties: Record<string, string | null> };
+  const { firstname, lastname, company, email, phone, mobilephone } = data.properties;
+
+  return {
+    fullName: [lastname, firstname].filter(Boolean).map(s => s!.trim()).join(", ") || null,
+    lastName: lastname?.trim() || null,
+    company: company?.trim() || null,
+    email: email?.trim().toLowerCase() || null,
+    phone: phone?.trim() || mobilephone?.trim() || null,
+  };
 }
 
 /** Fetch HubSpot deal properties needed by the pipeline. */
@@ -117,6 +443,7 @@ async function fetchDealProperties(dealId: string): Promise<{
   address: string | null;
   city: string | null;
   state: string | null;
+  pbLocation: string | null;
 }> {
   const accessToken = process.env.HUBSPOT_ACCESS_TOKEN;
   if (!accessToken) throw new Error("HUBSPOT_ACCESS_TOKEN not configured");
@@ -125,6 +452,7 @@ async function fetchDealProperties(dealId: string): Promise<{
     "dealname",
     "design_documents", "design_document_folder_id", "all_document_parent_folder_id",
     "address_line_1", "city", "state", "postal_code",
+    "pb_location",
   ];
   const url = `https://api.hubapi.com/crm/v3/objects/deals/${encodeURIComponent(dealId)}?properties=${properties.join(",")}`;
 
@@ -153,6 +481,7 @@ async function fetchDealProperties(dealId: string): Promise<{
     address: p.address_line_1?.trim() || null,
     city: p.city?.trim() || null,
     state: p.state?.trim() || null,
+    pbLocation: p.pb_location?.trim() || null,
   };
 }
 
@@ -200,19 +529,53 @@ async function listDrivePdfs(folderId: string): Promise<DrivePdfFile[]> {
   return data.files ?? [];
 }
 
+/**
+ * Filename patterns that indicate a document is NOT a planset.
+ * These are excluded before selection to avoid extracting from
+ * cover letters, response letters, permit apps, etc.
+ */
+const NON_PLANSET_PATTERNS = [
+  /response\s*letter/i,
+  /cover\s*letter/i,
+  /permit\s*app/i,
+  /revision\s*(response|letter|comment)/i,
+  /plan\s*check\s*(comment|response|correction)/i,
+  /inspection\s*report/i,
+  /approval\s*letter/i,
+  /^invoice/i,
+  /^receipt/i,
+  /^proposal/i,
+  /^contract/i,
+];
+
 /** Pick the best planset PDF from a list — prefer "stamped" or "planset" in name. */
-function pickBestPlanset(files: DrivePdfFile[]): DrivePdfFile | null {
+export function pickBestPlanset(files: DrivePdfFile[]): DrivePdfFile | null {
   if (files.length === 0) return null;
 
+  // Filter out known non-planset documents
+  const candidates = files.filter(
+    (f) => !NON_PLANSET_PATTERNS.some((p) => p.test(f.name)),
+  );
+
   // Prefer files with "stamped" in the name (case-insensitive)
-  const stamped = files.filter((f) => /stamped/i.test(f.name));
+  const stamped = candidates.filter((f) => /stamped/i.test(f.name));
   if (stamped.length > 0) return stamped[0]; // already sorted by modifiedTime desc
 
   // Fallback to files with "planset" or "plan set" in the name
-  const planset = files.filter((f) => /plan\s*set/i.test(f.name));
+  const planset = candidates.filter((f) => /plan\s*set/i.test(f.name));
   if (planset.length > 0) return planset[0];
 
-  // Last resort: newest PDF
+  // Prefer files with PROJ-XXXX (project number) — design plans include project number + customer + date
+  const projNumbered = candidates.filter((f) => /PROJ-\d{4,}/i.test(f.name));
+  if (projNumbered.length > 0) return projNumbered[0];
+
+  // Last resort: newest PDF from candidates (if any survived filtering)
+  if (candidates.length > 0) return candidates[0];
+
+  // If ALL files were excluded, fall back to original list with a warning
+  console.warn(
+    `[bom-pipeline] All ${files.length} PDFs matched non-planset patterns — falling back to newest: ${files[0].name}`,
+  );
   return files[0];
 }
 
@@ -279,19 +642,134 @@ export async function runDesignCompletePipeline(
   let dealName = `Deal ${dealId}`;
   let capturedDesignFolderUrl: string | undefined;
   let capturedPlansetName: string | undefined;
+  let capturedPbLocation: string | undefined;
   let bomPdfBuffer: Buffer | undefined;
+
+  /** Track per-step retry info for observability. */
+  // Shared retry observation — withRetry updates this even on failure
+  const retryObs: RetryObservation = { attempt: 1, retried: false };
 
   const fail = async (step: BomPipelineStep, error: string): Promise<PipelineResult> => {
     const durationMs = Date.now() - startedAt;
-    console.error(`[bom-pipeline] Step ${step} failed for deal ${dealId}: ${error}`);
+    console.error(`[bom-pipeline] Step ${step} failed for deal ${dealId} (attempt ${retryObs.attempt}, retried=${retryObs.retried}): ${error}`);
 
-    await updateRun(runId, {
-      status: "FAILED",
+    // ── Layer 2: Claude escalation ──
+    let escalation: EscalationResult | null = null;
+    let escalationTriggeredRunId: string | undefined;
+
+    escalation = await escalateToClaudeAnalysis({
+      dealId,
       dealName,
       failedStep: step,
-      errorMessage: error.slice(0, 2000),
-      durationMs,
+      errorMessage: error.slice(0, 1000),
+      runId,
+      attempt: retryObs.attempt,
     });
+
+    if (escalation?.shouldRetry) {
+      console.log(`[bom-pipeline] Claude escalation: retry recommended — "${escalation.reasoning}"`);
+
+      // IMPORTANT: Mark current run as FAILED before acquiring a new lock,
+      // otherwise acquirePipelineLock will see this run as still RUNNING
+      // and throw DuplicateRunError.
+      const escalationMetadata: Record<string, unknown> = {
+        attempt: retryObs.attempt,
+        retried: retryObs.retried,
+        ...(retryObs.retryReason ? { retryReason: retryObs.retryReason } : {}),
+        claudeEscalation: {
+          shouldRetry: escalation.shouldRetry,
+          reasoning: escalation.reasoning,
+        },
+      };
+      await updateRun(runId, {
+        status: "FAILED",
+        dealName,
+        failedStep: step,
+        errorMessage: error.slice(0, 2000),
+        durationMs,
+        metadata: escalationMetadata,
+      });
+
+      // Try to start a fresh pipeline run
+      try {
+        const newRunId = await acquirePipelineLock(dealId, "MANUAL");
+        escalationTriggeredRunId = newRunId;
+
+        // Fire-and-forget the retry (runs after this function returns)
+        // Import waitUntil lazily to avoid circular dependency issues in tests
+        try {
+          const { waitUntil } = await import("@vercel/functions");
+          waitUntil(
+            runDesignCompletePipeline(newRunId, dealId).catch((retryErr) => {
+              console.error(`[bom-pipeline] Escalation-triggered retry failed for deal ${dealId}:`, retryErr);
+            }),
+          );
+        } catch {
+          // waitUntil not available (e.g., local dev) — run inline
+          runDesignCompletePipeline(newRunId, dealId).catch((retryErr) => {
+            console.error(`[bom-pipeline] Escalation-triggered retry failed for deal ${dealId}:`, retryErr);
+          });
+        }
+
+        // Update the run metadata with the triggered run ID
+        await updateRun(runId, {
+          metadata: { ...escalationMetadata, claudeEscalation: { ...escalationMetadata.claudeEscalation as Record<string, unknown>, triggeredRunId: newRunId } },
+        });
+
+        await logActivity({
+          type: "BOM_PIPELINE_STARTED",
+          description: `BOM pipeline auto-retried via AI escalation for deal ${dealId}`,
+          userEmail: PIPELINE_ACTOR.email,
+          userName: PIPELINE_ACTOR.name,
+          entityType: "bom",
+          entityId: dealId,
+          entityName: "pipeline",
+          metadata: {
+            event: "bom_pipeline_ai_escalation_retry",
+            dealId,
+            dealName,
+            originalRunId: runId,
+            newRunId,
+            reasoning: escalation.reasoning,
+          },
+          requestPath: PIPELINE_ACTOR.requestPath,
+          requestMethod: PIPELINE_ACTOR.requestMethod,
+        });
+      } catch (lockErr) {
+        if (lockErr instanceof DuplicateRunError) {
+          console.warn("[bom-pipeline] Escalation retry skipped — pipeline already running");
+        } else {
+          console.error("[bom-pipeline] Escalation retry lock failed:", lockErr);
+        }
+        // Proceed with normal failure flow
+      }
+    } else {
+      // No escalation retry — mark run as FAILED normally
+      if (escalation) {
+        console.log(`[bom-pipeline] Claude escalation: no retry — "${escalation.reasoning}"`);
+      }
+
+      const metadata: Record<string, unknown> = {
+        attempt: retryObs.attempt,
+        retried: retryObs.retried,
+        ...(retryObs.retryReason ? { retryReason: retryObs.retryReason } : {}),
+        ...(escalation ? {
+          claudeEscalation: {
+            shouldRetry: escalation.shouldRetry,
+            reasoning: escalation.reasoning,
+          },
+        } : {}),
+      };
+
+      await updateRun(runId, {
+        status: "FAILED",
+        dealName,
+        failedStep: step,
+        errorMessage: error.slice(0, 2000),
+        durationMs,
+        metadata,
+      });
+    }
 
     await logActivity({
       type: "BOM_PIPELINE_FAILED",
@@ -301,7 +779,17 @@ export async function runDesignCompletePipeline(
       entityType: "bom",
       entityId: dealId,
       entityName: "pipeline",
-      metadata: { event: "bom_pipeline_failed", dealId, dealName, step, error: error.slice(0, 500) },
+      metadata: {
+        event: "bom_pipeline_failed",
+        dealId,
+        dealName,
+        step,
+        error: error.slice(0, 500),
+        attempt: retryObs.attempt,
+        retried: retryObs.retried,
+        escalated: !!escalation,
+        escalationDecision: escalation?.shouldRetry ?? null,
+      },
       requestPath: PIPELINE_ACTOR.requestPath,
       requestMethod: PIPELINE_ACTOR.requestMethod,
       durationMs,
@@ -318,7 +806,13 @@ export async function runDesignCompletePipeline(
         errorMessage: error.slice(0, 500),
         designFolderUrl: capturedDesignFolderUrl,
         plansetFileName: capturedPlansetName,
+        pbLocation: capturedPbLocation,
         durationMs,
+        attempt: retryObs.attempt,
+        retried: retryObs.retried,
+        retryReason: retryObs.retryReason,
+        ...(escalation ? { claudeAnalysis: escalation } : {}),
+        ...(escalationTriggeredRunId ? { escalationTriggeredRunId } : {}),
         ...(bomPdfBuffer ? { pdfAttachment: { filename: `BOM-${safeName}.pdf`, content: bomPdfBuffer } } : {}),
       });
     } catch (notifyErr) {
@@ -332,15 +826,17 @@ export async function runDesignCompletePipeline(
     // ── Step 1: Fetch deal properties + primary contact ──
     currentStep = "FETCH_DEAL";
 
-    const [dealProps, primaryContactId] = await Promise.all([
-      fetchDealProperties(dealId),
-      fetchPrimaryContactId(dealId),
-    ]);
+    const { result: [dealProps, primaryContactId] } =
+      await withRetry("FETCH_DEAL", () =>
+        Promise.all([fetchDealProperties(dealId), fetchPrimaryContactId(dealId)]),
+        retryObs,
+      );
 
     dealName = dealProps.dealName;
     await updateRun(runId, { dealName });
 
     capturedDesignFolderUrl = dealProps.designFolderUrl ?? undefined;
+    capturedPbLocation = dealProps.pbLocation ?? undefined;
 
     if (!dealProps.designFolderUrl) {
       return fail("FETCH_DEAL", "Deal has no design_documents folder URL");
@@ -354,7 +850,9 @@ export async function runDesignCompletePipeline(
     // ── Step 2: List PDFs in Drive folder ──
     currentStep = "LIST_PDFS";
 
-    const pdfFiles = await listDrivePdfs(folderId);
+    const { result: pdfFiles } =
+      await withRetry("LIST_PDFS", () => listDrivePdfs(folderId), retryObs);
+
     if (pdfFiles.length === 0) {
       return fail("LIST_PDFS", `No PDF files found in Drive folder ${folderId}`);
     }
@@ -371,23 +869,41 @@ export async function runDesignCompletePipeline(
     // ── Step 3: Download + Extract BOM ──
     currentStep = "EXTRACT_BOM";
 
-    const { buffer: pdfBuffer, filename } = await downloadDrivePdf(selectedFile.id);
-    const extractResult = await extractBomFromPdf(pdfBuffer, filename, PIPELINE_ACTOR);
+    const { result: { buffer: pdfBuffer, filename } } =
+      await withRetry("EXTRACT_BOM", () => downloadDrivePdf(selectedFile.id), retryObs);
+
+    const { result: extractResult } =
+      await withRetry("EXTRACT_BOM", () => extractBomFromPdf(pdfBuffer, filename, PIPELINE_ACTOR), retryObs);
 
     if (!extractResult.bom) {
       return fail("EXTRACT_BOM", "BOM extraction returned no data");
     }
 
+    // Guard: extraction succeeded but found zero items (likely wrong document)
+    const bomItems = (extractResult.bom as { items?: unknown[] }).items ?? [];
+    if (bomItems.length === 0) {
+      const warnings = (extractResult.bom as { validation?: { warnings?: string[] } }).validation?.warnings ?? [];
+      const warningHint = warnings.length > 0 ? ` Warnings: ${warnings.join("; ")}` : "";
+      return fail(
+        "EXTRACT_BOM",
+        `BOM extraction returned 0 items from "${filename}" — likely not a planset.${warningHint}`,
+      );
+    }
+
     // ── Step 4: Save BOM snapshot ──
     currentStep = "SAVE_SNAPSHOT";
 
-    const snapshotResult = await saveBomSnapshot({
-      dealId,
-      dealName,
-      bomData: extractResult.bom as unknown as BomData,
-      sourceFile: filename,
-      actor: PIPELINE_ACTOR,
-    });
+    const { result: snapshotResult } =
+      await withRetry("SAVE_SNAPSHOT", () =>
+        saveBomSnapshot({
+          dealId,
+          dealName,
+          bomData: extractResult.bom as unknown as BomData,
+          sourceFile: filename,
+          actor: PIPELINE_ACTOR,
+        }),
+        retryObs,
+      );
 
     await updateRun(runId, {
       snapshotId: snapshotResult.id,
@@ -425,7 +941,7 @@ export async function runDesignCompletePipeline(
     let customerMatchMethod: string = "none";
     const searchAttempts: string[] = [];
 
-    await ensureCustomerCacheLoaded();
+    await withRetry("RESOLVE_CUSTOMER", () => ensureCustomerCacheLoaded(), retryObs);
 
     // --- Strategy 1: HubSpot contact ID → Zoho customer mapping ---
     if (primaryContactId) {
@@ -492,7 +1008,7 @@ export async function runDesignCompletePipeline(
 
     // --- Strategy 3: HubSpot contact email/phone/name → Zoho lookup ---
     if (!customerId && primaryContactId) {
-      const contactInfo = await fetchContactDetails(primaryContactId);
+      const { result: contactInfo } = await withRetry("RESOLVE_CUSTOMER", () => fetchContactDetails(primaryContactId), retryObs);
       if (contactInfo) {
         // 3a: Email match (very reliable — unique identifier)
         if (!customerId && contactInfo.email) {
@@ -608,6 +1124,7 @@ export async function runDesignCompletePipeline(
           errorMessage: `BOM extracted & saved (v${snapshotResult.version}), but Zoho customer could not be auto-matched. Manual SO creation needed. Searched: ${searchAttempts.join("; ")}`,
           designFolderUrl: dealProps.designFolderUrl ?? undefined,
           plansetFileName: selectedFile.name,
+          pbLocation: dealProps.pbLocation ?? undefined,
           durationMs,
           ...(bomPdfBuffer ? { pdfAttachment: { filename: pdfFilename, content: bomPdfBuffer } } : {}),
         });
@@ -634,12 +1151,16 @@ export async function runDesignCompletePipeline(
     // ── Step 6: Create draft Sales Order ──
     currentStep = "CREATE_SO";
 
-    const soResult = await createSalesOrder({
-      dealId,
-      version: snapshotResult.version,
-      customerId,
-      actor: PIPELINE_ACTOR,
-    });
+    const { result: soResult } =
+      await withRetry("CREATE_SO", () =>
+        createSalesOrder({
+          dealId,
+          version: snapshotResult.version,
+          customerId: customerId!,
+          actor: PIPELINE_ACTOR,
+        }),
+        retryObs,
+      );
 
     await updateRun(runId, {
       zohoSoId: soResult.salesorder_id,
@@ -700,6 +1221,7 @@ export async function runDesignCompletePipeline(
         customerMatchMethod: customerMatchMethod !== "none" ? customerMatchMethod : undefined,
         designFolderUrl: dealProps.designFolderUrl ?? undefined,
         plansetFileName: selectedFile.name,
+        pbLocation: dealProps.pbLocation ?? undefined,
         durationMs,
         ...(bomPdfBuffer ? { pdfAttachment: { filename: pdfFilename, content: bomPdfBuffer } } : {}),
       });
