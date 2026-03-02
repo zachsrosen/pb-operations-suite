@@ -98,7 +98,7 @@ export default function AHJTrackerPage() {
   const filteredProjects = useMemo(() => {
     let result = safeProjects;
     if (persistedFilters.locations.length > 0) result = result.filter((p) => persistedFilters.locations.includes(p.pbLocation || ""));
-    if (persistedFilters.leads.length > 0) result = result.filter((p) => persistedFilters.leads.includes(p.permitLead || ""));
+    if (persistedFilters.permitLeads.length > 0) result = result.filter((p) => persistedFilters.permitLeads.includes(p.permitLead || ""));
     if (persistedFilters.stages.length > 0) result = result.filter((p) => persistedFilters.stages.includes(p.stage || ""));
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -276,7 +276,7 @@ export default function AHJTrackerPage() {
   const drillSortIndicator = (field: DrillSortField) =>
     drillSortField === field ? (drillSortDir === "asc" ? " ↑" : " ↓") : " ⇅";
 
-  const hasActiveFilters = persistedFilters.locations.length > 0 || persistedFilters.leads.length > 0 || persistedFilters.stages.length > 0 || searchQuery.trim().length > 0;
+  const hasActiveFilters = persistedFilters.locations.length > 0 || persistedFilters.permitLeads.length > 0 || persistedFilters.stages.length > 0 || searchQuery.trim().length > 0;
 
   return (
     <DashboardShell
@@ -327,10 +327,10 @@ export default function AHJTrackerPage() {
           accentColor="cyan"
         />
         <MultiSelectFilter
-          label="Lead"
+          label="Permit Lead"
           options={leadOptions}
-          selected={persistedFilters.leads}
-          onChange={(v) => setPersisted({ ...persistedFilters, leads: v })}
+          selected={persistedFilters.permitLeads}
+          onChange={(v) => setPersisted({ ...persistedFilters, permitLeads: v })}
           accentColor="cyan"
         />
         <MultiSelectFilter

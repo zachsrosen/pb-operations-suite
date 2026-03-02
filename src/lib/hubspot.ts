@@ -120,7 +120,7 @@ async function getDealPropertyDefinition(
   }
 }
 
-async function searchWithRetry(
+export async function searchWithRetry(
   searchRequest: Parameters<typeof hubspotClient.crm.deals.searchApi.doSearch>[0],
   maxRetries = 5
 ) {
@@ -166,7 +166,7 @@ async function searchWithRetry(
 const PROJECT_PIPELINE_ID = "6900017";
 
 // Deal stage ID to name mapping for Project Pipeline
-const DEAL_STAGE_MAP: Record<string, string> = {
+export const DEAL_STAGE_MAP: Record<string, string> = {
   "20461935": "Project Rejected - Needs Review",
   "20461936": "Site Survey",
   "20461937": "Design & Engineering",

@@ -81,7 +81,7 @@ export function AnomalyInsights() {
           <div>
             <div className="font-semibold text-sm">AI Insights</div>
             <div className="text-[0.65rem] text-muted">
-              Non-obvious patterns — powered by gpt-4o-mini
+              Non-obvious patterns — powered by Claude
             </div>
           </div>
           {data?.cached && (
@@ -134,7 +134,7 @@ export function AnomalyInsights() {
 
       {state === "error" && (
         <div className="px-5 py-6 text-center">
-          <div className="text-sm text-red-400 mb-2">Analysis failed. Check OPENAI_API_KEY or try again.</div>
+          <div className="text-sm text-red-400 mb-2">Analysis failed. Check ANTHROPIC_API_KEY or try again.</div>
           <button
             onClick={runAnalysis}
             className="px-3 py-1.5 text-xs bg-orange-500 text-white rounded-md border-none cursor-pointer hover:bg-orange-600"

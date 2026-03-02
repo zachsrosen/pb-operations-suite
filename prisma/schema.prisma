@@ -148,6 +148,9 @@ enum ActivityType {
   BOM_PIPELINE_STARTED
   BOM_PIPELINE_COMPLETED
   BOM_PIPELINE_FAILED
+
+  // Reviews
+  DESIGN_REVIEW_COMPLETED
 }
 
 enum ClientType {
@@ -1138,4 +1141,40 @@ model CatalogMatchGroup {
   @@index([confidence])
   @@index([decision])
   @@index([needsReview])
+}
+
+// ============================================================
+// AI Assistant Layer
+// ============================================================
+
+model ProjectReview {
+  id           String   @id @default(cuid())
+  dealId       String
+  projectId    String?
+  skill        String
+  trigger      String
+  triggeredBy  String?
+  findings     Json
+  errorCount   Int      @default(0)
+  warningCount Int      @default(0)
+  passed       Boolean  @default(false)
+  durationMs   Int?
+  createdAt    DateTime @default(now())
+
+  @@index([dealId, skill])
+  @@index([createdAt])
+  @@index([skill, passed])
+}
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  userId    String
+  dealId    String?
+  role      String
+  content   String
+  model     String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, dealId])
+  @@index([createdAt])
 }

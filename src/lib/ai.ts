@@ -2,8 +2,8 @@
  * AI Foundation
  *
  * Shared Vercel AI SDK client, Zod output schemas, and guardrails
- * for all /api/ai/* routes. Uses gpt-4o-mini via OpenAI provider —
- * cheap, fast, and accurate enough for structured extraction tasks.
+ * for all /api/ai/* routes. Uses Claude Haiku via Anthropic provider —
+ * fast and accurate for structured extraction tasks.
  *
  * Guardrails enforced here (not per-route):
  * - Role check: ADMIN | OWNER only
@@ -13,7 +13,7 @@
  * - Safe fallback values when parsing fails
  */
 
-import { createOpenAI } from "@ai-sdk/openai";
+import { createAnthropic } from "@ai-sdk/anthropic";
 import { z } from "zod";
 
 // ============================================================
@@ -21,16 +21,16 @@ import { z } from "zod";
 // ============================================================
 
 /**
- * Lazy-initialized OpenAI provider. Throws at call-time (not import-time)
+ * Lazy-initialized Anthropic provider. Throws at call-time (not import-time)
  * so missing env doesn't crash cold starts for non-AI routes.
  */
 export function getAIClient() {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error("OPENAI_API_KEY is not configured");
-  return createOpenAI({ apiKey });
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not configured");
+  return createAnthropic({ apiKey });
 }
 
-export const AI_MODEL = "gpt-4o-mini";
+export const AI_MODEL = "claude-haiku-4-5-20251001";
 
 // ============================================================
 // Role guard
@@ -191,3 +191,9 @@ Rules:
 - Dollar amounts: interpret "30k" as 30000, "100k" as 100000, "1M" as 1000000
 - If you cannot confidently parse the query, return only interpreted_as explaining the limitation
 - interpreted_as must always be set — describe in plain English what filters you applied`;
+
+// ============================================================
+// Claude (Anthropic) — for new AI assistant layer routes
+// ============================================================
+
+export { getAnthropicClient, CLAUDE_MODELS } from "./anthropic";

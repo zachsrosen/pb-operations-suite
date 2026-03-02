@@ -49,7 +49,7 @@ if (globalForPrisma.prisma === undefined) {
   globalForPrisma.prisma = createPrismaClient();
 }
 
-export const prisma = globalForPrisma.prisma;
+export const prisma = globalForPrisma.prisma!;
 
 // ==========================================
 // HELPER FUNCTIONS

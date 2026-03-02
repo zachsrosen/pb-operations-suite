@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import Link from "next/link";
 import DashboardShell from "@/components/DashboardShell";
 import { MiniStat } from "@/components/ui/MetricCard";
 import { MultiSelectFilter, FilterOption } from "@/components/ui/MultiSelectFilter";
@@ -62,14 +63,15 @@ export default function PIActionQueuePage() {
     return Array.from(locs).sort().map(loc => ({ value: loc, label: loc }));
   }, [safeProjects]);
 
-  const leadOptions: FilterOption[] = useMemo(() => {
+  const permitLeadOptions: FilterOption[] = useMemo(() => {
     const names = new Set<string>();
-    safeProjects.forEach((p) => {
-      if (p.permitLead) names.add(p.permitLead);
-      if (p.interconnectionsLead) names.add(p.interconnectionsLead);
-      if (p.projectManager) names.add(p.projectManager);
-      if (p.preconstructionLead) names.add(p.preconstructionLead);
-    });
+    safeProjects.forEach((p) => { names.add(p.permitLead || "Unknown"); });
+    return Array.from(names).sort().map(name => ({ value: name, label: name }));
+  }, [safeProjects]);
+
+  const icLeadOptions: FilterOption[] = useMemo(() => {
+    const names = new Set<string>();
+    safeProjects.forEach((p) => { names.add(p.interconnectionsLead || "Unknown"); });
     return Array.from(names).sort().map(name => ({ value: name, label: name }));
   }, [safeProjects]);
 
@@ -83,7 +85,8 @@ export default function PIActionQueuePage() {
     const result: RawProject[] = [];
     for (const p of safeProjects) {
       if (persistedFilters.locations.length > 0 && !persistedFilters.locations.includes(p.pbLocation || "")) continue;
-      if (persistedFilters.leads.length > 0 && !persistedFilters.leads.includes(p.permitLead || "Unknown") && !persistedFilters.leads.includes(p.interconnectionsLead || "Unknown") && !persistedFilters.leads.includes(p.projectManager || "Unknown") && !persistedFilters.leads.includes(p.preconstructionLead || "Unknown")) continue;
+      if (persistedFilters.permitLeads.length > 0 && !persistedFilters.permitLeads.includes(p.permitLead || "Unknown")) continue;
+      if (persistedFilters.icLeads.length > 0 && !persistedFilters.icLeads.includes(p.interconnectionsLead || "Unknown")) continue;
       if (persistedFilters.stages.length > 0 && !persistedFilters.stages.includes(p.stage || "")) continue;
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
@@ -255,7 +258,7 @@ export default function PIActionQueuePage() {
     stale: "bg-red-500/20 text-red-400 border-red-500/30",
   };
 
-  const hasActiveFilters = persistedFilters.locations.length > 0 || persistedFilters.leads.length > 0 || persistedFilters.stages.length > 0 || searchQuery.trim().length > 0;
+  const hasActiveFilters = persistedFilters.locations.length > 0 || persistedFilters.permitLeads.length > 0 || persistedFilters.icLeads.length > 0 || persistedFilters.stages.length > 0 || searchQuery.trim().length > 0;
 
   return (
     <DashboardShell
@@ -265,6 +268,16 @@ export default function PIActionQueuePage() {
       exportData={{ data: exportRows, filename: "pi-action-queue.csv" }}
       fullWidth
     >
+      {/* Cross-nav */}
+      <div className="flex items-center gap-2 text-sm mb-4">
+        <span className="text-muted">View:</span>
+        <Link href="/dashboards/pi-permit-action-queue" className="text-cyan-400 hover:underline">Permit</Link>
+        <span className="text-muted">|</span>
+        <Link href="/dashboards/pi-ic-action-queue" className="text-cyan-400 hover:underline">IC & PTO</Link>
+        <span className="text-muted">|</span>
+        <span className="text-foreground font-medium">All Pipelines</span>
+      </div>
+
       {/* Summary Stats */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 stagger-grid mb-6">
         <MiniStat label="Total Actions" value={loading ? null : stats.total} />
@@ -291,10 +304,17 @@ export default function PIActionQueuePage() {
           accentColor="cyan"
         />
         <MultiSelectFilter
-          label="Lead"
-          options={leadOptions}
-          selected={persistedFilters.leads}
-          onChange={(v) => setPersisted({ ...persistedFilters, leads: v })}
+          label="Permit Lead"
+          options={permitLeadOptions}
+          selected={persistedFilters.permitLeads}
+          onChange={(v) => setPersisted({ ...persistedFilters, permitLeads: v })}
+          accentColor="cyan"
+        />
+        <MultiSelectFilter
+          label="IC Lead"
+          options={icLeadOptions}
+          selected={persistedFilters.icLeads}
+          onChange={(v) => setPersisted({ ...persistedFilters, icLeads: v })}
           accentColor="cyan"
         />
         <MultiSelectFilter

@@ -86,12 +86,15 @@ export default function PITimelinePage() {
     return Array.from(locs).sort().map((loc) => ({ value: loc, label: loc }));
   }, [safeProjects]);
 
-  const leadOptions: FilterOption[] = useMemo(() => {
+  const permitLeadOptions: FilterOption[] = useMemo(() => {
     const names = new Set<string>();
-    safeProjects.forEach((p) => {
-      if (p.permitLead) names.add(p.permitLead);
-      if (p.interconnectionsLead) names.add(p.interconnectionsLead);
-    });
+    safeProjects.forEach((p) => { names.add(p.permitLead || "Unknown"); });
+    return Array.from(names).sort().map((name) => ({ value: name, label: name }));
+  }, [safeProjects]);
+
+  const icLeadOptions: FilterOption[] = useMemo(() => {
+    const names = new Set<string>();
+    safeProjects.forEach((p) => { names.add(p.interconnectionsLead || "Unknown"); });
     return Array.from(names).sort().map((name) => ({ value: name, label: name }));
   }, [safeProjects]);
 
@@ -102,14 +105,16 @@ export default function PITimelinePage() {
   }, [safeProjects]);
 
   const hasActiveFilters = persistedFilters.locations.length > 0 ||
-    persistedFilters.leads.length > 0 ||
+    persistedFilters.permitLeads.length > 0 ||
+    persistedFilters.icLeads.length > 0 ||
     persistedFilters.stages.length > 0;
 
   const filteredProjects = useMemo(() => {
     const result: RawProject[] = [];
     for (const p of safeProjects) {
       if (persistedFilters.locations.length > 0 && !persistedFilters.locations.includes(p.pbLocation || "")) continue;
-      if (persistedFilters.leads.length > 0 && !persistedFilters.leads.includes(p.permitLead || "Unknown") && !persistedFilters.leads.includes(p.interconnectionsLead || "Unknown")) continue;
+      if (persistedFilters.permitLeads.length > 0 && !persistedFilters.permitLeads.includes(p.permitLead || "Unknown")) continue;
+      if (persistedFilters.icLeads.length > 0 && !persistedFilters.icLeads.includes(p.interconnectionsLead || "Unknown")) continue;
       if (persistedFilters.stages.length > 0 && !persistedFilters.stages.includes(p.stage || "")) continue;
       result.push(p);
     }
@@ -425,10 +430,17 @@ export default function PITimelinePage() {
           accentColor="cyan"
         />
         <MultiSelectFilter
-          label="Lead"
-          options={leadOptions}
-          selected={persistedFilters.leads}
-          onChange={(v) => setPersisted({ ...persistedFilters, leads: v })}
+          label="Permit Lead"
+          options={permitLeadOptions}
+          selected={persistedFilters.permitLeads}
+          onChange={(v) => setPersisted({ ...persistedFilters, permitLeads: v })}
+          accentColor="cyan"
+        />
+        <MultiSelectFilter
+          label="IC Lead"
+          options={icLeadOptions}
+          selected={persistedFilters.icLeads}
+          onChange={(v) => setPersisted({ ...persistedFilters, icLeads: v })}
           accentColor="cyan"
         />
         <MultiSelectFilter

@@ -191,13 +191,15 @@ export function useSiteSurveyFilters() {
 
 export interface PISubFilters {
   locations: string[];
-  leads: string[];
+  permitLeads: string[];
+  icLeads: string[];
   stages: string[];
 }
 
 const defaultPISubFilters: PISubFilters = {
   locations: [],
-  leads: [],
+  permitLeads: [],
+  icLeads: [],
   stages: [],
 };
 
@@ -208,7 +210,7 @@ function createPIFilterHook(key: string) {
     ) as PISubFilters | undefined;
     const setFilters = useDashboardFilters((s) => s.setFilters);
     return {
-      filters: raw ?? defaultPISubFilters,
+      filters: raw ? { ...defaultPISubFilters, ...raw } : defaultPISubFilters,
       setFilters: (f: PISubFilters) => setFilters(key, f),
       clearFilters: () =>
         useDashboardFilters.getState().clearFilters(key),
@@ -223,6 +225,10 @@ export const usePIActionQueueFilters = createPIFilterHook("pi-action-queue");
 export const useAHJTrackerFilters = createPIFilterHook("ahj-tracker");
 export const useUtilityTrackerFilters = createPIFilterHook("utility-tracker");
 export const usePIRevisionsFilters = createPIFilterHook("pi-revisions");
+export const usePIPermitActionQueueFilters = createPIFilterHook("pi-permit-action-queue");
+export const usePIICActionQueueFilters = createPIFilterHook("pi-ic-action-queue");
+export const usePIPermitRevisionsFilters = createPIFilterHook("pi-permit-revisions");
+export const usePIICRevisionsFilters = createPIFilterHook("pi-ic-revisions");
 
 // ===== D&E Suite filters (5 dashboards) =====
 

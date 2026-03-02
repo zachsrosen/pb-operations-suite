@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { sendDailyDigest } from "@/lib/audit/alerts";
+import { sendCronHealthAlert, sendDailyDigest } from "@/lib/audit/alerts";
 import { prisma } from "@/lib/db";
 
 /**
@@ -15,6 +15,20 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const result = await sendDailyDigest(prisma);
-  return NextResponse.json(result);
+  try {
+    const result = await sendDailyDigest(prisma);
+    if (!result.sent && result.reason !== "digest recently sent") {
+      await sendCronHealthAlert("audit-digest", result.reason ?? "unknown reason");
+      return NextResponse.json(result, { status: 500 });
+    }
+    return NextResponse.json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "unknown error";
+    try {
+      await sendCronHealthAlert("audit-digest", message);
+    } catch {
+      // Best-effort notification path; preserve original failure response.
+    }
+    return NextResponse.json({ sent: false, reason: message }, { status: 500 });
+  }
 }

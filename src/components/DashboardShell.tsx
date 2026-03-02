@@ -5,6 +5,7 @@ import { ReactNode, useCallback } from "react";
 import { usePathname } from "next/navigation";
 import { ThemeToggle } from "./ThemeToggle";
 import PhotonBrothersBadge from "./PhotonBrothersBadge";
+import ChatWidget from "./ChatWidget";
 
 // Maps dashboard paths to their parent suite
 const SUITE_MAP: Record<string, { href: string; label: string }> = {
@@ -46,6 +47,10 @@ const SUITE_MAP: Record<string, { href: string; label: string }> = {
   "/dashboards/pi-metrics": { href: "/suites/permitting-interconnection", label: "P&I" },
   "/dashboards/pi-action-queue": { href: "/suites/permitting-interconnection", label: "P&I" },
   "/dashboards/pi-revisions": { href: "/suites/permitting-interconnection", label: "P&I" },
+  "/dashboards/pi-permit-action-queue": { href: "/suites/permitting-interconnection", label: "P&I" },
+  "/dashboards/pi-ic-action-queue": { href: "/suites/permitting-interconnection", label: "P&I" },
+  "/dashboards/pi-permit-revisions": { href: "/suites/permitting-interconnection", label: "P&I" },
+  "/dashboards/pi-ic-revisions": { href: "/suites/permitting-interconnection", label: "P&I" },
   "/dashboards/ahj-tracker": { href: "/suites/permitting-interconnection", label: "P&I" },
   "/dashboards/utility-tracker": { href: "/suites/permitting-interconnection", label: "P&I" },
   "/dashboards/pi-timeline": { href: "/suites/permitting-interconnection", label: "P&I" },
@@ -102,6 +107,7 @@ interface DashboardShellProps {
   subtitle?: string;
   accentColor?: string;
   lastUpdated?: string | null;
+  dealId?: string;
   headerRight?: ReactNode;
   children: ReactNode;
   /** Breadcrumb trail (e.g. [{ label: "Operations", href: "/" }, { label: "At-Risk" }]) */
@@ -117,6 +123,7 @@ export default function DashboardShell({
   subtitle,
   accentColor = "orange",
   lastUpdated,
+  dealId,
   headerRight,
   children,
   breadcrumbs,
@@ -255,6 +262,7 @@ export default function DashboardShell({
         </div>
       </header>
       <main className={`${containerClass} py-6`}>{children}</main>
+      <ChatWidget dealId={dealId} />
     </div>
   );
 }
