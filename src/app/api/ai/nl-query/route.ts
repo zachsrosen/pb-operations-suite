@@ -66,9 +66,9 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const openai = getAIClient();
+    const anthropic = getAIClient();
     const { object } = await generateObject({
-      model: openai(AI_MODEL),
+      model: anthropic(AI_MODEL),
       schema: ProjectFilterSpecSchema,
       system: NL_QUERY_SYSTEM_PROMPT,
       prompt: `Parse this query into a filter spec: "${query}"`,

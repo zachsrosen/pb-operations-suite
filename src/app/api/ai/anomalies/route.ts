@@ -2,7 +2,7 @@
  * POST /api/ai/anomalies
  *
  * Detects non-obvious operational anomalies in the active project pipeline
- * using gpt-4o-mini. Fetches project data server-side (no client payload)
+ * using Claude Haiku. Fetches project data server-side (no client payload)
  * and sends a minimal, PII-free field set to the model.
  *
  * Guardrails:
@@ -81,7 +81,7 @@ export async function POST() {
 
     // --- Build minimal, PII-free payload ---
     // Project names include customer name after "|" — send only the internal
-    // identifier portion (before "|") to avoid sending PII to OpenAI.
+    // identifier portion (before "|") to avoid sending PII to the model.
     const payload: AnomalyInputProject[] = execProjects.map((p) => ({
       id: p.id,
       name: (p.name.split("|")[0]?.trim() || p.id).substring(
@@ -110,9 +110,9 @@ export async function POST() {
     );
 
     // --- Call model ---
-    const openai = getAIClient();
+    const anthropic = getAIClient();
     const { object } = await generateObject({
-      model: openai(AI_MODEL),
+      model: anthropic(AI_MODEL),
       schema: AnomalyResultSchema,
       system: ANOMALY_SYSTEM_PROMPT,
       prompt: `Here are ${validPayload.length} active solar projects sorted by priority score (highest first). Identify non-obvious anomalies:\n\n${JSON.stringify(validPayload, null, 0)}`,

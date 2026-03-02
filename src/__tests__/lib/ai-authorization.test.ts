@@ -1,13 +1,13 @@
 /**
  * Tests for AI role authorization.
  *
- * The ai.ts module imports @ai-sdk/openai which requires TransformStream
+ * The ai.ts module imports @ai-sdk/anthropic which requires TransformStream
  * (unavailable in Jest's Node env), so we cannot import isAIAuthorized
  * directly. Instead we use jest.mock to stub the dependency and isolate
  * the role guard logic.
  */
 
-jest.mock("@ai-sdk/openai", () => ({ createOpenAI: jest.fn() }));
+jest.mock("@ai-sdk/anthropic", () => ({ createAnthropic: jest.fn() }));
 
 import { isAIAuthorized } from "@/lib/ai";
 
