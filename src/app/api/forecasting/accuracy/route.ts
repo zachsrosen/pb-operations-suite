@@ -96,7 +96,7 @@ export async function GET(_request: NextRequest) {
         meanAbsError: installAccuracy?.meanAbsError ?? null,
         withinOneWeek: installAccuracy?.withinOneWeek ?? 0,
         withinTwoWeeks: installAccuracy?.withinTwoWeeks ?? 0,
-        totalProjectsAnalyzed: analyzable.length,
+        totalProjectsAnalyzed: installAccuracy?.sampleCount ?? 0,
       },
       lastUpdated: new Date().toISOString(),
     });
@@ -147,7 +147,8 @@ function computeMilestoneAccuracy(
       const forecastDate = forecast[milestone]?.date;
       if (!forecastDate) continue;
 
-      errors.push(daysBetween(forecastDate, actual));
+      // positive = forecast was late (forecast > actual), negative = early
+      errors.push(daysBetween(actual, forecastDate));
     }
 
     const sorted = [...errors].sort((a, b) => a - b);

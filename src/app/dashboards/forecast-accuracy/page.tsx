@@ -298,8 +298,8 @@ export default function ForecastAccuracyPage() {
 
       {/* ── Metadata ─────────────────────────────────────────── */}
       <div className="mt-6 text-xs text-muted text-center">
-        Based on {overallAccuracy.totalProjectsAnalyzed} completed projects with construction
-        complete dates. Original forecasts computed from closeDate using current baseline table.
+        Install accuracy based on {overallAccuracy.totalProjectsAnalyzed} projects with both
+        forecast and actual dates. Original forecasts computed from closeDate using current baseline table.
       </div>
     </DashboardShell>
   );
