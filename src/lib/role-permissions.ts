@@ -558,6 +558,10 @@ export const ADMIN_ONLY_ROUTES: string[] = [
   "/dashboards/zuper-compliance",
   "/dashboards/product-comparison",
   "/dashboards/mobile",
+  // AI assistant routes — admin-only until per-deal access boundaries confirmed
+  "/dashboards/reviews",
+  "/api/reviews",
+  "/api/chat",
 ];
 
 
