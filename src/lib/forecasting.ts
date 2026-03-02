@@ -12,6 +12,8 @@
  */
 
 import type { Project } from "@/lib/hubspot";
+import { fetchAllProjects } from "@/lib/hubspot";
+import { appCache, CACHE_KEYS } from "@/lib/cache";
 
 // ─── Milestone Chain ───────────────────────────────────────────────
 
@@ -322,4 +324,35 @@ export function computeProjectForecasts(
   const original = computeForecast(blankProject, table);
 
   return { original, live };
+}
+
+// ─── Cached Baseline Table ─────────────────────────────────────────
+
+/**
+ * Get the cached baseline table, rebuilding from QC data if stale.
+ * Fetches ALL projects (including inactive) to maximize historical data.
+ * Filters to projects completed in the last 12 months that have
+ * at least reached construction complete (install milestone).
+ */
+export async function getBaselineTable() {
+  return appCache.getOrFetch<BaselineTable>(
+    CACHE_KEYS.FORECAST_BASELINES,
+    async () => {
+      const allProjects = await fetchAllProjects({ activeOnly: false });
+
+      // Filter to completed projects from last 12 months
+      const cutoff = new Date();
+      cutoff.setFullYear(cutoff.getFullYear() - 1);
+      const cutoffStr = cutoff.toISOString().split("T")[0];
+
+      const completed = allProjects.filter(
+        (p) =>
+          p.closeDate &&
+          p.closeDate >= cutoffStr &&
+          p.constructionCompleteDate, // Must have at least installed
+      );
+
+      return buildBaselineTable(completed);
+    },
+  );
 }
