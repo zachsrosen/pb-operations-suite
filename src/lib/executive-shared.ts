@@ -4,6 +4,10 @@
  * Capacity, PE, and Alerts standalone pages.
  */
 
+import type { BaselineTable } from "@/lib/forecasting";
+import { computeProjectForecasts } from "@/lib/forecasting";
+import type { Project } from "@/lib/hubspot";
+
 // ============================================================
 // Types
 // ============================================================
@@ -207,9 +211,41 @@ export function getDaysClass(
   return "text-emerald-500";
 }
 
-export function transformProject(p: ApiProject): ExecProject {
+export function transformProject(
+  p: ApiProject,
+  baselineTable?: BaselineTable | null,
+): ExecProject {
   const isRtb = p.stage === "Ready To Build" || p.stage === "RTB - Blocked";
   const isSchedulable = isRtb || p.stage === "Construction";
+
+  let forecastInstall = p.forecastedInstallDate || p.constructionScheduleDate;
+  let forecastInspection = p.forecastedInspectionDate || p.inspectionScheduleDate;
+  let forecastPto = p.forecastedPtoDate;
+  let daysToInstall = p.daysToInstall ?? null;
+  let daysToInspection = p.daysToInspection ?? null;
+  let daysToPto = p.daysToPto ?? null;
+
+  // Use forecasting engine when baseline table is available
+  if (baselineTable && Object.keys(baselineTable).length > 0 && p.closeDate) {
+    const projectLike = apiProjectToProjectLike(p);
+    const { live } = computeProjectForecasts(projectLike, baselineTable);
+
+    forecastInstall = live.install?.date ?? forecastInstall;
+    forecastInspection = live.inspection?.date ?? forecastInspection;
+    forecastPto = live.pto?.date ?? forecastPto;
+
+    const now = Date.now();
+    const MS_PER_DAY = 86_400_000;
+    if (forecastInstall) {
+      daysToInstall = Math.floor((new Date(forecastInstall).getTime() - now) / MS_PER_DAY);
+    }
+    if (forecastInspection) {
+      daysToInspection = Math.floor((new Date(forecastInspection).getTime() - now) / MS_PER_DAY);
+    }
+    if (forecastPto) {
+      daysToPto = Math.floor((new Date(forecastPto).getTime() - now) / MS_PER_DAY);
+    }
+  }
 
   return {
     id: p.id,
@@ -221,12 +257,12 @@ export function transformProject(p: ApiProject): ExecProject {
     amount: p.amount || 0,
     url: p.url || `https://app.hubspot.com/contacts/21710069/record/0-3/${p.id}`,
     close_date: p.closeDate,
-    forecast_install: p.forecastedInstallDate || p.constructionScheduleDate,
-    forecast_inspection: p.forecastedInspectionDate || p.inspectionScheduleDate,
-    forecast_pto: p.forecastedPtoDate,
-    days_to_install: p.daysToInstall ?? null,
-    days_to_inspection: p.daysToInspection ?? null,
-    days_to_pto: p.daysToPto ?? null,
+    forecast_install: forecastInstall,
+    forecast_inspection: forecastInspection,
+    forecast_pto: forecastPto,
+    days_to_install: daysToInstall,
+    days_to_inspection: daysToInspection,
+    days_to_pto: daysToPto,
     days_since_close: p.daysSinceClose || 0,
     is_participate_energy: p.isParticipateEnergy || false,
     is_rtb: isRtb,
@@ -239,6 +275,25 @@ export function transformProject(p: ApiProject): ExecProject {
     inspection_pass: p.inspectionPassDate || null,
     pto_granted: p.ptoGrantedDate || null,
   };
+}
+
+/** Map ApiProject fields to the Project shape expected by the forecasting engine */
+function apiProjectToProjectLike(p: ApiProject): Project {
+  return {
+    pbLocation: p.pbLocation || "Unknown",
+    ahj: p.ahj || "Unknown",
+    utility: p.utility || "Unknown",
+    closeDate: p.closeDate ?? null,
+    designCompletionDate: p.designApprovalDate ?? null,
+    permitSubmitDate: null,
+    permitIssueDate: null,
+    interconnectionSubmitDate: null,
+    interconnectionApprovalDate: null,
+    readyToBuildDate: null,
+    constructionCompleteDate: p.constructionCompleteDate ?? null,
+    inspectionPassDate: p.inspectionPassDate ?? null,
+    ptoGrantedDate: p.ptoGrantedDate ?? null,
+  } as Project;
 }
 
 export function calculateCapacityAnalysis(

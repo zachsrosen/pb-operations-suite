@@ -68,6 +68,22 @@ const LINKS: SuitePageCard[] = [
     section: "Tools",
   },
   {
+    href: "/dashboards/project-management",
+    title: "Project Management",
+    description: "PM workload, DA backlog, stuck deals, and revenue tracking.",
+    tag: "PM",
+    tagColor: "bg-green-500/20 text-green-400 border-green-500/30",
+    section: "Analytics",
+  },
+  {
+    href: "/dashboards/design-engineering",
+    title: "D&E Dept Analytics",
+    description: "Cross-state design analytics, status breakdowns, and ops clarification queue.",
+    tag: "ANALYTICS",
+    tagColor: "bg-purple-500/20 text-purple-400 border-purple-500/30",
+    section: "Analytics",
+  },
+  {
     href: "/dashboards/design",
     title: "Design & Engineering (Legacy)",
     description: "Original design progress tracking, engineering approvals, and plan sets.",

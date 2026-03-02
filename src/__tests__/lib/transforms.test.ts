@@ -1,5 +1,7 @@
 import { transformProject, avg, MS_PER_DAY, FORECAST_OFFSETS } from "@/lib/transforms";
 import type { RawProject } from "@/lib/types";
+import type { BaselineTable, PairStats } from "@/lib/forecasting";
+import { MILESTONE_CHAIN } from "@/lib/forecasting";
 
 function makeRawProject(overrides: Partial<RawProject> = {}): RawProject {
   return {
@@ -144,6 +146,69 @@ describe("transformProject", () => {
     expect(result.pto_granted).toBe("2025-03-10");
     expect(result.permit_submit).toBe("2024-08-01");
     expect(result.permit_issued).toBe("2024-09-01");
+  });
+});
+
+describe("transformProject with baselineTable", () => {
+  function makeBasicTable(): BaselineTable {
+    const pairs: Record<string, PairStats> = {};
+    for (let i = 0; i < MILESTONE_CHAIN.length - 1; i++) {
+      const from = MILESTONE_CHAIN[i];
+      const to = MILESTONE_CHAIN[i + 1];
+      pairs[`${from}_to_${to}`] = {
+        median: 14,
+        p25: 10,
+        p75: 18,
+        sampleCount: 10,
+      };
+    }
+    return {
+      "Westminster|Boulder County|Xcel": { sampleCount: 10, pairs },
+      global: { sampleCount: 100, pairs },
+    };
+  }
+
+  it("uses forecasting engine when baseline table provided", () => {
+    const raw = makeRawProject({
+      closeDate: "2025-06-01",
+      designCompletionDate: "2025-06-10",
+    });
+    const table = makeBasicTable();
+    const result = transformProject(raw, table);
+
+    expect(result.forecast).not.toBeNull();
+    expect(result.forecast!.live.designComplete.date).toBe("2025-06-10");
+    expect(result.forecast!.live.designComplete.basis).toBe("actual");
+    expect(result.forecast!.original.designComplete.basis).toBe("segment");
+  });
+
+  it("populates backwards-compat forecast fields from live forecast", () => {
+    const raw = makeRawProject({ closeDate: "2025-06-01" });
+    const table = makeBasicTable();
+    const result = transformProject(raw, table);
+
+    // install = close + 14*7 = 98 days = Sep 7
+    expect(result.forecast_install).toBe("2025-09-07");
+    expect(result.forecast!.live.install.date).toBe("2025-09-07");
+  });
+
+  it("returns null forecast when no baseline table", () => {
+    const raw = makeRawProject({ closeDate: "2025-06-01" });
+    const result = transformProject(raw);
+
+    expect(result.forecast).toBeNull();
+    // Still falls back to old offsets
+    expect(result.forecast_install).not.toBeNull();
+  });
+
+  it("falls back to legacy offsets when baseline table is empty", () => {
+    const raw = makeRawProject({ closeDate: "2025-06-01" });
+    const emptyTable: BaselineTable = {};
+    const result = transformProject(raw, emptyTable);
+
+    // Empty table should be treated as no table — use legacy fallback
+    expect(result.forecast).toBeNull();
+    expect(result.forecast_install).not.toBeNull();
   });
 });
 

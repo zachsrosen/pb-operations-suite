@@ -79,7 +79,7 @@ const SUITE_LINKS: SuiteLinkData[] = [
   {
     href: "/suites/intelligence",
     title: "Intelligence Suite",
-    description: "Risk analysis, QC, capacity planning, and pipeline analytics.",
+    description: "Risk analysis, QC metrics, and pipeline forecasting.",
     tag: "INTELLIGENCE",
     tagColor: "cyan",
     visibility: "owner_admin",
@@ -125,7 +125,6 @@ const ROLE_LANDING_CARDS: Record<string, RoleLandingCard[]> = {
     { href: "/dashboards/equipment-backlog", title: "Equipment Backlog", description: "Equipment forecasting by brand, model, and stage.", tag: "EQUIPMENT", tagColor: "blue" },
     { href: "/dashboards/timeline", title: "Timeline View", description: "Gantt-style project progression and milestones.", tag: "PLANNING", tagColor: "blue" },
     { href: "/dashboards/at-risk", title: "At-Risk Projects", description: "Overdue milestones, stalled stages, severity scoring.", tag: "AT-RISK", tagColor: "orange" },
-    { href: "/dashboards/capacity", title: "Capacity Planning", description: "Crew capacity vs. forecasted installs.", tag: "CAPACITY", tagColor: "cyan" },
     { href: "/dashboards/qc", title: "QC Metrics", description: "Time-between-stages analytics.", tag: "QC", tagColor: "cyan" },
   ],
   PROJECT_MANAGER: [

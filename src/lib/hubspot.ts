@@ -749,35 +749,12 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
 
   const daysSinceClose = closeDate ? daysBetween(closeDate, now) : 0;
 
-  // Calculate days to milestones
-  // Use explicit forecast dates from HubSpot if available
-  const explicitForecastInstall = parseDate(deal.forecasted_installation_date) || parseDate(deal.install_schedule_date);
-  const explicitForecastInspection = parseDate(deal.forecasted_inspection_date) || parseDate(deal.inspections_schedule_date);
-  const explicitForecastPto = parseDate(deal.forecasted_pto_date);
-
-  // Calculate default forecasts from close date if no explicit dates
-  // Default timeline: Install at close + 90 days, Inspection at close + 120 days, PTO at close + 150 days
-  let forecastInstall = explicitForecastInstall;
-  let forecastInspection = explicitForecastInspection;
-  let forecastPto = explicitForecastPto;
-
-  if (closeDate) {
-    if (!forecastInstall) {
-      const defaultInstall = new Date(closeDate);
-      defaultInstall.setDate(defaultInstall.getDate() + 90);
-      forecastInstall = defaultInstall.toISOString().split('T')[0];
-    }
-    if (!forecastInspection) {
-      const defaultInspection = new Date(closeDate);
-      defaultInspection.setDate(defaultInspection.getDate() + 120);
-      forecastInspection = defaultInspection.toISOString().split('T')[0];
-    }
-    if (!forecastPto) {
-      const defaultPto = new Date(closeDate);
-      defaultPto.setDate(defaultPto.getDate() + 150);
-      forecastPto = defaultPto.toISOString().split('T')[0];
-    }
-  }
+  // Explicit forecast dates from HubSpot (no static fallbacks — the
+  // forecasting engine in src/lib/forecasting.ts handles all forecasting
+  // via QC-data-driven baselines at transform time)
+  const forecastInstall = parseDate(deal.forecasted_installation_date) || parseDate(deal.install_schedule_date);
+  const forecastInspection = parseDate(deal.forecasted_inspection_date) || parseDate(deal.inspections_schedule_date);
+  const forecastPto = parseDate(deal.forecasted_pto_date);
 
   const daysToInstall = forecastInstall ? daysBetween(now, new Date(forecastInstall)) : null;
   const daysToInspection = forecastInspection ? daysBetween(now, new Date(forecastInspection)) : null;

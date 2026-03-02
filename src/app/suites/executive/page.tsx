@@ -35,6 +35,38 @@ const LINKS: SuitePageCard[] = [
     tagColor: "bg-green-500/20 text-green-400 border-green-500/30",
     section: "Executive Views",
   },
+  {
+    href: "/dashboards/sales",
+    title: "Sales Pipeline",
+    description: "Active deals, funnel visualization, and proposal tracking.",
+    tag: "SALES",
+    tagColor: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
+    section: "Sales",
+  },
+  {
+    href: "/dashboards/pe",
+    title: "PE Dashboard",
+    description: "Participate Energy milestone tracking and compliance monitoring.",
+    tag: "PE",
+    tagColor: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
+    section: "Programs",
+  },
+  {
+    href: "/dashboards/zuper-compliance",
+    title: "Zuper Compliance",
+    description: "Per-user compliance scorecards and crew-composition comparisons.",
+    tag: "COMPLIANCE",
+    tagColor: "bg-red-500/20 text-red-400 border-red-500/30",
+    section: "Field Performance",
+  },
+  {
+    href: "/dashboards/forecast-accuracy",
+    title: "Forecast Accuracy",
+    description: "How well the forecasting model predicts reality across milestones and segments.",
+    tag: "META",
+    tagColor: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
+    section: "Meta",
+  },
 ];
 
 export default async function ExecutiveSuitePage() {

@@ -4,11 +4,13 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { useActivityTracking } from "./useActivityTracking";
+import { useBaselineTable } from "./useBaselineTable";
 import { queryKeys } from "@/lib/query-keys";
 import {
   type ExecProject,
   type CapacityAnalysis,
   type Alert,
+  type ApiProject,
   transformProject,
   calculateCapacityAnalysis,
   calculateAlerts,
@@ -62,19 +64,25 @@ export function useExecutiveData(dashboardName: string): UseExecutiveDataReturn 
     }
   }, [authQuery.data, authQuery.error, router]);
 
-  // Projects data
-  const projectsQuery = useQuery({
+  // Baseline table for forecast engine
+  const { baselineTable } = useBaselineTable();
+
+  // Projects data — fetch raw, transform in useMemo with baseline table
+  const projectsQuery = useQuery<ApiProject[]>({
     queryKey: queryKeys.projects.executive(),
     queryFn: async () => {
       const response = await fetch("/api/projects?context=executive");
       if (!response.ok) throw new Error("Failed to fetch data");
       const data = await response.json();
-      return data.projects.map(transformProject) as ExecProject[];
+      return data.projects as ApiProject[];
     },
     refetchInterval: 5 * 60 * 1000,
   });
 
-  const projects = projectsQuery.data ?? [];
+  const projects: ExecProject[] = useMemo(
+    () => (projectsQuery.data ?? []).map((p) => transformProject(p, baselineTable)),
+    [projectsQuery.data, baselineTable],
+  );
   const loading = projectsQuery.isLoading;
   const error = projectsQuery.error
     ? (projectsQuery.error as Error).message

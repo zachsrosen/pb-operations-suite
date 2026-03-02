@@ -6,7 +6,9 @@ import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { LiveIndicator } from "@/components/ui/LiveIndicator";
 import { useProjectData } from "@/hooks/useProjectData";
+import { useBaselineTable } from "@/hooks/useBaselineTable";
 import { transformProject } from "@/lib/transforms";
+import { ForecastBasisBadge } from "@/components/ui/ForecastBasisBadge";
 import { formatMoney, formatCurrency } from "@/lib/format";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import type { RawProject, TransformedProject, Risk, ProjectWithRisk } from "@/lib/types";
@@ -38,12 +40,17 @@ export default function AtRiskPage() {
 
   /* ---- data fetching ---- */
 
-  const { data: projects, loading, error, lastUpdated, refetch } = useProjectData<TransformedProject[]>({
+  const { baselineTable } = useBaselineTable();
+
+  const { data: rawProjects, loading, error, lastUpdated, refetch } = useProjectData<RawProject[]>({
     params: { context: "at-risk" },
-    transform: (res: unknown) => ((res as { projects: RawProject[] }).projects || []).map(transformProject),
+    transform: (res: unknown) => (res as { projects: RawProject[] }).projects || [],
   });
 
-  const allProjects = useMemo(() => projects || [], [projects]);
+  const allProjects: TransformedProject[] = useMemo(
+    () => (rawProjects || []).map((p) => transformProject(p, baselineTable)),
+    [rawProjects, baselineTable],
+  );
 
   /* ---- Track dashboard view on load ---- */
   useEffect(() => {
@@ -412,26 +419,41 @@ export default function AtRiskPage() {
             <div className="mt-3 pt-3 border-t border-t-border/50 grid grid-cols-3 gap-4 text-sm">
               <div>
                 <div className="text-muted">Forecast Install</div>
-                <div className="text-white">
-                  {project.forecast_install
-                    ? new Date(project.forecast_install).toLocaleDateString()
-                    : "-"}
+                <div className="flex items-center gap-2">
+                  <span className="text-white">
+                    {project.forecast_install
+                      ? new Date(project.forecast_install).toLocaleDateString()
+                      : "-"}
+                  </span>
+                  {project.forecast?.live.install && (
+                    <ForecastBasisBadge basis={project.forecast.live.install.basis} compact />
+                  )}
                 </div>
               </div>
               <div>
                 <div className="text-muted">Forecast Inspection</div>
-                <div className="text-white">
-                  {project.forecast_inspection
-                    ? new Date(project.forecast_inspection).toLocaleDateString()
-                    : "-"}
+                <div className="flex items-center gap-2">
+                  <span className="text-white">
+                    {project.forecast_inspection
+                      ? new Date(project.forecast_inspection).toLocaleDateString()
+                      : "-"}
+                  </span>
+                  {project.forecast?.live.inspection && (
+                    <ForecastBasisBadge basis={project.forecast.live.inspection.basis} compact />
+                  )}
                 </div>
               </div>
               <div>
                 <div className="text-muted">Forecast PTO</div>
-                <div className="text-white">
-                  {project.forecast_pto
-                    ? new Date(project.forecast_pto).toLocaleDateString()
-                    : "-"}
+                <div className="flex items-center gap-2">
+                  <span className="text-white">
+                    {project.forecast_pto
+                      ? new Date(project.forecast_pto).toLocaleDateString()
+                      : "-"}
+                  </span>
+                  {project.forecast?.live.pto && (
+                    <ForecastBasisBadge basis={project.forecast.live.pto.basis} compact />
+                  )}
                 </div>
               </div>
             </div>

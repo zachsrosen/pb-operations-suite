@@ -145,6 +145,11 @@ export interface TransformedProject {
   days_to_inspection: number | null;
   days_to_pto: number | null;
   days_since_close: number;
+  /** Full forecast engine output (null when no baseline table available) */
+  forecast: {
+    original: Record<string, { date: string | null; basis: string }>;
+    live: Record<string, { date: string | null; basis: string }>;
+  } | null;
 }
 
 // Risk types used by at-risk dashboard

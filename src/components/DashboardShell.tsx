@@ -30,8 +30,8 @@ const SUITE_MAP: Record<string, { href: string; label: string }> = {
   "/dashboards/design": { href: "/suites/design-engineering", label: "D&E" },
   "/dashboards/permitting": { href: "/suites/permitting-interconnection", label: "P&I" },
   "/dashboards/interconnection": { href: "/suites/permitting-interconnection", label: "P&I" },
-  // Incentives (Intelligence Suite)
-  "/dashboards/incentives": { href: "/suites/intelligence", label: "Intelligence" },
+  // Incentives → P&I Suite
+  "/dashboards/incentives": { href: "/suites/permitting-interconnection", label: "P&I" },
   // Design & Engineering Suite
   "/dashboards/de-overview": { href: "/suites/design-engineering", label: "D&E" },
   "/dashboards/plan-review": { href: "/suites/design-engineering", label: "D&E" },
@@ -60,18 +60,18 @@ const SUITE_MAP: Record<string, { href: string; label: string }> = {
   "/dashboards/alerts": { href: "/suites/intelligence", label: "Intelligence" },
   "/dashboards/pipeline": { href: "/suites/intelligence", label: "Intelligence" },
   "/dashboards/optimizer": { href: "/suites/intelligence", label: "Intelligence" },
-  "/dashboards/capacity": { href: "/suites/intelligence", label: "Intelligence" },
   "/dashboards/pe": { href: "/suites/intelligence", label: "Intelligence" },
-  "/dashboards/sales": { href: "/", label: "Home" },
-  "/dashboards/project-management": { href: "/suites/intelligence", label: "Intelligence" },
-  "/dashboards/design-engineering": { href: "/suites/intelligence", label: "Intelligence" },
-  "/dashboards/permitting-interconnection": { href: "/suites/intelligence", label: "Intelligence" },
+  "/dashboards/sales": { href: "/suites/intelligence", label: "Intelligence" },
+  "/dashboards/project-management": { href: "/suites/design-engineering", label: "D&E" },
+  "/dashboards/design-engineering": { href: "/suites/design-engineering", label: "D&E" },
+  "/dashboards/permitting-interconnection": { href: "/suites/permitting-interconnection", label: "P&I" },
   // Executive Suite
   "/dashboards/command-center": { href: "/suites/executive", label: "Executive" },
   "/dashboards/revenue": { href: "/suites/executive", label: "Executive" },
   "/dashboards/executive": { href: "/suites/executive", label: "Executive" },
   "/dashboards/locations": { href: "/suites/executive", label: "Executive" },
   "/dashboards/executive-calendar": { href: "/suites/executive", label: "Executive" },
+  "/dashboards/forecast-accuracy": { href: "/suites/executive", label: "Executive" },
   // Service + D&R Suite
   "/dashboards/service-scheduler": { href: "/suites/service", label: "Service + D&R" },
   "/dashboards/service-backlog": { href: "/suites/service", label: "Service + D&R" },
@@ -80,7 +80,7 @@ const SUITE_MAP: Record<string, { href: string; label: string }> = {
   "/dashboards/dnr": { href: "/suites/service", label: "Service + D&R" },
   // Admin Suite
   "/dashboards/zuper-status-comparison": { href: "/suites/admin", label: "Admin" },
-  "/dashboards/zuper-compliance": { href: "/suites/admin", label: "Admin" },
+  "/dashboards/zuper-compliance": { href: "/suites/executive", label: "Executive" },
   "/dashboards/product-comparison": { href: "/suites/operations", label: "Operations" },
   "/dashboards/mobile": { href: "/suites/admin", label: "Admin" },
 };
