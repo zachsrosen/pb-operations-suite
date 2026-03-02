@@ -62,7 +62,7 @@ const SUITE_MAP: Record<string, { href: string; label: string }> = {
   "/dashboards/optimizer": { href: "/suites/intelligence", label: "Intelligence" },
   "/dashboards/pe": { href: "/suites/intelligence", label: "Intelligence" },
   "/dashboards/sales": { href: "/suites/intelligence", label: "Intelligence" },
-  "/dashboards/project-management": { href: "/suites/design-engineering", label: "D&E" },
+  "/dashboards/project-management": { href: "/suites/intelligence", label: "Intelligence" },
   "/dashboards/design-engineering": { href: "/suites/design-engineering", label: "D&E" },
   "/dashboards/permitting-interconnection": { href: "/suites/permitting-interconnection", label: "P&I" },
   // Executive Suite
