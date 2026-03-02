@@ -482,6 +482,7 @@ function MilestoneGroup({
   projects,
   dateField,
   daysField,
+  basisField,
   threshold,
 }: {
   title: string;
@@ -492,6 +493,7 @@ function MilestoneGroup({
   projects: PEProject[];
   dateField: keyof PEProject;
   daysField: keyof PEProject;
+  basisField?: keyof PEProject;
   threshold: number;
 }) {
   return (
@@ -526,8 +528,11 @@ function MilestoneGroup({
             </div>
             <div className="text-right">
               <div className="text-xs text-muted mb-1">Forecasted</div>
-              <div className="text-sm text-foreground/80">
+              <div className="flex items-center justify-end gap-1.5 text-sm text-foreground/80">
                 {p[dateField] as string}
+                {basisField && p[basisField] && (
+                  <ForecastBasisBadge basis={p[basisField] as string} compact />
+                )}
               </div>
               <StatusBadge
                 days={p[daysField] as number | null}
@@ -1351,6 +1356,7 @@ export default function PEDashboardPage() {
             projects={inspectionMilestones}
             dateField="forecast_inspection"
             daysField="days_to_inspection"
+            basisField="inspection_basis"
             threshold={14}
           />
 
@@ -1363,6 +1369,7 @@ export default function PEDashboardPage() {
             projects={ptoMilestones}
             dateField="forecast_pto"
             daysField="days_to_pto"
+            basisField="pto_basis"
             threshold={30}
           />
         </div>

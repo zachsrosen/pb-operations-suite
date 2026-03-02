@@ -63,6 +63,7 @@ export function cacheKeyToQueryKeys(
   if (serverKey.startsWith("deals")) return [queryKeys.deals.root];
   if (serverKey.startsWith("stats")) return [queryKeys.stats.root];
   if (serverKey.startsWith("zuper")) return [queryKeys.zuper.root];
+  if (serverKey.startsWith("forecast")) return [queryKeys.forecasting.root];
   // pipelines: no RQ consumer depends on it in this batch
   if (serverKey.startsWith("pipelines")) return [];
   return [];
