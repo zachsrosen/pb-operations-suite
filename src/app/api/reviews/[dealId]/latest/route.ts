@@ -22,9 +22,11 @@ export async function GET(
     return NextResponse.json({ error: "Database not configured" }, { status: 503 });
   }
 
+  const db = prisma; // local const so TS narrows inside .map() callback
+
   const latest = await Promise.all(
     VALID_SKILLS.map((skill) =>
-      prisma.projectReview.findFirst({
+      db.projectReview.findFirst({
         where: { dealId, skill },
         orderBy: { createdAt: "desc" },
       })
