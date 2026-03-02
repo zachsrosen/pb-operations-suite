@@ -194,6 +194,8 @@ export default function DEOverviewPage() {
       switch (sortKey) {
         case "name": aVal = (a.name || "").toLowerCase(); bVal = (b.name || "").toLowerCase(); break;
         case "designStatus": aVal = (a.designStatus || "").toLowerCase(); bVal = (b.designStatus || "").toLowerCase(); break;
+        case "layoutStatus": aVal = (a.layoutStatus || "").toLowerCase(); bVal = (b.layoutStatus || "").toLowerCase(); break;
+        case "stage": aVal = (a.stage || "").toLowerCase(); bVal = (b.stage || "").toLowerCase(); break;
         case "designLead": aVal = (a.designLead || "Unknown").toLowerCase(); bVal = (b.designLead || "Unknown").toLowerCase(); break;
         case "pbLocation": aVal = (a.pbLocation || "").toLowerCase(); bVal = (b.pbLocation || "").toLowerCase(); break;
         case "amount": aVal = a.amount || 0; bVal = b.amount || 0; break;
