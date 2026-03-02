@@ -103,7 +103,7 @@ async function processDesignReview(dealId: string, eventId: number) {
       skill: "design-review",
       trigger: "webhook",
       triggeredBy: "system",
-      findings: result.findings,
+      findings: result.findings as unknown as import("@prisma/client/runtime/library").JsonArray,
       errorCount: result.errorCount,
       warningCount: result.warningCount,
       passed: result.passed,

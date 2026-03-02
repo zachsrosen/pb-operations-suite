@@ -96,7 +96,7 @@ export async function POST(request: NextRequest) {
       skill: skillName,
       trigger,
       triggeredBy: trigger === "webhook" ? "system" : email,
-      findings: result.findings,
+      findings: result.findings as unknown as import("@prisma/client/runtime/library").JsonArray,
       errorCount: result.errorCount,
       warningCount: result.warningCount,
       passed: result.passed,
