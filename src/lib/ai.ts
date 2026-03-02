@@ -191,3 +191,9 @@ Rules:
 - Dollar amounts: interpret "30k" as 30000, "100k" as 100000, "1M" as 1000000
 - If you cannot confidently parse the query, return only interpreted_as explaining the limitation
 - interpreted_as must always be set — describe in plain English what filters you applied`;
+
+// ============================================================
+// Claude (Anthropic) — for new AI assistant layer routes
+// ============================================================
+
+export { getAnthropicClient, CLAUDE_MODELS } from "./anthropic";

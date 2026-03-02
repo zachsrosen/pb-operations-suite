@@ -15,6 +15,7 @@ const PUBLIC_API_ROUTES = [
   "/api/updates/notify",
   "/api/sentry-canary",
   "/api/webhooks/hubspot/design-complete",
+  "/api/webhooks/hubspot/design-review",
   "/api/cron/audit-digest",
   "/api/cron/audit-retention",
 ];
