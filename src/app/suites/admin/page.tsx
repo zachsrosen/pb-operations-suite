@@ -44,14 +44,6 @@ const ADMIN_TOOLS: SuitePageCard[] = [
     section: "Admin Tools",
   },
   {
-    href: "/dashboards/zuper-compliance",
-    title: "Zuper Compliance",
-    description: "Per-user compliance scorecards and crew-composition comparisons.",
-    tag: "COMPLIANCE",
-    tagColor: "bg-red-500/20 text-red-400 border-red-500/30",
-    section: "Admin Tools",
-  },
-  {
     href: "/dashboards/zuper-status-comparison",
     title: "Zuper Status Comparison",
     description: "Compare Zuper job statuses and schedule/completion dates with HubSpot data.",

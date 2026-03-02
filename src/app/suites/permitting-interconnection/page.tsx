@@ -53,6 +53,22 @@ const LINKS: SuitePageCard[] = [
     section: "Analytics",
   },
   {
+    href: "/dashboards/permitting-interconnection",
+    title: "P&I Dept Analytics",
+    description: "Combined P&I analytics, turnaround times, and action-needed views.",
+    tag: "ANALYTICS",
+    tagColor: "bg-teal-500/20 text-teal-400 border-teal-500/30",
+    section: "Analytics",
+  },
+  {
+    href: "/dashboards/incentives",
+    title: "Incentives",
+    description: "Rebate and incentive program tracking and application status.",
+    tag: "INCENTIVES",
+    tagColor: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+    section: "Programs",
+  },
+  {
     href: "/dashboards/permitting",
     title: "Permitting (Legacy)",
     description: "Original permit status tracking, submission dates, and approval monitoring.",
