@@ -33,7 +33,7 @@ const LINKS: SuitePageCard[] = [
     description: "Gantt-style timeline showing project progression and milestones.",
     tag: "TIMELINE",
     tagColor: "bg-blue-500/20 text-blue-400 border-blue-500/30",
-    section: "Pipeline & Capacity",
+    section: "Pipeline & Forecasting",
   },
   {
     href: "/dashboards/pipeline",
@@ -41,7 +41,7 @@ const LINKS: SuitePageCard[] = [
     description: "Full project pipeline with filters, priority scoring, and milestone tracking.",
     tag: "PIPELINE",
     tagColor: "bg-green-500/20 text-green-400 border-green-500/30",
-    section: "Pipeline & Capacity",
+    section: "Pipeline & Forecasting",
   },
   {
     href: "/dashboards/optimizer",
@@ -49,63 +49,7 @@ const LINKS: SuitePageCard[] = [
     description: "Identify scheduling opportunities and optimize project throughput.",
     tag: "OPTIMIZER",
     tagColor: "bg-purple-500/20 text-purple-400 border-purple-500/30",
-    section: "Pipeline & Capacity",
-  },
-  {
-    href: "/dashboards/capacity",
-    title: "Capacity Planning",
-    description: "Crew capacity vs. forecasted installs across all locations.",
-    tag: "CAPACITY",
-    tagColor: "bg-indigo-500/20 text-indigo-400 border-indigo-500/30",
-    section: "Pipeline & Capacity",
-  },
-  {
-    href: "/dashboards/pe",
-    title: "PE Dashboard",
-    description: "Participate Energy milestone tracking and compliance monitoring.",
-    tag: "PE",
-    tagColor: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
-    section: "Pipeline & Capacity",
-  },
-  {
-    href: "/dashboards/sales",
-    title: "Sales Pipeline",
-    description: "Active deals, funnel visualization, and proposal tracking.",
-    tag: "SALES",
-    tagColor: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
-    section: "Pipeline & Capacity",
-  },
-  {
-    href: "/dashboards/project-management",
-    title: "Project Management",
-    description: "PM workload, DA backlog, stuck deals, and revenue tracking.",
-    tag: "PM",
-    tagColor: "bg-green-500/20 text-green-400 border-green-500/30",
-    section: "Department Analytics",
-  },
-  {
-    href: "/dashboards/design-engineering",
-    title: "Design & Engineering",
-    description: "Cross-state design analytics, status breakdowns, and ops clarification queue.",
-    tag: "D&E",
-    tagColor: "bg-purple-500/20 text-purple-400 border-purple-500/30",
-    section: "Department Analytics",
-  },
-  {
-    href: "/dashboards/permitting-interconnection",
-    title: "Permitting & Interconnection",
-    description: "Combined P&I analytics, turnaround times, and action-needed views.",
-    tag: "P&I",
-    tagColor: "bg-teal-500/20 text-teal-400 border-teal-500/30",
-    section: "Department Analytics",
-  },
-  {
-    href: "/dashboards/incentives",
-    title: "Incentives",
-    description: "Rebate and incentive program tracking and application status.",
-    tag: "INCENTIVES",
-    tagColor: "bg-amber-500/20 text-amber-400 border-amber-500/30",
-    section: "Department Analytics",
+    section: "Pipeline & Forecasting",
   },
 ];
 
@@ -120,7 +64,7 @@ export default async function IntelligenceSuitePage() {
     <SuitePageShell
       currentSuiteHref="/suites/intelligence"
       title="Intelligence Suite"
-      subtitle="Risk analysis, QC metrics, capacity planning, and pipeline analytics."
+      subtitle="Forecast-dependent dashboards under evaluation. Will be redistributed or cut."
       cards={LINKS}
       role={user.role}
       hoverBorderClass="hover:border-cyan-500/50"
