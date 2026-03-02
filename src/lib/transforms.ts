@@ -38,7 +38,7 @@ export function transformProject(
   let forecastPto: string | null = null;
   let forecastData: TransformedProject["forecast"] = null;
 
-  if (baselineTable) {
+  if (baselineTable && Object.keys(baselineTable).length > 0) {
     // Use the forecasting engine
     // Build a Project-like shape from RawProject for the engine
     const projectLike = rawToProjectLike(p);

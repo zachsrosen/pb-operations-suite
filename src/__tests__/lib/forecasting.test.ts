@@ -378,6 +378,106 @@ describe("computeForecast", () => {
     expect(forecast.designComplete.date).toBeNull();
   });
 
+  it("clears lastDate after insufficient pair so downstream milestones don't chain from wrong anchor", () => {
+    // Build a table that has close→designComplete but NOT designComplete→permitSubmit
+    const pairs: Record<string, PairStats> = {};
+    for (let i = 0; i < MILESTONE_CHAIN.length - 1; i++) {
+      const from = MILESTONE_CHAIN[i];
+      const to = MILESTONE_CHAIN[i + 1];
+      pairs[`${from}_to_${to}`] = {
+        median: 14,
+        p25: 10,
+        p75: 18,
+        sampleCount: 10,
+      };
+    }
+    // Remove one pair in the middle to create a gap
+    pairs["designComplete_to_permitSubmit"] = {
+      median: null,
+      p25: null,
+      p75: null,
+      sampleCount: 0,
+    };
+    const table: BaselineTable = {
+      global: { sampleCount: 100, pairs },
+    };
+
+    const project = makeCompletedProject({
+      closeDate: "2025-06-01",
+      designCompletionDate: null,
+      permitSubmitDate: null,
+      permitIssueDate: null,
+      interconnectionSubmitDate: null,
+      interconnectionApprovalDate: null,
+      readyToBuildDate: null,
+      constructionCompleteDate: null,
+      inspectionPassDate: null,
+      ptoGrantedDate: null,
+    });
+
+    const forecast = computeForecast(project, table);
+
+    // designComplete forecasted normally
+    expect(forecast.designComplete.date).toBe("2025-06-15");
+    expect(forecast.designComplete.basis).toBe("global");
+
+    // permitSubmit is insufficient (no pair data)
+    expect(forecast.permitSubmit.date).toBeNull();
+    expect(forecast.permitSubmit.basis).toBe("insufficient");
+
+    // permitApproval should also be insufficient (lastDate cleared)
+    // NOT forecasted from designComplete's date
+    expect(forecast.permitApproval.date).toBeNull();
+    expect(forecast.permitApproval.basis).toBe("insufficient");
+  });
+
+  it("falls back per-pair: uses global for pair missing from segment", () => {
+    // Segment has all pairs EXCEPT icSubmit→icApproval
+    const segPairs: Record<string, PairStats> = {};
+    const globalPairs: Record<string, PairStats> = {};
+    for (let i = 0; i < MILESTONE_CHAIN.length - 1; i++) {
+      const from = MILESTONE_CHAIN[i];
+      const to = MILESTONE_CHAIN[i + 1];
+      const pk = `${from}_to_${to}`;
+      globalPairs[pk] = { median: 20, p25: 15, p75: 25, sampleCount: 50 };
+      if (pk === "icSubmit_to_icApproval") {
+        // Segment has no data for this pair
+        segPairs[pk] = { median: null, p25: null, p75: null, sampleCount: 0 };
+      } else {
+        segPairs[pk] = { median: 10, p25: 7, p75: 13, sampleCount: 10 };
+      }
+    }
+    const table: BaselineTable = {
+      "Westminster|Boulder County|Xcel": { sampleCount: 10, pairs: segPairs },
+      global: { sampleCount: 50, pairs: globalPairs },
+    };
+
+    const project = makeCompletedProject({
+      closeDate: "2025-06-01",
+      designCompletionDate: null,
+      permitSubmitDate: null,
+      permitIssueDate: null,
+      interconnectionSubmitDate: null,
+      interconnectionApprovalDate: null,
+      readyToBuildDate: null,
+      constructionCompleteDate: null,
+      inspectionPassDate: null,
+      ptoGrantedDate: null,
+    });
+
+    const forecast = computeForecast(project, table);
+
+    // Most milestones use segment (median=10)
+    expect(forecast.designComplete.basis).toBe("segment");
+    expect(forecast.icSubmit.basis).toBe("segment");
+
+    // icApproval falls back to global for this specific pair
+    expect(forecast.icApproval.basis).toBe("global");
+
+    // Milestones after the fallback continue from the correct anchor
+    expect(forecast.rtb.basis).toBe("segment");
+  });
+
   it("returns insufficient for all milestones when no closeDate", () => {
     const table: BaselineTable = {
       global: {

@@ -200,6 +200,16 @@ describe("transformProject with baselineTable", () => {
     // Still falls back to old offsets
     expect(result.forecast_install).not.toBeNull();
   });
+
+  it("falls back to legacy offsets when baseline table is empty", () => {
+    const raw = makeRawProject({ closeDate: "2025-06-01" });
+    const emptyTable: BaselineTable = {};
+    const result = transformProject(raw, emptyTable);
+
+    // Empty table should be treated as no table — use legacy fallback
+    expect(result.forecast).toBeNull();
+    expect(result.forecast_install).not.toBeNull();
+  });
 });
 
 describe("avg", () => {

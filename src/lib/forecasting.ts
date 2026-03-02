@@ -223,20 +223,36 @@ export function buildBaselineTable(projects: Project[]): BaselineTable {
 
 // ─── Forecast Calculator ───────────────────────────────────────────
 
-function resolveSegment(
+/**
+ * Resolve the best segment entry for a specific milestone pair.
+ * Falls back per-pair: segment → location → global → null.
+ * This ensures that if a segment lacks data for one pair,
+ * we still try broader segments before giving up.
+ */
+function resolvePairStats(
   project: Project,
   table: BaselineTable,
-): { entry: BaselineEntry; basis: ForecastBasis } | null {
+  pk: string,
+): { stats: PairStats; basis: ForecastBasis } | null {
   // Try full segment first
   const fullKey = fullSegmentKey(project);
-  if (table[fullKey]) return { entry: table[fullKey], basis: "segment" };
+  const fullEntry = table[fullKey];
+  if (fullEntry?.pairs[pk]?.median !== null && fullEntry?.pairs[pk]?.median !== undefined) {
+    return { stats: fullEntry.pairs[pk], basis: "segment" };
+  }
 
   // Try location fallback
   const locKey = locationSegmentKey(project);
-  if (table[locKey]) return { entry: table[locKey], basis: "location" };
+  const locEntry = table[locKey];
+  if (locEntry?.pairs[pk]?.median !== null && locEntry?.pairs[pk]?.median !== undefined) {
+    return { stats: locEntry.pairs[pk], basis: "location" };
+  }
 
   // Try global
-  if (table[GLOBAL_KEY]) return { entry: table[GLOBAL_KEY], basis: "global" };
+  const globalEntry = table[GLOBAL_KEY];
+  if (globalEntry?.pairs[pk]?.median !== null && globalEntry?.pairs[pk]?.median !== undefined) {
+    return { stats: globalEntry.pairs[pk], basis: "global" };
+  }
 
   return null;
 }
@@ -251,7 +267,6 @@ export function computeForecast(
   table: BaselineTable,
 ): ForecastSet {
   const result = {} as Record<MilestoneKey, ForecastedMilestone>;
-  const segment = resolveSegment(project, table);
 
   // Close is always actual
   const closeDate = project.closeDate;
@@ -274,22 +289,26 @@ export function computeForecast(
       continue;
     }
 
-    // Need to forecast
-    if (!lastDate || !segment) {
+    // Need to forecast — no anchor means insufficient
+    if (!lastDate) {
       result[milestone] = { date: null, basis: "insufficient" };
+      // lastDate stays null; downstream milestones also insufficient
       continue;
     }
 
+    // Per-pair fallback: segment → location → global
     const pk = pairKey(prev, milestone);
-    const pairStats = segment.entry.pairs[pk];
+    const resolved = resolvePairStats(project, table, pk);
 
-    if (!pairStats || pairStats.median === null) {
+    if (!resolved) {
       result[milestone] = { date: null, basis: "insufficient" };
+      // Clear lastDate so downstream milestones don't chain from wrong anchor
+      lastDate = null;
       continue;
     }
 
-    const forecastDate = addDays(lastDate, pairStats.median);
-    result[milestone] = { date: forecastDate, basis: segment.basis };
+    const forecastDate = addDays(lastDate, resolved.stats.median!);
+    result[milestone] = { date: forecastDate, basis: resolved.basis };
     lastDate = forecastDate;
   }
 
