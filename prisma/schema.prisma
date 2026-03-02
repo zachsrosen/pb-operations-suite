@@ -148,6 +148,9 @@ enum ActivityType {
   BOM_PIPELINE_STARTED
   BOM_PIPELINE_COMPLETED
   BOM_PIPELINE_FAILED
+
+  // Reviews
+  DESIGN_REVIEW_COMPLETED
 }
 
 enum ClientType {
