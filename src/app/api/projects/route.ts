@@ -9,6 +9,40 @@ import {
 } from "@/lib/hubspot";
 import { appCache, CACHE_KEYS } from "@/lib/cache";
 
+function getHubSpotAuthStatus(error: unknown): number | null {
+  const candidate = error as {
+    code?: number | string;
+    statusCode?: number | string;
+    status?: number | string;
+    response?: { status?: number | string; statusCode?: number | string };
+  };
+
+  const rawStatus =
+    candidate?.statusCode ??
+    candidate?.code ??
+    candidate?.status ??
+    candidate?.response?.statusCode ??
+    candidate?.response?.status;
+
+  const parsed = Number(rawStatus);
+  if (Number.isFinite(parsed)) return parsed;
+  return null;
+}
+
+function isHubSpotAuthError(error: unknown): boolean {
+  const status = getHubSpotAuthStatus(error);
+  if (status === 401 || status === 403) return true;
+
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  const lowered = message.toLowerCase();
+  return (
+    lowered.includes("invalid_authentication") ||
+    lowered.includes("authentication credentials not found") ||
+    lowered.includes("oauth") ||
+    lowered.includes("x-hubspot-auth-failure")
+  );
+}
+
 export async function GET(request: NextRequest) {
   tagSentryRequest(request);
   try {
@@ -19,6 +53,14 @@ export async function GET(request: NextRequest) {
 
     if (expectedToken && authHeader && authHeader !== `Bearer ${expectedToken}`) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Fail fast for local/dev misconfiguration so we avoid noisy upstream 401s.
+    if (!process.env.HUBSPOT_ACCESS_TOKEN?.trim()) {
+      return NextResponse.json(
+        { error: "HubSpot integration is not configured (missing HUBSPOT_ACCESS_TOKEN)" },
+        { status: 503 }
+      );
     }
 
     // Parse query parameters
@@ -152,6 +194,17 @@ export async function GET(request: NextRequest) {
       lastUpdated,
     });
   } catch (error) {
+    if (isHubSpotAuthError(error)) {
+      const status = getHubSpotAuthStatus(error);
+      const detail = status ? `HubSpot auth failed (status ${status})` : "HubSpot auth failed";
+      console.warn(`[api/projects] ${detail}`);
+      Sentry.captureMessage(`[api/projects] ${detail}`, "warning");
+      return NextResponse.json(
+        { error: "HubSpot authentication failed. Check HUBSPOT_ACCESS_TOKEN." },
+        { status: 503 }
+      );
+    }
+
     console.error("Error fetching projects:", error);
     Sentry.captureException(error);
     return NextResponse.json(

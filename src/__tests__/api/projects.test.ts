@@ -72,8 +72,23 @@ function makeRequest(params: Record<string, string> = {}): NextRequest {
 }
 
 describe("GET /api/projects", () => {
+  const originalHubSpotToken = process.env.HUBSPOT_ACCESS_TOKEN;
+
+  beforeAll(() => {
+    process.env.HUBSPOT_ACCESS_TOKEN = process.env.HUBSPOT_ACCESS_TOKEN || "test-token";
+  });
+
+  afterAll(() => {
+    if (originalHubSpotToken === undefined) {
+      delete process.env.HUBSPOT_ACCESS_TOKEN;
+    } else {
+      process.env.HUBSPOT_ACCESS_TOKEN = originalHubSpotToken;
+    }
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
+    process.env.HUBSPOT_ACCESS_TOKEN = process.env.HUBSPOT_ACCESS_TOKEN || "test-token";
     mockFetchAllProjects.mockResolvedValue([
       makeProject({ id: "1", amount: 50000, pbLocation: "Westminster" }),
       makeProject({ id: "2", amount: 75000, pbLocation: "Centennial", stage: "Inspection" }),
@@ -175,5 +190,30 @@ describe("GET /api/projects", () => {
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.error).toBe("Failed to fetch projects");
+  });
+
+  it("returns 503 when HUBSPOT_ACCESS_TOKEN is missing", async () => {
+    delete process.env.HUBSPOT_ACCESS_TOKEN;
+
+    const req = makeRequest({ context: "all" });
+    const res = await GET(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(503);
+    expect(body.error).toContain("missing HUBSPOT_ACCESS_TOKEN");
+    expect(mockFetchAllProjects).not.toHaveBeenCalled();
+  });
+
+  it("returns 503 on HubSpot authentication errors", async () => {
+    mockFetchAllProjects.mockRejectedValue(
+      new Error('HTTP-Code: 401 Message: {"category":"INVALID_AUTHENTICATION"}')
+    );
+
+    const req = makeRequest({ context: "all" });
+    const res = await GET(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(503);
+    expect(body.error).toContain("HubSpot authentication failed");
   });
 });
