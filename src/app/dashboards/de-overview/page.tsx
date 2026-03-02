@@ -11,16 +11,57 @@ import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { useDEOverviewFilters } from "@/stores/dashboard-filters";
 import Link from "next/link";
 
-// Design status funnel order
+// Design status funnel order — keys are HubSpot `design_status` values, labels are display names
 const STATUS_FUNNEL = [
+  // Core pipeline
   { key: "Ready for Design", label: "Ready for Design", color: "bg-slate-500" },
   { key: "In Progress", label: "In Progress", color: "bg-blue-500" },
-  { key: "Ready For Review", label: "Ready For Review", color: "bg-yellow-500" },
-  { key: "Final Review/Stamping", label: "Final Review", color: "bg-orange-500" },
-  { key: "Draft Complete - Waiting on Approvals", label: "Waiting on Approvals", color: "bg-purple-500" },
+  { key: "Initial Review", label: "Ready For Review", color: "bg-yellow-500" },
+  { key: "Ready for Review", label: "Final Review/Stamping", color: "bg-orange-500" },
+  { key: "Draft Complete", label: "Draft Complete — Waiting on Approvals", color: "bg-purple-500" },
   { key: "DA Approved", label: "DA Approved", color: "bg-indigo-500" },
-  { key: "Submitted To Engineering", label: "In Engineering", color: "bg-cyan-500" },
-  { key: "Design Complete", label: "Design Complete", color: "bg-emerald-500" },
+  { key: "Submitted To Engineering", label: "Submitted To Engineering", color: "bg-cyan-500" },
+  { key: "Complete", label: "Design Complete", color: "bg-emerald-500" },
+  // DA revisions
+  { key: "Revision Needed - DA Rejected", label: "Revision Needed — DA Rejected", color: "bg-red-500" },
+  { key: "DA Revision In Progress", label: "DA Revision In Progress", color: "bg-red-400" },
+  { key: "DA Revision Completed", label: "DA Revision Completed", color: "bg-red-300" },
+  // AHJ revisions
+  { key: "Revision Needed - Rejected by AHJ", label: "Revision Needed — AHJ Rejected", color: "bg-rose-500" },
+  { key: "Permit Revision In Progress", label: "Permit Revision In Progress", color: "bg-rose-400" },
+  { key: "Permit Revision Completed", label: "Permit Revision Completed", color: "bg-rose-300" },
+  // Utility revisions
+  { key: "Revision Needed - Rejected by Utility", label: "Revision Needed — Utility Rejected", color: "bg-pink-500" },
+  { key: "Utility Revision In Progress", label: "Utility Revision In Progress", color: "bg-pink-400" },
+  { key: "Utility Revision Completed", label: "Utility Revision Completed", color: "bg-pink-300" },
+  // As-built revisions
+  { key: "Revision Needed - Rejected", label: "Revision Needed — As-Built", color: "bg-fuchsia-500" },
+  { key: "As-Built Revision In Progress", label: "As-Built Revision In Progress", color: "bg-fuchsia-400" },
+  { key: "As-Built Revision Completed", label: "As-Built Revision Completed", color: "bg-fuchsia-300" },
+  // Clarification
+  { key: "Needs Clarification", label: "Needs Clarification", color: "bg-amber-500" },
+  { key: "Needs Clarification from Customer", label: "Needs Clarification — Customer", color: "bg-amber-400" },
+  { key: "Needs Clarification from Sales", label: "Needs Clarification — Sales", color: "bg-amber-400" },
+  { key: "Needs Clarification from Operations", label: "Needs Clarification — Operations", color: "bg-amber-400" },
+  // Holds & special
+  { key: "Pending Resurvey", label: "Pending Resurvey", color: "bg-zinc-500" },
+  { key: "On Hold", label: "On Hold", color: "bg-zinc-400" },
+  { key: "No Design Needed", label: "No Design Needed", color: "bg-zinc-300" },
+  // New construction
+  { key: "New Construction - Design Needed", label: "New Construction — Design Needed", color: "bg-teal-500" },
+  { key: "New Construction - In Progress", label: "New Construction — In Progress", color: "bg-teal-400" },
+  { key: "New Construction - Ready for Review", label: "New Construction — Ready for Review", color: "bg-teal-300" },
+  { key: "New Construction - Design Completed", label: "New Construction — Completed", color: "bg-teal-200" },
+  // Xcel
+  { key: "Xcel - Design Needed", label: "Xcel — Design Needed", color: "bg-sky-500" },
+  { key: "Xcel - In Progress", label: "Xcel — In Progress", color: "bg-sky-400" },
+  { key: "Xcel - Site Plan & SLD Completed", label: "Xcel — Site Plan & SLD Completed", color: "bg-sky-300" },
+  // Archived
+  { key: "In Revision", label: "(Archived) Revision In Progress", color: "bg-stone-500" },
+  { key: "Revision Complete", label: "(Archived) Revision Complete", color: "bg-stone-400" },
+  { key: "Revision Initial Review", label: "(Archived) Revision Initial Review", color: "bg-stone-400" },
+  { key: "Revision Final Review", label: "(Archived) Revision Final Review", color: "bg-stone-400" },
+  { key: "Revision In Engineering", label: "(Archived) Revision In Engineering", color: "bg-stone-400" },
 ];
 
 const DA_STATUS_FUNNEL = [
@@ -136,7 +177,7 @@ export default function DEOverviewPage() {
       (p) => p.designStatus === "Ready for Design"
     ).length;
     const readyForReview = filteredProjects.filter(
-      (p) => p.designStatus === "Ready For Review"
+      (p) => p.designStatus === "Initial Review"
     ).length;
 
     // Pending DA: layoutStatus is a pending-approval status and not yet approved
@@ -160,12 +201,19 @@ export default function DEOverviewPage() {
         counts[p.designStatus] = (counts[p.designStatus] || 0) + 1;
       }
     });
-    const maxCount = Math.max(1, ...STATUS_FUNNEL.map((s) => counts[s.key] || 0));
-    return STATUS_FUNNEL.map((s) => ({
-      ...s,
-      count: counts[s.key] || 0,
-      pct: ((counts[s.key] || 0) / maxCount) * 100,
-    }));
+
+    // Build ordered list: known statuses first, then unknowns
+    const knownKeys = new Set(STATUS_FUNNEL.map((s) => s.key));
+    const known = STATUS_FUNNEL
+      .map((s) => ({ ...s, count: counts[s.key] || 0 }))
+      .filter((s) => s.count > 0);
+    const unknown = Object.entries(counts)
+      .filter(([key]) => !knownKeys.has(key))
+      .map(([key, count]) => ({ key, label: key, color: "bg-zinc-500", count }));
+    const all = [...known, ...unknown];
+
+    const maxCount = Math.max(1, ...all.map((s) => s.count));
+    return all.map((s) => ({ ...s, pct: (s.count / maxCount) * 100 }));
   }, [filteredProjects]);
 
   // ---- DA Status funnel ----
@@ -347,22 +395,26 @@ export default function DEOverviewPage() {
       <div className="mb-6 bg-surface border border-t-border rounded-xl p-6 shadow-card">
         <h2 className="text-lg font-semibold text-foreground mb-4">Design Status Funnel</h2>
         <div className="space-y-3">
-          {funnelData.map((s) => (
-            <div key={s.key} className="flex items-center gap-3">
-              <div className="w-44 text-sm text-muted truncate">{s.label}</div>
-              <div className="flex-1 h-7 bg-surface-2 rounded-full overflow-hidden">
-                <div
-                  className={`h-full ${s.color} rounded-full transition-all duration-500 flex items-center justify-end pr-2`}
-                  style={{ width: `${Math.max(s.pct, s.count > 0 ? 8 : 0)}%` }}
-                >
-                  {s.count > 0 && (
-                    <span className="text-xs font-semibold text-white">{s.count}</span>
-                  )}
+          {funnelData.length === 0 ? (
+            <p className="text-sm text-muted italic">No design status data for current filters.</p>
+          ) : (
+            funnelData.map((s) => (
+              <div key={s.key} className="flex items-center gap-3">
+                <div className="w-44 text-sm text-muted truncate">{s.label}</div>
+                <div className="flex-1 h-7 bg-surface-2 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full ${s.color} rounded-full transition-all duration-500 flex items-center justify-end pr-2`}
+                    style={{ width: `${Math.max(s.pct, s.count > 0 ? 8 : 0)}%` }}
+                  >
+                    {s.count > 0 && (
+                      <span className="text-xs font-semibold text-white">{s.count}</span>
+                    )}
+                  </div>
                 </div>
+                <div className="w-10 text-right text-sm font-medium text-foreground">{s.count}</div>
               </div>
-              <div className="w-10 text-right text-sm font-medium text-foreground">{s.count}</div>
-            </div>
-          ))}
+            ))
+          )}
         </div>
       </div>
 
