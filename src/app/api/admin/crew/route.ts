@@ -108,6 +108,23 @@ const TEAM_SEED_DATA: Array<{
   teamName: string;
   permissions: string[];
 }> = [
+  // ===== DTC Surveyors (added 3/2/2026) =====
+  {
+    name: "Mike Reso",
+    zuperSearchName: "Mike",
+    location: "DTC",
+    role: "surveyor",
+    teamName: "",
+    permissions: ["Site Survey"],
+  },
+  {
+    name: "Samuel Paro",
+    zuperSearchName: "Samuel",
+    location: "DTC",
+    role: "surveyor",
+    teamName: "",
+    permissions: ["Site Survey"],
+  },
   // ===== DTC Electricians =====
   {
     name: "Jeremy",

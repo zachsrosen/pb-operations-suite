@@ -121,6 +121,7 @@ interface CrewSchedule {
   userUid?: string; // Zuper user UID for assignments
   teamUid?: string; // Zuper team UID (required for assignment API)
   timezone?: string; // IANA timezone (defaults to "America/Denver" for CO locations)
+  onlyDates?: string[]; // If set, only generate slots on these specific dates (YYYY-MM-DD)
 }
 
 // Location → timezone mapping (imported from shared constants)
@@ -254,6 +255,28 @@ const CREW_SCHEDULES: CrewSchedule[] = [
       { day: 3, startTime: "09:00", endTime: "10:00" }, // Wed 9-10am PT
     ],
     jobTypes: ["survey"],
+  },
+
+  // TODO: Remove after 3/7/2026 — one-time DTC Friday survey availability for 3/6/2026 only
+  {
+    name: "Mike Reso",
+    location: "DTC",
+    reportLocation: "DTC",
+    schedule: [
+      { day: 5, startTime: "12:00", endTime: "16:00" }, // Fri 12-4pm
+    ],
+    jobTypes: ["survey"],
+    onlyDates: ["2026-03-06"],
+  },
+  {
+    name: "Samuel Paro",
+    location: "DTC",
+    reportLocation: "DTC",
+    schedule: [
+      { day: 5, startTime: "12:00", endTime: "16:00" }, // Fri 12-4pm
+    ],
+    jobTypes: ["survey"],
+    onlyDates: ["2026-03-06"],
   },
 
   // ============================================
@@ -449,6 +472,13 @@ export async function GET(request: NextRequest) {
         teamUid: s.teamUid,
         timezone: s.timezone,
       }));
+      // Append date-pinned hardcoded entries (onlyDates) — these are one-off
+      // overrides that don't exist in DB and must always be included.
+      const datePinnedEntries = CREW_SCHEDULES.filter(c => c.onlyDates && c.onlyDates.length > 0);
+      if (datePinnedEntries.length > 0) {
+        activeSchedules = [...activeSchedules, ...datePinnedEntries];
+        console.log(`[Zuper Availability] Appended ${datePinnedEntries.length} date-pinned schedule entries`);
+      }
       console.log(`[Zuper Availability] Using ${dbSchedules.length} crew schedules from DB`);
     } else {
       console.log("[Zuper Availability] No DB schedules found, using hardcoded fallback");
@@ -524,6 +554,9 @@ export async function GET(request: NextRequest) {
     for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
       const dayOfWeek = d.getDay();
       const dateStr = d.toISOString().split("T")[0];
+
+      // Skip if this crew is restricted to specific dates and today isn't one
+      if (crew.onlyDates && !crew.onlyDates.includes(dateStr)) continue;
 
       // Check if crew works on this day
       const shifts = crew.schedule.filter((s) => s.day === dayOfWeek);
