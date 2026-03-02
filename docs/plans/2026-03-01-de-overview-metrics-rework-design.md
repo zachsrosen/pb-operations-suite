@@ -8,7 +8,7 @@
 1. Approval rate formula is wrong — should be design approved / design approval sent (same cohort)
 2. Design Status funnel on de-overview shows only current D&E-stage projects (12) — correct behavior after stage-only fix, but users expected more
 3. No DA Status funnel on de-overview
-4. Design turnaround uses wrong date range (close → design complete instead of design start → draft complete)
+4. Design turnaround uses wrong date range (close → design complete instead of design start → date returned from designers)
 5. No design approval turnaround metric (DA sent → approved)
 6. Rate and turnaround metrics should be filterable by 30/60/90 day windows
 7. de-overview hero stats should be pipeline snapshot counts, not historical metrics
@@ -61,12 +61,18 @@ New section at top with segmented control toggle (30d / 60d / 90d, default 30d).
 
 | Card | Formula |
 |------|---------|
-| Avg Design Turnaround | Mean of (`designDraftDate` − `designStartDate`) in days, for projects where both exist AND `designDraftDate` in window. Subtitle: "Start → Draft" |
+| Avg Design Turnaround | Mean of (`dateReturnedFromDesigners` − `designStartDate`) in days, for projects where both exist AND `dateReturnedFromDesigners` in window. Subtitle: "Start → Returned" |
 | Avg DA Turnaround | Mean of (`designApprovalDate` − `designApprovalSentDate`) in days, for projects where both exist AND `designApprovalDate` in window. Subtitle: "Sent → Approved" |
 
-### 4. No data model changes
+### 4. Data model: add `dateReturnedFromDesigners`
 
-All required properties already exist on RawProject: `designStartDate`, `designDraftDate`, `designApprovalSentDate`, `designApprovalDate`, `layoutStatus`, `designStatus`, `stage`.
+New HubSpot property `date_returned_from_designers` (date type) must be added to:
+- `DEAL_PROPERTIES` in hubspot.ts
+- `Project` interface in hubspot.ts
+- Deal transform in hubspot.ts
+- `RawProject` interface in types.ts
+
+All other required properties already exist: `designStartDate`, `designDraftDate`, `designApprovalSentDate`, `designApprovalDate`, `layoutStatus`, `designStatus`, `stage`.
 
 ### 5. Files changed
 
