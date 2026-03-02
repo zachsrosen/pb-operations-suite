@@ -18,6 +18,10 @@ export async function GET(
 
   const { dealId } = await params;
 
+  if (!prisma) {
+    return NextResponse.json({ error: "Database not configured" }, { status: 503 });
+  }
+
   const latest = await Promise.all(
     VALID_SKILLS.map((skill) =>
       prisma.projectReview.findFirst({

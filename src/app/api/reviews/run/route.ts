@@ -85,6 +85,10 @@ export async function POST(request: NextRequest) {
 
   const result = await runChecks(skillName, { dealId, properties });
 
+  if (!prisma) {
+    return NextResponse.json({ error: "Database not configured" }, { status: 503 });
+  }
+
   const review = await prisma.projectReview.create({
     data: {
       dealId,
