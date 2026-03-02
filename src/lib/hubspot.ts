@@ -271,6 +271,18 @@ export interface Project {
   isParticipateEnergy: boolean;
   participateEnergyStatus: string | null;
 
+  // Preconstruction milestone booleans
+  isSiteSurveyScheduled: boolean;
+  isSiteSurveyCompleted: boolean;
+  isDASent: boolean;
+  isDesignApproved: boolean;
+  isDesignDrafted: boolean;
+  isDesignCompleted: boolean;
+  isPermitSubmitted: boolean;
+  isPermitIssued: boolean;
+  isInterconnectionSubmitted: boolean;
+  isInterconnectionApproved: boolean;
+
   // Incentive Programs
   threeceEvStatus: string | null;
   threeceBatteryStatus: string | null;
@@ -507,6 +519,19 @@ const DEAL_PROPERTIES = [
   "total_revision_count",
   "design_status",
   "layout_status", // design approval status
+
+  // Preconstruction milestone booleans
+  "is_site_survey_scheduled_",
+  "is_site_survey_completed_",
+  "is_da_sent_",
+  "layout_approved",
+  "is_design_drafted_",
+  "is_design_completed_",
+  "is_permit_submitted_",
+  "permit_issued_",
+  "is_interconnection_submitted_",
+  "interconnection_approved_",
+  "is_participate_energy",
 
   // Permit dates
   "permit_submit_date",
@@ -814,6 +839,18 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
     tags,
     isParticipateEnergy: isPE,
     participateEnergyStatus: deal.participate_energy_status ? String(deal.participate_energy_status) : null,
+
+    // Preconstruction milestone booleans
+    isSiteSurveyScheduled: String(deal.is_site_survey_scheduled_ || "").toLowerCase() === "true",
+    isSiteSurveyCompleted: String(deal.is_site_survey_completed_ || "").toLowerCase() === "true",
+    isDASent: String(deal.is_da_sent_ || "").toLowerCase() === "true",
+    isDesignApproved: String(deal.layout_approved || "").toLowerCase() === "true",
+    isDesignDrafted: String(deal.is_design_drafted_ || "").toLowerCase() === "true",
+    isDesignCompleted: String(deal.is_design_completed_ || "").toLowerCase() === "true",
+    isPermitSubmitted: String(deal.is_permit_submitted_ || "").toLowerCase() === "true",
+    isPermitIssued: String(deal.permit_issued_ || "").toLowerCase() === "true",
+    isInterconnectionSubmitted: String(deal.is_interconnection_submitted_ || "").toLowerCase() === "true",
+    isInterconnectionApproved: String(deal.interconnection_approved_ || "").toLowerCase() === "true",
 
     // Incentive Programs
     threeceEvStatus: deal.n3ce_ev_status ? String(deal.n3ce_ev_status) : null,

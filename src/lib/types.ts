@@ -25,6 +25,19 @@ export interface RawProject {
   daysSinceStageMovement?: number;
   isBlocked?: boolean;
   isParticipateEnergy?: boolean;
+
+  // Preconstruction milestone booleans
+  isSiteSurveyScheduled?: boolean;
+  isSiteSurveyCompleted?: boolean;
+  isDASent?: boolean;
+  isDesignApproved?: boolean;
+  isDesignDrafted?: boolean;
+  isDesignCompleted?: boolean;
+  isPermitSubmitted?: boolean;
+  isPermitIssued?: boolean;
+  isInterconnectionSubmitted?: boolean;
+  isInterconnectionApproved?: boolean;
+
   siteSurveyScheduleDate?: string;
   daysForInstallers?: number;
   daysForElectricians?: number;

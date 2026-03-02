@@ -143,12 +143,12 @@ export default function DEOverviewPage() {
         ? Math.round(turnarounds.reduce((a, b) => a + b, 0) / turnarounds.length)
         : 0;
 
-    // Approval rate: projects with designApprovalDate / projects with designCompletionDate
-    const completed = filteredProjects.filter((p) => p.designCompletionDate);
+    // Approval rate: projects with designApprovalDate / projects with designDraftDate
+    const drafted = filteredProjects.filter((p) => p.designDraftDate);
     const approved = filteredProjects.filter((p) => p.designApprovalDate);
     const approvalRate =
-      completed.length > 0
-        ? Math.round((approved.length / completed.length) * 100)
+      drafted.length > 0
+        ? Math.round((approved.length / drafted.length) * 100)
         : 0;
 
     // Flagged for system performance review
@@ -315,7 +315,7 @@ export default function DEOverviewPage() {
         <StatCard
           label="Approval Rate"
           value={loading ? null : `${heroMetrics.approvalRate}%`}
-          subtitle="Completed → Approved"
+          subtitle="Drafted → Approved"
           color="purple"
         />
         <StatCard
