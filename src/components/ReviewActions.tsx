@@ -94,11 +94,9 @@ export default function ReviewActions({ dealId, projectId, userRole }: ReviewAct
                 <span className="text-foreground">{f.message}</span>
               </div>
             ))}
-            {projectId && (
-              <a href={`/dashboards/reviews/${projectId}`} className="text-xs text-orange-500 hover:underline mt-1 inline-block">
-                View full review history →
-              </a>
-            )}
+            <a href={`/dashboards/reviews/${dealId}`} className="text-xs text-orange-500 hover:underline mt-1 inline-block">
+              View full review history →
+            </a>
           </div>
         ) : null
       )}
