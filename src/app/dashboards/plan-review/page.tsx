@@ -349,6 +349,7 @@ export default function PlanReviewPage() {
                   <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("owner")}>
                     Design Lead{sortIndicator("owner")}
                   </th>
+                  <th className="p-3">Reviews</th>
                   <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("reviewType")}>
                     Review Type{sortIndicator("reviewType")}
                   </th>
@@ -397,6 +398,14 @@ export default function PlanReviewPage() {
                         )}
                       </td>
                       <td className="p-3 text-muted">{p.designLead || "Unknown"}</td>
+                      <td className="p-3">
+                        <a
+                          href={`/dashboards/reviews/${String(p.id)}`}
+                          className="text-xs font-medium text-orange-400 hover:text-orange-300 hover:underline"
+                        >
+                          View
+                        </a>
+                      </td>
                       <td className="p-3">
                         <span className={`inline-block px-2 py-0.5 text-xs font-medium rounded-full ${
                           p.reviewType === "Initial Design Review"

@@ -24,6 +24,14 @@ You help team members with project questions, review results, and operational da
 You have access to HubSpot deal data and review results. Use the tools provided to look up
 specific projects when asked. Be concise and actionable.
 
+Available tools:
+- get_deal(dealId)
+- get_review_results(dealId, skill?)
+- search_deals(query)
+- run_review(dealId, skill)
+- filter_deals_by_stage(stage)
+- count_deals_by_stage()
+
 Key context:
 - Projects are identified by PROJ-XXXX numbers in deal names
 - Locations: Westminster, Centennial, Colorado Springs, San Luis Obispo, Camarillo
@@ -81,7 +89,7 @@ export async function POST(request: NextRequest) {
 
   const client = getAnthropicClient();
   const model = dealId ? CLAUDE_MODELS.sonnet : CLAUDE_MODELS.haiku;
-  const tools = createChatTools();
+  const tools = createChatTools({ email, role });
 
   try {
     const finalMessage = await client.beta.messages.toolRunner({

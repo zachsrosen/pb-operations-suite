@@ -107,6 +107,7 @@ interface DashboardShellProps {
   subtitle?: string;
   accentColor?: string;
   lastUpdated?: string | null;
+  dealId?: string;
   headerRight?: ReactNode;
   children: ReactNode;
   /** Breadcrumb trail (e.g. [{ label: "Operations", href: "/" }, { label: "At-Risk" }]) */
@@ -122,6 +123,7 @@ export default function DashboardShell({
   subtitle,
   accentColor = "orange",
   lastUpdated,
+  dealId,
   headerRight,
   children,
   breadcrumbs,
@@ -260,7 +262,7 @@ export default function DashboardShell({
         </div>
       </header>
       <main className={`${containerClass} py-6`}>{children}</main>
-      <ChatWidget />
+      <ChatWidget dealId={dealId} />
     </div>
   );
 }

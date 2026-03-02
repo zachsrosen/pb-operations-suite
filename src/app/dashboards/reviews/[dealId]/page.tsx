@@ -21,7 +21,7 @@ export default async function ReviewHistoryPage({ params }: Props) {
   const projectId = reviews[0]?.projectId || dealId;
 
   return (
-    <DashboardShell title={`Reviews — ${projectId}`} accentColor="orange">
+    <DashboardShell title={`Reviews — ${projectId}`} accentColor="orange" dealId={dealId}>
       <div className="space-y-6">
         {/* Run review actions */}
         <ReviewActions dealId={dealId} userRole={userRole} />
