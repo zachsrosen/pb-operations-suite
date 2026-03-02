@@ -7,7 +7,12 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { formatCurrency } from "@/lib/format";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { useProjectData } from "@/hooks/useProjectData";
+import { useBaselineTable } from "@/hooks/useBaselineTable";
 import { usePEFilters, type PEFilters } from "@/stores/dashboard-filters";
+import type { BaselineTable } from "@/lib/forecasting";
+import { computeProjectForecasts } from "@/lib/forecasting";
+import type { Project } from "@/lib/hubspot";
+import { ForecastBasisBadge } from "@/components/ui/ForecastBasisBadge";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -161,7 +166,60 @@ function generateWeeklyPeriods(): RevenuePeriod[] {
   return weeks;
 }
 
-function transformProject(p: APIProject): PEProject {
+function transformProject(
+  p: APIProject,
+  baselineTable?: BaselineTable | null,
+): PEProject {
+  let forecastInstall = p.forecastedInstallDate || p.constructionScheduleDate;
+  let installBasis = p.constructionScheduleDate ? "Scheduled" : "Forecast";
+  let forecastInspection = p.forecastedInspectionDate || p.inspectionScheduleDate;
+  let inspectionBasis = p.inspectionScheduleDate ? "Scheduled" : "Forecast";
+  let forecastPto = p.forecastedPtoDate;
+  let ptoBasis = p.ptoGrantedDate ? "Completed" : "Forecast";
+  let daysToInstall = p.daysToInstall;
+  let daysToInspection = p.daysToInspection;
+  let daysToPto = p.daysToPto;
+
+  // Use forecasting engine when baseline table is available
+  if (baselineTable && Object.keys(baselineTable).length > 0 && p.closeDate) {
+    const projectLike = {
+      pbLocation: p.pbLocation || "Unknown",
+      ahj: p.ahj || "Unknown",
+      utility: p.utility || "Unknown",
+      closeDate: p.closeDate,
+      designCompletionDate: p.designApprovalDate ?? null,
+      permitSubmitDate: null,
+      permitIssueDate: null,
+      interconnectionSubmitDate: null,
+      interconnectionApprovalDate: null,
+      readyToBuildDate: null,
+      constructionCompleteDate: p.constructionCompleteDate ?? null,
+      inspectionPassDate: p.inspectionPassDate ?? null,
+      ptoGrantedDate: p.ptoGrantedDate ?? null,
+    } as Project;
+
+    const { live } = computeProjectForecasts(projectLike, baselineTable);
+
+    if (live.install?.date) {
+      forecastInstall = live.install.date;
+      installBasis = live.install.basis === "actual" ? "Completed" : live.install.basis;
+    }
+    if (live.inspection?.date) {
+      forecastInspection = live.inspection.date;
+      inspectionBasis = live.inspection.basis === "actual" ? "Completed" : live.inspection.basis;
+    }
+    if (live.pto?.date) {
+      forecastPto = live.pto.date;
+      ptoBasis = live.pto.basis === "actual" ? "Completed" : live.pto.basis;
+    }
+
+    const now = Date.now();
+    const MS_PER_DAY = 86_400_000;
+    if (forecastInstall) daysToInstall = Math.floor((new Date(forecastInstall).getTime() - now) / MS_PER_DAY);
+    if (forecastInspection) daysToInspection = Math.floor((new Date(forecastInspection).getTime() - now) / MS_PER_DAY);
+    if (forecastPto) daysToPto = Math.floor((new Date(forecastPto).getTime() - now) / MS_PER_DAY);
+  }
+
   return {
     id: p.id,
     name: p.name,
@@ -179,16 +237,15 @@ function transformProject(p: APIProject): PEProject {
     inspection_scheduled: p.inspectionScheduleDate,
     inspection_complete: p.inspectionPassDate,
     pto_granted: p.ptoGrantedDate,
-    forecast_install: p.forecastedInstallDate || p.constructionScheduleDate,
-    install_basis: p.constructionScheduleDate ? "Scheduled" : "Forecast",
-    days_to_install: p.daysToInstall,
-    forecast_inspection:
-      p.forecastedInspectionDate || p.inspectionScheduleDate,
-    inspection_basis: p.inspectionScheduleDate ? "Scheduled" : "Forecast",
-    days_to_inspection: p.daysToInspection,
-    forecast_pto: p.forecastedPtoDate,
-    pto_basis: p.ptoGrantedDate ? "Completed" : "Forecast",
-    days_to_pto: p.daysToPto,
+    forecast_install: forecastInstall,
+    install_basis: installBasis,
+    days_to_install: daysToInstall,
+    forecast_inspection: forecastInspection,
+    inspection_basis: inspectionBasis,
+    days_to_inspection: daysToInspection,
+    forecast_pto: forecastPto,
+    pto_basis: ptoBasis,
+    days_to_pto: daysToPto,
     days_since_close: p.daysSinceClose,
   };
 }
@@ -764,12 +821,17 @@ export default function PEDashboardPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
-  const { data: projects, loading, error, refetch } = useProjectData<PEProject[]>({
+  const { baselineTable } = useBaselineTable();
+
+  const { data: rawProjects, loading, error, refetch } = useProjectData<APIProject[]>({
     params: { context: "pe" },
-    transform: (raw: unknown) =>
-      (raw as APIResponse).projects.map(transformProject),
+    transform: (raw: unknown) => (raw as APIResponse).projects,
   });
-  const safeProjects = projects ?? [];
+
+  const safeProjects: PEProject[] = useMemo(
+    () => (rawProjects ?? []).map((p) => transformProject(p, baselineTable)),
+    [rawProjects, baselineTable],
+  );
 
   // Persisted filters (survive navigation)
   const { filters: peFilters, setFilters: setPEFilters } = usePEFilters();

@@ -43,6 +43,10 @@ export const queryKeys = {
     root: ["optimizer"] as const,
     projects: () => [...queryKeys.optimizer.root, "projects"] as const,
   },
+  forecasting: {
+    root: ["forecasting"] as const,
+    baselines: () => [...queryKeys.forecasting.root, "baselines"] as const,
+  },
 } as const;
 
 /**

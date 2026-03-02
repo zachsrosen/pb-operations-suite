@@ -6,6 +6,7 @@ import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { LiveIndicator } from "@/components/ui/LiveIndicator";
 import { useProjectData } from "@/hooks/useProjectData";
+import { useBaselineTable } from "@/hooks/useBaselineTable";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { transformProject } from "@/lib/transforms";
 import { formatCurrencyCompact } from "@/lib/format";
@@ -45,12 +46,17 @@ export default function LocationComparisonPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
-  const { data: projectData, loading, error, lastUpdated, refetch } = useProjectData<TransformedProject[]>({
+  const { baselineTable } = useBaselineTable();
+
+  const { data: rawProjects, loading, error, lastUpdated, refetch } = useProjectData<RawProject[]>({
     params: { context: "executive" },
-    transform: (res: unknown) => ((res as { projects: RawProject[] }).projects || []).map(transformProject),
+    transform: (res: unknown) => (res as { projects: RawProject[] }).projects || [],
   });
 
-  const allProjects = useMemo(() => projectData || [], [projectData]);
+  const allProjects: TransformedProject[] = useMemo(
+    () => (rawProjects || []).map((p) => transformProject(p, baselineTable)),
+    [rawProjects, baselineTable],
+  );
 
   /* ---- Track dashboard view on load ---- */
   useEffect(() => {
