@@ -23,6 +23,15 @@ const STATUS_FUNNEL = [
   { key: "Design Complete", label: "Design Complete", color: "bg-emerald-500" },
 ];
 
+const DA_STATUS_FUNNEL = [
+  { key: "Draft Created", label: "Draft Created", color: "bg-slate-500" },
+  { key: "Draft Complete", label: "Draft Complete", color: "bg-blue-500" },
+  { key: "Sent For Approval", label: "Sent For Approval", color: "bg-yellow-500" },
+  { key: "Resent For Approval", label: "Resent For Approval", color: "bg-orange-500" },
+  { key: "Review In Progress", label: "Review In Progress", color: "bg-purple-500" },
+  { key: "Approved", label: "Approved", color: "bg-emerald-500" },
+];
+
 // pbLocation values: "Westminster", "Centennial", "Colorado Springs", "San Luis Obispo", "Camarillo"
 const CO_LOCATIONS = ["Westminster", "Centennial", "Colorado Springs"];
 const CA_LOCATIONS = ["San Luis Obispo", "Camarillo"];
@@ -122,34 +131,25 @@ export default function DEOverviewPage() {
 
   // ---- Hero metrics ----
   const heroMetrics = useMemo(() => {
-    const activeDE = filteredProjects.filter((p) => p.stage === "Design & Engineering");
+    const activeCount = filteredProjects.length;
+    const readyForDesign = filteredProjects.filter(
+      (p) => p.designStatus === "Ready for Design"
+    ).length;
+    const readyForReview = filteredProjects.filter(
+      (p) => p.designStatus === "Ready For Review"
+    ).length;
 
-    // Avg turnaround: close -> designCompletionDate for completed designs
-    const turnarounds = filteredProjects
-      .filter((p) => p.closeDate && p.designCompletionDate)
-      .map((p) => {
-        const d1 = new Date(p.closeDate! + "T12:00:00");
-        const d2 = new Date(p.designCompletionDate! + "T12:00:00");
-        return Math.floor((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24));
-      })
-      .filter((d) => d >= 0);
-    const avgTurnaround =
-      turnarounds.length > 0
-        ? Math.round(turnarounds.reduce((a, b) => a + b, 0) / turnarounds.length)
-        : 0;
+    // Pending DA: layoutStatus is a pending-approval status and not yet approved
+    const PENDING_DA_STATUSES = [
+      "Draft Created", "Draft Complete", "Sent For Approval",
+      "Resent For Approval", "Sent to Customer", "Review In Progress",
+      "Pending Review", "Ready For Review", "Ready",
+    ];
+    const pendingDA = filteredProjects.filter(
+      (p) => p.layoutStatus && PENDING_DA_STATUSES.includes(p.layoutStatus)
+    ).length;
 
-    // Approval rate: projects with designApprovalDate / projects with designDraftDate
-    const drafted = filteredProjects.filter((p) => p.designDraftDate);
-    const approved = filteredProjects.filter((p) => p.designApprovalDate);
-    const approvalRate =
-      drafted.length > 0
-        ? Math.round((approved.length / drafted.length) * 100)
-        : 0;
-
-    // Flagged for system performance review
-    const flagged = filteredProjects.filter((p) => p.systemPerformanceReview).length;
-
-    return { activeCount: activeDE.length, avgTurnaround, approvalRate, flagged };
+    return { activeCount, readyForDesign, readyForReview, pendingDA };
   }, [filteredProjects]);
 
   // ---- Status funnel ----
@@ -166,6 +166,29 @@ export default function DEOverviewPage() {
       count: counts[s.key] || 0,
       pct: ((counts[s.key] || 0) / maxCount) * 100,
     }));
+  }, [filteredProjects]);
+
+  // ---- DA Status funnel ----
+  const daFunnelData = useMemo(() => {
+    const counts: Record<string, number> = {};
+    filteredProjects.forEach((p) => {
+      if (p.layoutStatus) {
+        counts[p.layoutStatus] = (counts[p.layoutStatus] || 0) + 1;
+      }
+    });
+
+    // Build ordered list: known statuses first, then unknowns
+    const knownKeys = new Set(DA_STATUS_FUNNEL.map((s) => s.key));
+    const known = DA_STATUS_FUNNEL
+      .map((s) => ({ ...s, count: counts[s.key] || 0 }))
+      .filter((s) => s.count > 0);
+    const unknown = Object.entries(counts)
+      .filter(([key]) => !knownKeys.has(key))
+      .map(([key, count]) => ({ key, label: key, color: "bg-zinc-500", count }));
+    const all = [...known, ...unknown];
+
+    const maxCount = Math.max(1, ...all.map((s) => s.count));
+    return all.map((s) => ({ ...s, pct: (s.count / maxCount) * 100 }));
   }, [filteredProjects]);
 
   // ---- CO vs CA split ----
@@ -304,21 +327,18 @@ export default function DEOverviewPage() {
           color="purple"
         />
         <StatCard
-          label="Avg Design Turnaround"
-          value={loading ? null : `${heroMetrics.avgTurnaround}d`}
-          subtitle="Close → Design Complete"
+          label="Ready for Design"
+          value={loading ? null : heroMetrics.readyForDesign}
           color="purple"
         />
         <StatCard
-          label="Approval Rate"
-          value={loading ? null : `${heroMetrics.approvalRate}%`}
-          subtitle="Drafted → Approved"
+          label="Ready for Review"
+          value={loading ? null : heroMetrics.readyForReview}
           color="purple"
         />
         <StatCard
-          label="Flagged for Review"
-          value={loading ? null : heroMetrics.flagged}
-          subtitle="System Performance Review"
+          label="Pending DA"
+          value={loading ? null : heroMetrics.pendingDA}
           color="purple"
         />
       </div>
@@ -343,6 +363,33 @@ export default function DEOverviewPage() {
               <div className="w-10 text-right text-sm font-medium text-foreground">{s.count}</div>
             </div>
           ))}
+        </div>
+      </div>
+
+      {/* DA Status Funnel */}
+      <div className="mb-6 bg-surface border border-t-border rounded-xl p-6 shadow-card">
+        <h2 className="text-lg font-semibold text-foreground mb-4">DA Status Funnel</h2>
+        <div className="space-y-3">
+          {daFunnelData.length === 0 ? (
+            <p className="text-sm text-muted italic">No DA status data for current filters.</p>
+          ) : (
+            daFunnelData.map((s) => (
+              <div key={s.key} className="flex items-center gap-3">
+                <div className="w-44 text-sm text-muted truncate">{s.label}</div>
+                <div className="flex-1 h-7 bg-surface-2 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full ${s.color} rounded-full transition-all duration-500 flex items-center justify-end pr-2`}
+                    style={{ width: `${Math.max(s.pct, s.count > 0 ? 8 : 0)}%` }}
+                  >
+                    {s.count > 0 && (
+                      <span className="text-xs font-semibold text-white">{s.count}</span>
+                    )}
+                  </div>
+                </div>
+                <div className="w-10 text-right text-sm font-medium text-foreground">{s.count}</div>
+              </div>
+            ))
+          )}
         </div>
       </div>
 
