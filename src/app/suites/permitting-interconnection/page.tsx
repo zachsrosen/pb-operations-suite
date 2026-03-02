@@ -15,7 +15,7 @@ const LINKS: SuitePageCard[] = [
     title: "P&I Metrics",
     description: "Permits submitted/issued/pending, interconnection apps, PTO status, revenue and deal counts.",
     tag: "METRICS",
-    section: "Pipeline",
+    section: "Analytics",
   },
   {
     href: "/dashboards/pi-permit-action-queue",
