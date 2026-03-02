@@ -1,0 +1,190 @@
+/**
+ * HubSpot Deal Stage Change Webhook — Design Review Gate
+ *
+ * POST /api/webhooks/hubspot/design-review
+ *
+ * Triggered by HubSpot workflow when a deal enters a design-review gate stage.
+ * Validates the HubSpot webhook signature, then runs all design-review checks
+ * in the background via waitUntil() (respond 200 immediately so HubSpot
+ * doesn't retry).
+ *
+ * Calls runChecks() directly — no HTTP self-call. This avoids VERCEL_URL
+ * protocol issues and internal auth complexity.
+ *
+ * Security: HubSpot signature validation inside the route handler (not
+ * middleware). The exact path is in PUBLIC_API_ROUTES to skip session-based auth.
+ */
+
+import { NextRequest, NextResponse } from "next/server";
+import { waitUntil } from "@vercel/functions";
+import { prisma, logActivity } from "@/lib/db";
+import { validateHubSpotWebhook } from "@/lib/hubspot-webhook-auth";
+import { runChecks } from "@/lib/checks/runner";
+import { PIPELINE_ACTOR } from "@/lib/actor-context";
+// Side-effect import: registers design-review checks with the engine
+import "@/lib/checks/design-review";
+
+export const runtime = "nodejs";
+export const maxDuration = 300;
+
+// ---------------------------------------------------------------------------
+// HubSpot webhook event shape
+// ---------------------------------------------------------------------------
+
+interface HubSpotWebhookEvent {
+  eventId: number;
+  subscriptionType: string;
+  propertyName?: string;
+  propertyValue?: string;
+  objectId: number;
+  changeSource?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Deal properties to fetch (same set as POST /api/reviews/run)
+// ---------------------------------------------------------------------------
+
+const DEAL_PROPERTIES = [
+  "dealname",
+  "dealstage",
+  "pipeline",
+  "amount",
+  "pb_location",
+  "design_status",
+  "permitting_status",
+  "site_survey_status",
+  "install_date",
+  "inspection_date",
+  "pto_date",
+  "hubspot_owner_id",
+  "closedate",
+];
+
+// ---------------------------------------------------------------------------
+// Background worker
+// ---------------------------------------------------------------------------
+
+async function processDesignReview(dealId: string, eventId: number) {
+  // 1. Fetch deal properties from HubSpot
+  const { getHubSpotClient } = await import("@/lib/hubspot");
+  const client = getHubSpotClient();
+  const deal = await client.crm.deals.basicApi.getById(dealId, DEAL_PROPERTIES);
+  const properties = deal.properties;
+
+  // 2. Run checks directly (pure function, no HTTP hop)
+  const result = await runChecks("design-review", { dealId, properties });
+
+  // 3. Extract projectId from deal name
+  const projectIdMatch = properties.dealname?.match(/PROJ-\d+/);
+  const projectId = projectIdMatch?.[0] ?? null;
+
+  // 4. Save to ProjectReview table
+  await prisma.projectReview.create({
+    data: {
+      dealId,
+      projectId,
+      skill: "design-review",
+      trigger: "webhook",
+      triggeredBy: "system",
+      findings: result.findings,
+      errorCount: result.errorCount,
+      warningCount: result.warningCount,
+      passed: result.passed,
+      durationMs: result.durationMs,
+    },
+  });
+
+  // 5. Log activity
+  await logActivity({
+    type: "DESIGN_REVIEW_COMPLETED",
+    description: `Design review ${result.passed ? "passed" : "failed"} for deal ${dealId} (${result.errorCount} errors, ${result.warningCount} warnings)`,
+    userEmail: PIPELINE_ACTOR.email,
+    userName: PIPELINE_ACTOR.name,
+    entityType: "review",
+    entityId: dealId,
+    entityName: projectId ?? dealId,
+    metadata: {
+      event: "design_review_completed",
+      dealId,
+      eventId,
+      skill: "design-review",
+      passed: result.passed,
+      errorCount: result.errorCount,
+      warningCount: result.warningCount,
+      durationMs: result.durationMs,
+    },
+    requestPath: "/api/webhooks/hubspot/design-review",
+    requestMethod: "POST",
+  });
+
+  // TODO: Create HubSpot task if review failed
+  // TODO: Send Gmail notification to design team
+
+  console.log(
+    `[design-review] Deal ${dealId}: ${result.passed ? "PASSED" : "FAILED"} (${result.errorCount}E/${result.warningCount}W) in ${result.durationMs}ms`
+  );
+}
+
+// ---------------------------------------------------------------------------
+// POST handler
+// ---------------------------------------------------------------------------
+
+export async function POST(req: NextRequest) {
+  if (!prisma) {
+    return NextResponse.json({ error: "Database not configured" }, { status: 503 });
+  }
+
+  // -- 1. Read raw body (needed for signature validation) --
+  const rawBody = await req.text();
+
+  // -- 2. Validate HubSpot signature --
+  const signature = req.headers.get("x-hubspot-signature-v3") ?? "";
+  const timestamp = req.headers.get("x-hubspot-request-timestamp") ?? "";
+
+  const validation = validateHubSpotWebhook({
+    rawBody,
+    signature,
+    timestamp,
+    requestUrl: req.url,
+    method: "POST",
+  });
+
+  if (!validation.valid) {
+    console.warn(`[design-review] Signature validation failed: ${validation.error}`);
+    return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+  }
+
+  // -- 3. Parse payload --
+  let events: HubSpotWebhookEvent[];
+  try {
+    events = JSON.parse(rawBody) as HubSpotWebhookEvent[];
+    if (!Array.isArray(events)) events = [events];
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  // -- 4. Process each event --
+  const triggered: string[] = [];
+
+  for (const event of events) {
+    // Only handle deal property changes
+    if (event.subscriptionType !== "deal.propertyChange") continue;
+    if (event.propertyName !== "dealstage") continue;
+
+    const dealId = String(event.objectId);
+
+    // Run design review in background
+    waitUntil(
+      processDesignReview(dealId, event.eventId).catch((err) => {
+        console.error(
+          `[design-review] Unhandled error for deal ${dealId}:`,
+          err
+        );
+      })
+    );
+
+    triggered.push(dealId);
+  }
+
+  return NextResponse.json({ status: "ok", triggered });
+}
