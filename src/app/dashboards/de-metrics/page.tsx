@@ -83,6 +83,17 @@ export default function DEMetricsPage() {
     }
   }, [sortKey]);
 
+  const [timeWindow, setTimeWindow] = useState<30 | 60 | 90>(30);
+
+  // Helper: is date within the last N days?
+  const isInWindow = useCallback((dateStr: string | undefined | null, days: number) => {
+    if (!dateStr) return false;
+    const d = new Date(dateStr + "T12:00:00");
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    return d >= cutoff;
+  }, []);
+
   // ---- Build filter option lists ----
   const locationOptions: FilterOption[] = useMemo(
     () =>
@@ -161,6 +172,59 @@ export default function DEMetricsPage() {
       pending: { count: pending.length, revenue: pending.reduce((s, p) => s + (p.amount || 0), 0) },
     };
   }, [designProjects]);
+
+  // ---- Time-windowed performance metrics ----
+  const windowedMetrics = useMemo(() => {
+    // Approval volume (independent cohorts)
+    const sentInWindow = designProjects.filter((p) =>
+      isInWindow(p.designApprovalSentDate, timeWindow)
+    );
+    const approvedInWindow = designProjects.filter((p) =>
+      isInWindow(p.designApprovalDate, timeWindow)
+    );
+
+    // Approval rate (same cohort: sent in window, of those how many approved)
+    const sentAndApproved = sentInWindow.filter((p) => p.designApprovalDate);
+    const approvalRate = sentInWindow.length > 0
+      ? Math.round((sentAndApproved.length / sentInWindow.length) * 100)
+      : 0;
+
+    // Design turnaround: designStartDate → dateReturnedFromDesigners
+    const designTurnarounds = designProjects
+      .filter((p) => p.designStartDate && p.dateReturnedFromDesigners && isInWindow(p.dateReturnedFromDesigners, timeWindow))
+      .map((p) => {
+        const start = new Date(p.designStartDate! + "T12:00:00");
+        const end = new Date(p.dateReturnedFromDesigners! + "T12:00:00");
+        return Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+      })
+      .filter((d) => d >= 0);
+    const avgDesignTurnaround = designTurnarounds.length > 0
+      ? Math.round(designTurnarounds.reduce((a, b) => a + b, 0) / designTurnarounds.length)
+      : 0;
+
+    // DA turnaround: designApprovalSentDate → designApprovalDate
+    const daTurnarounds = designProjects
+      .filter((p) => p.designApprovalSentDate && p.designApprovalDate && isInWindow(p.designApprovalDate, timeWindow))
+      .map((p) => {
+        const start = new Date(p.designApprovalSentDate! + "T12:00:00");
+        const end = new Date(p.designApprovalDate! + "T12:00:00");
+        return Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+      })
+      .filter((d) => d >= 0);
+    const avgDATurnaround = daTurnarounds.length > 0
+      ? Math.round(daTurnarounds.reduce((a, b) => a + b, 0) / daTurnarounds.length)
+      : 0;
+
+    return {
+      sentCount: sentInWindow.length,
+      approvedCount: approvedInWindow.length,
+      approvalRate,
+      avgDesignTurnaround,
+      designTurnaroundN: designTurnarounds.length,
+      avgDATurnaround,
+      daTurnaroundN: daTurnarounds.length,
+    };
+  }, [designProjects, timeWindow, isInWindow]);
 
   // ---- Design Status Metrics ----
   const designMetrics = useMemo(() => {
@@ -298,6 +362,67 @@ export default function DEMetricsPage() {
             Clear All
           </button>
         )}
+      </div>
+
+      {/* Time-Windowed Performance */}
+      <div className="mb-6">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-lg font-semibold text-foreground">Performance</h2>
+          <div className="flex bg-surface-2 rounded-lg p-0.5 border border-t-border">
+            {([30, 60, 90] as const).map((d) => (
+              <button
+                key={d}
+                onClick={() => setTimeWindow(d)}
+                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                  timeWindow === d
+                    ? "bg-purple-600 text-white shadow-sm"
+                    : "text-muted hover:text-foreground"
+                }`}
+              >
+                {d}d
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Approval stats */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4 stagger-grid">
+          <MetricCard
+            label="DA Sent"
+            value={loading ? "\u2014" : String(windowedMetrics.sentCount)}
+            sub={`Last ${timeWindow} days`}
+            border="border-l-4 border-l-blue-500"
+          />
+          <MetricCard
+            label="DA Approved"
+            value={loading ? "\u2014" : String(windowedMetrics.approvedCount)}
+            sub={`Last ${timeWindow} days`}
+            border="border-l-4 border-l-emerald-500"
+            valueColor="text-emerald-400"
+          />
+          <MetricCard
+            label="Approval Rate"
+            value={loading ? "\u2014" : `${windowedMetrics.approvalRate}%`}
+            sub={`Sent in window \u2192 approved (n=${windowedMetrics.sentCount})`}
+            border="border-l-4 border-l-indigo-500"
+          />
+        </div>
+
+        {/* Turnaround stats */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 stagger-grid">
+          <MetricCard
+            label="Avg Design Turnaround"
+            value={loading ? "\u2014" : `${windowedMetrics.avgDesignTurnaround}d`}
+            sub={`Start \u2192 Returned (n=${windowedMetrics.designTurnaroundN})`}
+            border="border-l-4 border-l-purple-500"
+          />
+          <MetricCard
+            label="Avg DA Turnaround"
+            value={loading ? "\u2014" : `${windowedMetrics.avgDATurnaround}d`}
+            sub={`Sent \u2192 Approved (n=${windowedMetrics.daTurnaroundN})`}
+            border="border-l-4 border-l-cyan-500"
+          />
+        </div>
       </div>
 
       {/* Design Approvals Section */}
