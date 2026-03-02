@@ -28,7 +28,8 @@ Available tools:
 - get_deal(dealId)
 - get_review_results(dealId, skill?)
 - search_deals(query)
-- run_review(dealId, skill)
+- run_review(dealId) — starts async design review, returns reviewId
+- get_review_status(reviewId) — poll for review completion
 - filter_deals_by_stage(stage)
 - count_deals_by_stage()
 

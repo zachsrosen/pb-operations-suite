@@ -17,6 +17,7 @@ import {
   failReviewRun,
   DuplicateReviewError,
 } from "@/lib/review-lock";
+import { safeWaitUntil } from "@/lib/safe-wait-until";
 import "@/lib/checks/design-review";
 
 const REVIEW_DEAL_PROPERTIES = [
@@ -186,10 +187,8 @@ export function createChatTools(context: ChatToolContext) {
         }
       })();
 
-      // Fire-and-forget (non-durable in non-Vercel environments)
-      reviewPromise.catch((err) =>
-        console.error("[chat-tools] Review background error:", err)
-      );
+      // Anchor to Vercel runtime when available; falls back to fire-and-forget locally
+      safeWaitUntil(reviewPromise);
 
       return JSON.stringify({
         status: "running",

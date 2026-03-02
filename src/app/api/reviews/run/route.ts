@@ -25,22 +25,8 @@ import {
   DuplicateReviewError,
 } from "@/lib/review-lock";
 // Side-effect import: registers design-review checks with the engine
+import { safeWaitUntil } from "@/lib/safe-wait-until";
 import "@/lib/checks/design-review";
-
-// ---------------------------------------------------------------------------
-// safeWaitUntil — background execution that works on Vercel + local
-// ---------------------------------------------------------------------------
-
-function safeWaitUntil(promise: Promise<void>) {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { waitUntil } = require("@vercel/functions");
-    waitUntil(promise);
-  } catch {
-    // Not on Vercel — run in background without waitUntil (non-durable)
-    promise.catch((err) => console.error("[review] Background error:", err));
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Deal properties to fetch

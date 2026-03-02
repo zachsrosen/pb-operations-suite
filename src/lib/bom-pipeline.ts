@@ -700,6 +700,7 @@ export async function runDesignCompletePipeline(
         designFolderUrl: capturedDesignFolderUrl,
         plansetFileName: capturedPlansetName,
         pbLocation: capturedPbLocation,
+        snapshotUrl: getBomSnapshotUrl(dealId),
         durationMs,
         attempt: retryObs.attempt,
         retried: retryObs.retried,
