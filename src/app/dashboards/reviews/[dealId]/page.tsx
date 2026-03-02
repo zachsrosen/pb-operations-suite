@@ -24,7 +24,7 @@ export default async function ReviewHistoryPage({ params }: Props) {
     <DashboardShell title={`Reviews — ${projectId}`} accentColor="orange">
       <div className="space-y-6">
         {/* Run review actions */}
-        <ReviewActions dealId={dealId} projectId={projectId} userRole={userRole} />
+        <ReviewActions dealId={dealId} userRole={userRole} />
 
         <div className="grid grid-cols-3 gap-4">
           {["design-review", "engineering-review", "sales-advisor"].map((skill) => {

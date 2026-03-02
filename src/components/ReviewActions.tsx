@@ -5,7 +5,6 @@ import type { SkillName } from "@/lib/checks/types";
 
 interface ReviewActionsProps {
   dealId: string;
-  projectId?: string;
   userRole: string;
 }
 
@@ -23,7 +22,7 @@ const SKILL_CONFIG: Array<{ skill: SkillName; label: string; roles: string[] }> 
   { skill: "sales-advisor", label: "Sales Check", roles: ["ADMIN", "OWNER", "MANAGER", "SALES"] },
 ];
 
-export default function ReviewActions({ dealId, projectId, userRole }: ReviewActionsProps) {
+export default function ReviewActions({ dealId, userRole }: ReviewActionsProps) {
   const [loading, setLoading] = useState<string | null>(null);
   const [results, setResults] = useState<Record<string, ReviewResult>>({});
 
