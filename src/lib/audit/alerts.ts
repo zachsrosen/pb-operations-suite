@@ -383,6 +383,63 @@ export async function sendDailyDigest(
   return { sent: true };
 }
 
+/**
+ * Send a cron health alert email when a scheduled job fails or is degraded.
+ */
+export async function sendCronHealthAlert(
+  jobName: string,
+  reason: string
+): Promise<DigestResult> {
+  if (ADMIN_EMAILS.length === 0) {
+    return { sent: false, reason: "no admin emails configured" };
+  }
+
+  const resend = getResendClient();
+  if (!resend) {
+    return { sent: false, reason: "resend not configured" };
+  }
+
+  const subject = `[CRON ALERT] ${jobName} issue`;
+  const html = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto;">
+      <div style="border-left: 4px solid #dc2626; padding: 16px; margin-bottom: 16px;">
+        <h2 style="margin: 0 0 4px 0; color: #b91c1c;">Cron Health Alert</h2>
+        <p style="margin: 0; color: #6b7280; font-size: 14px;">PB Operations Suite</p>
+      </div>
+      <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+        <tr style="border-bottom: 1px solid #e5e7eb;">
+          <td style="padding: 8px 12px; font-weight: 600; color: #374151; width: 160px;">Job</td>
+          <td style="padding: 8px 12px; color: #111827;">${jobName}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #e5e7eb;">
+          <td style="padding: 8px 12px; font-weight: 600; color: #374151;">Reason</td>
+          <td style="padding: 8px 12px; color: #111827;">${reason}</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px 12px; font-weight: 600; color: #374151;">Timestamp (UTC)</td>
+          <td style="padding: 8px 12px; color: #111827;">${new Date().toISOString()}</td>
+        </tr>
+      </table>
+      <div style="margin-top: 20px;">
+        <a href="${DASHBOARD_URL}" style="display: inline-block; padding: 10px 20px; background: #dc2626; color: #fff; text-decoration: none; border-radius: 6px; font-weight: 600;">Open Audit Dashboard</a>
+      </div>
+    </div>
+  `;
+
+  const { error: sendError } = await resend.emails.send({
+    from: ALERT_FROM,
+    to: ADMIN_EMAILS,
+    subject,
+    html,
+  });
+
+  if (sendError) {
+    throw new Error(`Resend API error: ${sendError.message}`);
+  }
+
+  return { sent: true };
+}
+
 function buildDigestHtml(
   totalSessions: number,
   anomalySessions: number,
