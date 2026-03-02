@@ -51,6 +51,14 @@ const LINKS: SuitePageCard[] = [
     tagColor: "bg-purple-500/20 text-purple-400 border-purple-500/30",
     section: "Pipeline & Forecasting",
   },
+  {
+    href: "/dashboards/project-management",
+    title: "Project Management",
+    description: "PM workload, DA backlog, stuck deals, and revenue tracking.",
+    tag: "PM",
+    tagColor: "bg-green-500/20 text-green-400 border-green-500/30",
+    section: "Management",
+  },
 ];
 
 export default async function IntelligenceSuitePage() {
