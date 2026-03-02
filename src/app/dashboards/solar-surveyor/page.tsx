@@ -18,13 +18,10 @@ export default async function SolarSurveyorPage() {
             &larr; D&E Suite
           </Link>
           <span className="text-t-border">|</span>
-          <h1 className="text-sm font-semibold text-foreground">Solar Surveyor v11</h1>
-          <span className="text-xs font-medium px-2 py-0.5 rounded border bg-pink-500/20 text-pink-400 border-pink-500/30">
-            PROTOTYPE
-          </span>
+          <h1 className="text-sm font-semibold text-foreground">Solar Surveyor</h1>
         </div>
         <a
-          href="/prototypes/solar-surveyor-v11.html"
+          href="https://solarsurveyor.vercel.app"
           target="_blank"
           rel="noopener noreferrer"
           className="text-xs text-muted hover:text-orange-400 transition-colors"
@@ -33,9 +30,10 @@ export default async function SolarSurveyorPage() {
         </a>
       </header>
       <iframe
-        src="/prototypes/solar-surveyor-v11.html"
+        src="https://solarsurveyor.vercel.app"
         className="flex-1 w-full border-none"
-        title="Solar Surveyor v11 Prototype"
+        title="Solar Surveyor"
+        allow="clipboard-read; clipboard-write"
       />
     </div>
   );
