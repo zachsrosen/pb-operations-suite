@@ -111,7 +111,7 @@ export default function UtilityDesignRequirementsPage() {
         dealCount: deals.length,
         revenue,
         // From custom object
-        interconnectionTurnaround: parseFloat(record?.properties.average_interconnection_turnaround_time || "0") || 0,
+        interconnectionTurnaround: (() => { const ms = parseFloat(record?.properties.interconnection_turnaround_average__365_days_ || "0") || 0; return ms > 0 ? Math.round(ms / 86_400_000) : 0; })(),
         rejectionCount: parseInt(record?.properties.rejection_count || "0", 10) || 0,
         approvalCount: parseInt(record?.properties.utility_approval_count || "0", 10) || 0,
         ptoFpr: record?.properties.pto_first_time_pass_rate || null,
@@ -357,7 +357,7 @@ export default function UtilityDesignRequirementsPage() {
                 <h3 className="text-sm font-semibold text-foreground mb-2">Interconnection</h3>
                 <div className="space-y-1 text-sm text-muted">
                   {p.interconnection_required && <div>IC Required: <span className="text-foreground">{p.interconnection_required}</span></div>}
-                  {p.average_interconnection_turnaround_time && <div>Avg Turnaround: <span className="text-foreground">{p.average_interconnection_turnaround_time}d</span></div>}
+                  {p.interconnection_turnaround_average__365_days_ && <div>Avg Turnaround (365d): <span className="text-foreground">{Math.round(parseFloat(p.interconnection_turnaround_average__365_days_) / 86_400_000)}d</span></div>}
                   {p.communicated_review_time && <div>Communicated Time: <span className="text-foreground">{p.communicated_review_time}</span></div>}
                   {p.submission_type && <div>Submission: <span className="text-foreground">{p.submission_type}</span></div>}
                   {p.util_app_requires_customer_signature && <div>Customer Sig: <span className="text-foreground">{p.util_app_requires_customer_signature}</span></div>}

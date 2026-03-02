@@ -131,7 +131,7 @@ export default function AHJRequirementsPage() {
         inRevision,
         rejectionRate: deals.length > 0 ? inRevision / deals.length : 0,
         // From custom object
-        permitTurnaround: parseFloat(record?.properties.average_permit_turnaround_time__365_days_ || "0") || 0,
+        permitTurnaround: (() => { const ms = parseFloat(record?.properties.average_permit_turnaround_time__365_days_ || "0") || 0; return ms > 0 ? Math.round(ms / 86_400_000) : 0; })(),
         permitIssued: parseInt(record?.properties.permit_issued_count || "0", 10) || 0,
         permitRejections: parseInt(record?.properties.permit_rejection_count || "0", 10) || 0,
         city: record?.properties.city || null,
@@ -381,7 +381,7 @@ export default function AHJRequirementsPage() {
                 <div className="space-y-1 text-sm text-muted">
                   {p.permits_required && <div>Permits Required: <span className="text-foreground">{p.permits_required}</span></div>}
                   {p.submission_method && <div>Submission: <span className="text-foreground">{p.submission_method}</span></div>}
-                  {p.permit_turnaround_time && <div>Turnaround: <span className="text-foreground">{p.permit_turnaround_time}</span></div>}
+                  {p.average_permit_turnaround_time__365_days_ && <div>Avg Turnaround (365d): <span className="text-foreground">{Math.round(parseFloat(p.average_permit_turnaround_time__365_days_) / 86_400_000)}d</span></div>}
                   {p.customer_signature_required_on_permit && <div>Customer Sig: <span className="text-foreground">{p.customer_signature_required_on_permit}</span></div>}
                   {p.permit_issues && <div>Known Issues: <span className="text-foreground">{p.permit_issues}</span></div>}
                 </div>

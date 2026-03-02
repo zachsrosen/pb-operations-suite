@@ -83,16 +83,36 @@ export default function DEMetricsPage() {
     }
   }, [sortKey]);
 
-  const [timeWindow, setTimeWindow] = useState<30 | 60 | 90>(30);
+  const TIME_PRESETS = [30, 60, 90, 180, 365] as const;
+  type TimePreset = (typeof TIME_PRESETS)[number];
+  const [timePreset, setTimePreset] = useState<TimePreset | "custom">(30);
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
 
-  // Helper: is date within the last N days?
-  const isInWindow = useCallback((dateStr: string | undefined | null, days: number) => {
+  // Helper: is date within the selected window?
+  const isInWindow = useCallback((dateStr: string | undefined | null) => {
     if (!dateStr) return false;
     const d = new Date(dateStr + "T12:00:00");
+    if (timePreset === "custom") {
+      if (!customFrom && !customTo) return true;
+      if (customFrom && d < new Date(customFrom + "T00:00:00")) return false;
+      if (customTo && d > new Date(customTo + "T23:59:59")) return false;
+      return true;
+    }
     const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - days);
+    cutoff.setDate(cutoff.getDate() - timePreset);
     return d >= cutoff;
-  }, []);
+  }, [timePreset, customFrom, customTo]);
+
+  const timeWindowLabel = useMemo(() => {
+    if (timePreset === "custom") {
+      if (customFrom && customTo) return `${customFrom} → ${customTo}`;
+      if (customFrom) return `From ${customFrom}`;
+      if (customTo) return `Until ${customTo}`;
+      return "All time";
+    }
+    return `Last ${timePreset} days`;
+  }, [timePreset, customFrom, customTo]);
 
   // ---- Build filter option lists ----
   const locationOptions: FilterOption[] = useMemo(
@@ -177,10 +197,10 @@ export default function DEMetricsPage() {
   const windowedMetrics = useMemo(() => {
     // Approval volume (independent cohorts)
     const sentInWindow = designProjects.filter((p) =>
-      isInWindow(p.designApprovalSentDate, timeWindow)
+      isInWindow(p.designApprovalSentDate)
     );
     const approvedInWindow = designProjects.filter((p) =>
-      isInWindow(p.designApprovalDate, timeWindow)
+      isInWindow(p.designApprovalDate)
     );
 
     // Approval rate (same cohort: sent in window, of those how many approved)
@@ -191,7 +211,7 @@ export default function DEMetricsPage() {
 
     // Design turnaround: designStartDate → dateReturnedFromDesigners
     const designTurnarounds = designProjects
-      .filter((p) => p.designStartDate && p.dateReturnedFromDesigners && isInWindow(p.dateReturnedFromDesigners, timeWindow))
+      .filter((p) => p.designStartDate && p.dateReturnedFromDesigners && isInWindow(p.dateReturnedFromDesigners))
       .map((p) => {
         const start = new Date(p.designStartDate! + "T12:00:00");
         const end = new Date(p.dateReturnedFromDesigners! + "T12:00:00");
@@ -204,7 +224,7 @@ export default function DEMetricsPage() {
 
     // DA turnaround: designApprovalSentDate → designApprovalDate
     const daTurnarounds = designProjects
-      .filter((p) => p.designApprovalSentDate && p.designApprovalDate && isInWindow(p.designApprovalDate, timeWindow))
+      .filter((p) => p.designApprovalSentDate && p.designApprovalDate && isInWindow(p.designApprovalDate))
       .map((p) => {
         const start = new Date(p.designApprovalSentDate! + "T12:00:00");
         const end = new Date(p.designApprovalDate! + "T12:00:00");
@@ -224,7 +244,7 @@ export default function DEMetricsPage() {
       avgDATurnaround,
       daTurnaroundN: daTurnarounds.length,
     };
-  }, [designProjects, timeWindow, isInWindow]);
+  }, [designProjects, isInWindow]);
 
   // ---- Design Status Metrics ----
   const designMetrics = useMemo(() => {
@@ -268,7 +288,7 @@ export default function DEMetricsPage() {
       designProjects
         .filter((p) => p.designCompletionDate)
         .map((p) => ({ date: p.designCompletionDate!, amount: p.amount || 0 })),
-      6
+      12
     ),
     [designProjects]
   );
@@ -278,7 +298,7 @@ export default function DEMetricsPage() {
       designProjects
         .filter((p) => p.designApprovalDate)
         .map((p) => ({ date: p.designApprovalDate!, amount: p.amount || 0 })),
-      6
+      12
     ),
     [designProjects]
   );
@@ -366,22 +386,51 @@ export default function DEMetricsPage() {
 
       {/* Time-Windowed Performance */}
       <div className="mb-6">
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
           <h2 className="text-lg font-semibold text-foreground">Performance</h2>
-          <div className="flex bg-surface-2 rounded-lg p-0.5 border border-t-border">
-            {([30, 60, 90] as const).map((d) => (
+          <div className="flex items-center gap-2">
+            <div className="flex bg-surface-2 rounded-lg p-0.5 border border-t-border">
+              {TIME_PRESETS.map((d) => (
+                <button
+                  key={d}
+                  onClick={() => setTimePreset(d)}
+                  className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                    timePreset === d
+                      ? "bg-purple-600 text-white shadow-sm"
+                      : "text-muted hover:text-foreground"
+                  }`}
+                >
+                  {d >= 365 ? `${d / 365}y` : `${d}d`}
+                </button>
+              ))}
               <button
-                key={d}
-                onClick={() => setTimeWindow(d)}
+                onClick={() => setTimePreset("custom")}
                 className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                  timeWindow === d
+                  timePreset === "custom"
                     ? "bg-purple-600 text-white shadow-sm"
                     : "text-muted hover:text-foreground"
                 }`}
               >
-                {d}d
+                Custom
               </button>
-            ))}
+            </div>
+            {timePreset === "custom" && (
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="date"
+                  value={customFrom}
+                  onChange={(e) => setCustomFrom(e.target.value)}
+                  className="px-2 py-1 text-xs bg-surface-2 border border-t-border rounded-md text-foreground focus:outline-none focus:border-purple-500"
+                />
+                <span className="text-xs text-muted">→</span>
+                <input
+                  type="date"
+                  value={customTo}
+                  onChange={(e) => setCustomTo(e.target.value)}
+                  className="px-2 py-1 text-xs bg-surface-2 border border-t-border rounded-md text-foreground focus:outline-none focus:border-purple-500"
+                />
+              </div>
+            )}
           </div>
         </div>
 
@@ -390,20 +439,20 @@ export default function DEMetricsPage() {
           <MetricCard
             label="DA Sent"
             value={loading ? "\u2014" : String(windowedMetrics.sentCount)}
-            sub={`Last ${timeWindow} days`}
+            sub={timeWindowLabel}
             border="border-l-4 border-l-blue-500"
           />
           <MetricCard
             label="DA Approved"
             value={loading ? "\u2014" : String(windowedMetrics.approvedCount)}
-            sub={`Last ${timeWindow} days`}
+            sub={timeWindowLabel}
             border="border-l-4 border-l-emerald-500"
             valueColor="text-emerald-400"
           />
           <MetricCard
             label="Approval Rate"
             value={loading ? "\u2014" : `${windowedMetrics.approvalRate}%`}
-            sub={`Sent in window \u2192 approved (n=${windowedMetrics.sentCount})`}
+            sub={`Sent → approved (n=${windowedMetrics.sentCount})`}
             border="border-l-4 border-l-indigo-500"
           />
         </div>
@@ -488,16 +537,16 @@ export default function DEMetricsPage() {
       {/* Monthly Trends */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
         <MonthlyBarChart
-          title="Design Completions (6 months)"
+          title="Design Completions (12 months)"
           data={completionTrend}
-          months={6}
+          months={12}
           accentColor="purple"
           primaryLabel="completed"
         />
         <MonthlyBarChart
-          title="Design Approvals (6 months)"
+          title="Design Approvals (12 months)"
           data={approvalTrend}
-          months={6}
+          months={12}
           accentColor="emerald"
           primaryLabel="approved"
         />

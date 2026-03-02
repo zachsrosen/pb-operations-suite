@@ -165,7 +165,8 @@ export default function UtilityTrackerPage() {
       const revenue = deals.reduce((s, p) => s + (p.amount || 0), 0);
 
       // From custom object
-      const icTurnaround = parseFloat(record?.properties.average_interconnection_turnaround_time || "0") || 0;
+      const icTurnaroundMs = parseFloat(record?.properties.interconnection_turnaround_average__365_days_ || "0") || 0;
+      const icTurnaround = icTurnaroundMs > 0 ? Math.round(icTurnaroundMs / 86_400_000) : 0;
       const rejections = parseInt(record?.properties.rejection_count || "0", 10) || 0;
       const approvals = parseInt(record?.properties.utility_approval_count || "0", 10) || 0;
 

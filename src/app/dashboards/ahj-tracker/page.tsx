@@ -155,8 +155,9 @@ export default function AHJTrackerPage() {
       ).length;
       const revenue = deals.reduce((s, p) => s + (p.amount || 0), 0);
 
-      // Turnaround from custom object
-      const turnaround = parseFloat(record?.properties.average_permit_turnaround_time__365_days_ || "0") || 0;
+      // Turnaround from custom object (stored in ms, convert to days)
+      const turnaroundMs = parseFloat(record?.properties.average_permit_turnaround_time__365_days_ || "0") || 0;
+      const turnaround = turnaroundMs > 0 ? Math.round(turnaroundMs / 86_400_000) : 0;
       const permitIssued = parseInt(record?.properties.permit_issued_count || "0", 10) || 0;
       const permitRejections = parseInt(record?.properties.permit_rejection_count || "0", 10) || 0;
 
