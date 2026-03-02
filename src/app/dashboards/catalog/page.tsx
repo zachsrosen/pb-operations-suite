@@ -82,7 +82,7 @@ interface DuplicateGroup {
 
 interface PushRequest {
   id: string;
-  status: "PENDING" | "APPROVED" | "REJECTED";
+  status: "PENDING" | "APPROVED" | "REJECTED" | "EXPIRED";
   brand: string;
   model: string;
   description: string;
@@ -108,8 +108,10 @@ interface ApproveSummary {
 
 interface ApproveResponse {
   error?: string;
+  push?: PushRequest;
   summary?: ApproveSummary;
   outcomes?: Record<string, { status: ApproveOutcomeStatus; message?: string; externalId?: string | null }>;
+  retryable?: boolean;
 }
 
 interface SkuEditDraft {
@@ -331,12 +333,17 @@ export default function CatalogPage() {
       const res = await fetch(`/api/catalog/push-requests/${id}/approve`, { method: "POST" });
       const data = await res.json() as ApproveResponse;
       if (!res.ok) throw new Error(data.error);
-      setPendingPushes((prev) => prev.filter((p) => p.id !== id));
-      setPendingCount((c) => Math.max(0, c - 1));
+      const isApproved = data.push?.status === "APPROVED";
+      if (isApproved) {
+        setPendingPushes((prev) => prev.filter((p) => p.id !== id));
+        setPendingCount((c) => Math.max(0, c - 1));
+      } else if (data.push) {
+        setPendingPushes((prev) => prev.map((p) => (p.id === data.push!.id ? data.push! : p)));
+      }
 
       const summary = data.summary;
       if (!summary) {
-        addToast({ type: "success", title: "Request approved" });
+        addToast({ type: isApproved ? "success" : "warning", title: isApproved ? "Request approved" : "Push attempt incomplete" });
       } else if (summary.success === summary.selected) {
         addToast({
           type: "success",
@@ -352,7 +359,7 @@ export default function CatalogPage() {
       } else {
         addToast({
           type: "warning",
-          title: "Approved, but no selected systems completed",
+          title: isApproved ? "Approved, but no selected systems completed" : "Still pending for retry",
           message: `${summary.notImplemented} not implemented, ${summary.skipped} skipped, ${summary.failed} failed.`,
         });
       }

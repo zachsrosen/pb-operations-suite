@@ -183,6 +183,10 @@ function makeSummary(outcomes: Partial<Record<SystemName, SystemOutcome>>) {
   return { selected, ...counts };
 }
 
+function shouldMarkApproved(summary: ReturnType<typeof makeSummary>): boolean {
+  return summary.failed === 0 && summary.notImplemented === 0 && summary.skipped === 0;
+}
+
 export async function POST(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -211,22 +215,21 @@ export async function POST(
   }
 
   const quickbooksMatch = push.systems.includes("QUICKBOOKS")
-    ? await resolveQuickBooksMatch(push)
+    ? push.quickbooksItemId
+      ? {
+          status: "matched" as const,
+          externalId: push.quickbooksItemId,
+          name: null,
+          strategy: "explicit" as const,
+        }
+      : await resolveQuickBooksMatch(push)
     : null;
 
-  // Single transaction: internal catalog writes + status update are atomic.
-  // If any step fails, neither the SKU nor the status change persists.
-  const approvedPush = await prisma.$transaction(async (tx) => {
-    const results: Record<string, string | null> = {
-      internalSkuId: null,
-      zohoItemId: null,
-      hubspotProductId: null,
-      zuperItemId: null,
-      quickbooksItemId:
-        quickbooksMatch?.status === "matched"
-          ? quickbooksMatch.externalId
-          : null,
-    };
+  // Keep core internal writes atomic; final APPROVED status is set only if all
+  // selected systems complete successfully.
+  const basePush = await prisma.$transaction(async (tx) => {
+    let internalSkuId: string | null = push.internalSkuId;
+    let quickbooksItemId: string | null = push.quickbooksItemId;
 
     // INTERNAL catalog
     if (push.systems.includes("INTERNAL") && INTERNAL_CATEGORIES.includes(push.category)) {
@@ -291,7 +294,7 @@ export async function POST(
         }
       }
 
-      results.internalSkuId = sku.id;
+      internalSkuId = sku.id;
       outcomes.INTERNAL = {
         status: "success",
         externalId: sku.id,
@@ -304,20 +307,33 @@ export async function POST(
       };
     }
 
-    // 3. Mark request approved (same transaction — atomic with writes above)
+    if (push.systems.includes("QUICKBOOKS")) {
+      if (quickbooksMatch?.status === "matched") {
+        quickbooksItemId = quickbooksMatch.externalId;
+      } else if (!quickbooksItemId) {
+        quickbooksItemId = null;
+      }
+    }
+
+    // Persist latest internal and QuickBooks link IDs for retry-safe attempts.
     return tx.pendingCatalogPush.update({
       where: { id },
       data: {
-        status: "APPROVED",
-        resolvedAt: new Date(),
-        ...results,
+        internalSkuId,
+        quickbooksItemId,
       },
     });
   });
 
-  let hubspotPersistedPush: typeof approvedPush | null = null;
   if (push.systems.includes("HUBSPOT")) {
-    try {
+    if (basePush.hubspotProductId) {
+      outcomes.HUBSPOT = {
+        status: "success",
+        externalId: basePush.hubspotProductId,
+        message: "HubSpot product already linked on this request.",
+      };
+    } else {
+      try {
       const metadata =
         push.metadata && typeof push.metadata === "object"
           ? (push.metadata as Record<string, unknown>)
@@ -337,14 +353,14 @@ export async function POST(
         additionalProperties: mappedMetadataProps,
       });
 
-      hubspotPersistedPush = await prisma.$transaction(async (tx) => {
+        await prisma.$transaction(async (tx) => {
         const pendingPush = await tx.pendingCatalogPush.update({
           where: { id },
           data: { hubspotProductId: hubspotResult.hubspotProductId },
         });
-        if (approvedPush.internalSkuId) {
+          if (basePush.internalSkuId) {
           await tx.equipmentSku.update({
-            where: { id: approvedPush.internalSkuId },
+              where: { id: basePush.internalSkuId },
             data: { hubspotProductId: hubspotResult.hubspotProductId },
           });
         }
@@ -358,14 +374,15 @@ export async function POST(
           ? "Created HubSpot product."
           : "Updated existing HubSpot product.",
       };
-    } catch (error) {
-      outcomes.HUBSPOT = {
-        status: "failed",
-        message:
-          error instanceof Error
-            ? error.message
-            : "HubSpot product push failed.",
-      };
+      } catch (error) {
+        outcomes.HUBSPOT = {
+          status: "failed",
+          message:
+            error instanceof Error
+              ? error.message
+              : "HubSpot product push failed.",
+        };
+      }
     }
   }
 
@@ -399,9 +416,15 @@ export async function POST(
     }
   }
 
-  let zohoPersistedPush: typeof approvedPush | null = null;
   if (push.systems.includes("ZOHO")) {
-    try {
+    if (basePush.zohoItemId) {
+      outcomes.ZOHO = {
+        status: "success",
+        externalId: basePush.zohoItemId,
+        message: "Zoho item already linked on this request.",
+      };
+    } else {
+      try {
       const zohoResult = await createOrUpdateZohoItem({
         brand: push.brand,
         model: push.model,
@@ -413,14 +436,14 @@ export async function POST(
         unitCost: push.unitCost,
       });
 
-      zohoPersistedPush = await prisma.$transaction(async (tx) => {
+        await prisma.$transaction(async (tx) => {
         const pendingPush = await tx.pendingCatalogPush.update({
           where: { id },
           data: { zohoItemId: zohoResult.zohoItemId },
         });
-        if (approvedPush.internalSkuId) {
+          if (basePush.internalSkuId) {
           await tx.equipmentSku.update({
-            where: { id: approvedPush.internalSkuId },
+              where: { id: basePush.internalSkuId },
             data: { zohoItemId: zohoResult.zohoItemId },
           });
         }
@@ -434,19 +457,26 @@ export async function POST(
           ? "Created Zoho item."
           : "Updated existing Zoho item.",
       };
-    } catch (error) {
-      outcomes.ZOHO = {
-        status: "failed",
-        message:
-          error instanceof Error
-            ? error.message
-            : "Zoho product push failed.",
-      };
+      } catch (error) {
+        outcomes.ZOHO = {
+          status: "failed",
+          message:
+            error instanceof Error
+              ? error.message
+              : "Zoho product push failed.",
+        };
+      }
     }
   }
-  let zuperPersistedPush: typeof approvedPush | null = null;
   if (push.systems.includes("ZUPER")) {
-    try {
+    if (basePush.zuperItemId) {
+      outcomes.ZUPER = {
+        status: "success",
+        externalId: basePush.zuperItemId,
+        message: "Zuper item already linked on this request.",
+      };
+    } else {
+      try {
       const metadata =
         push.metadata && typeof push.metadata === "object"
           ? (push.metadata as Record<string, unknown>)
@@ -470,14 +500,14 @@ export async function POST(
         specification: specSummary,
       });
 
-      zuperPersistedPush = await prisma.$transaction(async (tx) => {
+        await prisma.$transaction(async (tx) => {
         const pendingPush = await tx.pendingCatalogPush.update({
           where: { id },
           data: { zuperItemId: zuperResult.zuperItemId },
         });
-        if (approvedPush.internalSkuId) {
+          if (basePush.internalSkuId) {
           await tx.equipmentSku.update({
-            where: { id: approvedPush.internalSkuId },
+              where: { id: basePush.internalSkuId },
             data: { zuperItemId: zuperResult.zuperItemId },
           });
         }
@@ -491,22 +521,36 @@ export async function POST(
           ? "Created Zuper item."
           : "Linked existing Zuper item.",
       };
-    } catch (error) {
-      outcomes.ZUPER = {
-        status: "failed",
-        message:
-          error instanceof Error
-            ? error.message
-            : "Zuper part push failed.",
-      };
+      } catch (error) {
+        outcomes.ZUPER = {
+          status: "failed",
+          message:
+            error instanceof Error
+              ? error.message
+              : "Zuper part push failed.",
+        };
+      }
     }
   }
 
-  const responsePush = zuperPersistedPush ?? zohoPersistedPush ?? hubspotPersistedPush ?? approvedPush;
+  const summary = makeSummary(outcomes);
+  const finalizeApproved = shouldMarkApproved(summary);
+
+  const responsePush = await prisma.pendingCatalogPush.update({
+    where: { id },
+    data: finalizeApproved
+      ? { status: "APPROVED", resolvedAt: new Date(), note: null }
+      : {
+          status: "PENDING",
+          resolvedAt: null,
+          note: "Approval attempt incomplete. Resolve failed/skipped systems and retry.",
+        },
+  });
 
   return NextResponse.json({
     push: responsePush,
     outcomes,
-    summary: makeSummary(outcomes),
+    summary,
+    retryable: !finalizeApproved,
   });
 }

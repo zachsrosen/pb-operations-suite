@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireApiAuth } from "@/lib/api-auth";
+import { FORM_CATEGORIES } from "@/lib/catalog-fields";
 
 const ADMIN_ROLES = ["ADMIN", "OWNER", "MANAGER"];
 const VALID_SYSTEMS = ["INTERNAL", "ZOHO", "HUBSPOT", "ZUPER", "QUICKBOOKS"] as const;
+const VALID_CATEGORIES = new Set<string>(FORM_CATEGORIES as readonly string[]);
 
 function parseOptionalString(value: unknown): string | null {
   if (value === null || value === undefined) return null;
@@ -57,6 +59,9 @@ export async function PATCH(
   if ("category" in body) {
     const category = String(body.category || "").trim();
     if (!category) return NextResponse.json({ error: "category is required" }, { status: 400 });
+    if (!VALID_CATEGORIES.has(category)) {
+      return NextResponse.json({ error: `Invalid category: ${category}` }, { status: 400 });
+    }
     updateData.category = category;
   }
   if ("unitSpec" in body) {

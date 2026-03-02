@@ -120,6 +120,20 @@ describe("POST /api/catalog/push-requests", () => {
     expect(mockCreate).not.toHaveBeenCalled();
   });
 
+  it("returns 400 for an invalid category value", async () => {
+    const req = makeRequest({
+      brand: "Tesla",
+      model: "1707000-XX-Y",
+      description: "Powerwall 3",
+      category: "NOT_A_REAL_CATEGORY",
+      systems: ["INTERNAL"],
+    });
+    const res = await postRequest(req);
+
+    expect(res.status).toBe(400);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
   it("returns 400 for systems containing non-string values", async () => {
     const req = makeRequest({
       brand: "Tesla",

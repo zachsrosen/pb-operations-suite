@@ -2,9 +2,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireApiAuth } from "@/lib/api-auth";
+import { FORM_CATEGORIES } from "@/lib/catalog-fields";
 
 const VALID_SYSTEMS = ["INTERNAL", "ZOHO", "HUBSPOT", "ZUPER", "QUICKBOOKS"] as const;
 const VALID_STATUSES = ["PENDING", "APPROVED", "REJECTED"] as const;
+const VALID_CATEGORIES = new Set<string>(FORM_CATEGORIES as readonly string[]);
 type PushStatus = typeof VALID_STATUSES[number];
 
 function parseNullableNumber(value: unknown): number | null {
@@ -33,6 +35,10 @@ export async function POST(request: NextRequest) {
 
   if (!brand || !model || !description || !category) {
     return NextResponse.json({ error: "brand, model, description, category are required" }, { status: 400 });
+  }
+  const normalizedCategory = String(category).trim();
+  if (!VALID_CATEGORIES.has(normalizedCategory)) {
+    return NextResponse.json({ error: `Invalid category: ${normalizedCategory}` }, { status: 400 });
   }
   if (!Array.isArray(systems) || systems.length === 0) {
     return NextResponse.json({ error: "systems must be a non-empty array" }, { status: 400 });
@@ -64,7 +70,7 @@ export async function POST(request: NextRequest) {
       brand: String(brand).trim(),
       model: String(model).trim(),
       description: String(description).trim(),
-      category: String(category).trim(),
+      category: normalizedCategory,
       unitSpec: unitSpec ? String(unitSpec).trim() : null,
       unitLabel: unitLabel ? String(unitLabel).trim() : null,
       sku: sku ? String(sku).trim() : null,

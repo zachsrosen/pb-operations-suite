@@ -66,6 +66,7 @@ const mockUpsert = jest.fn();
 const mockUpdate = jest.fn();
 const mockSpecUpsert = jest.fn();
 const mockEquipmentUpdate = jest.fn();
+let pushState: Record<string, unknown>;
 
 // $transaction receives a callback; we execute it with a fake tx client
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -87,6 +88,7 @@ jest.mock("@/lib/db", () => ({
   prisma: {
     pendingCatalogPush: {
       findUnique: (...args: unknown[]) => mockFindUnique(...args),
+      update: (...args: unknown[]) => mockUpdate(...args),
     },
     catalogProduct: {
       findMany: (...args: unknown[]) => mockCatalogFindMany(...args),
@@ -157,19 +159,27 @@ function makeParams(id = "push_1") {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  pushState = {
+    id: "push_1",
+    status: "PENDING",
+    internalSkuId: null,
+    zohoItemId: null,
+    hubspotProductId: null,
+    zuperItemId: null,
+    quickbooksItemId: null,
+    resolvedAt: null,
+    note: null,
+  };
   mockRequireApiAuth.mockResolvedValue({ email: "admin@photonbrothers.com", role: "ADMIN" });
   mockUpsert.mockResolvedValue({ id: "sku_1" });
-  mockUpdate.mockImplementation((args: { data?: Record<string, unknown> }) =>
-    Promise.resolve({
-      id: "push_1",
-      status: "APPROVED",
-      internalSkuId: "sku_1",
-      zohoItemId: typeof args?.data?.zohoItemId === "string" ? args.data.zohoItemId : null,
-      hubspotProductId: typeof args?.data?.hubspotProductId === "string" ? args.data.hubspotProductId : null,
-      zuperItemId: typeof args?.data?.zuperItemId === "string" ? args.data.zuperItemId : null,
-      quickbooksItemId: typeof args?.data?.quickbooksItemId === "string" ? args.data.quickbooksItemId : null,
-    })
-  );
+  mockUpdate.mockImplementation((args: { data?: Record<string, unknown> }) => {
+    const nextData = args?.data ?? {};
+    pushState = {
+      ...pushState,
+      ...nextData,
+    };
+    return Promise.resolve({ ...pushState });
+  });
   mockEquipmentUpdate.mockResolvedValue({ id: "sku_1" });
   mockCatalogFindMany.mockResolvedValue([]);
   mockCatalogFindUnique.mockResolvedValue(null);
@@ -252,23 +262,28 @@ describe("POST /api/catalog/push-requests/[id]/approve", () => {
   // ── Transaction atomicity ────────────────────────────────────────────────
 
   describe("transaction atomicity", () => {
-    it("runs SKU upsert and status update in same $transaction", async () => {
+    it("runs SKU upsert and core ID persistence in same $transaction", async () => {
       mockFindUnique.mockResolvedValue(makePush());
 
       await POST(new NextRequest("http://localhost"), makeParams());
 
-      // $transaction called exactly once — both writes inside
+      // First transaction contains core internal writes.
       expect(mockTransaction).toHaveBeenCalledTimes(1);
-      // SKU upsert called inside transaction
       expect(mockUpsert).toHaveBeenCalledTimes(1);
-      // Status update called inside transaction
-      expect(mockUpdate).toHaveBeenCalledTimes(1);
-      expect(mockUpdate).toHaveBeenCalledWith(
+      expect(mockUpdate).toHaveBeenCalledTimes(2);
+      expect(mockUpdate.mock.calls[0][0]).toEqual(
+        expect.objectContaining({
+          where: { id: "push_1" },
+          data: expect.objectContaining({
+            internalSkuId: "sku_1",
+          }),
+        })
+      );
+      expect(mockUpdate.mock.calls[1][0]).toEqual(
         expect.objectContaining({
           where: { id: "push_1" },
           data: expect.objectContaining({
             status: "APPROVED",
-            internalSkuId: "sku_1",
           }),
         })
       );
@@ -279,8 +294,10 @@ describe("POST /api/catalog/push-requests/[id]/approve", () => {
 
       await POST(new NextRequest("http://localhost"), makeParams());
 
-      const updateCall = mockUpdate.mock.calls[0][0] as { data: Record<string, unknown> };
-      expect(updateCall.data.resolvedAt).toBeInstanceOf(Date);
+      const statusCall = mockUpdate.mock.calls.find(
+        (call) => (call[0] as { data?: Record<string, unknown> })?.data?.status === "APPROVED"
+      )?.[0] as { data: Record<string, unknown> } | undefined;
+      expect(statusCall?.data.resolvedAt).toBeInstanceOf(Date);
     });
   });
 
@@ -407,12 +424,11 @@ describe("POST /api/catalog/push-requests/[id]/approve", () => {
       expect(mockUpsert).not.toHaveBeenCalled();
       // Two transactions: approval + external ID persistence
       expect(mockTransaction).toHaveBeenCalledTimes(2);
-      // Status update with null internalSkuId
+      // Final status update happens after external result processing
       expect(mockUpdate).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             status: "APPROVED",
-            internalSkuId: null,
           }),
         })
       );
@@ -433,6 +449,8 @@ describe("POST /api/catalog/push-requests/[id]/approve", () => {
       const res = await POST(new NextRequest("http://localhost"), makeParams());
       const data = await res.json();
 
+      expect(data.push.status).toBe("PENDING");
+      expect(data.retryable).toBe(true);
       expect(data.outcomes.ZOHO.status).toBe("failed");
       expect(data.outcomes.ZOHO.message).toMatch(/zoho unavailable/i);
       expect(data.summary).toEqual({
@@ -616,35 +634,22 @@ describe("POST /api/catalog/push-requests/[id]/approve", () => {
   });
 
   describe("QuickBooks link integration", () => {
-    it("uses explicit quickbooksItemId when provided on the push request", async () => {
+    it("uses existing quickbooksItemId on the request without re-querying cache", async () => {
       mockFindUnique.mockResolvedValue(
         makePush({
           systems: ["INTERNAL", "QUICKBOOKS"],
           quickbooksItemId: "qb_explicit_1",
         })
       );
-      mockCatalogFindUnique.mockResolvedValue({
-        externalId: "qb_explicit_1",
-        name: "Explicit match",
-      });
 
       const res = await POST(new NextRequest("http://localhost"), makeParams());
       const data = await res.json();
 
       expect(res.status).toBe(200);
-      expect(mockCatalogFindUnique).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: {
-            source_externalId: {
-              source: "QUICKBOOKS",
-              externalId: "qb_explicit_1",
-            },
-          },
-        })
-      );
+      expect(mockCatalogFindUnique).not.toHaveBeenCalled();
       expect(mockCatalogFindMany).not.toHaveBeenCalled();
       expect(data.outcomes.QUICKBOOKS.status).toBe("success");
-      expect(data.outcomes.QUICKBOOKS.message).toMatch(/selected item/i);
+      expect(data.outcomes.QUICKBOOKS.message).toMatch(/selected item|already linked/i);
       expect(data.outcomes.QUICKBOOKS.externalId).toBe("qb_explicit_1");
     });
 
@@ -713,6 +718,7 @@ describe("POST /api/catalog/push-requests/[id]/approve", () => {
       expect(res.status).toBe(200);
       const data = await res.json();
       expect(data.push.status).toBe("APPROVED");
+      expect(data.retryable).toBe(false);
       expect(data.push.internalSkuId).toBe("sku_1");
       expect(data.outcomes.INTERNAL.status).toBe("success");
       expect(data.summary).toEqual({
