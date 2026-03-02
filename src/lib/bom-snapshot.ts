@@ -268,10 +268,19 @@ async function syncWithDirectInsert(
   let created = 0;
   let updated = 0;
 
+  // Deduplicate by (category, brand, model) — PostgreSQL's ON CONFLICT DO UPDATE
+  // cannot affect the same row twice in a single INSERT statement. Keep the last
+  // occurrence so that later (potentially more complete) data wins.
+  const deduped = new Map<string, ValidSkuItem>();
+  for (const item of validItems) {
+    deduped.set(`${item.category}\0${item.brand}\0${item.model}`, item);
+  }
+  const uniqueItems = Array.from(deduped.values());
+
   // Batch in groups of 50 — one SQL statement per batch
   const BATCH_SIZE = 50;
-  for (let i = 0; i < validItems.length; i += BATCH_SIZE) {
-    const batch = validItems.slice(i, i + BATCH_SIZE);
+  for (let i = 0; i < uniqueItems.length; i += BATCH_SIZE) {
+    const batch = uniqueItems.slice(i, i + BATCH_SIZE);
 
     // Build parameterized VALUES list: each row has 10 params
     // (id, category, brand, model, description, unitSpec, unitLabel,
