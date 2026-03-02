@@ -36,7 +36,7 @@ Key context:
 - Projects are identified by PROJ-XXXX numbers in deal names
 - Locations: Westminster, Centennial, Colorado Springs, San Luis Obispo, Camarillo
 - Pipeline stages: Site Survey > Design & Engineering > Permitting & Interconnection > RTB - Blocked > Ready To Build > Construction > Inspection > Permission To Operate > Close Out
-- Review skills: design-review, engineering-review, sales-advisor
+- Review skill: design-review (use run_review to start, get_review_status to check progress)
 
 If you don't have enough information to answer, say so. Don't guess at deal data - use the tools.`;
 

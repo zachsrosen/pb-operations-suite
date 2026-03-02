@@ -1,7 +1,8 @@
 /**
  * GET /api/reviews/:dealId/latest
  *
- * Most recent review for each skill on a deal (at most 3 records).
+ * Most recent COMPLETED review for each skill on a deal.
+ * Only returns COMPLETED rows to avoid surfacing empty RUNNING placeholders.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -27,7 +28,7 @@ export async function GET(
   const latest = await Promise.all(
     VALID_SKILLS.map((skill) =>
       db.projectReview.findFirst({
-        where: { dealId, skill },
+        where: { dealId, skill, status: "COMPLETED" },
         orderBy: { createdAt: "desc" },
       })
     )

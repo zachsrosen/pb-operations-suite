@@ -151,6 +151,11 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function getBomSnapshotUrl(dealId: string): string {
+  const base = (process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "https://www.pbtechops.com").replace(/\/$/, "");
+  return `${base}/dashboards/bom-tool?dealId=${encodeURIComponent(dealId)}`;
+}
+
 /** Check if an error matches the retryable patterns for a given step. */
 export function isRetryableError(
   err: unknown,
@@ -1013,6 +1018,7 @@ export async function runDesignCompletePipeline(
           designFolderUrl: dealProps.designFolderUrl ?? undefined,
           plansetFileName: selectedFile.name,
           pbLocation: dealProps.pbLocation ?? undefined,
+          snapshotUrl: getBomSnapshotUrl(dealId),
           durationMs,
           ...(bomPdfBuffer ? { pdfAttachment: { filename: pdfFilename, content: bomPdfBuffer } } : {}),
         });
@@ -1110,6 +1116,7 @@ export async function runDesignCompletePipeline(
         designFolderUrl: dealProps.designFolderUrl ?? undefined,
         plansetFileName: selectedFile.name,
         pbLocation: dealProps.pbLocation ?? undefined,
+        snapshotUrl: getBomSnapshotUrl(dealId),
         durationMs,
         ...(bomPdfBuffer ? { pdfAttachment: { filename: pdfFilename, content: bomPdfBuffer } } : {}),
       });

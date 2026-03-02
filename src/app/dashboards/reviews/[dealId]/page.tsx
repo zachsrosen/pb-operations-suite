@@ -26,8 +26,8 @@ export default async function ReviewHistoryPage({ params }: Props) {
         {/* Run review actions */}
         <ReviewActions dealId={dealId} userRole={userRole} />
 
-        <div className="grid grid-cols-3 gap-4">
-          {["design-review", "engineering-review", "sales-advisor"].map((skill) => {
+        <div className="grid grid-cols-1 gap-4">
+          {["design-review"].map((skill) => {
             const latest = reviews.find((r) => r.skill === skill);
             return (
               <div key={skill} className="rounded-xl border border-t-border bg-surface p-4">

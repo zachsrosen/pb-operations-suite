@@ -17,8 +17,19 @@ jest.mock("@/lib/checks/runner", () => ({
   runChecks: (...args: unknown[]) => mockRunChecks(...args),
 }));
 jest.mock("@/lib/checks/design-review", () => ({}));
-jest.mock("@/lib/checks/engineering-review", () => ({}));
-jest.mock("@/lib/checks/sales-advisor", () => ({}));
+
+jest.mock("@/lib/review-lock", () => ({
+  acquireReviewLock: jest.fn().mockResolvedValue("mock-review-id"),
+  completeReviewRun: jest.fn().mockResolvedValue(undefined),
+  failReviewRun: jest.fn().mockResolvedValue(undefined),
+  DuplicateReviewError: class DuplicateReviewError extends Error {
+    existingReviewId?: string;
+    constructor(dealId: string, skill: string, existingReviewId?: string) {
+      super(`Review already running for deal ${dealId} (skill: ${skill})`);
+      this.existingReviewId = existingReviewId;
+    }
+  },
+}));
 
 const mockGetById = jest.fn();
 jest.mock("@/lib/hubspot", () => ({
@@ -127,7 +138,6 @@ describe("POST /api/chat", () => {
       if (!runReviewTool) throw new Error("run_review tool missing");
       const reviewOutput = await runReviewTool.run({
         dealId: "deal_1",
-        skill: "design-review",
       });
       return {
         content: [{ type: "text", text: `Tool executed: ${reviewOutput}` }],
@@ -156,19 +166,9 @@ describe("POST /api/chat", () => {
         max_iterations: 5,
       })
     );
-    expect(mockRunChecks).toHaveBeenCalledWith(
-      "design-review",
-      expect.objectContaining({ dealId: "deal_1" })
-    );
-    expect(mockProjectReviewCreate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          dealId: "deal_1",
-          skill: "design-review",
-          triggeredBy: "admin@test.com",
-        }),
-      })
-    );
+    // run_review now uses acquireReviewLock (fire-and-forget pattern)
+    // The tool returns immediately with { status: "running", reviewId }
+    // Background worker calls runChecks — not asserted here (async)
 
     expect(mockTransaction).toHaveBeenCalledTimes(1);
     expect(mockChatMessageCreate).toHaveBeenCalledTimes(2);

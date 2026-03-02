@@ -8,8 +8,8 @@
  * in the background via waitUntil() (respond 200 immediately so HubSpot
  * doesn't retry).
  *
- * Calls runChecks() directly — no HTTP self-call. This avoids VERCEL_URL
- * protocol issues and internal auth complexity.
+ * Uses the review lock system (review-lock.ts) for deduplication.
+ * Calls runChecks() directly — no HTTP self-call.
  *
  * Security: HubSpot signature validation inside the route handler (not
  * middleware). The exact path is in PUBLIC_API_ROUTES to skip session-based auth.
@@ -21,6 +21,13 @@ import { prisma, logActivity } from "@/lib/db";
 import { validateHubSpotWebhook } from "@/lib/hubspot-webhook-auth";
 import { runChecks } from "@/lib/checks/runner";
 import { PIPELINE_ACTOR } from "@/lib/actor-context";
+import {
+  acquireReviewLock,
+  completeReviewRun,
+  failReviewRun,
+  touchReviewRun,
+  DuplicateReviewError,
+} from "@/lib/review-lock";
 // Side-effect import: registers design-review checks with the engine
 import "@/lib/checks/design-review";
 
@@ -82,11 +89,15 @@ function getTargetStages(): Set<string> | null {
 // Background worker
 // ---------------------------------------------------------------------------
 
-async function processDesignReview(dealId: string, eventId: number) {
+async function processDesignReview(reviewId: string, dealId: string, eventId: number) {
+  const start = Date.now();
+
   // 1. Fetch deal properties from HubSpot
   const { hubspotClient } = await import("@/lib/hubspot");
   const deal = await hubspotClient.crm.deals.basicApi.getById(dealId, DEAL_PROPERTIES);
   const properties = deal.properties;
+
+  await touchReviewRun(reviewId);
 
   // 2. Run checks directly (pure function, no HTTP hop)
   const result = await runChecks("design-review", { dealId, properties });
@@ -95,20 +106,14 @@ async function processDesignReview(dealId: string, eventId: number) {
   const projectIdMatch = properties.dealname?.match(/PROJ-\d+/);
   const projectId = projectIdMatch?.[0] ?? null;
 
-  // 4. Save to ProjectReview table
-  await prisma.projectReview.create({
-    data: {
-      dealId,
-      projectId,
-      skill: "design-review",
-      trigger: "webhook",
-      triggeredBy: "system",
-      findings: JSON.parse(JSON.stringify(result.findings)),
-      errorCount: result.errorCount,
-      warningCount: result.warningCount,
-      passed: result.passed,
-      durationMs: result.durationMs,
-    },
+  // 4. Complete the review run
+  await completeReviewRun(reviewId, {
+    findings: result.findings,
+    errorCount: result.errorCount,
+    warningCount: result.warningCount,
+    passed: result.passed,
+    durationMs: Date.now() - start,
+    projectId,
   });
 
   // 5. Log activity
@@ -128,7 +133,7 @@ async function processDesignReview(dealId: string, eventId: number) {
       passed: result.passed,
       errorCount: result.errorCount,
       warningCount: result.warningCount,
-      durationMs: result.durationMs,
+      durationMs: Date.now() - start,
     },
     requestPath: "/api/webhooks/hubspot/design-review",
     requestMethod: "POST",
@@ -138,7 +143,7 @@ async function processDesignReview(dealId: string, eventId: number) {
   // TODO: Send Gmail notification to design team
 
   console.log(
-    `[design-review] Deal ${dealId}: ${result.passed ? "PASSED" : "FAILED"} (${result.errorCount}E/${result.warningCount}W) in ${result.durationMs}ms`
+    `[design-review] Deal ${dealId}: ${result.passed ? "PASSED" : "FAILED"} (${result.errorCount}E/${result.warningCount}W) in ${Date.now() - start}ms`
   );
 }
 
@@ -184,6 +189,7 @@ export async function POST(req: NextRequest) {
   const targetStages = getTargetStages();
   const triggered: string[] = [];
   const skipped: string[] = [];
+  const duplicates: string[] = [];
 
   if (!targetStages) {
     console.warn("[design-review] DESIGN_REVIEW_TARGET_STAGES not set — all dealstage changes will trigger review");
@@ -202,18 +208,31 @@ export async function POST(req: NextRequest) {
 
     const dealId = String(event.objectId);
 
+    // Acquire lock — skip duplicates gracefully
+    let reviewId: string;
+    try {
+      reviewId = await acquireReviewLock(dealId, "design-review", "webhook");
+    } catch (err) {
+      if (err instanceof DuplicateReviewError) {
+        duplicates.push(dealId);
+        continue;
+      }
+      throw err;
+    }
+
     // Run design review in background
     waitUntil(
-      processDesignReview(dealId, event.eventId).catch((err) => {
+      processDesignReview(reviewId, dealId, event.eventId).catch(async (err) => {
         console.error(
           `[design-review] Unhandled error for deal ${dealId}:`,
           err
         );
+        await failReviewRun(reviewId, err instanceof Error ? err.message : "unknown").catch(() => {});
       })
     );
 
     triggered.push(dealId);
   }
 
-  return NextResponse.json({ status: "ok", triggered, skipped });
+  return NextResponse.json({ status: "ok", triggered, skipped, duplicates });
 }

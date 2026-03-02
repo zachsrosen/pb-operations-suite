@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import type { SkillName } from "@/lib/checks/types";
 
 interface ReviewActionsProps {
@@ -18,18 +18,70 @@ interface ReviewResult {
 
 const SKILL_CONFIG: Array<{ skill: SkillName; label: string; roles: string[] }> = [
   { skill: "design-review", label: "Design Review", roles: ["ADMIN", "OWNER", "MANAGER", "DESIGNER", "OPERATIONS_MANAGER", "PROJECT_MANAGER"] },
-  { skill: "engineering-review", label: "Engineering Review", roles: ["ADMIN", "OWNER", "MANAGER", "TECH_OPS", "OPERATIONS_MANAGER", "PROJECT_MANAGER"] },
-  { skill: "sales-advisor", label: "Sales Check", roles: ["ADMIN", "OWNER", "MANAGER", "SALES"] },
 ];
+
+const POLL_INTERVAL_MS = 3000;
 
 export default function ReviewActions({ dealId, userRole }: ReviewActionsProps) {
   const [loading, setLoading] = useState<string | null>(null);
   const [results, setResults] = useState<Record<string, ReviewResult>>({});
+  const [error, setError] = useState<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const visibleSkills = SKILL_CONFIG.filter((s) => s.roles.includes(userRole));
+  const stopPolling = useCallback(() => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => stopPolling, [stopPolling]);
+
+  async function pollStatus(reviewId: string, skill: SkillName) {
+    try {
+      const res = await fetch(`/api/reviews/status/${reviewId}`);
+      if (!res.ok) return; // Keep polling
+
+      const data = await res.json();
+
+      if (data.status === "completed") {
+        stopPolling();
+        setLoading(null);
+        setResults((prev) => ({
+          ...prev,
+          [skill]: {
+            passed: data.passed,
+            errorCount: data.errorCount,
+            warningCount: data.warningCount,
+            findings: data.findings ?? [],
+            durationMs: data.durationMs ?? 0,
+          },
+        }));
+      } else if (data.status === "failed") {
+        stopPolling();
+        setLoading(null);
+        setError(data.error || "Review failed");
+        setResults((prev) => ({
+          ...prev,
+          [skill]: {
+            passed: false,
+            errorCount: 1,
+            warningCount: 0,
+            findings: [{ check: "review-failed", severity: "error", message: data.error || "Review failed" }],
+            durationMs: 0,
+          },
+        }));
+      }
+      // status === "running" → keep polling
+    } catch {
+      // Network error — keep polling, don't crash
+    }
+  }
 
   async function runReview(skill: SkillName) {
     setLoading(skill);
+    setError(null);
     try {
       const res = await fetch("/api/reviews/run", {
         method: "POST",
@@ -37,17 +89,34 @@ export default function ReviewActions({ dealId, userRole }: ReviewActionsProps) 
         body: JSON.stringify({ dealId, skill }),
       });
       const data = await res.json();
-      setResults((prev) => ({ ...prev, [skill]: data }));
+
+      if (res.status === 409 && data.existingReviewId) {
+        // Attach flow: review already running — poll existing run
+        stopPolling();
+        pollRef.current = setInterval(() => pollStatus(data.existingReviewId, skill), POLL_INTERVAL_MS);
+        return;
+      }
+
+      if (!res.ok) {
+        setLoading(null);
+        setError(data.error || "Failed to start review");
+        return;
+      }
+
+      // Started successfully — poll for completion
+      const reviewId = data.id;
+      stopPolling();
+      pollRef.current = setInterval(() => pollStatus(reviewId, skill), POLL_INTERVAL_MS);
     } catch {
+      setLoading(null);
       setResults((prev) => ({
         ...prev,
-        [skill]: { passed: false, errorCount: 1, warningCount: 0, findings: [{ check: "network-error", severity: "error", message: "Failed to run review" }], durationMs: 0 },
+        [skill]: { passed: false, errorCount: 1, warningCount: 0, findings: [{ check: "network-error", severity: "error", message: "Failed to start review" }], durationMs: 0 },
       }));
-    } finally {
-      setLoading(null);
     }
   }
 
+  const visibleSkills = SKILL_CONFIG.filter((s) => s.roles.includes(userRole));
   if (visibleSkills.length === 0) return null;
 
   return (
@@ -69,15 +138,22 @@ export default function ReviewActions({ dealId, userRole }: ReviewActionsProps) 
               } disabled:opacity-50`}
             >
               {loading === skill ? (
-                <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                <>
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                  <span className="text-xs text-muted">Reviewing planset…</span>
+                </>
               ) : result ? (
                 result.passed ? "✓" : `✗ ${result.errorCount}`
               ) : null}
-              {label}
+              {loading !== skill && label}
             </button>
           );
         })}
       </div>
+
+      {error && (
+        <p className="text-sm text-red-500">{error}</p>
+      )}
 
       {Object.entries(results).map(([skill, result]) =>
         result.findings.length > 0 ? (

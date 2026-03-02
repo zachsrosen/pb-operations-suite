@@ -3,7 +3,8 @@ import type { CheckFn, ReviewContext } from "@/lib/checks/types";
 
 describe("Check Engine Registry", () => {
   it("returns empty array for unregistered skill", () => {
-    expect(getChecks("sales-advisor")).toEqual([]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(getChecks("nonexistent-skill" as any)).toEqual([]);
   });
 
   it("registers and retrieves checks", () => {
