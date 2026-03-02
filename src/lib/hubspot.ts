@@ -304,6 +304,7 @@ export interface Project {
   designDraftDate: string | null;
   designApprovalSentDate: string | null;
   designStartDate: string | null;
+  dateReturnedFromDesigners: string | null;
   daRevisionCounter: number | null;
   asBuiltRevisionCounter: number | null;
   permitRevisionCounter: number | null;
@@ -512,6 +513,7 @@ const DEAL_PROPERTIES = [
   "design_draft_completion_date", // planset upload date
   "design_approval_sent_date", // sent to customer for approval
   "design_start_date", // design work started
+  "date_returned_from_designers",
   "da_revision_counter",
   "as_built_revision_counter",
   "permit_revision_counter",
@@ -873,6 +875,7 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
     designDraftDate: parseDate(deal.design_draft_completion_date),
     designApprovalSentDate: parseDate(deal.design_approval_sent_date),
     designStartDate: parseDate(deal.design_start_date),
+    dateReturnedFromDesigners: parseDate(deal.date_returned_from_designers),
     daRevisionCounter: parseNullableNumber(deal.da_revision_counter),
     asBuiltRevisionCounter: parseNullableNumber(deal.as_built_revision_counter),
     permitRevisionCounter: parseNullableNumber(deal.permit_revision_counter),
