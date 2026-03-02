@@ -127,6 +127,22 @@ export function pickBestPlanset(files: DrivePdfFile[]): DrivePdfFile | null {
 }
 
 // ---------------------------------------------------------------------------
+// URL / ID helpers
+// ---------------------------------------------------------------------------
+
+/** Extract a Google Drive folder ID from a URL or bare ID. */
+export function extractFolderId(input: string): string | null {
+  // Full URL: https://drive.google.com/drive/folders/FOLDER_ID?...
+  const urlMatch = input.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+  if (urlMatch) return urlMatch[1];
+
+  // Bare alphanumeric ID (no slashes)
+  if (/^[a-zA-Z0-9_-]{10,}$/.test(input.trim())) return input.trim();
+
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // Download
 // ---------------------------------------------------------------------------
 

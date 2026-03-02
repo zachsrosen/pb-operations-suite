@@ -31,11 +31,12 @@ import {
   listDrivePdfs,
   pickBestPlanset,
   downloadDrivePdf,
+  extractFolderId,
   NON_PLANSET_PATTERNS,
 } from "@/lib/drive-plansets";
 
 // Re-export for existing consumers (tests, etc.)
-export { type DrivePdfFile, getDriveToken, listDrivePdfs, pickBestPlanset, downloadDrivePdf, NON_PLANSET_PATTERNS };
+export { type DrivePdfFile, getDriveToken, listDrivePdfs, pickBestPlanset, downloadDrivePdf, extractFolderId, NON_PLANSET_PATTERNS };
 import { extractBomFromPdf } from "@/lib/bom-extract";
 import { saveBomSnapshot, type BomData } from "@/lib/bom-snapshot";
 import { createSalesOrder } from "@/lib/bom-so-create";
@@ -393,18 +394,6 @@ export interface PipelineResult {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/** Extract a Google Drive folder ID from a URL or bare ID. */
-function extractFolderId(input: string): string | null {
-  // Full URL: https://drive.google.com/drive/folders/FOLDER_ID?...
-  const urlMatch = input.match(/\/folders\/([a-zA-Z0-9_-]+)/);
-  if (urlMatch) return urlMatch[1];
-
-  // Bare alphanumeric ID (no slashes)
-  if (/^[a-zA-Z0-9_-]{10,}$/.test(input.trim())) return input.trim();
-
-  return null;
-}
 
 /** Fetch a HubSpot contact's details for fallback customer matching.
  *  Returns null for expected "not found" (404) or missing config.

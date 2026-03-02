@@ -25,13 +25,15 @@ export function isAIDesignReviewEnabled(): boolean {
  */
 export async function runChecks(
   skill: SkillName,
-  context: ReviewContext
+  context: ReviewContext,
+  /** Optional heartbeat for long-running AI reviews (prevents stale-run recovery). */
+  onHeartbeat?: () => Promise<void>,
 ): Promise<ReviewResult> {
   // Phase 2: AI dispatch for design-review when flag is enabled
   if (skill === "design-review" && isAIDesignReviewEnabled()) {
     // Dynamically import to avoid loading AI module when flag is off
     const { runDesignReview } = await import("@/lib/checks/design-review-ai");
-    return runDesignReview(context.dealId, context.properties);
+    return runDesignReview(context.dealId, context.properties, onHeartbeat);
   }
 
   // Deterministic fallback: run registered check functions

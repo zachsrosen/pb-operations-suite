@@ -140,7 +140,7 @@ export default function ReviewActions({ dealId, userRole }: ReviewActionsProps) 
               {loading === skill ? (
                 <>
                   <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                  <span className="text-xs text-muted">Reviewing planset…</span>
+                  <span className="text-xs text-muted">Reviewing planset with AI…</span>
                 </>
               ) : result ? (
                 result.passed ? "✓" : `✗ ${result.errorCount}`

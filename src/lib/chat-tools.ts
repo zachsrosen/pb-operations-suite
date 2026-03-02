@@ -13,6 +13,7 @@ import { SKILL_ALLOWED_ROLES } from "@/lib/checks/types";
 import type { SkillName } from "@/lib/checks/types";
 import {
   acquireReviewLock,
+  touchReviewRun,
   completeReviewRun,
   failReviewRun,
   DuplicateReviewError,
@@ -34,6 +35,17 @@ const REVIEW_DEAL_PROPERTIES = [
   "pto_date",
   "hubspot_owner_id",
   "closedate",
+  // Phase 2: folder IDs for planset lookup + equipment for cross-reference
+  "design_documents",
+  "design_document_folder_id",
+  "all_document_parent_folder_id",
+  "system_size_kw",
+  "module_type",
+  "module_count",
+  "inverter_type",
+  "battery_type",
+  "battery_count",
+  "roof_type",
 ] as const;
 
 interface ChatToolContext {
@@ -169,7 +181,7 @@ export function createChatTools(context: ChatToolContext) {
             [...REVIEW_DEAL_PROPERTIES]
           );
           const properties = deal.properties as Record<string, string | null>;
-          const result = await runChecks(skill, { dealId: input.dealId, properties });
+          const result = await runChecks(skill, { dealId: input.dealId, properties }, () => touchReviewRun(reviewId));
           const projectIdMatch = properties.dealname?.match(/PROJ-\d+/);
           const projectId = projectIdMatch?.[0] ?? null;
 

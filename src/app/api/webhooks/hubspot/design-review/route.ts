@@ -65,6 +65,17 @@ const DEAL_PROPERTIES = [
   "pto_date",
   "hubspot_owner_id",
   "closedate",
+  // Phase 2: folder IDs for planset lookup + equipment for cross-reference
+  "design_documents",
+  "design_document_folder_id",
+  "all_document_parent_folder_id",
+  "system_size_kw",
+  "module_type",
+  "module_count",
+  "inverter_type",
+  "battery_type",
+  "battery_count",
+  "roof_type",
 ];
 
 // ---------------------------------------------------------------------------
@@ -100,7 +111,7 @@ async function processDesignReview(reviewId: string, dealId: string, eventId: nu
   await touchReviewRun(reviewId);
 
   // 2. Run checks directly (pure function, no HTTP hop)
-  const result = await runChecks("design-review", { dealId, properties });
+  const result = await runChecks("design-review", { dealId, properties }, () => touchReviewRun(reviewId));
 
   // 3. Extract projectId from deal name
   const projectIdMatch = properties.dealname?.match(/PROJ-\d+/);

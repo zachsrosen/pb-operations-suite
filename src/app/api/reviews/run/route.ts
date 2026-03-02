@@ -46,6 +46,17 @@ const DEAL_PROPERTIES = [
   "pto_date",
   "hubspot_owner_id",
   "closedate",
+  // Phase 2: folder IDs for planset lookup + equipment for cross-reference
+  "design_documents",
+  "design_document_folder_id",
+  "all_document_parent_folder_id",
+  "system_size_kw",
+  "module_type",
+  "module_count",
+  "inverter_type",
+  "battery_type",
+  "battery_count",
+  "roof_type",
 ];
 
 // ---------------------------------------------------------------------------
@@ -67,7 +78,7 @@ async function executeReview(
   await touchReviewRun(reviewId);
 
   // 2. Run checks (deterministic or AI depending on feature flag)
-  const result = await runChecks(skillName, { dealId, properties });
+  const result = await runChecks(skillName, { dealId, properties }, () => touchReviewRun(reviewId));
 
   // 3. Extract projectId from deal name
   const projectIdMatch = properties.dealname?.match(/PROJ-\d+/);
