@@ -54,9 +54,8 @@ export async function POST(request: NextRequest) {
   // Fetch deal properties from HubSpot
   let properties: Record<string, string | null>;
   try {
-    const { getHubSpotClient } = await import("@/lib/hubspot");
-    const client = getHubSpotClient();
-    const deal = await client.crm.deals.basicApi.getById(dealId, [
+    const { hubspotClient } = await import("@/lib/hubspot");
+    const deal = await hubspotClient.crm.deals.basicApi.getById(dealId, [
       "dealname",
       "dealstage",
       "pipeline",

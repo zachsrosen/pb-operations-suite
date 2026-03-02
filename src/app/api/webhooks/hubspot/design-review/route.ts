@@ -61,14 +61,31 @@ const DEAL_PROPERTIES = [
 ];
 
 // ---------------------------------------------------------------------------
+// Stage gate — only run on target stage(s)
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse DESIGN_REVIEW_TARGET_STAGES env var into a Set of stage IDs.
+ * If unset or empty, returns null (all stages pass — for dev/testing).
+ *
+ * Format: comma-separated HubSpot stage IDs
+ * Example: "qualifiedtobuy,presentationscheduled"
+ */
+function getTargetStages(): Set<string> | null {
+  const raw = (process.env.DESIGN_REVIEW_TARGET_STAGES ?? "").trim();
+  if (!raw) return null;
+  const stages = new Set(raw.split(",").map((s) => s.trim()).filter(Boolean));
+  return stages.size > 0 ? stages : null;
+}
+
+// ---------------------------------------------------------------------------
 // Background worker
 // ---------------------------------------------------------------------------
 
 async function processDesignReview(dealId: string, eventId: number) {
   // 1. Fetch deal properties from HubSpot
-  const { getHubSpotClient } = await import("@/lib/hubspot");
-  const client = getHubSpotClient();
-  const deal = await client.crm.deals.basicApi.getById(dealId, DEAL_PROPERTIES);
+  const { hubspotClient } = await import("@/lib/hubspot");
+  const deal = await hubspotClient.crm.deals.basicApi.getById(dealId, DEAL_PROPERTIES);
   const properties = deal.properties;
 
   // 2. Run checks directly (pure function, no HTTP hop)
@@ -164,12 +181,24 @@ export async function POST(req: NextRequest) {
   }
 
   // -- 4. Process each event --
+  const targetStages = getTargetStages();
   const triggered: string[] = [];
+  const skipped: string[] = [];
+
+  if (!targetStages) {
+    console.warn("[design-review] DESIGN_REVIEW_TARGET_STAGES not set — all dealstage changes will trigger review");
+  }
 
   for (const event of events) {
-    // Only handle deal property changes
+    // Only handle deal property changes on dealstage
     if (event.subscriptionType !== "deal.propertyChange") continue;
     if (event.propertyName !== "dealstage") continue;
+
+    // Gate: only run when deal enters a target stage
+    if (targetStages && event.propertyValue && !targetStages.has(event.propertyValue)) {
+      skipped.push(String(event.objectId));
+      continue;
+    }
 
     const dealId = String(event.objectId);
 
@@ -186,5 +215,5 @@ export async function POST(req: NextRequest) {
     triggered.push(dealId);
   }
 
-  return NextResponse.json({ status: "ok", triggered });
+  return NextResponse.json({ status: "ok", triggered, skipped });
 }

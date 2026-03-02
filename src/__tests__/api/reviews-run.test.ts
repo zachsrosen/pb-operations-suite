@@ -27,15 +27,22 @@ jest.mock("@/lib/checks/engineering-review", () => ({}));
 jest.mock("@/lib/checks/sales-advisor", () => ({}));
 
 // Mock the HubSpot client (dynamically imported in the route)
+const mockGetById = jest.fn();
 jest.mock("@/lib/hubspot", () => ({
-  getHubSpotClient: jest.fn(),
+  hubspotClient: {
+    crm: {
+      deals: {
+        basicApi: { getById: (...args: unknown[]) => mockGetById(...args) },
+      },
+    },
+  },
 }));
 
 import { NextRequest, NextResponse } from "next/server";
 import { POST } from "@/app/api/reviews/run/route";
 import { requireApiAuth } from "@/lib/api-auth";
 import { runChecks } from "@/lib/checks/runner";
-import { getHubSpotClient } from "@/lib/hubspot";
+// hubspotClient is already mocked above via jest.mock
 
 function makeRequest(body: Record<string, unknown>): NextRequest {
   return new NextRequest("http://localhost/api/reviews/run", {
@@ -97,19 +104,11 @@ describe("POST /api/reviews/run", () => {
       userAgent: "jest",
     });
 
-    (getHubSpotClient as jest.Mock).mockReturnValue({
-      crm: {
-        deals: {
-          basicApi: {
-            getById: jest.fn().mockResolvedValue({
-              properties: {
-                dealname: "PROJ-1234 Smith Residence",
-                dealstage: "qualifiedtobuy",
-                pipeline: "default",
-              },
-            }),
-          },
-        },
+    mockGetById.mockResolvedValue({
+      properties: {
+        dealname: "PROJ-1234 Smith Residence",
+        dealstage: "qualifiedtobuy",
+        pipeline: "default",
       },
     });
 

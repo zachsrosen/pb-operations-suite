@@ -1,5 +1,7 @@
 import DashboardShell from "@/components/DashboardShell";
+import ReviewActions from "@/components/ReviewActions";
 import { prisma } from "@/lib/db";
+import { auth } from "@/auth";
 
 interface Props {
   params: Promise<{ dealId: string }>;
@@ -7,6 +9,8 @@ interface Props {
 
 export default async function ReviewHistoryPage({ params }: Props) {
   const { dealId } = await params;
+  const session = await auth();
+  const userRole = session?.user?.role || "VIEWER";
 
   const reviews = await prisma.projectReview.findMany({
     where: { dealId },
@@ -19,6 +23,9 @@ export default async function ReviewHistoryPage({ params }: Props) {
   return (
     <DashboardShell title={`Reviews — ${projectId}`} accentColor="orange">
       <div className="space-y-6">
+        {/* Run review actions */}
+        <ReviewActions dealId={dealId} projectId={projectId} userRole={userRole} />
+
         <div className="grid grid-cols-3 gap-4">
           {["design-review", "engineering-review", "sales-advisor"].map((skill) => {
             const latest = reviews.find((r) => r.skill === skill);
