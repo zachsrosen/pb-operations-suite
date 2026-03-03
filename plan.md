@@ -16,7 +16,7 @@ Add to `prisma/schema.prisma`:
 ```prisma
 model SurveyInvite {
   id              String    @id @default(cuid())
-  token           String    @unique                // crypto-random, URL-safe
+  tokenHash       String    @unique                // SHA-256 of raw token; raw token NEVER stored
   dealId          String                           // HubSpot deal ID
   customerEmail   String
   customerName    String
@@ -26,9 +26,9 @@ model SurveyInvite {
   systemSize      Float?                           // kW, from deal
   status          SurveyInviteStatus @default(PENDING)
   expiresAt       DateTime                         // token TTL (default 14 days)
-  scheduledAt     DateTime?                        // when customer booked
-  scheduledDate   String?                          // YYYY-MM-DD
-  scheduledTime   String?                          // HH:MM
+  scheduledAt     DateTime?                        // UTC — when customer booked
+  scheduledDate   String?                          // YYYY-MM-DD (location-local date)
+  scheduledTime   String?                          // HH:MM (location-local time)
   crewMemberId    String?                          // assigned crew member
   scheduleRecordId String?                         // link to ScheduleRecord
   zuperJobUid     String?                          // Zuper job UID once created
@@ -40,8 +40,7 @@ model SurveyInvite {
 
   @@index([dealId])
   @@index([customerEmail])
-  @@index([token])
-  @@index([status])
+  @@index([status, expiresAt])
 }
 
 enum SurveyInviteStatus {
@@ -54,23 +53,48 @@ enum SurveyInviteStatus {
 }
 ```
 
+**Constraints:**
+- `tokenHash` is unique (covers lookup + uniqueness)
+- Composite index on `(status, expiresAt)` for expiry sweeps
+- One active invite per deal enforced at app level: reject `POST /invite` if an active (PENDING | SCHEDULED) invite already exists for that `dealId`
+
 ---
 
-## 2. New Files & Routes
+## 2. Token Design
 
-### Public Portal Page (no auth required)
+- **Generation:** 32 bytes via `crypto.randomBytes(32)`, base64url-encoded → 43-char URL-safe string
+- **Storage:** Only `SHA-256(token)` stored in `tokenHash` column. Raw token exists only in the invite URL and never hits the DB
+- **Lookup:** On portal request, hash the incoming token and query by `tokenHash`
+- **Expiry:** 14-day default, checked at query time
+- **Revocation:** Setting status to `CANCELLED` or `EXPIRED` invalidates the token without needing to touch the hash
+
+---
+
+## 3. Timezone Handling
+
+- All `DateTime` fields stored as UTC
+- `scheduledDate` / `scheduledTime` stored as location-local strings (e.g. `2026-03-15` / `09:00` in America/Denver for Westminster)
+- Each `pbLocation` maps to an IANA timezone (already exists in crew availability system)
+- Portal UI renders times in the location's timezone with the timezone label shown to the customer
+- Availability computation uses location timezone for day boundaries
+
+---
+
+## 4. New Files & Routes
+
+### Public Portal Pages (no auth required)
 ```
-src/app/portal/survey/[token]/page.tsx        # Customer-facing scheduling page
-src/app/portal/survey/[token]/layout.tsx      # Minimal layout (no DashboardShell, no nav)
-src/app/portal/survey/[token]/confirmation/page.tsx  # Post-booking confirmation
+src/app/portal/survey/[token]/page.tsx              # Scheduling UI
+src/app/portal/survey/[token]/layout.tsx            # Minimal layout (PB logo, no sidebar)
+src/app/portal/survey/[token]/confirmation/page.tsx # Post-booking confirmation
 ```
 
 ### Public API Routes (token-validated, no next-auth)
 ```
-src/app/api/portal/survey/[token]/route.ts          # GET: invite details + available slots
-src/app/api/portal/survey/[token]/book/route.ts     # POST: book a slot
-src/app/api/portal/survey/[token]/reschedule/route.ts  # PUT: change booking (if allowed)
-src/app/api/portal/survey/[token]/cancel/route.ts   # POST: cancel booking
+src/app/api/portal/survey/[token]/route.ts             # GET: invite details + available slots
+src/app/api/portal/survey/[token]/book/route.ts        # POST: book a slot
+src/app/api/portal/survey/[token]/reschedule/route.ts  # PUT: change booking
+src/app/api/portal/survey/[token]/cancel/route.ts      # POST: cancel booking
 ```
 
 ### Internal API Routes (auth required)
@@ -81,146 +105,175 @@ src/app/api/portal/survey/invites/route.ts   # GET: list invites (for dashboard)
 
 ### Shared Utilities
 ```
-src/lib/portal-token.ts          # Token generation + validation helpers
+src/lib/portal-token.ts          # Token generation, hashing, validation
 src/lib/portal-availability.ts   # Compute available slots for customer view
 ```
 
-### Email Template
+### Email Templates
 ```
-src/emails/SurveyInviteEmail.tsx       # "Schedule your site survey" email
-src/emails/SurveyConfirmationEmail.tsx # Booking confirmation to customer
-```
-
-### Internal Dashboard Integration
-```
-src/app/dashboards/survey-invites/page.tsx   # Track invite statuses (optional, phase 2)
+src/emails/SurveyInviteEmail.tsx       # "Schedule your site survey" CTA email
+src/emails/SurveyConfirmationEmail.tsx # Booking confirmation + .ics attachment
 ```
 
 ---
 
-## 3. Implementation Steps
+## 5. Implementation Steps
 
 ### Step 1: Schema + Token Infrastructure
-- Add `SurveyInvite` model and enum to Prisma schema
-- Run `npx prisma generate` (no migration needed for Neon — will use `prisma db push` or migration)
+- Add `SurveyInvite` model + `SurveyInviteStatus` enum to Prisma schema
+- Run `prisma generate` / `prisma db push`
 - Create `src/lib/portal-token.ts`:
-  - `generateToken()` — 32-byte crypto-random, base64url-encoded
-  - `validateToken(token)` — fetch invite, check expiry + status
+  - `generateToken()` → `{ raw: string, hash: string }` (32-byte random, base64url + SHA-256)
+  - `hashToken(raw)` → SHA-256 hex digest
+  - `validateToken(raw)` → fetch invite by hash, check expiry + status, return invite or null
 
 ### Step 2: Availability Computation for Portal
 - Create `src/lib/portal-availability.ts`:
   - Reuse existing `CrewAvailability` + `BookedSlot` + `AvailabilityOverride` queries
-  - Compute available survey slots for a given `pbLocation` over the next 14 days
-  - Return slots grouped by date: `{ date: string, slots: { time: string, crewMemberId: string }[] }`
-  - Apply business rules: no same-day booking, minimum 2-day lead time for sales-originated invites
-  - Hide crew member identity from customer (just show time slots)
+  - Compute available survey slots for a `pbLocation` over the next 14 days
+  - Return slots grouped by date: `{ date: string, slots: { time: string, slotId: string }[] }`
+  - `slotId` is an opaque identifier (e.g. HMAC of date+time+crewId) — no internal IDs exposed
+  - Apply business rules: no same-day booking, configurable minimum lead time
+  - All time math uses location timezone for day boundaries
 
 ### Step 3: Public API Endpoints
-- **GET `/api/portal/survey/[token]`**
-  - Validate token (exists, not expired, status PENDING or SCHEDULED)
-  - Return: customer name, property address, available slots, current booking (if any)
-  - Rate limit: 20 requests/minute per token
-  - Do NOT expose internal IDs, crew names, or deal details
 
-- **POST `/api/portal/survey/[token]/book`**
-  - Body: `{ date: string, time: string, accessNotes?: string }`
-  - Validate: token valid, slot still available (re-check), status is PENDING
-  - Book slot via existing `BookedSlot` creation logic
-  - Create `ScheduleRecord` (source: "customer_portal")
-  - Create Zuper job via `ZuperClient.createJobFromProject()`
-  - Update `SurveyInvite` status → SCHEDULED
-  - Send confirmation email to customer
-  - Send internal notification to ops team
-  - Log activity (SURVEY_SCHEDULED, source: customer_portal)
+**GET `/api/portal/survey/[token]`**
+- Hash token, lookup invite by `tokenHash`
+- Validate: exists, not expired, status is PENDING or SCHEDULED
+- Return: customer name, property address, available slots (if PENDING), current booking (if SCHEDULED)
+- Rate limit: 20 req/min per token, 60 req/min per IP
+- Expose nothing internal: no crew names, deal IDs, or internal statuses
 
-- **PUT `/api/portal/survey/[token]/reschedule`**
-  - Only if current status is SCHEDULED and survey date is >24h away
-  - Free old slot, book new slot, update Zuper job schedule
-  - Update status → RESCHEDULED
-  - Send updated confirmation to customer + internal notification
+**POST `/api/portal/survey/[token]/book`**
+- Body: `{ slotId: string, accessNotes?: string, idempotencyKey: string }`
+- Idempotency: if `idempotencyKey` matches a previous successful booking for this invite, return the existing booking (prevents double-submit)
+- Validate: token valid, status is PENDING, slot still available
+- **DB transaction:** re-check slot availability + create `BookedSlot` + update `SurveyInvite` status → SCHEDULED atomically
+- **Async outbox:** after commit, enqueue Zuper job creation + confirmation email + internal notification
+  - If Zuper fails: invite stays SCHEDULED, `zuperJobUid` stays null, ops notified to manually sync
+  - If email fails: logged to Sentry, ops notified, customer can still see confirmation in portal
+- Log activity: `SURVEY_SCHEDULED`, source `customer_portal`
 
-- **POST `/api/portal/survey/[token]/cancel`**
-  - Only if status is SCHEDULED and survey date is >24h away
-  - Free slot, update Zuper job status
-  - Update status → CANCELLED
-  - Send cancellation emails
+**PUT `/api/portal/survey/[token]/reschedule`**
+- Body: `{ slotId: string, idempotencyKey: string }`
+- Only if status is SCHEDULED and survey date is >24h away
+- DB transaction: free old slot + book new slot + update invite
+- Async: update Zuper job schedule + send updated confirmation + internal notification
+
+**POST `/api/portal/survey/[token]/cancel`**
+- Body: `{ idempotencyKey: string }`
+- Only if status is SCHEDULED and survey date is >24h away
+- DB transaction: free slot + update status → CANCELLED
+- Async: update Zuper job status + send cancellation emails
 
 ### Step 4: Customer-Facing UI
-- **Layout** (`portal/survey/[token]/layout.tsx`):
-  - Minimal: PB logo, no sidebar/nav, no auth checks
-  - Responsive, mobile-first (customers will use phones)
-  - Theme tokens for consistency but simpler than internal dashboards
 
-- **Main Page** (`portal/survey/[token]/page.tsx`):
-  - Fetch invite + slots via API on load
-  - Show: greeting with customer name, property address, instructions
-  - Calendar date picker (next 14 days, disabled dates with no availability)
-  - Time slot grid for selected date
-  - Access notes textarea ("Gate codes, pets, parking instructions...")
-  - Confirm button → book API call → redirect to confirmation page
-  - States: loading, invalid/expired token, already scheduled (show booking), available
+**Layout** (`portal/survey/[token]/layout.tsx`):
+- Minimal: PB logo, no sidebar/nav, no auth checks
+- Responsive, mobile-first (customers will mostly use phones)
+- Theme tokens for consistency, simpler than internal dashboards
 
-- **Confirmation Page** (`portal/survey/[token]/confirmation`):
-  - Show: date, time, address, what to expect
-  - "Add to Calendar" link (Google Calendar / .ics download)
-  - Reschedule / Cancel buttons (if within allowed window)
-  - Contact info for questions
+**Main Page** (`portal/survey/[token]/page.tsx`):
+- Fetch invite + slots on load via GET endpoint
+- Greeting with customer name, property address, brief instructions
+- Calendar date picker (next 14 days, disabled dates with no availability)
+- Time slot grid for selected date (location timezone displayed)
+- Access notes textarea ("Gate codes, pets, parking instructions...")
+- Confirm button with loading state (idempotencyKey generated client-side on mount)
+- On success → redirect to confirmation page
+- States: loading, invalid/expired token, already scheduled (show current booking), no availability, error
+
+**Confirmation Page** (`portal/survey/[token]/confirmation`):
+- Date, time (with timezone), address, what to expect
+- "Add to Calendar" link (Google Calendar URL + .ics download)
+- Reschedule / Cancel buttons (visible only if >24h before survey)
+- Contact info for questions
 
 ### Step 5: Internal Invite API + Email
-- **POST `/api/portal/survey/invite`** (requires auth, canScheduleSurveys permission):
-  - Body: `{ dealId, customerEmail, customerName, propertyAddress, pbLocation, systemSize? }`
-  - Generate token, create SurveyInvite (status: PENDING, expiresAt: now + 14 days)
-  - Send invite email via Resend using `SurveyInviteEmail` template
-  - Log activity
 
-- **SurveyInviteEmail template**:
-  - Subject: "Schedule Your Site Survey — Photon Brothers"
-  - Body: greeting, explain what a site survey is, CTA button to portal URL
-  - Clean, branded, mobile-friendly
+**POST `/api/portal/survey/invite`** (requires auth + `canScheduleSurveys`):
+- Body: `{ dealId, customerEmail, customerName, propertyAddress, pbLocation, systemSize?, customerPhone? }`
+- Reject if an active invite (PENDING | SCHEDULED) already exists for `dealId`
+- Generate token → store `tokenHash`, build portal URL with raw token
+- Create `SurveyInvite` (status: PENDING, expiresAt: now + 14 days)
+- Send invite email via Resend
+- Log activity
 
-- **SurveyConfirmationEmail template**:
-  - Subject: "Your Site Survey is Confirmed"
-  - Body: date/time, address, what to expect, reschedule/cancel links
-  - Calendar attachment (.ics)
+**SurveyInviteEmail:**
+- Subject: "Schedule Your Site Survey — Photon Brothers"
+- Greeting, brief explanation of what a site survey is, CTA button linking to portal URL
+- Mobile-friendly, branded
 
-### Step 6: Integration with Existing Scheduler
+**SurveyConfirmationEmail:**
+- Subject: "Your Site Survey is Confirmed"
+- Date/time, address, what to expect, reschedule/cancel links back to portal
+- .ics calendar attachment
+
+### Step 6: Middleware + Auth Bypass
+- Add `/portal` to `ALWAYS_ALLOWED` array in `src/middleware.ts` so portal routes skip auth checks
+- Portal routes validate access via token hash lookup instead
+
+### Step 7: Integration with Existing Scheduler
 - Add "Send Portal Invite" button to site survey scheduler dashboard
-  - On the project row or detail panel, button to trigger invite creation
-  - Pre-fills customerEmail, name, address from HubSpot deal data
-  - Shows invite status if one already exists for that deal
-- Add `source: "customer_portal"` tracking to ScheduleRecord for analytics
+  - On project row or detail panel
+  - Pre-fills customer info from HubSpot deal data
+  - Shows invite status badge if one already exists for that deal (PENDING/SCHEDULED/etc.)
+- Add `source: "customer_portal"` tracking to `ScheduleRecord` for analytics
 
 ---
 
-## 4. Security Considerations
+## 6. Security
 
-- **Tokens**: 32-byte crypto-random (256-bit entropy), base64url-encoded, 44 chars
-- **Expiry**: 14-day default, configurable per invite
-- **Rate limiting**: Per-token and per-IP limits on public endpoints
-- **Input validation**: Zod schemas on all API inputs
-- **No sensitive data exposure**: Hide crew IDs, deal IDs, internal status from customer responses
-- **CSRF**: Not needed for token-validated GET/POST (token itself acts as CSRF token)
-- **Slot race conditions**: Re-validate availability at booking time inside a transaction
-- **Audit trail**: All portal actions logged to ActivityLog with `source: "customer_portal"`
+| Concern | Approach |
+|---------|----------|
+| Token secrecy | SHA-256 hash at rest; raw token only in URL |
+| Token entropy | 32 bytes (256-bit), base64url, 43 chars |
+| Expiry | 14-day default, checked at query time |
+| Rate limiting | Per-token (20/min) + per-IP (60/min) on public endpoints |
+| Input validation | Zod schemas on all API request bodies |
+| Data exposure | No crew names, deal IDs, or internal statuses in portal responses |
+| Race conditions | Slot availability re-checked inside DB transaction at booking time |
+| Double-submit | Client-generated `idempotencyKey` on book/reschedule/cancel |
+| Partial failure | DB commit first (booking is source of truth), Zuper + email async with retry |
+| One invite per deal | App-level check on active invites before creating new one |
+| Audit trail | All portal actions logged to `ActivityLog` with `source: "customer_portal"` |
 
 ---
 
-## 5. Files Modified (Existing)
+## 7. Existing Files Modified
 
 | File | Change |
 |------|--------|
 | `prisma/schema.prisma` | Add `SurveyInvite` model + `SurveyInviteStatus` enum |
-| `src/lib/role-permissions.ts` | Add portal invite permissions if needed |
+| `src/middleware.ts` | Add `/portal` to `ALWAYS_ALLOWED` for auth bypass |
 | `src/app/dashboards/site-survey-scheduler/page.tsx` | Add "Send Invite" button per project |
-| `src/lib/zuper.ts` | No changes needed (reuse existing job creation) |
 | `src/lib/email.ts` | Add portal email sending functions |
-| `next.config.ts` | Ensure `/portal/*` routes are not behind auth middleware |
 
 ---
 
-## 6. Out of Scope (Future Phases)
+## 8. Test Coverage
 
-- Customer account system / login
+| Scenario | Type |
+|----------|------|
+| Token generation + hash round-trip | Unit |
+| Expired token rejected | Unit |
+| Cancelled/completed invite rejected | Unit |
+| Slot availability computation respects overrides + booked slots | Unit |
+| Booking race condition: two concurrent bookings for last slot, one wins | Integration |
+| Idempotent re-submit returns same booking | Integration |
+| 24h cutoff enforced for reschedule/cancel | Unit |
+| One active invite per deal constraint | Integration |
+| Rate limiting triggers on excess requests | Integration |
+| Zuper failure doesn't roll back booking | Integration |
+| Email failure doesn't roll back booking | Integration |
+| Timezone boundary edge cases (late-night bookings, DST transitions) | Unit |
+
+---
+
+## 9. Out of Scope (Future Phases)
+
+- Customer accounts / login system
 - Project status tracker
 - Document upload / viewing
 - In-portal messaging
