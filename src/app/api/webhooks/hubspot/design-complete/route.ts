@@ -179,14 +179,14 @@ export async function POST(req: NextRequest) {
     const dealId = String(event.objectId);
     const trigger: BomPipelineTrigger = stageConfig.get(event.propertyValue)!;
 
-    // ── 5b. Skip if pipeline already succeeded for this deal+trigger (prevent re-runs) ──
-    const successfulRun = await prisma.bomPipelineRun.findFirst({
-      where: { dealId, trigger, status: "SUCCEEDED" },
-      select: { id: true },
+    // ── 5b. Skip if pipeline already succeeded/partial for this deal+trigger (prevent re-runs) ──
+    const completedRun = await prisma.bomPipelineRun.findFirst({
+      where: { dealId, trigger, status: { in: ["SUCCEEDED", "PARTIAL"] } },
+      select: { id: true, status: true },
     });
-    if (successfulRun) {
-      console.log(`[design-complete] Skipping deal ${dealId} — already has a successful run for trigger ${trigger} (run ${successfulRun.id})`);
-      triggered.push(`${dealId}:already_succeeded`);
+    if (completedRun) {
+      console.log(`[design-complete] Skipping deal ${dealId} — already has a ${completedRun.status} run for trigger ${trigger} (run ${completedRun.id})`);
+      triggered.push(`${dealId}:already_completed`);
       continue;
     }
 
