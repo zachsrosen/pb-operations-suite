@@ -21,11 +21,12 @@ interface FullEquipment {
   systemSizeKwac: number;
 }
 
-// Statuses that indicate "in review"
+// Statuses that indicate "in review" (raw HubSpot designStatus values)
 const REVIEW_STATUSES = [
-  "Ready For Review",
-  "Final Review/Stamping",
-  "DA Approved",
+  "Initial Review",           // Initial design review
+  "Ready for Review",         // Final review / stamping
+  "DA Approved",              // DA approved, pending engineering
+  "Submitted To Engineering", // In engineering review
 ];
 
 type SortField =
@@ -138,11 +139,13 @@ export default function PlanReviewPage() {
       const dcAcRatio = acKw > 0 ? dcKw / acKw : 0;
       const daysWaiting = p.daysSinceStageMovement ?? 0;
 
-      const reviewType = p.designStatus === "Ready For Review"
+      const reviewType = p.designStatus === "Initial Review"
         ? "Initial Design Review"
+        : p.designStatus === "Ready for Review"
+        ? "Final Review / Stamping"
         : p.designStatus === "DA Approved"
-        ? "Final Design Review"
-        : "Pending Engineering";
+        ? "DA Approved — Pending Engineering"
+        : "In Engineering";
 
       const eqSummary = eq
         ? `${eq.modules?.count || 0}\u00d7 ${eq.modules?.wattage || 0}W, ${eq.inverter?.count || 0}\u00d7 inv`
@@ -212,7 +215,7 @@ export default function PlanReviewPage() {
   // Stats (computed from filtered set)
   const stats = useMemo(() => {
     const initial = filteredProjects.filter((p) => p.reviewType === "Initial Design Review").length;
-    const finalEng = filteredProjects.filter((p) => p.reviewType === "Final Design Review" || p.reviewType === "Pending Engineering").length;
+    const finalEng = filteredProjects.filter((p) => p.reviewType !== "Initial Design Review").length;
     const avgDays = filteredProjects.length > 0
       ? Math.round(filteredProjects.reduce((s, p) => s + p.daysWaiting, 0) / filteredProjects.length)
       : 0;
@@ -410,7 +413,9 @@ export default function PlanReviewPage() {
                         <span className={`inline-block px-2 py-0.5 text-xs font-medium rounded-full ${
                           p.reviewType === "Initial Design Review"
                             ? "bg-yellow-500/20 text-yellow-400 border border-yellow-500/30"
-                            : p.reviewType === "Final Design Review"
+                            : p.reviewType === "Final Review / Stamping"
+                            ? "bg-orange-500/20 text-orange-400 border border-orange-500/30"
+                            : p.reviewType === "DA Approved — Pending Engineering"
                             ? "bg-indigo-500/20 text-indigo-400 border border-indigo-500/30"
                             : "bg-cyan-500/20 text-cyan-400 border border-cyan-500/30"
                         }`}>
