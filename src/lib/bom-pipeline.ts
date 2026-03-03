@@ -41,13 +41,7 @@ import { extractBomFromPdf } from "@/lib/bom-extract";
 import { saveBomSnapshot, type BomData } from "@/lib/bom-snapshot";
 import { createSalesOrder } from "@/lib/bom-so-create";
 import { fetchPrimaryContactId } from "@/lib/hubspot";
-import {
-  ensureCustomerCacheLoaded,
-  findByHubSpotContactId,
-  findByEmail,
-  findByPhone,
-  searchCustomersByName,
-} from "@/lib/zoho-customer-cache";
+import { resolveCustomer } from "@/lib/bom-customer-resolve";
 import { sendPipelineNotification } from "@/lib/email";
 import { PIPELINE_ACTOR } from "@/lib/actor-context";
 import { getAnthropicClient, CLAUDE_MODELS } from "@/lib/anthropic";
@@ -820,145 +814,20 @@ export async function runDesignCompletePipeline(
     // ── Step 5: Resolve Zoho customer ──
     currentStep = "RESOLVE_CUSTOMER";
 
-    let customerId: string | null = null;
-    let customerMatchMethod: string = "none";
-    const searchAttempts: string[] = [];
+    const { result: customerResult } = await withRetry(
+      "RESOLVE_CUSTOMER",
+      () => resolveCustomer({
+        dealName,
+        primaryContactId,
+        dealAddress: dealProps.address,
+      }),
+      retryObs,
+    );
 
-    await withRetry("RESOLVE_CUSTOMER", () => ensureCustomerCacheLoaded(), retryObs);
+    const { customerId, customerName: _customerName, matchMethod: customerMatchMethod, searchAttempts } = customerResult;
 
-    // --- Strategy 1: HubSpot contact ID → Zoho customer mapping ---
-    if (primaryContactId) {
-      const match = findByHubSpotContactId(primaryContactId);
-      if (match) {
-        customerId = match.contact_id;
-        customerMatchMethod = "hubspot_contact_id";
-        console.log(`[bom-pipeline] Auto-matched Zoho customer via HubSpot ID: ${match.contact_name} (${customerId})`);
-      } else {
-        searchAttempts.push(`HubSpot ID ${primaryContactId} → no match`);
-      }
-    }
-
-    // Helper: try a name search and auto-select if exactly 1 match or exact-name match
-    const tryNameSearch = (query: string, fullName: string | null, label: string): boolean => {
-      if (customerId || query.length < 2) return false;
-      const matches = searchCustomersByName(query);
-      console.log(`[bom-pipeline] ${label} search "${query}" → ${matches.length} match(es)`);
-
-      if (matches.length === 1) {
-        customerId = matches[0].contact_id;
-        customerMatchMethod = `${label}_single`;
-        console.log(`[bom-pipeline] Auto-matched via ${label} (single): ${matches[0].contact_name} (${customerId})`);
-        return true;
-      }
-      if (matches.length > 1 && fullName) {
-        const exact = matches.find((c) => c.contact_name.toLowerCase() === fullName.toLowerCase());
-        if (exact) {
-          customerId = exact.contact_id;
-          customerMatchMethod = `${label}_exact`;
-          console.log(`[bom-pipeline] Auto-matched via ${label} (exact): ${exact.contact_name} (${customerId})`);
-          return true;
-        }
-      }
-      searchAttempts.push(`${label} "${query}" → ${matches.length} match(es), no unique`);
-      return false;
-    };
-
-    // --- Strategy 2: Deal name (after pipe) → Zoho name search ---
-    // Deal names: "PROJ-XXXX | LastName, FirstName | Address" or "PROJ-XXXX | CompanyName"
-    if (!customerId && dealName) {
-      // Extract customer portion: second segment between pipes
-      const segments = dealName.split("|").map((s) => s.trim());
-      const afterPipe = segments.length >= 2 ? segments[1] : null;
-      if (afterPipe) {
-        // 2a: Try full customer portion (e.g. "Morton, Yu")
-        tryNameSearch(afterPipe, afterPipe, "deal_name_full");
-
-        // 2b: Try without comma (e.g. "Morton Yu" — Zoho may store as "Yu Morton")
-        if (!customerId && afterPipe.includes(",")) {
-          const noComma = afterPipe.replace(/,/g, "").trim();
-          tryNameSearch(noComma, afterPipe, "deal_name_nocomma");
-        }
-
-        // 2c: Try just last name (first word before comma/space)
-        if (!customerId) {
-          const lastName = afterPipe.split(/[,\s]+/)[0];
-          if (lastName && lastName !== afterPipe) {
-            tryNameSearch(lastName, afterPipe, "deal_name_lastname");
-          }
-        }
-      }
-    }
-
-    // --- Strategy 3: HubSpot contact email/phone/name → Zoho lookup ---
-    if (!customerId && primaryContactId) {
-      const { result: contactInfo } = await withRetry("RESOLVE_CUSTOMER", () => fetchContactDetails(primaryContactId), retryObs);
-      if (contactInfo) {
-        // 3a: Email match (very reliable — unique identifier)
-        if (!customerId && contactInfo.email) {
-          const emailMatch = findByEmail(contactInfo.email);
-          if (emailMatch) {
-            customerId = emailMatch.contact_id;
-            customerMatchMethod = "email";
-            console.log(`[bom-pipeline] Auto-matched via email ${contactInfo.email}: ${emailMatch.contact_name} (${customerId})`);
-          } else {
-            searchAttempts.push(`email "${contactInfo.email}" → no match`);
-          }
-        }
-
-        // 3b: Phone match (reliable — normalize digits)
-        if (!customerId && contactInfo.phone) {
-          const phoneMatch = findByPhone(contactInfo.phone);
-          if (phoneMatch) {
-            customerId = phoneMatch.contact_id;
-            customerMatchMethod = "phone";
-            console.log(`[bom-pipeline] Auto-matched via phone ${contactInfo.phone}: ${phoneMatch.contact_name} (${customerId})`);
-          } else {
-            searchAttempts.push(`phone "${contactInfo.phone}" → no match`);
-          }
-        }
-
-        // 3c: Last name → name search
-        if (!customerId && contactInfo.lastName) {
-          tryNameSearch(contactInfo.lastName, contactInfo.fullName, "contact_lastname");
-        }
-        // 3d: Full name → name search
-        if (!customerId && contactInfo.fullName) {
-          tryNameSearch(contactInfo.fullName, contactInfo.fullName, "contact_fullname");
-        }
-        // 3e: Company name → name search
-        if (!customerId && contactInfo.company) {
-          tryNameSearch(contactInfo.company, contactInfo.company, "contact_company");
-        }
-      }
-    }
-
-    // --- Strategy 4: Deal address → Zoho name search (address-based) ---
-    // Some Zoho customers are named by address or include address in name
-    if (!customerId && dealProps.address) {
-      // Try last name from deal + address city combo for disambiguation
-      const afterPipe = dealName.includes("|") ? dealName.split("|")[1]?.trim() : null;
-      const lastName = afterPipe?.split(/[,\s]+/)[0];
-      if (lastName && lastName.length >= 2) {
-        // Already tried in strategy 2 — skip if same query
-        // But try with just the bare last name (no comma/first name)
-        const matches = searchCustomersByName(lastName);
-        if (matches.length > 1 && dealProps.address) {
-          // Multiple matches for last name — try to disambiguate by address in customer name
-          const addressWord = dealProps.address.split(/\s+/)[0]; // First word of address (e.g. "1234")
-          if (addressWord && addressWord.length >= 3) {
-            const addressMatch = matches.find((c) =>
-              c.contact_name.toLowerCase().includes(addressWord.toLowerCase())
-            );
-            if (addressMatch) {
-              customerId = addressMatch.contact_id;
-              customerMatchMethod = "address_disambiguate";
-              console.log(`[bom-pipeline] Auto-matched via address disambiguation: ${addressMatch.contact_name} (${customerId})`);
-            } else {
-              searchAttempts.push(`address disambiguate "${lastName}" + "${addressWord}" → no match among ${matches.length}`);
-            }
-          }
-        }
-      }
+    if (customerId) {
+      console.log(`[bom-pipeline] Resolved Zoho customer via ${customerMatchMethod}: ${_customerName} (${customerId})`);
     }
 
     // --- Graceful degradation: skip SO creation instead of failing ---

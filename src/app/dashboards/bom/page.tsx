@@ -845,6 +845,7 @@ function BomDashboardInner() {
   // Zoho SO state
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
   const [selectedCustomerName, setSelectedCustomerName] = useState<string>("");
+  const [customerMatchMethod, setCustomerMatchMethod] = useState<string | null>(null);
   const customerManuallySet = useRef(false);
   const autoMatchAbortRef = useRef<AbortController | null>(null);
   const projectHydrateAbortRef = useRef<AbortController | null>(null);
@@ -876,30 +877,38 @@ function BomDashboardInner() {
   const [driveFilesError, setDriveFilesError] = useState<string | null>(null);
   const [extractingDriveFileId, setExtractingDriveFileId] = useState<string | null>(null);
 
-  const runCustomerAutoMatch = useCallback((hubspotContactId: string) => {
-    const normalizedId = hubspotContactId.trim();
-    if (!normalizedId) return;
+  const runCustomerAutoMatch = useCallback(() => {
+    const dealName = linkedProject?.dealname;
+    if (!dealName) return;
 
     autoMatchAbortRef.current?.abort();
     const controller = new AbortController();
     autoMatchAbortRef.current = controller;
 
-    fetch(`/api/bom/zoho-customers?hubspot_contact_id=${encodeURIComponent(normalizedId)}`, {
+    fetch("/api/bom/resolve-customer", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       signal: controller.signal,
+      body: JSON.stringify({
+        dealName,
+        hubspotContactId: linkedProject?.hubspotContactId || undefined,
+        dealAddress: linkedProject?.address || undefined,
+      }),
     })
       .then((r) => r.ok ? r.json() : null)
-      .then((data: { customer: { contact_id: string; contact_name: string } | null } | null) => {
+      .then((data: { customerId: string | null; customerName: string | null; matchMethod: string } | null) => {
         if (controller.signal.aborted) return;
-        if (!data?.customer) return;
+        if (!data?.customerId || !data.customerName) return;
         if (customerManuallySet.current) return;
-        setSelectedCustomerId(data.customer.contact_id);
-        setSelectedCustomerName(data.customer.contact_name);
+        setSelectedCustomerId(data.customerId);
+        setSelectedCustomerName(data.customerName);
+        setCustomerMatchMethod(data.matchMethod);
       })
       .catch((err: unknown) => {
         if (err instanceof DOMException && err.name === "AbortError") return;
         // Silent — fall back to manual search
       });
-  }, []);
+  }, [linkedProject?.dealname, linkedProject?.hubspotContactId, linkedProject?.address]);
 
   const hydrateProjectDetails = useCallback(async (dealId: string): Promise<void> => {
     const normalizedDealId = dealId.trim();
@@ -1005,14 +1014,17 @@ function BomDashboardInner() {
     }
   }, [linkedProject?.hs_object_id]);
 
-  // Fire auto-match when hubspotContactId becomes available.
-  // The optimistic project set has hubspotContactId=undefined, so this
-  // effect skips until the full /api/projects/:id response populates it.
+  // Fire multi-strategy auto-match when project details are hydrated.
+  // Waits until dealname is populated (optimistic set has name from search,
+  // but hubspotContactId arrives only after full /api/projects/:id response).
   useEffect(() => {
-    const hsContactId = linkedProject?.hubspotContactId;
-    if (!hsContactId) return;
-    runCustomerAutoMatch(hsContactId);
-  }, [linkedProject?.hubspotContactId, runCustomerAutoMatch]);
+    if (!linkedProject?.dealname) return;
+    // Wait for hubspotContactId to be populated (or confirmed null) before matching.
+    // The optimistic linkedProject from search has hubspotContactId=undefined,
+    // while the hydrated version has it as string|null.
+    if (linkedProject.hubspotContactId === undefined) return;
+    runCustomerAutoMatch();
+  }, [linkedProject?.dealname, linkedProject?.hubspotContactId, runCustomerAutoMatch]);
 
   useEffect(() => {
     return () => {
@@ -1178,10 +1190,9 @@ function BomDashboardInner() {
       setSelectedVendorId("");      // Clear stale vendor selection
       setSelectedCustomerId("");    // Clear stale customer selection
       setSelectedCustomerName("");  // Clear stale customer name
+      setCustomerMatchMethod(null);
       customerManuallySet.current = false;
-      if (targetProject.hubspotContactId) {
-        runCustomerAutoMatch(targetProject.hubspotContactId);
-      }
+      runCustomerAutoMatch();
       // Reload history list
       const histRes = await fetch(`/api/bom/history?dealId=${encodeURIComponent(targetProject.hs_object_id)}`);
       if (histRes.ok) {
@@ -1347,6 +1358,7 @@ function BomDashboardInner() {
         setSelectedVendorId("");
         setSelectedCustomerId("");
         setSelectedCustomerName("");
+        setCustomerMatchMethod(null);
         setAutoLinkSuggestion(null);
         // Remove stale ?deal= param from URL without a navigation
         const url = new URL(window.location.href);
@@ -2555,14 +2567,19 @@ function BomDashboardInner() {
                         View SO in Zoho →
                       </a>
                     ) : (
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <CustomerSearchCombobox
                           value={selectedCustomerId}
                           valueName={selectedCustomerName}
                           onChange={(id, name) => { setSelectedCustomerId(id); setSelectedCustomerName(name); }}
-                          onManualSelect={() => { customerManuallySet.current = true; }}
+                          onManualSelect={() => { customerManuallySet.current = true; setCustomerMatchMethod("manual"); }}
                           autoSearch={linkedProject?.dealname}
                         />
+                        {customerMatchMethod && customerMatchMethod !== "manual" && selectedCustomerId && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 whitespace-nowrap" title={`Auto-matched via ${customerMatchMethod}`}>
+                            ✓ {customerMatchMethod.replace(/_/g, " ")}
+                          </span>
+                        )}
                         <button
                           onClick={createSo}
                           disabled={!selectedCustomerId || creatingSo}
@@ -2586,7 +2603,7 @@ function BomDashboardInner() {
                     </button>
                   )}
                   <button
-                    onClick={() => { setLinkedProject(null); setImportTab("upload"); setDriveFiles([]); setSnapshots([]); setSavedVersion(null); setZohoPoId(null); setZohoVendors(null); setZohoSoId(null); setSelectedVendorId(""); setSelectedCustomerId(""); setSelectedCustomerName(""); router.replace("/dashboards/bom"); }}
+                    onClick={() => { setLinkedProject(null); setImportTab("upload"); setDriveFiles([]); setSnapshots([]); setSavedVersion(null); setZohoPoId(null); setZohoVendors(null); setZohoSoId(null); setSelectedVendorId(""); setSelectedCustomerId(""); setSelectedCustomerName(""); setCustomerMatchMethod(null); router.replace("/dashboards/bom"); }}
                     className="text-xs text-muted hover:text-foreground"
                   >
                     Unlink
@@ -2622,6 +2639,7 @@ function BomDashboardInner() {
                             setSelectedVendorId("");
                             setSelectedCustomerId("");
                             setSelectedCustomerName("");
+                            setCustomerMatchMethod(null);
                           }}
                           className="w-full text-left px-4 py-2.5 text-sm text-foreground hover:bg-surface-2 transition-colors"
                         >
@@ -2790,6 +2808,7 @@ function BomDashboardInner() {
                               setSelectedVendorId("");      // clear stale selection
                               setSelectedCustomerId("");    // clear stale selection
                               setSelectedCustomerName("");  // clear stale selection
+                              setCustomerMatchMethod(null);
                               addToast({ type: "success", title: `Loaded v${snap.version}` });
                             }}
                             className="text-xs text-cyan-600 dark:text-cyan-400 hover:underline"
