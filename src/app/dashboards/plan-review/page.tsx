@@ -24,7 +24,7 @@ interface FullEquipment {
 // Statuses that indicate "in review" (raw HubSpot designStatus values)
 const REVIEW_STATUSES = [
   "Initial Review",           // Initial design review
-  "Ready for Review",         // Final review / stamping
+  "Ready For Review",         // Final review / stamping (HubSpot uses capital F)
   "DA Approved",              // DA approved, pending engineering
   "Submitted To Engineering", // In engineering review
 ];
@@ -141,7 +141,7 @@ export default function PlanReviewPage() {
 
       const reviewType = p.designStatus === "Initial Review"
         ? "Initial Design Review"
-        : p.designStatus === "Ready for Review"
+        : p.designStatus === "Ready For Review"
         ? "Final Review / Stamping"
         : p.designStatus === "DA Approved"
         ? "DA Approved — Pending Engineering"
