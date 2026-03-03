@@ -21,11 +21,11 @@ interface FullEquipment {
   systemSizeKwac: number;
 }
 
-// Statuses that indicate "in review" (HubSpot internal names from Design Status property)
+// Statuses that indicate "in review" — HubSpot internal names (not labels)
 const REVIEW_STATUSES = [
-  "Initial Review",           // Initial design review
-  "DA Approved",              // Final design review
-  "Submitted To Engineering", // In engineering review
+  "Initial Review",           // label: "Ready For Review" — initial design review
+  "DA Approved",              // label = internal name — final design review
+  "Submitted To Engineering", // label = internal name — in engineering
 ];
 
 type SortField =
