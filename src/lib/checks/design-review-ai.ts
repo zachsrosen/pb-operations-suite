@@ -73,8 +73,26 @@ const DEAL_CONTEXT_FIELDS = [
 ] as const;
 
 // ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/** Max PDF size for base64 inline fallback (45MB — same as bom-extract). */
+const INLINE_LIMIT = 45 * 1024 * 1024;
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/** Detect Anthropic "Could not process PDF" errors (password-protected, corrupt, etc.). */
+function isPdfProcessingError(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("could not process pdf") ||
+    normalized.includes("password") ||
+    normalized.includes("encrypted") ||
+    normalized.includes("corrupt")
+  );
+}
 
 /** Pick whitelisted fields from a properties bag, dropping nulls/empty. */
 function pickFields(
@@ -279,14 +297,18 @@ export async function runDesignReview(
     // ── Step 4: Call Claude with structured output (Files API reference) ──
     const userMessage = buildUserMessage(dealContext, ahjContext, utilityContext, filename);
 
+    const claudeParams = {
+      model: CLAUDE_MODELS.sonnet,
+      max_tokens: 4096,
+      system: buildSystemPrompt(),
+      tools: [SUBMIT_FINDINGS_TOOL],
+      tool_choice: { type: "tool", name: "submit_findings" } as never,
+    };
+
     let response;
     try {
       response = await client.beta.messages.create({
-        model: CLAUDE_MODELS.sonnet,
-        max_tokens: 4096,
-        system: buildSystemPrompt(),
-        tools: [SUBMIT_FINDINGS_TOOL],
-        tool_choice: { type: "tool", name: "submit_findings" } as never,
+        ...claudeParams,
         messages: [
           {
             role: "user",
@@ -307,12 +329,53 @@ export async function runDesignReview(
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Claude API call failed";
       console.error("[design-review-ai] Claude API error:", msg);
-      // Clean up uploaded file before returning error
+
+      // Clean up uploaded file before fallback/error
       if (anthropicFileId) {
         await client.beta.files.delete(anthropicFileId).catch(() => {});
+        anthropicFileId = undefined;
       }
-      return makeErrorResult(dealId, start, "completeness", "error",
-        `AI review failed: ${msg}`);
+
+      // Fallback: retry with base64 inline if it's a PDF processing error and file is small enough
+      if (isPdfProcessingError(msg) && buffer.byteLength < INLINE_LIMIT) {
+        console.log(
+          `[design-review-ai] Falling back to base64 inline (${Math.round(buffer.byteLength / 1024)}KB)`,
+        );
+        try {
+          const base64Data = Buffer.from(buffer).toString("base64");
+          response = await client.messages.create({
+            ...claudeParams,
+            messages: [
+              {
+                role: "user",
+                content: [
+                  {
+                    type: "document",
+                    source: { type: "base64", media_type: "application/pdf", data: base64Data },
+                  } as { type: "document"; source: { type: "base64"; media_type: "application/pdf"; data: string } },
+                  {
+                    type: "text",
+                    text: userMessage,
+                  },
+                ],
+              },
+            ],
+          });
+        } catch (fallbackErr) {
+          const fallbackMsg = fallbackErr instanceof Error ? fallbackErr.message : "Unknown error";
+          console.error("[design-review-ai] Base64 fallback also failed:", fallbackMsg);
+          return makeErrorResult(dealId, start, "completeness", "error",
+            isPdfProcessingError(fallbackMsg)
+              ? "PDF could not be processed. The file may be password-protected, encrypted, or corrupt."
+              : `AI review failed: ${fallbackMsg}`);
+        }
+      } else if (isPdfProcessingError(msg)) {
+        return makeErrorResult(dealId, start, "completeness", "error",
+          `PDF could not be processed — the file may be password-protected, encrypted, or corrupt (${Math.round(buffer.byteLength / 1024 / 1024)}MB).`);
+      } else {
+        return makeErrorResult(dealId, start, "completeness", "error",
+          `AI review failed: ${msg}`);
+      }
     }
 
     // Clean up uploaded file (best-effort)

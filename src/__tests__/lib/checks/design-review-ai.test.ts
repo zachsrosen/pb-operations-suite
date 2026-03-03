@@ -10,11 +10,13 @@
 // ── Mocks (must be before imports) ──
 
 const mockCreate = jest.fn();
+const mockCreateNonBeta = jest.fn();
 const mockFilesUpload = jest.fn();
 const mockFilesDelete = jest.fn();
 
 jest.mock("@/lib/anthropic", () => ({
   getAnthropicClient: () => ({
+    messages: { create: mockCreateNonBeta },
     beta: {
       messages: { create: mockCreate },
       files: {
@@ -336,6 +338,61 @@ describe("runDesignReview", () => {
       await runDesignReview(DEAL_ID, baseProperties);
 
       expect(mockFilesDelete).toHaveBeenCalledWith("anthropic-file-123");
+    });
+  });
+
+  describe("base64 fallback on PDF processing error", () => {
+    it("retries with base64 inline when Files API returns 'Could not process PDF'", async () => {
+      setupHappyPath();
+      mockCreate.mockRejectedValue(new Error("Could not process PDF"));
+      mockCreateNonBeta.mockResolvedValue(
+        claudeResponse({
+          findings: [{ check: "completeness", severity: "info", message: "All good via fallback" }],
+        }),
+      );
+
+      const result = await runDesignReview(DEAL_ID, baseProperties);
+
+      expect(result.passed).toBe(true);
+      expect(result.findings[0].message).toBe("All good via fallback");
+      // Should have cleaned up the uploaded file before fallback
+      expect(mockFilesDelete).toHaveBeenCalledWith("anthropic-file-123");
+      // Should have called the non-beta API
+      expect(mockCreateNonBeta).toHaveBeenCalledTimes(1);
+    });
+
+    it("returns error when both Files API and base64 fallback fail", async () => {
+      setupHappyPath();
+      mockCreate.mockRejectedValue(new Error("Could not process PDF"));
+      mockCreateNonBeta.mockRejectedValue(new Error("Still cannot process"));
+
+      const result = await runDesignReview(DEAL_ID, baseProperties);
+
+      expect(result.passed).toBe(false);
+      expect(result.errorCount).toBe(1);
+      expect(result.findings[0].message).toMatch(/AI review failed.*Still cannot process/);
+    });
+
+    it("returns specific message when fallback also gets PDF processing error", async () => {
+      setupHappyPath();
+      mockCreate.mockRejectedValue(new Error("Could not process PDF"));
+      mockCreateNonBeta.mockRejectedValue(new Error("Could not process PDF"));
+
+      const result = await runDesignReview(DEAL_ID, baseProperties);
+
+      expect(result.passed).toBe(false);
+      expect(result.findings[0].message).toMatch(/password-protected.*encrypted.*corrupt/);
+    });
+
+    it("does not fall back for non-PDF-processing errors", async () => {
+      setupHappyPath();
+      mockCreate.mockRejectedValue(new Error("Rate limited"));
+
+      const result = await runDesignReview(DEAL_ID, baseProperties);
+
+      expect(result.passed).toBe(false);
+      expect(result.findings[0].message).toMatch(/AI review failed.*Rate limited/);
+      expect(mockCreateNonBeta).not.toHaveBeenCalled();
     });
   });
 
