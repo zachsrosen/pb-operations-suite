@@ -609,7 +609,12 @@ export async function sendSchedulingNotification(
       : Array.isArray(params.bcc)
         ? params.bcc.map((value) => parseEmailAddress(value)).filter((value): value is string => !!value)
         : [];
-  const bccRecipients = dedupeEmails([...defaultBcc, ...explicitBcc], params.to);
+  // Include the scheduler so they get a confirmation copy of what was sent
+  const schedulerEmail = parseEmailAddress(params.scheduledByEmail);
+  const bccRecipients = dedupeEmails(
+    [...defaultBcc, ...explicitBcc, ...(schedulerEmail ? [schedulerEmail] : [])],
+    params.to,
+  );
   const installDetails = params.appointmentType === "installation" ? params.installDetails : undefined;
   const cleanedNotes = sanitizeScheduleEmailNotes(params.notes);
   const hubSpotDealUrl = getHubSpotDealUrl(params.projectId);
