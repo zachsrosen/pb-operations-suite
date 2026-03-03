@@ -1921,10 +1921,14 @@ export async function sendPipelineNotification(params: {
   // Location-based routing
   pbLocation?: string;
 }): Promise<SendResult> {
-  const recipients = resolvePipelineRecipients({
-    pbLocation: params.pbLocation,
-    configuredRecipientsRaw: process.env.DESIGN_COMPLETE_NOTIFY_EMAILS,
-  });
+  const failOverride = params.status === "failed" ? process.env.PIPELINE_FAIL_NOTIFY_EMAILS : undefined;
+
+  const recipients = failOverride
+    ? { to: parseEmailList(failOverride), bcc: [] as string[] }
+    : resolvePipelineRecipients({
+        pbLocation: params.pbLocation,
+        configuredRecipientsRaw: process.env.DESIGN_COMPLETE_NOTIFY_EMAILS,
+      });
 
   if (recipients.to.length === 0 && recipients.bcc.length === 0) {
     console.warn("[email] No recipients resolved for pipeline notification — skipping");
