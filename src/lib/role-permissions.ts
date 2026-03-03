@@ -142,6 +142,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/api/bugs",
       "/api/ahj",
       "/api/utility",
+      // Design review
+      "/dashboards/reviews",
+      "/api/reviews",
     ],
     canScheduleSurveys: true,
     canScheduleInstalls: true,
@@ -233,6 +236,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/api/activity/log",
       "/api/inventory",
       "/api/bugs",
+      // Design review
+      "/dashboards/reviews",
+      "/api/reviews",
     ],
     canScheduleSurveys: true,
     canScheduleInstalls: true,
@@ -318,6 +324,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/api/bugs",
       "/api/ahj",
       "/api/utility",
+      // Design review
+      "/dashboards/reviews",
+      "/api/reviews",
     ],
     canScheduleSurveys: true,
     canScheduleInstalls: true,
@@ -389,6 +398,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/api/bugs",
       "/api/ahj",
       "/api/utility",
+      // Design review
+      "/dashboards/reviews",
+      "/api/reviews",
     ],
     canScheduleSurveys: false,
     canScheduleInstalls: false,
@@ -441,6 +453,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/api/bugs",
       "/api/ahj",
       "/api/utility",
+      // Design review
+      "/dashboards/reviews",
+      "/api/reviews",
     ],
     canScheduleSurveys: false,
     canScheduleInstalls: false,
@@ -578,9 +593,7 @@ export const ADMIN_ONLY_ROUTES: string[] = [
   "/dashboards/zuper-compliance",
   "/dashboards/product-comparison",
   "/dashboards/mobile",
-  // AI assistant routes — admin-only until per-deal access boundaries confirmed
-  "/dashboards/reviews",
-  "/api/reviews",
+  // AI assistant chat — admin-only until per-deal access boundaries confirmed
   "/api/chat",
 ];
 

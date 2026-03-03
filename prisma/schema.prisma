@@ -924,6 +924,24 @@ model BomToolFeedback {
 }
 
 // ===========================================
+// DESIGN REVIEW FEEDBACK
+// ===========================================
+
+model DesignReviewFeedback {
+  id            String   @id @default(cuid())
+  reviewId      String?  // ProjectReview ID if linked to a specific run
+  rating        String   // "positive" or "negative"
+  notes         String?  // Optional free-text feedback
+  dealId        String?  // HubSpot deal ID
+  dealName      String?  // Deal/project name for context
+  submittedBy   String   // User email
+  createdAt     DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([reviewId])
+}
+
+// ===========================================
 // BUG REPORTS / TICKETS
 // ===========================================
 

@@ -5,6 +5,7 @@ import type { SkillName } from "@/lib/checks/types";
 
 interface ReviewActionsProps {
   dealId: string;
+  dealName?: string;
   userRole: string;
 }
 
@@ -14,6 +15,14 @@ interface ReviewResult {
   warningCount: number;
   findings: Array<{ check: string; severity: string; message: string }>;
   durationMs: number;
+  reviewId?: string;
+}
+
+interface FeedbackState {
+  rating: "positive" | "negative" | null;
+  notes: string;
+  submitted: boolean;
+  submitting: boolean;
 }
 
 const SKILL_CONFIG: Array<{ skill: SkillName; label: string; roles: string[] }> = [
@@ -59,10 +68,11 @@ function useProgressText(isActive: boolean): string {
   return text;
 }
 
-export default function ReviewActions({ dealId, userRole }: ReviewActionsProps) {
+export default function ReviewActions({ dealId, dealName, userRole }: ReviewActionsProps) {
   const [loading, setLoading] = useState<string | null>(null);
   const [results, setResults] = useState<Record<string, ReviewResult>>({});
   const [error, setError] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<Record<string, FeedbackState>>({});
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const progressText = useProgressText(loading !== null);
 
@@ -94,6 +104,7 @@ export default function ReviewActions({ dealId, userRole }: ReviewActionsProps) 
             warningCount: data.warningCount,
             findings: data.findings ?? [],
             durationMs: data.durationMs ?? 0,
+            reviewId: reviewId,
           },
         }));
       } else if (data.status === "failed") {
@@ -154,6 +165,48 @@ export default function ReviewActions({ dealId, userRole }: ReviewActionsProps) 
     }
   }
 
+  async function submitFeedback(skill: string, rating: "positive" | "negative") {
+    const result = results[skill];
+    const fb = feedback[skill] || { rating: null, notes: "", submitted: false, submitting: false };
+
+    // If clicking the same rating again, toggle off
+    if (fb.rating === rating && !fb.submitted) {
+      setFeedback((prev) => ({ ...prev, [skill]: { ...fb, rating: null } }));
+      return;
+    }
+
+    // Set rating (show notes field)
+    if (!fb.submitted) {
+      setFeedback((prev) => ({ ...prev, [skill]: { ...fb, rating, submitting: false } }));
+      return;
+    }
+  }
+
+  async function confirmFeedback(skill: string) {
+    const fb = feedback[skill];
+    if (!fb?.rating) return;
+
+    setFeedback((prev) => ({ ...prev, [skill]: { ...fb, submitting: true } }));
+    try {
+      const result = results[skill];
+      const res = await fetch("/api/reviews/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reviewId: result?.reviewId || null,
+          rating: fb.rating,
+          notes: fb.notes.trim() || null,
+          dealId,
+          dealName: dealName || null,
+        }),
+      });
+      if (!res.ok) throw new Error(`Submit failed (${res.status})`);
+      setFeedback((prev) => ({ ...prev, [skill]: { ...fb, submitted: true, submitting: false } }));
+    } catch {
+      setFeedback((prev) => ({ ...prev, [skill]: { ...fb, submitting: false } }));
+    }
+  }
+
   const visibleSkills = SKILL_CONFIG.filter((s) => s.roles.includes(userRole));
   if (visibleSkills.length === 0) return null;
 
@@ -207,7 +260,75 @@ export default function ReviewActions({ dealId, userRole }: ReviewActionsProps) 
                 <span className="text-foreground">{f.message}</span>
               </div>
             ))}
-            <a href={`/dashboards/reviews/${dealId}`} className="text-xs text-orange-500 hover:underline mt-1 inline-block">
+
+            {/* Feedback UI */}
+            {(() => {
+              const fb = feedback[skill] || { rating: null, notes: "", submitted: false, submitting: false };
+              return (
+                <div className="mt-3 pt-3 border-t border-t-border">
+                  {fb.submitted ? (
+                    <p className="text-xs text-muted">
+                      {fb.rating === "positive" ? "👍" : "👎"} Feedback submitted
+                    </p>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted">Was this review helpful?</span>
+                        <button
+                          onClick={() => submitFeedback(skill, "positive")}
+                          className={`px-2 py-1 rounded text-xs transition-colors ${
+                            fb.rating === "positive"
+                              ? "bg-emerald-500/20 text-emerald-500 border border-emerald-500/40"
+                              : "bg-surface text-muted border border-t-border hover:text-foreground"
+                          }`}
+                        >
+                          👍
+                        </button>
+                        <button
+                          onClick={() => submitFeedback(skill, "negative")}
+                          className={`px-2 py-1 rounded text-xs transition-colors ${
+                            fb.rating === "negative"
+                              ? "bg-red-500/20 text-red-500 border border-red-500/40"
+                              : "bg-surface text-muted border border-t-border hover:text-foreground"
+                          }`}
+                        >
+                          👎
+                        </button>
+                      </div>
+                      {fb.rating && (
+                        <div className="mt-2 space-y-2">
+                          <textarea
+                            value={fb.notes}
+                            onChange={(e) =>
+                              setFeedback((prev) => ({
+                                ...prev,
+                                [skill]: { ...fb, notes: e.target.value },
+                              }))
+                            }
+                            rows={2}
+                            placeholder={
+                              fb.rating === "negative"
+                                ? "What was wrong? (incorrect findings, missed issues, etc.)"
+                                : "Any additional notes? (optional)"
+                            }
+                            className="w-full rounded-lg bg-surface border border-t-border text-sm text-foreground px-3 py-2 focus:outline-none focus:ring-1 focus:ring-orange-500 placeholder:text-muted resize-y"
+                          />
+                          <button
+                            onClick={() => confirmFeedback(skill)}
+                            disabled={fb.submitting}
+                            className="px-3 py-1.5 rounded-lg bg-orange-600 text-white text-xs hover:bg-orange-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                          >
+                            {fb.submitting ? "Submitting…" : "Submit Feedback"}
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              );
+            })()}
+
+            <a href={`/dashboards/reviews/${dealId}`} className="text-xs text-orange-500 hover:underline mt-2 inline-block">
               View full review history →
             </a>
           </div>
