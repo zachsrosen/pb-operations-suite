@@ -9,7 +9,7 @@ import {
 } from "@/lib/role-permissions";
 
 // Routes that are always accessible (login, auth callbacks)
-const ALWAYS_ALLOWED = ["/login", "/api/auth", "/maintenance"];
+const ALWAYS_ALLOWED = ["/login", "/api/auth", "/maintenance", "/portal"];
 const PUBLIC_API_ROUTES = [
   "/api/deployment",
   "/api/updates/notify",
@@ -18,6 +18,7 @@ const PUBLIC_API_ROUTES = [
   "/api/webhooks/hubspot/design-review",
   "/api/cron/audit-digest",
   "/api/cron/audit-retention",
+  "/api/portal/survey", // Customer portal — token-validated, no session needed
 ];
 const MACHINE_TOKEN_ALLOWED_ROUTES = ["/api/bom", "/api/products/seed"] as const;
 
