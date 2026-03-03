@@ -38,7 +38,6 @@ type SortField =
   | "location"
   | "stage"
   | "designDraftDate"
-  | "designComplete"
   | "daDate"
   | "amount";
 type SortDir = "asc" | "desc";
@@ -221,7 +220,6 @@ export default function PlanReviewPage() {
         case "location": cmp = (a.pbLocation || "").localeCompare(b.pbLocation || ""); break;
         case "stage": cmp = (a.stage || "").localeCompare(b.stage || ""); break;
         case "designDraftDate": cmp = (a.designDraftDate || "").localeCompare(b.designDraftDate || ""); break;
-        case "designComplete": cmp = (a.designCompletionDate || "").localeCompare(b.designCompletionDate || ""); break;
         case "daDate": cmp = (a.designApprovalDate || "").localeCompare(b.designApprovalDate || ""); break;
         case "amount": cmp = (a.amount || 0) - (b.amount || 0); break;
       }
@@ -264,9 +262,8 @@ export default function PlanReviewPage() {
       location: p.pbLocation || "",
       designDraftDate: p.designDraftDate || "",
       amount: p.amount || 0,
-      designCompletionDate: p.designCompletionDate || "",
       designApprovalDate: p.designApprovalDate || "",
-      systemPerformanceReview: (localOverrides[p.id] ?? p.systemPerformanceReview) ? "Yes" : "No",
+      perfReview: (localOverrides[p.id] ?? p.systemPerformanceReview) ? "Yes" : "No",
     })),
     [sortedProjects, localOverrides]
   );
@@ -407,16 +404,13 @@ export default function PlanReviewPage() {
                   <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("designDraftDate")}>
                     Draft Date{sortIndicator("designDraftDate")}
                   </th>
-                  <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("designComplete")}>
-                    Design Complete{sortIndicator("designComplete")}
-                  </th>
                   <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("daDate")}>
                     DA Date{sortIndicator("daDate")}
                   </th>
                   <th className="p-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("amount")}>
                     Amount{sortIndicator("amount")}
                   </th>
-                  <th className="p-3 text-center">SPR</th>
+                  <th className="p-3 text-center" title="System Performance Review — flag for performance review needed">Perf Review</th>
                 </tr>
               </thead>
               <tbody>
@@ -482,22 +476,24 @@ export default function PlanReviewPage() {
                       <td className="p-3 text-muted">{p.ahj || "\u2014"}</td>
                       <td className="p-3 text-muted">{p.stage || "\u2014"}</td>
                       <td className="p-3 text-muted">{p.designDraftDate || "\u2014"}</td>
-                      <td className="p-3 text-muted">{formatDate(p.designCompletionDate)}</td>
                       <td className="p-3 text-muted">{formatDate(p.designApprovalDate)}</td>
                       <td className="p-3 text-right text-foreground">{formatMoney(p.amount || 0)}</td>
                       <td className="p-3 text-center">
                         <button
                           onClick={() => handleTogglePerformanceReview(p)}
                           disabled={isToggling}
-                          className={`w-8 h-5 rounded-full relative transition-colors ${
-                            sprValue ? "bg-purple-500" : "bg-zinc-600"
+                          title={sprValue ? "Performance review flagged — click to remove" : "Click to flag for performance review"}
+                          className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-colors ${
+                            sprValue
+                              ? "bg-purple-500/20 text-purple-400 border border-purple-500/30 hover:bg-purple-500/30"
+                              : "bg-surface-2 text-muted border border-t-border hover:bg-surface-2/80 hover:text-foreground"
                           } ${isToggling ? "opacity-50" : "cursor-pointer"}`}
                         >
-                          <span
-                            className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
-                              sprValue ? "translate-x-3" : ""
-                            }`}
-                          />
+                          {sprValue ? (
+                            <><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>Yes</>
+                          ) : (
+                            "No"
+                          )}
                         </button>
                       </td>
                     </tr>
