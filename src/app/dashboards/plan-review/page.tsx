@@ -23,9 +23,8 @@ interface FullEquipment {
 
 // Statuses that indicate "in review" (HubSpot internal names from Design Status property)
 const REVIEW_STATUSES = [
-  "Initial Review",           // Label: "Ready For Review" — initial design review
-  "Ready for Review",         // Label: "Final Review/Stamping" — lowercase f per HubSpot
-  "DA Approved",              // DA approved, pending engineering
+  "Initial Review",           // Initial design review
+  "DA Approved",              // Final design review
   "Submitted To Engineering", // In engineering review
 ];
 
@@ -141,10 +140,8 @@ export default function PlanReviewPage() {
 
       const reviewType = p.designStatus === "Initial Review"
         ? "Initial Design Review"
-        : p.designStatus === "Ready for Review"
-        ? "Final Review / Stamping"
         : p.designStatus === "DA Approved"
-        ? "DA Approved — Pending Engineering"
+        ? "Final Design Review"
         : "In Engineering";
 
       const eqSummary = eq
@@ -413,9 +410,7 @@ export default function PlanReviewPage() {
                         <span className={`inline-block px-2 py-0.5 text-xs font-medium rounded-full ${
                           p.reviewType === "Initial Design Review"
                             ? "bg-yellow-500/20 text-yellow-400 border border-yellow-500/30"
-                            : p.reviewType === "Final Review / Stamping"
-                            ? "bg-orange-500/20 text-orange-400 border border-orange-500/30"
-                            : p.reviewType === "DA Approved — Pending Engineering"
+                            : p.reviewType === "Final Design Review"
                             ? "bg-indigo-500/20 text-indigo-400 border border-indigo-500/30"
                             : "bg-cyan-500/20 text-cyan-400 border border-cyan-500/30"
                         }`}>
