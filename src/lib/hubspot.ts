@@ -569,6 +569,9 @@ const DEAL_PROPERTIES = [
   "forecasted_inspection_date",
   "forecasted_pto_date",
 
+  // Design review flags
+  "system_performance_review",
+
   // Calculated/tracking
   "days_since_stage_movement",
 
@@ -900,6 +903,7 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
     daysSinceStageMovement: Number(deal.days_since_stage_movement) || 0,
 
     // Status flags
+    systemPerformanceReview: String(deal.system_performance_review || "").toLowerCase() === "true",
     stagePriority: STAGE_PRIORITY[stageName] || 0,
     isRtb: isRTB,
     isSchedulable,
