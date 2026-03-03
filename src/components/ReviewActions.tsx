@@ -26,7 +26,7 @@ interface FeedbackState {
 }
 
 const SKILL_CONFIG: Array<{ skill: SkillName; label: string; roles: string[] }> = [
-  { skill: "design-review", label: "Design Review", roles: ["ADMIN", "OWNER", "MANAGER", "DESIGNER", "OPERATIONS_MANAGER", "PROJECT_MANAGER"] },
+  { skill: "design-review", label: "Design Review", roles: ["ADMIN", "OWNER", "MANAGER", "DESIGNER", "OPERATIONS_MANAGER", "PROJECT_MANAGER", "TECH_OPS"] },
 ];
 
 const POLL_INTERVAL_MS = 3000;

@@ -41,5 +41,5 @@ export type SkillName = "design-review";
 export const VALID_SKILLS: SkillName[] = ["design-review"];
 
 export const SKILL_ALLOWED_ROLES: Record<SkillName, string[]> = {
-  "design-review": ["ADMIN", "OWNER", "MANAGER", "DESIGNER", "OPERATIONS_MANAGER", "PROJECT_MANAGER"],
+  "design-review": ["ADMIN", "OWNER", "MANAGER", "DESIGNER", "OPERATIONS_MANAGER", "PROJECT_MANAGER", "TECH_OPS"],
 };
