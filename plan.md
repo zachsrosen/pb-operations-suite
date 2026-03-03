@@ -236,7 +236,12 @@ src/emails/SurveyConfirmationEmail.tsx # Booking confirmation + .ics attachment
 | Race conditions | Slot availability re-checked inside DB transaction at booking time |
 | Double-submit | Client-generated `idempotencyKey` on book/reschedule/cancel |
 | Partial failure | DB commit first (booking is source of truth), Zuper + email async with retry |
-| One invite per deal | App-level check on active invites before creating new one |
+| One invite per deal | Partial unique index on `(dealId) WHERE status IN ('PENDING','SCHEDULED')` + app-level guard |
+| Idempotency | `IdempotencyKey` table in Postgres (transactional), scoped per action+token, 24h TTL |
+| Async reliability | Outbox table written in same transaction as booking; cron + `after()` processor with backoff and dead-letter |
+| Slot locking | `SELECT ... FOR UPDATE` on crew availability row inside booking transaction |
+| Rate limit state | Upstash Redis for cross-instance shared counters (edge-compatible) |
+| 24h cutoff | Pre-computed `cutoffAt` UTC timestamp stored on invite; DST-safe derivation at booking time |
 | Audit trail | All portal actions logged to `ActivityLog` with `source: "customer_portal"` |
 
 ---
@@ -245,7 +250,7 @@ src/emails/SurveyConfirmationEmail.tsx # Booking confirmation + .ics attachment
 
 | File | Change |
 |------|--------|
-| `prisma/schema.prisma` | Add `SurveyInvite` model + `SurveyInviteStatus` enum |
+| `prisma/schema.prisma` | Add `SurveyInvite`, `IdempotencyKey`, `OutboxEvent` models + `SurveyInviteStatus` enum |
 | `src/middleware.ts` | Add `/portal` to `ALWAYS_ALLOWED` for auth bypass |
 | `src/app/dashboards/site-survey-scheduler/page.tsx` | Add "Send Invite" button per project |
 | `src/lib/email.ts` | Add portal email sending functions |
@@ -271,7 +276,91 @@ src/emails/SurveyConfirmationEmail.tsx # Booking confirmation + .ics attachment
 
 ---
 
-## 9. Out of Scope (Future Phases)
+## 9. Implementation Checklist (Pre-Coding)
+
+Risks that must be resolved in code, not deferred:
+
+### P1 — Must resolve before shipping
+
+**[P1-1] Partial unique index for one-active-invite-per-deal**
+App-level checks race under concurrent requests. Use a Postgres partial unique index via raw SQL migration:
+```sql
+CREATE UNIQUE INDEX uq_active_invite_per_deal
+  ON "SurveyInvite" ("dealId")
+  WHERE status IN ('PENDING', 'SCHEDULED');
+```
+This makes the DB reject a second active invite for the same deal even if two requests slip through the app check simultaneously. Keep the app-level check as a fast-path guard with a user-friendly error message.
+
+**[P1-2] Idempotency key storage and semantics**
+- Store in an `IdempotencyKey` table in Postgres (not Redis — keeps it transactional with the booking):
+  ```prisma
+  model IdempotencyKey {
+    key       String   @id          // client-generated UUID
+    scope     String                // "book:{tokenHash}" | "reschedule:{tokenHash}" | "cancel:{tokenHash}"
+    status    String                // "processing" | "completed" | "failed"
+    response  Json?                 // cached response payload for replay
+    createdAt DateTime @default(now())
+    expiresAt DateTime              // TTL: 24 hours
+    @@unique([key, scope])
+  }
+  ```
+- On request: check if `(key, scope)` exists.
+  - `completed` → replay cached response (HTTP 200, same body)
+  - `processing` → return HTTP 409 Conflict (concurrent in-flight)
+  - `failed` → allow retry (delete old row, reprocess)
+  - Not found → insert with `processing`, proceed, update to `completed` with response on success
+- TTL: 24 hours, swept by a cron or on-read expiry check
+- Scope is `action:tokenHash` so the same idempotency key can't cross actions
+
+**[P1-3] Outbox pattern for Zuper + email (not fire-and-forget)**
+- Add an `OutboxEvent` table:
+  ```prisma
+  model OutboxEvent {
+    id          String   @id @default(cuid())
+    type        String                // "zuper_create_job" | "send_confirmation_email" | "send_internal_notification"
+    payload     Json                  // serialized args for the handler
+    status      String   @default("pending")  // "pending" | "processing" | "completed" | "failed" | "dead_letter"
+    attempts    Int      @default(0)
+    maxAttempts Int      @default(5)
+    lastError   String?
+    nextRetryAt DateTime?             // exponential backoff: 30s, 2m, 8m, 32m, 2h
+    inviteId    String                // FK to SurveyInvite
+    createdAt   DateTime @default(now())
+    processedAt DateTime?
+    @@index([status, nextRetryAt])
+  }
+  ```
+- Write outbox rows in the same DB transaction as the booking commit
+- Process via: (a) Vercel cron job polling every 30s, or (b) `after()` (Next.js post-response callback) for immediate attempt + cron as fallback
+- Retry with exponential backoff: 30s → 2m → 8m → 32m → 2h
+- After `maxAttempts`: mark `dead_letter`, alert ops via existing notification channel
+- Reconciliation: daily cron checks for SCHEDULED invites with null `zuperJobUid` and re-queues
+
+### P2 — Must resolve, can finalize during implementation
+
+**[P2-1] Booking race condition: row-level locking**
+Inside the booking DB transaction:
+1. `SELECT ... FOR UPDATE` on relevant `CrewAvailability` row for the selected slot
+2. Check `BookedSlot` count for that crew member + date + time doesn't exceed capacity
+3. Insert `BookedSlot` — if a unique constraint fires (crew + date + time), catch and return 409
+This guarantees a single winner even under concurrent bookings. The `FOR UPDATE` lock serializes competing transactions on the same slot.
+
+**[P2-2] Rate limiting backend**
+Use Vercel's built-in `@vercel/edge` rate limiting or Upstash Redis (`@upstash/ratelimit`) for shared-state limits across instances:
+- Per-token: sliding window, 20 req/min
+- Per-IP: sliding window, 60 req/min
+- Returns `429 Too Many Requests` with `Retry-After` header
+Decision: Upstash Redis (already compatible with edge runtime, sub-ms latency). If no Redis is available, fall back to in-memory with a TODO to upgrade before scaling beyond one instance.
+
+**[P2-3] 24-hour cutoff definition (DST-safe)**
+- Cutoff = `scheduledStartUTC - 24 hours`, computed once at booking time and stored as `cutoffAt DateTime` on the invite
+- `scheduledStartUTC` derived from `scheduledDate` + `scheduledTime` + location IANA timezone using a DST-safe library (e.g., `date-fns-tz` or `Temporal` if available)
+- Reschedule/cancel endpoints compare `now() < cutoffAt` — no timezone math at request time
+- Edge case: if DST spring-forward makes a 2:30 AM slot non-existent, slot computation should already exclude it
+
+---
+
+## 10. Out of Scope (Future Phases)
 
 - Customer accounts / login system
 - Project status tracker
