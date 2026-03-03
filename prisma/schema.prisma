@@ -151,6 +151,13 @@ enum ActivityType {
 
   // Reviews
   DESIGN_REVIEW_COMPLETED
+
+  // Portal — Customer survey scheduling
+  PORTAL_INVITE_CREATED
+  PORTAL_INVITE_SENT
+  PORTAL_SURVEY_SCHEDULED
+  PORTAL_SURVEY_RESCHEDULED
+  PORTAL_SURVEY_CANCELLED
 }
 
 enum ClientType {
@@ -1229,4 +1236,92 @@ model ZohoDedupRun {
 
   @@index([executedBy])
   @@index([createdAt])
+}
+
+// ===========================================
+// CUSTOMER PORTAL — SURVEY SELF-SCHEDULING
+// ===========================================
+
+enum SurveyInviteStatus {
+  PENDING      // invite sent, awaiting customer action
+  SCHEDULED    // customer booked a slot
+  RESCHEDULED  // customer changed their slot
+  EXPIRED      // token past expiry
+  CANCELLED    // cancelled by ops or customer
+  COMPLETED    // survey done
+}
+
+model SurveyInvite {
+  id               String             @id @default(cuid())
+  tokenHash        String             @unique    // SHA-256 of raw token; raw token NEVER stored
+  dealId           String                        // HubSpot deal ID
+  customerEmail    String
+  customerName     String
+  customerPhone    String?
+  propertyAddress  String                        // survey site address
+  pbLocation       String                        // Westminster, Centennial, etc.
+  systemSize       Float?                        // kW, from deal
+  status           SurveyInviteStatus @default(PENDING)
+  expiresAt        DateTime                      // token TTL (default 14 days)
+
+  // Booking details (populated when customer schedules)
+  scheduledAt      DateTime?                     // UTC — when customer submitted booking
+  scheduledDate    String?                       // YYYY-MM-DD (location-local date)
+  scheduledTime    String?                       // HH:MM (location-local time)
+  cutoffAt         DateTime?                     // UTC — 24h before scheduled start (DST-safe, pre-computed)
+  crewMemberId     String?                       // assigned crew member
+  scheduleRecordId String?                       // link to ScheduleRecord
+  zuperJobUid      String?                       // Zuper job UID once created
+  accessNotes      String?                       // customer-provided gate codes, dogs, etc.
+
+  // Invite tracking
+  sentAt           DateTime?                     // when invite email was sent
+  sentBy           String?                       // internal user who triggered it
+
+  // Timestamps
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  // Relations
+  outboxEvents     OutboxEvent[]
+
+  // NOTE: partial unique index on (dealId) WHERE status IN ('PENDING','SCHEDULED')
+  // is added via raw SQL in the migration file (not expressible in Prisma schema)
+
+  @@index([dealId])
+  @@index([customerEmail])
+  @@index([status, expiresAt])
+}
+
+model IdempotencyKey {
+  id        String   @id @default(cuid())
+  key       String                               // client-generated UUID
+  scope     String                               // "book:{tokenHash}" | "reschedule:{tokenHash}" | "cancel:{tokenHash}"
+  status    String                               // "processing" | "completed" | "failed"
+  response  Json?                                // cached response payload for replay
+  createdAt DateTime @default(now())
+  expiresAt DateTime                             // TTL: 24 hours
+
+  @@unique([key, scope])
+  @@index([expiresAt])
+}
+
+model OutboxEvent {
+  id          String        @id @default(cuid())
+  type        String                              // "zuper_create_job" | "send_confirmation_email" | "send_internal_notification"
+  payload     Json                                // serialized args for the handler
+  status      String        @default("pending")   // "pending" | "processing" | "completed" | "failed" | "dead_letter"
+  attempts    Int           @default(0)
+  maxAttempts Int           @default(5)
+  lastError   String?
+  nextRetryAt DateTime?                           // exponential backoff: 30s, 2m, 8m, 32m, 2h
+  inviteId    String                              // FK to SurveyInvite
+  invite      SurveyInvite  @relation(fields: [inviteId], references: [id], onDelete: Cascade)
+  dedupeKey   String?       @unique               // prevents duplicate event creation
+  createdAt   DateTime      @default(now())
+  processedAt DateTime?
+
+  @@index([status, nextRetryAt])
+  @@index([inviteId])
+}
 }
