@@ -131,6 +131,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/ahj-tracker",
       "/dashboards/utility-tracker",
       "/dashboards/pi-timeline",
+      // Equipment catalog
+      "/dashboards/catalog",
       "/api/projects",
       "/api/bom",
       "/api/catalog",
@@ -175,6 +177,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/bom",
       "/dashboards/bom/history",
       "/dashboards/dnr",
+      // Equipment catalog
+      "/dashboards/catalog",
       "/api/projects",
       "/api/bom",
       "/api/catalog",
@@ -227,6 +231,17 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/project-management",
       "/dashboards/design-engineering",
       "/dashboards/permitting-interconnection",
+      // Executive dashboards (read-only visibility)
+      "/suites/executive",
+      "/dashboards/executive",
+      "/dashboards/executive-calendar",
+      "/dashboards/revenue",
+      "/dashboards/locations",
+      "/dashboards/command-center",
+      "/dashboards/capacity",
+      "/dashboards/forecast-accuracy",
+      // Equipment catalog
+      "/dashboards/catalog",
       "/api/projects",
       "/api/bom",
       "/api/catalog",
@@ -258,6 +273,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/suites/permitting-interconnection",
       "/suites/service",
       "/suites/intelligence",
+      "/suites/executive",
       "/dashboards/scheduler",
       "/dashboards/site-survey-scheduler",
       "/dashboards/construction-scheduler",
@@ -291,6 +307,13 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/project-management",
       "/dashboards/design-engineering",
       "/dashboards/permitting-interconnection",
+      // Executive dashboards (read-only visibility)
+      "/dashboards/executive",
+      "/dashboards/executive-calendar",
+      "/dashboards/revenue",
+      "/dashboards/locations",
+      "/dashboards/command-center",
+      "/dashboards/forecast-accuracy",
       // D&E Suite dashboards
       "/dashboards/de-overview",
       "/dashboards/plan-review",
@@ -313,6 +336,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/ahj-tracker",
       "/dashboards/utility-tracker",
       "/dashboards/pi-timeline",
+      // Equipment catalog
+      "/dashboards/catalog",
       "/api/projects",
       "/api/bom",
       "/api/catalog",
@@ -387,6 +412,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/ahj-tracker",
       "/dashboards/utility-tracker",
       "/dashboards/pi-timeline",
+      // Equipment catalog
+      "/dashboards/catalog",
       "/api/projects",
       "/api/bom",
       "/api/catalog",
@@ -606,9 +633,9 @@ export function canAccessRoute(role: UserRole, route: string): boolean {
   const permissions = ROLE_PERMISSIONS[effectiveRole];
   if (!permissions) return false;
 
-  // Check admin-only routes first — only ADMIN can access these
+  // Check admin-only routes first — only ADMIN and OWNER can access these
   if (ADMIN_ONLY_ROUTES.some((restricted) => route === restricted || route.startsWith(`${restricted}/`))) {
-    return effectiveRole === "ADMIN";
+    return effectiveRole === "ADMIN" || effectiveRole === "OWNER";
   }
 
   // Roles with "*" can access all routes

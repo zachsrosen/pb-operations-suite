@@ -88,7 +88,8 @@ const LINKS: SuitePageCard[] = [
 export default async function ExecutiveSuitePage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login?callbackUrl=/suites/executive");
-  if (user.role !== "ADMIN" && user.role !== "OWNER") redirect("/");
+  const allowed = ["ADMIN", "OWNER", "OPERATIONS_MANAGER", "PROJECT_MANAGER"];
+  if (!allowed.includes(user.role)) redirect("/");
 
   return (
     <SuitePageShell
