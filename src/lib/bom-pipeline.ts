@@ -148,7 +148,7 @@ function sleep(ms: number): Promise<void> {
 
 function getBomSnapshotUrl(dealId: string): string {
   const base = (process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "https://www.pbtechops.com").replace(/\/$/, "");
-  return `${base}/dashboards/bom-tool?dealId=${encodeURIComponent(dealId)}`;
+  return `${base}/dashboards/bom?deal=${encodeURIComponent(dealId)}&load=latest`;
 }
 
 /** Check if an error matches the retryable patterns for a given step. */
