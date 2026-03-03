@@ -25,6 +25,8 @@ export interface BomProject {
   address?: string;
   utility?: string | null;
   moduleCount?: number | string | null;
+  arrayCount?: number | null;
+  arrays?: Array<{ label: string; moduleCount: number; pitch?: number | null; azimuth?: number | null; area?: number | null; orientation?: string | null }> | null;
   roofType?: string | null;
   systemSizeKwdc?: number | string | null;
   systemSizeKwac?: number | string | null;
@@ -68,6 +70,7 @@ export interface JobContext {
   hasEnphase: boolean;
   hasEvCharger: boolean;
   moduleCount: number;
+  arrayCount: number | null;
   utility: string | null;
 }
 
@@ -184,6 +187,13 @@ export function detectJobContext(
       .reduce((sum, i) => sum + (Number(i.qty) || 0), 0);
   }
 
+  // Array count from planset array table (PV-1/PV-2)
+  // Used for snow dog qty formula: 2 × arrayCount
+  const rawArrayCount = Number(project?.arrayCount);
+  const arrayCount = Number.isFinite(rawArrayCount) && rawArrayCount > 0
+    ? rawArrayCount
+    : project?.arrays?.length ?? null;
+
   return {
     jobType,
     roofType,
@@ -200,6 +210,7 @@ export function detectJobContext(
     hasEnphase,
     hasEvCharger,
     moduleCount,
+    arrayCount,
     utility: project?.utility ?? null,
   };
 }
@@ -386,7 +397,11 @@ export async function postProcessSoItems(
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
 
-    // Snow dogs (only if not already removed)
+    // Snow dogs — formula TBD
+    // Manufacturer spec: 2 per module (portrait), 3 per module (landscape)
+    // PB ops practice: unclear — Turner 27mod→10dogs, Wang 12mod→8dogs
+    // Neither 2×arrayCount nor 2×moduleCount matches. Needs ops team input.
+    // For now: use bracket formula from original v3 rules
     if (matchesSku(item, /snow\s*dog/i)) {
       let target: number;
       if (ctx.roofType === "standing_seam_metal" || ctx.roofType === "tile") {
