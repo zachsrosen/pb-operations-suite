@@ -28,6 +28,9 @@ import {
 import { safeWaitUntil } from "@/lib/safe-wait-until";
 import "@/lib/checks/design-review";
 
+// AI design review: Drive download + Anthropic upload + Claude PDF analysis
+export const maxDuration = 300;
+
 // ---------------------------------------------------------------------------
 // Deal properties to fetch
 // ---------------------------------------------------------------------------
