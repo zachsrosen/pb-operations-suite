@@ -66,6 +66,7 @@ const SUITE_MAP: Record<string, { href: string; label: string }> = {
   "/dashboards/design-engineering": { href: "/suites/design-engineering", label: "D&E" },
   "/dashboards/permitting-interconnection": { href: "/suites/permitting-interconnection", label: "P&I" },
   // Executive Suite
+  "/dashboards/capacity": { href: "/suites/executive", label: "Executive" },
   "/dashboards/command-center": { href: "/suites/executive", label: "Executive" },
   "/dashboards/revenue": { href: "/suites/executive", label: "Executive" },
   "/dashboards/executive": { href: "/suites/executive", label: "Executive" },
@@ -80,6 +81,8 @@ const SUITE_MAP: Record<string, { href: string; label: string }> = {
   "/dashboards/dnr": { href: "/suites/service", label: "Service + D&R" },
   // Admin Suite
   "/dashboards/zuper-status-comparison": { href: "/suites/admin", label: "Admin" },
+  // Design Reviews (dynamic: /dashboards/reviews/:dealId)
+  "/dashboards/reviews": { href: "/suites/design-engineering", label: "D&E" },
   "/dashboards/zuper-compliance": { href: "/suites/executive", label: "Executive" },
   "/dashboards/product-comparison": { href: "/suites/operations", label: "Operations" },
   "/dashboards/mobile": { href: "/suites/admin", label: "Admin" },

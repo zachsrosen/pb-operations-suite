@@ -54,7 +54,9 @@ const DASHBOARD_LINKS = [
   { name: "Site Survey", path: "/dashboards/site-survey", description: "Site survey scheduling and status" },
   // Leadership
   { name: "PE Dashboard", path: "/dashboards/pe", description: "Participate Energy tracking" },
+  { name: "Command Center", path: "/dashboards/command-center", description: "Real-time executive command center" },
   { name: "Executive Summary", path: "/dashboards/executive", description: "KPIs and charts for leadership" },
+  { name: "Forecast Accuracy", path: "/dashboards/forecast-accuracy", description: "Forecasting model accuracy across milestones" },
   { name: "Mobile Dashboard", path: "/dashboards/mobile", description: "Touch-optimized field view" },
   // Admin
   { name: "Zuper Compliance", path: "/dashboards/zuper-compliance", description: "Per-user compliance scorecards" },

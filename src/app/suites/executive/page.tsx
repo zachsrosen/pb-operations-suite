@@ -20,6 +20,22 @@ const LINKS: SuitePageCard[] = [
     section: "Executive Views",
   },
   {
+    href: "/dashboards/command-center",
+    title: "Command Center",
+    description: "Real-time executive command center with live metrics and alerts.",
+    tag: "LIVE",
+    tagColor: "bg-red-500/20 text-red-400 border-red-500/30",
+    section: "Executive Views",
+  },
+  {
+    href: "/dashboards/capacity",
+    title: "Capacity Planning",
+    description: "Crew capacity vs. forecasted installs by location and month.",
+    tag: "CAPACITY",
+    tagColor: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+    section: "Executive Views",
+  },
+  {
     href: "/dashboards/locations",
     title: "Location Comparison",
     description: "Side-by-side location performance, capacity, and pipeline breakdown.",
