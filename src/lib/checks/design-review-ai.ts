@@ -18,7 +18,7 @@
 import { getAnthropicClient, CLAUDE_MODELS } from "@/lib/anthropic";
 import {
   extractFolderId,
-  listDrivePdfs,
+  listPlansetPdfs,
   pickBestPlanset,
   downloadDrivePdf,
 } from "@/lib/drive-plansets";
@@ -240,7 +240,7 @@ export async function runDesignReview(
         "Ensure design_documents or design_document_folder_id is set in HubSpot.");
     }
 
-    const pdfFiles = await listDrivePdfs(folderId);
+    const pdfFiles = await listPlansetPdfs(folderId);
     if (pdfFiles.length === 0) {
       return makeErrorResult(dealId, start, "completeness", "error",
         `No PDF files found in Drive folder ${folderId}.`);
@@ -251,6 +251,12 @@ export async function runDesignReview(
       return makeErrorResult(dealId, start, "completeness", "error",
         "Could not select a planset PDF from available files.");
     }
+
+    console.log(
+      `[design-review-ai] Deal ${dealId}: selected "${selectedFile.name}" ` +
+      `(${selectedFile.size ? Math.round(Number(selectedFile.size) / 1024) + "KB" : "size unknown"}) ` +
+      `from ${pdfFiles.length} PDF${pdfFiles.length !== 1 ? "s" : ""} in folder`,
+    );
 
     const { buffer, filename } = await downloadDrivePdf(selectedFile.id);
     const base64Data = Buffer.from(buffer).toString("base64");

@@ -18,6 +18,8 @@ export interface DrivePdfFile {
   id: string;
   name: string;
   modifiedTime: string;
+  /** File size in bytes (string from Drive API). */
+  size?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -49,7 +51,7 @@ export async function listDrivePdfs(folderId: string): Promise<DrivePdfFile[]> {
   const token = await getDriveToken();
 
   const query = `'${folderId}' in parents and mimeType='application/pdf' and trashed=false`;
-  const fields = "files(id,name,modifiedTime)";
+  const fields = "files(id,name,modifiedTime,size)";
   const orderBy = "modifiedTime desc";
   const url =
     `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}` +
@@ -89,6 +91,8 @@ export const NON_PLANSET_PATTERNS = [
   /plan\s*check\s*(comment|response|correction)/i,
   /inspection\s*report/i,
   /approval\s*letter/i,
+  /design\s*approval/i,
+  /customer\s*approval/i,
   /^invoice/i,
   /^receipt/i,
   /^proposal/i,
@@ -114,16 +118,86 @@ export function pickBestPlanset(files: DrivePdfFile[]): DrivePdfFile | null {
 
   // Prefer files with PROJ-XXXX (project number) — design plans include project number + customer + date
   const projNumbered = candidates.filter((f) => /PROJ-\d{4,}/i.test(f.name));
-  if (projNumbered.length > 0) return projNumbered[0];
+  if (projNumbered.length > 0) return pickLargest(projNumbered);
 
-  // Last resort: newest PDF from candidates (if any survived filtering)
-  if (candidates.length > 0) return candidates[0];
+  // Last resort: largest PDF from candidates — full plansets are almost always
+  // the biggest file in the folder (10-50+ pages vs 2-3 page approvals/letters)
+  if (candidates.length > 0) return pickLargest(candidates);
 
-  // If ALL files were excluded, fall back to original list with a warning
+  // If ALL files were excluded, fall back to largest from original list
   console.warn(
-    `[drive-plansets] All ${files.length} PDFs matched non-planset patterns — falling back to newest: ${files[0].name}`,
+    `[drive-plansets] All ${files.length} PDFs matched non-planset patterns — falling back to largest`,
   );
-  return files[0];
+  return pickLargest(files);
+}
+
+/** Pick the largest file from a list (plansets are almost always the biggest PDF). */
+function pickLargest(files: DrivePdfFile[]): DrivePdfFile {
+  return files.reduce((best, f) => {
+    const bestSize = Number(best.size) || 0;
+    const fSize = Number(f.size) || 0;
+    return fSize > bestSize ? f : best;
+  }, files[0]);
+}
+
+// ---------------------------------------------------------------------------
+// Subfolder navigation — prefer "Stamped Plans" inside Design folder
+// ---------------------------------------------------------------------------
+
+/** Patterns for the stamped plans subfolder name. */
+const STAMPED_FOLDER_PATTERNS = [
+  /stamped\s*plans?/i,
+  /^stamped$/i,
+];
+
+/**
+ * Look for a "Stamped Plans" subfolder inside the given folder.
+ * Returns the subfolder ID if found, null otherwise.
+ */
+export async function findStampedPlansFolder(parentFolderId: string): Promise<string | null> {
+  const token = await getDriveToken();
+
+  const query = `'${parentFolderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+  const fields = "files(id,name)";
+  const url =
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}` +
+    `&fields=${encodeURIComponent(fields)}` +
+    `&pageSize=50` +
+    `&supportsAllDrives=true&includeItemsFromAllDrives=true`;
+
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+
+  if (!res.ok) return null;
+
+  const data = await res.json() as { files?: Array<{ id: string; name: string }> };
+  const folders = data.files ?? [];
+
+  const stamped = folders.find((f) =>
+    STAMPED_FOLDER_PATTERNS.some((p) => p.test(f.name)),
+  );
+  return stamped?.id ?? null;
+}
+
+/**
+ * List planset PDFs, preferring the "Stamped Plans" subfolder if it exists.
+ * Falls back to the parent folder if no subfolder found.
+ */
+export async function listPlansetPdfs(designFolderId: string): Promise<DrivePdfFile[]> {
+  // Try "Stamped Plans" subfolder first
+  const stampedFolderId = await findStampedPlansFolder(designFolderId);
+  if (stampedFolderId) {
+    const files = await listDrivePdfs(stampedFolderId);
+    if (files.length > 0) {
+      console.log(`[drive-plansets] Found ${files.length} PDFs in Stamped Plans subfolder`);
+      return files;
+    }
+  }
+
+  // Fallback to parent design folder
+  return listDrivePdfs(designFolderId);
 }
 
 // ---------------------------------------------------------------------------

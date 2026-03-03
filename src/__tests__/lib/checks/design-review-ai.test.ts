@@ -25,7 +25,7 @@ jest.mock("@/lib/hubspot-custom-objects", () => ({
   fetchUtilitiesForDeal: (...args: any[]) => mockFetchUtilities(...args),
 }));
 
-const mockListDrivePdfs = jest.fn();
+const mockListPlansetPdfs = jest.fn();
 const mockPickBestPlanset = jest.fn();
 const mockDownloadDrivePdf = jest.fn();
 jest.mock("@/lib/drive-plansets", () => ({
@@ -35,7 +35,7 @@ jest.mock("@/lib/drive-plansets", () => ({
     if (/^[a-zA-Z0-9_-]{10,}$/.test(input.trim())) return input.trim();
     return null;
   },
-  listDrivePdfs: (...args: any[]) => mockListDrivePdfs(...args),
+  listPlansetPdfs: (...args: any[]) => mockListPlansetPdfs(...args),
   pickBestPlanset: (...args: any[]) => mockPickBestPlanset(...args),
   downloadDrivePdf: (...args: any[]) => mockDownloadDrivePdf(...args),
 }));
@@ -62,7 +62,7 @@ const baseProperties: Record<string, string | null> = {
 
 /** Set up the Drive + Anthropic mocks for a successful flow through to the Claude call. */
 function setupHappyPath() {
-  mockListDrivePdfs.mockResolvedValue([
+  mockListPlansetPdfs.mockResolvedValue([
     { id: "file-1", name: "Planset_stamped.pdf", modifiedTime: "2026-01-01T00:00:00Z" },
   ]);
   mockPickBestPlanset.mockReturnValue({
@@ -248,7 +248,7 @@ describe("runDesignReview", () => {
     });
 
     it("returns error when folder has no PDFs", async () => {
-      mockListDrivePdfs.mockResolvedValue([]);
+      mockListPlansetPdfs.mockResolvedValue([]);
 
       const result = await runDesignReview(DEAL_ID, baseProperties);
 
@@ -257,7 +257,7 @@ describe("runDesignReview", () => {
     });
 
     it("returns error when pickBestPlanset returns null", async () => {
-      mockListDrivePdfs.mockResolvedValue([{ id: "f1", name: "junk.pdf" }]);
+      mockListPlansetPdfs.mockResolvedValue([{ id: "f1", name: "junk.pdf" }]);
       mockPickBestPlanset.mockReturnValue(null);
 
       const result = await runDesignReview(DEAL_ID, baseProperties);
