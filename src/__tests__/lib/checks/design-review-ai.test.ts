@@ -10,10 +10,18 @@
 // ── Mocks (must be before imports) ──
 
 const mockCreate = jest.fn();
+const mockFilesUpload = jest.fn();
+const mockFilesDelete = jest.fn();
 
 jest.mock("@/lib/anthropic", () => ({
   getAnthropicClient: () => ({
-    messages: { create: mockCreate },
+    beta: {
+      messages: { create: mockCreate },
+      files: {
+        upload: mockFilesUpload,
+        delete: mockFilesDelete,
+      },
+    },
   }),
   CLAUDE_MODELS: { sonnet: "claude-sonnet-test" },
 }));
@@ -74,6 +82,8 @@ function setupHappyPath() {
     buffer: Buffer.from("fake-pdf"),
     filename: "Planset_stamped.pdf",
   });
+  mockFilesUpload.mockResolvedValue({ id: "anthropic-file-123" });
+  mockFilesDelete.mockResolvedValue(undefined);
 }
 
 /** Build a mock Claude response with the given tool_use input. */
@@ -296,12 +306,36 @@ describe("runDesignReview", () => {
     });
   });
 
-  describe("error propagation", () => {
-    it("propagates Claude API errors", async () => {
+  describe("error handling", () => {
+    it("returns error result when Claude API fails", async () => {
       setupHappyPath();
       mockCreate.mockRejectedValue(new Error("API timeout"));
 
-      await expect(runDesignReview(DEAL_ID, baseProperties)).rejects.toThrow("API timeout");
+      const result = await runDesignReview(DEAL_ID, baseProperties);
+
+      expect(result.passed).toBe(false);
+      expect(result.errorCount).toBe(1);
+      expect(result.findings[0].message).toMatch(/AI review failed.*API timeout/);
+    });
+
+    it("returns error result when file upload fails", async () => {
+      setupHappyPath();
+      mockFilesUpload.mockRejectedValue(new Error("Upload quota exceeded"));
+
+      const result = await runDesignReview(DEAL_ID, baseProperties);
+
+      expect(result.passed).toBe(false);
+      expect(result.errorCount).toBe(1);
+      expect(result.findings[0].message).toMatch(/Failed to upload planset/);
+    });
+
+    it("cleans up uploaded file after Claude API error", async () => {
+      setupHappyPath();
+      mockCreate.mockRejectedValue(new Error("overloaded"));
+
+      await runDesignReview(DEAL_ID, baseProperties);
+
+      expect(mockFilesDelete).toHaveBeenCalledWith("anthropic-file-123");
     });
   });
 

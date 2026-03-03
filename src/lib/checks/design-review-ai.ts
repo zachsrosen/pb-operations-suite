@@ -259,39 +259,72 @@ export async function runDesignReview(
     );
 
     const { buffer, filename } = await downloadDrivePdf(selectedFile.id);
-    const base64Data = Buffer.from(buffer).toString("base64");
 
     await heartbeat(); // milestone: PDF downloaded
 
-    // ── Step 3: Call Claude with structured output (base64 inline PDF) ──
+    // ── Step 3: Upload PDF to Anthropic Files API ──
+    let anthropicFileId: string | undefined;
+    try {
+      const uploadedFile = await client.beta.files.upload({
+        file: new File([new Uint8Array(buffer)], filename, { type: "application/pdf" }),
+      });
+      anthropicFileId = uploadedFile.id;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "File upload failed";
+      console.error("[design-review-ai] Files API upload error:", msg);
+      return makeErrorResult(dealId, start, "completeness", "error",
+        `Failed to upload planset PDF for AI review: ${msg}`);
+    }
+
+    // ── Step 4: Call Claude with structured output (Files API reference) ──
     const userMessage = buildUserMessage(dealContext, ahjContext, utilityContext, filename);
 
-    const response = await client.messages.create({
-      model: CLAUDE_MODELS.sonnet,
-      max_tokens: 4096,
-      system: buildSystemPrompt(),
-      tools: [SUBMIT_FINDINGS_TOOL],
-      tool_choice: { type: "tool", name: "submit_findings" } as never,
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "document",
-              source: { type: "base64", media_type: "application/pdf", data: base64Data },
-            } as { type: "document"; source: { type: "base64"; media_type: "application/pdf"; data: string } },
-            {
-              type: "text",
-              text: userMessage,
-            },
-          ],
-        },
-      ],
-    });
+    let response;
+    try {
+      response = await client.beta.messages.create({
+        model: CLAUDE_MODELS.sonnet,
+        max_tokens: 4096,
+        system: buildSystemPrompt(),
+        tools: [SUBMIT_FINDINGS_TOOL],
+        tool_choice: { type: "tool", name: "submit_findings" } as never,
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "document",
+                source: { type: "file", file_id: anthropicFileId },
+              },
+              {
+                type: "text",
+                text: userMessage,
+              },
+            ],
+          },
+        ],
+        betas: ["files-api-2025-04-14"],
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Claude API call failed";
+      console.error("[design-review-ai] Claude API error:", msg);
+      // Clean up uploaded file before returning error
+      if (anthropicFileId) {
+        await client.beta.files.delete(anthropicFileId).catch(() => {});
+      }
+      return makeErrorResult(dealId, start, "completeness", "error",
+        `AI review failed: ${msg}`);
+    }
+
+    // Clean up uploaded file (best-effort)
+    if (anthropicFileId) {
+      await client.beta.files.delete(anthropicFileId).catch((e) => {
+        console.warn("[design-review-ai] Failed to delete uploaded file:", anthropicFileId, e);
+      });
+    }
 
     await heartbeat(); // milestone: Claude response received
 
-    // ── Step 5: Extract findings from tool use ──
+    // ── Step 5: Extract findings from tool use response ──
     const toolBlock = response.content.find(
       (block): block is Extract<typeof block, { type: "tool_use" }> =>
         block.type === "tool_use" && block.name === "submit_findings",
