@@ -213,10 +213,7 @@ export async function runDesignReview(
 ): Promise<ReviewResult> {
   const start = Date.now();
   const client = getAnthropicClient();
-  let anthropicFileId: string | null = null;
   const heartbeat = onHeartbeat ?? (() => Promise.resolve());
-
-  try {
     // ── Step 1: Fetch AHJ + utility requirements ──
     const [ahjRecords, utilityRecords] = await Promise.all([
       fetchAHJsForDeal(dealId).catch((err) => {
@@ -256,32 +253,27 @@ export async function runDesignReview(
     }
 
     const { buffer, filename } = await downloadDrivePdf(selectedFile.id);
+    const base64Data = Buffer.from(buffer).toString("base64");
 
-    // ── Step 3: Upload PDF to Anthropic Files API ──
-    const uploadedFile = await client.beta.files.upload({
-      file: new File([new Uint8Array(buffer)], filename, { type: "application/pdf" }),
-    });
-    anthropicFileId = uploadedFile.id;
+    await heartbeat(); // milestone: PDF downloaded
 
-    await heartbeat(); // milestone: PDF uploaded to Anthropic
-
-    // ── Step 4: Call Claude with structured output ──
+    // ── Step 3: Call Claude with structured output (base64 inline PDF) ──
     const userMessage = buildUserMessage(dealContext, ahjContext, utilityContext, filename);
 
-    const response = await client.beta.messages.create({
+    const response = await client.messages.create({
       model: CLAUDE_MODELS.sonnet,
       max_tokens: 4096,
       system: buildSystemPrompt(),
       tools: [SUBMIT_FINDINGS_TOOL],
-      tool_choice: { type: "tool", name: "submit_findings" },
+      tool_choice: { type: "tool", name: "submit_findings" } as never,
       messages: [
         {
           role: "user",
           content: [
             {
               type: "document",
-              source: { type: "file", file_id: anthropicFileId },
-            },
+              source: { type: "base64", media_type: "application/pdf", data: base64Data },
+            } as { type: "document"; source: { type: "base64"; media_type: "application/pdf"; data: string } },
             {
               type: "text",
               text: userMessage,
@@ -338,14 +330,6 @@ export async function runDesignReview(
       passed: errorCount === 0,
       durationMs: Date.now() - start,
     };
-  } finally {
-    // ── Cleanup: delete uploaded PDF from Anthropic Files API ──
-    if (anthropicFileId) {
-      await client.beta.files.delete(anthropicFileId).catch((e) => {
-        console.warn("[design-review-ai] Failed to delete uploaded file:", anthropicFileId, e);
-      });
-    }
-  }
 }
 
 // ---------------------------------------------------------------------------

@@ -10,15 +10,10 @@
 // ── Mocks (must be before imports) ──
 
 const mockCreate = jest.fn();
-const mockUpload = jest.fn();
-const mockDelete = jest.fn();
 
 jest.mock("@/lib/anthropic", () => ({
   getAnthropicClient: () => ({
-    beta: {
-      messages: { create: mockCreate },
-      files: { upload: mockUpload, delete: mockDelete },
-    },
+    messages: { create: mockCreate },
   }),
   CLAUDE_MODELS: { sonnet: "claude-sonnet-test" },
 }));
@@ -79,8 +74,6 @@ function setupHappyPath() {
     buffer: Buffer.from("fake-pdf"),
     filename: "Planset_stamped.pdf",
   });
-  mockUpload.mockResolvedValue({ id: "anthro-file-id" });
-  mockDelete.mockResolvedValue({});
 }
 
 /** Build a mock Claude response with the given tool_use input. */
@@ -251,7 +244,7 @@ describe("runDesignReview", () => {
       expect(result.passed).toBe(false);
       expect(result.findings[0].message).toMatch(/No design folder/);
       // Should NOT have called Anthropic
-      expect(mockUpload).not.toHaveBeenCalled();
+      expect(mockCreate).not.toHaveBeenCalled();
     });
 
     it("returns error when folder has no PDFs", async () => {
@@ -303,35 +296,12 @@ describe("runDesignReview", () => {
     });
   });
 
-  describe("Files API cleanup", () => {
-    it("cleans up uploaded file after successful review", async () => {
-      setupHappyPath();
-      mockCreate.mockResolvedValue(
-        claudeResponse({
-          findings: [{ check: "completeness", severity: "info", message: "OK" }],
-        }),
-      );
-
-      await runDesignReview(DEAL_ID, baseProperties);
-
-      expect(mockDelete).toHaveBeenCalledWith("anthro-file-id");
-    });
-
-    it("cleans up uploaded file even when Claude call throws", async () => {
+  describe("error propagation", () => {
+    it("propagates Claude API errors", async () => {
       setupHappyPath();
       mockCreate.mockRejectedValue(new Error("API timeout"));
 
       await expect(runDesignReview(DEAL_ID, baseProperties)).rejects.toThrow("API timeout");
-
-      expect(mockDelete).toHaveBeenCalledWith("anthro-file-id");
-    });
-
-    it("does not call delete when upload was never reached", async () => {
-      mockListDrivePdfs.mockResolvedValue([]);
-
-      await runDesignReview(DEAL_ID, baseProperties);
-
-      expect(mockDelete).not.toHaveBeenCalled();
     });
   });
 

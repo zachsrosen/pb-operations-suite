@@ -22,11 +22,49 @@ const SKILL_CONFIG: Array<{ skill: SkillName; label: string; roles: string[] }> 
 
 const POLL_INTERVAL_MS = 3000;
 
+/** Timed progress steps shown during AI review (~15-45s). */
+const PROGRESS_STEPS = [
+  { after: 0, text: "Starting review…" },
+  { after: 3, text: "Fetching AHJ & utility requirements…" },
+  { after: 6, text: "Locating planset in Drive…" },
+  { after: 10, text: "Downloading planset PDF…" },
+  { after: 14, text: "Sending planset to Claude for analysis…" },
+  { after: 22, text: "Claude is reviewing the planset…" },
+  { after: 35, text: "Still analyzing — large plansets take longer…" },
+  { after: 50, text: "Almost done…" },
+];
+
+function useProgressText(isActive: boolean): string {
+  const [elapsed, setElapsed] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (isActive) {
+      setElapsed(0);
+      timerRef.current = setInterval(() => setElapsed((e) => e + 1), 1000);
+    } else {
+      if (timerRef.current) clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [isActive]);
+
+  // Find the latest step whose threshold has passed
+  let text = PROGRESS_STEPS[0].text;
+  for (const step of PROGRESS_STEPS) {
+    if (elapsed >= step.after) text = step.text;
+  }
+  return text;
+}
+
 export default function ReviewActions({ dealId, userRole }: ReviewActionsProps) {
   const [loading, setLoading] = useState<string | null>(null);
   const [results, setResults] = useState<Record<string, ReviewResult>>({});
   const [error, setError] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const progressText = useProgressText(loading !== null);
 
   const stopPolling = useCallback(() => {
     if (pollRef.current) {
@@ -140,7 +178,7 @@ export default function ReviewActions({ dealId, userRole }: ReviewActionsProps) 
               {loading === skill ? (
                 <>
                   <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                  <span className="text-xs text-muted">Reviewing planset with AI…</span>
+                  <span className="text-xs text-muted">{progressText}</span>
                 </>
               ) : result ? (
                 result.passed ? "✓" : `✗ ${result.errorCount}`
