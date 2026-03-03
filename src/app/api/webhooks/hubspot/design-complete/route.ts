@@ -179,6 +179,18 @@ export async function POST(req: NextRequest) {
     const dealId = String(event.objectId);
     const trigger: BomPipelineTrigger = stageConfig.get(event.propertyValue)!;
 
+    // ── 5b. Skip if pipeline already ran for this deal+trigger (prevent re-runs) ──
+    const existingRun = await prisma.bomPipelineRun.findFirst({
+      where: { dealId, trigger },
+      select: { id: true, status: true },
+      orderBy: { createdAt: "desc" },
+    });
+    if (existingRun) {
+      console.log(`[design-complete] Skipping deal ${dealId} — already has a ${existingRun.status} run for trigger ${trigger} (run ${existingRun.id})`);
+      triggered.push(`${dealId}:already_ran`);
+      continue;
+    }
+
     // ── 6. Dedupe: stale lock recovery + insert RUNNING row ──
     let runId: string;
     try {
