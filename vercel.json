@@ -34,6 +34,18 @@
       "schedule": "0 5 * * 0"
     }
   ],
+  "redirects": [
+    {
+      "source": "/dashboards/_archive/:path*",
+      "destination": "/404",
+      "permanent": false
+    },
+    {
+      "source": "/prototypes/:path*.html",
+      "destination": "/404",
+      "permanent": false
+    }
+  ],
   "rewrites": [
     {
       "source": "/dashboards/:path*",
