@@ -30,6 +30,7 @@ const SKILL_CONFIG: Array<{ skill: SkillName; label: string; roles: string[] }> 
 ];
 
 const POLL_INTERVAL_MS = 3000;
+const MAX_POLL_DURATION_MS = 3 * 60 * 1000; // 3 minutes max before showing timeout
 
 /** Timed progress steps shown during AI review (~15-45s). */
 const PROGRESS_STEPS = [
@@ -74,6 +75,7 @@ export default function ReviewActions({ dealId, dealName, userRole }: ReviewActi
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<Record<string, FeedbackState>>({});
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollStartRef = useRef<number>(0);
   const progressText = useProgressText(loading !== null);
 
   const stopPolling = useCallback(() => {
@@ -87,6 +89,24 @@ export default function ReviewActions({ dealId, dealName, userRole }: ReviewActi
   useEffect(() => stopPolling, [stopPolling]);
 
   async function pollStatus(reviewId: string, skill: SkillName) {
+    // Check for client-side poll timeout
+    if (Date.now() - pollStartRef.current > MAX_POLL_DURATION_MS) {
+      stopPolling();
+      setLoading(null);
+      setError("Review timed out — the background process may have crashed. Try again.");
+      setResults((prev) => ({
+        ...prev,
+        [skill]: {
+          passed: false,
+          errorCount: 1,
+          warningCount: 0,
+          findings: [{ check: "timeout", severity: "error", message: "Review timed out after 3 minutes. Try running again." }],
+          durationMs: 0,
+        },
+      }));
+      return;
+    }
+
     try {
       const res = await fetch(`/api/reviews/status/${reviewId}`);
       if (!res.ok) return; // Keep polling
@@ -142,6 +162,7 @@ export default function ReviewActions({ dealId, dealName, userRole }: ReviewActi
       if (res.status === 409 && data.existingReviewId) {
         // Attach flow: review already running — poll existing run
         stopPolling();
+        pollStartRef.current = Date.now();
         pollRef.current = setInterval(() => pollStatus(data.existingReviewId, skill), POLL_INTERVAL_MS);
         return;
       }
@@ -155,6 +176,7 @@ export default function ReviewActions({ dealId, dealName, userRole }: ReviewActi
       // Started successfully — poll for completion
       const reviewId = data.id;
       stopPolling();
+      pollStartRef.current = Date.now();
       pollRef.current = setInterval(() => pollStatus(reviewId, skill), POLL_INTERVAL_MS);
     } catch {
       setLoading(null);

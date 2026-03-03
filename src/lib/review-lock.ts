@@ -18,9 +18,9 @@ import type { Finding } from "@/lib/checks/types";
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Stale lock threshold: 5 minutes. Heartbeat via touchReviewRun() prevents
- *  active runs from being killed prematurely. */
-const STALE_LOCK_THRESHOLD_MS = 5 * 60 * 1000;
+/** Stale lock threshold: 3 minutes. Heartbeat via touchReviewRun() prevents
+ *  active runs from being killed prematurely. Matches client-side poll timeout. */
+const STALE_LOCK_THRESHOLD_MS = 3 * 60 * 1000;
 
 // ---------------------------------------------------------------------------
 // Errors
