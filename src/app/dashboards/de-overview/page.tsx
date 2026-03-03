@@ -17,7 +17,7 @@ const STATUS_FUNNEL = [
   { key: "Ready for Design", label: "Ready for Design", color: "bg-slate-500" },
   { key: "In Progress", label: "In Progress", color: "bg-blue-500" },
   { key: "Initial Review", label: "Ready For Review", color: "bg-yellow-500" },
-  { key: "Ready For Review", label: "Final Review/Stamping", color: "bg-orange-500" },
+  { key: "Ready for Review", label: "Final Review/Stamping", color: "bg-orange-500" },
   { key: "Draft Complete", label: "Draft Complete — Waiting on Approvals", color: "bg-purple-500" },
   { key: "DA Approved", label: "DA Approved", color: "bg-indigo-500" },
   { key: "Submitted To Engineering", label: "Submitted To Engineering", color: "bg-cyan-500" },
