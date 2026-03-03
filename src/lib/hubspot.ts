@@ -352,6 +352,7 @@ export interface Project {
   daysSinceStageMovement: number;
 
   // Status flags
+  systemPerformanceReview: boolean;
   stagePriority: number;
   isRtb: boolean;
   isSchedulable: boolean;
