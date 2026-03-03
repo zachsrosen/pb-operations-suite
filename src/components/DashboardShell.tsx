@@ -134,6 +134,16 @@ export default function DashboardShell({
   const router = useRouter();
   const parentSuite = getParentSuiteForPath(pathname);
 
+  const handleBack = useCallback(() => {
+    // If we have browser history from navigating within the app, go back
+    // Otherwise fall back to parent suite or home
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      router.back();
+    } else {
+      router.push(parentSuite?.href || "/");
+    }
+  }, [router, parentSuite]);
+
   // Auto-generate breadcrumbs from suite mapping if not explicitly provided
   const effectiveBreadcrumbs = breadcrumbs || (parentSuite
     ? [{ label: parentSuite.label, href: parentSuite.href }]
@@ -198,9 +208,9 @@ export default function DashboardShell({
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-3 sm:gap-4 min-w-0">
               <button
-                onClick={() => router.back()}
+                onClick={handleBack}
                 className="text-muted hover:text-foreground transition-colors shrink-0"
-                title="Go back"
+                title={parentSuite ? `Back (or ${parentSuite.label})` : "Go back"}
               >
                 <svg
                   className="w-5 h-5"
