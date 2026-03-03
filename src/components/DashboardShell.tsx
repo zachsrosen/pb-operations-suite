@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { ReactNode, useCallback } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { ThemeToggle } from "./ThemeToggle";
 import PhotonBrothersBadge from "./PhotonBrothersBadge";
 import ChatWidget from "./ChatWidget";
@@ -131,8 +131,8 @@ export default function DashboardShell({
   exportData,
 }: DashboardShellProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const parentSuite = getParentSuiteForPath(pathname);
-  const backHref = parentSuite?.href || "/";
 
   // Auto-generate breadcrumbs from suite mapping if not explicitly provided
   const effectiveBreadcrumbs = breadcrumbs || (parentSuite
@@ -197,10 +197,10 @@ export default function DashboardShell({
 
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-              <Link
-                href={backHref}
+              <button
+                onClick={() => router.back()}
                 className="text-muted hover:text-foreground transition-colors shrink-0"
-                title={parentSuite ? `Back to ${parentSuite.label}` : "Back to Home"}
+                title="Go back"
               >
                 <svg
                   className="w-5 h-5"
@@ -215,7 +215,7 @@ export default function DashboardShell({
                     d="M10 19l-7-7m0 0l7-7m-7 7h18"
                   />
                 </svg>
-              </Link>
+              </button>
               <PhotonBrothersBadge compact className="hidden sm:inline-flex" />
               <div className="min-w-0">
                 <h1
