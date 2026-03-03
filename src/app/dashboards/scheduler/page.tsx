@@ -2876,6 +2876,16 @@ export default function SchedulerPage() {
                           Zuper
                         </a>
                       )}
+                      <a
+                        href={p.hubspotUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="text-[0.5rem] px-1 py-0.5 rounded bg-orange-500/30 text-orange-400 font-semibold hover:bg-orange-500/50"
+                        title="Open in HubSpot"
+                      >
+                        HubSpot
+                      </a>
                       {types.slice(0, 2).map((t, i) => (
                         <span
                           key={i}
