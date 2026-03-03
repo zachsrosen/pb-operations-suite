@@ -15,9 +15,9 @@ import { useDEMetricsFilters } from "@/stores/dashboard-filters";
 const ACTIVE_DESIGN_STATUSES = [
   "Ready for Design",
   "In Progress",
-  "Ready For Review",
-  "Final Review/Stamping",
-  "Draft Complete - Waiting on Approvals",
+  "Initial Review",            // label: "Ready For Review"
+  "Ready for Review",          // label: "Final Review/Stamping"
+  "Draft Complete",            // label: "Draft Complete — Waiting on Approvals"
   "DA Approved",
 ];
 
@@ -35,7 +35,7 @@ const REVISION_STATUSES = [
   "Revision Needed - Rejected by Utility",
   "Utility Revision In Progress",
   "Utility Revision Completed",
-  "Revision Needed - As-Built",
+  "Revision Needed - Rejected",  // label: "Revision Needed — As-Built"
   "As-Built Revision In Progress",
   "As-Built Revision Completed",
 ];

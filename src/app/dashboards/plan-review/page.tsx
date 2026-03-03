@@ -63,6 +63,10 @@ export default function PlanReviewPage() {
   // Filter state
   const { filters: persistedFilters, setFilters: setPersisted, clearFilters } = usePlanReviewFilters();
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedReviewTypes, setSelectedReviewTypes] = useState<string[]>([]);
+
+  // Batch-fetch review completion status
+  const [reviewStatus, setReviewStatus] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (!loading && !hasTrackedView.current) {
@@ -107,6 +111,20 @@ export default function PlanReviewPage() {
     );
   }, [safeProjects]);
 
+  // Fetch review completion status for projects in the queue
+  useEffect(() => {
+    if (reviewProjects.length === 0) return;
+    const dealIds = reviewProjects.map((p) => String(p.id));
+    fetch("/api/reviews/batch-status", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dealIds }),
+    })
+      .then((r) => r.json())
+      .then((data) => setReviewStatus(data.reviewed || {}))
+      .catch(() => {});
+  }, [reviewProjects]);
+
   // Build filter option lists from review projects
   const locationOptions: FilterOption[] = useMemo(() => {
     const locs = [...new Set(reviewProjects.map((p) => p.pbLocation).filter(Boolean))] as string[];
@@ -123,10 +141,17 @@ export default function PlanReviewPage() {
     return stages.sort().map((s) => ({ value: s, label: s }));
   }, [reviewProjects]);
 
+  const reviewTypeOptions: FilterOption[] = useMemo(() => [
+    { value: "Initial Design Review", label: "Initial Design Review" },
+    { value: "Final Design Review", label: "Final Design Review" },
+    { value: "In Engineering", label: "In Engineering" },
+  ], []);
+
   const hasActiveFilters =
     persistedFilters.locations.length > 0 ||
     persistedFilters.owners.length > 0 ||
     persistedFilters.stages.length > 0 ||
+    selectedReviewTypes.length > 0 ||
     searchQuery.length > 0;
 
   // Enrich with computed fields
@@ -167,6 +192,10 @@ export default function PlanReviewPage() {
       if (persistedFilters.stages.length > 0 && !persistedFilters.stages.includes(p.stage || "")) {
         return false;
       }
+      // Review type filter
+      if (selectedReviewTypes.length > 0 && !selectedReviewTypes.includes(p.reviewType)) {
+        return false;
+      }
       // Search filter
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
@@ -175,7 +204,7 @@ export default function PlanReviewPage() {
       }
       return true;
     });
-  }, [enrichedProjects, persistedFilters, searchQuery]);
+  }, [enrichedProjects, persistedFilters, selectedReviewTypes, searchQuery]);
 
   // Sort
   const sortedProjects = useMemo(() => {
@@ -316,9 +345,17 @@ export default function PlanReviewPage() {
           accentColor="indigo"
         />
 
+        <MultiSelectFilter
+          label="Review Type"
+          options={reviewTypeOptions}
+          selected={selectedReviewTypes}
+          onChange={setSelectedReviewTypes}
+          accentColor="purple"
+        />
+
         {hasActiveFilters && (
           <button
-            onClick={() => { clearFilters(); setSearchQuery(""); }}
+            onClick={() => { clearFilters(); setSelectedReviewTypes([]); setSearchQuery(""); }}
             className="text-xs px-3 py-2 text-muted hover:text-foreground border border-t-border rounded-lg hover:bg-surface-2 transition-colors"
           >
             Clear All
@@ -349,7 +386,7 @@ export default function PlanReviewPage() {
                   <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("owner")}>
                     Design Lead{sortIndicator("owner")}
                   </th>
-                  <th className="p-3">Reviews</th>
+                  <th className="p-3 text-center">Reviewed</th>
                   <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("reviewType")}>
                     Review Type{sortIndicator("reviewType")}
                   </th>
@@ -398,12 +435,17 @@ export default function PlanReviewPage() {
                         )}
                       </td>
                       <td className="p-3 text-muted">{p.designLead || "Unknown"}</td>
-                      <td className="p-3">
+                      <td className="p-3 text-center">
                         <a
                           href={`/dashboards/reviews/${String(p.id)}`}
-                          className="text-xs font-medium text-orange-400 hover:text-orange-300 hover:underline"
+                          className="inline-flex items-center gap-1 text-xs font-medium hover:underline"
+                          title={reviewStatus[String(p.id)] ? "Review completed — click to view" : "No review yet — click to run"}
                         >
-                          View
+                          {reviewStatus[String(p.id)] ? (
+                            <span className="text-emerald-400">&#10003;</span>
+                          ) : (
+                            <span className="text-muted">&#x2014;</span>
+                          )}
                         </a>
                       </td>
                       <td className="p-3">

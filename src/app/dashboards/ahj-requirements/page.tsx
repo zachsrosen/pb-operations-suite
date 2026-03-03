@@ -26,7 +26,7 @@ const REVISION_STATUSES = [
   "Revision Needed - Rejected by Utility",
   "Utility Revision In Progress",
   "Utility Revision Completed",
-  "Revision Needed - As-Built",
+  "Revision Needed - Rejected",  // label: "Revision Needed — As-Built"
   "As-Built Revision In Progress",
   "As-Built Revision Completed",
 ];
