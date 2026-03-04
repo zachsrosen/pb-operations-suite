@@ -176,26 +176,34 @@ export async function POST(req: NextRequest) {
 
     const dealId = String(event.objectId);
 
-    // ── 5a. Fetch actual deal stage from HubSpot (don't trust event.propertyValue) ──
-    // HubSpot webhook propertyValue has been observed to send incorrect stage IDs.
-    // We fetch the deal's live dealstage to determine the correct trigger.
-    const dealProps = await getDealProperties(dealId, ["dealstage"]);
-    const actualStage = dealProps?.dealstage ?? null;
+    // ── 5a. Determine trigger from webhook's reported stage ──
+    // Use event.propertyValue (the stage the deal moved TO when the webhook fired).
+    // Previously we fetched the live stage from HubSpot, but that races when deals
+    // move through multiple stages quickly (e.g. P&I → RTB before the webhook
+    // handler runs), causing the wrong trigger type to fire.
+    const webhookStage = event.propertyValue ?? "";
 
-    if (!actualStage || !stageConfig.has(actualStage)) {
-      if (actualStage) {
-        console.log(`[design-complete] Deal ${dealId} actual stage ${actualStage} not in config — skipping`);
+    if (!webhookStage || !stageConfig.has(webhookStage)) {
+      if (webhookStage) {
+        console.log(`[design-complete] Deal ${dealId} webhook stage ${webhookStage} not in config — skipping`);
       } else {
-        console.warn(`[design-complete] Could not fetch actual stage for deal ${dealId} — skipping`);
+        console.warn(`[design-complete] Deal ${dealId} webhook has no propertyValue — skipping`);
       }
       continue;
     }
 
-    if (event.propertyValue !== actualStage) {
-      console.warn(`[design-complete] Deal ${dealId}: webhook reported stage ${event.propertyValue} but actual stage is ${actualStage} — using actual`);
-    }
+    const trigger: BomPipelineTrigger = stageConfig.get(webhookStage)!;
 
-    const trigger: BomPipelineTrigger = stageConfig.get(actualStage)!;
+    // Log if live stage differs (informational only — trigger is from webhook)
+    try {
+      const dealProps = await getDealProperties(dealId, ["dealstage"]);
+      const actualStage = dealProps?.dealstage ?? null;
+      if (actualStage && actualStage !== webhookStage) {
+        console.log(`[design-complete] Deal ${dealId}: webhook stage ${webhookStage} but live stage is ${actualStage} (race expected, using webhook value)`);
+      }
+    } catch (err) {
+      console.warn(`[design-complete] Could not fetch live stage for deal ${dealId} — proceeding with webhook value`, err);
+    }
 
     // ── 5b. Skip if pipeline already succeeded/partial for this deal+trigger (prevent re-runs) ──
     const completedRun = await prisma.bomPipelineRun.findFirst({
@@ -236,8 +244,7 @@ export async function POST(req: NextRequest) {
           dealId,
           eventId: event.eventId,
           trigger,
-          actualStage: actualStage,
-          webhookReportedStage: event.propertyValue ?? null,
+          webhookStage,
         },
         requestPath: "/api/webhooks/hubspot/design-complete",
         requestMethod: "POST",

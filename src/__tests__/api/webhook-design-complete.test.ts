@@ -56,6 +56,21 @@ jest.mock("@/lib/db", () => ({
   logActivity: jest.fn(async () => {}),
 }));
 
+// ── Mock: HubSpot ────────────────────────────────────────────────────────────
+const mockGetDealProperties = jest.fn();
+jest.mock("@/lib/hubspot", () => ({
+  getDealProperties: (...args: unknown[]) => mockGetDealProperties(...args),
+}));
+
+// ── Mock: pipeline lock ──────────────────────────────────────────────────────
+const mockAcquireLock = jest.fn();
+jest.mock("@/lib/bom-pipeline-lock", () => ({
+  acquirePipelineLock: (...args: unknown[]) => mockAcquireLock(...args),
+  DuplicateRunError: class DuplicateRunError extends Error {
+    constructor(msg?: string) { super(msg ?? "duplicate"); this.name = "DuplicateRunError"; }
+  },
+}));
+
 // ── Mock: webhook auth (use real implementation for signature tests) ─────────
 jest.mock("@/lib/hubspot-webhook-auth", () => {
   const actual = jest.requireActual("@/lib/hubspot-webhook-auth");
@@ -129,6 +144,10 @@ describe("POST /api/webhooks/hubspot/design-complete", () => {
     mockCreate.mockResolvedValue({ id: "run_abc123" });
     mockUpdateMany.mockResolvedValue({ count: 0 });
     mockFindFirst.mockResolvedValue(null);
+    // Default: lock acquisition succeeds
+    mockAcquireLock.mockResolvedValue("run_abc123");
+    // Default: live stage matches webhook stage (no race)
+    mockGetDealProperties.mockResolvedValue({ dealstage: "some-stage-id" });
   });
 
   afterAll(() => {
@@ -197,11 +216,13 @@ describe("POST /api/webhooks/hubspot/design-complete", () => {
 
   // ── Dedupe: concurrent webhooks ──
 
-  it("skips duplicate webhook when RUNNING row already exists (P2002)", async () => {
-    // First call succeeds, second hits unique constraint
-    mockCreate
-      .mockResolvedValueOnce({ id: "run_first" })
-      .mockRejectedValueOnce({ code: "P2002", message: "Unique constraint" });
+  it("skips duplicate webhook when acquirePipelineLock throws DuplicateRunError", async () => {
+    process.env.PIPELINE_STAGE_CONFIG = "some-stage-id:design_complete";
+
+    // First call succeeds, second hits duplicate
+    mockAcquireLock
+      .mockResolvedValueOnce("run_first")
+      .mockRejectedValueOnce(new (jest.requireMock("@/lib/bom-pipeline-lock").DuplicateRunError)());
 
     // First webhook
     const body1 = JSON.stringify(makeWebhookPayload({ eventId: 1001 }));
@@ -220,34 +241,16 @@ describe("POST /api/webhooks/hubspot/design-complete", () => {
     expect(json2.triggered).toContain("12345:skipped");
   });
 
-  // ── Dedupe: stale lock recovery ──
+  // ── Dedupe: lock acquisition ──
 
-  it("recovers stale RUNNING locks before inserting new row", async () => {
-    mockUpdateMany.mockResolvedValue({ count: 1 }); // 1 stale lock recovered
-    mockCreate.mockResolvedValue({ id: "run_new" });
-
-    const body = JSON.stringify(makeWebhookPayload());
+  it("passes dealId and trigger to acquirePipelineLock", async () => {
+    process.env.PIPELINE_STAGE_CONFIG = "stage-a:design_complete";
+    const body = JSON.stringify(makeWebhookPayload({ propertyValue: "stage-a" }));
     const req = makeSignedRequest(body);
     const res = await POST(req);
     expect(res.status).toBe(200);
 
-    // Verify stale lock recovery was attempted
-    expect(mockUpdateMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          dealId: "12345",
-          status: "RUNNING",
-          createdAt: expect.objectContaining({ lt: expect.any(Date) }),
-        }),
-        data: expect.objectContaining({
-          status: "FAILED",
-          errorMessage: expect.stringContaining("stale lock"),
-        }),
-      }),
-    );
-
-    // Verify new RUNNING row was created
-    expect(mockCreate).toHaveBeenCalled();
+    expect(mockAcquireLock).toHaveBeenCalledWith("12345", "WEBHOOK_DESIGN_COMPLETE");
   });
 
   // ── Event filtering ──
@@ -273,6 +276,7 @@ describe("POST /api/webhooks/hubspot/design-complete", () => {
   // ── Pipeline execution ──
 
   it("calls waitUntil with the pipeline promise", async () => {
+    process.env.PIPELINE_STAGE_CONFIG = "some-stage-id:design_complete";
     const body = JSON.stringify(makeWebhookPayload());
     const req = makeSignedRequest(body);
     await POST(req);
@@ -282,9 +286,10 @@ describe("POST /api/webhooks/hubspot/design-complete", () => {
   });
 
   it("handles multiple events in a single payload", async () => {
-    mockCreate
-      .mockResolvedValueOnce({ id: "run_1" })
-      .mockResolvedValueOnce({ id: "run_2" });
+    process.env.PIPELINE_STAGE_CONFIG = "some-stage-id:design_complete";
+    mockAcquireLock
+      .mockResolvedValueOnce("run_1")
+      .mockResolvedValueOnce("run_2");
 
     const events = [
       ...makeWebhookPayload({ objectId: 111, eventId: 1 }),
@@ -312,12 +317,8 @@ describe("POST /api/webhooks/hubspot/design-complete", () => {
     const json = await res.json();
     expect(json.triggered).toContain("12345:started");
 
-    // Verify the trigger type was READY_TO_BUILD
-    expect(mockCreate).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        trigger: "WEBHOOK_READY_TO_BUILD",
-      }),
-    });
+    // Verify the trigger type was READY_TO_BUILD (passed to acquirePipelineLock)
+    expect(mockAcquireLock).toHaveBeenCalledWith("12345", "WEBHOOK_READY_TO_BUILD");
   });
 
   it("falls back to DESIGN_COMPLETE_TARGET_STAGES when PIPELINE_STAGE_CONFIG is unset", async () => {
