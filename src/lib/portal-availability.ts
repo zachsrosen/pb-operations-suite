@@ -267,13 +267,13 @@ export async function getPortalAvailability(
 
 /**
  * Encode a slot into an opaque ID.
- * Format: base64url(date:time:crewMemberId:hmac)
+ * Format: base64url(date|time|crewMemberId|hmac)
+ * Uses "|" as delimiter since time values contain ":"
  */
 export function encodeSlotId(date: string, time: string, crewMemberId: string): string {
-  const payload = `${date}:${time}:${crewMemberId}`;
+  const payload = `${date}|${time}|${crewMemberId}`;
   const mac = createHmac("sha256", SLOT_HMAC_SECRET).update(payload).digest("base64url");
-  // Encode the full thing so the customer can't parse it
-  return Buffer.from(`${payload}:${mac}`).toString("base64url");
+  return Buffer.from(`${payload}|${mac}`).toString("base64url");
 }
 
 /**
@@ -282,11 +282,11 @@ export function encodeSlotId(date: string, time: string, crewMemberId: string): 
 export function decodeSlotId(slotId: string): DecodedSlot | null {
   try {
     const decoded = Buffer.from(slotId, "base64url").toString("utf8");
-    const parts = decoded.split(":");
+    const parts = decoded.split("|");
     if (parts.length !== 4) return null;
 
     const [date, time, crewMemberId, mac] = parts;
-    const payload = `${date}:${time}:${crewMemberId}`;
+    const payload = `${date}|${time}|${crewMemberId}`;
     const expectedMac = createHmac("sha256", SLOT_HMAC_SECRET).update(payload).digest("base64url");
 
     if (mac !== expectedMac) return null;
