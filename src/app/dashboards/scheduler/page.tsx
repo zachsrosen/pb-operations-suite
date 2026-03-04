@@ -8,6 +8,7 @@ import { useToast } from "@/contexts/ToastContext";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { LOCATION_TIMEZONES } from "@/lib/constants";
 import { formatCurrency, formatDateShort, formatShortDate } from "@/lib/format";
+import { extractInstallerNote } from "@/lib/schedule-notes";
 import { generateOptimizedSchedule, type OptimizableProject, type ScoringPreset, type ExistingBooking, DEFAULT_LOCATION_CAPACITY } from "@/lib/schedule-optimizer";
 import {
   addBusinessDaysYmd,
@@ -137,6 +138,7 @@ interface ManualSchedule {
   recordId?: string;
   scheduleType?: string;
   fromOptimizer?: boolean;
+  tentativeNotes?: string;
 }
 
 interface ScheduledEvent extends SchedulerProject {
@@ -560,10 +562,22 @@ export default function SchedulerPage() {
   const [crewSelectInput, setCrewSelectInput] = useState("");
   const [constructionAssigneeNames, setConstructionAssigneeNames] = useState<string[]>([]);
   const [installerNotesInput, setInstallerNotesInput] = useState("");
+  const [tentativeConfirmNotes, setTentativeConfirmNotes] = useState("");
   const [liveConstructionAssigneesByLocation, setLiveConstructionAssigneesByLocation] = useState<
     Record<string, ZuperAssignee[]>
   >({});
   const [loadingConstructionAssignees, setLoadingConstructionAssignees] = useState(false);
+
+  // Initialize tentative confirm notes when detail modal opens
+  useEffect(() => {
+    if (detailModal && manualSchedules[detailModal.id]?.isTentative) {
+      const noteBlob = manualSchedules[detailModal.id]?.tentativeNotes || "";
+      setTentativeConfirmNotes(extractInstallerNote(noteBlob));
+    } else {
+      setTentativeConfirmNotes("");
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detailModal?.id]);
 
   /* ---- Availability time slots (for survey/inspection scheduling) ---- */
   interface AvailSlot {
@@ -721,6 +735,7 @@ export default function SchedulerPage() {
                 recordId: rec.id,
                 scheduleType: rec.scheduleType,
                 fromOptimizer: !!rec.notes?.includes("[AUTO_OPTIMIZED]"),
+                tentativeNotes: rec.notes || "",
               };
             }
           }
@@ -1608,6 +1623,10 @@ export default function SchedulerPage() {
       isReschedule: !!project.zuperJobUid,
     });
 
+    const resolvedScheduleType = project.stage === "survey" ? "survey"
+      : project.stage === "inspection" ? "inspection"
+      : "installation";
+
     setManualSchedules((prev) => ({
       ...prev,
       [project.id]: {
@@ -1615,9 +1634,11 @@ export default function SchedulerPage() {
         days,
         crew: selectedAssigneeName,
         isTentative: !syncToZuper,
-        scheduleType: project.stage === "survey" ? "survey"
-          : project.stage === "inspection" ? "inspection"
-          : "installation",
+        scheduleType: resolvedScheduleType,
+        // Store notes blob for tentative installs so prefill works before refetch
+        ...(!syncToZuper && resolvedScheduleType === "installation" && installerNotes
+          ? { tentativeNotes: `[TENTATIVE] Tentatively scheduled via Master Scheduler — ${selectedAssigneeName}\n\nInstaller Notes: ${installerNotes}` }
+          : {}),
       },
     }));
 
@@ -1759,9 +1780,11 @@ export default function SchedulerPage() {
           const tentData = await response.json();
           // Store the record ID so we can confirm/cancel later
           if (tentData.record?.id) {
+            // The API prepends [TENTATIVE] to the notes — store the full blob
+            const storedNotes = `[TENTATIVE] ${tentativeNotes}`;
             setManualSchedules((prev) => ({
               ...prev,
-              [project.id]: { ...prev[project.id], recordId: tentData.record.id },
+              [project.id]: { ...prev[project.id], recordId: tentData.record.id, tentativeNotes: storedNotes },
             }));
           }
           showToast(`${getCustomerName(project.name)} tentatively scheduled for ${formatDateShort(date)}`);
@@ -1811,7 +1834,7 @@ export default function SchedulerPage() {
     return record?.id || null;
   }, [manualSchedules]);
 
-  const handleConfirmTentative = useCallback(async (projectId: string) => {
+  const handleConfirmTentative = useCallback(async (projectId: string, additionalNotes?: string) => {
     setConfirmingTentative(true);
     try {
       const recordId = await resolveMasterTentativeRecordId(projectId);
@@ -1829,6 +1852,7 @@ export default function SchedulerPage() {
         body: JSON.stringify({
           scheduleRecordId: recordId,
           zuperJobUid: hintedZuperJobUid || undefined,
+          ...(additionalNotes ? { additionalNotes } : {}),
         }),
       });
       const data = await res.json();
@@ -1853,6 +1877,31 @@ export default function SchedulerPage() {
       setConfirmingTentative(false);
     }
   }, [detailModal, projects, resolveMasterTentativeRecordId, showToast]);
+
+  const handleSaveTentativeNotes = useCallback(async (projectId: string, notes: string) => {
+    const recordId = manualSchedules[projectId]?.recordId;
+    // Update local state immediately so reopen works without refetch
+    setManualSchedules((prev) => {
+      const existing = prev[projectId];
+      if (!existing) return prev;
+      const updatedBlob = notes.trim()
+        ? (existing.tentativeNotes || "").replace(/Installer Notes:[\s\S]*$/i, "").trimEnd() +
+          (notes.trim() ? `\n\nInstaller Notes: ${notes.trim()}` : "")
+        : (existing.tentativeNotes || "").replace(/\n*Installer Notes:[\s\S]*$/i, "").trimEnd();
+      return { ...prev, [projectId]: { ...existing, tentativeNotes: updatedBlob } };
+    });
+    // Skip PATCH for local-only tentatives (no DB record)
+    if (!recordId) return;
+    try {
+      await fetch("/api/zuper/schedule-records", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ recordId, installerNotes: notes.trim() }),
+      });
+    } catch {
+      // Silent failure — notes are saved locally and will be sent on confirm
+    }
+  }, [manualSchedules]);
 
   const handleCancelTentative = useCallback(async (projectId: string) => {
     const hasLocalOnlyTentative = !!manualSchedules[projectId]?.isTentative && !manualSchedules[projectId]?.recordId;
@@ -4638,9 +4687,29 @@ export default function SchedulerPage() {
                   <span className="text-amber-400 text-[0.7rem] font-bold uppercase tracking-wide">⏳ Tentative</span>
                   <span className="text-[0.65rem] text-muted">Not yet synced to Zuper</span>
                 </div>
+                {/* Install notes textarea — only for installation/construction schedules */}
+                {(() => {
+                  const st = manualSchedules[detailModal.id]?.scheduleType || "";
+                  return (st === "installation" || st === "construction") ? (
+                    <div className="mb-3">
+                      <label className="text-[0.7rem] text-muted w-full">
+                        Install Notes
+                        <span className="text-[0.6rem] text-muted/60 ml-1">(will be added to Zuper job on confirmation)</span>
+                      </label>
+                      <textarea
+                        value={tentativeConfirmNotes}
+                        onChange={(e) => setTentativeConfirmNotes(e.target.value)}
+                        onBlur={() => handleSaveTentativeNotes(detailModal.id, tentativeConfirmNotes)}
+                        placeholder="Optional notes for the install crew (e.g., arrival time, gate code)"
+                        rows={3}
+                        className="w-full mt-1 bg-background border border-t-border text-foreground/90 px-2 py-1.5 rounded font-mono text-[0.72rem] focus:outline-none focus:border-orange-500 resize-y"
+                      />
+                    </div>
+                  ) : null;
+                })()}
                 <div className="flex gap-2">
                   <button
-                    onClick={() => handleConfirmTentative(detailModal.id)}
+                    onClick={() => handleConfirmTentative(detailModal.id, tentativeConfirmNotes.trim() || undefined)}
                     disabled={confirmingTentative}
                     className="px-3 py-1.5 rounded-md bg-emerald-600 text-white text-[0.7rem] font-semibold hover:bg-emerald-700 transition-colors disabled:opacity-50 cursor-pointer"
                   >

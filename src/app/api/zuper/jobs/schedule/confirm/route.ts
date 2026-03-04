@@ -24,6 +24,7 @@ import { waitUntil } from "@vercel/functions";
 import { runDesignCompletePipeline } from "@/lib/bom-pipeline";
 import { acquirePipelineLock, DuplicateRunError } from "@/lib/bom-pipeline-lock";
 import { checkBomSnapshotExists, getBomEmailEnrichment, type BomEmailEnrichment } from "@/lib/bom-email-enrichment";
+import { extractInstallerNote, upsertInstallerNoteInBlob, MAX_INSTALLER_NOTE_LENGTH } from "@/lib/schedule-notes";
 
 function getConstructionScheduleBoundaryProperties(): { start: string | null; end: string | null } {
   const start = process.env.HUBSPOT_CONSTRUCTION_START_DATE_PROPERTY?.trim() || null;
@@ -123,15 +124,7 @@ function getSiteSurveySharedCalendarImpersonationEmail(email?: string | null): s
   return getSharedCalendarImpersonationEmail() || normalizeEmail(email);
 }
 
-function extractInstallerNote(rawNotes: unknown): string {
-  if (typeof rawNotes !== "string") return "";
-  const cleaned = rawNotes
-    .replace(/\[(?:TENTATIVE|CONFIRMED)\]\s*/gi, "")
-    .replace(/\[TZ:[^\]]+\]/gi, "")
-    .trim();
-  const markerMatch = cleaned.match(/Installer Notes:\s*([\s\S]+)/i);
-  return markerMatch?.[1]?.trim() || "";
-}
+// extractInstallerNote imported from @/lib/schedule-notes
 
 function matchesHubSpotDateValue(actualRaw: string | null | undefined, expectedCandidates: string[]): boolean {
   const actual = String(actualRaw || "").trim();
@@ -238,6 +231,9 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const scheduleRecordId = typeof body?.scheduleRecordId === "string" ? body.scheduleRecordId : "";
     const hintedZuperJobUid = typeof body?.zuperJobUid === "string" ? body.zuperJobUid.trim() : "";
+    const additionalNotes = typeof body?.additionalNotes === "string"
+      ? body.additionalNotes.trim().slice(0, MAX_INSTALLER_NOTE_LENGTH)
+      : "";
 
     if (!scheduleRecordId) {
       return NextResponse.json(
@@ -287,7 +283,24 @@ export async function POST(request: NextRequest) {
         { status: 403 }
       );
     }
-    const timezoneFromNotes = record.notes?.match(/\[TZ:([A-Za-z_\/]+)\]/)?.[1];
+
+    // Compute effective notes: upsert additionalNotes into the blob if provided
+    // Only allow installer notes on installation types (not survey/inspection)
+    const effectiveNotes =
+      additionalNotes && scheduleType === "installation"
+        ? upsertInstallerNoteInBlob(record.notes, additionalNotes)
+        : (record.notes || "");
+
+    // If additionalNotes were provided, persist them now so they survive even if
+    // Zuper sync fails and the record stays tentative.
+    if (additionalNotes && scheduleType === "installation" && effectiveNotes !== record.notes) {
+      await prisma.scheduleRecord.update({
+        where: { id: scheduleRecordId },
+        data: { notes: effectiveNotes },
+      });
+    }
+
+    const timezoneFromNotes = effectiveNotes?.match(/\[TZ:([A-Za-z_\/]+)\]/)?.[1];
     const salesLeadTimeError = getSalesSurveyLeadTimeError({
       role: effectiveRole,
       scheduleType,
@@ -348,7 +361,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const timezoneFromNotes2 = record.notes?.match(/\[TZ:([A-Za-z_\/]+)\]/)?.[1];
+    const timezoneFromNotes2 = effectiveNotes?.match(/\[TZ:([A-Za-z_\/]+)\]/)?.[1];
     const inferredTimezone = /\b(San Luis Obispo|Camarillo)\b|,\s*CA\b/i.test(record.projectName)
       ? "America/Los_Angeles"
       : "America/Denver";
@@ -602,7 +615,7 @@ export async function POST(request: NextRequest) {
         if (rescheduleResult.type === "success") {
           zuperJobUid = existingJob.job_uid;
           if (scheduleType === "installation") {
-            const installerNote = extractInstallerNote(record.notes);
+            const installerNote = extractInstallerNote(effectiveNotes);
             if (installerNote) {
               const appendResult = await zuper.appendJobNote(
                 existingJob.job_uid,
@@ -656,7 +669,7 @@ export async function POST(request: NextRequest) {
         zuperSynced: true,
         zuperJobUid: zuperJobUid || undefined,
         zuperError: null,
-        notes: record.notes?.replace("[TENTATIVE]", "[CONFIRMED]") || "[CONFIRMED]",
+        notes: effectiveNotes?.replace("[TENTATIVE]", "[CONFIRMED]") || "[CONFIRMED]",
       },
     });
 
@@ -946,7 +959,7 @@ export async function POST(request: NextRequest) {
             projectId: record.projectId,
             zuperJobUid: zuperJobUid || record.zuperJobUid || undefined,
             googleCalendarEventUrl,
-            notes: record.notes || undefined,
+            notes: effectiveNotes || undefined,
             installDetails,
             bomEnrichment: bomEnrichment || undefined,
           });
@@ -999,7 +1012,7 @@ export async function POST(request: NextRequest) {
               startTime: record.scheduledStart || undefined,
               endTime: record.scheduledEnd || undefined,
               timezone: slotTimezone,
-              notes: record.notes || undefined,
+              notes: effectiveNotes || undefined,
               zuperJobUid: zuperJobUid || record.zuperJobUid || undefined,
               calendarId: "primary",
               impersonateEmail: recipientEmail,
@@ -1021,7 +1034,7 @@ export async function POST(request: NextRequest) {
                 startTime: record.scheduledStart || undefined,
                 endTime: record.scheduledEnd || undefined,
                 timezone: slotTimezone,
-                notes: record.notes || undefined,
+                notes: effectiveNotes || undefined,
                 zuperJobUid: zuperJobUid || record.zuperJobUid || undefined,
                 calendarId: sharedSurveyCalendarId,
                 impersonateEmail: getSiteSurveySharedCalendarImpersonationEmail(recipientEmail) || recipientEmail,
@@ -1064,7 +1077,7 @@ export async function POST(request: NextRequest) {
                 endDate,
                 endTime: record.scheduledEnd || undefined,
                 timezone,
-                notes: record.notes || undefined,
+                notes: effectiveNotes || undefined,
                 zuperJobUid: zuperJobUid || record.zuperJobUid || undefined,
                 calendarId: installCalendarId,
                 installDetails,

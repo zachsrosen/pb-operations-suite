@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { prisma, canScheduleType } from "@/lib/db";
 import { requireApiAuth } from "@/lib/api-auth";
+import { upsertInstallerNoteInBlob, MAX_INSTALLER_NOTE_LENGTH } from "@/lib/schedule-notes";
+import type { UserRole } from "@/lib/db";
 
 /**
  * GET /api/zuper/schedule-records
@@ -138,6 +140,84 @@ export async function DELETE(request: NextRequest) {
     console.error("Error cancelling schedule record:", error);
     return NextResponse.json(
       { error: "Failed to cancel schedule record" },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * PATCH /api/zuper/schedule-records
+ *
+ * Update installer notes on a tentative schedule record.
+ * Only installation/construction tentative records can have notes updated.
+ *
+ * Body: { recordId: string, installerNotes: string }
+ */
+export async function PATCH(request: NextRequest) {
+  const authResult = await requireApiAuth();
+  if (authResult instanceof NextResponse) return authResult;
+
+  if (!prisma) {
+    return NextResponse.json({ error: "Database not configured" }, { status: 503 });
+  }
+
+  try {
+    const body = await request.json();
+    const recordId = typeof body?.recordId === "string" ? body.recordId.trim() : "";
+    const installerNotes = typeof body?.installerNotes === "string"
+      ? body.installerNotes.trim().slice(0, MAX_INSTALLER_NOTE_LENGTH)
+      : "";
+
+    if (!recordId) {
+      return NextResponse.json({ error: "recordId is required" }, { status: 400 });
+    }
+
+    const record = await prisma.scheduleRecord.findUnique({
+      where: { id: recordId },
+    });
+
+    if (!record) {
+      return NextResponse.json({ error: "Record not found" }, { status: 404 });
+    }
+
+    if (record.status !== "tentative") {
+      return NextResponse.json(
+        { error: "Only tentative records can have notes updated this way" },
+        { status: 400 }
+      );
+    }
+
+    // Normalize schedule type and enforce install-only
+    const normalizedType = String(record.scheduleType || "").toLowerCase();
+    const scheduleType = normalizedType === "construction" ? "installation" : normalizedType;
+
+    if (scheduleType !== "installation") {
+      return NextResponse.json(
+        { error: "Installer notes can only be added to installation schedules" },
+        { status: 400 }
+      );
+    }
+
+    // Permission check
+    if (!canScheduleType(authResult.role as UserRole, scheduleType as "installation")) {
+      return NextResponse.json(
+        { error: "You don't have permission to modify installation schedules" },
+        { status: 403 }
+      );
+    }
+
+    const updatedNotes = upsertInstallerNoteInBlob(record.notes, installerNotes);
+
+    await prisma.scheduleRecord.update({
+      where: { id: recordId },
+      data: { notes: updatedNotes },
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Error updating schedule record notes:", error);
+    return NextResponse.json(
+      { error: "Failed to update schedule record notes" },
       { status: 500 }
     );
   }

@@ -22,6 +22,7 @@ import { getBusinessEndDateInclusive, isWeekendDate } from "@/lib/business-days"
 import { getInstallCalendarTimezone, resolveInstallCalendarLocation } from "@/lib/install-calendar-location";
 import { getSalesSurveyLeadTimeError, resolveEffectiveRoleFromRequest } from "@/lib/scheduling-policy";
 import { getGoogleCalendarEventUrl } from "@/lib/external-links";
+import { extractInstallerNote as extractInstallerNoteFromBlob } from "@/lib/schedule-notes";
 
 type ScheduleType = "survey" | "installation" | "inspection";
 const MANAGER_ROLES = ["ADMIN", "OWNER", "MANAGER", "OPERATIONS_MANAGER"];
@@ -282,16 +283,11 @@ function isBlank(value: unknown): boolean {
 }
 
 function extractInstallerNote(rawNotes: unknown, rawInstallerNotes?: unknown): string {
+  // Prefer the direct installerNotes field (passed from live-sync UI)
   const direct = typeof rawInstallerNotes === "string" ? rawInstallerNotes.trim() : "";
   if (direct) return direct;
-  if (typeof rawNotes !== "string") return "";
-
-  const cleaned = rawNotes
-    .replace(/\[(?:TENTATIVE|CONFIRMED)\]\s*/gi, "")
-    .replace(/\[TZ:[^\]]+\]/gi, "")
-    .trim();
-  const markerMatch = cleaned.match(/Installer Notes:\s*([\s\S]+)/i);
-  return markerMatch?.[1]?.trim() || "";
+  // Fall back to parsing the notes blob
+  return extractInstallerNoteFromBlob(typeof rawNotes === "string" ? rawNotes : null);
 }
 
 async function verifyHubSpotScheduleWrite(
