@@ -59,3 +59,28 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({ invites });
 }
+
+export async function DELETE(request: NextRequest) {
+  if (!prisma) {
+    return NextResponse.json({ error: "Service unavailable" }, { status: 503 });
+  }
+
+  const session = await auth();
+  if (!session?.user?.email) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const permissions = await getUserPermissions(session.user.email);
+  if (!permissions?.canScheduleSurveys) {
+    return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
+  }
+
+  const { searchParams } = new URL(request.url);
+  const id = searchParams.get("id");
+  if (!id) {
+    return NextResponse.json({ error: "id required" }, { status: 400 });
+  }
+
+  await prisma.surveyInvite.delete({ where: { id } });
+  return NextResponse.json({ deleted: true });
+}
