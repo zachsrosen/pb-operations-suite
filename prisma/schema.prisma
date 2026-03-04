@@ -1324,4 +1324,3 @@ model OutboxEvent {
   @@index([status, nextRetryAt])
   @@index([inviteId])
 }
-}

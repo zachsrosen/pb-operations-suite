@@ -182,7 +182,7 @@ export async function PUT(
       }
 
       // Create new schedule record
-      await tx.scheduleRecord.create({
+      const newScheduleRecord = await tx.scheduleRecord.create({
         data: {
           scheduleType: "survey",
           projectId: invite.dealId,
@@ -199,7 +199,7 @@ export async function PUT(
         },
       });
 
-      // Update invite
+      // Update invite (relink to new schedule record)
       await tx.surveyInvite.update({
         where: { id: invite.id },
         data: {
@@ -209,6 +209,7 @@ export async function PUT(
           scheduledTime: newSlot.time,
           cutoffAt: newCutoffAt,
           crewMemberId: newSlot.crewMemberId,
+          scheduleRecordId: newScheduleRecord.id,
         },
       });
 

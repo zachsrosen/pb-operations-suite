@@ -8,7 +8,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { prisma } from "@/lib/db";
+import { prisma, getUserPermissions } from "@/lib/db";
 
 export async function GET(request: NextRequest) {
   if (!prisma) {
@@ -18,6 +18,12 @@ export async function GET(request: NextRequest) {
   const session = await auth();
   if (!session?.user?.email) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Permission check — only users who can schedule surveys can view invite data
+  const permissions = await getUserPermissions(session.user.email);
+  if (!permissions?.canScheduleSurveys) {
+    return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
   }
 
   const { searchParams } = new URL(request.url);

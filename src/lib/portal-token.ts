@@ -11,7 +11,7 @@ import { prisma } from "@/lib/db";
 import type { SurveyInviteStatus } from "@/generated/prisma/enums";
 
 // Active statuses — invites that are still actionable
-const ACTIVE_STATUSES: SurveyInviteStatus[] = ["PENDING", "SCHEDULED"];
+const ACTIVE_STATUSES: SurveyInviteStatus[] = ["PENDING", "SCHEDULED", "RESCHEDULED"];
 
 /** 32-byte token → 43-char base64url string (no padding) */
 export function generateToken(): { raw: string; hash: string } {

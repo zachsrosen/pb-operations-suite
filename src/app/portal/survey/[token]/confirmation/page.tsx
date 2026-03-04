@@ -92,9 +92,7 @@ export default function SurveyConfirmationPage() {
   }, [cancelling, token]);
 
   const handleReschedule = useCallback(() => {
-    // Navigate back to the main scheduling page — the API will show available slots
-    // since the reschedule flow re-uses the book endpoint after freeing the old slot
-    router.push(`/portal/survey/${token}`);
+    router.push(`/portal/survey/${token}?reschedule=1`);
   }, [token, router]);
 
   // ---------------------------------------------------------------------------

@@ -10,7 +10,7 @@ import { validateToken, hashToken } from "@/lib/portal-token";
 import { getPortalAvailability } from "@/lib/portal-availability";
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ token: string }> },
 ) {
   const { token } = await params;
@@ -32,9 +32,9 @@ export async function GET(
 
   const { invite } = result;
 
-  // If already scheduled, return booking details (no available slots needed)
-  if (invite.status === "SCHEDULED") {
-    return NextResponse.json({
+  // If already scheduled/rescheduled, return booking details
+  if (invite.status === "SCHEDULED" || invite.status === "RESCHEDULED") {
+    const response: Record<string, unknown> = {
       status: "scheduled",
       customerName: invite.customerName,
       propertyAddress: invite.propertyAddress,
@@ -45,7 +45,15 @@ export async function GET(
         accessNotes: invite.accessNotes,
         canModify: invite.cutoffAt ? new Date() < invite.cutoffAt : false,
       },
-    });
+    };
+
+    // Include availability when customer is rescheduling
+    const wantsReschedule = new URL(request.url).searchParams.get("reschedule") === "1";
+    if (wantsReschedule) {
+      response.availability = await getPortalAvailability(invite.pbLocation);
+    }
+
+    return NextResponse.json(response);
   }
 
   // Status is PENDING — fetch available slots

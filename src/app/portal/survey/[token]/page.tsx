@@ -7,8 +7,8 @@
 
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useEffect, useState, useCallback, useRef, Suspense } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 
 // ---------------------------------------------------------------------------
 // Types (matches API response)
@@ -49,6 +49,11 @@ interface ScheduledData {
     accessNotes: string | null;
     canModify: boolean;
   };
+  availability?: {
+    days: PortalDay[];
+    timezone: string;
+    tzAbbrev: string;
+  };
 }
 
 type InviteData = PendingData | ScheduledData;
@@ -64,8 +69,18 @@ type PageState =
 // ---------------------------------------------------------------------------
 
 export default function SurveySchedulePage() {
+  return (
+    <Suspense fallback={<LoadingSkeleton />}>
+      <SurveyScheduleInner />
+    </Suspense>
+  );
+}
+
+function SurveyScheduleInner() {
   const { token } = useParams<{ token: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const isReschedule = searchParams.get("reschedule") === "1";
 
   const [state, setState] = useState<PageState>({ type: "loading" });
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -80,7 +95,10 @@ export default function SurveySchedulePage() {
   useEffect(() => {
     async function load() {
       try {
-        const res = await fetch(`/api/portal/survey/${token}`);
+        const url = isReschedule
+          ? `/api/portal/survey/${token}?reschedule=1`
+          : `/api/portal/survey/${token}`;
+        const res = await fetch(url);
         if (res.status === 404) {
           setState({ type: "error", message: "This link is not valid. Please check the URL from your email." });
           return;
@@ -97,28 +115,37 @@ export default function SurveySchedulePage() {
         setState({ type: "data", data });
 
         // Auto-select first available date
-        if (data.status === "pending" && data.availability.days.length > 0) {
-          setSelectedDate(data.availability.days[0].date);
+        const avail = data.status === "pending"
+          ? data.availability
+          : data.availability; // reschedule mode also has availability
+        if (avail && avail.days.length > 0) {
+          setSelectedDate(avail.days[0].date);
         }
       } catch {
         setState({ type: "error", message: "Unable to connect. Please check your internet and try again." });
       }
     }
     load();
-  }, [token]);
+  }, [token, isReschedule]);
 
-  // Book the slot
+  // Book or reschedule the slot
   const handleBook = useCallback(async () => {
     if (!selectedSlot || booking) return;
     setBooking(true);
 
     try {
-      const res = await fetch(`/api/portal/survey/${token}/book`, {
-        method: "POST",
+      // Use reschedule endpoint if rescheduling, book endpoint otherwise
+      const endpoint = isReschedule
+        ? `/api/portal/survey/${token}/reschedule`
+        : `/api/portal/survey/${token}/book`;
+      const method = isReschedule ? "PUT" : "POST";
+
+      const res = await fetch(endpoint, {
+        method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           slotId: selectedSlot.slotId,
-          accessNotes: accessNotes.trim() || undefined,
+          ...(isReschedule ? {} : { accessNotes: accessNotes.trim() || undefined }),
           idempotencyKey: idempotencyKey.current,
         }),
       });
@@ -141,7 +168,7 @@ export default function SurveySchedulePage() {
     } finally {
       setBooking(false);
     }
-  }, [selectedSlot, accessNotes, booking, token, router]);
+  }, [selectedSlot, accessNotes, booking, token, router, isReschedule]);
 
   // ---------------------------------------------------------------------------
   // Render
@@ -184,13 +211,21 @@ export default function SurveySchedulePage() {
 
   const { data } = state;
 
-  // Already scheduled — show booking and redirect to confirmation
-  if (data.status === "scheduled") {
+  // Already scheduled — redirect to confirmation (unless rescheduling)
+  if (data.status === "scheduled" && !isReschedule) {
     router.replace(`/portal/survey/${token}/confirmation`);
     return <LoadingSkeleton />;
   }
 
-  const { availability } = data;
+  // Get availability from either pending data or reschedule response
+  const availability = data.status === "pending" ? data.availability : data.availability;
+
+  // If rescheduling but no availability (shouldn't happen, but guard)
+  if (!availability) {
+    router.replace(`/portal/survey/${token}/confirmation`);
+    return <LoadingSkeleton />;
+  }
+
   const selectedDay = availability.days.find((d) => d.date === selectedDate);
 
   return (
@@ -198,7 +233,9 @@ export default function SurveySchedulePage() {
       {/* Greeting */}
       <div>
         <h2 className="text-xl font-semibold text-foreground">
-          Hi {data.customerName.split(" ")[0]}, let&apos;s schedule your site survey
+          {isReschedule
+            ? `Pick a new time for your site survey`
+            : `Hi ${data.customerName.split(" ")[0]}, let\u2019s schedule your site survey`}
         </h2>
         <p className="mt-1 text-sm text-muted">
           Select a date and time that works for you. The survey takes about 1 hour.
@@ -293,7 +330,7 @@ export default function SurveySchedulePage() {
               disabled={booking}
               className="w-full rounded-lg bg-orange-500 px-4 py-3 text-base font-semibold text-white transition-colors hover:bg-orange-600 disabled:opacity-50"
             >
-              {booking ? "Scheduling..." : "Confirm Survey"}
+              {booking ? "Scheduling..." : isReschedule ? "Confirm New Time" : "Confirm Survey"}
             </button>
           )}
         </>
