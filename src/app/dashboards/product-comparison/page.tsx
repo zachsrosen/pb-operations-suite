@@ -2289,6 +2289,9 @@ export default function ProductComparisonPage() {
                   <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
                     <div className="space-y-1 min-w-0">
                       <div className="text-[11px] text-muted">Row {index + 1}</div>
+                      {row.internal?.name && (
+                        <div className="text-xs text-foreground font-medium truncate">{row.internal.name}</div>
+                      )}
                       <div className="font-mono text-[11px] text-muted break-all">{row.key}</div>
                       <div className="flex flex-wrap gap-1">
                         <span className={`px-1.5 py-0.5 rounded border text-[10px] ${severityBadgeClass(row.severity)}`}>
@@ -2330,8 +2333,8 @@ export default function ProductComparisonPage() {
 
                   {compactCards && !isRowExpanded && (
                     <div className="mt-3 space-y-2">
-                      <div className="grid grid-cols-2 md:grid-cols-2 xl:grid-cols-4 gap-1.5">
-                        {displayedSources.map((source) => {
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-1.5">
+                        {displayedSources.filter((s) => s !== "internal").map((source) => {
                           const sourceProduct = row[source];
                           const isMissing = !sourceProduct;
                           const supportsLinking = isLinkableSource(source);
