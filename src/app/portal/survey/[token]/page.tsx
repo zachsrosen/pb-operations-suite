@@ -64,6 +64,16 @@ type PageState =
   | { type: "expired" }
   | { type: "data"; data: InviteData };
 
+/** Extract first name from "Last, First" or "First Last" format */
+function extractFirstName(name: string): string {
+  if (name.includes(",")) {
+    // "Last, First" → take the part after the comma
+    return name.split(",")[1]?.trim().split(" ")[0] || name;
+  }
+  // "First Last" → take the first word
+  return name.split(" ")[0] || name;
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -235,7 +245,7 @@ function SurveyScheduleInner() {
         <h2 className="text-xl font-semibold text-foreground">
           {isReschedule
             ? `Pick a new time for your site survey`
-            : `Hi ${data.customerName.split(" ")[0]}, let\u2019s schedule your site survey`}
+            : `Hi ${extractFirstName(data.customerName)}, let\u2019s schedule your site survey`}
         </h2>
         <p className="mt-1 text-sm text-muted">
           Select a date and time that works for you. The survey takes about 1 hour.

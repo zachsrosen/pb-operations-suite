@@ -13,7 +13,10 @@ export function SurveyInviteEmail({
   propertyAddress,
   portalUrl,
 }: SurveyInviteEmailProps) {
-  const firstName = customerName.split(" ")[0] || customerName;
+  // Handle "Last, First" format from deal names
+  const firstName = customerName.includes(",")
+    ? customerName.split(",")[1]?.trim().split(" ")[0] || customerName
+    : customerName.split(" ")[0] || customerName;
 
   return (
     <EmailShell
