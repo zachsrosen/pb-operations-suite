@@ -1,5 +1,3 @@
-"use client";
-
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ReactNode } from "react";
 
