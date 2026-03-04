@@ -2106,6 +2106,39 @@ export default function SiteSurveySchedulerPage() {
                             {project.systemSize.toFixed(1)}kW
                           </span>
                         )}
+                        {!portalInviteStatuses[project.id] && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setPortalInviteProject(project);
+                              setPortalInviteEmail("");
+                              setPortalInvitePhone("");
+                              setPortalInviteResult(null);
+                            }}
+                            className="ml-auto text-xs text-orange-400 hover:text-orange-300"
+                            title="Send customer self-scheduling link"
+                          >
+                            Invite
+                          </button>
+                        )}
+                        {portalInviteStatuses[project.id] && (
+                          <span
+                            className={`ml-auto text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                              portalInviteStatuses[project.id] === "SCHEDULED"
+                                ? "bg-green-500/20 text-green-400"
+                                : portalInviteStatuses[project.id] === "PENDING"
+                                  ? "bg-orange-500/20 text-orange-400"
+                                  : "bg-zinc-500/20 text-muted"
+                            }`}
+                            title={`Portal invite: ${portalInviteStatuses[project.id]}`}
+                          >
+                            {portalInviteStatuses[project.id] === "SCHEDULED"
+                              ? "Booked"
+                              : portalInviteStatuses[project.id] === "PENDING"
+                                ? "Invited"
+                                : portalInviteStatuses[project.id]}
+                          </span>
+                        )}
                       </div>
                     </div>
                   ))
