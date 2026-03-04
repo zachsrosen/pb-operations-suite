@@ -13,7 +13,7 @@ import { getUserPermissions } from "@/lib/db";
 import { generateToken, hasActiveInvite } from "@/lib/portal-token";
 import { render } from "@react-email/render";
 import { SurveyInviteEmail } from "@/emails/SurveyInviteEmail";
-import { Resend } from "resend";
+import { sendPortalEmail } from "@/lib/email";
 
 const InviteSchema = z.object({
   dealId: z.string().min(1),
@@ -24,14 +24,6 @@ const InviteSchema = z.object({
   systemSize: z.number().positive().optional(),
   customerPhone: z.string().optional(),
 });
-
-// Lazy Resend client
-let resendClient: Resend | null = null;
-function getResend(): Resend | null {
-  if (!process.env.RESEND_API_KEY) return null;
-  if (!resendClient) resendClient = new Resend(process.env.RESEND_API_KEY);
-  return resendClient;
-}
 
 export async function POST(request: NextRequest) {
   if (!prisma) {
@@ -95,33 +87,30 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Send invite email
-    const resend = getResend();
+    // Send invite email via Google Workspace (falls back to Resend)
     let emailSent = false;
+    try {
+      const html = await render(
+        SurveyInviteEmail({
+          customerName: body.customerName,
+          propertyAddress: body.propertyAddress,
+          portalUrl,
+        }),
+      );
 
-    if (resend) {
-      try {
-        const html = await render(
-          SurveyInviteEmail({
-            customerName: body.customerName,
-            propertyAddress: body.propertyAddress,
-            portalUrl,
-          }),
-        );
+      const result = await sendPortalEmail({
+        to: body.customerEmail,
+        subject: "Schedule Your Site Survey — Photon Brothers",
+        html,
+      });
 
-        const fromEmail = process.env.PORTAL_FROM_EMAIL || "scheduling@photonbrothers.com";
-        await resend.emails.send({
-          from: `Photon Brothers <${fromEmail}>`,
-          to: body.customerEmail,
-          subject: "Schedule Your Site Survey — Photon Brothers",
-          html,
-        });
-
-        emailSent = true;
-      } catch (emailError) {
-        console.error("[portal/invite] Failed to send email:", emailError);
-        // Don't fail the invite creation — email can be resent
+      emailSent = result.success;
+      if (!result.success) {
+        console.error("[portal/invite] Failed to send email:", result.error);
       }
+    } catch (emailError) {
+      console.error("[portal/invite] Failed to send email:", emailError);
+      // Don't fail the invite creation — email can be resent
     }
 
     // Log activity

@@ -1839,3 +1839,25 @@ export async function sendPipelineNotification(params: {
     ...(attachments.length > 0 ? { attachments } : {}),
   });
 }
+
+// ---------------------------------------------------------------------------
+// Portal emails (customer-facing, sent via Google Workspace / Resend)
+// ---------------------------------------------------------------------------
+
+export async function sendPortalEmail(params: {
+  to: string;
+  subject: string;
+  html: string;
+}): Promise<{ success: boolean; error?: string }> {
+  // Strip HTML tags for plain-text fallback
+  const text = params.html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+
+  return sendEmailMessage({
+    to: params.to,
+    subject: params.subject,
+    html: params.html,
+    text,
+    debugFallbackTitle: `PORTAL EMAIL to ${params.to}`,
+    debugFallbackBody: text,
+  });
+}
