@@ -538,7 +538,6 @@ const MISSING_SOURCE_OPTIONS: FilterOption[] = [
   { value: "zuper", label: "Missing in Zuper" },
   { value: "zoho", label: "Missing in Zoho" },
   { value: "opensolar", label: "Missing in OpenSolar" },
-  { value: "quickbooks", label: "Missing in QuickBooks" },
 ];
 
 const WEBSITE_VIEW_OPTIONS: FilterOption[] = ALL_SOURCES.map((source) => ({
@@ -1737,7 +1736,7 @@ export default function ProductComparisonPage() {
   return (
     <DashboardShell
       title="Product Catalog Comparison"
-      subtitle="Cross-check Internal, HubSpot, Zuper, Zoho, OpenSolar, and QuickBooks product data"
+      subtitle="Cross-check Internal, HubSpot, Zuper, Zoho, and OpenSolar product data"
       accentColor="cyan"
       lastUpdated={lastUpdated}
       breadcrumbs={[{ label: "Operations", href: "/suites/operations" }]}

@@ -284,7 +284,8 @@ export async function harvestAll(): Promise<HarvestResult[]> {
     { source: "zoho", fn: harvestZoho },
     { source: "hubspot", fn: harvestHubSpot },
     { source: "zuper", fn: harvestZuper },
-    { source: "quickbooks", fn: harvestQuickBooks },
+    // QuickBooks deactivated — re-add to reactivate:
+    // { source: "quickbooks", fn: harvestQuickBooks },
   ];
 
   const results = await Promise.allSettled(

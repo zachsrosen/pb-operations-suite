@@ -41,6 +41,13 @@ export interface UpsertZuperPartResult {
   created: boolean;
 }
 
+export interface UpdateZuperPartResult {
+  status: "updated" | "not_found" | "unsupported" | "failed";
+  zuperItemId: string;
+  message: string;
+  httpStatus?: number;
+}
+
 interface ZuperIdentity {
   name: string;
   sku?: string;
@@ -395,6 +402,31 @@ async function tryCreateWithPayload(
   return { id: null, errors, successfulResponseWithoutId: false };
 }
 
+export async function getZuperPartById(
+  itemId: string,
+): Promise<Record<string, unknown> | null> {
+  const normalizedId = trimOrUndefined(itemId);
+  if (!normalizedId) return null;
+
+  const endpoints = getCatalogEndpoints();
+  for (const endpoint of endpoints) {
+    const url = `${endpoint}/${encodeURIComponent(normalizedId)}`;
+    try {
+      const response = await requestZuper(url);
+      if (isRecord(response)) {
+        // Try common nested shapes
+        for (const key of ["item", "part", "product", "data"]) {
+          if (isRecord(response[key])) return response[key] as Record<string, unknown>;
+        }
+        return response;
+      }
+    } catch {
+      // Try next endpoint
+    }
+  }
+  return null;
+}
+
 export async function createOrUpdateZuperPart(
   input: UpsertZuperPartInput
 ): Promise<UpsertZuperPartResult> {
@@ -477,4 +509,69 @@ export async function createOrUpdateZuperPart(
   throw new Error(
     `Failed to create Zuper item. Attempts: ${allErrors.join(" | ") || "no successful endpoint"}`
   );
+}
+
+export async function updateZuperPart(
+  itemId: string,
+  fields: JsonRecord,
+): Promise<UpdateZuperPartResult> {
+  const normalizedId = trimOrUndefined(itemId);
+  if (!normalizedId) {
+    return { status: "failed", zuperItemId: itemId, message: "Zuper item ID is required." };
+  }
+
+  if (Object.keys(fields).length === 0) {
+    return { status: "updated", zuperItemId: normalizedId, message: "No fields to update." };
+  }
+
+  const endpoints = getCatalogEndpoints();
+  const bodyVariants: Array<{ label: string; body: JsonRecord }> = [
+    { label: "item", body: { item: fields } },
+    { label: "raw", body: fields },
+  ];
+
+  const errors: string[] = [];
+  let allUnsupported = true;
+
+  for (const endpoint of endpoints) {
+    for (const variant of bodyVariants) {
+      const url = `${endpoint}/${encodeURIComponent(normalizedId)}`;
+      try {
+        await requestZuper(url, {
+          method: "PUT",
+          body: JSON.stringify(variant.body),
+        });
+        return { status: "updated", zuperItemId: normalizedId, message: "Zuper item updated." };
+      } catch (error) {
+        const message = getErrorMessage(error);
+        const is404 = /\bHTTP\s*404\b/i.test(message);
+        const is405 = /\bHTTP\s*405\b/i.test(message);
+        if (!is405) allUnsupported = false;
+        if (is404) {
+          return {
+            status: "not_found",
+            zuperItemId: normalizedId,
+            message,
+            httpStatus: 404,
+          };
+        }
+        errors.push(`${url} (${variant.label}): ${message}`);
+      }
+    }
+  }
+
+  if (allUnsupported && errors.length > 0) {
+    return {
+      status: "unsupported",
+      zuperItemId: normalizedId,
+      message: "Zuper API does not support product updates via PUT.",
+      httpStatus: 405,
+    };
+  }
+
+  return {
+    status: "failed",
+    zuperItemId: normalizedId,
+    message: `Failed to update Zuper item. Attempts: ${errors.join(" | ") || "no endpoint available"}`,
+  };
 }

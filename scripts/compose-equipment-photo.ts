@@ -12,12 +12,18 @@
  */
 
 import sharp from "sharp";
-import { readFileSync } from "fs";
+import { readFileSync, existsSync } from "fs";
 import path from "path";
 import {
   EQUIPMENT_VISUALS,
   type EquipmentKey,
 } from "../.claude/skills/design-approval-photo/equipment-config";
+
+// Pre-rendered equipment asset directory
+const ASSETS_DIR = path.resolve(
+  __dirname,
+  "../.claude/skills/design-approval-photo/assets",
+);
 
 // ---------------------------------------------------------------------------
 // Types
@@ -55,19 +61,40 @@ function escapeXml(str: string): string {
 }
 
 /**
- * Build an SVG buffer for a single equipment label overlay.
+ * Get the pre-rendered PNG asset path for an equipment key.
+ * Returns null if no asset exists for this key.
  */
-function buildLabelSvg(p: Placement): Buffer {
-  // Resolve colours from config, falling back to gray for unknown keys
+function getAssetPath(key: string): string | null {
+  const assetFile = path.join(ASSETS_DIR, `${key}.png`);
+  return existsSync(assetFile) ? assetFile : null;
+}
+
+/**
+ * Build an overlay buffer for a single equipment placement.
+ *
+ * Strategy: Load pre-rendered PNG asset and resize to placement dimensions.
+ * Falls back to a simple colored rectangle for unknown equipment types.
+ */
+async function buildOverlay(p: Placement): Promise<Buffer> {
+  const assetPath = getAssetPath(p.key);
+
+  if (assetPath) {
+    // Load asset PNG and resize to target placement dimensions
+    return sharp(assetPath)
+      .resize(Math.round(p.width), Math.round(p.height), {
+        fit: "contain",
+        background: { r: 0, g: 0, b: 0, alpha: 0 },
+      })
+      .png()
+      .toBuffer();
+  }
+
+  // Fallback: simple colored rectangle for unknown equipment types
   const visual = EQUIPMENT_VISUALS[p.key as EquipmentKey] ?? undefined;
   const fillColor = visual?.color ?? FALLBACK_COLOR;
   const textColor = visual?.textColor ?? FALLBACK_TEXT_COLOR;
 
-  // Use the placement label if provided, otherwise the config default
-  const displayLabel =
-    p.label || visual?.label || p.key;
-
-  // Font size: 30% of height, clamped 12-24 px
+  const displayLabel = p.label || visual?.label || p.key;
   const fontSize = Math.min(24, Math.max(12, Math.round(p.height * 0.3)));
 
   const svg = `<svg width="${p.width}" height="${p.height}" xmlns="http://www.w3.org/2000/svg">
@@ -117,14 +144,43 @@ export async function composeEquipmentPhoto(
     );
   }
 
-  // Build composite inputs
-  const composites: sharp.OverlayOptions[] = placementData.placements.map(
-    (p) => ({
-      input: buildLabelSvg(p),
+  // Build composite inputs: equipment asset + floating label
+  const composites: sharp.OverlayOptions[] = [];
+  for (const p of placementData.placements) {
+    // Equipment asset overlay
+    composites.push({
+      input: await buildOverlay(p),
       top: Math.round(p.y),
       left: Math.round(p.x),
-    }),
-  );
+    });
+
+    // Floating label below the equipment
+    const visual = EQUIPMENT_VISUALS[p.key as EquipmentKey] ?? undefined;
+    const displayLabel = p.label || visual?.label || p.key;
+    const labelColor = visual?.color ?? FALLBACK_COLOR;
+    const labelW = Math.max(p.width, 80);
+    const labelH = Math.min(28, Math.max(18, Math.round(p.height * 0.12)));
+    const labelFontSize = Math.min(16, Math.max(10, Math.round(labelH * 0.6)));
+    const labelX = Math.round(p.x + (p.width - labelW) / 2);
+    const labelY = Math.round(p.y + p.height + 4);
+
+    // Only add label if it fits within image bounds
+    if (labelY + labelH < (metadata.height ?? 9999)) {
+      const labelSvg = `<svg width="${labelW}" height="${labelH}" xmlns="http://www.w3.org/2000/svg">
+        <rect x="0" y="0" width="${labelW}" height="${labelH}" rx="4" ry="4"
+              fill="${labelColor}" fill-opacity="0.9"/>
+        <text x="${labelW / 2}" y="${labelH / 2}" dominant-baseline="central" text-anchor="middle"
+              font-family="Arial, Helvetica, sans-serif" font-weight="bold"
+              font-size="${labelFontSize}" fill="white">${escapeXml(displayLabel)}</text>
+      </svg>`;
+
+      composites.push({
+        input: Buffer.from(labelSvg),
+        top: labelY,
+        left: labelX,
+      });
+    }
+  }
 
   // Compose and write
   await image.composite(composites).png().toFile(resolvedOutput);
@@ -173,8 +229,14 @@ async function main() {
   console.log(`Output: ${outFile}`);
 }
 
-// Run when executed directly
-main().catch((err) => {
-  console.error("Fatal:", err);
-  process.exit(1);
-});
+// Run when executed directly (not when imported)
+const isMainModule =
+  process.argv[1]?.endsWith("compose-equipment-photo.ts") ||
+  process.argv[1]?.endsWith("compose-equipment-photo");
+
+if (isMainModule) {
+  main().catch((err) => {
+    console.error("Fatal:", err);
+    process.exit(1);
+  });
+}

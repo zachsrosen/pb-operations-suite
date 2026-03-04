@@ -1,0 +1,1315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PB Operations Suite — Skills Directory</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0e1117;
+      --surface: #161b22;
+      --surface-2: #1c2333;
+      --surface-3: #21293a;
+      --border: #30363d;
+      --text: #e6edf3;
+      --text-muted: #8b949e;
+      --accent-orange: #f97316;
+      --accent-blue: #58a6ff;
+      --accent-green: #3fb950;
+      --accent-purple: #bc8cff;
+      --accent-cyan: #39d5ff;
+      --accent-yellow: #e3b341;
+      --accent-red: #f85149;
+      --accent-emerald: #34d399;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: radial-gradient(ellipse 80% 60% at 50% -20%, rgba(249, 115, 22, 0.08), transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 3rem 1.5rem 4rem;
+      position: relative;
+      z-index: 1;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 3rem;
+    }
+
+    header h1 {
+      font-size: 2.25rem;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      background: linear-gradient(135deg, var(--accent-orange), var(--accent-yellow));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    header p {
+      color: var(--text-muted);
+      font-size: 1.05rem;
+      margin-top: 0.5rem;
+    }
+
+    .stats {
+      display: flex;
+      justify-content: center;
+      gap: 2rem;
+      margin-top: 1.5rem;
+      flex-wrap: wrap;
+    }
+
+    .stat { text-align: center; }
+    .stat-value { font-size: 1.75rem; font-weight: 700; color: var(--text); }
+    .stat-label { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); }
+
+    .category { margin-bottom: 2.5rem; }
+
+    .category-header {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin-bottom: 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .category-icon {
+      width: 20px; height: 20px; border-radius: 4px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.75rem;
+    }
+
+    .category-title {
+      font-size: 0.85rem; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--text-muted);
+    }
+
+    .category-count {
+      font-size: 0.7rem; background: var(--surface-2);
+      color: var(--text-muted); padding: 0.15rem 0.5rem; border-radius: 999px;
+    }
+
+    /* Cards */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem 1.5rem;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      position: relative;
+      overflow: hidden;
+      margin-bottom: 1rem;
+      cursor: pointer;
+    }
+
+    .card:hover {
+      border-color: color-mix(in srgb, var(--card-accent) 40%, transparent);
+      box-shadow: 0 0 20px color-mix(in srgb, var(--card-accent) 10%, transparent);
+    }
+
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+      background: var(--card-accent);
+      opacity: 0.8;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 0.5rem;
+    }
+
+    .card-name { font-size: 1.2rem; font-weight: 600; }
+
+    .card-id {
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      font-size: 0.7rem; color: var(--text-muted);
+      background: var(--surface-2); padding: 0.2rem 0.5rem;
+      border-radius: 4px; white-space: nowrap;
+    }
+
+    .card-desc {
+      color: var(--text-muted);
+      font-size: 0.875rem;
+      line-height: 1.5;
+      margin-bottom: 0.75rem;
+    }
+
+    .triggers { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-bottom: 0.5rem; }
+
+    .trigger {
+      font-size: 0.7rem; padding: 0.2rem 0.55rem;
+      border-radius: 999px; background: var(--surface-2);
+      color: var(--text-muted); border: 1px solid var(--border);
+    }
+
+    .card-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      margin-top: 0.5rem;
+    }
+
+    .card-meta-row {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+    }
+
+    .card-meta .version { color: var(--accent-green); font-weight: 500; }
+
+    .card-meta .path {
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      opacity: 0.6;
+    }
+
+    .expand-icon {
+      float: right;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      transition: transform 0.2s;
+    }
+
+    .card.open .expand-icon { transform: rotate(90deg); }
+
+    /* Detail panel */
+    .card-detail {
+      display: none;
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .card.open .card-detail { display: block; }
+
+    .detail-section { margin-bottom: 1rem; }
+
+    .detail-section h4 {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      margin-bottom: 0.4rem;
+    }
+
+    .detail-section p, .detail-section li {
+      font-size: 0.825rem;
+      color: var(--text);
+      line-height: 1.6;
+    }
+
+    .detail-section ul {
+      list-style: none;
+      padding: 0;
+    }
+
+    .detail-section ul li {
+      padding: 0.15rem 0;
+      padding-left: 1rem;
+      position: relative;
+    }
+
+    .detail-section ul li::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 0.65rem;
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--card-accent);
+      opacity: 0.6;
+    }
+
+    .flow-diagram {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      line-height: 1.8;
+      white-space: pre;
+      overflow-x: auto;
+    }
+
+    .detail-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8rem;
+      margin-top: 0.25rem;
+    }
+
+    .detail-table th {
+      text-align: left;
+      font-weight: 600;
+      color: var(--text-muted);
+      padding: 0.3rem 0.5rem;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .detail-table td {
+      padding: 0.3rem 0.5rem;
+      border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+      color: var(--text);
+    }
+
+    .detail-table code {
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      font-size: 0.75rem;
+      background: var(--surface-2);
+      padding: 0.1rem 0.3rem;
+      border-radius: 3px;
+    }
+
+    .badge {
+      display: inline-block;
+      font-size: 0.65rem;
+      padding: 0.15rem 0.45rem;
+      border-radius: 4px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .badge-prereq { background: color-mix(in srgb, var(--accent-yellow) 15%, transparent); color: var(--accent-yellow); }
+    .badge-api { background: color-mix(in srgb, var(--accent-blue) 15%, transparent); color: var(--accent-blue); }
+    .badge-output { background: color-mix(in srgb, var(--accent-green) 15%, transparent); color: var(--accent-green); }
+    .badge-interactive { background: color-mix(in srgb, var(--accent-purple) 15%, transparent); color: var(--accent-purple); }
+
+    .badge-ai { background: color-mix(in srgb, #f472b6 18%, transparent); color: #f472b6; }
+    .badge-service { background: color-mix(in srgb, var(--accent-blue) 12%, transparent); color: var(--accent-blue); font-weight: 500; text-transform: none; letter-spacing: 0; }
+
+    .api-tags { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.4rem; }
+    .api-tag {
+      font-size: 0.6rem; padding: 0.12rem 0.4rem; border-radius: 3px;
+      border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+      color: var(--text-muted); background: var(--surface-2);
+    }
+    .api-tag.ai { border-color: color-mix(in srgb, #f472b6 30%, transparent); color: #f472b6; }
+    .api-tag.svc { border-color: color-mix(in srgb, var(--accent-blue) 25%, transparent); color: var(--accent-blue); }
+
+    footer {
+      text-align: center;
+      margin-top: 3rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: 0.8rem;
+    }
+
+    @media (max-width: 700px) {
+      .container { padding: 2rem 1rem; }
+      header h1 { font-size: 1.75rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Skills Directory</h1>
+      <p>PB Operations Suite — Claude Code Skills</p>
+      <div class="stats">
+        <div class="stat"><div class="stat-value">12</div><div class="stat-label">Total Skills</div></div>
+        <div class="stat"><div class="stat-value">4</div><div class="stat-label">Pipelines</div></div>
+        <div class="stat"><div class="stat-value">4</div><div class="stat-label">Analysis</div></div>
+        <div class="stat"><div class="stat-value">4</div><div class="stat-label">Operations</div></div>
+      </div>
+    </header>
+
+    <!-- ═══════════════════════════════════════════ -->
+    <!-- DATA PIPELINES -->
+    <!-- ═══════════════════════════════════════════ -->
+    <section class="category">
+      <div class="category-header">
+        <div class="category-icon" style="background: color-mix(in srgb, var(--accent-orange) 20%, transparent); color: var(--accent-orange);">&#9654;</div>
+        <span class="category-title">Data Pipelines</span>
+        <span class="category-count">4 skills</span>
+      </div>
+
+      <!-- BOM Pipeline Core -->
+      <div class="card" style="--card-accent: var(--accent-yellow);" onclick="this.classList.toggle('open')">
+        <span class="expand-icon">&#9654;</span>
+        <div class="card-header">
+          <span class="card-name">BOM Pipeline Core</span>
+          <span class="card-id">/bom-pipeline-core</span>
+        </div>
+        <p class="card-desc">Shared pipeline: Deal &rarr; Planset &rarr; BOM &rarr; Zoho Sales Order. Canonical steps used by planset-to-so (single job) and bom-so-analysis (batch). Handles deal lookup, planset auto-selection, BOM extraction, customer matching, and SO creation.</p>
+        <div class="triggers">
+          <span class="trigger">deal-to-SO pipeline</span>
+          <span class="trigger">referenced by planset-to-so</span>
+          <span class="trigger">referenced by bom-so-analysis</span>
+        </div>
+        <div class="card-meta">
+          <div class="card-meta-row"><span class="path">.claude/skills/bom-pipeline-core/</span></div>
+          <div class="api-tags">
+            <span class="api-tag ai">Claude Vision</span>
+            <span class="api-tag svc">HubSpot</span>
+            <span class="api-tag svc">Google Drive</span>
+            <span class="api-tag svc">Zoho Inventory</span>
+          </div>
+        </div>
+
+        <div class="card-detail">
+          <div class="detail-section">
+            <h4>Input</h4>
+            <ul>
+              <li>PROJ number (e.g., "PROJ-9009")</li>
+              <li>Customer name (e.g., "Turner")</li>
+              <li>HubSpot deal ID</li>
+            </ul>
+          </div>
+
+          <div class="detail-section">
+            <h4>Pipeline Steps</h4>
+            <div class="flow-diagram">1. Find Deal in HubSpot (auto-select if single match)
+  &darr;
+2. Auto-Select Planset (Stamped Plans &gt; recent &gt; "stamped" filename)
+  &darr;
+3. Extract BOM (planset-bom skill, all sheets)
+  &darr;
+4. Save BOM Snapshot (POST /api/bom/history, auto-increment version)
+  &darr;
+5. Auto-Match Zoho Customer (hubspot_contact_id &rarr; name search)
+  &darr;
+6. Create Sales Order (POST /api/bom/create-so)</div>
+          </div>
+
+          <div class="detail-section">
+            <h4>HubSpot Properties Fetched</h4>
+            <p style="font-size: 0.8rem; font-family: 'SF Mono', monospace; color: var(--text-muted);">dealname, hs_object_id, design_documents, all_document_parent_folder_id, project_number, associated_contact_id, module_count, roof_type, system_size_kwdc</p>
+          </div>
+
+          <div class="detail-section">
+            <h4>Escalation Model</h4>
+            <table class="detail-table">
+              <tr><th>Error</th><th>Default Action</th></tr>
+              <tr><td>Deal not found</td><td>Escalate &mdash; ask caller for correct identifier</td></tr>
+              <tr><td>No PDFs in design folder</td><td>Escalate &mdash; provide Drive folder link</td></tr>
+              <tr><td>BOM validation fails</td><td>Escalate &mdash; caller decides continue/fix</td></tr>
+              <tr><td>No Zoho customer match</td><td>Escalate &mdash; caller provides customer ID</td></tr>
+              <tr><td>SO creation fails</td><td>Log error, escalate</td></tr>
+              <tr><td>Unmatched items on SO</td><td>Log them, continue (skipped)</td></tr>
+            </table>
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.4rem;">"Escalate" = return control to caller. <code>planset-to-so</code> asks the user; <code>bom-so-analysis</code> logs and skips to next job.</p>
+          </div>
+
+          <div class="detail-section">
+            <h4>SO Response Fields</h4>
+            <ul>
+              <li><code>salesorder_number</code> &mdash; Zoho SO number (e.g., SO-00456)</li>
+              <li><code>unmatchedItems[]</code> &mdash; BOM items that couldn't match Zoho inventory</li>
+              <li><code>corrections[]</code> &mdash; post-processor changes (sku_swap, item_removed, qty_adjust, item_added)</li>
+              <li><code>jobContext</code> &mdash; detected: jobType, roofType, moduleCount, hasPowerwall, etc.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Planset BOM -->
+      <div class="card" style="--card-accent: var(--accent-orange);" onclick="this.classList.toggle('open')">
+        <span class="expand-icon">&#9654;</span>
+        <div class="card-header">
+          <span class="card-name">Planset BOM</span>
+          <span class="card-id">/planset-bom</span>
+        </div>
+        <p class="card-desc">Extract a complete Bill of Materials from a Photon Brothers stamped solar/storage planset PDF. Outputs CSV, Markdown, and JSON matched to the EquipmentSku inventory schema.</p>
+        <div class="triggers">
+          <span class="trigger">read a planset</span>
+          <span class="trigger">generate a BOM</span>
+          <span class="trigger">extract equipment from a planset</span>
+          <span class="trigger">what's on this planset</span>
+          <span class="trigger">read this design plan</span>
+        </div>
+        <div class="card-meta">
+          <div class="card-meta-row"><span class="version">v0.1.0</span><span class="path">.claude/skills/planset-bom/</span></div>
+          <div class="api-tags">
+            <span class="api-tag ai">Claude Vision / PDF</span>
+          </div>
+        </div>
+
+        <div class="card-detail">
+          <div class="detail-section">
+            <h4>Workflow</h4>
+            <div class="flow-diagram">Planset PDF
+  &darr;
+1. Read PDF (PV-0 cover, PV-2 BOM table, PV-4 SLD)
+  &darr;
+2. Extract project header (system size, customer, AHJ)
+  &darr;
+3. Parse BOM table (equipment, qty, description)
+  &darr;
+4. Extract conductor schedule + rapid shutdown from SLD
+  &darr;
+5. Run validation (module count, battery kWh, OCPD)
+  &darr;
+6. Output: Markdown + CSV + JSON</div>
+          </div>
+
+          <div class="detail-section">
+            <h4>Planset Sheets</h4>
+            <table class="detail-table">
+              <tr><th>Sheet</th><th>Source</th><th>What to Extract</th></tr>
+              <tr><td><code>PV-0</code></td><td>Cover sheet</td><td>System size (kWdc/kWac), equipment list with (N)/(E) prefixes</td></tr>
+              <tr><td><code>PV-2</code></td><td>Roof plan</td><td>BILL OF MATERIALS table — primary source</td></tr>
+              <tr><td><code>PV-4</code></td><td>Electrical SLD</td><td>Conductor schedule, rapid shutdown switch, AC disconnect config, part numbers</td></tr>
+              <tr><td><code>PV-5</code></td><td>Electrical calc</td><td>OCPD rating (validation)</td></tr>
+              <tr><td><code>PV-6</code></td><td>Warning labels</td><td>ESS kWh size (battery validation)</td></tr>
+            </table>
+          </div>
+
+          <div class="detail-section">
+            <h4>Equipment Categories</h4>
+            <table class="detail-table">
+              <tr><th>Category</th><th>Examples</th></tr>
+              <tr><td><code>MODULE</code></td><td>SEG Solar SEG-440-BTD-BG, Hyundai HiN-T440NF</td></tr>
+              <tr><td><code>BATTERY</code></td><td>Tesla Powerwall 3 (1707000-XX-Y)</td></tr>
+              <tr><td><code>RAPID_SHUTDOWN</code></td><td>Tesla MCI-2, IMO SI16-PEL64R-2 (from PV-4 SLD only)</td></tr>
+              <tr><td><code>RACKING</code></td><td>IronRidge XR10/XR100 rails, HUG, bonded splices, clamps</td></tr>
+              <tr><td><code>ELECTRICAL_BOS</code></td><td>Wire, conduit, J-box, AC disconnect, grounding lugs</td></tr>
+              <tr><td><code>MONITORING</code></td><td>Tesla Backup Gateway 3, Xcel production meter</td></tr>
+            </table>
+          </div>
+
+          <div class="detail-section">
+            <h4>Validation Checks</h4>
+            <ul>
+              <li>Module count: sum of STRING values = MODULE qty</li>
+              <li>Battery kWh: ESS SIZE on PV-6 = nominal energy on PV-4</li>
+              <li>OCPD: PV-5 rating = AC disconnect amp rating on PV-2</li>
+              <li>Gateway paired with battery: both present or both absent</li>
+            </ul>
+          </div>
+
+          <div class="detail-section">
+            <h4>Roof Type &rarr; Racking</h4>
+            <table class="detail-table">
+              <tr><th>Roof Type</th><th>Attachment</th><th>Rail</th><th>Lag Screws</th></tr>
+              <tr><td>Asphalt Shingle</td><td>IronRidge HUG</td><td>XR10</td><td>Yes</td></tr>
+              <tr><td>Trapezoidal Metal</td><td>S-5! ProteaBracket</td><td>XR100</td><td>No</td></tr>
+            </table>
+          </div>
+
+          <div class="detail-section">
+            <h4>Outputs</h4>
+            <ul>
+              <li><span class="badge badge-output">CSV</span> Ready for Google Sheets or inventory import</li>
+              <li><span class="badge badge-output">Markdown</span> Grouped by category, with validation summary</li>
+              <li><span class="badge badge-output">JSON</span> Structured for <code>/api/inventory/sync-skus</code></li>
+            </ul>
+          </div>
+
+          <div class="detail-section">
+            <h4>Reference Files</h4>
+            <ul>
+              <li><code>references/extraction-guide.md</code> — Full guide with real BOM examples</li>
+              <li><code>references/bom-schema.md</code> — JSON schema, CSV columns, Markdown template</li>
+              <li><code>scripts/export-bom.py</code> — Export script for file output</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- BOM to Sales Order -->
+      <div class="card" style="--card-accent: var(--accent-blue);" onclick="this.classList.toggle('open')">
+        <span class="expand-icon">&#9654;</span>
+        <div class="card-header">
+          <span class="card-name">BOM to Sales Order</span>
+          <span class="card-id">/bom-to-so</span>
+        </div>
+        <p class="card-desc">Convert a saved BOM snapshot into a draft Zoho Sales Order with automatic post-processing, then optionally compare against the ops-created SO.</p>
+        <div class="triggers">
+          <span class="trigger">create SO from BOM</span>
+          <span class="trigger">generate sales order</span>
+          <span class="trigger">compare auto vs ops SO</span>
+          <span class="trigger">what does the post-processor do</span>
+        </div>
+        <div class="card-meta">
+          <div class="card-meta-row"><span class="version">v0.1.0</span><span class="path">.claude/skills/bom-to-so/</span></div>
+          <div class="api-tags">
+            <span class="api-tag svc">HubSpot</span>
+            <span class="api-tag svc">Zoho Inventory</span>
+          </div>
+        </div>
+
+        <div class="card-detail">
+          <div class="detail-section">
+            <h4>Prerequisites</h4>
+            <ul>
+              <li><span class="badge badge-prereq">Required</span> BOM snapshot saved via <code>planset-bom</code> skill</li>
+              <li><span class="badge badge-prereq">Required</span> Zoho customer ID resolved (auto-match or manual)</li>
+            </ul>
+          </div>
+
+          <div class="detail-section">
+            <h4>Pipeline</h4>
+            <div class="flow-diagram">1. Resolve Zoho Customer (hubspot_contact_id &rarr; name fallback)
+  &darr;
+2. POST /api/bom/create-so { dealId, version, customerId }
+  &darr;  Loads BOM &rarr; matches Zoho items &rarr; runs SO post-processor
+  &darr;
+3. Verify: SO number, unmatched items, corrections
+  &darr;
+4. Fetch ops SO: GET /api/bom/zoho-so?so_number=SO-XXXX
+  &darr;
+5. Compare: normalize, match by SKU/name, classify mismatches</div>
+          </div>
+
+          <div class="detail-section">
+            <h4>Two Post-Processors</h4>
+            <table class="detail-table">
+              <tr><th>Stage</th><th>File</th><th>Behavior</th></tr>
+              <tr><td>BOM Save</td><td><code>bom-post-process.ts</code></td><td>Category normalization, brand inference, model standardization. Qty corrections are <strong>informational only</strong></td></tr>
+              <tr><td>SO Create</td><td><code>bom-so-post-process.ts</code></td><td>SKU swaps by roof type, remove wrong items, <strong>mutate quantities</strong>, add missing OPS_STANDARD items</td></tr>
+            </table>
+          </div>
+
+          <div class="detail-section">
+            <h4>Job Context Detection</h4>
+            <table class="detail-table">
+              <tr><th>Field</th><th>Values</th><th>How Detected</th></tr>
+              <tr><td><code>jobType</code></td><td>solar, battery_only, hybrid</td><td>Presence of MODULE/BATTERY items</td></tr>
+              <tr><td><code>roofType</code></td><td>asphalt_shingle, standing_seam_metal, tile, etc.</td><td>Project field + item descriptions</td></tr>
+              <tr><td><code>hasPowerwall</code></td><td>boolean</td><td>Model matches <code>1707000</code></td></tr>
+              <tr><td><code>hasExpansion</code></td><td>boolean</td><td>Model matches <code>1807000</code></td></tr>
+              <tr><td><code>hasGateway3</code></td><td>boolean</td><td>Model matches <code>1841000</code></td></tr>
+              <tr><td><code>moduleCount</code></td><td>number</td><td>Project metadata or MODULE qty sum</td></tr>
+            </table>
+          </div>
+
+          <div class="detail-section">
+            <h4>Warehouse Racking Rules</h4>
+            <table class="detail-table">
+              <tr><th>Warehouse</th><th>Include Racking?</th></tr>
+              <tr><td>Westminster + Centennial</td><td>Always</td></tr>
+              <tr><td>SLO + CAM</td><td>Never</td></tr>
+              <tr><td>Colorado Springs</td><td>Mixed</td></tr>
+            </table>
+          </div>
+
+          <div class="detail-section">
+            <h4>API Endpoints</h4>
+            <ul>
+              <li><span class="badge badge-api">POST</span> <code>/api/bom/create-so</code> — Create draft SO from BOM snapshot</li>
+              <li><span class="badge badge-api">GET</span> <code>/api/bom/zoho-so?so_number=SO-XXXX</code> — Fetch single SO</li>
+              <li><span class="badge badge-api">GET</span> <code>/api/bom/zoho-so?so_numbers=SO-1,SO-2</code> — Batch fetch (up to 50)</li>
+              <li><span class="badge badge-api">GET</span> <code>/api/bom/zoho-customers?hubspot_contact_id=X</code> — Auto-match customer</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Planset to Sales Order -->
+      <div class="card" style="--card-accent: var(--accent-yellow);" onclick="this.classList.toggle('open')">
+        <span class="expand-icon">&#9654;</span>
+        <div class="card-header">
+          <span class="card-name">Planset to Sales Order</span>
+          <span class="card-id">/planset-to-so</span>
+        </div>
+        <p class="card-desc">End-to-end: Deal &rarr; Planset &rarr; BOM &rarr; Zoho Sales Order for one project. Delegates steps 1&ndash;5 to <code>bom-pipeline-core</code>, adds a user confirmation checkpoint before SO creation.</p>
+        <div class="triggers">
+          <span class="trigger">process PROJ-XXXX</span>
+          <span class="trigger">create SO for this deal</span>
+          <span class="trigger">run the full pipeline</span>
+          <span class="trigger">SO for [customer]</span>
+        </div>
+        <div class="card-meta">
+          <div class="card-meta-row"><span class="path">.claude/skills/planset-to-so/</span></div>
+          <div class="api-tags">
+            <span class="api-tag ai">Claude Vision</span>
+            <span class="api-tag svc">HubSpot</span>
+            <span class="api-tag svc">Google Drive</span>
+            <span class="api-tag svc">Zoho Inventory</span>
+          </div>
+        </div>
+
+        <div class="card-detail">
+          <div class="detail-section">
+            <h4>Required Sub-Skill</h4>
+            <p style="margin-bottom: 0.5rem;"><code>/bom-pipeline-core</code> &mdash; handles steps 1&ndash;5 (deal &rarr; planset &rarr; BOM &rarr; customer match). This skill adds the user confirmation checkpoint before SO creation.</p>
+          </div>
+
+          <div class="detail-section">
+            <h4>Workflow</h4>
+            <div class="flow-diagram">1. Run pipeline steps 1&ndash;5 from bom-pipeline-core
+  &darr;
+2. Show BOM summary (module count, battery type, racking, validation)
+  &darr;
+3. If pipeline escalates &rarr; ask the user
+  &darr;
+4. Show SO preview  &larr; ONE required checkpoint
+  &darr;
+5. On approval &rarr; run pipeline step 6 (create SO)
+  &darr;
+6. Report result (SO number, unmatched items, corrections)</div>
+          </div>
+
+          <div class="detail-section">
+            <h4>SO Preview Format</h4>
+            <ul>
+              <li>Deal name, Zoho customer ID, job type</li>
+              <li>Line items table with qty and source (BOM vs post-processor)</li>
+              <li>Post-processor corrections summary (SKU swaps, additions, removals)</li>
+              <li>User confirms or rejects before creation</li>
+            </ul>
+          </div>
+
+          <div class="detail-section">
+            <h4>What This Skill Does NOT Do</h4>
+            <ul>
+              <li>Does not run batch analysis (use <code>/bom-so-analysis</code>)</li>
+              <li>Does not bypass user confirmation before SO creation</li>
+              <li>Does not handle PO creation (separate workflow)</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ═══════════════════════════════════════════ -->
+    <!-- ANALYSIS & DEBUG -->
+    <!-- ═══════════════════════════════════════════ -->
+    <section class="category">
+      <div class="category-header">
+        <div class="category-icon" style="background: color-mix(in srgb, var(--accent-purple) 20%, transparent); color: var(--accent-purple);">&#9670;</div>
+        <span class="category-title">Analysis &amp; Debug</span>
+        <span class="category-count">4 skills</span>
+      </div>
+
+      <!-- BOM SO Analysis -->
+      <div class="card" style="--card-accent: var(--accent-purple);" onclick="this.classList.toggle('open')">
+        <span class="expand-icon">&#9654;</span>
+        <div class="card-header">
+          <span class="card-name">BOM SO Analysis</span>
+          <span class="card-id">/bom-so-analysis</span>
+        </div>
+        <p class="card-desc">Batch analysis of auto-generated vs ops-created Sales Orders. Orchestrates pipeline runs, fetches SOs from Zoho, classifies jobs, compares line items, and proposes post-processor improvements.</p>
+        <div class="triggers">
+          <span class="trigger">run the SO analysis</span>
+          <span class="trigger">compare auto vs ops SOs</span>
+          <span class="trigger">find SO patterns</span>
+          <span class="trigger">improve post-processor</span>
+          <span class="trigger">batch compare SOs</span>
+        </div>
+        <div class="card-meta">
+          <div class="card-meta-row"><span class="version">v0.1.0</span><span class="path">.claude/skills/bom-so-analysis/</span></div>
+          <div class="api-tags">
+            <span class="api-tag ai">Claude Vision</span>
+            <span class="api-tag svc">HubSpot</span>
+            <span class="api-tag svc">Google Drive</span>
+            <span class="api-tag svc">Zoho Inventory</span>
+          </div>
+        </div>
+
+        <div class="card-detail">
+          <div class="detail-section">
+            <h4>Prerequisites</h4>
+            <ul>
+              <li>Dev server running (for API access)</li>
+              <li><code>ENABLE_SO_POST_PROCESS=true</code> in env</li>
+              <li>BOM tool feedback fetched first</li>
+            </ul>
+          </div>
+
+          <div class="detail-section">
+            <h4>Batch Workflow</h4>
+            <div class="flow-diagram">1. Select jobs (PROJ numbers, warehouse filter, or all)
+  &darr;
+2. Per job: Run bom-pipeline-core (ALWAYS fresh, never reuse old snapshots)
+  &darr;
+3. Fetch auto SO + ops SO from Zoho, compare line items
+  &darr;
+4. Classify all jobs (type, warehouse, equipment)
+  &darr;
+5. Pattern analysis (frequency, qty formulas, breaker patterns)
+  &darr;
+6. Propose post-processor rule improvements
+  &darr;
+7. Write findings to ~/Downloads/SOs/</div>
+          </div>
+
+          <div class="detail-section">
+            <h4>Target Sample Sizes</h4>
+            <table class="detail-table">
+              <tr><th>Warehouse</th><th>Total SOs</th><th>Target</th></tr>
+              <tr><td>Westminster</td><td>205</td><td>30 solar</td></tr>
+              <tr><td>Centennial</td><td>193</td><td>30 solar</td></tr>
+              <tr><td>SLO</td><td>114</td><td>15 solar + 10 battery</td></tr>
+              <tr><td>Colorado Springs</td><td>52</td><td>15 solar</td></tr>
+              <tr><td>CAM</td><td>35</td><td>10 solar</td></tr>
+              <tr><td>Battery-only (any)</td><td>—</td><td>15</td></tr>
+            </table>
+          </div>
+
+          <div class="detail-section">
+            <h4>Pattern Analysis Dimensions</h4>
+            <ul>
+              <li>Item frequency by warehouse &times; job type</li>
+              <li>Qty formulas vs module count (HUG, MCI-2, screws, clamps, etc.)</li>
+              <li>Breaker brand patterns (HOM260, Q260, BR260) by region</li>
+              <li>Missing items in >80% of ops SOs = candidate post-processor rules</li>
+              <li>Enphase vs Tesla equipment differences</li>
+              <li>Service upgrade trigger identification</li>
+            </ul>
+          </div>
+
+          <div class="detail-section">
+            <h4>Required Skills</h4>
+            <ul>
+              <li><code>/bom-pipeline-core</code> &mdash; Shared pipeline (deal &rarr; planset &rarr; BOM &rarr; SO). Invoked for each job in the batch. On escalation, log failure and skip to next job.</li>
+              <li><code>/bom-to-so</code> &mdash; Reference for post-processor rules and comparison methodology</li>
+              <li><code>/product-lookup</code> &mdash; Manufacturer reference data for validating quantities, SKU variants, and installation rules during pattern analysis</li>
+            </ul>
+          </div>
+
+          <div class="detail-section">
+            <h4>Output Artifacts</h4>
+            <ul>
+              <li><code>session-N-dataset.json</code> — Full classified dataset</li>
+              <li><code>session-N-analysis.md</code> — Findings, frequency tables, proposed rules</li>
+              <li><code>PROJ-XXXX/ops-so-data.md</code> — Per-job ops SO data</li>
+              <li><code>PROJ-XXXX/comparison-notes.md</code> — Per-job auto vs ops comparison</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Product Lookup -->
+      <div class="card" style="--card-accent: var(--accent-cyan);" onclick="this.classList.toggle('open')">
+        <span class="expand-icon">&#9654;</span>
+        <div class="card-header">
+          <span class="card-name">Product Lookup</span>
+          <span class="card-id">/product-lookup</span>
+        </div>
+        <p class="card-desc">Look up solar equipment specifications, installation quantities, sizing rules, and compatibility from curated manufacturer reference files. Web search fallback for products not yet documented.</p>
+        <div class="triggers">
+          <span class="trigger">how many snow dogs per array?</span>
+          <span class="trigger">what clamp for this module frame?</span>
+          <span class="trigger">XR10 vs XR100?</span>
+          <span class="trigger">PW3 expansion kit contents</span>
+        </div>
+        <div class="card-meta">
+          <div class="card-meta-row"><span class="version">v0.1.0</span><span class="path">.claude/skills/product-lookup/</span></div>
+          <div class="api-tags">
+            <span class="api-tag svc">Web Search</span>
+          </div>
+        </div>
+
+        <div class="card-detail">
+          <div class="detail-section">
+            <h4>When to Use</h4>
+            <ul>
+              <li><strong>BOM extraction</strong> &mdash; determining correct quantities (snow dogs per array, MCI-2 per module)</li>
+              <li><strong>SO creation</strong> &mdash; selecting the right SKU variant for a roof type, panel brand, or inverter platform</li>
+              <li><strong>User questions</strong> &mdash; clamp ranges, load capacities, torque specs</li>
+              <li><strong>SO analysis</strong> &mdash; validating ops-created quantities against manufacturer guidelines</li>
+              <li><strong>Compatibility checks</strong> &mdash; module frame thickness &harr; clamp, rail span limits</li>
+            </ul>
+          </div>
+
+          <div class="detail-section">
+            <h4>Workflow</h4>
+            <div class="flow-diagram">1. Parse query &mdash; identify manufacturer, product, info needed
+  &darr;
+2. Read reference files (check Manufacturer Reference Index)
+  &darr;
+3. Answer from reference &mdash; cite source file
+  &darr;
+4. Web fallback &mdash; search manufacturer docs if references insufficient
+  &darr;
+5. Flag gaps &mdash; note missing products for future addition</div>
+          </div>
+
+          <div class="detail-section">
+            <h4>Manufacturer Reference Index</h4>
+            <table class="detail-table">
+              <tr><th>File</th><th>Manufacturer</th><th>Products</th></tr>
+              <tr><td><code>ironridge.md</code></td><td>IronRidge</td><td>XR10, XR100 rails; HUG; UFO mid clamp; CAMO end clamp; BOSS splice; lag screws; ground lugs</td></tr>
+              <tr><td><code>tesla.md</code></td><td>Tesla</td><td>Powerwall 3; Gateway-3; MCI-2; expansion kit; backup switch; wall mount kit</td></tr>
+              <tr><td><code>alpine.md</code></td><td>Alpine</td><td>Snow Dog (BLK/CLR); qty rules; mounting; pitch limits</td></tr>
+              <tr><td><code>imo.md</code></td><td>IMO</td><td>SI16-PEL64R-2 rapid shutdown switch; comm wire</td></tr>
+              <tr><td><code>seg-solar.md</code></td><td>SEG Solar</td><td>SEG-440-BTD-BG module; frame dims; clamp range</td></tr>
+              <tr><td><code>hyundai-solar.md</code></td><td>Hyundai</td><td>HiN-T440NF(BK) module; frame dims; clamp range</td></tr>
+              <tr><td><code>ez-solar.md</code></td><td>EZ Solar</td><td>JB-1.2 junction box</td></tr>
+              <tr><td><code>s5.md</code></td><td>S-5!</td><td>ProteaBracket; standing seam clamps</td></tr>
+              <tr><td><code>enphase.md</code></td><td>Enphase</td><td>IQ8 series; trunk cable; Q relay</td></tr>
+            </table>
+          </div>
+
+          <div class="detail-section">
+            <h4>Integration</h4>
+            <ul>
+              <li><code>/planset-bom</code> &mdash; call during extraction when quantities depend on manufacturer rules</li>
+              <li><code>/bom-to-so</code> &mdash; call when post-processor needs correct SKU variant selection</li>
+              <li><code>/bom-so-analysis</code> &mdash; call to validate ops quantities against manufacturer guidelines</li>
+            </ul>
+          </div>
+
+          <div class="detail-section">
+            <h4>Web Fallback</h4>
+            <ul>
+              <li>Search manufacturer domains for install guides and spec sheets</li>
+              <li>Prefer manufacturer docs over distributor listings</li>
+              <li>Cite source URL in answer</li>
+              <li>Flag gap for future reference file addition</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Find Design Plans -->
+      <div class="card" style="--card-accent: var(--accent-cyan);" onclick="this.classList.toggle('open')">
+        <span class="expand-icon">&#9654;</span>
+        <div class="card-header">
+          <span class="card-name">Find Design Plans</span>
+          <span class="card-id">/find-design-plans</span>
+        </div>
+        <p class="card-desc">Locate planset PDFs and design documents for any PB project. Full lookup chain: HubSpot deal &rarr; Google Drive folder &rarr; Stamped Plans subfolder.</p>
+        <div class="triggers">
+          <span class="trigger">find a planset PDF</span>
+          <span class="trigger">look up design documents</span>
+          <span class="trigger">planset for PROJ-XXXX</span>
+        </div>
+        <div class="card-meta">
+          <div class="card-meta-row"><span class="version">v0.1.0</span><span class="path">.claude/skills/find-design-plans/</span></div>
+          <div class="api-tags">
+            <span class="api-tag svc">HubSpot</span>
+            <span class="api-tag svc">Google Drive</span>
+          </div>
+        </div>
+
+        <div class="card-detail">
+          <div class="detail-section">
+            <h4>Lookup Chain</h4>
+            <div class="flow-diagram">1. Search HubSpot for deal (by name or PROJ number)
+  &darr;
+2. Extract folder ID from design_documents URL
+  &darr;  (fallback: all_document_parent_folder_id &rarr; "2. Design" subfolder)
+  &darr;
+3. GET /api/bom/drive-files?folderId={ID}
+  &darr;  (recursive breadth-first PDF scan)
+  &darr;
+4. Return file list: { id, name, mimeType, modifiedTime, size }</div>
+          </div>
+
+          <div class="detail-section">
+            <h4>Drive Folder Structure</h4>
+            <div class="flow-diagram">[Project Root]
+  0. Sales/
+  1. Site Survey/
+  2. Design/              &larr; design_documents points here
+    Stamped Plans/        &larr; planset PDFs
+    DA/
+    Archive/
+  3. Permitting/
+  4. Interconnections/
+  5. Installation/
+  6. Inspections/
+  7. PTO &amp; Closeout/
+  8. Incentives/</div>
+          </div>
+
+          <div class="detail-section">
+            <h4>HubSpot Properties</h4>
+            <table class="detail-table">
+              <tr><th>Property</th><th>Usage</th></tr>
+              <tr><td><code>design_documents</code></td><td>Direct URL to "2. Design" folder (preferred)</td></tr>
+              <tr><td><code>all_document_parent_folder_id</code></td><td>Root project folder ID (fallback)</td></tr>
+            </table>
+          </div>
+
+          <div class="detail-section">
+            <h4>Auth Note</h4>
+            <p><code>/api/bom/drive-files</code> requires a logged-in user session (Google OAuth). In chat, user must share a direct Drive file link or use the BOM tool UI at <code>/dashboards/bom?deal=DEAL_ID</code>.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Zuper Debug -->
+      <div class="card" style="--card-accent: var(--accent-red);" onclick="this.classList.toggle('open')">
+        <span class="expand-icon">&#9654;</span>
+        <div class="card-header">
+          <span class="card-name">Zuper Debug</span>
+          <span class="card-id">/zuper-debug</span>
+        </div>
+        <p class="card-desc">Debug Zuper field service integration issues — API problems, job syncing, scheduling mismatches, and status comparison discrepancies.</p>
+        <div class="triggers">
+          <span class="trigger">Zuper API problems</span>
+          <span class="trigger">job syncing issues</span>
+          <span class="trigger">scheduling mismatches</span>
+          <span class="trigger">status discrepancies</span>
+        </div>
+        <div class="card-meta">
+          <div class="card-meta-row"><span class="path">.claude/skills/zuper-debug/</span></div>
+          <div class="api-tags">
+            <span class="api-tag svc">Zuper MCP</span>
+            <span class="api-tag svc">HubSpot</span>
+          </div>
+        </div>
+
+        <div class="card-detail">
+          <div class="detail-section">
+            <h4>API Architecture</h4>
+            <table class="detail-table">
+              <tr><th>Route Group</th><th>Purpose</th></tr>
+              <tr><td><code>zuper/jobs/</code></td><td>Job CRUD and scheduling</td></tr>
+              <tr><td><code>zuper/jobs/schedule/</code></td><td>Schedule operations</td></tr>
+              <tr><td><code>zuper/status/</code></td><td>Job status queries</td></tr>
+              <tr><td><code>zuper/status-comparison/</code></td><td>HubSpot &harr; Zuper status sync</td></tr>
+              <tr><td><code>zuper/availability/</code></td><td>Technician availability</td></tr>
+              <tr><td><code>zuper/teams/</code></td><td>Team management</td></tr>
+              <tr><td><code>zuper/linkage-coverage/</code></td><td>Job-deal linkage</td></tr>
+              <tr><td><code>zuper/assisted-scheduling/</code></td><td>AI-assisted scheduling</td></tr>
+            </table>
+          </div>
+
+          <div class="detail-section">
+            <h4>Key Gotchas</h4>
+            <ul>
+              <li><strong>assigned_to is CREATE-only</strong> — Zuper API ignores it on updates</li>
+              <li><strong>Custom fields differ</strong> — GET returns array, POST expects object</li>
+              <li><strong>Status field</strong> — Use <code>current_job_status</code>, not <code>status</code></li>
+              <li><strong>Category matters</strong> — Each category has separate status workflows</li>
+              <li><strong>Team/User UIDs</strong> — JSON env vars: <code>ZUPER_TEAM_UIDS</code>, <code>ZUPER_USER_UIDS</code></li>
+            </ul>
+          </div>
+
+          <div class="detail-section">
+            <h4>Debug Steps</h4>
+            <ul>
+              <li>Identify scope: which API route, job category, or status?</li>
+              <li>Check API route in <code>src/app/api/zuper/</code></li>
+              <li>Check types in <code>src/lib/zuper.ts</code></li>
+              <li>Query live data via Zuper MCP tools</li>
+              <li>Compare with HubSpot via status-comparison route</li>
+            </ul>
+          </div>
+
+          <div class="detail-section">
+            <h4>Zuper MCP Tools</h4>
+            <ul>
+              <li><code>list_jobs</code> / <code>get_job_details</code> — Query live Zuper data</li>
+              <li><code>list_job_categories</code> — Get category UIDs and status workflows</li>
+              <li><code>get_module_filters</code> — Discover filterable fields</li>
+              <li><code>get_job_team_stats</code> / <code>get_job_stats_category</code> — Aggregated stats</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ═══════════════════════════════════════════ -->
+    <!-- OPERATIONS & GENERATION -->
+    <!-- ═══════════════════════════════════════════ -->
+    <section class="category">
+      <div class="category-header">
+        <div class="category-icon" style="background: color-mix(in srgb, var(--accent-green) 20%, transparent); color: var(--accent-green);">&#9679;</div>
+        <span class="category-title">Operations &amp; Generation</span>
+        <span class="category-count">4 skills</span>
+      </div>
+
+      <!-- Design Approval Photo -->
+      <div class="card" style="--card-accent: var(--accent-green);" onclick="this.classList.toggle('open')">
+        <span class="expand-icon">&#9654;</span>
+        <div class="card-header">
+          <span class="card-name">Design Approval Photo</span>
+          <span class="card-id">/design-approval-photo</span>
+        </div>
+        <p class="card-desc">Generate annotated equipment placement photos for design approval packages. AI vision analyzes site photos, suggests equipment positions, and composites labeled rectangles for PandaDoc DA templates.</p>
+        <div class="triggers">
+          <span class="trigger">create DA photo</span>
+          <span class="trigger">generate DA photo</span>
+          <span class="trigger">equipment layout photo</span>
+          <span class="trigger">place equipment on site photo</span>
+        </div>
+        <div class="card-meta">
+          <div class="card-meta-row"><span class="version">v0.1.0</span><span class="path">.claude/skills/design-approval-photo/</span></div>
+          <div class="api-tags">
+            <span class="api-tag ai">Claude Vision</span>
+            <span class="api-tag ai">Gemini Image Gen</span>
+            <span class="api-tag svc">HubSpot</span>
+          </div>
+        </div>
+
+        <div class="card-detail">
+          <div class="detail-section">
+            <h4>Inputs</h4>
+            <table class="detail-table">
+              <tr><th>Input</th><th>Required</th><th>Source</th></tr>
+              <tr><td>Site photo (JPEG/PNG)</td><td>Yes</td><td>Surveyor or user-provided</td></tr>
+              <tr><td>PROJ number</td><td>Preferred</td><td>Pulls BOM data for equipment list</td></tr>
+              <tr><td>Manual equipment list</td><td>Fallback</td><td>If no PROJ/BOM available</td></tr>
+            </table>
+          </div>
+
+          <div class="detail-section">
+            <h4>Workflow</h4>
+            <div class="flow-diagram">1. Gather equipment (from BOM or manual list)
+  &darr;
+2. Analyze photo (AI vision: panel, wall space, obstructions)
+  &darr;
+3. Generate placements JSON (coordinates, sizes, labels)
+  &darr;
+4. Compose image: npx tsx scripts/compose-equipment-photo.ts
+  &darr;
+5. Review loop (user adjusts positions as needed)
+  &darr;
+6. Finalize &rarr; ~/Downloads/PROJ-XXXX-design-approval.png</div>
+          </div>
+
+          <div class="detail-section">
+            <h4>Equipment Types</h4>
+            <table class="detail-table">
+              <tr><th>Key</th><th>Color</th><th>Label</th><th>Size (ft)</th></tr>
+              <tr><td><code>battery</code></td><td style="color: #3B82F6;">Blue</td><td>PW3</td><td>2.8 &times; 1.1</td></tr>
+              <tr><td><code>expansion</code></td><td style="color: #60A5FA;">Light Blue</td><td>PW3 EXP</td><td>2.8 &times; 1.1</td></tr>
+              <tr><td><code>gateway</code></td><td style="color: #14B8A6;">Teal</td><td>GW3</td><td>0.8 &times; 0.5</td></tr>
+              <tr><td><code>backup_switch</code></td><td style="color: #F59E0B;">Amber</td><td>BU SW</td><td>1.0 &times; 0.6</td></tr>
+              <tr><td><code>main_panel</code></td><td style="color: #6B7280;">Gray</td><td>PANEL</td><td>2.0 &times; 1.0</td></tr>
+              <tr><td><code>disconnect</code></td><td style="color: #EF4444;">Red</td><td>DISC</td><td>0.6 &times; 0.4</td></tr>
+              <tr><td><code>meter</code></td><td style="color: #22C55E;">Green</td><td>METER</td><td>0.8 &times; 0.5</td></tr>
+              <tr><td><code>ev_charger</code></td><td style="color: #A855F7;">Purple</td><td>EV</td><td>1.0 &times; 0.8</td></tr>
+            </table>
+          </div>
+
+          <div class="detail-section">
+            <h4>Placement Rules</h4>
+            <ul>
+              <li>Main panel is the anchor — position everything relative to it</li>
+              <li>36" front clearance for panels, batteries, disconnects (NEC 110.26)</li>
+              <li>Batteries within 10 ft of panel, 3 ft from gas appliances</li>
+              <li>Gateway within 5 ft of panel, needs WiFi coverage</li>
+              <li>AC disconnect exterior, within line of sight of utility meter</li>
+              <li>Stacking: max ~7 ft from floor for top battery, ~260 lbs combined</li>
+            </ul>
+          </div>
+
+          <div class="detail-section">
+            <h4>Equipment Asset Generation</h4>
+            <table class="detail-table">
+              <tr><th>Generator</th><th>Style</th><th>Requires</th></tr>
+              <tr><td>Gemini AI (recommended)</td><td>Photorealistic product photos</td><td><code>GEMINI_API_KEY</code> in <code>.env.local</code></td></tr>
+              <tr><td>SVG fallback</td><td>Diagram-style illustrations</td><td>No API key needed</td></tr>
+            </table>
+            <ul style="margin-top: 0.5rem;">
+              <li><code>npx tsx scripts/generate-equipment-assets-gemini.ts</code> &mdash; all 10 assets (or <code>--key battery</code> for one)</li>
+              <li><code>npx tsx scripts/generate-equipment-assets.ts</code> &mdash; SVG fallback</li>
+              <li>Gemini generates on white background, auto-removes background for transparent PNGs</li>
+            </ul>
+          </div>
+
+          <div class="detail-section">
+            <h4>Supporting Files</h4>
+            <ul>
+              <li><code>equipment-config.ts</code> — Visual definitions and BOM-to-key resolver</li>
+              <li><code>placement-rules.md</code> — Full placement rules reference</li>
+              <li><code>equipment-svg-renders.ts</code> — SVG render templates</li>
+              <li><code>scripts/compose-equipment-photo.ts</code> — Image composition script</li>
+              <li><code>scripts/generate-equipment-assets-gemini.ts</code> — Gemini AI asset generator</li>
+              <li><code>scripts/generate-equipment-assets.ts</code> — SVG fallback generator</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Deploy -->
+      <div class="card" style="--card-accent: var(--accent-emerald);" onclick="this.classList.toggle('open')">
+        <span class="expand-icon">&#9654;</span>
+        <div class="card-header">
+          <span class="card-name">Deploy</span>
+          <span class="card-id">/deploy</span>
+        </div>
+        <p class="card-desc">Run preflight checks, build, and deploy to Vercel. Handles the full deployment pipeline with validation gates.</p>
+        <div class="triggers">
+          <span class="trigger">deploy</span>
+          <span class="trigger">push to production</span>
+        </div>
+        <div class="card-meta">
+          <div class="card-meta-row"><span class="badge badge-interactive">No AI model</span><span class="path">.claude/skills/deploy/</span></div>
+          <div class="api-tags">
+            <span class="api-tag svc">Vercel</span>
+            <span class="api-tag">Shell only</span>
+          </div>
+        </div>
+
+        <div class="card-detail">
+          <div class="detail-section">
+            <h4>Steps</h4>
+            <div class="flow-diagram">1. Check for uncommitted changes (warn &rarr; offer /commit)
+  &darr;
+2. npm run preflight (fail = stop)
+  &darr;
+3. npm run build (fail = stop)
+  &darr;
+4. npx vercel@latest --prod --yes
+  &darr;
+5. Verify deployment URL is accessible</div>
+          </div>
+
+          <div class="detail-section">
+            <h4>Notes</h4>
+            <ul>
+              <li>Uses <code>disable-model-invocation: true</code> — runs shell commands only</li>
+              <li>Stops at first failure; does not skip steps</li>
+              <li>Common build issues: TypeScript errors, missing env vars, Prisma schema drift</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- New Dashboard -->
+      <div class="card" style="--card-accent: var(--accent-cyan);" onclick="this.classList.toggle('open')">
+        <span class="expand-icon">&#9654;</span>
+        <div class="card-header">
+          <span class="card-name">New Dashboard</span>
+          <span class="card-id">/new-dashboard</span>
+        </div>
+        <p class="card-desc">Scaffold a new dashboard page with DashboardShell, data fetching, and metric cards. Follows project conventions automatically.</p>
+        <div class="triggers">
+          <span class="trigger">create a new dashboard</span>
+          <span class="trigger">scaffold dashboard page</span>
+        </div>
+        <div class="card-meta">
+          <div class="card-meta-row"><span class="badge badge-interactive">No AI model</span><span class="path">.claude/skills/new-dashboard/</span></div>
+          <div class="api-tags">
+            <span class="api-tag">Scaffolding only</span>
+          </div>
+        </div>
+
+        <div class="card-detail">
+          <div class="detail-section">
+            <h4>Scaffolding Steps</h4>
+            <ul>
+              <li>Parse argument into name, slug (kebab-case), component name (PascalCase)</li>
+              <li>Create page at <code>src/app/dashboards/{slug}/page.tsx</code></li>
+              <li>Apply template with DashboardShell, accentColor, API endpoint</li>
+              <li>Ask user about data source (HubSpot, Zuper, custom API)</li>
+              <li>Add to navigation in the relevant suite page</li>
+            </ul>
+          </div>
+
+          <div class="detail-section">
+            <h4>Conventions Applied</h4>
+            <ul>
+              <li>Wrap in <code>&lt;DashboardShell&gt;</code> with title, accent, export</li>
+              <li>Use theme tokens (<code>bg-surface</code>, <code>text-foreground</code>)</li>
+              <li>Use <code>StatCard</code>/<code>MiniStat</code>/<code>MetricCard</code> from MetricCard.tsx</li>
+              <li><code>useActivityTracking()</code> for page view tracking</li>
+              <li><code>useSSE()</code> for real-time updates</li>
+              <li><code>stagger-grid</code> class for animated grid entry</li>
+              <li><code>key={String(value)}</code> on metrics for flash animation</li>
+            </ul>
+          </div>
+
+          <div class="detail-section">
+            <h4>Accent Colors</h4>
+            <p style="display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.3rem;">
+              <span style="background: #f97316; color: white; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.75rem;">orange</span>
+              <span style="background: #22c55e; color: white; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.75rem;">green</span>
+              <span style="background: #ef4444; color: white; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.75rem;">red</span>
+              <span style="background: #3b82f6; color: white; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.75rem;">blue</span>
+              <span style="background: #a855f7; color: white; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.75rem;">purple</span>
+              <span style="background: #34d399; color: white; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.75rem;">emerald</span>
+              <span style="background: #06b6d4; color: white; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.75rem;">cyan</span>
+              <span style="background: #eab308; color: white; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.75rem;">yellow</span>
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Release Notes -->
+      <div class="card" style="--card-accent: var(--accent-yellow);" onclick="this.classList.toggle('open')">
+        <span class="expand-icon">&#9654;</span>
+        <div class="card-header">
+          <span class="card-name">Release Notes</span>
+          <span class="card-id">/release-notes</span>
+        </div>
+        <p class="card-desc">Generate release notes from git commits for preparing a release, changelog, or deployment summary.</p>
+        <div class="triggers">
+          <span class="trigger">release notes</span>
+          <span class="trigger">prepare changelog</span>
+          <span class="trigger">deployment summary</span>
+        </div>
+        <div class="card-meta">
+          <div class="card-meta-row"><span class="badge badge-interactive">No AI model</span><span class="path">.claude/skills/release-notes/</span></div>
+          <div class="api-tags">
+            <span class="api-tag">Git only</span>
+          </div>
+        </div>
+
+        <div class="card-detail">
+          <div class="detail-section">
+            <h4>Output Format</h4>
+            <div class="flow-diagram">## Release Notes — [date]
+
+### New Features
+- [from feat: commits]
+
+### Bug Fixes
+- [from fix: commits]
+
+### Improvements
+- [refactors, performance, UX]
+
+### Infrastructure
+- [build, deploy, CI]</div>
+          </div>
+
+          <div class="detail-section">
+            <h4>Rules</h4>
+            <ul>
+              <li>Group commits by type (feat, fix, refactor, chore)</li>
+              <li>Write user-friendly descriptions (not raw commit messages)</li>
+              <li>Combine related commits into single bullet points</li>
+              <li>Highlight breaking changes at the top</li>
+              <li>Skip merge commits and trivial changes</li>
+              <li>Include dashboard names if mentioned in commits</li>
+              <li>Defaults to commits since last tag, or last 20 if no tags</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <footer>
+      PB Operations Suite &middot; Generated 2026-03-03 &middot; 12 skills across 3 categories &middot; Click any card to expand
+    </footer>
+  </div>
+</body>
+</html>

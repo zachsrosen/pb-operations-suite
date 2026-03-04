@@ -166,7 +166,8 @@ interface PushEditDraft {
 }
 
 const ADMIN_ROLES = ["ADMIN", "OWNER", "MANAGER"];
-const SYSTEM_OPTIONS = ["INTERNAL", "ZOHO", "HUBSPOT", "ZUPER", "QUICKBOOKS"] as const;
+// QuickBooks deactivated — re-add "QUICKBOOKS" to reactivate
+const SYSTEM_OPTIONS = ["INTERNAL", "ZOHO", "HUBSPOT", "ZUPER"] as const;
 const CATEGORIES = FORM_CATEGORIES;
 
 function money(value: number | null): string {
@@ -573,7 +574,7 @@ export default function CatalogPage() {
   );
 
   const CLEANUP_CONFIRM_TEXT = "CLEANUP";
-  const CLEANUP_LINKABLE_SOURCES = ["hubspot", "zuper", "zoho", "quickbooks"] as const;
+  const CLEANUP_LINKABLE_SOURCES = ["hubspot", "zuper", "zoho"] as const;
 
   function openCleanupModal(skuId: string) {
     setCleanupSkuId(skuId);
@@ -984,12 +985,7 @@ export default function CatalogPage() {
                               className="w-full rounded border border-t-border bg-surface px-2 py-1 text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
                               placeholder="Zuper Item ID"
                             />
-                            <input
-                              value={skuEditDraft.quickbooksItemId}
-                              onChange={(e) => setSkuEditDraft((prev) => prev ? { ...prev, quickbooksItemId: e.target.value } : prev)}
-                              className="w-full rounded border border-t-border bg-surface px-2 py-1 text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
-                              placeholder="QuickBooks Item ID"
-                            />
+                            {/* QuickBooks deactivated — input hidden */}
                             <label className="inline-flex items-center gap-1 text-[11px] text-muted">
                               <input
                                 type="checkbox"
@@ -1005,13 +1001,12 @@ export default function CatalogPage() {
                               <SyncDot label="Zoho" ok={sku.syncHealth?.zoho ?? Boolean(sku.zohoItemId)} />
                               <SyncDot label="HS" ok={sku.syncHealth?.hubspot ?? Boolean(sku.hubspotProductId)} />
                               <SyncDot label="Zu" ok={sku.syncHealth?.zuper ?? Boolean(sku.zuperItemId)} />
-                              <SyncDot label="QB" ok={sku.syncHealth?.quickbooks ?? Boolean(sku.quickbooksItemId)} />
                             </div>
                             <div className="text-[11px] text-muted">
                               Zoho: {sku.zohoItemId || "—"} · HS: {sku.hubspotProductId || "—"}
                             </div>
                             <div className="text-[11px] text-muted">
-                              Zu: {sku.zuperItemId || "—"} · QB: {sku.quickbooksItemId || "—"}
+                              Zu: {sku.zuperItemId || "—"}
                             </div>
                           </div>
                         )}
@@ -1028,23 +1023,12 @@ export default function CatalogPage() {
       {/* Sync Tab */}
       {tab === "sync" && (
         <div className="space-y-4">
-          <div className="flex items-center justify-end">
-            <button
-              onClick={handleAutoLinkQuickBooks}
-              disabled={linkingQuickBooks}
-              className="rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-3 py-1.5 text-xs font-medium text-cyan-300 hover:bg-cyan-500/20 disabled:opacity-50"
-            >
-              {linkingQuickBooks ? "Linking QuickBooks…" : "Auto-Link QuickBooks IDs"}
-            </button>
-          </div>
-
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-8 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-3">
             <MetricCard label="Total" value={skuSummary.total} />
             <MetricCard label="Fully Synced" value={skuSummary.fullySynced} />
             <MetricCard label="Missing Zoho" value={skuSummary.missingZoho} />
             <MetricCard label="Missing HubSpot" value={skuSummary.missingHubspot} />
             <MetricCard label="Missing Zuper" value={skuSummary.missingZuper} />
-            <MetricCard label="Missing QuickBooks" value={skuSummary.missingQuickbooks} />
             <MetricCard label="Duplicate Groups" value={skuSummary.duplicateGroups} />
             <MetricCard label="Duplicate Rows" value={skuSummary.duplicateRows} />
             <MetricCard label="With Pricing" value={skuSummary.withPricing} />
@@ -1089,10 +1073,6 @@ export default function CatalogPage() {
                           <span className={`w-1.5 h-1.5 rounded-full ${cat.hasZuper === cat.total ? "bg-green-500" : "bg-red-400"}`} />
                           Zu {cat.hasZuper}/{cat.total}
                         </div>
-                        <div className="flex items-center gap-1">
-                          <span className={`w-1.5 h-1.5 rounded-full ${(cat.hasQuickbooks ?? 0) === cat.total ? "bg-green-500" : "bg-red-400"}`} />
-                          QB {cat.hasQuickbooks ?? 0}/{cat.total}
-                        </div>
                       </div>
                       <div className="text-xs text-muted">
                         {syncPct}% synced · {cat.withPricing} with pricing
@@ -1130,7 +1110,7 @@ export default function CatalogPage() {
                     if (!sku.syncHealth?.zoho && !sku.zohoItemId) missing.push("Zoho");
                     if (!sku.syncHealth?.hubspot && !sku.hubspotProductId) missing.push("HubSpot");
                     if (!sku.syncHealth?.zuper && !sku.zuperItemId) missing.push("Zuper");
-                    if (!sku.syncHealth?.quickbooks && !sku.quickbooksItemId) missing.push("QuickBooks");
+                    // QuickBooks deactivated
                     return (
                       <tr key={sku.id} className="border-b border-t-border last:border-b-0 hover:bg-surface-2 transition-colors align-top">
                         <td className="px-4 py-3 text-xs text-muted">{sku.category}</td>
@@ -1151,7 +1131,6 @@ export default function CatalogPage() {
                           <div>Zoho: {sku.zohoItemId || "—"}</div>
                           <div>HubSpot: {sku.hubspotProductId || "—"}</div>
                           <div>Zuper: {sku.zuperItemId || "—"}</div>
-                          <div>QuickBooks: {sku.quickbooksItemId || "—"}</div>
                         </td>
                       </tr>
                     );
@@ -1178,7 +1157,7 @@ export default function CatalogPage() {
                           {entry.brand} — {entry.model}
                           {entry.sku ? ` · SKU ${entry.sku}` : ""}
                           {entry.vendorPartNumber ? ` · VP ${entry.vendorPartNumber}` : ""}
-                          {entry.quickbooksItemId ? ` · QB ${entry.quickbooksItemId}` : " · QB —"}
+                          {/* QuickBooks deactivated */}
                         </div>
                       ))}
                     </div>
@@ -1233,9 +1212,7 @@ export default function CatalogPage() {
                         )}
                         {p.hardToProcure && <span className="text-amber-400">Hard to Procure</span>}
                       </div>
-                      {p.quickbooksItemId && (
-                        <div className="text-xs text-cyan-300/90 mt-0.5">QB: {p.quickbooksItemId}</div>
-                      )}
+                      {/* QuickBooks deactivated */}
                     </div>
                     <div className="flex flex-wrap gap-1">
                       {p.systems.map((s) => (
@@ -1461,7 +1438,7 @@ export default function CatalogPage() {
                         quickbooks: "quickbooksItemId",
                       } as const;
                       const hasLink = Boolean(cleanupSku[sourceField[source]]);
-                      const sourceLabel = source === "hubspot" ? "HubSpot" : source === "quickbooks" ? "QuickBooks" : source.charAt(0).toUpperCase() + source.slice(1);
+                      const sourceLabel = source === "hubspot" ? "HubSpot" : source.charAt(0).toUpperCase() + source.slice(1);
                       return (
                         <label key={source} className={`flex items-center gap-2 text-xs ${hasLink ? "text-foreground" : "text-muted/60"}`}>
                           <input
@@ -1489,7 +1466,7 @@ export default function CatalogPage() {
                 <div>Zoho: {cleanupSku.zohoItemId || "—"}</div>
                 <div>HubSpot: {cleanupSku.hubspotProductId || "—"}</div>
                 <div>Zuper: {cleanupSku.zuperItemId || "—"}</div>
-                <div>QuickBooks: {cleanupSku.quickbooksItemId || "—"}</div>
+                {/* QuickBooks deactivated */}
               </div>
 
               {/* Confirmation */}

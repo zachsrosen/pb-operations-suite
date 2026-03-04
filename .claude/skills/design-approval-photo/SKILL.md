@@ -204,3 +204,36 @@ See `placement-rules.md` for the full reference. Key points:
 - **Multiple batteries**: For 2+ Powerwalls, check the stacking patterns in `placement-rules.md`. Stacked is preferred when horizontal space is limited; side-by-side when the wall is wide enough (~5 ft minimum span for two units).
 - **Expansion kits**: PW3 Expansion Kits are the same physical size as a Powerwall 3 and mount the same way. Use `key: "expansion"` with the lighter blue color to visually distinguish them.
 - **Existing equipment**: Always include the main panel as a reference rectangle even though it already exists. This helps the user see the spatial relationship. Use `key: "main_panel"` with the gray color.
+
+---
+
+## Equipment Asset Generation
+
+Equipment overlay images are stored as PNGs in the `assets/` directory. Two generators are available:
+
+### Gemini AI (photorealistic — recommended)
+
+Requires `GEMINI_API_KEY` in `.env.local`. Uses Google Gemini image generation to produce realistic product photos.
+
+```bash
+# Generate all 10 equipment assets
+npx tsx scripts/generate-equipment-assets-gemini.ts
+
+# Regenerate a single asset (useful for iteration)
+npx tsx scripts/generate-equipment-assets-gemini.ts --key battery
+
+# Use a specific Gemini model
+npx tsx scripts/generate-equipment-assets-gemini.ts --model gemini-2.0-flash-exp
+```
+
+The script generates images on white backgrounds and automatically removes the background to create transparent PNGs for clean compositing.
+
+### SVG fallback (diagram-style)
+
+No API key needed. Generates SVG-based illustrations rendered to PNG via Sharp.
+
+```bash
+npx tsx scripts/generate-equipment-assets.ts
+```
+
+Both scripts output to the same `assets/` directory — the newer output overwrites the older.

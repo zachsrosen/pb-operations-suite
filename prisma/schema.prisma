@@ -1209,3 +1209,24 @@ model ChatMessage {
   @@index([userId, dealId])
   @@index([createdAt])
 }
+
+// ===========================================
+// CATALOG DEDUP AUDIT
+// ===========================================
+
+model ZohoDedupRun {
+  id            String    @id @default(cuid())
+  tokenHash     String    @unique
+  status        String    @default("pending") // "pending" | "completed" | "failed"
+  clustersInput Json
+  outcomes      Json?
+  itemsDeleted  Int       @default(0)
+  itemsSkipped  Int       @default(0)
+  itemsFailed   Int       @default(0)
+  executedBy    String
+  createdAt     DateTime  @default(now())
+  completedAt   DateTime?
+
+  @@index([executedBy])
+  @@index([createdAt])
+}

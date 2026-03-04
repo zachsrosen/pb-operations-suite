@@ -75,7 +75,8 @@ export async function GET(request: NextRequest) {
   const limitRaw = Number(request.nextUrl.searchParams.get("limit") || 200);
   const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(Math.trunc(limitRaw), 1), 5000) : 200;
 
-  let sources: CatalogProductSource[] = ["HUBSPOT", "ZUPER", "ZOHO", "QUICKBOOKS", "OPENSOLAR"];
+  // QuickBooks deactivated — re-add "QUICKBOOKS" to reactivate
+  let sources: CatalogProductSource[] = ["HUBSPOT", "ZUPER", "ZOHO", "OPENSOLAR"];
   if (sourceParam) {
     const parsed = sourceParam
       .split(",")
