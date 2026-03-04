@@ -1022,10 +1022,7 @@ export default function CatalogPage() {
                               <SyncDot label="Zu" ok={sku.syncHealth?.zuper ?? Boolean(sku.zuperItemId)} />
                             </div>
                             <div className="text-[11px] text-muted">
-                              Zoho: {sku.zohoItemId || "—"} · HS: {sku.hubspotProductId || "—"}
-                            </div>
-                            <div className="text-[11px] text-muted">
-                              Zu: {sku.zuperItemId || "—"}
+                              Zoho: {sku.zohoItemId || "—"} · HS: {sku.hubspotProductId || "—"} · Zu: {sku.zuperItemId || "—"}
                             </div>
                           </div>
                         )}
