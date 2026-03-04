@@ -39,8 +39,12 @@ export interface UpsertZohoItemInput {
   sku?: string | null;
   unitLabel?: string | null;
   vendorName?: string | null;
+  vendorPartNumber?: string | null;
   sellPrice?: number | null;
   unitCost?: number | null;
+  weight?: number | null;
+  length?: number | null;
+  width?: number | null;
 }
 
 export interface UpsertZohoItemResult {
@@ -73,8 +77,24 @@ interface ZohoDeleteItemResponse {
   message?: string;
 }
 
+interface ZohoUpdateItemResponse {
+  code?: number;
+  message?: string;
+  item?: {
+    item_id?: string;
+    name?: string;
+  };
+}
+
 export interface DeleteZohoItemResult {
   status: "deleted" | "not_found" | "failed";
+  message: string;
+  httpStatus?: number;
+}
+
+export interface UpdateZohoItemResult {
+  status: "updated" | "not_found" | "failed";
+  zohoItemId: string;
   message: string;
   httpStatus?: number;
 }
@@ -563,6 +583,20 @@ export class ZohoInventoryClient {
   /** Load all Zoho items into a module-level cache (60 min TTL).
    *  Coalesces concurrent callers so only one listItems() request is in flight
    *  at a time — prevents bursting Zoho's concurrent-request limit on cold start. */
+  async getItemById(itemId: string): Promise<ZohoInventoryItem | null> {
+    const normalizedId = trimOrUndefined(itemId);
+    if (!normalizedId) return null;
+
+    try {
+      const response = await this.request<{ item?: ZohoInventoryItem }>(
+        `/items/${encodeURIComponent(normalizedId)}`
+      );
+      return response.item ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   async getItemsForMatching(): Promise<ZohoInventoryItem[]> {
     if (_itemCache && Date.now() < _itemCache.expiresAt) return _itemCache.items;
     // If a fetch is already in flight, piggyback on it instead of starting a second one
@@ -651,6 +685,7 @@ export class ZohoInventoryClient {
     const description = trimOrUndefined(input.description);
     const unitLabel = trimOrUndefined(input.unitLabel);
     const vendorName = trimOrUndefined(input.vendorName);
+    const vendorPartNumber = trimOrUndefined(input.vendorPartNumber);
 
     const name = `${brand || ""} ${model || ""}`.trim();
     if (!name) {
@@ -682,23 +717,24 @@ export class ZohoInventoryClient {
       return { zohoItemId: byName.item_id, created: false };
     }
 
+    const partNumber = vendorPartNumber || model;
     const corePayload: Record<string, unknown> = {
       name,
       ...(sku ? { sku } : {}),
       ...(description ? { description } : {}),
-      ...(model ? { part_number: model } : {}),
+      ...(partNumber ? { part_number: partNumber } : {}),
     };
 
+    const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
     const optionalPayload: Record<string, unknown> = {
       ...corePayload,
-      ...(typeof input.sellPrice === "number" && Number.isFinite(input.sellPrice)
-        ? { rate: input.sellPrice }
-        : {}),
-      ...(typeof input.unitCost === "number" && Number.isFinite(input.unitCost)
-        ? { purchase_rate: input.unitCost }
-        : {}),
+      ...(isNum(input.sellPrice) ? { rate: input.sellPrice } : {}),
+      ...(isNum(input.unitCost) ? { purchase_rate: input.unitCost } : {}),
       ...(vendorName ? { vendor_name: vendorName } : {}),
       ...(unitLabel ? { unit: unitLabel } : {}),
+      ...(isNum(input.weight) ? { weight: input.weight } : {}),
+      ...(isNum(input.length) ? { length: input.length } : {}),
+      ...(isNum(input.width) ? { width: input.width } : {}),
     };
 
     const hasOptionalFields = Object.keys(optionalPayload).length > Object.keys(corePayload).length;
@@ -748,6 +784,51 @@ export class ZohoInventoryClient {
       }
       return {
         status: "failed",
+        message,
+        ...(typeof httpStatus === "number" ? { httpStatus } : {}),
+      };
+    }
+  }
+
+  async updateItem(
+    itemId: string,
+    fields: Record<string, unknown>,
+  ): Promise<UpdateZohoItemResult> {
+    const normalizedId = trimOrUndefined(itemId);
+    if (!normalizedId) {
+      return { status: "failed", zohoItemId: itemId, message: "Zoho item ID is required." };
+    }
+
+    if (Object.keys(fields).length === 0) {
+      return { status: "updated", zohoItemId: normalizedId, message: "No fields to update." };
+    }
+
+    try {
+      const response = await this.requestPut<ZohoUpdateItemResponse>(
+        `/items/${encodeURIComponent(normalizedId)}`,
+        fields,
+        { is_partial: "true" },
+      );
+
+      _itemCache = null;
+
+      const message = trimOrUndefined(response.message) || "Zoho item updated.";
+      return { status: "updated", zohoItemId: normalizedId, message };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Zoho update failed";
+      const statusMatch = /status:\s*(\d{3})/i.exec(message);
+      const httpStatus = statusMatch ? Number(statusMatch[1]) : undefined;
+      if (httpStatus === 404 || isNotFoundMessage(message)) {
+        return {
+          status: "not_found",
+          zohoItemId: normalizedId,
+          message,
+          ...(typeof httpStatus === "number" ? { httpStatus } : {}),
+        };
+      }
+      return {
+        status: "failed",
+        zohoItemId: normalizedId,
         message,
         ...(typeof httpStatus === "number" ? { httpStatus } : {}),
       };
@@ -1069,6 +1150,39 @@ export class ZohoInventoryClient {
     return this.handleResponse<T>(doFetch);
   }
 
+  private async requestPut<T>(path: string, body: unknown, extraParams?: Record<string, string>): Promise<T> {
+    if (!this.organizationId) {
+      throw new Error("ZOHO_INVENTORY_ORG_ID is not configured");
+    }
+
+    const params = new URLSearchParams();
+    params.set("organization_id", this.organizationId);
+    if (extraParams) {
+      for (const [k, v] of Object.entries(extraParams)) {
+        params.set(k, v);
+      }
+    }
+
+    const url = `${buildUrl(this.configuredBaseUrl, path)}?${params.toString()}`;
+
+    const doFetch = async (token: string) => {
+      return withTimeout(
+        fetch(url, {
+          method: "PUT",
+          headers: {
+            Authorization: `Zoho-oauthtoken ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(body),
+          cache: "no-store",
+        }),
+        this.timeoutMs
+      );
+    };
+
+    return this.handleResponse<T>(doFetch);
+  }
+
   private async requestDelete<T>(path: string): Promise<T> {
     if (!this.organizationId) {
       throw new Error("ZOHO_INVENTORY_ORG_ID is not configured");
@@ -1178,4 +1292,11 @@ export async function deleteZohoItem(
   itemId: string
 ): Promise<DeleteZohoItemResult> {
   return zohoInventory.deleteItem(itemId);
+}
+
+export async function updateZohoItem(
+  itemId: string,
+  fields: Record<string, unknown>,
+): Promise<UpdateZohoItemResult> {
+  return zohoInventory.updateItem(itemId, fields);
 }

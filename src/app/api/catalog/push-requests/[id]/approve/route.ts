@@ -350,6 +350,11 @@ export async function POST(
         hardToProcure: push.hardToProcure,
         length: push.length,
         width: push.width,
+        weight: push.weight,
+        vendorName: push.vendorName,
+        vendorPartNumber: push.vendorPartNumber,
+        unitLabel: push.unitLabel,
+        qboProductId: quickbooksMatch?.status === "matched" ? quickbooksMatch.externalId : null,
         additionalProperties: mappedMetadataProps,
       });
 
@@ -432,8 +437,12 @@ export async function POST(
         sku: push.sku || push.model,
         unitLabel: push.unitLabel,
         vendorName: push.vendorName,
+        vendorPartNumber: push.vendorPartNumber,
         sellPrice: push.sellPrice,
         unitCost: push.unitCost,
+        weight: push.weight,
+        length: push.length,
+        width: push.width,
       });
 
         await prisma.$transaction(async (tx) => {

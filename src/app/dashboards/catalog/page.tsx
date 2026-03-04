@@ -7,8 +7,10 @@ import DashboardShell from "@/components/DashboardShell";
 import { useToast } from "@/contexts/ToastContext";
 import { useSession } from "next-auth/react";
 import { FORM_CATEGORIES } from "@/lib/catalog-fields";
+import SyncModal from "@/components/catalog/SyncModal";
+import DedupPanel from "@/components/catalog/DedupPanel";
 
-type Tab = "skus" | "sync" | "pending";
+type Tab = "skus" | "sync" | "pending" | "dedup";
 
 interface SkuSyncHealth {
   internal: boolean;
@@ -89,6 +91,15 @@ interface PushRequest {
   category: string;
   unitSpec: string | null;
   unitLabel: string | null;
+  sku: string | null;
+  vendorName: string | null;
+  vendorPartNumber: string | null;
+  unitCost: number | null;
+  sellPrice: number | null;
+  hardToProcure: boolean;
+  length: number | null;
+  width: number | null;
+  weight: number | null;
   systems: string[];
   quickbooksItemId: string | null;
   requestedBy: string;
@@ -141,6 +152,15 @@ interface PushEditDraft {
   category: string;
   unitSpec: string;
   unitLabel: string;
+  sku: string;
+  vendorName: string;
+  vendorPartNumber: string;
+  unitCost: string;
+  sellPrice: string;
+  hardToProcure: boolean;
+  length: string;
+  width: string;
+  weight: string;
   systems: string[];
   quickbooksItemId: string;
 }
@@ -222,6 +242,9 @@ export default function CatalogPage() {
   const [savingPushEdit, setSavingPushEdit] = useState(false);
 
   const [cleanupEnabled, setCleanupEnabled] = useState(false);
+  const [syncEnabled, setSyncEnabled] = useState(false);
+  const [syncSkuId, setSyncSkuId] = useState<string | null>(null);
+  const [syncSkuName, setSyncSkuName] = useState("");
   const [cleanupSkuId, setCleanupSkuId] = useState<string | null>(null);
   const [cleanupRunning, setCleanupRunning] = useState(false);
   const [cleanupAction, setCleanupAction] = useState<"unlink" | "deactivate">("unlink");
@@ -267,6 +290,14 @@ export default function CatalogPage() {
     fetch("/api/products/cleanup/confirm", { method: "GET", cache: "no-store" })
       .then((r) => setCleanupEnabled(r.ok))
       .catch(() => setCleanupEnabled(false));
+  }, [isAdmin]);
+
+  // Check sync feature flag (reuse any linked SKU's sync preview endpoint — a 404 means disabled)
+  useEffect(() => {
+    if (!isAdmin) return;
+    fetch("/api/inventory/skus/sync-enabled", { cache: "no-store" })
+      .then((r) => setSyncEnabled(r.ok))
+      .catch(() => setSyncEnabled(false));
   }, [isAdmin]);
 
   // Fetch pending count for badge (runs once)
@@ -458,6 +489,15 @@ export default function CatalogPage() {
       category: push.category,
       unitSpec: push.unitSpec ?? "",
       unitLabel: push.unitLabel ?? "",
+      sku: push.sku ?? "",
+      vendorName: push.vendorName ?? "",
+      vendorPartNumber: push.vendorPartNumber ?? "",
+      unitCost: push.unitCost != null ? String(push.unitCost) : "",
+      sellPrice: push.sellPrice != null ? String(push.sellPrice) : "",
+      hardToProcure: push.hardToProcure ?? false,
+      length: push.length != null ? String(push.length) : "",
+      width: push.width != null ? String(push.width) : "",
+      weight: push.weight != null ? String(push.weight) : "",
       systems: [...push.systems],
       quickbooksItemId: push.quickbooksItemId ?? "",
     });
@@ -498,6 +538,15 @@ export default function CatalogPage() {
           category: pushEditDraft.category,
           unitSpec: pushEditDraft.unitSpec || null,
           unitLabel: pushEditDraft.unitLabel || null,
+          sku: pushEditDraft.sku || null,
+          vendorName: pushEditDraft.vendorName || null,
+          vendorPartNumber: pushEditDraft.vendorPartNumber || null,
+          unitCost: pushEditDraft.unitCost ? parseFloat(pushEditDraft.unitCost) : null,
+          sellPrice: pushEditDraft.sellPrice ? parseFloat(pushEditDraft.sellPrice) : null,
+          hardToProcure: pushEditDraft.hardToProcure,
+          length: pushEditDraft.length ? parseFloat(pushEditDraft.length) : null,
+          width: pushEditDraft.width ? parseFloat(pushEditDraft.width) : null,
+          weight: pushEditDraft.weight ? parseFloat(pushEditDraft.weight) : null,
           systems: pushEditDraft.systems,
           quickbooksItemId:
             pushEditDraft.systems.includes("QUICKBOOKS")
@@ -649,7 +698,7 @@ export default function CatalogPage() {
     <DashboardShell title="Equipment Catalog" accentColor="cyan">
       {/* Tabs + Submit button */}
       <div className="flex items-center gap-1 mb-6 border-b border-t-border">
-        {(["skus", "sync", "pending"] as Tab[]).map((t) => (
+        {(["skus", "sync", "pending", ...(syncEnabled ? ["dedup" as Tab] : [])] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -661,6 +710,7 @@ export default function CatalogPage() {
           >
             {t === "skus" && "Equipment SKUs"}
             {t === "sync" && "Sync Health"}
+            {t === "dedup" && "Zoho Dedup"}
             {t === "pending" && (
               <span className="flex items-center gap-2">
                 Pending Approvals
@@ -827,6 +877,17 @@ export default function CatalogPage() {
                               >
                                 Full Edit
                               </Link>
+                              {syncEnabled && (sku.zohoItemId || sku.hubspotProductId || sku.zuperItemId) && (
+                                <button
+                                  onClick={() => {
+                                    setSyncSkuId(sku.id);
+                                    setSyncSkuName(`${sku.brand} ${sku.model}`);
+                                  }}
+                                  className="text-orange-400 hover:text-orange-300"
+                                >
+                                  Sync
+                                </button>
+                              )}
                               {cleanupEnabled && (
                                 <button
                                   onClick={() => openCleanupModal(sku.id)}
@@ -1148,153 +1209,188 @@ export default function CatalogPage() {
                 <span>Date</span>
                 {isAdmin && <span>Actions</span>}
               </div>
-              {pendingPushes.map((p) => (
-                <div key={p.id} className={`grid ${isAdmin ? "grid-cols-[1fr_1fr_140px_100px_120px]" : "grid-cols-[1fr_1fr_140px_100px]"} gap-x-3 items-center border-b border-t-border last:border-b-0 px-4 py-3 text-sm hover:bg-surface-2 transition-colors`}>
-                  <div className="min-w-0">
-                    {editingPushId === p.id && pushEditDraft ? (
-                      <div className="space-y-1.5">
-                        <input
-                          value={pushEditDraft.brand}
-                          onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, brand: e.target.value } : prev)}
-                          className="w-full rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
-                          placeholder="Brand"
-                        />
-                        <input
-                          value={pushEditDraft.model}
-                          onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, model: e.target.value } : prev)}
-                          className="w-full rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
-                          placeholder="Model"
-                        />
-                        <input
-                          value={pushEditDraft.description}
-                          onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, description: e.target.value } : prev)}
-                          className="w-full rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
-                          placeholder="Description"
-                        />
-                        <div className="flex gap-1.5">
-                          <select
-                            value={pushEditDraft.category}
-                            onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, category: e.target.value } : prev)}
-                            className="w-full rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
-                          >
+              {pendingPushes.map((p) => {
+                const isEditing = editingPushId === p.id && pushEditDraft;
+                const inputCls = "w-full rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500";
+                const labelCls = "text-[10px] uppercase tracking-wide text-muted mb-0.5";
+                return (
+                <div key={p.id} className="border-b border-t-border last:border-b-0">
+                  {/* Summary row */}
+                  <div className={`grid ${isAdmin ? "grid-cols-[1fr_1fr_140px_100px_120px]" : "grid-cols-[1fr_1fr_140px_100px]"} gap-x-3 items-center px-4 py-3 text-sm hover:bg-surface-2 transition-colors`}>
+                    <div className="min-w-0">
+                      <div className="font-medium text-foreground truncate">{p.brand} — {p.model}</div>
+                      <div className="text-xs text-muted truncate">{p.description}</div>
+                      <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5 text-xs text-muted/70">
+                        <span>{p.category}</span>
+                        {p.sku && <span>SKU: {p.sku}</span>}
+                        {p.vendorName && <span>Vendor: {p.vendorName}</span>}
+                        {(p.unitCost != null || p.sellPrice != null) && (
+                          <span>
+                            {p.unitCost != null ? `Cost: ${money(p.unitCost)}` : ""}
+                            {p.unitCost != null && p.sellPrice != null ? " / " : ""}
+                            {p.sellPrice != null ? `Sell: ${money(p.sellPrice)}` : ""}
+                          </span>
+                        )}
+                        {p.hardToProcure && <span className="text-amber-400">Hard to Procure</span>}
+                      </div>
+                      {p.quickbooksItemId && (
+                        <div className="text-xs text-cyan-300/90 mt-0.5">QB: {p.quickbooksItemId}</div>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {p.systems.map((s) => (
+                        <span key={s} className="inline-flex items-center rounded-md bg-cyan-500/15 px-1.5 py-0.5 text-xs font-medium text-cyan-400 ring-1 ring-cyan-500/30">
+                          {formatSystemLabel(s)}
+                        </span>
+                      ))}
+                    </div>
+                    <span className="text-xs text-muted truncate">{p.requestedBy}</span>
+                    <span className="text-xs text-muted">{new Date(p.createdAt).toLocaleDateString()}</span>
+                    {isAdmin && (
+                      <div className="flex items-center gap-2">
+                        {isEditing ? (
+                          <>
+                            <button onClick={savePushEdit} disabled={savingPushEdit} className="text-xs text-cyan-400 hover:text-cyan-300 hover:underline font-medium transition-colors disabled:opacity-50">
+                              {savingPushEdit ? "Saving…" : "Save"}
+                            </button>
+                            <button onClick={cancelPushEdit} disabled={savingPushEdit} className="text-xs text-muted hover:text-foreground hover:underline transition-colors">Cancel</button>
+                          </>
+                        ) : (
+                          <>
+                            <button onClick={() => beginPushEdit(p)} className="text-xs text-cyan-400 hover:text-cyan-300 hover:underline transition-colors">Edit</button>
+                            <button onClick={() => handleApprove(p.id)} className="text-xs text-green-400 hover:text-green-300 hover:underline font-medium transition-colors">Approve</button>
+                            <button onClick={() => handleReject(p.id)} className="text-xs text-red-400 hover:text-red-300 hover:underline transition-colors">Reject</button>
+                          </>
+                        )}
+                      </div>
+                    )}
+                    {!isAdmin && <span className="text-xs text-muted italic">Awaiting admin</span>}
+                  </div>
+
+                  {/* Expandable edit panel */}
+                  {isEditing && pushEditDraft && (
+                    <div className="border-t border-t-border bg-surface-2 px-4 py-4 space-y-3">
+                      {/* Identity */}
+                      <div>
+                        <div className={labelCls}>Identity</div>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          <input value={pushEditDraft.brand} onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, brand: e.target.value } : prev)} className={inputCls} placeholder="Brand *" />
+                          <input value={pushEditDraft.model} onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, model: e.target.value } : prev)} className={inputCls} placeholder="Model *" />
+                          <input value={pushEditDraft.sku} onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, sku: e.target.value } : prev)} className={inputCls} placeholder="SKU" />
+                          <select value={pushEditDraft.category} onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, category: e.target.value } : prev)} className={inputCls}>
                             {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
                           </select>
-                          <input
-                            value={pushEditDraft.unitSpec}
-                            onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, unitSpec: e.target.value } : prev)}
-                            className="w-20 rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
-                            placeholder="Spec"
-                          />
-                          <input
-                            value={pushEditDraft.unitLabel}
-                            onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, unitLabel: e.target.value } : prev)}
-                            className="w-16 rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
-                            placeholder="Unit"
-                          />
+                        </div>
+                      </div>
+
+                      {/* Description */}
+                      <div>
+                        <div className={labelCls}>Description</div>
+                        <textarea
+                          value={pushEditDraft.description}
+                          onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, description: e.target.value } : prev)}
+                          className={`${inputCls} resize-none`}
+                          rows={2}
+                          placeholder="Description *"
+                        />
+                      </div>
+
+                      {/* Vendor */}
+                      <div>
+                        <div className={labelCls}>Vendor</div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <input value={pushEditDraft.vendorName} onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, vendorName: e.target.value } : prev)} className={inputCls} placeholder="Vendor Name" />
+                          <input value={pushEditDraft.vendorPartNumber} onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, vendorPartNumber: e.target.value } : prev)} className={inputCls} placeholder="Vendor Part #" />
+                        </div>
+                      </div>
+
+                      {/* Pricing & Units */}
+                      <div>
+                        <div className={labelCls}>Pricing & Units</div>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          <div className="relative">
+                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted">$</span>
+                            <input value={pushEditDraft.unitCost} onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, unitCost: e.target.value } : prev)} className={`${inputCls} pl-5`} placeholder="Unit Cost" type="number" step="0.01" />
+                          </div>
+                          <div className="relative">
+                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted">$</span>
+                            <input value={pushEditDraft.sellPrice} onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, sellPrice: e.target.value } : prev)} className={`${inputCls} pl-5`} placeholder="Sell Price" type="number" step="0.01" />
+                          </div>
+                          <input value={pushEditDraft.unitSpec} onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, unitSpec: e.target.value } : prev)} className={inputCls} placeholder="Unit Spec (e.g. 410)" />
+                          <input value={pushEditDraft.unitLabel} onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, unitLabel: e.target.value } : prev)} className={inputCls} placeholder="Unit Label (e.g. W)" />
+                        </div>
+                      </div>
+
+                      {/* Dimensions */}
+                      <div>
+                        <div className={labelCls}>Physical</div>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 items-center">
+                          <input value={pushEditDraft.length} onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, length: e.target.value } : prev)} className={inputCls} placeholder="Length (in)" type="number" step="0.1" />
+                          <input value={pushEditDraft.width} onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, width: e.target.value } : prev)} className={inputCls} placeholder="Width (in)" type="number" step="0.1" />
+                          <input value={pushEditDraft.weight} onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, weight: e.target.value } : prev)} className={inputCls} placeholder="Weight (lbs)" type="number" step="0.1" />
+                          <label className="inline-flex items-center gap-1.5 text-xs text-foreground cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={pushEditDraft.hardToProcure}
+                              onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, hardToProcure: e.target.checked } : prev)}
+                              className="rounded border-t-border"
+                            />
+                            Hard to Procure
+                          </label>
+                        </div>
+                      </div>
+
+                      {/* Systems */}
+                      <div>
+                        <div className={labelCls}>Target Systems</div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {SYSTEM_OPTIONS.map((system) => {
+                            const checked = pushEditDraft.systems.includes(system);
+                            return (
+                              <label
+                                key={system}
+                                className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs cursor-pointer ring-1 ${checked ? "bg-cyan-500/15 text-cyan-400 ring-cyan-500/30" : "bg-surface text-muted ring-[color:var(--border)]"}`}
+                              >
+                                <input type="checkbox" checked={checked} onChange={() => togglePushSystem(system)} className="sr-only" />
+                                {formatSystemLabel(system)}
+                              </label>
+                            );
+                          })}
                         </div>
                         {pushEditDraft.systems.includes("QUICKBOOKS") && (
                           <input
                             value={pushEditDraft.quickbooksItemId}
                             onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, quickbooksItemId: e.target.value } : prev)}
-                            className="w-full rounded border border-t-border bg-surface px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                            className={`${inputCls} mt-2 max-w-xs`}
                             placeholder="QuickBooks Item ID (optional)"
                           />
                         )}
                       </div>
-                    ) : (
-                      <>
-                        <div className="font-medium text-foreground truncate">{p.brand} — {p.model}</div>
-                        <div className="text-xs text-muted truncate">{p.description}</div>
-                        <div className="text-xs text-muted/60 mt-0.5">{p.category}</div>
-                        {p.quickbooksItemId && (
-                          <div className="text-xs text-cyan-300/90 mt-0.5">
-                            QuickBooks: {p.quickbooksItemId}
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap gap-1">
-                    {editingPushId === p.id && pushEditDraft ? (
-                      SYSTEM_OPTIONS.map((system) => {
-                        const checked = pushEditDraft.systems.includes(system);
-                        return (
-                          <label
-                            key={system}
-                            className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs ring-1 ${checked ? "bg-cyan-500/15 text-cyan-400 ring-cyan-500/30" : "bg-surface text-muted ring-[color:var(--border)]"}`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() => togglePushSystem(system)}
-                            />
-                            {formatSystemLabel(system)}
-                          </label>
-                        );
-                      })
-                    ) : (
-                      p.systems.map((s) => (
-                        <span key={s} className="inline-flex items-center rounded-md bg-cyan-500/15 px-1.5 py-0.5 text-xs font-medium text-cyan-400 ring-1 ring-cyan-500/30">
-                          {formatSystemLabel(s)}
-                        </span>
-                      ))
-                    )}
-                  </div>
-                  <span className="text-xs text-muted truncate">{p.requestedBy}</span>
-                  <span className="text-xs text-muted">
-                    {new Date(p.createdAt).toLocaleDateString()}
-                  </span>
-                  {isAdmin ? (
-                    <div className="flex items-center gap-2">
-                      {editingPushId === p.id ? (
-                        <>
-                          <button
-                            onClick={savePushEdit}
-                            disabled={savingPushEdit}
-                            className="text-xs text-cyan-400 hover:text-cyan-300 hover:underline font-medium transition-colors disabled:opacity-50"
-                          >
-                            {savingPushEdit ? "Saving…" : "Save"}
-                          </button>
-                          <button
-                            onClick={cancelPushEdit}
-                            disabled={savingPushEdit}
-                            className="text-xs text-muted hover:text-foreground hover:underline transition-colors"
-                          >
-                            Cancel
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <button
-                            onClick={() => beginPushEdit(p)}
-                            className="text-xs text-cyan-400 hover:text-cyan-300 hover:underline transition-colors"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            onClick={() => handleApprove(p.id)}
-                            className="text-xs text-green-400 hover:text-green-300 hover:underline font-medium transition-colors"
-                          >
-                            Approve
-                          </button>
-                          <button
-                            onClick={() => handleReject(p.id)}
-                            className="text-xs text-red-400 hover:text-red-300 hover:underline transition-colors"
-                          >
-                            Reject
-                          </button>
-                        </>
-                      )}
                     </div>
-                  ) : (
-                    <span className="text-xs text-muted italic">Awaiting admin</span>
                   )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
       )}
+      {/* Dedup Tab */}
+      {tab === "dedup" && syncEnabled && (
+        <DedupPanel />
+      )}
+
+      {/* Sync Modal */}
+      {syncSkuId && (
+        <SyncModal
+          skuId={syncSkuId}
+          skuName={syncSkuName}
+          isOpen={!!syncSkuId}
+          onClose={() => { setSyncSkuId(null); setSyncSkuName(""); }}
+          onSyncComplete={fetchSkus}
+        />
+      )}
+
       {/* Single-item cleanup modal */}
       {cleanupSkuId && cleanupSku && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">

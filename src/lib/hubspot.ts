@@ -461,12 +461,24 @@ export interface UpsertHubSpotProductInput {
   hardToProcure?: boolean | null;
   length?: number | null;
   width?: number | null;
+  weight?: number | null;
+  vendorName?: string | null;
+  vendorPartNumber?: string | null;
+  unitLabel?: string | null;
+  qboProductId?: string | null;
   additionalProperties?: Record<string, string | number | boolean>;
 }
 
 export interface UpsertHubSpotProductResult {
   hubspotProductId: string;
   created: boolean;
+}
+
+export interface UpdateHubSpotProductResult {
+  status: "updated" | "not_found" | "failed";
+  hubspotProductId: string;
+  message: string;
+  httpStatus?: number;
 }
 
 // All properties we need from HubSpot deals
@@ -2103,6 +2115,19 @@ export async function createOrUpdateHubSpotProduct(
   }
   if (isFiniteNumber(input.length)) optionalProperties.length = String(input.length);
   if (isFiniteNumber(input.width)) optionalProperties.width = String(input.width);
+  if (isFiniteNumber(input.weight)) optionalProperties.weight = String(input.weight);
+  if (trimOrNull(input.vendorName)) optionalProperties.vendor_name = trimOrNull(input.vendorName)!;
+  if (trimOrNull(input.vendorPartNumber)) optionalProperties.vendor_part_number = trimOrNull(input.vendorPartNumber)!;
+  if (trimOrNull(input.unitLabel)) optionalProperties.unit_label = trimOrNull(input.unitLabel)!;
+  if (trimOrNull(input.qboProductId)) optionalProperties.qbo_product_id = trimOrNull(input.qboProductId)!;
+
+  // Auto-generate product_dimensions from available physical measurements
+  const dims: string[] = [];
+  if (isFiniteNumber(input.length)) dims.push(`L: ${input.length}"`);
+  if (isFiniteNumber(input.width)) dims.push(`W: ${input.width}"`);
+  if (isFiniteNumber(input.weight)) dims.push(`${input.weight} lbs`);
+  if (dims.length > 0) optionalProperties.product_dimensions = dims.join(" x ");
+
   for (const [key, value] of Object.entries(input.additionalProperties || {})) {
     optionalProperties[key] = toHubSpotPropertyValue(value);
   }
@@ -2123,6 +2148,88 @@ export async function createOrUpdateHubSpotProduct(
     );
     return upsertHubSpotProductRecord(token, existingId, coreProperties);
   }
+}
+
+export async function getHubSpotProductById(
+  productId: string,
+  properties?: string[],
+): Promise<Record<string, string> | null> {
+  const token = process.env.HUBSPOT_ACCESS_TOKEN;
+  if (!token) throw new Error("HUBSPOT_ACCESS_TOKEN is not configured");
+
+  const normalizedId = String(productId || "").trim();
+  if (!normalizedId) return null;
+
+  const params = new URLSearchParams();
+  if (properties && properties.length > 0) {
+    params.set("properties", properties.join(","));
+  }
+  const qs = params.toString();
+  const url = `https://api.hubapi.com/crm/v3/objects/products/${encodeURIComponent(normalizedId)}${qs ? `?${qs}` : ""}`;
+
+  try {
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) return null;
+    const json = (await response.json()) as { properties?: Record<string, string> };
+    return json.properties ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function updateHubSpotProduct(
+  productId: string,
+  properties: Record<string, string>,
+): Promise<UpdateHubSpotProductResult> {
+  const token = process.env.HUBSPOT_ACCESS_TOKEN;
+  if (!token) throw new Error("HUBSPOT_ACCESS_TOKEN is not configured");
+
+  const normalizedId = String(productId || "").trim();
+  if (!normalizedId) {
+    return { status: "failed", hubspotProductId: productId, message: "HubSpot product ID is required." };
+  }
+
+  if (Object.keys(properties).length === 0) {
+    return { status: "updated", hubspotProductId: normalizedId, message: "No properties to update." };
+  }
+
+  const url = `https://api.hubapi.com/crm/v3/objects/products/${encodeURIComponent(normalizedId)}`;
+
+  const response = await fetch(url, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ properties }),
+  });
+
+  const raw = await response.text();
+  let json: { id?: string; message?: string } = {};
+  try {
+    json = raw ? (JSON.parse(raw) as { id?: string; message?: string }) : {};
+  } catch {
+    json = {};
+  }
+
+  if (!response.ok) {
+    const message =
+      `Failed to update HubSpot product (${response.status}): ` +
+      `${json.message || raw || "unknown error"}`;
+
+    if (response.status === 404) {
+      return { status: "not_found", hubspotProductId: normalizedId, message, httpStatus: 404 };
+    }
+    return { status: "failed", hubspotProductId: normalizedId, message, httpStatus: response.status };
+  }
+
+  return {
+    status: "updated",
+    hubspotProductId: String(json.id || normalizedId).trim() || normalizedId,
+    message: "HubSpot product updated.",
+  };
 }
 
 export async function createDealLineItem(

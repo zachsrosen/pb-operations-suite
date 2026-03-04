@@ -13,6 +13,14 @@ function parseOptionalString(value: unknown): string | null {
   return trimmed || null;
 }
 
+function parseOptionalFloat(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  const str = String(value).trim();
+  if (str === "") return null;
+  const parsed = Number(str);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -99,6 +107,56 @@ export async function PATCH(
       return NextResponse.json({ error: "quickbooksItemId must be a string or null" }, { status: 400 });
     }
     updateData.quickbooksItemId = parseOptionalString(value);
+  }
+
+  // Nullable string fields
+  if ("sku" in body) updateData.sku = parseOptionalString(body.sku);
+  if ("vendorName" in body) updateData.vendorName = parseOptionalString(body.vendorName);
+  if ("vendorPartNumber" in body) updateData.vendorPartNumber = parseOptionalString(body.vendorPartNumber);
+
+  // Nullable float fields
+  if ("unitCost" in body) {
+    const parsed = parseOptionalFloat(body.unitCost);
+    if (body.unitCost !== null && body.unitCost !== undefined && String(body.unitCost).trim() !== "" && parsed === null) {
+      return NextResponse.json({ error: "unitCost must be a valid number" }, { status: 400 });
+    }
+    updateData.unitCost = parsed;
+  }
+  if ("sellPrice" in body) {
+    const parsed = parseOptionalFloat(body.sellPrice);
+    if (body.sellPrice !== null && body.sellPrice !== undefined && String(body.sellPrice).trim() !== "" && parsed === null) {
+      return NextResponse.json({ error: "sellPrice must be a valid number" }, { status: 400 });
+    }
+    updateData.sellPrice = parsed;
+  }
+  if ("length" in body) {
+    const parsed = parseOptionalFloat(body.length);
+    if (body.length !== null && body.length !== undefined && String(body.length).trim() !== "" && parsed === null) {
+      return NextResponse.json({ error: "length must be a valid number" }, { status: 400 });
+    }
+    updateData.length = parsed;
+  }
+  if ("width" in body) {
+    const parsed = parseOptionalFloat(body.width);
+    if (body.width !== null && body.width !== undefined && String(body.width).trim() !== "" && parsed === null) {
+      return NextResponse.json({ error: "width must be a valid number" }, { status: 400 });
+    }
+    updateData.width = parsed;
+  }
+  if ("weight" in body) {
+    const parsed = parseOptionalFloat(body.weight);
+    if (body.weight !== null && body.weight !== undefined && String(body.weight).trim() !== "" && parsed === null) {
+      return NextResponse.json({ error: "weight must be a valid number" }, { status: 400 });
+    }
+    updateData.weight = parsed;
+  }
+
+  // Boolean field
+  if ("hardToProcure" in body) {
+    if (typeof body.hardToProcure !== "boolean") {
+      return NextResponse.json({ error: "hardToProcure must be a boolean" }, { status: 400 });
+    }
+    updateData.hardToProcure = body.hardToProcure;
   }
 
   if (
