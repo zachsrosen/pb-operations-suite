@@ -89,6 +89,7 @@ export interface PostProcessResult {
   corrections: SoCorrection[];
   jobContext: JobContext;
   rulesVersion: string;
+  feedbackIds: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -227,6 +228,7 @@ export async function postProcessSoItems(
   lineItems: SoLineItem[],
   bomData: { project?: BomProject; items?: BomItem[] },
   findItemIdByName: FindItemFn,
+  options?: { feedbackIds?: string[] },
 ): Promise<PostProcessResult> {
   const project = bomData.project;
   const bomItems = Array.isArray(bomData.items) ? bomData.items : [];
@@ -549,5 +551,6 @@ export async function postProcessSoItems(
     corrections,
     jobContext: ctx,
     rulesVersion: RULES_VERSION,
+    feedbackIds: options?.feedbackIds ?? [],
   };
 }

@@ -13,17 +13,37 @@ describe("ThemeToggle", () => {
     jest.clearAllMocks();
   });
 
-  it("renders hydration-stable button metadata", () => {
+  it("renders moon icon in dark mode", () => {
     mockUseTheme.mockReturnValue({
       theme: "dark",
       toggleTheme: jest.fn(),
     });
 
     render(<ThemeToggle />);
-    const button = screen.getByRole("button", { name: "Toggle theme" });
+    const button = screen.getByRole("button", { name: "Dark mode" });
 
-    expect(button).toHaveAttribute("title", "Toggle theme");
-    expect(button).toHaveAttribute("aria-label", "Toggle theme");
+    expect(button).toHaveAttribute("title", "Dark mode");
+    expect(button).toHaveAttribute("aria-label", "Dark mode");
+  });
+
+  it("renders sun icon in light mode", () => {
+    mockUseTheme.mockReturnValue({
+      theme: "light",
+      toggleTheme: jest.fn(),
+    });
+
+    render(<ThemeToggle />);
+    expect(screen.getByRole("button", { name: "Light mode" })).toBeInTheDocument();
+  });
+
+  it("renders sunset icon in sunset mode", () => {
+    mockUseTheme.mockReturnValue({
+      theme: "sunset",
+      toggleTheme: jest.fn(),
+    });
+
+    render(<ThemeToggle />);
+    expect(screen.getByRole("button", { name: "Sunset mode" })).toBeInTheDocument();
   });
 
   it("calls toggleTheme on click", () => {
@@ -34,7 +54,7 @@ describe("ThemeToggle", () => {
     });
 
     render(<ThemeToggle />);
-    fireEvent.click(screen.getByRole("button", { name: "Toggle theme" }));
+    fireEvent.click(screen.getByRole("button", { name: "Light mode" }));
 
     expect(toggleTheme).toHaveBeenCalledTimes(1);
   });

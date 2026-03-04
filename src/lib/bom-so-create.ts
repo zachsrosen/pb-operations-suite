@@ -188,7 +188,34 @@ export async function createSalesOrder(params: {
     (item): item is NonNullable<typeof item> => item !== null,
   );
 
-  // 3b. Post-process line items (when enabled)
+  // 3b. Fetch feedback IDs for audit trail (best-effort, deal-scoped first)
+  let feedbackIds: string[] = [];
+  try {
+    if (prisma) {
+      const dealEntries = dealId
+        ? await prisma.bomToolFeedback.findMany({
+            where: { dealId },
+            orderBy: { createdAt: "desc" },
+            take: 5,
+            select: { id: true },
+          })
+        : [];
+      if (dealEntries.length > 0) {
+        feedbackIds = dealEntries.map(e => e.id);
+      } else {
+        const globalEntries = await prisma.bomToolFeedback.findMany({
+          orderBy: { createdAt: "desc" },
+          take: 5,
+          select: { id: true },
+        });
+        feedbackIds = globalEntries.map(e => e.id);
+      }
+    }
+  } catch {
+    // Best-effort — don't block SO creation
+  }
+
+  // 3c. Post-process line items (when enabled)
   let postProcessExtras: Record<string, unknown> = {};
   if (enablePostProcess) {
     const originalLineItems = wantDebug ? lineItems.map((i) => ({ ...i })) : undefined;
@@ -196,12 +223,14 @@ export async function createSalesOrder(params: {
       lineItems,
       bomData,
       (query) => zohoInventory.findItemIdByName(query),
+      { feedbackIds },
     );
     lineItems = ppResult.lineItems;
     postProcessExtras = {
       corrections: ppResult.corrections,
       rulesVersion: ppResult.rulesVersion,
       jobContext: ppResult.jobContext,
+      feedbackIds: ppResult.feedbackIds,
       ...(wantDebug ? { originalLineItems, correctedLineItems: ppResult.lineItems } : {}),
     };
   }

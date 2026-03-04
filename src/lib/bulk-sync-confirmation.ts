@@ -18,7 +18,9 @@ import {
 
 export type BulkSyncOperation =
   | "deal-line-item-sync"
-  | "hubspot-product-bulk-sync";
+  | "hubspot-product-bulk-sync"
+  | "zoho-product-bulk-sync"
+  | "zuper-product-bulk-sync";
 
 export interface BulkSyncConfirmationInput {
   operation: BulkSyncOperation;

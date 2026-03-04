@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
-import { formatMoney } from "@/lib/format";
+import { formatMoney, formatShortDate } from "@/lib/format";
 
 // ---- Types ----
 
@@ -154,15 +154,10 @@ interface LinkageCoverage {
 
 // ---- Helpers ----
 
-function formatShortDate(dateStr: string | null): string {
+function renderShortDate(dateStr: string | null | undefined): string {
   if (!dateStr) return "-";
-  try {
-    const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return dateStr;
-    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  } catch {
-    return dateStr;
-  }
+  const formatted = formatShortDate(dateStr);
+  return formatted && formatted !== "Invalid Date" ? formatted : dateStr;
 }
 
 function getZuperJobUrl(jobUid: string): string {
@@ -845,7 +840,7 @@ export default function ZuperStatusComparisonPage() {
           {isProjectView ? `${filteredProjectRecords.length} projects` : `${filteredRecords.length} records`}
           {data?.dateRange && (
             <span className="ml-2 text-muted">
-              ({formatShortDate(data.dateRange.from)} - {formatShortDate(data.dateRange.to)})
+              ({renderShortDate(data.dateRange.from)} - {renderShortDate(data.dateRange.to)})
             </span>
           )}
         </span>
@@ -1120,19 +1115,19 @@ export default function ZuperStatusComparisonPage() {
                       {(viewMode === "dates" || viewMode === "all") && (
                         <>
                           <td className="px-3 py-2.5 text-[11px] text-muted/70 dark:text-muted whitespace-nowrap">
-                            {formatShortDate(record.zuperScheduledStart)}
+                            {renderShortDate(record.zuperScheduledStart)}
                           </td>
                           <td className="px-3 py-2.5 text-[11px] text-muted/70 dark:text-muted whitespace-nowrap">
-                            {formatShortDate(record.hubspotScheduleDate)}
+                            {renderShortDate(record.hubspotScheduleDate)}
                           </td>
                           <td className="px-3 py-2.5 text-center">
                             <DateMatchBadge match={record.scheduleDateMatch} />
                           </td>
                           <td className="px-3 py-2.5 text-[11px] text-muted/70 dark:text-muted whitespace-nowrap">
-                            {formatShortDate(record.zuperCompletedAt || record.zuperScheduledEnd)}
+                            {renderShortDate(record.zuperCompletedAt || record.zuperScheduledEnd)}
                           </td>
                           <td className="px-3 py-2.5 text-[11px] text-muted/70 dark:text-muted whitespace-nowrap">
-                            {formatShortDate(record.hubspotCompletionDate)}
+                            {renderShortDate(record.hubspotCompletionDate)}
                           </td>
                           <td className="px-3 py-2.5 text-center">
                             <DateMatchBadge match={record.completionDateMatch} />
@@ -1447,16 +1442,16 @@ function ProjectDateCells({ slot }: { slot: CategorySlot }) {
   return (
     <>
       <td className={`px-2 py-2 text-[11px] whitespace-nowrap border-l border-t-border dark:border-t-border ${hasDateMismatch ? "text-red-600 dark:text-red-400" : "text-muted/70 dark:text-muted"}`}>
-        {formatShortDate(slot.zuperScheduledStart)}
+        {renderShortDate(slot.zuperScheduledStart)}
       </td>
       <td className={`px-2 py-2 text-[11px] whitespace-nowrap ${hasDateMismatch ? "text-red-600 dark:text-red-400" : "text-muted/70 dark:text-muted"}`}>
-        {formatShortDate(slot.hubspotScheduleDate)}
+        {renderShortDate(slot.hubspotScheduleDate)}
       </td>
       <td className={`px-2 py-2 text-[11px] whitespace-nowrap ${hasDateMismatch ? "text-red-600 dark:text-red-400" : "text-muted/70 dark:text-muted"}`}>
-        {formatShortDate(slot.zuperCompletedAt)}
+        {renderShortDate(slot.zuperCompletedAt)}
       </td>
       <td className={`px-2 py-2 text-[11px] whitespace-nowrap ${hasDateMismatch ? "text-red-600 dark:text-red-400" : "text-muted/70 dark:text-muted"}`}>
-        {formatShortDate(slot.hubspotCompletionDate)}
+        {renderShortDate(slot.hubspotCompletionDate)}
       </td>
       <td className="px-2 py-2 text-center">
         <div className="flex items-center justify-center gap-0.5">

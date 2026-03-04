@@ -59,7 +59,7 @@ export default function RootLayout({
         {/* Prevent flash of wrong theme by reading localStorage before paint */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem('pb-theme');document.documentElement.classList.add(t==='light'?'light':'dark')}catch(e){document.documentElement.classList.add('dark')}})()`,
+            __html: `(function(){try{var t=localStorage.getItem('pb-theme');var v=(t==='light'||t==='sunset')?t:'dark';document.documentElement.classList.add(v);var c={dark:'#0a0a0f',light:'#fafaf8',sunset:'#fdf6e3'};var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute('content',c[v])}catch(e){document.documentElement.classList.add('dark')}})()`,
           }}
         />
       </head>

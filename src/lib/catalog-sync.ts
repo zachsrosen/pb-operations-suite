@@ -48,7 +48,7 @@ export interface SyncExecuteResult {
 }
 
 // Type for a SKU record with all specs included
-interface SkuRecord {
+export interface SkuRecord {
   id: string;
   category: string;
   brand: string;
@@ -413,7 +413,7 @@ export function computePreviewHash(previews: SyncPreview[]): string {
 // Execute
 // ---------------------------------------------------------------------------
 
-async function executeZohoSync(sku: SkuRecord, preview: SyncPreview): Promise<SyncOutcome> {
+export async function executeZohoSync(sku: SkuRecord, preview: SyncPreview): Promise<SyncOutcome> {
   if (preview.action === "skip" || preview.noChanges) {
     return {
       system: "zoho",
@@ -476,7 +476,7 @@ async function executeZohoSync(sku: SkuRecord, preview: SyncPreview): Promise<Sy
   };
 }
 
-async function executeHubSpotSync(sku: SkuRecord, preview: SyncPreview): Promise<SyncOutcome> {
+export async function executeHubSpotSync(sku: SkuRecord, preview: SyncPreview): Promise<SyncOutcome> {
   if (preview.action === "skip" || preview.noChanges) {
     return {
       system: "hubspot",
@@ -545,7 +545,7 @@ async function executeHubSpotSync(sku: SkuRecord, preview: SyncPreview): Promise
   };
 }
 
-async function executeZuperSync(sku: SkuRecord, preview: SyncPreview): Promise<SyncOutcome> {
+export async function executeZuperSync(sku: SkuRecord, preview: SyncPreview): Promise<SyncOutcome> {
   if (preview.action === "skip" || preview.noChanges) {
     return {
       system: "zuper",

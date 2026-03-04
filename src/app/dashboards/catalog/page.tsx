@@ -1,13 +1,14 @@
 // src/app/dashboards/catalog/page.tsx
 "use client";
 
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback, type ReactNode } from "react";
 import Link from "next/link";
 import DashboardShell from "@/components/DashboardShell";
 import { useToast } from "@/contexts/ToastContext";
 import { useSession } from "next-auth/react";
 import { FORM_CATEGORIES } from "@/lib/catalog-fields";
 import { getZohoItemUrl, getHubSpotProductUrl, getZuperProductUrl } from "@/lib/external-links";
+import type { SyncSystem } from "@/lib/catalog-sync-confirmation";
 import SyncModal from "@/components/catalog/SyncModal";
 import DedupPanel from "@/components/catalog/DedupPanel";
 
@@ -28,6 +29,7 @@ interface Sku {
   category: string;
   brand: string;
   model: string;
+  name: string | null;
   description: string | null;
   vendorName: string | null;
   vendorPartNumber: string | null;
@@ -67,6 +69,33 @@ interface CategorySyncStat {
   withPricing: number;
 }
 
+interface BulkSyncPreviewSku {
+  id: string;
+  category: string;
+  brand: string;
+  model: string;
+}
+
+interface BulkSyncPreviewResult {
+  system: SyncSystem;
+  count: number;
+  changesHash: string;
+  skus: BulkSyncPreviewSku[];
+}
+
+interface BulkSyncExecuteResult {
+  system: SyncSystem;
+  runId: string;
+  status: "RUNNING" | "COMPLETED" | "FAILED";
+  itemsCreated?: number;
+  itemsSkipped?: number;
+  itemsFailed?: number;
+  remaining?: number;
+  cursor?: string;
+  continuationToken?: string;
+  continuationIssuedAt?: number;
+}
+
 interface DuplicateGroup {
   key: string;
   category: string;
@@ -85,6 +114,7 @@ interface DuplicateGroup {
 
 interface PushRequest {
   id: string;
+  name: string | null;
   status: "PENDING" | "APPROVED" | "REJECTED" | "EXPIRED";
   brand: string;
   model: string;
@@ -128,6 +158,7 @@ interface ApproveResponse {
 
 interface SkuEditDraft {
   id: string;
+  name: string;
   category: string;
   brand: string;
   model: string;
@@ -147,6 +178,7 @@ interface SkuEditDraft {
 
 interface PushEditDraft {
   id: string;
+  name: string;
   brand: string;
   model: string;
   description: string;
@@ -167,6 +199,7 @@ interface PushEditDraft {
 }
 
 const ADMIN_ROLES = ["ADMIN", "OWNER", "MANAGER"];
+const BULK_SYNC_ADMIN_ROLES = ["ADMIN", "OWNER"];
 // QuickBooks deactivated — re-add "QUICKBOOKS" to reactivate
 const SYSTEM_OPTIONS = ["INTERNAL", "ZOHO", "HUBSPOT", "ZUPER"] as const;
 const CATEGORIES = FORM_CATEGORIES;
@@ -210,6 +243,12 @@ function formatSystemLabel(system: string): string {
   if (system === "ZOHO") return "Zoho";
   if (system === "QUICKBOOKS") return "QuickBooks";
   return system;
+}
+
+function formatSyncSystemName(system: SyncSystem): string {
+  if (system === "hubspot") return "HubSpot";
+  if (system === "zuper") return "Zuper";
+  return "Zoho";
 }
 
 export default function CatalogPage() {
@@ -256,6 +295,14 @@ export default function CatalogPage() {
 
   const [categoryStats, setCategoryStats] = useState<CategorySyncStat[]>([]);
   const [categoryStatsLoading, setCategoryStatsLoading] = useState(false);
+  const [bulkSyncSystem, setBulkSyncSystem] = useState<SyncSystem | null>(null);
+  const [bulkSyncPreview, setBulkSyncPreview] = useState<BulkSyncPreviewResult | null>(null);
+  const [bulkSyncLoading, setBulkSyncLoading] = useState(false);
+  const [bulkSyncExecuting, setBulkSyncExecuting] = useState(false);
+  const [bulkSyncProgress, setBulkSyncProgress] = useState({ done: 0, total: 0 });
+  const [bulkSyncError, setBulkSyncError] = useState<string | null>(null);
+  const [bulkSyncDone, setBulkSyncDone] = useState(false);
+  const [bulkSyncSummary, setBulkSyncSummary] = useState({ created: 0, skipped: 0, failed: 0 });
 
   // Catalog product search for linking system IDs
   type CatalogSearchSource = "zoho" | "hubspot" | "zuper";
@@ -282,6 +329,7 @@ export default function CatalogPage() {
 
   const userRole = (session?.user as { role?: string } | undefined)?.role ?? "";
   const isAdmin = ADMIN_ROLES.includes(userRole);
+  const canExecuteBulkSync = BULK_SYNC_ADMIN_ROLES.includes(userRole);
 
   // Fetch SKUs
   const fetchSkus = useCallback(() => {
@@ -317,7 +365,7 @@ export default function CatalogPage() {
       .catch(() => setCleanupEnabled(false));
   }, [isAdmin]);
 
-  // Check sync feature flag (reuse any linked SKU's sync preview endpoint — a 404 means disabled)
+  // Check sync feature flag (admin-only — dedup APIs require admin/owner role)
   useEffect(() => {
     if (!isAdmin) return;
     fetch("/api/inventory/skus/sync-enabled", { cache: "no-store" })
@@ -464,6 +512,7 @@ export default function CatalogPage() {
       category: sku.category,
       brand: sku.brand,
       model: sku.model,
+      name: sku.name ?? "",
       description: sku.description ?? "",
       vendorName: sku.vendorName ?? "",
       vendorPartNumber: sku.vendorPartNumber ?? "",
@@ -497,6 +546,7 @@ export default function CatalogPage() {
           category: skuEditDraft.category,
           brand: skuEditDraft.brand,
           model: skuEditDraft.model,
+          name: skuEditDraft.name || null,
           description: skuEditDraft.description,
           vendorName: skuEditDraft.vendorName,
           vendorPartNumber: skuEditDraft.vendorPartNumber,
@@ -529,6 +579,7 @@ export default function CatalogPage() {
       id: push.id,
       brand: push.brand,
       model: push.model,
+      name: push.name ?? "",
       description: push.description,
       category: push.category,
       unitSpec: push.unitSpec ?? "",
@@ -578,6 +629,7 @@ export default function CatalogPage() {
         body: JSON.stringify({
           brand: pushEditDraft.brand,
           model: pushEditDraft.model,
+          name: pushEditDraft.name || null,
           description: pushEditDraft.description,
           category: pushEditDraft.category,
           unitSpec: pushEditDraft.unitSpec || null,
@@ -738,11 +790,155 @@ export default function CatalogPage() {
     }
   }
 
+  function closeBulkSyncModal() {
+    if (bulkSyncExecuting) return;
+    setBulkSyncSystem(null);
+    setBulkSyncPreview(null);
+    setBulkSyncLoading(false);
+    setBulkSyncExecuting(false);
+    setBulkSyncProgress({ done: 0, total: 0 });
+    setBulkSyncError(null);
+    setBulkSyncDone(false);
+    setBulkSyncSummary({ created: 0, skipped: 0, failed: 0 });
+  }
+
+  async function openBulkSyncModal(system: SyncSystem) {
+    if (!syncEnabled) return;
+    setBulkSyncSystem(system);
+    setBulkSyncPreview(null);
+    setBulkSyncLoading(true);
+    setBulkSyncExecuting(false);
+    setBulkSyncProgress({ done: 0, total: 0 });
+    setBulkSyncError(null);
+    setBulkSyncDone(false);
+    setBulkSyncSummary({ created: 0, skipped: 0, failed: 0 });
+
+    try {
+      const res = await fetch("/api/inventory/skus/sync-bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "preview", system }),
+      });
+      const data = await res.json().catch(() => null) as (BulkSyncPreviewResult & { error?: string }) | null;
+      if (!res.ok || !data) throw new Error(data?.error || "Failed to load bulk sync preview");
+      setBulkSyncPreview(data);
+      setBulkSyncProgress({ done: 0, total: data.count });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to load preview";
+      setBulkSyncError(message);
+    } finally {
+      setBulkSyncLoading(false);
+    }
+  }
+
+  async function executeBulkSync() {
+    if (!bulkSyncSystem || !bulkSyncPreview || bulkSyncExecuting) return;
+    if (!canExecuteBulkSync) {
+      setBulkSyncError("Requires admin approval");
+      return;
+    }
+
+    setBulkSyncExecuting(true);
+    setBulkSyncError(null);
+    setBulkSyncDone(false);
+    setBulkSyncProgress({ done: 0, total: bulkSyncPreview.count });
+
+    try {
+      const confirmRes = await fetch("/api/inventory/skus/sync-bulk/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          system: bulkSyncSystem,
+          changesHash: bulkSyncPreview.changesHash,
+        }),
+      });
+
+      const confirmData = await confirmRes.json().catch(() => null) as {
+        token?: string;
+        issuedAt?: number;
+        error?: string;
+      } | null;
+
+      if (!confirmRes.ok || !confirmData?.token || typeof confirmData.issuedAt !== "number") {
+        throw new Error(confirmData?.error || "Failed to generate confirmation token");
+      }
+
+      let payload: Record<string, unknown> = {
+        action: "execute",
+        system: bulkSyncSystem,
+        token: confirmData.token,
+        issuedAt: confirmData.issuedAt,
+        changesHash: bulkSyncPreview.changesHash,
+      };
+
+      for (let guard = 0; guard < 500; guard++) {
+        const executeRes = await fetch("/api/inventory/skus/sync-bulk", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+        const executeData = await executeRes.json().catch(() => null) as (BulkSyncExecuteResult & { error?: string }) | null;
+        if (!executeRes.ok || !executeData) {
+          throw new Error(executeData?.error || "Bulk sync execution failed");
+        }
+
+        const created = executeData.itemsCreated ?? 0;
+        const skipped = executeData.itemsSkipped ?? 0;
+        const failed = executeData.itemsFailed ?? 0;
+        const total = bulkSyncPreview.count;
+
+        setBulkSyncSummary({ created, skipped, failed });
+        setBulkSyncProgress({ done: Math.min(total, created + skipped + failed), total });
+
+        if (executeData.status === "COMPLETED") {
+          setBulkSyncDone(true);
+          addToast({
+            type: failed > 0 ? "warning" : "success",
+            title: `${formatSyncSystemName(bulkSyncSystem)} bulk sync complete`,
+            message: `Created ${created}, skipped ${skipped}, failed ${failed}.`,
+          });
+          return;
+        }
+
+        if (executeData.status === "FAILED") {
+          throw new Error(`${formatSyncSystemName(bulkSyncSystem)} bulk sync failed`);
+        }
+
+        if (
+          !executeData.runId ||
+          !executeData.cursor ||
+          !executeData.continuationToken ||
+          typeof executeData.continuationIssuedAt !== "number"
+        ) {
+          throw new Error("Missing continuation token data for running bulk sync");
+        }
+
+        payload = {
+          action: "execute",
+          system: bulkSyncSystem,
+          runId: executeData.runId,
+          cursor: executeData.cursor,
+          continuationToken: executeData.continuationToken,
+          continuationIssuedAt: executeData.continuationIssuedAt,
+        };
+      }
+
+      throw new Error("Bulk sync exceeded maximum continuation chunks");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Bulk sync failed";
+      setBulkSyncError(message);
+      addToast({ type: "error", title: message });
+    } finally {
+      setBulkSyncExecuting(false);
+    }
+  }
+
   return (
     <DashboardShell title="Equipment Catalog" accentColor="cyan">
       {/* Tabs + Submit button */}
       <div className="flex items-center gap-1 mb-6 border-b border-t-border">
-        {(["skus", "sync", "pending", ...(syncEnabled ? ["dedup" as Tab] : [])] as Tab[]).map((t) => (
+        {(["skus", "sync", "pending", ...(syncEnabled && isAdmin ? ["dedup" as Tab] : [])] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -854,6 +1050,29 @@ export default function CatalogPage() {
                               className="rounded border border-t-border bg-surface px-2 py-1.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
                               placeholder="Model"
                             />
+                            <div className="md:col-span-2">
+                              <div className="flex items-center gap-2">
+                                <input
+                                  value={skuEditDraft.name || `${skuEditDraft.brand} ${skuEditDraft.model}`.trim()}
+                                  onChange={(e) => setSkuEditDraft((prev) => prev ? { ...prev, name: e.target.value } : prev)}
+                                  className="flex-1 rounded border border-t-border bg-surface px-2 py-1.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                                  placeholder="Product Name"
+                                />
+                                {skuEditDraft.name && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setSkuEditDraft((prev) => prev ? { ...prev, name: "" } : prev)}
+                                    className="text-xs text-muted hover:text-foreground shrink-0"
+                                    title="Reset to Brand + Model"
+                                  >
+                                    Reset
+                                  </button>
+                                )}
+                              </div>
+                              <div className="text-xs text-muted mt-0.5">
+                                {skuEditDraft.name ? "Custom name" : "Auto-generated from Brand + Model"}
+                              </div>
+                            </div>
                             <input
                               value={skuEditDraft.description}
                               onChange={(e) => setSkuEditDraft((prev) => prev ? { ...prev, description: e.target.value } : prev)}
@@ -876,7 +1095,7 @@ export default function CatalogPage() {
                         ) : (
                           <>
                             <div className="text-base font-semibold text-foreground break-words">
-                              {sku.brand} - {sku.model}
+                              {sku.name || `${sku.brand} - ${sku.model}`}
                             </div>
                             {sku.description && (
                               <div className="text-sm text-muted break-words">{sku.description}</div>
@@ -1134,12 +1353,42 @@ export default function CatalogPage() {
       {/* Sync Tab */}
       {tab === "sync" && (
         <div className="space-y-4">
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-8 gap-3">
             <MetricCard label="Total" value={skuSummary.total} />
             <MetricCard label="Fully Synced" value={skuSummary.fullySynced} />
-            <MetricCard label="Missing Zoho" value={skuSummary.missingZoho} />
-            <MetricCard label="Missing HubSpot" value={skuSummary.missingHubspot} />
-            <MetricCard label="Missing Zuper" value={skuSummary.missingZuper} />
+            <MetricCard label="Missing Zoho" value={skuSummary.missingZoho}>
+              {syncEnabled && skuSummary.missingZoho > 0 && (
+                <button
+                  type="button"
+                  onClick={() => void openBulkSyncModal("zoho")}
+                  className="mt-2 rounded border border-cyan-500/40 bg-cyan-500/10 px-2 py-1 text-[11px] text-cyan-300 hover:bg-cyan-500/20"
+                >
+                  Sync All
+                </button>
+              )}
+            </MetricCard>
+            <MetricCard label="Missing HubSpot" value={skuSummary.missingHubspot}>
+              {syncEnabled && skuSummary.missingHubspot > 0 && (
+                <button
+                  type="button"
+                  onClick={() => void openBulkSyncModal("hubspot")}
+                  className="mt-2 rounded border border-cyan-500/40 bg-cyan-500/10 px-2 py-1 text-[11px] text-cyan-300 hover:bg-cyan-500/20"
+                >
+                  Sync All
+                </button>
+              )}
+            </MetricCard>
+            <MetricCard label="Missing Zuper" value={skuSummary.missingZuper}>
+              {syncEnabled && skuSummary.missingZuper > 0 && (
+                <button
+                  type="button"
+                  onClick={() => void openBulkSyncModal("zuper")}
+                  className="mt-2 rounded border border-cyan-500/40 bg-cyan-500/10 px-2 py-1 text-[11px] text-cyan-300 hover:bg-cyan-500/20"
+                >
+                  Sync All
+                </button>
+              )}
+            </MetricCard>
             <MetricCard label="Duplicate Groups" value={skuSummary.duplicateGroups} />
             <MetricCard label="Duplicate Rows" value={skuSummary.duplicateRows} />
             <MetricCard label="With Pricing" value={skuSummary.withPricing} />
@@ -1369,6 +1618,20 @@ export default function CatalogPage() {
                             {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
                           </select>
                         </div>
+                        <div className="flex items-center gap-2 mt-1">
+                          <input
+                            value={pushEditDraft.name || `${pushEditDraft.brand} ${pushEditDraft.model}`.trim()}
+                            onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, name: e.target.value } : prev)}
+                            className={`${inputCls} flex-1`}
+                            placeholder="Product Name"
+                          />
+                          {pushEditDraft.name && (
+                            <button type="button" onClick={() => setPushEditDraft((prev) => prev ? { ...prev, name: "" } : prev)} className="text-xs text-muted hover:text-foreground shrink-0">Reset</button>
+                          )}
+                        </div>
+                        <div className="text-xs text-muted mt-0.5">
+                          {pushEditDraft.name ? "Custom name" : "Auto-generated from Brand + Model"}
+                        </div>
                       </div>
 
                       {/* Description */}
@@ -1477,6 +1740,131 @@ export default function CatalogPage() {
           onClose={() => { setSyncSkuId(null); setSyncSkuName(""); }}
           onSyncComplete={fetchSkus}
         />
+      )}
+
+      {/* Bulk sync modal */}
+      {bulkSyncSystem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="w-full max-w-2xl rounded-xl border border-t-border bg-surface shadow-card-lg overflow-hidden">
+            <div className="flex items-center justify-between border-b border-t-border px-4 py-3">
+              <div>
+                <div className="text-xs uppercase tracking-wide text-cyan-300">Catalog Bulk Sync</div>
+                <div className="text-sm text-foreground">
+                  Missing {formatSyncSystemName(bulkSyncSystem)} Products
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={closeBulkSyncModal}
+                disabled={bulkSyncExecuting}
+                className="px-2 py-1 rounded border border-t-border bg-background text-xs text-muted hover:text-foreground disabled:opacity-50"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4">
+              {bulkSyncLoading && (
+                <p className="text-sm text-muted animate-pulse">Loading preview…</p>
+              )}
+
+              {!bulkSyncLoading && bulkSyncPreview && (
+                <>
+                  <div className="rounded-lg border border-t-border bg-background/40 p-3 text-sm text-muted">
+                    <div>
+                      {bulkSyncPreview.count} active SKU{bulkSyncPreview.count === 1 ? "" : "s"} missing {formatSyncSystemName(bulkSyncSystem)} IDs.
+                    </div>
+                    <div className="text-xs mt-1">
+                      Showing first {Math.min(50, bulkSyncPreview.skus.length)} of {bulkSyncPreview.skus.length}.
+                    </div>
+                  </div>
+
+                  <div className="max-h-56 overflow-auto rounded-lg border border-t-border bg-background/40">
+                    {bulkSyncPreview.skus.slice(0, 50).map((sku) => (
+                      <div
+                        key={sku.id}
+                        className="px-3 py-2 text-xs border-b border-t-border last:border-b-0 text-foreground"
+                      >
+                        {sku.brand} — {sku.model}
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {bulkSyncExecuting && (
+                <div className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 p-3 space-y-2">
+                  <div className="flex items-center justify-between text-xs text-cyan-200">
+                    <span>Syncing…</span>
+                    <span>{bulkSyncProgress.done}/{bulkSyncProgress.total}</span>
+                  </div>
+                  <div className="h-2 rounded bg-surface-2 overflow-hidden">
+                    <div
+                      className="h-2 bg-cyan-500 transition-all"
+                      style={{
+                        width: `${bulkSyncProgress.total > 0 ? Math.min(100, (bulkSyncProgress.done / bulkSyncProgress.total) * 100) : 0}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {bulkSyncError && (
+                <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-300">
+                  {bulkSyncError}
+                </div>
+              )}
+
+              {bulkSyncDone && (
+                <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-200 space-y-1">
+                  <div>Created: {bulkSyncSummary.created}</div>
+                  <div>Skipped: {bulkSyncSummary.skipped}</div>
+                  <div>Failed: {bulkSyncSummary.failed}</div>
+                </div>
+              )}
+
+              {!bulkSyncDone && !bulkSyncExecuting && bulkSyncPreview && (
+                <div className="flex items-center justify-between gap-3">
+                  {!canExecuteBulkSync ? (
+                    <span className="text-xs text-amber-300">Requires admin approval</span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => void executeBulkSync()}
+                      disabled={bulkSyncPreview.count === 0}
+                      className="px-3 py-1.5 rounded border border-cyan-500/40 bg-cyan-500/10 text-cyan-200 text-xs hover:bg-cyan-500/20 disabled:opacity-50"
+                    >
+                      Confirm + Execute
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={closeBulkSyncModal}
+                    className="px-3 py-1.5 rounded border border-t-border bg-background text-xs text-muted hover:text-foreground"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+
+              {bulkSyncDone && (
+                <div className="flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      fetchSkus();
+                      closeBulkSyncModal();
+                    }}
+                    className="px-3 py-1.5 rounded border border-cyan-500/40 bg-cyan-500/10 text-cyan-200 text-xs hover:bg-cyan-500/20"
+                  >
+                    Close & Refresh
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Single-item cleanup modal */}
@@ -1621,11 +2009,12 @@ export default function CatalogPage() {
   );
 }
 
-function MetricCard({ label, value }: { label: string; value: number }) {
+function MetricCard({ label, value, children }: { label: string; value: number; children?: ReactNode }) {
   return (
     <div className="rounded-xl border border-t-border bg-surface shadow-card px-4 py-3">
       <p className="text-xs text-muted uppercase tracking-wide">{label}</p>
       <p className="text-xl font-semibold text-foreground mt-1">{value}</p>
+      {children}
     </div>
   );
 }

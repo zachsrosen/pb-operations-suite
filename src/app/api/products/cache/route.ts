@@ -5,7 +5,6 @@ import { normalizeRole, type UserRole } from "@/lib/role-permissions";
 import { CatalogProductSource } from "@/generated/prisma/enums";
 import {
   getHubSpotProductUrl,
-  getOpenSolarProductUrl,
   getQuickBooksItemUrl,
   getZohoItemUrl,
   getZuperProductUrl,
@@ -28,10 +27,9 @@ const SOURCE_ENUM: Record<string, CatalogProductSource> = {
   zuper: "ZUPER",
   zoho: "ZOHO",
   quickbooks: "QUICKBOOKS",
-  opensolar: "OPENSOLAR",
 };
 
-type SourceApiValue = "hubspot" | "zuper" | "zoho" | "quickbooks" | "opensolar";
+type SourceApiValue = "hubspot" | "zuper" | "zoho" | "quickbooks";
 
 function sourceToApiValue(source: CatalogProductSource): SourceApiValue {
   const map: Record<CatalogProductSource, SourceApiValue> = {
@@ -39,7 +37,6 @@ function sourceToApiValue(source: CatalogProductSource): SourceApiValue {
     ZUPER: "zuper",
     ZOHO: "zoho",
     QUICKBOOKS: "quickbooks",
-    OPENSOLAR: "opensolar",
   };
   return map[source];
 }
@@ -50,7 +47,6 @@ function fallbackUrlForSource(source: SourceApiValue, externalId: string): strin
   if (source === "hubspot") return getHubSpotProductUrl(id);
   if (source === "zuper") return getZuperProductUrl(id);
   if (source === "zoho") return getZohoItemUrl(id);
-  if (source === "opensolar") return getOpenSolarProductUrl(id);
   return getQuickBooksItemUrl(id);
 }
 
@@ -75,7 +71,7 @@ export async function GET(request: NextRequest) {
   const limitRaw = Number(request.nextUrl.searchParams.get("limit") || 200);
   const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(Math.trunc(limitRaw), 1), 5000) : 200;
 
-  // QuickBooks & OpenSolar deactivated — re-add to reactivate
+  // QuickBooks deactivated — re-add to reactivate
   let sources: CatalogProductSource[] = ["HUBSPOT", "ZUPER", "ZOHO"];
   if (sourceParam) {
     const parsed = sourceParam
@@ -142,7 +138,6 @@ export async function GET(request: NextRequest) {
         zuper: counts.zuper || 0,
         zoho: counts.zoho || 0,
         quickbooks: counts.quickbooks || 0,
-        opensolar: counts.opensolar || 0,
       },
     },
   });

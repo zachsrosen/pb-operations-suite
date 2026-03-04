@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import Link from "next/link";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
+import { toDateStr } from "@/lib/scheduling-utils";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -71,10 +72,6 @@ const LOCATIONS = ["Westminster", "Centennial", "Colorado Springs", "San Luis Ob
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
-
-function toDateStr(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
 
 function formatTime(isoStr: string | null): string {
   if (!isoStr) return "";

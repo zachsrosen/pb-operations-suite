@@ -706,7 +706,6 @@ enum CatalogProductSource {
   ZUPER
   ZOHO
   QUICKBOOKS
-  OPENSOLAR
 }
 
 enum TransactionType {
@@ -722,6 +721,7 @@ model EquipmentSku {
   category    EquipmentCategory
   brand       String
   model       String
+  name        String?           // Display name override; defaults to "brand model" when null
   description String?
   vendorName  String?
   vendorPartNumber String?
@@ -1023,6 +1023,7 @@ model PendingCatalogPush {
   // Item data snapshot (what was in the BOM row at time of request)
   brand       String
   model       String
+  name        String?    // Display name override; defaults to "brand model" when null
   description String
   category    String     // BOM category string (may not be EquipmentCategory enum)
   unitSpec    String?

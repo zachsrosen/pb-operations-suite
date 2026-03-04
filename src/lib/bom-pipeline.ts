@@ -751,8 +751,27 @@ export async function runDesignCompletePipeline(
     const { result: { buffer: pdfBuffer, filename } } =
       await withRetry("EXTRACT_BOM", () => downloadDrivePdf(selectedFile.id), retryObs);
 
+    // Fetch team feedback (best-effort) to enrich extraction prompt
+    let feedbackContext: string | undefined;
+    try {
+      if (prisma) {
+        const fbEntries = await prisma.bomToolFeedback.findMany({
+          orderBy: { createdAt: "desc" },
+          take: 10,
+        });
+        if (fbEntries.length > 0) {
+          feedbackContext = fbEntries.map(e => {
+            const note = e.notes.replace(/\n/g, " ").slice(0, 200);
+            return `- "${note}"`;
+          }).join("\n");
+        }
+      }
+    } catch {
+      // Best-effort — don't block extraction
+    }
+
     const { result: extractResult } =
-      await withRetry("EXTRACT_BOM", () => extractBomFromPdf(pdfBuffer, filename, PIPELINE_ACTOR), retryObs);
+      await withRetry("EXTRACT_BOM", () => extractBomFromPdf(pdfBuffer, filename, PIPELINE_ACTOR, undefined, feedbackContext), retryObs);
 
     if (!extractResult.bom) {
       return fail("EXTRACT_BOM", "BOM extraction returned no data");

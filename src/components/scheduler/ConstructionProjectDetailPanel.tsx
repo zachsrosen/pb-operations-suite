@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { formatCurrency, formatShortDate } from "@/lib/format";
 
 export interface ConstructionProjectDetailPanelProject {
   id: string;
@@ -38,18 +39,6 @@ interface ConstructionProjectDetailPanelProps {
   onUnschedule?: () => void;
   onConfirmTentative?: () => void;
   onCancelTentative?: () => void;
-}
-
-function formatShortDate(dateStr: string | null | undefined): string {
-  if (!dateStr) return "";
-  const d = new Date(dateStr + "T12:00:00");
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
-
-function formatCurrency(amount: number): string {
-  if (amount >= 1_000_000) return "$" + (amount / 1_000_000).toFixed(1) + "M";
-  if (amount >= 1_000) return "$" + (amount / 1000).toFixed(1) + "K";
-  return "$" + amount.toFixed(0);
 }
 
 function getCustomerName(fullName: string): string {

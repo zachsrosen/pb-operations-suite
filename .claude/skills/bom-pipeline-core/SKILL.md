@@ -14,6 +14,15 @@ One of:
 - Customer name (e.g., "Turner")
 - HubSpot deal ID
 
+## Prerequisite: Fetch Team Feedback
+
+Before starting the pipeline, fetch recent BOM feedback:
+1. Call `GET /api/bom/feedback` (or query `BomToolFeedback` table directly)
+2. Review notes — they highlight extraction gaps and SO creation issues from the ops team
+3. The API extraction and SO creation paths now inject feedback automatically, but reviewing it first ensures you can flag known issues proactively
+
+> **Note:** Feedback is injected into the extraction system prompt and SO audit trail automatically. This step is for your awareness during interactive sessions.
+
 ## Step 1: Find Deal in HubSpot
 
 ```

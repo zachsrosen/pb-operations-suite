@@ -21,6 +21,7 @@ const sectionTitleClasses = "text-lg font-semibold text-foreground mb-4";
 
 interface EditableSku {
   id: string;
+  name: string | null;
   category: string;
   brand: string;
   model: string;
@@ -65,6 +66,7 @@ export default function CatalogSkuEditPage() {
   const [category, setCategory] = useState<string>("");
   const [brand, setBrand] = useState("");
   const [model, setModel] = useState("");
+  const [name, setName] = useState("");
   const [sku, setSku] = useState("");
   const [description, setDescription] = useState("");
   const [vendorName, setVendorName] = useState("");
@@ -109,6 +111,7 @@ export default function CatalogSkuEditPage() {
         setCategory(found.category);
         setBrand(found.brand);
         setModel(found.model);
+        setName(found.name ?? "");
         setSku(found.sku ?? "");
         setDescription(found.description ?? "");
         setVendorName(found.vendorName ?? "");
@@ -160,6 +163,7 @@ export default function CatalogSkuEditPage() {
         category,
         brand,
         model,
+        name: name || null,
         description: description || null,
         sku: sku || null,
         vendorName: vendorName || null,
@@ -250,6 +254,29 @@ export default function CatalogSkuEditPage() {
                     required
                     className={inputClasses}
                   />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className={labelClasses}>
+                    Product Name
+                    {!name && <span className="text-muted font-normal ml-1">(auto from Brand + Model)</span>}
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={name || `${brand} ${model}`.trim()}
+                      onChange={(e) => setName(e.target.value)}
+                      className={`${inputClasses} flex-1`}
+                    />
+                    {name && (
+                      <button
+                        type="button"
+                        onClick={() => setName("")}
+                        className="text-xs text-muted hover:text-foreground shrink-0"
+                      >
+                        Reset
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div>
                   <label className={labelClasses}>SKU</label>

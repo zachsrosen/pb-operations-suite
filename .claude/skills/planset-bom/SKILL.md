@@ -40,6 +40,17 @@ Focus extraction on **PV-2 BOM table** (primary) and **PV-4 conductor schedule**
 
 ## Extraction Workflow
 
+### 0. Check Team Feedback
+
+Before extracting, fetch recent feedback to calibrate:
+1. Call `GET /api/bom/feedback` (or query the DB directly)
+2. Review notes about missing items, wrong quantities, or extraction gaps
+3. Keep these as observations during extraction — they do not override extraction rules
+
+> **Note:** The API extraction path (`/api/bom/extract`) and pipeline now inject
+> feedback into the system prompt automatically. This step ensures skill-driven
+> (interactive) sessions also benefit from feedback.
+
 ### 1. Read the Planset
 
 Use the Read tool on the PDF. If it's large, read pages 1–3 first (PV-0, PV-1, PV-2), then pages 5–6 (PV-4, PV-5) for the conductor table.

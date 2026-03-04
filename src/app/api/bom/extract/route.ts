@@ -22,7 +22,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { getServiceAccountToken } from "@/lib/google-auth";
-import { logActivity } from "@/lib/db";
+import { logActivity, prisma } from "@/lib/db";
 import { extractBomFromPdf } from "@/lib/bom-extract";
 import { getToken } from "next-auth/jwt";
 import type { ActorContext } from "@/lib/actor-context";
@@ -274,12 +274,32 @@ export async function POST(req: NextRequest) {
 
         const pdfBuffer = Buffer.from(arrayBuffer);
 
+        // ── Fetch team feedback (best-effort) ────────────────────────────
+        let feedbackContext: string | undefined;
+        try {
+          if (prisma) {
+            const entries = await prisma.bomToolFeedback.findMany({
+              orderBy: { createdAt: "desc" },
+              take: 10,
+            });
+            if (entries.length > 0) {
+              feedbackContext = entries.map(e => {
+                const note = e.notes.replace(/\n/g, " ").slice(0, 200);
+                return `- "${note}"`;
+              }).join("\n");
+            }
+          }
+        } catch {
+          // Best-effort — don't block extraction
+        }
+
         // ── Stage 2 + 3: Extract BOM (delegated to shared function) ──────
         const result = await extractBomFromPdf(
           pdfBuffer,
           filename,
           actor,
           (progress) => send({ type: "progress", ...progress }),
+          feedbackContext,
         );
 
         send({ type: "result", bom: result.bom });

@@ -556,6 +556,7 @@ export async function POST(request: NextRequest) {
     const hardToProcureParsed = parseOptionalBoolean(body, "hardToProcure");
     if ("error" in hardToProcureParsed) return NextResponse.json({ error: hardToProcureParsed.error }, { status: 400 });
 
+    const nameParsed = parseOptionalString(body, "name");
     const unitLabelParsed = parseOptionalString(body, "unitLabel");
     const descriptionParsed = parseOptionalString(body, "description");
     const skuParsed = parseOptionalString(body, "sku");
@@ -581,6 +582,7 @@ export async function POST(request: NextRequest) {
           },
         },
         update: {
+          ...(nameParsed.provided && { name: nameParsed.value }),
           ...(unitSpecParsed.provided && { unitSpec: unitSpecParsed.value }),
           ...(unitLabelParsed.provided && { unitLabel: unitLabelParsed.value }),
           ...(descriptionParsed.provided && { description: descriptionParsed.value }),
@@ -606,6 +608,7 @@ export async function POST(request: NextRequest) {
           category: category as EquipmentCategory,
           brand: trimmedBrand,
           model: trimmedModel,
+          name: nameParsed.provided ? nameParsed.value : null,
           canonicalBrand: canonicalToken(trimmedBrand),
           canonicalModel: canonicalToken(trimmedModel),
           canonicalKey: buildCanonicalKey(category as string, trimmedBrand, trimmedModel),
@@ -798,6 +801,7 @@ export async function PATCH(request: NextRequest) {
     if ("error" in isActiveParsed) return NextResponse.json({ error: isActiveParsed.error }, { status: 400 });
     if ("error" in hardToProcureParsed) return NextResponse.json({ error: hardToProcureParsed.error }, { status: 400 });
 
+    const nameParsed = parseOptionalString(body, "name");
     const unitLabelParsed = parseOptionalString(body, "unitLabel");
     const descriptionParsed = parseOptionalString(body, "description");
     const skuParsed = parseOptionalString(body, "sku");
@@ -836,6 +840,7 @@ export async function PATCH(request: NextRequest) {
       ...(categoryProvided && { category: category as EquipmentCategory }),
       ...(brandProvided && { brand }),
       ...(modelProvided && { model }),
+      ...(nameParsed.provided && { name: nameParsed.value }),
       ...(identityChanged && {
         canonicalBrand: canonicalToken(effectiveBrand),
         canonicalModel: canonicalToken(effectiveModel),

@@ -110,6 +110,7 @@ export async function PATCH(
   }
 
   // Nullable string fields
+  if ("name" in body) updateData.name = parseOptionalString(body.name);
   if ("sku" in body) updateData.sku = parseOptionalString(body.sku);
   if ("vendorName" in body) updateData.vendorName = parseOptionalString(body.vendorName);
   if ("vendorPartNumber" in body) updateData.vendorPartNumber = parseOptionalString(body.vendorPartNumber);

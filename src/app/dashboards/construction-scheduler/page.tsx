@@ -12,6 +12,7 @@ import { ConstructionMonthView } from "@/components/scheduler/construction/Const
 import { ConstructionWeekView } from "@/components/scheduler/construction/ConstructionWeekView";
 import { ConstructionGanttView } from "@/components/scheduler/construction/ConstructionGanttView";
 import { LOCATION_TIMEZONES } from "@/lib/constants";
+import { formatCurrency, formatDateShort, formatShortDate } from "@/lib/format";
 import {
   DEFAULT_LOCATION_CAPACITY,
   generateOptimizedSchedule,
@@ -22,7 +23,10 @@ import {
 import {
   getBusinessDatesInSpan,
   getConstructionSpanDaysFromZuper,
+  getTodayStr,
+  isPastDate,
   normalizeZuperBoundaryDates,
+  toDateStr,
 } from "@/lib/scheduling-utils";
 
 /* ------------------------------------------------------------------ */
@@ -197,27 +201,6 @@ const PRESET_DESCRIPTIONS: Record<ScoringPreset, { label: string; desc: string }
 /*  Utility helpers                                                    */
 /* ------------------------------------------------------------------ */
 
-function formatDate(dateStr: string): string {
-  const date = new Date(dateStr + "T12:00:00");
-  return date.toLocaleDateString("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
-}
-
-function formatShortDate(dateStr: string | null | undefined): string {
-  if (!dateStr) return "";
-  const d = new Date(dateStr + "T12:00:00");
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
-
-function formatCurrency(amount: number): string {
-  if (amount >= 1_000_000) return "$" + (amount / 1_000_000).toFixed(1) + "M";
-  if (amount >= 1_000) return "$" + (amount / 1000).toFixed(1) + "K";
-  return "$" + amount.toFixed(0);
-}
-
 function getCustomerName(fullName: string): string {
   return fullName.split(" | ")[1] || fullName;
 }
@@ -252,14 +235,6 @@ function arraysEqual(a: string[], b: string[]): boolean {
   return true;
 }
 
-function toDateStr(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-function getTodayStr(): string {
-  return toDateStr(new Date());
-}
-
 function getNextWorkdayFromToday(): string {
   const d = new Date();
   while (d.getDay() === 0 || d.getDay() === 6) {
@@ -279,10 +254,6 @@ function getWeekStartDateYmd(dateStr: string): string {
   const mondayBasedDow = (d.getDay() + 6) % 7;
   d.setDate(d.getDate() - mondayBasedDow);
   return toDateStr(d);
-}
-
-function isPastDate(dateStr: string): boolean {
-  return dateStr < getTodayStr();
 }
 
 function getDaysUntilDate(dateStr?: string | null): number | null {
@@ -1007,7 +978,7 @@ export default function ConstructionSchedulerPage() {
               p.id === project.id ? { ...p, tentativeRecordId: recordId, installStatus: "Tentative" } : p
             ));
           }
-          showToast(`${getCustomerName(project.name)} tentatively scheduled for ${formatDate(date)}`);
+          showToast(`${getCustomerName(project.name)} tentatively scheduled for ${formatDateShort(date)}`);
         } else {
           showToast(`${getCustomerName(project.name)} scheduled locally (tentative save failed)`, "warning");
         }
@@ -2240,7 +2211,7 @@ export default function ConstructionSchedulerPage() {
 
               <div>
                 <span className="text-xs text-muted">Install Date</span>
-                <p className="text-sm font-medium text-emerald-400">{formatDate(scheduleModal.date)}</p>
+                <p className="text-sm font-medium text-emerald-400">{formatDateShort(scheduleModal.date)}</p>
               </div>
 
               <div className="flex gap-6">

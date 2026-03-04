@@ -7,6 +7,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { useToast } from "@/contexts/ToastContext";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { LOCATION_TIMEZONES } from "@/lib/constants";
+import { formatCurrency, formatDateShort, formatShortDate } from "@/lib/format";
 import { generateOptimizedSchedule, type OptimizableProject, type ScoringPreset, type ExistingBooking, DEFAULT_LOCATION_CAPACITY } from "@/lib/schedule-optimizer";
 import {
   addBusinessDaysYmd,
@@ -15,6 +16,7 @@ import {
   getConstructionSpanDaysFromZuper,
   isWeekendDateYmd,
   normalizeZuperBoundaryDates as normalizeZuperBoundaryDatesShared,
+  toDateStr,
 } from "@/lib/scheduling-utils";
 
 /* ------------------------------------------------------------------ */
@@ -363,27 +365,6 @@ const STAGE_TAB_ACTIVE: Record<string, string> = {
 /*  Utility helpers                                                    */
 /* ------------------------------------------------------------------ */
 
-function formatDate(dateStr: string): string {
-  const date = new Date(dateStr + "T12:00:00");
-  return date.toLocaleDateString("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
-}
-
-function formatShortDate(dateStr: string | null | undefined): string {
-  if (!dateStr) return "";
-  const d = new Date(dateStr + "T12:00:00");
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
-
-function formatCurrency(amount: number): string {
-  if (amount >= 1_000_000) return "$" + (amount / 1_000_000).toFixed(1) + "M";
-  if (amount >= 1_000) return "$" + (amount / 1000).toFixed(1) + "K";
-  return "$" + amount.toFixed(0);
-}
-
 // Format revenue without $ sign for display contexts that add their own
 function formatRevenueCompact(amount: number): string {
   if (amount >= 1_000_000) return (amount / 1_000_000).toFixed(1) + "M";
@@ -420,10 +401,6 @@ function normalizeZuperBoundaryDates(
 
 function getNextWorkday(dateStr: string): string {
   return addBusinessDaysYmd(dateStr, 0);
-}
-
-function toDateStr(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function getBusinessDatesInSpan(startDate: string, totalDays: number): string[] {
@@ -1787,7 +1764,7 @@ export default function SchedulerPage() {
               [project.id]: { ...prev[project.id], recordId: tentData.record.id },
             }));
           }
-          showToast(`${getCustomerName(project.name)} tentatively scheduled for ${formatDate(date)}`);
+          showToast(`${getCustomerName(project.name)} tentatively scheduled for ${formatDateShort(date)}`);
         } else {
           showToast(`${getCustomerName(project.name)} scheduled locally (tentative save failed)`, "error");
         }
@@ -2267,7 +2244,7 @@ export default function SchedulerPage() {
   const copySchedule = useCallback(() => {
     let text = "PB Install Schedule\n==================\n\n";
     scheduledEvents.forEach((e) => {
-      text += `${formatDate(e.date)} - ${getCustomerName(e.name)}\n`;
+      text += `${formatDateShort(e.date)} - ${getCustomerName(e.name)}\n`;
       text += `  ${e.address}\n`;
       text += `  Assignee(s): ${e.crew || "Unassigned"} | ${e.days || e.daysInstall || 2} days | $${e.amount.toLocaleString()}\n\n`;
     });
@@ -4616,7 +4593,7 @@ export default function SchedulerPage() {
                         label="Date"
                         value={
                           displayDate
-                            ? formatDate(displayDate)
+                            ? formatDateShort(displayDate)
                             : "Not scheduled"
                         }
                         valueClass="text-blue-400 font-semibold"

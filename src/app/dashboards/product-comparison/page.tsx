@@ -11,10 +11,10 @@ type RowViewMode = "mismatches" | "matches" | "two-of-three" | "all";
 type MatchConfidence = "high" | "medium" | "low";
 type QueueFilter = "unlinked" | "resolved" | "no-internal" | "duplicates" | "pinned";
 
-const ALL_SOURCES = ["internal", "hubspot", "zuper", "zoho", "opensolar", "quickbooks"] as const;
+const ALL_SOURCES = ["internal", "hubspot", "zuper", "zoho", "quickbooks"] as const;
 type SourceName = (typeof ALL_SOURCES)[number];
-// OpenSolar & QuickBooks deactivated — remove from this set to reactivate
-const DEACTIVATED_SOURCES = new Set<SourceName>(["opensolar", "quickbooks"]);
+// QuickBooks deactivated — remove from this set to reactivate
+const DEACTIVATED_SOURCES = new Set<SourceName>(["quickbooks"]);
 const ACTIVE_SOURCES = ALL_SOURCES.filter((s) => !DEACTIVATED_SOURCES.has(s));
 const LINKABLE_SOURCES = ["hubspot", "zuper", "zoho", "quickbooks"] as const;
 type LinkableSourceName = (typeof LINKABLE_SOURCES)[number];
@@ -53,7 +53,6 @@ interface ComparisonRow {
   hubspot: ComparableProduct | null;
   zuper: ComparableProduct | null;
   zoho: ComparableProduct | null;
-  opensolar: ComparableProduct | null;
   quickbooks: ComparableProduct | null;
 }
 
@@ -201,7 +200,6 @@ function formatSourceName(source: SourceName): string {
   if (source === "hubspot") return "HubSpot";
   if (source === "zuper") return "Zuper";
   if (source === "zoho") return "Zoho";
-  if (source === "opensolar") return "OpenSolar";
   return "QuickBooks";
 }
 
@@ -249,7 +247,6 @@ function sourceBadgeClass(source: SourceName): string {
   if (source === "hubspot") return "bg-orange-500/15 border-orange-500/40 text-orange-300";
   if (source === "zuper") return "bg-blue-500/15 border-blue-500/40 text-blue-300";
   if (source === "zoho") return "bg-emerald-500/15 border-emerald-500/40 text-emerald-300";
-  if (source === "opensolar") return "bg-teal-500/15 border-teal-500/40 text-teal-300";
   return "bg-sky-500/15 border-sky-500/40 text-sky-300";
 }
 
@@ -258,7 +255,6 @@ function reasonBadgeClass(reason: string): string {
   if (reason === "Missing in HubSpot") return "border-orange-500/40 bg-orange-500/10 text-orange-300";
   if (reason === "Missing in Zuper") return "border-blue-500/40 bg-blue-500/10 text-blue-300";
   if (reason === "Missing in Zoho") return "border-emerald-500/40 bg-emerald-500/10 text-emerald-300";
-  if (reason === "Missing in OpenSolar") return "border-teal-500/40 bg-teal-500/10 text-teal-300";
   if (reason === "Missing in QuickBooks") return "border-sky-500/40 bg-sky-500/10 text-sky-300";
   if (reason.includes("Internal link missing")) return "border-amber-500/40 bg-amber-500/10 text-amber-300";
   if (reason.includes("Internal link mismatch")) return "border-red-500/40 bg-red-500/10 text-red-300";
@@ -512,7 +508,7 @@ function splitBrandAndModel(name: string | null | undefined): { brand: string; m
 }
 
 function chooseSeedProductForInternal(row: ComparisonRow): ComparableProduct | null {
-  return row.quickbooks || row.zoho || row.zuper || row.hubspot || row.opensolar || null;
+  return row.quickbooks || row.zoho || row.zuper || row.hubspot || null;
 }
 
 function inferInternalCategory(row: ComparisonRow): string {
@@ -540,7 +536,6 @@ const MISSING_SOURCE_OPTIONS: FilterOption[] = [
   { value: "hubspot", label: "Missing in HubSpot" },
   { value: "zuper", label: "Missing in Zuper" },
   { value: "zoho", label: "Missing in Zoho" },
-  // OpenSolar deactivated
 ];
 
 const WEBSITE_VIEW_OPTIONS: FilterOption[] = ACTIVE_SOURCES.map((source) => ({
@@ -1666,10 +1661,6 @@ export default function ProductComparisonPage() {
       zoho_sku: row.zoho?.sku || "",
       zoho_price: row.zoho?.price ?? "",
       zoho_url: row.zoho?.url || "",
-      opensolar_name: row.opensolar?.name || "",
-      opensolar_sku: row.opensolar?.sku || "",
-      opensolar_price: row.opensolar?.price ?? "",
-      opensolar_url: row.opensolar?.url || "",
       quickbooks_name: row.quickbooks?.name || "",
       quickbooks_sku: row.quickbooks?.sku || "",
       quickbooks_price: row.quickbooks?.price ?? "",
@@ -2132,9 +2123,9 @@ export default function ProductComparisonPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
-            {ACTIVE_SOURCES.map((source) => (
-              <div key={source} className="bg-surface border border-t-border rounded-xl p-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {[...ACTIVE_SOURCES].sort((a, b) => (a === "internal" ? -1 : b === "internal" ? 1 : 0)).map((source) => (
+              <div key={source} className={`bg-surface border border-t-border rounded-xl p-4${source === "internal" ? " md:col-span-3" : ""}`}>
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold">{formatSourceName(source)}</h3>
                   <span
@@ -2657,7 +2648,7 @@ export default function ProductComparisonPage() {
                                   )}
                                 </div>
                               ) : (
-                                <div className="text-[11px] text-muted">OpenSolar linking is not stored on internal SKUs yet.</div>
+                                <div className="text-[11px] text-muted">Linking is not supported for this source.</div>
                               )}
                             </div>
                           )}

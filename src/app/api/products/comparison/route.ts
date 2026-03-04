@@ -6,7 +6,6 @@ import { normalizeRole, type UserRole } from "@/lib/role-permissions";
 import { zohoInventory, type ZohoInventoryItem } from "@/lib/zoho-inventory";
 import {
   getHubSpotProductUrl,
-  getOpenSolarProductUrl,
   getQuickBooksItemUrl,
   getZohoItemUrl,
   getZuperProductUrl,
@@ -15,10 +14,10 @@ import {
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-const ALL_SOURCES = ["internal", "hubspot", "zuper", "zoho", "opensolar", "quickbooks"] as const;
+const ALL_SOURCES = ["internal", "hubspot", "zuper", "zoho", "quickbooks"] as const;
 type SourceName = (typeof ALL_SOURCES)[number];
-// OpenSolar & QuickBooks deactivated — remove from this set to reactivate
-const DEACTIVATED_SOURCES = new Set<SourceName>(["opensolar", "quickbooks"]);
+// QuickBooks deactivated — remove from this set to reactivate
+const DEACTIVATED_SOURCES = new Set<SourceName>(["quickbooks"]);
 const LINKABLE_SOURCES = ["hubspot", "zuper", "zoho", "quickbooks"] as const;
 type LinkableSourceName = (typeof LINKABLE_SOURCES)[number];
 
@@ -27,7 +26,6 @@ const SOURCE_LABELS: Record<SourceName, string> = {
   hubspot: "HubSpot",
   zuper: "Zuper",
   zoho: "Zoho",
-  opensolar: "OpenSolar",
   quickbooks: "QuickBooks",
 };
 
@@ -35,14 +33,13 @@ function isLinkableSource(source: SourceName): source is LinkableSourceName {
   return LINKABLE_SOURCES.includes(source as LinkableSourceName);
 }
 
-type CacheSourceName = "hubspot" | "zuper" | "zoho" | "quickbooks" | "opensolar";
+type CacheSourceName = "hubspot" | "zuper" | "zoho" | "quickbooks";
 
 const CACHE_SOURCE_ENUM: Record<CacheSourceName, CatalogProductSource> = {
   hubspot: "HUBSPOT",
   zuper: "ZUPER",
   zoho: "ZOHO",
   quickbooks: "QUICKBOOKS",
-  opensolar: "OPENSOLAR",
 };
 
 type RowProducts = Record<SourceName, ComparableProduct | null>;
@@ -343,9 +340,6 @@ function buildZohoProductUrl(itemId: string): string {
   return getZohoItemUrl(itemId);
 }
 
-function buildOpenSolarProductUrl(productId: string): string {
-  return getOpenSolarProductUrl(productId);
-}
 
 function buildQuickBooksProductUrl(itemId: string): string | null {
   return getQuickBooksItemUrl(itemId);
@@ -997,7 +991,6 @@ function createExactMatchIndex(
     hubspot: makeEntry(),
     zuper: makeEntry(),
     zoho: makeEntry(),
-    opensolar: makeEntry(),
     quickbooks: makeEntry(),
   };
 
@@ -1265,7 +1258,6 @@ function autoMergeRows(rows: ComparisonRow[], sources: SourceName[]): Comparison
           hubspot: base.hubspot || target.hubspot,
           zuper: base.zuper || target.zuper,
           zoho: base.zoho || target.zoho,
-          opensolar: base.opensolar || target.opensolar,
           quickbooks: base.quickbooks || target.quickbooks,
           internalDuplicates: mergeInternalDuplicates(base.internalDuplicates, target.internalDuplicates),
           reasons: [],
@@ -1300,7 +1292,6 @@ function createProductIdIndex(
     hubspot: new Map<string, ComparableProduct>(),
     zuper: new Map<string, ComparableProduct>(),
     zoho: new Map<string, ComparableProduct>(),
-    opensolar: new Map<string, ComparableProduct>(),
     quickbooks: new Map<string, ComparableProduct>(),
   } as Record<SourceName, Map<string, ComparableProduct>>;
 
@@ -1720,132 +1711,6 @@ async function fetchZuperProducts(): Promise<{ products: NormalizedProduct[]; er
   };
 }
 
-function parseOpenSolarProduct(candidate: unknown): Omit<NormalizedProduct, "source" | "key" | "normalizedName"> | null {
-  const record = coerceRecord(candidate);
-  if (!record) return null;
-
-  const id = getStringField(record, ["id", "uuid", "product_id", "productId"]);
-  const name = getStringField(record, ["name", "title", "product_name", "productName", "display_name"]);
-  const sku = getStringField(record, ["sku", "code", "product_sku", "part_number", "partNumber"]);
-  const description = getStringField(record, ["description", "details", "product_description"]);
-  const directUrl = getStringField(record, ["url", "web_url", "product_url", "product_link", "link"]);
-  const status =
-    getStringField(record, ["status", "state"]) ??
-    (typeof record.active === "boolean" ? (record.active ? "active" : "inactive") : null);
-  const price = parsePrice(record.price ?? record.unit_price ?? record.rate ?? record.selling_price);
-
-  if (!id && !name && !sku) return null;
-  const fallbackIdBase = normalizeText(`${name || ""} ${sku || ""} ${status || ""}`) || "unknown";
-  const resolvedId = id || `opensolar-fallback-${fallbackIdBase}`;
-
-  return {
-    id: resolvedId,
-    name: name || null,
-    sku: sku || null,
-    price,
-    status,
-    description: description || null,
-    url: directUrl || buildOpenSolarProductUrl(resolvedId),
-  };
-}
-
-async function fetchOpenSolarProducts(): Promise<{ products: NormalizedProduct[]; error: string | null; configured: boolean }> {
-  const requestTimeoutMs = parsePositiveIntEnv("PRODUCT_COMPARISON_REQUEST_TIMEOUT_MS", 8000);
-  const apiKey = process.env.OPENSOLAR_API_KEY || process.env.OPENSOLAR_ACCESS_TOKEN;
-  if (!apiKey) {
-    return { products: [], error: null, configured: false };
-  }
-
-  const baseUrl = (process.env.OPENSOLAR_API_URL || "https://api.opensolar.com/api").replace(/\/$/, "");
-  const endpointCandidates = ["/products", "/product", "/inventory/products"];
-  let lastError: string | null = null;
-
-  for (const endpoint of endpointCandidates) {
-    const deduped = new Map<string, NormalizedProduct>();
-    const pageSize = 200;
-    const maxPages = 30;
-
-    try {
-      for (let page = 1; page <= maxPages; page += 1) {
-        const query = new URLSearchParams({
-          page: String(page),
-          limit: String(pageSize),
-          per_page: String(pageSize),
-          page_size: String(pageSize),
-        });
-        const url = `${baseUrl}${endpoint}?${query.toString()}`;
-
-        const response = await fetchWithTimeout(
-          url,
-          {
-            method: "GET",
-            headers: {
-              Authorization: `Bearer ${apiKey}`,
-              "x-api-key": apiKey,
-              "Content-Type": "application/json",
-            },
-            cache: "no-store",
-          },
-          requestTimeoutMs
-        );
-
-        if (response.status === 404 || response.status === 405) {
-          lastError = `Endpoint not available: ${endpoint}`;
-          break;
-        }
-
-        const rawText = await response.text();
-        if (!response.ok) {
-          lastError = `OpenSolar ${endpoint} failed (${response.status})`;
-          break;
-        }
-
-        const payload = rawText ? (JSON.parse(rawText) as unknown) : {};
-        const array = getNestedArrayCandidate(payload);
-        if (!array || array.length === 0) break;
-
-        for (const row of array) {
-          const parsed = parseOpenSolarProduct(row);
-          if (!parsed) continue;
-          const normalized: NormalizedProduct = {
-            source: "opensolar",
-            id: parsed.id,
-            name: parsed.name,
-            sku: parsed.sku,
-            price: parsed.price,
-            status: parsed.status,
-            description: parsed.description,
-            url: parsed.url,
-            key: keyForProduct(parsed.sku, parsed.name, "opensolar", parsed.id),
-            normalizedName: normalizeText(parsed.name),
-          };
-          if (!deduped.has(normalized.id)) {
-            deduped.set(normalized.id, normalized);
-          }
-        }
-
-        if (array.length < pageSize) break;
-      }
-
-      if (deduped.size > 0) {
-        return {
-          products: [...deduped.values()],
-          error: null,
-          configured: true,
-        };
-      }
-    } catch (error) {
-      lastError = error instanceof Error ? error.message : `Failed to fetch ${endpoint}`;
-    }
-  }
-
-  return {
-    products: [],
-    error: lastError || "No supported OpenSolar product endpoint returned data",
-    configured: true,
-  };
-}
-
 function parseQuickBooksProduct(candidate: unknown): Omit<NormalizedProduct, "source" | "key" | "normalizedName"> | null {
   const record = coerceRecord(candidate);
   if (!record) return null;
@@ -2066,7 +1931,6 @@ function createGroupedProductBuckets(): Record<SourceName, NormalizedProduct[]> 
     hubspot: [],
     zuper: [],
     zoho: [],
-    opensolar: [],
     quickbooks: [],
   };
 }
@@ -2077,7 +1941,6 @@ function fallbackUrlForCache(source: CacheSourceName, externalId: string): strin
   if (source === "hubspot") return buildHubSpotProductUrl(id);
   if (source === "zuper") return buildZuperProductUrl(id);
   if (source === "zoho") return buildZohoProductUrl(id);
-  if (source === "opensolar") return buildOpenSolarProductUrl(id);
   return buildQuickBooksProductUrl(id);
 }
 
@@ -2087,7 +1950,6 @@ function sourceFromCacheEnum(source: CatalogProductSource): CacheSourceName {
     ZUPER: "zuper",
     ZOHO: "zoho",
     QUICKBOOKS: "quickbooks",
-    OPENSOLAR: "opensolar",
   };
   return map[source];
 }
@@ -2230,7 +2092,6 @@ async function backfillLinkedProductsFromCache(
     hubspot: [...productsBySource.hubspot],
     zuper: [...productsBySource.zuper],
     zoho: [...productsBySource.zoho],
-    opensolar: [...productsBySource.opensolar],
     quickbooks: [...productsBySource.quickbooks],
   };
   const warnings: string[] = [];
@@ -2365,7 +2226,6 @@ function buildComparisonRows(products: NormalizedProduct[], sources: SourceName[
       hubspot: pickPrimary(group.hubspot),
       zuper: pickPrimary(group.zuper),
       zoho: pickPrimary(group.zoho),
-      opensolar: pickPrimary(group.opensolar),
       quickbooks: pickPrimary(group.quickbooks),
     };
     reasons.push(...evaluateRowReasons(primaryRow, sources));
@@ -2423,7 +2283,7 @@ export async function GET() {
   }
 
   const sourceTimeoutMs = parsePositiveIntEnv("PRODUCT_COMPARISON_SOURCE_TIMEOUT_MS", 12000);
-  const [internalResult, hubspotResult, zuperResult, zohoResult, opensolarResult, quickbooksResult] = await Promise.all([
+  const [internalResult, hubspotResult, zuperResult, zohoResult, quickbooksResult] = await Promise.all([
     withTimeout(fetchInternalProducts(), sourceTimeoutMs, "Internal catalog fetch").catch((error) => ({
       products: [],
       configured: Boolean(prisma),
@@ -2446,8 +2306,6 @@ export async function GET() {
       configured: zohoInventory.isConfigured(),
       error: asErrorMessage(error, "Zoho catalog fetch timed out"),
     })),
-    // OpenSolar deactivated — re-add fetchOpenSolarProducts() to reactivate
-    Promise.resolve({ products: [] as NormalizedProduct[], configured: false, error: null as string | null }),
     withTimeout(fetchQuickBooksProducts(), sourceTimeoutMs, "QuickBooks catalog fetch").catch((error) => ({
       products: [],
       configured: Boolean(process.env.QUICKBOOKS_ACCESS_TOKEN && process.env.QUICKBOOKS_COMPANY_ID),
@@ -2455,7 +2313,7 @@ export async function GET() {
     })),
   ]);
 
-  const [hubspotCache, zuperCache, zohoCache, quickbooksCache, opensolarCache] = await Promise.all([
+  const [hubspotCache, zuperCache, zohoCache, quickbooksCache] = await Promise.all([
     hydrateSourceWithCache("hubspot", {
       products: hubspotResult.products,
       configured: hubspotResult.configured,
@@ -2475,11 +2333,6 @@ export async function GET() {
       products: quickbooksResult.products,
       configured: quickbooksResult.configured,
       error: quickbooksResult.error,
-    }),
-    hydrateSourceWithCache("opensolar", {
-      products: opensolarResult.products,
-      configured: opensolarResult.configured,
-      error: opensolarResult.error,
     }),
   ]);
 
@@ -2507,13 +2360,6 @@ export async function GET() {
     configured: quickbooksCache.result.configured,
     error: quickbooksCache.result.error,
   };
-  const effectiveOpensolarResult = {
-    ...opensolarResult,
-    products: opensolarCache.result.products,
-    configured: opensolarCache.result.configured,
-    error: opensolarCache.result.error,
-  };
-
   const productCapPerSource = parsePositiveIntEnv("PRODUCT_COMPARISON_MAX_PRODUCTS_PER_SOURCE", 2500);
   const performanceWarnings: string[] = [];
   const capProducts = <T extends SourceFetchResult>(source: SourceName, result: T): T => {
@@ -2531,7 +2377,6 @@ export async function GET() {
   const boundedHubspotResult = capProducts("hubspot", effectiveHubspotResult);
   const boundedZuperResult = capProducts("zuper", effectiveZuperResult);
   const boundedZohoResult = capProducts("zoho", effectiveZohoResult);
-  const boundedOpensolarResult = capProducts("opensolar", effectiveOpensolarResult);
   const boundedQuickbooksResult = capProducts("quickbooks", effectiveQuickbooksResult);
 
   const sourceResults = {
@@ -2539,7 +2384,6 @@ export async function GET() {
     hubspot: boundedHubspotResult,
     zuper: boundedZuperResult,
     zoho: boundedZohoResult,
-    opensolar: boundedOpensolarResult,
     quickbooks: boundedQuickbooksResult,
   } as const;
   const comparisonSources = ALL_SOURCES.filter((source) => !DEACTIVATED_SOURCES.has(source) && sourceResults[source].configured);
@@ -2549,7 +2393,6 @@ export async function GET() {
     ...boundedHubspotResult.products,
     ...boundedZuperResult.products,
     ...boundedZohoResult.products,
-    ...boundedOpensolarResult.products,
     ...boundedQuickbooksResult.products,
   ];
   const rows = buildComparisonRows(allProducts, comparisonSources);
@@ -2558,7 +2401,6 @@ export async function GET() {
     hubspot: boundedHubspotResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
     zuper: boundedZuperResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
     zoho: boundedZohoResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
-    opensolar: boundedOpensolarResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
     quickbooks: boundedQuickbooksResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
   };
   const linkedCacheBackfill = await backfillLinkedProductsFromCache(
@@ -2619,7 +2461,6 @@ export async function GET() {
     hubspot: sourceResults.hubspot.configured ? enrichedRows.filter((row) => row.hubspot === null).length : 0,
     zuper: sourceResults.zuper.configured ? enrichedRows.filter((row) => row.zuper === null).length : 0,
     zoho: sourceResults.zoho.configured ? enrichedRows.filter((row) => row.zoho === null).length : 0,
-    opensolar: sourceResults.opensolar.configured ? enrichedRows.filter((row) => row.opensolar === null).length : 0,
     quickbooks: sourceResults.quickbooks.configured ? enrichedRows.filter((row) => row.quickbooks === null).length : 0,
   };
 
@@ -2627,7 +2468,7 @@ export async function GET() {
     ...ALL_SOURCES
     .map((source) => sourceResults[source].error)
     .filter(Boolean) as string[],
-    ...[hubspotCache, zuperCache, zohoCache, quickbooksCache, opensolarCache]
+    ...[hubspotCache, zuperCache, zohoCache, quickbooksCache]
       .map((c) => c.warning)
       .filter(Boolean) as string[],
     ...linkedCacheBackfill.warnings,
@@ -2646,7 +2487,6 @@ export async function GET() {
         hubspot: boundedHubspotResult.products.length,
         zuper: boundedZuperResult.products.length,
         zoho: boundedZohoResult.products.length,
-        opensolar: boundedOpensolarResult.products.length,
         quickbooks: boundedQuickbooksResult.products.length,
       },
     },
@@ -2670,11 +2510,6 @@ export async function GET() {
         configured: boundedZohoResult.configured,
         count: boundedZohoResult.products.length,
         error: boundedZohoResult.error,
-      },
-      opensolar: {
-        configured: boundedOpensolarResult.configured,
-        count: boundedOpensolarResult.products.length,
-        error: boundedOpensolarResult.error,
       },
       quickbooks: {
         configured: boundedQuickbooksResult.configured,
