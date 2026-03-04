@@ -31,7 +31,7 @@ The base schema uses `MODULE | INVERTER | BATTERY | EV_CHARGER`. The full planse
 | `INVERTER` | Standalone inverters (if not Powerwall) | SolarEdge SE7600H |
 | `EV_CHARGER` | EV charging equipment | — |
 | `RACKING` | All mounting/racking hardware | IronRidge XR10, HUG attachments, clamps, screws |
-| `ELECTRICAL_BOS` | Balance of system electrical | Wire, conduit, J-box, disconnect, breaker, lugs |
+| `ELECTRICAL_BOS` | Balance of system electrical | J-box, disconnect, breaker, lugs (NO wires — stocked internally) |
 | `RAPID_SHUTDOWN` | Rapid shutdown devices | Tesla MCI-2 |
 | `MONITORING` | Gateway, comms, meters | Tesla Backup Gateway-3, Xcel PV meter |
 
@@ -151,30 +151,6 @@ Flag values: `"INFERRED"`, `"ASSUMED_BRAND"`, `"VALIDATION_WARNING"`, `"EXISTING
       "flags": []
     },
     {
-      "lineItem": "DC WIRE",
-      "category": "ELECTRICAL_BOS",
-      "brand": null,
-      "model": "PV-WIRE",
-      "description": "PV-WIRE, 10 AWG, 8 CONDUCTORS, FREE AIR (TAG A)",
-      "qty": 1,
-      "unitSpec": "10 AWG",
-      "unitLabel": "AWG",
-      "source": "PV-4",
-      "flags": []
-    },
-    {
-      "lineItem": "AC WIRE",
-      "category": "ELECTRICAL_BOS",
-      "brand": null,
-      "model": "THWN-2",
-      "description": "LINE:THWN-2, 6 AWG, 2 CONDUCTORS, 3/4\" EMT/PVC/FMC (TAG C)",
-      "qty": 1,
-      "unitSpec": "6 AWG",
-      "unitLabel": "AWG",
-      "source": "PV-4",
-      "flags": []
-    },
-    {
       "lineItem": "JUNCTION BOX",
       "category": "ELECTRICAL_BOS",
       "brand": "EZ Solar",
@@ -246,10 +222,6 @@ RACKING,,End Clamp,"MODULES CLAMPS (END CLAMP)",48,,,PV-2,
 ELECTRICAL_BOS,,Ground Lug,"GROUND LUG",12,,,PV-2,
 ELECTRICAL_BOS,EZ Solar,JB-1.2,"EZ SOLAR JB-1.2 1000V 80A MAX",1,"80A, 1000V",,PV-2,
 ELECTRICAL_BOS,,60A Non-Fused AC Disconnect,"60A NON-FUSED AC DISCONNECT 240VAC",1,60A,A,PV-2,
-ELECTRICAL_BOS,,PV-WIRE,"PV-WIRE 10 AWG 8 CONDUCTORS FREE AIR (TAG A)",1,10 AWG,AWG,PV-4,
-ELECTRICAL_BOS,,THHN/THWN-2,"LINE:THHN/THWN-2 10 AWG 8 CONDUCTORS 3/4"" EMT (TAG B)",1,10 AWG,AWG,PV-4,
-ELECTRICAL_BOS,,THWN-2,"LINE:THWN-2 6 AWG 2 CONDUCTORS 3/4"" EMT (TAG C)",1,6 AWG,AWG,PV-4,
-ELECTRICAL_BOS,,THWN-2,"LINE:THWN-2 3/0 AWG 2 CONDUCTORS 2"" EMT (TAG D)",1,3/0 AWG,AWG,PV-4,
 MONITORING,Tesla,Backup Gateway-3,"200A TESLA BACKUP GATEWAY-3 NEMA 3R UL LISTED",1,200A,A,PV-2,
 ```
 

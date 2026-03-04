@@ -15,7 +15,7 @@ Read a PB planset PDF and extract every line item into a structured BOM covering
 - Battery & inverter (Tesla Powerwall-3, kWh, part number)
 - Rapid shutdown devices
 - Racking & mounting hardware (rails, attachments, clamps, screws)
-- Electrical BOS (wire, conduit sizes, J-box, AC disconnect, ground lugs)
+- Electrical BOS (J-box, AC disconnect, ground lugs, breakers)
 - Monitoring & controls (gateway, production meter)
 
 Output all three formats: **CSV**, **Markdown**, and **JSON** (inventory-ready).
@@ -30,11 +30,11 @@ Every PB planset is a stamped AutoCAD PDF with consistent sheet numbering:
 |-------|--------|----------------|
 | **PV-0** | Cover sheet | System size (kWdc/kWac), equipment list with `(N)`/`(E)` prefixes |
 | **PV-2** | Roof plan | **BILL OF MATERIALS table** — primary source |
-| **PV-4** | Electrical line diagram | Conductor schedule (wire sizes, conduit types) + equipment model numbers |
+| **PV-4** | Electrical line diagram | Equipment model numbers, AC disconnect callout, rapid shutdown switch |
 | **PV-5** | Electrical calculation | OCPD rating for validation |
 | **PV-6** | Warning labels | ESS kWh size for battery validation |
 
-Focus extraction on **PV-2 BOM table** (primary) and **PV-4 conductor schedule** (electrical BOS).
+Focus extraction on **PV-2 BOM table** (primary) and **PV-4 SLD** (part numbers, AC disconnect callout, rapid shutdown switch).
 
 ---
 
@@ -76,17 +76,10 @@ Also read the **module detail block** (upper-left of PV-2) for: module dimension
 
 ### 4. Extract from PV-4 SLD (Three things to find)
 
-**A. Conductor schedule** — table at the bottom of PV-4:
-`TAG | CONDUCTOR | MIN CONDUCTOR SIZE | NUMBER OF CONDUCTORS | CONDUIT/CABLE TYPE | MIN CONDUIT SIZE`
+**Do NOT extract wires or conductors.** Skip the entire conductor schedule table on PV-4 (Tags A/B/C/D). Wires are stocked internally and not needed in the BOM.
 
-Add each row to the BOM as an `ELECTRICAL_BOS` item. Standard tags for Powerwall-3 jobs:
-- **Tag A** — PV-WIRE, 10 AWG, free air (DC at array)
-- **Tag B** — THHN/THWN-2, 10 AWG, 3/4" EMT (after J-box)
-- **Tag C** — THWN-2, 6 AWG, 3/4" EMT (AC after Powerwall)
-- **Tag D** — THWN-2, 3/0 AWG, 2" EMT (utility/main panel feed)
-
-**B. Rapid Shutdown Switch** — scan the SLD diagram itself (not the table) for:
-`(N) RAPID SHUTDOWN SWITCH` (typically with a `16/2 COMM WIRE` label connecting it to MCI-2 devices)
+**A. Rapid Shutdown Switch** — scan the SLD diagram itself (not the table) for:
+`(N) RAPID SHUTDOWN SWITCH`
 
 If present → add to BOM:
 ```json
@@ -95,11 +88,11 @@ If present → add to BOM:
 ```
 This is the **control unit** that triggers the MCI-2 module-level devices. It does NOT appear in the PV-2 BOM table — only in the PV-4 SLD. Always qty 1 per job.
 
-**C. AC disconnect wire configuration** — read the SLD callout for the 60A disconnect:
+**B. AC disconnect wire configuration** — read the SLD callout for the 60A disconnect:
 - If callout includes `1-PHASE, 3-WIRE` → use SKU **`TGN3322R`** (3-pole, for service upgrade jobs with neutral)
 - If callout says `2-WIRE` or no wire count → use SKU **`DG222URB`** (2-pole, standard)
 
-**D. Part numbers** — from PV-4 spec tables:
+**C. Part numbers** — from PV-4 spec tables:
 - Powerwall part number (e.g., `1707000-XX-Y`) → `model: "1707000-XX-Y"`, `description: "TESLA POWERWALL 3, 13.5kWh BATTERY & INVERTER"`
 - Gateway part number (e.g., `1841000-X1-Y`) → `model: "1841000-X1-Y"`, `description: "TESLA BACKUP GATEWAY 3, 200A, NEMA 3R"`
 
@@ -146,7 +139,6 @@ python3 .claude/skills/planset-bom/scripts/export-bom.py bom.json
 | PV-2 | GROUNDING LUG | `ELECTRICAL_BOS` | — |
 | PV-2 | JUNCTION BOX | `ELECTRICAL_BOS` | "EZ Solar" (JB-1.2) |
 | PV-2 | AC DISCONNECT | `ELECTRICAL_BOS` | **Check PV-4 SLD: 2-WIRE → DG222URB, 3-WIRE → TGN3322R** |
-| PV-4 | Wire/conduit | `ELECTRICAL_BOS` | Conductor schedule rows |
 | PV-2 | TESLA BACKUP GATEWAY | `MONITORING` | "Tesla" (Backup Gateway-3) |
 | PV-2 | PRODUCTION METER | `MONITORING` | "Xcel Energy" (Xcel jobs only) |
 
@@ -178,8 +170,6 @@ Patterns seen across multiple reviewed jobs — expect to see these on most jobs
 **Rapid Shutdown:** Tesla MCI-2 (standard) or MCI-2 High Current — count = number of modules / 2 rounded up, or 1 per string
 
 **Racking:** IronRidge XR10 rail (168" lengths), HUG attachments, HW-RD1430-01-M1 structural screws
-
-**Wiring:** 10 AWG PV-WIRE (DC), 6 AWG THWN-2 (AC), 3/0 AWG THWN-2 (utility side)
 
 **Gateway:** Tesla Backup Gateway-3, 200A, NEMA 3R (model 1841000-X1-Y)
 

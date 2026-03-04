@@ -3067,6 +3067,9 @@ function BomDashboardInner() {
             )}
 
             {/* BOM Table — grouped by category */}
+            <p className="text-xs text-muted italic">
+              Conductor schedule (wires/conduit) excluded — stocked internally.
+            </p>
             {CATEGORY_ORDER.filter((cat) => grouped[cat]?.length).map((cat) => (
               <div key={cat} className="rounded-xl bg-surface border border-t-border shadow-card overflow-hidden">
                 <div className="flex items-center justify-between px-5 py-3 border-b border-t-border bg-surface-2">

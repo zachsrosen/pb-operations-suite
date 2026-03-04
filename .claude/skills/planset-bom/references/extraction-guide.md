@@ -11,14 +11,14 @@ Photon Brothers uses a consistent AutoCAD-based planset template across all jobs
 | Roof Plan with Modules | PV-2 | **Primary BOM source** — roof layout + BILL OF MATERIALS table |
 | Equipment Elevation | PV-2.1 | Photo callouts of installed equipment |
 | Attachment Details | PV-3 | Racking cross-section details |
-| Electrical Line Diagram | PV-4 | **SLD + conductor schedule** — wire sizes and conduit types |
-| Electrical Calculation | PV-5 | Wire sizing calcs, OCPD rating |
+| Electrical Line Diagram | PV-4 | **SLD** — equipment part numbers, AC disconnect callout, rapid shutdown switch |
+| Electrical Calculation | PV-5 | OCPD rating |
 | Warning Labels | PV-6 | NEC-required labels (has ESS size confirmation) |
 | Placard | PV-7 | Rapid shutdown placard |
 | Spec Sheets | PV-8+ | Equipment data sheets |
 
 **The BILL OF MATERIALS table is always on sheet PV-2 (Roof Plan with Modules).**
-**Wire/conduit schedule is on PV-4 (Electrical Line Diagram).**
+**Do NOT extract wires or conductors from PV-4.** Wires are stocked internally and not needed in the BOM.
 
 ---
 
@@ -171,24 +171,7 @@ NOMINAL OUTPUT VOLTAGE              | 240 V
 
 ### D. Conductor / Wire Schedule Table (PV-4 bottom):
 
-This table is always present and lists wire sizes by circuit tag:
-
-| TAG | CONDUCTOR | MIN CONDUCTOR SIZE | NUMBER OF CONDUCTORS | CONDUIT/CABLE TYPE | MIN CONDUIT SIZE |
-|-----|-----------|-------------------|---------------------|-------------------|-----------------|
-| A | PV-WIRE | 10 AWG | 8 | FREE AIR | N/A |
-| A | EGC/GEC: BARE COPPER | 6 AWG | 1 | FREE AIR | N/A |
-| B | LINE:THHN/THWN-2/MC/NM-B | 10 AWG | 8 | EMT/PVC/FMC | 3/4" |
-| B | EGC/GEC: THHN/THWN-2 | 10 AWG | 1 | EMT/PVC/FMC | 3/4" |
-| C | LINE:THWN-2 | 6 AWG | 2 | EMT/PVC/FMC | 3/4" |
-| C | NEUTRAL: THWN-2 | 6 AWG | 1 | EMT/PVC/FMC | 3/4" |
-| C | EGC/GEC: THWN-2 | 10 AWG | 1 | EMT/PVC/FMC | 3/4" |
-| D | LINE:THWN-2 | 3/0 AWG | 2 | EMT/PVC/FMC | 2" |
-| D | NEUTRAL: THWN-2 | 3/0 AWG | 1 | EMT/PVC/FMC | 2" |
-| D | EGC/GEC: THWN-2 | 6 AWG | 1 | EMT/PVC/FMC | 2" |
-
-**Both Cantwell and Anderson use the same wire schedule** (identical tags A–D, same sizes). This is standard for Powerwall-3 systems at this voltage.
-
-Include all conductor schedule rows in the BOM under `ELECTRICAL_BOS` category.
+**SKIP — Do NOT extract wires or conductors.** The conductor schedule table (Tags A/B/C/D) is present on PV-4 but wires are stocked internally and should NOT be included in the BOM.
 
 ### E. Tesla Gateway Spec (PV-4):
 `(N) TESLA BACKUP GATEWAY-3 W/200A, NEMA 3R, UL LISTED (1841000-X1-Y)`
@@ -198,11 +181,9 @@ Include all conductor schedule rows in the BOM under `ELECTRICAL_BOS` category.
 
 ## Step 4: PV-5 Electrical Calculation — OCPD Confirmation
 
-PV-5 confirms wire sizing and OCPD rating. Use this to validate what's in the BOM:
+PV-5 confirms OCPD rating. Use this to validate the AC disconnect size:
 
 ```
-DC WIRE SIZING: PV WIRE = 10 AWG, 40 A @ 90°C
-AC WIRE (AFTER POWERWALL-3): 6 AWG, 75A @ 90°C
 OCPD: 60 A Overcurrent Protection
 ```
 
@@ -244,8 +225,6 @@ Use this to confirm battery kWh for the BOM (13.5 kWh = Tesla Powerwall-3 nomina
 | SUB PANEL | New load center | `ELECTRICAL_BOS` | "125A" |
 | AC DISCONNECT | AC disconnect | `ELECTRICAL_BOS` | "60A" |
 | PRODUCTION METER | Utility PV meter | `MONITORING` | — |
-| PV-WIRE (from PV-4) | DC wire | `ELECTRICAL_BOS` | "10 AWG" |
-| THHN/THWN-2 (from PV-4) | AC wire | `ELECTRICAL_BOS` | "6 AWG" |
 | EMT conduit (from PV-4) | Conduit | `ELECTRICAL_BOS` | "3/4\" EMT" |
 
 ---
@@ -258,7 +237,7 @@ After extracting the full BOM, run these checks:
 2. **Battery capacity**: ESS SIZE on PV-6 label = kWh listed in POWERWALL 3 SPECIFICATIONS on PV-4
 3. **OCPD match**: PV-5 OCPD rating (60A) = AC disconnect size in PV-2 BOM
 4. **Gateway paired with battery**: If BATTERY & INVERTER row is present, TESLA BACKUP GATEWAY row must also be present
-5. **Wire sizes match calcs**: DC wire (10 AWG) and AC wire (6 AWG) from conductor table match PV-5 calculations
+5. **OCPD matches disconnect**: PV-5 OCPD rating matches AC disconnect amp rating from PV-2
 6. **Production meter**: Xcel Energy jobs require XCEL ENERGY PV PRODUCTION METER; PVREA jobs do not
 
 Flag any mismatch as `VALIDATION_WARNING` in BOM output.
@@ -523,8 +502,7 @@ When the job includes a **tap** or **service upgrade** (look for "SERVICE UPGRAD
 
 | Item | Source Sheet | Notes |
 |------|-------------|-------|
-| Wire gauges + conduit sizes | PV-4 conductor table | Add to BOM as ELECTRICAL_BOS items |
-| **Rapid Shutdown Switch (IMO)** | **PV-4 SLD callout** | **"(N) RAPID SHUTDOWN SWITCH" + 16/2 comm wire → 1× IMO SI16-PEL64R-2** |
+| **Rapid Shutdown Switch (IMO)** | **PV-4 SLD callout** | **"(N) RAPID SHUTDOWN SWITCH" → 1× IMO SI16-PEL64R-2** |
 | **AC disconnect wire config** | **PV-4 SLD callout** | **"3-WIRE" → TGN3322R; default → DG222URB** |
 | Module electrical specs (Vmp, Imp, Voc, Isc) | PV-4 module spec table | Add to module row as additional fields |
 | Battery model number (part #) | PV-4 (e.g., 1707000-XX-Y) | Add to battery row |
