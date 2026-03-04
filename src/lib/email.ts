@@ -1925,6 +1925,8 @@ export async function sendPipelineNotification(params: {
   snapshotUrl?: string;
   // Location-based routing
   pbLocation?: string;
+  // Trigger source
+  trigger?: string;
 }): Promise<SendResult> {
   const failOverride = params.status === "failed" ? process.env.PIPELINE_FAIL_NOTIFY_EMAILS : undefined;
 
@@ -1956,12 +1958,26 @@ export async function sendPipelineNotification(params: {
   const hubspotDealUrl = getHubSpotDealUrl(params.dealId);
   const zohoSoUrl = params.soId ? getZohoSalesOrderUrl(params.soId) : null;
 
+  // ── Trigger label ──
+  const triggerLabels: Record<string, string> = {
+    WEBHOOK_DESIGN_COMPLETE: "Design Complete",
+    WEBHOOK_READY_TO_BUILD: "Ready to Build",
+    WEBHOOK_INSTALL_SCHEDULED: "Install Scheduled",
+    MANUAL: "Manual",
+    CRON: "Scheduled",
+  };
+  const triggerLabel = params.trigger ? triggerLabels[params.trigger] ?? params.trigger : undefined;
+
   // ── HTML email ──
   const htmlParts: string[] = [
     `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:600px;margin:0 auto">`,
     `<h2 style="color:${statusColor};margin-bottom:4px">BOM Pipeline ${statusLabel}</h2>`,
     `<p style="margin:2px 0"><strong>Deal:</strong> ${escapeHtml(params.dealName || params.dealId)}</p>`,
   ];
+
+  if (triggerLabel) {
+    htmlParts.push(`<p style="margin:2px 0"><strong>Trigger:</strong> ${escapeHtml(triggerLabel)}</p>`);
+  }
 
   // Links section
   const linkItems: string[] = [];
@@ -2039,6 +2055,7 @@ export async function sendPipelineNotification(params: {
   const textLines: (string | null)[] = [
     `BOM Pipeline ${statusLabel}: ${params.dealName || params.dealId}`,
     ``,
+    triggerLabel ? `Trigger: ${triggerLabel}` : null,
     `HubSpot Deal: ${hubspotDealUrl}`,
     zohoSoUrl && params.soNumber ? `Zoho SO: ${params.soNumber} — ${zohoSoUrl}` : null,
     params.designFolderUrl ? `Design Folder: ${params.designFolderUrl}` : null,

@@ -228,7 +228,7 @@ export async function POST(req: NextRequest) {
 
     // ── 8. Run pipeline in background ──
     waitUntil(
-      runDesignCompletePipeline(runId, dealId).catch((err) => {
+      runDesignCompletePipeline(runId, dealId, trigger).catch((err) => {
         console.error(`[design-complete] Unhandled pipeline error for deal ${dealId}:`, err);
       }),
     );

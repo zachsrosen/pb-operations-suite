@@ -878,7 +878,7 @@ export async function POST(request: NextRequest) {
                 "WEBHOOK_INSTALL_SCHEDULED",
                 fallbackDealName,
               );
-              await runDesignCompletePipeline(runId, fallbackDealId);
+              await runDesignCompletePipeline(runId, fallbackDealId, "WEBHOOK_INSTALL_SCHEDULED");
             } catch (err) {
               if (err instanceof DuplicateRunError) {
                 console.log(`[Zuper Confirm] Pipeline already running for deal ${fallbackDealId}`);
