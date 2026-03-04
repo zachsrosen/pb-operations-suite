@@ -704,16 +704,21 @@ export default function SiteSurveySchedulerPage() {
   // Auto-fetch customer email from HubSpot when invite modal opens
   useEffect(() => {
     if (!portalInviteProject) return;
+    let cancelled = false;
+    const projectId = portalInviteProject.id;
     setPortalInviteLoadingEmail(true);
-    fetch(`/api/portal/survey/contact-email?dealId=${portalInviteProject.id}`)
+    fetch(`/api/portal/survey/contact-email?dealId=${projectId}`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
+        if (cancelled) return;
         if (data?.email) {
-          setPortalInviteEmail(data.email);
+          // Only auto-fill if the user hasn't started typing
+          setPortalInviteEmail((prev) => (prev === "" ? data.email : prev));
         }
       })
       .catch(() => { /* user can type manually */ })
-      .finally(() => setPortalInviteLoadingEmail(false));
+      .finally(() => { if (!cancelled) setPortalInviteLoadingEmail(false); });
+    return () => { cancelled = true; };
   }, [portalInviteProject]);
 
   // Check Zuper configuration status
