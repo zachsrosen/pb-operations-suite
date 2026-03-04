@@ -92,6 +92,9 @@ export default function SiteSurveyDashboardPage() {
     return projects.filter(p => {
       if (!isInSiteSurveyPhase(p)) return false;
 
+      // Exclude completed surveys (have completion date)
+      if (p.siteSurveyCompletionDate) return false;
+
       // Location filter (multi-select)
       if (filterLocations.length > 0 && !filterLocations.includes(p.pbLocation || '')) return false;
 

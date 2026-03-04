@@ -1389,6 +1389,37 @@ export async function fetchPrimaryContactId(dealId: string): Promise<string | nu
   }
 }
 
+export async function fetchContactEmail(dealId: string): Promise<{ email: string; name: string } | null> {
+  const contactId = await fetchPrimaryContactId(dealId);
+  if (!contactId) return null;
+
+  const accessToken = process.env.HUBSPOT_ACCESS_TOKEN;
+  if (!accessToken) return null;
+
+  try {
+    const response = await fetch(
+      `https://api.hubapi.com/crm/v3/objects/contacts/${encodeURIComponent(contactId)}?properties=email,firstname,lastname`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        cache: "no-store",
+      }
+    );
+    if (!response.ok) return null;
+    const data = await response.json() as {
+      properties?: { email?: string; firstname?: string; lastname?: string };
+    };
+    const email = data.properties?.email;
+    if (!email) return null;
+    const name = [data.properties?.firstname, data.properties?.lastname].filter(Boolean).join(" ");
+    return { email, name };
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchProjectById(id: string): Promise<Project | null> {
   const portalId = process.env.HUBSPOT_PORTAL_ID || "21710069";
 

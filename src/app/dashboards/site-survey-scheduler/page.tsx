@@ -337,6 +337,7 @@ export default function SiteSurveySchedulerPage() {
   const [portalInviteSending, setPortalInviteSending] = useState(false);
   const [portalInviteResult, setPortalInviteResult] = useState<{ success: boolean; message: string } | null>(null);
   const [portalInviteStatuses, setPortalInviteStatuses] = useState<Record<string, string>>({});
+  const [portalInviteLoadingEmail, setPortalInviteLoadingEmail] = useState(false);
 
   /* ---- Zuper integration ---- */
   const [zuperConfigured, setZuperConfigured] = useState(false);
@@ -654,6 +655,26 @@ export default function SiteSurveySchedulerPage() {
       })
       .catch(() => { /* non-critical */ });
   }, [projects]);
+
+  // Auto-fetch customer email from HubSpot when invite modal opens
+  useEffect(() => {
+    if (!portalInviteProject) return;
+    let cancelled = false;
+    const projectId = portalInviteProject.id;
+    setPortalInviteLoadingEmail(true);
+    fetch(`/api/portal/survey/contact-email?dealId=${projectId}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled) return;
+        if (data?.email) {
+          // Only auto-fill if the user hasn't started typing
+          setPortalInviteEmail((prev) => (prev === "" ? data.email : prev));
+        }
+      })
+      .catch(() => { /* user can type manually */ })
+      .finally(() => { if (!cancelled) setPortalInviteLoadingEmail(false); });
+    return () => { cancelled = true; };
+  }, [portalInviteProject]);
 
   // Check Zuper configuration status
   useEffect(() => {
@@ -2050,6 +2071,39 @@ export default function SiteSurveySchedulerPage() {
                             {project.systemSize.toFixed(1)}kW
                           </span>
                         )}
+                        <span className="flex-1" />
+                        {!portalInviteStatuses[project.id] ? (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setPortalInviteProject(project);
+                              setPortalInviteEmail("");
+                              setPortalInvitePhone("");
+                              setPortalInviteResult(null);
+                            }}
+                            className="text-[10px] px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 border border-orange-500/30 font-medium"
+                            title="Send customer self-scheduling link"
+                          >
+                            Invite
+                          </button>
+                        ) : (
+                          <span
+                            className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                              portalInviteStatuses[project.id] === "SCHEDULED"
+                                ? "bg-green-500/20 text-green-400"
+                                : portalInviteStatuses[project.id] === "PENDING"
+                                  ? "bg-orange-500/20 text-orange-400"
+                                  : "bg-zinc-500/20 text-muted"
+                            }`}
+                            title={`Portal invite: ${portalInviteStatuses[project.id]}`}
+                          >
+                            {portalInviteStatuses[project.id] === "SCHEDULED"
+                              ? "Booked"
+                              : portalInviteStatuses[project.id] === "PENDING"
+                                ? "Invited"
+                                : portalInviteStatuses[project.id]}
+                          </span>
+                        )}
                       </div>
                     </div>
                   ))
@@ -2969,14 +3023,21 @@ export default function SiteSurveySchedulerPage() {
                 <label htmlFor="portal-email" className="block text-xs font-medium text-muted mb-1">
                   Customer Email *
                 </label>
-                <input
-                  id="portal-email"
-                  type="email"
-                  value={portalInviteEmail}
-                  onChange={(e) => setPortalInviteEmail(e.target.value)}
-                  placeholder="customer@example.com"
-                  className="w-full rounded-lg border border-t-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted focus:border-orange-500 focus:outline-none"
-                />
+                <div className="relative">
+                  <input
+                    id="portal-email"
+                    type="email"
+                    value={portalInviteEmail}
+                    onChange={(e) => setPortalInviteEmail(e.target.value)}
+                    placeholder={portalInviteLoadingEmail ? "Loading from HubSpot..." : "customer@example.com"}
+                    className="w-full rounded-lg border border-t-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted focus:border-orange-500 focus:outline-none"
+                  />
+                  {portalInviteLoadingEmail && (
+                    <div className="absolute right-2.5 top-1/2 -translate-y-1/2">
+                      <div className="w-4 h-4 border-2 border-orange-500/30 border-t-orange-500 rounded-full animate-spin" />
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Phone (optional) */}

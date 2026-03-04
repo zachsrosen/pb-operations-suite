@@ -95,6 +95,9 @@ export default function ConstructionDashboardPage() {
     return safeProjects.filter(p => {
       if (!isInConstructionPhase(p)) return false;
 
+      // Exclude completed construction (have completion date)
+      if (p.constructionCompleteDate) return false;
+
       // Location filter (multi-select)
       if (filterLocations.length > 0 && !filterLocations.includes(p.pbLocation || '')) return false;
 

@@ -128,6 +128,9 @@ export default function InspectionsPage() {
 
   const filteredProjects = useMemo(() => {
     return safeProjects.filter(p => {
+      // Exclude passed inspections (have pass date)
+      if (p.inspectionPassDate) return false;
+
       if (filterAhjs.length > 0 && !filterAhjs.includes(p.ahj || '')) return false;
       if (filterLocations.length > 0 && !filterLocations.includes(p.pbLocation || '')) return false;
       if (filterStages.length > 0 && !filterStages.includes(p.stage || '')) return false;
