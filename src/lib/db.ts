@@ -7,7 +7,7 @@
  */
 
 import { PrismaClient } from "@/generated/prisma/client";
-import { ActivityType } from "@/generated/prisma/enums";
+import { ActivityType, SurveyInviteStatus } from "@/generated/prisma/enums";
 import { PrismaNeon } from "@prisma/adapter-neon";
 
 // Import for local use + re-export role permissions from edge-compatible module
@@ -16,8 +16,8 @@ export { UserRole, ROLE_PERMISSIONS, normalizeRole, canAccessRoute, canScheduleT
 export type { RolePermissions } from "./role-permissions";
 
 // Re-export types
-export { ActivityType };
-export type { User, ActivityLog, BookedSlot, AppSetting, ZuperJobCache, HubSpotProjectCache, ScheduleRecord, RateLimit, AvailabilityOverride } from "@/generated/prisma/client";
+export { ActivityType, SurveyInviteStatus };
+export type { User, ActivityLog, BookedSlot, AppSetting, ZuperJobCache, HubSpotProjectCache, ScheduleRecord, RateLimit, AvailabilityOverride, SurveyInvite, IdempotencyKey, OutboxEvent } from "@/generated/prisma/client";
 
 // Connection string
 const connectionString = process.env.DATABASE_URL;

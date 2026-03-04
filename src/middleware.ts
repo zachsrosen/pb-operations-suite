@@ -9,7 +9,7 @@ import {
 } from "@/lib/role-permissions";
 
 // Routes that are always accessible (login, auth callbacks)
-const ALWAYS_ALLOWED = ["/login", "/api/auth", "/maintenance"];
+const ALWAYS_ALLOWED = ["/login", "/api/auth", "/maintenance", "/portal"];
 const PUBLIC_API_ROUTES = [
   "/api/deployment",
   "/api/updates/notify",
@@ -18,6 +18,7 @@ const PUBLIC_API_ROUTES = [
   "/api/webhooks/hubspot/design-review",
   "/api/cron/audit-digest",
   "/api/cron/audit-retention",
+  "/api/portal/survey", // Customer portal — token-validated, no session needed
 ];
 const MACHINE_TOKEN_ALLOWED_ROUTES = ["/api/bom", "/api/products/seed"] as const;
 
@@ -211,6 +212,11 @@ export default auth((req) => {
     return addSecurityHeaders(requestId, NextResponse.redirect(new URL(defaultRoute, req.url)));
   }
 
+  // Public page routes (portal, etc.) — allow regardless of auth status
+  if (!isLoginPage && ALWAYS_ALLOWED.some(route => pathname.startsWith(route))) {
+    return nextWithRequestId(requestId, req);
+  }
+
   // Redirect non-logged-in users to login
   if (!isLoginPage && !isLoggedIn) {
     const loginUrl = new URL("/login", req.url);
@@ -220,11 +226,6 @@ export default auth((req) => {
 
   // Role-based access control for ALL roles (not just SALES)
   if (isLoggedIn && !isLoginPage) {
-    // Always allow these routes for everyone
-    if (ALWAYS_ALLOWED.some(route => pathname.startsWith(route))) {
-      return nextWithRequestId(requestId, req);
-    }
-
     // Check role permissions
     if (!canAccessRoute(userRole, pathname)) {
       // Redirect to their default allowed page
