@@ -2132,7 +2132,7 @@ export default function ProductComparisonPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
             {ACTIVE_SOURCES.map((source) => (
               <div key={source} className="bg-surface border border-t-border rounded-xl p-4">
                 <div className="flex items-center justify-between">
@@ -2339,7 +2339,7 @@ export default function ProductComparisonPage() {
 
                   {compactCards && !isRowExpanded && (
                     <div className="mt-3 space-y-2">
-                      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-1.5">
+                      <div className="grid grid-cols-2 md:grid-cols-2 xl:grid-cols-4 gap-1.5">
                         {displayedSources.map((source) => {
                           const sourceProduct = row[source];
                           const isMissing = !sourceProduct;
