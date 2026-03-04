@@ -109,7 +109,7 @@ export async function getPortalAvailability(
   const locations = getLocationMatches(pbLocation);
 
   // ----- Load data in parallel -----
-  const [crewAvailabilities, bookedSlots, overrides] = await Promise.all([
+  const [crewAvailabilities, bookedSlots, scheduleRecords, overrides] = await Promise.all([
     // Active survey availabilities at this location (including aliases)
     prisma.crewAvailability.findMany({
       where: {
@@ -119,7 +119,7 @@ export async function getPortalAvailability(
         crewMember: { isActive: true },
       },
       include: {
-        crewMember: { select: { id: true, name: true, maxDailyJobs: true } },
+        crewMember: { select: { id: true, name: true, maxDailyJobs: true, zuperUserUid: true } },
       },
     }),
     // Booked slots in the date range (including aliases)
@@ -128,6 +128,26 @@ export async function getPortalAvailability(
         date: { gte: startDate, lte: endDate },
         location: { in: locations },
       },
+    }),
+    // Active survey schedule records (covers scheduler-created bookings that do
+    // not always materialize as BookedSlot rows)
+    prisma.scheduleRecord.findMany({
+      where: {
+        scheduleType: "survey",
+        status: { in: ["scheduled", "tentative"] },
+        scheduledDate: { gte: startDate, lte: endDate },
+        assignedUser: { not: null },
+        scheduledStart: { not: null },
+      },
+      select: {
+        projectId: true,
+        scheduledDate: true,
+        scheduledStart: true,
+        assignedUser: true,
+        assignedUserUid: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: "desc" },
     }),
     // Availability overrides in the date range
     prisma.availabilityOverride.findMany({
@@ -143,15 +163,42 @@ export async function getPortalAvailability(
   const bookedSet = new Set<string>();
   // Count booked slots per crew per day for maxDailyJobs enforcement
   const dailyBookedCount = new Map<string, number>(); // "date|crewMemberId" → count
+  const addBookedKey = (date: string, crewMemberId: string, startTime: string) => {
+    const key = `${date}|${crewMemberId}|${startTime}`;
+    if (bookedSet.has(key)) return;
+    bookedSet.add(key);
+    const dayKey = `${date}|${crewMemberId}`;
+    dailyBookedCount.set(dayKey, (dailyBookedCount.get(dayKey) || 0) + 1);
+  };
   for (const slot of bookedSlots) {
     // We key by userName in BookedSlot, but we need crewMemberId
     // Look up crew by name from our loaded availabilities
     const crew = crewAvailabilities.find((a) => a.crewMember.name === slot.userName);
     if (crew) {
-      bookedSet.add(`${slot.date}|${crew.crewMemberId}|${slot.startTime}`);
-      const dayKey = `${slot.date}|${crew.crewMemberId}`;
-      dailyBookedCount.set(dayKey, (dailyBookedCount.get(dayKey) || 0) + 1);
+      addBookedKey(slot.date, crew.crewMemberId, slot.startTime);
     }
+  }
+
+  // Also block with the latest active survey ScheduleRecord per project.
+  // This prevents portal double-booking when scheduler-created records have not
+  // been mirrored into BookedSlot yet.
+  const latestSurveyByProject = new Map<string, (typeof scheduleRecords)[number]>();
+  for (const record of scheduleRecords) {
+    if (!latestSurveyByProject.has(record.projectId)) {
+      latestSurveyByProject.set(record.projectId, record);
+    }
+  }
+  for (const record of latestSurveyByProject.values()) {
+    const start = normalizeTime(record.scheduledStart);
+    if (!start) continue;
+    const crew = crewAvailabilities.find((a) => {
+      if (record.assignedUserUid && a.crewMember.zuperUserUid === record.assignedUserUid) {
+        return true;
+      }
+      return !!record.assignedUser && a.crewMember.name === record.assignedUser;
+    });
+    if (!crew) continue;
+    addBookedKey(record.scheduledDate, crew.crewMemberId, start);
   }
 
   // ----- Index overrides for O(1) lookup -----
@@ -343,6 +390,21 @@ function rangesOverlap(
   return aS < bE && bS < aE;
 }
 
+function normalizeTime(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parts = trimmed.split(":");
+  if (parts.length < 2) return null;
+
+  const h = Number(parts[0]);
+  const m = Number(parts[1]);
+  if (!Number.isInteger(h) || !Number.isInteger(m)) return null;
+  if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
 // ---------------------------------------------------------------------------
 // Date helpers (timezone-aware, no external deps)
 // ---------------------------------------------------------------------------
@@ -360,6 +422,10 @@ function addCalendarDays(dateStr: string, days: number): string {
 }
 
 /** Get day of week (0=Sun) for a date string in a timezone */
+export function getDayOfWeekForTz(dateStr: string, timezone: string): number {
+  return getDayOfWeek(dateStr, timezone);
+}
+
 function getDayOfWeek(dateStr: string, timezone: string): number {
   const d = new Date(dateStr + "T12:00:00Z");
   // Get the local day in the target timezone

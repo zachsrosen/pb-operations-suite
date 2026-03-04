@@ -4,16 +4,28 @@
  * Public endpoint (no auth). Allows a customer to change their survey slot
  * if the existing booking is >24h away (checked via pre-computed cutoffAt).
  *
- * Reliability: same outbox pattern as booking — DB transaction first,
- * Zuper update + emails dispatched async.
+ * Reliability: DB transaction first, then side effects fire inline
+ * (same pattern as the booking endpoint). Side effect failures are logged
+ * but don't fail the reschedule.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { prisma } from "@/lib/db";
+import { prisma, cacheZuperJob, getCrewMemberByName } from "@/lib/db";
 import { validateToken } from "@/lib/portal-token";
-import { decodeSlotId } from "@/lib/portal-availability";
+import { decodeSlotId, getDayOfWeekForTz } from "@/lib/portal-availability";
 import { getTimezoneForLocation } from "@/lib/constants";
+import { zuper } from "@/lib/zuper";
+import { updateDealProperty, getDealProperties, updateSiteSurveyorProperty } from "@/lib/hubspot";
+import { sendSchedulingNotification, sendPortalEmail } from "@/lib/email";
+import {
+  upsertSiteSurveyCalendarEvent,
+  deleteSiteSurveyCalendarEvent,
+  getDenverSiteSurveyCalendarId,
+  getSharedCalendarImpersonationEmail,
+  getSurveyCalendarEventId,
+} from "@/lib/google-calendar";
+import { getGoogleCalendarEventUrl } from "@/lib/external-links";
 
 const RescheduleSchema = z.object({
   slotId: z.string().min(1),
@@ -113,7 +125,7 @@ export async function PUT(
 
   const crewMember = await prisma.crewMember.findUnique({
     where: { id: newSlot.crewMemberId },
-    select: { name: true, zuperUserUid: true, zuperTeamUid: true },
+    select: { name: true, email: true, zuperUserUid: true, zuperTeamUid: true },
   });
   if (!crewMember) {
     await markFailed(idempotencyKey, scope);
@@ -124,12 +136,13 @@ export async function PUT(
   const endTime = `${(h + 1).toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
 
   try {
-    await prisma.$transaction(async (tx) => {
-      // Lock new slot
+    const result = await prisma.$transaction(async (tx) => {
+      // Lock new slot — use timezone-aware day-of-week
+      const dayOfWeek = getDayOfWeekForTz(newSlot.date, timezone);
       await tx.$queryRaw`
         SELECT id FROM "CrewAvailability"
         WHERE "crewMemberId" = ${newSlot.crewMemberId}
-          AND "dayOfWeek" = ${new Date(newSlot.date + "T12:00:00Z").getUTCDay()}
+          AND "dayOfWeek" = ${dayOfWeek}
           AND "startTime" <= ${newSlot.time}
           AND "endTime" > ${newSlot.time}
         FOR UPDATE
@@ -139,7 +152,23 @@ export async function PUT(
       const taken = await tx.bookedSlot.findFirst({
         where: { date: newSlot.date, userName: crewMember.name, startTime: newSlot.time },
       });
-      if (taken) throw new SlotTakenError();
+      const conflictingSchedule = await tx.scheduleRecord.findFirst({
+        where: {
+          scheduleType: "survey",
+          status: { in: ["scheduled", "tentative"] },
+          scheduledDate: newSlot.date,
+          scheduledStart: { in: [newSlot.time, `${newSlot.time}:00`] },
+          OR: [
+            { assignedUserUid: crewMember.zuperUserUid },
+            { assignedUser: crewMember.name },
+          ],
+        },
+        select: { projectId: true },
+      });
+      // Allow conflict if it's for the same deal (we're rescheduling it)
+      if (taken || (conflictingSchedule && conflictingSchedule.projectId !== invite.dealId)) {
+        throw new SlotTakenError();
+      }
 
       // Free old slot
       if (invite.scheduledDate && invite.scheduledTime && invite.crewMemberId) {
@@ -173,7 +202,7 @@ export async function PUT(
         },
       });
 
-      // Update schedule record
+      // Update old schedule record
       if (invite.scheduleRecordId) {
         await tx.scheduleRecord.update({
           where: { id: invite.scheduleRecordId },
@@ -213,41 +242,6 @@ export async function PUT(
         },
       });
 
-      // Outbox: Zuper update + emails
-      await tx.outboxEvent.createMany({
-        data: [
-          {
-            type: "zuper_update_job",
-            payload: {
-              inviteId: invite.id,
-              zuperJobUid: invite.zuperJobUid,
-              newDate: newSlot.date,
-              newTime: newSlot.time,
-              crewUserUid: crewMember.zuperUserUid,
-              crewTeamUid: crewMember.zuperTeamUid,
-            },
-            inviteId: invite.id,
-            dedupeKey: `zuper_reschedule:${invite.id}:${newSlot.date}:${newSlot.time}`,
-            nextRetryAt: new Date(),
-          },
-          {
-            type: "send_reschedule_email",
-            payload: {
-              inviteId: invite.id,
-              customerEmail: invite.customerEmail,
-              customerName: invite.customerName,
-              propertyAddress: invite.propertyAddress,
-              scheduledDate: newSlot.date,
-              scheduledTime: newSlot.time,
-              pbLocation: invite.pbLocation,
-            },
-            inviteId: invite.id,
-            dedupeKey: `reschedule_email:${invite.id}:${newSlot.date}:${newSlot.time}`,
-            nextRetryAt: new Date(),
-          },
-        ],
-      });
-
       // Log
       await tx.activityLog.create({
         data: {
@@ -270,6 +264,8 @@ export async function PUT(
           riskScore: 1,
         },
       });
+
+      return { newScheduleRecord };
     });
 
     const responseBody = {
@@ -281,6 +277,20 @@ export async function PUT(
         canModify: true,
       },
     };
+
+    // ----- Fire side effects (best-effort, awaited for durability) -----
+    try {
+      await firePostRescheduleSideEffects({
+        invite,
+        newSlot,
+        endTime,
+        timezone,
+        crewMember,
+        scheduleRecordId: result.newScheduleRecord.id,
+      });
+    } catch (err) {
+      console.error("[portal/reschedule] Side effect error (non-fatal):", err);
+    }
 
     await prisma.idempotencyKey.update({
       where: { key_scope: { key: idempotencyKey, scope } },
@@ -301,6 +311,317 @@ export async function PUT(
     await markFailed(idempotencyKey, scope);
     return NextResponse.json({ error: "Something went wrong. Please try again." }, { status: 500 });
   }
+}
+
+// ---------------------------------------------------------------------------
+// Post-reschedule side effects — mirrors booking's firePostBookingSideEffects
+// ---------------------------------------------------------------------------
+
+async function firePostRescheduleSideEffects(ctx: {
+  invite: {
+    id: string;
+    dealId: string;
+    customerName: string;
+    customerEmail: string;
+    customerPhone: string | null;
+    propertyAddress: string;
+    pbLocation: string;
+    systemSize: number | null;
+    zuperJobUid: string | null;
+    sentBy?: string | null;
+  };
+  newSlot: { date: string; time: string; crewMemberId: string };
+  endTime: string;
+  timezone: string;
+  crewMember: {
+    name: string;
+    email: string | null;
+    zuperUserUid: string;
+    zuperTeamUid: string | null;
+  };
+  scheduleRecordId: string;
+}) {
+  const { invite, newSlot, endTime, timezone, crewMember } = ctx;
+  const warnings: string[] = [];
+
+  // 1. Fetch deal properties from HubSpot
+  const dealProps = await getDealProperties(invite.dealId, [
+    "dealname",
+    "property_address",
+    "deal_owner_name",
+  ]);
+
+  const projectName = dealProps?.dealname || `PROJ | ${invite.customerName} | ${invite.propertyAddress}`;
+  const dealOwnerName = dealProps?.deal_owner_name || undefined;
+
+  // 2. Reschedule in Zuper (or create if no job exists)
+  if (invite.zuperJobUid && zuper.isConfigured()) {
+    try {
+      const startUtc = localTimeToUtcString(newSlot.date, newSlot.time, timezone);
+      const endUtc = localTimeToUtcString(newSlot.date, endTime, timezone);
+      const rescheduleResult = await zuper.rescheduleJob(
+        invite.zuperJobUid,
+        startUtc,
+        endUtc,
+        [crewMember.zuperUserUid],
+        crewMember.zuperTeamUid || undefined,
+      );
+      if (rescheduleResult.type === "success") {
+        console.log(`[portal/reschedule] Zuper job rescheduled: ${invite.zuperJobUid}`);
+      } else {
+        warnings.push(`Zuper reschedule failed: ${rescheduleResult.error}`);
+      }
+    } catch (err) {
+      warnings.push(`Zuper reschedule error: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  // 3. Update schedule record with Zuper info
+  if (invite.zuperJobUid) {
+    try {
+      await prisma?.scheduleRecord.update({
+        where: { id: ctx.scheduleRecordId },
+        data: { zuperJobUid: invite.zuperJobUid, zuperSynced: true, zuperAssigned: true },
+      });
+    } catch (err) {
+      warnings.push(`Schedule record update error: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  // 4. Cache the Zuper job
+  if (invite.zuperJobUid) {
+    try {
+      const parsedStart = localTimeToUtc(newSlot.date, newSlot.time, timezone);
+      const parsedEnd = localTimeToUtc(newSlot.date, endTime, timezone);
+      await cacheZuperJob({
+        jobUid: invite.zuperJobUid,
+        jobTitle: `survey - ${projectName}`,
+        jobCategory: "Site Survey",
+        jobStatus: "SCHEDULED",
+        hubspotDealId: invite.dealId,
+        projectName,
+        scheduledStart: parsedStart,
+        scheduledEnd: parsedEnd,
+      });
+    } catch (err) {
+      warnings.push(`Cache Zuper job failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  // 5. Update HubSpot schedule date
+  try {
+    const dateUpdated = await updateDealProperty(invite.dealId, {
+      site_survey_schedule_date: newSlot.date,
+    });
+    if (!dateUpdated) {
+      warnings.push("HubSpot site_survey_schedule_date write failed");
+    }
+  } catch (err) {
+    warnings.push(`HubSpot date update error: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  // 6. Update HubSpot site_surveyor
+  try {
+    const surveyorUpdated = await updateSiteSurveyorProperty(invite.dealId, crewMember.name);
+    if (!surveyorUpdated) {
+      warnings.push("HubSpot site_surveyor write failed");
+    }
+  } catch (err) {
+    warnings.push(`HubSpot surveyor update error: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  // 7. Resolve crew email
+  let crewEmail = crewMember.email;
+  if (!crewEmail) {
+    const byName = await getCrewMemberByName(crewMember.name);
+    crewEmail = byName?.email || null;
+  }
+
+  // 8. Send crew notification email
+  if (crewEmail) {
+    try {
+      await sendSchedulingNotification({
+        to: crewEmail,
+        crewMemberName: crewMember.name,
+        scheduledByName: "Customer Portal",
+        scheduledByEmail: invite.sentBy || "portal@photonbrothers.com",
+        dealOwnerName: dealOwnerName || undefined,
+        appointmentType: "survey",
+        customerName: invite.customerName,
+        customerAddress: invite.propertyAddress,
+        scheduledDate: newSlot.date,
+        scheduledStart: newSlot.time,
+        scheduledEnd: endTime,
+        projectId: invite.dealId,
+        zuperJobUid: invite.zuperJobUid || undefined,
+        googleCalendarEventUrl:
+          getGoogleCalendarEventUrl(getSurveyCalendarEventId(invite.dealId), crewEmail) || undefined,
+        notes: `Rescheduled by customer via portal`,
+      });
+      console.log(`[portal/reschedule] Crew notification sent to ${crewEmail}`);
+    } catch (err) {
+      warnings.push(`Crew notification failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  } else {
+    warnings.push(`No crew email found for ${crewMember.name}, skipping notification`);
+  }
+
+  // 9. Google Calendar — upsert with new time (replaces old event via deterministic event ID)
+  if (crewEmail) {
+    try {
+      const personalResult = await upsertSiteSurveyCalendarEvent({
+        surveyorEmail: crewEmail,
+        surveyorName: crewMember.name,
+        projectId: invite.dealId,
+        projectName,
+        customerName: invite.customerName,
+        customerAddress: invite.propertyAddress,
+        date: newSlot.date,
+        startTime: newSlot.time,
+        endTime,
+        timezone,
+        notes: `Rescheduled by customer via portal`,
+        zuperJobUid: invite.zuperJobUid || undefined,
+        calendarId: "primary",
+        impersonateEmail: crewEmail,
+      });
+      if (!personalResult.success) {
+        warnings.push(`Google Calendar personal sync: ${personalResult.error}`);
+      }
+    } catch (err) {
+      warnings.push(`Google Calendar personal error: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    // Shared survey calendar
+    const sharedCalendarId = getSiteSurveySharedCalendarIdForSurveyor(crewEmail);
+    if (sharedCalendarId) {
+      try {
+        const sharedResult = await upsertSiteSurveyCalendarEvent({
+          surveyorEmail: crewEmail,
+          surveyorName: crewMember.name,
+          projectId: invite.dealId,
+          projectName,
+          customerName: invite.customerName,
+          customerAddress: invite.propertyAddress,
+          date: newSlot.date,
+          startTime: newSlot.time,
+          endTime,
+          timezone,
+          notes: `Rescheduled by customer via portal`,
+          zuperJobUid: invite.zuperJobUid || undefined,
+          calendarId: sharedCalendarId,
+          impersonateEmail:
+            getSiteSurveySharedCalendarImpersonationEmail(crewEmail) || crewEmail,
+        });
+        if (!sharedResult.success) {
+          warnings.push(`Google Calendar shared sync: ${sharedResult.error}`);
+        }
+      } catch (err) {
+        warnings.push(`Google Calendar shared error: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+  }
+
+  // 10. Send customer reschedule confirmation email
+  try {
+    const formattedDate = new Date(newSlot.date + "T12:00:00Z").toLocaleDateString("en-US", {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+      timeZone: "UTC",
+    });
+    const tzAbbrev = timezone === "America/Los_Angeles" ? "PT" : "MT";
+    const formattedTime = formatTime12(newSlot.time);
+
+    await sendPortalEmail({
+      to: invite.customerEmail,
+      subject: "Your Site Survey Has Been Rescheduled - Photon Brothers",
+      html: buildRescheduleEmailHtml({
+        customerName: invite.customerName,
+        formattedDate,
+        formattedTime,
+        tzAbbrev,
+        propertyAddress: invite.propertyAddress,
+      }),
+    });
+    console.log(`[portal/reschedule] Confirmation email sent to ${invite.customerEmail}`);
+  } catch (err) {
+    warnings.push(`Customer confirmation email failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  if (warnings.length > 0) {
+    console.warn(`[portal/reschedule] Side effect warnings for deal ${invite.dealId}:`, warnings);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Shared calendar helpers (mirrored from booking route)
+// ---------------------------------------------------------------------------
+
+function isNickSurveyorEmail(email?: string | null): boolean {
+  const normalized = (email || "").trim().toLowerCase();
+  return normalized === "nick.scarpellino@photonbrothers.com" || normalized === "nick@photonbrothers.com";
+}
+
+function getNickSiteSurveyCalendarId(): string | null {
+  return (
+    (process.env.GOOGLE_SITE_SURVEY_NICK_CALENDAR_ID || "").trim() ||
+    (process.env.GOOGLE_NICK_SITE_SURVEY_CALENDAR_ID || "").trim() ||
+    null
+  );
+}
+
+function getSiteSurveySharedCalendarIdForSurveyor(email?: string | null): string | null {
+  if (isNickSurveyorEmail(email)) {
+    return getNickSiteSurveyCalendarId() || getDenverSiteSurveyCalendarId();
+  }
+  return getDenverSiteSurveyCalendarId();
+}
+
+function getSiteSurveySharedCalendarImpersonationEmail(email?: string | null): string | null {
+  if (isNickSurveyorEmail(email)) {
+    return (email || "").trim().toLowerCase() || getSharedCalendarImpersonationEmail();
+  }
+  return getSharedCalendarImpersonationEmail() || (email || "").trim().toLowerCase() || null;
+}
+
+// ---------------------------------------------------------------------------
+// Reschedule email HTML
+// ---------------------------------------------------------------------------
+
+function buildRescheduleEmailHtml(params: {
+  customerName: string;
+  formattedDate: string;
+  formattedTime: string;
+  tzAbbrev: string;
+  propertyAddress: string;
+}): string {
+  return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+      <h2 style="color: #f97316;">Your Site Survey Has Been Rescheduled</h2>
+      <p>Hi ${escapeHtml(params.customerName)},</p>
+      <p>Your site survey has been rescheduled. Here are the updated details:</p>
+      <div style="background: #f9fafb; border-radius: 8px; padding: 16px; margin: 16px 0;">
+        <p style="margin: 4px 0;"><strong>Date:</strong> ${escapeHtml(params.formattedDate)}</p>
+        <p style="margin: 4px 0;"><strong>Time:</strong> ${escapeHtml(params.formattedTime)} ${escapeHtml(params.tzAbbrev)}</p>
+        <p style="margin: 4px 0;"><strong>Location:</strong> ${escapeHtml(params.propertyAddress)}</p>
+      </div>
+      <p>A Photon Brothers surveyor will visit your property at the scheduled time. Please ensure access to your electrical panel and roof area.</p>
+      <p>If you need to make further changes, please contact us as soon as possible.</p>
+      <p style="margin-top: 24px;">Thank you for choosing Photon Brothers!</p>
+      <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;" />
+      <p style="color: #6b7280; font-size: 12px;">Photon Brothers Solar</p>
+    </div>
+  `;
+}
+
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 // ---------------------------------------------------------------------------
@@ -332,6 +653,17 @@ async function markFailed(key: string, scope: string) {
   } catch { /* best-effort */ }
 }
 
+/** Convert local date + time to UTC string "YYYY-MM-DD HH:mm:ss" for Zuper API */
+function localTimeToUtcString(dateStr: string, timeStr: string, timezone: string): string {
+  const utc = localTimeToUtc(dateStr, timeStr, timezone);
+  const y = utc.getUTCFullYear();
+  const mo = String(utc.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(utc.getUTCDate()).padStart(2, "0");
+  const hr = String(utc.getUTCHours()).padStart(2, "0");
+  const mi = String(utc.getUTCMinutes()).padStart(2, "0");
+  return `${y}-${mo}-${d} ${hr}:${mi}:00`;
+}
+
 function localTimeToUtc(dateStr: string, timeStr: string, timezone: string): Date {
   const ref = new Date(dateStr + "T12:00:00Z");
   const localStr = ref.toLocaleString("en-US", {
@@ -348,4 +680,12 @@ function localTimeToUtc(dateStr: string, timeStr: string, timezone: string): Dat
   const offsetMs = ref.getTime() - localRef.getTime();
   const localTarget = new Date(`${dateStr}T${timeStr}:00`);
   return new Date(localTarget.getTime() + offsetMs);
+}
+
+/** "09:00" → "9:00 AM" */
+function formatTime12(time: string): string {
+  const [hr, min] = time.split(":").map(Number);
+  const period = hr >= 12 ? "PM" : "AM";
+  const hour12 = hr === 0 ? 12 : hr > 12 ? hr - 12 : hr;
+  return `${hour12}:${min.toString().padStart(2, "0")} ${period}`;
 }

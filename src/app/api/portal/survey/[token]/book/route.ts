@@ -14,7 +14,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma, cacheZuperJob, getCrewMemberByName, getCachedZuperJobByDealId } from "@/lib/db";
 import { validateToken } from "@/lib/portal-token";
-import { decodeSlotId } from "@/lib/portal-availability";
+import { decodeSlotId, getDayOfWeekForTz } from "@/lib/portal-availability";
 import { getTimezoneForLocation } from "@/lib/constants";
 import { zuper, createJobFromProject, type ZuperJob } from "@/lib/zuper";
 import { updateDealProperty, getDealProperties, updateSiteSurveyorProperty } from "@/lib/hubspot";
@@ -148,10 +148,11 @@ export async function POST(
   try {
     const result = await prisma.$transaction(async (tx) => {
       // Lock the crew availability row for this day/time to serialize concurrent bookings
+      const dayOfWeek = getDayOfWeekForTz(slot.date, timezone);
       await tx.$queryRaw`
         SELECT id FROM "CrewAvailability"
         WHERE "crewMemberId" = ${slot.crewMemberId}
-          AND "dayOfWeek" = ${new Date(slot.date + "T12:00:00Z").getUTCDay()}
+          AND "dayOfWeek" = ${dayOfWeek}
           AND "startTime" <= ${slot.time}
           AND "endTime" > ${slot.time}
         FOR UPDATE
@@ -165,7 +166,21 @@ export async function POST(
           startTime: slot.time,
         },
       });
-      if (existingBooking) {
+      const existingSchedule = await tx.scheduleRecord.findFirst({
+        where: {
+          scheduleType: "survey",
+          status: { in: ["scheduled", "tentative"] },
+          scheduledDate: slot.date,
+          scheduledStart: { in: [slot.time, `${slot.time}:00`] },
+          OR: [
+            { assignedUserUid: crewMember.zuperUserUid },
+            { assignedUser: crewMember.name },
+          ],
+        },
+        select: { projectId: true },
+      });
+
+      if (existingBooking || existingSchedule) {
         throw new SlotTakenError();
       }
 
@@ -253,24 +268,27 @@ export async function POST(
       },
     };
 
+    // ----- Fire side effects (best-effort, awaited for durability) -----
+    // Run before marking idempotency complete so a retry re-runs them if the
+    // process dies mid-flight.
+    try {
+      await firePostBookingSideEffects({
+        invite,
+        slot,
+        endTime,
+        timezone,
+        crewMember,
+        accessNotes,
+        scheduleRecordId: result.scheduleRecord.id,
+      });
+    } catch (err) {
+      console.error("[portal/book] Side effect error (non-fatal):", err);
+    }
+
     // Mark idempotency key as completed with response for replay
     await prisma.idempotencyKey.update({
       where: { key_scope: { key: idempotencyKey, scope } },
       data: { status: "completed", response: responseBody },
-    });
-
-    // ----- Fire side effects (best-effort, non-blocking) -----
-    // These use the same functions as the internal scheduler so nothing is missed.
-    firePostBookingSideEffects({
-      invite,
-      slot,
-      endTime,
-      timezone,
-      crewMember,
-      accessNotes,
-      scheduleRecordId: result.scheduleRecord.id,
-    }).catch((err) => {
-      console.error("[portal/book] Side effect error (non-fatal):", err);
     });
 
     return NextResponse.json(responseBody, { status: 201 });
