@@ -160,14 +160,10 @@ function SurveyScheduleInner() {
         }),
       });
 
-      if (res.status === 409) {
-        const body = await res.json();
-        setState({ type: "error", message: body.error || "This time slot was just taken." });
-        return;
-      }
-
       if (!res.ok) {
-        setState({ type: "error", message: "Something went wrong. Please try again." });
+        const body = await res.json().catch(() => null);
+        const msg = body?.error || "Something went wrong. Please try again.";
+        setState({ type: "error", message: msg });
         return;
       }
 

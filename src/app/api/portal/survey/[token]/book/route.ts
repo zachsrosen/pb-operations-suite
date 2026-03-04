@@ -324,7 +324,18 @@ export async function POST(
       );
     }
 
-    console.error("[portal/book] Unexpected error:", error);
+    const errMsg = error instanceof Error ? error.message : String(error);
+    const errStack = error instanceof Error ? error.stack : undefined;
+    console.error("[portal/book] Unexpected error:", {
+      message: errMsg,
+      stack: errStack,
+      inviteId: invite.id,
+      dealId: invite.dealId,
+      slotDate: slot.date,
+      slotTime: slot.time,
+      crewMemberId: slot.crewMemberId,
+      pbLocation: invite.pbLocation,
+    });
     await markIdempotencyFailed(idempotencyKey, scope);
     return NextResponse.json(
       { error: "Something went wrong. Please try again." },

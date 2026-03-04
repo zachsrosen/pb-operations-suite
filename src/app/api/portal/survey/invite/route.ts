@@ -100,7 +100,7 @@ export async function POST(request: NextRequest) {
 
       const result = await sendPortalEmail({
         to: body.customerEmail,
-        subject: "Schedule Your Site Survey — Photon Brothers",
+        subject: "Schedule Your Site Survey - Photon Brothers",
         html,
       });
 

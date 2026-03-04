@@ -181,6 +181,13 @@ interface MimeAttachment {
   contentType: string;
 }
 
+/** RFC 2047 encode a header value if it contains non-ASCII characters */
+function encodeRfc2047(value: string): string {
+  // eslint-disable-next-line no-control-regex
+  if (/^[\x00-\x7F]*$/.test(value)) return value; // pure ASCII — no encoding needed
+  return `=?UTF-8?B?${Buffer.from(value, "utf8").toString("base64")}?=`;
+}
+
 function buildRawMimeMessage(params: {
   from: string;
   to: string[];
@@ -197,7 +204,7 @@ function buildRawMimeMessage(params: {
   const safeBcc = (params.bcc || [])
     .map((email) => email.replace(/[\r\n]+/g, " ").trim())
     .filter(Boolean);
-  const safeSubject = params.subject.replace(/[\r\n]+/g, " ").trim();
+  const safeSubject = encodeRfc2047(params.subject.replace(/[\r\n]+/g, " ").trim());
 
   const altBoundary = `pb_alt_${crypto.randomUUID().replace(/-/g, "")}`;
   const hasAttachments = params.attachments && params.attachments.length > 0;
@@ -288,13 +295,14 @@ async function trySendWithGoogleWorkspace(params: {
   text: string;
   from: string;
   attachments?: MimeAttachment[];
+  senderEmailOverride?: string;
 }): Promise<SendAttemptResult> {
   if (!isTruthy(process.env.GOOGLE_WORKSPACE_EMAIL_ENABLED)) {
     return { attempted: false, success: false };
   }
 
   const creds = getGoogleWorkspaceCredentials();
-  const senderEmail = getGoogleWorkspaceSenderEmail();
+  const senderEmail = params.senderEmailOverride || getGoogleWorkspaceSenderEmail();
   if (!creds) {
     return {
       attempted: true,
@@ -388,6 +396,7 @@ async function sendEmailMessage(params: {
   debugFallbackBody: string;
   attachments?: MimeAttachment[];
   fromOverride?: string;
+  senderEmailOverride?: string;
 }): Promise<SendResult> {
   const normalizedTo = (Array.isArray(params.to) ? params.to : [params.to || ""])
     .map((value) => parseEmailAddress(value))
@@ -424,6 +433,7 @@ async function sendEmailMessage(params: {
     text: params.text,
     from,
     attachments: params.attachments,
+    senderEmailOverride: params.senderEmailOverride,
   });
 
   if (googleResult.success) {
@@ -1865,5 +1875,6 @@ export async function sendPortalEmail(params: {
     debugFallbackTitle: `PORTAL EMAIL to ${params.to}`,
     debugFallbackBody: text,
     fromOverride: portalFrom,
+    senderEmailOverride: portalSender,
   });
 }
