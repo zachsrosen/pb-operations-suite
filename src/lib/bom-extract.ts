@@ -20,6 +20,7 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import { PDFDocument } from "pdf-lib";
 import { logActivity } from "@/lib/db";
 import type { ActorContext } from "@/lib/actor-context";
 
@@ -87,6 +88,49 @@ export function getPdfPageCount(buffer: Buffer): number | null {
   }
 }
 
+/**
+ * Strip a planset PDF down to BOM-relevant pages (PV-0 through PV-6).
+ *
+ * PB plansets follow a standard layout: pages 0-6 contain the cover sheet,
+ * site/roof plans, attachment details, SLD, electrical calcs, and warning
+ * labels — everything needed for BOM extraction. Pages 7+ are equipment
+ * spec sheets (PV-8, PV-9, …) that inflate file size but aren't needed.
+ *
+ * We keep up to 8 pages (indices 0-7) as a safety buffer — some plansets
+ * have an extra cover variant or notes page before the spec sheets.
+ *
+ * Only applied when the PDF exceeds STRIP_THRESHOLD to avoid unnecessary
+ * processing on smaller files that already fit within Anthropic's limits.
+ */
+const STRIP_THRESHOLD = 20 * 1024 * 1024; // 20MB — strip pages above this
+const MAX_PAGES_TO_KEEP = 8; // PV-0 through PV-6 + buffer
+
+async function stripToRelevantPages(
+  pdfBuffer: Buffer,
+): Promise<{ buffer: Buffer; stripped: boolean; originalPages: number; keptPages: number }> {
+  const srcDoc = await PDFDocument.load(pdfBuffer, { ignoreEncryption: true });
+  const originalPages = srcDoc.getPageCount();
+
+  if (originalPages <= MAX_PAGES_TO_KEEP) {
+    return { buffer: pdfBuffer, stripped: false, originalPages, keptPages: originalPages };
+  }
+
+  const newDoc = await PDFDocument.create();
+  const pagesToKeep = Math.min(originalPages, MAX_PAGES_TO_KEEP);
+  const copied = await newDoc.copyPages(srcDoc, Array.from({ length: pagesToKeep }, (_, i) => i));
+  for (const page of copied) {
+    newDoc.addPage(page);
+  }
+
+  const strippedBytes = await newDoc.save();
+  return {
+    buffer: Buffer.from(strippedBytes),
+    stripped: true,
+    originalPages,
+    keptPages: pagesToKeep,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Extraction system prompt
 // ---------------------------------------------------------------------------
@@ -99,7 +143,7 @@ Every PB planset has these standard sheets:
 - PV-1: Site plan
 - PV-2: Roof plan — PRIMARY BOM SOURCE: contains "BILL OF MATERIALS" table with EQUIPMENT | QTY | DESCRIPTION columns
 - PV-3: Attachment details
-- PV-4: Electrical Line Diagram (SLD) — conductor/wire schedule table at bottom, Powerwall part number, module specs
+- PV-4: Electrical Line Diagram (SLD) — Powerwall part number, module specs, AC disconnect callout
 - PV-5: Electrical calculation — OCPD rating
 - PV-6: Warning labels — ESS SIZE (battery kWh confirmation)
 - PV-8+: Equipment spec sheets
@@ -125,12 +169,11 @@ Map each BOM row to these categories:
 | SUB PANEL | ELECTRICAL_BOS |
 | TESLA BACKUP GATEWAY / BACKUP SWITCH | MONITORING |
 | PRODUCTION METER | MONITORING |
-| Conductor/wire rows from PV-4 | ELECTRICAL_BOS |
 
 ## Important Rules
 
 1. **(N) = new equipment** — include in BOM. **(E) = existing** — omit (do not include).
-2. For the **conductor schedule on PV-4**: add each conductor row as an ELECTRICAL_BOS item. Tags A/B/C/D are different circuit segments.
+2. **Do NOT extract wires or conductors** (e.g., THHN, NM-B, USE-2, XHHW). Skip the entire conductor schedule on PV-4 (Tags A/B/C/D). Wires are stocked internally and not needed in the BOM. **Exception:** Enphase Q-Cable is a structured cable assembly (not loose wire) — extract it per the Enphase rules below.
 3. **Metal roofs**: ATTACHMENT = "S-5! PROTEABRACKET ATTACHMENTS", rail = XR100 (not XR10), no RD STRUCTURAL SCREW row.
 4. **Powerwall-3 part number**: 1707000-XX-Y (found in PV-4 specifications table).
 5. **Gateway-3 part number**: 1841000-X1-Y (found in PV-4 or PV-2 callout).
@@ -188,19 +231,6 @@ When the job uses Enphase micro-inverters (IQ8 series), extract the following it
 - **Q-Cable Sealing Plugs**: Always add on Enphase jobs → { "category": "ELECTRICAL_BOS", "brand": "Enphase", "model": "Q-SEAL-10", "description": "ENPHASE Q-SEAL SEALING PLUGS", "qty": 1, "source": "OPS_STANDARD" }
 - **Q-Cable Termination Caps**: Always add on Enphase jobs → { "category": "ELECTRICAL_BOS", "brand": "Enphase", "model": "Q-TERM-10", "description": "ENPHASE Q-TERM TERMINATION CAPS", "qty": 1, "source": "OPS_STANDARD" }
 - **Microinverter Mounting Clip**: Add 1 clip per IQ8 microinverter (qty = IQ8 count from PV-2 BOM) → { "category": "RACKING", "brand": "Enphase", "model": "BHW-MI-01-A1", "description": "ENPHASE MICROINVERTER MOUNTING CLIP", "qty": [IQ8 qty], "source": "OPS_STANDARD" }
-
-### CONDUCTOR SCHEDULE — Wire Model Naming
-**CRITICAL**: Every wire item MUST include the gauge in the model field. Never output a wire type alone without its AWG rating. The Zoho inventory lookup depends on exact gauge matching — a bare "THWN-2" without gauge will match the wrong inventory item.
-
-Always use standardized model names:
-- 10 AWG THHN or THWN-2 → model: "10 AWG THHN/THWN-2"
-- 6 AWG THWN-2 → model: "6 AWG THWN-2"
-- 8 AWG THWN-2 → model: "8 AWG THWN-2"
-- 3/0 AWG THWN-2 → model: "3/0 AWG THWN-2"
-- 10 AWG PV Wire (free air, DC at array) → model: "10 AWG PV-WIRE"
-
-Never output internal codes like "THHN-10AWG", "THWN2-6AWG", "THWN-2" (no gauge), or "PV-Wire10". Always use the format "{gauge} {wire type}".
-Example WRONG: "model": "THWN-2" — Example CORRECT: "model": "10 AWG THHN/THWN-2"
 
 ## Ops-Standard Additions
 These items MUST be added to solar jobs with roof-mounted PV modules. Do NOT add to battery-only or storage-only jobs (no PV modules).
@@ -344,15 +374,34 @@ export async function extractBomFromPdf(
   try {
     await logExtract("started", { sizeBytes: pdfBuffer.byteLength });
 
-    // ── Upload to Anthropic Files API ──────────────────────────────────
-    const sizeMb = (pdfBuffer.byteLength / 1024 / 1024).toFixed(1);
+    // ── Strip spec-sheet pages from large plansets ─────────────────────
+    let uploadBuffer = pdfBuffer;
     const pageCount = getPdfPageCount(pdfBuffer);
+
+    if (pdfBuffer.byteLength > STRIP_THRESHOLD) {
+      try {
+        const stripResult = await stripToRelevantPages(pdfBuffer);
+        if (stripResult.stripped) {
+          const savedMb = ((pdfBuffer.byteLength - stripResult.buffer.byteLength) / 1024 / 1024).toFixed(1);
+          console.log(
+            `[bom-extract] Stripped PDF from ${stripResult.originalPages} → ${stripResult.keptPages} pages, saved ${savedMb} MB`,
+          );
+          uploadBuffer = stripResult.buffer;
+        }
+      } catch (stripErr) {
+        // Non-fatal — fall back to full PDF
+        console.warn("[bom-extract] Page stripping failed, using full PDF:", stripErr);
+      }
+    }
+
+    // ── Upload to Anthropic Files API ──────────────────────────────────
+    const sizeMb = (uploadBuffer.byteLength / 1024 / 1024).toFixed(1);
     const pageLabel = pageCount ? `, ${pageCount}-page planset` : "";
     onProgress?.({ step: "uploading", message: `Uploading to BOM Tool (${sizeMb} MB${pageLabel})…` });
 
     try {
       const uploadedFile = await client.beta.files.upload({
-        file: new File([new Uint8Array(pdfBuffer)], filename, { type: "application/pdf" }),
+        file: new File([new Uint8Array(uploadBuffer)], filename, { type: "application/pdf" }),
       });
       anthropicFileId = uploadedFile.id;
     } catch (e) {
@@ -425,11 +474,11 @@ export async function extractBomFromPdf(
 
       const isProcessingError = isPdfProcessingErrorMessage(msg);
 
-      if (isProcessingError && pdfBuffer.byteLength < INLINE_LIMIT) {
-        // Fallback to base64 inline
-        console.log("[bom-extract] Falling back to base64 inline (file is", pdfBuffer.byteLength, "bytes)");
+      if (isProcessingError && uploadBuffer.byteLength < INLINE_LIMIT) {
+        // Fallback to base64 inline — use uploadBuffer (possibly stripped) not the original
+        console.log("[bom-extract] Falling back to base64 inline (file is", uploadBuffer.byteLength, "bytes)");
         try {
-          const base64Data = pdfBuffer.toString("base64");
+          const base64Data = uploadBuffer.toString("base64");
           const fallbackMessage = await client.messages.create({
             model: "claude-opus-4-5",
             max_tokens: 8000,
@@ -465,7 +514,7 @@ export async function extractBomFromPdf(
       } else if (isProcessingError) {
         await logExtract("failed", { reason: "pdf_processing_error", error: msg });
         throw new Error(
-          `PDF could not be processed — the file may be password-protected, encrypted, or corrupt (${Math.round(pdfBuffer.byteLength / 1024 / 1024)}MB).`,
+          `PDF could not be processed — the file may be password-protected, encrypted, or corrupt (${Math.round(uploadBuffer.byteLength / 1024 / 1024)}MB).`,
         );
       } else {
         await logExtract("failed", { reason: "anthropic_extract_failed", error: msg });
