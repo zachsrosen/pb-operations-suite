@@ -75,8 +75,8 @@ export async function GET(request: NextRequest) {
   const limitRaw = Number(request.nextUrl.searchParams.get("limit") || 200);
   const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(Math.trunc(limitRaw), 1), 5000) : 200;
 
-  // QuickBooks deactivated — re-add "QUICKBOOKS" to reactivate
-  let sources: CatalogProductSource[] = ["HUBSPOT", "ZUPER", "ZOHO", "OPENSOLAR"];
+  // QuickBooks & OpenSolar deactivated — re-add to reactivate
+  let sources: CatalogProductSource[] = ["HUBSPOT", "ZUPER", "ZOHO"];
   if (sourceParam) {
     const parsed = sourceParam
       .split(",")
@@ -85,7 +85,7 @@ export async function GET(request: NextRequest) {
       .map((s) => SOURCE_ENUM[s])
       .filter(Boolean);
     if (parsed.length === 0) {
-      return NextResponse.json({ error: "Invalid source. Use hubspot,zuper,zoho,quickbooks,opensolar" }, { status: 400 });
+      return NextResponse.json({ error: "Invalid source. Use hubspot,zuper,zoho" }, { status: 400 });
     }
     sources = [...new Set(parsed)];
   }

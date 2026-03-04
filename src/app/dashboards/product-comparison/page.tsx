@@ -13,6 +13,9 @@ type QueueFilter = "unlinked" | "resolved" | "no-internal" | "duplicates" | "pin
 
 const ALL_SOURCES = ["internal", "hubspot", "zuper", "zoho", "opensolar", "quickbooks"] as const;
 type SourceName = (typeof ALL_SOURCES)[number];
+// OpenSolar & QuickBooks deactivated — remove from this set to reactivate
+const DEACTIVATED_SOURCES = new Set<SourceName>(["opensolar", "quickbooks"]);
+const ACTIVE_SOURCES = ALL_SOURCES.filter((s) => !DEACTIVATED_SOURCES.has(s));
 const LINKABLE_SOURCES = ["hubspot", "zuper", "zoho", "quickbooks"] as const;
 type LinkableSourceName = (typeof LINKABLE_SOURCES)[number];
 const LINK_FIELD_BY_SOURCE: Record<LinkableSourceName, "hubspotProductId" | "zuperItemId" | "zohoItemId" | "quickbooksItemId"> = {
@@ -327,7 +330,7 @@ function missingReasonForSource(source: SourceName): string {
 }
 
 function configuredSourcesFromPayload(payload: ProductComparisonResponse): SourceName[] {
-  return ALL_SOURCES.filter((source) => payload.health[source]?.configured);
+  return ACTIVE_SOURCES.filter((source) => payload.health[source]?.configured);
 }
 
 function evaluateDynamicReasons(row: ComparisonRow, configuredSources: SourceName[]): string[] {
@@ -537,10 +540,10 @@ const MISSING_SOURCE_OPTIONS: FilterOption[] = [
   { value: "hubspot", label: "Missing in HubSpot" },
   { value: "zuper", label: "Missing in Zuper" },
   { value: "zoho", label: "Missing in Zoho" },
-  { value: "opensolar", label: "Missing in OpenSolar" },
+  // OpenSolar deactivated
 ];
 
-const WEBSITE_VIEW_OPTIONS: FilterOption[] = ALL_SOURCES.map((source) => ({
+const WEBSITE_VIEW_OPTIONS: FilterOption[] = ACTIVE_SOURCES.map((source) => ({
   value: source,
   label: formatSourceName(source),
 }));
@@ -624,7 +627,7 @@ export default function ProductComparisonPage() {
 
   const [search, setSearch] = useState("");
   const [rowViewModes, setRowViewModes] = useState<RowViewMode[]>(["mismatches"]);
-  const [visibleSources, setVisibleSources] = useState<SourceName[]>([...ALL_SOURCES]);
+  const [visibleSources, setVisibleSources] = useState<SourceName[]>([...ACTIVE_SOURCES]);
   const [queueFilters, setQueueFilters] = useState<QueueFilter[]>([...DEFAULT_QUEUE_FILTERS]);
   const [missingFilters, setMissingFilters] = useState<SourceName[]>([]);
   const [reasonFilters, setReasonFilters] = useState<string[]>([]);
@@ -1291,13 +1294,13 @@ export default function ProductComparisonPage() {
   }, []);
 
   const configuredSources = useMemo<SourceName[]>(() => {
-    if (!data) return [...ALL_SOURCES];
-    return ALL_SOURCES.filter((source) => data.health[source]?.configured);
+    if (!data) return [...ACTIVE_SOURCES];
+    return ACTIVE_SOURCES.filter((source) => data.health[source]?.configured);
   }, [data]);
 
   const displayedSources = useMemo<SourceName[]>(() => {
-    const selected = visibleSources.length > 0 ? visibleSources : [...ALL_SOURCES];
-    return ALL_SOURCES.filter((source) => selected.includes(source));
+    const selected = visibleSources.length > 0 ? visibleSources : [...ACTIVE_SOURCES];
+    return ACTIVE_SOURCES.filter((source) => selected.includes(source));
   }, [visibleSources]);
 
   const reasonFilterOptions = useMemo<FilterOption[]>(() => {
@@ -1681,7 +1684,7 @@ export default function ProductComparisonPage() {
   const activeFilterCount =
     (search.trim() ? 1 : 0) +
     (rowViewModes.length === 1 && rowViewModes[0] === "mismatches" ? 0 : 1) +
-    (visibleSources.length !== ALL_SOURCES.length ? 1 : 0) +
+    (visibleSources.length !== ACTIVE_SOURCES.length ? 1 : 0) +
     (hasDefaultQueueFilters ? 0 : 1) +
     (missingFilters.length ? 1 : 0) +
     (reasonFilters.length ? 1 : 0) +
@@ -1690,7 +1693,7 @@ export default function ProductComparisonPage() {
   const clearFilters = () => {
     setSearch("");
     setRowViewModes(["mismatches"]);
-    setVisibleSources([...ALL_SOURCES]);
+    setVisibleSources([...ACTIVE_SOURCES]);
     setQueueFilters([...DEFAULT_QUEUE_FILTERS]);
     setMissingFilters([]);
     setReasonFilters([]);
@@ -1736,7 +1739,7 @@ export default function ProductComparisonPage() {
   return (
     <DashboardShell
       title="Product Catalog Comparison"
-      subtitle="Cross-check Internal, HubSpot, Zuper, Zoho, and OpenSolar product data"
+      subtitle="Cross-check Internal, HubSpot, Zuper, and Zoho product data"
       accentColor="cyan"
       lastUpdated={lastUpdated}
       breadcrumbs={[{ label: "Operations", href: "/suites/operations" }]}
@@ -2130,7 +2133,7 @@ export default function ProductComparisonPage() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-3">
-            {ALL_SOURCES.map((source) => (
+            {ACTIVE_SOURCES.map((source) => (
               <div key={source} className="bg-surface border border-t-border rounded-xl p-4">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold">{formatSourceName(source)}</h3>

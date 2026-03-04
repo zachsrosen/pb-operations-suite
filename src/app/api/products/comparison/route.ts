@@ -17,6 +17,8 @@ export const maxDuration = 60;
 
 const ALL_SOURCES = ["internal", "hubspot", "zuper", "zoho", "opensolar", "quickbooks"] as const;
 type SourceName = (typeof ALL_SOURCES)[number];
+// OpenSolar & QuickBooks deactivated — remove from this set to reactivate
+const DEACTIVATED_SOURCES = new Set<SourceName>(["opensolar", "quickbooks"]);
 const LINKABLE_SOURCES = ["hubspot", "zuper", "zoho", "quickbooks"] as const;
 type LinkableSourceName = (typeof LINKABLE_SOURCES)[number];
 
@@ -2444,11 +2446,8 @@ export async function GET() {
       configured: zohoInventory.isConfigured(),
       error: asErrorMessage(error, "Zoho catalog fetch timed out"),
     })),
-    withTimeout(fetchOpenSolarProducts(), sourceTimeoutMs, "OpenSolar catalog fetch").catch((error) => ({
-      products: [],
-      configured: Boolean(process.env.OPENSOLAR_API_KEY || process.env.OPENSOLAR_ACCESS_TOKEN),
-      error: asErrorMessage(error, "OpenSolar catalog fetch timed out"),
-    })),
+    // OpenSolar deactivated — re-add fetchOpenSolarProducts() to reactivate
+    Promise.resolve({ products: [] as NormalizedProduct[], configured: false, error: null as string | null }),
     withTimeout(fetchQuickBooksProducts(), sourceTimeoutMs, "QuickBooks catalog fetch").catch((error) => ({
       products: [],
       configured: Boolean(process.env.QUICKBOOKS_ACCESS_TOKEN && process.env.QUICKBOOKS_COMPANY_ID),
@@ -2543,7 +2542,7 @@ export async function GET() {
     opensolar: boundedOpensolarResult,
     quickbooks: boundedQuickbooksResult,
   } as const;
-  const comparisonSources = ALL_SOURCES.filter((source) => sourceResults[source].configured);
+  const comparisonSources = ALL_SOURCES.filter((source) => !DEACTIVATED_SOURCES.has(source) && sourceResults[source].configured);
 
   const allProducts = [
     ...boundedInternalResult.products,

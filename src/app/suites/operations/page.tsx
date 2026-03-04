@@ -95,7 +95,7 @@ const LINKS: SuitePageCard[] = [
   {
     href: "/dashboards/product-comparison",
     title: "Product Catalog Comparison",
-    description: "Match and link Internal, HubSpot, Zuper, Zoho, OpenSolar, and QuickBooks products.",
+    description: "Match and link Internal, HubSpot, Zuper, and Zoho products.",
     tag: "CATALOG",
     tagColor: "bg-amber-500/20 text-amber-300 border-amber-500/30",
     section: "Inventory & Equipment",
