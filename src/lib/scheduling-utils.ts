@@ -1,3 +1,18 @@
+/** Convert a Date to YYYY-MM-DD string in local time */
+export function toDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** Get today's date as YYYY-MM-DD string */
+export function getTodayStr(): string {
+  return toDateStr(new Date());
+}
+
+/** Check if a YYYY-MM-DD date string is before today */
+export function isPastDate(dateStr: string): boolean {
+  return dateStr < getTodayStr();
+}
+
 export function isWeekendDateYmd(dateStr: string): boolean {
   const [year, month, day] = dateStr.split("-").map(Number);
   const d = new Date(year, month - 1, day);

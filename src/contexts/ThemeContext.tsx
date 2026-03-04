@@ -2,7 +2,15 @@
 
 import { createContext, useContext, useEffect, useRef, useState, ReactNode } from "react";
 
-type Theme = "dark" | "light";
+type Theme = "dark" | "light" | "sunset";
+
+const THEME_ORDER: Theme[] = ["dark", "light", "sunset"];
+
+const THEME_COLORS: Record<Theme, string> = {
+  dark: "#0a0a0f",
+  light: "#fafaf8",
+  sunset: "#fdf6e3",
+};
 
 interface ThemeContextValue {
   theme: Theme;
@@ -27,7 +35,7 @@ function getInitialTheme(): Theme {
   if (typeof window === "undefined") return "dark";
   try {
     const saved = localStorage.getItem("pb-theme");
-    if (saved === "light" || saved === "dark") return saved;
+    if (saved === "light" || saved === "dark" || saved === "sunset") return saved;
   } catch {
     // localStorage may be unavailable
   }
@@ -41,7 +49,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   // On mount, sync DOM class with state.
   // The inline <head> script already handled the initial paint.
   useEffect(() => {
-    document.documentElement.classList.remove("light", "dark");
+    document.documentElement.classList.remove("light", "dark", "sunset");
     document.documentElement.classList.add(theme);
     mountedRef.current = true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -51,19 +59,22 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!mountedRef.current) return;
     const root = document.documentElement;
-    root.classList.remove("light", "dark");
+    root.classList.remove("light", "dark", "sunset");
     root.classList.add(theme);
     localStorage.setItem("pb-theme", theme);
 
     // Update theme-color meta tag for mobile browsers
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) {
-      meta.setAttribute("content", theme === "dark" ? "#0a0a0f" : "#ffffff");
+      meta.setAttribute("content", THEME_COLORS[theme]);
     }
   }, [theme]);
 
   const toggleTheme = () => {
-    setTheme((prev) => (prev === "dark" ? "light" : "dark"));
+    setTheme((prev) => {
+      const idx = THEME_ORDER.indexOf(prev);
+      return THEME_ORDER[(idx + 1) % THEME_ORDER.length];
+    });
   };
 
   return (

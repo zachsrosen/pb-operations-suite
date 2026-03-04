@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useMemo } from "react";
+import { toDateStr } from "@/lib/scheduling-utils";
 import type {
   ConstructionDayAvailability,
   ConstructionSchedulerProject,
@@ -29,10 +30,6 @@ interface ConstructionWeekViewProps<T extends ConstructionSchedulerProject> {
   onDateClick: (dateStr: string) => void;
   onEventDragStart: (projectId: string, e: React.DragEvent) => void;
   onEventClick: (project: T, dateStr: string, e: React.MouseEvent) => void;
-}
-
-function toDateStr(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function addCalendarDaysYmd(dateStr: string, days: number): string {

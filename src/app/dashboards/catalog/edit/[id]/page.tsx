@@ -11,6 +11,7 @@ import {
   getCategoryFields,
   getCategoryLabel,
 } from "@/lib/catalog-fields";
+import { getZohoItemUrl, getHubSpotProductUrl, getZuperProductUrl } from "@/lib/external-links";
 
 const inputClasses =
   "w-full rounded-lg border border-t-border bg-surface-2 px-3 py-2 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-cyan-500/50";
@@ -359,23 +360,35 @@ export default function CatalogSkuEditPage() {
           {category && (
             <div className={cardClasses}>
               <h2 className={sectionTitleClasses}>System IDs &amp; Status</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className={labelClasses}>Zoho Item ID</label>
-                  <input type="text" value={zohoItemId} onChange={(e) => setZohoItemId(e.target.value)} className={inputClasses} />
+                  <div className="flex items-center gap-1">
+                    <input type="text" value={zohoItemId} onChange={(e) => setZohoItemId(e.target.value)} className={`${inputClasses} flex-1 min-w-0`} />
+                    {zohoItemId && (
+                      <a href={getZohoItemUrl(zohoItemId)} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:text-cyan-300 shrink-0" title="Open in Zoho">&#8599;</a>
+                    )}
+                  </div>
                 </div>
                 <div>
                   <label className={labelClasses}>HubSpot Product ID</label>
-                  <input type="text" value={hubspotProductId} onChange={(e) => setHubspotProductId(e.target.value)} className={inputClasses} />
+                  <div className="flex items-center gap-1">
+                    <input type="text" value={hubspotProductId} onChange={(e) => setHubspotProductId(e.target.value)} className={`${inputClasses} flex-1 min-w-0`} />
+                    {hubspotProductId && (
+                      <a href={getHubSpotProductUrl(hubspotProductId)} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:text-cyan-300 shrink-0" title="Open in HubSpot">&#8599;</a>
+                    )}
+                  </div>
                 </div>
                 <div>
                   <label className={labelClasses}>Zuper Item ID</label>
-                  <input type="text" value={zuperItemId} onChange={(e) => setZuperItemId(e.target.value)} className={inputClasses} />
+                  <div className="flex items-center gap-1">
+                    <input type="text" value={zuperItemId} onChange={(e) => setZuperItemId(e.target.value)} className={`${inputClasses} flex-1 min-w-0`} />
+                    {zuperItemId && (
+                      <a href={getZuperProductUrl(zuperItemId)} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:text-cyan-300 shrink-0" title="Open in Zuper">&#8599;</a>
+                    )}
+                  </div>
                 </div>
-                <div>
-                  <label className={labelClasses}>QuickBooks Item ID</label>
-                  <input type="text" value={quickbooksItemId} onChange={(e) => setQuickbooksItemId(e.target.value)} className={inputClasses} />
-                </div>
+                {/* QuickBooks deactivated — input hidden */}
                 <div className="flex items-center gap-3">
                   <label className="text-sm font-medium text-muted">Active</label>
                   <button

@@ -4,7 +4,10 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import Link from "next/link";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
+import { useToast } from "@/contexts/ToastContext";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
+import { formatCurrency, formatDateShort, formatShortDate, formatTime12h, formatTimeRange12h } from "@/lib/format";
+import { getTodayStr, isPastDate, toDateStr } from "@/lib/scheduling-utils";
 import MyAvailability from "./my-availability";
 
 /* ------------------------------------------------------------------ */
@@ -165,42 +168,6 @@ const MANAGER_ROLES = ["ADMIN", "OWNER", "MANAGER", "OPERATIONS_MANAGER"];
 /*  Utility helpers                                                    */
 /* ------------------------------------------------------------------ */
 
-function formatDate(dateStr: string): string {
-  const date = new Date(dateStr + "T12:00:00");
-  return date.toLocaleDateString("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
-}
-
-function formatShortDate(dateStr: string | null | undefined): string {
-  if (!dateStr) return "";
-  const d = new Date(dateStr + "T12:00:00");
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
-
-function formatCurrency(amount: number): string {
-  if (amount >= 1_000_000) return "$" + (amount / 1_000_000).toFixed(1) + "M";
-  if (amount >= 1_000) return "$" + (amount / 1000).toFixed(1) + "K";
-  return "$" + amount.toFixed(0);
-}
-
-// Format 24-hour time (e.g., "13:00") to 12-hour format (e.g., "1pm")
-function formatTime12h(time: string): string {
-  const [hours, minutes] = time.split(":").map(Number);
-  const suffix = hours >= 12 ? "pm" : "am";
-  const hour12 = hours > 12 ? hours - 12 : hours === 0 ? 12 : hours;
-  return minutes === 0 ? `${hour12}${suffix}` : `${hour12}:${minutes.toString().padStart(2, "0")}${suffix}`;
-}
-
-function formatTimeRange12h(start?: string | null, end?: string | null): string {
-  if (!start) return "";
-  const startText = formatTime12h(start);
-  if (!end) return startText;
-  return `${startText}-${formatTime12h(end)}`;
-}
-
 function isLikelyUid(value: string | null | undefined): boolean {
   if (!value) return false;
   return /^[0-9a-f-]{30,}$/i.test(String(value));
@@ -220,18 +187,7 @@ function isWeekend(dateStr: string): boolean {
   return d.getDay() === 0 || d.getDay() === 6;
 }
 
-function toDateStr(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-function getTodayStr(): string {
-  return toDateStr(new Date());
-}
-
-// Check if a date is in the past (before today)
-function isPastDate(dateStr: string): boolean {
-  return dateStr < getTodayStr();
-}
+// toDateStr, getTodayStr, isPastDate imported from @/lib/scheduling-utils
 
 // Check if a date is tomorrow (next day after today)
 function isTomorrow(dateStr: string): boolean {
@@ -507,9 +463,8 @@ export default function SiteSurveySchedulerPage() {
     });
   }, []);
 
-  /* ---- toast ---- */
-  const [toast, setToast] = useState<{ message: string; type: string } | null>(null);
-  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /* ---- toast (via ToastContext) ---- */
+  const { addToast } = useToast();
 
   /* ---- Track dashboard view on load ---- */
   useEffect(() => {
@@ -798,11 +753,9 @@ export default function SiteSurveySchedulerPage() {
   /*  Toast                                                            */
   /* ================================================================ */
 
-  const showToast = useCallback((message: string, type = "success") => {
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-    setToast({ message, type });
-    toastTimer.current = setTimeout(() => setToast(null), 3000);
-  }, []);
+  const showToast = useCallback((message: string, type: "success" | "error" | "warning" | "info" = "success") => {
+    addToast({ title: message, type });
+  }, [addToast]);
 
   const canManageAllSchedules = useMemo(
     () => !!userRole && MANAGER_ROLES.includes(userRole),
@@ -1749,15 +1702,6 @@ export default function SiteSurveySchedulerPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      {/* Toast */}
-      {toast && (
-        <div className={`fixed top-4 right-4 z-[9999] px-4 py-3 rounded-lg shadow-lg ${
-          toast.type === "warning" ? "bg-yellow-600" : "bg-green-600"
-        }`}>
-          {toast.message}
-        </div>
-      )}
-
       {/* Header */}
       <div className="sticky top-0 z-50 bg-background/95 backdrop-blur border-b border-t-border">
         <div className="max-w-[1800px] mx-auto px-3 sm:px-4 py-2 sm:py-3">
@@ -2683,7 +2627,7 @@ export default function SiteSurveySchedulerPage() {
 
               <div>
                 <span className="text-xs text-muted">Date</span>
-                <p className="text-sm font-medium text-cyan-400">{formatDate(scheduleModal.date)}</p>
+                <p className="text-sm font-medium text-cyan-400">{formatDateShort(scheduleModal.date)}</p>
               </div>
 
               {/* Time Slot Display / Selection */}

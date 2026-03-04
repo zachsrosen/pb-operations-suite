@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo } from "react";
-import { getBusinessDatesInSpan } from "@/lib/scheduling-utils";
+import { getBusinessDatesInSpan, toDateStr } from "@/lib/scheduling-utils";
 import type { ConstructionSchedulerProject } from "./types";
 
 interface ConstructionGanttViewProps<T extends ConstructionSchedulerProject> {
@@ -17,10 +17,6 @@ interface ConstructionGanttViewProps<T extends ConstructionSchedulerProject> {
   onToday: () => void;
   onSelectProject: (project: T) => void;
   onOpenSchedule: (project: T, date: string) => void;
-}
-
-function toDateStr(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function addCalendarDaysYmd(dateStr: string, days: number): string {

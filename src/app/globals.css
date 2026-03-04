@@ -3,16 +3,29 @@
 /* ---- Theme variables ---- */
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-  --surface: #f4f4f5;
-  --surface-2: #e4e4e7;
-  --surface-elevated: #ffffff;
-  --border: #d4d4d8;
-  --muted: #71717a;
-  --skeleton: rgba(228, 228, 231, 0.5);
-  --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
-  --card-shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
+  --background: #fafaf8;
+  --foreground: #1c1917;
+  --surface: #f3f2ee;
+  --surface-2: #e8e6e1;
+  --surface-elevated: #fdfcfa;
+  --border: #d6d3cc;
+  --muted: #78716c;
+  --skeleton: rgba(231, 229, 224, 0.5);
+  --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.03);
+  --card-shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.07), 0 2px 4px rgba(0, 0, 0, 0.03);
+}
+
+html.sunset {
+  --background: #fdf6e3;
+  --foreground: #3c2a14;
+  --surface: #f5ead2;
+  --surface-2: #ebdcb8;
+  --surface-elevated: #fef9ef;
+  --border: #d4b896;
+  --muted: #8b6e4e;
+  --skeleton: rgba(235, 220, 184, 0.5);
+  --card-shadow: 0 1px 3px rgba(120, 80, 20, 0.08), 0 1px 2px rgba(120, 80, 20, 0.04);
+  --card-shadow-lg: 0 4px 12px rgba(120, 80, 20, 0.1), 0 2px 4px rgba(120, 80, 20, 0.05);
 }
 
 html.dark {
@@ -65,6 +78,16 @@ a, button, [role="button"], input, select, textarea {
 }
 
 /* ---- Dark theme atmosphere ---- */
+
+html.sunset body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at 30% 0%, rgba(251, 191, 36, 0.06) 0%, transparent 55%),
+              radial-gradient(ellipse at 80% 100%, rgba(249, 115, 22, 0.04) 0%, transparent 50%);
+}
 
 html.dark body::before {
   content: "";
@@ -218,12 +241,21 @@ html.dark ::-webkit-scrollbar-thumb:hover {
 }
 
 html.light ::-webkit-scrollbar-thumb {
-  background: #d4d4d8;
+  background: #d6d3cc;
   border-radius: 3px;
 }
 
 html.light ::-webkit-scrollbar-thumb:hover {
-  background: #a1a1aa;
+  background: #a8a29e;
+}
+
+html.sunset ::-webkit-scrollbar-thumb {
+  background: #d4b896;
+  border-radius: 3px;
+}
+
+html.sunset ::-webkit-scrollbar-thumb:hover {
+  background: #b8976a;
 }
 
 /* ---- Selection color ---- */

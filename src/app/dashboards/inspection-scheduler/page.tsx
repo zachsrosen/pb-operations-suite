@@ -5,8 +5,10 @@ import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
+import { useToast } from "@/contexts/ToastContext";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
-import { formatTime12h, formatTimeRange12h } from "@/lib/format";
+import { formatCurrency, formatDateShort, formatShortDate, formatTime12h, formatTimeRange12h } from "@/lib/format";
+import { getTodayStr, isPastDate, toDateStr } from "@/lib/scheduling-utils";
 import MyAvailability from "../site-survey-scheduler/my-availability";
 import { LOCATION_TIMEZONES } from "@/lib/constants";
 
@@ -144,27 +146,6 @@ const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 /*  Utility helpers                                                    */
 /* ------------------------------------------------------------------ */
 
-function formatDate(dateStr: string): string {
-  const date = new Date(dateStr + "T12:00:00");
-  return date.toLocaleDateString("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
-}
-
-function formatShortDate(dateStr: string | null | undefined): string {
-  if (!dateStr) return "";
-  const d = new Date(dateStr + "T12:00:00");
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
-
-function formatCurrency(amount: number): string {
-  if (amount >= 1_000_000) return "$" + (amount / 1_000_000).toFixed(1) + "M";
-  if (amount >= 1_000) return "$" + (amount / 1000).toFixed(1) + "K";
-  return "$" + amount.toFixed(0);
-}
-
 function getCustomerName(fullName: string): string {
   return fullName.split(" | ")[1] || fullName;
 }
@@ -177,18 +158,6 @@ function isWeekend(dateStr: string): boolean {
   const [year, month, day] = dateStr.split("-").map(Number);
   const d = new Date(year, month - 1, day);
   return d.getDay() === 0 || d.getDay() === 6;
-}
-
-function toDateStr(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-function getTodayStr(): string {
-  return toDateStr(new Date());
-}
-
-function isPastDate(dateStr: string): boolean {
-  return dateStr < getTodayStr();
 }
 
 function locationKey(value: string | null | undefined): string {
@@ -350,9 +319,8 @@ export default function InspectionSchedulerPage() {
     });
   }, []);
 
-  /* ---- toast ---- */
-  const [toast, setToast] = useState<{ message: string; type: string } | null>(null);
-  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /* ---- toast (via ToastContext) ---- */
+  const { addToast } = useToast();
 
   /* ================================================================ */
   /*  Data fetching                                                    */
@@ -592,11 +560,9 @@ export default function InspectionSchedulerPage() {
   /*  Toast                                                            */
   /* ================================================================ */
 
-  const showToast = useCallback((message: string, type = "success") => {
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-    setToast({ message, type });
-    toastTimer.current = setTimeout(() => setToast(null), 3000);
-  }, []);
+  const showToast = useCallback((message: string, type: "success" | "error" | "warning" | "info" = "success") => {
+    addToast({ title: message, type });
+  }, [addToast]);
 
   /* ================================================================ */
   /*  Derived data                                                     */
@@ -1262,15 +1228,6 @@ export default function InspectionSchedulerPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      {/* Toast */}
-      {toast && (
-        <div className={`fixed top-4 right-4 z-[9999] px-4 py-3 rounded-lg shadow-lg ${
-          toast.type === "warning" ? "bg-yellow-600" : "bg-green-600"
-        }`}>
-          {toast.message}
-        </div>
-      )}
-
       {/* Header */}
       <div className="sticky top-0 z-50 bg-background/95 backdrop-blur border-b border-t-border">
         <div className="max-w-[1800px] mx-auto px-3 sm:px-4 py-2 sm:py-3">
@@ -1947,7 +1904,7 @@ export default function InspectionSchedulerPage() {
 
               <div>
                 <span className="text-xs text-muted">Inspection Date</span>
-                <p className="text-sm font-medium text-purple-400">{formatDate(scheduleModal.date)}</p>
+                <p className="text-sm font-medium text-purple-400">{formatDateShort(scheduleModal.date)}</p>
               </div>
 
               {/* Time Slot Selection — 3 states */}

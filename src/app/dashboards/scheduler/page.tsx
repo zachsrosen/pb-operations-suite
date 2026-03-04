@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { useToast } from "@/contexts/ToastContext";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { LOCATION_TIMEZONES } from "@/lib/constants";
 import { generateOptimizedSchedule, type OptimizableProject, type ScoringPreset, type ExistingBooking, DEFAULT_LOCATION_CAPACITY } from "@/lib/schedule-optimizer";
@@ -613,9 +614,8 @@ export default function SchedulerPage() {
   const [revenueSidebarOpen, setRevenueSidebarOpen] = useState(true);
   const [revenueSidebarTab, setRevenueSidebarTab] = useState<"weekly" | "monthly">("weekly");
 
-  /* ---- toast ---- */
-  const [toast, setToast] = useState<{ message: string; type: string } | null>(null);
-  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /* ---- toast (via ToastContext) ---- */
+  const { addToast } = useToast();
 
   /* ---- optimizer ---- */
   const [optimizeOpen, setOptimizeOpen] = useState(false);
@@ -896,11 +896,9 @@ export default function SchedulerPage() {
   /*  Toast                                                            */
   /* ================================================================ */
 
-  const showToast = useCallback((message: string, type = "success") => {
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-    setToast({ message, type });
-    toastTimer.current = setTimeout(() => setToast(null), type === "error" ? 8000 : 3000);
-  }, []);
+  const showToast = useCallback((message: string, type: "success" | "error" | "warning" | "info" = "success") => {
+    addToast({ title: message, type });
+  }, [addToast]);
 
   /* ---- Crew booking helpers ---- */
 
@@ -4714,22 +4712,6 @@ export default function SchedulerPage() {
         </div>
       )}
 
-      {/* ============================================================ */}
-      {/* TOAST                                                         */}
-      {/* ============================================================ */}
-      <div
-        className={`fixed bottom-6 left-1/2 -translate-x-1/2 px-5 py-2.5 rounded-lg text-[0.8rem] font-medium z-[1001] transition-all duration-300 ${
-          toast
-            ? "translate-y-0 opacity-100"
-            : "translate-y-[100px] opacity-0"
-        } ${
-          toast?.type === "error"
-            ? "bg-red-500 text-white"
-            : "bg-green-500 text-black"
-        }`}
-      >
-        {toast?.message || ""}
-      </div>
     </div>
   );
 }

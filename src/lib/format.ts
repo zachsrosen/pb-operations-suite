@@ -60,6 +60,24 @@ export function formatDate(dateStr: string | null | undefined): string {
 }
 
 /**
+ * Format a date as "Mon, Jan 5" style for scheduler displays.
+ * Adds T12:00:00 to avoid timezone-related off-by-one errors.
+ */
+export function formatDateShort(dateStr: string): string {
+  const date = new Date(dateStr + "T12:00:00");
+  return date.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+}
+
+/**
+ * Format a date as "Jan 5" compact style.
+ */
+export function formatShortDate(dateStr: string | null | undefined): string {
+  if (!dateStr) return "";
+  const d = new Date(dateStr + "T12:00:00");
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+/**
  * Format a date as a relative description: "3 days ago", "in 5 days", "today"
  * Uses date-only comparison (ignoring time) to avoid timezone-related off-by-one errors.
  */

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { useToast } from "@/contexts/ToastContext";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 import { ConstructionProjectDetailPanel } from "@/components/scheduler/ConstructionProjectDetailPanel";
 import { ConstructionMonthView } from "@/components/scheduler/construction/ConstructionMonthView";
@@ -428,9 +429,8 @@ export default function ConstructionSchedulerPage() {
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [showAvailability, setShowAvailability] = useState(true);
 
-  /* ---- toast ---- */
-  const [toast, setToast] = useState<{ message: string; type: string } | null>(null);
-  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /* ---- toast (via ToastContext) ---- */
+  const { addToast } = useToast();
 
   /* ================================================================ */
   /*  Data fetching                                                    */
@@ -712,11 +712,9 @@ export default function ConstructionSchedulerPage() {
   /*  Toast                                                            */
   /* ================================================================ */
 
-  const showToast = useCallback((message: string, type = "success") => {
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-    setToast({ message, type });
-    toastTimer.current = setTimeout(() => setToast(null), 3000);
-  }, []);
+  const showToast = useCallback((message: string, type: "success" | "error" | "warning" | "info" = "success") => {
+    addToast({ title: message, type });
+  }, [addToast]);
 
   const handleManualRefresh = useCallback(async () => {
     if (manualRefreshing) return;
@@ -1561,15 +1559,6 @@ export default function ConstructionSchedulerPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      {/* Toast */}
-      {toast && (
-        <div className={`fixed top-4 right-4 z-[9999] px-4 py-3 rounded-lg shadow-lg ${
-          toast.type === "warning" ? "bg-yellow-600" : "bg-green-600"
-        }`}>
-          {toast.message}
-        </div>
-      )}
-
       {/* Header */}
       <div className="sticky top-0 z-50 bg-background/95 backdrop-blur border-b border-t-border">
         <div className="max-w-[1800px] mx-auto px-4 py-3">

@@ -7,6 +7,7 @@ import DashboardShell from "@/components/DashboardShell";
 import { useToast } from "@/contexts/ToastContext";
 import { useSession } from "next-auth/react";
 import { FORM_CATEGORIES } from "@/lib/catalog-fields";
+import { getZohoItemUrl, getHubSpotProductUrl, getZuperProductUrl } from "@/lib/external-links";
 import SyncModal from "@/components/catalog/SyncModal";
 import DedupPanel from "@/components/catalog/DedupPanel";
 
@@ -255,6 +256,29 @@ export default function CatalogPage() {
 
   const [categoryStats, setCategoryStats] = useState<CategorySyncStat[]>([]);
   const [categoryStatsLoading, setCategoryStatsLoading] = useState(false);
+
+  // Catalog product search for linking system IDs
+  type CatalogSearchSource = "zoho" | "hubspot" | "zuper";
+  interface CatalogSearchResult { externalId: string; name: string; sku: string | null; url: string | null }
+  const [catalogSearchOpen, setCatalogSearchOpen] = useState<CatalogSearchSource | null>(null);
+  const [catalogSearchQuery, setCatalogSearchQuery] = useState("");
+  const [catalogSearchResults, setCatalogSearchResults] = useState<CatalogSearchResult[]>([]);
+  const [catalogSearchLoading, setCatalogSearchLoading] = useState(false);
+
+  const runCatalogSearch = useCallback(async (source: CatalogSearchSource, query: string) => {
+    const q = query.trim();
+    if (!q) return;
+    setCatalogSearchLoading(true);
+    try {
+      const res = await fetch(`/api/products/cache?source=${source}&search=${encodeURIComponent(q)}&limit=8`, { cache: "no-store" });
+      const data = await res.json().catch(() => null) as { products?: CatalogSearchResult[] } | null;
+      setCatalogSearchResults(data?.products ?? []);
+    } catch {
+      setCatalogSearchResults([]);
+    } finally {
+      setCatalogSearchLoading(false);
+    }
+  }, []);
 
   const userRole = (session?.user as { role?: string } | undefined)?.role ?? "";
   const isAdmin = ADMIN_ROLES.includes(userRole);
@@ -986,24 +1010,93 @@ export default function CatalogPage() {
                         <div className="text-muted uppercase tracking-wide">Sync</div>
                         {editing && skuEditDraft ? (
                           <div className="space-y-1">
-                            <input
-                              value={skuEditDraft.zohoItemId}
-                              onChange={(e) => setSkuEditDraft((prev) => prev ? { ...prev, zohoItemId: e.target.value } : prev)}
-                              className="w-full rounded border border-t-border bg-surface px-2 py-1 text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
-                              placeholder="Zoho Item ID"
-                            />
-                            <input
-                              value={skuEditDraft.hubspotProductId}
-                              onChange={(e) => setSkuEditDraft((prev) => prev ? { ...prev, hubspotProductId: e.target.value } : prev)}
-                              className="w-full rounded border border-t-border bg-surface px-2 py-1 text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
-                              placeholder="HubSpot Product ID"
-                            />
-                            <input
-                              value={skuEditDraft.zuperItemId}
-                              onChange={(e) => setSkuEditDraft((prev) => prev ? { ...prev, zuperItemId: e.target.value } : prev)}
-                              className="w-full rounded border border-t-border bg-surface px-2 py-1 text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
-                              placeholder="Zuper Item ID"
-                            />
+                            {([
+                              { source: "zoho" as CatalogSearchSource, field: "zohoItemId" as const, label: "Zoho Item ID", urlFn: getZohoItemUrl },
+                              { source: "hubspot" as CatalogSearchSource, field: "hubspotProductId" as const, label: "HubSpot Product ID", urlFn: getHubSpotProductUrl },
+                              { source: "zuper" as CatalogSearchSource, field: "zuperItemId" as const, label: "Zuper Item ID", urlFn: getZuperProductUrl },
+                            ] as const).map(({ source, field, label, urlFn }) => (
+                              <div key={source}>
+                                <div className="flex items-center gap-1">
+                                  <input
+                                    value={skuEditDraft[field]}
+                                    onChange={(e) => setSkuEditDraft((prev) => prev ? { ...prev, [field]: e.target.value } : prev)}
+                                    className="flex-1 min-w-0 rounded border border-t-border bg-surface px-2 py-1 text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                                    placeholder={label}
+                                  />
+                                  {skuEditDraft[field] && (
+                                    <a href={urlFn(skuEditDraft[field])} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:text-cyan-300 text-[11px] shrink-0" title={`Open in ${source}`}>&#8599;</a>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (catalogSearchOpen === source) {
+                                        setCatalogSearchOpen(null);
+                                        setCatalogSearchResults([]);
+                                        setCatalogSearchQuery("");
+                                      } else {
+                                        setCatalogSearchOpen(source);
+                                        setCatalogSearchResults([]);
+                                        const q = `${skuEditDraft.brand} ${skuEditDraft.model}`.trim();
+                                        setCatalogSearchQuery(q);
+                                        if (q) runCatalogSearch(source, q);
+                                      }
+                                    }}
+                                    className={`text-[10px] shrink-0 px-1 rounded ${catalogSearchOpen === source ? "text-cyan-300 bg-cyan-500/20" : "text-muted hover:text-cyan-300"}`}
+                                    title={`Search ${source} catalog`}
+                                  >
+                                    &#128269;
+                                  </button>
+                                </div>
+                                {catalogSearchOpen === source && (
+                                  <div className="mt-1 rounded border border-t-border bg-background/50 p-2 space-y-1.5">
+                                    <div className="flex gap-1">
+                                      <input
+                                        value={catalogSearchQuery}
+                                        onChange={(e) => setCatalogSearchQuery(e.target.value)}
+                                        onKeyDown={(e) => { if (e.key === "Enter") runCatalogSearch(source, catalogSearchQuery); }}
+                                        placeholder={`Search ${source}...`}
+                                        className="flex-1 min-w-0 rounded border border-t-border bg-background px-2 py-1 text-[10px] text-foreground focus:outline-none focus:border-cyan-500/50"
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => runCatalogSearch(source, catalogSearchQuery)}
+                                        disabled={catalogSearchLoading}
+                                        className="px-2 py-0.5 rounded border border-cyan-500/40 bg-cyan-500/10 text-cyan-300 text-[10px] hover:bg-cyan-500/20 disabled:opacity-50"
+                                      >
+                                        {catalogSearchLoading ? "..." : "Search"}
+                                      </button>
+                                    </div>
+                                    {!catalogSearchLoading && catalogSearchResults.length === 0 && catalogSearchQuery.trim() && (
+                                      <div className="text-[10px] text-muted">No products found.</div>
+                                    )}
+                                    {catalogSearchResults.length > 0 && (
+                                      <div className="max-h-32 overflow-y-auto space-y-1">
+                                        {catalogSearchResults.map((r) => (
+                                          <div key={r.externalId} className="flex items-start justify-between gap-1 rounded border border-t-border bg-background/70 p-1.5">
+                                            <div className="min-w-0">
+                                              <div className="text-[10px] text-foreground truncate">{r.name || "Unnamed"}</div>
+                                              <div className="text-[9px] text-muted truncate">ID: {r.externalId}{r.sku ? ` · SKU: ${r.sku}` : ""}</div>
+                                            </div>
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setSkuEditDraft((prev) => prev ? { ...prev, [field]: r.externalId } : prev);
+                                                setCatalogSearchOpen(null);
+                                                setCatalogSearchResults([]);
+                                                setCatalogSearchQuery("");
+                                              }}
+                                              className="shrink-0 px-1.5 py-0.5 rounded border border-cyan-500/40 bg-cyan-500/10 text-cyan-300 text-[9px] hover:bg-cyan-500/20"
+                                            >
+                                              Use
+                                            </button>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
                             {/* QuickBooks deactivated — input hidden */}
                             <label className="inline-flex items-center gap-1 text-[11px] text-muted">
                               <input
@@ -1018,11 +1111,13 @@ export default function CatalogPage() {
                           <div className="space-y-1.5">
                             <div className="flex items-center gap-3">
                               <SyncDot label="Zoho" ok={sku.syncHealth?.zoho ?? Boolean(sku.zohoItemId)} />
-                              <SyncDot label="HS" ok={sku.syncHealth?.hubspot ?? Boolean(sku.hubspotProductId)} />
-                              <SyncDot label="Zu" ok={sku.syncHealth?.zuper ?? Boolean(sku.zuperItemId)} />
+                              <SyncDot label="HubSpot" ok={sku.syncHealth?.hubspot ?? Boolean(sku.hubspotProductId)} />
+                              <SyncDot label="Zuper" ok={sku.syncHealth?.zuper ?? Boolean(sku.zuperItemId)} />
                             </div>
                             <div className="text-[11px] text-muted">
-                              Zoho: {sku.zohoItemId || "—"} · HS: {sku.hubspotProductId || "—"} · Zu: {sku.zuperItemId || "—"}
+                              Zoho: {sku.zohoItemId ? <a href={getZohoItemUrl(sku.zohoItemId)} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:underline">{sku.zohoItemId}</a> : "—"}
+                              {" · "}HubSpot: {sku.hubspotProductId ? <a href={getHubSpotProductUrl(sku.hubspotProductId)} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:underline">{sku.hubspotProductId}</a> : "—"}
+                              {" · "}Zuper: {sku.zuperItemId ? <a href={getZuperProductUrl(sku.zuperItemId)} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:underline">{sku.zuperItemId}</a> : "—"}
                             </div>
                           </div>
                         )}
@@ -1083,11 +1178,11 @@ export default function CatalogPage() {
                         </div>
                         <div className="flex items-center gap-1">
                           <span className={`w-1.5 h-1.5 rounded-full ${cat.hasHubspot === cat.total ? "bg-green-500" : "bg-red-400"}`} />
-                          HS {cat.hasHubspot}/{cat.total}
+                          HubSpot {cat.hasHubspot}/{cat.total}
                         </div>
                         <div className="flex items-center gap-1">
                           <span className={`w-1.5 h-1.5 rounded-full ${cat.hasZuper === cat.total ? "bg-green-500" : "bg-red-400"}`} />
-                          Zu {cat.hasZuper}/{cat.total}
+                          Zuper {cat.hasZuper}/{cat.total}
                         </div>
                       </div>
                       <div className="text-xs text-muted">

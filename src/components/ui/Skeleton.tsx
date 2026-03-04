@@ -2,38 +2,6 @@
 
 import { memo } from "react";
 
-/** Generic skeleton shimmer block */
-export const SkeletonBlock = memo(function SkeletonBlock({
-  className = "",
-}: {
-  className?: string;
-}) {
-  return (
-    <div className={`bg-skeleton rounded animate-pulse ${className}`} />
-  );
-});
-
-/** Skeleton for a stat card grid */
-export const SkeletonStatCards = memo(function SkeletonStatCards({
-  count = 4,
-}: {
-  count?: number;
-}) {
-  return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-      {Array.from({ length: count }).map((_, i) => (
-        <div
-          key={i}
-          className="bg-surface/50 border border-t-border rounded-xl p-6 shadow-card animate-pulse"
-        >
-          <div className="h-9 w-20 bg-skeleton rounded mb-2" />
-          <div className="h-4 w-24 bg-skeleton rounded" />
-        </div>
-      ))}
-    </div>
-  );
-});
-
 /** Skeleton for a section with bars (stage breakdown, etc.) */
 export const SkeletonSection = memo(function SkeletonSection({
   rows = 5,
@@ -79,27 +47,6 @@ export const SkeletonTable = memo(function SkeletonTable({
           </div>
         ))}
       </div>
-    </div>
-  );
-});
-
-/** Skeleton for location cards */
-export const SkeletonLocationCards = memo(function SkeletonLocationCards({
-  count = 5,
-}: {
-  count?: number;
-}) {
-  return (
-    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-      {Array.from({ length: count }).map((_, i) => (
-        <div
-          key={i}
-          className="bg-skeleton rounded-lg p-4 text-center animate-pulse"
-        >
-          <div className="h-8 w-12 mx-auto bg-skeleton rounded mb-2" />
-          <div className="h-4 w-20 mx-auto bg-skeleton rounded" />
-        </div>
-      ))}
     </div>
   );
 });

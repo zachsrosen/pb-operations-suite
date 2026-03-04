@@ -2401,8 +2401,9 @@ export default function ProductComparisonPage() {
 
                   {(!compactCards || isRowExpanded) && (
                     <>
-                      <div className="mt-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
-                    {displayedSources.map((source) => {
+                      <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-2">
+                    {/* Internal card spans full row, external catalogs fill the 3-col grid */}
+                    {[...displayedSources].sort((a, b) => (a === "internal" ? -1 : b === "internal" ? 1 : 0)).map((source) => {
                       const sourceProduct = row[source];
                       const hasInternal = Boolean(row.internal);
                       const supportsLinking = isLinkableSource(source);
@@ -2430,7 +2431,7 @@ export default function ProductComparisonPage() {
                       const isCreatingSource = createKey ? Boolean(creatingKeys[createKey]) : false;
 
                       return (
-                        <div key={`${row.key}-${source}`} className="rounded-md border border-t-border bg-background/40 p-2 min-w-0">
+                        <div key={`${row.key}-${source}`} className={`rounded-md border border-t-border bg-background/40 p-2 min-w-0${source === "internal" ? " md:col-span-3" : ""}`}>
                           <div className="mb-2">
                             <span className={`inline-flex px-1.5 py-0.5 rounded border text-[10px] ${sourceBadgeClass(source)}`}>
                               {formatSourceName(source)}
