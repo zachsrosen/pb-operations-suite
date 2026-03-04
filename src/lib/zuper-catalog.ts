@@ -162,16 +162,18 @@ function matchesIdentity(record: JsonRecord, identity: ZuperIdentity): boolean {
     "item_sku",
     "item_code",
     "code",
+    "product_no",
     "product_id",
     "vendor_part_number",
     "part_number",
     "model",
   ]);
-  const recordPart = getRecordString(record, ["part_number", "vendor_part_number", "model", "item_code", "product_id"]);
+  const recordPart = getRecordString(record, ["part_number", "product_no", "vendor_part_number", "model", "item_code", "product_id"]);
   const recordName = getRecordString(record, ["name", "item_name", "part_name", "product_name", "title", "display_name"]);
   const recordCategory = getRecordString(record, [
     "category",
     "category_name",
+    "product_category",
     "product_category_name",
     "item_category",
     "part_category",
@@ -270,7 +272,7 @@ async function requestZuper(
 function buildSearchEndpoints(query: string): string[] {
   const q = encodeURIComponent(query);
   const endpointCandidates = getCatalogEndpoints();
-  const searchKeys = ["search", "query"] as const;
+  const searchKeys = ["filter.keyword", "search", "query"] as const;
   const endpoints: string[] = [];
   for (const endpoint of endpointCandidates) {
     for (const key of searchKeys) {
@@ -335,17 +337,32 @@ function getCreateBodyVariants(endpoint: string, payload: JsonRecord): CreateBod
     ];
   }
   if (path.endsWith("/product")) {
+    // Map generic field names → Zuper /product API field names.
+    // See https://developers.zuper.co/reference/create-a-product
     const productName = trimOrUndefined(payload.product_name) || trimOrUndefined(payload.name);
-    const productId = trimOrUndefined(payload.product_id) || trimOrUndefined(payload.sku) || trimOrUndefined(payload.part_number);
+    const productNo = trimOrUndefined(payload.product_no) || trimOrUndefined(payload.part_number) || trimOrUndefined(payload.sku);
+    const productCategory = trimOrUndefined(payload.product_category) || trimOrUndefined(payload.category_name) || trimOrUndefined(payload.category);
+    const productDescription = trimOrUndefined(payload.product_description) || trimOrUndefined(payload.description);
+    const uom = trimOrUndefined(payload.uom) || trimOrUndefined(payload.unit);
+    const purchasePrice = trimOrUndefined(payload.purchase_price) || trimOrUndefined(payload.cost_price) || trimOrUndefined(payload.purchase_rate) || trimOrUndefined(payload.cost);
+    const price = trimOrUndefined(payload.price) || trimOrUndefined(payload.unit_price) || trimOrUndefined(payload.rate);
+    const brand = trimOrUndefined(payload.brand);
+    const specification = trimOrUndefined(payload.specification);
+
     const productPayload: JsonRecord = {
-      ...payload,
       ...(productName ? { product_name: productName } : {}),
-      ...(productId ? { product_id: productId } : {}),
+      ...(productNo ? { product_no: productNo } : {}),
+      ...(productCategory ? { product_category: productCategory } : {}),
+      product_type: trimOrUndefined(payload.product_type) || "product",
+      ...(productDescription ? { product_description: productDescription } : {}),
+      ...(brand ? { brand } : {}),
+      ...(specification ? { specification } : {}),
+      ...(uom ? { uom } : {}),
+      ...(price ? { price: Number(price) || undefined } : {}),
+      ...(purchasePrice ? { purchase_price: String(purchasePrice) } : {}),
     };
     return [
       { label: "product", body: { product: productPayload } },
-      { label: "product_data", body: { product_data: productPayload } },
-      { label: "raw_product", body: productPayload },
     ];
   }
   if (path.includes("/products")) {

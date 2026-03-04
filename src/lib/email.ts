@@ -1691,7 +1691,7 @@ export async function sendPipelineNotification(params: {
   const isFailed = params.status === "failed";
 
   // ASCII-safe status indicators for subject line (avoids garbled emoji encoding)
-  const subjectTag = isSuccess ? "[OK]" : isPartial ? "[WARN]" : "[FAIL]";
+  const subjectTag = isSuccess ? "[OK]" : isPartial ? "[PARTIAL]" : "[FAIL]";
   const statusLabel = isSuccess ? "Succeeded" : isPartial ? "Partial" : "Failed";
   const statusColor = isSuccess ? "#16a34a" : isPartial ? "#d97706" : "#dc2626";
   const durationSec = params.durationMs ? `${(params.durationMs / 1000).toFixed(1)}s` : "N/A";

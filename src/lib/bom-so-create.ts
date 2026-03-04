@@ -257,6 +257,39 @@ export async function createSalesOrder(params: {
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Zoho API error";
+
+    // ── Recovery: SO already exists in Zoho (previous run crashed before saving ID) ──
+    if (message.includes("already exists")) {
+      console.warn(`[bom-so-create] SO ${soNumber} already exists in Zoho — recovering`);
+      try {
+        const existing = await zohoInventory.getSalesOrder(soNumber);
+        if (existing?.salesorder_id) {
+          // Patch the snapshot so future runs hit the idempotency guard
+          await prisma.projectBomSnapshot.update({
+            where: { id: snapshot.id },
+            data: { zohoSoId: existing.salesorder_id },
+          });
+          await logSo("reused", {
+            dealName: snapshot.dealName,
+            salesorder_id: existing.salesorder_id,
+            salesorder_number: existing.salesorder_number,
+            recovered: true,
+          });
+          return {
+            salesorder_id: existing.salesorder_id,
+            salesorder_number: existing.salesorder_number,
+            unmatchedCount,
+            unmatchedItems,
+            matchedItems,
+            alreadyExisted: true,
+            ...postProcessExtras,
+          };
+        }
+      } catch (recoveryErr) {
+        console.error("[bom-so-create] Recovery lookup failed:", recoveryErr);
+      }
+    }
+
     console.error("[bom-so-create] Zoho error:", message);
     await logSo("failed", {
       reason: "zoho_api_error",

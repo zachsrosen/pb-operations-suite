@@ -187,9 +187,9 @@ const SOURCE_DISPLAY_LABELS: Record<string, string> = {
 // Short column headers for the BOM table
 const SOURCE_SHORT_LABELS: Record<string, string> = {
   internal: "INT",
-  hubspot: "HS",
-  zuper: "ZU",
-  zoho: "ZO",
+  hubspot: "HubSpot",
+  zuper: "Zuper",
+  zoho: "Zoho",
 };
 
 const CATEGORY_ORDER: BomCategory[] = [
@@ -862,6 +862,8 @@ function BomDashboardInner() {
   const [internalSkus, setInternalSkus] = useState<InternalCatalogSku[]>([]);
   const [backfillingLinkedProducts, setBackfillingLinkedProducts] = useState(false);
   const [rowActionBusyKey, setRowActionBusyKey] = useState<string | null>(null);
+  const [bulkAddRunning, setBulkAddRunning] = useState(false);
+  const [bulkAddProgress, setBulkAddProgress] = useState("");
 
   // Derived source list — updates automatically when comparison data arrives
   const catalogSources = sourcesFromRows(comparisonRows);
@@ -1838,6 +1840,59 @@ function BomDashboardInner() {
     }
   }, [linkedProject, bestSkuByItem, pricingByItem, addToast]);
 
+  const handleAddBoth = useCallback(async (item: BomItem) => {
+    const actionKey = `both:${item.id}`;
+    setRowActionBusyKey(actionKey);
+    try {
+      await Promise.all([
+        handleAddHubspotDealLineItem(item),
+        handleAddZuperJobPart(item),
+      ]);
+    } finally {
+      setRowActionBusyKey((current) => (current === actionKey ? null : current));
+    }
+  }, [handleAddHubspotDealLineItem, handleAddZuperJobPart]);
+
+  const handlePushAllToSystems = useCallback(async () => {
+    if (!items.length) return;
+    const hasHs = !!linkedProject?.hs_object_id;
+    const hasZuper = !!linkedProject?.zuperUid;
+    if (!hasHs && !hasZuper) {
+      addToast({ type: "error", title: "No HubSpot deal or Zuper job linked" });
+      return;
+    }
+
+    setBulkAddRunning(true);
+    let hsOk = 0, hsFail = 0, zuOk = 0, zuFail = 0;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      const label = [item.brand, item.model].filter(Boolean).join(" ") || item.description || `Item ${i + 1}`;
+      setBulkAddProgress(`${i + 1}/${items.length}: ${label}`);
+      const promises: Promise<void>[] = [];
+      if (hasHs) {
+        promises.push(
+          handleAddHubspotDealLineItem(item).then(() => { hsOk++; }).catch(() => { hsFail++; })
+        );
+      }
+      if (hasZuper) {
+        promises.push(
+          handleAddZuperJobPart(item).then(() => { zuOk++; }).catch(() => { zuFail++; })
+        );
+      }
+      await Promise.all(promises);
+    }
+
+    setBulkAddRunning(false);
+    setBulkAddProgress("");
+    const parts: string[] = [];
+    if (hasHs) parts.push(`HubSpot: ${hsOk} added${hsFail ? `, ${hsFail} failed` : ""}`);
+    if (hasZuper) parts.push(`Zuper: ${zuOk} added${zuFail ? `, ${zuFail} failed` : ""}`);
+    addToast({
+      type: hsFail + zuFail > 0 ? "error" : "success",
+      title: `Push All complete — ${parts.join(" · ")}`,
+    });
+  }, [items, linkedProject, handleAddHubspotDealLineItem, handleAddZuperJobPart, addToast]);
+
   /* ---- Export CSV ---- */
   const handleExportCsv = useCallback(() => {
     if (!items.length) return;
@@ -2732,6 +2787,16 @@ function BomDashboardInner() {
               >
                 {backfillingLinkedProducts ? "⟳ Backfilling…" : "⇄ Fill Empty from Linked Products"}
               </button>
+              {linkedProject && (linkedProject.hs_object_id || linkedProject.zuperUid) && (
+                <button
+                  onClick={handlePushAllToSystems}
+                  disabled={bulkAddRunning || !items.length}
+                  className="px-4 py-2 rounded-lg bg-orange-500 text-white text-sm font-medium hover:bg-orange-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  title="Push all BOM line items to HubSpot and/or Zuper"
+                >
+                  {bulkAddRunning ? `⟳ ${bulkAddProgress}` : "↑ Push All to HubSpot / Zuper"}
+                </button>
+              )}
               <button
                 onClick={handleExportPdf}
                 disabled={!bom}
@@ -3148,20 +3213,30 @@ function BomDashboardInner() {
                               <div className="flex items-center gap-1.5">
                                 <button
                                   onClick={() => handleAddHubspotDealLineItem(item)}
-                                  disabled={!linkedProject?.hs_object_id || rowActionBusyKey === `hs:${item.id}`}
+                                  disabled={!linkedProject?.hs_object_id || !!rowActionBusyKey}
                                   className="text-[11px] px-2 py-1 rounded border border-t-border text-foreground hover:bg-surface-2 disabled:opacity-40 disabled:cursor-not-allowed"
                                   title={linkedProject?.hs_object_id ? "Add line item to linked HubSpot deal" : "Link a HubSpot project first"}
                                 >
-                                  {rowActionBusyKey === `hs:${item.id}` ? "Adding…" : "HS +"}
+                                  {rowActionBusyKey === `hs:${item.id}` ? "Adding…" : "HubSpot +"}
                                 </button>
                                 <button
                                   onClick={() => handleAddZuperJobPart(item)}
-                                  disabled={!linkedProject?.zuperUid || rowActionBusyKey === `zu:${item.id}`}
+                                  disabled={!linkedProject?.zuperUid || !!rowActionBusyKey}
                                   className="text-[11px] px-2 py-1 rounded border border-t-border text-foreground hover:bg-surface-2 disabled:opacity-40 disabled:cursor-not-allowed"
                                   title={linkedProject?.zuperUid ? "Add part to linked Zuper job" : "Linked project has no Zuper job"}
                                 >
-                                  {rowActionBusyKey === `zu:${item.id}` ? "Adding…" : "ZU +"}
+                                  {rowActionBusyKey === `zu:${item.id}` ? "Adding…" : "Zuper +"}
                                 </button>
+                                {linkedProject?.hs_object_id && linkedProject?.zuperUid && (
+                                  <button
+                                    onClick={() => handleAddBoth(item)}
+                                    disabled={!!rowActionBusyKey}
+                                    className="text-[11px] px-2 py-1 rounded border border-orange-400 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20 disabled:opacity-40 disabled:cursor-not-allowed font-medium"
+                                    title="Add to both HubSpot and Zuper"
+                                  >
+                                    {rowActionBusyKey === `both:${item.id}` ? "Adding…" : "Both +"}
+                                  </button>
+                                )}
                               </div>
                             </td>
                             {catalogSources.map((src) => (
