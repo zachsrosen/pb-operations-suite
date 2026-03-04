@@ -387,6 +387,7 @@ async function sendEmailMessage(params: {
   debugFallbackTitle: string;
   debugFallbackBody: string;
   attachments?: MimeAttachment[];
+  fromOverride?: string;
 }): Promise<SendResult> {
   const normalizedTo = (Array.isArray(params.to) ? params.to : [params.to || ""])
     .map((value) => parseEmailAddress(value))
@@ -413,7 +414,7 @@ async function sendEmailMessage(params: {
   const defaultFrom = senderEmail
     ? `PB Operations <${senderEmail}>`
     : "PB Operations <noreply@photonbrothers.com>";
-  const from = process.env.EMAIL_FROM || defaultFrom;
+  const from = params.fromOverride || process.env.EMAIL_FROM || defaultFrom;
 
   const googleResult = await trySendWithGoogleWorkspace({
     to: primaryToList,
@@ -1852,6 +1853,10 @@ export async function sendPortalEmail(params: {
   // Strip HTML tags for plain-text fallback
   const text = params.html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 
+  // Use a portal-specific sender (customer-facing)
+  const portalSender = process.env.PORTAL_SENDER_EMAIL || "scheduling@photonbrothers.com";
+  const portalFrom = `Photon Brothers <${portalSender}>`;
+
   return sendEmailMessage({
     to: params.to,
     subject: params.subject,
@@ -1859,5 +1864,6 @@ export async function sendPortalEmail(params: {
     text,
     debugFallbackTitle: `PORTAL EMAIL to ${params.to}`,
     debugFallbackBody: text,
+    fromOverride: portalFrom,
   });
 }
