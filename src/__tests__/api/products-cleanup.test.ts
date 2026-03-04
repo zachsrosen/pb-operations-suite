@@ -25,7 +25,7 @@ jest.mock("@/lib/db", () => ({
 
 const mockRunCleanupAdapter = jest.fn();
 jest.mock("@/lib/product-cleanup-adapters", () => ({
-  CLEANUP_SOURCES: ["hubspot", "zuper", "zoho", "quickbooks"],
+  CLEANUP_SOURCES: ["hubspot", "zuper", "zoho"],
   runCleanupAdapter: (...args: unknown[]) => mockRunCleanupAdapter(...args),
 }));
 
@@ -45,7 +45,7 @@ function signCleanup(ids: string[], actions: {
   internal: "none" | "deactivate";
   links: "none" | "unlink_selected";
   external: "none" | "delete_selected";
-  sources: readonly Array<"hubspot" | "zuper" | "zoho" | "quickbooks">;
+  sources: readonly Array<"hubspot" | "zuper" | "zoho">;
   deleteCachedProducts?: boolean;
 }, issuedAt = Date.now()) {
   const token = createProductCleanupConfirmationToken({
@@ -65,7 +65,6 @@ const baseSku = {
   hubspotProductId: "hs_1",
   zuperItemId: "zu_1",
   zohoItemId: "zo_1",
-  quickbooksItemId: "qb_1",
 };
 
 beforeEach(() => {
@@ -232,71 +231,4 @@ describe("POST /api/products/cleanup", () => {
     expect(payload.results[0].externalBySource.zuper.status).toBe("failed");
   });
 
-  it("accepts QuickBooks archived status and cleans matching cache row", async () => {
-    const actions = {
-      internal: "none" as const,
-      links: "none" as const,
-      external: "delete_selected" as const,
-      sources: ["quickbooks"] as const,
-      deleteCachedProducts: true,
-    };
-    const confirmation = signCleanup(["sku_1"], actions);
-
-    mockRunCleanupAdapter.mockResolvedValueOnce({
-      source: "quickbooks",
-      externalId: "qb_1",
-      status: "archived",
-      message: "set inactive",
-    });
-
-    const response = await POST(
-      makeRequest({
-        internalSkuIds: ["sku_1"],
-        actions,
-        confirmation,
-      })
-    );
-
-    expect(response.status).toBe(200);
-    const payload = await response.json();
-    expect(payload.results[0].externalBySource.quickbooks.status).toBe("archived");
-    expect(payload.summary.succeeded).toBe(1);
-    expect(mockCatalogDeleteMany).toHaveBeenCalledWith({
-      where: {
-        source: "QUICKBOOKS",
-        externalId: "qb_1",
-      },
-    });
-  });
-
-  it("skips cache cleanup when external cleanup fails", async () => {
-    const actions = {
-      internal: "none" as const,
-      links: "none" as const,
-      external: "delete_selected" as const,
-      sources: ["quickbooks"] as const,
-      deleteCachedProducts: true,
-    };
-    const confirmation = signCleanup(["sku_1"], actions);
-
-    mockRunCleanupAdapter.mockResolvedValueOnce({
-      source: "quickbooks",
-      externalId: "qb_1",
-      status: "failed",
-      message: "api error",
-    });
-
-    const response = await POST(
-      makeRequest({
-        internalSkuIds: ["sku_1"],
-        actions,
-        confirmation,
-      })
-    );
-
-    expect(response.status).toBe(200);
-    const payload = await response.json();
-    expect(payload.results[0].status).toBe("failed");
-    expect(mockCatalogDeleteMany).not.toHaveBeenCalled();
-  });
 });

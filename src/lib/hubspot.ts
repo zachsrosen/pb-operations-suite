@@ -2335,6 +2335,43 @@ export async function createDealLineItem(
   };
 }
 
+export interface HubSpotProductProperties {
+  name: string | null;
+  description: string | null;
+  hs_sku: string | null;
+  price: number | null;
+}
+
+export async function fetchHubSpotProductById(
+  productId: string
+): Promise<HubSpotProductProperties | null> {
+  const token = process.env.HUBSPOT_ACCESS_TOKEN;
+  if (!token || !productId) return null;
+
+  try {
+    const url = `https://api.hubapi.com/crm/v3/objects/products/${encodeURIComponent(productId)}?properties=name,description,hs_sku,price`;
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) return null;
+
+    const data = (await response.json()) as {
+      properties?: Record<string, string | null>;
+    };
+    const props = data?.properties;
+    if (!props) return null;
+
+    return {
+      name: props.name?.trim() || null,
+      description: props.description?.trim() || null,
+      hs_sku: props.hs_sku?.trim() || null,
+      price: props.price != null && props.price !== "" ? Number(props.price) : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function calculateStats(projects: Project[]) {
   const activeProjects = projects.filter((p) => p.isActive);
   const totalValue = activeProjects.reduce((sum, p) => sum + p.amount, 0);

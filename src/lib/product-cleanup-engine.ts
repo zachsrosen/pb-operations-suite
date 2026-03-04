@@ -23,7 +23,6 @@ export interface CleanupSkuRecord {
   hubspotProductId: string | null;
   zuperItemId: string | null;
   zohoItemId: string | null;
-  quickbooksItemId: string | null;
 }
 
 export type CleanupStepStatus =
@@ -53,26 +52,23 @@ export interface CleanupInternalEngineResult {
     hubspotProductId: null;
     zuperItemId: null;
     zohoItemId: null;
-    quickbooksItemId: null;
     isActive: boolean;
   }>;
 }
 
 const LINK_FIELD_BY_SOURCE: Record<
   CleanupSource,
-  "hubspotProductId" | "zuperItemId" | "zohoItemId" | "quickbooksItemId"
+  "hubspotProductId" | "zuperItemId" | "zohoItemId"
 > = {
   hubspot: "hubspotProductId",
   zuper: "zuperItemId",
   zoho: "zohoItemId",
-  quickbooks: "quickbooksItemId",
 };
 
 const CACHE_SOURCE_BY_SOURCE: Record<CleanupSource, CatalogProductSource> = {
   hubspot: "HUBSPOT",
   zuper: "ZUPER",
   zoho: "ZOHO",
-  quickbooks: "QUICKBOOKS",
 };
 
 export function isExternalResultCacheSafe(result: CleanupAdapterResult | undefined): boolean {

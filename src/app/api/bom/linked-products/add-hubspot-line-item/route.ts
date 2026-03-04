@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireApiAuth } from "@/lib/api-auth";
-import { createDealLineItem } from "@/lib/hubspot";
+import {
+  createDealLineItem,
+  fetchLineItemsForDeal,
+  fetchHubSpotProductById,
+} from "@/lib/hubspot";
 
 const ALLOWED_ROLES = new Set([
   "ADMIN",
@@ -117,6 +121,30 @@ async function loadSku(skuId: string | null, category: string | null, brand: str
   }
 }
 
+/** Check if a matching line item already exists on the deal */
+function findExistingLineItem(
+  existing: Array<{ name: string; sku: string; hubspotProductId: string | null }>,
+  hubspotProductId: string | null,
+  sku: string | null,
+  name: string
+): { id: string; name: string } | null {
+  for (const item of existing as Array<{ id: string; name: string; sku: string; hubspotProductId: string | null }>) {
+    // Match by HubSpot product ID (strongest signal)
+    if (hubspotProductId && item.hubspotProductId === hubspotProductId) {
+      return { id: item.id, name: item.name };
+    }
+    // Match by SKU
+    if (sku && item.sku && item.sku.toLowerCase() === sku.toLowerCase()) {
+      return { id: item.id, name: item.name };
+    }
+    // Match by name (case-insensitive)
+    if (name && item.name && item.name.toLowerCase() === name.toLowerCase()) {
+      return { id: item.id, name: item.name };
+    }
+  }
+  return null;
+}
+
 export async function POST(request: NextRequest) {
   const authResult = await requireApiAuth();
   if (authResult instanceof NextResponse) return authResult;
@@ -147,16 +175,55 @@ export async function POST(request: NextRequest) {
 
   const skuRecord = await loadSku(skuId, category, brand, model);
 
+  // Resolve the HubSpot product ID from explicit input or SKU record
+  const hubspotProductId = explicitHubspotProductId || skuRecord?.hubspotProductId || null;
+
+  // If we have a HubSpot product ID, fetch the product's canonical properties
+  const hsProduct = hubspotProductId
+    ? await fetchHubSpotProductById(hubspotProductId)
+    : null;
+
+  // Prefer HubSpot product properties > explicit input > SKU record > fallback
   const name =
+    hsProduct?.name ||
     explicitName ||
     [brand || skuRecord?.brand || "", model || skuRecord?.model || ""].filter(Boolean).join(" ").trim() ||
     explicitDescription ||
     skuRecord?.description ||
     "BOM Item";
 
-  const description = explicitDescription || skuRecord?.description || null;
-  const sku = explicitSku || skuRecord?.vendorPartNumber || model || skuRecord?.model || null;
-  const hubspotProductId = explicitHubspotProductId || skuRecord?.hubspotProductId || null;
+  const description = hsProduct?.description || explicitDescription || skuRecord?.description || null;
+  const sku = hsProduct?.hs_sku || explicitSku || skuRecord?.vendorPartNumber || model || skuRecord?.model || null;
+  const resolvedPrice = hsProduct?.price ?? (Number.isFinite(unitPrice) ? unitPrice : (skuRecord?.sellPrice ?? null));
+
+  // Check for duplicate line items on the deal
+  try {
+    const existingItems = await fetchLineItemsForDeal(dealId);
+    const duplicate = findExistingLineItem(
+      existingItems.map((li) => ({
+        id: li.id,
+        name: li.name,
+        sku: li.sku,
+        hubspotProductId: li.hubspotProductId,
+      })),
+      hubspotProductId,
+      sku,
+      name
+    );
+
+    if (duplicate) {
+      return NextResponse.json({
+        ok: true,
+        skipped: true,
+        reason: "already_exists",
+        existingLineItemId: duplicate.id,
+        existingName: duplicate.name,
+      });
+    }
+  } catch (error) {
+    // If we can't fetch existing items, log but continue with creation
+    console.warn("[AddLineItem] Failed to check for duplicates:", error);
+  }
 
   try {
     const result = await createDealLineItem({
@@ -164,7 +231,7 @@ export async function POST(request: NextRequest) {
       name,
       quantity,
       description,
-      unitPrice: Number.isFinite(unitPrice) ? unitPrice : (skuRecord?.sellPrice ?? null),
+      unitPrice: resolvedPrice,
       sku,
       hubspotProductId,
     });

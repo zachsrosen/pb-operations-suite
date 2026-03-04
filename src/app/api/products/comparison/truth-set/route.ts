@@ -6,7 +6,7 @@ import { normalizeRole, type UserRole } from "@/lib/role-permissions";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-const LINKABLE_SOURCES = ["hubspot", "zuper", "zoho", "quickbooks"] as const;
+const LINKABLE_SOURCES = ["hubspot", "zuper", "zoho"] as const;
 type LinkableSourceName = (typeof LINKABLE_SOURCES)[number];
 type AnchorSourceName = "internal" | LinkableSourceName;
 
@@ -33,7 +33,6 @@ interface ComparisonRow {
   hubspot: ComparableProduct | null;
   zuper: ComparableProduct | null;
   zoho: ComparableProduct | null;
-  quickbooks: ComparableProduct | null;
   possibleMatches: PossibleMatch[];
 }
 
@@ -80,7 +79,6 @@ function normalizeSource(value: unknown): LinkableSourceName | null {
   if (normalized === "hubspot") return "hubspot";
   if (normalized === "zuper") return "zuper";
   if (normalized === "zoho") return "zoho";
-  if (normalized === "quickbooks") return "quickbooks";
   return null;
 }
 

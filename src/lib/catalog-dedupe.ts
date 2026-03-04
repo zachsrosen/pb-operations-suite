@@ -66,8 +66,7 @@ const SOURCE_QUALITY: Record<HarvestSource, number> = {
   zoho: 0,
   internal: 1,
   hubspot: 2,
-  quickbooks: 3,
-  zuper: 4,
+  zuper: 3,
 };
 
 // ---------------------------------------------------------------------------

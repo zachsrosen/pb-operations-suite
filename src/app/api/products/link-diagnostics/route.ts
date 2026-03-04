@@ -6,21 +6,19 @@ import {
   getHubSpotProductUrl,
   getZuperProductUrl,
   getZohoItemUrl,
-  getQuickBooksItemUrl,
 } from "@/lib/external-links";
 
 export const runtime = "nodejs";
 
 const ALLOWED_ROLES = new Set<UserRole>(["ADMIN", "OWNER", "MANAGER"]);
 
-type DiagnosticSource = "hubspot" | "zuper" | "zoho" | "quickbooks";
-const VALID_SOURCES: DiagnosticSource[] = ["hubspot", "zuper", "zoho", "quickbooks"];
+type DiagnosticSource = "hubspot" | "zuper" | "zoho";
+const VALID_SOURCES: DiagnosticSource[] = ["hubspot", "zuper", "zoho"];
 
-const SOURCE_FIELD_MAP: Record<DiagnosticSource, "hubspotProductId" | "zuperItemId" | "zohoItemId" | "quickbooksItemId"> = {
+const SOURCE_FIELD_MAP: Record<DiagnosticSource, "hubspotProductId" | "zuperItemId" | "zohoItemId"> = {
   hubspot: "hubspotProductId",
   zuper: "zuperItemId",
   zoho: "zohoItemId",
-  quickbooks: "quickbooksItemId",
 };
 
 function generateUrl(source: DiagnosticSource, externalId: string): string | null {
@@ -31,8 +29,6 @@ function generateUrl(source: DiagnosticSource, externalId: string): string | nul
       return getZuperProductUrl(externalId);
     case "zoho":
       return getZohoItemUrl(externalId);
-    case "quickbooks":
-      return getQuickBooksItemUrl(externalId);
     default:
       return null;
   }
@@ -46,8 +42,6 @@ function hasEnvTemplate(source: DiagnosticSource): boolean {
       return Boolean((process.env.ZUPER_PRODUCT_URL_TEMPLATE || "").trim());
     case "zoho":
       return Boolean((process.env.ZOHO_INVENTORY_ITEM_URL_TEMPLATE || "").trim());
-    case "quickbooks":
-      return Boolean((process.env.QUICKBOOKS_ITEM_URL_TEMPLATE || "").trim());
     default:
       return false;
   }
@@ -104,7 +98,6 @@ export async function GET(request: NextRequest) {
         hubspotProductId: true,
         zuperItemId: true,
         zohoItemId: true,
-        quickbooksItemId: true,
       },
       take: limitParam * 2, // Fetch extra since we expand per-source
       orderBy: { brand: "asc" },
@@ -125,9 +118,7 @@ export async function GET(request: NextRequest) {
 
         if (generatedUrl === null) {
           likelyBroken = true;
-          brokenReason = source === "quickbooks"
-            ? "QUICKBOOKS_COMPANY_ID not set"
-            : "URL generation returned null";
+          brokenReason = "URL generation returned null";
         } else if (externalId.length < 3) {
           likelyBroken = true;
           brokenReason = "External ID suspiciously short";

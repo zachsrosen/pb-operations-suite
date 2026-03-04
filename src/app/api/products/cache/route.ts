@@ -5,7 +5,6 @@ import { normalizeRole, type UserRole } from "@/lib/role-permissions";
 import { CatalogProductSource } from "@/generated/prisma/enums";
 import {
   getHubSpotProductUrl,
-  getQuickBooksItemUrl,
   getZohoItemUrl,
   getZuperProductUrl,
 } from "@/lib/external-links";
@@ -26,17 +25,15 @@ const SOURCE_ENUM: Record<string, CatalogProductSource> = {
   hubspot: "HUBSPOT",
   zuper: "ZUPER",
   zoho: "ZOHO",
-  quickbooks: "QUICKBOOKS",
 };
 
-type SourceApiValue = "hubspot" | "zuper" | "zoho" | "quickbooks";
+type SourceApiValue = "hubspot" | "zuper" | "zoho";
 
 function sourceToApiValue(source: CatalogProductSource): SourceApiValue {
   const map: Record<CatalogProductSource, SourceApiValue> = {
     HUBSPOT: "hubspot",
     ZUPER: "zuper",
     ZOHO: "zoho",
-    QUICKBOOKS: "quickbooks",
   };
   return map[source];
 }
@@ -46,8 +43,7 @@ function fallbackUrlForSource(source: SourceApiValue, externalId: string): strin
   if (!id) return null;
   if (source === "hubspot") return getHubSpotProductUrl(id);
   if (source === "zuper") return getZuperProductUrl(id);
-  if (source === "zoho") return getZohoItemUrl(id);
-  return getQuickBooksItemUrl(id);
+  return getZohoItemUrl(id);
 }
 
 export async function GET(request: NextRequest) {
@@ -71,7 +67,6 @@ export async function GET(request: NextRequest) {
   const limitRaw = Number(request.nextUrl.searchParams.get("limit") || 200);
   const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(Math.trunc(limitRaw), 1), 5000) : 200;
 
-  // QuickBooks deactivated — re-add to reactivate
   let sources: CatalogProductSource[] = ["HUBSPOT", "ZUPER", "ZOHO"];
   if (sourceParam) {
     const parsed = sourceParam
@@ -137,7 +132,6 @@ export async function GET(request: NextRequest) {
         hubspot: counts.hubspot || 0,
         zuper: counts.zuper || 0,
         zoho: counts.zoho || 0,
-        quickbooks: counts.quickbooks || 0,
       },
     },
   });

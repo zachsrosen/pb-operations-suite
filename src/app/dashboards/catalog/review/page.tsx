@@ -63,7 +63,6 @@ function sourceClass(source: string): string {
   if (source === "hubspot") return "border-orange-500/40 bg-orange-500/10 text-orange-300";
   if (source === "zuper") return "border-blue-500/40 bg-blue-500/10 text-blue-300";
   if (source === "zoho") return "border-emerald-500/40 bg-emerald-500/10 text-emerald-300";
-  if (source === "quickbooks") return "border-sky-500/40 bg-sky-500/10 text-sky-300";
   return "border-teal-500/40 bg-teal-500/10 text-teal-300";
 }
 

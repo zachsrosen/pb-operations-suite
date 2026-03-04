@@ -1,6 +1,5 @@
 import {
   harvestInternal,
-  harvestQuickBooks,
   parseHarvestWarnings,
   type HarvestedProduct,
 } from "@/lib/catalog-harvest";
@@ -23,7 +22,6 @@ jest.mock("@/lib/db", () => ({
           zohoItemId: "zo_1",
           hubspotProductId: "hs_1",
           zuperItemId: null,
-          quickbooksItemId: null,
           sellPrice: 150,
           isActive: true,
         },
@@ -56,49 +54,6 @@ describe("harvestInternal", () => {
     expect(p.description).toBe("405W module");
     expect(p.rawPayload).toBeDefined();
     expect(p.rawPayload.id).toBe("sku_1");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Tests: harvestQuickBooks
-// ---------------------------------------------------------------------------
-
-describe("harvestQuickBooks", () => {
-  it("returns empty when no CatalogProduct rows exist for QUICKBOOKS", async () => {
-    const db = await import("@/lib/db");
-    (db.prisma!.catalogProduct.findMany as jest.Mock).mockResolvedValueOnce([]);
-
-    const products = await harvestQuickBooks();
-    expect(products).toHaveLength(0);
-  });
-
-  it("maps CatalogProduct rows with source QUICKBOOKS correctly", async () => {
-    const db = await import("@/lib/db");
-    (db.prisma!.catalogProduct.findMany as jest.Mock).mockResolvedValueOnce([
-      {
-        id: "cp_1",
-        source: "QUICKBOOKS",
-        externalId: "qb_99",
-        name: "Enphase IQ8M-72-2-US",
-        sku: "IQ8M",
-        normalizedName: "enphaseiq8m722us",
-        normalizedSku: "iq8m",
-        description: "Microinverter",
-        price: 200,
-        status: "active",
-        url: null,
-        lastSyncedAt: new Date(),
-      },
-    ]);
-
-    const products = await harvestQuickBooks();
-    expect(products).toHaveLength(1);
-    expect(products[0].source).toBe("quickbooks");
-    expect(products[0].externalId).toBe("qb_99");
-    // splitName("Enphase IQ8M-72-2-US") -> brand: "Enphase", model: "IQ8M-72-2-US"
-    expect(products[0].rawBrand).toBe("Enphase");
-    expect(products[0].rawModel).toBe("IQ8M-72-2-US");
-    expect(products[0].price).toBe(200);
   });
 });
 

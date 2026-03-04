@@ -16,7 +16,6 @@ import { createOrUpdateZohoItem } from "@/lib/zoho-inventory";
 import { createOrUpdateZuperPart } from "@/lib/zuper-catalog";
 import {
   getHubSpotProductUrl,
-  getQuickBooksItemUrl,
   getZohoItemUrl,
   getZuperProductUrl,
 } from "@/lib/external-links";
@@ -26,24 +25,22 @@ export const maxDuration = 60;
 
 const requestSchema = z.object({
   internalSkuId: z.string().trim().min(1),
-  source: z.enum(["hubspot", "zuper", "zoho", "quickbooks"]),
+  source: z.enum(["hubspot", "zuper", "zoho"]),
 });
 
-const SOURCE_ENUM: Record<"hubspot" | "zuper" | "zoho" | "quickbooks", CatalogProductSource> = {
+const SOURCE_ENUM: Record<"hubspot" | "zuper" | "zoho", CatalogProductSource> = {
   hubspot: "HUBSPOT",
   zuper: "ZUPER",
   zoho: "ZOHO",
-  quickbooks: "QUICKBOOKS",
 };
 
 const LINK_FIELD_BY_SOURCE: Record<
-  "hubspot" | "zuper" | "zoho" | "quickbooks",
-  "hubspotProductId" | "zuperItemId" | "zohoItemId" | "quickbooksItemId"
+  "hubspot" | "zuper" | "zoho",
+  "hubspotProductId" | "zuperItemId" | "zohoItemId"
 > = {
   hubspot: "hubspotProductId",
   zuper: "zuperItemId",
   zoho: "zohoItemId",
-  quickbooks: "quickbooksItemId",
 };
 
 function isAllowedRole(role: UserRole): boolean {
@@ -85,180 +82,8 @@ function buildZohoProductUrl(itemId: string): string {
   return getZohoItemUrl(itemId);
 }
 
-function buildQuickBooksProductUrl(itemId: string): string | null {
-  return getQuickBooksItemUrl(itemId);
-}
-
-function escapeQuickBooksQuery(value: string): string {
-  return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value);
-}
-
-function getQuickBooksErrorMessage(payload: unknown, fallback: string): string {
-  if (!isRecord(payload)) return fallback;
-  const fault = payload.Fault;
-  if (!isRecord(fault)) return fallback;
-  const errors = fault.Error;
-  if (!Array.isArray(errors) || errors.length === 0) return fallback;
-  const first = errors[0];
-  if (!isRecord(first)) return fallback;
-  const message = String(first.Message || "").trim();
-  const detail = String(first.Detail || "").trim();
-  return [message, detail].filter(Boolean).join(": ") || fallback;
-}
-
-interface QuickBooksItemRecord {
-  Id?: string;
-  Name?: string;
-  Sku?: string;
-  Description?: string;
-  UnitPrice?: number | string;
-  Active?: boolean;
-  Type?: string;
-}
-
-async function queryQuickBooksItems(
-  accessToken: string,
-  companyId: string,
-  query: string
-): Promise<QuickBooksItemRecord[]> {
-  const baseUrl = (process.env.QUICKBOOKS_API_BASE_URL || "https://quickbooks.api.intuit.com/v3/company").replace(/\/$/, "");
-  const minorVersion = process.env.QUICKBOOKS_MINOR_VERSION || "75";
-  const url = `${baseUrl}/${encodeURIComponent(companyId)}/query?query=${encodeURIComponent(query)}&minorversion=${encodeURIComponent(minorVersion)}`;
-
-  const response = await fetch(url, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      Accept: "application/json",
-    },
-    cache: "no-store",
-  });
-  const payload = (await response.json().catch(() => null)) as unknown;
-  if (!response.ok) {
-    throw new Error(getQuickBooksErrorMessage(payload, `QuickBooks query failed (${response.status})`));
-  }
-  const queryResponse = isRecord(payload) && isRecord(payload.QueryResponse) ? payload.QueryResponse : null;
-  const items = queryResponse?.Item;
-  return Array.isArray(items) ? (items as QuickBooksItemRecord[]) : [];
-}
-
-async function createOrFindQuickBooksItem(input: {
-  brand: string;
-  model: string;
-  sku: string | null;
-  description: string | null;
-  sellPrice: number | null;
-}): Promise<{ quickbooksItemId: string; created: boolean; name: string | null; sku: string | null; description: string | null; price: number | null; status: string | null; url: string | null }> {
-  const accessToken = String(process.env.QUICKBOOKS_ACCESS_TOKEN || "").trim();
-  const companyId = String(process.env.QUICKBOOKS_COMPANY_ID || "").trim();
-  if (!accessToken || !companyId) {
-    throw new Error("QuickBooks create requires QUICKBOOKS_ACCESS_TOKEN and QUICKBOOKS_COMPANY_ID");
-  }
-
-  const name = `${String(input.brand || "").trim()} ${String(input.model || "").trim()}`.trim();
-  if (!name) throw new Error("QuickBooks item requires brand and model");
-  const sku = String(input.sku || "").trim() || null;
-  const description = String(input.description || "").trim() || null;
-  const price = parsePrice(input.sellPrice);
-
-  if (sku) {
-    const matches = await queryQuickBooksItems(
-      accessToken,
-      companyId,
-      `select * from Item where Sku = '${escapeQuickBooksQuery(sku)}' startposition 1 maxresults 10`
-    );
-    const match = matches.find((item) => String(item.Id || "").trim());
-    if (match?.Id) {
-      const id = String(match.Id).trim();
-      return {
-        quickbooksItemId: id,
-        created: false,
-        name: String(match.Name || "").trim() || name,
-        sku: String(match.Sku || "").trim() || sku,
-        description: String(match.Description || "").trim() || description,
-        price: parsePrice(match.UnitPrice) ?? price,
-        status: match.Active === false ? "inactive" : "active",
-        url: buildQuickBooksProductUrl(id),
-      };
-    }
-  }
-
-  const byName = await queryQuickBooksItems(
-    accessToken,
-    companyId,
-    `select * from Item where Name = '${escapeQuickBooksQuery(name)}' startposition 1 maxresults 10`
-  );
-  const nameMatch = byName.find((item) => String(item.Id || "").trim());
-  if (nameMatch?.Id) {
-    const id = String(nameMatch.Id).trim();
-    return {
-      quickbooksItemId: id,
-      created: false,
-      name: String(nameMatch.Name || "").trim() || name,
-      sku: String(nameMatch.Sku || "").trim() || sku,
-      description: String(nameMatch.Description || "").trim() || description,
-      price: parsePrice(nameMatch.UnitPrice) ?? price,
-      status: nameMatch.Active === false ? "inactive" : "active",
-      url: buildQuickBooksProductUrl(id),
-    };
-  }
-
-  const baseUrl = (process.env.QUICKBOOKS_API_BASE_URL || "https://quickbooks.api.intuit.com/v3/company").replace(/\/$/, "");
-  const minorVersion = process.env.QUICKBOOKS_MINOR_VERSION || "75";
-  const postUrl = `${baseUrl}/${encodeURIComponent(companyId)}/item?minorversion=${encodeURIComponent(minorVersion)}`;
-
-  const payload: Record<string, unknown> = {
-    Name: name,
-    Type: "Service",
-    Active: true,
-  };
-  if (sku) payload.Sku = sku;
-  if (description) payload.Description = description;
-  if (typeof price === "number") payload.UnitPrice = price;
-  const incomeAccountId = String(process.env.QUICKBOOKS_INCOME_ACCOUNT_ID || "").trim();
-  if (incomeAccountId) {
-    payload.IncomeAccountRef = { value: incomeAccountId };
-  }
-
-  const createResponse = await fetch(postUrl, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      Accept: "application/json",
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
-    cache: "no-store",
-  });
-  const createPayload = (await createResponse.json().catch(() => null)) as unknown;
-  if (!createResponse.ok) {
-    throw new Error(getQuickBooksErrorMessage(createPayload, `QuickBooks create failed (${createResponse.status})`));
-  }
-
-  const createdItem = isRecord(createPayload) && isRecord(createPayload.Item) ? createPayload.Item : null;
-  const createdId = createdItem ? String(createdItem.Id || "").trim() : "";
-  if (!createdId) {
-    throw new Error("QuickBooks create succeeded but did not return an item ID");
-  }
-
-  return {
-    quickbooksItemId: createdId,
-    created: true,
-    name: createdItem ? String(createdItem.Name || "").trim() || name : name,
-    sku: createdItem ? String(createdItem.Sku || "").trim() || sku : sku,
-    description: createdItem ? String(createdItem.Description || "").trim() || description : description,
-    price: createdItem ? parsePrice(createdItem.UnitPrice) ?? price : price,
-    status: createdItem && createdItem.Active === false ? "inactive" : "active",
-    url: buildQuickBooksProductUrl(createdId),
-  };
-}
-
 function specRecordToMetadata(record: unknown): Record<string, unknown> {
-  if (!isRecord(record)) return {};
+  if (!record || typeof record !== "object" || Array.isArray(record)) return {};
   const metadata: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(record)) {
     if (key === "id" || key === "skuId") continue;
@@ -382,22 +207,6 @@ export async function POST(request: NextRequest) {
       externalId = result.zohoItemId;
       created = result.created;
       responseUrl = buildZohoProductUrl(externalId);
-    } else if (source === "quickbooks") {
-      const result = await createOrFindQuickBooksItem({
-        brand,
-        model,
-        sku: internalSkuValue,
-        description,
-        sellPrice: parsePrice(skuRecord.sellPrice),
-      });
-      externalId = result.quickbooksItemId;
-      created = result.created;
-      responseName = result.name;
-      responseSku = result.sku;
-      responseDescription = result.description;
-      responsePrice = result.price;
-      responseStatus = result.status;
-      responseUrl = result.url;
     }
 
     if (!externalId) {

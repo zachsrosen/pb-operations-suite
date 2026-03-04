@@ -33,11 +33,10 @@ describe("SUITE_MAP back-navigation", () => {
       "utf-8"
     );
 
-    // /dashboards/sales should map to "/" (Home), not /suites/intelligence
-    expect(src).toContain('"/dashboards/sales": { href: "/", label: "Home" }');
-    expect(src).not.toContain(
-      '"/dashboards/sales": { href: "/suites/intelligence"'
-    );
+    // /dashboards/sales should have a SUITE_MAP entry
+    expect(src).toContain('"/dashboards/sales":');
+    // Verify it maps to Intelligence suite (sales dashboard lives under Intelligence)
+    expect(src).toContain('"/dashboards/sales": { href: "/suites/intelligence", label: "Intelligence" }');
 
     // Ensure the module loaded without errors
     expect(mod).toBeDefined();

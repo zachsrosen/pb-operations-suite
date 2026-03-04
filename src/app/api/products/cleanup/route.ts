@@ -26,12 +26,11 @@ const ALLOWED_ROLES = new Set<UserRole>(["ADMIN", "OWNER"]);
 
 const EXTERNAL_FIELD_BY_SOURCE: Record<
   CleanupSource,
-  "hubspotProductId" | "zuperItemId" | "zohoItemId" | "quickbooksItemId"
+  "hubspotProductId" | "zuperItemId" | "zohoItemId"
 > = {
   hubspot: "hubspotProductId",
   zuper: "zuperItemId",
   zoho: "zohoItemId",
-  quickbooks: "quickbooksItemId",
 };
 
 type ResultStatus = "succeeded" | "partial" | "failed";
@@ -154,7 +153,6 @@ export async function POST(request: NextRequest) {
         hubspotProductId: true,
         zuperItemId: true,
         zohoItemId: true,
-        quickbooksItemId: true,
       },
     });
 

@@ -11,18 +11,15 @@ type RowViewMode = "mismatches" | "matches" | "two-of-three" | "all";
 type MatchConfidence = "high" | "medium" | "low";
 type QueueFilter = "unlinked" | "resolved" | "no-internal" | "duplicates" | "pinned";
 
-const ALL_SOURCES = ["internal", "hubspot", "zuper", "zoho", "quickbooks"] as const;
+const ALL_SOURCES = ["internal", "hubspot", "zuper", "zoho"] as const;
 type SourceName = (typeof ALL_SOURCES)[number];
-// QuickBooks deactivated — remove from this set to reactivate
-const DEACTIVATED_SOURCES = new Set<SourceName>(["quickbooks"]);
-const ACTIVE_SOURCES = ALL_SOURCES.filter((s) => !DEACTIVATED_SOURCES.has(s));
-const LINKABLE_SOURCES = ["hubspot", "zuper", "zoho", "quickbooks"] as const;
+const ACTIVE_SOURCES = [...ALL_SOURCES];
+const LINKABLE_SOURCES = ["hubspot", "zuper", "zoho"] as const;
 type LinkableSourceName = (typeof LINKABLE_SOURCES)[number];
-const LINK_FIELD_BY_SOURCE: Record<LinkableSourceName, "hubspotProductId" | "zuperItemId" | "zohoItemId" | "quickbooksItemId"> = {
+const LINK_FIELD_BY_SOURCE: Record<LinkableSourceName, "hubspotProductId" | "zuperItemId" | "zohoItemId"> = {
   hubspot: "hubspotProductId",
   zuper: "zuperItemId",
   zoho: "zohoItemId",
-  quickbooks: "quickbooksItemId",
 };
 
 interface ComparableProduct {
@@ -53,7 +50,6 @@ interface ComparisonRow {
   hubspot: ComparableProduct | null;
   zuper: ComparableProduct | null;
   zoho: ComparableProduct | null;
-  quickbooks: ComparableProduct | null;
 }
 
 interface SourceHealth {
@@ -107,7 +103,7 @@ interface CreateSourceProductResponse {
   source: LinkableSourceName;
   created: boolean;
   externalId: string;
-  linkField: "hubspotProductId" | "zuperItemId" | "zohoItemId" | "quickbooksItemId";
+  linkField: "hubspotProductId" | "zuperItemId" | "zohoItemId";
   product: ComparableProduct;
 }
 
@@ -123,7 +119,6 @@ interface InventorySkuResponse {
     hubspotProductId: string | null;
     zuperItemId: string | null;
     zohoItemId: string | null;
-    quickbooksItemId: string | null;
   };
   error?: string;
 }
@@ -199,8 +194,7 @@ function formatSourceName(source: SourceName): string {
   if (source === "internal") return "Internal";
   if (source === "hubspot") return "HubSpot";
   if (source === "zuper") return "Zuper";
-  if (source === "zoho") return "Zoho";
-  return "QuickBooks";
+  return "Zoho";
 }
 
 function formatCurrency(value: number | null): string {
@@ -255,7 +249,6 @@ function reasonBadgeClass(reason: string): string {
   if (reason === "Missing in HubSpot") return "border-orange-500/40 bg-orange-500/10 text-orange-300";
   if (reason === "Missing in Zuper") return "border-blue-500/40 bg-blue-500/10 text-blue-300";
   if (reason === "Missing in Zoho") return "border-emerald-500/40 bg-emerald-500/10 text-emerald-300";
-  if (reason === "Missing in QuickBooks") return "border-sky-500/40 bg-sky-500/10 text-sky-300";
   if (reason.includes("Internal link missing")) return "border-amber-500/40 bg-amber-500/10 text-amber-300";
   if (reason.includes("Internal link mismatch")) return "border-red-500/40 bg-red-500/10 text-red-300";
   if (reason.includes("Duplicate")) return "border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-300";
@@ -508,7 +501,7 @@ function splitBrandAndModel(name: string | null | undefined): { brand: string; m
 }
 
 function chooseSeedProductForInternal(row: ComparisonRow): ComparableProduct | null {
-  return row.quickbooks || row.zoho || row.zuper || row.hubspot || null;
+  return row.zoho || row.zuper || row.hubspot || null;
 }
 
 function inferInternalCategory(row: ComparisonRow): string {
@@ -1080,7 +1073,6 @@ export default function ProductComparisonPage() {
           hubspotProductId: row.hubspot?.id || null,
           zuperItemId: row.zuper?.id || null,
           zohoItemId: row.zoho?.id || null,
-          quickbooksItemId: row.quickbooks?.id || null,
         };
 
         const response = await fetch("/api/inventory/skus", {
@@ -1106,7 +1098,6 @@ export default function ProductComparisonPage() {
             hubspot: created.hubspotProductId || null,
             zuper: created.zuperItemId || null,
             zoho: created.zohoItemId || null,
-            quickbooks: created.quickbooksItemId || null,
           },
         };
 
@@ -1648,7 +1639,6 @@ export default function ProductComparisonPage() {
       internal_hubspot_link: row.internal?.linkedExternalIds?.hubspot || "",
       internal_zuper_link: row.internal?.linkedExternalIds?.zuper || "",
       internal_zoho_link: row.internal?.linkedExternalIds?.zoho || "",
-      internal_quickbooks_link: row.internal?.linkedExternalIds?.quickbooks || "",
       hubspot_name: row.hubspot?.name || "",
       hubspot_sku: row.hubspot?.sku || "",
       hubspot_price: row.hubspot?.price ?? "",
@@ -1661,10 +1651,6 @@ export default function ProductComparisonPage() {
       zoho_sku: row.zoho?.sku || "",
       zoho_price: row.zoho?.price ?? "",
       zoho_url: row.zoho?.url || "",
-      quickbooks_name: row.quickbooks?.name || "",
-      quickbooks_sku: row.quickbooks?.sku || "",
-      quickbooks_price: row.quickbooks?.price ?? "",
-      quickbooks_url: row.quickbooks?.url || "",
     }));
   }, [rows]);
 
@@ -1846,11 +1832,6 @@ export default function ProductComparisonPage() {
                         primary: displayLinkValue(mergePreview.targetPrimary.linkedExternalIds?.zoho),
                         duplicate: displayLinkValue(mergePreview.sourceDuplicate.linkedExternalIds?.zoho),
                       },
-                      {
-                        label: "QuickBooks ID",
-                        primary: displayLinkValue(mergePreview.targetPrimary.linkedExternalIds?.quickbooks),
-                        duplicate: displayLinkValue(mergePreview.sourceDuplicate.linkedExternalIds?.quickbooks),
-                      },
                     ].map((field) => {
                       const differs = field.primary !== field.duplicate;
                       return (
@@ -1985,7 +1966,7 @@ export default function ProductComparisonPage() {
                             }))
                           }
                         />
-                        Run external cleanup for selected sources (HubSpot/Zuper/Zoho delete/archive, QuickBooks archive)
+                        Run external cleanup for selected sources (HubSpot/Zuper/Zoho delete/archive)
                       </label>
                     </div>
 

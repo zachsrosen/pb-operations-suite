@@ -14,14 +14,13 @@ const baseSku: CleanupSkuRecord = {
   hubspotProductId: "hs_123",
   zuperItemId: "zu_456",
   zohoItemId: "zo_789",
-  quickbooksItemId: "qb_321",
 };
 
 const baseActions: ProductCleanupActions = {
   internal: "deactivate",
   links: "unlink_selected",
   external: "delete_selected",
-  sources: ["hubspot", "quickbooks"],
+  sources: ["hubspot"],
   deleteCachedProducts: true,
 };
 
@@ -41,11 +40,10 @@ describe("product-cleanup-engine", () => {
   it("buildCleanupUpdatePlan clears selected link fields and deactivates when active", () => {
     const plan = buildCleanupUpdatePlan(baseSku, baseActions);
 
-    expect(plan.changedLinkFields.sort()).toEqual(["hubspotProductId", "quickbooksItemId"]);
+    expect(plan.changedLinkFields.sort()).toEqual(["hubspotProductId"]);
     expect(plan.willDeactivate).toBe(true);
     expect(plan.updateData).toEqual({
       hubspotProductId: null,
-      quickbooksItemId: null,
       isActive: false,
     });
   });
@@ -62,7 +60,6 @@ describe("product-cleanup-engine", () => {
   it("collectCacheCleanupTargets only includes sources with successful/idempotent external outcomes", () => {
     const targets = collectCacheCleanupTargets(baseSku, baseActions, {
       hubspot: adapterResult("hubspot", "archived"),
-      quickbooks: adapterResult("quickbooks", "failed"),
     });
 
     expect(targets).toEqual([
@@ -93,7 +90,6 @@ describe("product-cleanup-engine", () => {
       dryRun: true,
       externalBySource: {
         hubspot: adapterResult("hubspot", "deleted"),
-        quickbooks: adapterResult("quickbooks", "archived"),
       },
     });
 

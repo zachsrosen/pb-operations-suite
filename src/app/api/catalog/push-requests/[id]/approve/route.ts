@@ -17,7 +17,6 @@ import { createOrUpdateZuperPart } from "@/lib/zuper-catalog";
 
 const ADMIN_ROLES = ["ADMIN", "OWNER", "MANAGER"];
 const INTERNAL_CATEGORIES = Object.values(EquipmentCategory) as string[];
-// QuickBooks deactivated — re-add "QUICKBOOKS" to reactivate
 const VALID_SYSTEMS = ["INTERNAL", "ZOHO", "HUBSPOT", "ZUPER"] as const;
 
 type SystemName = typeof VALID_SYSTEMS[number];
@@ -28,11 +27,6 @@ interface SystemOutcome {
   message?: string;
   externalId?: string | null;
 }
-
-type QuickBooksMatchOutcome =
-  | { status: "matched"; externalId: string; name: string | null; strategy: "explicit" | "sku" | "name" }
-  | { status: "ambiguous"; strategy: "sku" | "name"; candidates: Array<{ externalId: string; name: string | null }> }
-  | { status: "no_match"; reason: string };
 
 function normalizeText(value: string | null | undefined): string {
   return String(value || "")
@@ -57,115 +51,6 @@ function compactUnique(values: Array<string | null | undefined>): string[] {
     if (normalized) output.add(normalized);
   }
   return [...output];
-}
-
-async function resolveQuickBooksMatch(push: {
-  brand: string;
-  model: string;
-  description: string;
-  sku: string | null;
-  vendorPartNumber: string | null;
-  quickbooksItemId: string | null;
-}): Promise<QuickBooksMatchOutcome> {
-  if (!prisma) return { status: "no_match", reason: "Database is not configured." };
-
-  const explicitQuickbooksItemId = String(push.quickbooksItemId || "").trim();
-  if (explicitQuickbooksItemId) {
-    const explicit = await prisma.catalogProduct.findUnique({
-      where: {
-        source_externalId: {
-          source: "QUICKBOOKS",
-          externalId: explicitQuickbooksItemId,
-        },
-      },
-      select: { externalId: true, name: true },
-    });
-    if (explicit) {
-      return {
-        status: "matched",
-        externalId: explicit.externalId,
-        name: explicit.name,
-        strategy: "explicit",
-      };
-    }
-    return {
-      status: "no_match",
-      reason: `Selected QuickBooks item '${explicitQuickbooksItemId}' was not found in cached catalog.`,
-    };
-  }
-
-  const skuCandidates = compactUnique([
-    normalizeSku(push.sku),
-    normalizeSku(push.vendorPartNumber),
-    normalizeSku(push.model),
-  ]);
-
-  const nameCandidates = compactUnique([
-    normalizeText(`${push.brand} ${push.model}`),
-    normalizeText(push.model),
-    normalizeText(push.description),
-  ]);
-
-  if (skuCandidates.length === 0 && nameCandidates.length === 0) {
-    return { status: "no_match", reason: "No searchable SKU or name values were provided." };
-  }
-
-  const quickbooksRows = await prisma.catalogProduct.findMany({
-    where: {
-      source: "QUICKBOOKS",
-      OR: [
-        ...(skuCandidates.length > 0 ? [{ normalizedSku: { in: skuCandidates } }] : []),
-        ...(nameCandidates.length > 0 ? [{ normalizedName: { in: nameCandidates } }] : []),
-      ],
-    },
-    select: {
-      externalId: true,
-      name: true,
-      normalizedSku: true,
-      normalizedName: true,
-    },
-    take: 50,
-  });
-
-  const skuMatches = quickbooksRows.filter(
-    (row) => row.normalizedSku && skuCandidates.includes(row.normalizedSku)
-  );
-  if (skuMatches.length === 1) {
-    return {
-      status: "matched",
-      externalId: skuMatches[0].externalId,
-      name: skuMatches[0].name,
-      strategy: "sku",
-    };
-  }
-  if (skuMatches.length > 1) {
-    return {
-      status: "ambiguous",
-      strategy: "sku",
-      candidates: skuMatches.map((row) => ({ externalId: row.externalId, name: row.name })),
-    };
-  }
-
-  const nameMatches = quickbooksRows.filter(
-    (row) => row.normalizedName && nameCandidates.includes(row.normalizedName)
-  );
-  if (nameMatches.length === 1) {
-    return {
-      status: "matched",
-      externalId: nameMatches[0].externalId,
-      name: nameMatches[0].name,
-      strategy: "name",
-    };
-  }
-  if (nameMatches.length > 1) {
-    return {
-      status: "ambiguous",
-      strategy: "name",
-      candidates: nameMatches.map((row) => ({ externalId: row.externalId, name: row.name })),
-    };
-  }
-
-  return { status: "no_match", reason: "No QuickBooks catalog product matched this request." };
 }
 
 function makeSummary(outcomes: Partial<Record<SystemName, SystemOutcome>>) {
@@ -215,22 +100,10 @@ export async function POST(
     outcomes[system] = { status: "skipped", message: "Pending processing." };
   }
 
-  const quickbooksMatch = push.systems.includes("QUICKBOOKS")
-    ? push.quickbooksItemId
-      ? {
-          status: "matched" as const,
-          externalId: push.quickbooksItemId,
-          name: null,
-          strategy: "explicit" as const,
-        }
-      : await resolveQuickBooksMatch(push)
-    : null;
-
   // Keep core internal writes atomic; final APPROVED status is set only if all
   // selected systems complete successfully.
   const basePush = await prisma.$transaction(async (tx) => {
     let internalSkuId: string | null = push.internalSkuId;
-    let quickbooksItemId: string | null = push.quickbooksItemId;
 
     // INTERNAL catalog
     if (push.systems.includes("INTERNAL") && INTERNAL_CATEGORIES.includes(push.category)) {
@@ -250,11 +123,6 @@ export async function POST(
         length: push.length,
         width: push.width,
         weight: push.weight,
-        ...(quickbooksMatch?.status === "matched"
-          ? { quickbooksItemId: quickbooksMatch.externalId }
-          : push.systems.includes("QUICKBOOKS")
-            ? { quickbooksItemId: null }
-            : {}),
       };
 
       // 1. Upsert EquipmentSku with all common fields
@@ -308,20 +176,11 @@ export async function POST(
       };
     }
 
-    if (push.systems.includes("QUICKBOOKS")) {
-      if (quickbooksMatch?.status === "matched") {
-        quickbooksItemId = quickbooksMatch.externalId;
-      } else if (!quickbooksItemId) {
-        quickbooksItemId = null;
-      }
-    }
-
-    // Persist latest internal and QuickBooks link IDs for retry-safe attempts.
+    // Persist latest internal link ID for retry-safe attempts.
     return tx.pendingCatalogPush.update({
       where: { id },
       data: {
         internalSkuId,
-        quickbooksItemId,
       },
     });
   });
@@ -355,7 +214,6 @@ export async function POST(
         vendorName: push.vendorName,
         vendorPartNumber: push.vendorPartNumber,
         unitLabel: push.unitLabel,
-        qboProductId: quickbooksMatch?.status === "matched" ? quickbooksMatch.externalId : null,
         additionalProperties: mappedMetadataProps,
       });
 
@@ -391,9 +249,6 @@ export async function POST(
       }
     }
   }
-
-  // QuickBooks deactivated — outcomes block removed.
-  // Re-add QUICKBOOKS to VALID_SYSTEMS and restore this block to reactivate.
 
   if (push.systems.includes("ZOHO")) {
     if (basePush.zohoItemId) {

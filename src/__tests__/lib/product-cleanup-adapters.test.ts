@@ -1,6 +1,5 @@
 import {
   archiveHubSpotProduct,
-  archiveQuickBooksItem,
   runCleanupAdapter,
 } from "@/lib/product-cleanup-adapters";
 
@@ -28,8 +27,6 @@ describe("product-cleanup-adapters", () => {
     process.env = {
       ...originalEnv,
       HUBSPOT_ACCESS_TOKEN: "hs_token",
-      QUICKBOOKS_ACCESS_TOKEN: "qb_token",
-      QUICKBOOKS_COMPANY_ID: "company_1",
     };
     mockFetch = jest.fn() as MockFetch;
     global.fetch = mockFetch;
@@ -55,27 +52,6 @@ describe("product-cleanup-adapters", () => {
     const result = await archiveHubSpotProduct("123", mockFetch);
 
     expect(result.status).toBe("not_found");
-  });
-
-  it("archives QuickBooks item by setting Active=false", async () => {
-    mockFetch
-      .mockResolvedValueOnce(
-        makeResponse({
-          QueryResponse: {
-            Item: [{ Id: "123", SyncToken: "7", Active: true }],
-          },
-        })
-      )
-      .mockResolvedValueOnce(
-        makeResponse({
-          Item: { Id: "123", SyncToken: "8", Active: false },
-        })
-      );
-
-    const result = await archiveQuickBooksItem("123", mockFetch);
-
-    expect(result.status).toBe("archived");
-    expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 
   it("runCleanupAdapter delegates Zoho cleanup to zoho-inventory", async () => {

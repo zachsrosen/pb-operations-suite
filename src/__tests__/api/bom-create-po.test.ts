@@ -32,6 +32,7 @@ jest.mock("@/lib/db", () => ({
       findMany: (...args: unknown[]) => mockFindMany(...args),
     },
   },
+  logActivity: jest.fn(async () => {}),
 }));
 
 // ── Zoho inventory client ─────────────────────────────────────────────────────

@@ -146,7 +146,6 @@ function makePush(overrides: Record<string, unknown> = {}) {
     weight: 46,
     metadata: null,
     systems: ["INTERNAL"],
-    quickbooksItemId: null,
     ...overrides,
   };
 }
@@ -166,7 +165,6 @@ beforeEach(() => {
     zohoItemId: null,
     hubspotProductId: null,
     zuperItemId: null,
-    quickbooksItemId: null,
     resolvedAt: null,
     note: null,
   };
@@ -633,71 +631,6 @@ describe("POST /api/catalog/push-requests/[id]/approve", () => {
     });
   });
 
-  describe("QuickBooks link integration", () => {
-    it("uses existing quickbooksItemId on the request without re-querying cache", async () => {
-      mockFindUnique.mockResolvedValue(
-        makePush({
-          systems: ["INTERNAL", "QUICKBOOKS"],
-          quickbooksItemId: "qb_explicit_1",
-        })
-      );
-
-      const res = await POST(new NextRequest("http://localhost"), makeParams());
-      const data = await res.json();
-
-      expect(res.status).toBe(200);
-      expect(mockCatalogFindUnique).not.toHaveBeenCalled();
-      expect(mockCatalogFindMany).not.toHaveBeenCalled();
-      expect(data.outcomes.QUICKBOOKS.status).toBe("success");
-      expect(data.outcomes.QUICKBOOKS.message).toMatch(/selected item|already linked/i);
-      expect(data.outcomes.QUICKBOOKS.externalId).toBe("qb_explicit_1");
-    });
-
-    it("links QUICKBOOKS when a unique catalog match is found", async () => {
-      mockFindUnique.mockResolvedValue(makePush({ systems: ["INTERNAL", "QUICKBOOKS"] }));
-      mockCatalogFindMany.mockResolvedValue([
-        {
-          externalId: "qb_item_1",
-          name: "REC 400",
-          normalizedSku: "REC400",
-          normalizedName: "rec 400",
-        },
-      ]);
-
-      const res = await POST(new NextRequest("http://localhost"), makeParams());
-      const data = await res.json();
-
-      expect(res.status).toBe(200);
-      expect(mockCatalogFindMany).toHaveBeenCalledTimes(1);
-      expect(mockUpsert).toHaveBeenCalledWith(
-        expect.objectContaining({
-          create: expect.objectContaining({ quickbooksItemId: "qb_item_1" }),
-          update: expect.objectContaining({ quickbooksItemId: "qb_item_1" }),
-        })
-      );
-      expect(data.outcomes.QUICKBOOKS.status).toBe("success");
-      expect(data.outcomes.QUICKBOOKS.externalId).toBe("qb_item_1");
-    });
-
-    it("reports failed QUICKBOOKS outcome when no catalog match is found", async () => {
-      mockFindUnique.mockResolvedValue(makePush({ systems: ["INTERNAL", "QUICKBOOKS"] }));
-      mockCatalogFindMany.mockResolvedValue([]);
-
-      const res = await POST(new NextRequest("http://localhost"), makeParams());
-      const data = await res.json();
-
-      expect(res.status).toBe(200);
-      expect(mockUpsert).toHaveBeenCalledWith(
-        expect.objectContaining({
-          update: expect.objectContaining({ quickbooksItemId: null }),
-          create: expect.objectContaining({ quickbooksItemId: null }),
-        })
-      );
-      expect(data.outcomes.QUICKBOOKS.status).toBe("failed");
-      expect(data.outcomes.QUICKBOOKS.message).toMatch(/no quickbooks catalog product matched/i);
-    });
-  });
-
   // ── Response shape ─────────────────────────────────────────────────────
 
   describe("response shape", () => {
@@ -710,7 +643,6 @@ describe("POST /api/catalog/push-requests/[id]/approve", () => {
         zohoItemId: null,
         hubspotProductId: null,
         zuperItemId: null,
-        quickbooksItemId: null,
       });
 
       const res = await POST(new NextRequest("http://localhost"), makeParams());

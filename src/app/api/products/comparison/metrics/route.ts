@@ -5,7 +5,7 @@ import { normalizeRole, type UserRole } from "@/lib/role-permissions";
 
 export const runtime = "nodejs";
 
-type LinkableSourceName = "hubspot" | "zuper" | "zoho" | "quickbooks";
+type LinkableSourceName = "hubspot" | "zuper" | "zoho";
 
 type SourceCountMap = Record<LinkableSourceName, number>;
 
@@ -28,7 +28,6 @@ function buildZeroSourceCounts(): SourceCountMap {
     hubspot: 0,
     zuper: 0,
     zoho: 0,
-    quickbooks: 0,
   };
 }
 
@@ -58,7 +57,6 @@ function normalizeSource(value: unknown): LinkableSourceName | null {
   if (normalized === "hubspot") return "hubspot";
   if (normalized === "zuper") return "zuper";
   if (normalized === "zoho") return "zoho";
-  if (normalized === "quickbooks") return "quickbooks";
   return null;
 }
 
@@ -143,7 +141,6 @@ export async function GET() {
     linkedHubspot,
     linkedZuper,
     linkedZoho,
-    linkedQuickbooks,
     fullyLinkedAll,
     activityRows,
     lastActivity,
@@ -176,22 +173,13 @@ export async function GET() {
     prisma.equipmentSku.count({
       where: {
         isActive: true,
-        quickbooksItemId: { not: null },
-        NOT: { quickbooksItemId: "" },
-      },
-    }),
-    prisma.equipmentSku.count({
-      where: {
-        isActive: true,
         hubspotProductId: { not: null },
         zuperItemId: { not: null },
         zohoItemId: { not: null },
-        quickbooksItemId: { not: null },
         NOT: [
           { hubspotProductId: "" },
           { zuperItemId: "" },
           { zohoItemId: "" },
-          { quickbooksItemId: "" },
         ],
       },
     }),
@@ -236,7 +224,6 @@ export async function GET() {
     hubspot: linkedHubspot,
     zuper: linkedZuper,
     zoho: linkedZoho,
-    quickbooks: linkedQuickbooks,
   } as const;
 
   const catalogCounts: Record<string, number> = {};
@@ -264,10 +251,6 @@ export async function GET() {
         zoho: {
           count: linkedBySource.zoho,
           coveragePct: toPercent(linkedBySource.zoho, totalActiveSkus),
-        },
-        quickbooks: {
-          count: linkedBySource.quickbooks,
-          coveragePct: toPercent(linkedBySource.quickbooks, totalActiveSkus),
         },
       },
       fullyLinkedAllSources: {

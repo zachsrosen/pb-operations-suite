@@ -182,8 +182,6 @@ const SOURCE_DISPLAY_LABELS: Record<string, string> = {
   hubspot: "HubSpot",
   zuper: "Zuper",
   zoho: "Zoho",
-  opensolar: "OpenSolar",
-  quickbooks: "QuickBooks",
 };
 
 // Short column headers for the BOM table
@@ -192,8 +190,6 @@ const SOURCE_SHORT_LABELS: Record<string, string> = {
   hubspot: "HS",
   zuper: "ZU",
   zoho: "ZO",
-  opensolar: "OS",
-  quickbooks: "QB",
 };
 
 const CATEGORY_ORDER: BomCategory[] = [
@@ -1776,12 +1772,19 @@ function BomDashboardInner() {
           hubspotProductId: sku?.hubspotProductId || null,
         }),
       });
-      const data = await res.json() as { error?: string; lineItemId?: string };
+      const data = await res.json() as { error?: string; lineItemId?: string; skipped?: boolean; reason?: string; existingName?: string };
       if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
-      addToast({
-        type: "success",
-        title: `Added HubSpot line item${data.lineItemId ? ` (${data.lineItemId})` : ""}`,
-      });
+      if (data.skipped) {
+        addToast({
+          type: "info",
+          title: `Line item already exists on deal${data.existingName ? `: ${data.existingName}` : ""}`,
+        });
+      } else {
+        addToast({
+          type: "success",
+          title: `Added HubSpot line item${data.lineItemId ? ` (${data.lineItemId})` : ""}`,
+        });
+      }
     } catch (e) {
       addToast({ type: "error", title: e instanceof Error ? e.message : "Failed to add HubSpot line item" });
     } finally {

@@ -34,7 +34,6 @@ export async function GET() {
       zohoItemId: string | null;
       hubspotProductId: string | null;
       zuperItemId: string | null;
-      quickbooksItemId: string | null;
       unitCost: number | null;
       sellPrice: number | null;
     }> = [];
@@ -47,7 +46,6 @@ export async function GET() {
           zohoItemId: true,
           hubspotProductId: true,
           zuperItemId: true,
-          quickbooksItemId: true,
           unitCost: true,
           sellPrice: true,
         },
@@ -55,7 +53,7 @@ export async function GET() {
     } catch (error) {
       if (!isPrismaMissingColumnError(error)) throw error;
       console.warn("[Inventory SKU Stats] Falling back to legacy query due to missing columns");
-      const legacy = await prisma.equipmentSku.findMany({
+      skus = await prisma.equipmentSku.findMany({
         where: { isActive: true },
         select: {
           category: true,
@@ -66,7 +64,6 @@ export async function GET() {
           sellPrice: true,
         },
       });
-      skus = legacy.map((row) => ({ ...row, quickbooksItemId: null }));
     }
 
     // Group by category
@@ -78,7 +75,6 @@ export async function GET() {
         hasZoho: number;
         hasHubspot: number;
         hasZuper: number;
-        hasQuickbooks: number;
         withPricing: number;
       }
     > = {};
@@ -92,7 +88,6 @@ export async function GET() {
           hasZoho: 0,
           hasHubspot: 0,
           hasZuper: 0,
-          hasQuickbooks: 0,
           withPricing: 0,
         };
       }
@@ -102,13 +97,11 @@ export async function GET() {
       const hasZoho = Boolean(sku.zohoItemId);
       const hasHubspot = Boolean(sku.hubspotProductId);
       const hasZuper = Boolean(sku.zuperItemId);
-      const hasQuickbooks = Boolean(sku.quickbooksItemId);
 
       if (hasZoho) entry.hasZoho++;
       if (hasHubspot) entry.hasHubspot++;
       if (hasZuper) entry.hasZuper++;
-      if (hasQuickbooks) entry.hasQuickbooks++;
-      if (hasZoho && hasHubspot && hasZuper && hasQuickbooks) entry.fullySynced++;
+      if (hasZoho && hasHubspot && hasZuper) entry.fullySynced++;
       if (sku.unitCost != null && sku.sellPrice != null) entry.withPricing++;
     }
 
@@ -124,7 +117,6 @@ export async function GET() {
       missingZoho: skus.length - categories.reduce((s, c) => s + c.hasZoho, 0),
       missingHubspot: skus.length - categories.reduce((s, c) => s + c.hasHubspot, 0),
       missingZuper: skus.length - categories.reduce((s, c) => s + c.hasZuper, 0),
-      missingQuickbooks: skus.length - categories.reduce((s, c) => s + c.hasQuickbooks, 0),
       withPricing: categories.reduce((s, c) => s + c.withPricing, 0),
     };
 

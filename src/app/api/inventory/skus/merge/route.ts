@@ -97,7 +97,6 @@ export async function POST(request: NextRequest) {
     ["HubSpot", source.hubspotProductId, target.hubspotProductId],
     ["Zuper", source.zuperItemId, target.zuperItemId],
     ["Zoho", source.zohoItemId, target.zohoItemId],
-    ["QuickBooks", source.quickbooksItemId, target.quickbooksItemId],
   ] as const) {
     if (!isBlank(sourceValue) && !isBlank(targetValue) && String(sourceValue).trim() !== String(targetValue).trim()) {
       conflicts.push(`${label} link conflict (${targetValue} vs ${sourceValue})`);
@@ -132,8 +131,6 @@ export async function POST(request: NextRequest) {
       pickMissingTargetValue(targetFresh.hubspotProductId, sourceFresh.hubspotProductId) ?? targetFresh.hubspotProductId;
     updateData.zuperItemId = pickMissingTargetValue(targetFresh.zuperItemId, sourceFresh.zuperItemId) ?? targetFresh.zuperItemId;
     updateData.zohoItemId = pickMissingTargetValue(targetFresh.zohoItemId, sourceFresh.zohoItemId) ?? targetFresh.zohoItemId;
-    updateData.quickbooksItemId =
-      pickMissingTargetValue(targetFresh.quickbooksItemId, sourceFresh.quickbooksItemId) ?? targetFresh.quickbooksItemId;
 
     await tx.equipmentSku.update({
       where: { id: targetSkuId },
@@ -241,7 +238,6 @@ export async function POST(request: NextRequest) {
         hubspotProductId: true,
         zuperItemId: true,
         zohoItemId: true,
-        quickbooksItemId: true,
       },
     });
 

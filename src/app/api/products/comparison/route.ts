@@ -6,7 +6,6 @@ import { normalizeRole, type UserRole } from "@/lib/role-permissions";
 import { zohoInventory, type ZohoInventoryItem } from "@/lib/zoho-inventory";
 import {
   getHubSpotProductUrl,
-  getQuickBooksItemUrl,
   getZohoItemUrl,
   getZuperProductUrl,
 } from "@/lib/external-links";
@@ -14,11 +13,10 @@ import {
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-const ALL_SOURCES = ["internal", "hubspot", "zuper", "zoho", "quickbooks"] as const;
+const ALL_SOURCES = ["internal", "hubspot", "zuper", "zoho"] as const;
 type SourceName = (typeof ALL_SOURCES)[number];
-// QuickBooks deactivated — remove from this set to reactivate
-const DEACTIVATED_SOURCES = new Set<SourceName>(["quickbooks"]);
-const LINKABLE_SOURCES = ["hubspot", "zuper", "zoho", "quickbooks"] as const;
+const DEACTIVATED_SOURCES = new Set<SourceName>([]);
+const LINKABLE_SOURCES = ["hubspot", "zuper", "zoho"] as const;
 type LinkableSourceName = (typeof LINKABLE_SOURCES)[number];
 
 const SOURCE_LABELS: Record<SourceName, string> = {
@@ -26,20 +24,18 @@ const SOURCE_LABELS: Record<SourceName, string> = {
   hubspot: "HubSpot",
   zuper: "Zuper",
   zoho: "Zoho",
-  quickbooks: "QuickBooks",
 };
 
 function isLinkableSource(source: SourceName): source is LinkableSourceName {
   return LINKABLE_SOURCES.includes(source as LinkableSourceName);
 }
 
-type CacheSourceName = "hubspot" | "zuper" | "zoho" | "quickbooks";
+type CacheSourceName = "hubspot" | "zuper" | "zoho";
 
 const CACHE_SOURCE_ENUM: Record<CacheSourceName, CatalogProductSource> = {
   hubspot: "HUBSPOT",
   zuper: "ZUPER",
   zoho: "ZOHO",
-  quickbooks: "QUICKBOOKS",
 };
 
 type RowProducts = Record<SourceName, ComparableProduct | null>;
@@ -108,7 +104,6 @@ function mergeInternalDuplicates(
             hubspot: String(entry.linkedExternalIds.hubspot || "").trim() || null,
             zuper: String(entry.linkedExternalIds.zuper || "").trim() || null,
             zoho: String(entry.linkedExternalIds.zoho || "").trim() || null,
-            quickbooks: String(entry.linkedExternalIds.quickbooks || "").trim() || null,
           }
         : undefined,
     };
@@ -132,10 +127,6 @@ function mergeInternalDuplicates(
           zoho:
             String(existing.linkedExternalIds?.zoho || "").trim() ||
             String(normalizedEntry.linkedExternalIds?.zoho || "").trim() ||
-            null,
-          quickbooks:
-            String(existing.linkedExternalIds?.quickbooks || "").trim() ||
-            String(normalizedEntry.linkedExternalIds?.quickbooks || "").trim() ||
             null,
         }
       : undefined;
@@ -340,11 +331,6 @@ function buildZohoProductUrl(itemId: string): string {
   return getZohoItemUrl(itemId);
 }
 
-
-function buildQuickBooksProductUrl(itemId: string): string | null {
-  return getQuickBooksItemUrl(itemId);
-}
-
 function keyForProduct(sku: string | null, name: string | null, source: SourceName, id: string): string {
   const normalizedSku = normalizeSku(sku);
   if (normalizedSku) return `sku:${normalizedSku}`;
@@ -361,7 +347,6 @@ function pickPrimary(products: NormalizedProduct[]): ComparableProduct | null {
         hubspot: String(first.linkedExternalIds.hubspot || "").trim() || null,
         zuper: String(first.linkedExternalIds.zuper || "").trim() || null,
         zoho: String(first.linkedExternalIds.zoho || "").trim() || null,
-        quickbooks: String(first.linkedExternalIds.quickbooks || "").trim() || null,
       }
     : undefined;
   return {
@@ -753,14 +738,12 @@ function createEmptyLinkFeedbackIndex(): LinkFeedbackIndex {
     hubspot: new Map<string, Map<string, number>>(),
     zuper: new Map<string, Map<string, number>>(),
     zoho: new Map<string, Map<string, number>>(),
-    quickbooks: new Map<string, Map<string, number>>(),
   });
 
   return {
     hubspot: makeTargetMap(),
     zuper: makeTargetMap(),
     zoho: makeTargetMap(),
-    quickbooks: makeTargetMap(),
   };
 }
 
@@ -991,7 +974,6 @@ function createExactMatchIndex(
     hubspot: makeEntry(),
     zuper: makeEntry(),
     zoho: makeEntry(),
-    quickbooks: makeEntry(),
   };
 
   for (const source of ALL_SOURCES) {
@@ -1258,7 +1240,6 @@ function autoMergeRows(rows: ComparisonRow[], sources: SourceName[]): Comparison
           hubspot: base.hubspot || target.hubspot,
           zuper: base.zuper || target.zuper,
           zoho: base.zoho || target.zoho,
-          quickbooks: base.quickbooks || target.quickbooks,
           internalDuplicates: mergeInternalDuplicates(base.internalDuplicates, target.internalDuplicates),
           reasons: [],
           isMismatch: false,
@@ -1292,7 +1273,6 @@ function createProductIdIndex(
     hubspot: new Map<string, ComparableProduct>(),
     zuper: new Map<string, ComparableProduct>(),
     zoho: new Map<string, ComparableProduct>(),
-    quickbooks: new Map<string, ComparableProduct>(),
   } as Record<SourceName, Map<string, ComparableProduct>>;
 
   for (const source of ALL_SOURCES) {
@@ -1711,119 +1691,6 @@ async function fetchZuperProducts(): Promise<{ products: NormalizedProduct[]; er
   };
 }
 
-function parseQuickBooksProduct(candidate: unknown): Omit<NormalizedProduct, "source" | "key" | "normalizedName"> | null {
-  const record = coerceRecord(candidate);
-  if (!record) return null;
-
-  const id = getStringField(record, ["Id", "id", "ItemId", "item_id"]);
-  const name = getStringField(record, ["Name", "name", "FullyQualifiedName"]);
-  const sku = getStringField(record, ["Sku", "sku", "PartNumber", "part_number"]);
-  const description = getStringField(record, ["Description", "description", "FullyQualifiedName"]);
-  const status =
-    getStringField(record, ["Type", "type"]) ??
-    (typeof record.Active === "boolean" ? (record.Active ? "active" : "inactive") : null);
-  const price = parsePrice(record.UnitPrice ?? record.unit_price ?? record.PurchaseCost ?? record.rate);
-
-  if (!id && !name && !sku) return null;
-  const fallbackIdBase = normalizeText(`${name || ""} ${sku || ""} ${status || ""}`) || "unknown";
-  const resolvedId = id || `quickbooks-fallback-${fallbackIdBase}`;
-
-  return {
-    id: resolvedId,
-    name: name || null,
-    sku: sku || null,
-    price,
-    status,
-    description: description || null,
-    url: buildQuickBooksProductUrl(resolvedId),
-  };
-}
-
-async function fetchQuickBooksProducts(): Promise<{ products: NormalizedProduct[]; error: string | null; configured: boolean }> {
-  const requestTimeoutMs = parsePositiveIntEnv("PRODUCT_COMPARISON_REQUEST_TIMEOUT_MS", 8000);
-  const accessToken = process.env.QUICKBOOKS_ACCESS_TOKEN;
-  const companyId = process.env.QUICKBOOKS_COMPANY_ID;
-  if (!accessToken || !companyId) {
-    return { products: [], error: null, configured: false };
-  }
-
-  const baseUrl = (process.env.QUICKBOOKS_API_BASE_URL || "https://quickbooks.api.intuit.com/v3/company").replace(/\/$/, "");
-  const minorVersion = process.env.QUICKBOOKS_MINOR_VERSION || "75";
-  const pageSize = 200;
-  const maxPages = 30;
-  const deduped = new Map<string, NormalizedProduct>();
-
-  try {
-    for (let page = 0; page < maxPages; page += 1) {
-      const startPosition = page * pageSize + 1;
-      const sql = `select * from Item startposition ${startPosition} maxresults ${pageSize}`;
-      const url = `${baseUrl}/${companyId}/query?query=${encodeURIComponent(sql)}&minorversion=${encodeURIComponent(minorVersion)}`;
-
-      const response = await fetchWithTimeout(
-        url,
-        {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            Accept: "application/json",
-            "Content-Type": "application/text",
-          },
-          cache: "no-store",
-        },
-        requestTimeoutMs
-      );
-
-      const rawText = await response.text();
-      if (!response.ok) {
-        return {
-          products: [],
-          error: `QuickBooks query failed (${response.status})`,
-          configured: true,
-        };
-      }
-
-      const payload = rawText ? (JSON.parse(rawText) as Record<string, unknown>) : {};
-      const queryResponse = coerceRecord(payload.QueryResponse);
-      const items = Array.isArray(queryResponse?.Item) ? (queryResponse!.Item as unknown[]) : [];
-      if (items.length === 0) break;
-
-      for (const item of items) {
-        const parsed = parseQuickBooksProduct(item);
-        if (!parsed) continue;
-        const normalized: NormalizedProduct = {
-          source: "quickbooks",
-          id: parsed.id,
-          name: parsed.name,
-          sku: parsed.sku,
-          price: parsed.price,
-          status: parsed.status,
-          description: parsed.description,
-          url: parsed.url,
-          key: keyForProduct(parsed.sku, parsed.name, "quickbooks", parsed.id),
-          normalizedName: normalizeText(parsed.name),
-        };
-        if (!deduped.has(normalized.id)) {
-          deduped.set(normalized.id, normalized);
-        }
-      }
-
-      if (items.length < pageSize) break;
-    }
-  } catch (error) {
-    return {
-      products: [],
-      error: error instanceof Error ? error.message : "Failed to fetch QuickBooks products",
-      configured: true,
-    };
-  }
-
-  return {
-    products: [...deduped.values()],
-    error: null,
-    configured: true,
-  };
-}
-
 async function fetchInternalProducts(): Promise<{ products: NormalizedProduct[]; error: string | null; configured: boolean }> {
   const db = prisma;
   if (!db) {
@@ -1846,49 +1713,25 @@ async function fetchInternalProducts(): Promise<{ products: NormalizedProduct[];
       hubspotProductId: string | null;
       zuperItemId: string | null;
       zohoItemId: string | null;
-      quickbooksItemId: string | null;
     }>;
 
-    try {
-      rows = await db.equipmentSku.findMany({
-        where: { isActive: true },
-        select: {
-          id: true,
-          brand: true,
-          model: true,
-          description: true,
-          sku: true,
-          vendorPartNumber: true,
-          isActive: true,
-          hubspotProductId: true,
-          zuperItemId: true,
-          zohoItemId: true,
-          quickbooksItemId: true,
-        },
-        orderBy: [{ updatedAt: "desc" }],
-        take: 10000,
-      });
-    } catch (error) {
-      if (!isPrismaMissingColumnError(error)) throw error;
-      const legacy = await db.equipmentSku.findMany({
-        where: { isActive: true },
-        select: {
-          id: true,
-          brand: true,
-          model: true,
-          description: true,
-          sku: true,
-          vendorPartNumber: true,
-          isActive: true,
-          hubspotProductId: true,
-          zuperItemId: true,
-          zohoItemId: true,
-        },
-        orderBy: [{ updatedAt: "desc" }],
-        take: 10000,
-      });
-      rows = legacy.map((row) => ({ ...row, quickbooksItemId: null }));
-    }
+    rows = await db.equipmentSku.findMany({
+      where: { isActive: true },
+      select: {
+        id: true,
+        brand: true,
+        model: true,
+        description: true,
+        sku: true,
+        vendorPartNumber: true,
+        isActive: true,
+        hubspotProductId: true,
+        zuperItemId: true,
+        zohoItemId: true,
+      },
+      orderBy: [{ updatedAt: "desc" }],
+      take: 10000,
+    });
 
     const products: NormalizedProduct[] = rows.map((row) => {
       const combinedName = `${String(row.brand || "").trim()} ${String(row.model || "").trim()}`.trim() || null;
@@ -1910,7 +1753,6 @@ async function fetchInternalProducts(): Promise<{ products: NormalizedProduct[];
           hubspot: String(row.hubspotProductId || "").trim() || null,
           zuper: String(row.zuperItemId || "").trim() || null,
           zoho: String(row.zohoItemId || "").trim() || null,
-          quickbooks: String(row.quickbooksItemId || "").trim() || null,
         },
       };
     });
@@ -1931,7 +1773,6 @@ function createGroupedProductBuckets(): Record<SourceName, NormalizedProduct[]> 
     hubspot: [],
     zuper: [],
     zoho: [],
-    quickbooks: [],
   };
 }
 
@@ -1940,8 +1781,7 @@ function fallbackUrlForCache(source: CacheSourceName, externalId: string): strin
   if (!id) return null;
   if (source === "hubspot") return buildHubSpotProductUrl(id);
   if (source === "zuper") return buildZuperProductUrl(id);
-  if (source === "zoho") return buildZohoProductUrl(id);
-  return buildQuickBooksProductUrl(id);
+  return buildZohoProductUrl(id);
 }
 
 function sourceFromCacheEnum(source: CatalogProductSource): CacheSourceName {
@@ -1949,7 +1789,6 @@ function sourceFromCacheEnum(source: CatalogProductSource): CacheSourceName {
     HUBSPOT: "hubspot",
     ZUPER: "zuper",
     ZOHO: "zoho",
-    QUICKBOOKS: "quickbooks",
   };
   return map[source];
 }
@@ -2064,7 +1903,6 @@ function collectInternalLinkedIds(
     hubspot: new Set<string>(),
     zuper: new Set<string>(),
     zoho: new Set<string>(),
-    quickbooks: new Set<string>(),
   };
 
   for (const product of internalProducts) {
@@ -2092,7 +1930,6 @@ async function backfillLinkedProductsFromCache(
     hubspot: [...productsBySource.hubspot],
     zuper: [...productsBySource.zuper],
     zoho: [...productsBySource.zoho],
-    quickbooks: [...productsBySource.quickbooks],
   };
   const warnings: string[] = [];
 
@@ -2226,7 +2063,6 @@ function buildComparisonRows(products: NormalizedProduct[], sources: SourceName[
       hubspot: pickPrimary(group.hubspot),
       zuper: pickPrimary(group.zuper),
       zoho: pickPrimary(group.zoho),
-      quickbooks: pickPrimary(group.quickbooks),
     };
     reasons.push(...evaluateRowReasons(primaryRow, sources));
     const dedupedReasons = uniqueStrings(reasons);
@@ -2245,7 +2081,6 @@ function buildComparisonRows(products: NormalizedProduct[], sources: SourceName[
                   hubspot: String(product.linkedExternalIds.hubspot || "").trim() || null,
                   zuper: String(product.linkedExternalIds.zuper || "").trim() || null,
                   zoho: String(product.linkedExternalIds.zoho || "").trim() || null,
-                  quickbooks: String(product.linkedExternalIds.quickbooks || "").trim() || null,
                 }
               : undefined,
           }))
@@ -2283,7 +2118,7 @@ export async function GET() {
   }
 
   const sourceTimeoutMs = parsePositiveIntEnv("PRODUCT_COMPARISON_SOURCE_TIMEOUT_MS", 12000);
-  const [internalResult, hubspotResult, zuperResult, zohoResult, quickbooksResult] = await Promise.all([
+  const [internalResult, hubspotResult, zuperResult, zohoResult] = await Promise.all([
     withTimeout(fetchInternalProducts(), sourceTimeoutMs, "Internal catalog fetch").catch((error) => ({
       products: [],
       configured: Boolean(prisma),
@@ -2306,14 +2141,9 @@ export async function GET() {
       configured: zohoInventory.isConfigured(),
       error: asErrorMessage(error, "Zoho catalog fetch timed out"),
     })),
-    withTimeout(fetchQuickBooksProducts(), sourceTimeoutMs, "QuickBooks catalog fetch").catch((error) => ({
-      products: [],
-      configured: Boolean(process.env.QUICKBOOKS_ACCESS_TOKEN && process.env.QUICKBOOKS_COMPANY_ID),
-      error: asErrorMessage(error, "QuickBooks catalog fetch timed out"),
-    })),
   ]);
 
-  const [hubspotCache, zuperCache, zohoCache, quickbooksCache] = await Promise.all([
+  const [hubspotCache, zuperCache, zohoCache] = await Promise.all([
     hydrateSourceWithCache("hubspot", {
       products: hubspotResult.products,
       configured: hubspotResult.configured,
@@ -2328,11 +2158,6 @@ export async function GET() {
       products: zohoResult.products,
       configured: zohoResult.configured,
       error: zohoResult.error,
-    }),
-    hydrateSourceWithCache("quickbooks", {
-      products: quickbooksResult.products,
-      configured: quickbooksResult.configured,
-      error: quickbooksResult.error,
     }),
   ]);
 
@@ -2354,12 +2179,6 @@ export async function GET() {
     configured: zohoCache.result.configured,
     error: zohoCache.result.error,
   };
-  const effectiveQuickbooksResult = {
-    ...quickbooksResult,
-    products: quickbooksCache.result.products,
-    configured: quickbooksCache.result.configured,
-    error: quickbooksCache.result.error,
-  };
   const productCapPerSource = parsePositiveIntEnv("PRODUCT_COMPARISON_MAX_PRODUCTS_PER_SOURCE", 2500);
   const performanceWarnings: string[] = [];
   const capProducts = <T extends SourceFetchResult>(source: SourceName, result: T): T => {
@@ -2377,14 +2196,12 @@ export async function GET() {
   const boundedHubspotResult = capProducts("hubspot", effectiveHubspotResult);
   const boundedZuperResult = capProducts("zuper", effectiveZuperResult);
   const boundedZohoResult = capProducts("zoho", effectiveZohoResult);
-  const boundedQuickbooksResult = capProducts("quickbooks", effectiveQuickbooksResult);
 
   const sourceResults = {
     internal: boundedInternalResult,
     hubspot: boundedHubspotResult,
     zuper: boundedZuperResult,
     zoho: boundedZohoResult,
-    quickbooks: boundedQuickbooksResult,
   } as const;
   const comparisonSources = ALL_SOURCES.filter((source) => !DEACTIVATED_SOURCES.has(source) && sourceResults[source].configured);
 
@@ -2393,7 +2210,6 @@ export async function GET() {
     ...boundedHubspotResult.products,
     ...boundedZuperResult.products,
     ...boundedZohoResult.products,
-    ...boundedQuickbooksResult.products,
   ];
   const rows = buildComparisonRows(allProducts, comparisonSources);
   const productsBySourceBase: Record<SourceName, ComparableProduct[]> = {
@@ -2401,7 +2217,6 @@ export async function GET() {
     hubspot: boundedHubspotResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
     zuper: boundedZuperResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
     zoho: boundedZohoResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
-    quickbooks: boundedQuickbooksResult.products.map((p) => pickPrimary([p])).filter(Boolean) as ComparableProduct[],
   };
   const linkedCacheBackfill = await backfillLinkedProductsFromCache(
     boundedInternalResult.products,
@@ -2461,14 +2276,13 @@ export async function GET() {
     hubspot: sourceResults.hubspot.configured ? enrichedRows.filter((row) => row.hubspot === null).length : 0,
     zuper: sourceResults.zuper.configured ? enrichedRows.filter((row) => row.zuper === null).length : 0,
     zoho: sourceResults.zoho.configured ? enrichedRows.filter((row) => row.zoho === null).length : 0,
-    quickbooks: sourceResults.quickbooks.configured ? enrichedRows.filter((row) => row.quickbooks === null).length : 0,
   };
 
   const warnings = [
     ...ALL_SOURCES
     .map((source) => sourceResults[source].error)
     .filter(Boolean) as string[],
-    ...[hubspotCache, zuperCache, zohoCache, quickbooksCache]
+    ...[hubspotCache, zuperCache, zohoCache]
       .map((c) => c.warning)
       .filter(Boolean) as string[],
     ...linkedCacheBackfill.warnings,
@@ -2487,7 +2301,6 @@ export async function GET() {
         hubspot: boundedHubspotResult.products.length,
         zuper: boundedZuperResult.products.length,
         zoho: boundedZohoResult.products.length,
-        quickbooks: boundedQuickbooksResult.products.length,
       },
     },
     health: {
@@ -2510,11 +2323,6 @@ export async function GET() {
         configured: boundedZohoResult.configured,
         count: boundedZohoResult.products.length,
         error: boundedZohoResult.error,
-      },
-      quickbooks: {
-        configured: boundedQuickbooksResult.configured,
-        count: boundedQuickbooksResult.products.length,
-        error: boundedQuickbooksResult.error,
       },
     },
     warnings,

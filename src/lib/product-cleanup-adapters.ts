@@ -1,6 +1,6 @@
 import { deleteZohoItem } from "@/lib/zoho-inventory";
 
-export const CLEANUP_SOURCES = ["hubspot", "zuper", "zoho", "quickbooks"] as const;
+export const CLEANUP_SOURCES = ["hubspot", "zuper", "zoho"] as const;
 export type CleanupSource = (typeof CLEANUP_SOURCES)[number];
 
 export type CleanupAdapterStatus =
@@ -272,148 +272,6 @@ export async function deleteOrArchiveZohoItem(
   return failed("zoho", id, result.message || "Zoho delete failed.", result.httpStatus);
 }
 
-async function queryQuickBooksItemById(
-  accessToken: string,
-  companyId: string,
-  externalId: string,
-  fetchImpl: FetchFn
-): Promise<{ id: string; syncToken: string; active: boolean } | null> {
-  const baseUrl = (process.env.QUICKBOOKS_API_BASE_URL || "https://quickbooks.api.intuit.com/v3/company").replace(/\/$/, "");
-  const minorVersion = process.env.QUICKBOOKS_MINOR_VERSION || "75";
-  const query = `select Id, SyncToken, Active from Item where Id = '${externalId.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
-  const url = `${baseUrl}/${encodeURIComponent(companyId)}/query?query=${encodeURIComponent(query)}&minorversion=${encodeURIComponent(minorVersion)}`;
-  const response = await fetchWithTimeout(
-    url,
-    {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        Accept: "application/json",
-      },
-    },
-    DEFAULT_TIMEOUT_MS,
-    fetchImpl
-  );
-
-  const raw = await response.text();
-  const payload = parseJsonSafe(raw);
-  if (!response.ok) {
-    const message = payloadMessage(payload) || raw || `QuickBooks query failed (${response.status})`;
-    if (response.status === 404 || isNotFoundMessage(message)) return null;
-    throw new Error(message);
-  }
-
-  const root = toJsonRecord(payload);
-  const queryResponse = toJsonRecord(root?.QueryResponse);
-  const items = Array.isArray(queryResponse?.Item) ? (queryResponse?.Item as unknown[]) : [];
-  const first = toJsonRecord(items[0]);
-  if (!first) return null;
-
-  const id = trimOrEmpty(first.Id);
-  const syncToken = trimOrEmpty(first.SyncToken);
-  if (!id || !syncToken) return null;
-  const active = first.Active !== false;
-  return { id, syncToken, active };
-}
-
-export async function archiveQuickBooksItem(
-  externalId: string,
-  fetchImpl: FetchFn = fetch
-): Promise<CleanupAdapterResult> {
-  const id = trimOrEmpty(externalId);
-  if (!id) return skipped("quickbooks", id, "No QuickBooks external ID present.");
-
-  const accessToken = trimOrEmpty(process.env.QUICKBOOKS_ACCESS_TOKEN);
-  const companyId = trimOrEmpty(process.env.QUICKBOOKS_COMPANY_ID);
-  if (!accessToken || !companyId) {
-    return skipped(
-      "quickbooks",
-      id,
-      "QuickBooks archive requires QUICKBOOKS_ACCESS_TOKEN and QUICKBOOKS_COMPANY_ID."
-    );
-  }
-
-  let existing: { id: string; syncToken: string; active: boolean } | null = null;
-  try {
-    existing = await queryQuickBooksItemById(accessToken, companyId, id, fetchImpl);
-  } catch (error) {
-    return failed(
-      "quickbooks",
-      id,
-      error instanceof Error ? error.message : "QuickBooks lookup failed."
-    );
-  }
-
-  if (!existing) {
-    return {
-      source: "quickbooks",
-      externalId: id,
-      status: "not_found",
-      message: "QuickBooks item not found.",
-    };
-  }
-
-  if (!existing.active) {
-    return {
-      source: "quickbooks",
-      externalId: id,
-      status: "archived",
-      message: "QuickBooks item already inactive.",
-    };
-  }
-
-  const baseUrl = (process.env.QUICKBOOKS_API_BASE_URL || "https://quickbooks.api.intuit.com/v3/company").replace(/\/$/, "");
-  const minorVersion = process.env.QUICKBOOKS_MINOR_VERSION || "75";
-  const url = `${baseUrl}/${encodeURIComponent(companyId)}/item?operation=update&minorversion=${encodeURIComponent(minorVersion)}`;
-  const payload = {
-    sparse: true,
-    Id: existing.id,
-    SyncToken: existing.syncToken,
-    Active: false,
-  };
-
-  const response = await fetchWithTimeout(
-    url,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        Accept: "application/json",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    },
-    DEFAULT_TIMEOUT_MS,
-    fetchImpl
-  );
-
-  const raw = await response.text();
-  const responsePayload = parseJsonSafe(raw);
-  const message = payloadMessage(responsePayload) || raw || `QuickBooks archive failed (${response.status})`;
-
-  if (response.ok) {
-    return {
-      source: "quickbooks",
-      externalId: id,
-      status: "archived",
-      message: "QuickBooks item set inactive.",
-      httpStatus: response.status,
-    };
-  }
-
-  if (response.status === 404 || isNotFoundMessage(message)) {
-    return {
-      source: "quickbooks",
-      externalId: id,
-      status: "not_found",
-      message,
-      httpStatus: response.status,
-    };
-  }
-
-  return failed("quickbooks", id, message, response.status);
-}
-
 export async function runCleanupAdapter(
   source: CleanupSource,
   externalId: string
@@ -421,6 +279,6 @@ export async function runCleanupAdapter(
   if (source === "hubspot") return archiveHubSpotProduct(externalId);
   if (source === "zuper") return deleteOrArchiveZuperProduct(externalId);
   if (source === "zoho") return deleteOrArchiveZohoItem(externalId);
-  return archiveQuickBooksItem(externalId);
+  return skipped(source, externalId, `Unknown cleanup source: ${source}`);
 }
 

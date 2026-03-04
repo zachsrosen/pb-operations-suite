@@ -4,7 +4,7 @@ import { requireApiAuth } from "@/lib/api-auth";
 import { FORM_CATEGORIES } from "@/lib/catalog-fields";
 
 const ADMIN_ROLES = ["ADMIN", "OWNER", "MANAGER"];
-const VALID_SYSTEMS = ["INTERNAL", "ZOHO", "HUBSPOT", "ZUPER", "QUICKBOOKS"] as const;
+const VALID_SYSTEMS = ["INTERNAL", "ZOHO", "HUBSPOT", "ZUPER"] as const;
 const VALID_CATEGORIES = new Set<string>(FORM_CATEGORIES as readonly string[]);
 
 function parseOptionalString(value: unknown): string | null {
@@ -101,14 +101,6 @@ export async function PATCH(
     updateData.systems = systems;
   }
 
-  if ("quickbooksItemId" in body) {
-    const value = body.quickbooksItemId;
-    if (value !== null && value !== undefined && typeof value !== "string") {
-      return NextResponse.json({ error: "quickbooksItemId must be a string or null" }, { status: 400 });
-    }
-    updateData.quickbooksItemId = parseOptionalString(value);
-  }
-
   // Nullable string fields
   if ("name" in body) updateData.name = parseOptionalString(body.name);
   if ("sku" in body) updateData.sku = parseOptionalString(body.sku);
@@ -158,14 +150,6 @@ export async function PATCH(
       return NextResponse.json({ error: "hardToProcure must be a boolean" }, { status: 400 });
     }
     updateData.hardToProcure = body.hardToProcure;
-  }
-
-  if (
-    "systems" in body &&
-    Array.isArray(updateData.systems) &&
-    !(updateData.systems as string[]).includes("QUICKBOOKS")
-  ) {
-    updateData.quickbooksItemId = null;
   }
 
   if (Object.keys(updateData).length === 0) {

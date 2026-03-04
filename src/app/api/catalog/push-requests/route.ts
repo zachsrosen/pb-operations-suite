@@ -4,7 +4,7 @@ import { prisma } from "@/lib/db";
 import { requireApiAuth } from "@/lib/api-auth";
 import { FORM_CATEGORIES } from "@/lib/catalog-fields";
 
-const VALID_SYSTEMS = ["INTERNAL", "ZOHO", "HUBSPOT", "ZUPER", "QUICKBOOKS"] as const;
+const VALID_SYSTEMS = ["INTERNAL", "ZOHO", "HUBSPOT", "ZUPER"] as const;
 const VALID_STATUSES = ["PENDING", "APPROVED", "REJECTED"] as const;
 const VALID_CATEGORIES = new Set<string>(FORM_CATEGORIES as readonly string[]);
 type PushStatus = typeof VALID_STATUSES[number];
@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
   const {
     brand, model, description, category, unitSpec, unitLabel,
     sku, vendorName, vendorPartNumber, unitCost, sellPrice,
-    hardToProcure, length, width, weight, metadata, quickbooksItemId,
+    hardToProcure, length, width, weight, metadata,
     systems, dealId,
   } = body as Record<string, unknown>;
 
@@ -51,20 +51,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: `Invalid systems: ${invalidSystems.join(", ")}` }, { status: 400 });
   }
 
-  if (
-    quickbooksItemId !== undefined &&
-    quickbooksItemId !== null &&
-    typeof quickbooksItemId !== "string"
-  ) {
-    return NextResponse.json({ error: "quickbooksItemId must be a string or null" }, { status: 400 });
-  }
-
-  const normalizedQuickbooksItemId =
-    typeof quickbooksItemId === "string" && quickbooksItemId.trim()
-      ? quickbooksItemId.trim()
-      : null;
-  const includeQuickbooks = systems.includes("QUICKBOOKS");
-
   const push = await prisma.pendingCatalogPush.create({
     data: {
       brand: String(brand).trim(),
@@ -84,7 +70,6 @@ export async function POST(request: NextRequest) {
       weight: parseNullableNumber(weight),
       metadata: metadata || undefined,
       systems: systems,
-      quickbooksItemId: includeQuickbooks ? normalizedQuickbooksItemId : null,
       requestedBy: authResult.email,
       dealId: dealId ? String(dealId) : null,
     },

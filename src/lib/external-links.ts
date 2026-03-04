@@ -2,8 +2,6 @@ const DEFAULT_HUBSPOT_PORTAL_ID = "21710069";
 const DEFAULT_ZUPER_BASE_URL = "https://web.zuperpro.com";
 const GOOGLE_CALENDAR_EVENT_BASE_URL = "https://calendar.google.com/calendar/event";
 const DEFAULT_ZOHO_ITEM_BASE_URL = "https://inventory.zoho.com/app#/items";
-const DEFAULT_QUICKBOOKS_BASE_URL = "https://app.qbo.intuit.com";
-
 export function getHubSpotDealUrl(dealId: string): string {
   const portalId = (process.env.HUBSPOT_PORTAL_ID || DEFAULT_HUBSPOT_PORTAL_ID).trim();
   return `https://app.hubspot.com/contacts/${portalId}/record/0-3/${dealId}`;
@@ -68,19 +66,6 @@ export function getZohoItemUrl(itemId: string): string {
   }
   const baseUrl = process.env.ZOHO_INVENTORY_WEB_URL || DEFAULT_ZOHO_ITEM_BASE_URL;
   return `${baseUrl.replace(/\/$/, "")}/${encodeURIComponent(itemId)}`;
-}
-
-export function getQuickBooksItemUrl(itemId: string): string | null {
-  const companyId = String(process.env.QUICKBOOKS_COMPANY_ID || "").trim();
-  if (!companyId) return null;
-
-  const template = (process.env.QUICKBOOKS_ITEM_URL_TEMPLATE || "").trim();
-  if (template) {
-    return applyUrlTemplate(template, { id: itemId, companyId });
-  }
-
-  const baseUrl = process.env.QUICKBOOKS_WEB_URL || DEFAULT_QUICKBOOKS_BASE_URL;
-  return `${baseUrl.replace(/\/$/, "")}/app/items?itemId=${encodeURIComponent(itemId)}&companyId=${encodeURIComponent(companyId)}`;
 }
 
 export function getZuperJobUrl(jobUid?: string | null): string | null {

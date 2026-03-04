@@ -34,11 +34,13 @@ jest.mock("@/lib/bom-pipeline", () => ({
 // ── Mock: Prisma ──────────────────────────────────────────────────────────────
 const mockCreate = jest.fn();
 const mockUpdateMany = jest.fn();
+const mockFindFirst = jest.fn();
 jest.mock("@/lib/db", () => ({
   prisma: {
     bomPipelineRun: {
       create: (...args: unknown[]) => mockCreate(...args),
       updateMany: (...args: unknown[]) => mockUpdateMany(...args),
+      findFirst: (...args: unknown[]) => mockFindFirst(...args),
     },
     $transaction: async (fn: (tx: unknown) => Promise<unknown>) => {
       // Execute the transaction callback with the same mock methods
@@ -46,6 +48,7 @@ jest.mock("@/lib/db", () => ({
         bomPipelineRun: {
           create: (...args: unknown[]) => mockCreate(...args),
           updateMany: (...args: unknown[]) => mockUpdateMany(...args),
+          findFirst: (...args: unknown[]) => mockFindFirst(...args),
         },
       });
     },
@@ -122,9 +125,10 @@ describe("POST /api/webhooks/hubspot/design-complete", () => {
     process.env.DESIGN_COMPLETE_TARGET_STAGES = "";
     delete process.env.PIPELINE_STAGE_CONFIG;
 
-    // Default: create succeeds
+    // Default: create succeeds, no completed runs exist
     mockCreate.mockResolvedValue({ id: "run_abc123" });
     mockUpdateMany.mockResolvedValue({ count: 0 });
+    mockFindFirst.mockResolvedValue(null);
   });
 
   afterAll(() => {

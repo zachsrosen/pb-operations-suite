@@ -28,7 +28,6 @@ const LINK_FIELD_CONFIG = [
   { source: "hubspot", field: "hubspotProductId" },
   { source: "zuper", field: "zuperItemId" },
   { source: "zoho", field: "zohoItemId" },
-  { source: "quickbooks", field: "quickbooksItemId" },
 ] as const;
 
 const SPEC_TABLES = Array.from(
@@ -174,21 +173,18 @@ function buildSyncHealth(sku: {
   zohoItemId: string | null;
   hubspotProductId: string | null;
   zuperItemId: string | null;
-  quickbooksItemId: string | null;
 }) {
   const zoho = Boolean(sku.zohoItemId);
   const hubspot = Boolean(sku.hubspotProductId);
   const zuper = Boolean(sku.zuperItemId);
-  const quickbooks = Boolean(sku.quickbooksItemId);
-  const connectedCount = (zoho ? 1 : 0) + (hubspot ? 1 : 0) + (zuper ? 1 : 0) + (quickbooks ? 1 : 0);
+  const connectedCount = (zoho ? 1 : 0) + (hubspot ? 1 : 0) + (zuper ? 1 : 0);
   return {
     internal: true,
     zoho,
     hubspot,
     zuper,
-    quickbooks,
     connectedCount,
-    fullySynced: connectedCount === 4,
+    fullySynced: connectedCount === 3,
   };
 }
 
@@ -198,7 +194,6 @@ interface DuplicateGroupEntry {
   model: string;
   sku: string | null;
   vendorPartNumber: string | null;
-  quickbooksItemId: string | null;
 }
 
 interface DuplicateGroup {
@@ -238,7 +233,6 @@ function buildDuplicateGroups(skus: Array<Record<string, unknown>>): DuplicateGr
       model: String(sku.model || ""),
       sku: typeof sku.sku === "string" ? sku.sku : null,
       vendorPartNumber: typeof sku.vendorPartNumber === "string" ? sku.vendorPartNumber : null,
-      quickbooksItemId: typeof sku.quickbooksItemId === "string" ? sku.quickbooksItemId : null,
     });
     group.count += 1;
   }
@@ -304,7 +298,6 @@ function enrichSku<T extends Record<string, unknown>>(sku: T) {
     zohoItemId: string | null;
     hubspotProductId: string | null;
     zuperItemId: string | null;
-    quickbooksItemId: string | null;
   };
   return {
     ...sku,
@@ -429,7 +422,6 @@ export async function GET(request: NextRequest) {
         weight: null,
         hubspotProductId: null,
         zuperItemId: null,
-        quickbooksItemId: null,
         metadata: {},
       }));
     }
@@ -444,7 +436,6 @@ export async function GET(request: NextRequest) {
       missingZoho: enriched.filter((s) => !s.syncHealth.zoho).length,
       missingHubspot: enriched.filter((s) => !s.syncHealth.hubspot).length,
       missingZuper: enriched.filter((s) => !s.syncHealth.zuper).length,
-      missingQuickbooks: enriched.filter((s) => !s.syncHealth.quickbooks).length,
       duplicateGroups: duplicateGroups.length,
       duplicateRows,
       withPricing: enriched.filter((s) => s.unitCost != null && s.sellPrice != null).length,
@@ -469,7 +460,7 @@ export async function GET(request: NextRequest) {
  *   description?, vendorName?, vendorPartNumber?, sku?,
  *   unitSpec?, unitLabel?, unitCost?, sellPrice?,
  *   hardToProcure?, length?, width?, weight?, metadata?,
- *   zohoItemId?, hubspotProductId?, zuperItemId?, quickbooksItemId?
+ *   zohoItemId?, hubspotProductId?, zuperItemId?
  * }
  *
  * Upserts on the compound unique (category + brand + model).
@@ -565,7 +556,6 @@ export async function POST(request: NextRequest) {
     const zohoItemParsed = parseOptionalString(body, "zohoItemId");
     const hubspotProductParsed = parseOptionalString(body, "hubspotProductId");
     const zuperItemParsed = parseOptionalString(body, "zuperItemId");
-    const quickbooksItemParsed = parseOptionalString(body, "quickbooksItemId");
     const metadataParsed = parseOptionalMetadata(body, category as string);
     if ("error" in metadataParsed) return NextResponse.json({ error: metadataParsed.error }, { status: 400 });
 
@@ -598,7 +588,6 @@ export async function POST(request: NextRequest) {
           ...(zohoItemParsed.provided && { zohoItemId: zohoItemParsed.value }),
           ...(hubspotProductParsed.provided && { hubspotProductId: hubspotProductParsed.value }),
           ...(zuperItemParsed.provided && { zuperItemId: zuperItemParsed.value }),
-          ...(quickbooksItemParsed.provided && { quickbooksItemId: quickbooksItemParsed.value }),
           canonicalBrand: canonicalToken(trimmedBrand),
           canonicalModel: canonicalToken(trimmedModel),
           canonicalKey: buildCanonicalKey(category as string, trimmedBrand, trimmedModel),
@@ -627,7 +616,6 @@ export async function POST(request: NextRequest) {
           zohoItemId: zohoItemParsed.provided ? zohoItemParsed.value : null,
           hubspotProductId: hubspotProductParsed.provided ? hubspotProductParsed.value : null,
           zuperItemId: zuperItemParsed.provided ? zuperItemParsed.value : null,
-          quickbooksItemId: quickbooksItemParsed.provided ? quickbooksItemParsed.value : null,
         },
       });
 
@@ -703,7 +691,7 @@ export async function POST(request: NextRequest) {
  *   description?, vendorName?, vendorPartNumber?, sku?,
  *   unitSpec?, unitLabel?, unitCost?, sellPrice?,
  *   hardToProcure?, length?, width?, weight?, metadata?,
- *   zohoItemId?, hubspotProductId?, zuperItemId?, quickbooksItemId?,
+ *   zohoItemId?, hubspotProductId?, zuperItemId?,
  *   isActive?
  * }
  *
@@ -756,7 +744,6 @@ export async function PATCH(request: NextRequest) {
         hubspotProductId: true,
         zuperItemId: true,
         zohoItemId: true,
-        quickbooksItemId: true,
       },
     });
     if (!existing) {
@@ -810,8 +797,6 @@ export async function PATCH(request: NextRequest) {
     const zohoItemParsed = parseOptionalString(body, "zohoItemId");
     const hubspotProductParsed = parseOptionalString(body, "hubspotProductId");
     const zuperItemParsed = parseOptionalString(body, "zuperItemId");
-    const quickbooksItemParsed = parseOptionalString(body, "quickbooksItemId");
-
     const metadataParsed = parseOptionalMetadata(body, category as string);
     if ("error" in metadataParsed) return NextResponse.json({ error: metadataParsed.error }, { status: 400 });
 
@@ -819,7 +804,6 @@ export async function PATCH(request: NextRequest) {
       hubspot: hubspotProductParsed,
       zuper: zuperItemParsed,
       zoho: zohoItemParsed,
-      quickbooks: quickbooksItemParsed,
     } as const;
     const requestedLinkChanges = LINK_FIELD_CONFIG.flatMap(({ source, field }) => {
       const parsedLink = parsedLinksBySource[source];
@@ -861,7 +845,6 @@ export async function PATCH(request: NextRequest) {
       ...(zohoItemParsed.provided && { zohoItemId: zohoItemParsed.value }),
       ...(hubspotProductParsed.provided && { hubspotProductId: hubspotProductParsed.value }),
       ...(zuperItemParsed.provided && { zuperItemId: zuperItemParsed.value }),
-      ...(quickbooksItemParsed.provided && { quickbooksItemId: quickbooksItemParsed.value }),
       ...(isActiveParsed.provided && { isActive: isActiveParsed.value }),
     };
 

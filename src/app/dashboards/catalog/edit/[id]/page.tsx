@@ -40,7 +40,6 @@ interface EditableSku {
   zohoItemId: string | null;
   hubspotProductId: string | null;
   zuperItemId: string | null;
-  quickbooksItemId: string | null;
   isActive: boolean;
   metadata?: Record<string, unknown>;
 }
@@ -83,7 +82,6 @@ export default function CatalogSkuEditPage() {
   const [zohoItemId, setZohoItemId] = useState("");
   const [hubspotProductId, setHubspotProductId] = useState("");
   const [zuperItemId, setZuperItemId] = useState("");
-  const [quickbooksItemId, setQuickbooksItemId] = useState("");
   const [isActive, setIsActive] = useState(true);
 
   useEffect(() => {
@@ -128,7 +126,6 @@ export default function CatalogSkuEditPage() {
         setZohoItemId(found.zohoItemId ?? "");
         setHubspotProductId(found.hubspotProductId ?? "");
         setZuperItemId(found.zuperItemId ?? "");
-        setQuickbooksItemId(found.quickbooksItemId ?? "");
         setIsActive(found.isActive);
       } catch (error) {
         if (!cancelled) {
@@ -180,7 +177,6 @@ export default function CatalogSkuEditPage() {
         zohoItemId: zohoItemId || null,
         hubspotProductId: hubspotProductId || null,
         zuperItemId: zuperItemId || null,
-        quickbooksItemId: quickbooksItemId || null,
         isActive,
       };
 
@@ -415,7 +411,6 @@ export default function CatalogSkuEditPage() {
                     )}
                   </div>
                 </div>
-                {/* QuickBooks deactivated — input hidden */}
                 <div className="flex items-center gap-3">
                   <label className="text-sm font-medium text-muted">Active</label>
                   <button

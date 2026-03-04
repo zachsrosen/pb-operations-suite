@@ -19,7 +19,6 @@ interface SkuSyncHealth {
   zoho: boolean;
   hubspot: boolean;
   zuper: boolean;
-  quickbooks: boolean;
   connectedCount: number;
   fullySynced: boolean;
 }
@@ -41,7 +40,6 @@ interface Sku {
   zohoItemId: string | null;
   hubspotProductId: string | null;
   zuperItemId: string | null;
-  quickbooksItemId: string | null;
   syncHealth: SkuSyncHealth;
   stockLevels: { location: string; quantityOnHand: number }[];
 }
@@ -108,7 +106,6 @@ interface DuplicateGroup {
     model: string;
     sku: string | null;
     vendorPartNumber: string | null;
-    quickbooksItemId: string | null;
   }>;
 }
 
@@ -132,7 +129,6 @@ interface PushRequest {
   width: number | null;
   weight: number | null;
   systems: string[];
-  quickbooksItemId: string | null;
   requestedBy: string;
   dealId: string | null;
   createdAt: string;
@@ -172,7 +168,6 @@ interface SkuEditDraft {
   zohoItemId: string;
   hubspotProductId: string;
   zuperItemId: string;
-  quickbooksItemId: string;
   isActive: boolean;
 }
 
@@ -195,12 +190,10 @@ interface PushEditDraft {
   width: string;
   weight: string;
   systems: string[];
-  quickbooksItemId: string;
 }
 
 const ADMIN_ROLES = ["ADMIN", "OWNER", "MANAGER"];
 const BULK_SYNC_ADMIN_ROLES = ["ADMIN", "OWNER"];
-// QuickBooks deactivated — re-add "QUICKBOOKS" to reactivate
 const SYSTEM_OPTIONS = ["INTERNAL", "ZOHO", "HUBSPOT", "ZUPER"] as const;
 const CATEGORIES = FORM_CATEGORIES;
 
@@ -241,7 +234,6 @@ function formatSystemLabel(system: string): string {
   if (system === "HUBSPOT") return "HubSpot";
   if (system === "ZUPER") return "Zuper";
   if (system === "ZOHO") return "Zoho";
-  if (system === "QUICKBOOKS") return "QuickBooks";
   return system;
 }
 
@@ -269,7 +261,6 @@ export default function CatalogPage() {
     withPricing: 0,
   });
   const [duplicateGroups, setDuplicateGroups] = useState<DuplicateGroup[]>([]);
-  const [linkingQuickBooks, setLinkingQuickBooks] = useState(false);
   const [pendingPushes, setPendingPushes] = useState<PushRequest[]>([]);
   const [pendingLoading, setPendingLoading] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
@@ -523,7 +514,6 @@ export default function CatalogPage() {
       zohoItemId: sku.zohoItemId ?? "",
       hubspotProductId: sku.hubspotProductId ?? "",
       zuperItemId: sku.zuperItemId ?? "",
-      quickbooksItemId: sku.quickbooksItemId ?? "",
       isActive: sku.isActive,
     });
   }
@@ -557,7 +547,6 @@ export default function CatalogPage() {
           zohoItemId: skuEditDraft.zohoItemId || null,
           hubspotProductId: skuEditDraft.hubspotProductId || null,
           zuperItemId: skuEditDraft.zuperItemId || null,
-          quickbooksItemId: skuEditDraft.quickbooksItemId || null,
           isActive: skuEditDraft.isActive,
         }),
       });
@@ -594,7 +583,6 @@ export default function CatalogPage() {
       width: push.width != null ? String(push.width) : "",
       weight: push.weight != null ? String(push.weight) : "",
       systems: [...push.systems],
-      quickbooksItemId: push.quickbooksItemId ?? "",
     });
   }
 
@@ -644,10 +632,6 @@ export default function CatalogPage() {
           width: pushEditDraft.width ? parseFloat(pushEditDraft.width) : null,
           weight: pushEditDraft.weight ? parseFloat(pushEditDraft.weight) : null,
           systems: pushEditDraft.systems,
-          quickbooksItemId:
-            pushEditDraft.systems.includes("QUICKBOOKS")
-              ? pushEditDraft.quickbooksItemId || null
-              : null,
         }),
       });
       const data = await res.json() as { error?: string; push?: PushRequest };
@@ -758,35 +742,6 @@ export default function CatalogPage() {
       addToast({ type: "error", title: err instanceof Error ? err.message : "Cleanup failed" });
     } finally {
       setCleanupRunning(false);
-    }
-  }
-
-  async function handleAutoLinkQuickBooks() {
-    setLinkingQuickBooks(true);
-    try {
-      const res = await fetch("/api/inventory/skus/link-quickbooks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dryRun: false, onlyMissing: true }),
-      });
-      const data = await res.json() as {
-        error?: string;
-        evaluated?: number;
-        matched?: number;
-        ambiguous?: number;
-        noMatch?: number;
-      };
-      if (!res.ok) throw new Error(data.error || "Failed to auto-link QuickBooks");
-      addToast({
-        type: "success",
-        title: "QuickBooks linking complete",
-        message: `Matched ${data.matched ?? 0} of ${data.evaluated ?? 0} checked (${data.ambiguous ?? 0} ambiguous, ${data.noMatch ?? 0} no match).`,
-      });
-      fetchSkus();
-    } catch (err: unknown) {
-      addToast({ type: "error", title: err instanceof Error ? err.message : "Failed to auto-link QuickBooks" });
-    } finally {
-      setLinkingQuickBooks(false);
     }
   }
 
@@ -1316,7 +1271,6 @@ export default function CatalogPage() {
                                 )}
                               </div>
                             ))}
-                            {/* QuickBooks deactivated — input hidden */}
                             <label className="inline-flex items-center gap-1 text-[11px] text-muted">
                               <input
                                 type="checkbox"
@@ -1470,7 +1424,6 @@ export default function CatalogPage() {
                     if (!sku.syncHealth?.zoho && !sku.zohoItemId) missing.push("Zoho");
                     if (!sku.syncHealth?.hubspot && !sku.hubspotProductId) missing.push("HubSpot");
                     if (!sku.syncHealth?.zuper && !sku.zuperItemId) missing.push("Zuper");
-                    // QuickBooks deactivated
                     return (
                       <tr key={sku.id} className="border-b border-t-border last:border-b-0 hover:bg-surface-2 transition-colors align-top">
                         <td className="px-4 py-3 text-xs text-muted">{sku.category}</td>
@@ -1517,7 +1470,6 @@ export default function CatalogPage() {
                           {entry.brand} — {entry.model}
                           {entry.sku ? ` · SKU ${entry.sku}` : ""}
                           {entry.vendorPartNumber ? ` · VP ${entry.vendorPartNumber}` : ""}
-                          {/* QuickBooks deactivated */}
                         </div>
                       ))}
                     </div>
@@ -1572,7 +1524,6 @@ export default function CatalogPage() {
                         )}
                         {p.hardToProcure && <span className="text-amber-400">Hard to Procure</span>}
                       </div>
-                      {/* QuickBooks deactivated */}
                     </div>
                     <div className="flex flex-wrap gap-1">
                       {p.systems.map((s) => (
@@ -1708,14 +1659,6 @@ export default function CatalogPage() {
                             );
                           })}
                         </div>
-                        {pushEditDraft.systems.includes("QUICKBOOKS") && (
-                          <input
-                            value={pushEditDraft.quickbooksItemId}
-                            onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, quickbooksItemId: e.target.value } : prev)}
-                            className={`${inputCls} mt-2 max-w-xs`}
-                            placeholder="QuickBooks Item ID (optional)"
-                          />
-                        )}
                       </div>
                     </div>
                   )}
@@ -1934,7 +1877,6 @@ export default function CatalogPage() {
                         hubspot: "hubspotProductId",
                         zuper: "zuperItemId",
                         zoho: "zohoItemId",
-                        quickbooks: "quickbooksItemId",
                       } as const;
                       const hasLink = Boolean(cleanupSku[sourceField[source]]);
                       const sourceLabel = source === "hubspot" ? "HubSpot" : source.charAt(0).toUpperCase() + source.slice(1);
@@ -1965,7 +1907,6 @@ export default function CatalogPage() {
                 <div>Zoho: {cleanupSku.zohoItemId || "—"}</div>
                 <div>HubSpot: {cleanupSku.hubspotProductId || "—"}</div>
                 <div>Zuper: {cleanupSku.zuperItemId || "—"}</div>
-                {/* QuickBooks deactivated */}
               </div>
 
               {/* Confirmation */}

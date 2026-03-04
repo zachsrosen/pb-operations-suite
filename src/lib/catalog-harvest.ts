@@ -14,7 +14,6 @@ export type HarvestSource =
   | "zoho"
   | "hubspot"
   | "zuper"
-  | "quickbooks"
   | "internal";
 
 export interface HarvestedProduct {
@@ -247,34 +246,6 @@ export async function harvestZuper(): Promise<HarvestedProduct[]> {
 }
 
 // ---------------------------------------------------------------------------
-// Adapter: QuickBooks (from CatalogProduct cache, not linked SKUs)
-// ---------------------------------------------------------------------------
-
-export async function harvestQuickBooks(): Promise<HarvestedProduct[]> {
-  const { prisma } = await import("@/lib/db");
-  if (!prisma) return [];
-
-  const items = await prisma.catalogProduct.findMany({
-    where: { source: "QUICKBOOKS" },
-  });
-
-  return items.map((item) => {
-    const { brand, model } = splitName(item.name ?? "");
-    return {
-      source: "quickbooks" as const,
-      externalId: item.externalId,
-      rawName: item.name ?? "",
-      rawBrand: brand,
-      rawModel: model,
-      category: null, // CatalogProduct doesn't have structured category
-      price: item.price ?? null,
-      description: item.description ?? null,
-      rawPayload: JSON.parse(JSON.stringify(item)) as Record<string, unknown>,
-    };
-  });
-}
-
-// ---------------------------------------------------------------------------
 // Orchestrator: harvest all sources
 // ---------------------------------------------------------------------------
 
@@ -284,8 +255,6 @@ export async function harvestAll(): Promise<HarvestResult[]> {
     { source: "zoho", fn: harvestZoho },
     { source: "hubspot", fn: harvestHubSpot },
     { source: "zuper", fn: harvestZuper },
-    // QuickBooks deactivated — re-add to reactivate:
-    // { source: "quickbooks", fn: harvestQuickBooks },
   ];
 
   const results = await Promise.allSettled(

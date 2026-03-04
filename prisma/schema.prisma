@@ -705,7 +705,6 @@ enum CatalogProductSource {
   HUBSPOT
   ZUPER
   ZOHO
-  QUICKBOOKS
 }
 
 enum TransactionType {
@@ -738,8 +737,6 @@ model EquipmentSku {
   hubspotProductId String?
   zuperItemId      String?
   zohoItemId  String?           // Zoho Inventory item_id for PO line item matching
-  quickbooksItemId String?      // QuickBooks CatalogProduct externalId link
-
   canonicalBrand  String?
   canonicalModel  String?
   canonicalKey    String?
@@ -765,7 +762,6 @@ model EquipmentSku {
   @@index([hubspotProductId])
   @@index([zuperItemId])
   @@index([zohoItemId])
-  @@index([quickbooksItemId])
   @@index([canonicalKey])
   @@index([canonicalBrand, canonicalModel])
 }
@@ -1049,7 +1045,6 @@ model PendingCatalogPush {
   zohoItemId       String?
   hubspotProductId String?
   zuperItemId      String?
-  quickbooksItemId String?
   // Catalog rebuild additions
   canonicalKey      String?
   source            String?
