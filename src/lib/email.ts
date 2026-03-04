@@ -1859,13 +1859,19 @@ export async function sendPortalEmail(params: {
   to: string;
   subject: string;
   html: string;
+  /** Optional: send from this user's Workspace account (e.g. the rep who clicked Invite) */
+  senderEmail?: string;
+  senderName?: string;
 }): Promise<{ success: boolean; error?: string }> {
   // Strip HTML tags for plain-text fallback
   const text = params.html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 
-  // Use a portal-specific sender (customer-facing)
-  const portalSender = process.env.PORTAL_SENDER_EMAIL || "scheduling@photonbrothers.com";
-  const portalFrom = `Photon Brothers <${portalSender}>`;
+  // Use the provided sender (rep's email), or fall back to portal-specific sender
+  const portalSender = params.senderEmail
+    || process.env.PORTAL_SENDER_EMAIL
+    || undefined; // fall through to default Google Workspace sender
+  const displayName = params.senderName || "Photon Brothers";
+  const portalFrom = portalSender ? `${displayName} <${portalSender}>` : undefined;
 
   return sendEmailMessage({
     to: params.to,
@@ -1874,7 +1880,7 @@ export async function sendPortalEmail(params: {
     text,
     debugFallbackTitle: `PORTAL EMAIL to ${params.to}`,
     debugFallbackBody: text,
-    fromOverride: portalFrom,
-    senderEmailOverride: portalSender,
+    ...(portalFrom ? { fromOverride: portalFrom } : {}),
+    ...(portalSender ? { senderEmailOverride: portalSender } : {}),
   });
 }

@@ -102,6 +102,8 @@ export async function POST(request: NextRequest) {
         to: body.customerEmail,
         subject: "Schedule Your Site Survey - Photon Brothers",
         html,
+        senderEmail: session.user.email!,
+        senderName: session.user.name || undefined,
       });
 
       emailSent = result.success;
