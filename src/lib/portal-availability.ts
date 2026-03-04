@@ -27,6 +27,23 @@ const MIN_LEAD_HOURS = 48;
 const SLOT_HMAC_SECRET =
   process.env.PORTAL_SLOT_HMAC_SECRET || process.env.NEXTAUTH_SECRET || "portal-dev-secret";
 
+/**
+ * Location aliases — same mapping the internal scheduler uses.
+ * e.g. "Centennial" crew availability is stored as "DTC".
+ */
+const LOCATION_ALIASES: Record<string, string[]> = {
+  Westminster: ["Westminster"],
+  Centennial: ["Centennial", "DTC"],
+  DTC: ["DTC", "Centennial"],
+  "Colorado Springs": ["Colorado Springs"],
+  "San Luis Obispo": ["San Luis Obispo", "SLO"],
+  Camarillo: ["Camarillo", "San Luis Obispo", "SLO"],
+};
+
+function getLocationMatches(location: string): string[] {
+  return LOCATION_ALIASES[location] || [location];
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -88,25 +105,28 @@ export async function getPortalAvailability(
   // Lead-time cutoff: slots before this UTC instant are unavailable
   const leadCutoff = new Date(now.getTime() + MIN_LEAD_HOURS * 60 * 60 * 1000);
 
+  // Resolve location aliases (e.g. "Centennial" → ["Centennial", "DTC"])
+  const locations = getLocationMatches(pbLocation);
+
   // ----- Load data in parallel -----
   const [crewAvailabilities, bookedSlots, overrides] = await Promise.all([
-    // Active survey availabilities at this location
+    // Active survey availabilities at this location (including aliases)
     prisma.crewAvailability.findMany({
       where: {
         isActive: true,
         jobType: "survey",
-        location: pbLocation,
+        location: { in: locations },
         crewMember: { isActive: true },
       },
       include: {
         crewMember: { select: { id: true, name: true, maxDailyJobs: true } },
       },
     }),
-    // Booked slots in the date range
+    // Booked slots in the date range (including aliases)
     prisma.bookedSlot.findMany({
       where: {
         date: { gte: startDate, lte: endDate },
-        location: pbLocation,
+        location: { in: locations },
       },
     }),
     // Availability overrides in the date range

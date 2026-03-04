@@ -69,8 +69,9 @@ export async function POST(request: NextRequest) {
   // Generate token
   const { raw, hash } = generateToken();
 
-  // Build portal URL
-  const baseUrl = process.env.NEXTAUTH_URL
+  // Build portal URL — prefer custom domain for customer-facing links
+  const baseUrl = process.env.PORTAL_BASE_URL
+    || process.env.NEXTAUTH_URL
     || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
   const portalUrl = `${baseUrl}/portal/survey/${raw}`;
 
@@ -108,8 +109,9 @@ export async function POST(request: NextRequest) {
           }),
         );
 
+        const fromEmail = process.env.PORTAL_FROM_EMAIL || "scheduling@photonbrothers.com";
         await resend.emails.send({
-          from: process.env.RESEND_FROM_EMAIL || "Photon Brothers <notifications@photonbrothers.com>",
+          from: `Photon Brothers <${fromEmail}>`,
           to: body.customerEmail,
           subject: "Schedule Your Site Survey — Photon Brothers",
           html,

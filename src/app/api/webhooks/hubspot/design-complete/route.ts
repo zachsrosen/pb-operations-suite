@@ -24,6 +24,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { waitUntil } from "@vercel/functions";
 import { prisma, logActivity } from "@/lib/db";
 import { validateHubSpotWebhook } from "@/lib/hubspot-webhook-auth";
+import { getDealProperties } from "@/lib/hubspot";
 import { runDesignCompletePipeline } from "@/lib/bom-pipeline";
 import { acquirePipelineLock, DuplicateRunError } from "@/lib/bom-pipeline-lock";
 import { PIPELINE_ACTOR } from "@/lib/actor-context";
@@ -173,11 +174,28 @@ export async function POST(req: NextRequest) {
     if (event.subscriptionType !== "deal.propertyChange") continue;
     if (event.propertyName !== "dealstage") continue;
 
-    // Guard: check stage→trigger mapping
-    if (!event.propertyValue || !stageConfig.has(event.propertyValue)) continue;
-
     const dealId = String(event.objectId);
-    const trigger: BomPipelineTrigger = stageConfig.get(event.propertyValue)!;
+
+    // ── 5a. Fetch actual deal stage from HubSpot (don't trust event.propertyValue) ──
+    // HubSpot webhook propertyValue has been observed to send incorrect stage IDs.
+    // We fetch the deal's live dealstage to determine the correct trigger.
+    const dealProps = await getDealProperties(dealId, ["dealstage"]);
+    const actualStage = dealProps?.dealstage ?? null;
+
+    if (!actualStage || !stageConfig.has(actualStage)) {
+      if (actualStage) {
+        console.log(`[design-complete] Deal ${dealId} actual stage ${actualStage} not in config — skipping`);
+      } else {
+        console.warn(`[design-complete] Could not fetch actual stage for deal ${dealId} — skipping`);
+      }
+      continue;
+    }
+
+    if (event.propertyValue !== actualStage) {
+      console.warn(`[design-complete] Deal ${dealId}: webhook reported stage ${event.propertyValue} but actual stage is ${actualStage} — using actual`);
+    }
+
+    const trigger: BomPipelineTrigger = stageConfig.get(actualStage)!;
 
     // ── 5b. Skip if pipeline already succeeded/partial for this deal+trigger (prevent re-runs) ──
     const completedRun = await prisma.bomPipelineRun.findFirst({
@@ -218,6 +236,8 @@ export async function POST(req: NextRequest) {
           dealId,
           eventId: event.eventId,
           trigger,
+          actualStage: actualStage,
+          webhookReportedStage: event.propertyValue ?? null,
         },
         requestPath: "/api/webhooks/hubspot/design-complete",
         requestMethod: "POST",
