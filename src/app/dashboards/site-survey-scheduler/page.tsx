@@ -3081,8 +3081,8 @@ export default function SiteSurveySchedulerPage() {
                     setPortalInviteSending(true);
                     setPortalInviteResult(null);
                     try {
-                      // Parse customer name from project name (format: "Last, First | Address")
-                      const namePart = portalInviteProject.name.split("|")[0]?.trim() || portalInviteProject.name;
+                      // Parse customer name from project name (format: "PROJ-XXXX | Last, First | Address")
+                      const namePart = getCustomerName(portalInviteProject.name);
                       const res = await fetch("/api/portal/survey/invite", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
