@@ -337,6 +337,8 @@ export default function SiteSurveySchedulerPage() {
   const [portalInviteSending, setPortalInviteSending] = useState(false);
   const [portalInviteResult, setPortalInviteResult] = useState<{ success: boolean; message: string } | null>(null);
   const [portalInviteStatuses, setPortalInviteStatuses] = useState<Record<string, string>>({});
+  const [portalInviteIds, setPortalInviteIds] = useState<Record<string, string>>({}); // dealId → inviteId
+  const [cancellingInvite, setCancellingInvite] = useState<string | null>(null); // dealId being cancelled
   const [portalInviteLoadingEmail, setPortalInviteLoadingEmail] = useState(false);
 
   /* ---- Zuper integration ---- */
@@ -645,13 +647,16 @@ export default function SiteSurveySchedulerPage() {
       .then((res) => (res.ok ? res.json() : { invites: [] }))
       .then((data) => {
         const statuses: Record<string, string> = {};
+        const ids: Record<string, string> = {};
         for (const inv of data.invites || []) {
-          // Keep the most recent invite status per deal
+          // Keep the most recent invite per deal
           if (!statuses[inv.dealId]) {
             statuses[inv.dealId] = inv.status;
+            ids[inv.dealId] = inv.id;
           }
         }
         setPortalInviteStatuses(statuses);
+        setPortalInviteIds(ids);
       })
       .catch(() => { /* non-critical */ });
   }, [projects]);
@@ -795,6 +800,28 @@ export default function SiteSurveySchedulerPage() {
     if (!project) return "Only the scheduler or a manager can modify this survey";
     return `Scheduled by ${project.scheduledBy || "another user"} — contact a manager to modify`;
   }, []);
+
+  // Cancel a portal invite
+  const cancelPortalInvite = useCallback(async (dealId: string) => {
+    const inviteId = portalInviteIds[dealId];
+    if (!inviteId || cancellingInvite) return;
+    setCancellingInvite(dealId);
+    try {
+      const res = await fetch(`/api/portal/survey/invites?id=${inviteId}`, { method: "DELETE" });
+      if (res.ok) {
+        setPortalInviteStatuses((prev) => { const next = { ...prev }; delete next[dealId]; return next; });
+        setPortalInviteIds((prev) => { const next = { ...prev }; delete next[dealId]; return next; });
+        showToast("Invite cancelled");
+      } else {
+        const data = await res.json().catch(() => null);
+        showToast(data?.error || "Failed to cancel invite", "error");
+      }
+    } catch {
+      showToast("Failed to cancel invite", "error");
+    } finally {
+      setCancellingInvite(null);
+    }
+  }, [portalInviteIds, cancellingInvite, showToast]);
 
   const openCancelModal = useCallback((project: SurveyProject) => {
     if (!canModifyProjectSchedule(project)) {
@@ -2087,21 +2114,31 @@ export default function SiteSurveySchedulerPage() {
                             Invite
                           </button>
                         ) : (
-                          <span
-                            className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                              portalInviteStatuses[project.id] === "SCHEDULED"
-                                ? "bg-green-500/20 text-green-400"
+                          <span className="inline-flex items-center gap-1">
+                            <span
+                              className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                                portalInviteStatuses[project.id] === "SCHEDULED"
+                                  ? "bg-green-500/20 text-green-400"
+                                  : portalInviteStatuses[project.id] === "PENDING"
+                                    ? "bg-orange-500/20 text-orange-400"
+                                    : "bg-zinc-500/20 text-muted"
+                              }`}
+                              title={`Portal invite: ${portalInviteStatuses[project.id]}`}
+                            >
+                              {portalInviteStatuses[project.id] === "SCHEDULED"
+                                ? "Booked"
                                 : portalInviteStatuses[project.id] === "PENDING"
-                                  ? "bg-orange-500/20 text-orange-400"
-                                  : "bg-zinc-500/20 text-muted"
-                            }`}
-                            title={`Portal invite: ${portalInviteStatuses[project.id]}`}
-                          >
-                            {portalInviteStatuses[project.id] === "SCHEDULED"
-                              ? "Booked"
-                              : portalInviteStatuses[project.id] === "PENDING"
-                                ? "Invited"
-                                : portalInviteStatuses[project.id]}
+                                  ? "Invited"
+                                  : portalInviteStatuses[project.id]}
+                            </span>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); cancelPortalInvite(project.id); }}
+                              disabled={cancellingInvite === project.id}
+                              className="text-[10px] text-muted hover:text-red-400 disabled:opacity-50"
+                              title="Cancel invite"
+                            >
+                              {cancellingInvite === project.id ? "..." : "\u00d7"}
+                            </button>
                           </span>
                         )}
                       </div>
@@ -2523,21 +2560,31 @@ export default function SiteSurveySchedulerPage() {
                                       </button>
                                     )}
                                     {portalInviteStatuses[project.id] && (
-                                      <span
-                                        className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                                          portalInviteStatuses[project.id] === "SCHEDULED"
-                                            ? "bg-green-500/20 text-green-400"
+                                      <span className="inline-flex items-center gap-1">
+                                        <span
+                                          className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                                            portalInviteStatuses[project.id] === "SCHEDULED"
+                                              ? "bg-green-500/20 text-green-400"
+                                              : portalInviteStatuses[project.id] === "PENDING"
+                                                ? "bg-orange-500/20 text-orange-400"
+                                                : "bg-zinc-500/20 text-muted"
+                                          }`}
+                                          title={`Portal invite: ${portalInviteStatuses[project.id]}`}
+                                        >
+                                          {portalInviteStatuses[project.id] === "SCHEDULED"
+                                            ? "Booked"
                                             : portalInviteStatuses[project.id] === "PENDING"
-                                              ? "bg-orange-500/20 text-orange-400"
-                                              : "bg-zinc-500/20 text-muted"
-                                        }`}
-                                        title={`Portal invite: ${portalInviteStatuses[project.id]}`}
-                                      >
-                                        {portalInviteStatuses[project.id] === "SCHEDULED"
-                                          ? "Booked"
-                                          : portalInviteStatuses[project.id] === "PENDING"
-                                            ? "Invited"
-                                            : portalInviteStatuses[project.id]}
+                                              ? "Invited"
+                                              : portalInviteStatuses[project.id]}
+                                        </span>
+                                        <button
+                                          onClick={(e) => { e.stopPropagation(); cancelPortalInvite(project.id); }}
+                                          disabled={cancellingInvite === project.id}
+                                          className="text-[10px] text-muted hover:text-red-400 disabled:opacity-50"
+                                          title="Cancel invite"
+                                        >
+                                          {cancellingInvite === project.id ? "..." : "\u00d7"}
+                                        </button>
                                       </span>
                                     )}
                                   </>
