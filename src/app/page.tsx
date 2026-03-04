@@ -8,6 +8,7 @@ import { queryKeys } from "@/lib/query-keys";
 
 import { formatMoney } from "@/lib/format";
 import { STAGE_COLORS } from "@/lib/constants";
+import { StatCard } from "@/components/ui/MetricCard";
 import { SkeletonSection } from "@/components/ui/Skeleton";
 import { LiveIndicator } from "@/components/ui/LiveIndicator";
 import { UserMenu } from "@/components/UserMenu";
@@ -195,6 +196,7 @@ function computeStats(projects: ProjectRecord[]): Stats {
 }
 
 export default function Home() {
+  const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
   const [userRole, setUserRole] = useState<string | null>(null);
 
   const isMac = useIsMac();
@@ -283,7 +285,36 @@ export default function Home() {
 
   const { connected, reconnecting } = useSSE(null, { cacheKeyFilter: "projects" });
 
-  const stats = useMemo(() => computeStats(rawProjects), [rawProjects]);
+  // All locations (from unfiltered data)
+  const allLocations = useMemo(
+    () =>
+      [...new Set(rawProjects.map((p) => p.pbLocation))]
+        .filter((l) => l && l !== "Unknown")
+        .sort(),
+    [rawProjects]
+  );
+
+  // Unfiltered stats for location cards (always show full counts)
+  const unfilteredStats = useMemo(() => computeStats(rawProjects), [rawProjects]);
+
+  // Filtered projects & stats
+  const filteredProjects = useMemo(() => {
+    if (selectedLocations.length === 0) return rawProjects;
+    const locSet = new Set(selectedLocations);
+    return rawProjects.filter((p) => locSet.has(p.pbLocation));
+  }, [rawProjects, selectedLocations]);
+
+  const stats = useMemo(() => computeStats(filteredProjects), [filteredProjects]);
+
+  const toggleLocation = useCallback((loc: string) => {
+    setSelectedLocations((prev) =>
+      prev.includes(loc) ? prev.filter((l) => l !== loc) : [...prev, loc]
+    );
+  }, []);
+
+  const clearLocations = useCallback(() => {
+    setSelectedLocations([]);
+  }, []);
 
   const visibleSuites = useMemo(() => {
     if (!userRole) return [];
@@ -417,6 +448,125 @@ export default function Home() {
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-8">
+        {/* Active Filter Banner */}
+        {selectedLocations.length > 0 && (
+          <div className="mb-4 flex items-center gap-2 px-3 py-2 bg-orange-500/10 border border-orange-500/30 rounded-lg animate-fadeIn">
+            <svg className="w-4 h-4 text-orange-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+            </svg>
+            <span className="text-sm text-orange-400 flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span>Filtered:</span>
+              <span className="font-medium">{selectedLocations.join(", ")}</span>
+            </span>
+            <button
+              onClick={clearLocations}
+              className="ml-auto text-xs text-orange-400/70 hover:text-orange-300 underline"
+            >
+              Clear
+            </button>
+          </div>
+        )}
+
+        {/* Stats Grid */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8 stagger-grid">
+          <StatCard
+            label="Active Projects"
+            value={loading ? null : stats?.totalProjects ?? null}
+            subtitle={
+              !loading && stats?.totalValue
+                ? `${formatMoney(stats.totalValue)} pipeline`
+                : null
+            }
+            color="orange"
+          />
+          <StatCard
+            label="Pipeline Value"
+            value={
+              loading
+                ? null
+                : stats?.totalValue
+                  ? `$${(stats.totalValue / 1000000).toFixed(1)}M`
+                  : null
+            }
+            color="green"
+          />
+          <StatCard
+            label="PE Projects"
+            value={loading ? null : stats?.peCount ?? null}
+            subtitle={
+              !loading && stats?.peValue ? formatMoney(stats.peValue) : null
+            }
+            color="emerald"
+          />
+          <StatCard
+            label="Ready To Build"
+            value={loading ? null : stats?.rtbCount ?? null}
+            subtitle={
+              !loading && stats?.rtbValue ? formatMoney(stats.rtbValue) : null
+            }
+            color="blue"
+          />
+        </div>
+
+        {/* Location Filter */}
+        {loading ? (
+          <SkeletonSection rows={2} />
+        ) : (
+          allLocations.length > 0 && (
+            <div className="bg-gradient-to-br from-surface-elevated/85 via-surface/70 to-surface-2/55 border border-t-border/80 rounded-xl p-6 mb-8 animate-fadeIn shadow-card backdrop-blur-sm">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold">
+                  Projects by Location
+                  {selectedLocations.length > 0 && (
+                    <span className="text-sm text-orange-400 font-normal ml-2">
+                      ({selectedLocations.length} filtered)
+                    </span>
+                  )}
+                </h2>
+                {selectedLocations.length > 0 && (
+                  <button
+                    onClick={clearLocations}
+                    className="text-xs text-muted hover:text-foreground underline transition-colors"
+                  >
+                    Clear filter
+                  </button>
+                )}
+              </div>
+              <p className="text-xs text-muted mb-3">Click a location to filter all data</p>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4 stagger-grid">
+                {allLocations.map((location) => {
+                  const count = unfilteredStats.locationCounts[location] || 0;
+                  const value = unfilteredStats.locationValues[location];
+                  const isSelected = selectedLocations.includes(location);
+                  return (
+                    <button
+                      key={location}
+                      onClick={() => toggleLocation(location)}
+                      className={`rounded-lg p-4 text-center transition-all cursor-pointer border ${
+                        isSelected
+                          ? "bg-orange-500/15 border-orange-500/50 ring-1 ring-orange-500/30 scale-[1.02]"
+                          : selectedLocations.length > 0
+                            ? "bg-surface-2/30 border-transparent hover:bg-skeleton opacity-60 hover:opacity-100"
+                            : "bg-skeleton border-transparent hover:bg-surface-2/70"
+                      }`}
+                    >
+                      <div className={`text-2xl font-bold ${isSelected ? "text-orange-400" : "text-foreground"}`}>
+                        {count}
+                      </div>
+                      <div className={`text-sm ${isSelected ? "text-orange-300" : "text-muted"}`}>{location}</div>
+                      {value != null && (
+                        <div className="text-xs text-orange-400 mt-0.5">
+                          {formatMoney(value)}
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )
+        )}
+
         {/* Pipeline by Stage */}
         {loading ? (
           <SkeletonSection />

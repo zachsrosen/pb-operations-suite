@@ -3726,7 +3726,10 @@ export default function SchedulerPage() {
           {revenueSidebarTab === "weekly" && (
           <>
           <div className="flex-1 p-2 space-y-0.5">
-            {weeklyRevenueSummary.map((week, i) => {
+            {weeklyRevenueSummary.filter((week) => {
+              const hasAnyData = week.scheduled.count > 0 || week.completed.count > 0 || week.overdue.count > 0 || week.tentative.count > 0;
+              return hasAnyData || week.isCurrent;
+            }).map((week, i) => {
               const hasSched = week.scheduled.count > 0;
               const hasComp = week.completed.count > 0;
               const hasIncomplete = week.overdue.count > 0;
@@ -3857,7 +3860,10 @@ export default function SchedulerPage() {
           {revenueSidebarTab === "monthly" && (
           <>
           <div className="flex-1 p-2 space-y-0.5">
-            {monthlyRevenueSummary.map((month, i) => {
+            {monthlyRevenueSummary.filter((month) => {
+              const hasAnyData = month.scheduled.count > 0 || month.completed.count > 0 || month.overdue.count > 0 || month.tentative.count > 0;
+              return hasAnyData || month.isCurrent;
+            }).map((month, i) => {
               const hasSched = month.scheduled.count > 0;
               const hasComp = month.completed.count > 0;
               const hasIncomplete = month.overdue.count > 0;

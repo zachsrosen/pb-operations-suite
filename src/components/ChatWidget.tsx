@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import { usePathname } from "next/navigation";
 
 interface ChatMessage {
   role: "user" | "assistant";
@@ -12,7 +13,10 @@ interface ChatWidgetProps {
   projectId?: string;
 }
 
+const HIDDEN_PATHS = ["/dashboards/scheduler", "/dashboards/construction-scheduler", "/dashboards/site-survey-scheduler", "/dashboards/inspection-scheduler"];
+
 export default function ChatWidget({ dealId, projectId }: ChatWidgetProps) {
+  const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -54,6 +58,8 @@ export default function ChatWidget({ dealId, projectId }: ChatWidgetProps) {
       setLoading(false);
     }
   }
+
+  if (HIDDEN_PATHS.some((p) => pathname?.startsWith(p))) return null;
 
   return (
     <>
