@@ -5,7 +5,7 @@ import { ReactNode, useCallback } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { ThemeToggle } from "./ThemeToggle";
 import PhotonBrothersBadge from "./PhotonBrothersBadge";
-import ChatWidget from "./ChatWidget";
+
 
 // Maps dashboard paths to their parent suite
 const SUITE_MAP: Record<string, { href: string; label: string }> = {
@@ -275,7 +275,6 @@ export default function DashboardShell({
         </div>
       </header>
       <main className={`${containerClass} py-6`}>{children}</main>
-      <ChatWidget dealId={dealId} />
     </div>
   );
 }

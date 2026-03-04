@@ -1324,3 +1324,31 @@ model OutboxEvent {
   @@index([status, nextRetryAt])
   @@index([inviteId])
 }
+
+// ===========================================
+// HUBSPOT SYNC RUNS (Bulk Operations)
+// ===========================================
+
+model HubSpotSyncRun {
+  id            String    @id @default(cuid())
+  tokenHash     String    @unique           // SHA-256 of HMAC token — idempotency key
+  operation     String                      // "deal-line-item-sync" | "hubspot-product-bulk-sync"
+  operationId   String                      // dealId or "all"
+  status        String    @default("RUNNING") // "RUNNING" | "COMPLETED" | "FAILED"
+  inputHash     String                      // changesHash from preview
+  cursor        String?                     // last processed ID for chunked runs
+  targetIds     Json?                       // frozen set of target IDs for chunked bulk runs
+  outcomes      Json?
+  updatedAt     DateTime  @updatedAt        // heartbeat — updated each chunk/item for stale lock detection
+  itemsCreated  Int       @default(0)
+  itemsSkipped  Int       @default(0)
+  itemsFailed   Int       @default(0)
+  executedBy    String
+  createdAt     DateTime  @default(now())
+  completedAt   DateTime?
+
+  // Supports mutual exclusion queries + partial unique index in migration SQL
+  @@index([operation, operationId, status])
+  @@index([executedBy])
+  @@index([createdAt])
+}

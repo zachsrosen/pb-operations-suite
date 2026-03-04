@@ -8,15 +8,11 @@ import { queryKeys } from "@/lib/query-keys";
 
 import { formatMoney } from "@/lib/format";
 import { STAGE_COLORS } from "@/lib/constants";
-import { StatCard } from "@/components/ui/MetricCard";
 import { SkeletonSection } from "@/components/ui/Skeleton";
 import { LiveIndicator } from "@/components/ui/LiveIndicator";
 import { UserMenu } from "@/components/UserMenu";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { prefetchDashboard } from "@/lib/prefetch";
-import { NLSearchBar } from "@/components/ui/NLSearchBar";
-import { AnomalyInsights } from "@/components/ui/AnomalyInsights";
-import type { ProjectFilterSpec } from "@/lib/ai";
 import PhotonBrothersBadge from "@/components/PhotonBrothersBadge";
 import { canAccessRoute, type UserRole } from "@/lib/role-permissions";
 
@@ -165,43 +161,6 @@ interface ProjectRecord {
   isRtb: boolean;
 }
 
-type PipelineFilter = "all" | "pe" | "rtb";
-
-function applyAISpecToProjects(projects: ProjectRecord[], spec: ProjectFilterSpec | null): ProjectRecord[] {
-  if (!spec) return projects;
-
-  let result = [...projects];
-
-  if (spec.locations?.length) {
-    const locationSet = new Set(spec.locations.map((location) => location.toLowerCase()));
-    result = result.filter((project) => locationSet.has(project.pbLocation.toLowerCase()));
-  }
-
-  if (spec.stages?.length) {
-    const stageSet = new Set(spec.stages.map((stage) => stage.toLowerCase()));
-    result = result.filter((project) => stageSet.has(project.stage.toLowerCase()));
-  }
-
-  if (spec.is_pe !== undefined) {
-    result = result.filter((project) => project.isParticipateEnergy === spec.is_pe);
-  }
-
-  if (spec.is_rtb !== undefined) {
-    result = result.filter((project) => project.isRtb === spec.is_rtb);
-  }
-
-  if (typeof spec.min_amount === "number") {
-    const minAmount = spec.min_amount;
-    result = result.filter((project) => project.amount >= minAmount);
-  }
-
-  if (typeof spec.max_amount === "number") {
-    const maxAmount = spec.max_amount;
-    result = result.filter((project) => project.amount <= maxAmount);
-  }
-
-  return result;
-}
 
 function computeStats(projects: ProjectRecord[]): Stats {
   const totalValue = projects.reduce((s, p) => s + p.amount, 0);
@@ -236,10 +195,6 @@ function computeStats(projects: ProjectRecord[]): Stats {
 }
 
 export default function Home() {
-  const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
-  const [pipelineFilter, setPipelineFilter] = useState<PipelineFilter>("all");
-  const [aiQuery, setAiQuery] = useState("");
-  const [aiSpec, setAiSpec] = useState<ProjectFilterSpec | null>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
 
   const isMac = useIsMac();
@@ -328,112 +283,7 @@ export default function Home() {
 
   const { connected, reconnecting } = useSSE(null, { cacheKeyFilter: "projects" });
 
-  // All locations (from unfiltered data)
-  const allLocations = useMemo(
-    () =>
-      [...new Set(rawProjects.map((p) => p.pbLocation))]
-        .filter((l) => l && l !== "Unknown")
-        .sort(),
-    [rawProjects]
-  );
-
-  // Unfiltered stats for location cards (always show full counts)
-  const unfilteredStats = useMemo(() => computeStats(rawProjects), [rawProjects]);
-
-  // Filtered projects & stats — instant, no API call
-  const filteredProjects = useMemo(() => {
-    let filtered = rawProjects;
-
-    if (selectedLocations.length > 0) {
-      const locSet = new Set(selectedLocations);
-      filtered = filtered.filter((p) => locSet.has(p.pbLocation));
-    }
-
-    if (pipelineFilter === "pe") {
-      filtered = filtered.filter((p) => p.isParticipateEnergy);
-    } else if (pipelineFilter === "rtb") {
-      filtered = filtered.filter((p) => p.isRtb);
-    }
-
-    filtered = applyAISpecToProjects(filtered, aiSpec);
-
-    return filtered;
-  }, [rawProjects, selectedLocations, pipelineFilter, aiSpec]);
-
-  const stats = useMemo(() => computeStats(filteredProjects), [filteredProjects]);
-
-  const toggleLocation = useCallback((loc: string) => {
-    setSelectedLocations((prev) =>
-      prev.includes(loc) ? prev.filter((l) => l !== loc) : [...prev, loc]
-    );
-  }, []);
-
-  const clearLocations = useCallback(() => {
-    setSelectedLocations([]);
-  }, []);
-
-  const clearAllFilters = useCallback(() => {
-    setSelectedLocations([]);
-    setPipelineFilter("all");
-    setAiQuery("");
-    setAiSpec(null);
-  }, []);
-
-  const locationLookup = useMemo(() => {
-    const map = new Map<string, string>();
-    allLocations.forEach((location) => {
-      map.set(location.toLowerCase(), location);
-    });
-    return map;
-  }, [allLocations]);
-
-  const handleAIFilterSpec = useCallback(
-    (spec: ProjectFilterSpec | null, rawQuery: string) => {
-      setAiSpec(spec);
-
-      if (!rawQuery.trim()) {
-        return;
-      }
-
-      if (!spec) {
-        return;
-      }
-
-      if (spec.locations?.length) {
-        const matchedLocations = Array.from(
-          new Set(
-            spec.locations
-              .map((location) => locationLookup.get(location.toLowerCase()))
-              .filter((location): location is string => Boolean(location))
-          )
-        );
-        if (matchedLocations.length > 0) {
-          setSelectedLocations(matchedLocations);
-        }
-      }
-
-      if (spec.is_pe === true && spec.is_rtb !== true) {
-        setPipelineFilter("pe");
-      } else if (spec.is_rtb === true && spec.is_pe !== true) {
-        setPipelineFilter("rtb");
-      } else if (spec.is_pe === false || spec.is_rtb === false) {
-        setPipelineFilter("all");
-      }
-    },
-    [locationLookup]
-  );
-
-  const aiSummaryChips = useMemo(() => {
-    if (!aiSpec) return [];
-
-    const chips: string[] = [];
-    if (aiSpec.is_pe) chips.push("PE only");
-    if (aiSpec.is_rtb) chips.push("RTB only");
-    if (aiSpec.locations?.length) chips.push(`Locations: ${aiSpec.locations.join(", ")}`);
-    if (aiSpec.stages?.length) chips.push(`Stages: ${aiSpec.stages.join(", ")}`);
-    if (aiSpec.is_overdue) chips.push("Overdue projects");
-    return chips;
-  }, [aiSpec]);
+  const stats = useMemo(() => computeStats(rawProjects), [rawProjects]);
 
   const visibleSuites = useMemo(() => {
     if (!userRole) return [];
@@ -477,7 +327,7 @@ export default function Home() {
     return ROLE_LANDING_CARDS[userRole] || null;
   }, [userRole]);
 
-  const canUseAI = userRole === "ADMIN" || userRole === "OWNER" || userRole === "OPERATIONS_MANAGER" || userRole === "PROJECT_MANAGER";
+
 
   if (!userRole || redirectTarget) {
     return (
@@ -567,199 +417,6 @@ export default function Home() {
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-8">
-        {/* Active Filter Banner */}
-        {canUseAI && (selectedLocations.length > 0 || pipelineFilter !== "all") && (
-          <div className="mb-4 flex items-center gap-2 px-3 py-2 bg-orange-500/10 border border-orange-500/30 rounded-lg animate-fadeIn">
-            <svg className="w-4 h-4 text-orange-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-            </svg>
-            <span className="text-sm text-orange-400 flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span>Filtered:</span>
-              {pipelineFilter !== "all" && (
-                <span className="font-medium">
-                  {pipelineFilter === "pe" ? "PE only" : "RTB only"}
-                </span>
-              )}
-              {selectedLocations.length > 0 && (
-                <span className="font-medium">{selectedLocations.join(", ")}</span>
-              )}
-            </span>
-            <button
-              onClick={clearAllFilters}
-              className="ml-auto text-xs text-orange-400/70 hover:text-orange-300 underline"
-            >
-              Clear
-            </button>
-          </div>
-        )}
-
-        {/* Stats Grid */}
-        {canUseAI && <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8 stagger-grid">
-          <StatCard
-            label="Active Projects"
-            value={loading ? null : stats?.totalProjects ?? null}
-            subtitle={
-              !loading && stats?.totalValue
-                ? `${formatMoney(stats.totalValue)} pipeline`
-                : null
-            }
-            color="orange"
-          />
-          <StatCard
-            label="Pipeline Value"
-            value={
-              loading
-                ? null
-                : stats?.totalValue
-                  ? `$${(stats.totalValue / 1000000).toFixed(1)}M`
-                  : null
-            }
-            color="green"
-          />
-          <StatCard
-            label="PE Projects"
-            value={loading ? null : stats?.peCount ?? null}
-            subtitle={
-              !loading && stats?.peValue ? formatMoney(stats.peValue) : null
-            }
-            color="emerald"
-          />
-          <StatCard
-            label="Ready To Build"
-            value={loading ? null : stats?.rtbCount ?? null}
-            subtitle={
-              !loading && stats?.rtbValue ? formatMoney(stats.rtbValue) : null
-            }
-            color="blue"
-          />
-        </div>}
-
-        {/* Zach's Bot (AI) */}
-        {canUseAI && <div className="bg-gradient-to-br from-surface-elevated/85 via-surface/70 to-surface-2/55 border border-t-border/80 rounded-xl p-6 mb-8 animate-fadeIn shadow-card backdrop-blur-sm">
-          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h2 className="text-lg font-semibold">Zach&apos;s Bot</h2>
-              <p className="text-xs text-muted">
-                AI-assisted filters and anomaly analysis on top of your current homepage.
-              </p>
-            </div>
-            <button
-              onClick={clearAllFilters}
-              className="text-xs text-muted hover:text-foreground underline transition-colors self-start md:self-auto"
-            >
-              Clear all filters
-            </button>
-          </div>
-
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            <span className="text-xs text-muted">Pipeline:</span>
-            {[
-              { value: "all", label: "All" },
-              { value: "pe", label: "PE Only" },
-              { value: "rtb", label: "RTB Only" },
-            ].map((option) => (
-              <button
-                key={option.value}
-                onClick={() => setPipelineFilter(option.value as PipelineFilter)}
-                className={`px-3 py-1.5 rounded-md text-xs border transition-colors ${
-                  pipelineFilter === option.value
-                    ? "bg-orange-500/20 text-orange-400 border-orange-500/40"
-                    : "bg-background text-muted border-t-border hover:text-foreground hover:border-orange-500/40"
-                }`}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="mt-4">
-            <NLSearchBar
-              value={aiQuery}
-              onChange={setAiQuery}
-              onFilterSpec={handleAIFilterSpec}
-              disabled={loading}
-            />
-            {aiSpec?.interpreted_as && (
-              <p className="mt-3 text-xs text-muted">
-                Zach&apos;s Bot: {aiSpec.interpreted_as}
-              </p>
-            )}
-            {aiSummaryChips.length > 0 && (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {aiSummaryChips.map((chip) => (
-                  <span key={chip} className="text-xs px-2 py-1 rounded border border-orange-500/30 bg-orange-500/10 text-orange-400">
-                    {chip}
-                  </span>
-                ))}
-              </div>
-            )}
-            <div className="mt-4">
-              <AnomalyInsights />
-            </div>
-          </div>
-        </div>}
-
-        {/* Location Filter - click to filter all data (ADMIN/OWNER only) */}
-        {canUseAI && (<>
-        {/* Location Filter */}
-        {loading ? (
-          <SkeletonSection rows={2} />
-        ) : (
-          allLocations.length > 0 && (
-            <div className="bg-gradient-to-br from-surface-elevated/85 via-surface/70 to-surface-2/55 border border-t-border/80 rounded-xl p-6 mb-8 animate-fadeIn shadow-card backdrop-blur-sm">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold">
-                  Projects by Location
-                  {selectedLocations.length > 0 && (
-                    <span className="text-sm text-orange-400 font-normal ml-2">
-                      ({selectedLocations.length} filtered)
-                    </span>
-                  )}
-                </h2>
-                {selectedLocations.length > 0 && (
-                  <button
-                    onClick={clearLocations}
-                    className="text-xs text-muted hover:text-foreground underline transition-colors"
-                  >
-                    Clear filter
-                  </button>
-                )}
-              </div>
-              <p className="text-xs text-muted mb-3">Click a location to filter all data</p>
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4 stagger-grid">
-                {allLocations.map((location) => {
-                  const count = unfilteredStats.locationCounts[location] || 0;
-                  const value = unfilteredStats.locationValues[location];
-                  const isSelected = selectedLocations.includes(location);
-                  return (
-                    <button
-                      key={location}
-                      onClick={() => toggleLocation(location)}
-                      className={`rounded-lg p-4 text-center transition-all cursor-pointer border ${
-                        isSelected
-                          ? "bg-orange-500/15 border-orange-500/50 ring-1 ring-orange-500/30 scale-[1.02]"
-                          : selectedLocations.length > 0
-                            ? "bg-surface-2/30 border-transparent hover:bg-skeleton opacity-60 hover:opacity-100"
-                            : "bg-skeleton border-transparent hover:bg-surface-2/70"
-                      }`}
-                    >
-                      <div className={`text-2xl font-bold ${isSelected ? "text-orange-400" : "text-foreground"}`}>
-                        {count}
-                      </div>
-                      <div className={`text-sm ${isSelected ? "text-orange-300" : "text-muted"}`}>{location}</div>
-                      {value != null && (
-                        <div className="text-xs text-orange-400 mt-0.5">
-                          {formatMoney(value)}
-                        </div>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )
-        )}
-
         {/* Pipeline by Stage */}
         {loading ? (
           <SkeletonSection />
@@ -805,7 +462,6 @@ export default function Home() {
             </div>
           )
         )}
-        </>)}
 
         {/* Role-Based Curated Cards */}
         {roleLandingCards && (

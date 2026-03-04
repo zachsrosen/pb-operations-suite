@@ -17,7 +17,8 @@ import { createOrUpdateZuperPart } from "@/lib/zuper-catalog";
 
 const ADMIN_ROLES = ["ADMIN", "OWNER", "MANAGER"];
 const INTERNAL_CATEGORIES = Object.values(EquipmentCategory) as string[];
-const VALID_SYSTEMS = ["INTERNAL", "ZOHO", "HUBSPOT", "ZUPER", "QUICKBOOKS"] as const;
+// QuickBooks deactivated — re-add "QUICKBOOKS" to reactivate
+const VALID_SYSTEMS = ["INTERNAL", "ZOHO", "HUBSPOT", "ZUPER"] as const;
 
 type SystemName = typeof VALID_SYSTEMS[number];
 type SystemOutcomeStatus = "success" | "failed" | "skipped" | "not_implemented";
@@ -391,35 +392,8 @@ export async function POST(
     }
   }
 
-  if (push.systems.includes("QUICKBOOKS")) {
-    if (!quickbooksMatch) {
-      outcomes.QUICKBOOKS = {
-        status: "failed",
-        message: "QuickBooks matching was not executed.",
-      };
-    } else if (quickbooksMatch.status === "matched") {
-      outcomes.QUICKBOOKS = {
-        status: "success",
-        externalId: quickbooksMatch.externalId,
-        message:
-          quickbooksMatch.strategy === "explicit"
-            ? "Linked QuickBooks using selected item."
-            : quickbooksMatch.strategy === "sku"
-            ? "Linked QuickBooks by SKU match."
-            : "Linked QuickBooks by name match.",
-      };
-    } else if (quickbooksMatch.status === "ambiguous") {
-      outcomes.QUICKBOOKS = {
-        status: "failed",
-        message: `QuickBooks ${quickbooksMatch.strategy} match is ambiguous (${quickbooksMatch.candidates.length} candidates).`,
-      };
-    } else {
-      outcomes.QUICKBOOKS = {
-        status: "failed",
-        message: quickbooksMatch.reason,
-      };
-    }
-  }
+  // QuickBooks deactivated — outcomes block removed.
+  // Re-add QUICKBOOKS to VALID_SYSTEMS and restore this block to reactivate.
 
   if (push.systems.includes("ZOHO")) {
     if (basePush.zohoItemId) {

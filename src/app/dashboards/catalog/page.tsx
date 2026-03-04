@@ -360,7 +360,11 @@ export default function CatalogPage() {
     [filtered]
   );
 
+  const [approvingIds, setApprovingIds] = useState<Set<string>>(new Set());
+
   async function handleApprove(id: string) {
+    if (approvingIds.has(id)) return;
+    setApprovingIds((prev) => new Set(prev).add(id));
     try {
       const res = await fetch(`/api/catalog/push-requests/${id}/approve`, { method: "POST" });
       const data = await res.json() as ApproveResponse;
@@ -374,30 +378,45 @@ export default function CatalogPage() {
       }
 
       const summary = data.summary;
+      const outcomes = data.outcomes;
+
+      // Build per-system failure detail for toast
+      const failedDetails = outcomes
+        ? Object.entries(outcomes)
+            .filter(([, o]) => o.status === "failed")
+            .map(([sys, o]) => `${formatSystemLabel(sys)}: ${o.message || "failed"}`)
+        : [];
+
       if (!summary) {
         addToast({ type: isApproved ? "success" : "warning", title: isApproved ? "Request approved" : "Push attempt incomplete" });
       } else if (summary.success === summary.selected) {
         addToast({
           type: "success",
-          title: "Approved. All selected systems completed.",
+          title: "Approved — all systems synced",
           message: `${summary.success}/${summary.selected} systems succeeded.`,
         });
       } else if (summary.success > 0) {
         addToast({
           type: "warning",
-          title: "Approved with partial execution",
-          message: `${summary.success}/${summary.selected} succeeded, ${summary.notImplemented} not implemented, ${summary.skipped} skipped, ${summary.failed} failed.`,
+          title: `Partial sync — ${summary.failed} system${summary.failed === 1 ? "" : "s"} failed`,
+          message: failedDetails.length > 0
+            ? failedDetails.join(". ")
+            : `${summary.success}/${summary.selected} succeeded.`,
         });
       } else {
         addToast({
-          type: "warning",
-          title: isApproved ? "Approved, but no selected systems completed" : "Still pending for retry",
-          message: `${summary.notImplemented} not implemented, ${summary.skipped} skipped, ${summary.failed} failed.`,
+          type: "error",
+          title: "Approval failed — no systems synced",
+          message: failedDetails.length > 0
+            ? failedDetails.join(". ")
+            : `${summary.failed} failed, ${summary.skipped} skipped.`,
         });
       }
       fetchSkus();
     } catch (err: unknown) {
       addToast({ type: "error", title: err instanceof Error ? err.message : "Approval failed" });
+    } finally {
+      setApprovingIds((prev) => { const next = new Set(prev); next.delete(id); return next; });
     }
   }
 
@@ -1235,8 +1254,8 @@ export default function CatalogPage() {
                         ) : (
                           <>
                             <button onClick={() => beginPushEdit(p)} className="text-xs text-cyan-400 hover:text-cyan-300 hover:underline transition-colors">Edit</button>
-                            <button onClick={() => handleApprove(p.id)} className="text-xs text-green-400 hover:text-green-300 hover:underline font-medium transition-colors">Approve</button>
-                            <button onClick={() => handleReject(p.id)} className="text-xs text-red-400 hover:text-red-300 hover:underline transition-colors">Reject</button>
+                            <button onClick={() => handleApprove(p.id)} disabled={approvingIds.has(p.id)} className="text-xs text-green-400 hover:text-green-300 hover:underline font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed">{approvingIds.has(p.id) ? "Approving…" : "Approve"}</button>
+                            <button onClick={() => handleReject(p.id)} disabled={approvingIds.has(p.id)} className="text-xs text-red-400 hover:text-red-300 hover:underline transition-colors disabled:opacity-50">Reject</button>
                           </>
                         )}
                       </div>
