@@ -41,7 +41,7 @@ export async function PUT(
   }
   const { invite } = tokenResult;
 
-  if (invite.status !== "SCHEDULED") {
+  if (invite.status !== "SCHEDULED" && invite.status !== "RESCHEDULED") {
     return NextResponse.json(
       { error: "No existing booking to reschedule" },
       { status: 409 },

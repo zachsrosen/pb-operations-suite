@@ -35,7 +35,7 @@ export async function POST(
   }
   const { invite } = tokenResult;
 
-  if (invite.status !== "SCHEDULED") {
+  if (invite.status !== "SCHEDULED" && invite.status !== "RESCHEDULED") {
     return NextResponse.json({ error: "No active booking to cancel" }, { status: 409 });
   }
 
