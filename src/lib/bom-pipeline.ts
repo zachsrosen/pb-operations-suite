@@ -46,7 +46,7 @@ import { sendPipelineNotification } from "@/lib/email";
 import { PIPELINE_ACTOR } from "@/lib/actor-context";
 import { getAnthropicClient, CLAUDE_MODELS } from "@/lib/anthropic";
 import { acquirePipelineLock, DuplicateRunError } from "@/lib/bom-pipeline-lock";
-import type { BomPipelineStep } from "@/generated/prisma/enums";
+import type { BomPipelineStep, BomPipelineTrigger } from "@/generated/prisma/enums";
 import { renderToBuffer } from "@react-pdf/renderer";
 import { BomPdfDocument } from "@/components/BomPdfDocument";
 import React from "react";
@@ -512,6 +512,7 @@ async function updateRun(
 export async function runDesignCompletePipeline(
   runId: string,
   dealId: string,
+  trigger?: BomPipelineTrigger,
 ): Promise<PipelineResult> {
   const startedAt = Date.now();
   let currentStep: BomPipelineStep = "FETCH_DEAL";
@@ -576,13 +577,13 @@ export async function runDesignCompletePipeline(
         try {
           const { waitUntil } = await import("@vercel/functions");
           waitUntil(
-            runDesignCompletePipeline(newRunId, dealId).catch((retryErr) => {
+            runDesignCompletePipeline(newRunId, dealId, trigger).catch((retryErr) => {
               console.error(`[bom-pipeline] Escalation-triggered retry failed for deal ${dealId}:`, retryErr);
             }),
           );
         } catch {
           // waitUntil not available (e.g., local dev) — run inline
-          runDesignCompletePipeline(newRunId, dealId).catch((retryErr) => {
+          runDesignCompletePipeline(newRunId, dealId, trigger).catch((retryErr) => {
             console.error(`[bom-pipeline] Escalation-triggered retry failed for deal ${dealId}:`, retryErr);
           });
         }
@@ -685,6 +686,7 @@ export async function runDesignCompletePipeline(
         pbLocation: capturedPbLocation,
         snapshotUrl: getBomSnapshotUrl(dealId),
         durationMs,
+        trigger,
         attempt: retryObs.attempt,
         retried: retryObs.retried,
         retryReason: retryObs.retryReason,
@@ -879,6 +881,7 @@ export async function runDesignCompletePipeline(
           pbLocation: dealProps.pbLocation ?? undefined,
           snapshotUrl: getBomSnapshotUrl(dealId),
           durationMs,
+          trigger,
           ...(bomPdfBuffer ? { pdfAttachment: { filename: pdfFilename, content: bomPdfBuffer } } : {}),
         });
       } catch (notifyErr) {
@@ -977,6 +980,7 @@ export async function runDesignCompletePipeline(
         pbLocation: dealProps.pbLocation ?? undefined,
         snapshotUrl: getBomSnapshotUrl(dealId),
         durationMs,
+        trigger,
         ...(bomPdfBuffer ? { pdfAttachment: { filename: pdfFilename, content: bomPdfBuffer } } : {}),
       });
     } catch (notifyErr) {
