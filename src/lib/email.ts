@@ -302,7 +302,7 @@ async function trySendWithGoogleWorkspace(params: {
   }
 
   const creds = getGoogleWorkspaceCredentials();
-  const senderEmail = params.senderEmailOverride || getGoogleWorkspaceSenderEmail();
+  const senderEmail = parseEmailAddress(params.senderEmailOverride) || getGoogleWorkspaceSenderEmail();
   if (!creds) {
     return {
       attempted: true,
