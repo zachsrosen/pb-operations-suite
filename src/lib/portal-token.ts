@@ -10,8 +10,12 @@ import { randomBytes, createHash } from "crypto";
 import { prisma } from "@/lib/db";
 import type { SurveyInviteStatus } from "@/generated/prisma/enums";
 
-// Active statuses — invites that are still actionable
+// Active statuses — invites that are still actionable (used for dedup guard)
 const ACTIVE_STATUSES: SurveyInviteStatus[] = ["PENDING", "SCHEDULED", "RESCHEDULED"];
+
+// Portal-accessible statuses — tokens that can still load the portal
+// Includes CANCELLED so customers can reschedule after cancelling
+const PORTAL_ACCESSIBLE_STATUSES: SurveyInviteStatus[] = ["PENDING", "SCHEDULED", "RESCHEDULED", "CANCELLED"];
 
 /** 32-byte token → 43-char base64url string (no padding) */
 export function generateToken(): { raw: string; hash: string } {
@@ -50,6 +54,7 @@ export type ValidatedInvite = {
   scheduleRecordId: string | null;
   zuperJobUid: string | null;
   accessNotes: string | null;
+  sentBy: string | null;
 };
 
 /**
@@ -83,8 +88,8 @@ export async function validateToken(rawToken: string): Promise<TokenValidation> 
     return { valid: false, reason: "expired" };
   }
 
-  // Check status — only PENDING and SCHEDULED invites are actionable
-  if (!ACTIVE_STATUSES.includes(invite.status)) {
+  // Check status — allow portal access for active + cancelled (for reschedule)
+  if (!PORTAL_ACCESSIBLE_STATUSES.includes(invite.status)) {
     return { valid: false, reason: "inactive" };
   }
 

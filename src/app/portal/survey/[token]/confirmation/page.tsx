@@ -68,7 +68,11 @@ export default function SurveyConfirmationPage() {
 
   const handleCancel = useCallback(async () => {
     if (cancelling) return;
-    if (!confirm("Are you sure you want to cancel your survey?")) return;
+    // Encourage rescheduling over cancellation
+    const confirmed = confirm(
+      "Are you sure you want to cancel your survey?\n\nIf you need a different time, you can reschedule instead."
+    );
+    if (!confirmed) return;
 
     setCancelling(true);
     try {
@@ -127,10 +131,15 @@ export default function SurveyConfirmationPage() {
           </svg>
         </div>
         <h2 className="mb-2 text-lg font-semibold text-foreground">Survey Cancelled</h2>
-        <p className="text-sm text-muted">
-          Your site survey has been cancelled. If you&apos;d like to reschedule,
-          please contact your Photon Brothers representative.
+        <p className="mb-6 text-sm text-muted">
+          Your site survey has been cancelled. Would you like to pick a new time?
         </p>
+        <button
+          onClick={() => router.push(`/portal/survey/${token}`)}
+          className="rounded-lg bg-orange-500 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-orange-600"
+        >
+          Reschedule Survey
+        </button>
       </div>
     );
   }

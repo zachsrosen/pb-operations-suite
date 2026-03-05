@@ -544,6 +544,7 @@ async function firePostRescheduleSideEffects(ctx: {
         tzAbbrev,
         propertyAddress: invite.propertyAddress,
       }),
+      senderEmail: invite.sentBy || undefined,
     });
     console.log(`[portal/reschedule] Confirmation email sent to ${invite.customerEmail}`);
   } catch (err) {
@@ -600,7 +601,7 @@ function buildRescheduleEmailHtml(params: {
   return `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
       <h2 style="color: #f97316;">Your Site Survey Has Been Rescheduled</h2>
-      <p>Hi ${escapeHtml(params.customerName)},</p>
+      <p>Hi ${escapeHtml(extractFirstName(params.customerName))},</p>
       <p>Your site survey has been rescheduled. Here are the updated details:</p>
       <div style="background: #f9fafb; border-radius: 8px; padding: 16px; margin: 16px 0;">
         <p style="margin: 4px 0;"><strong>Date:</strong> ${escapeHtml(params.formattedDate)}</p>
@@ -614,6 +615,14 @@ function buildRescheduleEmailHtml(params: {
       <p style="color: #6b7280; font-size: 12px;">Photon Brothers Solar</p>
     </div>
   `;
+}
+
+/** Extract first name from "Last, First" or "First Last" format */
+function extractFirstName(name: string): string {
+  if (name.includes(",")) {
+    return name.split(",")[1]?.trim().split(" ")[0] || name;
+  }
+  return name.split(" ")[0] || name;
 }
 
 function escapeHtml(str: string): string {

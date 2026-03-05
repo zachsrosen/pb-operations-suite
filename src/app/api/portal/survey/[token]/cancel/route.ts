@@ -162,11 +162,17 @@ export async function POST(
     const responseBody = { status: "cancelled" };
 
     // ----- Fire side effects (best-effort, awaited for durability) -----
+    const baseUrl = process.env.PORTAL_BASE_URL
+      || process.env.NEXTAUTH_URL
+      || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
+    const portalUrl = `${baseUrl}/portal/survey/${token}`;
+
     try {
       await firePostCancelSideEffects({
         invite,
         crewEmail,
         crewName,
+        portalUrl,
       });
     } catch (err) {
       console.error("[portal/cancel] Side effect error (non-fatal):", err);
@@ -200,9 +206,11 @@ async function firePostCancelSideEffects(ctx: {
     scheduledDate: string | null;
     scheduledTime: string | null;
     zuperJobUid: string | null;
+    sentBy: string | null;
   };
   crewEmail: string | null;
   crewName: string | null;
+  portalUrl: string;
 }) {
   const { invite, crewEmail, crewName } = ctx;
   const warnings: string[] = [];
@@ -291,7 +299,9 @@ async function firePostCancelSideEffects(ctx: {
         formattedTime,
         tzAbbrev,
         propertyAddress: invite.propertyAddress,
+        portalUrl: ctx.portalUrl,
       }),
+      senderEmail: invite.sentBy || undefined,
     });
     console.log(`[portal/cancel] Cancellation email sent to ${invite.customerEmail}`);
   } catch (err) {
@@ -344,23 +354,35 @@ function buildCancellationEmailHtml(params: {
   formattedTime: string;
   tzAbbrev: string;
   propertyAddress: string;
+  portalUrl: string;
 }): string {
   return `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
       <h2 style="color: #f97316;">Your Site Survey Has Been Cancelled</h2>
-      <p>Hi ${escapeHtml(params.customerName)},</p>
+      <p>Hi ${escapeHtml(extractFirstName(params.customerName))},</p>
       <p>Your site survey has been cancelled. Here were the original details:</p>
       <div style="background: #f9fafb; border-radius: 8px; padding: 16px; margin: 16px 0;">
         <p style="margin: 4px 0;"><strong>Date:</strong> ${escapeHtml(params.formattedDate)}</p>
         ${params.formattedTime ? `<p style="margin: 4px 0;"><strong>Time:</strong> ${escapeHtml(params.formattedTime)} ${escapeHtml(params.tzAbbrev)}</p>` : ""}
         <p style="margin: 4px 0;"><strong>Location:</strong> ${escapeHtml(params.propertyAddress)}</p>
       </div>
-      <p>If you'd like to reschedule, please contact us and we'll find a new time that works for you.</p>
+      <p>If you'd like to reschedule, click the button below to pick a new time:</p>
+      <div style="text-align: center; margin: 24px 0;">
+        <a href="${escapeHtml(params.portalUrl)}" style="display: inline-block; background-color: #f97316; color: #ffffff; font-size: 16px; font-weight: 600; text-decoration: none; border-radius: 8px; padding: 12px 32px;">Reschedule Survey</a>
+      </div>
       <p style="margin-top: 24px;">Thank you for choosing Photon Brothers!</p>
       <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;" />
       <p style="color: #6b7280; font-size: 12px;">Photon Brothers Solar</p>
     </div>
   `;
+}
+
+/** Extract first name from "Last, First" or "First Last" format */
+function extractFirstName(name: string): string {
+  if (name.includes(",")) {
+    return name.split(",")[1]?.trim().split(" ")[0] || name;
+  }
+  return name.split(" ")[0] || name;
 }
 
 function escapeHtml(str: string): string {
