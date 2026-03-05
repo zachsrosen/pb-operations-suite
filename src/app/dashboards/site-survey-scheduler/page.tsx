@@ -388,7 +388,7 @@ export default function SiteSurveySchedulerPage() {
               completionDate: null,
               closeDate: null,
               hubspotUrl: String(d.url || ""),
-              dealOwner: "",
+              dealOwner: String(d.dealOwner || ""),
               isPreSale: true,
             }))
           );
@@ -1747,6 +1747,7 @@ export default function SiteSurveySchedulerPage() {
   }
 
   const todayStr = getTodayStr();
+  const isTentativeOnly = !syncToZuper;
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -2941,22 +2942,25 @@ export default function SiteSurveySchedulerPage() {
               </div>
             </div>
 
-            {/* Zuper Sync Option - only show when scheduling/rescheduling */}
+            {/* Tentative scheduling option - only show when scheduling/rescheduling */}
             {zuperConfigured && (scheduleModal.slot || scheduleModal.isRescheduling) && (
               <div className="mb-4 p-3 bg-surface rounded-lg border border-t-border">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
-                    checked={syncToZuper}
-                    onChange={(e) => setSyncToZuper(e.target.checked)}
+                    checked={isTentativeOnly}
+                    onChange={(e) => {
+                      const nextTentativeOnly = e.target.checked;
+                      setSyncToZuper(!nextTentativeOnly);
+                    }}
                     className="w-4 h-4 rounded border-t-border bg-surface-2 text-cyan-500 focus:ring-cyan-500"
                   />
-                  <span className="text-sm">Sync to Zuper FSM</span>
+                  <span className="text-sm">Tentative only (skip live Zuper sync)</span>
                 </label>
-                <p className={`text-xs mt-2 ${syncToZuper ? "text-cyan-400" : "text-amber-400"}`}>
-                  {syncToZuper
-                    ? "Mode: live sync (writes to Zuper now)."
-                    : "Mode: tentative only (does not sync until confirmed)."}
+                <p className={`text-xs mt-2 ${isTentativeOnly ? "text-amber-400" : "text-cyan-400"}`}>
+                  {isTentativeOnly
+                    ? "Mode: tentative only (does not sync until confirmed)."
+                    : "Mode: live sync (always writes to Zuper now)."}
                 </p>
                 {canUseTestSlot && (
                   <label className="flex items-center gap-2 cursor-pointer mt-2">
@@ -3030,14 +3034,14 @@ export default function SiteSurveySchedulerPage() {
                         : undefined
                     }
                     className={`px-4 py-2 text-sm rounded-lg font-medium disabled:opacity-50 ${
-                      syncToZuper
-                        ? "bg-cyan-600 hover:bg-cyan-700"
-                        : "bg-amber-600 hover:bg-amber-700"
+                      isTentativeOnly
+                        ? "bg-amber-600 hover:bg-amber-700"
+                        : "bg-cyan-600 hover:bg-cyan-700"
                     }`}
                   >
                     {syncingToZuper
                       ? "Syncing..."
-                      : !syncToZuper
+                      : isTentativeOnly
                         ? (scheduleModal.isRescheduling ? "Save Tentative Reschedule" : "Save Tentative")
                         : (scheduleModal.isRescheduling ? "Confirm Reschedule" : "Confirm Schedule")}
                   </button>

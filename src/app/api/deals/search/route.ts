@@ -3,6 +3,7 @@ import { Client } from "@hubspot/api-client";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
 import { requireApiAuth } from "@/lib/api-auth";
 import { STAGE_MAPS } from "@/lib/deals-pipeline";
+import { resolveHubSpotOwnerContact } from "@/lib/hubspot";
 
 const hubspotClient = new Client({
   accessToken: process.env.HUBSPOT_ACCESS_TOKEN,
@@ -138,9 +139,29 @@ export async function GET(request: NextRequest) {
         .slice(0, 20),
     };
 
+    const ownerIds = [...new Set(
+      (response.results || [])
+        .map((deal) => String(deal.properties?.hubspot_owner_id || "").trim())
+        .filter(Boolean)
+    )];
+
+    const ownerNameMap = new Map<string, string>();
+    if (ownerIds.length > 0) {
+      // Resolve owner IDs in sequence to avoid concurrent owner-directory fan-out.
+      for (const ownerId of ownerIds) {
+        try {
+          const owner = await resolveHubSpotOwnerContact(ownerId);
+          if (owner?.name) ownerNameMap.set(ownerId, owner.name);
+        } catch (ownerErr) {
+          console.warn(`[Deals Search] Failed to resolve owner ${ownerId}:`, ownerErr);
+        }
+      }
+    }
+
     const deals = (response.results || []).map((deal) => {
       const props = deal.properties || {};
       const stageId = props.dealstage || "";
+      const ownerId = String(props.hubspot_owner_id || "").trim();
       return {
         id: props.hs_object_id || deal.id,
         name: props.dealname || "Unknown",
@@ -151,6 +172,7 @@ export async function GET(request: NextRequest) {
         city: props.city || "",
         state: props.state || "",
         type: props.project_type || "Solar",
+        dealOwner: ownerNameMap.get(ownerId) || ownerId || "",
         surveyDate: props.site_survey_schedule_date || null,
         surveyStatus: props.site_survey_status || null,
         url: `https://app.hubspot.com/contacts/${portalId}/record/0-3/${props.hs_object_id || deal.id}`,

@@ -1715,7 +1715,7 @@ export async function sendPipelineNotification(params: {
 
   // ── Trigger label ──
   const triggerLabels: Record<string, string> = {
-    WEBHOOK_DESIGN_COMPLETE: "Design Complete",
+    WEBHOOK_DESIGN_COMPLETE: "Permitting & Interconnection",
     WEBHOOK_READY_TO_BUILD: "Ready to Build",
     WEBHOOK_INSTALL_SCHEDULED: "Install Scheduled",
     MANUAL: "Manual",
