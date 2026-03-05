@@ -23,6 +23,7 @@ import {
   pickBestPlanset,
   downloadDrivePdf,
 } from "@/lib/drive-plansets";
+import { handleLookup as zuperJobLookup } from "@/app/api/zuper/jobs/lookup/route";
 
 // Allow up to 2 minutes for AI vision review (planset + photos can be large)
 export const maxDuration = 120;
@@ -230,34 +231,32 @@ function mimeFromFilename(name: string): string {
 const MAX_IMAGE_SIZE = 20 * 1024 * 1024;
 
 // ---------------------------------------------------------------------------
-// Zuper job lookup by deal ID (simplified version of the full lookup route)
+// Zuper job lookup — calls the shared handleLookup directly (no HTTP round-trip,
+// no auth needed). Uses DB cache, paginated Zuper search, deal ID/tag/name match.
 // ---------------------------------------------------------------------------
 
-async function findZuperJobUid(dealId: string): Promise<string | null> {
-  const zuper = new ZuperClient();
-  if (!zuper.isConfigured()) return null;
-
-  // Search recent jobs and find one with matching hubspot_deal_id custom field
-  const result = await zuper.searchJobs({ limit: 200 });
-  if (result.type === "error" || !result.data?.jobs) return null;
-
-  for (const job of result.data.jobs) {
-    if (!job.custom_fields || !Array.isArray(job.custom_fields)) continue;
-    const dealIdField = job.custom_fields.find(
-      (f: { label?: string; name?: string; value?: string }) => {
-        const label = f.label?.toLowerCase() || "";
-        const name = (f as { name?: string }).name?.toLowerCase() || "";
-        return (
-          label === "hubspot deal id" ||
-          label === "hubspot_deal_id" ||
-          name === "hubspot_deal_id" ||
-          name === "hubspot deal id"
-        );
-      },
+async function findZuperJobUid(
+  dealId: string,
+  dealName?: string,
+  category?: string,
+): Promise<string | null> {
+  try {
+    const res = await zuperJobLookup(
+      [dealId],
+      dealName ? [dealName] : [],
+      category || null,
     );
-    if (dealIdField?.value === dealId) {
-      return job.job_uid || null;
+
+    const data = await res.json();
+    const match = data.jobs?.[dealId];
+    if (match?.jobUid) {
+      console.log(
+        `[install-review] Zuper job found: ${match.jobUid} (matched by: ${match.matchedBy}, status: ${match.status})`,
+      );
+      return match.jobUid;
     }
+  } catch (err) {
+    console.warn("[install-review] Zuper lookup failed:", err);
   }
 
   return null;
@@ -289,13 +288,25 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // ── Step 1: Resolve Zuper job UID ──
-  let resolvedJobUid = jobUid || null;
-  if (!resolvedJobUid && dealId) {
-    resolvedJobUid = await findZuperJobUid(dealId);
+  // ── Step 1: Fetch deal properties early (needed for job lookup + planset) ──
+  let properties: Record<string, string | null> | null = null;
+  if (dealId) {
+    properties = await getDealProperties(dealId, DEAL_PROPERTIES);
   }
 
-  // ── Step 2: Fetch photos ──
+  // ── Step 2: Resolve Zuper job UID ──
+  let resolvedJobUid = jobUid || null;
+  if (!resolvedJobUid && dealId) {
+    const dealName = properties?.dealname || undefined;
+    // Try construction jobs first (most likely to have install photos),
+    // then inspection, then any category
+    resolvedJobUid =
+      (await findZuperJobUid(dealId, dealName, "construction")) ||
+      (await findZuperJobUid(dealId, dealName, "inspection")) ||
+      (await findZuperJobUid(dealId, dealName));
+  }
+
+  // ── Step 3: Fetch photos ──
   const zuper = new ZuperClient();
   let photoBuffers: { buffer: Buffer; name: string }[] = [];
 
@@ -392,7 +403,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // ── Step 3: Fetch deal properties + planset ──
+  // ── Step 4: Validate deal properties + planset ──
   if (!dealId) {
     return NextResponse.json(
       { error: "dealId is required to locate the planset" },
@@ -400,7 +411,6 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const properties = await getDealProperties(dealId, DEAL_PROPERTIES);
   if (!properties) {
     return NextResponse.json(
       { error: `Failed to fetch deal ${dealId} from HubSpot` },
@@ -441,7 +451,7 @@ export async function POST(request: NextRequest) {
     selectedFile.id,
   );
 
-  // ── Step 4: Upload planset to Anthropic Files API ──
+  // ── Step 5: Upload planset to Anthropic Files API ──
   const client = getAnthropicClient();
   let anthropicFileId: string | undefined;
 

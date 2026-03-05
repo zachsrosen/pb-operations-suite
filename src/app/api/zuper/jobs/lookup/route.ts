@@ -17,8 +17,8 @@ import { requireApiAuth } from "@/lib/api-auth";
  * Also supports GET with query params for backward compatibility.
  */
 
-// Shared handler for both GET and POST
-async function handleLookup(projectIds: string[], projectNames: string[], category: string | null) {
+// Shared handler for both GET and POST — also exported for direct use by other server code
+export async function handleLookup(projectIds: string[], projectNames: string[], category: string | null) {
   const zuper = new ZuperClient();
 
   if (!zuper.isConfigured()) {
