@@ -343,7 +343,7 @@ setFilterInspectionStatuses([]);
 
   if (loading) {
     return (
-      <DashboardShell title="Inspections" accentColor="orange">
+      <DashboardShell title="Inspections Execution" accentColor="orange">
         <div className="flex items-center justify-center min-h-[400px]">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-orange-500 mx-auto mb-4"></div>
@@ -356,7 +356,7 @@ setFilterInspectionStatuses([]);
 
   if (error) {
     return (
-      <DashboardShell title="Inspections" accentColor="orange">
+      <DashboardShell title="Inspections Execution" accentColor="orange">
         <div className="flex items-center justify-center min-h-[400px]">
           <div className="text-center text-red-500">
             <p className="text-xl mb-2">Error loading data</p>
@@ -383,7 +383,7 @@ setFilterInspectionStatuses([]);
   };
 
   return (
-    <DashboardShell title="Inspections" accentColor="orange">
+    <DashboardShell title="Inspections Execution" accentColor="orange">
       {/* Search and Filters */}
       <div className="flex flex-col gap-4 mb-6">
         <div className="flex items-center gap-3">
@@ -446,19 +446,14 @@ setFilterInspectionStatuses([]);
           <div className="text-xs text-muted">{formatMoney(stats.inspectionPending.reduce((s, p) => s + (p.amount || 0), 0))}</div>
         </div>
         <div className="bg-surface rounded-xl p-4 border border-t-border">
-          <div className="text-2xl font-bold text-emerald-400">{stats.inspectionPassed.length}</div>
-          <div className="text-sm text-muted">Passed</div>
-          <div className="text-xs text-muted">{formatMoney(stats.inspectionPassed.reduce((s, p) => s + (p.amount || 0), 0))}</div>
-        </div>
-        <div className="bg-surface rounded-xl p-4 border border-t-border">
           <div className="text-2xl font-bold text-amber-400">{stats.avgDaysInInspection}d</div>
           <div className="text-sm text-muted">Avg Days Pending</div>
           <div className="text-xs text-muted">{stats.avgTurnaround}d avg turnaround</div>
         </div>
         <div className="bg-surface rounded-xl p-4 border border-t-border">
-          <div className="text-2xl font-bold text-cyan-400">{stats.passRate}%</div>
-          <div className="text-sm text-muted">Pass Rate</div>
-          <div className="text-xs text-muted">{stats.inspectionFailed.length} failed</div>
+          <div className="text-2xl font-bold text-red-400">{stats.inspectionFailed.length}</div>
+          <div className="text-sm text-muted">Failed</div>
+          <div className="text-xs text-muted">{formatMoney(stats.inspectionFailed.reduce((s, p) => s + (p.amount || 0), 0))}</div>
         </div>
       </div>
 

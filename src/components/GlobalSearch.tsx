@@ -50,8 +50,8 @@ const DASHBOARD_LINKS = [
   { name: "Sales Pipeline", path: "/dashboards/sales", description: "Active deals and proposals" },
   { name: "Service Pipeline", path: "/dashboards/service", description: "Service job tracking" },
   { name: "D&R Pipeline", path: "/dashboards/dnr", description: "Detach & Reset projects" },
-  { name: "Construction", path: "/dashboards/construction", description: "Construction status and scheduling" },
-  { name: "Site Survey", path: "/dashboards/site-survey", description: "Site survey scheduling and status" },
+  { name: "Construction Execution", path: "/dashboards/construction", description: "Construction status and scheduling" },
+  { name: "Site Survey Execution", path: "/dashboards/site-survey", description: "Site survey scheduling and status" },
   // Leadership
   { name: "PE Dashboard", path: "/dashboards/pe", description: "Participate Energy tracking" },
   { name: "Command Center", path: "/dashboards/command-center", description: "Real-time executive command center" },
