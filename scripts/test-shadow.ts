@@ -1,6 +1,6 @@
 /**
- * Shadow telemetry test — PROJ-8654 Lingle battery-only BOM
- * Run: CATALOG_LOCKDOWN_MODE=shadow npx tsx scripts/test-shadow.ts
+ * SKU sync test — PROJ-8654 Lingle battery-only BOM
+ * Run: npx tsx scripts/test-shadow.ts
  */
 import "dotenv/config";
 import { syncEquipmentSkus } from "../src/lib/bom-snapshot";
@@ -106,40 +106,32 @@ const bomItems: BomItem[] = [
 ];
 
 async function main() {
-  const mode = process.env.CATALOG_LOCKDOWN_MODE ?? "(not set)";
-  const cats = process.env.CATALOG_LOCKDOWN_CATEGORIES ?? "(all categories)";
-  console.log(`\n🔧 CATALOG_LOCKDOWN_MODE = ${mode}`);
-  console.log(`🔧 CATALOG_LOCKDOWN_CATEGORIES = ${cats}`);
+  const legacy = process.env.CATALOG_SKU_SYNC_LEGACY ?? "false";
+  console.log(`\n🔧 CATALOG_SKU_SYNC_LEGACY = ${legacy}`);
   console.log(`📦 PROJ-8654 Lingle — ${bomItems.length} BOM items\n`);
 
   const result = await syncEquipmentSkus(bomItems);
 
   console.log("═══════════════════════════════════════════");
-  console.log("  SKU SYNC RESULT (direct insert path)");
+  console.log("  SKU SYNC RESULT");
   console.log("═══════════════════════════════════════════");
-  console.log(`  created:  ${result.created}`);
-  console.log(`  updated:  ${result.updated}`);
-  console.log(`  skipped:  ${result.skipped}`);
-  console.log(`  pending:  ${result.pending}`);
+  console.log(`  created:      ${result.created}`);
+  console.log(`  updated:      ${result.updated}`);
+  console.log(`  skipped:      ${result.skipped}`);
+  console.log(`  pending:      ${result.pending}`);
+  console.log(`  zohoMatched:  ${result.zohoMatched}`);
 
-  if (result.shadow) {
+  if (result.items.length > 0) {
     console.log("");
     console.log("───────────────────────────────────────────");
-    console.log("  SHADOW TELEMETRY (what enforced would do)");
+    console.log("  PER-ITEM MATCHING DETAIL");
     console.log("───────────────────────────────────────────");
-    console.log(`  evaluated:     ${result.shadow.evaluated}`);
-    console.log(`  exactMatches:  ${result.shadow.exactMatches}`);
-    console.log(`  ambiguous:     ${result.shadow.ambiguous}`);
-    console.log(`  unmatched:     ${result.shadow.unmatched}`);
-    console.log(`  wouldQueue:    ${result.shadow.wouldQueue}`);
-    console.log("");
-    const matchRate = result.shadow.evaluated > 0
-      ? ((result.shadow.exactMatches / result.shadow.evaluated) * 100).toFixed(1)
-      : "N/A";
-    console.log(`  📊 Match rate: ${matchRate}%`);
-    console.log(`  ⚠️  Would queue ${result.shadow.wouldQueue} items for admin review`);
-  } else {
-    console.log("\n⚠️  No shadow telemetry — mode is not 'shadow'");
+    for (const item of result.items) {
+      const source = item.matchSource.padEnd(8);
+      const action = item.action.padEnd(18);
+      const zoho = item.zohoItemName ? ` → ${item.zohoItemName}` : "";
+      console.log(`  [${source}] ${action} ${item.brand} ${item.model}${zoho}`);
+    }
   }
 
   console.log("═══════════════════════════════════════════\n");

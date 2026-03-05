@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const { created, updated, skipped, pending, shadow } = await syncEquipmentSkus(bom.items);
+    const { created, updated, skipped, pending, zohoMatched, items } = await syncEquipmentSkus(bom.items);
 
     await logSave(
       "succeeded",
@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
         updated,
         skipped,
         pending,
-        ...(shadow ? { shadow } : {}),
+        zohoMatched,
         customer: bom.project?.customer,
         address: bom.project?.address,
         plansetRev: bom.project?.plansetRev,
@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
       200
     );
 
-    return NextResponse.json({ created, updated, skipped, pending, ...(shadow ? { shadow } : {}) });
+    return NextResponse.json({ created, updated, skipped, pending, zohoMatched, items });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await logSave("failed", { reason: "sku_sync_failed", error: message }, 500);

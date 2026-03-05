@@ -14,6 +14,7 @@ import { prisma, logActivity } from "@/lib/db";
 import { EquipmentCategory } from "@/generated/prisma/enums";
 import type { ActorContext } from "@/lib/actor-context";
 import { buildCanonicalKey, canonicalToken } from "@/lib/canonical";
+import { zohoInventory } from "@/lib/zoho-inventory";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -56,10 +57,35 @@ export interface BomData {
   };
 }
 
+export interface SkuSyncItemResult {
+  category: string;
+  brand: string;
+  model: string;
+  matchSource: "zoho" | "internal" | "pending" | "skipped";
+  zohoItemId?: string;
+  zohoItemName?: string;
+  equipmentSkuId?: string;
+  pendingPushId?: string;
+  action: "linked" | "matched" | "created_with_zoho" | "queued_pending" | "skipped";
+}
+
+export interface SkuSyncResult {
+  created: number;
+  updated: number;
+  skipped: number;
+  /** PendingCatalogPush records created/updated for items with no match */
+  pending: number;
+  /** Items matched via Zoho inventory */
+  zohoMatched: number;
+  /** Per-item matching detail for UI display */
+  items: SkuSyncItemResult[];
+}
+
 export interface SnapshotResult {
   id: string;
   version: number;
   createdAt: Date;
+  skuSync?: SkuSyncResult;
 }
 
 // ---------------------------------------------------------------------------
@@ -78,94 +104,11 @@ const INVENTORY_CATEGORIES: Record<string, EquipmentCategory> = {
   MONITORING: "MONITORING",
 };
 
-// ---------------------------------------------------------------------------
-// Shared SKU sync (used by both /api/bom/save and saveBomSnapshot)
-// ---------------------------------------------------------------------------
-
-export interface SkuSyncResult {
-  created: number;
-  updated: number;
-  skipped: number;
-  /** Pending catalog pushes created/updated (lockdown mode only, 0 otherwise) */
-  pending: number;
-  /** Read-only rollout telemetry when lockdown runs in shadow mode. */
-  shadow?: {
-    evaluated: number;
-    exactMatches: number;
-    ambiguous: number;
-    unmatched: number;
-    wouldQueue: number;
-  };
-}
-
-type CatalogLockdownMode = "off" | "shadow" | "enforced";
-
-interface LockdownConfig {
-  mode: CatalogLockdownMode;
-  categories: Set<EquipmentCategory> | null;
-  pendingTtlDays: number;
-}
-
 const DEFAULT_PENDING_PUSH_TTL_DAYS = 90;
 
-function parseLockdownMode(): CatalogLockdownMode {
-  const rawMode = String(process.env.CATALOG_LOCKDOWN_MODE || "")
-    .trim()
-    .toLowerCase();
-
-  if (rawMode === "off" || rawMode === "shadow" || rawMode === "enforced") {
-    return rawMode;
-  }
-
-  const legacyEnabled =
-    String(process.env.CATALOG_LOCKDOWN_ENABLED || "")
-      .trim()
-      .toLowerCase() === "true";
-  return legacyEnabled ? "enforced" : "off";
-}
-
-function parseLockdownCategories(): Set<EquipmentCategory> | null {
-  const raw = String(process.env.CATALOG_LOCKDOWN_CATEGORIES || "").trim();
-  if (!raw) return null;
-
-  const allowed = new Set<EquipmentCategory>();
-  for (const entry of raw.split(",")) {
-    const candidate = entry.trim().toUpperCase();
-    if ((Object.values(EquipmentCategory) as string[]).includes(candidate)) {
-      allowed.add(candidate as EquipmentCategory);
-    }
-  }
-
-  if (allowed.size === 0) {
-    console.warn(
-      "[bom-snapshot] CATALOG_LOCKDOWN_CATEGORIES provided but no valid categories were parsed; lockdown category scope is empty."
-    );
-  }
-
-  return allowed;
-}
-
-function parsePendingTtlDays(): number {
-  const raw = Number(process.env.CATALOG_PENDING_TTL_DAYS);
-  if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_PENDING_PUSH_TTL_DAYS;
-  return Math.min(Math.floor(raw), 3650);
-}
-
-function getLockdownConfig(): LockdownConfig {
-  return {
-    mode: parseLockdownMode(),
-    categories: parseLockdownCategories(),
-    pendingTtlDays: parsePendingTtlDays(),
-  };
-}
-
-function appliesToLockdownCategory(
-  item: ValidSkuItem,
-  categories: Set<EquipmentCategory> | null
-): boolean {
-  if (!categories) return true;
-  return categories.has(item.category as EquipmentCategory);
-}
+// ---------------------------------------------------------------------------
+// Internal types
+// ---------------------------------------------------------------------------
 
 /** Validated item shape after filtering in syncEquipmentSkus. */
 interface ValidSkuItem {
@@ -177,20 +120,47 @@ interface ValidSkuItem {
   unitLabel: string | null;
 }
 
+// ---------------------------------------------------------------------------
+// Shared SKU sync
+// ---------------------------------------------------------------------------
+
+function parsePendingTtlDays(): number {
+  const raw = Number(process.env.CATALOG_PENDING_TTL_DAYS);
+  if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_PENDING_PUSH_TTL_DAYS;
+  return Math.min(Math.floor(raw), 3650);
+}
+
 /**
- * Batch-upsert BOM items into the EquipmentSku table using a single
- * INSERT ... ON CONFLICT per batch (eliminates N+1 query pattern).
+ * Build search terms for Zoho inventory matching.
+ * Same pattern as bom-so-create.ts: model → "brand model" → description.
+ */
+function buildSearchTerms(item: ValidSkuItem): string[] {
+  const name = item.model
+    ? `${item.brand} ${item.model}`
+    : item.description;
+  return [item.model, name, item.description].filter(
+    (t): t is string => !!t && t.trim().length > 1,
+  );
+}
+
+function itemBase(item: ValidSkuItem): Pick<SkuSyncItemResult, "category" | "brand" | "model"> {
+  return { category: item.category, brand: item.brand, model: item.model };
+}
+
+/**
+ * Match BOM items against Zoho Inventory (first) then internal EquipmentSku
+ * catalog. Unmatched items create PendingCatalogPush records for review.
  *
- * When lockdown mode is active (`CATALOG_LOCKDOWN_MODE=shadow|enforced` or
- * legacy `CATALOG_LOCKDOWN_ENABLED=true`), can fuzzy-match against canonical
- * keys and create PendingCatalogPush records for unmatched/ambiguous items.
- *
- * Uses Postgres xmax system column to distinguish inserts (xmax=0) from
- * updates (xmax>0) without an extra SELECT.
+ * New EquipmentSku records are only created when backed by a real Zoho item.
  */
 export async function syncEquipmentSkus(items: BomItem[]): Promise<SkuSyncResult> {
   if (!prisma) {
     throw new Error("Database not configured");
+  }
+
+  // Legacy escape hatch
+  if (process.env.CATALOG_SKU_SYNC_LEGACY === "true") {
+    return syncWithDirectInsertLegacy(items);
   }
 
   const validItems = items
@@ -213,135 +183,213 @@ export async function syncEquipmentSkus(items: BomItem[]): Promise<SkuSyncResult
 
   const skipped = items.length - validItems.length;
   if (validItems.length === 0) {
-    return { created: 0, updated: 0, skipped, pending: 0 };
+    return { created: 0, updated: 0, skipped, pending: 0, zohoMatched: 0, items: [] };
   }
 
-  const lockdown = getLockdownConfig();
+  return matchItemsAgainstInventory(validItems, skipped);
+}
 
-  // ----- Legacy mode: direct INSERT ON CONFLICT for all categories -----
-  if (lockdown.mode === "off") {
-    return syncWithDirectInsert(validItems, skipped);
+// ---------------------------------------------------------------------------
+// Core matching pipeline
+// ---------------------------------------------------------------------------
+
+async function matchItemsAgainstInventory(
+  validItems: ValidSkuItem[],
+  initialSkipped: number,
+): Promise<SkuSyncResult> {
+  let created = 0;
+  let updated = 0;
+  let pending = 0;
+  let zohoMatched = 0;
+  const itemResults: SkuSyncItemResult[] = [];
+  const pendingTtlDays = parsePendingTtlDays();
+
+  // Check if Zoho is available (cache hydrates on first call)
+  let zohoAvailable = true;
+  try {
+    await zohoInventory.getItemsForMatching();
+  } catch (e) {
+    console.warn("[bom-snapshot] Zoho unavailable, falling back to internal-only matching:", e);
+    zohoAvailable = false;
   }
 
-  const lockdownItems = validItems.filter((item) =>
-    appliesToLockdownCategory(item, lockdown.categories)
-  );
-  const legacyItems = validItems.filter(
-    (item) => !appliesToLockdownCategory(item, lockdown.categories)
-  );
+  // Process SEQUENTIALLY — findItemIdByName uses a shared in-memory item
+  // cache, and firing 30+ simultaneous requests hits Zoho's concurrent limit.
+  for (const item of validItems) {
+    const searchTerms = buildSearchTerms(item);
+    const canonicalKey = buildCanonicalKey(item.category, item.brand, item.model);
 
-  // ----- Shadow mode: evaluate fuzzy matching but keep writes on legacy path -----
-  if (lockdown.mode === "shadow") {
-    const directResult = await syncWithDirectInsert(validItems, skipped);
-    const shadow = lockdownItems.length
-      ? await simulateFuzzyMatch(lockdownItems)
-      : { evaluated: 0, exactMatches: 0, ambiguous: 0, unmatched: 0, wouldQueue: 0 };
-    return { ...directResult, shadow };
+    // ── Step 1: Try Zoho inventory match ──
+    let zohoMatch: { item_id: string; zohoName: string; zohoSku?: string } | null = null;
+    if (zohoAvailable) {
+      for (const term of searchTerms) {
+        try {
+          zohoMatch = await zohoInventory.findItemIdByName(term);
+          if (zohoMatch) break;
+        } catch {
+          // Individual term failure — try next
+        }
+      }
+    }
+
+    if (zohoMatch) {
+      zohoMatched++;
+      const result = await linkOrCreateSkuFromZoho(item, zohoMatch, canonicalKey);
+      if (result.action === "created_with_zoho") created++;
+      else updated++;
+      itemResults.push(result);
+      continue;
+    }
+
+    // ── Step 2: Try internal EquipmentSku by canonical key ──
+    if (canonicalKey) {
+      const skuMatch = await prisma!.equipmentSku.findFirst({
+        where: { canonicalKey, isActive: true },
+        select: { id: true },
+      });
+
+      if (skuMatch) {
+        updated++;
+        itemResults.push({
+          ...itemBase(item),
+          matchSource: "internal",
+          equipmentSkuId: skuMatch.id,
+          action: "matched",
+        });
+        continue;
+      }
+    }
+
+    // ── Step 3: No match — create PendingCatalogPush ──
+    if (!canonicalKey) {
+      itemResults.push({ ...itemBase(item), matchSource: "skipped", action: "skipped" });
+      continue;
+    }
+
+    const existingPending = await prisma!.pendingCatalogPush.findFirst({
+      where: { canonicalKey, status: "PENDING" },
+      select: { id: true, candidateSkuIds: true },
+    });
+
+    const pushResult = await upsertPendingPush(existingPending, {
+      brand: item.brand,
+      model: item.model,
+      description: item.description || "",
+      category: item.category,
+      canonicalKey,
+      candidateSkuIds: [],
+      reviewReason: "no_match",
+    }, pendingTtlDays);
+
+    pending++;
+    itemResults.push({
+      ...itemBase(item),
+      matchSource: "pending",
+      pendingPushId: pushResult.id,
+      action: "queued_pending",
+    });
   }
-
-  // ----- Enforced mode: fuzzy for configured categories, direct insert otherwise -----
-  const [fuzzyResult, directResult] = await Promise.all([
-    lockdownItems.length
-      ? syncWithFuzzyMatch(lockdownItems, 0, lockdown.pendingTtlDays)
-      : Promise.resolve({ created: 0, updated: 0, skipped: 0, pending: 0 } as SkuSyncResult),
-    legacyItems.length
-      ? syncWithDirectInsert(legacyItems, 0)
-      : Promise.resolve({ created: 0, updated: 0, skipped: 0, pending: 0 } as SkuSyncResult),
-  ]);
 
   return {
-    created: fuzzyResult.created + directResult.created,
-    updated: fuzzyResult.updated + directResult.updated,
-    skipped: skipped + fuzzyResult.skipped + directResult.skipped,
-    pending: fuzzyResult.pending + directResult.pending,
+    created,
+    updated,
+    skipped: initialSkipped,
+    pending,
+    zohoMatched,
+    items: itemResults,
   };
 }
 
 // ---------------------------------------------------------------------------
-// Legacy path: direct INSERT ON CONFLICT
+// Zoho → EquipmentSku bridge
 // ---------------------------------------------------------------------------
 
-async function syncWithDirectInsert(
-  validItems: ValidSkuItem[],
-  initialSkipped: number
-): Promise<SkuSyncResult> {
-  let created = 0;
-  let updated = 0;
+/**
+ * When a Zoho match is found, find or create the corresponding EquipmentSku.
+ * Priority: zohoItemId → canonicalKey → create new (Zoho-backed).
+ */
+async function linkOrCreateSkuFromZoho(
+  item: ValidSkuItem,
+  zohoMatch: { item_id: string; zohoName: string; zohoSku?: string },
+  canonicalKey: string | null,
+): Promise<SkuSyncItemResult> {
+  const base = itemBase(item);
+  const zohoFields = {
+    zohoItemId: zohoMatch.item_id,
+    zohoItemName: zohoMatch.zohoName,
+  };
 
-  // Deduplicate by (category, brand, model) — PostgreSQL's ON CONFLICT DO UPDATE
-  // cannot affect the same row twice in a single INSERT statement. Keep the last
-  // occurrence so that later (potentially more complete) data wins.
-  const deduped = new Map<string, ValidSkuItem>();
-  for (const item of validItems) {
-    deduped.set(`${item.category}\0${item.brand}\0${item.model}`, item);
+  // 1. Find by zohoItemId
+  let sku = await prisma!.equipmentSku.findFirst({
+    where: { zohoItemId: zohoMatch.item_id, isActive: true },
+    select: { id: true },
+  });
+
+  if (sku) {
+    return { ...base, matchSource: "zoho", ...zohoFields, equipmentSkuId: sku.id, action: "linked" };
   }
-  const uniqueItems = Array.from(deduped.values());
 
-  // Batch in groups of 50 — one SQL statement per batch
-  const BATCH_SIZE = 50;
-  for (let i = 0; i < uniqueItems.length; i += BATCH_SIZE) {
-    const batch = uniqueItems.slice(i, i + BATCH_SIZE);
-
-    // Build parameterized VALUES list: each row has 10 params
-    // (id, category, brand, model, description, unitSpec, unitLabel,
-    //  canonicalBrand, canonicalModel, canonicalKey)
-    // plus SQL literals for isActive/createdAt/updatedAt.
-    const values: unknown[] = [];
-    const placeholders: string[] = [];
-    for (let j = 0; j < batch.length; j++) {
-      const item = batch[j];
-      const offset = j * 10;
-      const cb = canonicalToken(item.brand);
-      const cm = canonicalToken(item.model);
-      const ck = buildCanonicalKey(item.category, item.brand, item.model);
-      placeholders.push(
-        `($${offset + 1}, $${offset + 2}::"EquipmentCategory", $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}::double precision, $${offset + 7}, $${offset + 8}, $${offset + 9}, $${offset + 10}, true, NOW(), NOW())`
-      );
-      values.push(
-        crypto.randomUUID(),  // id
-        item.category,        // category (enum cast)
-        item.brand,           // brand
-        item.model,           // model
-        item.description,     // description
-        item.unitSpec,         // unitSpec
-        item.unitLabel,        // unitLabel
-        cb || null,            // canonicalBrand
-        cm || null,            // canonicalModel
-        ck,                    // canonicalKey
-      );
+  // 2. Find by canonical key and backfill zohoItemId
+  if (canonicalKey) {
+    sku = await prisma!.equipmentSku.findFirst({
+      where: { canonicalKey, isActive: true },
+      select: { id: true },
+    });
+    if (sku) {
+      await prisma!.equipmentSku.update({
+        where: { id: sku.id },
+        data: { zohoItemId: zohoMatch.item_id },
+      });
+      return { ...base, matchSource: "zoho", ...zohoFields, equipmentSkuId: sku.id, action: "linked" };
     }
+  }
 
-    const rows = await prisma!.$queryRawUnsafe<Array<{ xmax: string }>>(
-      `INSERT INTO "EquipmentSku" ("id", "category", "brand", "model", "description", "unitSpec", "unitLabel", "canonicalBrand", "canonicalModel", "canonicalKey", "isActive", "createdAt", "updatedAt")
-       VALUES ${placeholders.join(", ")}
-       ON CONFLICT ("category", "brand", "model") DO UPDATE SET
-         "description"    = COALESCE(NULLIF(EXCLUDED."description", ''), "EquipmentSku"."description"),
-         "unitSpec"       = COALESCE(EXCLUDED."unitSpec", "EquipmentSku"."unitSpec"),
-         "unitLabel"      = COALESCE(EXCLUDED."unitLabel", "EquipmentSku"."unitLabel"),
-         "canonicalBrand" = COALESCE(EXCLUDED."canonicalBrand", "EquipmentSku"."canonicalBrand"),
-         "canonicalModel" = COALESCE(EXCLUDED."canonicalModel", "EquipmentSku"."canonicalModel"),
-         "canonicalKey"   = COALESCE(EXCLUDED."canonicalKey", "EquipmentSku"."canonicalKey"),
-         "isActive"       = true,
-         "updatedAt"      = NOW()
-       RETURNING xmax::text`,
-      ...values
-    );
-
-    for (const row of rows) {
-      // xmax = 0 means the row was inserted; xmax > 0 means it was updated
-      if (row.xmax === "0") {
-        created++;
-      } else {
-        updated++;
+  // 3. No EquipmentSku exists — create one backed by Zoho item
+  const cb = canonicalToken(item.brand);
+  const cm = canonicalToken(item.model);
+  try {
+    const newSku = await prisma!.equipmentSku.create({
+      data: {
+        category: item.category as EquipmentCategory,
+        brand: item.brand,
+        model: item.model,
+        description: item.description,
+        unitSpec: item.unitSpec,
+        unitLabel: item.unitLabel,
+        zohoItemId: zohoMatch.item_id,
+        canonicalBrand: cb || null,
+        canonicalModel: cm || null,
+        canonicalKey,
+        isActive: true,
+      },
+      select: { id: true },
+    });
+    return { ...base, matchSource: "zoho", ...zohoFields, equipmentSkuId: newSku.id, action: "created_with_zoho" };
+  } catch (err: unknown) {
+    // P2002 = unique constraint race — another request created it first
+    if ((err as { code?: string }).code === "P2002") {
+      const existing = await prisma!.equipmentSku.findFirst({
+        where: {
+          category: item.category as EquipmentCategory,
+          brand: item.brand,
+          model: item.model,
+        },
+        select: { id: true },
+      });
+      if (existing) {
+        await prisma!.equipmentSku.update({
+          where: { id: existing.id },
+          data: { zohoItemId: zohoMatch.item_id },
+        });
+        return { ...base, matchSource: "zoho", ...zohoFields, equipmentSkuId: existing.id, action: "linked" };
       }
     }
+    throw err;
   }
-
-  return { created, updated, skipped: initialSkipped, pending: 0 };
 }
 
 // ---------------------------------------------------------------------------
-// Lockdown helpers
+// PendingCatalogPush helpers
 // ---------------------------------------------------------------------------
 
 /** Merge two candidateSkuIds arrays into a deduplicated union. */
@@ -456,148 +504,95 @@ async function upsertPendingPush(
 }
 
 // ---------------------------------------------------------------------------
-// Lockdown path: fuzzy match against canonical keys
+// Legacy path: direct INSERT ON CONFLICT (escape hatch)
 // ---------------------------------------------------------------------------
 
-async function syncWithFuzzyMatch(
-  validItems: ValidSkuItem[],
-  initialSkipped: number,
-  pendingTtlDays: number
-): Promise<SkuSyncResult> {
+async function syncWithDirectInsertLegacy(items: BomItem[]): Promise<SkuSyncResult> {
+  const validItems = items
+    .map((item) => {
+      const inventoryCategory = INVENTORY_CATEGORIES[item.category];
+      if (!inventoryCategory) return null;
+      const brand = item.brand?.trim();
+      const model = item.model?.trim();
+      if (!brand || !model) return null;
+      return {
+        category: inventoryCategory,
+        brand,
+        model,
+        description: item.description?.trim() || null,
+        unitSpec: item.unitSpec != null ? Number(item.unitSpec) : null,
+        unitLabel: item.unitLabel ?? null,
+      };
+    })
+    .filter((v): v is NonNullable<typeof v> => v !== null);
+
+  const skipped = items.length - validItems.length;
+  if (validItems.length === 0) {
+    return { created: 0, updated: 0, skipped, pending: 0, zohoMatched: 0, items: [] };
+  }
+
+  let created = 0;
   let updated = 0;
-  let pending = 0;
-  let skipped = initialSkipped;
 
-  const keyedItems: Array<{ item: ValidSkuItem; canonicalKey: string }> = [];
+  // Deduplicate by (category, brand, model)
+  const deduped = new Map<string, ValidSkuItem>();
   for (const item of validItems) {
-    const ck = buildCanonicalKey(item.category, item.brand, item.model);
-    if (!ck) {
-      skipped++;
-      continue;
-    }
-    keyedItems.push({ item, canonicalKey: ck });
+    deduped.set(`${item.category}\0${item.brand}\0${item.model}`, item);
   }
+  const uniqueItems = Array.from(deduped.values());
 
-  if (keyedItems.length === 0) {
-    return { created: 0, updated, skipped, pending };
-  }
+  const BATCH_SIZE = 50;
+  for (let i = 0; i < uniqueItems.length; i += BATCH_SIZE) {
+    const batch = uniqueItems.slice(i, i + BATCH_SIZE);
 
-  const uniqueCanonicalKeys = Array.from(
-    new Set(keyedItems.map((entry) => entry.canonicalKey))
-  );
-
-  const [skuMatches, pendingRows] = await Promise.all([
-    prisma!.equipmentSku.findMany({
-      where: { canonicalKey: { in: uniqueCanonicalKeys }, isActive: true },
-      select: { id: true, canonicalKey: true },
-    }),
-    prisma!.pendingCatalogPush.findMany({
-      where: { canonicalKey: { in: uniqueCanonicalKeys }, status: "PENDING" },
-      select: { id: true, canonicalKey: true, candidateSkuIds: true },
-    }),
-  ]);
-
-  const matchesByCanonicalKey = new Map<string, string[]>();
-  for (const row of skuMatches) {
-    if (!row.canonicalKey) continue;
-    const existing = matchesByCanonicalKey.get(row.canonicalKey) || [];
-    existing.push(row.id);
-    matchesByCanonicalKey.set(row.canonicalKey, existing);
-  }
-
-  const pendingByCanonicalKey = new Map<
-    string,
-    { id: string; candidateSkuIds: string[] }
-  >();
-  for (const row of pendingRows) {
-    if (!row.canonicalKey) continue;
-    pendingByCanonicalKey.set(row.canonicalKey, {
-      id: row.id,
-      candidateSkuIds: Array.isArray(row.candidateSkuIds)
-        ? (row.candidateSkuIds as string[])
-        : [],
-    });
-  }
-
-  for (const entry of keyedItems) {
-    const { item, canonicalKey } = entry;
-    const matchIds = matchesByCanonicalKey.get(canonicalKey) || [];
-
-    if (matchIds.length === 1) {
-      // Exact match — use existing SKU, no insert needed
-      updated++;
-      continue;
+    const values: unknown[] = [];
+    const placeholders: string[] = [];
+    for (let j = 0; j < batch.length; j++) {
+      const item = batch[j];
+      const offset = j * 10;
+      const cb = canonicalToken(item.brand);
+      const cm = canonicalToken(item.model);
+      const ck = buildCanonicalKey(item.category, item.brand, item.model);
+      placeholders.push(
+        `($${offset + 1}, $${offset + 2}::"EquipmentCategory", $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}::double precision, $${offset + 7}, $${offset + 8}, $${offset + 9}, $${offset + 10}, true, NOW(), NOW())`
+      );
+      values.push(
+        crypto.randomUUID(),
+        item.category,
+        item.brand,
+        item.model,
+        item.description,
+        item.unitSpec,
+        item.unitLabel,
+        cb || null,
+        cm || null,
+        ck,
+      );
     }
 
-    // Determine review reason and candidate IDs
-    const reviewReason = matchIds.length > 1 ? "ambiguous_bom_match" : "no_match";
-    const refreshedPending = await upsertPendingPush(
-      pendingByCanonicalKey.get(canonicalKey) || null,
-      {
-        brand: item.brand,
-        model: item.model,
-        description: item.description || "",
-        category: item.category,
-        canonicalKey,
-        candidateSkuIds: matchIds,
-        reviewReason,
-      },
-      pendingTtlDays
+    const rows = await prisma!.$queryRawUnsafe<Array<{ xmax: string }>>(
+      `INSERT INTO "EquipmentSku" ("id", "category", "brand", "model", "description", "unitSpec", "unitLabel", "canonicalBrand", "canonicalModel", "canonicalKey", "isActive", "createdAt", "updatedAt")
+       VALUES ${placeholders.join(", ")}
+       ON CONFLICT ("category", "brand", "model") DO UPDATE SET
+         "description"    = COALESCE(NULLIF(EXCLUDED."description", ''), "EquipmentSku"."description"),
+         "unitSpec"       = COALESCE(EXCLUDED."unitSpec", "EquipmentSku"."unitSpec"),
+         "unitLabel"      = COALESCE(EXCLUDED."unitLabel", "EquipmentSku"."unitLabel"),
+         "canonicalBrand" = COALESCE(EXCLUDED."canonicalBrand", "EquipmentSku"."canonicalBrand"),
+         "canonicalModel" = COALESCE(EXCLUDED."canonicalModel", "EquipmentSku"."canonicalModel"),
+         "canonicalKey"   = COALESCE(EXCLUDED."canonicalKey", "EquipmentSku"."canonicalKey"),
+         "isActive"       = true,
+         "updatedAt"      = NOW()
+       RETURNING xmax::text`,
+      ...values
     );
-    pendingByCanonicalKey.set(canonicalKey, refreshedPending);
-    pending++;
+
+    for (const row of rows) {
+      if (row.xmax === "0") created++;
+      else updated++;
+    }
   }
 
-  // Lockdown path never creates SKUs directly — created is always 0
-  return { created: 0, updated, skipped, pending };
-}
-
-async function simulateFuzzyMatch(
-  validItems: ValidSkuItem[]
-): Promise<NonNullable<SkuSyncResult["shadow"]>> {
-  const keyedItems = validItems
-    .map((item) => ({
-      canonicalKey: buildCanonicalKey(item.category, item.brand, item.model),
-    }))
-    .filter((entry): entry is { canonicalKey: string } => Boolean(entry.canonicalKey));
-
-  if (keyedItems.length === 0) {
-    return { evaluated: 0, exactMatches: 0, ambiguous: 0, unmatched: 0, wouldQueue: 0 };
-  }
-
-  const uniqueCanonicalKeys = Array.from(new Set(keyedItems.map((entry) => entry.canonicalKey)));
-  const skuMatches = await prisma!.equipmentSku.findMany({
-    where: { canonicalKey: { in: uniqueCanonicalKeys }, isActive: true },
-    select: { id: true, canonicalKey: true },
-  });
-
-  const countsByCanonicalKey = new Map<string, number>();
-  for (const row of skuMatches) {
-    if (!row.canonicalKey) continue;
-    countsByCanonicalKey.set(
-      row.canonicalKey,
-      (countsByCanonicalKey.get(row.canonicalKey) || 0) + 1
-    );
-  }
-
-  let exactMatches = 0;
-  let ambiguous = 0;
-  let unmatched = 0;
-
-  for (const entry of keyedItems) {
-    const count = countsByCanonicalKey.get(entry.canonicalKey) || 0;
-    if (count === 1) exactMatches++;
-    else if (count > 1) ambiguous++;
-    else unmatched++;
-  }
-
-  return {
-    evaluated: keyedItems.length,
-    exactMatches,
-    ambiguous,
-    unmatched,
-    wouldQueue: ambiguous + unmatched,
-  };
+  return { created, updated, skipped, pending: 0, zohoMatched: 0, items: [] };
 }
 
 // ---------------------------------------------------------------------------
@@ -711,27 +706,26 @@ export async function saveBomSnapshot(params: {
       ...processedBomData.items,
       ...(processedBomData.suggestedAdditions ?? []),
     ];
-    const {
-      created: skuCreated,
-      updated: skuUpdated,
-      skipped: skuSkipped,
-      pending: skuPending,
-      shadow: skuShadow,
-    } = await syncEquipmentSkus(allItemsToSync);
+    const skuSync = await syncEquipmentSkus(allItemsToSync);
 
     await logSnapshot("succeeded", {
       dealId,
       dealName,
       version: nextVersion,
       sourceFile,
-      skuCreated,
-      skuUpdated,
-      skuSkipped,
-      skuPending,
-      ...(skuShadow ? { skuShadow } : {}),
+      skuCreated: skuSync.created,
+      skuUpdated: skuSync.updated,
+      skuSkipped: skuSync.skipped,
+      skuPending: skuSync.pending,
+      skuZohoMatched: skuSync.zohoMatched,
     });
 
-    return { id: snapshot.id, version: snapshot.version, createdAt: snapshot.createdAt };
+    return {
+      id: snapshot.id,
+      version: snapshot.version,
+      createdAt: snapshot.createdAt,
+      skuSync,
+    };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await logSnapshot("failed", {

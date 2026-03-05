@@ -42,6 +42,30 @@ const DISPLAY_NAMES: Record<string, string> = {
   'pending_new_construction': 'Pending New Construction',
 };
 
+type InstallReviewFindingStatus = "pass" | "fail" | "unable_to_verify";
+
+type InstallReviewFinding = {
+  category: string;
+  status: InstallReviewFindingStatus;
+  planset_spec: string;
+  observed: string;
+  notes: string;
+};
+
+type InstallReviewResult = {
+  overall_pass: boolean;
+  summary: string;
+  findings: InstallReviewFinding[];
+  photo_count: number;
+  planset_filename: string;
+  duration_ms: number;
+  photo_source?: string;
+};
+
+function getProjectDisplayName(name: string | undefined): string {
+  return (name || "").split("|")[0]?.trim() || "Unknown Project";
+}
+
 function getDisplayName(value: string | undefined): string {
   if (!value) return value || '';
   const key = value.toLowerCase().replace(/[\s-]+/g, '_');
@@ -108,7 +132,7 @@ export default function InspectionsPage() {
     params: { context: "executive" },
     transform: (raw: unknown) => (raw as { projects: RawProject[] }).projects,
   });
-  const safeProjects = projects ?? [];
+  const safeProjects = useMemo(() => projects ?? [], [projects]);
 
   // Multi-select filters
   const [filterAhjs, setFilterAhjs] = useState<string[]>([]);
@@ -121,10 +145,21 @@ export default function InspectionsPage() {
   const [photoReviewDealId, setPhotoReviewDealId] = useState<string | null>(null);
   const [photoReviewDealName, setPhotoReviewDealName] = useState("");
   const [photoReviewLoading, setPhotoReviewLoading] = useState(false);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [photoReviewResult, setPhotoReviewResult] = useState<any>(null);
+  const [photoReviewResult, setPhotoReviewResult] = useState<InstallReviewResult | null>(null);
   const [photoReviewError, setPhotoReviewError] = useState<string | null>(null);
+  const [photoReviewProjectSearch, setPhotoReviewProjectSearch] = useState("");
+  const [photoReviewStatusFilter, setPhotoReviewStatusFilter] = useState<"all" | InstallReviewFindingStatus>("all");
   const photoReviewRequestId = useRef(0);
+
+  const resetPhotoReview = () => {
+    photoReviewRequestId.current += 1;
+    setPhotoReviewDealId(null);
+    setPhotoReviewDealName("");
+    setPhotoReviewLoading(false);
+    setPhotoReviewResult(null);
+    setPhotoReviewError(null);
+    setPhotoReviewStatusFilter("all");
+  };
 
   const runPhotoReview = async (dealId: string, dealName: string) => {
     const requestId = ++photoReviewRequestId.current;
@@ -134,6 +169,7 @@ export default function InspectionsPage() {
     setPhotoReviewLoading(true);
     setPhotoReviewResult(null);
     setPhotoReviewError(null);
+    setPhotoReviewStatusFilter("all");
 
     try {
       const res = await fetch("/api/install-review", {
@@ -191,6 +227,61 @@ if (filterInspectionStatuses.length > 0 && !filterInspectionStatuses.includes(p.
       return true;
     });
   }, [safeProjects, filterAhjs, filterLocations, filterInspectionStatuses, searchQuery]);
+
+  const photoReviewCandidates = useMemo(() => {
+    const query = photoReviewProjectSearch.trim().toLowerCase();
+    return filteredProjects
+      .filter((p) => {
+        const status = (p.finalInspectionStatus || "").toLowerCase();
+        return p.stage === "Inspection" || status.includes("scheduled") || status.includes("ready");
+      })
+      .filter((p) => {
+        if (!query) return true;
+        const name = getProjectDisplayName(p.name).toLowerCase();
+        const projectId = (p.id || "").toLowerCase();
+        const location = (p.pbLocation || "").toLowerCase();
+        const ahj = (p.ahj || "").toLowerCase();
+        return (
+          name.includes(query) ||
+          projectId.includes(query) ||
+          location.includes(query) ||
+          ahj.includes(query)
+        );
+      })
+      .sort((a, b) => {
+        const aIsCurrent = photoReviewDealId === a.id ? 1 : 0;
+        const bIsCurrent = photoReviewDealId === b.id ? 1 : 0;
+        if (aIsCurrent !== bIsCurrent) return bIsCurrent - aIsCurrent;
+        return (b.amount || 0) - (a.amount || 0);
+      })
+      .slice(0, 40);
+  }, [filteredProjects, photoReviewProjectSearch, photoReviewDealId]);
+
+  const photoReviewFindingCounts = useMemo(() => {
+    const findings = photoReviewResult?.findings || [];
+    return {
+      all: findings.length,
+      pass: findings.filter((f) => f.status === "pass").length,
+      fail: findings.filter((f) => f.status === "fail").length,
+      unable_to_verify: findings.filter((f) => f.status === "unable_to_verify").length,
+    };
+  }, [photoReviewResult]);
+
+  const visiblePhotoReviewFindings = useMemo(() => {
+    const findings = [...(photoReviewResult?.findings || [])];
+    const rank: Record<InstallReviewFindingStatus, number> = {
+      fail: 0,
+      unable_to_verify: 1,
+      pass: 2,
+    };
+    findings.sort((a, b) => {
+      const rankDiff = rank[a.status] - rank[b.status];
+      if (rankDiff !== 0) return rankDiff;
+      return (a.category || "").localeCompare(b.category || "");
+    });
+    if (photoReviewStatusFilter === "all") return findings;
+    return findings.filter((f) => f.status === photoReviewStatusFilter);
+  }, [photoReviewResult, photoReviewStatusFilter]);
 
   const stats = useMemo(() => {
     const today = new Date();
@@ -560,146 +651,226 @@ setFilterInspectionStatuses([]);
 
         {photoReviewOpen && (
           <div className="border-t border-t-border p-4">
-            {/* Project selector — pick from table or show current review */}
-            {!photoReviewDealId && !photoReviewLoading && !photoReviewResult && (
-              <div className="text-center py-6">
-                <p className="text-muted mb-3">Select a project to review install photos against the planset.</p>
-                <p className="text-xs text-muted">
-                  Click the camera icon on any project row below, or choose from recently completed installs:
+            <div className="grid grid-cols-1 xl:grid-cols-[360px,minmax(0,1fr)] gap-4">
+              <div className="border border-t-border rounded-xl bg-surface-2/40 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="text-sm font-semibold text-foreground">Select Project</h3>
+                  <span className="text-[0.7rem] text-muted">{photoReviewCandidates.length} shown</span>
+                </div>
+                <p className="text-xs text-muted mt-1">
+                  Search by project name, ID, location, or AHJ.
                 </p>
-                <div className="mt-4 flex flex-wrap justify-center gap-2">
-                  {filteredProjects
-                    .filter(p => {
-                      const status = (p.finalInspectionStatus || "").toLowerCase();
-                      return p.stage === "Inspection" || status.includes("scheduled") || status.includes("ready");
-                    })
-                    .slice(0, 6)
-                    .map(p => (
-                      <button
-                        key={p.id}
-                        onClick={() => runPhotoReview(p.id, p.name.split("|")[0].trim())}
-                        className="px-3 py-2 bg-surface-2 hover:bg-orange-500/20 border border-t-border hover:border-orange-500/50 rounded-lg text-sm transition-colors"
-                      >
-                        {p.name.split("|")[0].trim()}
-                      </button>
-                    ))}
-                </div>
-              </div>
-            )}
-
-            {/* Loading state */}
-            {photoReviewLoading && (
-              <div className="text-center py-8">
-                <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-orange-500 mx-auto mb-4"></div>
-                <p className="text-foreground font-medium">{photoReviewDealName}</p>
-                <p className="text-sm text-muted mt-1">Fetching photos from Zuper, downloading planset, running AI comparison...</p>
-                <p className="text-xs text-muted mt-2">This may take 30-60 seconds</p>
-              </div>
-            )}
-
-            {/* Error state */}
-            {photoReviewError && (
-              <div className="py-4">
-                <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <p className="font-medium text-red-400">{photoReviewDealName}</p>
-                      <p className="text-sm text-red-300 mt-1">{photoReviewError}</p>
+                <input
+                  type="text"
+                  value={photoReviewProjectSearch}
+                  onChange={(e) => setPhotoReviewProjectSearch(e.target.value)}
+                  placeholder="Find a project..."
+                  className="mt-3 w-full px-3 py-2 bg-surface border border-t-border rounded-lg text-sm focus:outline-none focus:border-orange-500"
+                />
+                <div className="mt-3 max-h-[480px] overflow-y-auto space-y-2 pr-1">
+                  {photoReviewCandidates.length === 0 ? (
+                    <div className="text-xs text-muted px-2 py-4 text-center border border-dashed border-t-border rounded-lg">
+                      No matching projects in current filters.
                     </div>
-                    <button
-                      onClick={() => { setPhotoReviewDealId(null); setPhotoReviewError(null); }}
-                      className="text-muted hover:text-foreground text-sm px-2"
-                    >
-                      Dismiss
-                    </button>
-                  </div>
+                  ) : (
+                    photoReviewCandidates.map((project) => {
+                      const projectName = getProjectDisplayName(project.name);
+                      const inspectionStatus = getDisplayName(project.finalInspectionStatus) || "Pending";
+                      const isActive = photoReviewDealId === project.id;
+                      const isRunning = isActive && photoReviewLoading;
+                      return (
+                        <button
+                          key={project.id}
+                          onClick={() => runPhotoReview(project.id, projectName)}
+                          className={`w-full text-left p-3 rounded-lg border transition-colors ${
+                            isActive
+                              ? "border-orange-500/60 bg-orange-500/10"
+                              : "border-t-border bg-surface hover:bg-surface-2 hover:border-orange-500/40"
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-foreground truncate">{projectName}</p>
+                              <p className="text-xs text-muted truncate mt-0.5">
+                                {project.pbLocation || "Unknown"} • {project.ahj || "Unknown AHJ"}
+                              </p>
+                              <p className="text-[0.7rem] text-muted truncate mt-0.5">{project.id}</p>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <p className="text-xs font-mono text-orange-400">{formatMoney(project.amount || 0)}</p>
+                              <span className={`inline-flex items-center mt-1 px-2 py-0.5 rounded-full text-[0.65rem] font-medium ${getInspectionStatusColor(project.finalInspectionStatus)}`}>
+                                {inspectionStatus}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="mt-2 text-xs text-orange-300">
+                            {isRunning ? "Running review..." : isActive ? "Selected for review" : "Run photo review"}
+                          </div>
+                        </button>
+                      );
+                    })
+                  )}
                 </div>
               </div>
-            )}
 
-            {/* Results */}
-            {photoReviewResult && (
-              <div className="space-y-4">
-                {/* Header */}
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="font-semibold text-foreground">{photoReviewDealName}</h3>
-                    <p className="text-xs text-muted">
-                      {photoReviewResult.photo_count} photo{photoReviewResult.photo_count !== 1 ? "s" : ""} reviewed
-                      {" \u00B7 "}planset: {photoReviewResult.planset_filename}
-                      {" \u00B7 "}{(photoReviewResult.duration_ms / 1000).toFixed(1)}s
+              <div className="min-h-[260px]">
+                {!photoReviewDealId && !photoReviewLoading && !photoReviewResult && !photoReviewError && (
+                  <div className="h-full rounded-xl border border-dashed border-t-border bg-surface-2/30 p-6">
+                    <h3 className="text-lg font-semibold text-foreground">Run Install Photo Review</h3>
+                    <p className="text-sm text-muted mt-2">
+                      Pick a project on the left to compare install photos against the permitted planset.
                     </p>
+                    <ul className="mt-4 space-y-2 text-xs text-muted">
+                      <li>1. Select a project and start review.</li>
+                      <li>2. Wait while the system fetches planset + photos.</li>
+                      <li>3. Prioritize any FAIL findings for follow-up.</li>
+                    </ul>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className={`px-3 py-1 rounded-full text-sm font-bold ${
-                      photoReviewResult.overall_pass
-                        ? "bg-emerald-500/20 text-emerald-400"
-                        : "bg-red-500/20 text-red-400"
-                    }`}>
-                      {photoReviewResult.overall_pass ? "PASS" : "FAIL"}
-                    </span>
-                    <button
-                      onClick={() => { setPhotoReviewDealId(null); setPhotoReviewResult(null); }}
-                      className="text-xs text-muted hover:text-foreground px-2 py-1 border border-t-border rounded-lg"
-                    >
-                      New Review
-                    </button>
+                )}
+
+                {photoReviewLoading && (
+                  <div className="rounded-xl border border-orange-500/30 bg-orange-500/5 p-6">
+                    <div className="flex items-center gap-3">
+                      <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-orange-500"></div>
+                      <div>
+                        <p className="text-foreground font-medium">{photoReviewDealName}</p>
+                        <p className="text-xs text-muted">Fetching photos, loading planset, running AI comparison.</p>
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted mt-3">Typical runtime: 30-60 seconds.</p>
                   </div>
-                </div>
+                )}
 
-                {/* Summary */}
-                <p className="text-sm text-muted bg-surface-2 rounded-lg p-3">{photoReviewResult.summary}</p>
+                {photoReviewError && (
+                  <div className="rounded-xl border border-red-500/40 bg-red-500/10 p-4">
+                    <p className="font-medium text-red-400">{photoReviewDealName || "Install Photo Review"}</p>
+                    <p className="text-sm text-red-300 mt-1">{photoReviewError}</p>
+                    <div className="flex items-center gap-2 mt-4">
+                      {photoReviewDealId && (
+                        <button
+                          onClick={() => runPhotoReview(photoReviewDealId, photoReviewDealName || "Selected Project")}
+                          className="px-3 py-1.5 rounded-lg text-xs font-medium bg-red-600 hover:bg-red-700"
+                        >
+                          Retry Review
+                        </button>
+                      )}
+                      <button
+                        onClick={resetPhotoReview}
+                        className="px-3 py-1.5 rounded-lg text-xs font-medium border border-t-border hover:border-muted text-muted hover:text-foreground"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+                )}
 
-                {/* Findings table */}
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-t-border">
-                        <th className="px-3 py-2 text-left text-xs font-medium text-muted uppercase">Category</th>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-muted uppercase">Status</th>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-muted uppercase">Planset Spec</th>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-muted uppercase">Observed</th>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-muted uppercase">Notes</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-t-border">
-                      {(photoReviewResult.findings || []).map((f: { category: string; status: string; planset_spec: string; observed: string; notes: string }, i: number) => (
-                        <tr key={i} className="hover:bg-surface-2/50">
-                          <td className="px-3 py-2 font-medium capitalize text-foreground">{f.category}</td>
-                          <td className="px-3 py-2">
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${
-                              f.status === "pass"
-                                ? "bg-emerald-500/20 text-emerald-400"
-                                : f.status === "fail"
-                                  ? "bg-red-500/20 text-red-400"
-                                  : "bg-zinc-500/20 text-muted"
-                            }`}>
-                              {f.status === "pass" ? "PASS" : f.status === "fail" ? "FAIL" : "N/A"}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2 text-muted max-w-[200px] truncate" title={f.planset_spec}>{f.planset_spec || "-"}</td>
-                          <td className="px-3 py-2 text-muted max-w-[200px] truncate" title={f.observed}>{f.observed || "-"}</td>
-                          <td className="px-3 py-2 text-muted max-w-[250px] truncate" title={f.notes}>{f.notes || "-"}</td>
-                        </tr>
+                {photoReviewResult && (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <div>
+                        <h3 className="font-semibold text-foreground">{photoReviewDealName}</h3>
+                        <p className="text-xs text-muted mt-0.5">
+                          {photoReviewResult.photo_count} photo{photoReviewResult.photo_count !== 1 ? "s" : ""} reviewed
+                          {" • "}planset: {photoReviewResult.planset_filename}
+                          {" • "}{(photoReviewResult.duration_ms / 1000).toFixed(1)}s
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={`px-3 py-1 rounded-full text-sm font-bold ${
+                          photoReviewResult.overall_pass
+                            ? "bg-emerald-500/20 text-emerald-400"
+                            : "bg-red-500/20 text-red-400"
+                        }`}>
+                          {photoReviewResult.overall_pass ? "PASS" : "FAIL"}
+                        </span>
+                        {photoReviewDealId && (
+                          <button
+                            onClick={() => runPhotoReview(photoReviewDealId, photoReviewDealName)}
+                            className="text-xs px-3 py-1.5 border border-t-border rounded-lg hover:border-orange-500/50"
+                          >
+                            Run Again
+                          </button>
+                        )}
+                        <button
+                          onClick={resetPhotoReview}
+                          className="text-xs px-3 py-1.5 border border-t-border rounded-lg hover:border-muted text-muted hover:text-foreground"
+                        >
+                          New Review
+                        </button>
+                      </div>
+                    </div>
+
+                    <p className="text-sm text-muted bg-surface-2 rounded-lg p-3 border border-t-border">
+                      {photoReviewResult.summary}
+                    </p>
+
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {[
+                        { key: "all" as const, label: "All", count: photoReviewFindingCounts.all, activeClass: "bg-zinc-500/20 text-foreground border-zinc-500/40" },
+                        { key: "fail" as const, label: "Fail", count: photoReviewFindingCounts.fail, activeClass: "bg-red-500/20 text-red-300 border-red-500/40" },
+                        { key: "unable_to_verify" as const, label: "Unable", count: photoReviewFindingCounts.unable_to_verify, activeClass: "bg-amber-500/20 text-amber-300 border-amber-500/40" },
+                        { key: "pass" as const, label: "Pass", count: photoReviewFindingCounts.pass, activeClass: "bg-emerald-500/20 text-emerald-300 border-emerald-500/40" },
+                      ].map((filter) => (
+                        <button
+                          key={filter.key}
+                          onClick={() => setPhotoReviewStatusFilter(filter.key)}
+                          className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${
+                            photoReviewStatusFilter === filter.key
+                              ? filter.activeClass
+                              : "border-t-border text-muted hover:text-foreground"
+                          }`}
+                        >
+                          {filter.label} ({filter.count})
+                        </button>
                       ))}
-                    </tbody>
-                  </table>
-                </div>
+                    </div>
 
-                {/* Counts summary */}
-                <div className="flex items-center gap-4 text-xs text-muted pt-2 border-t border-t-border">
-                  <span className="text-emerald-400 font-medium">
-                    {photoReviewResult.findings?.filter((f: { status: string }) => f.status === "pass").length || 0} pass
-                  </span>
-                  <span className="text-red-400 font-medium">
-                    {photoReviewResult.findings?.filter((f: { status: string }) => f.status === "fail").length || 0} fail
-                  </span>
-                  <span className="text-muted">
-                    {photoReviewResult.findings?.filter((f: { status: string }) => f.status === "unable_to_verify").length || 0} unable to verify
-                  </span>
-                </div>
+                    <div className="space-y-3">
+                      {visiblePhotoReviewFindings.length === 0 ? (
+                        <div className="text-xs text-muted border border-dashed border-t-border rounded-lg p-4">
+                          No findings match this filter.
+                        </div>
+                      ) : (
+                        visiblePhotoReviewFindings.map((finding, idx) => {
+                          const statusClass = finding.status === "pass"
+                            ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"
+                            : finding.status === "fail"
+                              ? "bg-red-500/20 text-red-300 border-red-500/30"
+                              : "bg-amber-500/20 text-amber-300 border-amber-500/30";
+                          const statusLabel = finding.status === "unable_to_verify"
+                            ? "Unable to verify"
+                            : finding.status.toUpperCase();
+                          return (
+                            <div key={`${finding.category}-${idx}`} className="border border-t-border rounded-lg p-3 bg-surface-2/30">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-sm font-semibold text-foreground capitalize">{finding.category || "Unknown"}</p>
+                                <span className={`px-2 py-0.5 rounded-full text-[0.7rem] font-semibold border ${statusClass}`}>
+                                  {statusLabel}
+                                </span>
+                              </div>
+                              <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mt-3 text-xs">
+                                <div className="rounded-md border border-t-border p-2 bg-surface">
+                                  <p className="uppercase tracking-wide text-[0.65rem] text-muted mb-1">Planset Spec</p>
+                                  <p className="text-foreground/90 whitespace-pre-wrap">{finding.planset_spec || "-"}</p>
+                                </div>
+                                <div className="rounded-md border border-t-border p-2 bg-surface">
+                                  <p className="uppercase tracking-wide text-[0.65rem] text-muted mb-1">Observed</p>
+                                  <p className="text-foreground/90 whitespace-pre-wrap">{finding.observed || "-"}</p>
+                                </div>
+                                <div className="rounded-md border border-t-border p-2 bg-surface">
+                                  <p className="uppercase tracking-wide text-[0.65rem] text-muted mb-1">Notes</p>
+                                  <p className="text-foreground/90 whitespace-pre-wrap">{finding.notes || "-"}</p>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
+            </div>
           </div>
         )}
       </div>
@@ -760,13 +931,13 @@ setFilterInspectionStatuses([]);
                           <div className="flex items-start gap-2">
                             <div className="flex-1 min-w-0">
                               <a href={project.url} target="_blank" rel="noopener noreferrer" className="font-medium text-foreground hover:text-orange-400">
-                                {project.name.split('|')[0].trim()}
+                                {getProjectDisplayName(project.name)}
                               </a>
                               <div className="text-xs text-muted">{project.name.split('|')[1]?.trim() || ''}</div>
                               <div className="text-xs text-muted">{project.pbLocation}</div>
                             </div>
                             <button
-                              onClick={(e) => { e.stopPropagation(); runPhotoReview(project.id, project.name.split('|')[0].trim()); }}
+                              onClick={(e) => { e.stopPropagation(); runPhotoReview(project.id, getProjectDisplayName(project.name)); }}
                               className="flex-shrink-0 p-1.5 rounded-lg text-muted hover:text-orange-400 hover:bg-orange-500/10 transition-colors"
                               title="Review install photos"
                             >
