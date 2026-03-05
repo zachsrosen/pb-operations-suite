@@ -113,7 +113,6 @@ export default function InspectionsPage() {
   // Multi-select filters
   const [filterAhjs, setFilterAhjs] = useState<string[]>([]);
   const [filterLocations, setFilterLocations] = useState<string[]>([]);
-  const [filterStages, setFilterStages] = useState<string[]>([]);
   const [filterInspectionStatuses, setFilterInspectionStatuses] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -172,13 +171,14 @@ export default function InspectionsPage() {
 
   const filteredProjects = useMemo(() => {
     return safeProjects.filter(p => {
+      // Only include projects in the Inspection stage
+      if (p.stage !== 'Inspection') return false;
       // Exclude passed inspections (have pass date)
       if (p.inspectionPassDate) return false;
 
       if (filterAhjs.length > 0 && !filterAhjs.includes(p.ahj || '')) return false;
       if (filterLocations.length > 0 && !filterLocations.includes(p.pbLocation || '')) return false;
-      if (filterStages.length > 0 && !filterStages.includes(p.stage || '')) return false;
-      if (filterInspectionStatuses.length > 0 && !filterInspectionStatuses.includes(p.finalInspectionStatus || '')) return false;
+if (filterInspectionStatuses.length > 0 && !filterInspectionStatuses.includes(p.finalInspectionStatus || '')) return false;
 
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
@@ -190,7 +190,7 @@ export default function InspectionsPage() {
 
       return true;
     });
-  }, [safeProjects, filterAhjs, filterLocations, filterStages, filterInspectionStatuses, searchQuery]);
+  }, [safeProjects, filterAhjs, filterLocations, filterInspectionStatuses, searchQuery]);
 
   const stats = useMemo(() => {
     const today = new Date();
@@ -301,20 +301,6 @@ export default function InspectionsPage() {
     [safeProjects]
   );
 
-  const stages = useMemo(() => {
-    const STAGE_ORDER = ['Site Survey', 'Design & Engineering', 'Permitting & Interconnection', 'RTB - Blocked', 'Ready To Build', 'Construction', 'Inspection', 'Permission To Operate', 'Close Out'];
-    return [...new Set(safeProjects.map(p => p.stage))]
-      .filter(s => s)
-      .sort((a, b) => {
-        const aIdx = STAGE_ORDER.findIndex(s => s.toLowerCase() === a!.toLowerCase());
-        const bIdx = STAGE_ORDER.findIndex(s => s.toLowerCase() === b!.toLowerCase());
-        if (aIdx === -1 && bIdx === -1) return a!.localeCompare(b!);
-        if (aIdx === -1) return 1;
-        if (bIdx === -1) return -1;
-        return aIdx - bIdx;
-      })
-      .map(s => ({ value: s!, label: s! }));
-  }, [safeProjects]);
 
   const existingInspectionStatuses = useMemo(() =>
     new Set(safeProjects.map(p => (p as RawProject).finalInspectionStatus).filter(Boolean)),
@@ -348,13 +334,12 @@ export default function InspectionsPage() {
   const clearAllFilters = () => {
     setFilterAhjs([]);
     setFilterLocations([]);
-    setFilterStages([]);
-    setFilterInspectionStatuses([]);
+setFilterInspectionStatuses([]);
     setSearchQuery("");
   };
 
   const hasActiveFilters = filterAhjs.length > 0 || filterLocations.length > 0 ||
-    filterStages.length > 0 || filterInspectionStatuses.length > 0 || searchQuery;
+    filterInspectionStatuses.length > 0 || searchQuery;
 
   if (loading) {
     return (
@@ -428,15 +413,7 @@ export default function InspectionsPage() {
             placeholder="All Locations"
             accentColor="blue"
           />
-          <MultiSelectFilter
-            label="Stage"
-            options={stages}
-            selected={filterStages}
-            onChange={setFilterStages}
-            placeholder="All Stages"
-            accentColor="indigo"
-          />
-          <MultiSelectFilter
+<MultiSelectFilter
             label="Inspection Status"
             options={filteredInspectionStatusOptions}
             groups={filteredInspectionStatusGroups}
