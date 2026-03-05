@@ -147,6 +147,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       // Design review
       "/dashboards/reviews",
       "/api/reviews",
+      // Install photo review
+      "/dashboards/inspections",
+      "/api/install-review",
     ],
     canScheduleSurveys: true,
     canScheduleInstalls: true,
@@ -188,6 +191,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/api/activity/log",
       "/api/inventory",
       "/api/bugs",
+      // Install photo review
+      "/dashboards/inspections",
+      "/api/install-review",
     ],
     canScheduleSurveys: false,
     canScheduleInstalls: true,
@@ -254,6 +260,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       // Design review
       "/dashboards/reviews",
       "/api/reviews",
+      // Install photo review
+      "/dashboards/inspections",
+      "/api/install-review",
     ],
     canScheduleSurveys: true,
     canScheduleInstalls: true,
@@ -352,6 +361,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       // Design review
       "/dashboards/reviews",
       "/api/reviews",
+      // Install photo review
+      "/dashboards/inspections",
+      "/api/install-review",
     ],
     canScheduleSurveys: true,
     canScheduleInstalls: true,
@@ -428,6 +440,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       // Design review
       "/dashboards/reviews",
       "/api/reviews",
+      // Install photo review
+      "/dashboards/inspections",
+      "/api/install-review",
     ],
     canScheduleSurveys: false,
     canScheduleInstalls: false,

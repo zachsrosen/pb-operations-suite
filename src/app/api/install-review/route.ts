@@ -26,6 +26,14 @@ import {
   downloadDriveImage,
 } from "@/lib/drive-plansets";
 import { handleLookup as zuperJobLookup } from "@/app/api/zuper/jobs/lookup/route";
+import {
+  acquireReviewLock,
+  touchReviewRun,
+  completeReviewRun,
+  failReviewRun,
+  DuplicateReviewError,
+} from "@/lib/review-lock";
+import type { Finding } from "@/lib/checks/types";
 
 // Allow up to 2 minutes for AI vision review (planset + photos can be large)
 export const maxDuration = 120;
@@ -262,10 +270,7 @@ function mimeFromFilename(name: string): string {
   return map[ext] || "image/jpeg";
 }
 
-/** Check if a filename has a Claude-supported image type. */
-function isSupportedImageType(name: string): boolean {
-  return SUPPORTED_IMAGE_TYPES.has(mimeFromFilename(name));
-}
+
 
 /** Max image size for base64 inline: 20MB per image. */
 const MAX_IMAGE_SIZE = 20 * 1024 * 1024;
@@ -338,11 +343,63 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // ── Acquire review lock (prevents duplicate concurrent runs) ──
+  let reviewId: string | null = null;
+  if (dealId) {
+    try {
+      reviewId = await acquireReviewLock(dealId, "install-review", "manual", authResult.email ?? "api");
+    } catch (e) {
+      if (e instanceof DuplicateReviewError) {
+        return NextResponse.json(
+          { error: "Install review already running for this deal", reviewId: e.existingReviewId },
+          { status: 409 },
+        );
+      }
+      // DB not configured or transient error — continue without persistence
+      console.warn("[install-review] Lock acquisition failed, continuing without persistence:", e);
+    }
+  }
+
+  // Wrap all work in try/catch so we can mark the review as FAILED on errors
+  try {
+    return await runInstallReview(dealId, jobUid, photoUrls, reviewId, start);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    if (reviewId) await failReviewRun(reviewId, msg).catch(() => {});
+    console.error("[install-review] Unhandled error:", msg);
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Core review logic (extracted to support try/catch + lock cleanup)
+// ---------------------------------------------------------------------------
+
+async function runInstallReview(
+  dealId: string | undefined,
+  jobUid: string | undefined,
+  photoUrls: string[] | undefined,
+  reviewId: string | null,
+  start: number,
+): Promise<NextResponse> {
+  /** Mark the review as FAILED in the DB and return a JSON error response. */
+  const failAndReturn = async (
+    body: Record<string, unknown>,
+    status: number,
+  ): Promise<NextResponse> => {
+    const msg = String(body.error || body.details || "Unknown error");
+    if (reviewId) await failReviewRun(reviewId, msg).catch(() => {});
+    return NextResponse.json(body, { status });
+  };
+
   // ── Step 1: Fetch deal properties early (needed for job lookup + planset) ──
   let properties: Record<string, string | null> | null = null;
   if (dealId) {
     properties = await getDealProperties(dealId, DEAL_PROPERTIES);
   }
+
+  // Heartbeat: deal properties fetched
+  if (reviewId) await touchReviewRun(reviewId).catch(() => {});
 
   // ── Step 2: Resolve Zuper job UID ──
   let resolvedJobUid = jobUid || null;
@@ -459,12 +516,12 @@ export async function POST(request: NextRequest) {
     });
 
     if (safeUrls.length === 0 && photoUrls.length > 0) {
-      return NextResponse.json(
+      return failAndReturn(
         {
           error: "Invalid photo URLs",
           details: `Photo URLs must use HTTPS and be from allowed hosts: ${ALLOWED_PHOTO_HOSTS.join(", ")}`,
         },
-        { status: 400 },
+        400,
       );
     }
 
@@ -498,9 +555,9 @@ export async function POST(request: NextRequest) {
       details.push("Could not find a Zuper job for this deal.");
     details.push("Provide photoUrls as fallback.");
 
-    return NextResponse.json(
+    return failAndReturn(
       { error: "No photos available", details: details.join(" ") },
-      { status: 422 },
+      422,
     );
   }
 
@@ -519,29 +576,32 @@ export async function POST(request: NextRequest) {
   photoBuffers = photoBuffers.filter(isSupported);
 
   if (photoBuffers.length === 0) {
-    return NextResponse.json(
+    return failAndReturn(
       {
         error: "No supported photos available",
         details: `Found ${unsupported.length} photo(s) but all are in unsupported formats (HEIC/HEIF). Please provide JPEG, PNG, or WebP images.`,
       },
-      { status: 422 },
+      422,
     );
   }
 
   console.log(`[install-review] Using ${photoBuffers.length} photos from ${photoSource}`);
 
+  // Heartbeat: photos collected
+  if (reviewId) await touchReviewRun(reviewId).catch(() => {});
+
   // ── Step 4: Validate deal properties + planset ──
   if (!dealId) {
-    return NextResponse.json(
+    return failAndReturn(
       { error: "dealId is required to locate the planset" },
-      { status: 400 },
+      400,
     );
   }
 
   if (!properties) {
-    return NextResponse.json(
+    return failAndReturn(
       { error: `Failed to fetch deal ${dealId} from HubSpot` },
-      { status: 500 },
+      500,
     );
   }
 
@@ -569,14 +629,17 @@ export async function POST(request: NextRequest) {
   }
 
   if (plansetCandidates.length === 0) {
-    return NextResponse.json(
+    return failAndReturn(
       {
         error: "No planset PDF found",
         details: `Checked ${[permitFolderId && "permit_documents", designFolderId && "design_documents"].filter(Boolean).join(" and ") || "no folders"} — no PDFs found.`,
       },
-      { status: 422 },
+      422,
     );
   }
+
+  // Heartbeat: planset candidates found, starting AI phase
+  if (reviewId) await touchReviewRun(reviewId).catch(() => {});
 
   // ── Step 5: Upload photos to Anthropic Files API ──
   const client = getAnthropicClient();
@@ -708,9 +771,9 @@ export async function POST(request: NextRequest) {
       if (!isPdfError) {
         // Non-PDF error (auth, rate limit, etc.) — don't try other candidates
         await cleanupFiles(client, uploadedFileIds);
-        return NextResponse.json(
+        return failAndReturn(
           { error: `AI review failed: ${msg}` },
-          { status: 500 },
+          500,
         );
       }
 
@@ -781,7 +844,6 @@ export async function POST(request: NextRequest) {
     ];
 
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const photoBlocks = photoFileIds.length > 0
         ? photoFileIds.map((p) => ({
             type: "image",
@@ -821,12 +883,12 @@ export async function POST(request: NextRequest) {
       const photoOnlyMsg = photoOnlyErr instanceof Error ? photoOnlyErr.message : "Unknown error";
       console.error("[install-review] Photo-only review also failed:", photoOnlyMsg);
       await cleanupFiles(client, uploadedFileIds);
-      return NextResponse.json(
+      return failAndReturn(
         {
           error: `AI review failed for all strategies`,
           details: `File-ref planset failed, inline planset failed, photo-only review failed. Last error: ${photoOnlyMsg}`,
         },
-        { status: 500 },
+        500,
       );
     }
   }
@@ -841,9 +903,9 @@ export async function POST(request: NextRequest) {
   );
 
   if (!toolBlock) {
-    return NextResponse.json(
+    return failAndReturn(
       { error: "AI review did not return structured findings" },
-      { status: 500 },
+      500,
     );
   }
 
@@ -882,5 +944,33 @@ export async function POST(request: NextRequest) {
       `(${result.duration_ms}ms)`,
   );
 
-  return NextResponse.json(result);
+  // ── Persist results to DB ──
+  if (reviewId) {
+    // Map InstallFinding → Finding format used by ProjectReview table
+    const dbFindings: Finding[] = findings.map((f) => ({
+      check: `install-${f.category}`,
+      severity: f.status === "fail" ? "error" : f.status === "unable_to_verify" ? "warning" : "info",
+      message: `[${f.status.toUpperCase()}] ${f.category}: ${f.notes || f.observed}`,
+      field: f.category,
+    }));
+
+    const errorCount = findings.filter((f) => f.status === "fail").length;
+    const warningCount = findings.filter((f) => f.status === "unable_to_verify").length;
+
+    try {
+      await completeReviewRun(reviewId, {
+        findings: dbFindings,
+        errorCount,
+        warningCount,
+        passed: result.overall_pass,
+        durationMs: result.duration_ms,
+      });
+    } catch (err) {
+      console.error("[install-review] Failed to persist review results:", err);
+      // Release the lock so the user isn't blocked by a RUNNING row until stale recovery
+      await failReviewRun(reviewId, "completeReviewRun failed").catch(() => {});
+    }
+  }
+
+  return NextResponse.json({ ...result, reviewId });
 }

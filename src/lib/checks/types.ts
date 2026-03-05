@@ -36,10 +36,19 @@ export interface ReviewResult {
   durationMs: number;
 }
 
-export type SkillName = "design-review";
+export type SkillName = "design-review" | "install-review";
 
-export const VALID_SKILLS: SkillName[] = ["design-review"];
+/** All valid skill names — used for DB queries (e.g. latest review per skill). */
+export const VALID_SKILLS: SkillName[] = ["design-review", "install-review"];
+
+/**
+ * Skills the generic /api/reviews/run runner can execute.
+ * install-review has its own endpoint (/api/install-review) with AI vision pipeline,
+ * so it's excluded here to prevent false "passed" results from empty check lists.
+ */
+export const RUNNER_SKILLS: SkillName[] = ["design-review"];
 
 export const SKILL_ALLOWED_ROLES: Record<SkillName, string[]> = {
   "design-review": ["ADMIN", "OWNER", "MANAGER", "DESIGNER", "OPERATIONS_MANAGER", "PROJECT_MANAGER", "TECH_OPS"],
+  "install-review": ["ADMIN", "OWNER", "MANAGER", "OPERATIONS", "OPERATIONS_MANAGER", "PROJECT_MANAGER", "TECH_OPS"],
 };

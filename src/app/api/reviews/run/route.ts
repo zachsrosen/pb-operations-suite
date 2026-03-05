@@ -15,7 +15,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { runChecks } from "@/lib/checks/runner";
-import { VALID_SKILLS, SKILL_ALLOWED_ROLES } from "@/lib/checks/types";
+import { RUNNER_SKILLS, SKILL_ALLOWED_ROLES } from "@/lib/checks/types";
 import type { SkillName } from "@/lib/checks/types";
 import {
   acquireReviewLock,
@@ -124,9 +124,9 @@ export async function POST(request: NextRequest) {
   if (!dealId || typeof dealId !== "string") {
     return NextResponse.json({ error: "dealId is required" }, { status: 400 });
   }
-  if (!skill || !VALID_SKILLS.includes(skill as SkillName)) {
+  if (!skill || !RUNNER_SKILLS.includes(skill as SkillName)) {
     return NextResponse.json(
-      { error: `skill must be one of: ${VALID_SKILLS.join(", ")}` },
+      { error: `skill must be one of: ${RUNNER_SKILLS.join(", ")}` },
       { status: 400 }
     );
   }
