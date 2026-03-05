@@ -534,9 +534,19 @@ export default function SchedulerPage() {
 
   /* ---- view / nav ---- */
   const [currentView, setCurrentView] = useState<"calendar" | "week" | "gantt">("calendar");
-  const [currentYear, setCurrentYear] = useState(() => new Date().getFullYear());
-  const [currentMonth, setCurrentMonth] = useState(() => new Date().getMonth());
+  // Hydration-safe: defer Date-dependent state to client via useEffect
+  const [mounted, setMounted] = useState(false);
+  const [currentYear, setCurrentYear] = useState(2026);
+  const [currentMonth, setCurrentMonth] = useState(0);
   const [weekOffset, setWeekOffset] = useState(0);
+  const todayStr = useRef("");
+  useEffect(() => {
+    const now = new Date();
+    setCurrentYear(now.getFullYear());
+    setCurrentMonth(now.getMonth());
+    todayStr.current = now.toDateString();
+    setMounted(true);
+  }, []);
 
   /* ---- filters ---- */
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]); // For project list filtering (multi-select)
@@ -2392,6 +2402,15 @@ export default function SchedulerPage() {
   /*  RENDER                                                           */
   /* ================================================================ */
 
+  // Prevent hydration mismatch: server renders a shell, client takes over after mount
+  if (!mounted) {
+    return (
+      <div className="h-screen overflow-hidden bg-background text-foreground/90 font-sans flex items-center justify-center">
+        <div className="text-muted text-sm animate-pulse">Loading scheduler…</div>
+      </div>
+    );
+  }
+
   return (
     <div className="h-screen overflow-hidden bg-background text-foreground/90 font-sans max-[900px]:h-auto max-[900px]:min-h-screen max-[900px]:overflow-auto">
       {/* Grid layout: project queue | calendar | optional revenue sidebar */}
@@ -3392,7 +3411,7 @@ export default function SchedulerPage() {
                   <div className="bg-background p-2" />
                   {weekDates.map((d, i) => {
                     const isToday =
-                      d.toDateString() === new Date().toDateString();
+                      d.toDateString() === todayStr.current;
                     return (
                       <div
                         key={i}
@@ -3573,7 +3592,7 @@ export default function SchedulerPage() {
                     </div>
                     {ganttDates.map((d, i) => {
                       const isToday =
-                        d.toDateString() === new Date().toDateString();
+                        d.toDateString() === todayStr.current;
                       return (
                         <div
                           key={i}
