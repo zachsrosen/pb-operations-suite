@@ -22,6 +22,9 @@ import {
   listPlansetPdfs,
   pickBestPlanset,
   downloadDrivePdf,
+  listDriveImages,
+  downloadDriveImage,
+  findPhotosFolder,
 } from "@/lib/drive-plansets";
 import { handleLookup as zuperJobLookup } from "@/app/api/zuper/jobs/lookup/route";
 
@@ -65,6 +68,10 @@ const DEAL_PROPERTIES = [
   "design_documents",
   "design_document_folder_id",
   "all_document_parent_folder_id",
+  "installation_documents",
+  "installation_document_id",
+  "permit_documents",
+  "permit_document_id",
   "system_size_kw",
   "module_type",
   "module_count",
@@ -203,6 +210,26 @@ function getDesignFolderId(properties: Record<string, string | null>): string | 
   return extractFolderId(raw);
 }
 
+function getInstallFolderId(properties: Record<string, string | null>): string | null {
+  const raw = String(
+    properties.installation_documents ||
+      properties.installation_document_id ||
+      "",
+  ).trim();
+  if (!raw) return null;
+  return extractFolderId(raw);
+}
+
+function getPermitFolderId(properties: Record<string, string | null>): string | null {
+  const raw = String(
+    properties.permit_documents ||
+      properties.permit_document_id ||
+      "",
+  ).trim();
+  if (!raw) return null;
+  return extractFolderId(raw);
+}
+
 function buildDealContext(properties: Record<string, string | null>): Record<string, string> {
   const result: Record<string, string> = {};
   for (const [key, val] of Object.entries(properties)) {
@@ -242,13 +269,13 @@ async function findZuperJobUid(
 ): Promise<string | null> {
   try {
     const res = await zuperJobLookup(
-      [dealId],
+      [String(dealId)],
       dealName ? [dealName] : [],
       category || null,
     );
 
     const data = await res.json();
-    const match = data.jobs?.[dealId];
+    const match = data.jobs?.[String(dealId)];
     if (match?.jobUid) {
       console.log(
         `[install-review] Zuper job found: ${match.jobUid} (matched by: ${match.matchedBy}, status: ${match.status})`,
@@ -279,7 +306,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { dealId, jobUid, photoUrls } = body;
+  // Coerce dealId to string — JSON body may send it as a number
+  const dealId = body.dealId ? String(body.dealId) : undefined;
+  const { jobUid, photoUrls } = body;
 
   if (!dealId && !jobUid && (!photoUrls || photoUrls.length === 0)) {
     return NextResponse.json(
@@ -306,42 +335,95 @@ export async function POST(request: NextRequest) {
       (await findZuperJobUid(dealId, dealName));
   }
 
-  // ── Step 3: Fetch photos ──
-  const zuper = new ZuperClient();
+  // ── Step 3: Fetch photos (Drive → Zuper → manual URLs) ──
   let photoBuffers: { buffer: Buffer; name: string }[] = [];
+  let photoSource = "";
 
-  // Try Zuper attachments first
-  if (resolvedJobUid && zuper.isConfigured()) {
-    try {
-      const photos = await zuper.getJobPhotos(resolvedJobUid);
-      console.log(
-        `[install-review] Found ${photos.length} photos on Zuper job ${resolvedJobUid}`,
-      );
+  // 3a. Try Google Drive installation documents folder (most reliable)
+  if (photoBuffers.length === 0 && properties) {
+    const installFolderId = getInstallFolderId(properties);
+    if (installFolderId) {
+      try {
+        // Try direct images in the install folder first
+        let driveImages = await listDriveImages(installFolderId);
 
-      // Download photos (limit to 10 to keep within token budget)
-      const toDownload = photos.slice(0, 10);
-      const downloadResults = await Promise.allSettled(
-        toDownload.map(async (att) => {
-          const buffer = await zuper.downloadFile(att.url);
-          return { buffer, name: att.file_name };
-        }),
-      );
-
-      for (const r of downloadResults) {
-        if (r.status === "fulfilled" && r.value.buffer.byteLength <= MAX_IMAGE_SIZE) {
-          photoBuffers.push(r.value);
+        // If no images at top level, search for a photos subfolder
+        if (driveImages.length === 0) {
+          const photosFolderId = await findPhotosFolder(installFolderId);
+          if (photosFolderId) {
+            driveImages = await listDriveImages(photosFolderId);
+          }
         }
-      }
 
-      console.log(
-        `[install-review] Downloaded ${photoBuffers.length}/${toDownload.length} photos`,
-      );
-    } catch (err) {
-      console.warn(`[install-review] Failed to fetch Zuper photos:`, err);
+        console.log(
+          `[install-review] Found ${driveImages.length} images in Drive install folder ${installFolderId}`,
+        );
+
+        if (driveImages.length > 0) {
+          const toDownload = driveImages.slice(0, 10);
+          const downloadResults = await Promise.allSettled(
+            toDownload.map(async (img) => {
+              const { buffer, filename } = await downloadDriveImage(img.id);
+              return { buffer, name: filename };
+            }),
+          );
+
+          for (const r of downloadResults) {
+            if (r.status === "fulfilled" && r.value.buffer.byteLength <= MAX_IMAGE_SIZE) {
+              photoBuffers.push(r.value);
+            }
+          }
+
+          if (photoBuffers.length > 0) {
+            photoSource = "google_drive";
+            console.log(
+              `[install-review] Downloaded ${photoBuffers.length}/${toDownload.length} photos from Drive`,
+            );
+          }
+        }
+      } catch (err) {
+        console.warn(`[install-review] Failed to fetch Drive photos:`, err);
+      }
     }
   }
 
-  // Manual fallback: download from provided URLs (with SSRF protection)
+  // 3b. Try Zuper job attachments as fallback
+  if (photoBuffers.length === 0 && resolvedJobUid) {
+    const zuper = new ZuperClient();
+    if (zuper.isConfigured()) {
+      try {
+        const photos = await zuper.getJobPhotos(resolvedJobUid);
+        console.log(
+          `[install-review] Found ${photos.length} photos on Zuper job ${resolvedJobUid}`,
+        );
+
+        const toDownload = photos.slice(0, 10);
+        const downloadResults = await Promise.allSettled(
+          toDownload.map(async (att) => {
+            const buffer = await zuper.downloadFile(att.url);
+            return { buffer, name: att.file_name };
+          }),
+        );
+
+        for (const r of downloadResults) {
+          if (r.status === "fulfilled" && r.value.buffer.byteLength <= MAX_IMAGE_SIZE) {
+            photoBuffers.push(r.value);
+          }
+        }
+
+        if (photoBuffers.length > 0) {
+          photoSource = "zuper";
+          console.log(
+            `[install-review] Downloaded ${photoBuffers.length}/${toDownload.length} photos from Zuper`,
+          );
+        }
+      } catch (err) {
+        console.warn(`[install-review] Failed to fetch Zuper photos:`, err);
+      }
+    }
+  }
+
+  // 3c. Manual fallback: download from provided URLs (with SSRF protection)
   if (photoBuffers.length === 0 && photoUrls && photoUrls.length > 0) {
     const ALLOWED_PHOTO_HOSTS = [
       "storage.googleapis.com",
@@ -389,19 +471,27 @@ export async function POST(request: NextRequest) {
         photoBuffers.push(r.value);
       }
     }
+
+    if (photoBuffers.length > 0) photoSource = "manual_urls";
   }
 
   if (photoBuffers.length === 0) {
+    const details = [];
+    if (!getInstallFolderId(properties || {}))
+      details.push("No installation_documents folder set on deal.");
+    if (resolvedJobUid)
+      details.push(`Zuper job ${resolvedJobUid} has no photo attachments.`);
+    else if (!jobUid)
+      details.push("Could not find a Zuper job for this deal.");
+    details.push("Provide photoUrls as fallback.");
+
     return NextResponse.json(
-      {
-        error: "No photos available",
-        details: resolvedJobUid
-          ? `Zuper job ${resolvedJobUid} has no photo attachments. Provide photoUrls as fallback.`
-          : "Could not find Zuper job for this deal. Provide jobUid or photoUrls directly.",
-      },
+      { error: "No photos available", details: details.join(" ") },
       { status: 422 },
     );
   }
+
+  console.log(`[install-review] Using ${photoBuffers.length} photos from ${photoSource}`);
 
   // ── Step 4: Validate deal properties + planset ──
   if (!dealId) {
@@ -418,18 +508,24 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const folderId = getDesignFolderId(properties);
-  if (!folderId) {
-    return NextResponse.json(
-      { error: "Deal has no design_documents folder — cannot locate planset" },
-      { status: 422 },
-    );
+  // Try permit folder first (stamped/permitted plans), then design folder
+  const permitFolderId = getPermitFolderId(properties);
+  const designFolderId = getDesignFolderId(properties);
+
+  let pdfFiles = permitFolderId ? await listPlansetPdfs(permitFolderId) : [];
+  let plansetSource = permitFolderId && pdfFiles.length > 0 ? "permit_documents" : "";
+
+  if (pdfFiles.length === 0 && designFolderId) {
+    pdfFiles = await listPlansetPdfs(designFolderId);
+    if (pdfFiles.length > 0) plansetSource = "design_documents";
   }
 
-  const pdfFiles = await listPlansetPdfs(folderId);
   if (pdfFiles.length === 0) {
     return NextResponse.json(
-      { error: `No PDF files found in Drive folder ${folderId}` },
+      {
+        error: "No planset PDF found",
+        details: `Checked ${[permitFolderId && "permit_documents", designFolderId && "design_documents"].filter(Boolean).join(" and ") || "no folders"} — no PDFs found.`,
+      },
       { status: 422 },
     );
   }
@@ -443,7 +539,7 @@ export async function POST(request: NextRequest) {
   }
 
   console.log(
-    `[install-review] Selected planset: "${selectedFile.name}" ` +
+    `[install-review] Selected planset: "${selectedFile.name}" from ${plansetSource} ` +
       `(${selectedFile.size ? Math.round(Number(selectedFile.size) / 1024) + "KB" : "?"})`,
   );
 

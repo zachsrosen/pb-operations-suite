@@ -247,3 +247,155 @@ export async function downloadDrivePdf(fileId: string): Promise<{ buffer: Buffer
   const arrayBuffer = await dlRes.arrayBuffer();
   return { buffer: Buffer.from(arrayBuffer), filename };
 }
+
+// ---------------------------------------------------------------------------
+// Install / Construction Photos from Drive
+// ---------------------------------------------------------------------------
+
+export interface DriveImageFile {
+  id: string;
+  name: string;
+  mimeType: string;
+  modifiedTime: string;
+  size?: string;
+}
+
+/** Patterns for construction / install photos subfolder names. */
+const PHOTOS_FOLDER_PATTERNS = [
+  /construction\s*photo/i,
+  /install(ation)?\s*photo/i,
+  /^photos$/i,
+  /^construction$/i,
+  /job\s*photo/i,
+  /field\s*photo/i,
+  /site\s*photo/i,
+];
+
+/**
+ * Search for a construction/install photos subfolder inside the given folder.
+ * Searches recursively one level deep (parent → child folders).
+ */
+export async function findPhotosFolder(parentFolderId: string): Promise<string | null> {
+  const token = await getDriveToken();
+
+  const query = `'${parentFolderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+  const fields = "files(id,name)";
+  const url =
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}` +
+    `&fields=${encodeURIComponent(fields)}` +
+    `&pageSize=100` +
+    `&supportsAllDrives=true&includeItemsFromAllDrives=true`;
+
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+
+  if (!res.ok) return null;
+
+  const data = (await res.json()) as { files?: Array<{ id: string; name: string }> };
+  const folders = data.files ?? [];
+
+  // Direct match at this level
+  const direct = folders.find((f) => PHOTOS_FOLDER_PATTERNS.some((p) => p.test(f.name)));
+  if (direct) return direct.id;
+
+  // One level deeper — check inside "Construction" or similar parent folders
+  const constructionLike = folders.filter((f) =>
+    /construct|install|field|job/i.test(f.name),
+  );
+  for (const folder of constructionLike) {
+    const subQuery = `'${folder.id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+    const subUrl =
+      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(subQuery)}` +
+      `&fields=${encodeURIComponent(fields)}` +
+      `&pageSize=50` +
+      `&supportsAllDrives=true&includeItemsFromAllDrives=true`;
+
+    const subRes = await fetch(subUrl, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+    if (!subRes.ok) continue;
+
+    const subData = (await subRes.json()) as { files?: Array<{ id: string; name: string }> };
+    const subMatch = (subData.files ?? []).find((f) =>
+      PHOTOS_FOLDER_PATTERNS.some((p) => p.test(f.name)),
+    );
+    if (subMatch) return subMatch.id;
+
+    // If "Construction" folder itself has images directly (no subfolder), use it
+    const hasImages = await listDriveImages(folder.id);
+    if (hasImages.length > 0) return folder.id;
+  }
+
+  return null;
+}
+
+/** List image files in a Google Drive folder, sorted by modifiedTime descending. */
+export async function listDriveImages(folderId: string): Promise<DriveImageFile[]> {
+  const token = await getDriveToken();
+
+  const mimeTypes = [
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/heic",
+    "image/heif",
+  ];
+  const mimeFilter = mimeTypes.map((m) => `mimeType='${m}'`).join(" or ");
+  const query = `'${folderId}' in parents and (${mimeFilter}) and trashed=false`;
+  const fields = "files(id,name,mimeType,modifiedTime,size)";
+  const orderBy = "modifiedTime desc";
+  const url =
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}` +
+    `&fields=${encodeURIComponent(fields)}` +
+    `&orderBy=${encodeURIComponent(orderBy)}` +
+    `&pageSize=50` +
+    `&supportsAllDrives=true&includeItemsFromAllDrives=true`;
+
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    console.warn(`[drive] Failed to list images in ${folderId}: ${res.status} ${body.slice(0, 200)}`);
+    return [];
+  }
+
+  const data = (await res.json()) as { files?: DriveImageFile[] };
+  return data.files ?? [];
+}
+
+/** Download an image from Google Drive as a Buffer. */
+export async function downloadDriveImage(
+  fileId: string,
+): Promise<{ buffer: Buffer; filename: string; mimeType: string }> {
+  const token = await getDriveToken();
+
+  // Get file metadata
+  const metaRes = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?fields=name,mimeType&supportsAllDrives=true`,
+    { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" },
+  );
+  const meta = metaRes.ok ? ((await metaRes.json()) as { name?: string; mimeType?: string }) : {};
+  const filename = meta.name ?? `photo-${fileId}.jpg`;
+  const mimeType = meta.mimeType ?? "image/jpeg";
+
+  // Download content
+  const dlUrl = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media&supportsAllDrives=true`;
+  const dlRes = await fetch(dlUrl, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+
+  if (!dlRes.ok) {
+    const body = await dlRes.text().catch(() => "");
+    throw new Error(`Drive image download ${dlRes.status}: ${body.slice(0, 200)}`);
+  }
+
+  const arrayBuffer = await dlRes.arrayBuffer();
+  return { buffer: Buffer.from(arrayBuffer), filename, mimeType };
+}
