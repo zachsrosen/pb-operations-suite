@@ -545,19 +545,30 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Try permit folder first (stamped/permitted plans), then design folder
+  // ── Collect planset candidates from permit + design folders ──
+  // Permit plans (stamped) are preferred but can be large/problematic;
+  // design plans serve as fallback (usually smaller, pre-stamp).
   const permitFolderId = getPermitFolderId(properties);
   const designFolderId = getDesignFolderId(properties);
 
-  let pdfFiles = permitFolderId ? await listPlansetPdfs(permitFolderId) : [];
-  let plansetSource = permitFolderId && pdfFiles.length > 0 ? "permit_documents" : "";
+  interface PlansetCandidate {
+    file: { id: string; name: string; size?: string };
+    source: string;
+  }
+  const plansetCandidates: PlansetCandidate[] = [];
 
-  if (pdfFiles.length === 0 && designFolderId) {
-    pdfFiles = await listPlansetPdfs(designFolderId);
-    if (pdfFiles.length > 0) plansetSource = "design_documents";
+  if (permitFolderId) {
+    const permitPdfs = await listPlansetPdfs(permitFolderId);
+    const best = pickBestPlanset(permitPdfs);
+    if (best) plansetCandidates.push({ file: best, source: "permit_documents" });
+  }
+  if (designFolderId) {
+    const designPdfs = await listPlansetPdfs(designFolderId);
+    const best = pickBestPlanset(designPdfs);
+    if (best) plansetCandidates.push({ file: best, source: "design_documents" });
   }
 
-  if (pdfFiles.length === 0) {
+  if (plansetCandidates.length === 0) {
     return NextResponse.json(
       {
         error: "No planset PDF found",
@@ -567,46 +578,10 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const selectedFile = pickBestPlanset(pdfFiles);
-  if (!selectedFile) {
-    return NextResponse.json(
-      { error: "Could not select a planset PDF from available files" },
-      { status: 422 },
-    );
-  }
-
-  console.log(
-    `[install-review] Selected planset: "${selectedFile.name}" from ${plansetSource} ` +
-      `(${selectedFile.size ? Math.round(Number(selectedFile.size) / 1024) + "KB" : "?"})`,
-  );
-
-  const { buffer: plansetBuffer, filename: plansetFilename } = await downloadDrivePdf(
-    selectedFile.id,
-  );
-
-  // ── Step 5: Upload planset + photos to Anthropic Files API ──
-  // Using Files API keeps the request body small regardless of file sizes.
+  // ── Step 5: Upload photos to Anthropic Files API ──
   const client = getAnthropicClient();
   const uploadedFileIds: string[] = []; // Track for cleanup
 
-  let pdfFileId: string | undefined;
-  try {
-    const uploadedFile = await client.beta.files.upload({
-      file: new File([new Uint8Array(plansetBuffer)], plansetFilename, {
-        type: "application/pdf",
-      }),
-    });
-    pdfFileId = uploadedFile.id;
-    uploadedFileIds.push(pdfFileId);
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : "File upload failed";
-    return NextResponse.json(
-      { error: `Failed to upload planset for AI review: ${msg}` },
-      { status: 500 },
-    );
-  }
-
-  // Upload photos to Files API too (avoids base64 bloat in request body)
   const photoFileIds: { fileId: string; name: string }[] = [];
   for (const photo of photoBuffers) {
     try {
@@ -618,63 +593,16 @@ export async function POST(request: NextRequest) {
       uploadedFileIds.push(uploaded.id);
     } catch (e) {
       console.warn(`[install-review] Failed to upload photo ${photo.name}:`, e);
-      // Continue with other photos
     }
   }
 
   if (photoFileIds.length === 0) {
-    // Cleanup and fall back to base64 photos
     console.warn("[install-review] Files API photo uploads all failed, using base64 photos");
   }
 
-  // ── Step 6: Call Claude with planset + photos ──
+  // ── Step 6: Try each planset candidate until one works ──
   const dealContext = buildDealContext(properties);
 
-  const promptParts = [
-    `Review the ${photoFileIds.length || photoBuffers.length} install photo(s) against the attached planset PDF (${plansetFilename}).`,
-    "",
-    "## Deal Properties (from CRM)",
-    "```json",
-    JSON.stringify(dealContext, null, 2),
-    "```",
-    "",
-    `Photos provided: ${(photoFileIds.length > 0 ? photoFileIds.map((p) => p.name) : photoBuffers.map((p) => p.name)).join(", ")}`,
-    "",
-    "Compare the installed equipment visible in the photos against the planset equipment list and call submit_install_review with your findings.",
-  ];
-
-  // Build content blocks using file_id references (tiny request body)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function buildFileRefContent(): any[] {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const blocks: any[] = [];
-    blocks.push({
-      type: "document",
-      source: { type: "file", file_id: pdfFileId },
-    });
-    if (photoFileIds.length > 0) {
-      for (const photo of photoFileIds) {
-        blocks.push({
-          type: "image",
-          source: { type: "file", file_id: photo.fileId },
-        });
-      }
-    } else {
-      // Fallback: base64 photos if file uploads failed
-      for (const photo of photoBuffers) {
-        const mediaType = photo.mimeType || mimeFromFilename(photo.name);
-        if (!SUPPORTED_IMAGE_TYPES.has(mediaType)) continue;
-        blocks.push({
-          type: "image",
-          source: { type: "base64", media_type: mediaType, data: photo.buffer.toString("base64") },
-        });
-      }
-    }
-    blocks.push({ type: "text", text: promptParts.join("\n") });
-    return blocks;
-  }
-
-  // Shared Claude call params (reused for fallback)
   const claudeCallParams = {
     model: CLAUDE_MODELS.sonnet,
     max_tokens: 4096,
@@ -683,109 +611,221 @@ export async function POST(request: NextRequest) {
     tool_choice: { type: "tool", name: "submit_install_review" } as never,
   };
 
+  // Max raw PDF size for base64 inline (base64 adds ~33%, so 22MB → ~30MB base64)
+  const MAX_INLINE_PDF_RAW = 22 * 1024 * 1024;
+
   let response;
-  try {
-    response = await client.beta.messages.create({
-      ...claudeCallParams,
-      messages: [{ role: "user", content: buildFileRefContent() }],
-      betas: ["files-api-2025-04-14"],
-    });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : "Claude API call failed";
-    console.error("[install-review] Claude API error (file refs):", msg);
+  let usedPlansetFilename = "";
+  let lastError = "";
 
-    // Fallback: retry with base64 inline PDF if it's a "Could not process PDF" error
-    // Keep photo file_id references since those work fine — only the PDF needs inlining
-    const isPdfError = msg.toLowerCase().includes("could not process pdf");
-    const INLINE_PDF_LIMIT = 45 * 1024 * 1024; // 45MB
+  for (const candidate of plansetCandidates) {
+    const { file: plansetFile, source: plansetSource } = candidate;
 
-    if (isPdfError && plansetBuffer.byteLength < INLINE_PDF_LIMIT) {
-      const pdfSizeMB = plansetBuffer.byteLength / (1024 * 1024);
-      console.log(
-        `[install-review] Falling back to base64 inline PDF (${Math.round(pdfSizeMB * 10) / 10}MB) with file-ref photos`,
-      );
+    console.log(
+      `[install-review] Trying planset: "${plansetFile.name}" from ${plansetSource} ` +
+        `(${plansetFile.size ? Math.round(Number(plansetFile.size) / 1024) + "KB" : "?"})`,
+    );
 
-      try {
-        const base64PdfData = Buffer.from(plansetBuffer).toString("base64");
+    const { buffer: plansetBuffer, filename: plansetFilename } = await downloadDrivePdf(
+      plansetFile.id,
+    );
+    const pdfSizeMB = plansetBuffer.byteLength / (1024 * 1024);
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const fallbackContent: any[] = [
-          {
-            type: "document",
-            source: { type: "base64", media_type: "application/pdf", data: base64PdfData },
-          },
-        ];
+    // Build prompt for this planset
+    const promptParts = [
+      `Review the ${photoFileIds.length || photoBuffers.length} install photo(s) against the attached planset PDF (${plansetFilename}).`,
+      "",
+      "## Deal Properties (from CRM)",
+      "```json",
+      JSON.stringify(dealContext, null, 2),
+      "```",
+      "",
+      `Photos provided: ${(photoFileIds.length > 0 ? photoFileIds.map((p) => p.name) : photoBuffers.map((p) => p.name)).join(", ")}`,
+      "",
+      "Compare the installed equipment visible in the photos against the planset equipment list and call submit_install_review with your findings.",
+    ];
 
-        // Use file_id references for photos if available (keeps request small)
-        if (photoFileIds.length > 0) {
-          for (const photo of photoFileIds) {
-            fallbackContent.push({
-              type: "image",
-              source: { type: "file", file_id: photo.fileId },
-            });
-          }
-        } else {
-          // Full fallback: base64 everything — dynamically size based on actual payload
-          const base64PdfSize = base64PdfData.length; // base64 is ~33% larger than raw
-          const MAX_REQUEST_BYTES = 30 * 1024 * 1024; // 30MB safety margin (API limit ~40MB)
-          let remainingBudget = MAX_REQUEST_BYTES - base64PdfSize;
+    // Helper: build photo content blocks
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const buildPhotoBlocks = (): any[] => {
+      if (photoFileIds.length > 0) {
+        return photoFileIds.map((p) => ({
+          type: "image",
+          source: { type: "file", file_id: p.fileId },
+        }));
+      }
+      // Fallback: base64 photos
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const blocks: any[] = [];
+      for (const photo of photoBuffers) {
+        const mediaType = photo.mimeType || mimeFromFilename(photo.name);
+        if (!SUPPORTED_IMAGE_TYPES.has(mediaType)) continue;
+        blocks.push({
+          type: "image",
+          source: { type: "base64", media_type: mediaType, data: photo.buffer.toString("base64") },
+        });
+      }
+      return blocks;
+    }
 
-          let photoCount = 0;
-          for (const photo of photoBuffers) {
-            const mediaType = photo.mimeType || mimeFromFilename(photo.name);
-            if (!SUPPORTED_IMAGE_TYPES.has(mediaType)) continue;
-            const b64Size = Math.ceil(photo.buffer.byteLength * 4 / 3); // base64 expansion
-            if (b64Size > remainingBudget) break;
-            fallbackContent.push({
-              type: "image",
-              source: { type: "base64", media_type: mediaType, data: photo.buffer.toString("base64") },
-            });
-            remainingBudget -= b64Size;
-            photoCount++;
-          }
-          console.log(
-            `[install-review] Full base64 fallback: ${photoCount} photos fit within budget`,
-          );
-        }
+    // ── Attempt A: Upload PDF to Files API, use file_id reference ──
+    let pdfFileId: string | undefined;
+    try {
+      const uploadedPdf = await client.beta.files.upload({
+        file: new File([new Uint8Array(plansetBuffer)], plansetFilename, {
+          type: "application/pdf",
+        }),
+      });
+      pdfFileId = uploadedPdf.id;
+      uploadedFileIds.push(pdfFileId);
+    } catch (e) {
+      console.warn(`[install-review] Failed to upload planset ${plansetFilename}:`, e);
+      lastError = e instanceof Error ? e.message : "File upload failed";
+      continue; // Try next candidate
+    }
 
-        fallbackContent.push({ type: "text", text: promptParts.join("\n") });
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const content: any[] = [
+        { type: "document", source: { type: "file", file_id: pdfFileId } },
+        ...buildPhotoBlocks(),
+        { type: "text", text: promptParts.join("\n") },
+      ];
 
-        // Use files beta if we still have photo file refs, otherwise plain messages
-        if (photoFileIds.length > 0) {
-          response = await client.beta.messages.create({
-            ...claudeCallParams,
-            messages: [{ role: "user", content: fallbackContent }],
-            betas: ["files-api-2025-04-14"],
-          });
-        } else {
-          response = await client.messages.create({
-            ...claudeCallParams,
-            messages: [{ role: "user", content: fallbackContent }],
-          });
-        }
-      } catch (fallbackErr) {
-        const fallbackMsg = fallbackErr instanceof Error ? fallbackErr.message : "Unknown error";
-        console.error("[install-review] Inline PDF fallback also failed:", fallbackMsg);
-        // Cleanup before returning
+      response = await client.beta.messages.create({
+        ...claudeCallParams,
+        messages: [{ role: "user", content }],
+        betas: ["files-api-2025-04-14"],
+      });
+      usedPlansetFilename = plansetFilename;
+      break; // Success!
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Claude API call failed";
+      console.error(`[install-review] File-ref attempt failed for ${plansetFilename}: ${msg}`);
+      lastError = msg;
+
+      const isPdfError = msg.toLowerCase().includes("could not process pdf");
+      if (!isPdfError) {
+        // Non-PDF error (auth, rate limit, etc.) — don't try other candidates
         await cleanupFiles(client, uploadedFileIds);
         return NextResponse.json(
-          { error: `AI review failed (both file and inline): ${fallbackMsg}` },
+          { error: `AI review failed: ${msg}` },
           { status: 500 },
         );
       }
-    } else if (isPdfError) {
+
+      // ── Attempt B: Base64 inline PDF (only if small enough) ──
+      if (plansetBuffer.byteLength <= MAX_INLINE_PDF_RAW) {
+        console.log(
+          `[install-review] Trying base64 inline for ${plansetFilename} (${Math.round(pdfSizeMB * 10) / 10}MB)`,
+        );
+        try {
+          const base64PdfData = Buffer.from(plansetBuffer).toString("base64");
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const content: any[] = [
+            {
+              type: "document",
+              source: { type: "base64", media_type: "application/pdf", data: base64PdfData },
+            },
+            ...buildPhotoBlocks(),
+            { type: "text", text: promptParts.join("\n") },
+          ];
+
+          if (photoFileIds.length > 0) {
+            response = await client.beta.messages.create({
+              ...claudeCallParams,
+              messages: [{ role: "user", content }],
+              betas: ["files-api-2025-04-14"],
+            });
+          } else {
+            response = await client.messages.create({
+              ...claudeCallParams,
+              messages: [{ role: "user", content }],
+            });
+          }
+          usedPlansetFilename = plansetFilename;
+          break; // Success!
+        } catch (inlineErr) {
+          const inlineMsg = inlineErr instanceof Error ? inlineErr.message : "Unknown error";
+          console.error(`[install-review] Inline fallback failed for ${plansetFilename}: ${inlineMsg}`);
+          lastError = inlineMsg;
+          // Continue to next candidate
+        }
+      } else {
+        console.log(
+          `[install-review] Skipping inline fallback — ${plansetFilename} too large (${Math.round(pdfSizeMB)}MB > ${MAX_INLINE_PDF_RAW / 1024 / 1024}MB limit)`,
+        );
+        // Continue to next candidate (e.g., design_documents version may be smaller)
+      }
+    }
+  }
+
+  // ── Attempt C: Photo-only review (no planset) as last resort ──
+  if (!response) {
+    console.log(
+      `[install-review] All planset attempts failed (last error: ${lastError}). Trying photo-only review.`,
+    );
+
+    const photoOnlyPrompt = [
+      `No planset PDF could be loaded for this review. Perform a photo-only install review based on the deal properties and ${photoFileIds.length || photoBuffers.length} install photo(s).`,
+      "",
+      "## Deal Properties (from CRM)",
+      "```json",
+      JSON.stringify(dealContext, null, 2),
+      "```",
+      "",
+      "Use the deal properties (module_type, module_count, inverter_type, battery_type, etc.) as the expected specification.",
+      "Compare what you can see in the photos against these expected specs.",
+      "Mark categories as unable_to_verify if the deal properties don't specify that component.",
+      "Call submit_install_review with your findings.",
+    ];
+
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const photoBlocks = photoFileIds.length > 0
+        ? photoFileIds.map((p) => ({
+            type: "image",
+            source: { type: "file", file_id: p.fileId },
+          }))
+        : photoBuffers
+            .filter((p) => SUPPORTED_IMAGE_TYPES.has(p.mimeType || mimeFromFilename(p.name)))
+            .map((p) => ({
+              type: "image",
+              source: {
+                type: "base64",
+                media_type: p.mimeType || mimeFromFilename(p.name),
+                data: p.buffer.toString("base64"),
+              },
+            }));
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const content: any[] = [
+        ...photoBlocks,
+        { type: "text", text: photoOnlyPrompt.join("\n") },
+      ];
+
+      if (photoFileIds.length > 0) {
+        response = await client.beta.messages.create({
+          ...claudeCallParams,
+          messages: [{ role: "user", content }],
+          betas: ["files-api-2025-04-14"],
+        });
+      } else {
+        response = await client.messages.create({
+          ...claudeCallParams,
+          messages: [{ role: "user", content }],
+        });
+      }
+      usedPlansetFilename = "(photo-only review — planset unavailable)";
+    } catch (photoOnlyErr) {
+      const photoOnlyMsg = photoOnlyErr instanceof Error ? photoOnlyErr.message : "Unknown error";
+      console.error("[install-review] Photo-only review also failed:", photoOnlyMsg);
       await cleanupFiles(client, uploadedFileIds);
       return NextResponse.json(
         {
-          error: "PDF could not be processed",
-          details: `The planset "${plansetFilename}" (${Math.round(plansetBuffer.byteLength / 1024 / 1024)}MB) could not be processed. It may be password-protected, encrypted, or corrupt.`,
+          error: `AI review failed for all strategies`,
+          details: `File-ref planset failed, inline planset failed, photo-only review failed. Last error: ${photoOnlyMsg}`,
         },
-        { status: 422 },
-      );
-    } else {
-      await cleanupFiles(client, uploadedFileIds);
-      return NextResponse.json(
-        { error: `AI review failed: ${msg}` },
         { status: 500 },
       );
     }
@@ -830,7 +870,7 @@ export async function POST(request: NextRequest) {
     overall_pass: input.overall_pass ?? findings.every((f) => f.status !== "fail"),
     summary: String(input.summary || "Review complete"),
     photo_count: photoBuffers.length,
-    planset_filename: plansetFilename,
+    planset_filename: usedPlansetFilename,
     duration_ms: Date.now() - start,
   };
 
