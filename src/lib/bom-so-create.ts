@@ -238,7 +238,7 @@ export async function createSalesOrder(params: {
   // 4. Create SO in Zoho
   const address = bomData?.project?.address ?? "";
   const projMatch = snapshot.dealName.match(/PROJ-(\d+)/);
-  const soNumber = projMatch ? `SO-${projMatch[1]} (TEST)` : `SO-${dealId} (TEST)`;
+  const soNumber = projMatch ? `SO-${projMatch[1]}` : `SO-${dealId}`;
 
   let soResult: { salesorder_id: string; salesorder_number: string };
   try {
