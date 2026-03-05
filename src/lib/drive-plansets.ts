@@ -369,6 +369,57 @@ export async function listDriveImages(folderId: string): Promise<DriveImageFile[
   return data.files ?? [];
 }
 
+/**
+ * Recursively list image files across a folder and all its subfolders.
+ * Searches up to `maxDepth` levels deep and returns up to `maxImages` results.
+ */
+export async function listDriveImagesRecursive(
+  folderId: string,
+  maxDepth = 3,
+  maxImages = 30,
+): Promise<DriveImageFile[]> {
+  const allImages: DriveImageFile[] = [];
+
+  async function walk(parentId: string, depth: number) {
+    if (depth > maxDepth || allImages.length >= maxImages) return;
+
+    // Fetch images at this level
+    const images = await listDriveImages(parentId);
+    for (const img of images) {
+      if (allImages.length >= maxImages) break;
+      allImages.push(img);
+    }
+
+    // Fetch subfolders and recurse
+    const token = await getDriveToken();
+    const query = `'${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+    const fields = "files(id,name)";
+    const url =
+      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}` +
+      `&fields=${encodeURIComponent(fields)}` +
+      `&pageSize=50` +
+      `&supportsAllDrives=true&includeItemsFromAllDrives=true`;
+
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+
+    if (!res.ok) return;
+
+    const data = (await res.json()) as { files?: Array<{ id: string; name: string }> };
+    const subfolders = data.files ?? [];
+
+    for (const sub of subfolders) {
+      if (allImages.length >= maxImages) break;
+      await walk(sub.id, depth + 1);
+    }
+  }
+
+  await walk(folderId, 0);
+  return allImages;
+}
+
 /** Download an image from Google Drive as a Buffer. */
 export async function downloadDriveImage(
   fileId: string,

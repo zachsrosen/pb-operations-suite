@@ -22,9 +22,8 @@ import {
   listPlansetPdfs,
   pickBestPlanset,
   downloadDrivePdf,
-  listDriveImages,
+  listDriveImagesRecursive,
   downloadDriveImage,
-  findPhotosFolder,
 } from "@/lib/drive-plansets";
 import { handleLookup as zuperJobLookup } from "@/app/api/zuper/jobs/lookup/route";
 
@@ -340,23 +339,15 @@ export async function POST(request: NextRequest) {
   let photoSource = "";
 
   // 3a. Try Google Drive installation documents folder (most reliable)
+  // Recursively searches all subfolders (photos are often nested 2-3 levels deep)
   if (photoBuffers.length === 0 && properties) {
     const installFolderId = getInstallFolderId(properties);
     if (installFolderId) {
       try {
-        // Try direct images in the install folder first
-        let driveImages = await listDriveImages(installFolderId);
-
-        // If no images at top level, search for a photos subfolder
-        if (driveImages.length === 0) {
-          const photosFolderId = await findPhotosFolder(installFolderId);
-          if (photosFolderId) {
-            driveImages = await listDriveImages(photosFolderId);
-          }
-        }
+        const driveImages = await listDriveImagesRecursive(installFolderId, 3, 30);
 
         console.log(
-          `[install-review] Found ${driveImages.length} images in Drive install folder ${installFolderId}`,
+          `[install-review] Found ${driveImages.length} images in Drive install folder ${installFolderId} (recursive)`,
         );
 
         if (driveImages.length > 0) {
