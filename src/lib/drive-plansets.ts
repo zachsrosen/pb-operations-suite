@@ -447,7 +447,7 @@ export async function downloadDriveImage(
 
   // For HEIC/HEIF: use Google Drive thumbnail (served as JPEG) at high resolution
   if (isHeic && meta.thumbnailLink) {
-    const thumbUrl = meta.thumbnailLink.replace(/=s\d+$/, "=s2048");
+    const thumbUrl = meta.thumbnailLink.replace(/=s\d+$/, "=s1024");
     const thumbRes = await fetch(thumbUrl, {
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store",

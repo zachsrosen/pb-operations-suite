@@ -270,6 +270,14 @@ function isSupportedImageType(name: string): boolean {
 /** Max image size for base64 inline: 20MB per image. */
 const MAX_IMAGE_SIZE = 20 * 1024 * 1024;
 
+/** Clean up uploaded files from Anthropic Files API. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function cleanupFiles(client: any, fileIds: string[]) {
+  await Promise.allSettled(
+    fileIds.map((id) => client.beta.files.delete(id).catch(() => {})),
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Zuper job lookup — calls the shared handleLookup directly (no HTTP round-trip,
 // no auth needed). Uses DB cache, paginated Zuper search, deal ID/tag/name match.
@@ -576,17 +584,20 @@ export async function POST(request: NextRequest) {
     selectedFile.id,
   );
 
-  // ── Step 5: Upload planset to Anthropic Files API ──
+  // ── Step 5: Upload planset + photos to Anthropic Files API ──
+  // Using Files API keeps the request body small regardless of file sizes.
   const client = getAnthropicClient();
-  let anthropicFileId: string | undefined;
+  const uploadedFileIds: string[] = []; // Track for cleanup
 
+  let pdfFileId: string | undefined;
   try {
     const uploadedFile = await client.beta.files.upload({
       file: new File([new Uint8Array(plansetBuffer)], plansetFilename, {
         type: "application/pdf",
       }),
     });
-    anthropicFileId = uploadedFile.id;
+    pdfFileId = uploadedFile.id;
+    uploadedFileIds.push(pdfFileId);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "File upload failed";
     return NextResponse.json(
@@ -595,52 +606,73 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // ── Step 5: Call Claude with planset + photos ──
-  const dealContext = buildDealContext(properties);
-
-  // Build message content: planset document + photos as base64 images + text prompt
-  const contentBlocks: Array<
-    | { type: "document"; source: { type: "file"; file_id: string } }
-    | { type: "image"; source: { type: "base64"; media_type: string; data: string } }
-    | { type: "text"; text: string }
-  > = [];
-
-  // 1. Planset PDF
-  contentBlocks.push({
-    type: "document",
-    source: { type: "file", file_id: anthropicFileId },
-  });
-
-  // 2. Install photos as base64 images
+  // Upload photos to Files API too (avoids base64 bloat in request body)
+  const photoFileIds: { fileId: string; name: string }[] = [];
   for (const photo of photoBuffers) {
-    const base64 = photo.buffer.toString("base64");
-    const mediaType = photo.mimeType || mimeFromFilename(photo.name);
-    // Final safety check — skip any unsupported types that slipped through
-    if (!SUPPORTED_IMAGE_TYPES.has(mediaType)) {
-      console.warn(`[install-review] Skipping unsupported media type: ${mediaType} (${photo.name})`);
-      continue;
+    try {
+      const mediaType = photo.mimeType || mimeFromFilename(photo.name);
+      const uploaded = await client.beta.files.upload({
+        file: new File([new Uint8Array(photo.buffer)], photo.name, { type: mediaType }),
+      });
+      photoFileIds.push({ fileId: uploaded.id, name: photo.name });
+      uploadedFileIds.push(uploaded.id);
+    } catch (e) {
+      console.warn(`[install-review] Failed to upload photo ${photo.name}:`, e);
+      // Continue with other photos
     }
-    contentBlocks.push({
-      type: "image",
-      source: { type: "base64", media_type: mediaType, data: base64 },
-    });
   }
 
-  // 3. Text prompt
+  if (photoFileIds.length === 0) {
+    // Cleanup and fall back to base64 photos
+    console.warn("[install-review] Files API photo uploads all failed, using base64 photos");
+  }
+
+  // ── Step 6: Call Claude with planset + photos ──
+  const dealContext = buildDealContext(properties);
+
   const promptParts = [
-    `Review the ${photoBuffers.length} install photo(s) against the attached planset PDF (${plansetFilename}).`,
+    `Review the ${photoFileIds.length || photoBuffers.length} install photo(s) against the attached planset PDF (${plansetFilename}).`,
     "",
     "## Deal Properties (from CRM)",
     "```json",
     JSON.stringify(dealContext, null, 2),
     "```",
     "",
-    `Photos provided: ${photoBuffers.map((p) => p.name).join(", ")}`,
+    `Photos provided: ${(photoFileIds.length > 0 ? photoFileIds.map((p) => p.name) : photoBuffers.map((p) => p.name)).join(", ")}`,
     "",
     "Compare the installed equipment visible in the photos against the planset equipment list and call submit_install_review with your findings.",
   ];
 
-  contentBlocks.push({ type: "text", text: promptParts.join("\n") });
+  // Build content blocks using file_id references (tiny request body)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function buildFileRefContent(): any[] {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const blocks: any[] = [];
+    blocks.push({
+      type: "document",
+      source: { type: "file", file_id: pdfFileId },
+    });
+    if (photoFileIds.length > 0) {
+      for (const photo of photoFileIds) {
+        blocks.push({
+          type: "image",
+          source: { type: "file", file_id: photo.fileId },
+        });
+      }
+    } else {
+      // Fallback: base64 photos if file uploads failed
+      for (const photo of photoBuffers) {
+        const mediaType = photo.mimeType || mimeFromFilename(photo.name);
+        if (!SUPPORTED_IMAGE_TYPES.has(mediaType)) continue;
+        blocks.push({
+          type: "image",
+          source: { type: "base64", media_type: mediaType, data: photo.buffer.toString("base64") },
+        });
+      }
+    }
+    blocks.push({ type: "text", text: promptParts.join("\n") });
+    return blocks;
+  }
 
   // Shared Claude call params (reused for fallback)
   const claudeCallParams = {
@@ -655,44 +687,26 @@ export async function POST(request: NextRequest) {
   try {
     response = await client.beta.messages.create({
       ...claudeCallParams,
-      messages: [
-        {
-          role: "user",
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          content: contentBlocks as any,
-        },
-      ],
+      messages: [{ role: "user", content: buildFileRefContent() }],
       betas: ["files-api-2025-04-14"],
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Claude API call failed";
-    console.error("[install-review] Claude API error:", msg);
-
-    // Clean up uploaded file before fallback
-    if (anthropicFileId) {
-      await client.beta.files.delete(anthropicFileId).catch(() => {});
-      anthropicFileId = undefined;
-    }
+    console.error("[install-review] Claude API error (file refs):", msg);
 
     // Fallback: retry with base64 inline PDF if it's a "Could not process PDF" error
+    // Keep photo file_id references since those work fine — only the PDF needs inlining
     const isPdfError = msg.toLowerCase().includes("could not process pdf");
     const INLINE_PDF_LIMIT = 45 * 1024 * 1024; // 45MB
 
     if (isPdfError && plansetBuffer.byteLength < INLINE_PDF_LIMIT) {
+      const pdfSizeMB = plansetBuffer.byteLength / (1024 * 1024);
       console.log(
-        `[install-review] Falling back to base64 inline PDF (${Math.round(plansetBuffer.byteLength / 1024)}KB)`,
+        `[install-review] Falling back to base64 inline PDF (${Math.round(pdfSizeMB * 10) / 10}MB) with file-ref photos`,
       );
-      try {
-        // Rebuild content with base64 PDF; limit photos to avoid exceeding ~40MB request limit
-        const base64PdfData = Buffer.from(plansetBuffer).toString("base64");
-        const pdfSizeMB = plansetBuffer.byteLength / (1024 * 1024);
-        const maxPhotos = pdfSizeMB > 15 ? 3 : pdfSizeMB > 8 ? 5 : 8;
-        const photoBlocks = contentBlocks.filter((b) => b.type === "image").slice(0, maxPhotos);
-        const textBlock = contentBlocks.find((b) => b.type === "text");
 
-        console.log(
-          `[install-review] Using ${photoBlocks.length} photos for inline fallback (PDF ~${Math.round(pdfSizeMB)}MB)`,
-        );
+      try {
+        const base64PdfData = Buffer.from(plansetBuffer).toString("base64");
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const fallbackContent: any[] = [
@@ -700,23 +714,67 @@ export async function POST(request: NextRequest) {
             type: "document",
             source: { type: "base64", media_type: "application/pdf", data: base64PdfData },
           },
-          ...photoBlocks,
-          ...(textBlock ? [textBlock] : []),
         ];
 
-        response = await client.messages.create({
-          ...claudeCallParams,
-          messages: [{ role: "user", content: fallbackContent }],
-        });
+        // Use file_id references for photos if available (keeps request small)
+        if (photoFileIds.length > 0) {
+          for (const photo of photoFileIds) {
+            fallbackContent.push({
+              type: "image",
+              source: { type: "file", file_id: photo.fileId },
+            });
+          }
+        } else {
+          // Full fallback: base64 everything — dynamically size based on actual payload
+          const base64PdfSize = base64PdfData.length; // base64 is ~33% larger than raw
+          const MAX_REQUEST_BYTES = 30 * 1024 * 1024; // 30MB safety margin (API limit ~40MB)
+          let remainingBudget = MAX_REQUEST_BYTES - base64PdfSize;
+
+          let photoCount = 0;
+          for (const photo of photoBuffers) {
+            const mediaType = photo.mimeType || mimeFromFilename(photo.name);
+            if (!SUPPORTED_IMAGE_TYPES.has(mediaType)) continue;
+            const b64Size = Math.ceil(photo.buffer.byteLength * 4 / 3); // base64 expansion
+            if (b64Size > remainingBudget) break;
+            fallbackContent.push({
+              type: "image",
+              source: { type: "base64", media_type: mediaType, data: photo.buffer.toString("base64") },
+            });
+            remainingBudget -= b64Size;
+            photoCount++;
+          }
+          console.log(
+            `[install-review] Full base64 fallback: ${photoCount} photos fit within budget`,
+          );
+        }
+
+        fallbackContent.push({ type: "text", text: promptParts.join("\n") });
+
+        // Use files beta if we still have photo file refs, otherwise plain messages
+        if (photoFileIds.length > 0) {
+          response = await client.beta.messages.create({
+            ...claudeCallParams,
+            messages: [{ role: "user", content: fallbackContent }],
+            betas: ["files-api-2025-04-14"],
+          });
+        } else {
+          response = await client.messages.create({
+            ...claudeCallParams,
+            messages: [{ role: "user", content: fallbackContent }],
+          });
+        }
       } catch (fallbackErr) {
         const fallbackMsg = fallbackErr instanceof Error ? fallbackErr.message : "Unknown error";
-        console.error("[install-review] Base64 fallback also failed:", fallbackMsg);
+        console.error("[install-review] Inline PDF fallback also failed:", fallbackMsg);
+        // Cleanup before returning
+        await cleanupFiles(client, uploadedFileIds);
         return NextResponse.json(
           { error: `AI review failed (both file and inline): ${fallbackMsg}` },
           { status: 500 },
         );
       }
     } else if (isPdfError) {
+      await cleanupFiles(client, uploadedFileIds);
       return NextResponse.json(
         {
           error: "PDF could not be processed",
@@ -725,6 +783,7 @@ export async function POST(request: NextRequest) {
         { status: 422 },
       );
     } else {
+      await cleanupFiles(client, uploadedFileIds);
       return NextResponse.json(
         { error: `AI review failed: ${msg}` },
         { status: 500 },
@@ -732,10 +791,8 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Clean up uploaded file
-  if (anthropicFileId) {
-    await client.beta.files.delete(anthropicFileId).catch(() => {});
-  }
+  // Clean up all uploaded files
+  await cleanupFiles(client, uploadedFileIds);
 
   // ── Step 6: Extract findings from tool use response ──
   const toolBlock = response.content.find(
