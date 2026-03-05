@@ -239,6 +239,14 @@ function buildDealContext(properties: Record<string, string | null>): Record<str
   return result;
 }
 
+/** MIME types supported by Claude's vision API. */
+const SUPPORTED_IMAGE_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+]);
+
 /** Determine MIME type from filename extension. */
 function mimeFromFilename(name: string): string {
   const ext = name.split(".").pop()?.toLowerCase() || "";
@@ -246,11 +254,17 @@ function mimeFromFilename(name: string): string {
     jpg: "image/jpeg",
     jpeg: "image/jpeg",
     png: "image/png",
+    gif: "image/gif",
     webp: "image/webp",
     heic: "image/heic",
     heif: "image/heif",
   };
   return map[ext] || "image/jpeg";
+}
+
+/** Check if a filename has a Claude-supported image type. */
+function isSupportedImageType(name: string): boolean {
+  return SUPPORTED_IMAGE_TYPES.has(mimeFromFilename(name));
 }
 
 /** Max image size for base64 inline: 20MB per image. */
@@ -335,7 +349,7 @@ export async function POST(request: NextRequest) {
   }
 
   // ── Step 3: Fetch photos (Drive → Zuper → manual URLs) ──
-  let photoBuffers: { buffer: Buffer; name: string }[] = [];
+  let photoBuffers: { buffer: Buffer; name: string; mimeType?: string }[] = [];
   let photoSource = "";
 
   // 3a. Try Google Drive installation documents folder (most reliable)
@@ -354,8 +368,8 @@ export async function POST(request: NextRequest) {
           const toDownload = driveImages.slice(0, 10);
           const downloadResults = await Promise.allSettled(
             toDownload.map(async (img) => {
-              const { buffer, filename } = await downloadDriveImage(img.id);
-              return { buffer, name: filename };
+              const { buffer, filename, mimeType } = await downloadDriveImage(img.id);
+              return { buffer, name: filename, mimeType };
             }),
           );
 
@@ -482,6 +496,30 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Filter out unsupported image types — Claude API only accepts jpeg/png/gif/webp
+  // Note: HEIC images from Drive are auto-converted to JPEG during download,
+  // so check the resolved mimeType (not just the filename)
+  const isSupported = (p: { name: string; mimeType?: string }) =>
+    SUPPORTED_IMAGE_TYPES.has(p.mimeType || mimeFromFilename(p.name));
+
+  const unsupported = photoBuffers.filter((p) => !isSupported(p));
+  if (unsupported.length > 0) {
+    console.warn(
+      `[install-review] Skipping ${unsupported.length} unsupported image(s): ${unsupported.map((p) => `${p.name} (${p.mimeType})`).join(", ")}`,
+    );
+  }
+  photoBuffers = photoBuffers.filter(isSupported);
+
+  if (photoBuffers.length === 0) {
+    return NextResponse.json(
+      {
+        error: "No supported photos available",
+        details: `Found ${unsupported.length} photo(s) but all are in unsupported formats (HEIC/HEIF). Please provide JPEG, PNG, or WebP images.`,
+      },
+      { status: 422 },
+    );
+  }
+
   console.log(`[install-review] Using ${photoBuffers.length} photos from ${photoSource}`);
 
   // ── Step 4: Validate deal properties + planset ──
@@ -576,7 +614,12 @@ export async function POST(request: NextRequest) {
   // 2. Install photos as base64 images
   for (const photo of photoBuffers) {
     const base64 = photo.buffer.toString("base64");
-    const mediaType = mimeFromFilename(photo.name);
+    const mediaType = photo.mimeType || mimeFromFilename(photo.name);
+    // Final safety check — skip any unsupported types that slipped through
+    if (!SUPPORTED_IMAGE_TYPES.has(mediaType)) {
+      console.warn(`[install-review] Skipping unsupported media type: ${mediaType} (${photo.name})`);
+      continue;
+    }
     contentBlocks.push({
       type: "image",
       source: { type: "base64", media_type: mediaType, data: base64 },
@@ -599,14 +642,19 @@ export async function POST(request: NextRequest) {
 
   contentBlocks.push({ type: "text", text: promptParts.join("\n") });
 
+  // Shared Claude call params (reused for fallback)
+  const claudeCallParams = {
+    model: CLAUDE_MODELS.sonnet,
+    max_tokens: 4096,
+    system: buildSystemPrompt(),
+    tools: [SUBMIT_INSTALL_REVIEW_TOOL],
+    tool_choice: { type: "tool", name: "submit_install_review" } as never,
+  };
+
   let response;
   try {
     response = await client.beta.messages.create({
-      model: CLAUDE_MODELS.sonnet,
-      max_tokens: 4096,
-      system: buildSystemPrompt(),
-      tools: [SUBMIT_INSTALL_REVIEW_TOOL],
-      tool_choice: { type: "tool", name: "submit_install_review" } as never,
+      ...claudeCallParams,
       messages: [
         {
           role: "user",
@@ -619,14 +667,69 @@ export async function POST(request: NextRequest) {
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Claude API call failed";
     console.error("[install-review] Claude API error:", msg);
-    // Clean up
+
+    // Clean up uploaded file before fallback
     if (anthropicFileId) {
       await client.beta.files.delete(anthropicFileId).catch(() => {});
+      anthropicFileId = undefined;
     }
-    return NextResponse.json(
-      { error: `AI review failed: ${msg}` },
-      { status: 500 },
-    );
+
+    // Fallback: retry with base64 inline PDF if it's a "Could not process PDF" error
+    const isPdfError = msg.toLowerCase().includes("could not process pdf");
+    const INLINE_PDF_LIMIT = 45 * 1024 * 1024; // 45MB
+
+    if (isPdfError && plansetBuffer.byteLength < INLINE_PDF_LIMIT) {
+      console.log(
+        `[install-review] Falling back to base64 inline PDF (${Math.round(plansetBuffer.byteLength / 1024)}KB)`,
+      );
+      try {
+        // Rebuild content with base64 PDF; limit photos to avoid exceeding ~40MB request limit
+        const base64PdfData = Buffer.from(plansetBuffer).toString("base64");
+        const pdfSizeMB = plansetBuffer.byteLength / (1024 * 1024);
+        const maxPhotos = pdfSizeMB > 15 ? 3 : pdfSizeMB > 8 ? 5 : 8;
+        const photoBlocks = contentBlocks.filter((b) => b.type === "image").slice(0, maxPhotos);
+        const textBlock = contentBlocks.find((b) => b.type === "text");
+
+        console.log(
+          `[install-review] Using ${photoBlocks.length} photos for inline fallback (PDF ~${Math.round(pdfSizeMB)}MB)`,
+        );
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const fallbackContent: any[] = [
+          {
+            type: "document",
+            source: { type: "base64", media_type: "application/pdf", data: base64PdfData },
+          },
+          ...photoBlocks,
+          ...(textBlock ? [textBlock] : []),
+        ];
+
+        response = await client.messages.create({
+          ...claudeCallParams,
+          messages: [{ role: "user", content: fallbackContent }],
+        });
+      } catch (fallbackErr) {
+        const fallbackMsg = fallbackErr instanceof Error ? fallbackErr.message : "Unknown error";
+        console.error("[install-review] Base64 fallback also failed:", fallbackMsg);
+        return NextResponse.json(
+          { error: `AI review failed (both file and inline): ${fallbackMsg}` },
+          { status: 500 },
+        );
+      }
+    } else if (isPdfError) {
+      return NextResponse.json(
+        {
+          error: "PDF could not be processed",
+          details: `The planset "${plansetFilename}" (${Math.round(plansetBuffer.byteLength / 1024 / 1024)}MB) could not be processed. It may be password-protected, encrypted, or corrupt.`,
+        },
+        { status: 422 },
+      );
+    } else {
+      return NextResponse.json(
+        { error: `AI review failed: ${msg}` },
+        { status: 500 },
+      );
+    }
   }
 
   // Clean up uploaded file

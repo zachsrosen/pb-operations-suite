@@ -20,7 +20,7 @@ const PUBLIC_API_ROUTES = [
   "/api/cron/audit-retention",
   "/api/portal/survey", // Customer portal — token-validated, no session needed
 ];
-const MACHINE_TOKEN_ALLOWED_ROUTES = ["/api/bom", "/api/products/seed"] as const;
+const MACHINE_TOKEN_ALLOWED_ROUTES = ["/api/bom", "/api/products/seed", "/api/install-review"] as const;
 
 function isMachineTokenAllowedRoute(pathname: string): boolean {
   return MACHINE_TOKEN_ALLOWED_ROUTES.some((allowed) =>

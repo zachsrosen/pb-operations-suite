@@ -420,22 +420,48 @@ export async function listDriveImagesRecursive(
   return allImages;
 }
 
-/** Download an image from Google Drive as a Buffer. */
+/** HEIC/HEIF mime types that need conversion via Drive thumbnail. */
+const HEIC_TYPES = new Set(["image/heic", "image/heif"]);
+
+/**
+ * Download an image from Google Drive as a Buffer.
+ * For HEIC/HEIF images, fetches the Drive thumbnail (JPEG) instead,
+ * since Claude's vision API doesn't support HEIC.
+ */
 export async function downloadDriveImage(
   fileId: string,
 ): Promise<{ buffer: Buffer; filename: string; mimeType: string }> {
   const token = await getDriveToken();
 
-  // Get file metadata
+  // Get file metadata (include thumbnailLink for HEIC fallback)
   const metaRes = await fetch(
-    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?fields=name,mimeType&supportsAllDrives=true`,
+    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?fields=name,mimeType,thumbnailLink&supportsAllDrives=true`,
     { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" },
   );
-  const meta = metaRes.ok ? ((await metaRes.json()) as { name?: string; mimeType?: string }) : {};
+  const meta = metaRes.ok
+    ? ((await metaRes.json()) as { name?: string; mimeType?: string; thumbnailLink?: string })
+    : {};
   const filename = meta.name ?? `photo-${fileId}.jpg`;
   const mimeType = meta.mimeType ?? "image/jpeg";
+  const isHeic = HEIC_TYPES.has(mimeType) || /\.heic$/i.test(filename) || /\.heif$/i.test(filename);
 
-  // Download content
+  // For HEIC/HEIF: use Google Drive thumbnail (served as JPEG) at high resolution
+  if (isHeic && meta.thumbnailLink) {
+    const thumbUrl = meta.thumbnailLink.replace(/=s\d+$/, "=s2048");
+    const thumbRes = await fetch(thumbUrl, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+    if (thumbRes.ok) {
+      const ab = await thumbRes.arrayBuffer();
+      const outName = filename.replace(/\.heic$/i, ".jpg").replace(/\.heif$/i, ".jpg");
+      console.log(`[drive] HEIC→thumbnail JPEG: ${filename} → ${outName} (${Math.round(ab.byteLength / 1024)}KB)`);
+      return { buffer: Buffer.from(ab), filename: outName, mimeType: "image/jpeg" };
+    }
+    console.warn(`[drive] Thumbnail fetch failed for ${filename}: ${thumbRes.status}`);
+  }
+
+  // Standard download for non-HEIC (or HEIC without thumbnail)
   const dlUrl = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media&supportsAllDrives=true`;
   const dlRes = await fetch(dlUrl, {
     headers: { Authorization: `Bearer ${token}` },
