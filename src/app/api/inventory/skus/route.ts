@@ -1,8 +1,9 @@
 /**
  * Inventory SKU API
  *
- * GET  /api/inventory/skus - List SKUs with optional filtering
- * POST /api/inventory/skus - Create or upsert a SKU (admin/manager only)
+ * GET    /api/inventory/skus - List SKUs with optional filtering
+ * POST   /api/inventory/skus - Create or upsert a SKU (admin/manager only)
+ * DELETE /api/inventory/skus - Permanently delete a SKU (admin only)
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -940,6 +941,134 @@ export async function PATCH(request: NextRequest) {
     Sentry.captureException(error);
     return NextResponse.json(
       { error: "Failed to update SKU" },
+      { status: 500 }
+    );
+  }
+}
+
+// Roles allowed to permanently delete SKUs
+const DELETE_ROLES = ["ADMIN"];
+
+/**
+ * DELETE /api/inventory/skus
+ *
+ * Body: { id: string }
+ *
+ * Permanently deletes a SKU and all related spec, stock, and transaction records.
+ * Requires ADMIN role only.
+ */
+export async function DELETE(request: NextRequest) {
+  tagSentryRequest(request);
+  if (!prisma) {
+    return NextResponse.json(
+      { error: "Database not configured" },
+      { status: 503 }
+    );
+  }
+
+  const authResult = await requireApiAuth();
+  if (authResult instanceof NextResponse) return authResult;
+
+  if (!DELETE_ROLES.includes(authResult.role)) {
+    return NextResponse.json(
+      { error: "Insufficient permissions. Only ADMIN can delete inventory items." },
+      { status: 403 }
+    );
+  }
+
+  try {
+    let body: Record<string, unknown>;
+    try {
+      body = await request.json() as Record<string, unknown>;
+    } catch {
+      return NextResponse.json(
+        { error: "Invalid JSON in request body" },
+        { status: 400 }
+      );
+    }
+
+    const id = typeof body.id === "string" ? body.id.trim() : "";
+    if (!id) {
+      return NextResponse.json({ error: "id is required" }, { status: 400 });
+    }
+
+    const existing = await prisma.equipmentSku.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        category: true,
+        brand: true,
+        model: true,
+        stockLevels: { select: { id: true } },
+      },
+    });
+
+    if (!existing) {
+      return NextResponse.json({ error: "SKU not found" }, { status: 404 });
+    }
+
+    // Cascade delete inside a transaction: specs → transactions → stock → SKU
+    await prisma.$transaction(async (
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      tx: any
+    ) => {
+      // Delete all category-specific spec records
+      for (const table of SPEC_TABLES) {
+        const model = tx[table];
+        if (model?.deleteMany) {
+          await model.deleteMany({ where: { skuId: id } });
+        }
+      }
+
+      // Delete stock transactions (they reference InventoryStock)
+      await tx.stockTransaction.deleteMany({
+        where: { stock: { skuId: id } },
+      });
+
+      // Delete inventory stock levels
+      await tx.inventoryStock.deleteMany({ where: { skuId: id } });
+
+      // Delete the SKU itself
+      await tx.equipmentSku.delete({ where: { id } });
+    });
+
+    await logActivity({
+      type: "INVENTORY_ADJUSTED",
+      description: `Permanently deleted SKU: ${existing.brand} ${existing.model} (${existing.category})`,
+      userEmail: authResult.email,
+      userName: authResult.name,
+      entityType: "equipment_sku",
+      entityId: id,
+      entityName: `${existing.brand} ${existing.model}`.trim(),
+      metadata: {
+        action: "delete_sku",
+        category: existing.category,
+        brand: existing.brand,
+        model: existing.model,
+        stockRecordsDeleted: existing.stockLevels.length,
+      },
+      ipAddress: authResult.ip,
+      userAgent: authResult.userAgent,
+      requestPath: request.nextUrl.pathname,
+      requestMethod: request.method,
+      responseStatus: 200,
+    });
+
+    return NextResponse.json({
+      deleted: true,
+      id,
+      name: `${existing.brand} ${existing.model}`.trim(),
+    });
+  } catch (error) {
+    const prismaCode = (error as { code?: string } | null)?.code;
+    if (prismaCode === "P2025") {
+      return NextResponse.json({ error: "SKU not found" }, { status: 404 });
+    }
+
+    console.error("Error deleting SKU:", error);
+    Sentry.captureException(error);
+    return NextResponse.json(
+      { error: "Failed to delete SKU" },
       { status: 500 }
     );
   }

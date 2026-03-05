@@ -5,6 +5,7 @@ import {
   createDealLineItem,
   fetchLineItemsForDeal,
   fetchHubSpotProductById,
+  createOrUpdateHubSpotProduct,
 } from "@/lib/hubspot";
 
 const ALLOWED_ROLES = new Set([
@@ -176,7 +177,41 @@ export async function POST(request: NextRequest) {
   const skuRecord = await loadSku(skuId, category, brand, model);
 
   // Resolve the HubSpot product ID from explicit input or SKU record
-  const hubspotProductId = explicitHubspotProductId || skuRecord?.hubspotProductId || null;
+  let hubspotProductId = explicitHubspotProductId || skuRecord?.hubspotProductId || null;
+  let productCreated = false;
+
+  // If no HubSpot product exists yet, create one so line items are properly linked
+  const resolvedBrand = (brand || skuRecord?.brand || "").trim() || null;
+  const resolvedModel = (model || skuRecord?.model || "").trim() || null;
+  if (!hubspotProductId && (resolvedBrand || resolvedModel)) {
+    try {
+      const productResult = await createOrUpdateHubSpotProduct({
+        brand: resolvedBrand || "",
+        model: resolvedModel || "",
+        sku: explicitSku || skuRecord?.vendorPartNumber || resolvedModel,
+        description: explicitDescription || skuRecord?.description || null,
+        productCategory: category || skuRecord?.category || null,
+        sellPrice: Number.isFinite(unitPrice) ? unitPrice : (skuRecord?.sellPrice ?? null),
+      });
+      hubspotProductId = productResult.hubspotProductId;
+      productCreated = productResult.created;
+
+      // Persist the new product ID back to the SKU record
+      if (prisma && skuRecord?.id && !skuRecord.hubspotProductId) {
+        try {
+          await prisma.equipmentSku.update({
+            where: { id: skuRecord.id },
+            data: { hubspotProductId },
+          });
+        } catch (updateError) {
+          if (!isPrismaMissingColumnError(updateError)) throw updateError;
+        }
+      }
+    } catch (productError) {
+      // Log but continue — we can still create an orphan line item
+      console.warn("[AddLineItem] Failed to create HubSpot product:", productError);
+    }
+  }
 
   // If we have a HubSpot product ID, fetch the product's canonical properties
   const hsProduct = hubspotProductId
@@ -187,13 +222,13 @@ export async function POST(request: NextRequest) {
   const name =
     hsProduct?.name ||
     explicitName ||
-    [brand || skuRecord?.brand || "", model || skuRecord?.model || ""].filter(Boolean).join(" ").trim() ||
+    [resolvedBrand || "", resolvedModel || ""].filter(Boolean).join(" ").trim() ||
     explicitDescription ||
     skuRecord?.description ||
     "BOM Item";
 
   const description = hsProduct?.description || explicitDescription || skuRecord?.description || null;
-  const sku = hsProduct?.hs_sku || explicitSku || skuRecord?.vendorPartNumber || model || skuRecord?.model || null;
+  const sku = hsProduct?.hs_sku || explicitSku || skuRecord?.vendorPartNumber || resolvedModel || null;
   const resolvedPrice = hsProduct?.price ?? (Number.isFinite(unitPrice) ? unitPrice : (skuRecord?.sellPrice ?? null));
 
   // Check for duplicate line items on the deal
@@ -253,6 +288,7 @@ export async function POST(request: NextRequest) {
       lineItemId: result.lineItemId,
       associated: result.associated,
       usedProductId: result.usedProductId,
+      productCreated,
       skuId: skuRecord?.id || null,
     });
   } catch (error) {

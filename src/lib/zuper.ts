@@ -152,6 +152,17 @@ export interface ZuperAddJobPartResult {
   warning?: string;
 }
 
+export interface ZuperAttachment {
+  attachment_uid: string;
+  file_name: string;
+  url: string;
+  file_type?: string;
+  file_size?: number;
+  visible_to_customer?: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
 interface ZuperAssignmentRef {
   userUid: string;
   teamUid?: string;
@@ -415,75 +426,70 @@ export class ZuperClient {
     const quantityRaw = Number(part.quantity);
     const quantity = Number.isFinite(quantityRaw) && quantityRaw > 0 ? quantityRaw : 1;
     const itemUid = String(part.itemUid || "").trim() || undefined;
-    const sku = String(part.sku || "").trim() || undefined;
-    const description = String(part.description || "").trim() || undefined;
     const unitPrice =
       part.unitPrice != null && Number.isFinite(Number(part.unitPrice))
         ? Number(part.unitPrice)
         : undefined;
 
-    const corePart = {
-      ...(itemUid ? { item_uid: itemUid } : {}),
-      ...(itemUid ? { item_id: itemUid } : {}),
-      name,
-      quantity,
-      ...(sku ? { sku } : {}),
-      ...(description ? { description } : {}),
-      ...(unitPrice != null ? { unit_price: unitPrice, price: unitPrice } : {}),
+    // Zuper API: products are added via PUT /jobs with a products array.
+    // We need to fetch existing products first, then append the new one.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let existingProducts: any[] = [];
+    try {
+      const jobResult = await this.getJob(jobUid);
+      if (jobResult.type === "success" && jobResult.data) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const jobData = jobResult.data as any;
+        existingProducts = Array.isArray(jobData.products) ? jobData.products : [];
+      }
+    } catch {
+      // If we can't fetch existing products, proceed with just the new one
+      console.warn("[Zuper] Failed to fetch existing products for job %s; appending only", jobUid);
+    }
+
+    // Build product line item per Zuper API spec
+    const newProduct: Record<string, unknown> = {
+      line_item_type: "ITEM",
+      product_name: name,
+      quantity: String(quantity),
+      ...(itemUid ? { product_uid: itemUid } : {}),
+      ...(unitPrice != null ? { price: String(unitPrice) } : {}),
     };
 
-    const attempts: Array<{ endpoint: string; method: "POST" | "PUT"; body: Record<string, unknown> }> = [
-      {
-        endpoint: `/jobs/${encodeURIComponent(jobUid)}/parts`,
-        method: "POST",
-        body: { parts: [corePart] },
-      },
-      {
-        endpoint: `/jobs/${encodeURIComponent(jobUid)}/parts`,
-        method: "POST",
-        body: { part: corePart },
-      },
-      {
-        endpoint: `/jobs/${encodeURIComponent(jobUid)}/job_parts`,
-        method: "POST",
-        body: { job_parts: [corePart] },
-      },
-      {
-        endpoint: `/jobs/${encodeURIComponent(jobUid)}/line_items`,
-        method: "POST",
-        body: { line_items: [corePart] },
-      },
-    ];
+    const total = unitPrice != null ? unitPrice * quantity : undefined;
+    if (total != null) newProduct.total = String(total);
 
-    const errors: string[] = [];
-    for (const attempt of attempts) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const result = await this.request<any>(attempt.endpoint, {
-        method: attempt.method,
-        body: JSON.stringify(attempt.body),
-      });
-      if (result.type === "success") {
-        return {
-          type: "success",
-          data: {
-            mode: "part_added",
-            endpoint: attempt.endpoint,
-          },
-        };
-      }
-      errors.push(`${attempt.endpoint}: ${result.error || "unknown error"}`);
+    const updatedProducts = [...existingProducts, newProduct];
+
+    // Use raw request instead of updateJob() since ZuperJob type lacks products field
+    const updateResult = await this.request<ZuperJob>(`/jobs`, {
+      method: "PUT",
+      body: JSON.stringify({
+        job: {
+          job_uid: jobUid,
+          products: updatedProducts,
+        },
+      }),
+    });
+
+    if (updateResult.type === "success") {
+      return {
+        type: "success",
+        data: {
+          mode: "part_added",
+          endpoint: "PUT /jobs (products array)",
+        },
+      };
     }
 
     // Graceful fallback: preserve the request as a job note so operations still
-    // has the part request in context even if this tenant lacks parts endpoints.
+    // has the part request in context even if the products update fails.
     const noteBlock = [
       "[PB Ops] Part requested from BOM",
       `Name: ${name}`,
       `Quantity: ${quantity}`,
       ...(itemUid ? [`Zuper Item ID: ${itemUid}`] : []),
-      ...(sku ? [`SKU: ${sku}`] : []),
       ...(unitPrice != null ? [`Unit Price: ${unitPrice}`] : []),
-      ...(description ? [`Description: ${description}`] : []),
     ].join("\n");
 
     const noteResult = await this.appendJobNote(jobUid, noteBlock);
@@ -492,14 +498,14 @@ export class ZuperClient {
         type: "success",
         data: {
           mode: "note_fallback",
-          warning: "Zuper parts endpoint unavailable; added request as job note instead",
+          warning: `Zuper products update failed (${updateResult.error}); added request as job note instead`,
         },
       };
     }
 
     return {
       type: "error",
-      error: `Failed to add job part. Attempts: ${errors.join(" | ")}`,
+      error: `Failed to add job product: ${updateResult.error}`,
     };
   }
 
@@ -1470,6 +1476,56 @@ export class ZuperClient {
 
     console.warn(`[Zuper] Could not resolve team UID for "${name}"`);
     return null;
+  }
+
+  // ========== JOB ATTACHMENTS ==========
+
+  /**
+   * List attachments for a job.
+   * Zuper endpoint: GET /jobs/{job_uid}/attachments
+   */
+  async getJobAttachments(jobUid: string): Promise<ZuperApiResponse<{ attachments: ZuperAttachment[] }>> {
+    return this.request<{ attachments: ZuperAttachment[] }>(`/jobs/${encodeURIComponent(jobUid)}/attachments`);
+  }
+
+  /**
+   * Get image attachments from a job, filtered to photo MIME types.
+   * Returns attachment metadata with downloadable URLs.
+   */
+  async getJobPhotos(jobUid: string): Promise<ZuperAttachment[]> {
+    const result = await this.getJobAttachments(jobUid);
+    if (result.type === "error" || !result.data?.attachments) {
+      console.warn(`[Zuper] Failed to fetch attachments for job ${jobUid}:`, result.error);
+      return [];
+    }
+
+    const IMAGE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "heic", "heif", "webp"]);
+    const IMAGE_MIME_PREFIXES = ["image/"];
+
+    return result.data.attachments.filter((att) => {
+      // Check MIME type if available
+      if (att.file_type && IMAGE_MIME_PREFIXES.some((p) => att.file_type!.toLowerCase().startsWith(p))) {
+        return true;
+      }
+      // Fallback: check file extension
+      const ext = att.file_name?.split(".").pop()?.toLowerCase() || "";
+      return IMAGE_EXTENSIONS.has(ext);
+    });
+  }
+
+  /**
+   * Download a file from a URL (e.g., Zuper attachment URL).
+   * Returns the raw buffer.
+   */
+  async downloadFile(url: string): Promise<Buffer> {
+    const response = await fetch(url, {
+      headers: { "x-api-key": this.apiKey },
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to download ${url}: HTTP ${response.status}`);
+    }
+    const arrayBuffer = await response.arrayBuffer();
+    return Buffer.from(arrayBuffer);
   }
 
   // ========== HELPER METHODS ==========

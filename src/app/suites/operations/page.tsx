@@ -76,15 +76,6 @@ const LINKS: SuitePageCard[] = [
     hardNavigate: true,
   },
   {
-    href: "/dashboards/bom/history",
-    title: "BOM History",
-    description: "All saved BOM snapshots across every project — search by customer, address, or deal.",
-    tag: "BOM",
-    tagColor: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
-    section: "Inventory & Equipment",
-    hardNavigate: true,
-  },
-  {
     href: "/dashboards/catalog",
     title: "Equipment Catalog",
     description: "Manage equipment SKUs and review approval-gated requests to push new items to all systems.",

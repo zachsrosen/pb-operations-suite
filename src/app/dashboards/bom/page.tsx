@@ -6,8 +6,6 @@ import { exportToCSV } from "@/lib/export";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useToast } from "@/contexts/ToastContext";
 import { useSession } from "next-auth/react";
-import BomHistoryDrawer from "@/components/BomHistoryDrawer";
-import type { BomSnapshot as BomSnapshotGlobal } from "@/lib/bom-history";
 // PDF upload uses chunked /api/bom/chunk — stays on our domain, no CORS issues
 
 /* ------------------------------------------------------------------ */
@@ -851,7 +849,10 @@ function BomDashboardInner() {
   const [compareA, setCompareA] = useState<BomSnapshot | null>(null);
   const [compareB, setCompareB] = useState<BomSnapshot | null>(null);
   const [showDiff, setShowDiff] = useState(false);
-  const [historyDrawerOpen, setHistoryDrawerOpen] = useState(false);
+  // All-history (inline at bottom of page)
+  const [allSnapshots, setAllSnapshots] = useState<{ id: string; dealId: string; dealName: string; version: number; sourceFile: string | null; savedBy: string | null; createdAt: string; customer: string | null; address: string | null; systemSizeKwdc: number | string | null; moduleCount: number | string | null; itemCount: number }[]>([]);
+  const [allHistoryLoading, setAllHistoryLoading] = useState(true);
+  const [allHistorySearch, setAllHistorySearch] = useState("");
   const diffRows = compareA && compareB ? diffBoms(compareA.bomData.items, compareB.bomData.items) : [];
 
   // Product catalog comparison data
@@ -950,6 +951,17 @@ function BomDashboardInner() {
         hubspotContactId: p.hubspotContactId ?? null,
       };
     });
+  }, []);
+
+  /* ---- Fetch all BOM history for inline section ---- */
+  useEffect(() => {
+    fetch("/api/bom/history/all")
+      .then((r) => r.json())
+      .then((data: { snapshots?: typeof allSnapshots }) => {
+        setAllSnapshots(data.snapshots ?? []);
+      })
+      .catch(() => { /* silent */ })
+      .finally(() => setAllHistoryLoading(false));
   }, []);
 
   /* ---- Fetch catalog when BOM is loaded ---- */
@@ -2095,10 +2107,10 @@ function BomDashboardInner() {
         {!bom && !(historyLoading || (dealLoading && !linkedProject)) && (
           <div className="rounded-xl bg-surface border border-t-border shadow-card overflow-hidden">
 
-            {/* ---- Project link strip (pre-extraction) ---- */}
-            <div className="px-5 pt-4 pb-3 border-b border-t-border bg-surface-2 flex items-center gap-3">
+            {/* ---- Deal search ---- */}
+            <div className="px-5 pt-4 pb-3 bg-surface-2">
               {linkedProject ? (
-                <>
+                <div className="flex items-center gap-3">
                   <span className="text-sm text-foreground">
                     🔗 <span className="font-medium">{linkedProject.dealname}</span>
                   </span>
@@ -2114,12 +2126,12 @@ function BomDashboardInner() {
                   >
                     Unlink
                   </button>
-                </>
+                </div>
               ) : (
                 <div className="relative flex-1">
                   <input
                     type="text"
-                    placeholder="🔍 Link to HubSpot project (optional — enables Design Folder)…"
+                    placeholder="🔍 Search for a HubSpot project…"
                     value={projectSearch}
                     onChange={(e) => handleProjectSearch(e.target.value)}
                     className="w-full rounded-lg bg-surface border border-t-border text-sm text-foreground px-3 py-2 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 placeholder:text-muted"
@@ -2133,9 +2145,6 @@ function BomDashboardInner() {
                         <button
                           key={p.hs_object_id}
                           onClick={() => {
-                            // Set optimistically so the panel doesn't blank out while
-                            // the URL effect fetches fresh data (which may update
-                            // designFolderUrl from null → correct value).
                             setLinkedProject(p);
                             setDealLoading(true);
                             hydrateProjectDetails(p.hs_object_id)
@@ -2160,53 +2169,130 @@ function BomDashboardInner() {
                   )}
                 </div>
               )}
-              <button
-                onClick={() => setHistoryDrawerOpen(true)}
-                className="shrink-0 text-xs text-muted hover:text-foreground transition-colors flex items-center gap-1 px-2 py-1.5 rounded border border-t-border bg-surface hover:bg-surface-2"
-              >
-                ⏱ History
-              </button>
-            </div>
-
-            {/* Tab bar */}
-            <div className="flex border-b border-t-border">
-              {!designFolderOnlyMode && (["upload", "drive", "paste"] as ImportTab[]).map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => { setImportTab(tab); setImportError(null); }}
-                  className={`px-5 py-3 text-sm font-medium transition-colors ${
-                    importTab === tab
-                      ? "text-cyan-500 border-b-2 border-cyan-500 bg-surface"
-                      : "text-muted hover:text-foreground"
-                  }`}
-                >
-                  {tab === "upload" && "📄 Upload PDF"}
-                  {tab === "drive" && "☁️ Google Drive"}
-                  {tab === "paste" && "{ } Paste JSON"}
-                </button>
-              ))}
-              {designFolderOnlyMode && (
-                <button
-                  onClick={() => { setImportTab("project-files"); setImportError(null); }}
-                  className={`px-5 py-3 text-sm font-medium transition-colors whitespace-nowrap ${
-                    importTab === "project-files"
-                      ? "text-cyan-500 border-b-2 border-cyan-500 bg-surface"
-                      : "text-muted hover:text-foreground"
-                  }`}
-                >
-                  📁 Design Folder
-                  {driveFiles.length > 0 && (
-                    <span className="ml-1.5 inline-flex items-center justify-center rounded-full bg-cyan-500/20 text-cyan-400 text-xs px-1.5 py-0.5">
-                      {driveFiles.length}
-                    </span>
-                  )}
-                </button>
-              )}
             </div>
 
             <div className="p-6">
-              {/* ---- Upload PDF tab ---- */}
-              {importTab === "upload" && (
+              {/* ---- Design Folder files (when deal has a design folder) ---- */}
+              {designFolderOnlyMode ? (
+                <div className="space-y-3">
+                  <p className="text-sm text-muted">
+                    Planset PDFs in{" "}
+                    <span className="text-foreground font-medium">{linkedProject?.dealname}</span>
+                    &apos;s design folder. Click a file to extract the BOM.
+                  </p>
+
+                  {driveFilesLoading && (
+                    <p className="text-sm text-muted animate-pulse py-4 text-center">Loading design files…</p>
+                  )}
+                  {driveFilesError && (
+                    <p className="text-sm text-red-500">{driveFilesError}</p>
+                  )}
+                  {!driveFilesLoading && !driveFilesError && driveFiles.length === 0 && (
+                    <p className="text-sm text-muted py-4 text-center">No PDFs found in this project&apos;s design folder. You can upload a PDF below instead.</p>
+                  )}
+
+                  {driveFiles.map((file) => (
+                    <div
+                      key={file.id}
+                      className="flex items-center justify-between gap-3 rounded-lg border border-t-border bg-surface-2 px-4 py-3 hover:bg-surface-elevated transition-colors"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium text-foreground truncate">{file.name}</div>
+                        <div className="text-xs text-muted mt-0.5">
+                          {file.size ? `${(parseInt(file.size) / 1024 / 1024).toFixed(1)} MB · ` : ""}
+                          Modified {new Date(file.modifiedTime).toLocaleDateString()}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleExtractDriveFile(file)}
+                        disabled={extracting}
+                        className="flex-shrink-0 px-4 py-1.5 rounded-lg bg-cyan-600 text-white text-sm font-medium hover:bg-cyan-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                      >
+                        {extractingDriveFileId === file.id ? (
+                          <>
+                            <span className="inline-block w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            Extracting…
+                          </>
+                        ) : (
+                          "Extract BOM"
+                        )}
+                      </button>
+                    </div>
+                  ))}
+                  {extractingDriveFileId && uploadProgress && (
+                    <p className="text-xs text-muted animate-pulse text-center pt-1">
+                      {uploadProgress}
+                    </p>
+                  )}
+
+                  {/* Upload fallback when design folder is empty or errored */}
+                  {!driveFilesLoading && (driveFilesError || driveFiles.length === 0) && (
+                    <div className="mt-4 pt-4 border-t border-t-border space-y-3">
+                      <p className="text-xs font-medium text-muted uppercase tracking-wide">Or upload manually</p>
+                      <div
+                        onClick={() => fileInputRef.current?.click()}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          const dropped = e.dataTransfer.files[0];
+                          if (dropped?.name.toLowerCase().endsWith(".pdf")) {
+                            setUploadFile(dropped);
+                            setImportError(null);
+                          }
+                        }}
+                        className="flex flex-col items-center justify-center gap-2 h-28 rounded-xl border-2 border-dashed border-t-border hover:border-cyan-500 cursor-pointer transition-colors bg-surface-2 hover:bg-surface-elevated"
+                      >
+                        {uploadFile ? (
+                          <>
+                            <span className="text-lg">📄</span>
+                            <span className="text-sm font-medium text-foreground">{uploadFile.name}</span>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setUploadFile(null); }}
+                              className="text-xs text-muted hover:text-red-500 transition-colors"
+                            >
+                              ✕ Remove
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <span className="text-2xl opacity-40">☁️</span>
+                            <span className="text-xs text-muted">Drop planset PDF here or click to browse</span>
+                          </>
+                        )}
+                      </div>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept=".pdf,application/pdf"
+                        className="hidden"
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                          const f = e.target.files?.[0];
+                          if (f) { setUploadFile(f); setImportError(null); }
+                        }}
+                      />
+                      {importError && <p className="text-sm text-red-500">{importError}</p>}
+                      <button
+                        onClick={handleExtractUpload}
+                        disabled={!uploadFile || extracting}
+                        className="px-4 py-1.5 rounded-lg bg-cyan-600 text-white text-sm font-medium hover:bg-cyan-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                      >
+                        {extracting ? (
+                          <>
+                            <span className="inline-block w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            {uploadProgress ? uploadProgress.split("—")[0].trim() : "Extracting…"}
+                          </>
+                        ) : (
+                          "Extract BOM"
+                        )}
+                      </button>
+                      {extracting && uploadProgress && (
+                        <p className="text-xs text-muted animate-pulse">{uploadProgress}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* ---- Upload PDF (default when no design folder) ---- */
                 <div className="space-y-4">
                   <p className="text-sm text-muted">
                     Upload a PB stamped planset PDF. BOM Tool will read all sheets and extract the full BOM automatically.
@@ -2277,123 +2363,6 @@ function BomDashboardInner() {
                   </button>
                   {extracting && uploadProgress && (
                     <p className="text-xs text-muted animate-pulse">
-                      {uploadProgress}
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {/* ---- Google Drive tab ---- */}
-              {importTab === "drive" && (
-                <div className="space-y-4">
-                  <p className="text-sm text-muted">
-                    Paste a Google Drive share link to a planset PDF. The file must be shared with &quot;Anyone with the link&quot;.
-                  </p>
-                  <input
-                    type="url"
-                    placeholder="https://drive.google.com/file/d/ABC123/view?usp=sharing"
-                    value={driveUrl}
-                    onChange={(e) => { setDriveUrl(e.target.value); setImportError(null); }}
-                    className="w-full rounded-lg bg-surface-2 border border-t-border text-foreground text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                  />
-
-                  {importError && <p className="text-sm text-red-500">{importError}</p>}
-
-                  <button
-                    onClick={handleExtractDrive}
-                    disabled={!driveUrl.trim() || extracting}
-                    className="px-5 py-2 rounded-lg bg-cyan-600 text-white text-sm font-medium hover:bg-cyan-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
-                  >
-                    {extracting ? (
-                      <>
-                        <span className="inline-block w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                        Fetching & Extracting…
-                      </>
-                    ) : (
-                      "Extract from Drive"
-                    )}
-                  </button>
-                  {extracting && (
-                    <p className="text-xs text-muted animate-pulse">
-                      {uploadProgress || "Downloading from Drive then extracting with BOM Tool — allow 30–60 seconds."}
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {/* ---- Paste JSON tab ---- */}
-              {importTab === "paste" && (
-                <div className="space-y-3">
-                  <p className="text-sm text-muted">
-                    Run the{" "}
-                    <code className="bg-surface-2 px-1.5 py-0.5 rounded text-xs">planset-bom</code>{" "}
-                    skill in BOM Tool, then paste the JSON output below.
-                  </p>
-                  <textarea
-                    className="w-full h-48 rounded-lg bg-surface-2 border border-t-border text-foreground text-sm font-mono p-3 resize-y focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                    placeholder='{ "project": { ... }, "items": [ ... ], "validation": { ... } }'
-                    value={jsonInput}
-                    onChange={(e) => setJsonInput(e.target.value)}
-                  />
-                  {importError && <p className="text-sm text-red-500">{importError}</p>}
-                  <button
-                    onClick={handleImport}
-                    disabled={!jsonInput.trim()}
-                    className="px-5 py-2 rounded-lg bg-cyan-600 text-white text-sm font-medium hover:bg-cyan-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                  >
-                    Load BOM
-                  </button>
-                </div>
-              )}
-
-              {importTab === "project-files" && (
-                <div className="space-y-3">
-                  <p className="text-sm text-muted">
-                    Planset PDFs in{" "}
-                    <span className="text-foreground font-medium">{linkedProject?.dealname}</span>
-                    &apos;s design folder. Click a file to extract the BOM.
-                  </p>
-
-                  {driveFilesLoading && (
-                    <p className="text-sm text-muted animate-pulse py-4 text-center">Loading design files…</p>
-                  )}
-                  {driveFilesError && (
-                    <p className="text-sm text-red-500">{driveFilesError}</p>
-                  )}
-                  {!driveFilesLoading && !driveFilesError && driveFiles.length === 0 && (
-                    <p className="text-sm text-muted py-4 text-center">No PDFs found in this project&apos;s design folder.</p>
-                  )}
-
-                  {driveFiles.map((file) => (
-                    <div
-                      key={file.id}
-                      className="flex items-center justify-between gap-3 rounded-lg border border-t-border bg-surface-2 px-4 py-3 hover:bg-surface-elevated transition-colors"
-                    >
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium text-foreground truncate">{file.name}</div>
-                        <div className="text-xs text-muted mt-0.5">
-                          {file.size ? `${(parseInt(file.size) / 1024 / 1024).toFixed(1)} MB · ` : ""}
-                          Modified {new Date(file.modifiedTime).toLocaleDateString()}
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => handleExtractDriveFile(file)}
-                        disabled={extracting}
-                        className="flex-shrink-0 px-4 py-1.5 rounded-lg bg-cyan-600 text-white text-sm font-medium hover:bg-cyan-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
-                      >
-                        {extractingDriveFileId === file.id ? (
-                          <>
-                            <span className="inline-block w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                            Extracting…
-                          </>
-                        ) : (
-                          "Extract BOM"
-                        )}
-                      </button>
-                    </div>
-                  ))}
-                  {extractingDriveFileId && uploadProgress && (
-                    <p className="text-xs text-muted animate-pulse text-center pt-1">
                       {uploadProgress}
                     </p>
                   )}
@@ -2810,12 +2779,6 @@ function BomDashboardInner() {
                 className="px-4 py-2 rounded-lg bg-surface border border-t-border text-sm text-foreground hover:bg-surface-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 🖨 Print
-              </button>
-              <button
-                onClick={() => setHistoryDrawerOpen(true)}
-                className="px-4 py-2 rounded-lg bg-surface border border-t-border text-sm text-foreground hover:bg-surface-2 transition-colors"
-              >
-                ⏱ BOM History
               </button>
             </div>
 
@@ -3294,12 +3257,14 @@ function BomDashboardInner() {
           </>
         )}
       </div>
-      <BomHistoryDrawer
-        open={historyDrawerOpen}
-        onClose={() => setHistoryDrawerOpen(false)}
-        onSelect={(snap: BomSnapshotGlobal) => {
+      {/* ---- Inline BOM History ---- */}
+      <BomHistoryInline
+        snapshots={allSnapshots}
+        loading={allHistoryLoading}
+        search={allHistorySearch}
+        onSearchChange={setAllHistorySearch}
+        onSelect={(snap) => {
           if (linkedProject?.hs_object_id === snap.dealId) {
-            // Already on this deal — directly reload history and load the latest snapshot
             setHistoryLoading(true);
             fetch(`/api/bom/history?dealId=${encodeURIComponent(snap.dealId)}`)
               .then((r) => r.ok ? r.json() : Promise.reject(r.status))
@@ -3316,7 +3281,6 @@ function BomDashboardInner() {
               .catch(() => {/* silent */})
               .finally(() => setHistoryLoading(false));
           } else {
-            // Different deal — navigate and let the history useEffect auto-load
             router.push(`/dashboards/bom?deal=${snap.dealId}&load=latest`);
           }
         }}
@@ -3521,6 +3485,154 @@ async function fetchExtractStream(
   }
 
   throw new Error("Stream ended without result");
+}
+
+/* ------------------------------------------------------------------ */
+/*  Inline BOM History (replaces drawer + separate page)                */
+/* ------------------------------------------------------------------ */
+
+function historyRelativeTime(dateStr: string): string {
+  const now = Date.now();
+  const then = new Date(dateStr).getTime();
+  const diffSec = Math.floor((now - then) / 1000);
+  const diffMin = Math.floor(diffSec / 60);
+  const diffHr = Math.floor(diffMin / 60);
+  const diffDay = Math.floor(diffHr / 24);
+  if (diffSec < 60) return "just now";
+  if (diffMin < 60) return `${diffMin}m ago`;
+  if (diffHr < 24) return `${diffHr}h ago`;
+  if (diffDay === 1) return "yesterday";
+  if (diffDay < 7) return `${diffDay}d ago`;
+  return new Date(dateStr).toLocaleDateString();
+}
+
+function historyDateGroup(dateStr: string): string {
+  const now = new Date();
+  const date = new Date(dateStr);
+  const nowDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const itemDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const diffDays = Math.floor((nowDate.getTime() - itemDate.getTime()) / (1000 * 60 * 60 * 24));
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays < 7) return "This Week";
+  return "Older";
+}
+
+const HISTORY_GROUP_ORDER = ["Today", "Yesterday", "This Week", "Older"];
+
+interface AllHistorySnapshot {
+  id: string;
+  dealId: string;
+  dealName: string;
+  version: number;
+  sourceFile: string | null;
+  savedBy: string | null;
+  createdAt: string;
+  customer: string | null;
+  address: string | null;
+  systemSizeKwdc: number | string | null;
+  moduleCount: number | string | null;
+  itemCount: number;
+}
+
+function BomHistoryInline({
+  snapshots,
+  loading,
+  search,
+  onSearchChange,
+  onSelect,
+}: {
+  snapshots: AllHistorySnapshot[];
+  loading: boolean;
+  search: string;
+  onSearchChange: (v: string) => void;
+  onSelect: (snap: AllHistorySnapshot) => void;
+}) {
+  const filtered = useMemo(() => {
+    if (!search.trim()) return snapshots;
+    const q = search.toLowerCase();
+    return snapshots.filter(
+      (s) =>
+        s.dealName?.toLowerCase().includes(q) ||
+        s.customer?.toLowerCase().includes(q) ||
+        s.address?.toLowerCase().includes(q)
+    );
+  }, [snapshots, search]);
+
+  const grouped = useMemo(() => {
+    const map: Record<string, AllHistorySnapshot[]> = {};
+    for (const s of filtered) {
+      const group = historyDateGroup(s.createdAt);
+      if (!map[group]) map[group] = [];
+      map[group].push(s);
+    }
+    return map;
+  }, [filtered]);
+
+  return (
+    <div className="rounded-xl bg-surface border border-t-border shadow-card overflow-hidden">
+      <div className="px-5 py-4 border-b border-t-border bg-surface-2 flex items-center gap-3">
+        <h3 className="text-sm font-semibold text-foreground">BOM History</h3>
+        <span className="text-xs text-muted">({snapshots.length})</span>
+        <input
+          type="text"
+          placeholder="Search by deal, customer, or address…"
+          value={search}
+          onChange={(e) => onSearchChange(e.target.value)}
+          className="ml-auto w-full max-w-xs rounded-lg border border-t-border bg-surface px-3 py-1.5 text-xs text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
+        />
+      </div>
+
+      {loading && (
+        <div className="px-5 py-8 text-center">
+          <div className="inline-block w-5 h-5 border-2 border-t-foreground border-surface rounded-full animate-spin" />
+          <p className="text-xs text-muted mt-2">Loading history…</p>
+        </div>
+      )}
+
+      {!loading && filtered.length === 0 && (
+        <div className="px-5 py-8 text-center">
+          <p className="text-sm text-muted">
+            {search ? "No snapshots match your search." : "No BOM snapshots yet."}
+          </p>
+        </div>
+      )}
+
+      {!loading && filtered.length > 0 && (
+        <div className="max-h-[400px] overflow-y-auto divide-y divide-t-border">
+          {HISTORY_GROUP_ORDER.filter((g) => grouped[g]?.length).map((group) => (
+            <div key={group}>
+              <div className="sticky top-0 z-10 px-4 py-1.5 bg-surface-2 border-b border-t-border">
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-muted">
+                  {group}
+                </span>
+                <span className="text-[10px] text-muted ml-1.5">({grouped[group].length})</span>
+              </div>
+              {grouped[group].map((s) => (
+                <button
+                  key={s.id}
+                  onClick={() => onSelect(s)}
+                  className="w-full text-left px-4 py-2.5 hover:bg-surface-2 transition-colors flex items-center gap-3"
+                >
+                  <span className="inline-flex items-center rounded-md bg-cyan-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-cyan-400 ring-1 ring-cyan-500/30 shrink-0">
+                    v{s.version}
+                  </span>
+                  <span className="truncate text-sm font-medium text-foreground min-w-0">{s.dealName}</span>
+                  {s.customer && (
+                    <span className="hidden sm:inline truncate text-xs text-muted">{s.customer}</span>
+                  )}
+                  <span className="ml-auto shrink-0 text-xs text-muted whitespace-nowrap flex items-center gap-2">
+                    {s.itemCount} items
+                    <span className="hidden md:inline">{historyRelativeTime(s.createdAt)}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function BomDashboard() {

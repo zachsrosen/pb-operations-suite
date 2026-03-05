@@ -194,6 +194,7 @@ interface PushEditDraft {
 
 const ADMIN_ROLES = ["ADMIN", "OWNER", "MANAGER"];
 const BULK_SYNC_ADMIN_ROLES = ["ADMIN", "OWNER"];
+const DELETE_ROLES = ["ADMIN"];
 const SYSTEM_OPTIONS = ["INTERNAL", "ZOHO", "HUBSPOT", "ZUPER"] as const;
 const CATEGORIES = FORM_CATEGORIES;
 
@@ -318,9 +319,13 @@ export default function CatalogPage() {
     }
   }, []);
 
+  const [deleteSkuId, setDeleteSkuId] = useState<string | null>(null);
+  const [deletingSkuId, setDeletingSkuId] = useState<string | null>(null);
+
   const userRole = (session?.user as { role?: string } | undefined)?.role ?? "";
   const isAdmin = ADMIN_ROLES.includes(userRole);
   const canExecuteBulkSync = BULK_SYNC_ADMIN_ROLES.includes(userRole);
+  const canDeleteSku = DELETE_ROLES.includes(userRole);
 
   // Fetch SKUs
   const fetchSkus = useCallback(() => {
@@ -347,6 +352,26 @@ export default function CatalogPage() {
   }, [addToast]);
 
   useEffect(() => { fetchSkus(); }, [fetchSkus]);
+
+  async function handleDeleteSku(id: string) {
+    setDeletingSkuId(id);
+    try {
+      const res = await fetch("/api/inventory/skus", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      const body = await res.json().catch(() => null) as { error?: string; name?: string } | null;
+      if (!res.ok) throw new Error(body?.error || `Failed to delete (${res.status})`);
+      addToast({ type: "success", title: `Deleted ${body?.name || "SKU"}` });
+      setDeleteSkuId(null);
+      fetchSkus();
+    } catch (error) {
+      addToast({ type: "error", title: error instanceof Error ? error.message : "Failed to delete SKU" });
+    } finally {
+      setDeletingSkuId(null);
+    }
+  }
 
   // Check cleanup feature flag
   useEffect(() => {
@@ -1113,6 +1138,33 @@ export default function CatalogPage() {
                                 >
                                   Cleanup
                                 </button>
+                              )}
+                              {canDeleteSku && (
+                                deleteSkuId === sku.id ? (
+                                  <span className="flex items-center gap-2">
+                                    <span className="text-red-400 text-xs">Delete?</span>
+                                    <button
+                                      onClick={() => handleDeleteSku(sku.id)}
+                                      disabled={deletingSkuId === sku.id}
+                                      className="text-red-400 hover:text-red-300 disabled:opacity-50 font-medium"
+                                    >
+                                      {deletingSkuId === sku.id ? "Deleting…" : "Yes"}
+                                    </button>
+                                    <button
+                                      onClick={() => setDeleteSkuId(null)}
+                                      className="text-muted hover:text-foreground"
+                                    >
+                                      No
+                                    </button>
+                                  </span>
+                                ) : (
+                                  <button
+                                    onClick={() => setDeleteSkuId(sku.id)}
+                                    className="text-red-400 hover:text-red-300"
+                                  >
+                                    Delete
+                                  </button>
+                                )
                               )}
                             </>
                           )}

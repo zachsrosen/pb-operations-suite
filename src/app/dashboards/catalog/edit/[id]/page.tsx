@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import DashboardShell from "@/components/DashboardShell";
 import CategoryFields from "@/components/catalog/CategoryFields";
 import BrandDropdown from "@/components/catalog/BrandDropdown";
@@ -12,6 +13,8 @@ import {
   getCategoryLabel,
 } from "@/lib/catalog-fields";
 import { getZohoItemUrl, getHubSpotProductUrl, getZuperProductUrl } from "@/lib/external-links";
+
+const DELETE_ROLES = ["ADMIN"];
 
 const inputClasses =
   "w-full rounded-lg border border-t-border bg-surface-2 px-3 py-2 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-cyan-500/50";
@@ -52,6 +55,10 @@ export default function CatalogSkuEditPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const { addToast } = useToast();
+  const { data: session } = useSession();
+
+  const userRole = (session?.user as { role?: string } | undefined)?.role ?? "";
+  const canDelete = DELETE_ROLES.includes(userRole);
 
   const skuId = useMemo(() => {
     const value = params?.id;
@@ -60,6 +67,8 @@ export default function CatalogSkuEditPage() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [category, setCategory] = useState<string>("");
@@ -196,6 +205,30 @@ export default function CatalogSkuEditPage() {
       addToast({ type: "error", title: error instanceof Error ? error.message : "Failed to update SKU" });
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!skuId) return;
+    setDeleting(true);
+
+    try {
+      const res = await fetch("/api/inventory/skus", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: skuId }),
+      });
+
+      const body = await res.json().catch(() => null) as { error?: string; name?: string } | null;
+      if (!res.ok) throw new Error(body?.error || `Failed to delete SKU (${res.status})`);
+
+      addToast({ type: "success", title: `Deleted ${body?.name || "SKU"}` });
+      router.push("/dashboards/catalog");
+    } catch (error) {
+      addToast({ type: "error", title: error instanceof Error ? error.message : "Failed to delete SKU" });
+      setShowDeleteConfirm(false);
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -433,21 +466,56 @@ export default function CatalogSkuEditPage() {
             </div>
           )}
 
-          <div className="flex flex-col sm:flex-row justify-end gap-3">
-            <button
-              type="button"
-              onClick={() => router.push("/dashboards/catalog")}
-              className="rounded-lg border border-t-border bg-surface px-6 py-2.5 text-sm font-medium text-muted hover:text-foreground hover:bg-surface-2 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={saving || !brand || !model || !category}
-              className="rounded-lg bg-cyan-600 px-6 py-2.5 text-sm font-medium text-white hover:bg-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors w-full sm:w-auto"
-            >
-              {saving ? "Saving..." : "Save Changes"}
-            </button>
+          <div className="flex flex-col sm:flex-row justify-between gap-3">
+            {canDelete && (
+              <div className="relative">
+                {showDeleteConfirm ? (
+                  <div className="flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2">
+                    <span className="text-sm text-red-400">Permanently delete this item?</span>
+                    <button
+                      type="button"
+                      onClick={handleDelete}
+                      disabled={deleting}
+                      className="rounded-lg bg-red-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-50 transition-colors"
+                    >
+                      {deleting ? "Deleting..." : "Yes, Delete"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowDeleteConfirm(false)}
+                      disabled={deleting}
+                      className="rounded-lg border border-t-border bg-surface px-4 py-1.5 text-sm font-medium text-muted hover:text-foreground transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setShowDeleteConfirm(true)}
+                    className="rounded-lg border border-red-500/30 bg-surface px-6 py-2.5 text-sm font-medium text-red-400 hover:bg-red-500/10 hover:border-red-500/50 transition-colors"
+                  >
+                    Delete Item
+                  </button>
+                )}
+              </div>
+            )}
+            <div className="flex flex-col sm:flex-row gap-3 sm:ml-auto">
+              <button
+                type="button"
+                onClick={() => router.push("/dashboards/catalog")}
+                className="rounded-lg border border-t-border bg-surface px-6 py-2.5 text-sm font-medium text-muted hover:text-foreground hover:bg-surface-2 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={saving || !brand || !model || !category}
+                className="rounded-lg bg-cyan-600 px-6 py-2.5 text-sm font-medium text-white hover:bg-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors w-full sm:w-auto"
+              >
+                {saving ? "Saving..." : "Save Changes"}
+              </button>
+            </div>
           </div>
         </form>
       )}

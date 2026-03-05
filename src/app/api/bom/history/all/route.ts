@@ -2,7 +2,7 @@
  * BOM History - All Snapshots
  *
  * GET /api/bom/history/all
- *   Returns the 100 most recent BOM snapshots across all projects,
+ *   Returns all BOM snapshots across all projects,
  *   newest-first, with a summary extracted from bomData (no full bomData).
  */
 
@@ -28,7 +28,6 @@ export async function GET() {
 
   const raw = await prisma.projectBomSnapshot.findMany({
     orderBy: { createdAt: "desc" },
-    take: 100,
     select: {
       id: true,
       dealId: true,

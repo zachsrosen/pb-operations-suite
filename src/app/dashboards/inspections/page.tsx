@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { formatMoney } from "@/lib/format";
 import { RawProject } from "@/lib/types";
@@ -116,6 +116,50 @@ export default function InspectionsPage() {
   const [filterStages, setFilterStages] = useState<string[]>([]);
   const [filterInspectionStatuses, setFilterInspectionStatuses] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+
+  // Install Photo Review state
+  const [photoReviewOpen, setPhotoReviewOpen] = useState(false);
+  const [photoReviewDealId, setPhotoReviewDealId] = useState<string | null>(null);
+  const [photoReviewDealName, setPhotoReviewDealName] = useState("");
+  const [photoReviewLoading, setPhotoReviewLoading] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [photoReviewResult, setPhotoReviewResult] = useState<any>(null);
+  const [photoReviewError, setPhotoReviewError] = useState<string | null>(null);
+  const photoReviewRequestId = useRef(0);
+
+  const runPhotoReview = async (dealId: string, dealName: string) => {
+    const requestId = ++photoReviewRequestId.current;
+    setPhotoReviewDealId(dealId);
+    setPhotoReviewDealName(dealName);
+    setPhotoReviewOpen(true);
+    setPhotoReviewLoading(true);
+    setPhotoReviewResult(null);
+    setPhotoReviewError(null);
+
+    try {
+      const res = await fetch("/api/install-review", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dealId }),
+      });
+      // Stale response — user already started a new review
+      if (requestId !== photoReviewRequestId.current) return;
+      const data = await res.json();
+      if (!res.ok) {
+        setPhotoReviewError(data.error || `Request failed (${res.status})`);
+        if (data.details) setPhotoReviewError(`${data.error}: ${data.details}`);
+      } else {
+        setPhotoReviewResult(data);
+      }
+    } catch (err) {
+      if (requestId !== photoReviewRequestId.current) return;
+      setPhotoReviewError(err instanceof Error ? err.message : "Network error");
+    } finally {
+      if (requestId === photoReviewRequestId.current) {
+        setPhotoReviewLoading(false);
+      }
+    }
+  };
 
   useEffect(() => {
     if (!loading && !hasTrackedView.current) {
@@ -521,6 +565,173 @@ export default function InspectionsPage() {
         </div>
       </div>
 
+      {/* Install Photo Review */}
+      <div className="bg-surface rounded-xl border border-t-border mb-6 overflow-hidden">
+        <button
+          onClick={() => setPhotoReviewOpen(!photoReviewOpen)}
+          className="w-full flex items-center justify-between p-4 hover:bg-surface-2 transition-colors"
+        >
+          <div className="flex items-center gap-3">
+            <span className="text-lg">&#128247;</span>
+            <div className="text-left">
+              <h2 className="text-lg font-semibold">Install Photo Review</h2>
+              <p className="text-xs text-muted">Compare install photos against the permitted planset</p>
+            </div>
+          </div>
+          <svg
+            className={`w-5 h-5 text-muted transition-transform ${photoReviewOpen ? "rotate-180" : ""}`}
+            fill="none" stroke="currentColor" viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+
+        {photoReviewOpen && (
+          <div className="border-t border-t-border p-4">
+            {/* Project selector — pick from table or show current review */}
+            {!photoReviewDealId && !photoReviewLoading && !photoReviewResult && (
+              <div className="text-center py-6">
+                <p className="text-muted mb-3">Select a project to review install photos against the planset.</p>
+                <p className="text-xs text-muted">
+                  Click the camera icon on any project row below, or choose from recently completed installs:
+                </p>
+                <div className="mt-4 flex flex-wrap justify-center gap-2">
+                  {filteredProjects
+                    .filter(p => {
+                      const status = (p.finalInspectionStatus || "").toLowerCase();
+                      return p.stage === "Inspection" || status.includes("scheduled") || status.includes("ready");
+                    })
+                    .slice(0, 6)
+                    .map(p => (
+                      <button
+                        key={p.id}
+                        onClick={() => runPhotoReview(p.id, p.name.split("|")[0].trim())}
+                        className="px-3 py-2 bg-surface-2 hover:bg-orange-500/20 border border-t-border hover:border-orange-500/50 rounded-lg text-sm transition-colors"
+                      >
+                        {p.name.split("|")[0].trim()}
+                      </button>
+                    ))}
+                </div>
+              </div>
+            )}
+
+            {/* Loading state */}
+            {photoReviewLoading && (
+              <div className="text-center py-8">
+                <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-orange-500 mx-auto mb-4"></div>
+                <p className="text-foreground font-medium">{photoReviewDealName}</p>
+                <p className="text-sm text-muted mt-1">Fetching photos from Zuper, downloading planset, running AI comparison...</p>
+                <p className="text-xs text-muted mt-2">This may take 30-60 seconds</p>
+              </div>
+            )}
+
+            {/* Error state */}
+            {photoReviewError && (
+              <div className="py-4">
+                <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <p className="font-medium text-red-400">{photoReviewDealName}</p>
+                      <p className="text-sm text-red-300 mt-1">{photoReviewError}</p>
+                    </div>
+                    <button
+                      onClick={() => { setPhotoReviewDealId(null); setPhotoReviewError(null); }}
+                      className="text-muted hover:text-foreground text-sm px-2"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Results */}
+            {photoReviewResult && (
+              <div className="space-y-4">
+                {/* Header */}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-semibold text-foreground">{photoReviewDealName}</h3>
+                    <p className="text-xs text-muted">
+                      {photoReviewResult.photo_count} photo{photoReviewResult.photo_count !== 1 ? "s" : ""} reviewed
+                      {" \u00B7 "}planset: {photoReviewResult.planset_filename}
+                      {" \u00B7 "}{(photoReviewResult.duration_ms / 1000).toFixed(1)}s
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={`px-3 py-1 rounded-full text-sm font-bold ${
+                      photoReviewResult.overall_pass
+                        ? "bg-emerald-500/20 text-emerald-400"
+                        : "bg-red-500/20 text-red-400"
+                    }`}>
+                      {photoReviewResult.overall_pass ? "PASS" : "FAIL"}
+                    </span>
+                    <button
+                      onClick={() => { setPhotoReviewDealId(null); setPhotoReviewResult(null); }}
+                      className="text-xs text-muted hover:text-foreground px-2 py-1 border border-t-border rounded-lg"
+                    >
+                      New Review
+                    </button>
+                  </div>
+                </div>
+
+                {/* Summary */}
+                <p className="text-sm text-muted bg-surface-2 rounded-lg p-3">{photoReviewResult.summary}</p>
+
+                {/* Findings table */}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-t-border">
+                        <th className="px-3 py-2 text-left text-xs font-medium text-muted uppercase">Category</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-muted uppercase">Status</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-muted uppercase">Planset Spec</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-muted uppercase">Observed</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-muted uppercase">Notes</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-t-border">
+                      {(photoReviewResult.findings || []).map((f: { category: string; status: string; planset_spec: string; observed: string; notes: string }, i: number) => (
+                        <tr key={i} className="hover:bg-surface-2/50">
+                          <td className="px-3 py-2 font-medium capitalize text-foreground">{f.category}</td>
+                          <td className="px-3 py-2">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${
+                              f.status === "pass"
+                                ? "bg-emerald-500/20 text-emerald-400"
+                                : f.status === "fail"
+                                  ? "bg-red-500/20 text-red-400"
+                                  : "bg-zinc-500/20 text-muted"
+                            }`}>
+                              {f.status === "pass" ? "PASS" : f.status === "fail" ? "FAIL" : "N/A"}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 text-muted max-w-[200px] truncate" title={f.planset_spec}>{f.planset_spec || "-"}</td>
+                          <td className="px-3 py-2 text-muted max-w-[200px] truncate" title={f.observed}>{f.observed || "-"}</td>
+                          <td className="px-3 py-2 text-muted max-w-[250px] truncate" title={f.notes}>{f.notes || "-"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Counts summary */}
+                <div className="flex items-center gap-4 text-xs text-muted pt-2 border-t border-t-border">
+                  <span className="text-emerald-400 font-medium">
+                    {photoReviewResult.findings?.filter((f: { status: string }) => f.status === "pass").length || 0} pass
+                  </span>
+                  <span className="text-red-400 font-medium">
+                    {photoReviewResult.findings?.filter((f: { status: string }) => f.status === "fail").length || 0} fail
+                  </span>
+                  <span className="text-muted">
+                    {photoReviewResult.findings?.filter((f: { status: string }) => f.status === "unable_to_verify").length || 0} unable to verify
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Projects Table */}
       <div className="bg-surface rounded-xl border border-t-border overflow-hidden">
         <div className="p-4 border-b border-t-border flex items-center justify-between">
@@ -574,11 +785,25 @@ export default function InspectionsPage() {
                     return (
                       <tr key={project.id} className="hover:bg-surface/50">
                         <td className="px-4 py-3">
-                          <a href={project.url} target="_blank" rel="noopener noreferrer" className="font-medium text-foreground hover:text-orange-400">
-                            {project.name.split('|')[0].trim()}
-                          </a>
-                          <div className="text-xs text-muted">{project.name.split('|')[1]?.trim() || ''}</div>
-                          <div className="text-xs text-muted">{project.pbLocation}</div>
+                          <div className="flex items-start gap-2">
+                            <div className="flex-1 min-w-0">
+                              <a href={project.url} target="_blank" rel="noopener noreferrer" className="font-medium text-foreground hover:text-orange-400">
+                                {project.name.split('|')[0].trim()}
+                              </a>
+                              <div className="text-xs text-muted">{project.name.split('|')[1]?.trim() || ''}</div>
+                              <div className="text-xs text-muted">{project.pbLocation}</div>
+                            </div>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); runPhotoReview(project.id, project.name.split('|')[0].trim()); }}
+                              className="flex-shrink-0 p-1.5 rounded-lg text-muted hover:text-orange-400 hover:bg-orange-500/10 transition-colors"
+                              title="Review install photos"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                              </svg>
+                            </button>
+                          </div>
                         </td>
                         <td className="px-4 py-3 text-sm text-foreground/80">{project.ahj || '-'}</td>
                         <td className="px-4 py-3 text-sm text-foreground/80">{project.stage || '-'}</td>
