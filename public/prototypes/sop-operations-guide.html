@@ -94,6 +94,15 @@ code{font-family:'SF Mono',Consolas,monospace;font-size:11px;background:var(--gr
 .sys::before{content:"⚡ System does: ";font-weight:700;color:#1e40af;}
 @media print{.top-bar,.sidebar{display:none!important;}.layout{display:block!important;}.main{max-width:100%!important;padding:0!important;}.section{display:block!important;page-break-before:always;}.card{break-inside:avoid;}}
 @media(max-width:768px){.sidebar{display:none;}.main{padding:16px;}.search-box{width:180px;}}
+/* Admin mode & TBD system */
+.admin-only{display:none;}
+body.admin-mode .admin-only{display:block;}
+body.admin-mode .tbd-placeholder{display:none!important;}
+.tbd-placeholder{background:var(--gray-50);border:2px dashed var(--gray-300);border-radius:var(--radius);padding:40px 32px;margin:14px 0;text-align:center;}
+.admin-toggle{display:flex;align-items:center;gap:6px;background:var(--gray-100);border:1px solid var(--gray-200);border-radius:var(--radius);padding:4px 10px;font-size:11px;font-weight:600;color:var(--gray-500);cursor:pointer;transition:all .15s;user-select:none;}
+.admin-toggle:hover{background:var(--gray-200);color:var(--gray-700);}
+body.admin-mode .admin-toggle{background:var(--tag-auto-bg);border-color:var(--tag-auto);color:var(--tag-auto);}
+body.admin-mode .review{border-left-color:var(--tag-auto);}
 </style>
 </head>
 <body>
@@ -107,7 +116,13 @@ SOP Operations Guide
 <input type="text" id="si" placeholder="Search procedures..." onkeydown="if(event.key==='Enter')handleSearch(this.value)">
 <span class="kbd">Ctrl+K</span>
 </div>
+<div style="display:flex;align-items:center;gap:12px;">
+<div class="admin-toggle" id="adminToggle" onclick="toggleAdmin()" title="Toggle admin mode to view unfinished sections">
+<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+<span id="adminLabel">Admin</span>
+</div>
 <div class="meta">v3.1 — Updated Mar 2026</div>
+</div>
 </div>
 <div class="tab-bar" id="tabBar">
 <button class="active" onclick="switchTab('hubspot')">HubSpot Guide</button>
@@ -3375,6 +3390,52 @@ function switchTab(tab){
 // Init: hide non-active tabs on load
 document.querySelectorAll('.sidebar .sidebar-section[data-tab]').forEach(s=>{
   if(s.dataset.tab!=='hubspot') s.style.display='none';
+});
+// Force correct default page on load (fixes hard-refresh issue)
+go('hs-overview');
+
+// Admin mode & TBD system
+function toggleAdmin(){
+  document.body.classList.toggle('admin-mode');
+  const isAdmin=document.body.classList.contains('admin-mode');
+  localStorage.setItem('sop-admin',isAdmin?'1':'0');
+  document.getElementById('adminLabel').textContent=isAdmin?'Admin \u2713':'Admin';
+  document.getElementById('adminToggle').title=isAdmin?'Admin mode ON \u2014 showing unfinished sections':'Toggle admin mode to view unfinished sections';
+}
+// Restore admin state
+if(localStorage.getItem('sop-admin')==='1'){
+  document.body.classList.add('admin-mode');
+  document.getElementById('adminLabel').textContent='Admin \u2713';
+}
+// Wrap content after each review banner in admin-only containers
+document.querySelectorAll('.review').forEach(function(rev){
+  // Create TBD placeholder
+  var tbd=document.createElement('div');
+  tbd.className='tbd-placeholder';
+  var icon=document.createElement('div');
+  icon.style.cssText='font-size:24px;margin-bottom:8px;';
+  icon.textContent='\uD83D\uDEA7';
+  var title=document.createElement('div');
+  title.style.cssText='font-weight:600;color:var(--gray-600);font-size:14px;';
+  title.textContent='Section Under Development';
+  var sub=document.createElement('div');
+  sub.style.cssText='color:var(--gray-400);font-size:12px;margin-top:6px;';
+  sub.textContent='This content is being finalized by the ops team. Check back soon.';
+  tbd.appendChild(icon);
+  tbd.appendChild(title);
+  tbd.appendChild(sub);
+  rev.before(tbd);
+  // Wrap review + all following siblings in admin-only div
+  var wrapper=document.createElement('div');
+  wrapper.className='admin-only';
+  tbd.after(wrapper);
+  wrapper.appendChild(rev);
+  var next=wrapper.nextElementSibling;
+  while(next){
+    var cur=next;
+    next=next.nextElementSibling;
+    wrapper.appendChild(cur);
+  }
 });
 
 // Navigation
