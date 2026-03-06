@@ -3770,8 +3770,10 @@ function switchTab(tab){
 document.querySelectorAll('.sidebar .sidebar-section[data-tab]').forEach(s=>{
   if(s.dataset.tab!=='hubspot') s.style.display='none';
 });
-// Force correct default page on load (fixes hard-refresh issue)
-go('hs-overview');
+// Deep-link from URL hash, or default to hs-overview on fresh load
+_suppressHash=true;
+if(!goToHash()) go('hs-overview');
+_suppressHash=false;
 
 // Ensure user exists in DB (static pages skip React AuthSync component),
 // then fetch effective role (respects admin impersonation).
@@ -3830,6 +3832,7 @@ document.querySelectorAll('.review').forEach(function(rev){
 });
 
 // Navigation
+var _suppressHash=false;
 function go(id){
   document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
   const target=document.getElementById(id);
@@ -3841,7 +3844,22 @@ function go(id){
       if(sec)sec.classList.remove('collapsed');
     }
   });
+  // Update URL hash for deep linking (skip during initial load to keep clean URL)
+  if(!_suppressHash) history.replaceState(null,'','#'+id);
 }
+// Deep-link: navigate to hash target and switch to its tab
+function goToHash(){
+  var h=location.hash.replace('#','');
+  if(!h)return false;
+  var link=document.querySelector('.sidebar a[data-s="'+h+'"]');
+  if(!link)return false;
+  var sec=link.closest('.sidebar-section[data-tab]');
+  if(sec&&sec.dataset.tab!==currentTab) switchTab(sec.dataset.tab);
+  // switchTab calls go() for the first page; override to the actual target
+  go(h);
+  return true;
+}
+window.addEventListener('hashchange',function(){goToHash();});
 
 // Search
 function handleSearch(query){
