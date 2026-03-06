@@ -3391,23 +3391,27 @@ document.querySelectorAll('.sidebar .sidebar-section[data-tab]').forEach(s=>{
 // Force correct default page on load (fixes hard-refresh issue)
 go('hs-overview');
 
-// Ensure user exists in DB (static pages skip React AuthSync component)
-fetch('/api/auth/sync',{method:'POST',credentials:'include'}).catch(function(){});
-// Role-based admin mode — fetch session to determine access level
+// Ensure user exists in DB (static pages skip React AuthSync component),
+// then fetch effective role (respects admin impersonation).
 var ADMIN_ROLES=['ADMIN'];
-fetch('/api/auth/session',{credentials:'include'}).then(function(r){return r.json();}).then(function(s){
+fetch('/api/auth/sync',{method:'POST',credentials:'include'}).then(function(){
+  return fetch('/api/auth/sync',{credentials:'include'});
+}).then(function(r){return r.json();}).then(function(data){
   var badge=document.getElementById('roleBadge');
-  if(s&&s.user&&s.user.role){
-    var role=s.user.role;
-    var name=s.user.name||(s.user.email||'').split('@')[0]||'User';
-    badge.textContent=name;
-    if(ADMIN_ROLES.indexOf(role)!==-1){
+  if(data&&data.role){
+    var role=data.role;
+    var isImpersonating=!!data.isImpersonating;
+    var displayName=isImpersonating&&data.impersonatedUser
+      ? data.impersonatedUser.name||data.impersonatedUser.email||'User'
+      : (data.user&&data.user.name)||(data.user&&data.user.email)||'User';
+    badge.textContent=displayName+(isImpersonating?' (viewing as)':'');
+    if(ADMIN_ROLES.indexOf(role)!==-1&&!isImpersonating){
       document.body.classList.add('admin-mode');
       badge.className='role-badge role-admin';
-      badge.title=role+' — full access to unfinished sections';
+      badge.title=role+' \u2014 full access to unfinished sections';
     }else{
       badge.className='role-badge role-user';
-      badge.title=role;
+      badge.title=isImpersonating?'Viewing as '+role:role;
     }
     badge.style.display='';
   }
