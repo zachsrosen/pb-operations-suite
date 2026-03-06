@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Standard Operating Procedures — Solar Operations Guide</title>
 <style>
-:root{--primary:#1a56db;--primary-light:#e8eefb;--primary-dark:#0f3a8e;--success:#059669;--success-light:#ecfdf5;--warning:#d97706;--warning-light:#fffbeb;--danger:#dc2626;--danger-light:#fef2f2;--gray-50:#f9fafb;--gray-100:#f3f4f6;--gray-200:#e5e7eb;--gray-300:#d1d5db;--gray-400:#9ca3af;--gray-500:#6b7280;--gray-600:#4b5563;--gray-700:#374151;--gray-800:#1f2937;--gray-900:#111827;--tag-auto:#7c3aed;--tag-auto-bg:#ede9fe;--tag-manual:#b45309;--tag-manual-bg:#fef3c7;--tag-trigger:#2563eb;--tag-trigger-bg:#dbeafe;--tag-zuper:#059669;--tag-zuper-bg:#dcfce7;--tag-check:#db2777;--tag-check-bg:#fce7f3;--tag-calc:#0d9488;--tag-calc-bg:#ccfbf1;--tag-notif:#4f46e5;--tag-notif-bg:#e0e7ff;--radius:8px;--shadow:0 1px 3px rgba(0,0,0,.1),0 1px 2px rgba(0,0,0,.06);}
+:root{--primary:#1a56db;--primary-light:#e8eefb;--primary-dark:#0f3a8e;--success:#059669;--success-light:#ecfdf5;--warning:#d97706;--warning-light:#fffbeb;--danger:#dc2626;--danger-light:#fef2f2;--gray-50:#f9fafb;--gray-100:#f3f4f6;--gray-200:#e5e7eb;--gray-300:#d1d5db;--gray-400:#9ca3af;--gray-500:#6b7280;--gray-600:#4b5563;--gray-700:#374151;--gray-800:#1f2937;--gray-900:#111827;--tag-auto:#7c3aed;--tag-auto-bg:#ede9fe;--tag-manual:#b45309;--tag-manual-bg:#fef3c7;--tag-trigger:#2563eb;--tag-trigger-bg:#dbeafe;--tag-zuper:#059669;--tag-zuper-bg:#dcfce7;--tag-check:#db2777;--tag-check-bg:#fce7f3;--tag-calc:#0d9488;--tag-calc-bg:#ccfbf1;--tag-notif:#4f46e5;--tag-notif-bg:#e0e7ff;--teal-400:#2dd4bf;--teal-500:#14b8a6;--blue-300:#93c5fd;--blue-400:#60a5fa;--blue-500:#3b82f6;--blue-100:#dbeafe;--blue-600:#2563eb;--orange-100:#ffedd5;--orange-300:#fdba74;--orange-400:#fb923c;--orange-500:#f97316;--orange-600:#ea580c;--green-100:#dcfce7;--green-400:#4ade80;--green-500:#22c55e;--green-600:#16a34a;--purple-400:#a78bfa;--purple-500:#8b5cf6;--red-400:#f87171;--radius:8px;--shadow:0 1px 3px rgba(0,0,0,.1),0 1px 2px rgba(0,0,0,.06);}
 *{margin:0;padding:0;box-sizing:border-box;}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;color:var(--gray-800);background:var(--gray-50);line-height:1.6;}
 .top-bar{background:#fff;border-bottom:1px solid var(--gray-200);padding:10px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:1000;box-shadow:var(--shadow);}
@@ -77,21 +77,17 @@ code{font-family:'SF Mono',Consolas,monospace;font-size:11px;background:var(--gr
 .lc{border:1px solid var(--gray-200);border-radius:var(--radius);padding:12px;text-align:center;}
 .lc .t{font-size:11px;margin-bottom:6px;}
 .lc p{font-size:11.5px;color:var(--gray-600);margin:0;}
-/* Simple/Technical toggle */
-.view-toggle{display:flex;align-items:center;background:var(--gray-100);border-radius:6px;padding:2px;gap:2px;}
-.view-toggle button{border:none;background:transparent;padding:4px 10px;font-size:11px;font-weight:600;color:var(--gray-500);border-radius:4px;cursor:pointer;transition:all .15s;}
-.view-toggle button.active{background:#fff;color:var(--gray-800);box-shadow:0 1px 2px rgba(0,0,0,.1);}
-.view-toggle button:hover:not(.active){color:var(--gray-700);}
-/* Simple mode: hide technical elements */
-body.simple .ac{display:none;}
-body.simple .t{display:none;}
-body.simple .sf{display:none;}
-body.simple .review{display:none;}
-body.simple code{font-family:inherit;background:transparent;padding:0;font-size:inherit;color:inherit;}
-body.simple .warn code,body.simple .info code,body.simple .tip code{font-weight:600;}
-/* Simple mode: show friendly status flows instead */
-.sf-simple{display:none;margin:8px 0;padding:10px 14px;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:var(--radius);font-size:13px;color:var(--gray-600);}
-body.simple .sf-simple{display:block;}
+/* Section summaries */
+.summary{background:linear-gradient(135deg,#f0f7ff,#f5f3ff);border:1px solid #dbeafe;border-radius:var(--radius);padding:14px 18px;margin:0 0 20px;font-size:13px;line-height:1.7;}
+.summary strong{color:var(--gray-900);}
+.summary ul{margin:6px 0 0;padding-left:18px;}
+.summary li{margin:2px 0;color:var(--gray-700);}
+.summary li::marker{color:var(--primary);}
+/* Your action vs system action distinction */
+.you{background:#ecfdf5;border-left:3px solid var(--success);border-radius:0 var(--radius) var(--radius) 0;padding:8px 14px;margin:10px 0;font-size:12.5px;}
+.you::before{content:"👤 Your action: ";font-weight:700;color:#065f46;}
+.sys{background:#eff6ff;border-left:3px solid var(--primary);border-radius:0 var(--radius) var(--radius) 0;padding:8px 14px;margin:10px 0;font-size:12.5px;}
+.sys::before{content:"⚡ System does: ";font-weight:700;color:#1e40af;}
 @media print{.top-bar,.sidebar{display:none!important;}.layout{display:block!important;}.main{max-width:100%!important;padding:0!important;}.section{display:block!important;page-break-before:always;}.card{break-inside:avoid;}}
 @media(max-width:768px){.sidebar{display:none;}.main{padding:16px;}.search-box{width:180px;}}
 </style>
@@ -106,10 +102,6 @@ SOP Operations Guide
 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
 <input type="text" id="si" placeholder="Search procedures..." onkeydown="if(event.key==='Enter')handleSearch(this.value)">
 <span class="kbd">Ctrl+K</span>
-</div>
-<div class="view-toggle" id="viewToggle">
-<button class="active" onclick="setView('technical')">Technical</button>
-<button onclick="setView('simple')">Simple</button>
 </div>
 <div class="meta">v3.1 — Updated Mar 2026</div>
 </div>
@@ -182,6 +174,16 @@ SOP Operations Guide
 <div class="section" id="overview">
 <h1>Automation Legend &amp; System Map</h1>
 <p class="subtitle">Every action in this SOP is tagged to show what's automated, what's manual, and what triggers downstream automations.</p>
+
+<div class="summary">
+<strong>How to read this guide:</strong> Throughout the SOP, you'll see colored tags on each step. These tell you whether <em>you</em> need to do something, or whether the <em>system</em> handles it automatically.
+<ul>
+<li><strong>Purple AUTO</strong> = the system does this for you — no action needed</li>
+<li><strong>Orange MANUAL</strong> = you need to take this action yourself</li>
+<li><strong>Green ZUPER SYNC</strong> = data flows automatically from Zuper field software to HubSpot</li>
+<li><strong>Pink CHECKLIST</strong> = submit a checklist in Zuper to trigger the next step</li>
+</ul>
+</div>
 
 <h2>Tag Reference</h2>
 <div class="lg">
@@ -478,6 +480,16 @@ SOP Operations Guide
 <h1>Site Survey</h1>
 <p class="subtitle">Scheduling, conducting, and documenting site surveys with full automation mapping.</p>
 
+<div class="summary">
+<strong>At a glance:</strong> The site survey is the first field visit after a deal is sold. Here's what happens:
+<ul>
+<li>Survey gets <strong>scheduled</strong> (via Zuper or the scheduler) — customer gets a text and email</li>
+<li>Crew goes to the site, takes photos and measurements, uploads everything</li>
+<li>Crew marks the job <strong>complete in Zuper</strong> — HubSpot automatically advances the deal to Design</li>
+<li>If there are issues (bad roof, HOA, etc.), flag them <em>before</em> marking complete</li>
+</ul>
+</div>
+
 <h2>Status Flow <code>Site Survey Status</code></h2>
 <div class="sf">
 <span class="sp">Ready to Schedule</span><span class="fa">→</span>
@@ -511,10 +523,11 @@ SOP Operations Guide
 <div class="ac ac-zup"><div><span class="t t-zup">ZUPER</span> <code>Site Survey Status</code> updated from Zuper</div><div><span class="t t-zup">ZUPER</span> <code>Site Surveyor - Zuper</code> assigned from Zuper</div></div>
 
 <h3>3. Upload Survey Data <span class="t t-man">MANUAL</span></h3>
-<p>Upload photos, measurements, notes to <code>Site Survey Documents</code>. Note MPU needs in <code>MPU Scheduled For</code>.</p>
+<div class="you">Upload photos, measurements, and notes to the Site Survey Documents folder. If an MPU (meter panel upgrade) is needed, note it in the MPU Scheduled For field.</div>
 
 <h3>4. Survey Completed <span class="t t-zup">ZUPER SYNC</span></h3>
-<p>When the field crew marks the survey job complete in Zuper, the status syncs to HubSpot and triggers the stage advance.</p>
+<div class="you">Mark the survey job as complete in Zuper.</div>
+<div class="sys">HubSpot picks up the completion, marks the survey done, calculates timing metrics, and advances the deal to Design &amp; Engineering.</div>
 <div class="ac ac-zup"><div><span class="t t-zup">ZUPER</span> Survey completed in Zuper → <code>Site Survey Status</code> → "Completed"</div></div>
 <div class="ac"><div><span class="t t-auto">AUTO</span> <code>Is Site Survey Completed?</code> → Yes</div><div><span class="t t-auto">AUTO</span> <code>Site Survey Checklist Completed By</code> records who</div><div><span class="t t-calc">CALC</span> <code>Time from Sale to Survey Completion</code> (time from sale to survey done)</div><div><span class="t t-calc">CALC</span> <code>Time from Sale to Survey Completion</code></div><div><span class="t t-auto">AUTO</span> Deal stage advances to <strong>Design &amp; Engineering</strong></div></div>
 
@@ -645,6 +658,17 @@ SOP Operations Guide
 <h1>Design &amp; Engineering</h1>
 <p class="subtitle">Full engineering design process from <a href="#" onclick="go('survey')">survey</a> handoff through design completion and stage advance to <a href="#" onclick="go('permit')">Permitting</a>.</p>
 <p><a href="https://pbtechops.com/dashboards/design" target="_blank" class="app-link">Design Dashboard</a></p>
+
+<div class="summary">
+<strong>At a glance:</strong> After the site survey, the design team creates the solar system plan. Here's the flow:
+<ul>
+<li>Vishtik (design vendor) creates the initial design and uploads it</li>
+<li>Design Lead reviews → customer approves the design via PandaDoc (the "DA")</li>
+<li>Once approved, engineering stamps the plans</li>
+<li>When stamped plans are uploaded, the deal <strong>automatically advances to Permitting</strong></li>
+<li>If the customer rejects the design, it goes through a revision cycle</li>
+</ul>
+</div>
 
 <h2>Status Flow <code>Design Status</code></h2>
 <div class="sf">
@@ -777,6 +801,17 @@ SOP Operations Guide
 <p class="subtitle">Permit application, tracking, and approval process. One half of the <a href="#" onclick="go('rtb')">RTB dual-gate</a>.</p>
 <p><a href="https://pbtechops.com/dashboards/permitting" target="_blank" class="app-link">Permitting Dashboard</a></p>
 
+<div class="summary">
+<strong>At a glance:</strong> Permitting is one of two gates before construction can start (the other is <a href="#" onclick="go('ic')">Interconnection</a>).
+<ul>
+<li>Permit package is prepared and sent to the customer for signature</li>
+<li>Once signed, it's submitted to the local building authority (AHJ)</li>
+<li>When the permit is issued, someone <strong>manually sets the status</strong> to "Permit Issued"</li>
+<li>This is a <strong>manual step</strong> — the AHJ doesn't update HubSpot directly</li>
+<li>Once both permit AND interconnection are approved (and DA invoice paid), the deal moves to <a href="#" onclick="go('rtb')">Ready To Build</a></li>
+</ul>
+</div>
+
 <h2>Status Flow <code>Permitting Status</code></h2>
 <div class="sf">
 <span class="sp">Ready For Permitting</span><span class="fa">→</span>
@@ -835,7 +870,8 @@ SOP Operations Guide
 <p>Monitor AHJ response. If rejected, the revision path is followed: "Permit Rejected - Needs Revision" → "Design Revision In Progress" → "Revision Ready To Resubmit" → "Resubmitted to AHJ".</p>
 
 <h3>5. Permit Issued <span class="t t-man">MANUAL</span></h3>
-<p>Manually set <code>Permitting Status</code> → "Permit Issued" once permit is received from the AHJ.</p>
+<div class="you">When you receive the permit from the AHJ, set Permitting Status to "Permit Issued" in HubSpot. This is a manual step — the AHJ doesn't update HubSpot directly.</div>
+<div class="sys">HubSpot records the permit date, calculates turnaround time, notifies the customer, and checks the RTB gate.</div>
 <div class="ac ac-trig"><div><span class="t t-trig">TRIGGER</span> <code>Permitting Status</code> changes to "Permit Issued"</div></div>
 <div class="ac"><div><span class="t t-auto">AUTO</span> <code>Is Permit Issued?</code> → Yes</div><div><span class="t t-auto">AUTO</span> <code>Permit Issue Date</code> recorded</div><div><span class="t t-calc">CALC</span> <code>Time to Permit</code></div><div><span class="t t-calc">CALC</span> <code>Permit Turnaround Time</code> (submission to issued)</div><div><span class="t t-not">NOTIF</span> <code>Permit Status Update - SMS</code> + <code>Permit Status Update - Email</code></div><div><span class="t t-auto">AUTO</span> RTB Gate check triggered (see RTB Gate section)</div></div>
 
@@ -975,6 +1011,16 @@ SOP Operations Guide
 <p class="subtitle">The multi-condition gate that controls when a project can move to construction. Permit issued, interconnection approved, AND DA invoice paid must all be satisfied.</p>
 <p><a href="https://pbtechops.com/dashboards/bom" target="_blank" class="app-link">BOM Tool</a></p>
 
+<div class="summary">
+<strong>At a glance:</strong> A project can't start construction until three things are true:
+<ul>
+<li>✅ <strong>Permit issued</strong> — the local building authority approved the plans</li>
+<li>✅ <strong>Interconnection approved</strong> — the utility approved the grid connection</li>
+<li>✅ <strong>DA invoice paid</strong> — the customer paid the design approval milestone</li>
+</ul>
+When all three are met, the deal <strong>automatically</strong> moves to Ready To Build. If any are missing, it goes to "RTB - Blocked" with the reason tracked.
+</div>
+
 <h2>Gate Logic</h2>
 <div class="card">
 <table>
@@ -1039,6 +1085,17 @@ SOP Operations Guide
 <p class="subtitle">Physical installation of solar system. Status driven by <a href="#" onclick="go('zuper-jobs')">Zuper Pro</a> field sync with Zuper checklist for completion.</p>
 <p><a href="https://pbtechops.com/dashboards/construction-scheduler" target="_blank" class="app-link">Construction Scheduler</a> <a href="https://pbtechops.com/dashboards/construction" target="_blank" class="app-link">Construction Dashboard</a> <a href="https://pbtechops.com/dashboards/bom" target="_blank" class="app-link">BOM Tool</a></p>
 
+<div class="summary">
+<strong>At a glance:</strong> This is the actual installation. Here's the flow:
+<ul>
+<li>Project Manager schedules the install; Operations Lead assigns the crew</li>
+<li>Crew updates their status in Zuper (On Our Way → Started → In Progress) — it auto-syncs to HubSpot</li>
+<li>When done, submit the <strong>Construction Complete Checklist</strong> in Zuper</li>
+<li>That checklist triggers everything: stage advance to Inspection, M2 invoice, customer notification</li>
+<li><strong>Don't submit the checklist early</strong> — it's irreversible and fires invoicing</li>
+</ul>
+</div>
+
 <h2>Status Flow <code>Construction Status</code></h2>
 <div class="sf">
 <span class="sp">Ready to Build</span><span class="fa">→</span>
@@ -1074,7 +1131,8 @@ SOP Operations Guide
 <div class="ac ac-zup"><div><span class="t t-zup">ZUPER</span> <code>Construction Status</code>: On Our Way → Started → In Progress</div><div><span class="t t-zup">ZUPER</span> <code>Project Manager - Zuper</code> assigned</div></div>
 
 <h3>3. Complete Construction <span class="t t-chk">CHECKLIST</span></h3>
-<p>Submit the <strong>Construction Complete Checklist</strong> in HubSpot.</p>
+<div class="you">Submit the Construction Complete Checklist in Zuper when the install is fully done.</div>
+<div class="sys">HubSpot records the completion date, advances the deal to Inspection, fires the M2 (CC) invoice, and notifies the customer.</div>
 <div class="ac ac-chk"><div><span class="t t-chk">CHECKLIST</span> Construction Complete Checklist submitted</div></div>
 <div class="ac"><div><span class="t t-auto">AUTO</span> <code>Construction Status</code> → Construction Complete</div><div><span class="t t-auto">AUTO</span> <code>Construction Complete Date</code> recorded</div><div><span class="t t-auto">AUTO</span> <code>Is Construction Complete?</code> → Yes</div><div><span class="t t-calc">CALC</span> <code>Construction Turnaround Time</code></div><div><span class="t t-calc">CALC</span> <code>Time from RTB to CC</code></div><div><span class="t t-calc">CALC</span> <code>Time to CC</code> (total sale to construction complete)</div><div><span class="t t-auto">AUTO</span> Deal stage → Inspection</div><div><span class="t t-auto">AUTO</span> M2 (CC) invoice workflow triggered</div><div><span class="t t-not">NOTIF</span> <code>Construction Update - SMS</code> + <code>Construction Update - Email</code></div></div>
 
@@ -1154,6 +1212,16 @@ SOP Operations Guide
 <p class="subtitle">Final building inspection by the AHJ. Pass or fail with distinct automation paths for each outcome.</p>
 <p><a href="https://pbtechops.com/dashboards/inspection-scheduler" target="_blank" class="app-link">Inspection Scheduler</a> <a href="https://pbtechops.com/dashboards/inspections" target="_blank" class="app-link">Inspections Dashboard</a></p>
 
+<div class="summary">
+<strong>At a glance:</strong> After construction, the local building authority (AHJ) inspects the installation.
+<ul>
+<li>Inspections Lead schedules the inspection via Zuper or the scheduler</li>
+<li><strong>If it passes:</strong> the deal automatically advances to PTO and the customer gets notified</li>
+<li><strong>If it fails:</strong> use the <strong>Inspection Failed Checklist in Zuper</strong> (not the job status — there's a known sync issue)</li>
+<li>After corrections, re-schedule the inspection. The fail count tracks how many attempts.</li>
+</ul>
+</div>
+
 <h2>Status Flow <code>Final Inspection Status</code></h2>
 <div class="sf">
 <span class="sp">Ready For Inspection</span><span class="fa">→</span>
@@ -1193,13 +1261,15 @@ SOP Operations Guide
 <div class="ac ac-zup"><div><span class="t t-zup">ZUPER</span> <code>Final Inspection Status</code> synced from field</div></div>
 
 <h3>3a. Inspection Passed <span class="t t-zup">ZUPER SYNC</span></h3>
-<p>When the inspector passes in the field, Zuper syncs <code>Final Inspection Status</code> → "Passed" to HubSpot.</p>
+<div class="you">When the inspector passes, mark the inspection as passed in Zuper.</div>
+<div class="sys">HubSpot records the pass date, advances the deal to PTO, and notifies the customer.</div>
 <div class="ac ac-zup"><div><span class="t t-zup">ZUPER</span> Inspection passes in field → <code>Final Inspection Status</code> syncs to "Passed"</div></div>
 <div class="ac"><div><span class="t t-auto">AUTO</span> <code>Is Inspection Passed?</code> → Yes</div><div><span class="t t-auto">AUTO</span> <code>Inspections Pass Date</code> recorded</div><div><span class="t t-auto">AUTO</span> <code>PTO Status</code> → "Inspection Passed - Ready for PTO Submission"</div><div><span class="t t-auto">AUTO</span> Deal stage → Permission To Operate (PTO)</div><div><span class="t t-not">NOTIF</span> <code>Inspection Update - SMS</code> + <code>Inspection Update - Email</code></div></div>
 
 <h3>3b. Inspection Failed <span class="t t-chk">CHECKLIST</span></h3>
 <div class="warn"><strong>Known Race Condition — Zuper Inspection Sync:</strong> When an inspection fails in Zuper, the system auto-creates a new job, overwriting the "Failed" status before HubSpot captures it. <strong>Always use the Inspection Failed Checklist in Zuper</strong> as the reliable method for failure tracking.</div>
-<p>Submit the <strong>Inspection Failed Checklist</strong> in Zuper (do NOT rely on Zuper job status sync for failures — use the dedicated checklist).</p>
+<div class="you">Submit the Inspection Failed Checklist in Zuper (not the job status — use the dedicated checklist).</div>
+<div class="sys">HubSpot records the failure reason and increments the fail count.</div>
 <div class="ac ac-chk"><div><span class="t t-chk">CHECKLIST</span> Inspection Failed Checklist submitted</div></div>
 <div class="ac"><div><span class="t t-auto">AUTO</span> <code>Final Inspection Status</code> → Failed</div><div><span class="t t-auto">AUTO</span> <code>Inspection Failure Reason</code> captured</div><div><span class="t t-auto">AUTO</span> <code>Inspection Fail Count</code> incremented</div></div>
 <p><span class="t t-man">MANUAL</span> Address corrections. Set <code>Final Inspection Status</code> → "Corrections In Progress" → "Re-Inspection Scheduled".</p>
@@ -1263,6 +1333,16 @@ SOP Operations Guide
 <div class="section" id="pto">
 <h1>Permission To Operate (PTO)</h1>
 <p class="subtitle">Utility permission to energize the solar system. Includes PTO application, monitoring setup, and Xcel-specific photo submission path.</p>
+
+<div class="summary">
+<strong>At a glance:</strong> PTO is the utility's permission to turn on the solar system. It's the last step before Close Out.
+<ul>
+<li>After inspection passes, someone submits the PTO application to the utility</li>
+<li>When granted, <strong>manually set</strong> the status to "PTO Granted"</li>
+<li>That triggers: deal advances to Close Out, final invoice fires, customer gets notified</li>
+<li>Xcel projects have an extra step — photo submission is required before PTO</li>
+</ul>
+</div>
 
 <h2>Status Flow <code>PTO Status</code></h2>
 <div class="sf">
@@ -1365,6 +1445,16 @@ SOP Operations Guide
 <div class="section" id="close">
 <h1>Close Out</h1>
 <p class="subtitle">Final project wrap-up after PTO. Verify invoicing, incentives, documentation, and customer satisfaction before marking project complete.</p>
+
+<div class="summary">
+<strong>At a glance:</strong> Close Out is the final cleanup after PTO is granted. Make sure everything is buttoned up:
+<ul>
+<li>Verify all invoices are sent and paid (DA, CC, PTO milestones)</li>
+<li>Confirm incentive paperwork is submitted (SGIP, 3CE, rebates)</li>
+<li>Set up monitoring and verify the system is producing</li>
+<li>Mark the deal as "Project Complete" when everything checks out</li>
+</ul>
+</div>
 
 <h2>Procedure</h2>
 
@@ -2435,6 +2525,10 @@ SOP Operations Guide
 <h1>How to Read a HubSpot Deal Record</h1>
 <p class="subtitle">A visual guide to navigating project deal records in HubSpot. Every solar project lives here — this is where you check status, find documents, see what's automated, and take action.</p>
 
+<div class="summary">
+<strong>At a glance:</strong> Every deal record in HubSpot has three areas — a <strong>left sidebar</strong> with property groups (project info, dates, status fields), a <strong>center panel</strong> with tabs (activity feed, documents, checklists), and a <strong>right sidebar</strong> with linked records (contacts, companies, Zuper jobs). The diagram below shows you exactly where everything is.
+</div>
+
 <h2>Record Layout — Three Regions</h2>
 <p>Every deal record has three main areas. Understanding the layout means you'll always know where to look.</p>
 
@@ -2445,17 +2539,6 @@ SOP Operations Guide
     <span style="font-weight:600;">HubSpot</span>
     <span style="opacity:.5;">Search HubSpot</span>
     <span style="margin-left:auto;opacity:.5;">Photon Brothers</span>
-  </div>
-  <!-- Pipeline stage bar -->
-  <div style="background:var(--gray-100);border-bottom:1px solid var(--gray-300);padding:6px 14px;display:flex;gap:4px;flex-wrap:wrap;">
-    <span style="background:var(--teal-500);color:#fff;padding:2px 8px;border-radius:10px;font-size:10px;">Site Survey</span>
-    <span style="background:var(--teal-500);color:#fff;padding:2px 8px;border-radius:10px;font-size:10px;">Design</span>
-    <span style="background:var(--teal-500);color:#fff;padding:2px 8px;border-radius:10px;font-size:10px;">Permitting</span>
-    <span style="background:var(--teal-500);color:#fff;padding:2px 8px;border-radius:10px;font-size:10px;">RTB</span>
-    <span style="background:var(--blue-500);color:#fff;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;">★ Construction</span>
-    <span style="background:var(--gray-300);padding:2px 8px;border-radius:10px;font-size:10px;">Inspection</span>
-    <span style="background:var(--gray-300);padding:2px 8px;border-radius:10px;font-size:10px;">PTO</span>
-    <span style="background:var(--gray-300);padding:2px 8px;border-radius:10px;font-size:10px;">Close Out</span>
   </div>
   <!-- 3-column layout -->
   <div style="display:grid;grid-template-columns:240px 1fr 220px;min-height:340px;">
@@ -2573,18 +2656,6 @@ SOP Operations Guide
 </div>
 <!-- Visual: Deal header anatomy wireframe -->
 <div style="margin:16px 0 20px;border:2px solid var(--border);border-radius:12px;overflow:hidden;font-family:system-ui,sans-serif;">
-  <!-- Pipeline stage bar -->
-  <div style="display:flex;background:var(--surface-2);border-bottom:2px solid var(--border);overflow-x:auto;">
-    <div style="flex:1;text-align:center;padding:6px 4px;font-size:10px;font-weight:600;color:var(--text-muted);border-right:1px solid var(--border);">Site Survey</div>
-    <div style="flex:1;text-align:center;padding:6px 4px;font-size:10px;font-weight:600;color:var(--text-muted);border-right:1px solid var(--border);">Design</div>
-    <div style="flex:1;text-align:center;padding:6px 4px;font-size:10px;font-weight:600;color:var(--text-muted);border-right:1px solid var(--border);">Permitting</div>
-    <div style="flex:1;text-align:center;padding:6px 4px;font-size:10px;font-weight:600;color:var(--text-muted);border-right:1px solid var(--border);">Ready To Build</div>
-    <div style="flex:1;text-align:center;padding:6px 4px;font-size:10px;font-weight:600;color:var(--text-muted);border-right:1px solid var(--border);">Construction</div>
-    <div style="flex:1;text-align:center;padding:6px 4px;font-size:10px;font-weight:600;color:var(--text-muted);border-right:1px solid var(--border);">Inspection</div>
-    <div style="flex:1;text-align:center;padding:6px 4px;font-size:10px;font-weight:700;color:#fff;background:var(--orange-500);border-right:1px solid var(--border);">PTO</div>
-    <div style="flex:1;text-align:center;padding:6px 4px;font-size:10px;font-weight:600;color:var(--text-muted);border-right:1px solid var(--border);">Close Out</div>
-    <div style="flex:1;text-align:center;padding:6px 4px;font-size:10px;font-weight:600;color:var(--text-muted);">Complete</div>
-  </div>
   <!-- Header row -->
   <div style="padding:12px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
     <!-- Deal icon -->
@@ -2619,14 +2690,11 @@ SOP Operations Guide
   </div>
   <!-- Labels -->
   <div style="padding:6px 16px 10px;display:flex;gap:12px;flex-wrap:wrap;font-size:10px;color:var(--text-muted);">
-    <span>&#8593; Pipeline stage bar (clickable)</span>
     <span>&#8593; Deal icon + name + pipeline/stage</span>
     <span>&#8593; Key metrics</span>
     <span>&#8593; Quick action buttons</span>
   </div>
 </div>
-<div class="tip"><strong>Pipeline stage bar:</strong> At the very top, a horizontal bar shows all 9 stages. The current stage is highlighted (orange). You can click a stage to move the deal — use with caution, this triggers automations.</div>
-
 <h2>Quick Action Bar</h2>
 <p>Below the header, 6 action buttons let you quickly create activities:</p>
 <div class="card">
@@ -2710,6 +2778,10 @@ SOP Operations Guide
 <div class="section" id="hs-sidebar">
 <h1>Left Sidebar — Property Groups</h1>
 <p class="subtitle">The left sidebar contains 16 collapsible property groups organized by pipeline stage. Each group holds the date fields, status fields, team assignments, and details for that phase of the project.</p>
+
+<div class="summary">
+<strong>At a glance:</strong> The left sidebar is where you find all the key data fields for a deal — status fields, dates, team assignments, and project details. Fields are organized into collapsible groups that match the pipeline stages (Site Survey, Design, Permitting, etc.). Click any group header to expand or collapse it.
+</div>
 
 <h2>Property Groups at a Glance</h2>
 <p>Groups are listed top to bottom. Click any group header to expand/collapse it. Most groups are expanded by default.</p>
@@ -3136,17 +3208,6 @@ SOP Operations Guide
 </div>
 
 <script>
-// View toggle (simple/technical)
-function setView(mode){
-  document.body.classList.toggle('simple',mode==='simple');
-  document.querySelectorAll('#viewToggle button').forEach(b=>{
-    b.classList.toggle('active',b.textContent.toLowerCase()===mode);
-  });
-  localStorage.setItem('sop-view',mode);
-}
-// Restore saved preference
-if(localStorage.getItem('sop-view')==='simple')setView('simple');
-
 // Collapsible sidebar sections
 document.querySelectorAll('.sidebar-section-title').forEach(t=>{
   t.addEventListener('click',e=>{
