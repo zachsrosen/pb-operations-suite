@@ -103,6 +103,22 @@ body.admin-mode .tbd-placeholder{display:none!important;}
 .role-badge.role-admin{background:var(--tag-auto-bg);color:var(--tag-auto);border:1px solid rgba(124,58,237,.3);}
 .role-badge.role-user{background:var(--gray-100);color:var(--gray-500);border:1px solid var(--gray-200);}
 body.admin-mode .review{border-left-color:var(--tag-auto);}
+/* PM Guide styles */
+.region-bar{display:flex;align-items:center;gap:8px;background:linear-gradient(135deg,#fef3c7,#fff7ed);border:1px solid #fde68a;border-radius:var(--radius);padding:8px 14px;margin:0 0 18px;font-size:12px;color:#92400e;}
+.region-bar svg{flex-shrink:0;}
+.region-bar .market{font-weight:700;}
+.region-cosp{background:#eff6ff;border:1px solid #bfdbfe;border-left:3px solid #3b82f6;border-radius:0 var(--radius) var(--radius) 0;padding:10px 14px;margin:10px 0;font-size:12.5px;color:#1e40af;}
+.region-cosp::before{content:"🏔 Colorado Springs: ";font-weight:700;}
+.pm-tbd{background:var(--gray-50);border:2px dashed var(--gray-300);border-radius:var(--radius);padding:40px 32px;margin:16px 0;text-align:center;color:var(--gray-500);font-size:13px;}
+.pm-step{counter-increment:pm-step;margin:14px 0;padding:10px 14px 10px 40px;background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:13px;position:relative;box-shadow:var(--shadow);}
+.pm-step::before{content:counter(pm-step);position:absolute;left:10px;top:10px;width:22px;height:22px;background:var(--primary);color:#fff;border-radius:50%;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;}
+.pm-step strong{color:var(--gray-900);}
+.pm-steps{counter-reset:pm-step;}
+.pm-checklist{list-style:none;padding:0;margin:10px 0;}
+.pm-checklist li{padding:5px 0 5px 26px;font-size:13px;color:var(--gray-700);position:relative;border-bottom:1px solid var(--gray-100);}
+.pm-checklist li::before{content:"☐";position:absolute;left:4px;top:5px;font-size:14px;color:var(--primary);}
+.pm-checklist li:last-child{border-bottom:none;}
+.pm-naming{font-family:'SF Mono',Consolas,monospace;font-size:12px;background:var(--gray-100);border:1px solid var(--gray-200);border-radius:var(--radius);padding:10px 14px;margin:8px 0;color:var(--gray-700);}
 </style>
 </head>
 <body>
@@ -126,6 +142,7 @@ SOP Operations Guide
 <button onclick="switchTab('ops')">Operations SOP</button>
 <button onclick="switchTab('other')">Other Pipelines</button>
 <button onclick="switchTab('zuper')">Zuper</button>
+<button onclick="switchTab('pm')">PM Guide</button>
 </div>
 
 <div class="layout">
@@ -188,6 +205,20 @@ SOP Operations Guide
 <div class="sidebar-section" data-tab="ops">
 <div class="sidebar-section-title">Reference</div>
 <a href="#" onclick="go('ref')" data-s="ref"><span class="dot dot-blue"></span>Field Reference</a>
+</div>
+<div class="sidebar-section" data-tab="pm">
+<div class="sidebar-section-title">PM Procedures (CO)</div>
+<a href="#" onclick="go('pm-intake')" data-s="pm-intake"><span class="dot dot-amber"></span>Deal Intake &amp; Review</a>
+<a href="#" onclick="go('pm-survey')" data-s="pm-survey"><span class="dot dot-green"></span>Schedule Site Survey</a>
+<a href="#" onclick="go('pm-design')" data-s="pm-design"><span class="dot dot-green"></span>Design &amp; Engineering</a>
+<a href="#" onclick="go('pm-da-send')" data-s="pm-da-send"><span class="dot dot-green"></span>Send Design Approval</a>
+<a href="#" onclick="go('pm-da-receive')" data-s="pm-da-receive"><span class="dot dot-green"></span>Receive DA Approval</a>
+<a href="#" onclick="go('pm-permit')" data-s="pm-permit"><span class="dot dot-blue"></span>Permitting &amp; Interconnection</a>
+<a href="#" onclick="go('pm-rtb')" data-s="pm-rtb"><span class="dot dot-blue"></span>Ready to Build</a>
+<a href="#" onclick="go('pm-construction')" data-s="pm-construction"><span class="dot dot-purple"></span>Construction</a>
+<a href="#" onclick="go('pm-inspections')" data-s="pm-inspections"><span class="dot dot-purple"></span>Inspections</a>
+<a href="#" onclick="go('pm-pto')" data-s="pm-pto"><span class="dot dot-purple"></span>PTO</a>
+<a href="#" onclick="go('pm-closeout')" data-s="pm-closeout"><span class="dot dot-teal"></span>Close Out</a>
 </div>
 </nav>
 
@@ -3297,6 +3328,417 @@ When all three are met, the deal <strong>automatically</strong> moves to Ready T
 <div class="tip"><strong>Pro tip:</strong> Workflow enrolled/completed pairs are noise for daily work. Focus on task assignments, stage changes, notes, and emails. If you want to audit automation behavior, filter to "All activities" and trace the numbered workflow sequences (01a → 03 → 05e → 06 → 07 → 07a → 09).</div>
 </div>
 
+<!-- ===== PM GUIDE SECTIONS ===== -->
+
+<div class="section" id="pm-intake">
+<h1>Deal Intake &amp; Review</h1>
+<p class="subtitle">First steps after a new deal is assigned to you as Project Manager.</p>
+<div class="region-bar">
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+<span class="market">Colorado</span> &mdash; Westminster &amp; Centennial &bull; Colorado Springs
+</div>
+
+<div class="summary">
+<strong>At a glance:</strong> When a deal is assigned, the PM reviews the contract, proposal, utility bill, and deal page for accuracy before any field work begins.
+<ul>
+<li>Deal is auto-created when the customer signs in OpenSolar</li>
+<li>PM is auto-assigned based on project type (New Construction, Commercial, Residential)</li>
+<li>System generates a PROJ number and Google Drive folder structure</li>
+<li>PM gets HubSpot + email notifications of assignment</li>
+</ul>
+</div>
+
+<h2>1. Deal Page &amp; Notes Review</h2>
+<div class="pm-steps">
+<div class="pm-step"><strong>Open the deal page in HubSpot.</strong> Click the "Note" tab to review any notes left by Sales about the project.</div>
+<div class="pm-step"><strong>Open Google Drive folder.</strong> Located in the "About this Deal" section on the left side. Navigate to the "Sales" folder.</div>
+<div class="pm-step"><strong>Verify Sales documents are present:</strong>
+<ul class="pm-checklist">
+<li>Proposal uploaded</li>
+<li>Signed agreement uploaded</li>
+<li>Customer utility bill uploaded</li>
+</ul>
+<div class="tip">If the utility bill is missing, the project can still proceed. Reach out to the sales rep to inquire about the status of the document.</div>
+</div>
+</div>
+
+<h2>2. Utility Bill Review</h2>
+<div class="pm-steps">
+<div class="pm-step"><strong>Verify address match.</strong> The service address on the utility bill must match the address listed in the deal.</div>
+</div>
+
+<h2>3. Contract Review</h2>
+<ul class="pm-checklist">
+<li>Customer signature is present</li>
+<li>Agreement price matches the "Amount" section on the deal page</li>
+<li>Equipment listed in the contract matches the "Line Items" section on the right side of HubSpot</li>
+<li>Address on contract matches the utility bill and deal service address</li>
+</ul>
+<div class="info">If "Line Items" is blank, click "+Add" to update. If equipment is not listed in the system, submit an IT ticket to request adding it.</div>
+<div class="you">PM to make any necessary changes/updates to ensure alignment across all documents.</div>
+
+<h2>4. Proposal Review</h2>
+<div class="pm-steps">
+<div class="pm-step"><strong>Set project type.</strong> In "About this Deal", click all that apply for "Project Type": Solar, Battery, Electrical Upgrades, EV Charger, and/or Solar Add-on.</div>
+<div class="pm-step"><strong>Confirm payment type.</strong> Check the "Quotation" page of the proposal (typically page 11). Determine if cash or loan. Ensure the "Accounting" section in HubSpot matches.</div>
+</div>
+
+<h2>5. Customer Contact Setup</h2>
+<ul class="pm-checklist">
+<li>Homeowner's contact page listed as an associated contact</li>
+<li>Contact responsible for payment listed as "Payor"</li>
+<li>If loan: person on the loan listed as "Payor" &amp; "Loan Applicant"</li>
+<li>If loan: loan provider added as associated contact and labeled "Payor"</li>
+</ul>
+</div>
+
+<div class="section" id="pm-survey">
+<h1>Schedule Site Survey</h1>
+<p class="subtitle">Goal: have the site survey scheduled within 2 days of the deal becoming sold.</p>
+<div class="region-bar">
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+<span class="market">Colorado</span> &mdash; Westminster &amp; Centennial &bull; Colorado Springs
+</div>
+
+<h2>Survey Technicians by Region</h2>
+<div class="card">
+<table>
+<tr><th>Region</th><th>Technician</th></tr>
+<tr><td>Westminster &amp; Centennial</td><td><strong>Sam Miller</strong></td></tr>
+<tr><td>Colorado Springs</td><td><strong>Kenny O'Brian</strong></td></tr>
+</table>
+</div>
+
+<h2>Arrivy Scheduling Procedure</h2>
+<div class="pm-steps">
+<div class="pm-step"><strong>Open Arrivy.com</strong> in a new tab. Hover over "Tasks" in the banner, select "Calendar" from the dropdown.</div>
+<div class="pm-step"><strong>Filter by technician.</strong> In the Calendar view, add a filter and search by the Site Survey technician in the "Team" dropdown.</div>
+<div class="pm-step"><strong>Open Arrivy task from HubSpot.</strong> Locate the "Arrivy" section on the deal page (right side). Open the SITE SURVEY task in a new window.</div>
+<div class="pm-step"><strong>Update the task name</strong> to include the project type and deal info:
+<div class="pm-naming">ESS-SITE SURVEY - PROJ-7270 | Olson, Taylor | 13068 Westlake Place, Broomfield, CO 80020</div>
+</div>
+<div class="pm-step"><strong>Configure the task:</strong>
+<ul class="pm-checklist">
+<li>Verify "Arrivy" template has "Site Survey" selected</li>
+<li>Set group type to match install location (Westy, Centennial/DTC, or COSP)</li>
+<li>Assign appropriate Site Survey technician based on region</li>
+</ul>
+<div class="warn"><strong>Do not</strong> select "General Group" — that option should not be utilized.</div>
+</div>
+</div>
+
+<h2>Customer Scheduling Call</h2>
+<div class="pm-steps">
+<div class="pm-step"><strong>Check technician availability.</strong> If existing appointments are present but slots are available, map out the distance between the existing appointment and the project you are trying to schedule.</div>
+<div class="pm-step"><strong>Call the customer</strong> to schedule for the next available date based on schedule availability or whatever works best for the homeowner. Some homeowners may request the survey take place 1-2 weeks out.</div>
+<div class="pm-step"><strong>Update the Arrivy task</strong> once date and time are confirmed:
+<ul class="pm-checklist">
+<li>Un-click the "Unscheduled Task" checkbox</li>
+<li>Set Start &amp; End date to the survey day</li>
+<li>Set Start time to the technician's arrival time</li>
+<li>Set duration to <strong>1 hour</strong> (default is 4 hours — update this)</li>
+<li>Click "Save" in the upper right</li>
+</ul>
+</div>
+</div>
+
+<h2>Follow-Up</h2>
+<div class="info">The project will remain in the "Site Survey" status until the survey is complete. <strong>Follow up with the Site Survey technician within 2 days</strong> of the scheduled date if the Arrivy task is not marked complete.</div>
+<div class="sys">When the survey is marked complete, HubSpot automation moves the project from "Site Survey" to "Design &amp; Engineering" stage. The PM receives a notification, and a status email is sent to the homeowner automatically.</div>
+</div>
+
+<div class="section" id="pm-design">
+<h1>Design &amp; Engineering</h1>
+<p class="subtitle">This step typically takes about 2 weeks to complete.</p>
+<div class="region-bar">
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+<span class="market">Colorado</span> &mdash; Westminster &amp; Centennial &bull; Colorado Springs
+</div>
+
+<div class="summary">
+<strong>At a glance:</strong> The drafting partner creates the construction planset. Design &amp; Operations review it together. PM monitors progress and escalates delays.
+<ul>
+<li>System generates a "Retrieve Project Details" task for the drafter</li>
+<li>Construction planset should be drafted within 3-5 business days</li>
+<li>Design/Ops meetings happen on <strong>Tuesdays and Thursdays</strong></li>
+</ul>
+</div>
+
+<h2>Drafter Workflow (Automated Tasks)</h2>
+<div class="pm-steps">
+<div class="pm-step"><strong>Drafter begins work.</strong> They complete the "Retrieve Project Details and Site Survey Results - WMS" task when the design is in progress. The system then generates an "Upload Completed Design - WMS" task.</div>
+<div class="pm-step"><strong>Monitor timeline.</strong> The planset should be drafted within 3-5 business days of the survey being completed.
+<div class="warn">If not available within <strong>5 business days</strong>, leave a comment in the "Design and Revision Communication Thread" tagging the design lead to inquire about the status.</div>
+</div>
+<div class="pm-step"><strong>Drafter uploads planset.</strong> Vishtick (drafting partner) completes the "Upload Completed Design - WMS" task once the planset is ready.</div>
+</div>
+
+<h2>Design/Ops Review</h2>
+<div class="pm-steps">
+<div class="pm-step"><strong>System generates review task.</strong> "Complete Initial Design Review and Trigger DA Document - WMS" is assigned to the head design lead (Zach Rosen).</div>
+<div class="pm-step"><strong>Design/Ops meeting.</strong> Design &amp; Operations meet on <strong>Tuesdays and Thursdays</strong> to review the draft construction planset. Zach will note in the "Design and Revision Communication Thread" which date the project will be reviewed.</div>
+<div class="pm-step"><strong>Review outcome.</strong> After the meeting, Zach posts notes on how the review went and if any revisions are needed. Once ready for customer delivery, the review task is completed — triggering "Send DA to Customer - WMS" for the PM.</div>
+</div>
+</div>
+
+<div class="section" id="pm-da-send">
+<h1>Send Design Approval (DA)</h1>
+<p class="subtitle">Prepare and send the DA document to the homeowner for review and signature.</p>
+<div class="region-bar">
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+<span class="market">Colorado</span> &mdash; Westminster &amp; Centennial &bull; Colorado Springs
+</div>
+
+<div class="summary">
+<strong>At a glance:</strong> PM reviews the planset vs proposal, creates the DA in PandaDoc, emails it to the customer, and calls to notify them.
+<ul>
+<li>PM receives HubSpot + email notification that the project is ready for DA</li>
+<li>ESS-only projects can skip the comparison steps and send immediately</li>
+<li>PB Advantage projects have a 5% production tolerance threshold</li>
+</ul>
+</div>
+
+<h2>1. Review Design/Ops Meeting Notes</h2>
+<div class="pm-steps">
+<div class="pm-step"><strong>Check meeting notes</strong> to determine what has changed from proposal to current planset.</div>
+<div class="pm-step"><strong>ESS-only shortcut:</strong> If the project is ESS (battery) only, the DA form can be created and sent right away — skip the comparison steps below and jump to PandaDoc creation.</div>
+<div class="pm-step"><strong>Note customer-facing items.</strong> If items like installing drywall or clearing personal belongings are needed, these must be communicated to the homeowner.</div>
+</div>
+
+<h2>2. Compare Proposal vs Construction Planset</h2>
+<div class="pm-steps">
+<div class="pm-step"><strong>Open the proposal</strong> from the "Sales" folder in Google Drive. If solar is being installed, scroll to the proposed roof layout.</div>
+<div class="pm-step"><strong>Open the construction planset</strong> from the "Design" folder in a second tab.</div>
+<div class="pm-step"><strong>Compare panel count and layout.</strong> Ensure the number of panels matches what was sold unless otherwise stated in the Design/Ops meeting notes.
+<div class="info"><strong>PB Advantage rule:</strong> If the project was sold with Photon Brothers Advantage, production tolerance is up to <strong>5% loss</strong>. If production loss exceeds 5%, up to <strong>4 solar panels</strong> can be added at no additional cost to achieve the contracted production number.</div>
+</div>
+</div>
+
+<h2>3. Create DA in PandaDoc</h2>
+<div class="pm-steps">
+<div class="pm-step"><strong>Print the construction planset</strong> and save it as a PDF file.</div>
+<div class="pm-step"><strong>Navigate to PandaDoc</strong> on the deal page (right side) and click "Create Document".</div>
+<div class="pm-step"><strong>Select the correct template:</strong>
+<ul class="pm-checklist">
+<li>"PB Design Approval with PV" — for solar projects</li>
+<li>"PB Design Approval with ESS Only" — for battery-only projects</li>
+</ul>
+</div>
+<div class="pm-step"><strong>Name the document</strong> descriptively:
+<div class="pm-naming">PROJ-7211 | Torres, Mike | Design Approval</div>
+</div>
+<div class="pm-step"><strong>Attach the planset.</strong> Scroll to the bottom of the form, click the greyed-out "+ Add Content", select "Upload file" to attach the planset PDF.</div>
+<div class="pm-step"><strong>Trim the document.</strong> Delete all pages from the Single Line Diagram onward to shorten the signature request.</div>
+</div>
+
+<h2>4. Send to Customer</h2>
+<div class="pm-steps">
+<div class="pm-step"><strong>Download the DA form</strong> from PandaDoc.</div>
+<div class="pm-step"><strong>Email the homeowner</strong> via Gmail. Attach both the DA form and the full construction planset.</div>
+<div class="pm-step"><strong>Send signature request</strong> in PandaDoc by hitting "Send".</div>
+<div class="pm-step"><strong>Call the homeowner</strong> to advise that the DA has been sent via email.</div>
+<div class="pm-step"><strong>Mark "Send DA to Customer - WMS"</strong> task as complete. HubSpot will create "Receive DA Approval - WMS" task for PM.</div>
+</div>
+</div>
+
+<div class="section" id="pm-da-receive">
+<h1>Receive DA Approval</h1>
+<p class="subtitle">Track the customer's DA response and handle approvals or rejections.</p>
+<div class="region-bar">
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+<span class="market">Colorado</span> &mdash; Westminster &amp; Centennial &bull; Colorado Springs
+</div>
+
+<h2>Follow-Up Cadence</h2>
+<div class="info"><strong>Set the task due date</strong> to within 2 business days. Follow up with the homeowner <strong>every 2 business days</strong> for approval. Rule of thumb: use <strong>two contact methods</strong> (e.g., call + voicemail, then follow-up text).</div>
+
+<h2>If DA is Approved</h2>
+<div class="pm-steps">
+<div class="pm-step"><strong>Download signed DA.</strong> Retrieve from the PandaDoc completed email notification or from PandaDoc directly.</div>
+<div class="pm-step"><strong>Upload to Google Drive.</strong> Place the signed DA in the "Design" folder within the project's Google Drive.</div>
+<div class="pm-step"><strong>Mark task complete.</strong> Complete the "Retrieve DA Approval - WFM" task.</div>
+</div>
+<div class="sys">Completing this task triggers the next engineering steps: Complete Final Design Review For Stamping - WMS, Retrieve Plans &amp; Create Letter - WMS, Upload Plans &amp; Create Letter - WMS.</div>
+
+<h2>If DA is Rejected</h2>
+<div class="pm-steps">
+<div class="pm-step"><strong>Update DA status.</strong> Manually update "Design Approval Status" in the "Design Approval" section on the right side of HubSpot.</div>
+<div class="pm-step"><strong>Log revision requests.</strong> Place notes of requested system changes in the "Design and Revision Communication Thread".</div>
+</div>
+<div class="sys">The system creates a "Send Plans for Revisions - WMS" task for engineering. Once revisions are complete, PM receives a "Resubmit Design Revision for DA - WMS" task to send a revised DA.</div>
+</div>
+
+<div class="section" id="pm-permit">
+<h1>Permitting &amp; Interconnection</h1>
+<p class="subtitle">Submit building permits and utility interconnection applications.</p>
+<div class="region-bar">
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+<span class="market">Colorado</span> &mdash; Westminster &amp; Centennial &bull; Colorado Springs
+</div>
+
+<div class="summary">
+<strong>At a glance:</strong> Once design completes plan stamping, the PM receives two tasks: permit submission and interconnection application.
+</div>
+
+<h2>Submit Permit to AHJ</h2>
+<div class="pm-steps">
+<div class="pm-step"><strong>Receive "Submit Permit to AHJ - WMS" task.</strong></div>
+<div class="pm-step"><strong>Review the CO Login Sheet</strong> to determine the AHJ's preferred method of submission, then proceed with submission.</div>
+</div>
+
+<h2>Submit Interconnection Application</h2>
+<div class="pm-steps">
+<div class="pm-step"><strong>Receive "Submit Interconnection Application For Customer Signature - WMS" task.</strong></div>
+<div class="pm-step"><strong>Determine utility type:</strong>
+<div class="tip"><strong>Xcel Energy:</strong> If the utility is marked as "Xcel", the utility application should have already been submitted at the start of the project. The interconnection tasks can be marked as <strong>complete right away</strong>.</div>
+<div class="info"><strong>All other utilities:</strong> The interconnection application will need to be submitted at this stage. Refer to the Colorado Interconnections FAQ for utility-specific procedures.</div>
+</div>
+</div>
+</div>
+
+<div class="section" id="pm-rtb">
+<h1>Ready to Build</h1>
+<p class="subtitle">Coordinate with Operations and the customer to confirm installation dates.</p>
+<div class="region-bar">
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+<span class="market">Colorado</span> &mdash; Westminster &amp; Centennial &bull; Colorado Springs
+</div>
+
+<div class="summary">
+<strong>At a glance:</strong> Once the building permit and utility approval are both received, the project automatically advances to RTB. PM creates an RTB note for Operations, then confirms install dates with the customer.
+</div>
+
+<h2>Stage Transition Rules</h2>
+<div class="sys">When both building permit and utility approval are received, the project automatically moves from "Permitting &amp; Interconnections" to "Ready to Build".</div>
+
+<div class="info"><strong>Xcel exception:</strong> If the utility is marked as "Xcel", the project will move to RTB once the building permit is issued — even if utility approval is still underway.</div>
+
+<div class="pm-steps">
+<div class="pm-step"><strong>Evaluate the Xcel exception.</strong> If the project moved to RTB but utility approval is still pending, determine if installing ahead of the utility's approval would benefit the customer. If not, <strong>manually move the project back</strong> from "Ready to Build" to "Permitting &amp; Interconnection" until utility approval is received.</div>
+</div>
+
+<h2>RTB Note &amp; Scheduling</h2>
+<div class="pm-steps">
+<div class="pm-step"><strong>Create an RTB note</strong> for Operations advising the project is ready for installation scheduling. Use the HubSpot template available via "Insert Snippet" in the Notes window.</div>
+<div class="pm-step"><strong>Wait for Ops response.</strong> Operations will review the project and leave a comment on the RTB note tagging the PM with a proposed install date.</div>
+<div class="pm-step"><strong>Confirm with customer.</strong> Call the customer to confirm the proposed dates, then respond to Operations with confirmation.</div>
+</div>
+</div>
+
+<div class="section" id="pm-construction">
+<h1>Construction</h1>
+<p class="subtitle">Installation phase procedures for the PM.</p>
+<div class="region-bar">
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+<span class="market">Colorado</span> &mdash; Westminster &amp; Centennial &bull; Colorado Springs
+</div>
+
+<div class="pm-tbd">
+<div style="font-size:24px;margin-bottom:8px;">🏗</div>
+<div style="font-weight:600;font-size:14px;">Documentation In Progress</div>
+<div style="margin-top:6px;">Construction phase PM procedures are being finalized. Check back soon.</div>
+</div>
+</div>
+
+<div class="section" id="pm-inspections">
+<h1>Inspections</h1>
+<p class="subtitle">Coordinate building inspections after installation is complete.</p>
+<div class="region-bar">
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+<span class="market">Colorado</span> &mdash; Westminster &amp; Centennial &bull; Colorado Springs
+</div>
+
+<h2>Regional Inspection Notes</h2>
+<div class="card">
+<table>
+<tr><th>Region</th><th>Electrician / Inspector</th></tr>
+<tr><td>DTC / Centennial</td><td><strong>Dan</strong> (assigned)</td></tr>
+<tr><td>Westminster</td><td>Electrician needed (coordinate with Ops)</td></tr>
+<tr><td>Pueblo</td><td>Electrician needed (coordinate with Ops)</td></tr>
+</table>
+</div>
+
+<div class="pm-tbd">
+<div style="font-size:24px;margin-bottom:8px;">🔍</div>
+<div style="font-weight:600;font-size:14px;">Full Inspection Procedures In Progress</div>
+<div style="margin-top:6px;">Detailed inspection scheduling and follow-up steps are being documented.</div>
+</div>
+</div>
+
+<div class="section" id="pm-pto">
+<h1>Permission to Operate</h1>
+<p class="subtitle">Final utility approval to energize the system.</p>
+<div class="region-bar">
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+<span class="market">Colorado</span> &mdash; Westminster &amp; Centennial &bull; Colorado Springs
+</div>
+
+<div class="pm-tbd">
+<div style="font-size:24px;margin-bottom:8px;">⚡</div>
+<div style="font-weight:600;font-size:14px;">Documentation In Progress</div>
+<div style="margin-top:6px;">PTO procedures are being finalized. Check back soon.</div>
+</div>
+</div>
+
+<div class="section" id="pm-closeout">
+<h1>Close Out</h1>
+<p class="subtitle">Final steps to complete a project and deliver the closing packet to the customer.</p>
+<div class="region-bar">
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+<span class="market">Colorado</span> &mdash; Westminster &amp; Centennial &bull; Colorado Springs
+</div>
+
+<div class="summary">
+<strong>At a glance:</strong> Verify everything is finalized (invoices, tasks, system health), create the closeout packet in PandaDoc, and send it to the customer.
+</div>
+
+<h2>1. Pre-Close Verification</h2>
+<ul class="pm-checklist">
+<li>All invoices are paid</li>
+<li>No pending loose ends or tasks remain (check communication log)</li>
+<li>System is present in Powerhub and healthy</li>
+</ul>
+<div class="info">If an invoice is not paid, add a note to the task about the open invoice and reschedule the task as needed.</div>
+<div class="info">If there are loose ends, create a task to address them before proceeding.</div>
+
+<h2>2. Powerhub Health Check</h2>
+<ul class="pm-checklist">
+<li>Check proposal for estimated daily average production — verify it matches Powerhub</li>
+<li>No errors or alerts in Powerhub</li>
+<li>Export is on</li>
+<li>Backup reserve is set to ~20%</li>
+</ul>
+<div class="tip">If the system is not in remote access mode and you need to fix an issue, reach out to the customer directly. Create a follow-up task as needed.</div>
+
+<h2>3. Create Closeout Packet</h2>
+<div class="pm-steps">
+<div class="pm-step"><strong>Create PandaDoc from HubSpot Deal</strong> — this allows for prefill options.</div>
+<div class="pm-step"><strong>Remove unnecessary forms:</strong>
+<ul class="pm-checklist">
+<li>If not a battery project — remove CO storage tax form</li>
+<li>If not an inverter project — remove the inverter section</li>
+</ul>
+</div>
+<div class="pm-step"><strong>Add project documents.</strong> Download the contract, design plans, and any change orders from Google Drive. Upload them to the PandaDoc form.</div>
+<div class="pm-step"><strong>Download the full closeout packet</strong> as a PDF.</div>
+<div class="pm-step"><strong>Upload to Google Drive</strong> — place in the "PTO &amp; Closeout" folder.</div>
+</div>
+
+<h2>4. Send to Customer</h2>
+<div class="pm-steps">
+<div class="pm-step"><strong>Use email templates</strong> from the Deal page. Select the "Closing Packet with Review" template.
+<ul class="pm-checklist">
+<li>Choose the correct location so the customer gets the appropriate links</li>
+<li>Attach the closeout document</li>
+<li>CC the salesperson</li>
+</ul>
+</div>
+<div class="pm-step"><strong>Mark the task as complete.</strong></div>
+<div class="pm-step"><strong>Assign "Itemized Receipt" task to Jolien</strong> (optional).</div>
+<div class="pm-step"><strong>Move the project</strong> from "Closeout" to "Complete" stage.</div>
+</div>
+</div>
+
 </main>
 </div>
 
@@ -3409,6 +3851,10 @@ function handleSearch(query){
   let found=false;
   sections.forEach(s=>{
     if(s.textContent.toLowerCase().includes(q)&&!found){
+      // Switch to the correct tab if the result is on a different tab
+      const ownerLink=document.querySelector('.sidebar a[data-s="'+s.id+'"]');
+      const ownerTab=ownerLink&&ownerLink.closest('.sidebar-section[data-tab]');
+      if(ownerTab&&ownerTab.dataset.tab!==currentTab) switchTab(ownerTab.dataset.tab);
       go(s.id);
       found=true;
       // Highlight matches
