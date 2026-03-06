@@ -131,10 +131,12 @@ export default auth((req) => {
   );
   const isImpersonationApiRoute = pathname === "/api/admin/impersonate";
   const isMaintenancePage = pathname === "/maintenance";
+  const isProtectedStaticFile = pathname === "/sop-guide.html";
   const isStaticFile =
+    !isProtectedStaticFile && (
     pathname.startsWith("/_next/") ||
     pathname.startsWith("/static/") ||
-    /\/[^/]+\.[^/]+$/.test(pathname);
+    /\/[^/]+\.[^/]+$/.test(pathname));
 
   // Check for maintenance mode
   const maintenanceMode = process.env.MAINTENANCE_MODE === "true";
@@ -224,6 +226,11 @@ export default auth((req) => {
     return addSecurityHeaders(requestId, NextResponse.redirect(loginUrl));
   }
 
+  // Auth-protected static files — any logged-in user can access (no role check)
+  if (isProtectedStaticFile && isLoggedIn) {
+    return nextWithRequestId(requestId, req);
+  }
+
   // Role-based access control for ALL roles (not just SALES)
   if (isLoggedIn && !isLoginPage) {
     // Check role permissions
@@ -245,6 +252,6 @@ export const config = {
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
      */
-    "/((?!_next/static|_next/image|favicon.ico|sop-guide\\.html).*)",
+    "/((?!_next/static|_next/image|favicon.ico).*)",
   ],
 };
