@@ -2349,71 +2349,11 @@ When all three are met, the deal <strong>automatically</strong> moves to Ready T
 <h1>Participate Energy (PE)</h1>
 <p class="subtitle">Participate Energy is a community solar / VPP program that some Photon Brothers projects are enrolled in. PE projects have additional tracking requirements and milestones.</p>
 
-<h2>What Is Participate Energy?</h2>
-<div class="card">
-<table>
-<tr><th style="width:25%">Concept</th><th>Details</th></tr>
-<tr><td><strong>Program Type</strong></td><td>Virtual power plant / community solar program — enrolled projects participate in grid services</td></tr>
-<tr><td><strong>Eligibility</strong></td><td>Projects tagged with "Participate Energy" in HubSpot deal tags</td></tr>
-<tr><td><strong>Tracking</strong></td><td>PE Dashboard tracks enrollment status, milestones, and compliance across all PE-tagged projects</td></tr>
-<tr><td><strong>PandaDoc</strong></td><td>PE-eligible deals get an additional PandaDoc triggered via the Deal Overview card (<code>Trigger Participate Energy PandaDoc</code>)</td></tr>
-</table>
+<div class="tbd-placeholder" style="display:block;">
+<div style="font-size:24px;margin-bottom:8px;">🚧</div>
+<div style="font-weight:600;color:var(--gray-600);font-size:14px;">Section Under Development</div>
+<div style="color:var(--gray-400);font-size:12px;margin-top:6px;">PE procedures and tracking details are being documented. Check back soon.</div>
 </div>
-
-<h2>How to Identify PE Projects</h2>
-<div class="card">
-<table>
-<tr><th>Where to Look</th><th>What You'll See</th></tr>
-<tr><td><a href="#" onclick="go('hs-sidebar')">Left Sidebar</a> → <strong>About this deal</strong></td><td><code>Tags</code> field includes "Participate Energy"</td></tr>
-<tr><td><a href="#" onclick="go('hs-sidebar')">Left Sidebar</a> → <strong>About this deal</strong></td><td><code>Is Participate Energy?</code> boolean = Yes</td></tr>
-<tr><td><a href="#" onclick="go('hs-sidebar')">Left Sidebar</a> → <strong>About this deal</strong></td><td><code>Participate Energy Status</code> dropdown shows current PE status</td></tr>
-<tr><td><a href="#" onclick="go('hs-center')">Center Panel</a> → <strong>Deal Overview &amp; Project Details</strong></td><td>Trigger button for PE PandaDoc</td></tr>
-</table>
-</div>
-
-<h2>PE Project Milestones</h2>
-<p>PE projects follow the same <a href="#" onclick="go('proj')">project pipeline</a> as regular projects but have additional milestone tracking:</p>
-
-<!-- Visual: PE milestone flow -->
-<div style="margin:16px 0 20px;">
-  <div style="display:flex;align-items:center;gap:0;flex-wrap:wrap;">
-    <div style="background:var(--tag-auto);color:#fff;padding:8px 14px;border-radius:8px 0 0 8px;font-size:11px;font-weight:600;">Enrolled</div>
-    <div style="width:0;height:0;border-top:18px solid transparent;border-bottom:18px solid transparent;border-left:8px solid var(--tag-auto);"></div>
-    <div style="background:#7c3aed;color:#fff;padding:8px 14px;font-size:11px;font-weight:600;margin-left:-1px;">Design Approved</div>
-    <div style="width:0;height:0;border-top:18px solid transparent;border-bottom:18px solid transparent;border-left:8px solid #7c3aed;"></div>
-    <div style="background:#6d28d9;color:#fff;padding:8px 14px;font-size:11px;font-weight:600;margin-left:-1px;">Installed</div>
-    <div style="width:0;height:0;border-top:18px solid transparent;border-bottom:18px solid transparent;border-left:8px solid #6d28d9;"></div>
-    <div style="background:#5b21b6;color:#fff;padding:8px 14px;font-size:11px;font-weight:600;margin-left:-1px;">Inspected</div>
-    <div style="width:0;height:0;border-top:18px solid transparent;border-bottom:18px solid transparent;border-left:8px solid #5b21b6;"></div>
-    <div style="background:var(--success);color:#fff;padding:8px 14px;border-radius:0 8px 8px 0;font-size:11px;font-weight:600;margin-left:-1px;">PTO Granted</div>
-  </div>
-</div>
-
-<div class="card">
-<table>
-<tr><th>Milestone</th><th>Tracked Via</th><th>Forecasted?</th></tr>
-<tr><td><strong>Design Approval</strong></td><td><code>Design Approval Sent Date</code></td><td>Yes — PE Dashboard shows days since close</td></tr>
-<tr><td><strong>Install Scheduled</strong></td><td><code>Construction Schedule Date</code></td><td>Yes — forecast based on baseline table</td></tr>
-<tr><td><strong>Construction Complete</strong></td><td><code>Construction Complete Date</code></td><td>Yes</td></tr>
-<tr><td><strong>Inspection Complete</strong></td><td><code>Inspection Pass Date</code></td><td>Yes — forecast based on baseline</td></tr>
-<tr><td><strong>PTO Granted</strong></td><td><code>PTO Granted Date</code></td><td>Yes — forecast based on baseline</td></tr>
-</table>
-</div>
-
-<h2>PE Dashboard</h2>
-<p>The PE Dashboard (<code>/dashboards/pe</code>) provides a dedicated view of all Participate Energy projects with:</p>
-<div class="card">
-<table>
-<tr><th>Feature</th><th>What It Shows</th></tr>
-<tr><td><strong>Milestone Pipeline</strong></td><td>Visual breakdown of how many PE projects are at each milestone stage</td></tr>
-<tr><td><strong>Forecast Dates</strong></td><td>AI-predicted install, inspection, and PTO dates based on location baselines</td></tr>
-<tr><td><strong>Days Since Close</strong></td><td>Aging metric — flags projects that are taking too long relative to their stage</td></tr>
-<tr><td><strong>Location Breakdown</strong></td><td>PE project counts per PB office location (SLO, Westminster, etc.)</td></tr>
-<tr><td><strong>Filter &amp; Sort</strong></td><td>Filter by location, stage, AHJ, utility. Sort by days since close or forecast date.</td></tr>
-</table>
-</div>
-
-<div class="info"><strong>PE projects follow the same pipeline stages</strong> as regular projects. The PE Dashboard is a filtered view that only shows PE-tagged projects with additional milestone tracking overlaid.</div>
 </div>
 
 <!-- ===== FIELD REFERENCE ===== -->
