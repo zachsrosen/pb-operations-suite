@@ -3392,7 +3392,7 @@ document.querySelectorAll('.sidebar .sidebar-section[data-tab]').forEach(s=>{
 go('hs-overview');
 
 // Role-based admin mode — fetch session to determine access level
-var ADMIN_ROLES=['ADMIN','OWNER','MANAGER','OPERATIONS_MANAGER'];
+var ADMIN_ROLES=['ADMIN'];
 fetch('/api/auth/session',{credentials:'include'}).then(function(r){return r.json();}).then(function(s){
   var badge=document.getElementById('roleBadge');
   if(s&&s.user&&s.user.role){
