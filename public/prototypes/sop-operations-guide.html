@@ -3391,6 +3391,8 @@ document.querySelectorAll('.sidebar .sidebar-section[data-tab]').forEach(s=>{
 // Force correct default page on load (fixes hard-refresh issue)
 go('hs-overview');
 
+// Ensure user exists in DB (static pages skip React AuthSync component)
+fetch('/api/auth/sync',{method:'POST',credentials:'include'}).catch(function(){});
 // Role-based admin mode — fetch session to determine access level
 var ADMIN_ROLES=['ADMIN'];
 fetch('/api/auth/session',{credentials:'include'}).then(function(r){return r.json();}).then(function(s){
