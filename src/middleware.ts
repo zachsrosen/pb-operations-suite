@@ -131,7 +131,7 @@ export default auth((req) => {
   );
   const isImpersonationApiRoute = pathname === "/api/admin/impersonate";
   const isMaintenancePage = pathname === "/maintenance";
-  const isProtectedStaticFile = pathname === "/sop-guide.html";
+  const isProtectedStaticFile = pathname === "/sop-guide.html" || pathname.startsWith("/prototypes/");
   const isStaticFile =
     !isProtectedStaticFile && (
     pathname.startsWith("/_next/") ||
