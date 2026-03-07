@@ -178,7 +178,7 @@ export const DEAL_STAGE_MAP: Record<string, string> = {
   "20461940": "Permission To Operate",
   "24743347": "Close Out",
   "20440343": "Project Complete",
-  "20440344": "On-Hold",
+  "20440344": "On Hold",
   "68229433": "Cancelled",
 };
 
@@ -195,7 +195,7 @@ const STAGE_PRIORITY: Record<string, number> = {
   "Permission To Operate": 8,
   "Close Out": 9,
   "Project Complete": 10,
-  "On-Hold": -1,
+  "On Hold": -1,
   "Cancelled": -2,
 };
 
@@ -759,7 +759,7 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
   const tags = parseTags(deal.tags);
   const isPE = tags.includes("Participate Energy");
   const isRTB = stageName === "Ready To Build";
-  const isBlocked = stageName === "RTB - Blocked" || stageName === "On-Hold";
+  const isBlocked = stageName === "RTB - Blocked" || stageName === "On Hold";
   const isSchedulable = SCHEDULABLE_STAGES.includes(stageName);
   const isActive = ACTIVE_STAGES.includes(stageName);
 
@@ -1022,7 +1022,9 @@ export async function fetchAllProjects(options?: {
   // HubSpot search API truncates results when too many properties are
   // requested per deal (we need 63). Searching with just the ID is fast
   // and paginates reliably, then we batch-read full properties in Phase 2.
-  const INACTIVE_STAGE_IDS = ["20440343", "20440344", "68229433", "20461935"];
+  // On Hold (20440344) intentionally excluded — fetched with active projects so
+  // the home page On Hold stat card can count them.
+  const INACTIVE_STAGE_IDS = ["20440343", "68229433", "20461935"];
 
   // Build search filters
   const filters: { propertyName: string; operator: typeof FilterOperatorEnum.Eq | typeof FilterOperatorEnum.Neq; value: string }[] = [
@@ -2501,8 +2503,8 @@ export function filterProjectsForContext(
       return projects.filter((p) => p.isParticipateEnergy && p.isActive);
 
     case "executive":
-      // All active projects for executive dashboard
-      return projects.filter((p) => p.isActive);
+      // All active projects + On Hold for executive dashboard
+      return projects.filter((p) => p.isActive || p.stage === "On Hold");
 
     case "at-risk":
       // Projects that are overdue or blocked

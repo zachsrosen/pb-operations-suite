@@ -127,10 +127,13 @@ describe("catalog-fields", () => {
       expect(getZuperCategoryValue("RACKING")).toBe("Mounting Hardware");
       expect(getZuperCategoryValue("ELECTRICAL_BOS")).toBe("Electrical Hardwire");
       expect(getZuperCategoryValue("BATTERY")).toBe("Battery");
+      expect(getZuperCategoryValue("MODULE")).toBe("Solar Panel");
+      expect(getZuperCategoryValue("EV_CHARGER")).toBe("EV Charger");
+      expect(getZuperCategoryValue("OPTIMIZER")).toBe("Optimizer");
+      expect(getZuperCategoryValue("GATEWAY")).toBe("Relay Device");
     });
 
-    test("getZuperCategoryValue returns undefined when unmapped", () => {
-      expect(getZuperCategoryValue("MODULE")).toBeUndefined();
+    test("getZuperCategoryValue returns undefined for unknown categories", () => {
       expect(getZuperCategoryValue("UNKNOWN")).toBeUndefined();
     });
   });

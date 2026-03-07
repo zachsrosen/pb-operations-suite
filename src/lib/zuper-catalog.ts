@@ -13,12 +13,6 @@ const ITEM_ID_KEYS = [
   "id",
 ] as const;
 const DEFAULT_CATALOG_ENDPOINTS = [
-  "/items",
-  "/parts",
-  "/inventory/items",
-  "/catalog/items",
-  "/catalog/products",
-  "/products",
   "/product",
 ] as const;
 
@@ -454,7 +448,7 @@ export async function createOrUpdateZuperPart(
   const partNumber = trimOrUndefined(input.vendorPartNumber) || model;
   const unitLabel = trimOrUndefined(input.unitLabel);
   const vendorName = trimOrUndefined(input.vendorName);
-  const category = trimOrUndefined(input.category);
+  const category = trimOrUndefined(input.category) || "Parts";
   const specification = trimOrUndefined(input.specification);
 
   const name = `${brand || ""} ${model || ""}`.trim();
