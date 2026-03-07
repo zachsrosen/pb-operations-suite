@@ -176,13 +176,22 @@ export async function POST(request: NextRequest) {
   const skuRecord = await loadSku(skuId, category, brand, model);
 
   // Resolve the HubSpot product ID from explicit input or SKU record
-  let hubspotProductId = explicitHubspotProductId || skuRecord?.hubspotProductId || null;
+  const hubspotProductId = explicitHubspotProductId || skuRecord?.hubspotProductId || null;
   // If no HubSpot product exists, queue a catalog push request for approval
   const resolvedBrand = (brand || skuRecord?.brand || "").trim() || null;
   const resolvedModel = (model || skuRecord?.model || "").trim() || null;
   if (!hubspotProductId && prisma && (resolvedBrand || resolvedModel)) {
     try {
-      const push = await prisma.pendingCatalogPush.create({
+      // De-dup: reuse existing PENDING approval for same brand/model/system
+      const existing = await prisma.pendingCatalogPush.findFirst({
+        where: {
+          brand: resolvedBrand || "",
+          model: resolvedModel || "",
+          systems: { has: "HUBSPOT" },
+          status: "PENDING",
+        },
+      });
+      const push = existing ?? await prisma.pendingCatalogPush.create({
         data: {
           brand: resolvedBrand || "",
           model: resolvedModel || "",

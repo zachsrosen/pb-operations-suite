@@ -10,6 +10,7 @@ const ALLOWED_ROLES = new Set<UserRole>([
   "MANAGER",
   "OPERATIONS_MANAGER",
   "PROJECT_MANAGER",
+  "TECH_OPS",
 ]);
 
 export default async function AISkillsPage() {

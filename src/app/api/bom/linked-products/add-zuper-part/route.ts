@@ -156,13 +156,22 @@ export async function POST(request: NextRequest) {
 
   const description = explicitDescription || skuRecord?.description || null;
   const sku = explicitSku || skuRecord?.vendorPartNumber || model || skuRecord?.model || null;
-  let zuperItemId = explicitZuperItemId || skuRecord?.zuperItemId || null;
+  const zuperItemId = explicitZuperItemId || skuRecord?.zuperItemId || null;
   // If no Zuper product exists, queue a catalog push request for approval
   const resolvedBrand = (brand || skuRecord?.brand || "").trim() || null;
   const resolvedModel = (model || skuRecord?.model || "").trim() || null;
   if (!zuperItemId && prisma && (resolvedBrand || resolvedModel)) {
     try {
-      const push = await prisma.pendingCatalogPush.create({
+      // De-dup: reuse existing PENDING approval for same brand/model/system
+      const existing = await prisma.pendingCatalogPush.findFirst({
+        where: {
+          brand: resolvedBrand || "",
+          model: resolvedModel || "",
+          systems: { has: "ZUPER" },
+          status: "PENDING",
+        },
+      });
+      const push = existing ?? await prisma.pendingCatalogPush.create({
         data: {
           brand: resolvedBrand || "",
           model: resolvedModel || "",

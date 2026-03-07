@@ -344,6 +344,7 @@ export default function Home() {
         "/suites/operations",
         "/suites/design-engineering",
         "/suites/permitting-interconnection",
+        "/dashboards/ai",
       ]);
       return SUITE_LINKS.filter((suite) => allowedTechOpsSuites.has(suite.href));
     }

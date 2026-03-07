@@ -456,6 +456,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/api/install-review",
       // Solar Surveyor
       "/api/solar",
+      // AI hub
+      "/dashboards/ai",
     ],
     canScheduleSurveys: false,
     canScheduleInstalls: false,
