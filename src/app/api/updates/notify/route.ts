@@ -50,7 +50,8 @@ function extractLastSentVersion(value: unknown): string | null {
 function isAuthorizedRequest(request: NextRequest): boolean {
   const cronSecret = (process.env.CRON_SECRET || "").trim();
   if (!cronSecret) {
-    return process.env.NODE_ENV !== "production";
+    // Fail closed — deny all requests when CRON_SECRET is not configured
+    return false;
   }
 
   const authHeader = request.headers.get("authorization") || "";

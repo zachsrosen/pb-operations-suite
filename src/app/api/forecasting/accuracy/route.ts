@@ -79,12 +79,7 @@ export async function GET(_request: NextRequest) {
     const basisDistribution = computeBasisDistribution(analyzable, baselineTable);
     const monthlyTrend = computeMonthlyTrend(analyzable, baselineTable);
 
-    // Overall summary
-    const allErrors: number[] = [];
-    for (const ma of Object.values(milestoneAccuracy)) {
-      // Already aggregated, so use the raw sampleCount as proxy
-    }
-    // Compute overall from the install milestone (most meaningful)
+    // Overall summary — use install milestone as most meaningful indicator
     const installAccuracy = milestoneAccuracy.install;
 
     return NextResponse.json({

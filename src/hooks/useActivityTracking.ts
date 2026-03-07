@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
+import { useSession } from "next-auth/react";
 
 // Generate a session ID that persists for the browser session
 const getSessionId = () => {
@@ -79,12 +80,16 @@ interface ActivityTracker {
  */
 export function useActivityTracking(): ActivityTracker {
   const sessionId = useRef<string | null>(null);
+  const { status } = useSession();
 
   useEffect(() => {
     sessionId.current = getSessionId();
   }, []);
 
   const logActivity = useCallback(async (action: string, data: Record<string, unknown>) => {
+    // Skip tracking when not authenticated — avoids 401 spam on login/public pages
+    if (status !== "authenticated") return;
+
     try {
       await fetch("/api/activity/log", {
         method: "POST",
@@ -100,7 +105,7 @@ export function useActivityTracking(): ActivityTracker {
       // Silently fail - don't break the app for analytics
       console.debug("Activity tracking failed:", error);
     }
-  }, []);
+  }, [status]);
 
   const trackPageView = useCallback((
     path: string,

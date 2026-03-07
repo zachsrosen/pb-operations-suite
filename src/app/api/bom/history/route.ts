@@ -24,10 +24,10 @@ const ALLOWED_ROLES = new Set([
 
 /* ---- GET ---- */
 export async function GET(req: NextRequest) {
-  if (!prisma) return NextResponse.json({ error: "Database not configured" }, { status: 503 });
-
   const authResult = await requireApiAuth();
   if (authResult instanceof NextResponse) return authResult;
+
+  if (!prisma) return NextResponse.json({ error: "Database not configured" }, { status: 503 });
 
   const dealId = req.nextUrl.searchParams.get("dealId");
   if (!dealId) return NextResponse.json({ error: "dealId is required" }, { status: 400 });

@@ -111,6 +111,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "Missing required fields: uploadId, chunkIndex, totalChunks, data" }, { status: 400 });
   }
 
+  // Validate uploadId is a UUID to prevent path traversal in blob storage
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!UUID_RE.test(uploadId)) {
+    return NextResponse.json({ error: "Invalid uploadId format — must be a UUID" }, { status: 400 });
+  }
+
   let stage = "store_chunk";
   try {
     if (chunkIndex === 0) {

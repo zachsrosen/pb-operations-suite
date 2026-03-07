@@ -43,13 +43,16 @@ export async function POST(request: NextRequest) {
                       "unknown";
     const userAgent = headersList.get("user-agent") || undefined;
 
-    // Get authenticated user
+    // Get authenticated user — require auth to prevent audit log pollution
     const session = await auth();
-    const userEmail = session?.user?.email || undefined;
-    const userName = session?.user?.name || undefined;
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+    }
+    const userEmail = session.user.email;
+    const userName = session.user.name || undefined;
 
     // Resolve userId for audit (Amendment A3)
-    const currentUser = userEmail ? await getUserByEmail(userEmail) : null;
+    const currentUser = await getUserByEmail(userEmail);
     const userId = currentUser?.id || null;
 
     let body;

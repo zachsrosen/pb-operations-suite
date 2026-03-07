@@ -2294,7 +2294,10 @@ export async function createDealLineItem(
   if (sku) properties.hs_sku = sku;
 
   const productId = String(input.hubspotProductId || "").trim();
-  if (productId) properties.hs_product_id = productId;
+  if (!productId) {
+    throw new Error("hubspotProductId is required — line items must be linked to a HubSpot product");
+  }
+  properties.hs_product_id = productId;
 
   const createResponse = await fetch("https://api.hubapi.com/crm/v3/objects/line_items", {
     method: "POST",
