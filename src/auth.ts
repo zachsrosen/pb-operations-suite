@@ -191,38 +191,35 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     strategy: "jwt",
     maxAge: 7 * 24 * 60 * 60, // 7 days
   },
-  // Cross-origin cookie config for Solar Surveyor (solar.photonbrothers.com)
-  // calling PB Ops API (ops.photonbrothers.com).
-  // SameSite=None + Secure allows cookies in cross-origin fetch with credentials.
-  // Domain=.photonbrothers.com shares cookies across subdomains.
+  // Same-origin cookie config.
+  // Solar Surveyor now runs from PB Ops `public/solar-surveyor`, so host-only
+  // cookies are preferred (no Domain override). This avoids login loops on
+  // localhost / preview hosts where a fixed parent domain would reject cookies.
   cookies: {
     sessionToken: {
       name: "authjs.session-token",
       options: {
         httpOnly: true,
-        sameSite: "none" as const,
-        secure: true,
+        sameSite: "lax" as const,
+        secure: process.env.NODE_ENV === "production",
         path: "/",
-        domain: process.env.COOKIE_DOMAIN || undefined,
       },
     },
     callbackUrl: {
       name: "authjs.callback-url",
       options: {
-        sameSite: "none" as const,
-        secure: true,
+        sameSite: "lax" as const,
+        secure: process.env.NODE_ENV === "production",
         path: "/",
-        domain: process.env.COOKIE_DOMAIN || undefined,
       },
     },
     csrfToken: {
       name: "authjs.csrf-token",
       options: {
         httpOnly: true,
-        sameSite: "none" as const,
-        secure: true,
+        sameSite: "lax" as const,
+        secure: process.env.NODE_ENV === "production",
         path: "/",
-        domain: process.env.COOKIE_DOMAIN || undefined,
       },
     },
   },

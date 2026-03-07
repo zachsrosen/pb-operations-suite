@@ -864,7 +864,9 @@ describe("GET /api/solar/session", () => {
     // Check Set-Cookie header
     const setCookie = res.headers.get("set-cookie");
     expect(setCookie).toContain("csrf_token=");
-    expect(setCookie).toContain("SameSite=None");
-    expect(setCookie).toContain("Secure");
+    expect(setCookie).toContain("SameSite=Lax");
+    if (process.env.NODE_ENV === "production") {
+      expect(setCookie).toContain("Secure");
+    }
   });
 });

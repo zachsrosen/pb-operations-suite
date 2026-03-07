@@ -46,7 +46,8 @@ export async function GET(req: Request) {
   // Token is set as a cookie (readable by JS) and returned in the response
   // so the client can include it in X-CSRF-Token headers on mutations.
   const csrfToken = randomBytes(32).toString("hex");
-  const cookieDomain = process.env.COOKIE_DOMAIN || undefined;
+  const forwardedProto = req.headers.get("x-forwarded-proto");
+  const isHttps = forwardedProto === "https" || process.env.NODE_ENV === "production";
 
   const response = NextResponse.json({
     data: {
@@ -63,12 +64,11 @@ export async function GET(req: Request) {
   const cookieParts = [
     `csrf_token=${csrfToken}`,
     "Path=/",
-    "SameSite=None",
-    "Secure",
+    "SameSite=Lax",
     `Max-Age=${7 * 24 * 60 * 60}`,
   ];
-  if (cookieDomain) {
-    cookieParts.push(`Domain=${cookieDomain}`);
+  if (isHttps) {
+    cookieParts.push("Secure");
   }
   response.headers.append("Set-Cookie", cookieParts.join("; "));
 
