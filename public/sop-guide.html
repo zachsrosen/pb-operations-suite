@@ -139,10 +139,13 @@ SOP Operations Guide
 </div>
 <div class="tab-bar" id="tabBar">
 <button class="active" onclick="switchTab('hubspot')">HubSpot Guide</button>
-<button onclick="switchTab('ops')">Operations SOP</button>
+<button onclick="switchTab('ops')">Project Pipeline</button>
 <button onclick="switchTab('other')">Other Pipelines</button>
 <button onclick="switchTab('zuper')">Zuper</button>
 <button onclick="switchTab('pm')">PM Guide</button>
+<button onclick="switchTab('role-ops')">Operations</button>
+<button onclick="switchTab('role-de')">Design &amp; Permitting</button>
+<button onclick="switchTab('role-sales')">Sales</button>
 </div>
 
 <div class="layout">
@@ -205,6 +208,35 @@ SOP Operations Guide
 <div class="sidebar-section" data-tab="ops">
 <div class="sidebar-section-title">Reference</div>
 <a href="#" onclick="go('ref')" data-s="ref"><span class="dot dot-blue"></span>Field Reference</a>
+</div>
+<div class="sidebar-section" data-tab="role-ops">
+<div class="sidebar-section-title">Operations Guide</div>
+<a href="#" onclick="go('ops-overview')" data-s="ops-overview"><span class="dot dot-blue"></span>Role Overview</a>
+<a href="#" onclick="go('ops-daily')" data-s="ops-daily"><span class="dot dot-green"></span>Daily Workflow</a>
+<a href="#" onclick="go('ops-scheduling')" data-s="ops-scheduling"><span class="dot dot-green"></span>Scheduling</a>
+<a href="#" onclick="go('ops-bom')" data-s="ops-bom"><span class="dot dot-green"></span>BOM &amp; Inventory</a>
+<a href="#" onclick="go('ops-zuper')" data-s="ops-zuper"><span class="dot dot-green"></span>Zuper Sync &amp; Crews</a>
+<a href="#" onclick="go('ops-construction')" data-s="ops-construction"><span class="dot dot-amber"></span>Construction Day</a>
+<a href="#" onclick="go('ops-inspections')" data-s="ops-inspections"><span class="dot dot-amber"></span>Inspections</a>
+<a href="#" onclick="go('ops-service')" data-s="ops-service"><span class="dot dot-teal"></span>Service &amp; Warranty</a>
+</div>
+<div class="sidebar-section" data-tab="role-de">
+<div class="sidebar-section-title">Design &amp; Permitting</div>
+<a href="#" onclick="go('de-overview')" data-s="de-overview"><span class="dot dot-blue"></span>Role Overview</a>
+<a href="#" onclick="go('de-design-workflow')" data-s="de-design-workflow"><span class="dot dot-green"></span>Design Workflow</a>
+<a href="#" onclick="go('de-plan-review')" data-s="de-plan-review"><span class="dot dot-green"></span>Plan Review</a>
+<a href="#" onclick="go('de-permitting')" data-s="de-permitting"><span class="dot dot-amber"></span>Permitting Workflow</a>
+<a href="#" onclick="go('de-interconnection')" data-s="de-interconnection"><span class="dot dot-amber"></span>Interconnection</a>
+<a href="#" onclick="go('de-ahj')" data-s="de-ahj"><span class="dot dot-purple"></span>AHJ &amp; Utility Tracking</a>
+<a href="#" onclick="go('de-tools')" data-s="de-tools"><span class="dot dot-teal"></span>Your Tools</a>
+</div>
+<div class="sidebar-section" data-tab="role-sales">
+<div class="sidebar-section-title">Sales Guide</div>
+<a href="#" onclick="go('sales-overview')" data-s="sales-overview"><span class="dot dot-blue"></span>Role Overview</a>
+<a href="#" onclick="go('sales-deal')" data-s="sales-deal"><span class="dot dot-amber"></span>Your Deal Record</a>
+<a href="#" onclick="go('sales-survey')" data-s="sales-survey"><span class="dot dot-green"></span>Scheduling Surveys</a>
+<a href="#" onclick="go('sales-handoff')" data-s="sales-handoff"><span class="dot dot-green"></span>Sales → Ops Handoff</a>
+<a href="#" onclick="go('sales-tracking')" data-s="sales-tracking"><span class="dot dot-teal"></span>Tracking Your Projects</a>
 </div>
 <div class="sidebar-section" data-tab="pm">
 <div class="sidebar-section-title">PM Procedures (CO)</div>
@@ -3737,6 +3769,825 @@ When all three are met, the deal <strong>automatically</strong> moves to Ready T
 <div class="pm-step"><strong>Assign "Itemized Receipt" task to Jolien</strong> (optional).</div>
 <div class="pm-step"><strong>Move the project</strong> from "Closeout" to "Complete" stage.</div>
 </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     OPERATIONS ROLE GUIDE
+     ═══════════════════════════════════════════════════════════════ -->
+
+<div class="section" id="ops-overview">
+<h1>Operations Guide — Role Overview</h1>
+<p class="subtitle">For Operations Coordinators &amp; Operations Managers</p>
+
+<div class="info-box" style="border-left:4px solid var(--blue-500);background:var(--blue-50);padding:16px 20px;border-radius:8px;margin:20px 0;">
+<strong>Your Mission:</strong> Keep projects moving through the pipeline — from Ready To Build through Construction Complete — by scheduling crews, managing materials, syncing field service jobs, and ensuring nothing falls through the cracks.
+</div>
+
+<h2>What You Have Access To</h2>
+<table>
+<thead><tr><th>Tool / Suite</th><th>What It's For</th></tr></thead>
+<tbody>
+<tr><td><strong>Operations Suite</strong></td><td>Your home base — links to all ops dashboards</td></tr>
+<tr><td><strong>Construction Scheduler</strong></td><td>Schedule and manage installation dates</td></tr>
+<tr><td><strong>Inspection Scheduler</strong></td><td>Schedule final and utility inspections</td></tr>
+<tr><td><strong>Service Scheduler</strong></td><td>Schedule service visits and warranty work</td></tr>
+<tr><td><strong>D&amp;R Scheduler</strong></td><td>Schedule detach &amp; reset jobs</td></tr>
+<tr><td><strong>BOM Tool</strong></td><td>Generate bills of materials and create sales orders</td></tr>
+<tr><td><strong>Equipment Backlog</strong></td><td>Track equipment availability and ordering status</td></tr>
+<tr><td><strong>Inventory Dashboard</strong></td><td>Monitor warehouse stock levels</td></tr>
+<tr><td><strong>Equipment Catalog</strong></td><td>Browse and manage the product catalog</td></tr>
+<tr><td><strong>Timeline Dashboard</strong></td><td>Visual timeline of all project milestones</td></tr>
+<tr><td><strong>Zuper Sync</strong></td><td>Push scheduled jobs to Zuper for field crews</td></tr>
+<tr><td><strong>Install Photo Review</strong></td><td>Compare install photos against permitted plans</td></tr>
+</tbody>
+</table>
+
+<h2>What You Can Do</h2>
+<table>
+<thead><tr><th>Action</th><th>Operations</th><th>Ops Manager</th></tr></thead>
+<tbody>
+<tr><td>Schedule Installations</td><td>✅</td><td>✅</td></tr>
+<tr><td>Schedule Inspections</td><td>✅</td><td>✅</td></tr>
+<tr><td>Schedule Site Surveys</td><td>—</td><td>✅</td></tr>
+<tr><td>Sync to Zuper</td><td>✅</td><td>✅</td></tr>
+<tr><td>Manage Crew Availability</td><td>✅</td><td>✅</td></tr>
+<tr><td>View All Locations</td><td>✅</td><td>✅</td></tr>
+<tr><td>Intelligence Dashboards</td><td>—</td><td>✅</td></tr>
+<tr><td>Executive Dashboards</td><td>—</td><td>✅</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="section" id="ops-daily">
+<h1>Operations — Daily Workflow</h1>
+<p class="subtitle">Your morning routine and daily rhythm</p>
+
+<h2>Morning Routine (15 minutes)</h2>
+<div class="pipeline-stage" style="border-left:4px solid var(--green-500);">
+<h3 style="margin-top:0;">1. Check the Operations Suite</h3>
+<p>Open the <strong>Operations Suite</strong> from the sidebar. This is your home page — it links to every ops tool and shows at-a-glance metrics.</p>
+</div>
+
+<div class="pipeline-stage" style="border-left:4px solid var(--green-500);">
+<h3 style="margin-top:0;">2. Review Today's Scheduled Jobs</h3>
+<p>Open the <strong>Construction Scheduler</strong>. Check:</p>
+<ul>
+<li>Which installs are happening today?</li>
+<li>Are crews assigned and confirmed?</li>
+<li>Any last-minute cancellations or weather holds?</li>
+</ul>
+</div>
+
+<div class="pipeline-stage" style="border-left:4px solid var(--green-500);">
+<h3 style="margin-top:0;">3. Check Equipment Status</h3>
+<p>Open the <strong>Equipment Backlog</strong>. Look for:</p>
+<ul>
+<li>Any upcoming installs missing equipment</li>
+<li>Delivery dates that have changed</li>
+<li>Items on backorder</li>
+</ul>
+</div>
+
+<div class="pipeline-stage" style="border-left:4px solid var(--green-500);">
+<h3 style="margin-top:0;">4. Review Zuper Job Status</h3>
+<p>Check Zuper for any field updates from yesterday — crew check-ins, photo uploads, status changes. The <strong>Zuper &amp; Operations tab</strong> on each HubSpot deal record shows linked jobs and install photos.</p>
+</div>
+
+<h2>Weekly Tasks</h2>
+<table>
+<thead><tr><th>Day</th><th>Task</th><th>Tool</th></tr></thead>
+<tbody>
+<tr><td>Monday</td><td>Review RTB projects — what can be scheduled this week?</td><td>Construction Scheduler</td></tr>
+<tr><td>Monday</td><td>Check inspection results from last week</td><td>Inspection Scheduler</td></tr>
+<tr><td>Tuesday</td><td>Generate BOMs for newly RTB projects</td><td>BOM Tool</td></tr>
+<tr><td>Wednesday</td><td>Mid-week crew capacity check</td><td>Construction Scheduler</td></tr>
+<tr><td>Thursday</td><td>Prepare next week's schedule</td><td>Construction Scheduler</td></tr>
+<tr><td>Friday</td><td>End-of-week status review — update HubSpot stages</td><td>HubSpot</td></tr>
+</tbody>
+</table>
+
+<h2>HubSpot Fields You Touch</h2>
+<p>As an operations team member, these are the key HubSpot deal fields you work with:</p>
+<table>
+<thead><tr><th>Property Group</th><th>Key Fields</th><th>When You Update</th></tr></thead>
+<tbody>
+<tr><td>Construction Dates</td><td>Construction Schedule Start/End Date</td><td>When scheduling an install</td></tr>
+<tr><td>Inspection</td><td>Inspection Date, Inspector, Result</td><td>After scheduling or receiving results</td></tr>
+<tr><td>Construction Forecasting</td><td>Expected Days, Installer Count, Difficulty</td><td>During pre-construction planning</td></tr>
+<tr><td>Deal Stage</td><td>Pipeline stage progression</td><td>After construction complete, inspection pass, etc.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="section" id="ops-scheduling">
+<h1>Operations — Scheduling</h1>
+<p class="subtitle">How to schedule installations and inspections</p>
+
+<h2>Scheduling an Installation</h2>
+<div class="pm-steps">
+<div class="pm-step"><strong>Open the Construction Scheduler</strong> from the Operations Suite. You'll see a calendar view with crew availability and a list of RTB (Ready To Build) projects in the left panel.</div>
+<div class="pm-step"><strong>Find the project</strong> you want to schedule. Projects are sorted by priority score — higher scores mean more urgent (overdue, high value, or PE projects).</div>
+<div class="pm-step"><strong>Check the project's requirements:</strong>
+<ul class="pm-checklist">
+<li>Equipment on hand? (check Equipment Backlog)</li>
+<li>Permits issued?</li>
+<li>BOM and Sales Order created?</li>
+<li>Customer confirmed?</li>
+</ul>
+</div>
+<div class="pm-step"><strong>Select a date and crew.</strong> The scheduler shows crew capacity — don't overbook. Consider drive time between job sites for the same crew.</div>
+<div class="pm-step"><strong>Sync to Zuper.</strong> After scheduling, use the Zuper Sync button to push the job to the field service system. This creates (or updates) the Zuper job with the assigned crew and date.</div>
+<div class="pm-step"><strong>HubSpot updates automatically</strong> — the Construction Schedule Start/End Date fields are set when you schedule through the tool.</div>
+</div>
+
+<h2>Scheduling an Inspection</h2>
+<div class="pm-steps">
+<div class="pm-step"><strong>Open the Inspection Scheduler.</strong> Projects appear here after construction is marked complete.</div>
+<div class="pm-step"><strong>Verify the project is ready:</strong>
+<ul class="pm-checklist">
+<li>Construction Complete Checklist filled out in HubSpot</li>
+<li>No loose ends flagged</li>
+<li>"Ready for Inspection" = Yes</li>
+</ul>
+</div>
+<div class="pm-step"><strong>Check AHJ requirements.</strong> The AHJ &amp; Utility tab on the deal record shows whether an electrician is required for inspection, what permits are needed, and typical turnaround times.</div>
+<div class="pm-step"><strong>Schedule the inspection date</strong> and assign an inspector if applicable.</div>
+<div class="pm-step"><strong>Sync to Zuper</strong> to create the inspection job for the field team.</div>
+</div>
+
+<h2>Priority Score — How Projects Are Ranked</h2>
+<table>
+<thead><tr><th>Factor</th><th>Points</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td>Days overdue</td><td>+1–3 per day (max ~100)</td><td>Older projects need attention first</td></tr>
+<tr><td>PE project</td><td>+30–50 bonus</td><td>Participate Energy milestones have financial penalties</td></tr>
+<tr><td>High value ($50k+)</td><td>Up to +30</td><td>Larger deals = more revenue at risk</td></tr>
+<tr><td>Stage urgency</td><td>Varies</td><td>RTB and Inspection stages score higher</td></tr>
+</tbody>
+</table>
+<p><strong>Higher score = schedule this project first.</strong></p>
+</div>
+
+<div class="section" id="ops-bom">
+<h1>Operations — BOM &amp; Inventory</h1>
+<p class="subtitle">Bills of materials and sales order creation</p>
+
+<h2>What Is the BOM Tool?</h2>
+<p>The BOM (Bill of Materials) Tool reads the permitted design planset PDF and extracts every piece of equipment needed for the installation. It then matches those items to SKUs in Zoho Inventory and can create a Sales Order automatically.</p>
+
+<h2>When to Generate a BOM</h2>
+<ul>
+<li>When a project reaches <strong>Ready To Build</strong> — permits are issued, design is final</li>
+<li>After a <strong>design revision</strong> — if equipment changed, regenerate the BOM</li>
+<li>Before scheduling an install — confirm all materials are available</li>
+</ul>
+
+<h2>BOM → Sales Order Workflow</h2>
+<div class="pm-steps">
+<div class="pm-step"><strong>Open the BOM Tool</strong> from the Operations Suite.</div>
+<div class="pm-step"><strong>Search for the deal</strong> by PROJ number or customer name.</div>
+<div class="pm-step"><strong>Select the planset PDF</strong> — the tool auto-detects available plansets from the deal's Google Drive attachments.</div>
+<div class="pm-step"><strong>Run extraction.</strong> The AI reads every page of the planset and extracts modules, inverters, batteries, racking, electrical components, etc.</div>
+<div class="pm-step"><strong>Review the BOM.</strong> Check quantities and items against what you know about the project. Submit feedback if anything looks wrong.</div>
+<div class="pm-step"><strong>Create the Sales Order.</strong> Select the Zoho customer and warehouse, then click Create SO. The post-processor applies rules for your warehouse (e.g., Westminster/Centennial include racking, SLO/CAM do not).</div>
+</div>
+
+<h2>Equipment Backlog</h2>
+<p>The Equipment Backlog dashboard shows all projects with outstanding equipment needs. Use it to:</p>
+<ul>
+<li>Track which projects are waiting on deliveries</li>
+<li>See estimated arrival dates</li>
+<li>Flag projects that can't be scheduled until equipment arrives</li>
+</ul>
+
+<h2>Inventory Dashboard</h2>
+<p>Monitor warehouse stock levels across all locations. The dashboard pulls from Zoho Inventory and shows current quantities, reorder points, and recent movements.</p>
+</div>
+
+<div class="section" id="ops-zuper">
+<h1>Operations — Zuper Sync &amp; Crews</h1>
+<p class="subtitle">Field service job management</p>
+
+<h2>What Is Zuper?</h2>
+<p>Zuper is the field service management platform. It's how installation and inspection jobs get dispatched to field crews. Jobs in Zuper have their own lifecycle — separate from HubSpot deal stages — but the two systems stay linked.</p>
+
+<h2>Zuper Job Categories</h2>
+<table>
+<thead><tr><th>Category</th><th>Purpose</th><th>Created When</th></tr></thead>
+<tbody>
+<tr><td>Site Survey</td><td>Initial site assessment</td><td>Survey scheduled</td></tr>
+<tr><td>Construction</td><td>Installation work</td><td>Install scheduled</td></tr>
+<tr><td>Inspection</td><td>Final/utility inspection</td><td>Post-construction</td></tr>
+<tr><td>Additional Visit</td><td>Punch list, service calls</td><td>As needed</td></tr>
+</tbody>
+</table>
+
+<h2>How Zuper Sync Works</h2>
+<div class="pipeline-stage" style="border-left:4px solid var(--blue-500);">
+<h3 style="margin-top:0;">Scheduling → Zuper</h3>
+<p>When you schedule a job in the Ops Suite, clicking <strong>Sync to Zuper</strong> creates or updates the Zuper job. The assigned crew, date, and address are pushed from HubSpot deal data.</p>
+<p><strong>Important:</strong> Zuper only allows setting the <code>assigned_to</code> field at job <em>creation</em> time. If you need to reassign a crew, you may need to create a new job.</p>
+</div>
+
+<h2>Zuper on the Deal Record</h2>
+<p>Each HubSpot deal record shows linked Zuper jobs in the right sidebar (under <strong>Zuper Jobs</strong>). You'll see:</p>
+<ul>
+<li>Job number and category (Construction, Inspection, etc.)</li>
+<li>Current job status</li>
+<li>Priority level</li>
+</ul>
+<p>The <strong>Zuper &amp; Operations tab</strong> in the center panel shows the <strong>Zuper Gallery</strong> — install photos uploaded by crews, grouped by date with uploader names and timestamps. This is your visual verification that work was done.</p>
+
+<h2>Key Zuper Statuses</h2>
+<table>
+<thead><tr><th>Status</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>New</td><td>Job created, not yet assigned</td></tr>
+<tr><td>Ready To Schedule</td><td>Needs a date assigned</td></tr>
+<tr><td>Scheduled</td><td>Date and crew set</td></tr>
+<tr><td>In Progress</td><td>Crew is on site</td></tr>
+<tr><td>Construction Complete</td><td>Install finished</td></tr>
+<tr><td>Passed</td><td>Inspection passed</td></tr>
+<tr><td>Failed</td><td>Inspection failed — needs rework</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="section" id="ops-construction">
+<h1>Operations — Construction Day</h1>
+<p class="subtitle">What happens on install day and what to track</p>
+
+<h2>Pre-Construction Checklist</h2>
+<p>Before the crew arrives on site, verify:</p>
+<ul>
+<li>✅ Equipment delivered to warehouse or job site</li>
+<li>✅ Sales Order confirmed in Zoho</li>
+<li>✅ Zuper job synced with correct crew and date</li>
+<li>✅ Customer notified of install date</li>
+<li>✅ Permits posted on site (if required by AHJ)</li>
+<li>✅ Construction Forecasting fields filled in HubSpot (expected days, installer count, difficulty)</li>
+</ul>
+
+<h2>During Construction</h2>
+<p>Field crews update status in Zuper as they work. You can monitor progress via:</p>
+<ul>
+<li><strong>Zuper Gallery</strong> on the deal record — crews upload photos during the install</li>
+<li><strong>Zuper job status</strong> — changes from Scheduled → In Progress → Construction Complete</li>
+</ul>
+
+<h2>Post-Construction</h2>
+<p>After the crew completes the install, the <strong>Construction Complete Checklist</strong> on the deal record should be filled out:</p>
+<table>
+<thead><tr><th>Field</th><th>What to Enter</th></tr></thead>
+<tbody>
+<tr><td>Number of Panels Installed</td><td>Actual panel count</td></tr>
+<tr><td>Loose Ends Remaining?</td><td>Yes/No — any punch list items?</td></tr>
+<tr><td>Loose End Notes</td><td>What needs to be finished</td></tr>
+<tr><td>Are the permitted plans accurate?</td><td>Did the install match the design?</td></tr>
+<tr><td>What changed?</td><td>Note any field modifications</td></tr>
+<tr><td>Ready for Inspection?</td><td>Yes = can schedule inspection</td></tr>
+</tbody>
+</table>
+
+<h2>Moving the Deal Forward</h2>
+<p>Once construction is complete and the checklist is filled:</p>
+<ol>
+<li>Move the deal stage from <strong>Construction</strong> → <strong>Inspection</strong></li>
+<li>Schedule the inspection (see <a href="#" onclick="go('ops-scheduling')">Scheduling</a>)</li>
+<li>If loose ends remain, create an Additional Visit job in Zuper</li>
+</ol>
+</div>
+
+<div class="section" id="ops-inspections">
+<h1>Operations — Inspections</h1>
+<p class="subtitle">Scheduling and tracking inspection results</p>
+
+<h2>Types of Inspections</h2>
+<table>
+<thead><tr><th>Type</th><th>Required By</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>AHJ Final Inspection</td><td>Local building department</td><td>Required for all projects</td></tr>
+<tr><td>Utility Inspection</td><td>Utility company</td><td>Check the Utility Information card — some utilities require their own inspection</td></tr>
+<tr><td>Fire Inspection</td><td>Fire marshal (some AHJs)</td><td>Separate from building inspection in some jurisdictions</td></tr>
+</tbody>
+</table>
+
+<h2>Before Scheduling</h2>
+<p>Check the <strong>AHJ Information card</strong> on the deal record's AHJ &amp; Utility tab:</p>
+<ul>
+<li><strong>Electrician Required for Inspection?</strong> — If yes, schedule an electrician to be on site</li>
+<li><strong>Permits Required</strong> — Make sure all required permits (PV, ESS, Electrical) are issued</li>
+<li><strong>Is RSD Required?</strong> — Rapid Shutdown compliance needed?</li>
+</ul>
+
+<h2>Inspection Results</h2>
+<table>
+<thead><tr><th>Result</th><th>Next Step</th></tr></thead>
+<tbody>
+<tr><td><span style="color:var(--green-600);font-weight:600;">Pass</span></td><td>Move deal to <strong>PTO</strong> stage. Submit interconnection application if not already done.</td></tr>
+<tr><td><span style="color:var(--red-600);font-weight:600;">Fail</span></td><td>Document failure reason. Schedule correction visit (Additional Visit in Zuper). Re-inspect after fixes.</td></tr>
+<tr><td><span style="color:var(--amber-600);font-weight:600;">Conditional Pass</span></td><td>Minor items to fix — document conditions. May be able to proceed to PTO while addressing corrections.</td></tr>
+</tbody>
+</table>
+
+<h2>After Inspection Pass</h2>
+<ol>
+<li>Update the deal stage: <strong>Inspection</strong> → <strong>PTO</strong></li>
+<li>Ensure the interconnection application is submitted (if not already)</li>
+<li>Upload inspection documentation to the deal's Inspection Documents folder in Google Drive</li>
+</ol>
+</div>
+
+<div class="section" id="ops-service">
+<h1>Operations — Service &amp; Warranty</h1>
+<p class="subtitle">Handling service calls and warranty work</p>
+
+<h2>Service Pipeline</h2>
+<p>Service and warranty jobs use the <strong>Service Pipeline</strong> in HubSpot (separate from the main Project Pipeline). The <strong>Service Scheduler</strong> manages these jobs.</p>
+
+<h2>Creating a Service Job</h2>
+<div class="pm-steps">
+<div class="pm-step"><strong>Open the Service Scheduler</strong> from the Operations Suite.</div>
+<div class="pm-step"><strong>Find the original deal</strong> — service jobs are linked back to the original project deal in HubSpot.</div>
+<div class="pm-step"><strong>Schedule the service visit</strong> and assign a crew.</div>
+<div class="pm-step"><strong>Sync to Zuper</strong> as an Additional Visit category.</div>
+</div>
+
+<h2>Service Backlog</h2>
+<p>The <strong>Service Backlog</strong> dashboard shows all open service requests. Use it to prioritize which service calls to schedule first.</p>
+
+<h2>Detach &amp; Reset (D&amp;R)</h2>
+<p>D&amp;R jobs (roof work requiring panel removal and reinstallation) use the <strong>D&amp;R Pipeline</strong> and <strong>D&amp;R Scheduler</strong>. These are tracked separately because they have different crew requirements and timelines.</p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     DESIGN & PERMITTING ROLE GUIDE
+     ═══════════════════════════════════════════════════════════════ -->
+
+<div class="section" id="de-overview">
+<h1>Design &amp; Permitting Guide — Role Overview</h1>
+<p class="subtitle">For Designers, Permitting Specialists &amp; Tech Ops</p>
+
+<div class="info-box" style="border-left:4px solid var(--purple-500);background:var(--purple-50,#f5f3ff);padding:16px 20px;border-radius:8px;margin:20px 0;">
+<strong>Your Mission:</strong> Take projects from Site Survey through Design &amp; Engineering and Permitting &amp; Interconnection — producing stamped plans, securing permits, and getting interconnection approval so the project is Ready To Build.
+</div>
+
+<h2>What You Have Access To</h2>
+<table>
+<thead><tr><th>Tool / Suite</th><th>What It's For</th></tr></thead>
+<tbody>
+<tr><td><strong>Design &amp; Engineering Suite</strong></td><td>D&amp;E overview, plan review, design metrics</td></tr>
+<tr><td><strong>Permitting &amp; Interconnection Suite</strong></td><td>P&amp;I overview, permit/IC action queues, trackers</td></tr>
+<tr><td><strong>D&amp;E Overview</strong></td><td>Current design workload and status</td></tr>
+<tr><td><strong>Plan Review</strong></td><td>Review and approve design plans</td></tr>
+<tr><td><strong>Pending Approval</strong></td><td>Plans awaiting customer design approval</td></tr>
+<tr><td><strong>Design Revisions</strong></td><td>Track revision requests and completion</td></tr>
+<tr><td><strong>D&amp;E Metrics</strong></td><td>Turnaround times, throughput analytics</td></tr>
+<tr><td><strong>Clipping Analytics</strong></td><td>DC/AC ratio and clipping analysis</td></tr>
+<tr><td><strong>AHJ Requirements</strong></td><td>Jurisdiction-specific design requirements</td></tr>
+<tr><td><strong>Utility Design Requirements</strong></td><td>Utility-specific system size and design rules</td></tr>
+<tr><td><strong>P&amp;I Overview</strong></td><td>Permitting and interconnection pipeline status</td></tr>
+<tr><td><strong>Permit Action Queue</strong></td><td>Permits needing action (submit, respond, resubmit)</td></tr>
+<tr><td><strong>IC Action Queue</strong></td><td>Interconnection apps needing action</td></tr>
+<tr><td><strong>AHJ Tracker</strong></td><td>Performance scores for 83+ authorities having jurisdiction</td></tr>
+<tr><td><strong>Utility Tracker</strong></td><td>Performance scores for 18+ utility companies</td></tr>
+<tr><td><strong>Solar Surveyor</strong></td><td>Solar site survey and design tool</td></tr>
+</tbody>
+</table>
+
+<h2>Your Capabilities</h2>
+<table>
+<thead><tr><th>Action</th><th>Tech Ops</th></tr></thead>
+<tbody>
+<tr><td>View D&amp;E and P&amp;I Suites</td><td>✅</td></tr>
+<tr><td>View AHJ &amp; Utility Trackers</td><td>✅</td></tr>
+<tr><td>Manage Own Availability</td><td>✅</td></tr>
+<tr><td>Schedule Installations</td><td>—</td></tr>
+<tr><td>Schedule Inspections</td><td>—</td></tr>
+<tr><td>Sync to Zuper</td><td>—</td></tr>
+<tr><td>View All Locations</td><td>Own location only</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="section" id="de-design-workflow">
+<h1>Design &amp; Permitting — Design Workflow</h1>
+<p class="subtitle">From site survey data to stamped plans</p>
+
+<h2>Design Lifecycle in HubSpot</h2>
+<p>Design work happens during the <strong>Design &amp; Engineering</strong> pipeline stage. The deal record tracks every date in the process:</p>
+
+<div class="pm-steps">
+<div class="pm-step"><strong>Design Start Date</strong> — When design work begins on a project. Triggered when the deal enters D&amp;E stage.</div>
+<div class="pm-step"><strong>Date Returned From Designers</strong> — When the first draft comes back from the design team.</div>
+<div class="pm-step"><strong>Design Draft Completion Date</strong> — When the initial design is finished and ready for internal review.</div>
+<div class="pm-step"><strong>Design Approval Sent Date</strong> — When the design is sent to the customer for approval via PandaDoc.</div>
+<div class="pm-step"><strong>Design Completion Date</strong> — When the design is finalized (customer approved, ready for permitting).</div>
+</div>
+
+<h2>Key HubSpot Fields — Design &amp; Engineering Group</h2>
+<table>
+<thead><tr><th>Field</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td>Design Lead</td><td>Who is assigned to this design</td></tr>
+<tr><td>Design Start Date</td><td>When design began</td></tr>
+<tr><td>Date Returned From Designers</td><td>First draft received</td></tr>
+<tr><td>Design Draft Completion Date</td><td>Draft finalized</td></tr>
+<tr><td>Engineering Submission Date</td><td>Sent for engineering stamp</td></tr>
+<tr><td>Engineering Stamped Date</td><td>PE stamp received</td></tr>
+<tr><td>Design Completion Date</td><td>Final design complete</td></tr>
+<tr><td>Design Rejection Date</td><td>If customer rejected the DA</td></tr>
+<tr><td>Design Revision Date</td><td>Revision cycle dates</td></tr>
+</tbody>
+</table>
+
+<h2>Revision Tracking</h2>
+<p>The deal record tracks up to 4 types of revisions with separate counters:</p>
+<table>
+<thead><tr><th>Revision Type</th><th>Counter Field</th><th>Triggered By</th></tr></thead>
+<tbody>
+<tr><td>DA Revision</td><td>DA Revision Counter</td><td>Customer requests changes to design approval</td></tr>
+<tr><td>Permit Revision</td><td>Permit Revision Counter</td><td>AHJ requests plan corrections</td></tr>
+<tr><td>Interconnection Revision</td><td>Interconnection Revision Counter</td><td>Utility requests changes</td></tr>
+<tr><td>As-Built Revision</td><td>As-Built Revision Counter</td><td>Field changes require updated plans</td></tr>
+</tbody>
+</table>
+<p>The <strong>Design Revisions dashboard</strong> aggregates these across all active projects so you can see your revision workload at a glance.</p>
+</div>
+
+<div class="section" id="de-plan-review">
+<h1>Design &amp; Permitting — Plan Review</h1>
+<p class="subtitle">Internal design QC before customer approval</p>
+
+<h2>Plan Review Dashboard</h2>
+<p>The <strong>Plan Review</strong> dashboard shows all designs awaiting internal review. Before sending a design to the customer for approval, it should be reviewed for:</p>
+<ul>
+<li>✅ Correct module count and layout</li>
+<li>✅ Inverter/battery sizing matches the proposal</li>
+<li>✅ AHJ-specific requirements met (see AHJ Requirements dashboard)</li>
+<li>✅ Utility design requirements met (system size rules, production meter, etc.)</li>
+<li>✅ Structural calculations complete</li>
+<li>✅ Electrical single-line diagram accurate</li>
+</ul>
+
+<h2>Design Approval (DA) Process</h2>
+<div class="pm-steps">
+<div class="pm-step"><strong>Internal review complete</strong> — design passes plan review checklist.</div>
+<div class="pm-step"><strong>Send DA to customer</strong> via PandaDoc. The Design Approval Sent Date is recorded in HubSpot.</div>
+<div class="pm-step"><strong>Customer reviews and signs</strong> — or rejects with notes. DA status tracked in PandaDoc card on the deal record.</div>
+<div class="pm-step"><strong>If rejected:</strong> Review the "Design Approval Notes from Customer" and "DA Rejection Reason" fields. Create a revision. Increment the DA Revision Counter.</div>
+<div class="pm-step"><strong>If approved:</strong> Design is locked. Submit for engineering stamp if required (PE Letter per AHJ).</div>
+</div>
+
+<h2>Pending Approval Dashboard</h2>
+<p>The <strong>Pending Approval</strong> dashboard shows all designs sent to customers but not yet signed. Use this to follow up on stale approvals.</p>
+</div>
+
+<div class="section" id="de-permitting">
+<h1>Design &amp; Permitting — Permitting Workflow</h1>
+<p class="subtitle">From plan submission to permit issued</p>
+
+<h2>Permitting Lifecycle in HubSpot</h2>
+<p>Permitting work happens during the <strong>Permitting &amp; Interconnection</strong> pipeline stage. Key fields:</p>
+
+<table>
+<thead><tr><th>Field</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td>Permit Lead</td><td>Who is managing this permit</td></tr>
+<tr><td>Permit Submit Date</td><td>When the application was submitted</td></tr>
+<tr><td>Permit Issued Date</td><td>When the permit was approved</td></tr>
+<tr><td>Permit Rejection Date</td><td>If the AHJ rejected the submission</td></tr>
+<tr><td>Permit Revision Complete Date</td><td>When corrections were resubmitted</td></tr>
+<tr><td>Permit Revision Counter</td><td>How many revision cycles</td></tr>
+<tr><td>Permit Turnaround Time</td><td>Days from submit to issued</td></tr>
+</tbody>
+</table>
+
+<h2>Permit Action Queue</h2>
+<p>The <strong>Permit Action Queue</strong> dashboard shows permits that need your attention:</p>
+<ul>
+<li><strong>Ready to Submit</strong> — Design is complete, permit application needs to be prepared and submitted</li>
+<li><strong>Corrections Requested</strong> — AHJ sent back revisions, need to fix and resubmit</li>
+<li><strong>Awaiting Review</strong> — Submitted and waiting for AHJ response (track with AHJ Tracker)</li>
+</ul>
+
+<h2>AHJ-Specific Requirements</h2>
+<p>Every project is associated with an AHJ (Authority Having Jurisdiction) in HubSpot. The deal record's <strong>AHJ &amp; Utility tab</strong> shows:</p>
+<ul>
+<li><strong>Stamping Requirements</strong> — PE Letter required? Engineer stamp?</li>
+<li><strong>NEC Code / IRC Code</strong> — Which code year applies</li>
+<li><strong>Design Snow Load / Wind Speed</strong> — Structural requirements</li>
+<li><strong>Submission Method</strong> — Portal, email, in-person, etc.</li>
+<li><strong>Permits Required</strong> — PV, ESS, Electrical (varies by AHJ)</li>
+<li><strong>Average Permit Turnaround</strong> — Historical processing time</li>
+</ul>
+</div>
+
+<div class="section" id="de-interconnection">
+<h1>Design &amp; Permitting — Interconnection</h1>
+<p class="subtitle">Utility interconnection applications and approvals</p>
+
+<h2>Interconnection Lifecycle</h2>
+<p>Interconnection is typically submitted in parallel with permitting. Key HubSpot fields:</p>
+
+<table>
+<thead><tr><th>Field</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td>Interconnections Lead</td><td>Who is managing this application</td></tr>
+<tr><td>Interconnection Start Date</td><td>When IC work began</td></tr>
+<tr><td>Interconnection Ready To Submit Date</td><td>Application prepared</td></tr>
+<tr><td>Utility Application #</td><td>The application number from the utility</td></tr>
+<tr><td>Interconnection Turnaround Time</td><td>Days from submit to approval</td></tr>
+<tr><td>Interconnection Blocker</td><td>What's holding it up</td></tr>
+<tr><td>Interconnection Revision Counter</td><td>Number of revision cycles</td></tr>
+</tbody>
+</table>
+
+<h2>IC Action Queue</h2>
+<p>The <strong>IC Action Queue</strong> dashboard shows interconnection applications needing action — similar to the Permit Action Queue but for utility applications.</p>
+
+<h2>Utility-Specific Rules</h2>
+<p>Each project is associated with a Utility record in HubSpot. The <strong>Utility Information card</strong> on the AHJ &amp; Utility tab shows critical rules:</p>
+<ul>
+<li><strong>System Size Rule</strong> — e.g., 200% (max AC output vs. service panel)</li>
+<li><strong>AC Disconnect Required?</strong> — e.g., "Yes if over 10 kW"</li>
+<li><strong>Backup Switch allowed?</strong> — Affects battery system design</li>
+<li><strong>Is Production Meter Required?</strong> — Additional equipment needed?</li>
+<li><strong>Util App Requires Customer Signature?</strong> — May need customer involvement</li>
+<li><strong>Average Interconnection Turnaround</strong> — Historical timeline (can be 30–53+ days)</li>
+</ul>
+</div>
+
+<div class="section" id="de-ahj">
+<h1>Design &amp; Permitting — AHJ &amp; Utility Tracking</h1>
+<p class="subtitle">Monitoring jurisdiction and utility performance</p>
+
+<h2>AHJ Tracker</h2>
+<p>The <strong>AHJ Tracker</strong> dashboard scores 83+ authorities having jurisdiction on permit processing performance. Each AHJ gets a score based on:</p>
+<ul>
+<li>Average permit turnaround time</li>
+<li>Overdue rate (% of permits that exceed expected timelines)</li>
+<li>Deal volume in the last 365 days</li>
+</ul>
+
+<h2>How to Use It</h2>
+<table>
+<thead><tr><th>Scenario</th><th>Action</th></tr></thead>
+<tbody>
+<tr><td>Before submitting a permit</td><td>Check the AHJ's score — low scores mean expect delays, plan accordingly</td></tr>
+<tr><td>Identifying problem jurisdictions</td><td>Focus on AHJs with scores &lt; 50 for escalation or process changes</td></tr>
+<tr><td>Staffing decisions</td><td>High-volume slow AHJs may need dedicated resources</td></tr>
+<tr><td>Setting customer expectations</td><td>Use average turnaround to give realistic timelines</td></tr>
+</tbody>
+</table>
+
+<h2>Utility Tracker</h2>
+<p>Similar to the AHJ Tracker but for utility companies. Tracks interconnection turnaround times and identifies slow utilities. The tracker shows both overall averages and last-90-day trends so you can spot improving or worsening utilities.</p>
+</div>
+
+<div class="section" id="de-tools">
+<h1>Design &amp; Permitting — Your Tools</h1>
+<p class="subtitle">Quick reference for your daily toolkit</p>
+
+<h2>Daily Workflow</h2>
+<table>
+<thead><tr><th>Time</th><th>Task</th><th>Tool</th></tr></thead>
+<tbody>
+<tr><td>Morning</td><td>Check your design queue — new projects and revisions</td><td>D&amp;E Overview</td></tr>
+<tr><td>Morning</td><td>Check permit/IC action queues — anything need response?</td><td>P&amp;I Action Queues</td></tr>
+<tr><td>Midday</td><td>Work on designs — reference AHJ/Utility requirements</td><td>AHJ Requirements, Utility Design Requirements</td></tr>
+<tr><td>Afternoon</td><td>Review completed designs</td><td>Plan Review</td></tr>
+<tr><td>End of day</td><td>Update dates in HubSpot — design completion, submission, etc.</td><td>HubSpot deal records</td></tr>
+</tbody>
+</table>
+
+<h2>D&amp;E Metrics</h2>
+<p>The <strong>D&amp;E Metrics</strong> dashboard tracks your team's performance:</p>
+<ul>
+<li>Average design turnaround time (design start → design completion)</li>
+<li>Revision rates — how often designs need revisions</li>
+<li>Throughput — how many designs completed per week</li>
+<li>Queue depth — how many projects are waiting for design</li>
+</ul>
+
+<h2>Solar Surveyor</h2>
+<p>The <strong>Solar Surveyor</strong> tool is available to your role for creating and reviewing solar site survey projects. Use it for design reference, shade analysis, and site condition documentation.</p>
+
+<h2>Deal Record Quick Reference</h2>
+<p>The HubSpot deal record has 8 Google Drive folder links organized by project stage. For design and permitting, you'll primarily use:</p>
+<ul>
+<li><strong>Site Survey Documents</strong> — Site photos, measurements, existing conditions</li>
+<li><strong>Design Documents</strong> — Plans, engineering calcs, approval docs</li>
+<li><strong>Interconnection Documents</strong> — Utility applications, approvals</li>
+<li><strong>Permit Documents</strong> — Permit applications, issued permits, corrections</li>
+</ul>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     SALES ROLE GUIDE
+     ═══════════════════════════════════════════════════════════════ -->
+
+<div class="section" id="sales-overview">
+<h1>Sales Guide — Role Overview</h1>
+<p class="subtitle">For Sales Representatives</p>
+
+<div class="info-box" style="border-left:4px solid var(--amber-500);background:var(--amber-50,#fffbeb);padding:16px 20px;border-radius:8px;margin:20px 0;">
+<strong>Your Mission:</strong> Close deals and hand them off cleanly to operations. Your deal record in HubSpot is the foundation for everything that happens after the sale — design, permitting, construction, and PTO. Complete and accurate deal data means faster project completion.
+</div>
+
+<h2>What You Have Access To</h2>
+<table>
+<thead><tr><th>Tool</th><th>What It's For</th></tr></thead>
+<tbody>
+<tr><td><strong>Site Survey Scheduler</strong></td><td>Schedule site surveys for your deals</td></tr>
+<tr><td><strong>Sales Dashboard</strong></td><td>Your pipeline, deal status, and performance metrics</td></tr>
+<tr><td><strong>Deal Search</strong></td><td>Look up any deal by PROJ number or customer name</td></tr>
+</tbody>
+</table>
+
+<h2>Your Capabilities</h2>
+<table>
+<thead><tr><th>Action</th><th>Sales</th></tr></thead>
+<tbody>
+<tr><td>Schedule Site Surveys</td><td>✅</td></tr>
+<tr><td>Sync Survey to Zuper</td><td>✅</td></tr>
+<tr><td>View Sales Dashboard</td><td>✅</td></tr>
+<tr><td>Search Deals</td><td>✅</td></tr>
+<tr><td>Schedule Installations</td><td>—</td></tr>
+<tr><td>View Other Locations</td><td>Own location only</td></tr>
+<tr><td>Access BOM / Inventory</td><td>—</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="section" id="sales-deal">
+<h1>Sales — Your Deal Record</h1>
+<p class="subtitle">What you need to fill out and why it matters</p>
+
+<h2>Why Deal Data Quality Matters</h2>
+<p>Every field you fill in on the deal record flows downstream. Incomplete data causes delays:</p>
+<ul>
+<li>Missing address → design team can't pull permits</li>
+<li>Missing utility info → interconnection can't be submitted</li>
+<li>Missing roof type → wrong racking ordered</li>
+<li>Missing contact info → customer doesn't get notified about install dates</li>
+</ul>
+
+<h2>Critical Fields at Close</h2>
+<p>When you close a deal and it moves from the Sales Pipeline to the Project Pipeline, make sure these fields are complete:</p>
+
+<h3>Pre-Sale Checklist (Deal Overview tab)</h3>
+<table>
+<thead><tr><th>Field</th><th>Why It Matters</th></tr></thead>
+<tbody>
+<tr><td>Amount</td><td>Revenue tracking, invoice milestones</td></tr>
+<tr><td>Close Date</td><td>Timeline calculations for all downstream stages</td></tr>
+<tr><td>Project Number (PROJ-XXXX)</td><td>Universal identifier across all systems</td></tr>
+<tr><td>PB Location</td><td>Routes to correct ops team and warehouse</td></tr>
+<tr><td>Project Type</td><td>Determines equipment and design approach</td></tr>
+<tr><td>Customer Segment</td><td>Residential vs. commercial handling</td></tr>
+<tr><td>Utility Company</td><td>Drives interconnection and design requirements</td></tr>
+<tr><td>Roof Type</td><td>Determines racking and mounting hardware</td></tr>
+<tr><td>Payment Method</td><td>Affects invoicing schedule</td></tr>
+<tr><td>Tags / Incentives Selection</td><td>PE enrollment, rebates, special handling</td></tr>
+</tbody>
+</table>
+
+<h3>Address &amp; Contact</h3>
+<table>
+<thead><tr><th>Field</th><th>Why It Matters</th></tr></thead>
+<tbody>
+<tr><td>Full Address (street, city, state, zip)</td><td>Permit applications, crew dispatch, AHJ lookup</td></tr>
+<tr><td>Latitude / Longitude</td><td>Solar production modeling, route planning</td></tr>
+<tr><td>Associated Contact</td><td>Customer notifications, DA delivery, scheduling calls</td></tr>
+</tbody>
+</table>
+
+<h2>Deal Tags</h2>
+<p>Tags flag special handling requirements. Common tags that affect downstream work:</p>
+<ul>
+<li><strong>Participate Energy</strong> tags — triggers PE milestone tracking with financial deadlines</li>
+<li><strong>Non-PB Install</strong> — different crew handling</li>
+<li><strong>Battery Rebate</strong> tags — affects incentive tracking</li>
+<li><strong>Roof Type</strong> tags — determines racking in the BOM</li>
+</ul>
+</div>
+
+<div class="section" id="sales-survey">
+<h1>Sales — Scheduling Surveys</h1>
+<p class="subtitle">How to book site surveys for your customers</p>
+
+<h2>Site Survey Scheduler</h2>
+<p>The <strong>Site Survey Scheduler</strong> is your primary scheduling tool. It allows you to book a site survey for your customer and assign a surveyor.</p>
+
+<div class="pm-steps">
+<div class="pm-step"><strong>Open the Site Survey Scheduler</strong> from your dashboard.</div>
+<div class="pm-step"><strong>Search for your deal</strong> by PROJ number or customer name.</div>
+<div class="pm-step"><strong>Select an available date and surveyor.</strong> The scheduler shows surveyor availability and existing bookings.</div>
+<div class="pm-step"><strong>Confirm the booking.</strong> This sets the Site Survey Booked Date and Site Surveyor fields on the deal record in HubSpot.</div>
+<div class="pm-step"><strong>The survey syncs to Zuper</strong> — creating a Site Survey job for the assigned surveyor.</div>
+</div>
+
+<h2>What Happens After the Survey</h2>
+<p>After the site survey is completed:</p>
+<ol>
+<li>The surveyor uploads photos and measurements to the Site Survey Documents folder</li>
+<li>Site Survey Status is updated to "Completed"</li>
+<li>The Site Survey Turnaround Time is calculated automatically</li>
+<li>The deal moves to Design &amp; Engineering stage</li>
+<li>HubSpot workflows trigger the design process</li>
+</ol>
+
+<h2>Key HubSpot Fields — Site Survey Group</h2>
+<table>
+<thead><tr><th>Field</th><th>Set By</th></tr></thead>
+<tbody>
+<tr><td>Site Survey Booked Date</td><td>You (when scheduling)</td></tr>
+<tr><td>Site Survey Start Date</td><td>Surveyor (when arriving on site)</td></tr>
+<tr><td>Site Surveyor</td><td>You (when scheduling)</td></tr>
+<tr><td>Site Survey Status</td><td>Surveyor (when complete)</td></tr>
+<tr><td>Site Survey Documents</td><td>Surveyor (Google Drive link)</td></tr>
+<tr><td>Site Survey Lead</td><td>Auto-assigned or manager</td></tr>
+<tr><td>Site Survey Turnaround Time</td><td>Calculated automatically</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="section" id="sales-handoff">
+<h1>Sales — Sales → Ops Handoff</h1>
+<p class="subtitle">Clean handoffs mean faster installations</p>
+
+<h2>The Handoff Checklist</h2>
+<p>When your deal closes and moves from the Sales Pipeline to the Project Pipeline, the operations team takes over. A clean handoff means:</p>
+
+<div class="pm-steps">
+<div class="pm-step"><strong>All Pre-Sale Checklist fields are complete.</strong> Missing fields = delays. Operations will send the deal back if critical info is missing.</div>
+<div class="pm-step"><strong>Contact is associated.</strong> The customer's email and phone must be on the deal record — this is how they get notifications about survey, DA, and install scheduling.</div>
+<div class="pm-step"><strong>Documents are uploaded.</strong> Contract, proposal, and any change orders should be in the Sales Documents folder on Google Drive (linked from the deal record).</div>
+<div class="pm-step"><strong>Tags are set correctly.</strong> PE enrollment, rebates, special handling — set these at close so nothing is missed downstream.</div>
+<div class="pm-step"><strong>Site Survey is scheduled (or ready to schedule).</strong> If you can schedule the survey before handoff, do it — it shaves days off the timeline.</div>
+</div>
+
+<h2>What Ops Needs From You</h2>
+<table>
+<thead><tr><th>Category</th><th>Required Fields</th></tr></thead>
+<tbody>
+<tr><td>Customer</td><td>Name, email, phone, associated contact on deal</td></tr>
+<tr><td>Site</td><td>Full address, lat/lng, roof type, utility company</td></tr>
+<tr><td>Project</td><td>Amount, close date, PROJ number, PB location, project type</td></tr>
+<tr><td>Financial</td><td>Payment method, incentives/tags, customer segment</td></tr>
+<tr><td>Documents</td><td>Signed contract in Google Drive</td></tr>
+</tbody>
+</table>
+
+<h2>HubSpot Workflows After Handoff</h2>
+<p>Once the deal enters the Project Pipeline, HubSpot workflows automatically:</p>
+<ul>
+<li>Assign a Project Manager based on location</li>
+<li>Create initial tasks (Site Survey, Design, etc.)</li>
+<li>Start tracking pipeline stage durations</li>
+<li>Begin PE milestone timers (if PE tags are set)</li>
+</ul>
+</div>
+
+<div class="section" id="sales-tracking">
+<h1>Sales — Tracking Your Projects</h1>
+<p class="subtitle">Stay informed about your deals after handoff</p>
+
+<h2>Sales Dashboard</h2>
+<p>The <strong>Sales Dashboard</strong> shows your pipeline from the sales perspective — deal values, stages, and status. Use it to:</p>
+<ul>
+<li>See where your closed deals are in the project pipeline</li>
+<li>Track which deals are approaching install (for customer communication)</li>
+<li>Monitor your location's overall pipeline health</li>
+</ul>
+
+<h2>Looking Up a Deal</h2>
+<p>Use <strong>Deal Search</strong> to find any deal by PROJ number or customer name. You can see the current pipeline stage, key dates, and who is assigned to each role on the project team.</p>
+
+<h2>Staying in the Loop</h2>
+<p>You don't need to check dashboards daily — HubSpot sends notifications at key milestones. But if a customer asks "where is my project?", here's how to find out:</p>
+
+<table>
+<thead><tr><th>Project Stage</th><th>What's Happening</th><th>Typical Timeline</th></tr></thead>
+<tbody>
+<tr><td>Site Survey</td><td>Surveyor is visiting or has visited the site</td><td>1–2 weeks after close</td></tr>
+<tr><td>Design &amp; Engineering</td><td>Plans being created, customer approval pending</td><td>2–4 weeks</td></tr>
+<tr><td>Permitting &amp; Interconnection</td><td>Permits submitted, waiting on AHJ/utility</td><td>2–8 weeks (varies by AHJ)</td></tr>
+<tr><td>Ready To Build</td><td>Permits issued, waiting to be scheduled</td><td>1–2 weeks</td></tr>
+<tr><td>Construction</td><td>Install scheduled or in progress</td><td>1–3 days on site</td></tr>
+<tr><td>Inspection</td><td>Waiting for or completed inspection</td><td>1–4 weeks</td></tr>
+<tr><td>PTO</td><td>Permission to operate submitted to utility</td><td>2–8 weeks</td></tr>
+<tr><td>Close Out</td><td>Final paperwork, customer closeout packet</td><td>1–2 weeks</td></tr>
+</tbody>
+</table>
+
+<h2>Customer Communication Tips</h2>
+<ul>
+<li>Check the deal's <strong>Activity tab</strong> before calling a customer — see what emails and calls have already happened</li>
+<li>The <strong>Agent Conversations</strong> card shows AI-analyzed sentiment on recent interactions — useful for gauging customer mood</li>
+<li>Your salesperson name appears on the PM Guide's closeout email template (CC'd) — you'll be looped in at project completion</li>
+</ul>
 </div>
 
 </main>
