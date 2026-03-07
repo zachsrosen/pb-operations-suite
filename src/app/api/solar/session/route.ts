@@ -12,8 +12,18 @@ import { prisma } from "@/lib/db";
 import { randomBytes } from "crypto";
 
 export async function GET(req: Request) {
-  const [user, authError] = await requireSolarAuth();
-  if (authError) return authError;
+  let user;
+  try {
+    const [authUser, authError] = await requireSolarAuth();
+    if (authError) return authError;
+    user = authUser;
+  } catch (err) {
+    console.error("[solar/session] Auth error:", err);
+    return NextResponse.json(
+      { error: "Internal server error during authentication" },
+      { status: 500 }
+    );
+  }
 
   // Fetch pending states for this user
   let pendingStates: Array<{
@@ -25,21 +35,26 @@ export async function GET(req: Request) {
   }> = [];
 
   if (prisma) {
-    const pending = await prisma.solarPendingState.findMany({
-      where: { userId: user.id },
-      include: {
-        project: { select: { name: true } },
-      },
-      orderBy: { createdAt: "desc" },
-    });
+    try {
+      const pending = await prisma.solarPendingState.findMany({
+        where: { userId: user.id },
+        include: {
+          project: { select: { name: true } },
+        },
+        orderBy: { createdAt: "desc" },
+      });
 
-    pendingStates = pending.map((p) => ({
-      id: p.id,
-      projectId: p.projectId,
-      projectName: p.project.name,
-      version: p.version,
-      createdAt: p.createdAt,
-    }));
+      pendingStates = pending.map((p) => ({
+        id: p.id,
+        projectId: p.projectId,
+        projectName: p.project.name,
+        version: p.version,
+        createdAt: p.createdAt,
+      }));
+    } catch (err) {
+      // Table may not exist yet (migration not applied) — degrade gracefully
+      console.warn("[solar/session] Failed to fetch pending states (table may not exist):", err);
+    }
   }
 
   // Generate CSRF token for double-submit cookie pattern.
