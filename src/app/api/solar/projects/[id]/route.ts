@@ -168,10 +168,10 @@ export async function PUT(req: NextRequest, context: RouteContext) {
           createdById: user.id,
           note,
         },
+        // On conflict: only update snapshot (latest state).
+        // Preserve original createdById and note to maintain audit integrity.
         update: {
           snapshot,
-          createdById: user.id,
-          note,
         },
       });
       const lastUpdater = current.updatedBy || current.createdBy;

@@ -60,6 +60,14 @@ model User {
   activities    ActivityLog[]
   auditSessions AuditSession[]
 
+  // Solar Surveyor relations
+  solarProjects         SolarProject[]         @relation("SolarProjectCreator")
+  solarProjectsUpdated  SolarProject[]         @relation("SolarProjectUpdater")
+  solarRevisions        SolarProjectRevision[] @relation("SolarRevisionCreator")
+  solarFeedback         SolarFeedback[]        @relation("SolarFeedbackAuthor")
+  solarProjectShares    SolarProjectShare[]    @relation("SolarProjectShares")
+  solarPendingStates    SolarPendingState[]    @relation("SolarPendingStates")
+
   @@index([email])
   @@index([role])
   @@index([impersonatingUserId])
@@ -1347,4 +1355,146 @@ model HubSpotSyncRun {
   @@index([operation, operationId, status])
   @@index([executedBy])
   @@index([createdAt])
+}
+
+// ===========================================
+// SOLAR SURVEYOR
+// ===========================================
+
+enum SolarProjectStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum SolarProjectVisibility {
+  PRIVATE
+  TEAM
+}
+
+enum SharePermission {
+  READ
+  EDIT
+}
+
+enum FeedbackCategory {
+  BUG
+  FEATURE
+  EQUIPMENT
+  GENERAL
+}
+
+enum FeedbackStatus {
+  NEW
+  REVIEWED
+  RESOLVED
+  WONTFIX
+}
+
+model SolarProject {
+  id              String                  @id @default(cuid())
+  name            String
+  address         String?
+  lat             Float?
+  lng             Float?
+  createdById     String
+  createdBy       User                    @relation("SolarProjectCreator", fields: [createdById], references: [id])
+  updatedById     String?
+  updatedBy       User?                   @relation("SolarProjectUpdater", fields: [updatedById], references: [id])
+  status          SolarProjectStatus      @default(DRAFT)
+  visibility      SolarProjectVisibility  @default(TEAM)
+  version         Int                     @default(1)
+  equipmentConfig Json?
+  stringsConfig   Json?
+  siteConditions  Json?
+  energyBalance   Json?
+  batteryConfig   Json?
+  lossProfile     Json?
+  geoJsonUrl      String?
+  radianceDxfUrl  String?
+  shadeDataUrl    String?
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  // Relations
+  revisions       SolarProjectRevision[]
+  feedback        SolarFeedback[]
+  shares          SolarProjectShare[]
+  pendingStates   SolarPendingState[]
+
+  @@index([createdById])
+  @@index([status])
+  @@index([updatedAt])
+}
+
+model SolarProjectRevision {
+  id              String         @id @default(cuid())
+  projectId       String
+  project         SolarProject   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  version         Int
+  snapshot        Json
+  analysisResults Json?
+  createdById     String
+  createdBy       User           @relation("SolarRevisionCreator", fields: [createdById], references: [id])
+  note            String?
+  createdAt       DateTime       @default(now())
+
+  @@unique([projectId, version])
+  @@index([projectId])
+  @@index([createdAt])
+}
+
+model SolarFeedback {
+  id          String            @id @default(cuid())
+  userId      String
+  user        User              @relation("SolarFeedbackAuthor", fields: [userId], references: [id])
+  projectId   String?
+  project     SolarProject?     @relation(fields: [projectId], references: [id])
+  category    FeedbackCategory
+  message     String
+  context     Json?
+  status      FeedbackStatus    @default(NEW)
+  createdAt   DateTime          @default(now())
+
+  @@index([userId])
+  @@index([category])
+  @@index([createdAt])
+}
+
+model SolarProjectShare {
+  id          String          @id @default(cuid())
+  projectId   String
+  project     SolarProject    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User            @relation("SolarProjectShares", fields: [userId], references: [id])
+  permission  SharePermission @default(READ)
+  createdAt   DateTime        @default(now())
+
+  @@unique([projectId, userId])
+  @@index([userId])
+}
+
+model SolarPendingState {
+  id          String       @id @default(cuid())
+  projectId   String
+  project     SolarProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User         @relation("SolarPendingStates", fields: [userId], references: [id])
+  version     Int
+  createdAt   DateTime     @default(now())
+
+  @@unique([projectId, userId])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model SolarWeatherCache {
+  id         String   @id @default(cuid())
+  latE3      Int
+  lngE3      Int
+  tmyData    Json
+  fetchedAt  DateTime @default(now())
+
+  @@unique([latE3, lngE3])
+  @@index([fetchedAt])
 }
