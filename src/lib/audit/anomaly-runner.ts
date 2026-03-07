@@ -26,6 +26,11 @@ export interface AuditSessionLike {
   deviceFingerprint: string | null;
   riskScore: number;
   anomalyReasons: string[];
+  // Alert dedup fields — carried from session resolution to avoid
+  // a redundant findUnique when checking alert eligibility.
+  startedAt: Date;
+  immediateAlertSentAt: Date | null;
+  criticalAlertSentAt: Date | null;
 }
 
 export interface AnomalyContext {
@@ -109,14 +114,27 @@ export async function runAnomalyChecks(
 
   // Check for alert even if no NEW escalation (session may already be HIGH/CRITICAL)
   if (newRiskScore >= 3 || ctx.session.riskScore >= 3) {
-    const updatedSession = await prisma.auditSession.findUnique({
-      where: { id: ctx.session.id },
-    });
-    if (updatedSession) {
-      sendImmediateAlert(updatedSession, prisma).catch((e: unknown) =>
-        console.error("Alert email failed:", e)
-      );
-    }
+    // Build alert session from in-memory data — avoids a redundant DB round-trip.
+    // sendImmediateAlert uses atomic $executeRaw for dedup, so stale alert
+    // timestamps are safe (the DB gate is the true source of truth).
+    const alertSession = {
+      id: ctx.session.id,
+      userEmail: ctx.session.userEmail,
+      clientType: ctx.session.clientType,
+      environment: ctx.session.environment,
+      ipAddress: ctx.session.ipAddress,
+      riskScore: newRiskScore,
+      anomalyReasons: [
+        ...ctx.session.anomalyReasons,
+        ...triggered.map((r: AnomalyRuleResult) => r.rule),
+      ],
+      startedAt: ctx.session.startedAt,
+      immediateAlertSentAt: ctx.session.immediateAlertSentAt,
+      criticalAlertSentAt: ctx.session.criticalAlertSentAt,
+    };
+    sendImmediateAlert(alertSession, prisma).catch((e: unknown) =>
+      console.error("Alert email failed:", e)
+    );
   }
 
   return triggered;

@@ -12,6 +12,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { createSalesOrder } from "@/lib/bom-so-create";
+import { logActivity } from "@/lib/db";
 import type { ActorContext } from "@/lib/actor-context";
 
 export const runtime = "nodejs";
@@ -70,9 +71,38 @@ export async function POST(request: NextRequest) {
       debug: wantDebug,
     });
 
+    await logActivity({
+      type: "BOM_PIPELINE_COMPLETED",
+      description: `Created SO ${result.salesorder_number || "draft"} for deal ${dealId} v${version}`,
+      userEmail: authResult.email,
+      userName: authResult.name,
+      entityType: "sales_order",
+      entityId: result.salesorder_id,
+      entityName: result.salesorder_number || dealId,
+      metadata: { dealId, version, customerId, soNumber: result.salesorder_number, unmatchedCount: result.unmatchedCount },
+      ipAddress: authResult.ip,
+      userAgent: authResult.userAgent,
+      requestPath: "/api/bom/create-so",
+      requestMethod: "POST",
+    }).catch(() => {});
+
     return NextResponse.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Internal server error";
+
+    await logActivity({
+      type: "API_ERROR",
+      description: `SO creation failed for deal ${dealId}: ${message}`,
+      userEmail: authResult.email,
+      userName: authResult.name,
+      entityType: "sales_order",
+      entityName: dealId,
+      metadata: { dealId, version, customerId, error: message },
+      ipAddress: authResult.ip,
+      userAgent: authResult.userAgent,
+      requestPath: "/api/bom/create-so",
+      requestMethod: "POST",
+    }).catch(() => {});
 
     // Distinguish Zoho errors (502) from other errors (500)
     const status = message.includes("Zoho API error") ? 502

@@ -29,6 +29,32 @@ export default function ChatWidget({ dealId, projectId }: ChatWidgetProps) {
 
   useEffect(scrollToBottom, [messages, scrollToBottom]);
 
+  useEffect(() => {
+    function handleOpenChatWidget() {
+      setIsOpen(true);
+    }
+
+    window.addEventListener("open-chat-widget", handleOpenChatWidget);
+    return () => {
+      window.removeEventListener("open-chat-widget", handleOpenChatWidget);
+    };
+  }, []);
+
+  useEffect(() => {
+    function handleChatTriggerClick(event: MouseEvent) {
+      const target = event.target as HTMLElement | null;
+      const trigger = target?.closest("[data-open-chat-widget]");
+      if (!trigger) return;
+      event.preventDefault();
+      window.dispatchEvent(new Event("open-chat-widget"));
+    }
+
+    document.addEventListener("click", handleChatTriggerClick);
+    return () => {
+      document.removeEventListener("click", handleChatTriggerClick);
+    };
+  }, []);
+
   async function handleSend() {
     if (!input.trim() || loading) return;
     const userMessage = input.trim();

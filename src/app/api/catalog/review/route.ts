@@ -9,7 +9,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
-import { prisma } from "@/lib/db";
+import { prisma, logActivity } from "@/lib/db";
 import type { MatchConfidence, MatchDecisionStatus } from "@/generated/prisma/enums";
 
 // ── GET: List match groups ──────────────────────────────────────────────────
@@ -170,6 +170,18 @@ export async function POST(request: NextRequest) {
         needsReview: false,
       },
     });
+
+    await logActivity({
+      type: "FEATURE_USED",
+      description: `Catalog match group ${decision.toLowerCase()}: ${matchGroupKey}`,
+      userEmail: email,
+      entityType: "catalog_match",
+      entityId: matchGroupKey,
+      entityName: matchGroupKey,
+      metadata: { decision, note, previousDecision: existing.decision },
+      requestPath: "/api/catalog/review",
+      requestMethod: "POST",
+    }).catch(() => {});
 
     return NextResponse.json({ updated });
   } catch (err) {

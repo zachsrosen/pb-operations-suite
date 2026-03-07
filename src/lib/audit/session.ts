@@ -32,6 +32,11 @@ export interface AuditSessionLike {
   deviceFingerprint: string | null;
   riskScore: number;
   anomalyReasons: string[];
+  // Alert dedup fields — carried from session resolution to avoid
+  // a redundant findUnique when checking alert eligibility.
+  startedAt: Date;
+  immediateAlertSentAt: Date | null;
+  criticalAlertSentAt: Date | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -161,6 +166,9 @@ type PrismaTransactionClient = {
       deviceFingerprint?: string | null;
       riskScore?: number;
       anomalyReasons?: string[];
+      startedAt?: Date;
+      immediateAlertSentAt?: Date | null;
+      criticalAlertSentAt?: Date | null;
     }) | null>;
     update: (args: Record<string, unknown>) => Promise<unknown>;
     create: (args: Record<string, unknown>) => Promise<{ id: string }>;
@@ -221,7 +229,8 @@ export async function getOrCreateAuditSession(
       whereClause.userAgent = input.userAgent;
     }
 
-    // Select fields needed for both match resolution and anomaly context
+    // Select fields needed for both match resolution and anomaly context.
+    // Includes alert timestamps to avoid a redundant findUnique later.
     const sessionSelect = {
       id: true,
       clientType: true,
@@ -234,6 +243,9 @@ export async function getOrCreateAuditSession(
       deviceFingerprint: true,
       riskScore: true,
       anomalyReasons: true,
+      startedAt: true,
+      immediateAlertSentAt: true,
+      criticalAlertSentAt: true,
     };
 
     // Look for existing open session
@@ -266,6 +278,9 @@ export async function getOrCreateAuditSession(
           deviceFingerprint: existing.deviceFingerprint ?? null,
           riskScore: existing.riskScore ?? 0,
           anomalyReasons: existing.anomalyReasons ?? [],
+          startedAt: existing.startedAt ?? now,
+          immediateAlertSentAt: existing.immediateAlertSentAt ?? null,
+          criticalAlertSentAt: existing.criticalAlertSentAt ?? null,
         };
 
         return { sessionId: existing.id, isNew: false, sessionData };
@@ -307,6 +322,9 @@ export async function getOrCreateAuditSession(
       deviceFingerprint: input.deviceFingerprint ?? null,
       riskScore: 0,
       anomalyReasons: [],
+      startedAt: now,
+      immediateAlertSentAt: null,
+      criticalAlertSentAt: null,
     };
 
     return { sessionId: created.id, isNew: true, sessionData };

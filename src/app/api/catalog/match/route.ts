@@ -13,7 +13,7 @@
 
 import { NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
-import { prisma } from "@/lib/db";
+import { prisma, logActivity } from "@/lib/db";
 import { harvestAll } from "@/lib/catalog-harvest";
 import { dedupeProducts } from "@/lib/catalog-dedupe";
 import { crossMatch } from "@/lib/catalog-matcher";
@@ -132,6 +132,18 @@ export async function POST() {
         created++;
       }
     }
+
+    await logActivity({
+      type: "FEATURE_USED",
+      description: `Catalog match pipeline: ${created} created, ${updated} updated, ${skippedSticky} sticky`,
+      userEmail: authResult.email,
+      userName: authResult.name,
+      entityType: "catalog_match",
+      metadata: { totalMatchGroups: matchGroups.length, created, updated, skippedSticky, byConfidence },
+      requestPath: "/api/catalog/match",
+      requestMethod: "POST",
+      responseStatus: 200,
+    }).catch(() => {});
 
     return NextResponse.json({
       generatedAt: new Date().toISOString(),

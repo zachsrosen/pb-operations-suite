@@ -5,6 +5,7 @@ import { ReactNode, useCallback } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { ThemeToggle } from "./ThemeToggle";
 import PhotonBrothersBadge from "./PhotonBrothersBadge";
+import { useActivityTracking } from "@/hooks/useActivityTracking";
 
 
 // Maps dashboard paths to their parent suite
@@ -86,6 +87,7 @@ const SUITE_MAP: Record<string, { href: string; label: string }> = {
   "/dashboards/zuper-compliance": { href: "/suites/executive", label: "Executive" },
   "/dashboards/product-comparison": { href: "/suites/operations", label: "Operations" },
   "/dashboards/mobile": { href: "/suites/admin", label: "Admin" },
+  "/dashboards/ai": { href: "/dashboards/ai", label: "AI Skills" },
 };
 
 function getParentSuiteForPath(pathname: string): { href: string; label: string } | null {
@@ -135,6 +137,7 @@ export default function DashboardShell({
 }: DashboardShellProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const { trackExport } = useActivityTracking();
   const parentSuite = getParentSuiteForPath(pathname);
 
   const handleBack = useCallback(() => {
@@ -143,9 +146,11 @@ export default function DashboardShell({
     if (typeof window !== "undefined" && window.history.length > 1) {
       router.back();
     } else {
-      router.push(parentSuite?.href || "/");
+      const fallbackHref =
+        parentSuite?.href && parentSuite.href !== pathname ? parentSuite.href : "/";
+      router.push(fallbackHref);
     }
-  }, [router, parentSuite]);
+  }, [router, parentSuite, pathname]);
 
   // Auto-generate breadcrumbs from suite mapping if not explicitly provided
   const effectiveBreadcrumbs = breadcrumbs || (parentSuite
@@ -165,10 +170,11 @@ export default function DashboardShell({
 
   const handleExport = useCallback(() => {
     if (!exportData) return;
+    trackExport("csv", exportData.data.length, title, undefined);
     import("@/lib/export").then(({ exportToCSV }) => {
       exportToCSV(exportData.data, exportData.filename);
     });
-  }, [exportData]);
+  }, [exportData, trackExport, title]);
 
   const containerClass = fullWidth
     ? "px-4 sm:px-6"

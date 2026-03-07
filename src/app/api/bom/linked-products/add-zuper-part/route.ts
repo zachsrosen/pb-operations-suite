@@ -156,7 +156,46 @@ export async function POST(request: NextRequest) {
 
   const description = explicitDescription || skuRecord?.description || null;
   const sku = explicitSku || skuRecord?.vendorPartNumber || model || skuRecord?.model || null;
-  const zuperItemId = explicitZuperItemId || skuRecord?.zuperItemId || null;
+  let zuperItemId = explicitZuperItemId || skuRecord?.zuperItemId || null;
+  // If no Zuper product exists, queue a catalog push request for approval
+  const resolvedBrand = (brand || skuRecord?.brand || "").trim() || null;
+  const resolvedModel = (model || skuRecord?.model || "").trim() || null;
+  if (!zuperItemId && prisma && (resolvedBrand || resolvedModel)) {
+    try {
+      const push = await prisma.pendingCatalogPush.create({
+        data: {
+          brand: resolvedBrand || "",
+          model: resolvedModel || "",
+          description: description || partName,
+          category: category || skuRecord?.category || "Uncategorized",
+          sku: sku || undefined,
+          sellPrice: Number.isFinite(unitPrice) ? unitPrice : (skuRecord?.sellPrice ?? null),
+          systems: ["ZUPER"],
+          requestedBy: authResult.email,
+          metadata: { source: "bom_push", jobUid },
+        },
+      });
+      return NextResponse.json({
+        ok: false,
+        pendingApproval: true,
+        pushRequestId: push.id,
+        message: `Product "${[resolvedBrand, resolvedModel].filter(Boolean).join(" ")}" not found in Zuper. Sent to catalog approvals.`,
+      }, { status: 202 });
+    } catch (pushError) {
+      const msg = pushError instanceof Error ? pushError.message : String(pushError);
+      return NextResponse.json(
+        { error: `Product not found in Zuper and failed to queue approval: ${msg}` },
+        { status: 502 }
+      );
+    }
+  }
+
+  if (!zuperItemId) {
+    return NextResponse.json(
+      { error: "Cannot add part without a linked Zuper product. Provide brand/model or zuperItemId." },
+      { status: 400 }
+    );
+  }
 
   const result = await zuper.addPartToJob(jobUid, {
     itemUid: zuperItemId,

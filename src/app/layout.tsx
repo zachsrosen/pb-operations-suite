@@ -7,6 +7,7 @@ import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistratio
 import { InstallPrompt } from "@/components/InstallPrompt";
 import ImpersonationBanner from "@/components/ImpersonationBanner";
 import PageViewTracker from "@/components/PageViewTracker";
+import ClickTracker from "@/components/ClickTracker";
 import ChatWidget from "@/components/ChatWidget";
 import "./globals.css";
 
@@ -71,6 +72,7 @@ export default function RootLayout({
           <Suspense fallback={null}>
             <PageViewTracker />
           </Suspense>
+          <ClickTracker />
           {children}
           <ChatWidget />
         </Providers>

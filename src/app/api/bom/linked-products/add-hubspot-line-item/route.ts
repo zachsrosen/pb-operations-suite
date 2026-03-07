@@ -5,7 +5,6 @@ import {
   createDealLineItem,
   fetchLineItemsForDeal,
   fetchHubSpotProductById,
-  createOrUpdateHubSpotProduct,
 } from "@/lib/hubspot";
 
 const ALLOWED_ROLES = new Set([
@@ -178,39 +177,45 @@ export async function POST(request: NextRequest) {
 
   // Resolve the HubSpot product ID from explicit input or SKU record
   let hubspotProductId = explicitHubspotProductId || skuRecord?.hubspotProductId || null;
-  let productCreated = false;
-
-  // If no HubSpot product exists yet, create one so line items are properly linked
+  // If no HubSpot product exists, queue a catalog push request for approval
   const resolvedBrand = (brand || skuRecord?.brand || "").trim() || null;
   const resolvedModel = (model || skuRecord?.model || "").trim() || null;
-  if (!hubspotProductId && (resolvedBrand || resolvedModel)) {
+  if (!hubspotProductId && prisma && (resolvedBrand || resolvedModel)) {
     try {
-      const productResult = await createOrUpdateHubSpotProduct({
-        brand: resolvedBrand || "",
-        model: resolvedModel || "",
-        sku: explicitSku || skuRecord?.vendorPartNumber || resolvedModel,
-        description: explicitDescription || skuRecord?.description || null,
-        productCategory: category || skuRecord?.category || null,
-        sellPrice: Number.isFinite(unitPrice) ? unitPrice : (skuRecord?.sellPrice ?? null),
+      const push = await prisma.pendingCatalogPush.create({
+        data: {
+          brand: resolvedBrand || "",
+          model: resolvedModel || "",
+          description: explicitDescription || skuRecord?.description || [resolvedBrand, resolvedModel].filter(Boolean).join(" "),
+          category: category || skuRecord?.category || "Uncategorized",
+          sku: explicitSku || skuRecord?.vendorPartNumber || null,
+          sellPrice: Number.isFinite(unitPrice) ? unitPrice : (skuRecord?.sellPrice ?? null),
+          systems: ["HUBSPOT"],
+          requestedBy: authResult.email,
+          metadata: { source: "bom_push", dealId },
+        },
       });
-      hubspotProductId = productResult.hubspotProductId;
-      productCreated = productResult.created;
-
-      // Persist the new product ID back to the SKU record
-      if (prisma && skuRecord?.id && !skuRecord.hubspotProductId) {
-        try {
-          await prisma.equipmentSku.update({
-            where: { id: skuRecord.id },
-            data: { hubspotProductId },
-          });
-        } catch (updateError) {
-          if (!isPrismaMissingColumnError(updateError)) throw updateError;
-        }
-      }
-    } catch (productError) {
-      // Log but continue — we can still create an orphan line item
-      console.warn("[AddLineItem] Failed to create HubSpot product:", productError);
+      return NextResponse.json({
+        ok: false,
+        pendingApproval: true,
+        pushRequestId: push.id,
+        message: `Product "${[resolvedBrand, resolvedModel].filter(Boolean).join(" ")}" not found in HubSpot. Sent to catalog approvals.`,
+      }, { status: 202 });
+    } catch (pushError) {
+      const msg = pushError instanceof Error ? pushError.message : String(pushError);
+      return NextResponse.json(
+        { error: `Product not found in HubSpot and failed to queue approval: ${msg}` },
+        { status: 502 }
+      );
     }
+  }
+
+  // Hard gate: never create orphan line items
+  if (!hubspotProductId) {
+    return NextResponse.json(
+      { error: "Cannot create line item without a linked HubSpot product. Provide brand/model or hubspotProductId." },
+      { status: 400 }
+    );
   }
 
   // If we have a HubSpot product ID, fetch the product's canonical properties
@@ -288,7 +293,6 @@ export async function POST(request: NextRequest) {
       lineItemId: result.lineItemId,
       associated: result.associated,
       usedProductId: result.usedProductId,
-      productCreated,
       skuId: skuRecord?.id || null,
     });
   } catch (error) {
