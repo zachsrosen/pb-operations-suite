@@ -11,12 +11,18 @@
  *
  * Cache key uses integer lat/lng × 1000 (~110m resolution) to avoid
  * floating-point uniqueness edge cases.
+ *
+ * PBO-003a hotfixes applied:
+ *  - CSV parser detects header row dynamically (handles variable metadata rows)
+ *  - Mutation rate limiter removed (read-only endpoint)
+ *  - Structured logging for cache source, fetch failures, parse failures
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { requireSolarAuth, checkSolarRateLimit } from "@/lib/solar-auth";
+import { requireSolarAuth } from "@/lib/solar-auth";
 import { prisma } from "@/lib/db";
 import { z } from "zod";
+import { parseNrelCsv } from "@/lib/solar-weather-parser";
 
 // ── Config ────────────────────────────────────────────────
 
@@ -41,8 +47,8 @@ export async function GET(req: NextRequest) {
   const [user, authError] = await requireSolarAuth(req);
   if (authError) return authError;
 
-  const rateLimited = checkSolarRateLimit(user.email);
-  if (rateLimited) return rateLimited;
+  // No mutation rate limiter — this is a read-only endpoint.
+  // NREL upstream has its own rate limits; our cache prevents excessive calls.
 
   if (!prisma) {
     return NextResponse.json(
@@ -90,6 +96,9 @@ export async function GET(req: NextRequest) {
   if (cached) {
     const age = Date.now() - cached.fetchedAt.getTime();
     if (age < CACHE_TTL_MS) {
+      console.log(
+        `[weather] source=cache lat=${lat} lng=${lng} latE3=${latE3} lngE3=${lngE3} user=${user.email}`
+      );
       return NextResponse.json({
         data: cached.tmyData,
         source: "cache",
@@ -99,6 +108,9 @@ export async function GET(req: NextRequest) {
       });
     }
     // Cache expired — fall through to re-fetch
+    console.log(
+      `[weather] cache_expired lat=${lat} lng=${lng} age_days=${Math.round(age / 86400000)}`
+    );
   }
 
   // ── Fetch from NREL ─────────────────────────────────────
@@ -128,12 +140,12 @@ export async function GET(req: NextRequest) {
     if (!nrelResponse.ok) {
       const errText = await nrelResponse.text().catch(() => "");
       console.error(
-        `NREL API error ${nrelResponse.status}: ${errText.slice(0, 500)}`
+        `[weather] nrel_fetch_error status=${nrelResponse.status} lat=${lat} lng=${lng} body=${errText.slice(0, 500)}`
       );
       return NextResponse.json(
         {
           error: "NREL API request failed",
-          status: nrelResponse.status,
+          nrelStatus: nrelResponse.status,
         },
         { status: 502 }
       );
@@ -141,7 +153,10 @@ export async function GET(req: NextRequest) {
 
     csvText = await nrelResponse.text();
   } catch (err) {
-    console.error("NREL fetch error:", err);
+    console.error(
+      `[weather] nrel_fetch_exception lat=${lat} lng=${lng}`,
+      err
+    );
     return NextResponse.json(
       { error: "Failed to reach NREL API" },
       { status: 502 }
@@ -150,17 +165,25 @@ export async function GET(req: NextRequest) {
 
   // ── Parse CSV ───────────────────────────────────────────
 
-  const tmyData = parseNrelCsv(csvText);
-  if (!tmyData) {
+  const parseResult = parseNrelCsv(csvText);
+  if (!parseResult.ok) {
+    console.error(
+      `[weather] parse_error lat=${lat} lng=${lng} reason="${parseResult.error}" totalLines=${parseResult.totalLines ?? "?"} headerRow=${parseResult.headerRowIndex ?? "not found"}`
+    );
     return NextResponse.json(
-      { error: "Failed to parse NREL CSV response" },
+      {
+        error: "Failed to parse NREL CSV response",
+        detail: parseResult.error,
+      },
       { status: 502 }
     );
   }
 
+  const tmyData = parseResult.data;
+
   if (tmyData.ghi.length !== 8760 || tmyData.temperature.length !== 8760) {
     console.error(
-      `NREL data length mismatch: GHI=${tmyData.ghi.length}, temp=${tmyData.temperature.length}`
+      `[weather] row_count_error lat=${lat} lng=${lng} ghi=${tmyData.ghi.length} temp=${tmyData.temperature.length} expected=8760`
     );
     return NextResponse.json(
       {
@@ -190,8 +213,12 @@ export async function GET(req: NextRequest) {
     });
   } catch (err) {
     // Cache write failure is non-fatal — still return data
-    console.error("Weather cache upsert failed:", err);
+    console.error("[weather] cache_upsert_error", err);
   }
+
+  console.log(
+    `[weather] source=nrel lat=${lat} lng=${lng} latE3=${latE3} lngE3=${lngE3} rows=${tmyData.ghi.length} user=${user.email}`
+  );
 
   return NextResponse.json({
     data: tmyData,
@@ -202,76 +229,4 @@ export async function GET(req: NextRequest) {
   });
 }
 
-// ── CSV Parser ────────────────────────────────────────────
-
-/**
- * Parse NREL PSM3 TMY CSV response.
- *
- * NREL CSV format:
- *  - Row 1: Source metadata
- *  - Row 2: Column headers (Year, Month, Day, Hour, Minute, GHI, Temperature, ...)
- *  - Rows 3+: Data (8,760 hourly rows for a non-leap year)
- *
- * We extract GHI (W/m²) and Temperature (°C).
- */
-function parseNrelCsv(
-  csv: string
-): { ghi: number[]; temperature: number[] } | null {
-  try {
-    const lines = csv.split("\n").filter((l) => l.trim().length > 0);
-
-    if (lines.length < 3) {
-      console.error("NREL CSV too short:", lines.length, "lines");
-      return null;
-    }
-
-    // Row 2 (index 1) is the header row
-    const headers = lines[1].split(",").map((h) => h.trim().toLowerCase());
-
-    // Find column indices — NREL uses various header names
-    const ghiIdx = headers.findIndex(
-      (h) => h === "ghi" || h === "ghi (w/m2)" || h === "ghi (w/m^2)"
-    );
-    const tempIdx = headers.findIndex(
-      (h) =>
-        h === "temperature" ||
-        h === "air temperature" ||
-        h === "temperature (c)" ||
-        h === "air temperature (c)"
-    );
-
-    if (ghiIdx === -1 || tempIdx === -1) {
-      console.error(
-        "NREL CSV header mismatch. Headers found:",
-        headers.join(", ")
-      );
-      console.error(`GHI index: ${ghiIdx}, Temp index: ${tempIdx}`);
-      return null;
-    }
-
-    const ghi: number[] = [];
-    const temperature: number[] = [];
-
-    // Data starts at row 3 (index 2)
-    for (let i = 2; i < lines.length; i++) {
-      const cols = lines[i].split(",");
-      if (cols.length <= Math.max(ghiIdx, tempIdx)) continue;
-
-      const g = parseFloat(cols[ghiIdx]);
-      const t = parseFloat(cols[tempIdx]);
-
-      if (isNaN(g) || isNaN(t)) {
-        console.warn(`NREL CSV row ${i}: invalid data — GHI=${cols[ghiIdx]}, temp=${cols[tempIdx]}`);
-        continue;
-      }
-
-      ghi.push(g);
-      temperature.push(t);
-    }
-
-    return { ghi, temperature };
-  } catch (err) {
-    console.error("NREL CSV parse error:", err);
-    return null;
-  }
-}
+// Parser imported from @/lib/solar-weather-parser
