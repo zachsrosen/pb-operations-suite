@@ -133,6 +133,26 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       const emailDomain = user.email.split("@")[1]?.toLowerCase();
       return !!emailDomain && domains.includes(emailDomain);
     },
+    async redirect({ url, baseUrl }) {
+      // Allow redirects to Solar Surveyor origins (cross-origin callback after sign-in)
+      const allowedOrigins = (process.env.SOLAR_ALLOWED_ORIGINS || "")
+        .split(",")
+        .map((o) => o.trim())
+        .filter(Boolean);
+
+      try {
+        const target = new URL(url);
+        // Same origin — always allow
+        if (target.origin === baseUrl) return url;
+        // Solar Surveyor origins — allow
+        if (allowedOrigins.includes(target.origin)) return url;
+      } catch {
+        // Invalid URL — fall through to default
+      }
+
+      // Default: redirect to base URL
+      return baseUrl;
+    },
     async session({ session, token }) {
       // Add user info to session
       if (session.user && token.sub) {
@@ -177,6 +197,41 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   session: {
     strategy: "jwt",
     maxAge: 7 * 24 * 60 * 60, // 7 days
+  },
+  // Cross-origin cookie config for Solar Surveyor (solar.photonbrothers.com)
+  // calling PB Ops API (ops.photonbrothers.com).
+  // SameSite=None + Secure allows cookies in cross-origin fetch with credentials.
+  // Domain=.photonbrothers.com shares cookies across subdomains.
+  cookies: {
+    sessionToken: {
+      name: "authjs.session-token",
+      options: {
+        httpOnly: true,
+        sameSite: "none" as const,
+        secure: true,
+        path: "/",
+        domain: process.env.COOKIE_DOMAIN || undefined,
+      },
+    },
+    callbackUrl: {
+      name: "authjs.callback-url",
+      options: {
+        sameSite: "none" as const,
+        secure: true,
+        path: "/",
+        domain: process.env.COOKIE_DOMAIN || undefined,
+      },
+    },
+    csrfToken: {
+      name: "authjs.csrf-token",
+      options: {
+        httpOnly: true,
+        sameSite: "none" as const,
+        secure: true,
+        path: "/",
+        domain: process.env.COOKIE_DOMAIN || undefined,
+      },
+    },
   },
   trustHost: true,
 });
