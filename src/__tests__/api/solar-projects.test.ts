@@ -78,9 +78,7 @@ jest.mock("@/lib/db", () => ({
   },
 }));
 
-// ── CORS mock ──────────────────────────────────────────────
-
-process.env.SOLAR_ALLOWED_ORIGINS = "https://solarsurveyor.vercel.app,http://localhost:5173";
+// Solar CORS no longer needed — same-origin
 
 // ── Imports ────────────────────────────────────────────────
 
@@ -546,7 +544,7 @@ describe("PUT with forceOverwrite", () => {
         geoJsonUrl: null,
         radianceDxfUrl: null,
         shadeDataUrl: null,
-        energyBalance: null,
+        homeConsumptionConfig: null,
       });
 
     mockRevisionUpsert.mockResolvedValue({ id: "forced-rev", version: 5 });
@@ -609,8 +607,8 @@ describe("DELETE /api/solar/projects/[id]", () => {
 describe("Write access control", () => {
   it("non-admin cannot PUT a TEAM-visibility project they don't own", async () => {
     setupUserMock(REGULAR_USER);
-    // canWriteProject: not creator, no share
-    mockProjectFindUnique.mockResolvedValueOnce({ createdById: "other-user" });
+    // canWriteProject: not creator, TEAM visibility → denied before share check
+    mockProjectFindUnique.mockResolvedValueOnce({ createdById: "other-user", visibility: "TEAM" });
     mockShareFindUnique.mockResolvedValue(null);
 
     const req = makeRequest("/api/solar/projects/proj1", {
@@ -622,9 +620,9 @@ describe("Write access control", () => {
     expect(res.status).toBe(403);
   });
 
-  it("user with READ share cannot write", async () => {
+  it("user with READ share cannot write (PRIVATE project)", async () => {
     setupUserMock(REGULAR_USER);
-    mockProjectFindUnique.mockResolvedValueOnce({ createdById: "other-user" });
+    mockProjectFindUnique.mockResolvedValueOnce({ createdById: "other-user", visibility: "PRIVATE" });
     mockShareFindUnique.mockResolvedValue({ permission: "READ" });
 
     const req = makeRequest("/api/solar/projects/proj1", {
@@ -636,10 +634,28 @@ describe("Write access control", () => {
     expect(res.status).toBe(403);
   });
 
-  it("user with EDIT share can write", async () => {
+  it("user with EDIT share on TEAM project is DENIED write", async () => {
+    setupUserMock(REGULAR_USER);
+    // TEAM visibility: EDIT shares do NOT grant write — only creator or elevated roles
+    mockProjectFindUnique.mockResolvedValueOnce({ createdById: "other-user", visibility: "TEAM" });
+    // Share should not even be checked, but mock it to verify it's bypassed
+    mockShareFindUnique.mockResolvedValue({ permission: "EDIT" });
+
+    const req = makeRequest("/api/solar/projects/proj1", {
+      method: "PUT",
+      body: { version: 1, name: "Should Fail" },
+    });
+
+    const res = await updateProject(req, makeContext("proj1"));
+    expect(res.status).toBe(403);
+    // Verify share was NOT queried (early return on TEAM visibility)
+    expect(mockShareFindUnique).not.toHaveBeenCalled();
+  });
+
+  it("user with EDIT share can write (PRIVATE project)", async () => {
     setupUserMock(REGULAR_USER);
     mockProjectFindUnique
-      .mockResolvedValueOnce({ createdById: "other-user" }) // canWriteProject
+      .mockResolvedValueOnce({ createdById: "other-user", visibility: "PRIVATE" }) // canWriteProject
       .mockResolvedValueOnce({ // version check
         version: 1,
         updatedAt: new Date(),
@@ -664,11 +680,27 @@ describe("Write access control", () => {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 describe("POST /api/solar/projects/[id]/beacon", () => {
-  it("returns 403 when Origin is not in allowed list", async () => {
+  it("returns 403 when Origin does not match app origin", async () => {
     const req = new NextRequest("http://localhost/api/solar/projects/proj1/beacon", {
       method: "POST",
       headers: {
         origin: "https://evil-site.com",
+        cookie: "csrf_token=valid",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ csrfToken: "valid", version: 1, dirtyFlag: true }),
+    });
+
+    const res = await beacon(req, makeContext("proj1"));
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error).toContain("Origin");
+  });
+
+  it("returns 403 when Origin header is missing", async () => {
+    const req = new NextRequest("http://localhost/api/solar/projects/proj1/beacon", {
+      method: "POST",
+      headers: {
         cookie: "csrf_token=valid",
         "content-type": "application/json",
       },
@@ -683,7 +715,7 @@ describe("POST /api/solar/projects/[id]/beacon", () => {
     const req = new NextRequest("http://localhost/api/solar/projects/proj1/beacon", {
       method: "POST",
       headers: {
-        origin: "https://solarsurveyor.vercel.app",
+        origin: "http://localhost",
         cookie: "csrf_token=correct-token",
         "content-type": "application/json",
       },
@@ -703,7 +735,7 @@ describe("POST /api/solar/projects/[id]/beacon", () => {
     const req = new NextRequest("http://localhost/api/solar/projects/proj1/beacon", {
       method: "POST",
       headers: {
-        origin: "https://solarsurveyor.vercel.app",
+        origin: "http://localhost",
         cookie: "csrf_token=valid-beacon-token",
         "content-type": "application/json",
       },
@@ -727,7 +759,7 @@ describe("POST /api/solar/projects/[id]/beacon", () => {
     const req = new NextRequest("http://localhost/api/solar/projects/proj1/beacon", {
       method: "POST",
       headers: {
-        origin: "https://solarsurveyor.vercel.app",
+        origin: "http://localhost",
         "content-length": "2048",
         cookie: "csrf_token=valid",
         "content-type": "application/json",
@@ -747,7 +779,7 @@ describe("POST /api/solar/projects/[id]/beacon", () => {
     const req1 = new NextRequest("http://localhost/api/solar/projects/proj1/beacon", {
       method: "POST",
       headers: {
-        origin: "https://solarsurveyor.vercel.app",
+        origin: "http://localhost",
         cookie: "csrf_token=token1",
         "content-type": "application/json",
       },
@@ -768,7 +800,7 @@ describe("POST /api/solar/projects/[id]/beacon", () => {
     const req2 = new NextRequest("http://localhost/api/solar/projects/proj1/beacon", {
       method: "POST",
       headers: {
-        origin: "https://solarsurveyor.vercel.app",
+        origin: "http://localhost",
         cookie: "csrf_token=token2",
         "content-type": "application/json",
       },

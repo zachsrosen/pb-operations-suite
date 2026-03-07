@@ -2,9 +2,6 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { getUserByEmail } from "@/lib/db";
-import SolarIframeBridge from "./SolarIframeBridge";
-
-const SOLAR_IFRAME_SRC = process.env.SOLAR_IFRAME_SRC || "https://solarsurveyor.vercel.app";
 
 export default async function SolarSurveyorPage() {
   const session = await auth();
@@ -12,13 +9,6 @@ export default async function SolarSurveyorPage() {
 
   const user = await getUserByEmail(session.user.email);
   if (!user) redirect("/");
-
-  const bridgeUser = {
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    role: user.role,
-  };
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
@@ -31,7 +21,7 @@ export default async function SolarSurveyorPage() {
           <h1 className="text-sm font-semibold text-foreground">Solar Surveyor</h1>
         </div>
         <a
-          href={SOLAR_IFRAME_SRC}
+          href="/solar-surveyor/index.html"
           target="_blank"
           rel="noopener noreferrer"
           className="text-xs text-muted hover:text-orange-400 transition-colors"
@@ -39,7 +29,13 @@ export default async function SolarSurveyorPage() {
           Open in new tab &rarr;
         </a>
       </header>
-      <SolarIframeBridge iframeSrc={SOLAR_IFRAME_SRC} user={bridgeUser} />
+      <iframe
+        src="/solar-surveyor/index.html"
+        className="flex-1 w-full border-none"
+        title="Solar Surveyor"
+        allow="clipboard-read; clipboard-write"
+        sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+      />
     </div>
   );
 }

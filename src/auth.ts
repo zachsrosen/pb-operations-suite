@@ -134,18 +134,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       return !!emailDomain && domains.includes(emailDomain);
     },
     async redirect({ url, baseUrl }) {
-      // Allow redirects to Solar Surveyor origins (cross-origin callback after sign-in)
-      const allowedOrigins = (process.env.SOLAR_ALLOWED_ORIGINS || "")
-        .split(",")
-        .map((o) => o.trim())
-        .filter(Boolean);
-
+      // Solar Surveyor is now same-origin — no cross-origin redirect needed
       try {
         const target = new URL(url);
         // Same origin — always allow
         if (target.origin === baseUrl) return url;
-        // Solar Surveyor origins — allow
-        if (allowedOrigins.includes(target.origin)) return url;
       } catch {
         // Invalid URL — fall through to default
       }

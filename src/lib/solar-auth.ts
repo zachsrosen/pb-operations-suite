@@ -180,8 +180,8 @@ export async function canReadProject(
  * Rules:
  * - ADMIN/MANAGER/OWNER: can write all projects
  * - Creator: can write own projects
- * - SolarProjectShare with EDIT permission: can write
- * - TEAM visibility with non-elevated role: read-only (cannot write)
+ * - TEAM visibility: only creator or elevated roles can write (no share-based write)
+ * - PRIVATE visibility + SolarProjectShare with EDIT permission: can write
  */
 export async function canWriteProject(
   userId: string,
@@ -192,14 +192,18 @@ export async function canWriteProject(
 
   const project = await prisma.solarProject.findUnique({
     where: { id: projectId },
-    select: { createdById: true },
+    select: { createdById: true, visibility: true },
   });
 
   if (!project) return false;
   if (isElevatedRole(role)) return true;
   if (project.createdById === userId) return true;
 
-  // Check shares — only EDIT permission grants write access
+  // TEAM-visibility projects: only creator or elevated roles can write.
+  // EDIT shares only grant write access on PRIVATE-visibility projects.
+  if (project.visibility === "TEAM") return false;
+
+  // Check shares — only EDIT permission grants write access (PRIVATE projects only)
   const share = await prisma.solarProjectShare.findUnique({
     where: { projectId_userId: { projectId, userId } },
     select: { permission: true },
@@ -253,7 +257,7 @@ export function buildProjectSnapshot(project: any): any {
     equipmentConfig: project.equipmentConfig,
     stringsConfig: project.stringsConfig,
     siteConditions: project.siteConditions,
-    energyBalance: project.energyBalance,
+    homeConsumptionConfig: project.homeConsumptionConfig,
     batteryConfig: project.batteryConfig,
     lossProfile: project.lossProfile,
     geoJsonUrl: project.geoJsonUrl,

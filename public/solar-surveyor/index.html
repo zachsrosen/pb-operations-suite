@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Solar Surveyor V12 — Energy Dispatch & Battery Simulation Suite for professional solar panel analysis and system design.">
+    <title>Solar Surveyor V12: Energy Dispatch & Battery Simulation Suite</title>
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="/assets/favicon-DZL5oizE.svg">
+
+    <!-- External Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- App Styles -->
+  <script type="module" crossorigin src="/assets/index-D51Nb5HY.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-DaePd3FV.css">
+</head>
+<body>
+
+<!-- Login Overlay -->
+<div id="loginOverlay" class="login-overlay hidden">
+    <div class="login-card">
+        <h2 class="login-title">Solar Surveyor <span class="badge">V12</span></h2>
+        <p class="login-subtitle">Sign in to save projects, access revisions, and collaborate with your team.</p>
+        <button id="btnLogin" class="btn-login">Sign in with Google</button>
+        <p class="login-note">Requires a Photon Brothers account</p>
+    </div>
+</div>
+
+<!-- Conflict Modal -->
+<div id="conflictModal" class="modal-overlay hidden">
+    <div class="modal-card">
+        <div class="modal-title">Version Conflict</div>
+        <p class="modal-text">This project was modified while you were editing.</p>
+        <p id="conflictInfo" class="modal-detail"></p>
+        <div class="modal-actions">
+            <button id="btnConflictReload" class="btn-sm btn-secondary">Reload Server Version</button>
+            <button id="btnConflictOverwrite" class="btn-sm btn-danger">Overwrite with Mine</button>
+        </div>
+    </div>
+</div>
+
+<header>
+    <h1>Solar Surveyor <span class="badge">V12</span></h1>
+    <div style="display:flex; gap:10px; align-items:center;">
+        <button id="btnShowTutorial" class="btn-tutorial">Show Tutorial</button>
+        <span id="saveStatus"></span>
+        <div id="mode-badge">WAITING</div>
+        <div id="userInfo"></div>
+    </div>
+</header>
+
+<div class="layout">
+    <!-- LEFT SIDEBAR -->
+    <div class="sidebar">
+        <!-- Projects Card -->
+        <div class="card hidden" id="projectsCard">
+            <div class="card-header">
+                <span class="lbl" style="margin-bottom:0;">Projects</span>
+                <div style="display:flex; gap:4px;">
+                    <button class="btn-sm btn-success" id="btnNewProject">+ New</button>
+                    <button class="btn-sm btn-purple" id="btnSaveProject">Save</button>
+                    <button class="btn-sm btn-secondary" id="btnSaveAsProject">Save As</button>
+                </div>
+            </div>
+            <div id="projectNameDisplay" class="project-name-display">No project loaded</div>
+            <div id="projectListItems" class="project-list"></div>
+            <div style="margin-top:6px;">
+                <button class="btn-sm btn-secondary" id="btnHistory" style="width:100%;">Revision History</button>
+            </div>
+            <!-- Revision dropdown -->
+            <div id="revisionDropdown" class="revision-dropdown hidden">
+                <div id="revisionListItems"></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <span class="lbl">1. Data Import</span>
+            <div class="file-box" id="boxGeo"><span id="txtGeo">JSON Layout</span><input type="file" accept=".json" onchange="APP.loadGeo(this)"></div>
+            <div class="file-box" id="boxRad"><span id="txtRad">Radiance DXF</span><input type="file" accept=".dxf" onchange="APP.loadRad(this)"></div>
+            <div class="file-box" id="boxZip"><span id="txtZip">Shading ZIP/CSVs</span><input type="file" accept=".zip,.csv" multiple onchange="APP.handleData(this)"></div>
+            <button id="btnRun" onclick="APP.process()" disabled>Run Analysis</button>
+        </div>
+
+        <div class="card">
+            <span class="lbl">2. Equipment Profiles</span>
+            <label style="font-size:10px; color:#94a3b8;">Panel</label>
+            <select id="selPanel" onchange="APP.updateEquipment()"></select>
+            <label style="font-size:10px; color:#94a3b8;">Inverter</label>
+            <select id="selInverter" onchange="APP.updateEquipment()"></select>
+            <label style="font-size:10px; color:#94a3b8;">ESS/Battery</label>
+            <select id="selESS" onchange="APP.updateEquipment()"></select>
+            <div style="margin-top:8px; padding:8px; background:rgba(0,0,0,0.3); border-radius:4px; font-size:10px;">
+                <div id="equipSummary">Select equipment to see specs</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <span class="lbl">3. Site Conditions</span>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:8px;">
+                <div>
+                    <label style="font-size:10px; color:#94a3b8;">Min Temp (&deg;C)</label>
+                    <input type="number" id="tempMin" value="-20" onchange="APP.recalcStrings()">
+                </div>
+                <div>
+                    <label style="font-size:10px; color:#94a3b8;">Max Temp (&deg;C)</label>
+                    <input type="number" id="tempMax" value="45" onchange="APP.recalcStrings()">
+                </div>
+            </div>
+            <div>
+                <div class="slide-lbl"><span>Clipping Threshold</span><span id="lblClipThresh">100%</span></div>
+                <input type="range" id="rngClipThresh" min="0" max="200" value="100" step="1" oninput="APP.updateClipThreshold()">
+                <div style="font-size:9px; color:#64748b;">Flag clipping when DC*eff exceeds this % of AC rating</div>
+            </div>
+            <div style="margin-top:8px;">
+                <label style="font-size:10px; color:#94a3b8;">AC Export Limit (kW)</label>
+                <input type="number" id="acExportLimit" value="0" min="0" step="0.1" onchange="APP.updateExportLimit()" placeholder="0 = no limit">
+                <div style="font-size:9px; color:#64748b; margin-top:2px;">System curtailment. 0 = unlimited.</div>
+            </div>
+        </div>
+
+        <div class="card" id="lossCard">
+            <span class="lbl" style="cursor:pointer;" onclick="document.getElementById('lossBody').classList.toggle('hidden')">
+                System Losses ▾
+            </span>
+            <div id="lossBody">
+                <div style="margin-bottom:6px;">
+                    <label style="font-size:10px; color:#94a3b8;">Preset Profile</label>
+                    <select id="lossPreset" style="width:100%;" onchange="APP.applyLossPreset()">
+                        <option value="default">Default</option>
+                        <option value="colorado">Colorado Front Range</option>
+                        <option value="california">California Coast</option>
+                        <option value="custom">Custom</option>
+                    </select>
+                </div>
+                <div class="loss-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:4px; font-size:10px;">
+                    <div><label style="color:#94a3b8;">Soiling (%)</label><input type="number" class="loss-input" id="lossSoiling" value="2" min="0" max="10" step="0.5" onchange="APP.updateLossProfile()"></div>
+                    <div><label style="color:#94a3b8;">Mismatch (%)</label><input type="number" class="loss-input" id="lossMismatch" value="2" min="0" max="5" step="0.5" onchange="APP.updateLossProfile()"></div>
+                    <div><label style="color:#94a3b8;">DC Wiring (%)</label><input type="number" class="loss-input" id="lossDCWiring" value="2" min="0" max="5" step="0.5" onchange="APP.updateLossProfile()"></div>
+                    <div><label style="color:#94a3b8;">AC Wiring (%)</label><input type="number" class="loss-input" id="lossACWiring" value="1" min="0" max="3" step="0.5" onchange="APP.updateLossProfile()"></div>
+                    <div><label style="color:#94a3b8;">Availability (%)</label><input type="number" class="loss-input" id="lossAvailability" value="1" min="0" max="5" step="0.5" onchange="APP.updateLossProfile()"></div>
+                    <div><label style="color:#94a3b8;">LID (%)</label><input type="number" class="loss-input" id="lossLID" value="1.5" min="0" max="3" step="0.5" onchange="APP.updateLossProfile()"></div>
+                    <div><label style="color:#94a3b8;">Snow (%)</label><input type="number" class="loss-input" id="lossSnow" value="0" min="0" max="15" step="0.5" onchange="APP.updateLossProfile()"></div>
+                    <div><label style="color:#94a3b8;">Nameplate (%)</label><input type="number" class="loss-input" id="lossNameplate" value="0" min="0" max="3" step="0.5" onchange="APP.updateLossProfile()"></div>
+                </div>
+                <div style="margin-top:6px; font-size:11px; color:#60a5fa; font-weight:600;" id="lossDerateDisplay">System derate: 90.5%</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <span class="lbl">4. Home Consumption</span>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:8px;">
+                <div>
+                    <label style="font-size:9px; color:#94a3b8;">Zip Code</label>
+                    <input type="text" id="consumeZipCode" maxlength="5" placeholder="e.g. 85281" style="width:100%; padding:5px; background:#0f172a; color:white; border:1px solid #475569; border-radius:4px; font-size:11px;" onchange="APP.updateConsumption()">
+                </div>
+                <div>
+                    <label style="font-size:9px; color:#94a3b8;">Home Sq Ft</label>
+                    <input type="number" id="consumeSqFt" value="0" min="0" step="100" placeholder="e.g. 2000" style="width:100%; padding:5px; background:#0f172a; color:white; border:1px solid #475569; border-radius:4px; font-size:11px;" onchange="APP.updateConsumption()">
+                </div>
+            </div>
+            <div style="display:flex; gap:8px; margin-bottom:8px;">
+                <label style="font-size:10px; cursor:pointer; display:flex; align-items:center; gap:3px;">
+                    <input type="radio" name="consumeMethod" value="annual" checked onchange="APP.setConsumptionMethod('annual')"> Annual kWh
+                </label>
+                <label style="font-size:10px; cursor:pointer; display:flex; align-items:center; gap:3px;">
+                    <input type="radio" name="consumeMethod" value="monthly" onchange="APP.setConsumptionMethod('monthly')"> Monthly CSV
+                </label>
+            </div>
+            <div id="consumeAnnualInput">
+                <input type="number" id="annualConsumption" value="0" min="0" step="100" placeholder="Annual kWh (e.g. 12000)" onchange="APP.updateConsumption()">
+                <div style="font-size:9px; color:#64748b; margin-top:2px;">Enter yearly usage. 0 = disabled.</div>
+            </div>
+            <div id="consumeMonthlyInput" style="display:none;">
+                <div class="file-box" id="boxConsumption">
+                    <span id="txtConsumption">Monthly kWh CSV</span>
+                    <input type="file" accept=".csv" onchange="APP.loadConsumptionCSV(this)">
+                </div>
+                <div style="font-size:9px; color:#64748b; margin-top:2px;">CSV with 12 monthly kWh values (Jan-Dec)</div>
+            </div>
+            <div style="margin-top:8px;">
+                <label style="font-size:10px; color:#94a3b8;">Priority Mode</label>
+                <select id="selPriorityMode" onchange="APP.updatePriorityMode()">
+                    <option value="self">Self-Consumption (home first)</option>
+                    <option value="tou">Time-of-Use (rate optimized)</option>
+                    <option value="export">Export-First (grid priority)</option>
+                </select>
+            </div>
+            <div style="margin-top:8px;">
+                <label style="font-size:10px; color:#94a3b8;">Backup Reserve: <strong id="lblReservePct">20</strong>%</label>
+                <input type="range" id="sliderReserve" min="0" max="80" value="20" step="5"
+                       oninput="document.getElementById('lblReservePct').innerText=this.value; APP.homeConsumption.backupReservePct=parseInt(this.value); if(APP.stringTimeseries.length>0){APP.runEnergyDispatch();APP.renderInverterView();APP.renderBatteryView();APP.renderTimeseries();}">
+                <div style="display:flex; justify-content:space-between; font-size:8px; color:#64748b; margin-top:-4px;">
+                    <span>0% (Max usage)</span><span>80% (Backup only)</span>
+                </div>
+            </div>
+            <div style="margin-top:8px; display:grid; grid-template-columns:1fr 1fr 1fr; gap:4px;">
+                <div>
+                    <label style="font-size:8px; color:#64748b;">Standard $/kWh</label>
+                    <input type="number" id="rateStandard" value="0.14" min="0" max="1" step="0.01" style="width:100%; padding:3px; background:#0f172a; color:white; border:1px solid #475569; border-radius:3px; font-size:10px;" onchange="APP.utilityRates.standard=parseFloat(this.value)||0.14">
+                </div>
+                <div>
+                    <label style="font-size:8px; color:#64748b;">Peak $/kWh</label>
+                    <input type="number" id="ratePeak" value="0.35" min="0" max="1" step="0.01" style="width:100%; padding:3px; background:#0f172a; color:white; border:1px solid #475569; border-radius:3px; font-size:10px;" onchange="APP.utilityRates.peak=parseFloat(this.value)||0.35">
+                </div>
+                <div>
+                    <label style="font-size:8px; color:#64748b;">Off-Peak $/kWh</label>
+                    <input type="number" id="rateOffPeak" value="0.10" min="0" max="1" step="0.01" style="width:100%; padding:3px; background:#0f172a; color:white; border:1px solid #475569; border-radius:3px; font-size:10px;" onchange="APP.utilityRates.offPeak=parseFloat(this.value)||0.10">
+                </div>
+            </div>
+            <div id="consumptionSummary" style="margin-top:8px; padding:6px; background:rgba(0,0,0,0.3); border-radius:4px; font-size:10px; display:none;"></div>
+        </div>
+
+        <div class="card" style="flex:1; display:flex; flex-direction:column;">
+            <span class="lbl">System Log</span>
+            <div id="log">Ready. Load data to begin.</div>
+        </div>
+    </div>
+
+    <!-- MAIN STAGE -->
+    <div class="stage">
+        <div class="tabs">
+            <button class="tab-btn active" onclick="APP.tab('map', this)">Visualizer</button>
+            <button class="tab-btn" onclick="APP.tab('string', this)" id="tabString">Stringing</button>
+            <button class="tab-btn" onclick="APP.tab('micro', this)" id="tabMicro" style="display:none;">Micro Layout</button>
+            <button class="tab-btn" onclick="APP.tab('optimizer', this)" id="tabOptimizer" style="display:none;">Optimizer</button>
+            <button class="tab-btn" onclick="APP.tab('prod', this)">Production</button>
+            <button class="tab-btn" onclick="APP.tab('ts', this)">30-Min Series</button>
+            <button class="tab-btn" onclick="APP.tab('inverter', this)">Inverters</button>
+            <button class="tab-btn" onclick="APP.tab('battery', this)" style="color:var(--orange);">Battery</button>
+            <button class="tab-btn" onclick="APP.tab('ai', this)" style="color:var(--purple);">AI Analysis</button>
+            <button class="tab-btn" onclick="APP.tab('scenarios', this)" style="color:var(--success);">Scenarios</button>
+            <button class="tab-btn" onclick="APP.tab('help', this)" id="tabHelp">Help</button>
+        </div>
+
+        <!-- VISUALIZER -->
+        <div id="view-map" class="view-pane active">
+            <svg id="svgRender" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet">
+                <defs>
+                    <marker id="arrowhead" markerWidth="6" markerHeight="4" refX="0" refY="2" orient="auto">
+                        <polygon points="0 0, 6 2, 0 4" fill="white"/>
+                    </marker>
+                </defs>
+                <g id="gPanels"></g>
+                <g id="gStrings"></g>
+                <g id="gLabels"></g>
+                <g id="gPoints"></g>
+            </svg>
+            <div class="hud-panel">
+                <div class="lbl" style="margin-bottom:8px; border-bottom:1px solid #334155; padding-bottom:5px;">Shadow Simulation</div>
+                <div class="slide-lbl"><span>Day</span> <span id="lblDay">Jan 1</span></div>
+                <input type="range" id="rngDay" min="0" max="364" value="172" oninput="APP.sim()">
+                <div class="slide-lbl"><span>Time</span> <span id="lblTime">12:00</span></div>
+                <input type="range" id="rngTime" min="0" max="47" value="24" oninput="APP.sim()">
+                <div class="slide-lbl"><span>Rotation</span> <span id="lblRot">0&deg;</span></div>
+                <input type="range" id="rngRot" min="0" max="360" value="0" oninput="APP.render()">
+            </div>
+        </div>
+
+        <!-- STRINGING VIEW -->
+        <div id="view-string" class="view-pane">
+            <svg id="svgString" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet">
+                <g id="gStringPanels"></g>
+                <g id="gStringLines"></g>
+                <g id="gStringLabels"></g>
+            </svg>
+            <div class="string-mode-hud" id="stringHud">
+                <div class="lbl" style="color:var(--purple);">String Builder</div>
+                <div style="font-size:10px; color:#94a3b8; margin-bottom:10px;">Click panels to add/remove from current string</div>
+                <div style="display:flex; gap:4px; flex-wrap:wrap; margin-bottom:6px;">
+                    <button class="btn-sm btn-purple" onclick="APP.newString()">+ New String</button>
+                    <button class="btn-sm btn-success" onclick="APP.finishString()">Finish String</button>
+                    <button class="btn-sm btn-danger" onclick="APP.undoLastPanel()">Undo Panel</button>
+                </div>
+                <div id="currentStringInfo" style="margin-top:6px; font-size:11px; padding:8px; background:rgba(0,0,0,0.3); border-radius:4px;">
+                    No string active
+                </div>
+            </div>
+        </div>
+
+        <!-- MICRO LAYOUT VIEW -->
+        <div id="view-micro" class="view-pane" style="overflow:auto; padding:15px;">
+            <div id="microLayoutContent">
+                <div style="text-align:center; padding:40px; color:#94a3b8;">Select a microinverter to view layout</div>
+            </div>
+        </div>
+
+        <!-- OPTIMIZER ASSIGNMENT VIEW -->
+        <div id="view-optimizer" class="view-pane" style="overflow:auto; padding:15px;">
+            <div id="optimizerContent">
+                <div style="text-align:center; padding:40px; color:#94a3b8;">Select an optimizer inverter to view assignments</div>
+            </div>
+        </div>
+
+        <!-- PRODUCTION TABLE -->
+        <div id="view-prod" class="view-pane" style="overflow:auto; padding:0;">
+            <table class="prod-table">
+                <thead>
+                    <tr>
+                        <th>Panel</th><th>String</th><th>Avg Irr</th><th>TSRF</th><th>Indep kWh</th><th>String kWh</th><th>Mismatch</th><th>EV SAV</th><th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="tblProd"><tr><td colspan="9" style="text-align:center; padding:20px;">Run Analysis First</td></tr></tbody>
+                <tfoot id="tblProdFoot" style="display:none;"></tfoot>
+            </table>
+        </div>
+
+        <!-- 30-MIN TIMESERIES -->
+        <div id="view-ts" class="view-pane" style="overflow:auto;">
+            <div style="padding:15px;">
+                <!-- Controls row -->
+                <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:12px;">
+                    <select id="tsModel" onchange="APP.renderTimeseries()" style="width:auto;">
+                        <option value="independent">Model A: Independent</option>
+                        <option value="string" selected>Model B: String-Level</option>
+                    </select>
+                    <select id="tsSelect" onchange="APP.renderTimeseries()" style="width:auto;">
+                        <option value="system">System Total</option>
+                    </select>
+                    <div style="display:flex; gap:2px; margin-left:auto;">
+                        <button class="btn-sm" id="tsPeriodDay" onclick="APP.tsPeriod='day'; APP.renderTimeseries()" style="background:var(--accent);">Day</button>
+                        <button class="btn-sm btn-secondary" id="tsPeriodWeek" onclick="APP.tsPeriod='week'; APP.renderTimeseries()">Week</button>
+                        <button class="btn-sm btn-secondary" id="tsPeriodMonth" onclick="APP.tsPeriod='month'; APP.renderTimeseries()">Month</button>
+                        <button class="btn-sm btn-secondary" id="tsPeriodYear" onclick="APP.tsPeriod='year'; APP.renderTimeseries()">Year</button>
+                    </div>
+                </div>
+                <!-- Date navigation -->
+                <div style="display:flex; gap:8px; align-items:center; margin-bottom:10px;">
+                    <button class="btn-sm btn-secondary" onclick="APP.tsNav(-1)">&#9664;</button>
+                    <input type="range" id="tsDateSlider" min="0" max="364" value="172" oninput="APP.tsDay=parseInt(this.value); APP.renderTimeseries()" style="flex:1; margin:0;">
+                    <button class="btn-sm btn-secondary" onclick="APP.tsNav(1)">&#9654;</button>
+                    <span id="tsDateLabel" style="font-size:11px; color:#94a3b8; min-width:120px; text-align:center;">Jun 21</span>
+                </div>
+                <!-- Main production chart -->
+                <div id="tsChart" style="height:280px; padding:15px 15px 35px 50px; background:rgba(0,0,0,0.3); border-radius:6px; position:relative; margin-bottom:6px;">
+                    <div style="color:#64748b; text-align:center; padding-top:110px;">Run analysis to generate timeseries</div>
+                </div>
+                <!-- Battery chart (split view — only shown when battery configured) -->
+                <div id="tsBattChart" style="height:160px; padding:10px 15px 25px 50px; background:rgba(0,0,0,0.3); border-radius:6px; position:relative; margin-bottom:12px; display:none;">
+                    <div style="color:#64748b; text-align:center; padding-top:50px; font-size:10px;">Battery chart appears after analysis with ESS configured</div>
+                </div>
+                <!-- Production model toggles -->
+                <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px;">
+                    <label style="font-size:10px; color:#94a3b8; cursor:pointer; display:flex; align-items:center; gap:3px;">
+                        <input type="checkbox" id="tsShowA" checked onchange="APP.renderTimeseries()"> <span style="color:var(--accent);">&#9632;</span> Model A (Independent)
+                    </label>
+                    <label style="font-size:10px; color:#94a3b8; cursor:pointer; display:flex; align-items:center; gap:3px;">
+                        <input type="checkbox" id="tsShowB" checked onchange="APP.renderTimeseries()"> <span style="color:var(--purple);">&#9632;</span> Model B (String)
+                    </label>
+                    <label style="font-size:10px; color:#94a3b8; cursor:pointer; display:flex; align-items:center; gap:3px;">
+                        <input type="checkbox" id="tsShowC" checked onchange="APP.renderTimeseries()"> <span style="color:var(--success);">&#9632;</span> Model C (EagleView)
+                    </label>
+                    <span style="color:#334155; margin:0 4px;">|</span>
+                    <label style="font-size:10px; color:#94a3b8; cursor:pointer; display:flex; align-items:center; gap:3px;">
+                        <input type="checkbox" id="tsShowSoC" onchange="APP.renderTimeseries()"> <span style="color:var(--orange);">&#9619;</span> Battery SoC
+                    </label>
+                    <label style="font-size:10px; color:#94a3b8; cursor:pointer; display:flex; align-items:center; gap:3px;">
+                        <input type="checkbox" id="tsShowBattPower" onchange="APP.renderTimeseries()"> <span style="color:#22d3ee;">&#8597;</span> Charge/Discharge
+                    </label>
+                </div>
+                <!-- Stats dashboard -->
+                <div id="tsStats"></div>
+                <!-- String info -->
+                <div id="tsStringInfo" style="margin-top:12px;"></div>
+            </div>
+        </div>
+
+        <!-- INVERTER VIEW -->
+        <div id="view-inverter" class="view-pane" style="overflow:auto; padding:15px;">
+            <div id="inverterGrid">
+                <div style="color:#64748b; text-align:center; padding-top:50px;">Configure inverters and strings to see analysis</div>
+            </div>
+        </div>
+        <!-- Hidden state for inverter chart mode -->
+        <input type="hidden" id="invChartMode" value="daily">
+
+        <!-- BATTERY -->
+        <div id="view-battery" class="view-pane" style="overflow:auto; padding:15px;">
+            <div id="batteryContent">
+                <div style="color:#64748b; text-align:center; padding-top:50px;">Configure ESS and run analysis to see battery simulation</div>
+            </div>
+        </div>
+
+        <!-- AI ANALYSIS -->
+        <div id="view-ai" class="view-pane" style="overflow:auto; padding:15px;">
+            <div id="aiContent">
+                <div style="color:#64748b; text-align:center; padding-top:50px;">Run analysis to generate AI recommendations</div>
+            </div>
+        </div>
+
+        <!-- SCENARIOS -->
+        <div id="view-scenarios" class="view-pane" style="overflow:auto; padding:15px;">
+            <div id="scenarioContent">
+                <div style="color:#64748b; text-align:center; padding-top:50px;">Save scenarios to compare different design configurations</div>
+            </div>
+        </div>
+
+        <!-- HELP TAB (SSV-012) -->
+        <div id="view-help" class="view-pane" style="overflow:auto; padding:20px;">
+            <div id="helpContent"></div>
+        </div>
+    </div>
+
+    <!-- RIGHT PANEL -->
+    <div class="right-panel">
+        <div class="card" id="resCard" style="display:none;">
+            <span class="lbl">System Summary - Triple Model</span>
+            <div class="stat-row-3">
+                <div class="stat-item"><span class="stat-val-sm" id="valIndep">0</span><span class="stat-name">Independent kWh</span></div>
+                <div class="stat-item"><span class="stat-val-sm" id="valString">0</span><span class="stat-name">String kWh</span></div>
+                <div class="stat-item"><span class="stat-val-sm" id="valEV">0</span><span class="stat-name">EagleView kWh</span></div>
+            </div>
+            <div class="stat-row">
+                <div class="stat-item"><span class="stat-val" id="valCount">0</span><span class="stat-name">Panels</span></div>
+                <div class="stat-item"><span class="stat-val" id="valTSRF">0%</span><span class="stat-name">Avg TSRF</span></div>
+            </div>
+            <div class="stat-row">
+                <div class="stat-item"><span class="stat-val" id="valDC">0 kW</span><span class="stat-name">DC Capacity</span></div>
+                <div class="stat-item"><span class="stat-val" id="valMismatch">0%</span><span class="stat-name">Mismatch Loss</span></div>
+            </div>
+            <div class="stat-row" id="energyBalanceRow" style="display:none; margin-top:8px; padding-top:8px; border-top:1px solid #334155;">
+                <div class="stat-item"><span class="stat-val-sm" id="valSelfConsume">0%</span><span class="stat-name">Self-Consumption</span></div>
+                <div class="stat-item"><span class="stat-val-sm" id="valBattUtil">0%</span><span class="stat-name">Battery Util.</span></div>
+            </div>
+            <div class="stat-row" id="energyFlowRow" style="display:none;">
+                <div class="stat-item"><span class="stat-val-sm" id="valGridExport">0</span><span class="stat-name">Grid Export kWh</span></div>
+                <div class="stat-item"><span class="stat-val-sm" id="valBattStored">0</span><span class="stat-name">Battery kWh</span></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <span class="lbl">Strings</span>
+                <div style="display:flex; gap:4px;">
+                    <button class="btn-sm btn-purple" onclick="APP.optimizeStrings()">Optimize</button>
+                    <button class="btn-sm" onclick="APP.autoString()" style="background:rgba(148,163,184,0.15); color:var(--text-muted);" title="Simple TSRF-sorted grouping">Basic</button>
+                    <button class="btn-sm btn-danger" onclick="APP.clearAllStrings()" title="Remove all strings">Clear</button>
+                </div>
+            </div>
+            <div id="stringOptResult"></div>
+            <div class="string-list" id="stringList">
+                <div style="color:#64748b; font-size:11px; text-align:center; padding:10px;">No strings configured</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <span class="lbl">String Electrical</span>
+            <div id="stringElectrical" style="font-size:11px;">
+                <div style="color:#64748b;">Select a string to view specs</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <span class="lbl">Inverter Configuration</span>
+                <button class="btn-sm btn-success" onclick="APP.addInverter()">+ Add Inverter</button>
+            </div>
+            <div id="invConfigList">
+                <div style="color:#64748b; font-size:10px; text-align:center; padding:6px;">No inverters configured</div>
+            </div>
+            <div id="invUnassigned" style="display:none;"></div>
+        </div>
+
+        <div class="card" id="scenarioCard">
+            <span class="lbl">Scenarios</span>
+            <div style="display:flex; gap:4px; margin-bottom:6px;">
+                <button class="btn-sm btn-success" onclick="APP.promptSaveScenario()">Save Current</button>
+                <div style="position:relative; flex:1;">
+                    <button class="btn-sm btn-secondary" style="width:100%;">Import JSON</button>
+                    <input type="file" accept=".json" onchange="APP.importScenarioJSON(this.files[0]);this.value='';"
+                        style="position:absolute;top:0;left:0;width:100%;height:100%;opacity:0;cursor:pointer;">
+                </div>
+            </div>
+            <div id="scenarioQuickList" style="max-height:120px; overflow-y:auto; font-size:10px;">
+                <div style="color:#64748b; text-align:center; padding:6px;">No saved scenarios</div>
+            </div>
+            <button class="btn-sm btn-purple" onclick="APP.tab('scenarios',document.querySelector('[onclick*=scenarios]'))"
+                style="margin-top:6px; width:100%;" id="btnCompare" disabled>Compare Scenarios</button>
+        </div>
+
+        <div class="card">
+            <span class="lbl">Quick Actions</span>
+            <button class="btn-sm btn-secondary" onclick="APP.exportConfig()" style="margin-bottom:5px;">Export Config JSON</button>
+            <button class="btn-sm btn-success" onclick="APP.exportCSV()" style="margin-bottom:5px;">Export CSV</button>
+            <button class="btn-sm btn-purple" onclick="APP.generateReport()">Generate PDF Report</button>
+        </div>
+    </div>
+</div>
+
+<div id="tooltip"></div>
+
+<!-- App Scripts -->
+
+</body>
+</html>

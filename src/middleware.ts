@@ -7,7 +7,7 @@ import {
   normalizeRole,
   type UserRole,
 } from "@/lib/role-permissions";
-import { isSolarApiRoute, getSolarCorsHeaders } from "@/lib/solar-cors";
+// Solar CORS no longer needed — Solar Surveyor served from same origin
 
 // Routes that are always accessible (login, auth callbacks)
 const ALWAYS_ALLOWED = ["/login", "/api/auth", "/maintenance", "/portal"];
@@ -63,7 +63,7 @@ function addSecurityHeaders(requestId: string, response: NextResponse): NextResp
   // Note: unsafe-inline required for Next.js inline scripts; unsafe-eval removed for security
   response.headers.set(
     "Content-Security-Policy",
-    "default-src 'self'; script-src 'self' 'unsafe-inline' https://va.vercel-scripts.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https:; frame-src 'self' https://solarsurveyor.vercel.app; frame-ancestors 'self'; object-src 'none'; base-uri 'self'; form-action 'self';"
+    "default-src 'self'; script-src 'self' 'unsafe-inline' https://va.vercel-scripts.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https:; frame-src 'self'; frame-ancestors 'self'; object-src 'none'; base-uri 'self'; form-action 'self';"
   );
 
   // Strict Transport Security (HTTPS only in production)
@@ -81,21 +81,6 @@ function addSecurityHeaders(requestId: string, response: NextResponse): NextResp
  * Create a NextResponse.next() that forwards the request ID in request headers.
  * Route handlers can then read x-request-id for Sentry correlation.
  */
-/**
- * Add CORS headers to a response if the request is for a Solar API route.
- */
-function addSolarCorsIfNeeded(request: NextRequest, response: NextResponse): void {
-  const reqPathname = request.nextUrl.pathname;
-  if (isSolarApiRoute(reqPathname)) {
-    const origin = request.headers.get("origin");
-    const corsHeaders = getSolarCorsHeaders(origin);
-    if (corsHeaders) {
-      for (const [key, value] of Object.entries(corsHeaders)) {
-        response.headers.set(key, value);
-      }
-    }
-  }
-}
 
 function nextWithRequestId(
   requestId: string,
@@ -111,29 +96,12 @@ function nextWithRequestId(
   }
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   addSecurityHeaders(requestId, response);
-  addSolarCorsIfNeeded(request, response);
   return response;
 }
 
 export default auth((req) => {
   const requestId = generateRequestId();
   const pathname = req.nextUrl.pathname;
-
-  // ── Solar CORS preflight ────────────────────────────────────
-  // OPTIONS requests don't carry cookies, so handle before auth check.
-  if (req.method === "OPTIONS" && isSolarApiRoute(pathname)) {
-    const origin = req.headers.get("origin");
-    const corsHeaders = getSolarCorsHeaders(origin);
-    if (corsHeaders) {
-      const response = new NextResponse(null, { status: 204 });
-      for (const [key, value] of Object.entries(corsHeaders)) {
-        response.headers.set(key, value);
-      }
-      response.headers.set("X-Request-Id", requestId);
-      return response;
-    }
-    // Unknown origin — let it fall through to normal 401
-  }
 
   const isLoggedIn = !!req.auth;
   const tokenRole = req.auth?.user?.role as UserRole | undefined;
@@ -225,7 +193,6 @@ export default auth((req) => {
         { status: 401 }
       );
       addSecurityHeaders(requestId, response);
-      addSolarCorsIfNeeded(req, response);
       return response;
     }
 
@@ -242,7 +209,6 @@ export default auth((req) => {
         { status: 403 }
       );
       addSecurityHeaders(requestId, response);
-      addSolarCorsIfNeeded(req, response);
       return response;
     }
 
@@ -251,18 +217,13 @@ export default auth((req) => {
 
   // Redirect logged-in users away from login page
   if (isLoginPage && isLoggedIn) {
-    // Honor callbackUrl if present and validated (e.g. Solar Surveyor iframe auth flow)
+    // Honor callbackUrl if present and same-origin
     const callbackUrl = req.nextUrl.searchParams.get("callbackUrl");
     if (callbackUrl) {
       try {
         const target = new URL(callbackUrl, req.url);
         const baseOrigin = new URL(req.url).origin;
-        const allowedOrigins = (process.env.SOLAR_ALLOWED_ORIGINS || "")
-          .split(",")
-          .map((o) => o.trim())
-          .filter(Boolean);
-
-        if (target.origin === baseOrigin || allowedOrigins.includes(target.origin)) {
+        if (target.origin === baseOrigin) {
           return addSecurityHeaders(requestId, NextResponse.redirect(target));
         }
       } catch {

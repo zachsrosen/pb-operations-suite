@@ -6,12 +6,11 @@
  *
  * Accepts text/plain or application/json.
  * CSRF validated from body (sendBeacon can't set headers).
- * Origin validated against SOLAR_ALLOWED_ORIGINS.
+ * Origin validated: must match app origin (defense-in-depth for body-CSRF endpoint).
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { requireSolarAuth, validateCsrfBody, canWriteProject, checkSolarRateLimit } from "@/lib/solar-auth";
-import { isAllowedSolarOrigin } from "@/lib/solar-cors";
 import { prisma } from "@/lib/db";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -25,10 +24,12 @@ export async function POST(req: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: "Payload too large" }, { status: 413 });
   }
 
-  // Origin validation
+  // Origin must match our own origin (defense-in-depth — body CSRF is the primary check,
+  // but Origin validation blocks cross-origin beacon attempts before parsing)
   const origin = req.headers.get("origin");
-  if (!isAllowedSolarOrigin(origin)) {
-    return NextResponse.json({ error: "Origin not allowed" }, { status: 403 });
+  const appOrigin = req.nextUrl.origin;
+  if (!origin || origin !== appOrigin) {
+    return NextResponse.json({ error: "Origin mismatch" }, { status: 403 });
   }
 
   // Parse body (supports text/plain from sendBeacon or application/json)

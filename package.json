@@ -13,6 +13,7 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "email:preview": "react-email dev --dir src/emails",
+    "build:solar": "bash scripts/build-solar-surveyor.sh",
     "postinstall": "prisma generate"
   },
   "dependencies": {

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" rx="6" fill="#0a0f1e"/>
+  <!-- Solar panel grid -->
+  <rect x="4" y="8" width="10" height="7" rx="1" fill="#0ea5e9" opacity="0.9"/>
+  <rect x="15" y="8" width="10" height="7" rx="1" fill="#0ea5e9" opacity="0.9"/>
+  <rect x="4" y="17" width="10" height="7" rx="1" fill="#0ea5e9" opacity="0.7"/>
+  <rect x="15" y="17" width="10" height="7" rx="1" fill="#0ea5e9" opacity="0.7"/>
+  <!-- Grid lines on panels -->
+  <line x1="9" y1="8" x2="9" y2="15" stroke="#0f172a" stroke-width="0.5"/>
+  <line x1="20" y1="8" x2="20" y2="15" stroke="#0f172a" stroke-width="0.5"/>
+  <line x1="9" y1="17" x2="9" y2="24" stroke="#0f172a" stroke-width="0.5"/>
+  <line x1="20" y1="17" x2="20" y2="24" stroke="#0f172a" stroke-width="0.5"/>
+  <!-- Sun ray accent -->
+  <circle cx="26" cy="6" r="2" fill="#facc15"/>
+</svg>
