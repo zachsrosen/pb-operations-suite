@@ -40,8 +40,9 @@ function addSecurityHeaders(requestId: string, response: NextResponse): NextResp
   // Request correlation ID for tracing
   response.headers.set("X-Request-Id", requestId);
 
-  // Prevent clickjacking
-  response.headers.set("X-Frame-Options", "DENY");
+  // Prevent clickjacking — SAMEORIGIN allows PB Ops pages to frame PB Ops content
+  // (e.g., /dashboards/solar-surveyor iframe may redirect through PB Ops login)
+  response.headers.set("X-Frame-Options", "SAMEORIGIN");
 
   // Prevent MIME type sniffing
   response.headers.set("X-Content-Type-Options", "nosniff");
@@ -62,7 +63,7 @@ function addSecurityHeaders(requestId: string, response: NextResponse): NextResp
   // Note: unsafe-inline required for Next.js inline scripts; unsafe-eval removed for security
   response.headers.set(
     "Content-Security-Policy",
-    "default-src 'self'; script-src 'self' 'unsafe-inline' https://va.vercel-scripts.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https:; frame-src 'self' https://solarsurveyor.vercel.app; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self';"
+    "default-src 'self'; script-src 'self' 'unsafe-inline' https://va.vercel-scripts.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https:; frame-src 'self' https://solarsurveyor.vercel.app; frame-ancestors 'self'; object-src 'none'; base-uri 'self'; form-action 'self';"
   );
 
   // Strict Transport Security (HTTPS only in production)
