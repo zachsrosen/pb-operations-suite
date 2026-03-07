@@ -37,7 +37,7 @@ const UpdateProjectSchema = z.object({
   equipmentConfig: z.any().optional(),
   stringsConfig: z.any().optional(),
   siteConditions: z.any().optional(),
-  energyBalance: z.any().optional(),
+  homeConsumptionConfig: z.any().optional(),
   batteryConfig: z.any().optional(),
   lossProfile: z.any().optional(),
   geoJsonUrl: z.string().url().optional(),
@@ -197,7 +197,7 @@ export async function PUT(req: NextRequest, context: RouteContext) {
   if (data.equipmentConfig !== undefined) updateData.equipmentConfig = data.equipmentConfig;
   if (data.stringsConfig !== undefined) updateData.stringsConfig = data.stringsConfig;
   if (data.siteConditions !== undefined) updateData.siteConditions = data.siteConditions;
-  if (data.energyBalance !== undefined) updateData.energyBalance = data.energyBalance;
+  if (data.homeConsumptionConfig !== undefined) updateData.homeConsumptionConfig = data.homeConsumptionConfig;
   if (data.batteryConfig !== undefined) updateData.batteryConfig = data.batteryConfig;
   if (data.lossProfile !== undefined) updateData.lossProfile = data.lossProfile;
   if (data.geoJsonUrl !== undefined) updateData.geoJsonUrl = data.geoJsonUrl;

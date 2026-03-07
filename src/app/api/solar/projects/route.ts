@@ -20,9 +20,12 @@ const CreateProjectSchema = z.object({
   equipmentConfig: z.any().optional(),
   stringsConfig: z.any().optional(),
   siteConditions: z.any().optional(),
-  energyBalance: z.any().optional(),
+  homeConsumptionConfig: z.any().optional(),
   batteryConfig: z.any().optional(),
   lossProfile: z.any().optional(),
+  geoJsonUrl: z.string().url().optional(),
+  radianceDxfUrl: z.string().url().optional(),
+  shadeDataUrl: z.string().url().optional(),
 });
 
 // ── POST — Create project ──────────────────────────────────
@@ -73,9 +76,12 @@ export async function POST(req: NextRequest) {
       equipmentConfig: data.equipmentConfig ?? undefined,
       stringsConfig: data.stringsConfig ?? undefined,
       siteConditions: data.siteConditions ?? undefined,
-      energyBalance: data.energyBalance ?? undefined,
+      homeConsumptionConfig: data.homeConsumptionConfig ?? undefined,
       batteryConfig: data.batteryConfig ?? undefined,
       lossProfile: data.lossProfile ?? undefined,
+      geoJsonUrl: data.geoJsonUrl ?? undefined,
+      radianceDxfUrl: data.radianceDxfUrl ?? undefined,
+      shadeDataUrl: data.shadeDataUrl ?? undefined,
     },
   });
 

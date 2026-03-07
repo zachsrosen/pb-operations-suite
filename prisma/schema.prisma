@@ -1407,7 +1407,7 @@ model SolarProject {
   equipmentConfig Json?
   stringsConfig   Json?
   siteConditions  Json?
-  energyBalance   Json?
+  homeConsumptionConfig Json?
   batteryConfig   Json?
   lossProfile     Json?
   geoJsonUrl      String?
