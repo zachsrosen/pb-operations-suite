@@ -206,6 +206,32 @@ describe("GET /api/solar/weather", () => {
     expect(mockUpsert).toHaveBeenCalledTimes(1);
   });
 
+  it("treats exactly 90-day-old cache as expired (boundary)", async () => {
+    const tmyData = makeCachedTmyData();
+    const exactlyExpired = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+    mockFindUnique.mockResolvedValue({
+      latE3: 39739,
+      lngE3: -104985,
+      tmyData,
+      fetchedAt: exactlyExpired,
+    });
+    mockUpsert.mockResolvedValue({});
+
+    const csvText = makeValidCsv();
+    mockFetch.mockResolvedValue({
+      ok: true,
+      text: () => Promise.resolve(csvText),
+    });
+
+    const res = await GET(makeRequest(39.739, -104.985));
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    // age === TTL_MS → strict less-than fails → treated as expired
+    expect(body.source).toBe("nrel");
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
   it("returns cached data at 89 days (within TTL)", async () => {
     const tmyData = makeCachedTmyData();
     const almostExpired = new Date(Date.now() - 89 * 24 * 60 * 60 * 1000);
