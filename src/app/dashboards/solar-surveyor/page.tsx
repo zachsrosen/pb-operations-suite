@@ -34,7 +34,7 @@ export default async function SolarSurveyorPage() {
         className="flex-1 w-full border-none"
         title="Solar Surveyor"
         allow="clipboard-read; clipboard-write"
-        sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation"
       />
     </div>
   );
