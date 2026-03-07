@@ -7,6 +7,7 @@ import {
   normalizeRole,
   type UserRole,
 } from "@/lib/role-permissions";
+import { isSolarApiRoute, getSolarCorsHeaders } from "@/lib/solar-cors";
 
 // Routes that are always accessible (login, auth callbacks)
 const ALWAYS_ALLOWED = ["/login", "/api/auth", "/maintenance", "/portal"];
@@ -19,6 +20,7 @@ const PUBLIC_API_ROUTES = [
   "/api/cron/audit-digest",
   "/api/cron/audit-retention",
   "/api/portal/survey", // Customer portal — token-validated, no session needed
+  "/api/solar/cron/cleanup-pending", // Solar cron — CRON_SECRET validated in route
 ];
 const MACHINE_TOKEN_ALLOWED_ROUTES = ["/api/bom", "/api/products/seed", "/api/install-review"] as const;
 
@@ -78,6 +80,22 @@ function addSecurityHeaders(requestId: string, response: NextResponse): NextResp
  * Create a NextResponse.next() that forwards the request ID in request headers.
  * Route handlers can then read x-request-id for Sentry correlation.
  */
+/**
+ * Add CORS headers to a response if the request is for a Solar API route.
+ */
+function addSolarCorsIfNeeded(request: NextRequest, response: NextResponse): void {
+  const reqPathname = request.nextUrl.pathname;
+  if (isSolarApiRoute(reqPathname)) {
+    const origin = request.headers.get("origin");
+    const corsHeaders = getSolarCorsHeaders(origin);
+    if (corsHeaders) {
+      for (const [key, value] of Object.entries(corsHeaders)) {
+        response.headers.set(key, value);
+      }
+    }
+  }
+}
+
 function nextWithRequestId(
   requestId: string,
   request: NextRequest,
@@ -92,11 +110,30 @@ function nextWithRequestId(
   }
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   addSecurityHeaders(requestId, response);
+  addSolarCorsIfNeeded(request, response);
   return response;
 }
 
 export default auth((req) => {
   const requestId = generateRequestId();
+  const pathname = req.nextUrl.pathname;
+
+  // ── Solar CORS preflight ────────────────────────────────────
+  // OPTIONS requests don't carry cookies, so handle before auth check.
+  if (req.method === "OPTIONS" && isSolarApiRoute(pathname)) {
+    const origin = req.headers.get("origin");
+    const corsHeaders = getSolarCorsHeaders(origin);
+    if (corsHeaders) {
+      const response = new NextResponse(null, { status: 204 });
+      for (const [key, value] of Object.entries(corsHeaders)) {
+        response.headers.set(key, value);
+      }
+      response.headers.set("X-Request-Id", requestId);
+      return response;
+    }
+    // Unknown origin — let it fall through to normal 401
+  }
+
   const isLoggedIn = !!req.auth;
   const tokenRole = req.auth?.user?.role as UserRole | undefined;
   const cookieRole = req.cookies.get("pb_effective_role")?.value as UserRole | undefined;
@@ -112,7 +149,6 @@ export default auth((req) => {
     isAdminToken && !!isSafeCookieRole && (cookieRole !== "VIEWER" || isImpersonatingCookie);
   const rawRole = (shouldUseCookieRole ? cookieRole : tokenRole) || "VIEWER";
   const userRole = normalizeRole(rawRole);
-  const pathname = req.nextUrl.pathname;
 
   // Set Sentry context for edge-level errors
   Sentry.getCurrentScope().setTag("request_id", requestId);
@@ -187,7 +223,9 @@ export default auth((req) => {
         { error: "Unauthorized - Please log in" },
         { status: 401 }
       );
-      return addSecurityHeaders(requestId, response);
+      addSecurityHeaders(requestId, response);
+      addSolarCorsIfNeeded(req, response);
+      return response;
     }
 
     // Allow authenticated users to check/exit impersonation state.
@@ -202,7 +240,9 @@ export default auth((req) => {
         { error: "Forbidden - Insufficient permissions" },
         { status: 403 }
       );
-      return addSecurityHeaders(requestId, response);
+      addSecurityHeaders(requestId, response);
+      addSolarCorsIfNeeded(req, response);
+      return response;
     }
 
     return nextWithRequestId(requestId, req);
