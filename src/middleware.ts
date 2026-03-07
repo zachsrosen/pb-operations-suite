@@ -251,6 +251,25 @@ export default auth((req) => {
 
   // Redirect logged-in users away from login page
   if (isLoginPage && isLoggedIn) {
+    // Honor callbackUrl if present and validated (e.g. Solar Surveyor iframe auth flow)
+    const callbackUrl = req.nextUrl.searchParams.get("callbackUrl");
+    if (callbackUrl) {
+      try {
+        const target = new URL(callbackUrl, req.url);
+        const baseOrigin = new URL(req.url).origin;
+        const allowedOrigins = (process.env.SOLAR_ALLOWED_ORIGINS || "")
+          .split(",")
+          .map((o) => o.trim())
+          .filter(Boolean);
+
+        if (target.origin === baseOrigin || allowedOrigins.includes(target.origin)) {
+          return addSecurityHeaders(requestId, NextResponse.redirect(target));
+        }
+      } catch {
+        // Invalid URL — fall through to default route
+      }
+    }
+
     const defaultRoute = getDefaultRouteForRole(userRole);
     return addSecurityHeaders(requestId, NextResponse.redirect(new URL(defaultRoute, req.url)));
   }
