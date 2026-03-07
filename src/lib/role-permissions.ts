@@ -44,7 +44,7 @@ export function normalizeRole(role: UserRole): UserRole {
  */
 export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
   ADMIN: {
-    allowedRoutes: ["*"], // All routes
+    allowedRoutes: ["*", "/dashboards/ai"], // All routes
     canScheduleSurveys: true,
     canScheduleInstalls: true,
     canScheduleInspections: true,
@@ -56,7 +56,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     canViewAllLocations: true,
   },
   OWNER: {
-    allowedRoutes: ["*"], // All routes — like ADMIN but no user management
+    allowedRoutes: ["*", "/dashboards/ai"], // All routes — like ADMIN but no user management
     canScheduleSurveys: true,
     canScheduleInstalls: true,
     canScheduleInspections: true,
@@ -89,6 +89,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/timeline",
       "/dashboards/bom",
       "/dashboards/bom/history",
+      "/dashboards/ai",
       "/dashboards/dnr",
       "/dashboards/site-survey",
       "/dashboards/design",
@@ -150,6 +151,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       // Install photo review
       "/dashboards/inspections",
       "/api/install-review",
+      // Solar Surveyor
+      "/api/solar",
     ],
     canScheduleSurveys: true,
     canScheduleInstalls: true,
@@ -194,6 +197,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       // Install photo review
       "/dashboards/inspections",
       "/api/install-review",
+      // Solar Surveyor
+      "/api/solar",
     ],
     canScheduleSurveys: false,
     canScheduleInstalls: true,
@@ -224,6 +229,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/timeline",
       "/dashboards/bom",
       "/dashboards/bom/history",
+      "/dashboards/ai",
       "/dashboards/dnr",
       // Intelligence dashboards
       "/dashboards/at-risk",
@@ -263,6 +269,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       // Install photo review
       "/dashboards/inspections",
       "/api/install-review",
+      // Solar Surveyor
+      "/api/solar",
     ],
     canScheduleSurveys: true,
     canScheduleInstalls: true,
@@ -296,6 +304,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/timeline",
       "/dashboards/bom",
       "/dashboards/bom/history",
+      "/dashboards/ai",
       "/dashboards/dnr",
       "/dashboards/site-survey",
       "/dashboards/design",
@@ -364,6 +373,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       // Install photo review
       "/dashboards/inspections",
       "/api/install-review",
+      // Solar Surveyor
+      "/api/solar",
     ],
     canScheduleSurveys: true,
     canScheduleInstalls: true,
@@ -443,6 +454,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       // Install photo review
       "/dashboards/inspections",
       "/api/install-review",
+      // Solar Surveyor
+      "/api/solar",
     ],
     canScheduleSurveys: false,
     canScheduleInstalls: false,
@@ -498,6 +511,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       // Design review
       "/dashboards/reviews",
       "/api/reviews",
+      // Solar Surveyor
+      "/api/solar",
     ],
     canScheduleSurveys: false,
     canScheduleInstalls: false,
@@ -550,6 +565,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/api/bugs",
       "/api/ahj",
       "/api/utility",
+      // Solar Surveyor
+      "/api/solar",
     ],
     canScheduleSurveys: false,
     canScheduleInstalls: false,
@@ -567,6 +584,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/unassigned",
       "/api/activity/log",
       "/api/user/me",
+      "/api/solar",
     ],
     canScheduleSurveys: false,
     canScheduleInstalls: false,
@@ -591,6 +609,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/api/zuper/jobs/schedule",
       "/api/zuper/my-availability",
       "/api/bugs",
+      // Solar Surveyor
+      "/api/solar",
     ],
     canScheduleSurveys: true,
     canScheduleInstalls: false,

@@ -30,6 +30,7 @@ export const STAGE_COLORS: Record<string, { tw: string; hex: string }> = {
   "Permission To Operate": { tw: "bg-lime-500", hex: "#84CC16" },
   "Close Out": { tw: "bg-green-500", hex: "#22C55E" },
   "Project Complete": { tw: "bg-emerald-500", hex: "#10B981" },
+  "On Hold": { tw: "bg-red-500", hex: "#EF4444" },
   "Project Rejected - Needs Review": { tw: "bg-zinc-500", hex: "#71717A" },
 };
 

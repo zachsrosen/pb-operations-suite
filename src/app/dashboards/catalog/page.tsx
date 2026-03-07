@@ -6,6 +6,7 @@ import Link from "next/link";
 import DashboardShell from "@/components/DashboardShell";
 import { useToast } from "@/contexts/ToastContext";
 import { useSession } from "next-auth/react";
+import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { FORM_CATEGORIES } from "@/lib/catalog-fields";
 import { getZohoItemUrl, getHubSpotProductUrl, getZuperProductUrl } from "@/lib/external-links";
 import type { SyncSystem } from "@/lib/catalog-sync-confirmation";
@@ -247,6 +248,7 @@ function formatSyncSystemName(system: SyncSystem): string {
 export default function CatalogPage() {
   const { data: session } = useSession();
   const { addToast } = useToast();
+  const { trackDashboardView } = useActivityTracking();
   const [tab, setTab] = useState<Tab>("skus");
   const [skus, setSkus] = useState<Sku[]>([]);
   const [skuLoading, setSkuLoading] = useState(true);
@@ -352,6 +354,12 @@ export default function CatalogPage() {
   }, [addToast]);
 
   useEffect(() => { fetchSkus(); }, [fetchSkus]);
+
+  // Track dashboard view on mount
+  useEffect(() => {
+    trackDashboardView("catalog");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function handleDeleteSku(id: string) {
     setDeletingSkuId(id);

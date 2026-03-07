@@ -6,6 +6,7 @@ import { exportToCSV } from "@/lib/export";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useToast } from "@/contexts/ToastContext";
 import { useSession } from "next-auth/react";
+import { useActivityTracking } from "@/hooks/useActivityTracking";
 // PDF upload uses chunked /api/bom/chunk — stays on our domain, no CORS issues
 
 /* ------------------------------------------------------------------ */
@@ -647,6 +648,113 @@ function ContactCombobox({ contacts, value, onChange, placeholder = "Search…",
 }
 
 /* ------------------------------------------------------------------ */
+/*  SkuPickerDropdown — inline SKU override picker per BOM row         */
+/* ------------------------------------------------------------------ */
+
+interface SkuPickerDropdownProps {
+  skus: InternalCatalogSku[];
+  currentSku: InternalCatalogSku | null;
+  category: string;
+  onSelect: (sku: InternalCatalogSku) => void;
+  onClear: () => void;
+  onClose: () => void;
+  hasOverride: boolean;
+}
+
+function SkuPickerDropdown({ skus, currentSku, category, onSelect, onClear, onClose, hasOverride }: SkuPickerDropdownProps) {
+  const [query, setQuery] = useState("");
+  const [showAll, setShowAll] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
+  useEffect(() => {
+    function onMouseDown(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    }
+    document.addEventListener("mousedown", onMouseDown);
+    return () => document.removeEventListener("mousedown", onMouseDown);
+  }, [onClose]);
+
+  const filtered = useMemo(() => {
+    let pool = showAll ? skus : skus.filter((s) => s.category === category);
+    if (query.trim()) {
+      const q = query.toLowerCase();
+      pool = pool.filter((s) =>
+        s.brand.toLowerCase().includes(q) ||
+        s.model.toLowerCase().includes(q) ||
+        (s.description || "").toLowerCase().includes(q) ||
+        (s.vendorPartNumber || "").toLowerCase().includes(q)
+      );
+    }
+    return pool.slice(0, 50);
+  }, [skus, category, query, showAll]);
+
+  return (
+    <div ref={containerRef} className="absolute z-50 left-0 right-0 mt-1 rounded-lg border border-t-border bg-surface-elevated shadow-card-lg text-xs">
+      <div className="p-1.5 border-b border-t-border flex items-center gap-1">
+        <input
+          ref={inputRef}
+          type="text"
+          className="flex-1 bg-transparent text-foreground text-xs px-1.5 py-1 focus:outline-none"
+          placeholder="Search SKUs…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <label className="flex items-center gap-1 text-[10px] text-muted whitespace-nowrap cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={showAll}
+            onChange={(e) => setShowAll(e.target.checked)}
+            className="rounded"
+          />
+          All categories
+        </label>
+      </div>
+      <div className="max-h-48 overflow-y-auto">
+        {hasOverride && (
+          <button
+            type="button"
+            onMouseDown={(e) => { e.preventDefault(); onClear(); }}
+            className="w-full text-left px-3 py-1.5 hover:bg-surface-2 text-cyan-600 dark:text-cyan-400 border-b border-t-border"
+          >
+            ↩ Revert to auto-match
+          </button>
+        )}
+        {filtered.length === 0 ? (
+          <div className="px-3 py-2 text-muted">No matching SKUs</div>
+        ) : (
+          filtered.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              onMouseDown={(e) => { e.preventDefault(); onSelect(s); }}
+              className={`w-full text-left px-3 py-1.5 hover:bg-surface-2 transition-colors ${s.id === currentSku?.id ? "font-medium text-cyan-600 dark:text-cyan-400" : "text-foreground"}`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="truncate">{s.brand} {s.model}</span>
+                <span className="flex items-center gap-1 shrink-0">
+                  <span className={`w-1.5 h-1.5 rounded-full ${s.hubspotProductId ? "bg-green-500" : "bg-zinc-300 dark:bg-zinc-600"}`} title={s.hubspotProductId ? "Linked in HubSpot" : "Missing HubSpot"} />
+                  <span className="text-[9px] text-muted">HS</span>
+                  <span className={`w-1.5 h-1.5 rounded-full ${s.zuperItemId ? "bg-green-500" : "bg-zinc-300 dark:bg-zinc-600"}`} title={s.zuperItemId ? "Linked in Zuper" : "Missing Zuper"} />
+                  <span className="text-[9px] text-muted">ZU</span>
+                  <span className={`w-1.5 h-1.5 rounded-full ${s.zohoItemId ? "bg-green-500" : "bg-zinc-300 dark:bg-zinc-600"}`} title={s.zohoItemId ? "Linked in Zoho" : "Missing Zoho"} />
+                  <span className="text-[9px] text-muted">ZO</span>
+                </span>
+              </div>
+              {s.description && <div className="text-[10px] text-muted truncate mt-0.5">{s.description}</div>}
+            </button>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  CustomerSearchCombobox — live server-side search (9k+ contacts)    */
 /* ------------------------------------------------------------------ */
 
@@ -796,6 +904,13 @@ function BomDashboardInner() {
   const { data: session } = useSession();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { trackDashboardView, trackFeature } = useActivityTracking();
+
+  // Track page view on mount
+  useEffect(() => {
+    trackDashboardView("bom-tool");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // BOM state
   const [bom, setBom] = useState<BomData | null>(null);
@@ -863,6 +978,8 @@ function BomDashboardInner() {
   const [internalSkus, setInternalSkus] = useState<InternalCatalogSku[]>([]);
   const [backfillingLinkedProducts, setBackfillingLinkedProducts] = useState(false);
   const [rowActionBusyKey, setRowActionBusyKey] = useState<string | null>(null);
+  const [skuOverrides, setSkuOverrides] = useState<Map<string, InternalCatalogSku>>(new Map());
+  const [openSkuPickerItemId, setOpenSkuPickerItemId] = useState<string | null>(null);
   const [bulkAddRunning, setBulkAddRunning] = useState(false);
   const [bulkAddProgress, setBulkAddProgress] = useState("");
 
@@ -1636,13 +1753,24 @@ function BomDashboardInner() {
   }, [linkedProject, items, addToast]);
 
   /* ---- Editable table ---- */
+  const IDENTITY_FIELDS: Set<keyof BomItem> = useMemo(() => new Set(["category", "brand", "model"]), []);
+
   const updateItem = useCallback(
     (id: string, field: keyof BomItem, value: string | number | null) => {
       setItems((prev) =>
         prev.map((item) => (item.id === id ? { ...item, [field]: value } : item))
       );
+      // Clear manual SKU override when identity fields change
+      if (IDENTITY_FIELDS.has(field)) {
+        setSkuOverrides((prev) => {
+          if (!prev.has(id)) return prev;
+          const next = new Map(prev);
+          next.delete(id);
+          return next;
+        });
+      }
     },
-    []
+    [IDENTITY_FIELDS]
   );
 
   const updateItemFlags = useCallback((id: string, value: string) => {
@@ -1661,6 +1789,12 @@ function BomDashboardInner() {
 
   const deleteItem = useCallback((id: string) => {
     setItems((prev) => prev.filter((item) => item.id !== id));
+    setSkuOverrides((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Map(prev);
+      next.delete(id);
+      return next;
+    });
   }, []);
 
   const addRow = useCallback((category: BomCategory) => {
@@ -1745,28 +1879,42 @@ function BomDashboardInner() {
     return map;
   }, [items, internalSkus]);
 
+  /* ---- Effective SKU map: auto-match merged with manual overrides ---- */
+  const effectiveSkuByItem = useMemo(() => {
+    const map = new Map(bestSkuByItem);
+    for (const [itemId, sku] of skuOverrides) {
+      map.set(itemId, sku);
+    }
+    return map;
+  }, [bestSkuByItem, skuOverrides]);
+
   /* ---- Internal SKU pricing map ---- */
   const pricingByItem = useMemo(() => {
     const map = new Map<string, PricingMatch>();
     for (const item of items) {
-      const sku = bestSkuByItem.get(item.id);
+      const sku = effectiveSkuByItem.get(item.id);
       const sellPrice = sku?.sellPrice ?? null;
       map.set(item.id, { sellPrice });
     }
     return map;
-  }, [items, bestSkuByItem]);
+  }, [items, effectiveSkuByItem]);
 
   /* ---- Per-row push actions: HubSpot deal line item / Zuper job part ---- */
-  const handleAddHubspotDealLineItem = useCallback(async (item: BomItem) => {
+  /** Returns true only when a write actually happened (line item created or skipped-as-duplicate). */
+  const handleAddHubspotDealLineItem = useCallback(async (item: BomItem): Promise<boolean> => {
     if (!linkedProject?.hs_object_id) {
       addToast({ type: "error", title: "Link a HubSpot project first" });
-      return;
+      return false;
     }
 
     const actionKey = `hs:${item.id}`;
     setRowActionBusyKey(actionKey);
     try {
-      const sku = bestSkuByItem.get(item.id);
+      const sku = effectiveSkuByItem.get(item.id);
+      if (!sku) {
+        addToast({ type: "error", title: "No catalog SKU selected — pick one from the SKU picker" });
+        return false;
+      }
       const quantity = parsePositiveQty(item.qty);
       const pricing = pricingByItem.get(item.id);
       const res = await fetch("/api/bom/linked-products/add-hubspot-line-item", {
@@ -1774,7 +1922,7 @@ function BomDashboardInner() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           dealId: linkedProject.hs_object_id,
-          skuId: sku?.id || null,
+          skuId: sku.id,
           category: item.category,
           brand: item.brand,
           model: item.model,
@@ -1782,11 +1930,18 @@ function BomDashboardInner() {
           description: item.description,
           quantity,
           unitPrice: pricing?.sellPrice ?? null,
-          sku: sku?.vendorPartNumber || item.model || null,
-          hubspotProductId: sku?.hubspotProductId || null,
+          sku: sku.vendorPartNumber || item.model || null,
+          hubspotProductId: sku.hubspotProductId || null,
         }),
       });
-      const data = await res.json() as { error?: string; lineItemId?: string; skipped?: boolean; reason?: string; existingName?: string };
+      const data = await res.json() as { error?: string; lineItemId?: string; skipped?: boolean; reason?: string; existingName?: string; pendingApproval?: boolean; message?: string };
+      if (data.pendingApproval) {
+        addToast({
+          type: "warning",
+          title: data.message || "Product not found in HubSpot — sent to catalog approvals",
+        });
+        return false;
+      }
       if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
       if (data.skipped) {
         addToast({
@@ -1799,23 +1954,30 @@ function BomDashboardInner() {
           title: `Added HubSpot line item${data.lineItemId ? ` (${data.lineItemId})` : ""}`,
         });
       }
+      return true;
     } catch (e) {
       addToast({ type: "error", title: e instanceof Error ? e.message : "Failed to add HubSpot line item" });
+      return false;
     } finally {
       setRowActionBusyKey((current) => (current === actionKey ? null : current));
     }
-  }, [linkedProject, bestSkuByItem, pricingByItem, addToast]);
+  }, [linkedProject, effectiveSkuByItem, pricingByItem, addToast]);
 
-  const handleAddZuperJobPart = useCallback(async (item: BomItem) => {
+  /** Returns true only when a write actually happened (part added to job). */
+  const handleAddZuperJobPart = useCallback(async (item: BomItem): Promise<boolean> => {
     if (!linkedProject?.zuperUid) {
       addToast({ type: "error", title: "Linked project has no Zuper job UID" });
-      return;
+      return false;
     }
 
     const actionKey = `zu:${item.id}`;
     setRowActionBusyKey(actionKey);
     try {
-      const sku = bestSkuByItem.get(item.id);
+      const sku = effectiveSkuByItem.get(item.id);
+      if (!sku) {
+        addToast({ type: "error", title: "No catalog SKU selected — pick one from the SKU picker" });
+        return false;
+      }
       const quantity = parsePositiveQty(item.qty);
       const pricing = pricingByItem.get(item.id);
       const res = await fetch("/api/bom/linked-products/add-zuper-part", {
@@ -1823,7 +1985,7 @@ function BomDashboardInner() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           jobUid: linkedProject.zuperUid,
-          skuId: sku?.id || null,
+          skuId: sku.id,
           category: item.category,
           brand: item.brand,
           model: item.model,
@@ -1831,11 +1993,18 @@ function BomDashboardInner() {
           description: item.description,
           quantity,
           unitPrice: pricing?.sellPrice ?? null,
-          sku: sku?.vendorPartNumber || item.model || null,
-          zuperItemId: sku?.zuperItemId || null,
+          sku: sku.vendorPartNumber || item.model || null,
+          zuperItemId: sku.zuperItemId || null,
         }),
       });
-      const data = await res.json() as { error?: string; mode?: "part_added" | "note_fallback"; warning?: string };
+      const data = await res.json() as { error?: string; mode?: "part_added" | "note_fallback"; warning?: string; pendingApproval?: boolean; message?: string };
+      if (data.pendingApproval) {
+        addToast({
+          type: "warning",
+          title: data.message || "Product not found in Zuper — sent to catalog approvals",
+        });
+        return false;
+      }
       if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
       if (data.mode === "note_fallback") {
         addToast({
@@ -1845,12 +2014,14 @@ function BomDashboardInner() {
       } else {
         addToast({ type: "success", title: "Added Zuper part to job" });
       }
+      return true;
     } catch (e) {
       addToast({ type: "error", title: e instanceof Error ? e.message : "Failed to add Zuper part" });
+      return false;
     } finally {
       setRowActionBusyKey((current) => (current === actionKey ? null : current));
     }
-  }, [linkedProject, bestSkuByItem, pricingByItem, addToast]);
+  }, [linkedProject, effectiveSkuByItem, pricingByItem, addToast]);
 
   const handleAddBoth = useCallback(async (item: BomItem) => {
     const actionKey = `both:${item.id}`;
@@ -1880,18 +2051,14 @@ function BomDashboardInner() {
       const item = items[i];
       const label = [item.brand, item.model].filter(Boolean).join(" ") || item.description || `Item ${i + 1}`;
       setBulkAddProgress(`${i + 1}/${items.length}: ${label}`);
-      const promises: Promise<void>[] = [];
-      if (hasHs) {
-        promises.push(
-          handleAddHubspotDealLineItem(item).then(() => { hsOk++; }).catch(() => { hsFail++; })
-        );
-      }
-      if (hasZuper) {
-        promises.push(
-          handleAddZuperJobPart(item).then(() => { zuOk++; }).catch(() => { zuFail++; })
-        );
-      }
-      await Promise.all(promises);
+      const promises: Promise<boolean>[] = [];
+      if (hasHs) promises.push(handleAddHubspotDealLineItem(item));
+      if (hasZuper) promises.push(handleAddZuperJobPart(item));
+      const results = await Promise.all(promises);
+      // Count based on returned booleans — index 0 = HS (if present), index 1 or 0 = Zuper
+      let idx = 0;
+      if (hasHs) { if (results[idx++]) hsOk++; else hsFail++; }
+      if (hasZuper) { if (results[idx]) zuOk++; else zuFail++; }
     }
 
     setBulkAddRunning(false);
@@ -3109,6 +3276,65 @@ function BomDashboardInner() {
                                   onChange={(v) => updateItem(item.id, "model", v)}
                                   placeholder="Model"
                                 />
+                                {/* SKU match badge + override picker */}
+                                {(() => {
+                                  const sku = effectiveSkuByItem.get(item.id);
+                                  const hasOverride = skuOverrides.has(item.id);
+                                  const isPickerOpen = openSkuPickerItemId === item.id;
+                                  return (
+                                    <div className="relative mt-1.5 pt-1.5 border-t border-t-border">
+                                      {sku ? (
+                                        <div className="flex items-center gap-1.5 min-w-0">
+                                          <span className={`text-[10px] truncate ${hasOverride ? "text-cyan-600 dark:text-cyan-400 font-medium" : "text-muted"}`}>
+                                            {hasOverride ? "Manual" : "Matched"}: {sku.brand} {sku.model}
+                                          </span>
+                                          <span className="flex items-center gap-0.5 shrink-0">
+                                            <span className={`w-1.5 h-1.5 rounded-full ${sku.hubspotProductId ? "bg-green-500" : "bg-orange-400"}`} title={sku.hubspotProductId ? "HubSpot linked" : "No HubSpot product"} />
+                                            <span className={`w-1.5 h-1.5 rounded-full ${sku.zuperItemId ? "bg-green-500" : "bg-orange-400"}`} title={sku.zuperItemId ? "Zuper linked" : "No Zuper product"} />
+                                            <span className={`w-1.5 h-1.5 rounded-full ${sku.zohoItemId ? "bg-green-500" : "bg-orange-400"}`} title={sku.zohoItemId ? "Zoho linked" : "No Zoho item"} />
+                                          </span>
+                                          <button
+                                            type="button"
+                                            onClick={() => setOpenSkuPickerItemId(isPickerOpen ? null : item.id)}
+                                            className="text-[10px] text-muted hover:text-foreground shrink-0"
+                                            title="Change SKU match"
+                                          >
+                                            ✎
+                                          </button>
+                                        </div>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          onClick={() => setOpenSkuPickerItemId(isPickerOpen ? null : item.id)}
+                                          className="text-[10px] text-yellow-600 dark:text-yellow-400 hover:underline"
+                                        >
+                                          No catalog match — select SKU
+                                        </button>
+                                      )}
+                                      {isPickerOpen && (
+                                        <SkuPickerDropdown
+                                          skus={internalSkus}
+                                          currentSku={sku || null}
+                                          category={item.category}
+                                          hasOverride={hasOverride}
+                                          onSelect={(selected) => {
+                                            setSkuOverrides((prev) => new Map(prev).set(item.id, selected));
+                                            setOpenSkuPickerItemId(null);
+                                          }}
+                                          onClear={() => {
+                                            setSkuOverrides((prev) => {
+                                              const next = new Map(prev);
+                                              next.delete(item.id);
+                                              return next;
+                                            });
+                                            setOpenSkuPickerItemId(null);
+                                          }}
+                                          onClose={() => setOpenSkuPickerItemId(null)}
+                                        />
+                                      )}
+                                    </div>
+                                  );
+                                })()}
                               </div>
                             </td>
                             <td className="px-4 py-1.5">

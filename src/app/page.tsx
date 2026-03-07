@@ -32,6 +32,8 @@ interface Stats {
   peValue: number;
   rtbCount: number;
   rtbValue: number;
+  onHoldCount: number;
+  onHoldValue: number;
   locationCounts: Record<string, number>;
   locationValues: Record<string, number>;
   stageCounts: Record<string, number>;
@@ -94,6 +96,14 @@ const SUITE_LINKS: SuiteLinkData[] = [
     title: "Service + D&R Suite",
     description: "Service and D&R scheduling, equipment tracking, and deal management.",
     tag: "SERVICE + D&R",
+    tagColor: "purple",
+    visibility: "all",
+  },
+  {
+    href: "/dashboards/ai",
+    title: "AI Skills",
+    description: "All AI-powered tools in one place.",
+    tag: "AI",
     tagColor: "purple",
     visibility: "all",
   },
@@ -167,6 +177,7 @@ function computeStats(projects: ProjectRecord[]): Stats {
   const totalValue = projects.reduce((s, p) => s + p.amount, 0);
   const pe = projects.filter((p) => p.isParticipateEnergy);
   const rtb = projects.filter((p) => p.isRtb);
+  const onHold = projects.filter((p) => p.stage === "On Hold");
 
   const locationCounts: Record<string, number> = {};
   const locationValues: Record<string, number> = {};
@@ -187,6 +198,8 @@ function computeStats(projects: ProjectRecord[]): Stats {
     peValue: pe.reduce((s, p) => s + p.amount, 0),
     rtbCount: rtb.length,
     rtbValue: rtb.reduce((s, p) => s + p.amount, 0),
+    onHoldCount: onHold.length,
+    onHoldValue: onHold.reduce((s, p) => s + p.amount, 0),
     locationCounts,
     locationValues,
     stageCounts,
@@ -320,7 +333,11 @@ export default function Home() {
     if (!userRole) return [];
     if (userRole === "VIEWER") return [];
     if (userRole === "OPERATIONS_MANAGER") {
-      return SUITE_LINKS.filter((suite) => suite.href === "/suites/operations");
+      const allowedOpsManagerLinks = new Set([
+        "/suites/operations",
+        "/dashboards/ai",
+      ]);
+      return SUITE_LINKS.filter((suite) => allowedOpsManagerLinks.has(suite.href));
     }
     if (userRole === "TECH_OPS") {
       const allowedTechOpsSuites = new Set([
@@ -336,6 +353,7 @@ export default function Home() {
         "/suites/design-engineering",
         "/suites/permitting-interconnection",
         "/suites/intelligence",
+        "/dashboards/ai",
       ]);
       return SUITE_LINKS.filter((suite) => allowedPmSuites.has(suite.href));
     }
@@ -468,7 +486,7 @@ export default function Home() {
         )}
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8 stagger-grid">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8 stagger-grid">
           <StatCard
             label="Active Projects"
             value={loading ? null : stats?.totalProjects ?? null}
@@ -505,6 +523,14 @@ export default function Home() {
               !loading && stats?.rtbValue ? formatMoney(stats.rtbValue) : null
             }
             color="blue"
+          />
+          <StatCard
+            label="On Hold"
+            value={loading ? null : stats?.onHoldCount ?? null}
+            subtitle={
+              !loading && stats?.onHoldValue ? formatMoney(stats.onHoldValue) : null
+            }
+            color="red"
           />
         </div>
 
@@ -586,6 +612,7 @@ export default function Home() {
                     "Permitting & Interconnection",
                     "Design & Engineering",
                     "Site Survey",
+                    "On Hold",
                     "Project Rejected",
                   ];
                   return Object.entries(stats.stageCounts)
