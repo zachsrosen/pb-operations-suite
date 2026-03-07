@@ -26,11 +26,11 @@ if [ ! -f "$SOLAR_DIR/package.json" ]; then
   exit 1
 fi
 
-# Build
+# Build with base path for PB Ops embedding
 echo ""
 echo "Building Solar Surveyor..."
 cd "$SOLAR_DIR"
-npx vite build
+VITE_BASE_PATH=/solar-surveyor/ npx vite build
 
 echo ""
 echo "Build complete. Copying to PB Ops..."
