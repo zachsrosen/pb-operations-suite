@@ -197,7 +197,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   // localhost / preview hosts where a fixed parent domain would reject cookies.
   cookies: {
     sessionToken: {
-      name: "authjs.session-token",
+      // Rotated name to avoid collisions with legacy domain-scoped cookies
+      // that can coexist and cause ambiguous Cookie headers.
+      name: "pbops.session-token",
       options: {
         httpOnly: true,
         sameSite: "lax" as const,
@@ -206,7 +208,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       },
     },
     callbackUrl: {
-      name: "authjs.callback-url",
+      name: "pbops.callback-url",
       options: {
         sameSite: "lax" as const,
         secure: process.env.NODE_ENV === "production",
@@ -214,7 +216,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       },
     },
     csrfToken: {
-      name: "authjs.csrf-token",
+      name: "pbops.authjs.csrf-token",
       options: {
         httpOnly: true,
         sameSite: "lax" as const,
