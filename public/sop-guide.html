@@ -146,6 +146,7 @@ SOP Operations Guide
 <button onclick="switchTab('role-ops')">Operations</button>
 <button onclick="switchTab('role-de')">Design &amp; Permitting</button>
 <button onclick="switchTab('role-sales')">Sales</button>
+<button onclick="switchTab('wf')">Workflows</button>
 </div>
 
 <div class="layout">
@@ -251,6 +252,26 @@ SOP Operations Guide
 <a href="#" onclick="go('pm-inspections')" data-s="pm-inspections"><span class="dot dot-purple"></span>Inspections</a>
 <a href="#" onclick="go('pm-pto')" data-s="pm-pto"><span class="dot dot-purple"></span>PTO</a>
 <a href="#" onclick="go('pm-closeout')" data-s="pm-closeout"><span class="dot dot-teal"></span>Close Out</a>
+</div>
+<div class="sidebar-section" data-tab="wf">
+<div class="sidebar-section-title">Workflow Reference</div>
+<a href="#" onclick="go('wf-overview')" data-s="wf-overview"><span class="dot dot-blue"></span>Overview &amp; Counts</a>
+<a href="#" onclick="go('wf-survey')" data-s="wf-survey"><span class="dot dot-green"></span>Site Survey (15)</a>
+<a href="#" onclick="go('wf-da')" data-s="wf-da"><span class="dot dot-green"></span>Design Approval (21)</a>
+<a href="#" onclick="go('wf-permit')" data-s="wf-permit"><span class="dot dot-amber"></span>Permitting (36)</a>
+<a href="#" onclick="go('wf-ic')" data-s="wf-ic"><span class="dot dot-amber"></span>Interconnection (40)</a>
+<a href="#" onclick="go('wf-con')" data-s="wf-con"><span class="dot dot-purple"></span>Construction (8)</a>
+<a href="#" onclick="go('wf-insp')" data-s="wf-insp"><span class="dot dot-purple"></span>Inspection (12)</a>
+<a href="#" onclick="go('wf-pto')" data-s="wf-pto"><span class="dot dot-purple"></span>PTO (25)</a>
+<a href="#" onclick="go('wf-qr')" data-s="wf-qr"><span class="dot dot-teal"></span>Quality Review (7)</a>
+<a href="#" onclick="go('wf-nc')" data-s="wf-nc"><span class="dot dot-teal"></span>New Construction (7)</a>
+</div>
+<div class="sidebar-section" data-tab="wf">
+<div class="sidebar-section-title">Revision Workflows</div>
+<a href="#" onclick="go('wf-rev-da')" data-s="wf-rev-da"><span class="dot dot-red"></span>DA Revision</a>
+<a href="#" onclick="go('wf-rev-permit')" data-s="wf-rev-permit"><span class="dot dot-red"></span>Permitting Revision</a>
+<a href="#" onclick="go('wf-rev-ic')" data-s="wf-rev-ic"><span class="dot dot-red"></span>Interconnection Revision</a>
+<a href="#" onclick="go('wf-rev-ab')" data-s="wf-rev-ab"><span class="dot dot-red"></span>As-Built Revision</a>
 </div>
 </nav>
 
@@ -1410,6 +1431,7 @@ When all three are met, the deal <strong>automatically</strong> moves to Ready T
 </div>
 <div class="sf" style="margin-top:2px;">
 <span style="font-size:11px;color:var(--gray-400);">Rejection path:</span>
+<span class="sp sp-r">PTO Submission Rejected</span>
 <span class="sp sp-r">Inspection Rejected By Utility</span>
 <span class="sp sp-r">Ops Related PTO Rejection</span><span class="fa">→</span>
 <span class="sp">PTO Revision Resubmitted</span>
@@ -4588,6 +4610,512 @@ When all three are met, the deal <strong>automatically</strong> moves to Ready T
 <li>The <strong>Agent Conversations</strong> card shows AI-analyzed sentiment on recent interactions — useful for gauging customer mood</li>
 <li>Your salesperson name appears on the PM Guide's closeout email template (CC'd) — you'll be looped in at project completion</li>
 </ul>
+</div>
+
+<!-- ===== WORKFLOWS TAB: OVERVIEW ===== -->
+<div class="section" id="wf-overview">
+<h1>HubSpot Workflow Reference</h1>
+<p class="subtitle">Complete catalog of all 171 HubSpot workflows across 10 pipeline stages. Use this to understand what fires when, troubleshoot automation, and onboard new team members.</p>
+
+<div class="summary">
+<strong>At a glance:</strong> Photon Brothers runs <strong>171 HubSpot workflows</strong> that drive the solar installation lifecycle.
+<ul>
+<li>Workflows are named with prefixes: <strong>WMS</strong> (Westminster/CO workflows) and <strong>ZRS</strong> (Zuper-related sync)</li>
+<li>Numbered sequences (01a, 01b, 01c) indicate related workflow chains</li>
+<li>Follow-up patterns use lettered suffixes (05a–05d for 14/30/45/60-day cadences)</li>
+<li>Each stage has a <strong>dedicated status field</strong> that drives its workflow automations</li>
+</ul>
+</div>
+
+<h2>Workflow Counts by Stage</h2>
+<div class="card">
+<table>
+<tr><th>Stage</th><th>Count</th><th>Status Field</th><th>Key Integration</th></tr>
+<tr><td><strong>Site Survey</strong></td><td>15</td><td><code>Site Survey Status</code></td><td>Zuper (field sync)</td></tr>
+<tr><td><strong>Design Approval</strong></td><td>21</td><td><code>Design Approval Status</code></td><td>PandaDoc (e-sign)</td></tr>
+<tr><td><strong>Design &amp; Engineering</strong></td><td>—</td><td><code>Design Status</code></td><td>Vishtik Technologies</td></tr>
+<tr><td><strong>Permitting</strong></td><td>36</td><td><code>Permitting Status</code></td><td>SolarApp+</td></tr>
+<tr><td><strong>Interconnection</strong></td><td>40</td><td><code>Interconnection Status</code></td><td>Xcel Energy (CO)</td></tr>
+<tr><td><strong>Construction</strong></td><td>8</td><td><code>Construction Status</code></td><td>Zuper (field sync)</td></tr>
+<tr><td><strong>Inspection</strong></td><td>12</td><td><code>Final Inspection Status</code></td><td>Zuper (field sync)</td></tr>
+<tr><td><strong>PTO</strong></td><td>25</td><td><code>PTO Status</code></td><td>Xcel Energy photos</td></tr>
+<tr><td><strong>Quality Review</strong></td><td>7</td><td>Various triggers</td><td>Internal QA</td></tr>
+<tr><td><strong>New Construction</strong></td><td>7</td><td>Tag-based</td><td>New Construction tag</td></tr>
+<tr><td style="font-weight:700;">Total</td><td style="font-weight:700;">171</td><td></td><td></td></tr>
+</table>
+</div>
+
+<h2>Naming Conventions</h2>
+<div class="card">
+<table>
+<tr><th>Pattern</th><th>Meaning</th><th>Example</th></tr>
+<tr><td><code>WMS | Stage | ##</code></td><td>Westminster-origin workflow, numbered</td><td><code>WMS | Site Survey | 01a - Ready for Survey</code></td></tr>
+<tr><td><code>ZRS | Stage | ##</code></td><td>Zuper-related sync workflow</td><td><code>ZRS | Utility Flow | 03 - Submitted to Utility</code></td></tr>
+<tr><td><code>01a, 01b, 01c</code></td><td>Related workflow chain (same trigger, different actions)</td><td><code>01a</code> sets status, <code>01b</code> sends notification, <code>01c</code> records date</td></tr>
+<tr><td><code>05a–05d</code></td><td>Follow-up cadence (14/30/45/60 days)</td><td><code>05a - 14 Day Follow Up</code> through <code>05d - 60 Day Follow Up</code></td></tr>
+<tr><td><code>#1, #2, #3</code></td><td>Retry/attempt sequence</td><td><code>Utility Bill Upload #1</code>, <code>#2</code>, <code>#3</code></td></tr>
+</table>
+</div>
+
+<h2>Key People &amp; Location Routing</h2>
+<div class="card">
+<table>
+<tr><th>Location</th><th>Role</th><th>Assigned To</th></tr>
+<tr><td>CA (SLO, Camarillo)</td><td>Operations / Inspections</td><td>Katlyyn Arnoldi, Nick Scarpellino</td></tr>
+<tr><td>CO (Centennial, Westminster, Colorado Springs)</td><td>Operations / Inspections</td><td>Operations Lead (rotation)</td></tr>
+</table>
+</div>
+<p>Workflow task assignments are routed by the <code>PB Location</code> field on each deal. CA and CO have separate assignment rules for inspections and operations tasks.</p>
+
+<h2>Key Integrations</h2>
+<div class="lg">
+<div class="lc"><span class="t t-auto">PANDADOC</span><p>Design Approval e-signatures. DA sent/approved/rejected events trigger HubSpot workflows.</p></div>
+<div class="lc"><span class="t t-zup">ZUPER</span><p>Field service sync. Survey, construction, inspection statuses flow from Zuper to HubSpot.</p></div>
+<div class="lc"><span class="t t-trig">SOLARAPP+</span><p>Automated permit processing. Fast-track path for eligible jurisdictions.</p></div>
+<div class="lc"><span class="t t-calc">VISHTIK</span><p>External design partner. Design rejection/revision workflows auto-email Vishtik when changes are needed.</p></div>
+</div>
+
+<h2>Disabled Workflows</h2>
+<p>The following workflows are currently <strong>OFF</strong> in HubSpot. They may be re-enabled in the future or were replaced by newer versions:</p>
+<div class="card">
+<table>
+<tr><th>Workflow</th><th>Stage</th><th>Notes</th></tr>
+<tr><td><code>PTO Granted</code></td><td>PTO</td><td>Currently OFF — PTO granted may be handled by a different workflow or manual process</td></tr>
+<tr><td><code>Submit Xcel PTO Photos at Inspection</code></td><td>PTO</td><td>Currently OFF — photo submission now triggered separately from inspection</td></tr>
+<tr><td><code>08. Revision Returned From Design</code></td><td>Inspection</td><td>Currently OFF — updates final inspection when as-built revision returns from design</td></tr>
+<tr><td><code>01. Quality Flow - Review Needed</code></td><td>Quality Review</td><td>Currently OFF — general trigger replaced by specific variants (01b–01e)</td></tr>
+<tr><td><code>01e. Quality Flow - Review Needed (Survey Sched)</code></td><td>Quality Review</td><td>Duplicate copy — one is ON, one is OFF</td></tr>
+</table>
+</div>
+
+<h2>Empty Stage: Design &amp; Engineering</h2>
+<div class="info"><strong>Design &amp; Engineering has 0 dedicated workflows.</strong> This stage is driven by a 6-step task workflow managed outside the standard automation folder (Vishtik design submission → review → stamped plans). The <code>Design Status</code> field tracks progress through task completions rather than standalone workflows.</div>
+
+<h2>PTO Status Values</h2>
+<p>PTO has more status values than other stages due to the Xcel Energy photo requirements (CO only):</p>
+<div class="sf">
+<span class="sp">Inspection Passed - Ready for PTO Submission</span><span class="fa">→</span>
+<span class="sp">PTO Submitted to Utility</span><span class="fa">→</span>
+<span class="sp">PTO Granted</span>
+</div>
+<div class="sf" style="margin-top:2px;">
+<span style="font-size:11px;color:var(--gray-400);">Xcel path (CO):</span>
+<span class="sp">Xcel Photos Ready to Submit</span><span class="fa">→</span>
+<span class="sp">Xcel Photos Submitted</span><span class="fa">→</span>
+<span class="sp">Xcel Photos Approved</span>
+</div>
+<div class="sf" style="margin-top:2px;">
+<span style="font-size:11px;color:var(--gray-400);">Blocked / Waiting:</span>
+<span class="sp sp-h">PTO Waiting on Interconnection Approval</span>
+<span class="sp sp-h">Waiting on Information</span>
+<span class="sp sp-r">PTO Submission Rejected</span>
+</div>
+</div>
+
+<!-- ===== WORKFLOWS: SITE SURVEY ===== -->
+<div class="section" id="wf-survey">
+<h1>Site Survey Workflows (15)</h1>
+<p class="subtitle">Workflows triggered by <code>Site Survey Status</code> changes and Zuper field sync events.</p>
+
+<div class="summary">
+<strong>Key statuses:</strong> Ready for Survey → Survey Scheduled → Survey Complete → Waiting on Change Order.
+Driven by Zuper field sync with 15 workflows handling scheduling, notifications, completion tracking, and design handoff.
+</div>
+
+<h2>Core Workflows</h2>
+<div class="card">
+<table>
+<tr><th style="width:50%">Workflow</th><th>Trigger</th><th>Action</th></tr>
+<tr><td><code>01a - Ready for Survey</code></td><td>Deal enters Site Survey stage</td><td>Sets status to "Ready for Survey"</td></tr>
+<tr><td><code>02a - Survey Scheduled</code></td><td>Zuper job scheduled</td><td>Sets status, records booking date</td></tr>
+<tr><td><code>02b - Survey Scheduled SMS</code></td><td>Status → Scheduled</td><td>Customer SMS notification</td></tr>
+<tr><td><code>02c - Survey Scheduled Email</code></td><td>Status → Scheduled</td><td>Customer email notification</td></tr>
+<tr><td><code>03 - Survey Complete</code></td><td>Zuper job completed</td><td>Records completion, advances to Design</td></tr>
+<tr><td><code>04 - Waiting on Change Order</code></td><td>Change order flagged in survey</td><td>Holds design until resolved</td></tr>
+</table>
+</div>
+
+<h2>Automation Chain</h2>
+<div class="ac ac-zup"><div><span class="t t-zup">ZUPER</span> Survey scheduled → <code>Site Survey Status</code> → "Scheduled"</div><div><span class="t t-not">NOTIF</span> SMS + Email sent to customer</div><div><span class="t t-calc">CALC</span> <code>Time Taken to Schedule Site Survey</code></div></div>
+<div class="ac ac-zup"><div><span class="t t-zup">ZUPER</span> Survey completed → <code>Site Survey Status</code> → "Completed"</div><div><span class="t t-auto">AUTO</span> Boolean flags flipped, timing metrics calculated</div><div><span class="t t-auto">AUTO</span> Deal stage → Design &amp; Engineering</div></div>
+</div>
+
+<!-- ===== WORKFLOWS: DESIGN APPROVAL ===== -->
+<div class="section" id="wf-da">
+<h1>Design Approval Workflows (21)</h1>
+<p class="subtitle">Workflows triggered by <code>Design Approval Status</code> changes and PandaDoc events.</p>
+
+<div class="summary">
+<strong>Key integration:</strong> PandaDoc drives DA workflows. When a DA document is sent, approved, or rejected via PandaDoc, the corresponding HubSpot workflow fires automatically.
+<strong>Vishtik Technologies</strong> is the external design partner — design workflows route to Vishtik for engineering.
+</div>
+
+<h2>Core Workflows</h2>
+<div class="card">
+<table>
+<tr><th style="width:50%">Workflow</th><th>Trigger</th><th>Action</th></tr>
+<tr><td><code>DA Flow - DA Ready to Send</code></td><td>Design complete, ready for customer</td><td>Queues DA for sending</td></tr>
+<tr><td><code>PandaDoc DA Sent</code></td><td>PandaDoc document sent</td><td>Sets DA Status, records sent date</td></tr>
+<tr><td><code>Design Approved</code></td><td>PandaDoc document approved</td><td>Sets approval, advances pipeline</td></tr>
+<tr><td><code>DA Flow - Sales Change Needed</code></td><td>Sales change identified</td><td>Routes back to sales team</td></tr>
+<tr><td><code>DA Flow - Design Change Needed</code></td><td>Design revision required</td><td>Routes to design team; auto-emails Vishtik Technologies</td></tr>
+<tr><td><code>DA Revision Needed</code></td><td>Customer rejects DA</td><td>Triggers <a href="#" onclick="go('wf-rev-da')">DA revision cycle</a></td></tr>
+</table>
+</div>
+
+<h2>Automation Chain — Happy Path</h2>
+<div class="ac"><div><span class="t t-auto">AUTO</span> Design marked ready → <code>Design Approval Status</code> → "Ready to Send"</div></div>
+<div class="ac"><div><span class="t t-auto">AUTO</span> PandaDoc sent → <code>Design Approval Status</code> → "Sent For Approval"</div><div><span class="t t-auto">AUTO</span> <code>Is DA Sent?</code> → Yes, <code>Design Approval Sent Date</code> recorded</div></div>
+<div class="ac"><div><span class="t t-auto">AUTO</span> PandaDoc approved → <code>Design Approval Status</code> → "Design Approved"</div><div><span class="t t-auto">AUTO</span> <code>Is Design Approved?</code> → Yes, <code>Design Approval Date</code> recorded</div><div><span class="t t-not">NOTIF</span> Customer confirmation sent</div></div>
+</div>
+
+<!-- ===== WORKFLOWS: PERMITTING ===== -->
+<div class="section" id="wf-permit">
+<h1>Permitting Workflows (36)</h1>
+<p class="subtitle">The largest workflow group — covers permit submission, AHJ tracking, SolarApp+ fast-track, and automated follow-up cadences.</p>
+
+<div class="summary">
+<strong>36 workflows</strong> handle the full permitting lifecycle. Key patterns:
+<ul>
+<li><strong>14/30/45/60-day follow-up cadence</strong> (05a–05d) auto-reminds the Permit Lead</li>
+<li><strong>SolarApp+</strong> fast-track path for eligible AHJs</li>
+<li><strong>Arapahoe County compliance</strong> has a dedicated workflow</li>
+<li><strong>Permit expiration</strong> tracking with 30-day warning</li>
+</ul>
+</div>
+
+<h2>Core Workflows</h2>
+<div class="card">
+<table>
+<tr><th style="width:50%">Workflow</th><th>Trigger</th><th>Action</th></tr>
+<tr><td><code>01 - Ready for Permitting</code></td><td>Deal enters Permit &amp; IC stage</td><td>Sets permit status</td></tr>
+<tr><td><code>02 - Submitted to Customer</code></td><td>Permit package sent</td><td>Tracks customer signature</td></tr>
+<tr><td><code>03 - Submitted to AHJ</code></td><td>Application submitted</td><td>Records submit date, starts follow-up timer</td></tr>
+<tr><td><code>04 - Permit Issued</code></td><td>Manual status set</td><td>Records date, calculates turnaround, checks RTB gate</td></tr>
+<tr><td><code>05a - 14 Day AHJ Follow Up</code></td><td>14 days since submission</td><td>First follow-up reminder to Permit Lead</td></tr>
+<tr><td><code>05b - 30 Day AHJ Follow Up</code></td><td>30 days since submission</td><td>Second follow-up reminder</td></tr>
+<tr><td><code>05c - 45 Day AHJ Follow Up</code></td><td>45 days since submission</td><td>Third follow-up reminder</td></tr>
+<tr><td><code>05d - 60 Day AHJ Follow Up</code></td><td>60 days since submission</td><td>Escalation follow-up</td></tr>
+<tr><td><code>SolarApp+ Selected</code></td><td>AHJ supports SolarApp+</td><td>Routes to fast-track path</td></tr>
+<tr><td><code>PM Arapahoe Compliance Letter</code></td><td>Arapahoe County project</td><td>Generates compliance letter</td></tr>
+<tr><td><code>Permit Expiration in 30 Days</code></td><td>Permit nearing expiry</td><td>Warning notification to Permit Lead</td></tr>
+</table>
+</div>
+
+<h2>Revision Workflows</h2>
+<p>When a permit is rejected by the AHJ, the <a href="#" onclick="go('wf-rev-permit')">Permitting Revision</a> cycle engages, with support for a 2nd rejection round.</p>
+</div>
+
+<!-- ===== WORKFLOWS: INTERCONNECTION ===== -->
+<div class="section" id="wf-ic">
+<h1>Interconnection Workflows (40)</h1>
+<p class="subtitle">The largest workflow group by count. Named "Utility Flow" in HubSpot. Covers utility applications, Xcel-specific paths, and follow-up cadences.</p>
+
+<div class="summary">
+<strong>40 workflows</strong> handle utility interconnection — the most complex stage due to utility-specific requirements.
+<ul>
+<li><strong>Utility Bill Upload</strong> workflows handle retry sequences (#1, #2, #3)</li>
+<li><strong>Signature Retrieved</strong> workflows track customer signature attempts (#1, #2, #3)</li>
+<li><strong>Xcel-specific</strong> workflows handle Xcel Energy's unique requirements (Site Plan &amp; SLD)</li>
+<li><strong>14-day follow-up</strong> cadence for utility response</li>
+</ul>
+</div>
+
+<h2>Core Workflows</h2>
+<div class="card">
+<table>
+<tr><th style="width:50%">Workflow</th><th>Trigger</th><th>Action</th></tr>
+<tr><td><code>ZRS | Utility Flow | 01 - Ready</code></td><td>Deal enters Permit &amp; IC stage</td><td>Sets interconnection status</td></tr>
+<tr><td><code>ZRS | Utility Flow | 02 - Submitted to Customer</code></td><td>Application sent to customer</td><td>Tracks customer signature</td></tr>
+<tr><td><code>ZRS | Utility Flow | 03 - Submitted to Utility</code></td><td>Application submitted to utility</td><td>Records submit date, starts follow-up</td></tr>
+<tr><td><code>ZRS | Utility Flow | 04 - Approved</code></td><td>Manual status set</td><td>Records approval, checks RTB gate</td></tr>
+<tr><td><code>Utility Bill Upload #1</code></td><td>First utility bill request</td><td>Customer upload request</td></tr>
+<tr><td><code>Utility Bill Upload #2</code></td><td>Follow-up request</td><td>Second request for bill</td></tr>
+<tr><td><code>Utility Bill Upload #3</code></td><td>Final request</td><td>Escalation for missing bill</td></tr>
+<tr><td><code>Signature Retrieved #1</code></td><td>First signature attempt</td><td>Customer signature request</td></tr>
+<tr><td><code>Signature Retrieved #2</code></td><td>Follow-up attempt</td><td>Second signature request</td></tr>
+<tr><td><code>Signature Retrieved #3</code></td><td>Final attempt</td><td>Escalation for missing signature</td></tr>
+<tr><td><code>14 Day Utility Follow Up</code></td><td>14 days after submission</td><td>Follow-up to utility</td></tr>
+<tr><td><code>Xcel Site Plan &amp; SLD Needed</code></td><td>Xcel Energy project</td><td>Routes site plan/SLD requirements</td></tr>
+</table>
+</div>
+
+<h2>Revision Workflows</h2>
+<p>When utility rejects an application, the <a href="#" onclick="go('wf-rev-ic')">Interconnection Revision</a> cycle engages, with support for a 2nd rejection round.</p>
+</div>
+
+<!-- ===== WORKFLOWS: CONSTRUCTION ===== -->
+<div class="section" id="wf-con">
+<h1>Construction Workflows (8)</h1>
+<p class="subtitle">Compact set covering RTB alerts, schedule reminders, and completion tracking.</p>
+
+<div class="summary">
+<strong>8 workflows</strong> manage the construction phase. Most status tracking happens via Zuper sync, so workflows focus on alerts and edge cases.
+</div>
+
+<h2>Core Workflows</h2>
+<div class="card">
+<table>
+<tr><th style="width:50%">Workflow</th><th>Trigger</th><th>Action</th></tr>
+<tr><td><code>04. RTB 5 Days Ago</code></td><td>5 days after RTB reached</td><td>Alert: construction not yet scheduled</td></tr>
+<tr><td><code>05. Construction Scheduled 5 Days</code></td><td>5 days before construction date</td><td>Pre-construction reminder</td></tr>
+<tr><td><code>06. Design Rejected</code></td><td>Design rejected during construction</td><td>Routes back to design team</td></tr>
+<tr><td><code>09. Loose Ends Remaining</code></td><td>CC checklist flags loose ends</td><td>Creates punch-list follow-up task</td></tr>
+<tr><td><code>Construction Complete</code></td><td>CC checklist submitted</td><td>Records date, advances to Inspection, triggers M2 invoice</td></tr>
+</table>
+</div>
+</div>
+
+<!-- ===== WORKFLOWS: INSPECTION ===== -->
+<div class="section" id="wf-insp">
+<h1>Inspection Workflows (12)</h1>
+<p class="subtitle">Covers scheduling, pass/fail routing, and location-based task assignment.</p>
+
+<div class="summary">
+<strong>12 workflows</strong> handle inspections. Key feature: <strong>location-based task routing</strong> — CA inspections route to Katlyyn Arnoldi or Nick Scarpellino; CO inspections route to the Operations Lead.
+</div>
+
+<h2>Core Workflows</h2>
+<div class="card">
+<table>
+<tr><th style="width:50%">Workflow</th><th>Trigger</th><th>Action</th></tr>
+<tr><td><code>Inspection Scheduled</code></td><td>Zuper inspection job scheduled</td><td>Sets flag, creates prep tasks</td></tr>
+<tr><td><code>09. Inspection Flow - Inspection Failed</code></td><td>Inspection failed checklist</td><td>Creates correction tasks by location (CA→Katlyyn/Nick, CO→Ops Lead)</td></tr>
+<tr><td><code>Inspection Passed</code></td><td>Zuper passes inspection</td><td>Records pass date, advances to PTO</td></tr>
+<tr><td><code>First Time Inspection Pass</code></td><td>Passed on first attempt</td><td>Sets <code>First Time Inspection Pass?</code> → Yes</td></tr>
+<tr><td><code>08. Revision Returned From Design</code></td><td>As-built revision complete</td><td>Routes back for re-inspection <em>(currently OFF)</em></td></tr>
+</table>
+</div>
+
+<h2>Location Routing</h2>
+<div class="info"><strong>CA projects:</strong> Inspection failure tasks route to <strong>Katlyyn Arnoldi</strong> and <strong>Nick Scarpellino</strong>.<br>
+<strong>CO projects:</strong> Inspection failure tasks route to the assigned <strong>Operations Lead</strong>.<br>
+Routing is based on the <code>PB Location</code> field on the deal.</div>
+</div>
+
+<!-- ===== WORKFLOWS: PTO ===== -->
+<div class="section" id="wf-pto">
+<h1>PTO Workflows (25)</h1>
+<p class="subtitle">Permission to Operate workflows including the Xcel Energy photo submission chain and time-based follow-ups.</p>
+
+<div class="summary">
+<strong>25 workflows</strong> cover PTO — the highest count after Interconnection. The <strong>Xcel Energy photo submission chain</strong> (07a–07f) is the most complex sub-workflow.
+</div>
+
+<h2>Core Workflows</h2>
+<div class="card">
+<table>
+<tr><th style="width:50%">Workflow</th><th>Trigger</th><th>Action</th></tr>
+<tr><td><code>PTO Submission</code></td><td>PTO application ready</td><td>Submits to utility</td></tr>
+<tr><td><code>PTO Granted</code></td><td>Manual status set</td><td>Records date, advances to Close Out, triggers M3 invoice</td></tr>
+<tr><td><code>10 Day PTO Follow Up</code></td><td>10 days after submission</td><td>First follow-up</td></tr>
+<tr><td><code>30 Day PTO Follow Up</code></td><td>30 days after submission</td><td>Second follow-up</td></tr>
+<tr><td><code>60 Day PTO Follow Up</code></td><td>60 days after submission</td><td>Escalation follow-up</td></tr>
+</table>
+</div>
+
+<h2>Xcel Energy Photo Submission Chain</h2>
+<p>Xcel Energy (CO) requires photos for PTO approval. This is managed by a 6-workflow chain:</p>
+<div class="card">
+<table>
+<tr><th>Workflow</th><th>Step</th></tr>
+<tr><td><code>07a - Xcel Photo Start</code></td><td>Initiates photo submission process</td></tr>
+<tr><td><code>07d - Xcel Photos Uploaded #1</code></td><td>First batch of photos uploaded</td></tr>
+<tr><td><code>07d - Xcel Photos Uploaded #2</code></td><td>Second batch (if needed)</td></tr>
+<tr><td><code>07d - Xcel Photos Uploaded #3</code></td><td>Third batch (if needed)</td></tr>
+<tr><td><code>07c - Xcel Photos Rejected</code></td><td>Xcel rejects photos — triggers re-upload</td></tr>
+<tr><td><code>07e - Xcel Photos Resubmitted #1–#3</code></td><td>Resubmission attempts after rejection</td></tr>
+<tr><td><code>07f - Xcel Photos Approved</code></td><td>Photos accepted, PTO continues</td></tr>
+</table>
+</div>
+</div>
+
+<!-- ===== WORKFLOWS: QUALITY REVIEW ===== -->
+<div class="section" id="wf-qr">
+<h1>Quality Review Workflows (7)</h1>
+<p class="subtitle">Internal QA workflows that catch stuck or problematic projects at various points in the pipeline.</p>
+
+<div class="summary">
+<strong>7 workflows</strong> provide quality gates. The <strong>90-day stuck trigger</strong> catches projects that have stalled. Reviews are also triggered at key milestones (site survey, sales, scheduling).
+</div>
+
+<h2>Workflows</h2>
+<div class="card">
+<table>
+<tr><th style="width:50%">Workflow</th><th>Trigger</th><th>Action</th></tr>
+<tr><td><code>01 - Quality Flow - Review Needed</code></td><td>General review trigger</td><td>Creates QA review task <em>(currently OFF)</em></td></tr>
+<tr><td><code>01b - Review Needed (Site Survey)</code></td><td>Issue flagged at site survey</td><td>Creates QA review task</td></tr>
+<tr><td><code>01c - Review Needed (Sales)</code></td><td>Sales-related issue</td><td>5-minute delay → sets <code>Quality Review Needed?</code> → Yes</td></tr>
+<tr><td><code>01d - Review Needed (90 Days)</code></td><td>Deal tagged "Stuck 90 Days"</td><td>5-minute delay → sets <code>Quality Review Needed?</code> + <code>Quality Review Reason</code></td></tr>
+<tr><td><code>01e - Review Needed (Survey Sched)</code></td><td>Survey scheduling issue</td><td>Creates QA review task <em>(one copy ON, one copy OFF)</em></td></tr>
+<tr><td><code>02 - Review Completed</code></td><td>QA review finished</td><td>Updates review properties, routes to resolution</td></tr>
+</table>
+</div>
+
+<h2>90-Day Stuck Trigger Detail</h2>
+<p>The 90-day workflow specifically targets projects tagged <strong>"Stuck 90 Days"</strong> that are NOT in On-Hold, Project Complete, or Cancelled stages. The workflow:</p>
+<div class="ac"><div><span class="t t-auto">AUTO</span> Deal tagged "Stuck 90 Days" → 5-minute delay (allows other automations to settle)</div><div><span class="t t-auto">AUTO</span> Sets <code>Quality Review Needed?</code> → Yes</div><div><span class="t t-auto">AUTO</span> Sets <code>Quality Review Reason</code> with explanation of why the review was triggered</div></div>
+
+<h2>Key Fields</h2>
+<div class="card">
+<table>
+<tr><th>Field</th><th>Set By</th><th>Purpose</th></tr>
+<tr><td><code>Quality Review Needed?</code></td><td><span class="t t-auto">AUTO</span></td><td>Boolean flag set by review workflows</td></tr>
+<tr><td><code>Quality Review Reason</code></td><td><span class="t t-auto">AUTO</span></td><td>Text explaining what triggered the review</td></tr>
+</table>
+</div>
+</div>
+
+<!-- ===== WORKFLOWS: NEW CONSTRUCTION ===== -->
+<div class="section" id="wf-nc">
+<h1>New Construction Workflows (7)</h1>
+<p class="subtitle">Special workflows for projects tagged as new construction — different requirements and timing.</p>
+
+<div class="summary">
+<strong>7 workflows</strong> handle new construction projects. All require <strong>three conditions</strong>:
+<ul>
+<li>Pipeline = "Project Pipeline"</li>
+<li>Deal has the <strong>"New Construction"</strong> tag</li>
+<li>Stage matches the workflow's target stage</li>
+</ul>
+</div>
+
+<h2>Workflows</h2>
+<div class="card">
+<table>
+<tr><th style="width:50%">Workflow</th><th>Trigger</th><th>Action</th></tr>
+<tr><td><code>Site Survey Complete</code></td><td>NC survey done</td><td>Routes to NC design review</td></tr>
+<tr><td><code>Design Reviewed</code></td><td>NC design reviewed</td><td>Routes to NC permitting</td></tr>
+<tr><td><code>Permit Issued</code></td><td>NC permit issued</td><td>Routes to NC RTB check</td></tr>
+<tr><td><code>RTB Drone</code></td><td>RTB reached for NC</td><td>Schedules drone survey for NC site</td></tr>
+<tr><td><code>Design Need</code></td><td>NC design requested</td><td>Creates NC design task</td></tr>
+<tr><td><code>Design Uploaded</code></td><td>NC design files uploaded</td><td>Moves to NC design review</td></tr>
+<tr><td><code>Date Stamp | Design Completion</code></td><td>NC design complete</td><td>Records completion date</td></tr>
+</table>
+</div>
+
+<div class="info"><strong>Tag requirement:</strong> All new construction workflows check for the "New Construction" tag on the deal. Without this tag, these workflows won't fire — even if the deal is in the correct pipeline and stage.</div>
+</div>
+
+<!-- ===== REVISION WORKFLOWS: DA ===== -->
+<div class="section" id="wf-rev-da">
+<h1>DA Revision Workflow</h1>
+<p class="subtitle">Design Approval rejection → revision → re-send cycle. Triggered when a customer rejects the DA document.</p>
+
+<h2>Trigger</h2>
+<div class="ac ac-trig"><div><span class="t t-trig">TRIGGER</span> <code>Design Approval Status</code> → "Revision Needed - DA Rejected"</div></div>
+
+<h2>Revision Flow</h2>
+<div class="sf">
+<span class="sp sp-r">Revision Needed - DA Rejected</span><span class="fa">→</span>
+<span class="sp">DA Revision In Progress</span><span class="fa">→</span>
+<span class="sp">DA Revision Completed</span><span class="fa">→</span>
+<span class="sp">Corrected DA Re-Sent to Customer</span>
+</div>
+
+<h2>Step-by-Step</h2>
+<div class="ac"><div><span class="t t-auto">AUTO</span> Customer rejects DA → <code>Design Approval Status</code> → "Revision Needed - DA Rejected"</div></div>
+<div class="ac"><div><span class="t t-auto">AUTO</span> Design team picks up → <code>Design Approval Status</code> → "DA Revision In Progress"</div></div>
+<div class="ac"><div><span class="t t-auto">AUTO</span> Revisions complete → <code>Design Approval Status</code> → "DA Revision Completed"</div></div>
+<div class="ac"><div><span class="t t-auto">AUTO</span> Corrected DA re-sent via PandaDoc</div><div><span class="t t-auto">AUTO</span> <code>DA Revision Counter</code> incremented</div><div><span class="t t-calc">CALC</span> <code>DA Revision Complete Date</code> recorded</div></div>
+
+<div class="info"><strong>After re-send:</strong> The normal DA approval flow resumes — PandaDoc tracks the new document and triggers approval/rejection events. If rejected again, the cycle repeats with the counter incrementing.</div>
+</div>
+
+<!-- ===== REVISION WORKFLOWS: PERMITTING ===== -->
+<div class="section" id="wf-rev-permit">
+<h1>Permitting Revision Workflow</h1>
+<p class="subtitle">AHJ permit rejection → design revision → resubmission cycle. Supports up to 2 rejection rounds.</p>
+
+<h2>Trigger</h2>
+<div class="ac ac-trig"><div><span class="t t-trig">TRIGGER</span> <code>Permitting Status</code> → "Rejected - Needs Revision"</div></div>
+
+<h2>1st Rejection Cycle</h2>
+<div class="sf">
+<span class="sp sp-r">Rejected - Needs Revision</span><span class="fa">→</span>
+<span class="sp">Revision Needed - Rejected by AHJ</span><span class="fa">→</span>
+<span class="sp">Permit Revision In Progress</span><span class="fa">→</span>
+<span class="sp">Permit Revision Completed</span><span class="fa">→</span>
+<span class="sp">Revision Ready To Resubmit</span><span class="fa">→</span>
+<span class="sp">Resubmitted to AHJ</span>
+</div>
+
+<div class="ac"><div><span class="t t-auto">AUTO</span> AHJ rejects → <code>Permitting Status</code> → "Revision Needed - Rejected by AHJ"</div></div>
+<div class="ac"><div><span class="t t-auto">AUTO</span> Design picks up → "Permit Revision In Progress"</div></div>
+<div class="ac"><div><span class="t t-auto">AUTO</span> Design done → "Permit Revision Completed" → "Revision Ready To Resubmit"</div><div><span class="t t-auto">AUTO</span> Creates task for permitting coordinator to resubmit</div></div>
+<div class="ac"><div><span class="t t-man">MANUAL</span> Permitting coordinator completes task → "Resubmitted to AHJ"</div></div>
+
+<h2>2nd Rejection Cycle</h2>
+<div class="sf">
+<span class="sp sp-r">Rejected 2nd Time - Needs Revisions</span><span class="fa">→</span>
+<span class="sp">2nd Revision Needed - Rejected by AHJ</span><span class="fa">→</span>
+<span class="sp">2nd Permit Revision In Progress</span><span class="fa">→</span>
+<span class="sp">2nd Permit Revision Complete</span><span class="fa">→</span>
+<span class="sp">2nd Revision Ready To Submit</span><span class="fa">→</span>
+<span class="sp">Resubmitted to AHJ</span>
+</div>
+<div class="info"><strong>Same pattern</strong> as the 1st cycle — a task is created for the permitting coordinator at the "2nd Revision Ready To Submit" step. If rejected a 3rd time, manual escalation is required.</div>
+</div>
+
+<!-- ===== REVISION WORKFLOWS: INTERCONNECTION ===== -->
+<div class="section" id="wf-rev-ic">
+<h1>Interconnection Revision Workflow</h1>
+<p class="subtitle">Utility rejection → design revision → resubmission cycle. Supports up to 2 rejection rounds.</p>
+
+<h2>Trigger</h2>
+<div class="ac ac-trig"><div><span class="t t-trig">TRIGGER</span> <code>Interconnection Status</code> → "Rejected - Revisions Needed"</div></div>
+
+<h2>1st Rejection Cycle</h2>
+<div class="sf">
+<span class="sp sp-r">Rejected - Revisions Needed</span><span class="fa">→</span>
+<span class="sp">Revision Needed - Rejected by Utility</span><span class="fa">→</span>
+<span class="sp">Utility Revision In Progress</span><span class="fa">→</span>
+<span class="sp">Utility Revision Completed</span><span class="fa">→</span>
+<span class="sp">Revision Ready To Resubmit</span><span class="fa">→</span>
+<span class="sp">Resubmitted to Utility</span>
+</div>
+
+<div class="ac"><div><span class="t t-auto">AUTO</span> Utility rejects → <code>Interconnection Status</code> → "Revision Needed - Rejected by Utility"</div></div>
+<div class="ac"><div><span class="t t-auto">AUTO</span> Design picks up → "Utility Revision In Progress"</div></div>
+<div class="ac"><div><span class="t t-auto">AUTO</span> Design done → "Utility Revision Completed" → "Revision Ready To Resubmit"</div><div><span class="t t-auto">AUTO</span> Creates task for interconnection coordinator to resubmit</div></div>
+<div class="ac"><div><span class="t t-man">MANUAL</span> IC coordinator completes task → "Resubmitted to Utility"</div></div>
+
+<h2>2nd Rejection Cycle</h2>
+<div class="sf">
+<span class="sp sp-r">Rejected 2nd Time - Revisions Needed</span><span class="fa">→</span>
+<span class="sp">2nd Revision Needed - Rejected by Utility</span><span class="fa">→</span>
+<span class="sp">2nd Utility Revision In Progress</span><span class="fa">→</span>
+<span class="sp">2nd Utility Revision Complete</span><span class="fa">→</span>
+<span class="sp">2nd Revision Ready To Submit</span><span class="fa">→</span>
+<span class="sp">Resubmitted to Utility</span>
+</div>
+<div class="info"><strong>Same pattern</strong> as the 1st cycle — a task is created for the IC coordinator at the "2nd Revision Ready To Submit" step. If rejected a 3rd time, manual escalation is required.</div>
+</div>
+
+<!-- ===== REVISION WORKFLOWS: AS-BUILT ===== -->
+<div class="section" id="wf-rev-ab">
+<h1>As-Built Revision Workflow</h1>
+<p class="subtitle">Post-construction as-built revision cycle. Triggered by inspection failure or as-built requirement.</p>
+
+<h2>Triggers (either one)</h2>
+<div class="ac ac-trig"><div><span class="t t-trig">TRIGGER</span> <code>Permitting Status</code> → "As-Built Revision In Progress"</div></div>
+<div class="ac ac-trig"><div><span class="t t-trig">TRIGGER</span> <code>Final Inspection Status</code> → "Rejected - As-Built Revision Needed"</div></div>
+
+<h2>Revision Flow</h2>
+<div class="sf">
+<span class="sp sp-r">As-Built Revision Needed</span><span class="fa">→</span>
+<span class="sp">As-Built Revision In Progress</span><span class="fa">→</span>
+<span class="sp">As-Built Revision Completed</span><span class="fa">→</span>
+<span class="sp">As-Built Ready To Resubmit</span><span class="fa">→</span>
+<span class="sp">As-Built Revision Resubmitted</span>
+</div>
+
+<div class="ac"><div><span class="t t-auto">AUTO</span> Inspection fails with as-built issue → triggers as-built revision</div></div>
+<div class="ac"><div><span class="t t-auto">AUTO</span> Design team revises as-built plans → "As-Built Revision In Progress"</div></div>
+<div class="ac"><div><span class="t t-auto">AUTO</span> Revision done → "As-Built Revision Completed" → "As-Built Ready To Resubmit"</div><div><span class="t t-auto">AUTO</span> Creates task for permitting to resubmit as-built</div></div>
+<div class="ac"><div><span class="t t-man">MANUAL</span> Permitting completes task → "As-Built Revision Resubmitted"</div></div>
+
+<div class="warn"><strong>As-built revisions do NOT block PTO.</strong> The initial inspection pass is what advances the deal to PTO. As-built revisions run in parallel and are tracked separately via the permitting status sub-flow.</div>
 </div>
 
 </main>
