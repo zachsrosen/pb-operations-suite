@@ -610,6 +610,13 @@ export default function SchedulerPage() {
   const [zuperWebBaseUrl, setZuperWebBaseUrl] = useState("https://web.zuperpro.com");
   const [syncToZuper, setSyncToZuper] = useState(true);
   const [syncingToZuper, setSyncingToZuper] = useState(false);
+  const [reschedulingProjectId, setReschedulingProjectId] = useState<string | null>(null);
+  const [rescheduleConfirm, setRescheduleConfirm] = useState<{
+    project: SchedulerProject;
+    fromDate: string;
+    toDate: string;
+    days: number;
+  } | null>(null);
 
   /* ---- revenue sidebar ---- */
   const [revenueSidebarOpen, setRevenueSidebarOpen] = useState(true);
@@ -1958,6 +1965,186 @@ export default function SchedulerPage() {
     }
   }, [manualSchedules, resolveMasterTentativeRecordId, showToast]);
 
+  /* ---- One-click reschedule for confirmed installs ---- */
+  const handleOneClickReschedule = useCallback(async (project: SchedulerProject, newDate: string, daysOverride?: number) => {
+    const adjustedDate = getNextWorkday(newDate);
+    const isSurveyOrInsp = project.stage === "survey" || project.stage === "inspection";
+    const scheduleType: ScheduleType = project.stage === "survey" ? "survey"
+      : project.stage === "inspection" ? "inspection"
+      : "installation";
+
+    // Resolve existing crew/assignees from the project
+    const location = project.location || "";
+    const existingCrew = project.crew || "";
+    const existingAssignedTo = project.zuperAssignedTo || [];
+    // For surveys/inspections, always 1 day regardless of daysOverride
+    const days = isSurveyOrInsp ? 1 : (daysOverride || getEffectiveConstructionDays(project) || project.daysInstall || 2);
+    const timezone = LOCATION_TIMEZONES[location] || "America/Denver";
+
+    // For construction, resolve assignee UIDs from existing crew names
+    const constructionUsers = liveConstructionAssigneesByLocation[location] || ZUPER_CONSTRUCTION_USERS[location] || [];
+    const crewNames = existingCrew.split(",").map((n: string) => n.trim()).filter(Boolean);
+    const matchedAssignees = constructionUsers.filter((u: ZuperAssignee) => crewNames.includes(u.name) || existingAssignedTo.includes(u.name));
+    const assignees = matchedAssignees.length > 0 ? matchedAssignees : (constructionUsers[0] ? [constructionUsers[0]] : []);
+
+    // For survey/inspection reschedule, preserve existing appointment times from Zuper.
+    // Extract hours/minutes in the PROJECT's timezone (not the viewer's local TZ).
+    let existingStartTime: string | undefined;
+    let existingEndTime: string | undefined;
+    if (isSurveyOrInsp && project.zuperScheduledStart) {
+      try {
+        const extractTimeInTz = (isoStr: string, tz: string): string => {
+          const dt = new Date(isoStr);
+          const parts = new Intl.DateTimeFormat("en-US", {
+            hour: "numeric", minute: "numeric", hour12: false, timeZone: tz,
+          }).formatToParts(dt);
+          const h = parts.find(p => p.type === "hour")?.value || "08";
+          const m = parts.find(p => p.type === "minute")?.value || "00";
+          return `${h.padStart(2, "0")}:${m.padStart(2, "0")}`;
+        };
+        existingStartTime = extractTimeInTz(project.zuperScheduledStart, timezone);
+        if (project.zuperScheduledEnd) {
+          existingEndTime = extractTimeInTz(project.zuperScheduledEnd, timezone);
+        }
+      } catch { /* fall through to defaults */ }
+    }
+
+    let assigneeName: string;
+    let crewUids: string;
+    let teamUid: string;
+
+    if (isSurveyOrInsp) {
+      const users = project.stage === "survey"
+        ? (ZUPER_SURVEY_USERS[location] || [])
+        : (ZUPER_INSPECTION_USERS[location] || []);
+      const matched = users.find((u: ZuperAssignee) => existingAssignedTo.includes(u.name) || u.name === existingCrew);
+      const assignee = matched || users[0];
+      assigneeName = assignee?.name || existingCrew || "Unassigned";
+      crewUids = assignee?.userUid || "";
+      teamUid = assignee?.teamUid || "";
+    } else {
+      assigneeName = assignees.map((a: ZuperAssignee) => a.name).join(", ") || existingCrew || "Unassigned";
+      crewUids = assignees.map((a: ZuperAssignee) => a.userUid).filter(Boolean).join(",");
+      teamUid = ZUPER_CONSTRUCTION_DIRECTORS[location]?.teamUid || assignees[0]?.teamUid || "";
+    }
+
+    trackFeature(`${scheduleType}-rescheduled`, `${scheduleType} rescheduled via one-click`, {
+      scheduler: "master",
+      projectId: project.id,
+      projectName: project.name,
+      date: adjustedDate,
+      stage: project.stage,
+      days,
+      crew: assigneeName,
+      syncToZuper: true,
+      isReschedule: true,
+    });
+
+    // Save previous state for rollback on failure
+    let previousSchedule: typeof manualSchedules[string] | undefined;
+    setManualSchedules((prev) => {
+      previousSchedule = prev[project.id];
+      return {
+        ...prev,
+        [project.id]: {
+          startDate: adjustedDate,
+          days,
+          crew: assigneeName,
+          isTentative: false,
+          scheduleType,
+        },
+      };
+    });
+
+    // Sync to Zuper + HubSpot + Google Calendar + email
+    setReschedulingProjectId(project.id);
+    try {
+      const response = await fetch("/api/zuper/jobs/schedule", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          project: {
+            id: project.id,
+            name: project.name,
+            address: project.address,
+            city: "",
+            state: "",
+            systemSizeKw: project.systemSize,
+            batteryCount: project.batteries,
+            projectType: project.type,
+            zuperJobUid: project.zuperJobUid,
+          },
+          schedule: {
+            type: scheduleType,
+            date: adjustedDate,
+            days,
+            startTime: existingStartTime || "08:00",
+            endTime: existingEndTime || (isSurveyOrInsp ? "09:00" : "16:00"),
+            crew: crewUids,
+            teamUid,
+            assignedUser: assigneeName,
+            timezone,
+            notes: `Rescheduled via Master Schedule — ${assigneeName}`,
+          },
+          rescheduleOnly: true,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.action === "no_job_found") {
+          // Roll back — no Zuper job exists to reschedule
+          setManualSchedules((prev) => {
+            if (previousSchedule) return { ...prev, [project.id]: previousSchedule };
+            const next = { ...prev };
+            delete next[project.id];
+            return next;
+          });
+          showToast(
+            `${getCustomerName(project.name)} — no Zuper job found. Use full schedule modal.`,
+            "error"
+          );
+        } else {
+          showToast(
+            `${getCustomerName(project.name)} rescheduled to ${formatDateShort(adjustedDate)} — Zuper, calendar & crew notified`
+          );
+        }
+      } else {
+        // Roll back on API failure
+        setManualSchedules((prev) => {
+          if (previousSchedule) return { ...prev, [project.id]: previousSchedule };
+          const next = { ...prev };
+          delete next[project.id];
+          return next;
+        });
+        const errData = await response.json().catch(() => ({}));
+        console.error("[One-click Reschedule] Zuper sync failed:", errData);
+        showToast(
+          `${getCustomerName(project.name)} reschedule failed — reverted (${errData.error || response.status})`,
+          "error"
+        );
+      }
+    } catch (err) {
+      // Roll back on network error
+      setManualSchedules((prev) => {
+        if (previousSchedule) return { ...prev, [project.id]: previousSchedule };
+        const next = { ...prev };
+        delete next[project.id];
+        return next;
+      });
+      console.error("[One-click Reschedule] error:", err);
+      showToast(
+        `${getCustomerName(project.name)} reschedule failed — reverted`,
+        "error"
+      );
+    } finally {
+      setReschedulingProjectId(null);
+      setDetailModal(null);
+    }
+  }, [trackFeature, getEffectiveConstructionDays, liveConstructionAssigneesByLocation, showToast]);
+
+  type ScheduleType = "survey" | "installation" | "inspection";
+
   /* ---- Optimizer handlers ---- */
 
   const handleOptimizeGenerate = useCallback(() => {
@@ -2219,12 +2406,30 @@ export default function SchedulerPage() {
       const projectId = e.dataTransfer.getData("text/plain");
       const project = projects.find((p) => p.id === projectId);
       if (project) {
-        const proj = crewName ? { ...project, crew: crewName } : project;
-        openScheduleModal(proj, dateStr);
+        const isAlreadyScheduled = !!(project.scheduleDate || manualSchedules[project.id]?.startDate);
+        const hasZuperJob = !!project.zuperJobUid;
+        const isTentative = !!manualSchedules[project.id]?.isTentative;
+
+        if (isAlreadyScheduled && hasZuperJob && !isTentative) {
+          // Show quick confirmation dialog for one-click reschedule
+          const isSurveyOrInsp = project.stage === "survey" || project.stage === "inspection";
+          const days = isSurveyOrInsp ? 1 : (getEffectiveConstructionDays(project) || project.daysInstall || 2);
+          const fromDate = manualSchedules[project.id]?.startDate || project.scheduleDate || "";
+          setRescheduleConfirm({
+            project: crewName ? { ...project, crew: crewName } : project,
+            fromDate,
+            toDate: getNextWorkday(dateStr),
+            days,
+          });
+        } else {
+          // Unscheduled or tentative — open full schedule modal
+          const proj = crewName ? { ...project, crew: crewName } : project;
+          openScheduleModal(proj, dateStr);
+        }
       }
       setDraggedProjectId(null);
     },
-    [projects, showToast, openScheduleModal]
+    [projects, manualSchedules, showToast, openScheduleModal, getEffectiveConstructionDays]
   );
 
   const handleWeekCellClick = useCallback(
@@ -4745,6 +4950,74 @@ export default function SchedulerPage() {
               </div>
             )}
 
+            {/* Reschedule section — for confirmed (non-tentative) scheduled items */}
+            {(!manualSchedules[detailModal.id]?.isTentative && (detailModal.scheduleDate || manualSchedules[detailModal.id]?.startDate)) ? (
+              <div className="mb-4 p-3 rounded-lg bg-blue-500/10 border border-blue-400/30">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-blue-400 text-[0.7rem] font-bold uppercase tracking-wide">Reschedule</span>
+                  <span className="text-[0.65rem] text-muted">
+                    {detailModal.zuperJobUid
+                      ? "Zuper, calendar & crew updated automatically"
+                      : "Move to a new date"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <input
+                    type="date"
+                    defaultValue=""
+                    min={new Date().toISOString().split("T")[0]}
+                    className="bg-background border border-t-border text-foreground/90 px-2 py-1.5 rounded text-[0.75rem] focus:outline-none focus:border-blue-500"
+                    id="reschedule-date-picker"
+                  />
+                  {detailModal.stage !== "survey" && detailModal.stage !== "inspection" && (
+                    <div className="flex items-center gap-1">
+                      <label className="text-[0.65rem] text-muted">Days</label>
+                      <input
+                        type="number"
+                        defaultValue={
+                          (getEffectiveConstructionDays(detailModal) || detailModal.daysInstall || 2)
+                        }
+                        min={1}
+                        max={30}
+                        id="reschedule-days-input"
+                        className="w-12 bg-background border border-t-border text-foreground/90 px-1.5 py-1.5 rounded text-[0.75rem] text-center focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+                  )}
+                  <button
+                    disabled={reschedulingProjectId === detailModal.id}
+                    onClick={() => {
+                      const isSurveyOrInsp = detailModal.stage === "survey" || detailModal.stage === "inspection";
+                      const fallbackDays = isSurveyOrInsp ? 1 : (getEffectiveConstructionDays(detailModal) || detailModal.daysInstall || 2);
+                      const input = document.getElementById("reschedule-date-picker") as HTMLInputElement;
+                      const daysInput = document.getElementById("reschedule-days-input") as HTMLInputElement;
+                      const newDate = input?.value;
+                      if (!newDate) {
+                        showToast("Please select a new date", "warning");
+                        return;
+                      }
+                      const days = daysInput ? Math.max(1, Math.min(30, parseInt(daysInput.value) || fallbackDays)) : fallbackDays;
+                      if (detailModal.zuperJobUid) {
+                        handleOneClickReschedule(detailModal, newDate, days);
+                      } else {
+                        const project = detailModal;
+                        setDetailModal(null);
+                        openScheduleModal(project, newDate);
+                      }
+                    }}
+                    className="px-3 py-1.5 rounded-md bg-blue-600 text-white text-[0.7rem] font-semibold hover:bg-blue-700 transition-colors cursor-pointer whitespace-nowrap disabled:opacity-50"
+                  >
+                    {reschedulingProjectId === detailModal.id ? "Rescheduling..." : "Reschedule"}
+                  </button>
+                </div>
+                {detailModal.zuperJobUid && (
+                  <div className="mt-2 flex items-center gap-1.5 text-[0.6rem] text-cyan-400/70">
+                    <span>Keeps same crew: {detailModal.zuperAssignedTo?.join(", ") || detailModal.crew || "current"}</span>
+                  </div>
+                )}
+              </div>
+            ) : null}
+
             <div className="flex gap-2 justify-end flex-wrap">
               {!manualSchedules[detailModal.id]?.isTentative && (
                 <button
@@ -4777,6 +5050,75 @@ export default function SchedulerPage() {
                 className="px-3.5 py-2 rounded-md bg-background border border-t-border text-foreground/80 text-[0.75rem] cursor-pointer hover:bg-surface-2 transition-colors"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* DRAG RESCHEDULE CONFIRMATION DIALOG                           */}
+      {/* ============================================================ */}
+      {rescheduleConfirm && (
+        <div
+          className="fixed inset-0 bg-black/80 flex items-center justify-center z-[1001]"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setRescheduleConfirm(null);
+          }}
+        >
+          <div className="bg-surface border border-t-border rounded-xl p-5 max-w-[420px] w-[90%]">
+            <h3 className="text-base mb-1">Reschedule</h3>
+            <p className="text-[0.75rem] text-muted mb-4">
+              Move <span className="text-foreground font-semibold">{getCustomerName(rescheduleConfirm.project.name)}</span> from{" "}
+              <span className="text-blue-400">{formatDateShort(rescheduleConfirm.fromDate)}</span> to{" "}
+              <span className="text-blue-400">{formatDateShort(rescheduleConfirm.toDate)}</span>?
+            </p>
+
+            {/* Days control — only for construction, not surveys/inspections (always 1 day) */}
+            {rescheduleConfirm.project.stage !== "survey" && rescheduleConfirm.project.stage !== "inspection" && (
+              <div className="mb-3 flex items-center gap-3">
+                <label className="text-[0.7rem] text-muted">Days</label>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setRescheduleConfirm((prev) => prev ? { ...prev, days: Math.max(1, prev.days - 1) } : null)}
+                    className="w-6 h-6 rounded bg-background border border-t-border text-foreground/80 text-[0.75rem] flex items-center justify-center cursor-pointer hover:bg-surface-2"
+                  >
+                    -
+                  </button>
+                  <span className="w-8 text-center text-[0.8rem] font-semibold">{rescheduleConfirm.days}</span>
+                  <button
+                    onClick={() => setRescheduleConfirm((prev) => prev ? { ...prev, days: Math.min(30, prev.days + 1) } : null)}
+                    className="w-6 h-6 rounded bg-background border border-t-border text-foreground/80 text-[0.75rem] flex items-center justify-center cursor-pointer hover:bg-surface-2"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="text-[0.6rem] text-cyan-400/70 mb-4">
+              Zuper, Google Calendar & crew email will be updated automatically.
+              <br />
+              Crew: {rescheduleConfirm.project.zuperAssignedTo?.join(", ") || rescheduleConfirm.project.crew || "current"}
+            </div>
+
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setRescheduleConfirm(null)}
+                className="px-3.5 py-2 rounded-md bg-background border border-t-border text-foreground/80 text-[0.75rem] cursor-pointer hover:bg-surface-2 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                disabled={reschedulingProjectId === rescheduleConfirm.project.id}
+                onClick={() => {
+                  const { project, toDate, days } = rescheduleConfirm;
+                  setRescheduleConfirm(null);
+                  handleOneClickReschedule(project, toDate, days);
+                }}
+                className="px-3.5 py-2 rounded-md bg-blue-600 text-white text-[0.75rem] font-semibold cursor-pointer hover:bg-blue-700 transition-colors disabled:opacity-50"
+              >
+                {reschedulingProjectId === rescheduleConfirm.project.id ? "Rescheduling..." : "Confirm Reschedule"}
               </button>
             </div>
           </div>
