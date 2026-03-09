@@ -113,7 +113,10 @@ export function buildWorkerPayload(
   const resolvedEss = ess && ess.type !== "none" ? resolveEss(essKey, ess) : null;
 
   const hasDesignData = hasFullDesignData(project);
-  const isQuickEstimate = !hasDesignData;
+  const shadeData = eq.shadeData as Record<string, unknown> | undefined;
+  const hasShadeData = shadeData && Object.keys(shadeData).length > 0;
+  // Quick Estimate only when no design data AND no shade data
+  const isQuickEstimate = !hasDesignData && !hasShadeData;
 
   let panelStats: WorkerRunMessage["payload"]["panelStats"];
   let stringsConfig: Record<string, unknown>;
@@ -122,8 +125,15 @@ export function buildWorkerPayload(
     // Full design data — use as-is
     panelStats = (project.panelStats as WorkerRunMessage["payload"]["panelStats"]) || [];
     stringsConfig = (project.stringsConfig as Record<string, unknown>) || {};
+  } else if (hasShadeData) {
+    // Shade-informed estimate — use Google Solar API data for panel count + TSRF
+    const qe = generateShadeInformedEstimate(
+      panel, inverter, panelKey, inverterKey, shadeData!
+    );
+    panelStats = qe.panelStats;
+    stringsConfig = qe.stringsConfig;
   } else {
-    // Quick Estimate mode [B1]
+    // Quick Estimate mode [B1] — no shade, no design
     const qe = generateQuickEstimate(panel, inverter, panelKey, inverterKey);
     panelStats = qe.panelStats;
     stringsConfig = qe.stringsConfig;
@@ -251,6 +261,146 @@ function generateQuickEstimate(
       strings,
       inverters: inverterConfigs,
     },
+  };
+}
+
+// ── Shade-Informed Estimate ──────────────────────────────────
+
+/**
+ * Use Google Solar API shade data to derive panel count and per-panel TSRF.
+ * - Panel count from `maxArrayPanelsCount` (capped by inverter capacity)
+ * - Per-panel TSRF from `solarPanels[].yearlyEnergyDcKwh` or
+ *   `roofSegments[].stats.sunshineQuantiles`
+ * - Falls back to inverter-derived count if shade data is sparse
+ */
+function generateShadeInformedEstimate(
+  panel: BuiltInPanel,
+  inverter: BuiltInInverter,
+  panelKey: string,
+  inverterKey: string,
+  shadeData: Record<string, unknown>
+): QuickEstimateResult {
+  // Extract shade data fields
+  const maxArrayPanels = (shadeData.maxArrayPanelsCount as number) || 0;
+  const maxSunshineHours = (shadeData.maxSunshineHoursPerYear as number) || 0;
+  const solarPanels = (shadeData.solarPanels as Array<Record<string, unknown>>) || [];
+  const roofSegments = (shadeData.roofSegments as Array<Record<string, unknown>>) || [];
+
+  // Panel count: use shade data count, but cap by inverter capacity
+  const inverterMaxPanels = Math.ceil((inverter.dcMax * 1.5) / panel.watts);
+  const panelCount = maxArrayPanels > 0
+    ? Math.min(maxArrayPanels, inverterMaxPanels)
+    : Math.min(Math.round(inverter.dcMax / panel.watts), inverterMaxPanels);
+
+  if (panelCount === 0) {
+    return {
+      panelStats: [],
+      stringsConfig: { strings: [], inverters: [] },
+    };
+  }
+
+  // Derive per-panel TSRF from Google Solar API panel data
+  // TSRF = panel's sunshine hours / max possible sunshine hours
+  // Reference: ~4380 hours = theoretical max (12h × 365d), use maxSunshineHours if available
+  const referenceHours = maxSunshineHours > 0 ? maxSunshineHours : 4380;
+
+  const panelStats: WorkerRunMessage["payload"]["panelStats"] = [];
+
+  if (solarPanels.length > 0) {
+    // Use individual panel data from Google Solar API
+    for (let i = 0; i < panelCount; i++) {
+      const sp = solarPanels[i]; // may be undefined if panelCount > solarPanels.length
+      let tsrf = 0.8; // default fallback
+
+      if (sp) {
+        const yearlyEnergy = sp.yearlyEnergyDcKwh as number | undefined;
+        if (yearlyEnergy && yearlyEnergy > 0) {
+          // Derive TSRF: actual yield / ideal yield (STC watts × sunshine hours / 1000)
+          const idealKwh = (panel.watts * referenceHours) / 1000;
+          tsrf = idealKwh > 0 ? Math.min(yearlyEnergy / idealKwh, 1.0) : 0.8;
+        }
+      }
+
+      // Determine segment index from solar panel data
+      const segmentIndex = sp
+        ? (sp.segmentIndex as number | undefined) ?? 0
+        : 0;
+
+      panelStats.push({ tsrf, panelKey, segmentIndex });
+    }
+  } else if (roofSegments.length > 0) {
+    // Fallback: use roof segment stats to derive average TSRF per segment
+    // Distribute panels proportionally across segments
+    const totalPanelsInSegments = roofSegments.reduce((sum, seg) => {
+      return sum + ((seg.panelsCount as number) || 0);
+    }, 0);
+
+    let assigned = 0;
+    for (let segIdx = 0; segIdx < roofSegments.length && assigned < panelCount; segIdx++) {
+      const seg = roofSegments[segIdx];
+      const segPanels = (seg.panelsCount as number) || 0;
+      const segStats = seg.stats as Record<string, unknown> | undefined;
+
+      // Derive segment TSRF from sunshine quantiles (median = index 5 of 11)
+      let segTsrf = 0.8;
+      if (segStats) {
+        const quantiles = segStats.sunshineQuantiles as number[] | undefined;
+        if (quantiles && quantiles.length > 5) {
+          const medianHours = quantiles[5]; // median sunshine
+          segTsrf = referenceHours > 0
+            ? Math.min(medianHours / referenceHours, 1.0)
+            : 0.8;
+        }
+      }
+
+      // Proportionally allocate panels to this segment
+      const segShare = totalPanelsInSegments > 0
+        ? Math.round((segPanels / totalPanelsInSegments) * panelCount)
+        : Math.ceil(panelCount / roofSegments.length);
+      const segCount = Math.min(segShare, panelCount - assigned);
+
+      for (let j = 0; j < segCount; j++) {
+        panelStats.push({ tsrf: segTsrf, panelKey, segmentIndex: segIdx });
+        assigned++;
+      }
+    }
+
+    // Fill remaining panels with average TSRF if proportional distribution was short
+    while (panelStats.length < panelCount) {
+      panelStats.push({ tsrf: 0.8, panelKey, segmentIndex: 0 });
+    }
+  } else {
+    // No per-panel or per-segment data — use whole-roof sunshine for uniform TSRF
+    const uniformTsrf = maxSunshineHours > 0
+      ? Math.min(maxSunshineHours / 4380, 1.0)
+      : 0.8;
+    for (let i = 0; i < panelCount; i++) {
+      panelStats.push({ tsrf: uniformTsrf, panelKey, segmentIndex: 0 });
+    }
+  }
+
+  // Generate string assignments (same logic as Quick Estimate)
+  const channels = inverter.channels || 1;
+  const isMicro = inverter.isMicro || inverter.architectureType === "micro";
+
+  let strings: StringConfig[];
+  let inverterConfigs: InverterConfig[];
+
+  if (isMicro) {
+    strings = Array.from({ length: panelCount }, (_, i) => ({ panels: [i] }));
+    inverterConfigs = [{ inverterKey, stringIndices: strings.map((_, i) => i) }];
+  } else {
+    const channelBuckets: number[][] = Array.from({ length: channels }, () => []);
+    for (let i = 0; i < panelCount; i++) {
+      channelBuckets[i % channels].push(i);
+    }
+    strings = channelBuckets.filter((b) => b.length > 0).map((panels) => ({ panels }));
+    inverterConfigs = [{ inverterKey, stringIndices: strings.map((_, i) => i) }];
+  }
+
+  return {
+    panelStats,
+    stringsConfig: { strings, inverters: inverterConfigs },
   };
 }
 
