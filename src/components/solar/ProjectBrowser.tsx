@@ -127,6 +127,37 @@ export default function ProjectBrowser({
     [trackFeature, onStartWizard]
   );
 
+  const handleDelete = useCallback(
+    async (projectId: string, projectName: string) => {
+      const confirmed = window.confirm(
+        `Archive "${projectName}"? This will hide it from your project list.`
+      );
+      if (!confirmed) return;
+
+      try {
+        const csrfMatch = document.cookie.match(/csrf_token=([^;]+)/);
+        const csrf = csrfMatch?.[1] ?? "";
+
+        const res = await fetch(`/api/solar/projects/${projectId}`, {
+          method: "DELETE",
+          headers: { "x-csrf-token": csrf },
+        });
+
+        if (!res.ok) {
+          const body = await res.json().catch(() => null);
+          throw new Error(body?.error ?? `Delete failed (${res.status})`);
+        }
+
+        trackFeature("solar_project_archived", undefined, { projectId });
+        // Remove from local list
+        setProjects((prev) => prev.filter((p) => p.id !== projectId));
+      } catch (err) {
+        alert(err instanceof Error ? err.message : "Failed to archive project");
+      }
+    },
+    [trackFeature]
+  );
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -262,11 +293,14 @@ export default function ProjectBrowser({
                     </button>
                   </>
                 )}
-                {project.status === "DRAFT" && (
-                  <span className="text-[10px] text-yellow-500/50 ml-auto">
-                    In progress
-                  </span>
-                )}
+                <button
+                  onClick={() => handleDelete(project.id, project.name)}
+                  className="text-xs text-zinc-500 hover:text-red-400 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400/50 rounded ml-auto"
+                  aria-label={`Archive ${project.name}`}
+                  title="Archive project"
+                >
+                  &#x2715;
+                </button>
               </div>
             </article>
           ))}
