@@ -26,7 +26,8 @@ import type { ShadeFallbackReason } from "@/lib/solar/types";
 
 // ── Config ────────────────────────────────────────────────
 
-const GOOGLE_SOLAR_API_KEY = process.env.GOOGLE_SOLAR_API_KEY;
+const GOOGLE_SOLAR_API_KEY =
+  process.env.GOOGLE_SOLAR_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
 const GOOGLE_SOLAR_BASE_URL =
   "https://solar.googleapis.com/v1/buildingInsights:findClosest";
 
