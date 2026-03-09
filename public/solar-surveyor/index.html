@@ -20,7 +20,7 @@
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
     <!-- App Styles -->
-  <script type="module" crossorigin src="/solar-surveyor/assets/index-B0mEB1d4.js"></script>
+  <script type="module" crossorigin src="/solar-surveyor/assets/index-VZkOrA_e.js"></script>
   <link rel="stylesheet" crossorigin href="/solar-surveyor/assets/index-DaePd3FV.css">
 </head>
 <body>
@@ -72,6 +72,7 @@
                 </div>
             </div>
             <div id="projectNameDisplay" class="project-name-display">No project loaded</div>
+            <input type="text" id="projectSearch" placeholder="Search projects..." style="width:100%; padding:4px 8px; font-size:10px; background:rgba(0,0,0,0.3); border:1px solid var(--border); border-radius:4px; color:var(--text); margin-bottom:4px; outline:none;" />
             <div id="projectListItems" class="project-list"></div>
             <div style="margin-top:6px;">
                 <button class="btn-sm btn-secondary" id="btnHistory" style="width:100%;">Revision History</button>
@@ -461,7 +462,8 @@
         <div class="card">
             <div class="card-header">
                 <span class="lbl">Inverter Configuration</span>
-                <button class="btn-sm btn-success" onclick="APP.addInverter()">+ Add Inverter</button>
+                <input id="invQty" type="number" min="1" max="20" value="1" style="width:36px; padding:2px 4px; font-size:10px; background:rgba(0,0,0,0.3); border:1px solid var(--border); border-radius:3px; color:var(--text); text-align:center;" title="Quantity">
+                <button class="btn-sm btn-success" onclick="APP.addInverter()">+ Add Inverter(s)</button>
             </div>
             <div id="invConfigList">
                 <div style="color:#64748b; font-size:10px; text-align:center; padding:6px;">No inverters configured</div>
