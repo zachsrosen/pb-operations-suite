@@ -18,7 +18,8 @@ import type {
   WorkerResultMessage,
   WorkerErrorMessage,
 } from "../types";
-import { SCHEMA_VERSION } from "../engine/runner";
+import { SCHEMA_VERSION, runAnalysis } from "../engine/runner";
+import { mapPayloadToRunnerInput } from "../engine/payload-mapper";
 
 export type SimulationStatus = "idle" | "running" | "complete" | "error";
 
@@ -87,6 +88,60 @@ export function useSimulation(): UseSimulationReturn {
     }));
   }, []);
 
+  /**
+   * Run the engine inline on the main thread.
+   * Used as fallback when the Web Worker fails to load (e.g., Turbopack dev).
+   */
+  const runInline = useCallback(
+    (payload: WorkerRunMessage["payload"], currentRunId: number) => {
+      // Use setTimeout to avoid blocking the React commit
+      setTimeout(() => {
+        if (runIdRef.current !== currentRunId) return;
+        try {
+          const input = mapPayloadToRunnerInput(payload);
+          const result = runAnalysis(input, (progress) => {
+            if (runIdRef.current !== currentRunId) return;
+            setState((prev) => ({
+              ...prev,
+              progress: {
+                percent: progress.payload.percent,
+                stage: progress.payload.stage,
+              },
+            }));
+          });
+
+          if (runIdRef.current !== currentRunId) return;
+
+          if (result.schemaVersion !== SCHEMA_VERSION) {
+            setState({
+              status: "error",
+              progress: { percent: 0, stage: "" },
+              result: null,
+              error: `Unsupported schema version: ${result.schemaVersion} (expected ${SCHEMA_VERSION}).`,
+            });
+            return;
+          }
+
+          setState({
+            status: "complete",
+            progress: { percent: 100, stage: "Complete" },
+            result: { ...result },
+            error: null,
+          });
+        } catch (err) {
+          if (runIdRef.current !== currentRunId) return;
+          setState({
+            status: "error",
+            progress: { percent: 0, stage: "" },
+            result: null,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }, 0);
+    },
+    []
+  );
+
   const run = useCallback(
     (payload: WorkerRunMessage["payload"]) => {
       // Terminate previous worker if running
@@ -101,10 +156,18 @@ export function useSimulation(): UseSimulationReturn {
         error: null,
       });
 
-      const worker = new Worker(
-        new URL("../worker.ts", import.meta.url),
-        { type: "module" }
-      );
+      // Try Web Worker first, fall back to inline if it fails to load
+      let worker: Worker;
+      try {
+        worker = new Worker(
+          new URL("../worker.ts", import.meta.url)
+        );
+      } catch {
+        // Worker construction failed (e.g., Turbopack dev, CSP, unsupported)
+        console.warn("[solar] Web Worker unavailable, running engine inline");
+        runInline(payload, currentRunId);
+        return;
+      }
       workerRef.current = worker;
 
       worker.onmessage = (event: MessageEvent) => {
@@ -171,14 +234,11 @@ export function useSimulation(): UseSimulationReturn {
 
       worker.onerror = (event) => {
         if (runIdRef.current !== currentRunId) return;
-        setState({
-          status: "error",
-          progress: { percent: 0, stage: "" },
-          result: null,
-          error: event.message || "Worker encountered an unexpected error",
-        });
+        // Worker loaded but crashed — fall back to inline
+        console.warn("[solar] Worker error, falling back to inline:", event.message);
         worker.terminate();
         workerRef.current = null;
+        runInline(payload, currentRunId);
       };
 
       // Send the run message
@@ -187,7 +247,7 @@ export function useSimulation(): UseSimulationReturn {
         payload,
       } satisfies WorkerRunMessage);
     },
-    []
+    [runInline]
   );
 
   // Cleanup on unmount
