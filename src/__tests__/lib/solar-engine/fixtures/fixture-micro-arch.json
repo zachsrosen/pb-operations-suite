@@ -1,0 +1,69 @@
+{
+  "description": "4 panels with micro-inverters — modelB should be null [P1-F3]",
+  "panels": [
+    { "id": 0, "tsrf": 0.85, "points": [], "panelKey": "TEST_440W", "bifacialGain": 1.0 },
+    { "id": 1, "tsrf": 0.83, "points": [], "panelKey": "TEST_440W", "bifacialGain": 1.0 },
+    { "id": 2, "tsrf": 0.87, "points": [], "panelKey": "TEST_440W", "bifacialGain": 1.0 },
+    { "id": 3, "tsrf": 0.80, "points": [], "panelKey": "TEST_440W", "bifacialGain": 1.0 }
+  ],
+  "shadeData": {},
+  "strings": [],
+  "inverters": [
+    { "inverterKey": "TEST_MICRO_400", "stringIndices": [0] },
+    { "inverterKey": "TEST_MICRO_400", "stringIndices": [1] },
+    { "inverterKey": "TEST_MICRO_400", "stringIndices": [2] },
+    { "inverterKey": "TEST_MICRO_400", "stringIndices": [3] }
+  ],
+  "resolvedPanels": {
+    "TEST_440W": {
+      "key": "TEST_440W",
+      "name": "Test 440W Panel",
+      "watts": 440,
+      "voc": 51.8,
+      "vmp": 42.5,
+      "isc": 11.1,
+      "imp": 10.35,
+      "tempCoVoc": -0.0026,
+      "tempCoIsc": 0.0005,
+      "tempCoPmax": -0.003,
+      "cells": 144,
+      "bypassDiodes": 3,
+      "cellsPerSubstring": 48,
+      "isBifacial": false,
+      "bifacialityFactor": 0
+    }
+  },
+  "resolvedInverters": {
+    "TEST_MICRO_400": {
+      "key": "TEST_MICRO_400",
+      "name": "Test 400W Micro-Inverter",
+      "acPower": 400,
+      "dcMax": 500,
+      "mpptMin": 16,
+      "mpptMax": 60,
+      "channels": 1,
+      "maxIsc": 15,
+      "efficiency": 0.965,
+      "architectureType": "micro",
+      "isMicro": true,
+      "isIntegrated": false
+    }
+  },
+  "resolvedOptimizer": null,
+  "resolvedEss": null,
+  "architectureType": "micro",
+  "lossProfile": {
+    "soiling": 2.0,
+    "mismatch": 0.0,
+    "dcWiring": 2.0,
+    "acWiring": 1.0,
+    "availability": 3.0,
+    "lid": 1.5,
+    "snow": 0.0,
+    "nameplate": 1.0
+  },
+  "tmyData": null,
+  "homeConsumption": null,
+  "groundAlbedo": 0.2,
+  "clippingThreshold": 1.0
+}

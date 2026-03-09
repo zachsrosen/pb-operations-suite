@@ -43,6 +43,8 @@ const UpdateProjectSchema = z.object({
   geoJsonUrl: z.string().url().optional(),
   radianceDxfUrl: z.string().url().optional(),
   shadeDataUrl: z.string().url().optional(),
+  scenarios: z.any().optional(),
+  analysisResults: z.any().optional(),
 });
 
 // ── GET — Load project ─────────────────────────────────────
@@ -203,6 +205,7 @@ export async function PUT(req: NextRequest, context: RouteContext) {
   if (data.geoJsonUrl !== undefined) updateData.geoJsonUrl = data.geoJsonUrl;
   if (data.radianceDxfUrl !== undefined) updateData.radianceDxfUrl = data.radianceDxfUrl;
   if (data.shadeDataUrl !== undefined) updateData.shadeDataUrl = data.shadeDataUrl;
+  if (data.scenarios !== undefined) updateData.scenarios = data.scenarios;
 
   const updated = await prisma.solarProject.update({
     where: { id },

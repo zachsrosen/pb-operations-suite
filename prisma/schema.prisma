@@ -1414,6 +1414,7 @@ model SolarProject {
   homeConsumptionConfig Json?
   batteryConfig   Json?
   lossProfile     Json?
+  scenarios       Json?
   geoJsonUrl      String?
   radianceDxfUrl  String?
   shadeDataUrl    String?

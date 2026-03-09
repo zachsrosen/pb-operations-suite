@@ -1,0 +1,72 @@
+{
+  "description": "Single 440W panel, no shade, no battery, synthetic weather",
+  "panels": [
+    {
+      "id": 0,
+      "tsrf": 0.85,
+      "points": [],
+      "panelKey": "TEST_440W",
+      "bifacialGain": 1.0
+    }
+  ],
+  "shadeData": {},
+  "strings": [{ "panels": [0] }],
+  "inverters": [
+    {
+      "inverterKey": "TEST_INV_7600",
+      "stringIndices": [0]
+    }
+  ],
+  "resolvedPanels": {
+    "TEST_440W": {
+      "key": "TEST_440W",
+      "name": "Test 440W Panel",
+      "watts": 440,
+      "voc": 51.8,
+      "vmp": 42.5,
+      "isc": 11.1,
+      "imp": 10.35,
+      "tempCoVoc": -0.0026,
+      "tempCoIsc": 0.0005,
+      "tempCoPmax": -0.003,
+      "cells": 144,
+      "bypassDiodes": 3,
+      "cellsPerSubstring": 48,
+      "isBifacial": false,
+      "bifacialityFactor": 0
+    }
+  },
+  "resolvedInverters": {
+    "TEST_INV_7600": {
+      "key": "TEST_INV_7600",
+      "name": "Test 7.6kW Inverter",
+      "acPower": 7600,
+      "dcMax": 11400,
+      "mpptMin": 100,
+      "mpptMax": 480,
+      "channels": 2,
+      "maxIsc": 20,
+      "efficiency": 0.97,
+      "architectureType": "string",
+      "isMicro": false,
+      "isIntegrated": false
+    }
+  },
+  "resolvedOptimizer": null,
+  "resolvedEss": null,
+  "architectureType": "string",
+  "lossProfile": {
+    "soiling": 2.0,
+    "mismatch": 2.0,
+    "dcWiring": 2.0,
+    "acWiring": 1.0,
+    "availability": 3.0,
+    "lid": 1.5,
+    "snow": 0.0,
+    "nameplate": 1.0
+  },
+  "tmyData": null,
+  "homeConsumption": null,
+  "groundAlbedo": 0.2,
+  "clippingThreshold": 1.0
+}
