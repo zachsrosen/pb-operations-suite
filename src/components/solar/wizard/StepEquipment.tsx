@@ -7,9 +7,15 @@ interface EquipmentProfile {
   name: string;
   watts?: number;
   acPower?: number;
+  maxPowerW?: number;
+  channels?: number;
+  mpptChannels?: number;
   capacity?: number;
+  capacityKwh?: number;
   power?: number;
   dcMaxInput?: number;
+  maxInputW?: number;
+  cells?: number;
   [key: string]: unknown;
 }
 
@@ -33,6 +39,22 @@ export interface EquipmentSelections {
   inverterKey: string | null;
   essKey: string | null;
   optimizerKey: string | null;
+}
+
+function formatCustomInverterSpec(profile: EquipmentProfile): string {
+  const powerW = (profile.acPower ?? profile.maxPowerW ?? 0) as number;
+  const mppt = profile.channels ?? profile.mpptChannels ?? "?";
+  return `${(powerW / 1000).toFixed(1)}kW | ${mppt} MPPT`;
+}
+
+function formatCustomEssSpec(profile: EquipmentProfile): string {
+  const capacity = profile.capacity ?? profile.capacityKwh ?? 0;
+  return `${capacity}kWh`;
+}
+
+function formatCustomOptimizerSpec(profile: EquipmentProfile): string {
+  const maxInputW = (profile.dcMaxInput ?? profile.maxInputW ?? 0) as number;
+  return `${(maxInputW / 1000).toFixed(1)}kW max`;
 }
 
 interface StepEquipmentProps {
@@ -229,7 +251,7 @@ export default function StepEquipment({
               isCustom
               isSelected={selections.inverterKey === c.key}
               onSelect={() => select("inverterKey", c.key, "custom")}
-              spec={`${((c.profile.acPower ?? 0) / 1000).toFixed(1)}kW`}
+              spec={formatCustomInverterSpec(c.profile)}
             />
           ))}
         </div>
@@ -274,7 +296,7 @@ export default function StepEquipment({
               isCustom
               isSelected={selections.essKey === c.key}
               onSelect={() => select("essKey", c.key, "custom")}
-              spec={`${c.profile.capacity ?? "?"}kWh`}
+              spec={formatCustomEssSpec(c.profile)}
             />
           ))}
         </div>
@@ -321,7 +343,7 @@ export default function StepEquipment({
                 isCustom
                 isSelected={selections.optimizerKey === c.key}
                 onSelect={() => select("optimizerKey", c.key, "custom")}
-                spec={`${c.profile.dcMaxInput ?? "?"}W max`}
+                spec={formatCustomOptimizerSpec(c.profile)}
               />
             ))}
           </div>

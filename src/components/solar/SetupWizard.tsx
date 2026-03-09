@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import WizardStepper from "./wizard/WizardStepper";
 import StepBasics from "./wizard/StepBasics";
@@ -23,6 +23,13 @@ interface ConflictInfo {
   updatedAt: string;
 }
 
+interface PendingSaveIntent {
+  step: number;
+  url: string;
+  body: Record<string, unknown>;
+  onSuccess: (json: { data?: { version?: number } }) => Promise<void> | void;
+}
+
 export default function SetupWizard({
   onComplete,
   onCancel,
@@ -36,6 +43,7 @@ export default function SetupWizard({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [conflict, setConflict] = useState<ConflictInfo | null>(null);
+  const lastSaveRef = useRef<PendingSaveIntent | null>(null);
   const { trackFeature } = useActivityTracking();
 
   // Form data
@@ -103,14 +111,31 @@ export default function SetupWizard({
     return match?.[1] ?? "";
   }, []);
 
+  const persistWizardPreference = useCallback(async () => {
+    const res = await fetch("/api/solar/preferences", {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "x-csrf-token": getCsrfToken(),
+      },
+      body: JSON.stringify({
+        solarPreferredEntryMode: "wizard",
+      }),
+    });
+
+    if (!res.ok) {
+      throw new Error(`Failed to update preference (${res.status})`);
+    }
+  }, [getCsrfToken]);
+
   const handleApiError = useCallback(
     async (res: Response, step: number) => {
       if (res.status === 409) {
         const body = await res.json().catch(() => null);
         setConflict({
           serverVersion: body?.serverVersion ?? 0,
-          updatedBy: body?.updatedBy ?? "unknown",
-          updatedAt: body?.updatedAt ?? "",
+          updatedBy: body?.serverUpdatedBy ?? body?.updatedBy ?? "unknown",
+          updatedAt: body?.serverUpdatedAt ?? body?.updatedAt ?? "",
         });
         trackFeature("solar_wizard_conflict", undefined, {
           step,
@@ -127,22 +152,66 @@ export default function SetupWizard({
     [projectId, projectVersion, trackFeature]
   );
 
+  const saveProjectUpdate = useCallback(
+    async (intent: PendingSaveIntent) => {
+      lastSaveRef.current = intent;
+
+      const res = await fetch(intent.url, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "x-csrf-token": getCsrfToken(),
+        },
+        body: JSON.stringify(intent.body),
+      });
+
+      if (!res.ok) {
+        await handleApiError(res, intent.step);
+        return false;
+      }
+
+      const json = await res.json();
+      await intent.onSuccess(json);
+      lastSaveRef.current = null;
+      return true;
+    },
+    [getCsrfToken, handleApiError]
+  );
+
   // ── Step 1: Basics → POST project ────────────────────────
   const handleBasicsNext = useCallback(
     async (data: { name: string; address: string }) => {
       setError(null);
+      setConflict(null);
       setSaving(true);
       setName(data.name);
       setAddress(data.address);
 
       try {
         if (projectId) {
-          // Already have a project (resume case) — just advance
-          setCurrentStep(1);
-          trackFeature("solar_wizard_step_completed", undefined, {
+          const body = {
+            version: projectVersion,
+            name: data.name,
+            address: data.address || undefined,
+          };
+
+          await saveProjectUpdate({
             step: 0,
-            stepName: "Basics",
-            projectId,
+            url: `/api/solar/projects/${projectId}`,
+            body,
+            onSuccess: (json) => {
+              if (typeof json.data?.version === "number") {
+                setProjectVersion(json.data.version);
+              } else {
+                setProjectVersion((prev) => prev + 1);
+              }
+              setCurrentStep(1);
+              trackFeature("solar_wizard_step_completed", undefined, {
+                step: 0,
+                stepName: "Basics",
+                projectId,
+              });
+            },
           });
           return;
         }
@@ -166,6 +235,7 @@ export default function SetupWizard({
         }
 
         const json = await res.json();
+        lastSaveRef.current = null;
         setProjectId(json.data.id);
         setProjectVersion(json.data.version ?? 1);
         setCurrentStep(1);
@@ -193,36 +263,34 @@ export default function SetupWizard({
       setEquipment(selections);
 
       try {
-        const res = await fetch(`/api/solar/projects/${projectId}`, {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            "x-csrf-token": getCsrfToken(),
+        const body = {
+          version: projectVersion,
+          equipmentConfig: {
+            panelKey: selections.panelKey,
+            inverterKey: selections.inverterKey,
+            essKey: selections.essKey,
+            optimizerKey: selections.optimizerKey,
+            source: "wizard_v1",
           },
-          body: JSON.stringify({
-            version: projectVersion,
-            equipmentConfig: {
-              panelKey: selections.panelKey,
-              inverterKey: selections.inverterKey,
-              essKey: selections.essKey,
-              optimizerKey: selections.optimizerKey,
-              source: "wizard_v1",
-            },
-          }),
-        });
+        };
 
-        if (!res.ok) {
-          await handleApiError(res, 1);
-          return;
-        }
-
-        const json = await res.json();
-        setProjectVersion(json.data.version);
-        setCurrentStep(2);
-        trackFeature("solar_wizard_step_completed", undefined, {
+        await saveProjectUpdate({
           step: 1,
-          stepName: "Equipment",
-          projectId,
+          url: `/api/solar/projects/${projectId}`,
+          body,
+          onSuccess: (json) => {
+            if (typeof json.data?.version === "number") {
+              setProjectVersion(json.data.version);
+            } else {
+              setProjectVersion((prev) => prev + 1);
+            }
+            setCurrentStep(2);
+            trackFeature("solar_wizard_step_completed", undefined, {
+              step: 1,
+              stepName: "Equipment",
+              projectId,
+            });
+          },
         });
       } catch (err) {
         setError(err instanceof Error ? err.message : "Network error");
@@ -312,31 +380,27 @@ export default function SetupWizard({
           };
         }
 
-        const res = await fetch(`/api/solar/projects/${projectId}`, {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            "x-csrf-token": getCsrfToken(),
-          },
-          body: JSON.stringify(updateBody),
-        });
-
-        if (!res.ok) {
-          await handleApiError(res, 2);
-          return;
-        }
-
-        const json = await res.json();
-        setProjectVersion(json.data.version);
-        setCurrentStep(3);
-
         const shadeStatus = shadeData ? "fetched" : lat ? "no_data" : "no_geocode";
-        trackFeature("solar_wizard_step_completed", undefined, {
+
+        await saveProjectUpdate({
           step: 2,
-          stepName: "Shade",
-          projectId,
-          shadeStatus,
-          hasCoordinates: !!(lat && lng),
+          url: `/api/solar/projects/${projectId}`,
+          body: updateBody,
+          onSuccess: (json) => {
+            if (typeof json.data?.version === "number") {
+              setProjectVersion(json.data.version);
+            } else {
+              setProjectVersion((prev) => prev + 1);
+            }
+            setCurrentStep(3);
+            trackFeature("solar_wizard_step_completed", undefined, {
+              step: 2,
+              stepName: "Shade",
+              projectId,
+              shadeStatus,
+              hasCoordinates: !!(lat && lng),
+            });
+          },
         });
       } catch (err) {
         setError(err instanceof Error ? err.message : "Network error");
@@ -356,47 +420,37 @@ export default function SetupWizard({
       setSaving(true);
 
       try {
-        const res = await fetch(`/api/solar/projects/${projectId}`, {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            "x-csrf-token": getCsrfToken(),
+        const body = {
+          version: projectVersion,
+          status: "ACTIVE" as const,
+          visibility,
+        };
+
+        await saveProjectUpdate({
+          step: 3,
+          url: `/api/solar/projects/${projectId}`,
+          body,
+          onSuccess: async (json) => {
+            if (typeof json.data?.version === "number") {
+              setProjectVersion(json.data.version);
+            } else {
+              setProjectVersion((prev) => prev + 1);
+            }
+            if (setWizardPreference) {
+              await persistWizardPreference().catch(() => {});
+            }
+
+            trackFeature("solar_wizard_completed", undefined, {
+              projectId,
+              panelKey: equipment.panelKey,
+              inverterKey: equipment.inverterKey,
+              essKey: equipment.essKey,
+              shadeSource,
+            });
+
+            onComplete(projectId);
           },
-          body: JSON.stringify({
-            version: projectVersion,
-            status: "ACTIVE",
-            visibility,
-          }),
         });
-
-        if (!res.ok) {
-          await handleApiError(res, 3);
-          return;
-        }
-
-        // Optionally set wizard preference
-        if (setWizardPreference) {
-          await fetch("/api/solar/preferences", {
-            method: "PATCH",
-            headers: {
-              "Content-Type": "application/json",
-              "x-csrf-token": getCsrfToken(),
-            },
-            body: JSON.stringify({
-              solarPreferredEntryMode: "wizard",
-            }),
-          }).catch(() => {}); // Non-critical
-        }
-
-        trackFeature("solar_wizard_completed", undefined, {
-          projectId,
-          panelKey: equipment.panelKey,
-          inverterKey: equipment.inverterKey,
-          essKey: equipment.essKey,
-          shadeSource,
-        });
-
-        onComplete(projectId);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Network error");
       } finally {
@@ -449,6 +503,7 @@ export default function SetupWizard({
       setName(p.name ?? "");
       setAddress(p.address ?? "");
       setProjectVersion(p.version ?? 1);
+      lastSaveRef.current = null;
 
       if (p.equipmentConfig) {
         setEquipment({
@@ -477,10 +532,44 @@ export default function SetupWizard({
   }, [projectId]);
 
   const handleConflictForce = useCallback(async () => {
-    // Re-issue the last step's PUT with forceOverwrite
+    const intent = lastSaveRef.current;
+    if (!intent || !projectId) {
+      setConflict(null);
+      setError("No pending save to retry. Please re-enter your changes.");
+      return;
+    }
+
     setConflict(null);
-    setError("Force save not yet supported. Please reload and retry.");
-  }, []);
+    setError(null);
+    setSaving(true);
+
+    try {
+      const res = await fetch(intent.url, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "x-csrf-token": getCsrfToken(),
+        },
+        body: JSON.stringify({
+          ...intent.body,
+          forceOverwrite: true,
+        }),
+      });
+
+      if (!res.ok) {
+        await handleApiError(res, intent.step);
+        return;
+      }
+
+      const json = await res.json();
+      await intent.onSuccess(json);
+      lastSaveRef.current = null;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Network error");
+    } finally {
+      setSaving(false);
+    }
+  }, [projectId, getCsrfToken, handleApiError]);
 
   return (
     <div className="space-y-4 sm:space-y-6" role="region" aria-label="New project setup">

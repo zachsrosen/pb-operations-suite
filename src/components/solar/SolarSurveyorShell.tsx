@@ -90,9 +90,8 @@ export default function SolarSurveyorShell({
   const handleWizardComplete = useCallback(
     (projectId: string) => {
       trackFeature("solar_wizard_completed_shell", undefined, { projectId });
-      // Route to native analysis (not Classic) after wizard completion
       setSelectedProjectId(projectId);
-      switchView("analysis");
+      switchView("classic");
     },
     [switchView, trackFeature]
   );

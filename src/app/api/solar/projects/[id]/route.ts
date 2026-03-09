@@ -16,6 +16,7 @@ import {
   canArchiveProject,
   buildProjectSnapshot,
 } from "@/lib/solar-auth";
+import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { z } from "zod";
 
@@ -67,6 +68,12 @@ export async function GET(req: NextRequest, context: RouteContext) {
     where: { id },
     include: {
       createdBy: { select: { name: true, email: true } },
+      revisions: {
+        where: { analysisResults: { not: Prisma.DbNull } },
+        select: { analysisResults: true },
+        orderBy: { version: "desc" },
+        take: 1,
+      },
     },
   });
 
@@ -74,7 +81,16 @@ export async function GET(req: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
 
-  return NextResponse.json({ data: project });
+  const revisions = Array.isArray(project.revisions) ? project.revisions : [];
+  const latestAnalysisResults = revisions[0]?.analysisResults ?? null;
+  const { revisions: _revisions, ...projectData } = project;
+
+  return NextResponse.json({
+    data: {
+      ...projectData,
+      analysisResults: latestAnalysisResults,
+    },
+  });
 }
 
 // ── PUT — Update project ───────────────────────────────────
@@ -219,6 +235,7 @@ export async function PUT(req: NextRequest, context: RouteContext) {
         projectId: id,
         version: newVersion,
         snapshot: buildProjectSnapshot(updated),
+        analysisResults: data.analysisResults ?? undefined,
         createdById: user.id,
         note: data.revisionNote || null,
       },
@@ -226,7 +243,10 @@ export async function PUT(req: NextRequest, context: RouteContext) {
   }
 
   return NextResponse.json({
-    data: updated,
+    data: {
+      ...updated,
+      analysisResults: data.analysisResults ?? null,
+    },
     ...(replacedMeta ? { replaced: replacedMeta } : {}),
   });
 }
