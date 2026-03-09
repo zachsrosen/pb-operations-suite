@@ -36,6 +36,7 @@ import LossBreakdown from "./LossBreakdown";
 interface AnalysisWorkspaceProps {
   projectId: string;
   onBack: () => void;
+  onOpenInClassic?: (projectId: string) => void;
 }
 
 type LoadPhase = "loading" | "ready" | "error";
@@ -57,6 +58,7 @@ interface ProjectData {
 export default function AnalysisWorkspace({
   projectId,
   onBack,
+  onOpenInClassic,
 }: AnalysisWorkspaceProps) {
   const [loadPhase, setLoadPhase] = useState<LoadPhase>("loading");
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -294,12 +296,22 @@ export default function AnalysisWorkspace({
   return (
     <div className="space-y-4 sm:space-y-6 max-w-4xl" role="main" aria-label="Analysis workspace">
       {/* Project header */}
-      <div>
-        <h2 className="text-base sm:text-lg font-medium text-foreground">
-          {project?.name || "Project Analysis"}
-        </h2>
-        {project?.address && (
-          <p className="text-xs sm:text-sm text-muted">{project.address}</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-base sm:text-lg font-medium text-foreground">
+            {project?.name || "Project Analysis"}
+          </h2>
+          {project?.address && (
+            <p className="text-xs sm:text-sm text-muted">{project.address}</p>
+          )}
+        </div>
+        {onOpenInClassic && (
+          <button
+            onClick={() => onOpenInClassic(projectId)}
+            className="shrink-0 text-xs px-3 py-1.5 rounded border border-orange-500/30 text-orange-400 hover:bg-orange-500/10 transition-colors"
+          >
+            Open in Classic
+          </button>
         )}
       </div>
 

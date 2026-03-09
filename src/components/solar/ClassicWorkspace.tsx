@@ -8,12 +8,15 @@ interface ClassicWorkspaceProps {
   serverDefault: SolarMode;
   modeReason: ModeReason;
   source: "initial" | "toggle";
+  /** When set, Classic auto-loads this project on init */
+  projectId?: string | null;
 }
 
 export default function ClassicWorkspace({
   serverDefault,
   modeReason,
   source,
+  projectId,
 }: ClassicWorkspaceProps) {
   const { trackFeature } = useActivityTracking();
   const tracked = useRef(false);
@@ -35,7 +38,7 @@ export default function ClassicWorkspace({
       style={{ height: "calc(100vh - 120px)" }}
     >
       <iframe
-        src="/solar-surveyor/index.html"
+        src={`/solar-surveyor/index.html${projectId ? `#project=${projectId}` : ""}`}
         className="w-full h-full border-none"
         title="Solar Surveyor V12"
         allow="clipboard-read; clipboard-write"

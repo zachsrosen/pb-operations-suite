@@ -110,6 +110,15 @@ export default function SolarSurveyorShell({
     [switchView, trackFeature]
   );
 
+  const handleOpenInClassic = useCallback(
+    (projectId?: string) => {
+      trackFeature("solar_open_in_classic", undefined, { projectId: projectId ?? "none" });
+      if (projectId) setSelectedProjectId(projectId);
+      switchView("classic");
+    },
+    [switchView, trackFeature]
+  );
+
   const handleBackFromAnalysis = useCallback(() => {
     setSelectedProjectId(null);
     switchView("native");
@@ -120,7 +129,7 @@ export default function SolarSurveyorShell({
     !forceClassicLocked ? (
       activeView === "native" ? (
         <button
-          onClick={() => switchView("classic")}
+          onClick={() => handleOpenInClassic()}
           className="text-xs px-2 sm:px-3 py-1.5 rounded border border-t-border text-muted hover:text-orange-400 hover:border-orange-500/50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/50"
         >
           <span className="hidden sm:inline">Use </span>Classic<span className="hidden sm:inline"> (V12)</span>
@@ -169,7 +178,7 @@ export default function SolarSurveyorShell({
     >
       {activeView === "native" && (
         <ProjectBrowser
-          onOpenClassic={() => switchView("classic")}
+          onOpenClassic={handleOpenInClassic}
           onStartWizard={handleStartWizard}
           onRunAnalysis={handleRunAnalysis}
           serverDefault={initialMode}
@@ -183,6 +192,7 @@ export default function SolarSurveyorShell({
           serverDefault={initialMode}
           modeReason={modeReason}
           source={viewSource}
+          projectId={selectedProjectId}
         />
       )}
 
@@ -206,6 +216,7 @@ export default function SolarSurveyorShell({
           <AnalysisWorkspace
             projectId={selectedProjectId}
             onBack={handleBackFromAnalysis}
+            onOpenInClassic={handleOpenInClassic}
           />
         </Suspense>
       )}

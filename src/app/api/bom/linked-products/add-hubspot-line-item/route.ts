@@ -182,28 +182,42 @@ export async function POST(request: NextRequest) {
   const resolvedModel = (model || skuRecord?.model || "").trim() || null;
   if (!hubspotProductId && prisma && (resolvedBrand || resolvedModel)) {
     try {
-      // De-dup: reuse existing PENDING approval for same brand/model/system
-      const existing = await prisma.pendingCatalogPush.findFirst({
-        where: {
-          brand: resolvedBrand || "",
-          model: resolvedModel || "",
-          systems: { has: "HUBSPOT" },
-          status: "PENDING",
-        },
-      });
-      const push = existing ?? await prisma.pendingCatalogPush.create({
-        data: {
-          brand: resolvedBrand || "",
-          model: resolvedModel || "",
-          description: explicitDescription || skuRecord?.description || [resolvedBrand, resolvedModel].filter(Boolean).join(" "),
-          category: category || skuRecord?.category || "Uncategorized",
-          sku: explicitSku || skuRecord?.vendorPartNumber || null,
-          sellPrice: Number.isFinite(unitPrice) ? unitPrice : (skuRecord?.sellPrice ?? null),
-          systems: ["HUBSPOT"],
-          requestedBy: authResult.email,
-          metadata: { source: "bom_push", dealId },
-        },
-      });
+      // De-dup: atomic find-or-create inside a serializable transaction.
+      // Retry up to 3 times on serialization conflicts (Prisma error P2034).
+      let push: Awaited<ReturnType<typeof prisma.pendingCatalogPush.findFirst>>;
+      for (let attempt = 0; ; attempt++) {
+        try {
+          push = await prisma.$transaction(async (tx) => {
+            const existing = await tx.pendingCatalogPush.findFirst({
+              where: {
+                brand: resolvedBrand || "",
+                model: resolvedModel || "",
+                systems: { has: "HUBSPOT" },
+                status: "PENDING",
+              },
+            });
+            if (existing) return existing;
+            return tx.pendingCatalogPush.create({
+              data: {
+                brand: resolvedBrand || "",
+                model: resolvedModel || "",
+                description: explicitDescription || skuRecord?.description || [resolvedBrand, resolvedModel].filter(Boolean).join(" "),
+                category: category || skuRecord?.category || "Uncategorized",
+                sku: explicitSku || skuRecord?.vendorPartNumber || null,
+                sellPrice: Number.isFinite(unitPrice) ? unitPrice : (skuRecord?.sellPrice ?? null),
+                systems: ["HUBSPOT"],
+                requestedBy: authResult.email,
+                metadata: { source: "bom_push", dealId },
+              },
+            });
+          }, { isolationLevel: "Serializable" });
+          break;
+        } catch (txErr: unknown) {
+          const isSerializationConflict = txErr instanceof Error && "code" in txErr && (txErr as { code: string }).code === "P2034";
+          if (isSerializationConflict && attempt < 2) continue;
+          throw txErr;
+        }
+      }
       return NextResponse.json({
         ok: false,
         pendingApproval: true,

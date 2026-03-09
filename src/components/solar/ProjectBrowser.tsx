@@ -18,7 +18,7 @@ interface Project {
 }
 
 interface ProjectBrowserProps {
-  onOpenClassic: () => void;
+  onOpenClassic: (projectId?: string) => void;
   onStartWizard: (draftId?: string) => void;
   onRunAnalysis?: (projectId: string) => void;
   serverDefault: SolarMode;
@@ -106,7 +106,7 @@ export default function ProjectBrowser({
   const handleProjectOpen = useCallback(
     (projectId: string) => {
       trackFeature("solar_project_open", undefined, { projectId });
-      onOpenClassic();
+      onOpenClassic(projectId);
     },
     [trackFeature, onOpenClassic]
   );
@@ -175,7 +175,7 @@ export default function ProjectBrowser({
             New Project
           </button>
           <button
-            onClick={onOpenClassic}
+            onClick={() => onOpenClassic()}
             className="hidden sm:inline-flex px-4 py-2 rounded-lg bg-orange-500/10 text-orange-400 border border-orange-500/30 hover:bg-orange-500/20 transition-colors text-sm font-medium"
           >
             Open Classic Workspace
