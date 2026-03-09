@@ -51,6 +51,9 @@ model User {
   // Admin impersonation - when set, this admin is viewing as another user
   impersonatingUserId     String?
 
+  // User preferences (JSON blob for flexible settings)
+  preferences             Json?
+
   // Timestamps
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -67,6 +70,7 @@ model User {
   solarFeedback         SolarFeedback[]        @relation("SolarFeedbackAuthor")
   solarProjectShares    SolarProjectShare[]    @relation("SolarProjectShares")
   solarPendingStates    SolarPendingState[]    @relation("SolarPendingStates")
+  solarCustomEquipment  SolarCustomEquipment[] @relation("SolarCustomEquipmentCreator")
 
   @@index([email])
   @@index([role])
@@ -1497,4 +1501,112 @@ model SolarWeatherCache {
 
   @@unique([latE3, lngE3])
   @@index([fetchedAt])
+}
+
+model SolarShadeCache {
+  id         String   @id @default(cuid())
+  latE5      Int      // lat × 100,000 (~1.1m precision — building-level for Google Solar)
+  lngE5      Int      // lng × 100,000
+  shadeData  Json
+  fetchedAt  DateTime @default(now())
+
+  @@unique([latE5, lngE5])
+  @@index([fetchedAt])
+}
+
+enum SolarEquipmentCategory {
+  PANEL
+  INVERTER
+  ESS
+  OPTIMIZER
+}
+
+model SolarCustomEquipment {
+  id          String                 @id @default(cuid())
+  category    SolarEquipmentCategory
+  key         String
+  profile     Json
+  isArchived  Boolean           @default(false)
+  createdById String
+  createdBy   User              @relation("SolarCustomEquipmentCreator", fields: [createdById], references: [id])
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@index([category])
+  // Active-only unique constraint enforced via raw SQL partial index in migration:
+  //   CREATE UNIQUE INDEX "SolarCustomEquipment_active_key"
+  //   ON "SolarCustomEquipment" ("category", "key")
+  //   WHERE "isArchived" = false;
+}
+
+// ===========================================
+// SOP GUIDE (Database-Backed Editable Content)
+// ===========================================
+
+model SopTab {
+  id        String       @id              // Stable slug: "hubspot", "ops", "wf"
+  label     String                        // Display name: "HubSpot Guide", "Tech Ops"
+  sortOrder Int          @default(0)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  sections  SopSection[]
+
+  @@index([sortOrder])
+}
+
+model SopSection {
+  id           String        @id           // Stable slug: "hs-overview", "survey", "wf-ic"
+  tabId        String
+  sidebarGroup String                      // Grouping label: "Project Pipeline", "Workflow Reference"
+  title        String                      // Sidebar link text
+  dotColor     String        @default("blue") // Sidebar dot color
+  sortOrder    Int           @default(0)
+  content      String                      // Sanitized HTML body
+  version      Int           @default(1)   // Optimistic locking counter
+  updatedBy    String?                     // Email of last editor
+  updatedAt    DateTime      @updatedAt
+  createdAt    DateTime      @default(now())
+  tab          SopTab            @relation(fields: [tabId], references: [id])
+  revisions    SopRevision[]
+  suggestions  SopSuggestion[]
+
+  @@unique([tabId, sortOrder])
+  @@index([tabId, sortOrder])
+}
+
+model SopRevision {
+  id          String     @id @default(cuid())
+  sectionId   String
+  content     String                      // Previous content snapshot
+  editedBy    String                      // Email of editor
+  editSummary String?                     // Optional change description
+  createdAt   DateTime   @default(now())
+  section     SopSection @relation(fields: [sectionId], references: [id])
+
+  @@index([sectionId, createdAt])
+  @@index([editedBy])
+}
+
+enum SopSuggestionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model SopSuggestion {
+  id             String              @id @default(cuid())
+  sectionId      String
+  content        String              // Suggested HTML content (sanitized on submit)
+  summary        String              // Description of the change
+  status         SopSuggestionStatus @default(PENDING)
+  basedOnVersion Int                 // Section version when suggestion was created
+  submittedBy    String              // Email of submitter
+  reviewedBy     String?             // Email of reviewer
+  reviewNote     String?             // Optional review note
+  createdAt      DateTime            @default(now())
+  reviewedAt     DateTime?
+  section        SopSection          @relation(fields: [sectionId], references: [id])
+
+  @@index([status, createdAt])
+  @@index([sectionId])
 }

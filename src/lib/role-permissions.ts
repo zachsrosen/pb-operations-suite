@@ -153,6 +153,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/api/install-review",
       // Solar Surveyor
       "/api/solar",
+      // SOP Guide (read-only; writes gated by /api/admin/sop)
+      "/sop",
+      "/api/sop",
     ],
     canScheduleSurveys: true,
     canScheduleInstalls: true,
@@ -199,6 +202,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/api/install-review",
       // Solar Surveyor
       "/api/solar",
+      // SOP Guide
+      "/sop",
+      "/api/sop",
     ],
     canScheduleSurveys: false,
     canScheduleInstalls: true,
@@ -271,6 +277,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/api/install-review",
       // Solar Surveyor
       "/api/solar",
+      // SOP Guide
+      "/sop",
+      "/api/sop",
     ],
     canScheduleSurveys: true,
     canScheduleInstalls: true,
@@ -375,6 +384,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/api/install-review",
       // Solar Surveyor
       "/api/solar",
+      // SOP Guide
+      "/sop",
+      "/api/sop",
     ],
     canScheduleSurveys: true,
     canScheduleInstalls: true,
@@ -458,6 +470,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/api/solar",
       // AI hub
       "/dashboards/ai",
+      // SOP Guide
+      "/sop",
+      "/api/sop",
     ],
     canScheduleSurveys: false,
     canScheduleInstalls: false,
@@ -515,6 +530,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/api/reviews",
       // Solar Surveyor
       "/api/solar",
+      // SOP Guide
+      "/sop",
+      "/api/sop",
     ],
     canScheduleSurveys: false,
     canScheduleInstalls: false,
@@ -569,6 +587,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/api/utility",
       // Solar Surveyor
       "/api/solar",
+      // SOP Guide
+      "/sop",
+      "/api/sop",
     ],
     canScheduleSurveys: false,
     canScheduleInstalls: false,
@@ -587,6 +608,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/api/activity/log",
       "/api/user/me",
       "/api/solar",
+      // SOP Guide
+      "/sop",
+      "/api/sop",
     ],
     canScheduleSurveys: false,
     canScheduleInstalls: false,
@@ -613,6 +637,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/api/bugs",
       // Solar Surveyor
       "/api/solar",
+      // SOP Guide
+      "/sop",
+      "/api/sop",
     ],
     canScheduleSurveys: true,
     canScheduleInstalls: false,
