@@ -233,7 +233,7 @@ export default function SetupWizard({
     [projectId, projectVersion, getCsrfToken, handleApiError, trackFeature]
   );
 
-  // ── Step 3: Shade → PUT siteConditions ───────────────────
+  // ── Step 3: Shade → geocode + fetch shade + PUT ──────────
   const handleShadeNext = useCallback(
     async (source: "google_solar" | "dxf_upload") => {
       if (!projectId) return;
@@ -245,19 +245,80 @@ export default function SetupWizard({
       trackFeature("solar_shade_source_selected", undefined, { source });
 
       try {
+        let shadeData: Record<string, unknown> | null = null;
+        let lat: number | null = null;
+        let lng: number | null = null;
+
+        if (source === "google_solar" && address) {
+          // Step 3a: Geocode address → lat/lng (server-side to keep API key secure)
+          try {
+            const geoRes = await fetch(
+              `/api/solar/geocode?address=${encodeURIComponent(address)}`
+            );
+            if (geoRes.ok) {
+              const geoJson = await geoRes.json();
+              if (geoJson.data) {
+                lat = geoJson.data.lat;
+                lng = geoJson.data.lng;
+              }
+            }
+          } catch {
+            // Geocode failure is non-fatal — continue without shade
+          }
+
+          // Step 3b: Fetch shade data if we have coordinates
+          if (lat && lng) {
+            try {
+              const shadeRes = await fetch(
+                `/api/solar/shade?lat=${lat}&lng=${lng}`
+              );
+              if (shadeRes.ok) {
+                const shadeJson = await shadeRes.json();
+                if (shadeJson.data) {
+                  shadeData = shadeJson.data;
+                }
+              }
+            } catch {
+              // Shade fetch failure is non-fatal
+            }
+          }
+        }
+
+        // Step 3c: Save shade source + shade data + coordinates to project
+        const updateBody: Record<string, unknown> = {
+          version: projectVersion,
+          siteConditions: {
+            shadeSource: source,
+            shadeConfiguredAt: new Date().toISOString(),
+          },
+        };
+
+        // Add lat/lng if geocoded
+        if (lat && lng) {
+          updateBody.lat = lat;
+          updateBody.lng = lng;
+        }
+
+        // Add shade data to equipmentConfig if fetched
+        if (shadeData) {
+          // Merge with existing equipmentConfig (preserve equipment keys)
+          updateBody.equipmentConfig = {
+            panelKey: equipment.panelKey,
+            inverterKey: equipment.inverterKey,
+            essKey: equipment.essKey,
+            optimizerKey: equipment.optimizerKey,
+            source: "wizard_v1",
+            shadeData,
+          };
+        }
+
         const res = await fetch(`/api/solar/projects/${projectId}`, {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
             "x-csrf-token": getCsrfToken(),
           },
-          body: JSON.stringify({
-            version: projectVersion,
-            siteConditions: {
-              shadeSource: source,
-              shadeConfiguredAt: new Date().toISOString(),
-            },
-          }),
+          body: JSON.stringify(updateBody),
         });
 
         if (!res.ok) {
@@ -268,10 +329,14 @@ export default function SetupWizard({
         const json = await res.json();
         setProjectVersion(json.data.version);
         setCurrentStep(3);
+
+        const shadeStatus = shadeData ? "fetched" : lat ? "no_data" : "no_geocode";
         trackFeature("solar_wizard_step_completed", undefined, {
           step: 2,
           stepName: "Shade",
           projectId,
+          shadeStatus,
+          hasCoordinates: !!(lat && lng),
         });
       } catch (err) {
         setError(err instanceof Error ? err.message : "Network error");
@@ -279,7 +344,7 @@ export default function SetupWizard({
         setSaving(false);
       }
     },
-    [projectId, projectVersion, getCsrfToken, handleApiError, trackFeature]
+    [projectId, projectVersion, address, equipment, getCsrfToken, handleApiError, trackFeature]
   );
 
   // ── Step 4: Review → PUT status + visibility, then complete
