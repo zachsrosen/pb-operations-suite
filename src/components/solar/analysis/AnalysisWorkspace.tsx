@@ -29,6 +29,9 @@ import RunControls from "./RunControls";
 import ProductionSummary from "./ProductionSummary";
 import MismatchCard from "./MismatchCard";
 import DispatchSummary from "./DispatchSummary";
+import EquipmentSummary from "./EquipmentSummary";
+import RoofShadeSummary from "./RoofShadeSummary";
+import LossBreakdown from "./LossBreakdown";
 
 interface AnalysisWorkspaceProps {
   projectId: string;
@@ -300,6 +303,17 @@ export default function AnalysisWorkspace({
         )}
       </div>
 
+      {/* Project details — always visible */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
+        <EquipmentSummary equipmentConfig={project?.equipmentConfig ?? null} />
+        <RoofShadeSummary
+          equipmentConfig={project?.equipmentConfig ?? null}
+          siteConditions={project?.siteConditions ?? null}
+          lat={project?.lat ?? null}
+          lng={project?.lng ?? null}
+        />
+      </div>
+
       {/* Run controls */}
       <RunControls
         status={simState.status}
@@ -334,6 +348,11 @@ export default function AnalysisWorkspace({
             <MismatchCard result={analysisResult} />
             <DispatchSummary result={analysisResult} />
           </div>
+
+          <LossBreakdown
+            lossProfile={project?.lossProfile ?? null}
+            siteConditions={project?.siteConditions ?? null}
+          />
 
           {/* Save Results */}
           <div className="flex flex-wrap items-center gap-3 pt-2">
