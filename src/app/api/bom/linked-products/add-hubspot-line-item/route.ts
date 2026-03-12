@@ -6,6 +6,7 @@ import {
   fetchLineItemsForDeal,
   fetchHubSpotProductById,
 } from "@/lib/hubspot";
+import { notifyAdminsOfNewCatalogRequest } from "@/lib/catalog-notify";
 
 const ALLOWED_ROLES = new Set([
   "ADMIN",
@@ -218,6 +219,14 @@ export async function POST(request: NextRequest) {
           throw txErr;
         }
       }
+      notifyAdminsOfNewCatalogRequest({
+        id: push.id,
+        brand: push.brand,
+        model: push.model,
+        category: push.category,
+        requestedBy: push.requestedBy,
+        systems: push.systems,
+      });
       return NextResponse.json({
         ok: false,
         pendingApproval: true,
