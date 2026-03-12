@@ -165,6 +165,7 @@ export async function POST(request: NextRequest) {
     try {
       // De-dup: atomic find-or-create inside a serializable transaction.
       // Retry up to 3 times on serialization conflicts (Prisma error P2034).
+      const txStart = new Date();
       let push: Awaited<ReturnType<typeof prisma.pendingCatalogPush.findFirst>>;
       for (let attempt = 0; ; attempt++) {
         try {
@@ -199,14 +200,17 @@ export async function POST(request: NextRequest) {
           throw txErr;
         }
       }
-      notifyAdminsOfNewCatalogRequest({
-        id: push.id,
-        brand: push.brand,
-        model: push.model,
-        category: push.category,
-        requestedBy: push.requestedBy,
-        systems: push.systems,
-      });
+      // Only notify if this is a newly created record, not a dedup hit
+      if (push.createdAt >= txStart) {
+        notifyAdminsOfNewCatalogRequest({
+          id: push.id,
+          brand: push.brand,
+          model: push.model,
+          category: push.category,
+          requestedBy: push.requestedBy,
+          systems: push.systems,
+        });
+      }
       return NextResponse.json({
         ok: false,
         pendingApproval: true,
