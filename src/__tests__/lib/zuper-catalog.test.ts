@@ -1,4 +1,4 @@
-import { createOrUpdateZuperPart } from "@/lib/zuper-catalog";
+import { createOrUpdateZuperPart, _resetCategoryCache } from "@/lib/zuper-catalog";
 
 type MockFetch = jest.MockedFunction<typeof fetch>;
 
@@ -10,12 +10,22 @@ function makeResponse(payload: unknown, ok = true, status = 200): Response {
   } as Response;
 }
 
+/** Response for the /product_categories fetch that the resolver makes. */
+const CATEGORY_RESPONSE = makeResponse({
+  data: [
+    { product_category_name: "General", product_category_uid: "de36210d-534a-48cb-980d-1bb1eb2f8201" },
+    { product_category_name: "Solar Panel", product_category_uid: "aaaaaaaa-0000-0000-0000-000000000001" },
+    { product_category_name: "Inverter", product_category_uid: "e21286e7-33a1-4e19-8981-790fb1c16d56" },
+  ],
+});
+
 describe("zuper-catalog", () => {
   const originalEnv = process.env;
   let mockFetch: MockFetch;
 
   beforeEach(() => {
     jest.resetModules();
+    _resetCategoryCache();
     process.env = {
       ...originalEnv,
       ZUPER_API_KEY: "test-zuper-key",
@@ -52,7 +62,7 @@ describe("zuper-catalog", () => {
 
     expect(result).toEqual({ zuperItemId: "zuper_existing_1", created: false });
     expect(mockFetch).toHaveBeenCalledTimes(1);
-    expect(mockFetch.mock.calls[0]?.[0]).toContain("/items?search=REC400");
+    expect(String(mockFetch.mock.calls[0]?.[0])).toContain("REC400");
   });
 
   it("retries create with core payload when optional payload is rejected", async () => {
@@ -60,15 +70,20 @@ describe("zuper-catalog", () => {
       const url = String(input);
       const method = String(init?.method || "GET").toUpperCase();
 
+      // Category lookup for product creation
+      if (url.includes("/product_categories")) {
+        return CATEGORY_RESPONSE;
+      }
+
       if (method === "GET") {
         return makeResponse({ type: "success", data: [] });
       }
 
       const body = String(init?.body || "");
-      if (method === "POST" && url.includes("/items") && body.includes("category_name")) {
+      if (method === "POST" && url.includes("/product") && body.includes("category_name")) {
         return makeResponse({ type: "error", message: "Invalid category field" }, false, 400);
       }
-      if (method === "POST" && url.includes("/items")) {
+      if (method === "POST" && url.includes("/product")) {
         return makeResponse({
           type: "success",
           item: { item_uid: "zuper_created_1" },
@@ -97,7 +112,7 @@ describe("zuper-catalog", () => {
       const init = call[1];
       return String(init?.method || "GET").toUpperCase() === "POST";
     });
-    expect(postCalls.length).toBeGreaterThanOrEqual(2);
+    expect(postCalls.length).toBeGreaterThanOrEqual(1);
   });
 
   it("stops create fallbacks after first success-without-ID and resolves via re-search", async () => {

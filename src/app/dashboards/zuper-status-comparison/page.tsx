@@ -27,6 +27,7 @@ interface ComparisonRecord {
   hubspotCompletionDate: string | null;
   scheduleDateMatch: boolean | null;
   completionDateMatch: boolean | null;
+  completionDateDiffDays: number | null;
   team: string | null;
   assignedTo: string | null;
 }
@@ -42,6 +43,7 @@ interface CategorySlot {
   zuperCompletedAt: string | null;
   hubspotCompletionDate: string | null;
   completionDateMatch: boolean | null;
+  completionDateDiffDays: number | null;
   team: string | null;
   assignedTo: string | null;
 }
@@ -80,6 +82,14 @@ interface NonCoreAudit {
   affectedDeals: NonCoreAuditDeal[];
 }
 
+interface DuplicateJobGroup {
+  projectNumber: string;
+  category: string;
+  count: number;
+  statuses: string[];
+  jobUids: string[];
+}
+
 interface ApiResponse {
   records: ComparisonRecord[];
   projectRecords: ProjectGroupedRecord[];
@@ -97,6 +107,7 @@ interface ApiResponse {
     };
   };
   nonCoreAudit?: NonCoreAudit;
+  duplicateJobs?: DuplicateJobGroup[];
   dateRange: { from: string; to: string };
   lastUpdated: string;
 }
@@ -179,7 +190,7 @@ function statusDotColor(status: string): string {
 
 // ---- Date comparison badge ----
 
-function DateMatchBadge({ match }: { match: boolean | null }) {
+function DateMatchBadge({ match, diffDays }: { match: boolean | null; diffDays?: number | null }) {
   if (match === null) return <span className="text-xs text-muted">-</span>;
   if (match) {
     return (
@@ -195,6 +206,7 @@ function DateMatchBadge({ match }: { match: boolean | null }) {
       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
       </svg>
+      {diffDays != null && <span>{diffDays}d off</span>}
     </span>
   );
 }
@@ -437,6 +449,7 @@ export default function ZuperStatusComparisonPage() {
       "Zuper Completed": r.zuperCompletedAt || "-",
       "HubSpot Completion Date": r.hubspotCompletionDate || "-",
       "Completion Date Match": r.completionDateMatch === null ? "N/A" : r.completionDateMatch ? "Match" : "MISMATCH",
+      "Completion Date Diff (days)": r.completionDateDiffDays != null ? String(r.completionDateDiffDays) : "-",
       Team: r.team || "-",
       "Assigned To": r.assignedTo || "-",
       "HubSpot URL": r.dealUrl || "-",
@@ -1124,13 +1137,13 @@ export default function ZuperStatusComparisonPage() {
                             <DateMatchBadge match={record.scheduleDateMatch} />
                           </td>
                           <td className="px-3 py-2.5 text-[11px] text-muted/70 dark:text-muted whitespace-nowrap">
-                            {renderShortDate(record.zuperCompletedAt || record.zuperScheduledEnd)}
+                            {renderShortDate(record.zuperCompletedAt)}
                           </td>
                           <td className="px-3 py-2.5 text-[11px] text-muted/70 dark:text-muted whitespace-nowrap">
                             {renderShortDate(record.hubspotCompletionDate)}
                           </td>
                           <td className="px-3 py-2.5 text-center">
-                            <DateMatchBadge match={record.completionDateMatch} />
+                            <DateMatchBadge match={record.completionDateMatch} diffDays={record.completionDateDiffDays} />
                           </td>
                         </>
                       )}
@@ -1347,6 +1360,72 @@ export default function ZuperStatusComparisonPage() {
           </div>
         </div>
       )}
+      {/* Duplicate Active Jobs */}
+      {data?.duplicateJobs && data.duplicateJobs.length > 0 && (
+        <div className="mt-8">
+          <h3 className="text-lg font-semibold text-foreground mb-2">
+            Duplicate Active Jobs
+          </h3>
+          <p className="text-xs text-muted mb-4">
+            Projects with multiple non-cancelled Zuper jobs in the same category. Some may be expected (e.g., re-inspections) but others may indicate sync issues.
+          </p>
+
+          <div className="grid grid-cols-3 gap-3 mb-4">
+            <div className="rounded-xl border border-rose-200 dark:border-rose-800/50 bg-rose-50 dark:bg-rose-950/20 p-3">
+              <div className="text-xs text-rose-600 dark:text-rose-400">Total Duplicate Groups</div>
+              <div className="text-xl font-bold text-rose-700 dark:text-rose-300 mt-0.5">{data.duplicateJobs.length}</div>
+            </div>
+            {(["site_survey", "construction", "inspection"] as const).map((cat) => {
+              const count = data.duplicateJobs!.filter((d) => d.category === cat).length;
+              if (count === 0) return null;
+              return (
+                <div key={cat} className="rounded-xl border border-t-border bg-surface p-3">
+                  <div className="text-xs text-muted">{CATEGORY_LABELS[cat]}</div>
+                  <div className="text-xl font-bold text-foreground mt-0.5">{count}</div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="rounded-xl border border-t-border overflow-hidden">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-surface-2">
+                  <th className="text-left px-3 py-2 font-semibold text-muted">Project</th>
+                  <th className="text-left px-3 py-2 font-semibold text-muted">Category</th>
+                  <th className="text-left px-3 py-2 font-semibold text-muted">Jobs</th>
+                  <th className="text-left px-3 py-2 font-semibold text-muted">Statuses</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-t-border">
+                {data.duplicateJobs.map((dup) => (
+                  <tr key={`${dup.projectNumber}-${dup.category}`} className="hover:bg-surface-2/50">
+                    <td className="px-3 py-2 font-mono font-medium">{dup.projectNumber}</td>
+                    <td className="px-3 py-2">
+                      <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${CATEGORY_BADGE[dup.category] || ""}`}>
+                        {CATEGORY_LABELS[dup.category] || dup.category}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 font-medium">{dup.count}</td>
+                    <td className="px-3 py-2">
+                      <div className="flex flex-wrap gap-1">
+                        {dup.statuses.map((s, i) => (
+                          <span
+                            key={i}
+                            className="inline-block px-1.5 py-0.5 rounded text-[10px] bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+                          >
+                            {s}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </DashboardShell>
   );
 }
@@ -1456,7 +1535,7 @@ function ProjectDateCells({ slot }: { slot: CategorySlot }) {
       <td className="px-2 py-2 text-center">
         <div className="flex items-center justify-center gap-0.5">
           <DateMatchBadge match={slot.scheduleDateMatch} />
-          <DateMatchBadge match={slot.completionDateMatch} />
+          <DateMatchBadge match={slot.completionDateMatch} diffDays={slot.completionDateDiffDays} />
         </div>
       </td>
     </>

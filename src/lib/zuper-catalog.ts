@@ -16,6 +16,96 @@ const DEFAULT_CATALOG_ENDPOINTS = [
   "/product",
 ] as const;
 
+/** Zuper product_type must be one of these uppercase values. */
+const VALID_PRODUCT_TYPES = ["PRODUCT", "SERVICE", "PARTS", "BUNDLE", "LABOR"] as const;
+
+/**
+ * Static fallback map of category names → Zuper product_category UIDs.
+ * Used only when the live API fetch fails. The resolver prefers live data
+ * so that new Zuper categories are picked up automatically.
+ */
+const ZUPER_CATEGORY_UID_FALLBACK: Record<string, string> = {
+  "battery": "7e926259-0552-41e6-b936-547543c209c6",
+  "battery expansion": "7b1c6e98-e26f-4c2b-8ef6-d3e5471269ce",
+  "inverter": "e21286e7-33a1-4e19-8981-790fb1c16d56",
+  "relay device": "ea843bd0-dd5f-4211-8c59-c5dccaac2fa9",
+  "invoicing": "24afea80-4196-4db6-a4f1-59260390f563",
+  "general": "de36210d-534a-48cb-980d-1bb1eb2f8201",
+};
+const ZUPER_DEFAULT_CATEGORY_UID = ZUPER_CATEGORY_UID_FALLBACK["general"];
+
+/** In-memory cache for Zuper product categories (name → UID). */
+let _categoryCache: Record<string, string> | null = null;
+let _categoryCacheExpiry = 0;
+const CATEGORY_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+/** Reset the in-memory category cache (for tests). */
+export function _resetCategoryCache(): void {
+  _categoryCache = null;
+  _categoryCacheExpiry = 0;
+}
+
+/** Fetch product categories from Zuper and cache them. Falls back to static map on failure. */
+async function getCategoryMap(): Promise<Record<string, string>> {
+  if (_categoryCache && Date.now() < _categoryCacheExpiry) {
+    return _categoryCache;
+  }
+
+  const apiKey = process.env.ZUPER_API_KEY;
+  const baseUrl = process.env.ZUPER_API_URL || DEFAULT_ZUPER_API_URL;
+  if (!apiKey) return ZUPER_CATEGORY_UID_FALLBACK;
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10_000);
+    const res = await fetch(`${baseUrl}/product_categories?count=200&page=1`, {
+      headers: { "Content-Type": "application/json", "x-api-key": apiKey },
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    if (!res.ok) {
+      console.warn(`[zuper-catalog] Failed to fetch categories: ${res.status}`);
+      return ZUPER_CATEGORY_UID_FALLBACK;
+    }
+
+    const rawText = await res.text();
+    const json = rawText ? JSON.parse(rawText) : {};
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const categories: any[] = json?.data || json?.product_categories || [];
+    const map: Record<string, string> = {};
+    for (const cat of categories) {
+      const name = cat.product_category_name || cat.name || cat.category_name;
+      const uid = cat.product_category_uid || cat.uid || cat.id;
+      if (name && uid) {
+        map[String(name).toLowerCase().trim()] = String(uid);
+      }
+    }
+
+    if (Object.keys(map).length > 0) {
+      _categoryCache = map;
+      _categoryCacheExpiry = Date.now() + CATEGORY_CACHE_TTL_MS;
+      return map;
+    }
+  } catch (err) {
+    console.warn("[zuper-catalog] Category fetch error, using fallback:", err);
+  }
+
+  return ZUPER_CATEGORY_UID_FALLBACK;
+}
+
+/** Resolve a category name or UID to a valid Zuper category UID. */
+async function resolveZuperCategoryUid(category: string | undefined): Promise<string> {
+  if (!category) return ZUPER_DEFAULT_CATEGORY_UID;
+  // Already a UUID
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(category)) {
+    return category;
+  }
+  const key = category.toLowerCase().trim();
+  const map = await getCategoryMap();
+  return map[key] ?? ZUPER_DEFAULT_CATEGORY_UID;
+}
+
 export interface UpsertZuperPartInput {
   brand: string;
   model: string;
@@ -321,7 +411,7 @@ interface CreateBodyVariant {
   body: JsonRecord;
 }
 
-function getCreateBodyVariants(endpoint: string, payload: JsonRecord): CreateBodyVariant[] {
+async function getCreateBodyVariants(endpoint: string, payload: JsonRecord): Promise<CreateBodyVariant[]> {
   const path = getEndpointPath(endpoint).toLowerCase();
   if (path.includes("/parts")) {
     return [
@@ -334,7 +424,6 @@ function getCreateBodyVariants(endpoint: string, payload: JsonRecord): CreateBod
     // Map generic field names → Zuper /product API field names.
     // See https://developers.zuper.co/reference/create-a-product
     const productName = trimOrUndefined(payload.product_name) || trimOrUndefined(payload.name);
-    const productNo = trimOrUndefined(payload.product_no) || trimOrUndefined(payload.part_number) || trimOrUndefined(payload.sku);
     const productCategory = trimOrUndefined(payload.product_category) || trimOrUndefined(payload.category_name) || trimOrUndefined(payload.category);
     const productDescription = trimOrUndefined(payload.product_description) || trimOrUndefined(payload.description);
     const uom = trimOrUndefined(payload.uom) || trimOrUndefined(payload.unit);
@@ -343,11 +432,18 @@ function getCreateBodyVariants(endpoint: string, payload: JsonRecord): CreateBod
     const brand = trimOrUndefined(payload.brand);
     const specification = trimOrUndefined(payload.specification);
 
+    const rawType = (trimOrUndefined(payload.product_type) || "PRODUCT").toUpperCase();
+    const productType = VALID_PRODUCT_TYPES.includes(rawType as typeof VALID_PRODUCT_TYPES[number])
+      ? rawType
+      : "PRODUCT";
+    const categoryUid = await resolveZuperCategoryUid(productCategory);
+
+    // product_no is auto-assigned by Zuper as a sequential integer.
+    // Sending a string SKU causes a CastError, so we omit it.
     const productPayload: JsonRecord = {
       ...(productName ? { product_name: productName } : {}),
-      ...(productNo ? { product_no: productNo } : {}),
-      ...(productCategory ? { product_category: productCategory } : {}),
-      product_type: trimOrUndefined(payload.product_type) || "product",
+      product_category: categoryUid,
+      product_type: productType,
       ...(productDescription ? { product_description: productDescription } : {}),
       ...(brand ? { brand } : {}),
       ...(specification ? { specification } : {}),
@@ -378,14 +474,13 @@ async function tryCreateWithPayload(
   payload: JsonRecord,
   unavailableEndpoints: Set<string>
 ): Promise<CreateAttemptResult> {
-  const attempts: Array<{ endpoint: string; body: JsonRecord; label: string }> = getCatalogEndpoints()
-    .flatMap((endpoint) =>
-      getCreateBodyVariants(endpoint, payload).map((variant) => ({
-        endpoint,
-        body: variant.body,
-        label: variant.label,
-      }))
-    );
+  const attempts: Array<{ endpoint: string; body: JsonRecord; label: string }> = [];
+  for (const endpoint of getCatalogEndpoints()) {
+    const variants = await getCreateBodyVariants(endpoint, payload);
+    for (const variant of variants) {
+      attempts.push({ endpoint, body: variant.body, label: variant.label });
+    }
+  }
 
   const errors: string[] = [];
   for (const attempt of attempts) {

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { getUserByEmail } from "@/lib/db";
 import { zuper, JOB_CATEGORY_UIDS } from "@/lib/zuper";
+import { getCompletedTimeFromHistory, COMPLETED_STATUSES } from "@/lib/compliance-helpers";
 import { Client } from "@hubspot/api-client";
 
 const hubspotClient = new Client({
@@ -66,6 +67,7 @@ export interface ComparisonRecord {
   // Date comparison
   scheduleDateMatch: boolean | null; // null if either date missing
   completionDateMatch: boolean | null;
+  completionDateDiffDays: number | null; // abs difference in days when both dates exist
   // Team info
   team: string | null;
   assignedTo: string | null;
@@ -90,6 +92,7 @@ export interface ProjectGroupedRecord {
     zuperCompletedAt: string | null;
     hubspotCompletionDate: string | null;
     completionDateMatch: boolean | null;
+    completionDateDiffDays: number | null;
     team: string | null;
     assignedTo: string | null;
   };
@@ -105,6 +108,7 @@ export interface ProjectGroupedRecord {
     zuperCompletedAt: string | null;
     hubspotCompletionDate: string | null;
     completionDateMatch: boolean | null;
+    completionDateDiffDays: number | null;
     team: string | null;
     assignedTo: string | null;
   };
@@ -120,6 +124,7 @@ export interface ProjectGroupedRecord {
     zuperCompletedAt: string | null;
     hubspotCompletionDate: string | null;
     completionDateMatch: boolean | null;
+    completionDateDiffDays: number | null;
     team: string | null;
     assignedTo: string | null;
   };
@@ -287,6 +292,18 @@ function compareDates(date1: string | null, date2: string | null): boolean | nul
   }
 }
 
+// Calculate absolute difference in days between two date strings
+function dateDiffDays(date1: string | null, date2: string | null): number | null {
+  if (!date1 || !date2) return null;
+  try {
+    const d1 = new Date(date1);
+    const d2 = new Date(date2);
+    return Math.round(Math.abs(d1.getTime() - d2.getTime()) / (1000 * 60 * 60 * 24));
+  } catch {
+    return null;
+  }
+}
+
 function isWithinDateWindow(dateStr: string | null, fromDate?: string, toDate?: string): boolean {
   if (!fromDate || !toDate) return !!dateStr;
   if (!dateStr) return false;
@@ -296,6 +313,60 @@ function isWithinDateWindow(dateStr: string | null, fromDate?: string, toDate?: 
   } catch {
     return false;
   }
+}
+
+// Terminal statuses that warrant fetching job detail for accurate completion date
+const TERMINAL_STATUS_NAMES = new Set([
+  ...COMPLETED_STATUSES,
+  "loose ends remaining",
+]);
+
+// Fetch individual job details in batches to get completion dates from status history.
+// Capped at MAX_ENRICHMENT_JOBS to avoid hundreds of extra API calls on large date ranges.
+const MAX_ENRICHMENT_JOBS = 50;
+
+async function enrichCompletionDates(jobs: ZuperJobSummary[]): Promise<void> {
+  const needsEnrichment = jobs.filter(
+    (j) => !j.completedAt && TERMINAL_STATUS_NAMES.has(j.zuperStatus.toLowerCase())
+  );
+
+  if (needsEnrichment.length === 0) return;
+
+  const capped = needsEnrichment.slice(0, MAX_ENRICHMENT_JOBS);
+  if (needsEnrichment.length > MAX_ENRICHMENT_JOBS) {
+    console.warn(
+      `[status-comparison] ${needsEnrichment.length} jobs need enrichment, capping at ${MAX_ENRICHMENT_JOBS}`
+    );
+  }
+
+  const CONCURRENCY = 5;
+  const BATCH_DELAY_MS = 300;
+
+  for (let i = 0; i < capped.length; i += CONCURRENCY) {
+    const batch = capped.slice(i, i + CONCURRENCY);
+    const results = await Promise.allSettled(
+      batch.map((job) => zuper.getJob(job.jobUid))
+    );
+
+    for (let j = 0; j < batch.length; j++) {
+      const result = results[j];
+      if (result.status === "fulfilled" && result.value.type === "success" && result.value.data) {
+        const completedTime = getCompletedTimeFromHistory(result.value.data);
+        if (completedTime) {
+          batch[j].completedAt = completedTime.toISOString();
+        }
+      }
+    }
+
+    if (i + CONCURRENCY < capped.length) {
+      await new Promise((r) => setTimeout(r, BATCH_DELAY_MS));
+    }
+  }
+
+  console.info(
+    `[status-comparison] Enriched ${capped.length}/${needsEnrichment.length} jobs ` +
+    `(${capped.filter((j) => j.completedAt).length} completion dates found)`
+  );
 }
 
 // Fetch all Zuper jobs for a category with pagination (filtered by date range)
@@ -383,7 +454,12 @@ async function fetchAllZuperJobs(categoryUid: string, fromDate?: string, toDate?
   }
 
   // Enforce local windowing by scheduled start date only.
-  return allJobs.filter((job) => isWithinDateWindow(job.scheduledStart, fromDate, toDate));
+  const filtered = allJobs.filter((job) => isWithinDateWindow(job.scheduledStart, fromDate, toDate));
+
+  // Fetch individual job details to get accurate completion dates from status history
+  await enrichCompletionDates(filtered);
+
+  return filtered;
 }
 
 // Batch fetch HubSpot deals by deal id with all date fields
@@ -540,7 +616,8 @@ export async function GET() {
         hubspotCompletionDate,
         // Date comparisons
         scheduleDateMatch: compareDates(job.scheduledStart, hubspotScheduleDate),
-        completionDateMatch: compareDates(job.completedAt || job.scheduledEnd, hubspotCompletionDate),
+        completionDateMatch: compareDates(job.completedAt, hubspotCompletionDate),
+        completionDateDiffDays: dateDiffDays(job.completedAt, hubspotCompletionDate),
         // Team
         team: job.team,
         assignedTo: job.assignedTo,
@@ -721,6 +798,7 @@ export async function GET() {
       zuperCompletedAt: null,
       hubspotCompletionDate: null,
       completionDateMatch: null,
+      completionDateDiffDays: null,
       team: null,
       assignedTo: null,
     };
@@ -764,6 +842,7 @@ export async function GET() {
         zuperCompletedAt: record.zuperCompletedAt,
         hubspotCompletionDate: record.hubspotCompletionDate,
         completionDateMatch: record.completionDateMatch,
+        completionDateDiffDays: record.completionDateDiffDays,
         team: record.team,
         assignedTo: record.assignedTo,
       };
@@ -784,11 +863,50 @@ export async function GET() {
       return aNum - bNum;
     });
 
+    // Detect duplicate active jobs per project+category
+    // (multiple in-progress Zuper jobs for the same project in the same category).
+    // Excludes cancelled AND terminal (completed/passed/failed) statuses so only
+    // genuinely active duplicates are flagged.
+    const INACTIVE_STATUSES = new Set([
+      "cancelled", "canceled",
+      ...COMPLETED_STATUSES,
+      "loose ends remaining",
+    ]);
+    interface DuplicateJobGroup {
+      projectNumber: string;
+      category: string;
+      count: number;
+      statuses: string[];
+      jobUids: string[];
+    }
+    const duplicateJobs: DuplicateJobGroup[] = [];
+    const jobsByProjectCategory = new Map<string, ZuperJobSummary[]>();
+    for (const job of allJobs) {
+      if (INACTIVE_STATUSES.has(job.zuperStatus.toLowerCase())) continue;
+      const key = `${job.projectNumber}::${job.category}`;
+      const arr = jobsByProjectCategory.get(key) || [];
+      arr.push(job);
+      jobsByProjectCategory.set(key, arr);
+    }
+    for (const [key, jobs] of jobsByProjectCategory) {
+      if (jobs.length < 2) continue;
+      const [projectNumber, category] = key.split("::");
+      duplicateJobs.push({
+        projectNumber,
+        category,
+        count: jobs.length,
+        statuses: jobs.map((j) => j.zuperStatus),
+        jobUids: jobs.map((j) => j.jobUid),
+      });
+    }
+    duplicateJobs.sort((a, b) => b.count - a.count);
+
     return NextResponse.json({
       records,
       projectRecords,
       stats,
       nonCoreAudit,
+      duplicateJobs,
       dateRange: { from: fromDate, to: toDate },
       lastUpdated: new Date().toISOString(),
     });
