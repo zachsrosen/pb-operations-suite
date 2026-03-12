@@ -108,6 +108,12 @@ interface ApiResponse {
   };
   nonCoreAudit?: NonCoreAudit;
   duplicateJobs?: DuplicateJobGroup[];
+  enrichmentStats?: {
+    truncated: boolean;
+    enriched: number;
+    total: number;
+    capPerCategory: number;
+  };
   dateRange: { from: string; to: string };
   lastUpdated: string;
 }
@@ -687,6 +693,13 @@ export default function ZuperStatusComparisonPage() {
         <StatCard label="Schedule Date Mismatches" value={stats?.scheduleDateMismatches || 0} color="orange" />
         <StatCard label="Completion Date Mismatches" value={stats?.completionDateMismatches || 0} color="purple" />
       </div>
+
+      {data?.enrichmentStats?.truncated && (
+        <div className="mb-4 rounded-lg border border-amber-200 dark:border-amber-800/50 bg-amber-50 dark:bg-amber-950/20 px-4 py-2 text-xs text-amber-700 dark:text-amber-400">
+          ⚠ Completion date stats are approximate — only {data.enrichmentStats.enriched} of {data.enrichmentStats.total} terminal jobs
+          were enriched (capped at {data.enrichmentStats.capPerCategory}/category for API performance).
+        </div>
+      )}
 
       {/* Category Breakdown Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -1367,7 +1380,7 @@ export default function ZuperStatusComparisonPage() {
             Duplicate Active Jobs
           </h3>
           <p className="text-xs text-muted mb-4">
-            Projects with multiple non-cancelled Zuper jobs in the same category. Some may be expected (e.g., re-inspections) but others may indicate sync issues.
+            Projects with multiple active Zuper jobs in the same category (excludes cancelled, completed, and other terminal statuses). Some may be expected (e.g., re-inspections) but others may indicate sync issues.
           </p>
 
           <div className="grid grid-cols-3 gap-3 mb-4">

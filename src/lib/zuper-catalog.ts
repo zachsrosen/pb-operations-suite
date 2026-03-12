@@ -103,7 +103,15 @@ async function resolveZuperCategoryUid(category: string | undefined): Promise<st
   }
   const key = category.toLowerCase().trim();
   const map = await getCategoryMap();
-  return map[key] ?? ZUPER_DEFAULT_CATEGORY_UID;
+  const uid = map[key];
+  if (!uid) {
+    const source = map === ZUPER_CATEGORY_UID_FALLBACK ? "static fallback" : "live";
+    console.warn(
+      `[zuper-catalog] Category "${category}" not found in ${source} map — defaulting to General`
+    );
+    return ZUPER_DEFAULT_CATEGORY_UID;
+  }
+  return uid;
 }
 
 export interface UpsertZuperPartInput {

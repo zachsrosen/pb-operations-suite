@@ -325,15 +325,22 @@ const TERMINAL_STATUS_NAMES = new Set([
 // Capped at MAX_ENRICHMENT_JOBS to avoid hundreds of extra API calls on large date ranges.
 const MAX_ENRICHMENT_JOBS = 50;
 
-async function enrichCompletionDates(jobs: ZuperJobSummary[]): Promise<void> {
+interface EnrichmentResult {
+  enriched: number;
+  total: number;
+  truncated: boolean;
+}
+
+async function enrichCompletionDates(jobs: ZuperJobSummary[]): Promise<EnrichmentResult> {
   const needsEnrichment = jobs.filter(
     (j) => !j.completedAt && TERMINAL_STATUS_NAMES.has(j.zuperStatus.toLowerCase())
   );
 
-  if (needsEnrichment.length === 0) return;
+  if (needsEnrichment.length === 0) return { enriched: 0, total: 0, truncated: false };
 
+  const truncated = needsEnrichment.length > MAX_ENRICHMENT_JOBS;
   const capped = needsEnrichment.slice(0, MAX_ENRICHMENT_JOBS);
-  if (needsEnrichment.length > MAX_ENRICHMENT_JOBS) {
+  if (truncated) {
     console.warn(
       `[status-comparison] ${needsEnrichment.length} jobs need enrichment, capping at ${MAX_ENRICHMENT_JOBS}`
     );
@@ -363,16 +370,24 @@ async function enrichCompletionDates(jobs: ZuperJobSummary[]): Promise<void> {
     }
   }
 
+  const enrichedCount = capped.filter((j) => j.completedAt).length;
   console.info(
     `[status-comparison] Enriched ${capped.length}/${needsEnrichment.length} jobs ` +
-    `(${capped.filter((j) => j.completedAt).length} completion dates found)`
+    `(${enrichedCount} completion dates found)`
   );
+
+  return { enriched: capped.length, total: needsEnrichment.length, truncated };
 }
 
 // Fetch all Zuper jobs for a category with pagination (filtered by date range)
 const MAX_PAGES = 50; // Safety cap: 50 pages × 100 jobs = 5,000 jobs max per category
 
-async function fetchAllZuperJobs(categoryUid: string, fromDate?: string, toDate?: string): Promise<ZuperJobSummary[]> {
+interface FetchResult {
+  jobs: ZuperJobSummary[];
+  enrichment: EnrichmentResult;
+}
+
+async function fetchAllZuperJobs(categoryUid: string, fromDate?: string, toDate?: string): Promise<FetchResult> {
   const allJobs: ZuperJobSummary[] = [];
   let page = 1;
   const limit = 100;
@@ -457,9 +472,9 @@ async function fetchAllZuperJobs(categoryUid: string, fromDate?: string, toDate?
   const filtered = allJobs.filter((job) => isWithinDateWindow(job.scheduledStart, fromDate, toDate));
 
   // Fetch individual job details to get accurate completion dates from status history
-  await enrichCompletionDates(filtered);
+  const enrichment = await enrichCompletionDates(filtered);
 
-  return filtered;
+  return { jobs: filtered, enrichment };
 }
 
 // Batch fetch HubSpot deals by deal id with all date fields
@@ -549,13 +564,27 @@ export async function GET() {
     const toDate = now.toISOString().split("T")[0];
 
     // Fetch Zuper jobs for all three categories in parallel (last 3 months)
-    const [surveyJobs, constructionJobs, inspectionJobs] = await Promise.all([
+    const [surveyResult, constructionResult, inspectionResult] = await Promise.all([
       fetchAllZuperJobs(JOB_CATEGORY_UIDS.SITE_SURVEY, fromDate, toDate),
       fetchAllZuperJobs(JOB_CATEGORY_UIDS.CONSTRUCTION, fromDate, toDate),
       fetchAllZuperJobs(JOB_CATEGORY_UIDS.INSPECTION, fromDate, toDate),
     ]);
 
+    const surveyJobs = surveyResult.jobs;
+    const constructionJobs = constructionResult.jobs;
+    const inspectionJobs = inspectionResult.jobs;
     const allJobs = [...surveyJobs, ...constructionJobs, ...inspectionJobs];
+
+    // Track whether completion-date enrichment was truncated
+    const enrichmentTruncated = surveyResult.enrichment.truncated ||
+      constructionResult.enrichment.truncated ||
+      inspectionResult.enrichment.truncated;
+    const enrichmentStats = {
+      truncated: enrichmentTruncated,
+      enriched: surveyResult.enrichment.enriched + constructionResult.enrichment.enriched + inspectionResult.enrichment.enriched,
+      total: surveyResult.enrichment.total + constructionResult.enrichment.total + inspectionResult.enrichment.total,
+      capPerCategory: MAX_ENRICHMENT_JOBS,
+    };
 
     // Collect unique HubSpot deal IDs from Zuper job metadata
     const dealIds = [...new Set(allJobs.map((j) => j.hubspotDealId).filter((id): id is string => !!id))];
@@ -907,6 +936,7 @@ export async function GET() {
       stats,
       nonCoreAudit,
       duplicateJobs,
+      enrichmentStats,
       dateRange: { from: fromDate, to: toDate },
       lastUpdated: new Date().toISOString(),
     });
