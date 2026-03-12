@@ -8,6 +8,7 @@
     "preflight": "node scripts/preflight-check.js",
     "preflight:prod": "node scripts/preflight-check.js --prod",
     "db:migrate": "prisma migrate deploy",
+    "crew:deactivate": "tsx scripts/deactivate-crew-member.ts",
     "start": "next start",
     "lint": "eslint",
     "test": "jest",

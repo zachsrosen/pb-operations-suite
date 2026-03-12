@@ -30,25 +30,6 @@ const SEED_SCHEDULES = [
     jobTypes: ["survey"],
   },
   {
-    name: "Derek Pomar",
-    location: "DTC",
-    reportLocation: "DTC",
-    schedule: [
-      { day: 2, startTime: "12:00", endTime: "16:00" },
-      { day: 4, startTime: "12:00", endTime: "16:00" },
-    ],
-    jobTypes: ["survey"],
-  },
-  {
-    name: "Derek Pomar",
-    location: "Westminster",
-    reportLocation: "Westminster",
-    schedule: [
-      { day: 3, startTime: "12:00", endTime: "16:00" },
-    ],
-    jobTypes: ["survey"],
-  },
-  {
     name: "Ryszard Szymanski",
     location: "Westminster",
     reportLocation: "Westminster",
