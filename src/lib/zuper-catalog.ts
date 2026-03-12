@@ -23,6 +23,11 @@ const VALID_PRODUCT_TYPES = ["PRODUCT", "SERVICE", "PARTS", "BUNDLE", "LABOR"] a
  * Static fallback map of category names → Zuper product_category UIDs.
  * Used only when the live API fetch fails. The resolver prefers live data
  * so that new Zuper categories are picked up automatically.
+ *
+ * This map covers ALL product categories that currently exist in Zuper.
+ * Categories in catalog-fields.ts like "Solar Panel", "EV Charger", etc.
+ * don't have matching Zuper product categories yet — they fall back to
+ * "General" with a console.warn until those categories are created in Zuper.
  */
 const ZUPER_CATEGORY_UID_FALLBACK: Record<string, string> = {
   "battery": "7e926259-0552-41e6-b936-547543c209c6",

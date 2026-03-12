@@ -376,7 +376,7 @@ async function enrichCompletionDates(jobs: ZuperJobSummary[]): Promise<Enrichmen
     `(${enrichedCount} completion dates found)`
   );
 
-  return { enriched: capped.length, total: needsEnrichment.length, truncated };
+  return { enriched: enrichedCount, total: needsEnrichment.length, truncated };
 }
 
 // Fetch all Zuper jobs for a category with pagination (filtered by date range)
