@@ -2100,48 +2100,7 @@ export default function SiteSurveySchedulerPage() {
                           </span>
                         )}
                         <span className="flex-1" />
-                        {!portalInviteStatuses[project.id] ? (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setPortalInviteProject(project);
-                              setPortalInviteEmail("");
-                              setPortalInvitePhone("");
-                              setPortalInviteResult(null);
-                            }}
-                            className="text-[10px] px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 border border-orange-500/30 font-medium"
-                            title="Send customer self-scheduling link"
-                          >
-                            Invite
-                          </button>
-                        ) : (
-                          <span className="inline-flex items-center gap-1">
-                            <span
-                              className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                                portalInviteStatuses[project.id] === "SCHEDULED"
-                                  ? "bg-green-500/20 text-green-400"
-                                  : portalInviteStatuses[project.id] === "PENDING"
-                                    ? "bg-orange-500/20 text-orange-400"
-                                    : "bg-zinc-500/20 text-muted"
-                              }`}
-                              title={`Portal invite: ${portalInviteStatuses[project.id]}`}
-                            >
-                              {portalInviteStatuses[project.id] === "SCHEDULED"
-                                ? "Booked"
-                                : portalInviteStatuses[project.id] === "PENDING"
-                                  ? "Invited"
-                                  : portalInviteStatuses[project.id]}
-                            </span>
-                            <button
-                              onClick={(e) => { e.stopPropagation(); cancelPortalInvite(project.id); }}
-                              disabled={cancellingInvite === project.id}
-                              className="text-[10px] text-muted hover:text-red-400 disabled:opacity-50"
-                              title="Cancel invite"
-                            >
-                              {cancellingInvite === project.id ? "..." : "\u00d7"}
-                            </button>
-                          </span>
-                        )}
+                        {/* TEMPORARILY DISABLED - portal invite buttons */}
                       </div>
                     </div>
                   ))
@@ -2546,48 +2505,7 @@ export default function SiteSurveySchedulerPage() {
                                     >
                                       Schedule
                                     </button>
-                                    {!portalInviteStatuses[project.id] && (
-                                      <button
-                                        onClick={() => {
-                                          setPortalInviteProject(project);
-                                          setPortalInviteEmail("");
-                                          setPortalInvitePhone("");
-                                          setPortalInviteResult(null);
-                                        }}
-                                        className="text-xs text-orange-400 hover:text-orange-300"
-                                        title="Send customer self-scheduling link"
-                                      >
-                                        Invite
-                                      </button>
-                                    )}
-                                    {portalInviteStatuses[project.id] && (
-                                      <span className="inline-flex items-center gap-1">
-                                        <span
-                                          className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                                            portalInviteStatuses[project.id] === "SCHEDULED"
-                                              ? "bg-green-500/20 text-green-400"
-                                              : portalInviteStatuses[project.id] === "PENDING"
-                                                ? "bg-orange-500/20 text-orange-400"
-                                                : "bg-zinc-500/20 text-muted"
-                                          }`}
-                                          title={`Portal invite: ${portalInviteStatuses[project.id]}`}
-                                        >
-                                          {portalInviteStatuses[project.id] === "SCHEDULED"
-                                            ? "Booked"
-                                            : portalInviteStatuses[project.id] === "PENDING"
-                                              ? "Invited"
-                                              : portalInviteStatuses[project.id]}
-                                        </span>
-                                        <button
-                                          onClick={(e) => { e.stopPropagation(); cancelPortalInvite(project.id); }}
-                                          disabled={cancellingInvite === project.id}
-                                          className="text-[10px] text-muted hover:text-red-400 disabled:opacity-50"
-                                          title="Cancel invite"
-                                        >
-                                          {cancellingInvite === project.id ? "..." : "\u00d7"}
-                                        </button>
-                                      </span>
-                                    )}
+                                    {/* TEMPORARILY DISABLED - portal invite buttons */}
                                   </>
                                 )}
                               </div>
@@ -3052,8 +2970,8 @@ export default function SiteSurveySchedulerPage() {
         </div>
       )}
 
-      {/* Portal Invite Modal */}
-      {portalInviteProject && (
+      {/* TEMPORARILY DISABLED - Portal Invite Modal */}
+      {false && portalInviteProject && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[1000]">
           <div className="bg-surface border border-t-border rounded-xl p-5 max-w-md w-[90%]">
             <h3 className="text-lg font-semibold text-foreground mb-1">Send Survey Invite</h3>
@@ -3065,8 +2983,8 @@ export default function SiteSurveySchedulerPage() {
               {/* Project info */}
               <div className="rounded-lg bg-surface-2 p-3">
                 <p className="text-xs text-muted">Project</p>
-                <p className="text-sm font-medium text-foreground">{portalInviteProject.name}</p>
-                <p className="text-xs text-muted mt-1">{portalInviteProject.address}</p>
+                <p className="text-sm font-medium text-foreground">{portalInviteProject!.name}</p>
+                <p className="text-xs text-muted mt-1">{portalInviteProject!.address}</p>
               </div>
 
               {/* Customer email */}
@@ -3109,11 +3027,11 @@ export default function SiteSurveySchedulerPage() {
               {/* Result message */}
               {portalInviteResult && (
                 <div className={`rounded-lg p-3 text-sm ${
-                  portalInviteResult.success
+                  portalInviteResult!.success
                     ? "bg-green-500/10 text-green-400"
                     : "bg-red-500/10 text-red-400"
                 }`}>
-                  {portalInviteResult.message}
+                  {portalInviteResult!.message}
                 </div>
               )}
             </div>
