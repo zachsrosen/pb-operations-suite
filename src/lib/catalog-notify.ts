@@ -1,17 +1,11 @@
 // src/lib/catalog-notify.ts
 // Shared admin email notification for new PendingCatalogPush records.
-import { Resend } from "resend";
+// Uses the central sendEmailMessage (Google Workspace → Resend fallback).
+import { sendEmailMessage } from "@/lib/email";
 
 const ADMIN_EMAILS = (process.env.AUDIT_ALERT_EMAILS || "")
   .split(",")
   .filter(Boolean);
-
-let _resend: Resend | null = null;
-function getResend(): Resend | null {
-  if (!process.env.RESEND_API_KEY) return null;
-  if (!_resend) _resend = new Resend(process.env.RESEND_API_KEY);
-  return _resend;
-}
 
 export interface CatalogPushNotification {
   id: string;
@@ -23,10 +17,6 @@ export interface CatalogPushNotification {
   dealId?: string | null;
 }
 
-/**
- * Fire-and-forget email to admins when a new PendingCatalogPush is created.
- * Safe to call without awaiting — logs errors internally.
- */
 export interface CatalogApprovalWarning {
   id: string;
   brand: string;
@@ -42,8 +32,6 @@ export interface CatalogApprovalWarning {
  */
 export function notifyAdminsOfApprovalWarnings(data: CatalogApprovalWarning): void {
   if (ADMIN_EMAILS.length === 0) return;
-  const resend = getResend();
-  if (!resend) return;
 
   const dashboardUrl = process.env.NEXTAUTH_URL
     ? `${process.env.NEXTAUTH_URL}/dashboards/catalog`
@@ -74,31 +62,33 @@ export function notifyAdminsOfApprovalWarnings(data: CatalogApprovalWarning): vo
     </div>
   `;
 
-  resend.emails
-    .send({
-      from: process.env.RESEND_FROM_EMAIL
-        ? `PB Ops <${process.env.RESEND_FROM_EMAIL}>`
-        : "PB Ops <ops@photonbrothers.com>",
-      to: ADMIN_EMAILS,
-      subject,
-      html,
-    })
-    .then(() => {
-      console.log(`[catalog] Warning notification sent for ${data.brand} ${data.model}`);
+  sendEmailMessage({
+    to: ADMIN_EMAILS,
+    subject,
+    html,
+    text: `Catalog Approval Warning: ${data.brand} ${data.model}. Some fields were skipped during sync.`,
+    debugFallbackTitle: "Catalog Approval Warning",
+    debugFallbackBody: `${data.brand} ${data.model} approved with warnings`,
+  })
+    .then((result) => {
+      if (result.success) {
+        console.log(`[catalog] Warning notification sent for ${data.brand} ${data.model}`);
+      } else {
+        console.error(`[catalog] Failed to send warning notification: ${result.error}`);
+      }
     })
     .catch((err) => {
       console.error(`[catalog] Failed to send warning notification: ${err instanceof Error ? err.message : String(err)}`);
     });
 }
 
+/**
+ * Fire-and-forget email to admins when a new PendingCatalogPush is created.
+ * Safe to call without awaiting — logs errors internally.
+ */
 export function notifyAdminsOfNewCatalogRequest(push: CatalogPushNotification): void {
   if (ADMIN_EMAILS.length === 0) {
     console.warn("[catalog] AUDIT_ALERT_EMAILS not configured — skipping notification");
-    return;
-  }
-  const resend = getResend();
-  if (!resend) {
-    console.warn("[catalog] RESEND_API_KEY not configured — skipping notification");
     return;
   }
 
@@ -125,19 +115,22 @@ export function notifyAdminsOfNewCatalogRequest(push: CatalogPushNotification): 
     </div>
   `;
 
-  resend.emails
-    .send({
-      from: process.env.RESEND_FROM_EMAIL
-        ? `PB Ops <${process.env.RESEND_FROM_EMAIL}>`
-        : "PB Ops <ops@photonbrothers.com>",
-      to: ADMIN_EMAILS,
-      subject,
-      html,
-    })
-    .then(() => {
-      console.log(`[catalog] Admin notification sent for ${push.brand} ${push.model} to ${ADMIN_EMAILS.join(", ")}`);
+  sendEmailMessage({
+    to: ADMIN_EMAILS,
+    subject,
+    html,
+    text: `New Catalog Request: ${push.brand} ${push.model} (${push.category}) — ${systemsList}. Requested by ${push.requestedBy ?? "Unknown"}.`,
+    debugFallbackTitle: "New Catalog Request",
+    debugFallbackBody: `${push.brand} ${push.model} (${push.category})`,
+  })
+    .then((result) => {
+      if (result.success) {
+        console.log(`[catalog] Admin notification sent for ${push.brand} ${push.model} to ${ADMIN_EMAILS.join(", ")}`);
+      } else {
+        console.error(`[catalog] Failed to send admin notification: ${result.error}`);
+      }
     })
     .catch((err) => {
-      console.error(`[catalog] Failed to send admin notification email: ${err instanceof Error ? err.message : String(err)}`);
+      console.error(`[catalog] Failed to send admin notification: ${err instanceof Error ? err.message : String(err)}`);
     });
 }

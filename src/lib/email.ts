@@ -386,7 +386,7 @@ function logLocalFallback(title: string, content: string) {
     `);
 }
 
-async function sendEmailMessage(params: {
+export async function sendEmailMessage(params: {
   to?: string | string[];
   bcc?: string[];
   subject: string;
