@@ -131,15 +131,15 @@ Two options side by side on the Start Mode screen:
 
 ### Smart Defaults by Category
 
-| Category | Unit Label | Default Systems |
-|----------|-----------|----------------|
-| MODULE | W | Internal + HubSpot + Zuper + Zoho |
-| BATTERY | kWh | Internal + HubSpot + Zuper + Zoho |
-| INVERTER | kW | Internal + HubSpot + Zuper + Zoho |
-| EV_CHARGER | A | Internal + HubSpot + Zuper + Zoho |
-| SERVICE | — | Internal + Zoho |
-| ADDER_SERVICES | — | Internal + Zoho |
-| Others | — | Internal + HubSpot + Zuper + Zoho |
+All categories default to **Internal + HubSpot + Zuper + Zoho**. Only the unit label varies:
+
+| Category | Unit Label |
+|----------|-----------|
+| MODULE | W |
+| BATTERY / BATTERY_EXPANSION | kWh |
+| INVERTER | kW |
+| EV_CHARGER | A |
+| All others | — |
 
 ### Validation
 
