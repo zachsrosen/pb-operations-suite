@@ -719,22 +719,24 @@ export class ZohoInventoryClient {
     }
 
     const partNumber = vendorPartNumber || model;
+    // Core payload: identity + accounting defaults (must never be dropped on retry)
     const corePayload: Record<string, unknown> = {
       name,
       ...(sku ? { sku } : {}),
       ...(description ? { description } : {}),
       ...(partNumber ? { part_number: partNumber } : {}),
-    };
-
-    const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
-    const optionalPayload: Record<string, unknown> = {
-      ...corePayload,
       item_type: "inventory",
       tax_preference: "taxable",
       inventory_account_name: "Inventory Asset",
       inventory_valuation_method: "fifo",
       purchase_account_name: "Cost of Goods Sold",
       sales_account_name: "Sales",
+    };
+
+    const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+    // Optional payload: core + truly optional fields that can be safely dropped
+    const optionalPayload: Record<string, unknown> = {
+      ...corePayload,
       ...(isNum(input.sellPrice) ? { rate: input.sellPrice } : {}),
       ...(isNum(input.unitCost) ? { purchase_rate: input.unitCost } : {}),
       ...(vendorName ? { vendor_name: vendorName } : {}),

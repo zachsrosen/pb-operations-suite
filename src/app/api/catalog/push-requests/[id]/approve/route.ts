@@ -395,24 +395,26 @@ export async function POST(
         },
   });
 
-  // Collect warnings from all system outcomes and notify admins if any exist
-  const systemWarnings: Record<string, string[]> = {};
-  for (const [system, outcome] of Object.entries(outcomes)) {
-    if (outcome?.status === "success" && outcome.message?.includes("Warning:")) {
-      const warningMatch = outcome.message.match(/\(Warning: (.+)\)$/);
-      if (warningMatch) {
-        systemWarnings[system] = [warningMatch[1]];
+  // Collect warnings from all system outcomes and notify admins — only if fully approved
+  if (finalizeApproved) {
+    const systemWarnings: Record<string, string[]> = {};
+    for (const [system, outcome] of Object.entries(outcomes)) {
+      if (outcome?.status === "success" && outcome.message?.includes("Warning:")) {
+        const warningMatch = outcome.message.match(/\(Warning: (.+)\)$/);
+        if (warningMatch) {
+          systemWarnings[system] = [warningMatch[1]];
+        }
       }
     }
-  }
-  if (Object.keys(systemWarnings).length > 0) {
-    notifyAdminsOfApprovalWarnings({
-      id,
-      brand: push.brand,
-      model: push.model,
-      category: push.category,
-      systemWarnings,
-    });
+    if (Object.keys(systemWarnings).length > 0) {
+      notifyAdminsOfApprovalWarnings({
+        id,
+        brand: push.brand,
+        model: push.model,
+        category: push.category,
+        systemWarnings,
+      });
+    }
   }
 
   return NextResponse.json({
