@@ -9,6 +9,7 @@ interface CategoryFieldsProps {
   onChange: (key: string, value: unknown) => void;
   showTooltips?: boolean;
   prefillFields?: Set<string>;
+  onClearPrefill?: (key: string) => void;
 }
 
 const inputClasses =
@@ -137,6 +138,7 @@ export default function CategoryFields({
   onChange,
   showTooltips,
   prefillFields,
+  onClearPrefill,
 }: CategoryFieldsProps) {
   const fields = getCategoryFields(category);
 
@@ -171,7 +173,10 @@ export default function CategoryFields({
               <Renderer
                 field={field}
                 value={values[field.key]}
-                onChange={(v) => onChange(field.key, v)}
+                onChange={(v) => {
+                  onChange(field.key, v);
+                  onClearPrefill?.(field.key);
+                }}
               />
             </div>
           );

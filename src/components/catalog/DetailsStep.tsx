@@ -36,6 +36,7 @@ export default function DetailsStep({ state, dispatch, onNext, onBack }: Details
           onChange={(key, value) => dispatch({ type: "SET_SPEC", key, value })}
           showTooltips={true}
           prefillFields={state.prefillFields}
+          onClearPrefill={(key) => dispatch({ type: "CLEAR_PREFILL_FIELD", field: `spec.${key}` })}
         />
       </div>
 
@@ -54,7 +55,7 @@ export default function DetailsStep({ state, dispatch, onNext, onBack }: Details
               type="number"
               step="any"
               value={state.unitCost}
-              onChange={(e) => dispatch({ type: "SET_FIELD", field: "unitCost", value: e.target.value })}
+              onChange={(e) => { dispatch({ type: "SET_FIELD", field: "unitCost", value: e.target.value }); dispatch({ type: "CLEAR_PREFILL_FIELD", field: "unitCost" }); }}
               className="w-full rounded-lg border border-t-border bg-surface-2 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
             />
           </div>
@@ -67,7 +68,7 @@ export default function DetailsStep({ state, dispatch, onNext, onBack }: Details
               type="number"
               step="any"
               value={state.sellPrice}
-              onChange={(e) => dispatch({ type: "SET_FIELD", field: "sellPrice", value: e.target.value })}
+              onChange={(e) => { dispatch({ type: "SET_FIELD", field: "sellPrice", value: e.target.value }); dispatch({ type: "CLEAR_PREFILL_FIELD", field: "sellPrice" }); }}
               className="w-full rounded-lg border border-t-border bg-surface-2 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
             />
           </div>
@@ -80,7 +81,7 @@ export default function DetailsStep({ state, dispatch, onNext, onBack }: Details
               type="number"
               step="any"
               value={state.unitSpec}
-              onChange={(e) => dispatch({ type: "SET_FIELD", field: "unitSpec", value: e.target.value })}
+              onChange={(e) => { dispatch({ type: "SET_FIELD", field: "unitSpec", value: e.target.value }); dispatch({ type: "CLEAR_PREFILL_FIELD", field: "unitSpec" }); }}
               className="w-full rounded-lg border border-t-border bg-surface-2 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
             />
           </div>
@@ -92,7 +93,7 @@ export default function DetailsStep({ state, dispatch, onNext, onBack }: Details
             <input
               type="text"
               value={state.unitLabel}
-              onChange={(e) => dispatch({ type: "SET_FIELD", field: "unitLabel", value: e.target.value })}
+              onChange={(e) => { dispatch({ type: "SET_FIELD", field: "unitLabel", value: e.target.value }); dispatch({ type: "CLEAR_PREFILL_FIELD", field: "unitLabel" }); }}
               placeholder="W, kWh, kW, A..."
               className="w-full rounded-lg border border-t-border bg-surface-2 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
             />
@@ -115,7 +116,7 @@ export default function DetailsStep({ state, dispatch, onNext, onBack }: Details
               type="number"
               step="any"
               value={state.length}
-              onChange={(e) => dispatch({ type: "SET_FIELD", field: "length", value: e.target.value })}
+              onChange={(e) => { dispatch({ type: "SET_FIELD", field: "length", value: e.target.value }); dispatch({ type: "CLEAR_PREFILL_FIELD", field: "length" }); }}
               className="w-full rounded-lg border border-t-border bg-surface-2 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
             />
           </div>
@@ -128,7 +129,7 @@ export default function DetailsStep({ state, dispatch, onNext, onBack }: Details
               type="number"
               step="any"
               value={state.width}
-              onChange={(e) => dispatch({ type: "SET_FIELD", field: "width", value: e.target.value })}
+              onChange={(e) => { dispatch({ type: "SET_FIELD", field: "width", value: e.target.value }); dispatch({ type: "CLEAR_PREFILL_FIELD", field: "width" }); }}
               className="w-full rounded-lg border border-t-border bg-surface-2 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
             />
           </div>
@@ -141,7 +142,7 @@ export default function DetailsStep({ state, dispatch, onNext, onBack }: Details
               type="number"
               step="any"
               value={state.weight}
-              onChange={(e) => dispatch({ type: "SET_FIELD", field: "weight", value: e.target.value })}
+              onChange={(e) => { dispatch({ type: "SET_FIELD", field: "weight", value: e.target.value }); dispatch({ type: "CLEAR_PREFILL_FIELD", field: "weight" }); }}
               className="w-full rounded-lg border border-t-border bg-surface-2 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
             />
           </div>
@@ -153,7 +154,7 @@ export default function DetailsStep({ state, dispatch, onNext, onBack }: Details
             <input
               type="text"
               value={state.sku}
-              onChange={(e) => dispatch({ type: "SET_FIELD", field: "sku", value: e.target.value })}
+              onChange={(e) => { dispatch({ type: "SET_FIELD", field: "sku", value: e.target.value }); dispatch({ type: "CLEAR_PREFILL_FIELD", field: "sku" }); }}
               className="w-full rounded-lg border border-t-border bg-surface-2 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
             />
           </div>
@@ -165,7 +166,7 @@ export default function DetailsStep({ state, dispatch, onNext, onBack }: Details
             <input
               type="text"
               value={state.vendorName}
-              onChange={(e) => dispatch({ type: "SET_FIELD", field: "vendorName", value: e.target.value })}
+              onChange={(e) => { dispatch({ type: "SET_FIELD", field: "vendorName", value: e.target.value }); dispatch({ type: "CLEAR_PREFILL_FIELD", field: "vendorName" }); }}
               className="w-full rounded-lg border border-t-border bg-surface-2 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
             />
           </div>
@@ -177,7 +178,7 @@ export default function DetailsStep({ state, dispatch, onNext, onBack }: Details
             <input
               type="text"
               value={state.vendorPartNumber}
-              onChange={(e) => dispatch({ type: "SET_FIELD", field: "vendorPartNumber", value: e.target.value })}
+              onChange={(e) => { dispatch({ type: "SET_FIELD", field: "vendorPartNumber", value: e.target.value }); dispatch({ type: "CLEAR_PREFILL_FIELD", field: "vendorPartNumber" }); }}
               className="w-full rounded-lg border border-t-border bg-surface-2 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
             />
           </div>
@@ -189,7 +190,7 @@ export default function DetailsStep({ state, dispatch, onNext, onBack }: Details
             type="button"
             role="switch"
             aria-checked={state.hardToProcure}
-            onClick={() => dispatch({ type: "SET_FIELD", field: "hardToProcure", value: !state.hardToProcure })}
+            onClick={() => { dispatch({ type: "SET_FIELD", field: "hardToProcure", value: !state.hardToProcure }); dispatch({ type: "CLEAR_PREFILL_FIELD", field: "hardToProcure" }); }}
             className={`relative h-6 w-11 rounded-full transition-colors ${
               state.hardToProcure ? "bg-amber-500" : "bg-surface-2"
             }`}

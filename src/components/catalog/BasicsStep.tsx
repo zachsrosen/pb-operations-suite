@@ -29,6 +29,7 @@ export default function BasicsStep({ state, dispatch, onNext }: BasicsStepProps)
   const [mergeTargetSkuId, setMergeTargetSkuId] = useState("");
   const [mergeBusy, setMergeBusy] = useState(false);
   const [mergeMessage, setMergeMessage] = useState<string | null>(null);
+  const [lookupError, setLookupError] = useState<string | null>(null);
 
   // Multi-field duplicate lookup (same logic as current form: SKU, vendor part, brand+model, model)
   const existingLookupQuery = useMemo(() => {
@@ -39,17 +40,26 @@ export default function BasicsStep({ state, dispatch, onNext }: BasicsStepProps)
 
   useEffect(() => {
     const query = existingLookupQuery.trim();
-    if (!query) { setExistingMatches([]); return; }
+    if (!query) { setExistingMatches([]); setLookupError(null); return; }
     let cancelled = false;
     const timeoutId = setTimeout(async () => {
       setExistingMatchesLoading(true);
+      setLookupError(null);
       try {
         const res = await fetch(`/api/catalog/search?q=${encodeURIComponent(query)}`);
-        if (res.ok && !cancelled) {
+        if (cancelled) return;
+        if (res.ok) {
           setExistingMatches(await res.json());
+        } else {
+          setExistingMatches([]);
+          setLookupError("Duplicate check failed — please verify manually before submitting.");
         }
-      } catch { /* ignore */ }
-      finally { if (!cancelled) setExistingMatchesLoading(false); }
+      } catch {
+        if (!cancelled) {
+          setExistingMatches([]);
+          setLookupError("Could not check for duplicates — network error.");
+        }
+      } finally { if (!cancelled) setExistingMatchesLoading(false); }
     }, 500);
     return () => { cancelled = true; clearTimeout(timeoutId); };
   }, [existingLookupQuery]);
@@ -233,6 +243,11 @@ export default function BasicsStep({ state, dispatch, onNext }: BasicsStepProps)
         </div>
       )}
       {existingMatchesLoading && <p className="text-xs text-muted animate-pulse">Checking for existing products...</p>}
+      {lookupError && (
+        <div className="rounded-lg bg-red-500/10 border border-red-500/30 p-3 text-sm text-red-400">
+          {lookupError}
+        </div>
+      )}
 
       {/* Confidence banner for prefilled */}
       {state.prefillSource && state.prefillFields.size > 0 && (
