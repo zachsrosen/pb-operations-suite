@@ -1,14 +1,14 @@
 "use client";
 import { useState } from "react";
-import CloneSearch from "./CloneSearch";
-import DatasheetImport from "./DatasheetImport";
+import CloneSearch, { type CloneResult } from "./CloneSearch";
+import DatasheetImport, { type ExtractedProduct } from "./DatasheetImport";
 
 type StartMode = "choose" | "clone" | "datasheet";
 
 interface StartModeStepProps {
   onStartScratch: () => void;
-  onClone: (product: Record<string, unknown>) => void;
-  onDatasheetExtracted: (product: Record<string, unknown>) => void;
+  onClone: (product: CloneResult) => void;
+  onDatasheetExtracted: (product: ExtractedProduct) => void;
 }
 
 export default function StartModeStep({

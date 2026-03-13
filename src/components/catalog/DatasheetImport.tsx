@@ -1,7 +1,7 @@
 "use client";
 import { useState, useCallback } from "react";
 
-interface ExtractedProduct {
+export interface ExtractedProduct {
   category?: string;
   brand?: string;
   model?: string;

@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 
-interface CloneResult {
+export interface CloneResult {
   id: string;
   category: string;
   brand: string;

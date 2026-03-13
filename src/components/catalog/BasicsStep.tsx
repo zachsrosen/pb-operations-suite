@@ -7,7 +7,9 @@ import type { CatalogFormState, CatalogFormAction } from "@/lib/catalog-form-sta
 interface BasicsStepProps {
   state: CatalogFormState;
   dispatch: React.Dispatch<CatalogFormAction>;
+  onCategoryChange?: (category: string) => void;
   onNext: () => void;
+  onBack?: () => void;
 }
 
 interface ExistingSkuMatch {
@@ -22,7 +24,7 @@ interface ExistingSkuMatch {
   zohoItemId?: string;
 }
 
-export default function BasicsStep({ state, dispatch, onNext }: BasicsStepProps) {
+export default function BasicsStep({ state, dispatch, onCategoryChange, onNext, onBack }: BasicsStepProps) {
   const [existingMatches, setExistingMatches] = useState<ExistingSkuMatch[]>([]);
   const [existingMatchesLoading, setExistingMatchesLoading] = useState(false);
   const [mergeSourceSkuId, setMergeSourceSkuId] = useState("");
@@ -98,7 +100,7 @@ export default function BasicsStep({ state, dispatch, onNext }: BasicsStepProps)
             <button
               key={cat}
               type="button"
-              onClick={() => dispatch({ type: "SET_CATEGORY", category: cat })}
+              onClick={() => onCategoryChange ? onCategoryChange(cat) : dispatch({ type: "SET_CATEGORY", category: cat })}
               className={`rounded-lg px-3 py-2 text-sm font-medium transition-all ${
                 state.category === cat
                   ? "bg-cyan-500/20 text-cyan-400 ring-2 ring-cyan-500"
@@ -264,7 +266,18 @@ export default function BasicsStep({ state, dispatch, onNext }: BasicsStepProps)
       )}
 
       {/* Navigation */}
-      <div className="flex justify-end">
+      <div className="flex items-center justify-between">
+        {onBack ? (
+          <button
+            type="button"
+            onClick={onBack}
+            className="px-4 py-2 text-sm text-muted hover:text-foreground transition-colors"
+          >
+            ← Back
+          </button>
+        ) : (
+          <div />
+        )}
         <button
           type="button"
           disabled={!canProceed}
