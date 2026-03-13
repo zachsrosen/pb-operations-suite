@@ -76,7 +76,9 @@ export function notifyAdminsOfApprovalWarnings(data: CatalogApprovalWarning): vo
 
   resend.emails
     .send({
-      from: process.env.RESEND_FROM || "PB Ops <ops@photonbrothers.com>",
+      from: process.env.RESEND_FROM_EMAIL
+        ? `PB Ops <${process.env.RESEND_FROM_EMAIL}>`
+        : "PB Ops <ops@photonbrothers.com>",
       to: ADMIN_EMAILS,
       subject,
       html,
@@ -125,7 +127,9 @@ export function notifyAdminsOfNewCatalogRequest(push: CatalogPushNotification): 
 
   resend.emails
     .send({
-      from: process.env.RESEND_FROM || "PB Ops <ops@photonbrothers.com>",
+      from: process.env.RESEND_FROM_EMAIL
+        ? `PB Ops <${process.env.RESEND_FROM_EMAIL}>`
+        : "PB Ops <ops@photonbrothers.com>",
       to: ADMIN_EMAILS,
       subject,
       html,
