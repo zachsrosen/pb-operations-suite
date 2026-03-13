@@ -14,6 +14,7 @@ import {
 import { createOrUpdateHubSpotProduct } from "@/lib/hubspot";
 import { createOrUpdateZohoItem } from "@/lib/zoho-inventory";
 import { createOrUpdateZuperPart } from "@/lib/zuper-catalog";
+import { notifyAdminsOfApprovalWarnings } from "@/lib/catalog-notify";
 
 const ADMIN_ROLES = ["ADMIN", "OWNER", "MANAGER"];
 const INTERNAL_CATEGORIES = Object.values(EquipmentCategory) as string[];
@@ -231,12 +232,15 @@ export async function POST(
         return pendingPush;
       });
 
+      const hubspotWarnings = hubspotResult.warnings?.length
+        ? ` (Warning: ${hubspotResult.warnings.join("; ")})`
+        : "";
       outcomes.HUBSPOT = {
         status: "success",
         externalId: hubspotResult.hubspotProductId,
-        message: hubspotResult.created
+        message: (hubspotResult.created
           ? "Created HubSpot product."
-          : "Updated existing HubSpot product.",
+          : "Updated existing HubSpot product.") + hubspotWarnings,
       };
       } catch (error) {
         outcomes.HUBSPOT = {
@@ -288,12 +292,15 @@ export async function POST(
         return pendingPush;
       });
 
+      const zohoWarnings = zohoResult.warnings?.length
+        ? ` (Warning: ${zohoResult.warnings.join("; ")})`
+        : "";
       outcomes.ZOHO = {
         status: "success",
         externalId: zohoResult.zohoItemId,
-        message: zohoResult.created
+        message: (zohoResult.created
           ? "Created Zoho item."
-          : "Updated existing Zoho item.",
+          : "Updated existing Zoho item.") + zohoWarnings,
       };
       } catch (error) {
         outcomes.ZOHO = {
@@ -352,12 +359,15 @@ export async function POST(
         return pendingPush;
       });
 
+      const zuperWarnings = zuperResult.warnings?.length
+        ? ` (Warning: ${zuperResult.warnings.join("; ")})`
+        : "";
       outcomes.ZUPER = {
         status: "success",
         externalId: zuperResult.zuperItemId,
-        message: zuperResult.created
+        message: (zuperResult.created
           ? "Created Zuper item."
-          : "Linked existing Zuper item.",
+          : "Linked existing Zuper item.") + zuperWarnings,
       };
       } catch (error) {
         outcomes.ZUPER = {
@@ -384,6 +394,26 @@ export async function POST(
           note: "Approval attempt incomplete. Resolve failed/skipped systems and retry.",
         },
   });
+
+  // Collect warnings from all system outcomes and notify admins if any exist
+  const systemWarnings: Record<string, string[]> = {};
+  for (const [system, outcome] of Object.entries(outcomes)) {
+    if (outcome?.status === "success" && outcome.message?.includes("Warning:")) {
+      const warningMatch = outcome.message.match(/\(Warning: (.+)\)$/);
+      if (warningMatch) {
+        systemWarnings[system] = [warningMatch[1]];
+      }
+    }
+  }
+  if (Object.keys(systemWarnings).length > 0) {
+    notifyAdminsOfApprovalWarnings({
+      id,
+      brand: push.brand,
+      model: push.model,
+      category: push.category,
+      systemWarnings,
+    });
+  }
 
   return NextResponse.json({
     push: responsePush,

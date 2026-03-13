@@ -136,6 +136,7 @@ export interface UpsertZuperPartInput {
 export interface UpsertZuperPartResult {
   zuperItemId: string;
   created: boolean;
+  warnings?: string[];
 }
 
 export interface UpdateZuperPartResult {
@@ -607,12 +608,15 @@ export async function createOrUpdateZuperPart(
   }
 
   if (hasOptional) {
+    const droppedKeys = Object.keys(optionalPayload).filter((k) => !(k in corePayload));
+    const coreWarning = `Some fields were skipped due to Zuper validation errors: ${droppedKeys.join(", ")}. Original errors: ${allErrors.join(" | ")}`;
+    console.warn(`[zuper-catalog] Retrying with core payload only (dropped: ${droppedKeys.join(", ")})`);
     const coreAttempt = await tryCreateWithPayload(corePayload, unavailableCreateEndpoints);
     allErrors.push(...coreAttempt.errors);
-    if (coreAttempt.id) return { zuperItemId: coreAttempt.id, created: true };
+    if (coreAttempt.id) return { zuperItemId: coreAttempt.id, created: true, warnings: [coreWarning] };
     if (coreAttempt.successfulResponseWithoutId) {
       const discoveredId = await findExistingZuperItemId(identity);
-      if (discoveredId) return { zuperItemId: discoveredId, created: true };
+      if (discoveredId) return { zuperItemId: discoveredId, created: true, warnings: [coreWarning] };
       throw new Error(
         `Failed to resolve created Zuper item ID after successful create response. Attempts: ${
           allErrors.join(" | ") || "no successful endpoint"

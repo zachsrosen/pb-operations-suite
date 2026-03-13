@@ -472,6 +472,7 @@ export interface UpsertHubSpotProductInput {
 export interface UpsertHubSpotProductResult {
   hubspotProductId: string;
   created: boolean;
+  warnings?: string[];
 }
 
 export interface UpdateHubSpotProductResult {
@@ -2136,13 +2137,13 @@ export async function createOrUpdateHubSpotProduct(
     name,
   };
   if (sku) coreProperties.hs_sku = sku;
-  if (brand) coreProperties.manufacturer = brand;
   if (description) coreProperties.description = description;
   if (productCategory) coreProperties.product_category = productCategory;
   if (isFiniteNumber(input.sellPrice)) coreProperties.price = String(input.sellPrice);
   if (isFiniteNumber(input.unitCost)) coreProperties.hs_cost_of_goods_sold = String(input.unitCost);
 
   const optionalProperties: Record<string, string> = {};
+  if (brand) optionalProperties.manufacturer = brand;
   if (typeof input.hardToProcure === "boolean") {
     optionalProperties.hard_to_procure = input.hardToProcure ? "true" : "false";
   }
@@ -2176,10 +2177,17 @@ export async function createOrUpdateHubSpotProduct(
       throw error;
     }
 
+    const droppedKeys = Object.keys(optionalProperties);
     console.warn(
-      `[HubSpot] Retrying product upsert with core properties only after validation failure: ${message}`
+      `[HubSpot] Retrying product upsert with core properties only after validation failure (dropped: ${droppedKeys.join(", ")}): ${message}`
     );
-    return upsertHubSpotProductRecord(token, existingId, coreProperties);
+    const result = await upsertHubSpotProductRecord(token, existingId, coreProperties);
+    return {
+      ...result,
+      warnings: [
+        `Some properties were skipped due to HubSpot validation errors: ${droppedKeys.join(", ")}. Original error: ${message}`,
+      ],
+    };
   }
 }
 

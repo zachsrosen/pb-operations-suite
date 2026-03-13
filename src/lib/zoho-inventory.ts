@@ -50,6 +50,7 @@ export interface UpsertZohoItemInput {
 export interface UpsertZohoItemResult {
   zohoItemId: string;
   created: boolean;
+  warnings?: string[];
 }
 
 interface ZohoInventoryListItemsResponse {
@@ -746,10 +747,19 @@ export class ZohoInventoryClient {
     const hasOptionalFields = Object.keys(optionalPayload).length > Object.keys(corePayload).length;
 
     let response: ZohoCreateItemResponse;
+    let zohoWarnings: string[] | undefined;
     try {
       response = await this.requestPost<ZohoCreateItemResponse>("/items", optionalPayload);
     } catch (error) {
       if (!hasOptionalFields) throw error;
+      const droppedKeys = Object.keys(optionalPayload).filter((k) => !(k in corePayload));
+      const errMsg = error instanceof Error ? error.message : String(error);
+      console.warn(
+        `[zoho-inventory] Retrying item create with core payload only (dropped: ${droppedKeys.join(", ")}): ${errMsg}`
+      );
+      zohoWarnings = [
+        `Some fields were skipped due to Zoho validation errors: ${droppedKeys.join(", ")}. Original error: ${errMsg}`,
+      ];
       response = await this.requestPost<ZohoCreateItemResponse>("/items", corePayload);
     }
 
@@ -761,7 +771,7 @@ export class ZohoInventoryClient {
     // Bust matching cache so subsequent lookups can immediately see the new item.
     _itemCache = null;
 
-    return { zohoItemId: createdId, created: true };
+    return { zohoItemId: createdId, created: true, ...(zohoWarnings ? { warnings: zohoWarnings } : {}) };
   }
 
   async deleteItem(itemId: string): Promise<DeleteZohoItemResult> {
