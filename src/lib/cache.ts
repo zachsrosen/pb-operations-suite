@@ -262,4 +262,5 @@ export const CACHE_KEYS = {
   AHJS_ALL: "ahjs:all",
   UTILITIES_ALL: "utilities:all",
   FORECAST_BASELINES: "forecast:baselines",
+  FORECAST_ACCURACY: "forecast:accuracy",
 } as const;
