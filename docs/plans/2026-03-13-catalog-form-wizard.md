@@ -1062,23 +1062,21 @@ At the bottom of `catalog-fields.ts`, add:
 /** Smart defaults applied when a category is selected */
 const DEFAULT_ALL_SYSTEMS = ["INTERNAL", "HUBSPOT", "ZUPER", "ZOHO"];
 
-const CATEGORY_DEFAULTS_MAP: Record<string, { unitLabel?: string; systems?: string[] }> = {
-  MODULE:       { unitLabel: "W",   systems: DEFAULT_ALL_SYSTEMS },
-  BATTERY:      { unitLabel: "kWh", systems: DEFAULT_ALL_SYSTEMS },
-  BATTERY_EXPANSION: { unitLabel: "kWh", systems: DEFAULT_ALL_SYSTEMS },
-  INVERTER:     { unitLabel: "kW",  systems: DEFAULT_ALL_SYSTEMS },
-  EV_CHARGER:   { unitLabel: "A",   systems: DEFAULT_ALL_SYSTEMS },
-  SERVICE:      { systems: ["INTERNAL", "ZOHO"] },
-  ADDER_SERVICES: { systems: ["INTERNAL", "ZOHO"] },
-  PROJECT_MILESTONES: { systems: ["INTERNAL", "ZOHO"] },
+// All categories default to all 4 systems. Only unit labels vary.
+const CATEGORY_DEFAULTS_MAP: Record<string, { unitLabel?: string }> = {
+  MODULE:            { unitLabel: "W" },
+  BATTERY:           { unitLabel: "kWh" },
+  BATTERY_EXPANSION: { unitLabel: "kWh" },
+  INVERTER:          { unitLabel: "kW" },
+  EV_CHARGER:        { unitLabel: "A" },
 };
 
-/** Returns defaults for a category, falling back to all 4 systems for unlisted categories */
+/** Returns defaults for a category — all categories get all 4 systems */
 export function getCategoryDefaults(category: string): { unitLabel?: string; systems: string[] } {
   const entry = CATEGORY_DEFAULTS_MAP[category];
   return {
     unitLabel: entry?.unitLabel,
-    systems: entry?.systems ?? DEFAULT_ALL_SYSTEMS,
+    systems: DEFAULT_ALL_SYSTEMS,
   };
 }
 
