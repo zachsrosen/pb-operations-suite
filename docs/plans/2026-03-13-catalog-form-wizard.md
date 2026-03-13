@@ -109,7 +109,7 @@ describe("catalogFormReducer", () => {
     };
     const state = catalogFormReducer(initialFormState, {
       type: "PREFILL_FROM_PRODUCT",
-      product: extracted,
+      data: extracted,
       source: "datasheet",
     });
     expect(state.prefillSource).toBe("datasheet");
@@ -151,15 +151,15 @@ Expected: FAIL — module not found
 // src/lib/catalog-form-state.ts
 
 export interface CatalogFormState {
-  // Step 1: Basics
+  // Step 1: Basics (also includes SKU/vendor for duplicate lookup)
   category: string;
   brand: string;
   model: string;
   description: string;
-  // Step 2: Details
   sku: string;
-  vendorName: string;
   vendorPartNumber: string;
+  // Step 2: Details
+  vendorName: string;
   unitSpec: string;
   unitLabel: string;
   unitCost: string;
@@ -169,6 +169,9 @@ export interface CatalogFormState {
   width: string;
   weight: string;
   specValues: Record<string, unknown>;
+  // Photo
+  photoUrl: string;
+  photoFileName: string;
   // Step 3: Systems
   systems: Set<string>;
   // Prefill tracking
@@ -182,8 +185,8 @@ export const initialFormState: CatalogFormState = {
   model: "",
   description: "",
   sku: "",
-  vendorName: "",
   vendorPartNumber: "",
+  vendorName: "",
   unitSpec: "",
   unitLabel: "",
   unitCost: "",
@@ -193,6 +196,8 @@ export const initialFormState: CatalogFormState = {
   width: "",
   weight: "",
   specValues: {},
+  photoUrl: "",
+  photoFileName: "",
   systems: new Set(["INTERNAL"]),
   prefillSource: null,
   prefillFields: new Set(),
@@ -206,7 +211,7 @@ export type CatalogFormAction =
   | { type: "SET_CATEGORY"; category: string }
   | { type: "SET_SPEC"; key: string; value: unknown }
   | { type: "TOGGLE_SYSTEM"; system: string }
-  | { type: "PREFILL_FROM_PRODUCT"; product: Partial<CatalogFormState>; source: "clone" | "datasheet" }
+  | { type: "PREFILL_FROM_PRODUCT"; data: Partial<CatalogFormState>; source: "clone" | "datasheet" }
   | { type: "CLEAR_PREFILL_FIELD"; field: string }
   | { type: "RESET" };
 
@@ -238,7 +243,7 @@ export function catalogFormReducer(
     case "PREFILL_FROM_PRODUCT": {
       const filledFields = new Set<string>();
       const updates: Partial<CatalogFormState> = {};
-      for (const [key, value] of Object.entries(action.product)) {
+      for (const [key, value] of Object.entries(action.data)) {
         if (value !== undefined && value !== null && value !== "") {
           (updates as Record<string, unknown>)[key] = value;
           filledFields.add(key);
@@ -417,7 +422,21 @@ interface CloneResult {
   unitCost: number | null;
   sellPrice: number | null;
   hardToProcure: boolean;
-  metadata: Record<string, unknown> | null;
+  sku: string | null;
+  vendorName: string | null;
+  vendorPartNumber: string | null;
+  photoUrl: string | null;
+  hubspotProductId: string | null;
+  zuperItemId: string | null;
+  zohoItemId: string | null;
+  // Spec relations — one will be populated based on category
+  moduleSpec: Record<string, unknown> | null;
+  inverterSpec: Record<string, unknown> | null;
+  batterySpec: Record<string, unknown> | null;
+  evChargerSpec: Record<string, unknown> | null;
+  mountingHardwareSpec: Record<string, unknown> | null;
+  electricalHardwareSpec: Record<string, unknown> | null;
+  relayDeviceSpec: Record<string, unknown> | null;
 }
 
 interface CloneSearchProps {
@@ -1041,16 +1060,30 @@ At the bottom of `catalog-fields.ts`, add:
 
 ```typescript
 /** Smart defaults applied when a category is selected */
-export const CATEGORY_DEFAULTS: Record<string, { unitLabel?: string; systems?: string[] }> = {
-  MODULE:       { unitLabel: "W",   systems: ["INTERNAL", "HUBSPOT", "ZUPER", "ZOHO"] },
-  BATTERY:      { unitLabel: "kWh", systems: ["INTERNAL", "HUBSPOT", "ZUPER", "ZOHO"] },
-  BATTERY_EXPANSION: { unitLabel: "kWh", systems: ["INTERNAL", "HUBSPOT", "ZUPER", "ZOHO"] },
-  INVERTER:     { unitLabel: "kW",  systems: ["INTERNAL", "HUBSPOT", "ZUPER", "ZOHO"] },
-  EV_CHARGER:   { unitLabel: "A",   systems: ["INTERNAL", "HUBSPOT", "ZUPER", "ZOHO"] },
+const DEFAULT_ALL_SYSTEMS = ["INTERNAL", "HUBSPOT", "ZUPER", "ZOHO"];
+
+const CATEGORY_DEFAULTS_MAP: Record<string, { unitLabel?: string; systems?: string[] }> = {
+  MODULE:       { unitLabel: "W",   systems: DEFAULT_ALL_SYSTEMS },
+  BATTERY:      { unitLabel: "kWh", systems: DEFAULT_ALL_SYSTEMS },
+  BATTERY_EXPANSION: { unitLabel: "kWh", systems: DEFAULT_ALL_SYSTEMS },
+  INVERTER:     { unitLabel: "kW",  systems: DEFAULT_ALL_SYSTEMS },
+  EV_CHARGER:   { unitLabel: "A",   systems: DEFAULT_ALL_SYSTEMS },
   SERVICE:      { systems: ["INTERNAL", "ZOHO"] },
   ADDER_SERVICES: { systems: ["INTERNAL", "ZOHO"] },
   PROJECT_MILESTONES: { systems: ["INTERNAL", "ZOHO"] },
 };
+
+/** Returns defaults for a category, falling back to all 4 systems for unlisted categories */
+export function getCategoryDefaults(category: string): { unitLabel?: string; systems: string[] } {
+  const entry = CATEGORY_DEFAULTS_MAP[category];
+  return {
+    unitLabel: entry?.unitLabel,
+    systems: entry?.systems ?? DEFAULT_ALL_SYSTEMS,
+  };
+}
+
+// Re-export map for backward compat
+export const CATEGORY_DEFAULTS = CATEGORY_DEFAULTS_MAP;
 ```
 
 **Step 4: Commit**
@@ -1221,6 +1254,37 @@ export default function BasicsStep({ state, dispatch, onNext }: BasicsStepProps)
                 className="w-full rounded-lg border border-t-border bg-surface-2 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
               />
             </div>
+            {/* SKU + Vendor Part # — in Basics so duplicate lookup can use them */}
+            <div className={isPrefilled("sku") ? "border-l-2 border-l-green-400 pl-3" : ""}>
+              <label className="block text-sm font-medium text-muted mb-1">
+                SKU <span className="text-muted text-xs">(optional)</span>
+              </label>
+              <input
+                type="text"
+                value={state.sku}
+                onChange={(e) => {
+                  dispatch({ type: "SET_FIELD", field: "sku", value: e.target.value });
+                  dispatch({ type: "CLEAR_PREFILL_FIELD", field: "sku" });
+                }}
+                className="w-full rounded-lg border border-t-border bg-surface-2 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                placeholder="e.g., QCE-400-B"
+              />
+            </div>
+            <div className={isPrefilled("vendorPartNumber") ? "border-l-2 border-l-green-400 pl-3" : ""}>
+              <label className="block text-sm font-medium text-muted mb-1">
+                Vendor Part # <span className="text-muted text-xs">(optional)</span>
+              </label>
+              <input
+                type="text"
+                value={state.vendorPartNumber}
+                onChange={(e) => {
+                  dispatch({ type: "SET_FIELD", field: "vendorPartNumber", value: e.target.value });
+                  dispatch({ type: "CLEAR_PREFILL_FIELD", field: "vendorPartNumber" });
+                }}
+                className="w-full rounded-lg border border-t-border bg-surface-2 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                placeholder="Manufacturer part number"
+              />
+            </div>
           </div>
         </div>
       )}
@@ -1246,7 +1310,7 @@ export default function BasicsStep({ state, dispatch, onNext }: BasicsStepProps)
                     {match.hubspotProductId ? "✓HS" : "—"} {match.zuperItemId ? "✓ZP" : "—"} {match.zohoItemId ? "✓ZO" : "—"}
                   </span>
                 </div>
-                <a href={`/dashboards/catalog/${match.id}`} target="_blank" className="text-cyan-400 hover:underline text-xs">
+                <a href={`/dashboards/catalog/edit/${encodeURIComponent(match.id)}`} target="_blank" className="text-cyan-400 hover:underline text-xs">
                   Open Existing →
                 </a>
               </div>
@@ -1593,7 +1657,7 @@ Read-only summary of all fields, system checkboxes, sanity warnings, submit butt
 ```tsx
 // src/components/catalog/ReviewStep.tsx
 "use client";
-import { getCategoryLabel, getCategoryFields, CATEGORY_DEFAULTS } from "@/lib/catalog-fields";
+import { getCategoryLabel, getCategoryFields, getCategoryDefaults } from "@/lib/catalog-fields";
 import type { CatalogFormState, CatalogFormAction } from "@/lib/catalog-form-state";
 
 interface ReviewStepProps {
@@ -1757,8 +1821,8 @@ The page should:
 4. Render the active step component
 5. Handle `onSubmit` with the same POST payload structure as today (lines 209–228 of original)
 6. Show same success screen on completion
-7. Apply `CATEGORY_DEFAULTS` when category is selected (unit label + system defaults)
-8. Handle clone prefill: map `CloneResult` to `PREFILL_FROM_PRODUCT` action
+7. Apply `getCategoryDefaults(category)` when category is selected (unit label + system defaults) — uses the fallback-safe function from Task 6
+8. Handle clone prefill: normalize `CloneResult` before dispatching `PREFILL_FROM_PRODUCT`. The clone API returns spec data as relation objects (`moduleSpec`, `inverterSpec`, etc.), but the reducer expects flat `specValues`. Add a `normalizeCloneResult` helper that: (a) finds the non-null spec relation for the product's category, (b) extracts its key-value pairs into a flat `specValues` object, (c) maps top-level fields (`brand`, `model`, `description`, `unitSpec`, `unitLabel`, `unitCost`, `sellPrice`, `hardToProcure`, `sku`, `vendorName`, `vendorPartNumber`, `photoUrl`) to `Partial<CatalogFormState>`, (d) dispatches `{ type: "PREFILL_FROM_PRODUCT", data: normalized, source: "clone" }`
 9. Handle datasheet prefill: map extraction result to `PREFILL_FROM_PRODUCT` action
 10. **Preserve URL query-param prefills from deal/BOM flows** — read `searchParams` for `category`, `brand`, `model`, `description`, `unitSpec`, `unitLabel` on mount, dispatch `SET_FIELD` for each present param, and auto-skip to the "basics" step if any are provided (same behavior as current page.tsx lines 69-82)
 
@@ -2060,4 +2124,152 @@ In the approval route, after `upsertZohoItem` succeeds and returns a `zohoItemId
 ```
 git add src/lib/zoho-inventory.ts src/app/api/catalog/push-requests/[id]/approve/route.ts src/app/api/catalog/push-requests/route.ts
 git commit -m "feat(catalog): sync product photo to Zoho Inventory on approval"
+```
+
+---
+
+## Task 15: Zoho Item Name Enrichment (Ops Feedback)
+
+**Context:** Ops team feedback — Zoho item names are currently just "Brand Model" (e.g., "QCells Q.Peak 400"). For inventory management they need the size/spec and physical dimensions appended, e.g., "QCells Q.Peak 400 (400W, 1755×1038mm)".
+
+**Files:**
+- Modify: `src/lib/zoho-inventory.ts` — update `UpsertZohoItemInput` interface and `createOrUpdateItem()` name construction
+- Modify: `src/app/api/catalog/push-requests/[id]/approve/route.ts` — pass `category`, `unitSpec`, `length`, `width` to Zoho upsert
+
+**Step 1: Extend the Zoho input interface**
+
+In `src/lib/zoho-inventory.ts`, add optional fields to `UpsertZohoItemInput`:
+
+```typescript
+export interface UpsertZohoItemInput {
+  // ... existing fields ...
+  category?: string;      // Internal category enum (MODULE, BATTERY, etc.)
+  unitSpec?: string;       // e.g., "400" for a 400W module
+  // length and width already exist in the interface
+}
+```
+
+**Step 2: Build enriched item name**
+
+In `createOrUpdateItem()`, replace the simple name construction:
+
+```typescript
+// Before:
+const name = `${brand} ${model}`;
+
+// After:
+function buildZohoItemName(brand: string, model: string, unitSpec?: string, unitLabel?: string, length?: string, width?: string): string {
+  let name = `${brand} ${model}`;
+  const suffixes: string[] = [];
+
+  // Add spec rating if present (e.g., "400W", "13.5kWh")
+  if (unitSpec && unitLabel) {
+    suffixes.push(`${unitSpec}${unitLabel}`);
+  }
+
+  // Add dimensions if both present (e.g., "1755×1038mm")
+  if (length && width) {
+    suffixes.push(`${length}×${width}mm`);
+  }
+
+  if (suffixes.length > 0) {
+    name += ` (${suffixes.join(", ")})`;
+  }
+
+  return name;
+}
+```
+
+Use this in `corePayload`:
+```typescript
+const name = buildZohoItemName(brand, model, input.unitSpec, input.unitLabel, input.length, input.width);
+```
+
+**Step 3: Pass new fields from approval route**
+
+In `src/app/api/catalog/push-requests/[id]/approve/route.ts`, add `category` and `unitSpec` to the Zoho upsert call (around line 266):
+
+```typescript
+await upsertZohoItem({
+  // ... existing fields ...
+  category: push.category,
+  unitSpec: push.unitSpec ?? undefined,
+});
+```
+
+**Step 4: Commit**
+
+```
+git add src/lib/zoho-inventory.ts src/app/api/catalog/push-requests/[id]/approve/route.ts
+git commit -m "feat(zoho): enrich item names with spec rating and dimensions"
+```
+
+---
+
+## Task 16: Zoho Item Group Mapping (Ops Feedback)
+
+**Context:** Ops team feedback — for inventory purposes, Zoho items should be organized into item groups matching their category. Currently no `group_name` is sent to the Zoho API. Zoho Inventory uses `group_name` on item creation to automatically assign items to inventory groups (e.g., "Modules", "Batteries", "Inverters").
+
+**Files:**
+- Modify: `src/lib/zoho-inventory.ts` — add `group_name` to the Zoho payload using category-to-group mapping
+- Create: `src/lib/zoho-category-groups.ts` — mapping from internal category enum to Zoho group names
+
+**Step 1: Create category-to-group mapping**
+
+```typescript
+// src/lib/zoho-category-groups.ts
+
+/**
+ * Maps internal equipment categories to Zoho Inventory item group names.
+ * These group names must match existing groups in Zoho Inventory.
+ * If a category has no mapping, no group_name is sent (Zoho uses "Uncategorized").
+ */
+export const ZOHO_CATEGORY_GROUP_MAP: Record<string, string> = {
+  MODULE:              "Modules",
+  INVERTER:            "Inverters",
+  BATTERY:             "Batteries",
+  BATTERY_EXPANSION:   "Batteries",
+  EV_CHARGER:          "EV Chargers",
+  MOUNTING_HARDWARE:   "Mounting Hardware",
+  ELECTRICAL_HARDWARE: "Electrical Hardware",
+  RELAY_DEVICE:        "Relay Devices",
+  OPTIMIZER:           "Optimizers",
+  ROOFING:             "Roofing Materials",
+  SERVICE:             "Services",
+  ADDER_SERVICES:      "Services",
+  PROJECT_MILESTONES:  "Project Milestones",
+};
+
+export function getZohoGroupName(category: string): string | undefined {
+  return ZOHO_CATEGORY_GROUP_MAP[category];
+}
+```
+
+**Step 2: Add group_name to Zoho upsert payload**
+
+In `src/lib/zoho-inventory.ts`, import and use the mapping:
+
+```typescript
+import { getZohoGroupName } from "@/lib/zoho-category-groups";
+
+// In createOrUpdateItem(), add to corePayload or optionalPayload:
+const groupName = input.category ? getZohoGroupName(input.category) : undefined;
+
+// Add to the payload sent to Zoho:
+if (groupName) {
+  payload.group_name = groupName;
+}
+```
+
+Note: `group_name` is only set on item **creation**, not updates — Zoho doesn't allow changing an item's group after creation. Add a check: only include `group_name` in the payload when creating a new item (not when updating an existing one).
+
+**Step 3: Verify group names exist in Zoho**
+
+Before deployment, verify the group names in the mapping match the actual Zoho Inventory item groups. If a group doesn't exist, Zoho API will return an error. The ops team should create any missing groups in Zoho Inventory settings before this goes live.
+
+**Step 4: Commit**
+
+```
+git add src/lib/zoho-category-groups.ts src/lib/zoho-inventory.ts
+git commit -m "feat(zoho): assign item groups based on product category for inventory organization"
 ```
