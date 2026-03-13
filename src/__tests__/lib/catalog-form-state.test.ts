@@ -71,6 +71,9 @@ describe("catalogFormReducer", () => {
     expect(state.vendorPartNumber).toBe(""); // cleared on clone
     expect(state.prefillSource).toBe("clone");
     expect(state.prefillFields).toContain("brand");
+    // P2: spec keys tracked individually, not as "specValues" blob
+    expect(state.prefillFields).toContain("spec.wattage");
+    expect(state.prefillFields).not.toContain("specValues");
   });
 
   it("handles PREFILL_FROM_PRODUCT for datasheet", () => {
@@ -89,6 +92,29 @@ describe("catalogFormReducer", () => {
     expect(state.prefillSource).toBe("datasheet");
     expect(state.prefillFields).toContain("brand");
     expect(state.prefillFields).not.toContain("sku"); // wasn't provided
+    // P2: individual spec key tracked
+    expect(state.prefillFields).toContain("spec.capacity");
+  });
+
+  it("clears stale state when re-prefilling (P1)", () => {
+    // First prefill sets photoUrl and unitLabel
+    const first = catalogFormReducer(initialFormState, {
+      type: "PREFILL_FROM_PRODUCT",
+      data: { brand: "Tesla", model: "Powerwall 3", photoUrl: "https://example.com/pw3.jpg", unitLabel: "kWh" },
+      source: "clone",
+    });
+    expect(first.photoUrl).toBe("https://example.com/pw3.jpg");
+    expect(first.unitLabel).toBe("kWh");
+
+    // Second prefill omits photoUrl and unitLabel — they must not persist
+    const second = catalogFormReducer(first, {
+      type: "PREFILL_FROM_PRODUCT",
+      data: { brand: "Enphase", model: "IQ Battery 5P" },
+      source: "datasheet",
+    });
+    expect(second.brand).toBe("Enphase");
+    expect(second.photoUrl).toBe(""); // reset, not leaked from first prefill
+    expect(second.unitLabel).toBe(""); // reset, not leaked from first prefill
   });
 
   it("handles CLEAR_PREFILL_FIELD", () => {

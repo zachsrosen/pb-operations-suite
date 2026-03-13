@@ -89,12 +89,23 @@ export function catalogFormReducer(
     }
 
     case "PREFILL_FROM_PRODUCT": {
+      // P1 fix: reset to initial state first so stale values from a
+      // previous clone/import don't leak into the new product.
+      const base = { ...initialFormState };
       const filledFields = new Set<string>();
       const updates: Partial<CatalogFormState> = {};
       for (const [key, value] of Object.entries(action.data)) {
         if (value !== undefined && value !== null && value !== "") {
           (updates as Record<string, unknown>)[key] = value;
-          filledFields.add(key);
+          // P2 fix: track individual spec keys as "spec.<key>" so the
+          // Details step can highlight/clear per-field, not as one blob.
+          if (key === "specValues" && typeof value === "object" && value !== null) {
+            for (const specKey of Object.keys(value as Record<string, unknown>)) {
+              filledFields.add(`spec.${specKey}`);
+            }
+          } else {
+            filledFields.add(key);
+          }
         }
       }
       if (action.source === "clone") {
@@ -104,7 +115,7 @@ export function catalogFormReducer(
         }
       }
       return {
-        ...state,
+        ...base,
         ...updates,
         prefillSource: action.source,
         prefillFields: filledFields,
