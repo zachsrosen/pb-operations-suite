@@ -2275,3 +2275,92 @@ Before deployment, verify the group names in the mapping match the actual Zoho I
 git add src/lib/zoho-category-groups.ts src/lib/zoho-inventory.ts
 git commit -m "feat(zoho): assign item groups based on product category for inventory organization"
 ```
+
+---
+
+## Task 17: Battery + Built-in Inverter Specs Toggle
+
+**Context:** Combo battery+inverter products (Powerwall 3, Enphase IQ Battery, etc.) are categorized as BATTERY but need inverter specs for accurate naming and quoting. Add a "Has Built-in Inverter" toggle on the BATTERY details that reveals key inverter fields when enabled.
+
+**Files:**
+- Modify: `prisma/schema.prisma` — add inverter fields to `BatterySpec` model
+- Modify: `src/lib/catalog-fields.ts` — add toggle + conditional inverter fields to BATTERY config
+- Modify: `src/components/catalog/CategoryFields.tsx` — support conditional field groups (show/hide based on toggle)
+- Migration: `npx prisma migrate dev --name add-battery-inverter-fields`
+
+**Step 1: Add inverter columns to BatterySpec**
+
+```prisma
+model BatterySpec {
+  // ... existing fields ...
+  // Built-in inverter (combo units like Powerwall 3)
+  hasBuiltInInverter      Boolean?   @default(false)
+  acOutputKw              Float?     // Inverter AC output size
+  inverterPhase           String?    // "Single", "Three-phase"
+  inverterType            String?    // "Hybrid", "String", etc.
+}
+```
+
+Run migration:
+```
+npx prisma migrate dev --name add-battery-inverter-fields
+```
+
+**Step 2: Add conditional inverter fields to BATTERY config**
+
+In `src/lib/catalog-fields.ts`, append inverter fields to the BATTERY fields array with a `showWhen` condition:
+
+```typescript
+BATTERY: {
+  // ... existing config ...
+  fields: [
+    // ... existing 8 battery fields ...
+    { key: "hasBuiltInInverter", label: "Has Built-in Inverter", type: "toggle",
+      tooltip: "Enable for combo battery+inverter units (e.g., Powerwall 3, Enphase IQ Battery)" },
+    // These only show when hasBuiltInInverter is true
+    { key: "acOutputKw", label: "AC Output Size", type: "number", unit: "kW",
+      tooltip: "Inverter AC output rating in kW",
+      showWhen: { field: "hasBuiltInInverter", value: true } },
+    { key: "inverterPhase", label: "Phase", type: "dropdown", options: ["Single", "Three-phase"],
+      tooltip: "AC output phase configuration",
+      showWhen: { field: "hasBuiltInInverter", value: true } },
+    { key: "inverterType", label: "Inverter Type", type: "dropdown", options: ["Hybrid", "String"],
+      tooltip: "Type of built-in inverter",
+      showWhen: { field: "hasBuiltInInverter", value: true } },
+  ],
+},
+```
+
+Add `showWhen?: { field: string; value: unknown }` to the `FieldDef` interface.
+
+**Step 3: Update CategoryFields to support conditional visibility**
+
+In `CategoryFields.tsx`, when rendering fields, check if a field has `showWhen`. If so, only render it when the referenced field's value in `specValues` matches:
+
+```typescript
+// Inside the field rendering loop:
+if (field.showWhen) {
+  const conditionValue = specValues[field.showWhen.field];
+  if (conditionValue !== field.showWhen.value) return null;
+}
+```
+
+The toggle itself renders as a standard toggle field (same as `hardToProcure`). When it flips on, the three inverter fields appear below it with a subtle indent or group border.
+
+**Step 4: Update Zoho name enrichment (Task 15) to use inverter kW for combo units**
+
+In `buildZohoItemName`, when the category is BATTERY and `hasBuiltInInverter` is true, include the `acOutputKw` in the name suffix alongside the battery capacity:
+
+```typescript
+// e.g., "Tesla Powerwall 3 (13.5kWh / 11.5kW, 69×41in)"
+if (category === "BATTERY" && specValues?.acOutputKw) {
+  suffixes.push(`${specValues.acOutputKw}kW`);
+}
+```
+
+**Step 5: Commit**
+
+```
+git add prisma/schema.prisma src/lib/catalog-fields.ts src/components/catalog/CategoryFields.tsx
+git commit -m "feat(catalog): add built-in inverter specs toggle for combo battery products"
+```
