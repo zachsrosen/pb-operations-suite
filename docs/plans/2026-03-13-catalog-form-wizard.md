@@ -1385,14 +1385,14 @@ git commit -m "feat(catalog): add basics step with duplicate check and prefill h
 
 **Files:**
 - Create: `src/components/catalog/DetailsStep.tsx`
-- Modify: `src/components/catalog/CategoryFields.tsx` — add `showTooltips` and `prefillFields` props, render `FieldTooltip` per dynamic field using `FieldDef.description`
-- Modify: `src/lib/catalog-fields.ts` — add `description` strings to any `FieldDef` entries that lack them
+- Modify: `src/components/catalog/CategoryFields.tsx` — add `showTooltips` and `prefillFields` props, render `FieldTooltip` per dynamic field using `FieldDef.tooltip` (added in Task 6)
+- Modify: `src/lib/catalog-fields.ts` — add `tooltip` strings to any `FieldDef` entries that lack them
 
 **Step 1: Write DetailsStep**
 
 Renders category specs (via **enhanced** `CategoryFields` with per-field tooltips), pricing, dimensions, vendor info. All fields optional. Each has help tooltip. "Skip to Review" link.
 
-**Note on CategoryFields enhancement:** The existing `CategoryFields.tsx` renders dynamic fields from `getCategoryFields()` but has no tooltip support. This task also modifies `CategoryFields.tsx` to accept an optional `showTooltips` prop and renders `FieldTooltip` next to each dynamic field label using the `description` from `FieldDef` (already present in `catalog-fields.ts`). Add `description` strings to any `FieldDef` entries in `catalog-fields.ts` that lack them (e.g., "Cell Type" → "Monocrystalline, polycrystalline, or thin-film", "Efficiency %" → "Rated module efficiency as a percentage").
+**Note on CategoryFields enhancement:** The existing `CategoryFields.tsx` renders dynamic fields from `getCategoryFields()` but has no tooltip support. This task also modifies `CategoryFields.tsx` to accept an optional `showTooltips` prop and renders `FieldTooltip` next to each dynamic field label using `FieldDef.tooltip` (the property added to `FieldDef` in Task 6). Add `tooltip` strings to any `FieldDef` entries in `catalog-fields.ts` that lack them (e.g., "Cell Type" → "Monocrystalline, polycrystalline, or thin-film", "Efficiency %" → "Rated module efficiency as a percentage").
 
 ```tsx
 // src/components/catalog/DetailsStep.tsx
@@ -2130,7 +2130,7 @@ git commit -m "feat(catalog): sync product photo to Zoho Inventory on approval"
 
 ## Task 15: Zoho Item Name Enrichment (Ops Feedback)
 
-**Context:** Ops team feedback — Zoho item names are currently just "Brand Model" (e.g., "QCells Q.Peak 400"). For inventory management they need the size/spec and physical dimensions appended, e.g., "QCells Q.Peak 400 (400W, 1755×1038mm)".
+**Context:** Ops team feedback — Zoho item names are currently just "Brand Model" (e.g., "QCells Q.Peak 400"). For inventory management they need the size/spec and physical dimensions appended, e.g., "QCells Q.Peak 400 (400W, 69×41in)".
 
 **Files:**
 - Modify: `src/lib/zoho-inventory.ts` — update `UpsertZohoItemInput` interface and `createOrUpdateItem()` name construction
@@ -2167,9 +2167,9 @@ function buildZohoItemName(brand: string, model: string, unitSpec?: string, unit
     suffixes.push(`${unitSpec}${unitLabel}`);
   }
 
-  // Add dimensions if both present (e.g., "1755×1038mm")
+  // Add dimensions if both present — values are stored in inches (form labels: "Length (in)", "Width (in)")
   if (length && width) {
-    suffixes.push(`${length}×${width}mm`);
+    suffixes.push(`${length}×${width}in`);
   }
 
   if (suffixes.length > 0) {
@@ -2224,20 +2224,24 @@ git commit -m "feat(zoho): enrich item names with spec rating and dimensions"
  * These group names must match existing groups in Zoho Inventory.
  * If a category has no mapping, no group_name is sent (Zoho uses "Uncategorized").
  */
+// Keys MUST match the EquipmentCategory enum in prisma/schema.prisma (line 696)
 export const ZOHO_CATEGORY_GROUP_MAP: Record<string, string> = {
-  MODULE:              "Modules",
-  INVERTER:            "Inverters",
-  BATTERY:             "Batteries",
-  BATTERY_EXPANSION:   "Batteries",
-  EV_CHARGER:          "EV Chargers",
-  MOUNTING_HARDWARE:   "Mounting Hardware",
-  ELECTRICAL_HARDWARE: "Electrical Hardware",
-  RELAY_DEVICE:        "Relay Devices",
-  OPTIMIZER:           "Optimizers",
-  ROOFING:             "Roofing Materials",
-  SERVICE:             "Services",
-  ADDER_SERVICES:      "Services",
-  PROJECT_MILESTONES:  "Project Milestones",
+  MODULE:                   "Modules",
+  INVERTER:                 "Inverters",
+  BATTERY:                  "Batteries",
+  BATTERY_EXPANSION:        "Batteries",
+  EV_CHARGER:               "EV Chargers",
+  RAPID_SHUTDOWN:           "Electrical BOS",
+  RACKING:                  "Racking",
+  ELECTRICAL_BOS:           "Electrical BOS",
+  MONITORING:               "Monitoring",
+  OPTIMIZER:                "Optimizers",
+  GATEWAY:                  "Monitoring",
+  D_AND_R:                  "D&R",
+  SERVICE:                  "Services",
+  ADDER_SERVICES:           "Services",
+  TESLA_SYSTEM_COMPONENTS:  "Tesla System Components",
+  PROJECT_MILESTONES:       "Project Milestones",
 };
 
 export function getZohoGroupName(category: string): string | undefined {
