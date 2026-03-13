@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { FORM_CATEGORIES } from "@/lib/catalog-fields";
+import { requireApiAuth } from "@/lib/api-auth";
 
 // Dynamic import for pdf-parse (CommonJS module)
 async function extractPdfText(buffer: Buffer): Promise<string> {
@@ -35,6 +36,9 @@ const EXTRACTION_TOOL = {
 };
 
 export async function POST(request: NextRequest) {
+  const authResult = await requireApiAuth();
+  if (authResult instanceof NextResponse) return authResult;
+
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
   if (!anthropicKey) {
     return NextResponse.json({ error: "AI extraction not configured" }, { status: 503 });

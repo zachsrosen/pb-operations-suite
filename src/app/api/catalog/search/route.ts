@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
       hubspotProductId: true,
       zuperItemId: true,
       zohoItemId: true,
-      photoUrl: true,
+      // photoUrl deferred to Task 13 when schema column lands
       // Include category-specific spec relations for clone prefill
       moduleSpec: true,
       inverterSpec: true,
