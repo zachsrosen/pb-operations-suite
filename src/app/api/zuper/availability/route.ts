@@ -182,33 +182,6 @@ const CREW_SCHEDULES: CrewSchedule[] = [
     jobTypes: ["survey"],
   },
   {
-    name: "Derek Pomar",
-    location: "DTC",
-    reportLocation: "DTC",
-    schedule: [
-      { day: 2, startTime: "12:00", endTime: "16:00" }, // Tue
-    ],
-    jobTypes: ["survey"],
-  },
-  {
-    name: "Derek Pomar",
-    location: "Westminster",
-    reportLocation: "Westminster",
-    schedule: [
-      { day: 3, startTime: "12:00", endTime: "16:00" }, // Wed
-    ],
-    jobTypes: ["survey"],
-  },
-  {
-    name: "Derek Pomar",
-    location: "DTC",
-    reportLocation: "DTC",
-    schedule: [
-      { day: 4, startTime: "12:00", endTime: "16:00" }, // Thu
-    ],
-    jobTypes: ["survey"],
-  },
-  {
     name: "Ryszard Szymanski",
     location: "Westminster",
     reportLocation: "Westminster",

@@ -245,7 +245,10 @@ export async function createSalesOrder(params: {
     soResult = await zohoInventory.createSalesOrder({
       customer_id: customerId,
       salesorder_number: soNumber,
-      reference_number: snapshot.dealName.slice(0, 50),
+      reference_number: (address && snapshot.dealName.includes(address)
+        ? snapshot.dealName.replace(address, "").replace(/\s*[-–—]\s*$/, "").trim() || snapshot.dealName
+        : snapshot.dealName
+      ).slice(0, 50),
       notes: `Generated from PB Ops BOM v${version}${address ? ` — ${address}` : ""}`,
       status: "draft",
       line_items: lineItems.map(({ item_id, name, quantity, description }) => ({

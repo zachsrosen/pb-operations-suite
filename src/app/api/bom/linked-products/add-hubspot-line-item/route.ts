@@ -6,6 +6,7 @@ import {
   fetchLineItemsForDeal,
   fetchHubSpotProductById,
 } from "@/lib/hubspot";
+import { notifyAdminsOfNewCatalogRequest } from "@/lib/catalog-notify";
 
 const ALLOWED_ROLES = new Set([
   "ADMIN",
@@ -184,10 +185,10 @@ export async function POST(request: NextRequest) {
     try {
       // De-dup: atomic find-or-create inside a serializable transaction.
       // Retry up to 3 times on serialization conflicts (Prisma error P2034).
-      let push: Awaited<ReturnType<typeof prisma.pendingCatalogPush.findFirst>>;
+      let result: { push: NonNullable<Awaited<ReturnType<typeof prisma.pendingCatalogPush.findFirst>>>; created: boolean };
       for (let attempt = 0; ; attempt++) {
         try {
-          push = await prisma.$transaction(async (tx) => {
+          result = await prisma.$transaction(async (tx) => {
             const existing = await tx.pendingCatalogPush.findFirst({
               where: {
                 brand: resolvedBrand || "",
@@ -196,8 +197,8 @@ export async function POST(request: NextRequest) {
                 status: "PENDING",
               },
             });
-            if (existing) return existing;
-            return tx.pendingCatalogPush.create({
+            if (existing) return { push: existing, created: false };
+            const created = await tx.pendingCatalogPush.create({
               data: {
                 brand: resolvedBrand || "",
                 model: resolvedModel || "",
@@ -210,6 +211,7 @@ export async function POST(request: NextRequest) {
                 metadata: { source: "bom_push", dealId },
               },
             });
+            return { push: created, created: true };
           }, { isolationLevel: "Serializable" });
           break;
         } catch (txErr: unknown) {
@@ -217,6 +219,17 @@ export async function POST(request: NextRequest) {
           if (isSerializationConflict && attempt < 2) continue;
           throw txErr;
         }
+      }
+      const { push } = result;
+      if (result.created) {
+        notifyAdminsOfNewCatalogRequest({
+          id: push.id,
+          brand: push.brand,
+          model: push.model,
+          category: push.category,
+          requestedBy: push.requestedBy,
+          systems: push.systems,
+        });
       }
       return NextResponse.json({
         ok: false,

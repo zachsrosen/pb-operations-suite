@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireApiAuth } from "@/lib/api-auth";
 import { FORM_CATEGORIES } from "@/lib/catalog-fields";
+import { notifyAdminsOfNewCatalogRequest } from "@/lib/catalog-notify";
 
 const VALID_SYSTEMS = ["INTERNAL", "ZOHO", "HUBSPOT", "ZUPER"] as const;
 const VALID_STATUSES = ["PENDING", "APPROVED", "REJECTED"] as const;
@@ -73,6 +74,17 @@ export async function POST(request: NextRequest) {
       requestedBy: authResult.email,
       dealId: dealId ? String(dealId) : null,
     },
+  });
+
+  // Fire-and-forget admin notification
+  notifyAdminsOfNewCatalogRequest({
+    id: push.id,
+    brand: push.brand,
+    model: push.model,
+    category: push.category,
+    requestedBy: push.requestedBy,
+    systems: push.systems,
+    dealId: push.dealId,
   });
 
   return NextResponse.json({ push }, { status: 201 });

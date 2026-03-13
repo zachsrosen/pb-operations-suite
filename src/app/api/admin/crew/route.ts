@@ -56,14 +56,6 @@ const SEED_DATA = [
     locations: ["Westminster"],
   },
   {
-    name: "Derek Pomar",
-    email: "derek@photonbrothers.com",
-    zuperUserUid: "f3bb40c0-d548-4355-ab39-6c27532a6d36",
-    zuperTeamUid: ZUPER_TEAM_UIDS.Centennial,
-    role: "surveyor",
-    locations: ["DTC", "Centennial"],
-  },
-  {
     name: "Ryszard Szymanski",
     email: "richard@photonbrothers.com",
     zuperUserUid: "e043bf1d-006b-4033-a46e-3b5d06ed3d00",

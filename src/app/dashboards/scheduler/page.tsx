@@ -222,15 +222,12 @@ const ZUPER_SURVEY_USERS: Record<string, { name: string; userUid: string; teamUi
   Westminster: [
     { name: "Joe Lynch", userUid: "f203f99b-4aaf-488e-8e6a-8ee5e94ec217", teamUid: "1c23adb9-cefa-44c7-8506-804949afc56f" },
     { name: "Ryszard Szymanski", userUid: "e043bf1d-006b-4033-a46e-3b5d06ed3d00", teamUid: "1c23adb9-cefa-44c7-8506-804949afc56f" },
-    { name: "Derek Pomar", userUid: "f3bb40c0-d548-4355-ab39-6c27532a6d36", teamUid: "1c23adb9-cefa-44c7-8506-804949afc56f" },
   ],
   Centennial: [
     { name: "Drew Perry", userUid: "0ddc7e1d-62e1-49df-b89d-905a39c1e353", teamUid: "76b94bd3-e2fc-4cfe-8c2a-357b9a850b3c" },
-    { name: "Derek Pomar", userUid: "f3bb40c0-d548-4355-ab39-6c27532a6d36", teamUid: "76b94bd3-e2fc-4cfe-8c2a-357b9a850b3c" },
   ],
   DTC: [
     { name: "Drew Perry", userUid: "0ddc7e1d-62e1-49df-b89d-905a39c1e353", teamUid: "76b94bd3-e2fc-4cfe-8c2a-357b9a850b3c" },
-    { name: "Derek Pomar", userUid: "f3bb40c0-d548-4355-ab39-6c27532a6d36", teamUid: "76b94bd3-e2fc-4cfe-8c2a-357b9a850b3c" },
   ],
   "Colorado Springs": [
     { name: "Rolando", userUid: "a89ed2f5-222b-4b09-8bb0-14dc45c2a51b", teamUid: "1a914a0e-b633-4f12-8ed6-3348285d6b93" },

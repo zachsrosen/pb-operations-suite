@@ -728,6 +728,12 @@ export class ZohoInventoryClient {
     const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
     const optionalPayload: Record<string, unknown> = {
       ...corePayload,
+      item_type: "inventory",
+      tax_preference: "taxable",
+      inventory_account_name: "Inventory Asset",
+      inventory_valuation_method: "fifo",
+      purchase_account_name: "Cost of Goods Sold",
+      sales_account_name: "Sales",
       ...(isNum(input.sellPrice) ? { rate: input.sellPrice } : {}),
       ...(isNum(input.unitCost) ? { purchase_rate: input.unitCost } : {}),
       ...(vendorName ? { vendor_name: vendorName } : {}),

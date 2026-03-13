@@ -13,6 +13,7 @@
 import { prisma, logActivity } from "@/lib/db";
 import { EquipmentCategory } from "@/generated/prisma/enums";
 import type { ActorContext } from "@/lib/actor-context";
+import { notifyAdminsOfNewCatalogRequest } from "@/lib/catalog-notify";
 import { buildCanonicalKey, canonicalToken } from "@/lib/canonical";
 import { zohoInventory } from "@/lib/zoho-inventory";
 
@@ -462,6 +463,14 @@ async function upsertPendingPush(
         expiresAt: expiry,
       },
       select: { id: true, candidateSkuIds: true },
+    });
+    notifyAdminsOfNewCatalogRequest({
+      id: created.id,
+      brand: data.brand,
+      model: data.model,
+      category: data.category,
+      requestedBy: "bom_extraction",
+      systems: ["INTERNAL"],
     });
     return {
       id: created.id,
