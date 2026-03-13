@@ -2,11 +2,11 @@
  * Audit alert emails -- immediate alerts for HIGH/CRITICAL sessions
  * and daily digest summaries.
  *
- * Uses the same lazy-init Resend pattern as src/lib/email.ts.
+ * Routes through sendEmailMessage (Google Workspace → Resend fallback).
  * No Prisma imports -- prisma is passed as `any` parameter.
  */
 
-import { Resend } from "resend";
+import { sendEmailMessage } from "@/lib/email";
 import { maskIP } from "./detect";
 
 // ---------------------------------------------------------------------------
@@ -26,29 +26,8 @@ export interface AlertableSession {
 }
 
 // ---------------------------------------------------------------------------
-// Resend lazy init (matches src/lib/email.ts pattern)
-// ---------------------------------------------------------------------------
-let resendClient: Resend | null = null;
-
-function getResendClient(): Resend | null {
-  if (!process.env.RESEND_API_KEY) return null;
-  if (!resendClient) {
-    resendClient = new Resend(process.env.RESEND_API_KEY);
-  }
-  return resendClient;
-}
-
-// ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
-const ALERT_FROM_RAW = (
-  process.env.ALERT_FROM_EMAIL ||
-  process.env.RESEND_FROM_EMAIL ||
-  "onboarding@resend.dev"
-).replace(/\\n/g, "").trim();
-const ALERT_FROM = ALERT_FROM_RAW.includes("<")
-  ? ALERT_FROM_RAW
-  : `PB Ops Audit <${ALERT_FROM_RAW}>`;
 const ADMIN_EMAILS = (process.env.AUDIT_ALERT_EMAILS || "")
   .split(",")
   .filter(Boolean);
@@ -76,9 +55,6 @@ export async function sendImmediateAlert(
   prisma: any
 ): Promise<void> {
   if (ADMIN_EMAILS.length === 0) return;
-
-  const resend = getResendClient();
-  if (!resend) return;
 
   // Determine which gate to fire
   let alertLevel: "HIGH" | "CRITICAL" | null = null;
@@ -112,14 +88,16 @@ export async function sendImmediateAlert(
   const html = buildImmediateAlertHtml(session, alertLevel);
 
   try {
-    const { error: sendError } = await resend.emails.send({
-      from: ALERT_FROM,
+    const result = await sendEmailMessage({
       to: ADMIN_EMAILS,
       subject,
       html,
+      text: `[${alertLevel}] Audit Alert: ${session.userEmail || "Unknown"} in ${session.environment}. Risk score: ${session.riskScore}. Reasons: ${session.anomalyReasons.join(", ")}`,
+      debugFallbackTitle: `Audit Alert (${alertLevel})`,
+      debugFallbackBody: `${session.userEmail || "Unknown"} — ${session.environment}`,
     });
-    if (sendError) {
-      throw new Error(`Resend API error: ${sendError.message}`);
+    if (!result.success) {
+      throw new Error(result.error || "Email send failed");
     }
   } catch (error) {
     // Send failed — clear timestamp so a retry can re-claim the gate
@@ -290,11 +268,6 @@ export async function sendDailyDigest(
     return { sent: false, reason: "no admin emails configured" };
   }
 
-  const resend = getResendClient();
-  if (!resend) {
-    return { sent: false, reason: "resend not configured" };
-  }
-
   // Ensure row exists (first-ever run)
   await prisma.systemConfig.upsert({
     where: { key: "lastDigestSentAt" },
@@ -361,14 +334,16 @@ export async function sendDailyDigest(
   const html = buildDigestHtml(totalSessions, anomalySessions, envBreakdown, shadowStats);
 
   try {
-    const { error: sendError } = await resend.emails.send({
-      from: ALERT_FROM,
+    const result = await sendEmailMessage({
       to: ADMIN_EMAILS,
       subject,
       html,
+      text: `Audit Digest: ${totalSessions} sessions, ${anomalySessions} anomalies in the last 24 hours.`,
+      debugFallbackTitle: "Daily Audit Digest",
+      debugFallbackBody: `${totalSessions} sessions, ${anomalySessions} anomalies`,
     });
-    if (sendError) {
-      throw new Error(`Resend API error: ${sendError.message}`);
+    if (!result.success) {
+      throw new Error(result.error || "Email send failed");
     }
   } catch (error) {
     // Send failed — rollback the lock so a future retry can re-claim
@@ -392,11 +367,6 @@ export async function sendCronHealthAlert(
 ): Promise<DigestResult> {
   if (ADMIN_EMAILS.length === 0) {
     return { sent: false, reason: "no admin emails configured" };
-  }
-
-  const resend = getResendClient();
-  if (!resend) {
-    return { sent: false, reason: "resend not configured" };
   }
 
   const subject = `[CRON ALERT] ${jobName} issue`;
@@ -426,15 +396,17 @@ export async function sendCronHealthAlert(
     </div>
   `;
 
-  const { error: sendError } = await resend.emails.send({
-    from: ALERT_FROM,
+  const result = await sendEmailMessage({
     to: ADMIN_EMAILS,
     subject,
     html,
+    text: `[CRON ALERT] ${jobName}: ${reason}`,
+    debugFallbackTitle: "Cron Health Alert",
+    debugFallbackBody: `${jobName}: ${reason}`,
   });
 
-  if (sendError) {
-    throw new Error(`Resend API error: ${sendError.message}`);
+  if (!result.success) {
+    throw new Error(result.error || "Email send failed");
   }
 
   return { sent: true };
