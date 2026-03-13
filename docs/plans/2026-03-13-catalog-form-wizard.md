@@ -773,9 +773,12 @@ git commit -m "feat(catalog): add start mode step with clone search and datashee
 ```typescript
 // src/app/api/catalog/search/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { prisma } from "@/lib/db";
+import { requireApiAuth } from "@/lib/api-auth";
 
 export async function GET(request: NextRequest) {
+  const authResult = await requireApiAuth();
+  if (authResult instanceof NextResponse) return authResult;
   if (!prisma) return NextResponse.json([], { status: 503 });
 
   const q = request.nextUrl.searchParams.get("q")?.trim();
@@ -789,6 +792,7 @@ export async function GET(request: NextRequest) {
         { model: { contains: q, mode: "insensitive" } },
         { description: { contains: q, mode: "insensitive" } },
         { vendorPartNumber: { contains: q, mode: "insensitive" } },
+        { sku: { contains: q, mode: "insensitive" } },
       ],
     },
     select: {
@@ -801,8 +805,25 @@ export async function GET(request: NextRequest) {
       unitLabel: true,
       unitCost: true,
       sellPrice: true,
+      sku: true,
+      vendorName: true,
+      vendorPartNumber: true,
       hardToProcure: true,
-      metadata: true,
+      length: true,
+      width: true,
+      weight: true,
+      hubspotProductId: true,
+      zuperItemId: true,
+      zohoItemId: true,
+      photoUrl: true,
+      // Include category-specific spec relations for clone prefill
+      moduleSpec: true,
+      inverterSpec: true,
+      batterySpec: true,
+      evChargerSpec: true,
+      mountingHardwareSpec: true,
+      electricalHardwareSpec: true,
+      relayDeviceSpec: true,
     },
     take: 20,
     orderBy: { brand: "asc" },
@@ -1046,14 +1067,14 @@ git commit -m "feat(catalog): add field tooltips and smart category defaults"
 **Files:**
 - Create: `src/components/catalog/BasicsStep.tsx`
 
-Uses existing `BrandDropdown` and `CategoryFields` pattern. Shows category grid, brand, model, description. Inline duplicate check.
+Uses existing `BrandDropdown` and `CategoryFields` pattern. Shows category grid, brand, model, description. **Full duplicate-resolution workflow** matching the current form: searches by SKU, vendor part, brand+model; shows match cards with "Open Existing" links and a merge tool for resolving duplicates before proceeding.
 
 **Step 1: Write BasicsStep**
 
 ```tsx
 // src/components/catalog/BasicsStep.tsx
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import BrandDropdown from "./BrandDropdown";
 import { FORM_CATEGORIES, getCategoryLabel } from "@/lib/catalog-fields";
 import type { CatalogFormState, CatalogFormAction } from "@/lib/catalog-form-state";
@@ -1064,37 +1085,67 @@ interface BasicsStepProps {
   onNext: () => void;
 }
 
-interface DuplicateHint {
+interface ExistingSkuMatch {
+  id: string;
+  category: string;
   brand: string;
   model: string;
+  sku?: string;
+  vendorPartNumber?: string;
+  hubspotProductId?: string;
+  zuperItemId?: string;
+  zohoItemId?: string;
 }
 
 export default function BasicsStep({ state, dispatch, onNext }: BasicsStepProps) {
-  const [duplicateHint, setDuplicateHint] = useState<DuplicateHint | null>(null);
+  const [existingMatches, setExistingMatches] = useState<ExistingSkuMatch[]>([]);
+  const [existingMatchesLoading, setExistingMatchesLoading] = useState(false);
+  const [mergeSourceSkuId, setMergeSourceSkuId] = useState("");
+  const [mergeTargetSkuId, setMergeTargetSkuId] = useState("");
+  const [mergeBusy, setMergeBusy] = useState(false);
+  const [mergeMessage, setMergeMessage] = useState<string | null>(null);
 
-  // Inline duplicate check
+  // Multi-field duplicate lookup (same logic as current form: SKU, vendor part, brand+model, model)
+  const existingLookupQuery = useMemo(() => {
+    return [state.sku, state.vendorPartNumber, `${state.brand} ${state.model}`, state.model]
+      .map((value) => String(value || "").trim())
+      .find((value) => value.length >= 2) || "";
+  }, [state.brand, state.model, state.sku, state.vendorPartNumber]);
+
   useEffect(() => {
-    if (state.brand.length < 2 || state.model.length < 2) {
-      setDuplicateHint(null);
-      return;
-    }
-    const timeout = setTimeout(async () => {
+    const query = existingLookupQuery.trim();
+    if (!query) { setExistingMatches([]); return; }
+    let cancelled = false;
+    const timeoutId = setTimeout(async () => {
+      setExistingMatchesLoading(true);
       try {
-        const res = await fetch(
-          `/api/catalog/search?q=${encodeURIComponent(state.brand + " " + state.model)}`
-        );
-        if (res.ok) {
-          const results = await res.json();
-          if (results.length > 0) {
-            setDuplicateHint({ brand: results[0].brand, model: results[0].model });
-          } else {
-            setDuplicateHint(null);
-          }
+        const res = await fetch(`/api/catalog/search?q=${encodeURIComponent(query)}`);
+        if (res.ok && !cancelled) {
+          setExistingMatches(await res.json());
         }
       } catch { /* ignore */ }
+      finally { if (!cancelled) setExistingMatchesLoading(false); }
     }, 500);
-    return () => clearTimeout(timeout);
-  }, [state.brand, state.model]);
+    return () => { cancelled = true; clearTimeout(timeoutId); };
+  }, [existingLookupQuery]);
+
+  // Merge handler (preserve existing merge workflow)
+  async function handleMerge() {
+    if (!mergeSourceSkuId || !mergeTargetSkuId || mergeSourceSkuId === mergeTargetSkuId) return;
+    setMergeBusy(true);
+    try {
+      const res = await fetch("/api/inventory/skus/merge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sourceSkuId: mergeSourceSkuId, targetSkuId: mergeTargetSkuId }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setMergeMessage("Merge complete.");
+      setExistingMatches((prev) => prev.filter((m) => m.id !== mergeSourceSkuId));
+    } catch (e) {
+      setMergeMessage(e instanceof Error ? e.message : "Merge failed");
+    } finally { setMergeBusy(false); }
+  }
 
   const canProceed = state.category && state.brand && state.model && state.description;
 
@@ -1155,11 +1206,6 @@ export default function BasicsStep({ state, dispatch, onNext }: BasicsStepProps)
                 }}
                 className="w-full rounded-lg border border-t-border bg-surface-2 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
               />
-              {duplicateHint && (
-                <p className="mt-1 text-xs text-amber-400">
-                  Similar product exists: {duplicateHint.brand} {duplicateHint.model}
-                </p>
-              )}
             </div>
             <div className={`sm:col-span-2 ${isPrefilled("description") ? "border-l-2 border-l-green-400 pl-3" : ""}`}>
               <label className="block text-sm font-medium text-muted mb-1">
@@ -1178,6 +1224,59 @@ export default function BasicsStep({ state, dispatch, onNext }: BasicsStepProps)
           </div>
         </div>
       )}
+
+      {/* Existing Product Matches — full duplicate resolution workflow */}
+      {existingMatches.length > 0 && (
+        <div className="bg-amber-500/5 rounded-xl border border-amber-500/30 p-6">
+          <h3 className="text-lg font-semibold text-amber-400 mb-3">
+            ⚠ Existing Products Found ({existingMatches.length})
+          </h3>
+          <p className="text-sm text-muted mb-4">
+            These products already exist with similar details. Open one to edit it, or merge duplicates below.
+          </p>
+          <div className="space-y-2 mb-4">
+            {existingMatches.map((match) => (
+              <div key={match.id} className="flex items-center justify-between bg-surface-2 rounded-lg p-3 text-sm">
+                <div>
+                  <span className="font-medium text-foreground">{match.brand} {match.model}</span>
+                  <span className="text-muted ml-2">({match.category})</span>
+                  {match.sku && <span className="text-muted ml-2">SKU: {match.sku}</span>}
+                  {match.vendorPartNumber && <span className="text-muted ml-2">VP#: {match.vendorPartNumber}</span>}
+                  <span className="ml-2 text-xs">
+                    {match.hubspotProductId ? "✓HS" : "—"} {match.zuperItemId ? "✓ZP" : "—"} {match.zohoItemId ? "✓ZO" : "—"}
+                  </span>
+                </div>
+                <a href={`/dashboards/catalog/${match.id}`} target="_blank" className="text-cyan-400 hover:underline text-xs">
+                  Open Existing →
+                </a>
+              </div>
+            ))}
+          </div>
+
+          {/* Merge tool (same as current form) */}
+          {existingMatches.length >= 2 && (
+            <div className="border-t border-amber-500/20 pt-4 space-y-2">
+              <p className="text-xs font-medium text-muted">Merge Duplicates</p>
+              <div className="flex gap-2 items-end flex-wrap">
+                <select value={mergeSourceSkuId} onChange={(e) => setMergeSourceSkuId(e.target.value)} className="rounded-lg border border-t-border bg-surface-2 px-2 py-1.5 text-xs">
+                  <option value="">Source (will be removed)</option>
+                  {existingMatches.map((m) => <option key={m.id} value={m.id}>{m.brand} {m.model}</option>)}
+                </select>
+                <span className="text-xs text-muted">→</span>
+                <select value={mergeTargetSkuId} onChange={(e) => setMergeTargetSkuId(e.target.value)} className="rounded-lg border border-t-border bg-surface-2 px-2 py-1.5 text-xs">
+                  <option value="">Target (keep)</option>
+                  {existingMatches.map((m) => <option key={m.id} value={m.id}>{m.brand} {m.model}</option>)}
+                </select>
+                <button onClick={handleMerge} disabled={mergeBusy || !mergeSourceSkuId || !mergeTargetSkuId || mergeSourceSkuId === mergeTargetSkuId} className="px-3 py-1.5 text-xs font-medium rounded-lg bg-amber-600 text-white hover:bg-amber-500 disabled:opacity-50">
+                  {mergeBusy ? "Merging..." : "Merge"}
+                </button>
+              </div>
+              {mergeMessage && <p className="text-xs text-muted">{mergeMessage}</p>}
+            </div>
+          )}
+        </div>
+      )}
+      {existingMatchesLoading && <p className="text-xs text-muted animate-pulse">Checking for existing products...</p>}
 
       {/* Confidence banner for prefilled */}
       {state.prefillSource && state.prefillFields.size > 0 && (
@@ -1218,14 +1317,18 @@ git commit -m "feat(catalog): add basics step with duplicate check and prefill h
 
 ---
 
-## Task 8: Details Step Component
+## Task 8: Details Step Component (+ CategoryFields tooltip enhancement)
 
 **Files:**
 - Create: `src/components/catalog/DetailsStep.tsx`
+- Modify: `src/components/catalog/CategoryFields.tsx` — add `showTooltips` and `prefillFields` props, render `FieldTooltip` per dynamic field using `FieldDef.description`
+- Modify: `src/lib/catalog-fields.ts` — add `description` strings to any `FieldDef` entries that lack them
 
 **Step 1: Write DetailsStep**
 
-Renders category specs (via existing `CategoryFields`), pricing, dimensions, vendor info. All fields optional. Each has help tooltip. "Skip to Review" link.
+Renders category specs (via **enhanced** `CategoryFields` with per-field tooltips), pricing, dimensions, vendor info. All fields optional. Each has help tooltip. "Skip to Review" link.
+
+**Note on CategoryFields enhancement:** The existing `CategoryFields.tsx` renders dynamic fields from `getCategoryFields()` but has no tooltip support. This task also modifies `CategoryFields.tsx` to accept an optional `showTooltips` prop and renders `FieldTooltip` next to each dynamic field label using the `description` from `FieldDef` (already present in `catalog-fields.ts`). Add `description` strings to any `FieldDef` entries in `catalog-fields.ts` that lack them (e.g., "Cell Type" → "Monocrystalline, polycrystalline, or thin-film", "Efficiency %" → "Rated module efficiency as a percentage").
 
 ```tsx
 // src/components/catalog/DetailsStep.tsx
@@ -1265,6 +1368,8 @@ export default function DetailsStep({ state, dispatch, onNext, onBack }: Details
           category={state.category}
           values={state.specValues}
           onChange={(key, value) => dispatch({ type: "SET_SPEC", key, value })}
+          showTooltips={true}
+          prefillFields={state.prefillFields}
         />
       </div>
 
@@ -1655,6 +1760,7 @@ The page should:
 7. Apply `CATEGORY_DEFAULTS` when category is selected (unit label + system defaults)
 8. Handle clone prefill: map `CloneResult` to `PREFILL_FROM_PRODUCT` action
 9. Handle datasheet prefill: map extraction result to `PREFILL_FROM_PRODUCT` action
+10. **Preserve URL query-param prefills from deal/BOM flows** — read `searchParams` for `category`, `brand`, `model`, `description`, `unitSpec`, `unitLabel` on mount, dispatch `SET_FIELD` for each present param, and auto-skip to the "basics" step if any are provided (same behavior as current page.tsx lines 69-82)
 
 Keep `DashboardShell` wrapper with same props (title="Submit New Product", accentColor="cyan").
 
@@ -1673,19 +1779,20 @@ git commit -m "feat(catalog): rewrite product form as 4-step wizard with clone a
 
 ---
 
-## Task 11: Integration Test
+## Task 11: Tests — Reducer Unit + Wizard Flow Coverage
 
 **Files:**
+- Create: `src/__tests__/lib/catalog-form-state.test.ts` (if not already from Task 1)
 - Create: `src/__tests__/app/catalog-new-wizard.test.ts`
 
-**Step 1: Write integration test for the submission flow**
+**Step 1: Reducer unit tests (exhaustive)**
 
-Test that the form state reducer produces the correct POST payload shape:
+Cover all action types in the reducer — these are fast, pure-function tests:
 
 ```typescript
 import { catalogFormReducer, initialFormState } from "@/lib/catalog-form-state";
 
-describe("Catalog wizard submission payload", () => {
+describe("catalogFormReducer", () => {
   it("produces correct payload from completed wizard state", () => {
     let state = initialFormState;
     state = catalogFormReducer(state, { type: "SET_CATEGORY", category: "MODULE" });
@@ -1696,7 +1803,6 @@ describe("Catalog wizard submission payload", () => {
     state = catalogFormReducer(state, { type: "SET_SPEC", key: "wattage", value: 400 });
     state = catalogFormReducer(state, { type: "TOGGLE_SYSTEM", system: "HUBSPOT" });
 
-    // Verify state matches expected payload shape
     expect(state.category).toBe("MODULE");
     expect(state.brand).toBe("Hanwha");
     expect(state.model).toBe("Q.PEAK 400");
@@ -1705,7 +1811,77 @@ describe("Catalog wizard submission payload", () => {
     expect(state.systems.has("HUBSPOT")).toBe(true);
     expect(state.unitCost).toBe("150");
   });
+
+  it("PREFILL_FROM_PRODUCT populates all fields and tracks prefill source", () => {
+    const cloneData = {
+      category: "BATTERY", brand: "Tesla", model: "Powerwall 3",
+      description: "13.5 kWh battery", unitSpec: "13.5", unitLabel: "kWh",
+      unitCost: "8500", sellPrice: "12000", photoUrl: "https://blob.example/photo.jpg",
+      specValues: { capacity: 13.5 },
+    };
+    const state = catalogFormReducer(initialFormState, {
+      type: "PREFILL_FROM_PRODUCT", data: cloneData, source: "clone",
+    });
+    expect(state.brand).toBe("Tesla");
+    expect(state.photoUrl).toBe("https://blob.example/photo.jpg");
+    expect(state.prefillSource).toBe("clone");
+    expect(state.prefillFields.has("brand")).toBe(true);
+  });
+
+  it("SET_CATEGORY resets specValues but preserves other fields", () => {
+    let state = initialFormState;
+    state = catalogFormReducer(state, { type: "SET_FIELD", field: "brand", value: "Enphase" });
+    state = catalogFormReducer(state, { type: "SET_SPEC", key: "wattage", value: 400 });
+    state = catalogFormReducer(state, { type: "SET_CATEGORY", category: "INVERTER" });
+    expect(state.specValues).toEqual({});
+    expect(state.brand).toBe("Enphase"); // preserved
+  });
+
+  it("SET_FIELD for photoUrl and photoFileName", () => {
+    let state = initialFormState;
+    state = catalogFormReducer(state, { type: "SET_FIELD", field: "photoUrl", value: "https://blob/photo.jpg" });
+    state = catalogFormReducer(state, { type: "SET_FIELD", field: "photoFileName", value: "photo.jpg" });
+    expect(state.photoUrl).toBe("https://blob/photo.jpg");
+    expect(state.photoFileName).toBe("photo.jpg");
+  });
+
+  it("RESET returns to initial state", () => {
+    let state = initialFormState;
+    state = catalogFormReducer(state, { type: "SET_FIELD", field: "brand", value: "Hanwha" });
+    state = catalogFormReducer(state, { type: "RESET" });
+    expect(state).toEqual(initialFormState);
+  });
 });
+```
+
+**Step 2: API route tests (clone search, photo upload, extraction)**
+
+Test the search and photo upload endpoints for auth enforcement and correct responses:
+
+```typescript
+// src/__tests__/app/catalog-search-api.test.ts
+// Mock prisma, requireApiAuth — test that:
+// - Unauthenticated requests return 401
+// - Short queries return []
+// - Valid queries call prisma.equipmentSku.findMany with correct includes (spec relations)
+// - Results include sync status fields (hubspotProductId, zuperItemId, zohoItemId, photoUrl)
+
+// src/__tests__/app/catalog-photo-upload.test.ts
+// Mock @vercel/blob, requireApiAuth — test that:
+// - Unauthenticated requests return 401
+// - Non-image files return 400
+// - Oversized files return 400
+// - Valid upload returns { url, fileName }
+// - Filename is sanitized (no path traversal characters)
+```
+
+**Step 3: Wizard flow validation (query-param prefill)**
+
+```typescript
+// src/__tests__/app/catalog-wizard-prefill.test.ts
+// Test that URL search params are read and dispatched as SET_FIELD actions.
+// This can be a pure unit test: given params { brand: "Hanwha", model: "Q.PEAK" },
+// assert that the resulting state has those fields populated and currentStep === "basics" (skipped start).
 ```
 
 **Step 2: Run tests**
@@ -1764,7 +1940,21 @@ git push
 
 Run: `npm install @vercel/blob`
 
-**Step 2: Add photo fields to form state**
+**Step 2: Add `photoUrl` to Prisma schema**
+
+Add `photoUrl String?` to both `EquipmentSku` and `PendingCatalogPush` models. This ensures the photo persists on the canonical SKU record after approval, not just on the pending push.
+
+```prisma
+// In model EquipmentSku, after zohoItemId:
+photoUrl    String?           // Vercel Blob URL for product photo
+
+// In model PendingCatalogPush, in the metadata section:
+photoUrl    String?           // Photo uploaded during submission
+```
+
+Run: `npx prisma migrate dev --name add-photo-url`
+
+**Step 3: Add photo fields to form state**
 
 In `src/lib/catalog-form-state.ts`, add to `CatalogFormState`:
 
@@ -1773,16 +1963,21 @@ photoUrl: string;       // Vercel Blob URL after upload
 photoFileName: string;  // Original filename for display
 ```
 
-Initialize both as `""` in `initialFormState`. Handle in `SET_FIELD` action (already works). Add to `PREFILL_FROM_PRODUCT` handling (clone copies photo URL, datasheet leaves blank).
+Initialize both as `""` in `initialFormState`. Handle in `SET_FIELD` action (already works). Add to `PREFILL_FROM_PRODUCT` handling (clone copies `photoUrl` from the EquipmentSku record returned by the search API; datasheet leaves blank).
 
-**Step 3: Write upload API route**
+**Step 4: Write upload API route (with auth)**
 
 ```typescript
 // src/app/api/catalog/upload-photo/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { put } from "@vercel/blob";
+import { requireApiAuth } from "@/lib/api-auth";
 
 export async function POST(request: NextRequest) {
+  // Auth guard — same pattern as bom/upload and solar/upload routes
+  const authResult = await requireApiAuth();
+  if (authResult instanceof NextResponse) return authResult;
+
   const formData = await request.formData();
   const file = formData.get("file");
   if (!file || !(file instanceof File)) {
@@ -1790,14 +1985,17 @@ export async function POST(request: NextRequest) {
   }
 
   // Validate: images only, max 5MB
-  if (!file.type.startsWith("image/")) {
-    return NextResponse.json({ error: "Only image files are allowed" }, { status: 400 });
+  const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
+  if (!ALLOWED_TYPES.includes(file.type)) {
+    return NextResponse.json({ error: "Only JPEG, PNG, and WebP images are allowed" }, { status: 400 });
   }
   if (file.size > 5 * 1024 * 1024) {
     return NextResponse.json({ error: "Image must be under 5MB" }, { status: 400 });
   }
 
-  const blob = await put(`catalog-photos/${Date.now()}-${file.name}`, file, {
+  // Sanitize filename to prevent path traversal
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const blob = await put(`catalog-photos/${Date.now()}-${safeName}`, file, {
     access: "public",
   });
 
@@ -1829,9 +2027,11 @@ git commit -m "feat(catalog): add product photo upload with Vercel Blob storage"
 - Modify: `src/app/api/catalog/push-requests/[id]/approve/route.ts` — call image upload after Zoho upsert
 - Modify: `src/app/api/catalog/push-requests/route.ts` — persist `photoUrl` on PendingCatalogPush
 
-**Step 1: Add photoUrl to push request creation**
+**Step 1: Add photoUrl to push request creation and approval**
 
-In `src/app/api/catalog/push-requests/route.ts`, add `photoUrl` to the `prisma.pendingCatalogPush.create()` data. This requires the `photoUrl` field on the `PendingCatalogPush` Prisma model — add a migration if it doesn't exist.
+In `src/app/api/catalog/push-requests/route.ts`, add `photoUrl` to the `prisma.pendingCatalogPush.create()` data. The field was added in the Task 13 migration.
+
+In `src/app/api/catalog/push-requests/[id]/approve/route.ts`, when creating/updating the `EquipmentSku`, include `photoUrl: push.photoUrl` so the photo persists on the canonical record after approval (not just on the pending push). This is the authoritative source for clone operations.
 
 **Step 2: Write Zoho image upload function**
 
