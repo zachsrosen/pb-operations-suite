@@ -1749,3 +1749,115 @@ Start dev server, navigate through all wizard steps, verify:
 ```
 git push
 ```
+
+---
+
+## Task 13: Product Photo Upload on Details Step
+
+**Files:**
+- Create: `src/components/catalog/PhotoUpload.tsx`
+- Create: `src/app/api/catalog/upload-photo/route.ts`
+- Modify: `src/components/catalog/DetailsStep.tsx` — add PhotoUpload section
+- Modify: `src/lib/catalog-form-state.ts` — add `photoUrl` and `photoFileName` to state
+
+**Step 1: Install Vercel Blob**
+
+Run: `npm install @vercel/blob`
+
+**Step 2: Add photo fields to form state**
+
+In `src/lib/catalog-form-state.ts`, add to `CatalogFormState`:
+
+```typescript
+photoUrl: string;       // Vercel Blob URL after upload
+photoFileName: string;  // Original filename for display
+```
+
+Initialize both as `""` in `initialFormState`. Handle in `SET_FIELD` action (already works). Add to `PREFILL_FROM_PRODUCT` handling (clone copies photo URL, datasheet leaves blank).
+
+**Step 3: Write upload API route**
+
+```typescript
+// src/app/api/catalog/upload-photo/route.ts
+import { NextRequest, NextResponse } from "next/server";
+import { put } from "@vercel/blob";
+
+export async function POST(request: NextRequest) {
+  const formData = await request.formData();
+  const file = formData.get("file");
+  if (!file || !(file instanceof File)) {
+    return NextResponse.json({ error: "No file provided" }, { status: 400 });
+  }
+
+  // Validate: images only, max 5MB
+  if (!file.type.startsWith("image/")) {
+    return NextResponse.json({ error: "Only image files are allowed" }, { status: 400 });
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    return NextResponse.json({ error: "Image must be under 5MB" }, { status: 400 });
+  }
+
+  const blob = await put(`catalog-photos/${Date.now()}-${file.name}`, file, {
+    access: "public",
+  });
+
+  return NextResponse.json({ url: blob.url, fileName: file.name });
+}
+```
+
+**Step 4: Write PhotoUpload component**
+
+Drag-and-drop zone that uploads to `/api/catalog/upload-photo`, shows thumbnail preview after upload, with a remove button. Dispatches `SET_FIELD` for `photoUrl` and `photoFileName`.
+
+**Step 5: Add PhotoUpload to DetailsStep**
+
+Add a "Product Photo (optional)" section at the bottom of DetailsStep, before the Hard to Procure toggle.
+
+**Step 6: Commit**
+
+```
+git add src/components/catalog/PhotoUpload.tsx src/app/api/catalog/upload-photo/route.ts src/components/catalog/DetailsStep.tsx src/lib/catalog-form-state.ts
+git commit -m "feat(catalog): add product photo upload with Vercel Blob storage"
+```
+
+---
+
+## Task 14: Zoho Photo Sync on Approval
+
+**Files:**
+- Modify: `src/lib/zoho-inventory.ts` — add `uploadZohoItemImage()` function
+- Modify: `src/app/api/catalog/push-requests/[id]/approve/route.ts` — call image upload after Zoho upsert
+- Modify: `src/app/api/catalog/push-requests/route.ts` — persist `photoUrl` on PendingCatalogPush
+
+**Step 1: Add photoUrl to push request creation**
+
+In `src/app/api/catalog/push-requests/route.ts`, add `photoUrl` to the `prisma.pendingCatalogPush.create()` data. This requires the `photoUrl` field on the `PendingCatalogPush` Prisma model — add a migration if it doesn't exist.
+
+**Step 2: Write Zoho image upload function**
+
+```typescript
+// In src/lib/zoho-inventory.ts, add:
+export async function uploadZohoItemImage(
+  zohoItemId: string,
+  imageUrl: string
+): Promise<{ success: boolean; error?: string }> {
+  // 1. Fetch image from Vercel Blob URL
+  // 2. POST to Zoho Inventory API: /items/{item_id}/image
+  //    Content-Type: multipart/form-data with the image file
+  // 3. Return success/error
+}
+```
+
+Zoho Inventory API endpoint: `POST /api/v1/items/{item_id}/image`
+Accepts multipart form data with an `image` field.
+
+**Step 3: Call image upload after Zoho upsert in approval route**
+
+In the approval route, after `upsertZohoItem` succeeds and returns a `zohoItemId`, check if `push.photoUrl` exists. If so, call `uploadZohoItemImage(zohoItemId, push.photoUrl)`. This is fire-and-forget — log errors but don't fail the approval.
+
+**Step 4: Commit**
+
+```
+git add src/lib/zoho-inventory.ts src/app/api/catalog/push-requests/[id]/approve/route.ts src/app/api/catalog/push-requests/route.ts
+git commit -m "feat(catalog): sync product photo to Zoho Inventory on approval"
+```
