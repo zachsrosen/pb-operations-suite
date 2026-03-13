@@ -29,7 +29,6 @@ interface SyncModalProps {
   skuName: string;
   isOpen: boolean;
   onClose: () => void;
-  onSyncComplete?: () => void;
 }
 
 const SYSTEM_LABELS: Record<string, string> = {
@@ -46,7 +45,7 @@ const STATUS_COLORS: Record<string, string> = {
   unsupported: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300",
 };
 
-export default function SyncModal({ skuId, skuName, isOpen, onClose, onSyncComplete }: SyncModalProps) {
+export default function SyncModal({ skuId, skuName, isOpen, onClose }: SyncModalProps) {
   const [previews, setPreviews] = useState<SyncPreview[]>([]);
   const [changesHash, setChangesHash] = useState("");
   const [systems, setSystems] = useState<string[]>([]);
@@ -113,7 +112,7 @@ export default function SyncModal({ skuId, skuName, isOpen, onClose, onSyncCompl
       }
       const result = await executeRes.json();
       setOutcomes(result.outcomes || []);
-      onSyncComplete?.();
+      // Outcomes screen renders — user dismisses via "Close" button which calls onClose.
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sync failed");
     } finally {

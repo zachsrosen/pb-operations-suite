@@ -1782,8 +1782,7 @@ export default function CatalogPage() {
           skuId={syncSkuId}
           skuName={syncSkuName}
           isOpen={!!syncSkuId}
-          onClose={() => { setSyncSkuId(null); setSyncSkuName(""); }}
-          onSyncComplete={fetchSkus}
+          onClose={() => { setSyncSkuId(null); setSyncSkuName(""); fetchSkus(); }}
         />
       )}
 

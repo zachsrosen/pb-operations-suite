@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react";
 import DashboardShell from "@/components/DashboardShell";
 import CategoryFields from "@/components/catalog/CategoryFields";
 import BrandDropdown from "@/components/catalog/BrandDropdown";
+import SyncModal from "@/components/catalog/SyncModal";
 import { useToast } from "@/contexts/ToastContext";
 import {
   FORM_CATEGORIES,
@@ -15,6 +16,7 @@ import {
 import { getZohoItemUrl, getHubSpotProductUrl, getZuperProductUrl } from "@/lib/external-links";
 
 const DELETE_ROLES = ["ADMIN"];
+const SYNC_ROLES = ["ADMIN", "OWNER"];
 
 const inputClasses =
   "w-full rounded-lg border border-t-border bg-surface-2 px-3 py-2 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-cyan-500/50";
@@ -59,6 +61,7 @@ export default function CatalogSkuEditPage() {
 
   const userRole = (session?.user as { role?: string } | undefined)?.role ?? "";
   const canDelete = DELETE_ROLES.includes(userRole);
+  const canSync = SYNC_ROLES.includes(userRole);
 
   const skuId = useMemo(() => {
     const value = params?.id;
@@ -92,6 +95,8 @@ export default function CatalogSkuEditPage() {
   const [hubspotProductId, setHubspotProductId] = useState("");
   const [zuperItemId, setZuperItemId] = useState("");
   const [isActive, setIsActive] = useState(true);
+  const [showSyncPrompt, setShowSyncPrompt] = useState(false);
+  const [showSyncModal, setShowSyncModal] = useState(false);
 
   useEffect(() => {
     if (!skuId) {
@@ -199,7 +204,13 @@ export default function CatalogSkuEditPage() {
       if (!res.ok) throw new Error(body?.error || `Failed to update SKU (${res.status})`);
 
       addToast({ type: "success", title: "SKU updated" });
-      router.push("/dashboards/catalog");
+
+      const hasLinkedSystems = Boolean(zohoItemId || hubspotProductId || zuperItemId);
+      if (hasLinkedSystems && canSync) {
+        setShowSyncPrompt(true);
+      } else {
+        router.push("/dashboards/catalog");
+      }
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : "Failed to update SKU");
       addToast({ type: "error", title: error instanceof Error ? error.message : "Failed to update SKU" });
@@ -519,6 +530,50 @@ export default function CatalogSkuEditPage() {
           </div>
         </form>
       )}
+
+      {showSyncPrompt && (
+        <div className="fixed inset-x-0 bottom-0 z-50 p-4">
+          <div className="mx-auto max-w-2xl rounded-xl border border-cyan-500/40 bg-surface p-4 shadow-lg flex flex-col sm:flex-row items-start sm:items-center gap-3">
+            <div className="flex-1">
+              <div className="text-sm font-medium text-foreground">Push changes to linked systems?</div>
+              <div className="text-xs text-muted mt-0.5">
+                This SKU is linked to{" "}
+                {[zohoItemId && "Zoho", hubspotProductId && "HubSpot", zuperItemId && "Zuper"]
+                  .filter(Boolean)
+                  .join(", ")}
+                . Sync to keep them in sync.
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setShowSyncModal(true)}
+                className="px-4 py-2 rounded-lg bg-cyan-600 text-white text-sm font-medium hover:bg-cyan-500 transition-colors"
+              >
+                Sync Now
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push("/dashboards/catalog")}
+                className="px-4 py-2 rounded-lg border border-t-border bg-background text-sm text-muted hover:text-foreground transition-colors"
+              >
+                Skip
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <SyncModal
+        skuId={skuId}
+        skuName={`${brand} ${model}`}
+        isOpen={showSyncModal}
+        onClose={() => {
+          setShowSyncModal(false);
+          setShowSyncPrompt(false);
+          router.push("/dashboards/catalog");
+        }}
+      />
     </DashboardShell>
   );
 }
