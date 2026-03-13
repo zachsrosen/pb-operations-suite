@@ -1622,14 +1622,28 @@ export default function CatalogPage() {
                       <div>
                         <div className={labelCls}>Identity</div>
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                          <input value={pushEditDraft.brand} onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, brand: e.target.value } : prev)} className={inputCls} placeholder="Brand *" />
-                          <input value={pushEditDraft.model} onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, model: e.target.value } : prev)} className={inputCls} placeholder="Model *" />
-                          <input value={pushEditDraft.sku} onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, sku: e.target.value } : prev)} className={inputCls} placeholder="SKU" />
-                          <select value={pushEditDraft.category} onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, category: e.target.value } : prev)} className={inputCls}>
-                            {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-                          </select>
+                          <div>
+                            <div className="text-[11px] text-muted mb-0.5">Brand *</div>
+                            <input value={pushEditDraft.brand} onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, brand: e.target.value } : prev)} className={inputCls} placeholder="Brand" />
+                          </div>
+                          <div>
+                            <div className="text-[11px] text-muted mb-0.5">Model *</div>
+                            <input value={pushEditDraft.model} onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, model: e.target.value } : prev)} className={inputCls} placeholder="Model" />
+                          </div>
+                          <div>
+                            <div className="text-[11px] text-muted mb-0.5">SKU</div>
+                            <input value={pushEditDraft.sku} onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, sku: e.target.value } : prev)} className={inputCls} placeholder="SKU" />
+                          </div>
+                          <div>
+                            <div className="text-[11px] text-muted mb-0.5">Category</div>
+                            <select value={pushEditDraft.category} onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, category: e.target.value } : prev)} className={inputCls}>
+                              {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2 mt-1">
+                        <div className="mt-1">
+                          <div className="text-[11px] text-muted mb-0.5">Product Name</div>
+                          <div className="flex items-center gap-2">
                           <input
                             value={pushEditDraft.name || `${pushEditDraft.brand} ${pushEditDraft.model}`.trim()}
                             onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, name: e.target.value } : prev)}
@@ -1639,6 +1653,7 @@ export default function CatalogPage() {
                           {pushEditDraft.name && (
                             <button type="button" onClick={() => setPushEditDraft((prev) => prev ? { ...prev, name: "" } : prev)} className="text-xs text-muted hover:text-foreground shrink-0">Reset</button>
                           )}
+                          </div>
                         </div>
                         <div className="text-xs text-muted mt-0.5">
                           {pushEditDraft.name ? "Custom name" : "Auto-generated from Brand + Model"}
@@ -1661,8 +1676,14 @@ export default function CatalogPage() {
                       <div>
                         <div className={labelCls}>Vendor</div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          <input value={pushEditDraft.vendorName} onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, vendorName: e.target.value } : prev)} className={inputCls} placeholder="Vendor Name" />
-                          <input value={pushEditDraft.vendorPartNumber} onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, vendorPartNumber: e.target.value } : prev)} className={inputCls} placeholder="Vendor Part #" />
+                          <div>
+                            <div className="text-[11px] text-muted mb-0.5">Vendor Name</div>
+                            <input value={pushEditDraft.vendorName} onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, vendorName: e.target.value } : prev)} className={inputCls} placeholder="Vendor Name" />
+                          </div>
+                          <div>
+                            <div className="text-[11px] text-muted mb-0.5">Vendor Part #</div>
+                            <input value={pushEditDraft.vendorPartNumber} onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, vendorPartNumber: e.target.value } : prev)} className={inputCls} placeholder="Vendor Part #" />
+                          </div>
                         </div>
                       </div>
 
@@ -1670,26 +1691,47 @@ export default function CatalogPage() {
                       <div>
                         <div className={labelCls}>Pricing & Units</div>
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                          <div className="relative">
-                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted">$</span>
-                            <input value={pushEditDraft.unitCost} onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, unitCost: e.target.value } : prev)} className={`${inputCls} pl-5`} placeholder="Unit Cost" type="number" step="0.01" />
+                          <div>
+                            <div className="text-[11px] text-muted mb-0.5">Unit Cost</div>
+                            <div className="relative">
+                              <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted">$</span>
+                              <input value={pushEditDraft.unitCost} onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, unitCost: e.target.value } : prev)} className={`${inputCls} pl-5`} placeholder="0.00" type="number" step="0.01" />
+                            </div>
                           </div>
-                          <div className="relative">
-                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted">$</span>
-                            <input value={pushEditDraft.sellPrice} onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, sellPrice: e.target.value } : prev)} className={`${inputCls} pl-5`} placeholder="Sell Price" type="number" step="0.01" />
+                          <div>
+                            <div className="text-[11px] text-muted mb-0.5">Sell Price</div>
+                            <div className="relative">
+                              <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted">$</span>
+                              <input value={pushEditDraft.sellPrice} onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, sellPrice: e.target.value } : prev)} className={`${inputCls} pl-5`} placeholder="0.00" type="number" step="0.01" />
+                            </div>
                           </div>
-                          <input value={pushEditDraft.unitSpec} onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, unitSpec: e.target.value } : prev)} className={inputCls} placeholder="Unit Spec (e.g. 410)" />
-                          <input value={pushEditDraft.unitLabel} onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, unitLabel: e.target.value } : prev)} className={inputCls} placeholder="Unit Label (e.g. W)" />
+                          <div>
+                            <div className="text-[11px] text-muted mb-0.5">Unit Spec</div>
+                            <input value={pushEditDraft.unitSpec} onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, unitSpec: e.target.value } : prev)} className={inputCls} placeholder="e.g. 410" />
+                          </div>
+                          <div>
+                            <div className="text-[11px] text-muted mb-0.5">Unit Label</div>
+                            <input value={pushEditDraft.unitLabel} onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, unitLabel: e.target.value } : prev)} className={inputCls} placeholder="e.g. W" />
+                          </div>
                         </div>
                       </div>
 
                       {/* Dimensions */}
                       <div>
                         <div className={labelCls}>Physical</div>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 items-center">
-                          <input value={pushEditDraft.length} onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, length: e.target.value } : prev)} className={inputCls} placeholder="Length (in)" type="number" step="0.1" />
-                          <input value={pushEditDraft.width} onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, width: e.target.value } : prev)} className={inputCls} placeholder="Width (in)" type="number" step="0.1" />
-                          <input value={pushEditDraft.weight} onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, weight: e.target.value } : prev)} className={inputCls} placeholder="Weight (lbs)" type="number" step="0.1" />
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 items-end">
+                          <div>
+                            <div className="text-[11px] text-muted mb-0.5">Length (in)</div>
+                            <input value={pushEditDraft.length} onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, length: e.target.value } : prev)} className={inputCls} placeholder="inches" type="number" step="0.1" />
+                          </div>
+                          <div>
+                            <div className="text-[11px] text-muted mb-0.5">Width (in)</div>
+                            <input value={pushEditDraft.width} onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, width: e.target.value } : prev)} className={inputCls} placeholder="inches" type="number" step="0.1" />
+                          </div>
+                          <div>
+                            <div className="text-[11px] text-muted mb-0.5">Weight (lbs)</div>
+                            <input value={pushEditDraft.weight} onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, weight: e.target.value } : prev)} className={inputCls} placeholder="lbs" type="number" step="0.1" />
+                          </div>
                           <label className="inline-flex items-center gap-1.5 text-xs text-foreground cursor-pointer">
                             <input
                               type="checkbox"
