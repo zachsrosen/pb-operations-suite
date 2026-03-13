@@ -137,4 +137,40 @@ describe("catalogFormReducer", () => {
     const state = catalogFormReducer(dirty, { type: "RESET" });
     expect(state).toEqual(initialFormState);
   });
+
+  it("produces correct payload from a completed wizard flow", () => {
+    let state = initialFormState;
+    state = catalogFormReducer(state, { type: "SET_CATEGORY", category: "MODULE" });
+    state = catalogFormReducer(state, { type: "SET_FIELD", field: "brand", value: "Hanwha" });
+    state = catalogFormReducer(state, { type: "SET_FIELD", field: "model", value: "Q.PEAK 400" });
+    state = catalogFormReducer(state, { type: "SET_FIELD", field: "description", value: "400W Module" });
+    state = catalogFormReducer(state, { type: "SET_FIELD", field: "unitCost", value: "150" });
+    state = catalogFormReducer(state, { type: "SET_SPEC", key: "wattage", value: 400 });
+    state = catalogFormReducer(state, { type: "TOGGLE_SYSTEM", system: "HUBSPOT" });
+
+    expect(state.category).toBe("MODULE");
+    expect(state.brand).toBe("Hanwha");
+    expect(state.model).toBe("Q.PEAK 400");
+    expect(state.specValues).toEqual({ wattage: 400 });
+    expect(state.systems.has("INTERNAL")).toBe(true);
+    expect(state.systems.has("HUBSPOT")).toBe(true);
+    expect(state.unitCost).toBe("150");
+  });
+
+  it("SET_CATEGORY resets specValues but preserves other fields", () => {
+    let state = initialFormState;
+    state = catalogFormReducer(state, { type: "SET_FIELD", field: "brand", value: "Enphase" });
+    state = catalogFormReducer(state, { type: "SET_SPEC", key: "wattage", value: 400 });
+    state = catalogFormReducer(state, { type: "SET_CATEGORY", category: "INVERTER" });
+    expect(state.specValues).toEqual({});
+    expect(state.brand).toBe("Enphase");
+  });
+
+  it("SET_FIELD works for photoUrl and photoFileName", () => {
+    let state = initialFormState;
+    state = catalogFormReducer(state, { type: "SET_FIELD", field: "photoUrl", value: "https://blob/photo.jpg" });
+    state = catalogFormReducer(state, { type: "SET_FIELD", field: "photoFileName", value: "photo.jpg" });
+    expect(state.photoUrl).toBe("https://blob/photo.jpg");
+    expect(state.photoFileName).toBe("photo.jpg");
+  });
 });
