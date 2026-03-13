@@ -1,11 +1,14 @@
 "use client";
 
 import { getCategoryFields, type FieldDef } from "@/lib/catalog-fields";
+import FieldTooltip from "./FieldTooltip";
 
 interface CategoryFieldsProps {
   category: string;
   values: Record<string, unknown>;
   onChange: (key: string, value: unknown) => void;
+  showTooltips?: boolean;
+  prefillFields?: Set<string>;
 }
 
 const inputClasses =
@@ -132,6 +135,8 @@ export default function CategoryFields({
   category,
   values,
   onChange,
+  showTooltips,
+  prefillFields,
 }: CategoryFieldsProps) {
   const fields = getCategoryFields(category);
 
@@ -146,11 +151,21 @@ export default function CategoryFields({
         {fields.map((field) => {
           const Renderer = FIELD_RENDERERS[field.type];
           return (
-            <div key={field.key}>
+            <div
+              key={field.key}
+              className={
+                prefillFields?.has(`spec.${field.key}`)
+                  ? "border-l-2 border-l-blue-400 pl-3"
+                  : ""
+              }
+            >
               <label className="text-sm font-medium text-muted mb-1 block">
                 {field.label}
                 {field.required && (
                   <span className="text-red-400 ml-0.5">*</span>
+                )}
+                {showTooltips && field.tooltip && (
+                  <FieldTooltip text={field.tooltip} />
                 )}
               </label>
               <Renderer
