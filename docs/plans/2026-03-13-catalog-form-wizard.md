@@ -2143,6 +2143,7 @@ export interface UpsertZohoItemInput {
   // ... existing fields ...
   category?: string;      // Internal category enum (MODULE, BATTERY, etc.)
   unitSpec?: string;       // e.g., "400" for a 400W module
+  acOutputKw?: string;     // For combo battery+inverter units (e.g., "11.5")
   // length and width already exist in the interface
 }
 ```
@@ -2156,13 +2157,23 @@ In `createOrUpdateItem()`, replace the simple name construction:
 const name = `${brand} ${model}`;
 
 // After:
-function buildZohoItemName(brand: string, model: string, unitSpec?: string, unitLabel?: string, length?: string, width?: string): string {
+function buildZohoItemName(
+  brand: string, model: string,
+  unitSpec?: string, unitLabel?: string,
+  length?: string, width?: string,
+  acOutputKw?: string,
+): string {
   let name = `${brand} ${model}`;
   const suffixes: string[] = [];
 
   // Add spec rating if present (e.g., "400W", "13.5kWh")
   if (unitSpec && unitLabel) {
     suffixes.push(`${unitSpec}${unitLabel}`);
+  }
+
+  // For combo battery+inverter units, append inverter rating (e.g., "13.5kWh / 11.5kW")
+  if (acOutputKw) {
+    suffixes.push(`${acOutputKw}kW`);
   }
 
   // Add dimensions if both present — values are stored in inches (form labels: "Length (in)", "Width (in)")
@@ -2180,7 +2191,7 @@ function buildZohoItemName(brand: string, model: string, unitSpec?: string, unit
 
 Use this in `corePayload`:
 ```typescript
-const name = buildZohoItemName(brand, model, input.unitSpec, input.unitLabel, input.length, input.width);
+const name = buildZohoItemName(brand, model, input.unitSpec, input.unitLabel, input.length, input.width, input.acOutputKw);
 ```
 
 **Step 3: Pass new fields from approval route**
@@ -2192,6 +2203,8 @@ await upsertZohoItem({
   // ... existing fields ...
   category: push.category,
   unitSpec: push.unitSpec ?? undefined,
+  // For combo battery+inverter units, pass the AC output rating for Zoho name enrichment
+  acOutputKw: push.batterySpec?.acOutputKw?.toString() ?? undefined,
 });
 ```
 
@@ -2333,7 +2346,7 @@ BATTERY: {
 
 Add `showWhen?: { field: string; value: unknown }` to the `FieldDef` interface.
 
-**Step 3: Update CategoryFields to support conditional visibility**
+**Step 3: Update CategoryFields to support conditional visibility + stale data cleanup**
 
 In `CategoryFields.tsx`, when rendering fields, check if a field has `showWhen`. If so, only render it when the referenced field's value in `specValues` matches:
 
@@ -2347,16 +2360,28 @@ if (field.showWhen) {
 
 The toggle itself renders as a standard toggle field (same as `hardToProcure`). When it flips on, the three inverter fields appear below it with a subtle indent or group border.
 
-**Step 4: Update Zoho name enrichment (Task 15) to use inverter kW for combo units**
-
-In `buildZohoItemName`, when the category is BATTERY and `hasBuiltInInverter` is true, include the `acOutputKw` in the name suffix alongside the battery capacity:
+**Stale data cleanup:** When a `showWhen` controlling field changes, clear the values of all dependent fields. Add an `onChange` wrapper for toggle fields that dispatches `SET_SPEC` with cleared values:
 
 ```typescript
-// e.g., "Tesla Powerwall 3 (13.5kWh / 11.5kW, 69×41in)"
-if (category === "BATTERY" && specValues?.acOutputKw) {
-  suffixes.push(`${specValues.acOutputKw}kW`);
+// When hasBuiltInInverter toggles OFF, clear dependent fields so stale
+// inverter data doesn't persist in form state or get submitted.
+const dependentFields = fields
+  .filter((f) => f.showWhen?.field === changedFieldKey)
+  .map((f) => f.key);
+
+if (dependentFields.length > 0 && !newValue) {
+  // Dispatch SET_SPEC for each dependent field with undefined/null
+  for (const key of dependentFields) {
+    onSpecChange(key, undefined);
+  }
 }
 ```
+
+This ensures that toggling `hasBuiltInInverter` off clears `acOutputKw`, `inverterPhase`, and `inverterType` from `specValues` immediately, not just at submit time.
+
+**Step 4: Zoho name enrichment — already handled in Task 15**
+
+No additional code needed here. Task 15's `buildZohoItemName` now accepts `acOutputKw` and the approval route passes `push.batterySpec?.acOutputKw` through the `UpsertZohoItemInput` interface. The enriched name for combo units will be e.g., `"Tesla Powerwall 3 (13.5kWh, 11.5kW, 69×41in)"`.
 
 **Step 5: Commit**
 
