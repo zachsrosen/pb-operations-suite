@@ -3,12 +3,12 @@ import Anthropic from "@anthropic-ai/sdk";
 import { FORM_CATEGORIES } from "@/lib/catalog-fields";
 import { requireApiAuth } from "@/lib/api-auth";
 
-// pdf-parse v2 uses a class-based API: new PDFParse({}) → load(buffer) → getText()
+// pdf-parse v2: pass { data } to constructor, then load() → getText()
 async function extractPdfText(buffer: Buffer): Promise<string> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { PDFParse } = await import("pdf-parse") as any;
-  const parser = new PDFParse({});
-  await parser.load(buffer);
+  const parser = new PDFParse({ data: new Uint8Array(buffer) });
+  await parser.load();
   return parser.getText();
 }
 
