@@ -8,6 +8,8 @@ export interface FieldDef {
   unit?: string;
   placeholder?: string;
   required?: boolean;
+  tooltip?: string;
+  showWhen?: { field: string; value: unknown };
   hubspotProperty?: string;
   zuperCustomField?: string;
   zohoCustomField?: string;
@@ -30,14 +32,14 @@ export const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
     zuperCategory: "Solar Panel",
     specTable: "moduleSpec",
     fields: [
-      { key: "wattage", label: "DC Size (Wattage)", type: "number", unit: "W", hubspotProperty: "dc_size" },
-      { key: "efficiency", label: "Efficiency", type: "number", unit: "%" },
-      { key: "cellType", label: "Cell Type", type: "dropdown", options: ["Mono PERC", "TOPCon", "HJT", "Poly", "Thin Film"] },
-      { key: "voc", label: "Voc (Open Circuit Voltage)", type: "number", unit: "V" },
-      { key: "isc", label: "Isc (Short Circuit Current)", type: "number", unit: "A" },
-      { key: "vmp", label: "Vmp (Max Power Voltage)", type: "number", unit: "V" },
-      { key: "imp", label: "Imp (Max Power Current)", type: "number", unit: "A" },
-      { key: "tempCoefficient", label: "Temp Coefficient (Pmax)", type: "number", unit: "%/°C" },
+      { key: "wattage", label: "DC Size (Wattage)", type: "number", unit: "W", hubspotProperty: "dc_size", tooltip: "Rated power output under STC (Standard Test Conditions)" },
+      { key: "efficiency", label: "Efficiency", type: "number", unit: "%", tooltip: "Module conversion efficiency percentage" },
+      { key: "cellType", label: "Cell Type", type: "dropdown", options: ["Mono PERC", "TOPCon", "HJT", "Poly", "Thin Film"], tooltip: "Solar cell technology used in the module" },
+      { key: "voc", label: "Voc (Open Circuit Voltage)", type: "number", unit: "V", tooltip: "Voltage when no load is connected" },
+      { key: "isc", label: "Isc (Short Circuit Current)", type: "number", unit: "A", tooltip: "Current when output terminals are shorted" },
+      { key: "vmp", label: "Vmp (Max Power Voltage)", type: "number", unit: "V", tooltip: "Voltage at maximum power point" },
+      { key: "imp", label: "Imp (Max Power Current)", type: "number", unit: "A", tooltip: "Current at maximum power point" },
+      { key: "tempCoefficient", label: "Temp Coefficient (Pmax)", type: "number", unit: "%/°C", tooltip: "Power output change per degree Celsius" },
     ],
   },
   INVERTER: {
@@ -47,13 +49,13 @@ export const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
     zuperCategory: "Inverter",
     specTable: "inverterSpec",
     fields: [
-      { key: "acOutputKw", label: "AC Output Size", type: "number", unit: "kW", hubspotProperty: "ac_size" },
-      { key: "maxDcInput", label: "Max DC Input", type: "number", unit: "kW" },
-      { key: "phase", label: "Phase", type: "dropdown", options: ["Single", "Three-phase"] },
-      { key: "nominalAcVoltage", label: "Nominal AC Voltage", type: "dropdown", options: ["240V", "208V", "480V"] },
-      { key: "mpptChannels", label: "MPPT Channels", type: "number" },
-      { key: "maxInputVoltage", label: "Max Input Voltage", type: "number", unit: "V" },
-      { key: "inverterType", label: "Inverter Type", type: "dropdown", options: ["String", "Micro", "Hybrid", "Central"] },
+      { key: "acOutputKw", label: "AC Output Size", type: "number", unit: "kW", hubspotProperty: "ac_size", tooltip: "Rated AC power output of the inverter" },
+      { key: "maxDcInput", label: "Max DC Input", type: "number", unit: "kW", tooltip: "Maximum DC input power the inverter can accept" },
+      { key: "phase", label: "Phase", type: "dropdown", options: ["Single", "Three-phase"], tooltip: "Single-phase for residential, three-phase for commercial" },
+      { key: "nominalAcVoltage", label: "Nominal AC Voltage", type: "dropdown", options: ["240V", "208V", "480V"], tooltip: "Grid-side AC voltage the inverter connects to" },
+      { key: "mpptChannels", label: "MPPT Channels", type: "number", tooltip: "Number of independent maximum power point trackers" },
+      { key: "maxInputVoltage", label: "Max Input Voltage", type: "number", unit: "V", tooltip: "Maximum DC input voltage the inverter can handle" },
+      { key: "inverterType", label: "Inverter Type", type: "dropdown", options: ["String", "Micro", "Hybrid", "Central"], tooltip: "String = centralized, Micro = per-panel, Hybrid = battery-ready" },
     ],
   },
   BATTERY: {
@@ -63,14 +65,14 @@ export const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
     zuperCategory: "Battery",
     specTable: "batterySpec",
     fields: [
-      { key: "capacityKwh", label: "Capacity", type: "number", unit: "kWh", hubspotProperty: "size__kwh_" },
-      { key: "energyStorageCapacity", label: "Energy Storage Capacity", type: "number", hubspotProperty: "energy_storage_capacity" },
-      { key: "usableCapacityKwh", label: "Usable Capacity", type: "number", unit: "kWh" },
-      { key: "continuousPowerKw", label: "Continuous Power", type: "number", unit: "kW", hubspotProperty: "capacity__kw_" },
-      { key: "peakPowerKw", label: "Peak Power", type: "number", unit: "kW" },
-      { key: "chemistry", label: "Chemistry", type: "dropdown", options: ["LFP", "NMC"] },
-      { key: "roundTripEfficiency", label: "Round-Trip Efficiency", type: "number", unit: "%" },
-      { key: "nominalVoltage", label: "Nominal Voltage", type: "number", unit: "V" },
+      { key: "capacityKwh", label: "Capacity", type: "number", unit: "kWh", hubspotProperty: "size__kwh_", tooltip: "Total energy storage capacity of the battery" },
+      { key: "energyStorageCapacity", label: "Energy Storage Capacity", type: "number", hubspotProperty: "energy_storage_capacity", tooltip: "HubSpot-specific energy storage value" },
+      { key: "usableCapacityKwh", label: "Usable Capacity", type: "number", unit: "kWh", tooltip: "Actual usable energy after depth-of-discharge limits" },
+      { key: "continuousPowerKw", label: "Continuous Power", type: "number", unit: "kW", hubspotProperty: "capacity__kw_", tooltip: "Sustained power output the battery can deliver" },
+      { key: "peakPowerKw", label: "Peak Power", type: "number", unit: "kW", tooltip: "Maximum short-burst power output" },
+      { key: "chemistry", label: "Chemistry", type: "dropdown", options: ["LFP", "NMC"], tooltip: "LFP = longer life/safer, NMC = higher energy density" },
+      { key: "roundTripEfficiency", label: "Round-Trip Efficiency", type: "number", unit: "%", tooltip: "Energy retained after a full charge/discharge cycle" },
+      { key: "nominalVoltage", label: "Nominal Voltage", type: "number", unit: "V", tooltip: "Average operating voltage of the battery system" },
     ],
   },
   BATTERY_EXPANSION: {
@@ -88,12 +90,12 @@ export const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
     zuperCategory: "EV Charger",
     specTable: "evChargerSpec",
     fields: [
-      { key: "powerKw", label: "Charger Power", type: "number", unit: "kW", hubspotProperty: "capacity__kw_" },
-      { key: "connectorType", label: "Connector Type", type: "dropdown", options: ["J1772", "NACS", "CCS"] },
-      { key: "amperage", label: "Amperage", type: "number", unit: "A" },
-      { key: "voltage", label: "Voltage", type: "number", unit: "V" },
-      { key: "level", label: "Level", type: "dropdown", options: ["Level 1", "Level 2", "DC Fast"] },
-      { key: "smartFeatures", label: "WiFi / Smart Features", type: "toggle" },
+      { key: "powerKw", label: "Charger Power", type: "number", unit: "kW", hubspotProperty: "capacity__kw_", tooltip: "Maximum charging power output" },
+      { key: "connectorType", label: "Connector Type", type: "dropdown", options: ["J1772", "NACS", "CCS"], tooltip: "Physical plug type — NACS is Tesla/newer EVs" },
+      { key: "amperage", label: "Amperage", type: "number", unit: "A", tooltip: "Maximum current draw of the charger" },
+      { key: "voltage", label: "Voltage", type: "number", unit: "V", tooltip: "Operating voltage (240V typical for Level 2)" },
+      { key: "level", label: "Level", type: "dropdown", options: ["Level 1", "Level 2", "DC Fast"], tooltip: "L1 = 120V/slow, L2 = 240V/standard, DC Fast = commercial" },
+      { key: "smartFeatures", label: "WiFi / Smart Features", type: "toggle", tooltip: "WiFi connectivity, app control, energy scheduling" },
     ],
   },
   RACKING: {
@@ -103,12 +105,12 @@ export const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
     zuperCategory: "Mounting Hardware",
     specTable: "mountingHardwareSpec",
     fields: [
-      { key: "mountType", label: "Mount Type", type: "dropdown", options: ["Roof", "Ground", "Carport", "Flat Roof"] },
-      { key: "material", label: "Material", type: "dropdown", options: ["Aluminum", "Steel"] },
-      { key: "tiltRange", label: "Tilt Range", type: "text" },
-      { key: "windRating", label: "Wind Rating", type: "number", unit: "mph" },
-      { key: "snowLoad", label: "Snow Load", type: "number", unit: "psf" },
-      { key: "roofAttachment", label: "Roof Attachment", type: "dropdown", options: ["Comp Shingle", "Tile", "Metal", "S-Tile"] },
+      { key: "mountType", label: "Mount Type", type: "dropdown", options: ["Roof", "Ground", "Carport", "Flat Roof"], tooltip: "Installation location type for the racking system" },
+      { key: "material", label: "Material", type: "dropdown", options: ["Aluminum", "Steel"], tooltip: "Primary structural material of the racking" },
+      { key: "tiltRange", label: "Tilt Range", type: "text", tooltip: "Adjustable tilt angle range (e.g. 10°–30°)" },
+      { key: "windRating", label: "Wind Rating", type: "number", unit: "mph", tooltip: "Maximum wind speed the system is rated for" },
+      { key: "snowLoad", label: "Snow Load", type: "number", unit: "psf", tooltip: "Maximum snow load in pounds per square foot" },
+      { key: "roofAttachment", label: "Roof Attachment", type: "dropdown", options: ["Comp Shingle", "Tile", "Metal", "S-Tile"], tooltip: "Roof material the mount attaches to" },
     ],
   },
   ELECTRICAL_BOS: {
@@ -118,10 +120,10 @@ export const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
     zuperCategory: "Electrical Hardwire",
     specTable: "electricalHardwareSpec",
     fields: [
-      { key: "componentType", label: "Component Type", type: "dropdown", options: ["Conduit", "Wire", "Disconnect", "Breaker", "Combiner"] },
-      { key: "gaugeSize", label: "Gauge / Size", type: "text" },
-      { key: "voltageRating", label: "Voltage Rating", type: "number", unit: "V" },
-      { key: "material", label: "Material", type: "dropdown", options: ["Copper", "Aluminum", "PVC", "EMT"] },
+      { key: "componentType", label: "Component Type", type: "dropdown", options: ["Conduit", "Wire", "Disconnect", "Breaker", "Combiner"], tooltip: "Type of electrical balance-of-system component" },
+      { key: "gaugeSize", label: "Gauge / Size", type: "text", tooltip: "Wire gauge (AWG) or conduit trade size" },
+      { key: "voltageRating", label: "Voltage Rating", type: "number", unit: "V", tooltip: "Maximum voltage the component is rated for" },
+      { key: "material", label: "Material", type: "dropdown", options: ["Copper", "Aluminum", "PVC", "EMT"], tooltip: "Primary material of the electrical component" },
     ],
   },
   MONITORING: {
@@ -131,9 +133,9 @@ export const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
     zuperCategory: "Relay Device",
     specTable: "relayDeviceSpec",
     fields: [
-      { key: "deviceType", label: "Device Type", type: "dropdown", options: ["Gateway", "Meter", "CT", "Consumption Monitor"] },
-      { key: "connectivity", label: "Connectivity", type: "dropdown", options: ["WiFi", "Cellular", "Ethernet", "Zigbee"] },
-      { key: "compatibleInverters", label: "Compatible Inverters", type: "text" },
+      { key: "deviceType", label: "Device Type", type: "dropdown", options: ["Gateway", "Meter", "CT", "Consumption Monitor"], tooltip: "Type of monitoring or relay device" },
+      { key: "connectivity", label: "Connectivity", type: "dropdown", options: ["WiFi", "Cellular", "Ethernet", "Zigbee"], tooltip: "Communication method for data transmission" },
+      { key: "compatibleInverters", label: "Compatible Inverters", type: "text", tooltip: "Inverter brands/models this device works with" },
     ],
   },
   RAPID_SHUTDOWN: {
@@ -286,6 +288,26 @@ export function getHubspotPropertiesFromMetadata(
   }
 
   return mapped;
+}
+
+/** Default unit label per category for the Basics step. */
+const CATEGORY_UNIT_LABELS: Record<string, string> = {
+  MODULE: "W",
+  INVERTER: "kW",
+  BATTERY: "kWh",
+  BATTERY_EXPANSION: "kWh",
+  EV_CHARGER: "kW",
+};
+
+/** All categories get the same four system targets. Unit label varies by category. */
+export function getCategoryDefaults(category: string): {
+  unitLabel: string;
+  systems: Set<string>;
+} {
+  return {
+    unitLabel: CATEGORY_UNIT_LABELS[category] ?? "",
+    systems: new Set(["INTERNAL", "HUBSPOT", "ZUPER", "ZOHO"]),
+  };
 }
 
 export function generateZuperSpecification(category: string, specData: Record<string, unknown>): string {
